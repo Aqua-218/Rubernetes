@@ -1365,6 +1365,15 @@ module Rubernetes
           "pod_errors" => pod_errors,
           "ready" => errors.empty?
         }
+        # kubelet_orphan_pod_cleaned_volumes: the Pods this sweep tore down
+        # (their volumes with them) and the ones it could not.
+        if @metrics_observer.respond_to?(:orphan_pod_volumes)
+          begin
+            @metrics_observer.orphan_pod_volumes(recovered.uniq.length, blocked.uniq.length)
+          rescue StandardError
+            nil
+          end
+        end
         @mutex.synchronize do
           @recovery_report = Helpers.deep_copy(report).freeze
           @recovery_done = true
