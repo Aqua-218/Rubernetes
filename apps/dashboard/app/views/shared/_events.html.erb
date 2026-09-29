@@ -1,0 +1,28 @@
+<table>
+  <thead><tr><th>Last seen</th><th>Type</th><th>Reason</th><th>Object</th><th>Message</th><th class="num">Count</th></tr></thead>
+  <tbody>
+    <% if events.empty? %><tr><td colspan="6" class="muted">No events</td></tr><% end %>
+    <% events.each do |event| %>
+      <% object = event["involvedObject"] || {} %>
+      <tr>
+        <td class="muted" title="<%= event["lastTimestamp"] %>"><%= time_ago(event["lastTimestamp"] || event.dig("metadata", "creationTimestamp")) %></td>
+        <td><%= badge(event["type"], event["type"] == "Warning" ? "bad" : "muted") %></td>
+        <td><%= event["reason"] %></td>
+        <td class="mono">
+          <% ns = object["namespace"] %>
+          <% if object["kind"] == "Pod" && ns %>
+            <%= link_to "#{object["kind"]}/#{object["name"]}", namespace_pod_path(ns, object["name"]) %>
+          <% elsif object["kind"] == "Node" %>
+            <%= link_to "Node/#{object["name"]}", node_path(object["name"]) %>
+          <% else %>
+            <%= "#{object["kind"]}/#{object["name"]}" %>
+          <% end %>
+          <% if object["fieldPath"].present? %><span class="muted"><%= object["fieldPath"] %></span><% end %>
+          <% if ns && !defined?(hide_namespace) %><div class="muted"><%= ns %></div><% end %>
+        </td>
+        <td><%= event["message"] %></td>
+        <td class="num"><%= event["count"] || event.dig("series", "count") || 1 %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
