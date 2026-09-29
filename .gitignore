@@ -1,0 +1,13 @@
+/artifacts/
+/build/
+/pkg/
+/tmp/
+/.bundle/
+*.gem
+*.so
+*.o
+/verification/tla/states/
+/states/
+/.claude/settings.local.json
+/tmp/
+*.log
