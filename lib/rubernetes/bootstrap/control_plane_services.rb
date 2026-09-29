@@ -2333,6 +2333,11 @@ module Rubernetes
         candidate
       end
 
+      # An assumed Pod is forgotten once its binding call finished, either way.
+      def forget_assumed(key)
+        @mutex.synchronize { @assumed_pods&.delete(key) }
+      end
+
       def start_bind_workers_locked
         @bind_queue ||= Queue.new
         @bind_workers = Array(@bind_workers).select(&:alive?)
