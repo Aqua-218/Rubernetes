@@ -509,7 +509,7 @@ module RubernetesFieldParity
     end
 
     def parse_json(path, label)
-      JSON.parse(read_file(path), object_class: DuplicateCheckingHash, create_additions: false, allow_nan: false)
+      JSON.parse(read_file(path), object_class: DuplicateCheckingHash, allow_nan: false)
     rescue DuplicateKeyError => error
       raise Error, "#{label} contains #{error.message}"
     end
