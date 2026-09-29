@@ -124,6 +124,10 @@ module Rubernetes
       # registered_metrics_total by stability level.
       def register_component_base(overrides = {})
         set("kubernetes_build_info", 1, BUILD_INFO)
+        # --disabled-metrics: no metric is disabled by flag here, and the
+        # counter component-base keeps for that reads 0 like upstream's.
+        register("disabled_metrics_total", type: :counter) unless registered?("disabled_metrics_total")
+        set("disabled_metrics_total", 0)
         self.class.feature_gates.each do |name, gate|
           enabled = overrides.key?(name) ? overrides[name] == true : gate["default"] == true
           set("kubernetes_feature_enabled", enabled ? 1 : 0, {"name" => name, "stage" => self.class.feature_stage(gate["stage"])})
