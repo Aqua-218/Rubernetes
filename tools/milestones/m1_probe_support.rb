@@ -227,7 +227,7 @@ module M1ProbeSupport
   end
 
   def parse_json(path, label: path)
-    JSON.parse(File.binread(path), create_additions: false, max_nesting: 512)
+    JSON.parse(File.binread(path), max_nesting: 512)
   rescue Errno::ENOENT, Errno::EACCES, Errno::EISDIR => error
     raise ProbeError, "cannot read #{label}: #{error.message}"
   rescue JSON::ParserError => error
