@@ -69,6 +69,7 @@ module Rubernetes
 
         def reconcile
           desired = discover
+          @mutex.synchronize { @last_desired = desired.keys }
           current = @mutex.synchronize { @registered.dup }
           current.each do |socket, plugin|
             next if desired[socket] == plugin.identity
