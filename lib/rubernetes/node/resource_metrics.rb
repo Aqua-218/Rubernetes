@@ -481,7 +481,7 @@ module Rubernetes
             name = container["name"].to_s
             labels = {"container" => name, "id" => "#{pod_id}/#{name}", "image" => images.fetch([ref["uid"].to_s, name], "").to_s,
                       "name" => name}.merge(pod_labels)
-            add_entry(samples, container, labels, stamp)
+            add_summary_entry(samples, container, labels, stamp)
             started = ResourceMetrics.parse_time(container["startTime"])
             samples["container_start_time_seconds"] << [labels, started.to_f] if started
             rootfs = container["rootfs"]
