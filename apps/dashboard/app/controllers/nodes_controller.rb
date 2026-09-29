@@ -3,7 +3,7 @@
 class NodesController < ApplicationController
   def index
     @nodes = Array(client.get("nodes")["items"]).sort_by { |n| n.dig("metadata", "name") }
-    @pods_by_node = Array(client.get("pods")["items"]).group_by { |p| p.dig("spec", "nodeName") }
+    @pods_by_node = Array(client.get("pods", namespace: :all)["items"]).group_by { |p| p.dig("spec", "nodeName") }
   end
 
   def show
