@@ -64,7 +64,7 @@ class FakeCluster
 
   def get(resource, name = nil, namespace: nil, api_version: "v1", query: nil, **)
     items = Array(@objects[resource])
-    items = items.select { |o| o.dig("metadata", "namespace") == namespace } if namespace
+    items = items.select { |o| o.dig("metadata", "namespace") == namespace } if namespace && namespace != :all
     if query && query["fieldSelector"]
       query["fieldSelector"].split(",").each do |pair|
         key, value = pair.split("=", 2)
