@@ -1071,6 +1071,7 @@ module Rubernetes
           bridged_request = authenticate_request(request)
           pod = await_scheduled_pod(route, request)
           admit_streaming_subresource(bridged_request, route)
+          record_pod_logs_usage(request) if route.subresource.to_s == "log"
           begin
             return @subresource_bridge.call(bridged_request, route, pod: pod)
           rescue Status::Error => error
