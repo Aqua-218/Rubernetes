@@ -18,7 +18,7 @@ class M3ControllerRegistryProbeTest < Minitest::Test
   # generic StandardError and still claiming duplicate rejection.
   def test_duplicate_registration_records_the_exact_production_exception
     stdout, stderr, process = Open3.capture3(RbConfig.ruby, "-Ilib", PROBE, chdir: ROOT)
-    report = JSON.parse(stdout, create_additions: false)
+    report = JSON.parse(stdout)
 
     assert process.success?, "controller registry probe failed: #{stderr}\n#{report.fetch("errors", []).join("; ")}"
     assert_equal "PASS", report.fetch("status")
