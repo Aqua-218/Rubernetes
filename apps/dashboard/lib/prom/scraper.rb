@@ -60,7 +60,11 @@ module Prom
       samples = []
       if error.nil?
         begin
-          samples = Exposition.samples(body.to_s)
+          families = Exposition.parse(body.to_s)
+          samples = families.flat_map(&:samples)
+          @mutex.synchronize do
+            families.each { |family| @metadata[family.name] = [{"type" => family.type, "help" => family.help.to_s, "unit" => ""}] }
+          end
         rescue Exposition::ParseError => e
           error = "parse error: #{e.message}"
         end
