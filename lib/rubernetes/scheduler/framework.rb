@@ -535,6 +535,8 @@ module Rubernetes
               post_filter_started = monotonic
               begin
                 preemption = run_post_filters(typed_pod, context, filtered, trace, nominated: nominated)
+                @metrics.extension_point(:post_filter, preemption ? Metrics::STATUS_SUCCESS : Metrics::STATUS_UNSCHEDULABLE,
+                                         monotonic - post_filter_started)
               rescue PreemptionError, PluginError => error
                 @batch&.failed(cycle)
                 status = requeue_after_failure(typed_pod, error)
