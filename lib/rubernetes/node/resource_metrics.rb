@@ -72,6 +72,20 @@ module Rubernetes
         list << [labels, memory["workingSetBytes"].to_i, millis(memory["time"])]
       end
 
+      def add_swap(list, swap, labels)
+        return unless swap.is_a?(Hash) && swap["swapUsageBytes"]
+
+        list << [labels, swap["swapUsageBytes"].to_i, millis(swap["time"])]
+      end
+
+      # The container's swap limit: usage plus what is still available under
+      # memory.swap.max (absent when the cgroup has no swap limit).
+      def add_swap_limit(list, swap, labels)
+        return unless swap.is_a?(Hash) && swap["swapUsageBytes"] && swap["swapAvailableBytes"]
+
+        list << [labels, swap["swapUsageBytes"].to_i + swap["swapAvailableBytes"].to_i, millis(swap["time"])]
+      end
+
       def sample(name, labels, value, timestamp)
         label_text = labels.empty? ? "" : "{#{labels.map { |key, item| "#{key}=\"#{escape(item)}\"" }.join(",")}}"
         rendered = format_float(value)
