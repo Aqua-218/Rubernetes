@@ -1030,6 +1030,7 @@ module Rubernetes
       # (storage_operation_duration_seconds) through the Pod volumes.
       def metrics_observer=(observer)
         @metrics_observer = observer
+        report_volume_reconstruction(observer)
         return unless @pod_volumes.respond_to?(:metrics_observer=) && observer.respond_to?(:storage_operation)
 
         @pod_volumes.metrics_observer = ->(plugin, operation, status, seconds) { observer.storage_operation(plugin, operation, status, seconds) }
