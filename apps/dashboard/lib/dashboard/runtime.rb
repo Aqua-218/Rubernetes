@@ -75,7 +75,7 @@ module Dashboard
     end
 
     def kube_state
-      @kube_state ||= client && Prom::KubeState.new(client: client)
+      memoize(:kube_state) { client && Prom::KubeState.new(client: client) }
     end
 
     def targets
