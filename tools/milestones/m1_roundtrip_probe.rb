@@ -919,8 +919,8 @@ def build_validation_list_fixture(codec:, mapping:, raw_json:, types_by_schema:,
   item_schema = mapping.fetch("item_schema")
   item_type = types_by_schema.fetch(item_schema)
   item_mapping = mapping.merge("validation_mode" => mapping.fetch("item_mode"), "target_path" => mapping.fetch("item_target_path"))
-  list_value = JSON.parse(raw_json, create_additions: false)
-  item_target = Array(list_value["items"]).first || JSON.parse(JSON.generate(minimal_required_values(item_type, types_by_schema, include_zero_references: true)), create_additions: false)
+  list_value = JSON.parse(raw_json)
+  item_target = Array(list_value["items"]).first || JSON.parse(JSON.generate(minimal_required_values(item_type, types_by_schema, include_zero_references: true)))
   owner_type = types_by_schema.fetch(mapping.fetch("owner_schema"))
   inner = if mapping.fetch("item_mode") == "handler"
             build_validation_handler_fixture(codec: codec, mapping: item_mapping, owner_type: owner_type, target_json: JSON.generate(item_target),
