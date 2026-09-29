@@ -87,18 +87,18 @@ module Dashboard
     end
 
     def rules
-      return @rules if defined?(@rules) && !@rules.nil?
-
-      path = Config.rules_path
-      @rules = if File.file?(path)
-                 Prom::Rules.load_file(path, webhook_url: Config.alert_webhook_url, logger: @logger,
-                                       default_interval_ms: (Config.evaluation_interval_seconds * 1000).to_i)
-               else
-                 Prom::Rules.new({"groups" => []}, webhook_url: Config.alert_webhook_url, logger: @logger)
-               end
-    rescue Prom::Rules::Error => e
-      @errors[:rules] = e.message
-      @rules = Prom::Rules.new({"groups" => []}, logger: @logger)
+      memoize(:rules) do
+        path = Config.rules_path
+        if File.file?(path)
+          Prom::Rules.load_file(path, webhook_url: Config.alert_webhook_url, logger: @logger,
+                                default_interval_ms: (Config.evaluation_interval_seconds * 1000).to_i)
+        else
+          Prom::Rules.new({"groups" => []}, webhook_url: Config.alert_webhook_url, logger: @logger)
+        end
+      rescue Prom::Rules::Error => e
+        @errors[:rules] = e.message
+        Prom::Rules.new({"groups" => []}, logger: @logger)
+      end
     end
 
     def scraper
