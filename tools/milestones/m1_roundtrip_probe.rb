@@ -639,7 +639,7 @@ def validation_embed_fixture(value, path, target, target_schema)
   return JSON.parse(JSON.generate(target)) if path.empty?
 
   edge = path.fetch(0)
-  result = value.is_a?(Hash) ? JSON.parse(JSON.generate(value), create_additions: false) : {}
+  result = value.is_a?(Hash) ? JSON.parse(JSON.generate(value)) : {}
   existing = result[edge.fetch("field")]
   current = case edge.fetch("container")
             when "array" then existing.is_a?(Array) && existing.first.is_a?(Hash) ? existing.first : {}
