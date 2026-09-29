@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "suite": "m3-control-plane-chaos",
+  "runner": "test/conformance/kubernetes/m3_control_plane_chaos/runner.rb",
+  "required_environment": {
+    "built_in_backend": "project-owned APIServerService with one shared HTTP process and MemoryStore"
+  },
+  "required_capabilities": [
+    "worker_restart_shared_api",
+    "worker_restart_shared_store",
+    "watch_replay",
+    "lease_cas",
+    "effect_ids"
+  ],
+  "capability_scope": {
+    "worker_restart_durable": "shared API/store state survives controller-manager or scheduler worker SIGKILL/restart",
+    "m5_disk_durable": false,
+    "m5_api_ha": false
+  },
+  "optional_environment": {
+    "RUBERNETES_M3_DURABLE_API_COMMAND": "override for a project-owned shared API/store process",
+    "RUBERNETES_M3_DURABLE_API_ENDPOINT": "HTTP(S) endpoint served by the shared API/store override",
+    "RUBERNETES_M3_DURABLE_API_CAPABILITIES": "JSON worker-restart capability document for the shared API/store override",
+    "RUBERNETES_M3_LEADER_CHAOS_COMMAND": "leader probe runner override",
+    "RUBERNETES_M3_QUEUE_CHAOS_COMMAND": "queue probe runner override",
+    "RUBERNETES_M3_PROCESS_CHAOS_COMMAND": "shared process-chaos runner override",
+    "RUBERNETES_M3_CONTROLLER_MANAGER_COMMAND": "controller-manager executable override",
+    "RUBERNETES_M3_SCHEDULER_COMMAND": "scheduler executable override",
+    "RUBERNETES_M3_WATCH_CHAOS_COMMAND": "watch duplicate/order/bookmark/EOF/410/reconnect/resync control override",
+    "RUBERNETES_M3_EFFECT_CHAOS_COMMAND": "effect-boundary observer with SIGKILL side-effect controls override"
+  },
+  "process_contract": {
+    "components": ["controller-manager", "scheduler"],
+    "initial_processes_per_component": 2,
+    "leader_signal": "SIGKILL",
+    "restart_required": true,
+    "recovery_deadline_seconds": 60
+  },
+  "watch_faults": [
+    "duplicate",
+    "out_of_order",
+    "bookmark",
+    "eof",
+    "gone_410",
+    "reconnect",
+    "resync"
+  ],
+  "watch_control_response": {
+    "passed": true,
+    "faults": "array containing every requested watch fault",
+    "events": "one structured passing observation per fault",
+    "properties": [
+      "duplicate_suppression",
+      "out_of_order_delivery",
+      "watch_reconnect",
+      "resync"
+    ],
+    "counters": [
+      "duplicate_loss_count",
+      "out_of_order_count",
+      "reconnect_loss_count",
+      "resync_loss_count"
+    ]
+  },
+  "effect_control_response": {
+    "passed": true,
+    "effect_ids": "non-empty unique IDs per phase",
+    "counters": [
+      "duplicate_side_effect_count",
+      "stale_side_effect_count",
+      "double_side_effect_count"
+    ]
+  },
+  "evidence_fields": [
+    "pid",
+    "start_time",
+    "namespace",
+    "lease_resource_version",
+    "effect_ids",
+    "shared_api_survival_observations",
+    "raw_trace_sha256",
+    "canonical_trace_sha256"
+  ]
+}
