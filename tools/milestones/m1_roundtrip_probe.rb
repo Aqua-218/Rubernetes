@@ -891,9 +891,9 @@ def build_validation_handler_fixture(codec:, mapping:, owner_type:, target_json:
   missing_json = JSON.generate(missing_hash)
   update_json = codec.canonical_json(update_hash, schema: definition)
   validator = definition.validator
-  missing_local = augment ? augment.call(JSON.parse(missing_json, create_additions: false), owner_type) : JSON.parse(missing_json, create_additions: false)
-  create_accepted, create_errors = local_validation_observation(validator, JSON.parse(create_json, create_additions: false), operation: :create, definition: definition)
-  invalid_accepted, invalid_errors = local_validation_observation(validator, JSON.parse(invalid_json, create_additions: false), operation: :create, definition: definition)
+  missing_local = augment ? augment.call(JSON.parse(missing_json), owner_type) : JSON.parse(missing_json)
+  create_accepted, create_errors = local_validation_observation(validator, JSON.parse(create_json), operation: :create, definition: definition)
+  invalid_accepted, invalid_errors = local_validation_observation(validator, JSON.parse(invalid_json), operation: :create, definition: definition)
   missing_accepted, missing_errors = local_validation_observation(validator, missing_local, operation: :create, definition: definition)
   update_accepted, update_errors = local_validation_observation(validator, JSON.parse(update_json, create_additions: false), operation: :update,
                                                                 old: JSON.parse(create_json, create_additions: false), definition: definition)
