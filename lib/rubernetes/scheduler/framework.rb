@@ -494,6 +494,7 @@ module Rubernetes
                                        scores: [], victims: [], trace: trace, reason: reason, gated: true)
           end
 
+          algorithm_started = monotonic
           cycle = (@cycle += 1)
           signature = @batch&.sign(typed_pod)
           nominated = nominated_pods_index(context)
