@@ -1,0 +1,592 @@
+[
+ {
+  "name": "containerd-cri-default",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": false
+   },
+   {
+    "type": "c",
+    "major": -1,
+    "minor": -1,
+    "access": "m",
+    "allow": true
+   },
+   {
+    "type": "b",
+    "major": -1,
+    "minor": -1,
+    "access": "m",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 8,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 7,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 5,
+    "minor": 0,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 5,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 9,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 136,
+    "minor": -1,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 5,
+    "minor": 2,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 10,
+    "minor": 200,
+    "access": "rwm",
+    "allow": true
+   }
+  ]
+ },
+ {
+  "name": "containerd-cri-privileged",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": -1,
+    "minor": -1,
+    "access": "m",
+    "allow": true
+   },
+   {
+    "type": "b",
+    "major": -1,
+    "minor": -1,
+    "access": "m",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 8,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 7,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 5,
+    "minor": 0,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 5,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 9,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 136,
+    "minor": -1,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 5,
+    "minor": 2,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 10,
+    "minor": 200,
+    "access": "rwm",
+    "allow": true
+   }
+  ]
+ },
+ {
+  "name": "containerd-cri-with-devices",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": false
+   },
+   {
+    "type": "c",
+    "major": 195,
+    "minor": 0,
+    "access": "rw",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 195,
+    "minor": 255,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "b",
+    "major": 259,
+    "minor": -1,
+    "access": "r",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": -1,
+    "minor": -1,
+    "access": "m",
+    "allow": true
+   },
+   {
+    "type": "b",
+    "major": -1,
+    "minor": -1,
+    "access": "m",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 8,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 7,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 5,
+    "minor": 0,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 5,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 9,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 136,
+    "minor": -1,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 5,
+    "minor": 2,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 10,
+    "minor": 200,
+    "access": "rwm",
+    "allow": true
+   }
+  ]
+ },
+ {
+  "name": "empty",
+  "rules": []
+ },
+ {
+  "name": "deny-all-only",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": false
+   }
+  ]
+ },
+ {
+  "name": "allow-all-only",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": true
+   }
+  ]
+ },
+ {
+  "name": "denylist-exceptions",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "w",
+    "allow": false
+   },
+   {
+    "type": "b",
+    "major": 8,
+    "minor": 0,
+    "access": "rwm",
+    "allow": false
+   },
+   {
+    "type": "b",
+    "major": 8,
+    "minor": -1,
+    "access": "m",
+    "allow": false
+   }
+  ]
+ },
+ {
+  "name": "hole-punch-rejected",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": false
+   },
+   {
+    "type": "c",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "w",
+    "allow": false
+   }
+  ]
+ },
+ {
+  "name": "union-of-permissions",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": false
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "r",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "w",
+    "allow": true
+   }
+  ]
+ },
+ {
+  "name": "remove-permission",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": false
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "w",
+    "allow": false
+   }
+  ]
+ },
+ {
+  "name": "remove-to-empty",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": false
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "rw",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "rw",
+    "allow": false
+   }
+  ]
+ },
+ {
+  "name": "wildcard-minor",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": false
+   },
+   {
+    "type": "b",
+    "major": 8,
+    "minor": -1,
+    "access": "rw",
+    "allow": true
+   }
+  ]
+ },
+ {
+  "name": "wildcard-major",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": false
+   },
+   {
+    "type": "c",
+    "major": -1,
+    "minor": 5,
+    "access": "r",
+    "allow": true
+   }
+  ]
+ },
+ {
+  "name": "no-leading-wildcard",
+  "rules": [
+   {
+    "type": "c",
+    "major": -1,
+    "minor": -1,
+    "access": "m",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "rwm",
+    "allow": true
+   }
+  ]
+ },
+ {
+  "name": "reset-after-rules",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": false
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": false
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 5,
+    "access": "rw",
+    "allow": true
+   }
+  ]
+ },
+ {
+  "name": "unsorted-input",
+  "rules": [
+   {
+    "type": "a",
+    "major": -1,
+    "minor": -1,
+    "access": "rwm",
+    "allow": false
+   },
+   {
+    "type": "c",
+    "major": 10,
+    "minor": 200,
+    "access": "rwm",
+    "allow": true
+   },
+   {
+    "type": "b",
+    "major": 7,
+    "minor": 1,
+    "access": "r",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 9,
+    "access": "mr",
+    "allow": true
+   },
+   {
+    "type": "c",
+    "major": 1,
+    "minor": 3,
+    "access": "wm",
+    "allow": true
+   }
+  ]
+ }
+]
