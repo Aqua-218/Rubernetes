@@ -397,7 +397,7 @@ module Tsdb
           if chunk.max_time < boundary
             chunks << [chunk.bytes, chunk.min_time, chunk.max_time, chunk.count]
           else
-            remaining << bytes
+            remaining << chunk
           end
         end
         if series.encoder && (all || series.encoder.max_time < boundary)
