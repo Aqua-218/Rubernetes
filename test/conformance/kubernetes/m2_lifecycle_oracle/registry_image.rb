@@ -121,7 +121,7 @@ module M2LifecycleOracleRegistryImage
           bytes = entry.read.to_s
           case entry.full_name
           when "index.json"
-            index = JSON.parse(bytes, create_additions: false)
+            index = JSON.parse(bytes)
             index_ok = index.is_a?(Hash) && Array(index["manifests"]).any? { |m| m.is_a?(Hash) && m["digest"] == parsed.fetch("digest") }
           when %r{\Ablobs/sha256/([0-9a-f]{64})\z}
             hex = Regexp.last_match(1)
