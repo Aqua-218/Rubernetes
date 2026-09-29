@@ -2149,8 +2149,10 @@ module Rubernetes
                      "lastTransitionTime" => Time.now.utc.iso8601, "lastProbeTime" => nil}
         status = {"conditions" => [condition]}
         status["nominatedNodeName"] = nominated.empty? ? nil : nominated unless nominated.nil?
-        @client.patch("pods", {"status" => status}, type: :strategic, namespace: pod.namespace,
-                      api_version: "v1", name: pod.name, subresource: "status")
+        timed_status_patch do
+          @client.patch("pods", {"status" => status}, type: :strategic, namespace: pod.namespace,
+                        api_version: "v1", name: pod.name, subresource: "status")
+        end
         (@unschedulable_reports ||= {})[key] = report
         log(:info, "scheduler.unschedulable", pod: key, message: message)
         record_pod_event(pod, "FailedScheduling", message, type: "Warning")
