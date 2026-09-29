@@ -1,0 +1,28 @@
+<% content_for :title, "Status" %>
+<h1>Status</h1>
+<div class="grid">
+  <div class="card"><div class="sub">Series (index)</div><div class="big"><%= @stats["series"] %></div></div>
+  <div class="card"><div class="sub">Head series</div><div class="big"><%= @stats["head_series"] %></div><span class="muted"><%= @stats["head_chunks"] %> chunks</span></div>
+  <div class="card"><div class="sub">Blocks</div><div class="big"><%= @stats["blocks"] %></div><span class="muted"><%= human_bytes(@stats["block_bytes"]) %> on disk</span></div>
+  <div class="card"><div class="sub">WAL</div><div class="big"><%= human_bytes(@stats["wal_bytes"]) %></div></div>
+  <div class="card"><div class="sub">Collector</div><div class="big"><%= @collector.running? ? "running" : "stopped" %></div><span class="muted">threads <%= Thread.list.length %></span></div>
+</div>
+<h2>Build</h2>
+<dl class="kv"><% @build.each do |k, v| %><dt><%= k %></dt><dd class="mono"><%= v %></dd><% end %>
+  <dt>started</dt><dd class="mono"><%= runtime.started_at.iso8601 %></dd></dl>
+<h2>Configuration</h2>
+<dl class="kv"><% @config.each do |k, v| %><dt><%= k %></dt><dd class="mono"><%= v %></dd><% end %></dl>
+<% if @errors.any? %>
+  <h2>Errors</h2>
+  <dl class="kv"><% @errors.each do |k, v| %><dt><%= k %></dt><dd class="graph-error"><%= v %></dd><% end %></dl>
+<% end %>
+<h2>Blocks</h2>
+<table>
+  <thead><tr><th>Path</th><th>Min time</th><th>Max time</th><th>Created</th></tr></thead>
+  <tbody>
+    <% if @blocks.empty? %><tr><td colspan="4" class="muted">No blocks yet (everything is in the head).</td></tr><% end %>
+    <% @blocks.each do |b| %>
+      <tr><td class="mono"><%= b["path"] %></td><td class="mono"><%= Time.at(b["min_t"] / 1000.0).utc.iso8601 %></td><td class="mono"><%= Time.at(b["max_t"] / 1000.0).utc.iso8601 %></td><td class="mono"><%= Time.at(b["created_at"] / 1000.0).utc.iso8601 %></td></tr>
+    <% end %>
+  </tbody>
+</table>
