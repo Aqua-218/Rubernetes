@@ -2,6 +2,8 @@
 
 require "yaml"
 require "json"
+require "socket"
+require "uri"
 
 module Dashboard
   # Runtime configuration, from the environment with sensible defaults for a
