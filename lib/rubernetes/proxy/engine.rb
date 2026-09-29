@@ -1110,6 +1110,9 @@ module Rubernetes
           end
           diff
         end
+      rescue StandardError
+        failed = true
+        raise
       ensure
         record_publish(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
       end
