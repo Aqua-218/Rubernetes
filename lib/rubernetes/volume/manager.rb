@@ -1744,6 +1744,8 @@ module Rubernetes
         recover_backends_from_store!
       end
 
+
+      attr_reader :reconstruction_stats
       def identity
         @identity_value.is_a?(Identity) ? @identity_value : Identity.new(**@identity_value.to_h.transform_keys(&:to_sym))
       end
