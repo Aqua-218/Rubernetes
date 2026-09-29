@@ -1,0 +1,46 @@
+<% name = @object.dig("metadata", "name") %>
+<% content_for :title, "#{@entry.kind} #{name}" %>
+<h1><%= link_to "#{@entry.kind}s", resource_index_path(@kind, @namespace) %> / <%= name %></h1>
+<div class="toolbar">
+  <%= link_to "YAML", "#{resource_show_path(@kind, name, @namespace)}/yaml", class: "btn", target: "_blank" %>
+  <% if writes_allowed? && @namespace %>
+    <% if @entry.scalable %>
+      <%= form_with url: "#{resource_show_path(@kind, name, @namespace)}/scale", method: :post, data: {turbo: false} do |f| %>
+        <label>Replicas <%= f.number_field :replicas, value: @object.dig("spec", "replicas"), min: 0, style: "width: 70px" %></label>
+        <%= f.button "Scale" %>
+      <% end %>
+    <% end %>
+    <% if %w[Deployment StatefulSet DaemonSet].include?(@entry.kind) %>
+      <%= button_to "Rollout restart", "#{resource_show_path(@kind, name, @namespace)}/restart", method: :post, form: {data: {turbo_confirm: "Restart all pods of #{name}?"}} %>
+    <% end %>
+    <%= button_to "Delete", resource_show_path(@kind, name, @namespace), method: :delete, class: "danger", form: {data: {turbo_confirm: "Delete #{@entry.kind} #{name}?"}} %>
+  <% end %>
+</div>
+<dl class="kv">
+  <% @entry.columns.each do |col, fn| %><dt><%= col %></dt><dd><%= (v = fn.call(@object) rescue "?"; col == "Age" ? "#{v} (#{time_ago(v)})" : v) %></dd><% end %>
+  <dt>Labels</dt><dd class="mono"><%= format_labels(@object.dig("metadata", "labels")) %></dd>
+  <dt>Annotations</dt><dd class="mono muted"><%= (@object.dig("metadata", "annotations") || {}).reject { |k, _| k == "kubectl.kubernetes.io/last-applied-configuration" }.map { |k, v| "#{k}=#{v.to_s.truncate(120)}" }.join(", ") %></dd>
+</dl>
+<% if @object["status"].is_a?(Hash) && @object["status"]["conditions"].is_a?(Array) %>
+  <h2>Conditions</h2>
+  <table><thead><tr><th>Type</th><th>Status</th><th>Reason</th><th>Message</th><th>Since</th></tr></thead><tbody>
+    <% @object["status"]["conditions"].each do |c| %>
+      <tr><td><%= c["type"] %></td><td><%= badge(c["status"], c["status"] == "True" ? "ok" : "warn") %></td><td><%= c["reason"] %></td><td><%= c["message"] %></td><td class="muted"><%= c["lastTransitionTime"] %></td></tr>
+    <% end %></tbody></table>
+<% end %>
+<% if @pods.any? %>
+  <h2>Pods (<%= @pods.length %>)</h2>
+  <%= render "shared/pods_table", pods: @pods, show_namespace: false %>
+<% end %>
+<% if @entry.kind == "ConfigMap" %>
+  <h2>Data</h2>
+  <% (@object["data"] || {}).each do |k, v| %><details><summary><%= k %> <span class="muted">(<%= v.to_s.bytesize %> bytes)</span></summary><pre><%= v %></pre></details><% end %>
+<% end %>
+<% if @entry.kind == "Secret" %>
+  <h2>Keys</h2>
+  <p class="mono"><%= (@object["data"] || {}).keys.join(", ") %></p><p class="muted">Secret values are not shown.</p>
+<% end %>
+<h2>Events</h2>
+<%= render "shared/events", events: @events, hide_namespace: true %>
+<h2>YAML</h2>
+<details><summary>Show</summary><pre><%= @entry.kind == "Secret" ? @object.merge("data" => (@object["data"] || {}).transform_values { "<redacted>" }).to_yaml : @yaml %></pre></details>
