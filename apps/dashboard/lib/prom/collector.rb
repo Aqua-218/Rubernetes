@@ -70,6 +70,8 @@ module Prom
       statuses
     end
 
+    attr_reader :last_round_seconds
+
     def start
       return @thread if @thread&.alive?
 
