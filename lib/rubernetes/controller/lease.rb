@@ -216,7 +216,7 @@ module Rubernetes
         candidate["spec"]["renewTime"] = now.utc.iso8601(6)
         candidate["spec"]["leaseDurationSeconds"] = lease_duration_seconds.to_i
         begin
-          @adapter.update(candidate, descriptor: lease_descriptor, existing: lease)
+          stored = @adapter.update(candidate, descriptor: lease_descriptor, existing: lease)
         rescue StandardError => error
           if transient_error?(error) && !contention_error?(error)
             # Leadership is kept: the renew deadline, checked above, decides
