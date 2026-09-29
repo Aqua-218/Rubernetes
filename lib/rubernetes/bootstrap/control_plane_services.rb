@@ -1610,9 +1610,7 @@ module Rubernetes
         # one upstream never pops.
         return if (result.respond_to?(:gated?) && result.gated?) || (result.respond_to?(:dropped?) && result.dropped?)
 
-        labels = {"result" => outcome, "profile" => "default-scheduler"}
-        @metrics.increment("scheduler_schedule_attempts_total", labels)
-        @metrics.observe("scheduler_scheduling_attempt_duration_seconds", seconds, labels)
+        @scheduler_metrics.attempt(outcome, seconds)
         victims = result.respond_to?(:victims) ? Array(result.victims) : []
         return if victims.empty?
 
