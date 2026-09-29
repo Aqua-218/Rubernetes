@@ -58,6 +58,15 @@ module Rubernetes
         end
 
         # One reconcile pass.
+        # plugin_manager_total_plugins{socket_path, state}: every socket the
+        # registry directory holds (desired_state_of_world) and every plugin
+        # registered from it (actual_state_of_world), as pluginmanager's
+        # collector reports them.
+        def plugin_states
+          desired, registered = @mutex.synchronize { [Array(@last_desired).dup, @registered.keys.dup] }
+          desired.map { |socket| [socket, "desired_state_of_world"] } + registered.map { |socket| [socket, "actual_state_of_world"] }
+        end
+
         def reconcile
           desired = discover
           current = @mutex.synchronize { @registered.dup }
