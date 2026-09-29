@@ -3089,7 +3089,12 @@ module Rubernetes
         rescue Platform::Linux::CgroupV2::Error, Sandbox::Error
           nil
         end
-        {"pod" => @cgroup.usage(sandbox.cgroup, pod: true), "containers" => containers}
+        netns_pid = begin
+          sandbox.respond_to?(:network_sandbox_context) ? sandbox.network_sandbox_context.dig("netns", "pid") : nil
+        rescue StandardError
+          nil
+        end
+        {"pod" => @cgroup.usage(sandbox.cgroup, pod: true), "containers" => containers, "netns_pid" => netns_pid}
       rescue Platform::Linux::CgroupV2::Error, SystemCallError
         nil
       end
