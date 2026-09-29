@@ -154,7 +154,7 @@ module M2LifecycleOracleNodeImage
 
   def repo_digests(reference)
     stdout, = docker("image", "inspect", "--format", "{{json .RepoDigests}}", reference)
-    JSON.parse(stdout, create_additions: false)
+    JSON.parse(stdout)
   end
 
   # Pushes the local image through an ephemeral registry so Docker records a
