@@ -381,6 +381,11 @@ module Rubernetes
         @batch = if opportunistic_batching
                    OpportunisticBatch.new(plugin_names: (filter_plugins + score_plugins).map(&:name))
                  end
+        @batch.metrics = @metrics if @batch.respond_to?(:metrics=)
+        @queue.metrics = @metrics if @queue.respond_to?(:metrics=)
+        @metrics.queue = @queue if @metrics.respond_to?(:queue=)
+        @volume_binding.metrics = @metrics if @volume_binding.respond_to?(:metrics=)
+        @dynamic_resources.metrics = @metrics if @dynamic_resources.respond_to?(:metrics=)
         configure_queue_sort!
       end
 
