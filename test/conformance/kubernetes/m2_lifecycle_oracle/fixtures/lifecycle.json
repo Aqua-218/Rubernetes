@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "suite": "m2-kubernetes-lifecycle-oracle",
+  "kubernetes_version": "v1.36.2",
+  "source_commit": "24e2b02af5543d7910c2bb074c7264df5a8f0467",
+  "observable_schema_version": 2,
+  "timeline": [
+    {"at": 0, "operation": "apply", "case": "all"},
+    {"at": 1, "operation": "start", "case": "all"},
+    {"at": 2, "operation": "observe_status", "case": "all"},
+    {"at": 3, "operation": "observe_events", "case": "all"},
+    {"at": 4, "operation": "terminate", "case": "graceful_termination_oracle"}
+  ],
+  "cases": {
+    "init_sidecar_app_order": {
+      "pod": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {"name": "m2-order", "namespace": "default", "uid": "m2-order"},
+        "spec": {
+          "restartPolicy": "Always",
+          "initContainers": [
+            {"name": "prepare", "image": "registry.k8s.io/e2e-test-images/busybox@sha256:caec39cad3b12c26600baf6e67ba811ac15d28a9288d0ccdfffb4b318992c3bb", "command": ["/bin/sh", "-c", "exit 0"]},
+            {"name": "sidecar", "image": "registry.k8s.io/e2e-test-images/busybox@sha256:caec39cad3b12c26600baf6e67ba811ac15d28a9288d0ccdfffb4b318992c3bb", "command": ["/bin/sh", "-c", "sleep 300"], "restartPolicy": "Always"}
+          ],
+          "containers": [
+            {"name": "app", "image": "registry.k8s.io/e2e-test-images/busybox@sha256:caec39cad3b12c26600baf6e67ba811ac15d28a9288d0ccdfffb4b318992c3bb", "command": ["/bin/sh", "-c", "sleep 300"]}
+          ]
+        }
+      },
+      "operations": ["create:prepare", "start:prepare", "wait:prepare", "create:sidecar", "start:sidecar", "create:app", "start:app"],
+      "observation": {
+        "settle": "phase Running, sidecar and app running and ready, prepare terminated with exitCode 0",
+        "operations_source": "container createdAt/startedAt/finishedAt ordering of the container runtime (CRI), wait:<init> is the init container termination"
+      }
+    },
+    "startup_liveness_readiness_thresholds": {
+      "pod": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {"name": "m2-probes", "namespace": "default", "uid": "m2-probes"},
+        "spec": {
+          "restartPolicy": "Always",
+          "containers": [
+            {
+              "name": "app",
+              "image": "registry.k8s.io/e2e-test-images/busybox@sha256:caec39cad3b12c26600baf6e67ba811ac15d28a9288d0ccdfffb4b318992c3bb",
+              "command": ["/bin/sh", "-c", "sleep 300"],
+              "startupProbe": {"exec": {"command": ["/bin/true"]}, "successThreshold": 1, "failureThreshold": 3, "periodSeconds": 1},
+              "livenessProbe": {"exec": {"command": ["/bin/false"]}, "failureThreshold": 2, "periodSeconds": 1, "initialDelaySeconds": 10},
+              "readinessProbe": {"exec": {"command": ["/bin/true"]}, "successThreshold": 2, "failureThreshold": 1, "periodSeconds": 1}
+            }
+          ]
+        }
+      },
+      "operations": ["probe:startup:success", "probe:readiness:success", "probe:readiness:success", "probe:liveness:failure", "probe:liveness:failure", "kill:liveness", "restart:app"],
+      "observation": {
+        "settle": "started=true and ready=true are observed before the first liveness Killing event; the case ends when restartCount reaches 1",
+        "liveness_failures_before_kill_source": "count of Unhealthy events whose message starts with 'Liveness probe failed' at the moment the Killing event with message 'Container app failed liveness probe, will be restarted' is first observed"
+      }
+    },
+    "restart_policy_and_backoff": {
+      "variants": {
+        "always_exit_0": {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {"name": "m2-restart-always-exit-0", "namespace": "default", "uid": "m2-restart-always-exit-0"},
+          "spec": {
+            "restartPolicy": "Always",
+            "containers": [
+              {"name": "app", "image": "registry.k8s.io/e2e-test-images/busybox@sha256:caec39cad3b12c26600baf6e67ba811ac15d28a9288d0ccdfffb4b318992c3bb", "command": ["/bin/sh", "-c", "exit 0"]}
+            ]
+          }
+        },
+        "on_failure_exit_0": {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {"name": "m2-restart-on-failure-exit-0", "namespace": "default", "uid": "m2-restart-on-failure-exit-0"},
+          "spec": {
+            "restartPolicy": "OnFailure",
+            "containers": [
+              {"name": "app", "image": "registry.k8s.io/e2e-test-images/busybox@sha256:caec39cad3b12c26600baf6e67ba811ac15d28a9288d0ccdfffb4b318992c3bb", "command": ["/bin/sh", "-c", "exit 0"]}
+            ]
+          }
+        },
+        "on_failure_exit_1": {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {"name": "m2-restart-on-failure-exit-1", "namespace": "default", "uid": "m2-restart-on-failure-exit-1"},
+          "spec": {
+            "restartPolicy": "OnFailure",
+            "containers": [
+              {"name": "app", "image": "registry.k8s.io/e2e-test-images/busybox@sha256:caec39cad3b12c26600baf6e67ba811ac15d28a9288d0ccdfffb4b318992c3bb", "command": ["/bin/sh", "-c", "exit 1"]}
+            ]
+          }
+        },
+        "never_exit_1": {
+          "apiVersion": "v1",
+          "kind": "Pod",
+          "metadata": {"name": "m2-restart-never-exit-1", "namespace": "default", "uid": "m2-restart-never-exit-1"},
+          "spec": {
+            "restartPolicy": "Never",
+            "containers": [
+              {"name": "app", "image": "registry.k8s.io/e2e-test-images/busybox@sha256:caec39cad3b12c26600baf6e67ba811ac15d28a9288d0ccdfffb4b318992c3bb", "command": ["/bin/sh", "-c", "exit 1"]}
+            ]
+          }
+        }
+      },
+      "operations": ["exit:always_exit_0:0", "exit:on_failure_exit_0:0", "exit:on_failure_exit_1:1", "exit:never_exit_1:1", "observe:restartCount", "observe:phase", "observe:status", "observe:backoff"],
+      "observation": {
+        "restarting_variants": ["always_exit_0", "on_failure_exit_1"],
+        "settle": "restarting variants are observed when restartCount reaches 2 and the container is waiting in CrashLoopBackOff; terminal variants are observed when the phase is Succeeded or Failed",
+        "backoff_seconds_source": "seconds between the finishedAt of run N and the startedAt of run N+1 for the first two restarts, rounded to the nearest 10 seconds (kubelet initial CrashLoopBackOff 10s doubling)"
+      }
+    },
+    "graceful_termination_oracle": {
+      "pod": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {"name": "m2-grace", "namespace": "default", "uid": "m2-grace"},
+        "spec": {
+          "restartPolicy": "Never",
+          "terminationGracePeriodSeconds": 2,
+          "containers": [
+            {
+              "name": "app",
+              "image": "registry.k8s.io/e2e-test-images/busybox@sha256:caec39cad3b12c26600baf6e67ba811ac15d28a9288d0ccdfffb4b318992c3bb",
+              "command": ["/bin/sh", "-c", "trap 'echo TERM >> /dev/termination-log' TERM; while true; do sleep 1; done"],
+              "lifecycle": {"preStop": {"exec": {"command": ["/bin/sh", "-c", "echo preStop >> /dev/termination-log"]}}}
+            }
+          ]
+        }
+      },
+      "operations": ["exec:preStop", "signal:TERM", "wait:2", "signal:KILL", "observe:events", "observe:phase", "observe:status"],
+      "observation": {
+        "settle": "the Pod is deleted once the app container is running and ready; the case ends with the last status observed before the Pod object disappears",
+        "operations_source": "termination message lines (preStop, TERM) prove hook and signal order; exitCode 137 after the grace period proves KILL",
+        "events_source": "ordered distinct event reasons recorded for the Pod after the delete request"
+      }
+    }
+  }
+}
