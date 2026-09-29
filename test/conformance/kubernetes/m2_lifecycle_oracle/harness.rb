@@ -350,7 +350,7 @@ module M2LifecycleOracleHarness
   # ---------------------------------------------------------------------------
 
   def parse_json(path)
-    JSON.parse(File.binread(path), create_additions: false, max_nesting: 512)
+    JSON.parse(File.binread(path), max_nesting: 512)
   rescue Errno::ENOENT => error
     raise HarnessError, "required input is missing: #{path}: #{error.message}"
   rescue JSON::ParserError => error
