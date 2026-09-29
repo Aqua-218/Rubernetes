@@ -247,7 +247,7 @@ module Rubernetes
           candidate["spec"]["leaderTransitions"] = Support.integer(Support.value(candidate["spec"], "leaderTransitions", 0), 0) + 1
         end
         begin
-          @adapter.update(candidate, descriptor: lease_descriptor, existing: lease)
+          stored = @adapter.update(candidate, descriptor: lease_descriptor, existing: lease)
         rescue StandardError => error
           if transient_error?(error) && !contention_error?(error)
             @last_error = error
