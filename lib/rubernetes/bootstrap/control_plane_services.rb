@@ -2010,10 +2010,13 @@ module Rubernetes
       def delete_pod(object)
         typed = Scheduler::Pod.new(object)
         key = [typed.namespace, typed.name, typed.uid].freeze
-        @mutex.synchronize { @pods.delete(key) }
-        @framework.forget_nomination(typed) if @framework.respond_to?(:forget_nomination)
-        retry_unschedulable("pod_deleted", pod: "#{typed.namespace}/#{typed.name}")
-        @framework.queue.delete(typed) if @framework.respond_to?(:queue)
+        event = typed.node_name.empty? ? "PodDelete" : "assignedPodDelete"
+        timed_event(event) do
+          @mutex.synchronize { @pods.delete(key) }
+          @framework.forget_nomination(typed) if @framework.respond_to?(:forget_nomination)
+          retry_unschedulable("pod_deleted", pod: "#{typed.namespace}/#{typed.name}", event: event)
+          @framework.queue.delete(typed) if @framework.respond_to?(:queue)
+        end
       end
 
       # A scheduling cycle that failed for a Pod the informer no longer holds is
