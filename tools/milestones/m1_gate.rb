@@ -1961,7 +1961,7 @@ module M1Gate
 
         inspection = inspections.first
         valid_output = begin
-          inspection["exit_status"] == 0 && Array(JSON.parse(inspection["stdout"], create_additions: false)).include?(image)
+          inspection["exit_status"] == 0 && Array(JSON.parse(inspection["stdout"])).include?(image)
         rescue JSON::ParserError, TypeError
           false
         end
