@@ -29,7 +29,7 @@ module Promql
                  elsif without
                    metric.reject { |k, _| labels.include?(k) || k == "__name__" }
                  else
-                   source
+                   metric.reject { |k, _| k == "__name__" }
                  end
         source.sort.map { |k, v| "#{k}\u0000#{v}" }.join("\u0001")
       end
