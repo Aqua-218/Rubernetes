@@ -721,7 +721,10 @@ module Conformance
       write_config(root, "apiserver-#{id}", document)
     end
 
-    def write_scheduler_config(root, kubeconfig, lease_name: "m8-scheduler")
+    # kube-scheduler's --secure-port equivalent (upstream 10259): /healthz,
+    # /metrics and /metrics/resources on a loopback port of its own, which
+    # the dashboard's discovery reads back from this file.
+    def write_scheduler_config(root, kubeconfig, lease_name: "m8-scheduler", serving_port: free_port)
       write_config(root, "scheduler", {
                      "version" => 1, "logging" => {"level" => "info"},
                      "processes" => {"rubernetes-scheduler" => {
