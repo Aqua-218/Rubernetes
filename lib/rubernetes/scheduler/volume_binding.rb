@@ -139,6 +139,7 @@ module Rubernetes
           state.all_bound = true
           return true
         end
+        @metrics&.volume_binder_cache_request("assume")
         state.all_bound = assume(pod, node.name, podvolumes, data)
         true
       rescue BindingError => error
