@@ -98,6 +98,10 @@ module Rubernetes
       alias run_once step
       alias reconcile step
 
+      # leaderelection's tryAcquireOrRenew: a leader renews from its cached
+      # record first (the fast path, one UPDATE); a conflict there means the
+      # record moved under it, so the slow path re-reads the Lease and
+      # decides again -- leader_election_slowpath_total counts those.
       private def step_now(now)
         begin
           lease = current
