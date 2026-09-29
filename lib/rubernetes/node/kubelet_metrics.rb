@@ -519,6 +519,7 @@ module Rubernetes
       def image_volume_mount_failed(count = 1)
         @registry.increment("kubelet_image_volume_mounted_errors_total", by: count)
       end
+      public :csi_operation, :volume_metric_collection, :volume_reconstruction, :orphan_pod_volumes, :image_volume_mount_failed
 
       # totalVolumesCollector: the volumes per plugin in the desired state
       # (every live Pod's) and the actual state (every mounted one).
