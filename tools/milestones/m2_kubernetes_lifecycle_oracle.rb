@@ -366,7 +366,7 @@ module M2KubernetesLifecycleOracle
       if detail.empty?
         # The runner reports its own refusal as a JSON document on stdout.
         runner_errors = begin
-          Array(JSON.parse(raw_output.to_s, create_additions: false)["errors"]).map(&:to_s)
+          Array(JSON.parse(raw_output.to_s)["errors"]).map(&:to_s)
         rescue JSON::ParserError, TypeError
           []
         end
