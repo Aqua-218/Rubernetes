@@ -1,0 +1,515 @@
+{
+  "affinity_bad_key": {
+    "errors": [
+      "spec.affinity.podAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].matchLabelKeys[0]: Invalid value: \"-bad\": name part must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character (e.g. 'MyName',  or 'my.name',  or '123-abc', regex used for validation is '([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]')"
+    ],
+    "spec": {
+      "affinity": {
+        "podAffinity": {
+          "requiredDuringSchedulingIgnoredDuringExecution": [
+            {
+              "labelSelector": {
+                "matchLabels": {
+                  "app": "web"
+                }
+              },
+              "topologyKey": "kubernetes.io/hostname",
+              "matchLabelKeys": [
+                "-bad"
+              ]
+            }
+          ]
+        }
+      },
+      "topologySpreadConstraints": null
+    }
+  },
+  "affinity_dup_expression": {
+    "errors": [
+      "spec.affinity.podAffinity.requiredDuringSchedulingIgnoredDuringExecution[0][0]: Invalid value: \"tier\": exists in both matchLabelKeys and labelSelector"
+    ],
+    "spec": {
+      "affinity": {
+        "podAffinity": {
+          "requiredDuringSchedulingIgnoredDuringExecution": [
+            {
+              "labelSelector": {
+                "matchExpressions": [
+                  {
+                    "key": "tier",
+                    "operator": "In",
+                    "values": [
+                      "x"
+                    ]
+                  },
+                  {
+                    "key": "tier",
+                    "operator": "In",
+                    "values": [
+                      "front"
+                    ]
+                  }
+                ]
+              },
+              "topologyKey": "kubernetes.io/hostname",
+              "matchLabelKeys": [
+                "tier"
+              ]
+            }
+          ]
+        }
+      },
+      "topologySpreadConstraints": null
+    }
+  },
+  "affinity_dup_matchlabels": {
+    "errors": [
+      "spec.affinity.podAffinity.requiredDuringSchedulingIgnoredDuringExecution[0][0]: Invalid value: \"app\": exists in both matchLabelKeys and labelSelector"
+    ],
+    "spec": {
+      "affinity": {
+        "podAffinity": {
+          "requiredDuringSchedulingIgnoredDuringExecution": [
+            {
+              "labelSelector": {
+                "matchLabels": {
+                  "app": "web"
+                },
+                "matchExpressions": [
+                  {
+                    "key": "app",
+                    "operator": "In",
+                    "values": [
+                      "web"
+                    ]
+                  }
+                ]
+              },
+              "topologyKey": "kubernetes.io/hostname",
+              "matchLabelKeys": [
+                "app"
+              ]
+            }
+          ]
+        }
+      },
+      "topologySpreadConstraints": null
+    }
+  },
+  "affinity_match_mismatch_dup": {
+    "errors": [
+      "spec.affinity.podAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].matchLabelKeys[0]: Invalid value: \"tier\": exists in both matchLabelKeys and mismatchLabelKeys",
+      "spec.affinity.podAffinity.requiredDuringSchedulingIgnoredDuringExecution[0][0]: Invalid value: \"tier\": exists in both matchLabelKeys and labelSelector"
+    ],
+    "spec": {
+      "affinity": {
+        "podAffinity": {
+          "requiredDuringSchedulingIgnoredDuringExecution": [
+            {
+              "labelSelector": {
+                "matchLabels": {
+                  "app": "web"
+                },
+                "matchExpressions": [
+                  {
+                    "key": "tier",
+                    "operator": "In",
+                    "values": [
+                      "front"
+                    ]
+                  },
+                  {
+                    "key": "tier",
+                    "operator": "NotIn",
+                    "values": [
+                      "front"
+                    ]
+                  }
+                ]
+              },
+              "topologyKey": "kubernetes.io/hostname",
+              "matchLabelKeys": [
+                "tier"
+              ],
+              "mismatchLabelKeys": [
+                "tier"
+              ]
+            }
+          ]
+        }
+      },
+      "topologySpreadConstraints": null
+    }
+  },
+  "affinity_merge": {
+    "errors": [],
+    "spec": {
+      "affinity": {
+        "podAffinity": {
+          "requiredDuringSchedulingIgnoredDuringExecution": [
+            {
+              "labelSelector": {
+                "matchLabels": {
+                  "app": "web"
+                },
+                "matchExpressions": [
+                  {
+                    "key": "tier",
+                    "operator": "In",
+                    "values": [
+                      "front"
+                    ]
+                  }
+                ]
+              },
+              "topologyKey": "kubernetes.io/hostname",
+              "matchLabelKeys": [
+                "tier"
+              ],
+              "mismatchLabelKeys": [
+                "app2"
+              ]
+            }
+          ]
+        }
+      },
+      "topologySpreadConstraints": null
+    }
+  },
+  "affinity_mismatch_merge": {
+    "errors": [],
+    "spec": {
+      "affinity": {
+        "podAntiAffinity": {
+          "requiredDuringSchedulingIgnoredDuringExecution": [
+            {
+              "labelSelector": {
+                "matchLabels": {
+                  "app": "web"
+                },
+                "matchExpressions": [
+                  {
+                    "key": "track",
+                    "operator": "NotIn",
+                    "values": [
+                      "canary"
+                    ]
+                  }
+                ]
+              },
+              "topologyKey": "kubernetes.io/hostname",
+              "mismatchLabelKeys": [
+                "track"
+              ]
+            }
+          ]
+        }
+      },
+      "topologySpreadConstraints": null
+    }
+  },
+  "affinity_missing_label": {
+    "errors": [],
+    "spec": {
+      "affinity": {
+        "podAffinity": {
+          "requiredDuringSchedulingIgnoredDuringExecution": [
+            {
+              "labelSelector": {
+                "matchLabels": {
+                  "app": "web"
+                }
+              },
+              "topologyKey": "kubernetes.io/hostname",
+              "matchLabelKeys": [
+                "absent"
+              ]
+            }
+          ]
+        }
+      },
+      "topologySpreadConstraints": null
+    }
+  },
+  "affinity_nil_selector": {
+    "errors": [
+      "spec.affinity.podAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].matchLabelKeys: Forbidden: must not be specified when labelSelector is not set"
+    ],
+    "spec": {
+      "affinity": {
+        "podAffinity": {
+          "requiredDuringSchedulingIgnoredDuringExecution": [
+            {
+              "topologyKey": "kubernetes.io/hostname",
+              "matchLabelKeys": [
+                "tier"
+              ]
+            }
+          ]
+        }
+      },
+      "topologySpreadConstraints": null
+    }
+  },
+  "affinity_preferred": {
+    "errors": [],
+    "spec": {
+      "affinity": {
+        "podAffinity": {
+          "preferredDuringSchedulingIgnoredDuringExecution": [
+            {
+              "weight": 10,
+              "podAffinityTerm": {
+                "labelSelector": {
+                  "matchLabels": {
+                    "app": "web"
+                  },
+                  "matchExpressions": [
+                    {
+                      "key": "tier",
+                      "operator": "In",
+                      "values": [
+                        "front"
+                      ]
+                    }
+                  ]
+                },
+                "topologyKey": "kubernetes.io/hostname",
+                "matchLabelKeys": [
+                  "tier"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "topologySpreadConstraints": null
+    }
+  },
+  "affinity_preferred_dup": {
+    "errors": [
+      "spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm[0]: Invalid value: \"app\": exists in both matchLabelKeys and labelSelector"
+    ],
+    "spec": {
+      "affinity": {
+        "podAntiAffinity": {
+          "preferredDuringSchedulingIgnoredDuringExecution": [
+            {
+              "weight": 10,
+              "podAffinityTerm": {
+                "labelSelector": {
+                  "matchLabels": {
+                    "app": "web"
+                  },
+                  "matchExpressions": [
+                    {
+                      "key": "app",
+                      "operator": "In",
+                      "values": [
+                        "web"
+                      ]
+                    }
+                  ]
+                },
+                "topologyKey": "kubernetes.io/hostname",
+                "matchLabelKeys": [
+                  "app"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "topologySpreadConstraints": null
+    }
+  },
+  "spread_bad_key": {
+    "errors": [
+      "spec.topologySpreadConstraints[0].matchLabelKeys[0]: Invalid value: \"bad key\": name part must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character (e.g. 'MyName',  or 'my.name',  or '123-abc', regex used for validation is '([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]')"
+    ],
+    "spec": {
+      "affinity": null,
+      "topologySpreadConstraints": [
+        {
+          "maxSkew": 1,
+          "topologyKey": "zone",
+          "whenUnsatisfiable": "DoNotSchedule",
+          "labelSelector": {
+            "matchLabels": {
+              "app": "web"
+            }
+          },
+          "matchLabelKeys": [
+            "bad key"
+          ]
+        }
+      ]
+    }
+  },
+  "spread_dup_expression": {
+    "errors": [
+      "spec.topologySpreadConstraints[0][0]: Invalid value: \"tier\": exists in both matchLabelKeys and labelSelector"
+    ],
+    "spec": {
+      "affinity": null,
+      "topologySpreadConstraints": [
+        {
+          "maxSkew": 1,
+          "topologyKey": "zone",
+          "whenUnsatisfiable": "DoNotSchedule",
+          "labelSelector": {
+            "matchExpressions": [
+              {
+                "key": "tier",
+                "operator": "Exists"
+              },
+              {
+                "key": "tier",
+                "operator": "In",
+                "values": [
+                  "front"
+                ]
+              }
+            ]
+          },
+          "matchLabelKeys": [
+            "tier"
+          ]
+        }
+      ]
+    }
+  },
+  "spread_dup_matchlabels": {
+    "errors": [
+      "spec.topologySpreadConstraints[0][0]: Invalid value: \"app\": exists in both matchLabelKeys and labelSelector"
+    ],
+    "spec": {
+      "affinity": null,
+      "topologySpreadConstraints": [
+        {
+          "maxSkew": 1,
+          "topologyKey": "zone",
+          "whenUnsatisfiable": "DoNotSchedule",
+          "labelSelector": {
+            "matchLabels": {
+              "app": "web"
+            },
+            "matchExpressions": [
+              {
+                "key": "app",
+                "operator": "In",
+                "values": [
+                  "web"
+                ]
+              }
+            ]
+          },
+          "matchLabelKeys": [
+            "app"
+          ]
+        }
+      ]
+    }
+  },
+  "spread_merge": {
+    "errors": [],
+    "spec": {
+      "affinity": null,
+      "topologySpreadConstraints": [
+        {
+          "maxSkew": 1,
+          "topologyKey": "zone",
+          "whenUnsatisfiable": "DoNotSchedule",
+          "labelSelector": {
+            "matchLabels": {
+              "app": "web"
+            },
+            "matchExpressions": [
+              {
+                "key": "tier",
+                "operator": "In",
+                "values": [
+                  "front"
+                ]
+              }
+            ]
+          },
+          "matchLabelKeys": [
+            "tier"
+          ]
+        }
+      ]
+    }
+  },
+  "spread_missing_label": {
+    "errors": [],
+    "spec": {
+      "affinity": null,
+      "topologySpreadConstraints": [
+        {
+          "maxSkew": 1,
+          "topologyKey": "zone",
+          "whenUnsatisfiable": "DoNotSchedule",
+          "labelSelector": {
+            "matchLabels": {
+              "app": "web"
+            },
+            "matchExpressions": [
+              {
+                "key": "tier",
+                "operator": "In",
+                "values": [
+                  "front"
+                ]
+              }
+            ]
+          },
+          "matchLabelKeys": [
+            "absent",
+            "tier"
+          ]
+        }
+      ]
+    }
+  },
+  "spread_nil_selector": {
+    "errors": [
+      "spec.topologySpreadConstraints[0].matchLabelKeys: Forbidden: must not be specified when labelSelector is not set"
+    ],
+    "spec": {
+      "affinity": null,
+      "topologySpreadConstraints": [
+        {
+          "maxSkew": 1,
+          "topologyKey": "zone",
+          "whenUnsatisfiable": "DoNotSchedule",
+          "matchLabelKeys": [
+            "tier"
+          ]
+        }
+      ]
+    }
+  },
+  "template_dup_expression": {
+    "errors": []
+  },
+  "template_dup_matchlabels": {
+    "errors": []
+  },
+  "template_nil_selector": {
+    "errors": [
+      "template.spec.topologySpreadConstraints[0].matchLabelKeys: Forbidden: must not be specified when labelSelector is not set"
+    ]
+  },
+  "template_ok": {
+    "errors": []
+  },
+  "update_merged": {
+    "errors": []
+  },
+  "update_old_violates": {
+    "errors": [
+      "spec.topologySpreadConstraints[0].matchLabelKeys[0]: Invalid value: \"tier\": exists in both matchLabelKeys and labelSelector"
+    ]
+  }
+}
