@@ -120,7 +120,6 @@ module Rubernetes
         ["container_memory_usage_bytes", "gauge", "Current memory usage in bytes, including all memory regardless of when it was accessed"],
         ["container_memory_max_usage_bytes", "gauge", "Maximum memory usage recorded in bytes"],
         ["container_memory_working_set_bytes", "gauge", "Current working set in bytes."],
-        ["container_memory_rss", "gauge", "Size of RSS in bytes."],
         ["container_memory_failures_total", "counter", "Cumulative count of memory allocation failures."],
         ["container_fs_usage_bytes", "gauge", "Number of bytes that are consumed by the container on this filesystem."],
         ["container_start_time_seconds", "gauge", "Start time of the container since unix epoch in seconds."],
