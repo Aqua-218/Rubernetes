@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "time"
+require "find"
+require "etc"
 require_relative "../observability/metrics"
 
 module Rubernetes
