@@ -1579,12 +1579,6 @@ module Rubernetes
       def scheduler_metrics
         metrics = Observability::Metrics.new(apiserver: false, component: "kube-scheduler")
         metrics.add_collector do |registry|
-          queue = @framework.respond_to?(:queue) ? @framework.queue : nil
-          if queue
-            registry.set("scheduler_pending_pods", queue.size, {"queue" => "active"}) if queue.respond_to?(:size)
-            registry.set("scheduler_pending_pods", queue.backoff_size, {"queue" => "backoff"}) if queue.respond_to?(:backoff_size)
-            registry.set("scheduler_pending_pods", queue.unschedulable_size, {"queue" => "unschedulable"}) if queue.respond_to?(:unschedulable_size)
-          end
           registry.set("leader_election_master_status", @elector&.leader? ? 1 : 0, {"name" => "kube-scheduler"})
         end
         metrics
