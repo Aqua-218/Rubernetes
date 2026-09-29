@@ -3080,6 +3080,7 @@ module Rubernetes
 
           spec = normalize_hash(container.spec)
           {"id" => container.id, "name" => (spec["name"] || spec[:name]).to_s, "usage" => @cgroup.usage(container.cgroup),
+           "image" => (spec["image"] || spec[:image]).to_s,
            # The writable layer (overlay upper) and the log directory: what
            # the container's rootfs/logs ephemeral storage is measured on.
            "rootfs" => entry["workspace"].is_a?(Hash) ? (entry["workspace"]["upper"] || entry["workspace"][:upper]) : nil,
