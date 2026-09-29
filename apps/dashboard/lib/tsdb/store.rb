@@ -483,6 +483,15 @@ module Tsdb
       open_wal
     end
 
+    # A block file whose index rows never landed (a crash between the file
+    # write and the transaction) is garbage; it can never be read.
+    def remove_unreferenced_blocks
+      known = @db.execute("SELECT path FROM blocks").flatten
+      Dir.glob(File.join(@dir, "blocks", "*.chunks")).each do |file|
+        FileUtils.rm_f(file) unless known.include?(File.basename(file))
+      end
+    end
+
     def apply_retention(now_ms)
       cutoff = now_ms - @retention_ms
       expired = @db.execute("SELECT id, path FROM blocks WHERE max_t < ?", [cutoff])
