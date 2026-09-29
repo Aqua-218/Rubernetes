@@ -91,8 +91,7 @@ module Tsdb
 
       # Oldest sample time held in the head, without decoding anything.
       def min_time
-        first = @chunks.first ? Prom::Gorilla.decode(@chunks.first).first[0] : @encoder&.min_time
-        first
+        @chunks.first ? @chunks.first.min_time : @encoder&.min_time
       end
 
       def empty? = @chunks.empty? && @encoder.nil?
