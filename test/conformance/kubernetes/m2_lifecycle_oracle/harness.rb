@@ -474,7 +474,7 @@ module M2LifecycleOracleHarness
 
     def kubectl_json(*args)
       stdout, = kubectl(*args, "-o", "json")
-      JSON.parse(stdout, create_additions: false, max_nesting: 512)
+      JSON.parse(stdout, max_nesting: 512)
     end
 
     def node_exec(*args, allow_failure: false)
