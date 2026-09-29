@@ -164,6 +164,7 @@ module Rubernetes
         normalized = normalize_key(key)
         @mutex.synchronize do
           @processing.delete(normalized)
+          @popped_age.delete(normalized)
           # Events that arrived while the caller was processing the key stay
           # pending and must be made visible exactly once after completion.
           if @closed
