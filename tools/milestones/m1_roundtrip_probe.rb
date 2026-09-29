@@ -1334,7 +1334,7 @@ def build_semantic_case(registry:, codec:, type:, wire_case:, types_by_schema:, 
   invalid_value = if scalar_schema
                     value
                   else
-                    JSON.parse(JSON.generate(value), create_additions: false).tap do |invalid|
+                    JSON.parse(JSON.generate(value)).tap do |invalid|
                       invalid["apiVersion"] = 7 if invalid.is_a?(Hash)
                       invalid["m1InvalidField"] = {"value" => 1} if invalid.is_a?(Hash) && invalid["apiVersion"] != 7
                     end
