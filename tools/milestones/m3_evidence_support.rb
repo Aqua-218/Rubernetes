@@ -610,7 +610,7 @@ module M34EvidenceSupport
   end
 
   def json_document(path)
-    JSON.parse(File.binread(path), create_additions: false, max_nesting: 512)
+    JSON.parse(File.binread(path), max_nesting: 512)
   end
 
   # Copy a complete prior bundle, rerun its gate, and return references for all
