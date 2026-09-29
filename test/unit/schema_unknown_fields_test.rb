@@ -21,7 +21,7 @@ class SchemaUnknownFieldsTest < Minitest::Test
       value = klass.new("m1FutureField" => {"value" => 1})
       expected_preserved = klass.definition.preserve_unknown_fields
       encoded = @codec.canonical_json(value)
-      preserved = JSON.parse(encoded, create_additions: false).key?("m1FutureField")
+      preserved = JSON.parse(encoded).key?("m1FutureField")
       explicit_preserved = JSON.parse(
         @codec.canonical_json(value, unknown_fields: :preserve),
         create_additions: false
