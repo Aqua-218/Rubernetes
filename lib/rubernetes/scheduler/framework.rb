@@ -1275,6 +1275,8 @@ module Rubernetes
         raise BindError.new("bind failed: #{error.message}", cause_error: error), cause: error
       end
 
+      # The Bind extension point: the bind handler, else the Bind plugin.
+      def bind_through!(original, pod, node, bind_context, trace)
         if @bind_handler
           result = invoke_handler(@bind_handler, :bind, pod, node)
           raise BindError, "bind handler rejected #{pod.name}" if result == false
