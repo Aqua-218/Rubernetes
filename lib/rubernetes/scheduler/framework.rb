@@ -968,6 +968,7 @@ module Rubernetes
       def run_filters(pod, node, context, trace:)
         plugins.filters.each do |plugin|
           input = {"pod" => pod.to_h, "node" => node.to_h}
+          @metrics.plugin_evaluated(:filter, plugin.name)
           output = invoke_plugin(plugin, pod, node, context, phase: :filter)
           result = normalize_filter_result(output, plugin)
           trace.record(plugin: plugin.name, phase: :filter, weight: plugin.weight,
