@@ -24,7 +24,6 @@ module Promql
       # name __name__), `without`/`ignoring` drop the listed labels and the
       # metric name, plain one-to-one matching ignores the metric name.
       def signature(labels = nil, without: false, on: false)
-        source = metric.reject { |k, _| k == "__name__" }
         source = if on
                    source.select { |k, _| labels.include?(k) }
                  elsif without
