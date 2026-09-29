@@ -84,7 +84,7 @@ module Tsdb
       end
 
       def samples
-        list = @chunks.flat_map { |bytes| Prom::Gorilla.decode(bytes) }
+        list = @chunks.flat_map { |chunk| Prom::Gorilla.decode(chunk.bytes) }
         list.concat(Prom::Gorilla.decode(@encoder.bytes)) if @encoder
         list
       end
