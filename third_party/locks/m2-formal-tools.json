@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-05",
+  "purpose": "M2 RuntimeLifecycle formal verification tools pinned for the external proof profile (tools/verification/m2_proof_profile.rb)",
+  "tools": {
+    "tlc": {
+      "distribution": "tla2tools.jar",
+      "release": "tlaplus v1.7.4 (TLC2 Version 2.19)",
+      "url": "https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar",
+      "path": "third_party/cache/tla2tools.jar",
+      "sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+      "runtime": "OpenJDK 21 (system java)"
+    },
+    "apalache": {
+      "release": "v0.62.2",
+      "url": "https://github.com/apalache-mc/apalache/releases/download/v0.62.2/apalache-0.62.2.tgz",
+      "archive_sha256": "765f610537281a0f25b8c30f2554f19523e2859c824e80e62276653ee23c10e2",
+      "install_path": "build/tools/apalache/apalache-0.62.2",
+      "executable": "bin/apalache-mc",
+      "executable_sha256": "f8d4643705369d0642d9345a479e7cc8b7929710dc966e7f9a374bf03e526fe4",
+      "config": "verification/tla/RuntimeLifecycle.apalache.cfg",
+      "note": "Apalache has no fairness semantics; it checks the safety invariants, TLC checks EventuallyStoppedOrRemoved"
+    },
+    "lean": {
+      "release": "Lean 4.16.0 via elan",
+      "executable": "/root/.elan/bin/lean",
+      "executable_sha256": "df25409ddea390271687e3296ffae15d2efbae339b58f78f7aca023917ee354f"
+    }
+  }
+}
