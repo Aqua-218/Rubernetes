@@ -116,6 +116,8 @@ module Rubernetes
       end
 
       attr_accessor :api
+      # Scheduler::Metrics: scheduler_resourceclaim_creates_total.
+      attr_accessor :metrics
 
       # ---------------------------------------------------------- phases
 
