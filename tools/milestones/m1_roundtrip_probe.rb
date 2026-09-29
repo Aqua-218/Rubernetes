@@ -668,8 +668,7 @@ def build_validation_parent_fixture(codec:, mapping:, owner_type:, target_json:,
   owner_klass = generated_class(owner_type)
   gvk = mapping.fetch("owner_gvk")
   base = JSON.parse(
-    JSON.generate(minimal_required_values(owner_type, types_by_schema, include_zero_references: true)),
-    create_additions: false
+    JSON.generate(minimal_required_values(owner_type, types_by_schema, include_zero_references: true))
   )
   # The owner object is decoded by kube-apiserver like any other request:
   # value structs are materialized and nil pointers are absent.  The
