@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "kind": "m2_external_proof_profile",
+  "claim": "RuntimeLifecycle",
+  "generated_at": "2026-09-05T17:46:19.892261Z",
+  "host": {
+    "kernel": "6.8.0-138-generic",
+    "hostname": "dev"
+  },
+  "source_files": [
+    {
+      "label": "tla_source",
+      "path": "verification/tla/RuntimeLifecycle.tla",
+      "sha256": "2f6d538afaf9260afc2669ba98440cbbdb0013d0d6bc376f9bd44442e56f5ef7"
+    },
+    {
+      "label": "tla_config",
+      "path": "verification/tla/RuntimeLifecycle.cfg",
+      "sha256": "c76794424141ceedcff9dbe629b2f78bf1caf1f1b69a62b4a1cbdf840928ae69"
+    },
+    {
+      "label": "apalache_config",
+      "path": "verification/tla/RuntimeLifecycle.apalache.cfg",
+      "sha256": "37e33d5dea039cfca46f6133beb17d915fd5e25de0ddf51c4406ae867b537ab1"
+    },
+    {
+      "label": "lean_source",
+      "path": "verification/lean/RuntimeLifecycle.lean",
+      "sha256": "d3261a8d6e5fcb8f128a216610b1102eb16f324b1766c397a0a45cdff4c01f93"
+    },
+    {
+      "label": "ruby_trace_verifier",
+      "path": "tools/verification/m2_runtime_trace_verifier.rb",
+      "sha256": "e687eb1402d72c3d199b239e9b7c08a3a3c37a47a1aa5a030dd4187ff385f0e1"
+    },
+    {
+      "label": "ruby_formal_verifier",
+      "path": "tools/verification/m2_formal_verify.rb",
+      "sha256": "5646d7e87d6bb20e21db4b4c11cf4406f5b8d7eb25edb5515335b02b264d644e"
+    }
+  ],
+  "source_sha256": "3c772a4fa9c3ab0eb58b9bf6d833535e9e6ca49a798c54beacc475fd3c8ceb07",
+  "tools": [
+    {
+      "name": "tlc",
+      "command": [
+        "/usr/lib/jvm/java-21-openjdk-amd64/bin/java",
+        "-cp",
+        "/root/Programming/Ruby/2026/third_party/cache/tla2tools.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-seed",
+        "1",
+        "-fp",
+        "1",
+        "-config",
+        "/root/Programming/Ruby/2026/verification/tla/RuntimeLifecycle.cfg",
+        "/root/Programming/Ruby/2026/verification/tla/RuntimeLifecycle.tla"
+      ],
+      "version_command": [
+        "/usr/lib/jvm/java-21-openjdk-amd64/bin/java",
+        "-cp",
+        "/root/Programming/Ruby/2026/third_party/cache/tla2tools.jar",
+        "tlc2.TLC",
+        "-workers",
+        "1",
+        "-seed",
+        "1",
+        "-fp",
+        "1",
+        "-config",
+        "/root/Programming/Ruby/2026/verification/tla/RuntimeLifecycle.cfg",
+        "/root/Programming/Ruby/2026/verification/tla/RuntimeLifecycle.tla"
+      ],
+      "version": "2.19",
+      "executable_sha256": "377196a32c5e4442b604bbf36add1c49cfe8680cd27edd693b60872e58895e9e",
+      "jar_path": "third_party/cache/tla2tools.jar",
+      "jar_sha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+      "properties": [
+        "TypeOK",
+        "ActiveResourceInvariant",
+        "IdentityNonReuseInvariant",
+        "CleanupOrderInvariant",
+        "LiveOwnerInvariant",
+        "RunningInvariant",
+        "DigestMismatchInvariant",
+        "WorkloadStoppedInvariant",
+        "UnknownInvariant",
+        "StoppedInvariant",
+        "RemovedInvariant",
+        "EventuallyStoppedOrRemoved"
+      ],
+      "source_bindings": {
+        "tla_source": {
+          "path": "verification/tla/RuntimeLifecycle.tla",
+          "sha256": "2f6d538afaf9260afc2669ba98440cbbdb0013d0d6bc376f9bd44442e56f5ef7"
+        },
+        "tla_config": {
+          "path": "verification/tla/RuntimeLifecycle.cfg",
+          "sha256": "c76794424141ceedcff9dbe629b2f78bf1caf1f1b69a62b4a1cbdf840928ae69"
+        }
+      }
+    },
+    {
+      "name": "lean",
+      "command": [
+        "/root/.elan/bin/lean",
+        "/root/Programming/Ruby/2026/verification/lean/RuntimeLifecycle.lean"
+      ],
+      "version_command": [
+        "/root/.elan/bin/lean",
+        "--version"
+      ],
+      "version": "4.16.0",
+      "executable_sha256": "df25409ddea390271687e3296ffae15d2efbae339b58f78f7aca023917ee354f",
+      "properties": [
+        "initial_is_safe",
+        "step_preserves_safety",
+        "reachable_is_safe"
+      ],
+      "source_bindings": {
+        "lean_source": {
+          "path": "verification/lean/RuntimeLifecycle.lean",
+          "sha256": "d3261a8d6e5fcb8f128a216610b1102eb16f324b1766c397a0a45cdff4c01f93"
+        }
+      }
+    },
+    {
+      "name": "apalache",
+      "command": [
+        "/root/Programming/Ruby/2026/build/tools/apalache/apalache-0.62.2/bin/apalache-mc",
+        "check",
+        "--config=/root/Programming/Ruby/2026/verification/tla/RuntimeLifecycle.apalache.cfg",
+        "--length=18",
+        "/root/Programming/Ruby/2026/verification/tla/RuntimeLifecycle.tla"
+      ],
+      "version_command": [
+        "/root/Programming/Ruby/2026/build/tools/apalache/apalache-0.62.2/bin/apalache-mc",
+        "version"
+      ],
+      "version": "0.62.2",
+      "executable_sha256": "f8d4643705369d0642d9345a479e7cc8b7929710dc966e7f9a374bf03e526fe4",
+      "properties": [
+        "TypeOK",
+        "ActiveResourceInvariant",
+        "IdentityNonReuseInvariant",
+        "CleanupOrderInvariant",
+        "LiveOwnerInvariant",
+        "RunningInvariant",
+        "DigestMismatchInvariant",
+        "WorkloadStoppedInvariant",
+        "UnknownInvariant",
+        "StoppedInvariant",
+        "RemovedInvariant"
+      ],
+      "source_bindings": {
+        "tla_source": {
+          "path": "verification/tla/RuntimeLifecycle.tla",
+          "sha256": "2f6d538afaf9260afc2669ba98440cbbdb0013d0d6bc376f9bd44442e56f5ef7"
+        },
+        "apalache_config": {
+          "path": "verification/tla/RuntimeLifecycle.apalache.cfg",
+          "sha256": "37e33d5dea039cfca46f6133beb17d915fd5e25de0ddf51c4406ae867b537ab1"
+        }
+      }
+    }
+  ],
+  "tool_output_sha256": "c4d08402269b6386bdeab8996d063dced74a09ecc8080918932ced32150c60a6",
+  "tool_results": [
+    {
+      "name": "tlc",
+      "exit_status": 0,
+      "output_sha256": "7cfefe0c9ec7594753e1bb919716952c9fd64531ac7876fd5365cad6f7e988a7",
+      "version_sha256": "7cfefe0c9ec7594753e1bb919716952c9fd64531ac7876fd5365cad6f7e988a7"
+    },
+    {
+      "name": "lean",
+      "exit_status": 0,
+      "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "version_sha256": "a8424af2dc71cf4d4de84c8f0fd4b4760deb37cd50f8ad550b18e3481f4b7e77"
+    },
+    {
+      "name": "apalache",
+      "exit_status": 0,
+      "output_sha256": "51889fd962d7669e7839d4ac2c7389fa73e0b4b20582fc0b7bdab81ce5669b52",
+      "version_sha256": "b130f770a9dfe9669cba4429c90ef5b12b2b23c22a5dfbc098edab3ce1ed6a39"
+    }
+  ],
+  "output_normalization": "timestamps-durations-workdir-v1",
+  "profile_sha256": "fbbc93284fa6251c14b7054027673baf4b223cb9cec76c7bf24dcb46cd45f9eb"
+}
