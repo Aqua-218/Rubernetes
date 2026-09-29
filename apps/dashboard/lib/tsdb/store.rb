@@ -409,7 +409,7 @@ module Tsdb
     end
 
     def head_series_for(labels)
-      labels = labels.transform_keys(&:to_s).transform_values(&:to_s)
+      labels = labels.to_h { |k, v| [text(k), text(v)] }
       metric = labels.fetch("__name__") { raise ArgumentError, "labels need __name__" }
       key = fingerprint(labels)
       id = @series_by_fingerprint[key]
