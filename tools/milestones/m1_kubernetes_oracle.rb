@@ -323,7 +323,7 @@ module M1KubernetesOracle
         "etcd_container_name" => @etcd_name,
         "published_port" => port,
         "tls_verification" => "peer-and-hostname",
-        "container_execution" => JSON.parse(JSON.generate(@command_records), create_additions: false)
+        "container_execution" => JSON.parse(JSON.generate(@command_records))
       }
     end
 
