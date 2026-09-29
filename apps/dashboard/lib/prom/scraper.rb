@@ -136,6 +136,15 @@ module Prom
 
     private
 
+    # The text exposition format is UTF-8; Net::HTTP returns bodies as
+    # ASCII-8BIT and binary strings would reach the store as BLOB labels.
+    def utf8(body)
+      return body if body.encoding == Encoding::UTF_8
+
+      body = body.dup.force_encoding(Encoding::UTF_8)
+      body.valid_encoding? ? body : body.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "\uFFFD")
+    end
+
     def retire_missing(targets)
       live = targets.to_h { |t| [t.key, true] }
       gone = @mutex.synchronize { @previous.keys.reject { |key| live.key?(key) } }
