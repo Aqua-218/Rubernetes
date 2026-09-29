@@ -930,7 +930,7 @@ module Rubernetes
         size = File.size(path)
         raise InvalidJSONError, "#{label} file exceeds #{MAX_JSON_BYTES} bytes: #{path}" if size > MAX_JSON_BYTES
 
-        JSON.parse(File.binread(path), create_additions: false, max_nesting: 512)
+        JSON.parse(File.binread(path), max_nesting: 512)
       rescue JSON::ParserError => error
         raise InvalidJSONError, "invalid #{label} JSON #{path}: #{error.message}"
       rescue SystemCallError => error
