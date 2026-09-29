@@ -1503,7 +1503,7 @@ module M1Gate
         errors << "API surface pinned discovery source path is unavailable"
         return nil
       end
-      document = JSON.parse(File.binread(file_path), create_additions: false, max_nesting: 100)
+      document = JSON.parse(File.binread(file_path), max_nesting: 100)
       return canonical_discovery_digest(default_off_discovery_body(endpoint)) if DEFAULT_OFF_DISCOVERY_PATHS.include?(endpoint)
 
       canonical_discovery_digest(default_profile_discovery_value(path: file_path, document: document, endpoint: endpoint))
