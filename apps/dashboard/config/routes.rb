@@ -20,7 +20,7 @@ Rails.application.routes.draw do
       get "status/buildinfo", to: "status#buildinfo"
       get "status/tsdb", to: "status#tsdb"
       get "status/runtimeinfo", to: "status#runtimeinfo"
-      get "status/config", to: "status#config"
+      get "status/config", to: "status#config_status"
     end
   end
 
