@@ -532,6 +532,7 @@ module Rubernetes
             eligible = eligible_to_preempt?(typed_pod, context, nominated_name, nominated_status)
             preemption = nil
             if eligible
+              post_filter_started = monotonic
               begin
                 preemption = run_post_filters(typed_pod, context, filtered, trace, nominated: nominated)
               rescue PreemptionError, PluginError => error
