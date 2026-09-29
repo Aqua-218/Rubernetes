@@ -110,7 +110,27 @@ module Rubernetes
         @queue_sort = queue_sort || PrioritySort.new
         @queue_sort_name = (queue_sort_name || queue_sort_name_for(@queue_sort)).to_s.freeze
         @queue_sort_weight = normalize_sort_weight(queue_sort_weight)
+        # pkg/scheduler/metrics bookkeeping: pops per Pod (its Attempts),
+        # the time of its first pop (InitialAttemptTimestamp), whether an
+        # unschedulable entry is gated, and the plugins that rejected it.
+        @metrics = nil
+        @pops = {}
+        @first_pop = {}
+        @gated = {}
+        @rejecting_plugins = {}
       end
+
+      # The Scheduler::Metrics observer (scheduler_queue_incoming_pods_total
+      # and the pending-pod gauges); nil records nothing.
+      attr_accessor :metrics
+
+      # queue events as framework.ClusterEvent.Label() spells them.
+      EVENT_POD_ADD = "PodAdd"
+      EVENT_POD_UPDATE = "PodUpdate"
+      EVENT_ATTEMPT_FAILURE = "ScheduleAttemptFailure"
+      EVENT_BACKOFF_COMPLETE = "BackoffComplete"
+      EVENT_FORCE_ACTIVATE = "ForceActivate"
+      EVENT_UNSCHEDULABLE_TIMEOUT = "UnschedulableTimeout"
 
       # Replace the comparator used by every pending-queue ordering operation.
       # Framework instances install a registry-backed wrapper here so the
