@@ -397,6 +397,7 @@ module Rubernetes
           @pending[key] = item
           @gated.delete(key)
           enforce_capacity!
+          incoming(EVENT_FORCE_ACTIVATE, "active")
           item
         end
       end
