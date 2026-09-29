@@ -1248,7 +1248,7 @@ module M2Gate
         return
       end
       lock = begin
-        JSON.parse(File.binread(LIFECYCLE_ORACLE_RUNNER_LOCK_PATH), create_additions: false, max_nesting: 64)
+        JSON.parse(File.binread(LIFECYCLE_ORACLE_RUNNER_LOCK_PATH), max_nesting: 64)
       rescue JSON::ParserError, Errno::ENOENT => error
         errors << "#{label} external runner lock is invalid: #{error.message}"
         return
