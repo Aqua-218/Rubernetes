@@ -33,7 +33,7 @@ module Rubernetes
           return [] unless path && File.file?(path)
 
           File.foreach(path).map do |line|
-            JSON.parse(line, create_additions: false, max_nesting: 64)
+            JSON.parse(line, max_nesting: 64)
           end
         end
 
