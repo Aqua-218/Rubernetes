@@ -2328,6 +2328,7 @@ module Rubernetes
           (@assumed_pods ||= {})[key] = true
           start_bind_workers_locked
         end
+        @scheduler_metrics&.async_call_queued(Scheduler::Metrics::CALL_POD_BINDING)
         @bind_queue << [pod, node, key, assumed]
         candidate
       end
