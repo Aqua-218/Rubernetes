@@ -42,7 +42,7 @@ module Rubernetes
         raise Error, "manifest output exceeds #{@max_output} bytes" if length > @max_output
         raise Error, "manifest sandbox frame length mismatch" unless payload.bytesize == length
 
-        resources = JSON.parse(payload, create_additions: false, max_nesting: 512)
+        resources = JSON.parse(payload, max_nesting: 512)
         raise Error, "manifest output must be an array" unless resources.is_a?(Array)
         raise Error, "manifest output exceeds #{@max_resources} resources" if resources.length > @max_resources
 
