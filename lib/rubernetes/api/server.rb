@@ -5123,6 +5123,10 @@ module Rubernetes
           spec["groups"] = groups unless groups.empty?
           spec["extra"] = extra.to_h { |key, values| [key.to_s, Array(values).map(&:to_s)] } unless extra.empty?
         end
+        # registry/certificates/csr metrics: a CSR that asks for a duration.
+        if spec["expirationSeconds"]
+          @metrics&.increment("apiserver_certificates_registry_csr_requested_duration_total", {"signerName" => spec["signerName"].to_s})
+        end
         result
       end
 
