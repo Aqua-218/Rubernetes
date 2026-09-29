@@ -1,0 +1,460 @@
+{
+  "schema_version": 1,
+  "kubernetes": {
+    "tag": "v1.36.2",
+    "commit": "24e2b02af5543d7910c2bb074c7264df5a8f0467"
+  },
+  "source_directory": "api/openapi-spec/v3",
+  "file_count": 64,
+  "path_count": 562,
+  "files": [
+    {
+      "path": ".well-known/openid-configuration.json",
+      "upstream_path": "api/openapi-spec/v3/.well-known__openid-configuration_openapi.json",
+      "source_sha256": "d776f5a3b4924075c3105f6576a4167c56a9b31d94219e4eb304af17841f1c0c",
+      "sha256": "d776f5a3b4924075c3105f6576a4167c56a9b31d94219e4eb304af17841f1c0c",
+      "paths": 1
+    },
+    {
+      "path": "api/v1.json",
+      "upstream_path": "api/openapi-spec/v3/api__v1_openapi.json",
+      "source_sha256": "a3cbb14c08e7832e80776e717a5658a178dccb3562cc5c1238193634b6985ff8",
+      "sha256": "a3cbb14c08e7832e80776e717a5658a178dccb3562cc5c1238193634b6985ff8",
+      "paths": 113
+    },
+    {
+      "path": "api.json",
+      "upstream_path": "api/openapi-spec/v3/api_openapi.json",
+      "source_sha256": "5133552f7041355f7ca8267b0ad62b067e51be8191f8f1ad54e875f6536f5010",
+      "sha256": "5133552f7041355f7ca8267b0ad62b067e51be8191f8f1ad54e875f6536f5010",
+      "paths": 1
+    },
+    {
+      "path": "apis/admissionregistration.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__admissionregistration.k8s.io__v1_openapi.json",
+      "source_sha256": "497d32b28c101b251c4192577794c8b17a5fecdc7551ba5eba0d6ab1bbbace21",
+      "sha256": "497d32b28c101b251c4192577794c8b17a5fecdc7551ba5eba0d6ab1bbbace21",
+      "paths": 26
+    },
+    {
+      "path": "apis/admissionregistration.k8s.io/v1alpha1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__admissionregistration.k8s.io__v1alpha1_openapi.json",
+      "source_sha256": "332952ab1d5b4ad7ff88e58182f7891d967bfde2ce31ce5403a8ae4f8268dff2",
+      "sha256": "332952ab1d5b4ad7ff88e58182f7891d967bfde2ce31ce5403a8ae4f8268dff2",
+      "paths": 9
+    },
+    {
+      "path": "apis/admissionregistration.k8s.io/v1beta1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__admissionregistration.k8s.io__v1beta1_openapi.json",
+      "source_sha256": "5cbea9331dd716f65aa073e5a3722b0139477266a9be10d2ca0530ad3ad71abd",
+      "sha256": "5cbea9331dd716f65aa073e5a3722b0139477266a9be10d2ca0530ad3ad71abd",
+      "paths": 9
+    },
+    {
+      "path": "apis/admissionregistration.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__admissionregistration.k8s.io_openapi.json",
+      "source_sha256": "dc6c54d8c99e5909ff109974998538ecfb2031827c2d11863436f7a203af1522",
+      "sha256": "dc6c54d8c99e5909ff109974998538ecfb2031827c2d11863436f7a203af1522",
+      "paths": 1
+    },
+    {
+      "path": "apis/apiextensions.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__apiextensions.k8s.io__v1_openapi.json",
+      "source_sha256": "1c7dd621bece6661867bcc29471f774a46b36c02567d59815c7c72f6d08aa512",
+      "sha256": "1c7dd621bece6661867bcc29471f774a46b36c02567d59815c7c72f6d08aa512",
+      "paths": 6
+    },
+    {
+      "path": "apis/apiextensions.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__apiextensions.k8s.io_openapi.json",
+      "source_sha256": "baf38ebd39bec67016c2da44ed239ccbf07c43869837ca56d25b8ef4d259bda8",
+      "sha256": "baf38ebd39bec67016c2da44ed239ccbf07c43869837ca56d25b8ef4d259bda8",
+      "paths": 1
+    },
+    {
+      "path": "apis/apiregistration.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__apiregistration.k8s.io__v1_openapi.json",
+      "source_sha256": "d3a0471e3e8ed54872390d5e587a773c6ec750369ab470e35cc2c4a7e75a7e10",
+      "sha256": "d3a0471e3e8ed54872390d5e587a773c6ec750369ab470e35cc2c4a7e75a7e10",
+      "paths": 6
+    },
+    {
+      "path": "apis/apiregistration.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__apiregistration.k8s.io_openapi.json",
+      "source_sha256": "9acdfcbc925ad6fa7c2563323aa0ce1f7eb309360cd53fa9f54ffd070e5447b5",
+      "sha256": "9acdfcbc925ad6fa7c2563323aa0ce1f7eb309360cd53fa9f54ffd070e5447b5",
+      "paths": 1
+    },
+    {
+      "path": "apis/apps/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__apps__v1_openapi.json",
+      "source_sha256": "4e190f85e4d9bcea04ee9a4a1501205fd4d1902766426c0e3de7efdeaa7395dc",
+      "sha256": "4e190f85e4d9bcea04ee9a4a1501205fd4d1902766426c0e3de7efdeaa7395dc",
+      "paths": 38
+    },
+    {
+      "path": "apis/apps.json",
+      "upstream_path": "api/openapi-spec/v3/apis__apps_openapi.json",
+      "source_sha256": "c3fd555540caad353f7cc41f4e67e40b9ef7d5616588b7132d62e36d81a6846a",
+      "sha256": "c3fd555540caad353f7cc41f4e67e40b9ef7d5616588b7132d62e36d81a6846a",
+      "paths": 1
+    },
+    {
+      "path": "apis/authentication.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__authentication.k8s.io__v1_openapi.json",
+      "source_sha256": "a024bbc5e65cefbf48d1db9e556b05222f56bde5e70b1782c285da76f6521b44",
+      "sha256": "a024bbc5e65cefbf48d1db9e556b05222f56bde5e70b1782c285da76f6521b44",
+      "paths": 3
+    },
+    {
+      "path": "apis/authentication.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__authentication.k8s.io_openapi.json",
+      "source_sha256": "9885966ae17ed021309e2d42511e4b69080be05e358575c6763552c882398d9d",
+      "sha256": "9885966ae17ed021309e2d42511e4b69080be05e358575c6763552c882398d9d",
+      "paths": 1
+    },
+    {
+      "path": "apis/authorization.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__authorization.k8s.io__v1_openapi.json",
+      "source_sha256": "6654256e4da02e94d848dfecf10245b6e74769c205822ae6ce709e742a6018d9",
+      "sha256": "6654256e4da02e94d848dfecf10245b6e74769c205822ae6ce709e742a6018d9",
+      "paths": 5
+    },
+    {
+      "path": "apis/authorization.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__authorization.k8s.io_openapi.json",
+      "source_sha256": "7179307b29889697fd45128b99ed84e07321eed9d20491f559260cfac3886fd1",
+      "sha256": "7179307b29889697fd45128b99ed84e07321eed9d20491f559260cfac3886fd1",
+      "paths": 1
+    },
+    {
+      "path": "apis/autoscaling/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__autoscaling__v1_openapi.json",
+      "source_sha256": "42775783d2fa0e55637f1c910361abb5970150c944bcc2bce330cb647d26f1e1",
+      "sha256": "42775783d2fa0e55637f1c910361abb5970150c944bcc2bce330cb647d26f1e1",
+      "paths": 8
+    },
+    {
+      "path": "apis/autoscaling/v2.json",
+      "upstream_path": "api/openapi-spec/v3/apis__autoscaling__v2_openapi.json",
+      "source_sha256": "47726b03de581449a6b1ab4323604df6edec4894e199f3059ff1870424d864ad",
+      "sha256": "47726b03de581449a6b1ab4323604df6edec4894e199f3059ff1870424d864ad",
+      "paths": 8
+    },
+    {
+      "path": "apis/autoscaling.json",
+      "upstream_path": "api/openapi-spec/v3/apis__autoscaling_openapi.json",
+      "source_sha256": "21dd30ad7b3539eed5f766e0bdb8707af2ab6f6785a887ec3a0f92e6738f118b",
+      "sha256": "21dd30ad7b3539eed5f766e0bdb8707af2ab6f6785a887ec3a0f92e6738f118b",
+      "paths": 1
+    },
+    {
+      "path": "apis/batch/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__batch__v1_openapi.json",
+      "source_sha256": "f39ccc48cf5d51dd6312299624c5033f935a67b8044f4c91f0fb8cdc7391f689",
+      "sha256": "f39ccc48cf5d51dd6312299624c5033f935a67b8044f4c91f0fb8cdc7391f689",
+      "paths": 15
+    },
+    {
+      "path": "apis/batch.json",
+      "upstream_path": "api/openapi-spec/v3/apis__batch_openapi.json",
+      "source_sha256": "c9d5b55a1eb99cadf8ed53f032cb45a369b71e4a56137cff9621740cf8505d0c",
+      "sha256": "c9d5b55a1eb99cadf8ed53f032cb45a369b71e4a56137cff9621740cf8505d0c",
+      "paths": 1
+    },
+    {
+      "path": "apis/certificates.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__certificates.k8s.io__v1_openapi.json",
+      "source_sha256": "d8a3339d727913d644016ba2f24aaee9ad4416011066d3baed2c1afc3bf1f6c8",
+      "sha256": "d8a3339d727913d644016ba2f24aaee9ad4416011066d3baed2c1afc3bf1f6c8",
+      "paths": 7
+    },
+    {
+      "path": "apis/certificates.k8s.io/v1alpha1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__certificates.k8s.io__v1alpha1_openapi.json",
+      "source_sha256": "46b03068a91dd326ccbeeddf26ed6299c106c83e2c63bebf5eb376e373fa3d69",
+      "sha256": "46b03068a91dd326ccbeeddf26ed6299c106c83e2c63bebf5eb376e373fa3d69",
+      "paths": 5
+    },
+    {
+      "path": "apis/certificates.k8s.io/v1beta1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__certificates.k8s.io__v1beta1_openapi.json",
+      "source_sha256": "049de3b36f5e80b503610a70baea298747bb805d036e96f68388463ce91857b3",
+      "sha256": "049de3b36f5e80b503610a70baea298747bb805d036e96f68388463ce91857b3",
+      "paths": 12
+    },
+    {
+      "path": "apis/certificates.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__certificates.k8s.io_openapi.json",
+      "source_sha256": "de1b013c22ae5b7ae548e5273609b3b27018f83068a69d9c19a316b755058b4f",
+      "sha256": "de1b013c22ae5b7ae548e5273609b3b27018f83068a69d9c19a316b755058b4f",
+      "paths": 1
+    },
+    {
+      "path": "apis/coordination.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__coordination.k8s.io__v1_openapi.json",
+      "source_sha256": "54b9a4143dbe22fa74ed47ae2a3694f844d1c65e7c1012c80667e0c7d0e5112a",
+      "sha256": "54b9a4143dbe22fa74ed47ae2a3694f844d1c65e7c1012c80667e0c7d0e5112a",
+      "paths": 7
+    },
+    {
+      "path": "apis/coordination.k8s.io/v1alpha2.json",
+      "upstream_path": "api/openapi-spec/v3/apis__coordination.k8s.io__v1alpha2_openapi.json",
+      "source_sha256": "69f49100f471578cef82b0b294ff49fef5c37c11718d94ae8b8c9ad4e3040bb0",
+      "sha256": "69f49100f471578cef82b0b294ff49fef5c37c11718d94ae8b8c9ad4e3040bb0",
+      "paths": 7
+    },
+    {
+      "path": "apis/coordination.k8s.io/v1beta1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__coordination.k8s.io__v1beta1_openapi.json",
+      "source_sha256": "73bf8fc2779b4c9ebb16c42b13db0e910f73ade7f23b56763c5a50262b6ddca3",
+      "sha256": "73bf8fc2779b4c9ebb16c42b13db0e910f73ade7f23b56763c5a50262b6ddca3",
+      "paths": 7
+    },
+    {
+      "path": "apis/coordination.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__coordination.k8s.io_openapi.json",
+      "source_sha256": "ebd405fc9982811805aba54b205295192ff10a2657be4202efa47f8baf249eb3",
+      "sha256": "ebd405fc9982811805aba54b205295192ff10a2657be4202efa47f8baf249eb3",
+      "paths": 1
+    },
+    {
+      "path": "apis/discovery.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__discovery.k8s.io__v1_openapi.json",
+      "source_sha256": "29b42c9d7c944a0902e2738e3a0d4567ddda326292a8dedc75fe74eea7089af1",
+      "sha256": "29b42c9d7c944a0902e2738e3a0d4567ddda326292a8dedc75fe74eea7089af1",
+      "paths": 7
+    },
+    {
+      "path": "apis/discovery.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__discovery.k8s.io_openapi.json",
+      "source_sha256": "ed1e6208224a2c6012c26df6e1644b6ed407c65311d993a33c1d97106d083bbd",
+      "sha256": "ed1e6208224a2c6012c26df6e1644b6ed407c65311d993a33c1d97106d083bbd",
+      "paths": 1
+    },
+    {
+      "path": "apis/events.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__events.k8s.io__v1_openapi.json",
+      "source_sha256": "59e3fdad17e39047e9fab4f75fdcc7aaf7269bf1dc148a7f3865ab90e3334e80",
+      "sha256": "59e3fdad17e39047e9fab4f75fdcc7aaf7269bf1dc148a7f3865ab90e3334e80",
+      "paths": 7
+    },
+    {
+      "path": "apis/events.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__events.k8s.io_openapi.json",
+      "source_sha256": "f95094d9216f45aca86f9344f0315ac7aa60175f36c4a06963b264205ec8e884",
+      "sha256": "f95094d9216f45aca86f9344f0315ac7aa60175f36c4a06963b264205ec8e884",
+      "paths": 1
+    },
+    {
+      "path": "apis/flowcontrol.apiserver.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__flowcontrol.apiserver.k8s.io__v1_openapi.json",
+      "source_sha256": "9f8b7cd5953c2316b42d12c55339ec4f1b16046a644634256cc02d7312a8d895",
+      "sha256": "9f8b7cd5953c2316b42d12c55339ec4f1b16046a644634256cc02d7312a8d895",
+      "paths": 11
+    },
+    {
+      "path": "apis/flowcontrol.apiserver.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__flowcontrol.apiserver.k8s.io_openapi.json",
+      "source_sha256": "fd9a67b7504bd7bc2d061913a68b8e347dce60fe6aa8dc3162c451257163af98",
+      "sha256": "fd9a67b7504bd7bc2d061913a68b8e347dce60fe6aa8dc3162c451257163af98",
+      "paths": 1
+    },
+    {
+      "path": "apis/internal.apiserver.k8s.io/v1alpha1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__internal.apiserver.k8s.io__v1alpha1_openapi.json",
+      "source_sha256": "b3c5fe27eae1819e5b24095d7e8dc56b478c49b9f2040ea98fe11f9679e8e726",
+      "sha256": "b3c5fe27eae1819e5b24095d7e8dc56b478c49b9f2040ea98fe11f9679e8e726",
+      "paths": 6
+    },
+    {
+      "path": "apis/internal.apiserver.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__internal.apiserver.k8s.io_openapi.json",
+      "source_sha256": "69fa06c16151c0f14d7daef296da70a22fac53bbd84401922c38b33493a274df",
+      "sha256": "69fa06c16151c0f14d7daef296da70a22fac53bbd84401922c38b33493a274df",
+      "paths": 1
+    },
+    {
+      "path": "apis/networking.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__networking.k8s.io__v1_openapi.json",
+      "source_sha256": "ea25fb66aae62d27a39649461cba91eea96a03c6395b378cc20a019f4dd77306",
+      "sha256": "ea25fb66aae62d27a39649461cba91eea96a03c6395b378cc20a019f4dd77306",
+      "paths": 27
+    },
+    {
+      "path": "apis/networking.k8s.io/v1beta1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__networking.k8s.io__v1beta1_openapi.json",
+      "source_sha256": "c64a384190f4fd15d750b8a0658cbb85f09db8e736f91fab998638a86d61814f",
+      "sha256": "c64a384190f4fd15d750b8a0658cbb85f09db8e736f91fab998638a86d61814f",
+      "paths": 10
+    },
+    {
+      "path": "apis/networking.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__networking.k8s.io_openapi.json",
+      "source_sha256": "3060f4ce09006a33349163f413f4c83aff85d6b4fc1ed0bc07e0f455d503e061",
+      "sha256": "3060f4ce09006a33349163f413f4c83aff85d6b4fc1ed0bc07e0f455d503e061",
+      "paths": 1
+    },
+    {
+      "path": "apis/node.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__node.k8s.io__v1_openapi.json",
+      "source_sha256": "e08ef6b735b0adeddd6a1451bd46b00971bc84b156136d9d46f80ca207c54cb6",
+      "sha256": "e08ef6b735b0adeddd6a1451bd46b00971bc84b156136d9d46f80ca207c54cb6",
+      "paths": 5
+    },
+    {
+      "path": "apis/node.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__node.k8s.io_openapi.json",
+      "source_sha256": "a71526de7d1abab4f61aba32dbf3a0e42ca1eee39f2a2cbe42a3a47946133843",
+      "sha256": "a71526de7d1abab4f61aba32dbf3a0e42ca1eee39f2a2cbe42a3a47946133843",
+      "paths": 1
+    },
+    {
+      "path": "apis/policy/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__policy__v1_openapi.json",
+      "source_sha256": "89af0b1d3257e63e6bb55d9e0e9387a5461c27abacadd943e37d973b1c3fa67c",
+      "sha256": "89af0b1d3257e63e6bb55d9e0e9387a5461c27abacadd943e37d973b1c3fa67c",
+      "paths": 8
+    },
+    {
+      "path": "apis/policy.json",
+      "upstream_path": "api/openapi-spec/v3/apis__policy_openapi.json",
+      "source_sha256": "52074d50fef7fc714e7cab626971597320f94ee14a31cfafd67033e32e4fb8cb",
+      "sha256": "52074d50fef7fc714e7cab626971597320f94ee14a31cfafd67033e32e4fb8cb",
+      "paths": 1
+    },
+    {
+      "path": "apis/rbac.authorization.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__rbac.authorization.k8s.io__v1_openapi.json",
+      "source_sha256": "060632eb16c82d9d204d23dc70bae49237d206d7bc2d22b812d160ee61a1fb54",
+      "sha256": "060632eb16c82d9d204d23dc70bae49237d206d7bc2d22b812d160ee61a1fb54",
+      "paths": 21
+    },
+    {
+      "path": "apis/rbac.authorization.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__rbac.authorization.k8s.io_openapi.json",
+      "source_sha256": "15f461c99c4904cb084be11331ca59d5e042f9cf491fd1da9b04f340f8df68e6",
+      "sha256": "15f461c99c4904cb084be11331ca59d5e042f9cf491fd1da9b04f340f8df68e6",
+      "paths": 1
+    },
+    {
+      "path": "apis/resource.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__resource.k8s.io__v1_openapi.json",
+      "source_sha256": "db24d1cb24681696af6478da11d530d0b6c288b172526d1425453761fb131e00",
+      "sha256": "db24d1cb24681696af6478da11d530d0b6c288b172526d1425453761fb131e00",
+      "paths": 22
+    },
+    {
+      "path": "apis/resource.k8s.io/v1alpha3.json",
+      "upstream_path": "api/openapi-spec/v3/apis__resource.k8s.io__v1alpha3_openapi.json",
+      "source_sha256": "e227ce42630c422e1263e05a452a07e68a00a3ecabb47dd3f49140e6e08887b3",
+      "sha256": "e227ce42630c422e1263e05a452a07e68a00a3ecabb47dd3f49140e6e08887b3",
+      "paths": 11
+    },
+    {
+      "path": "apis/resource.k8s.io/v1beta1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__resource.k8s.io__v1beta1_openapi.json",
+      "source_sha256": "51035c8dcea33c09e125fcf2749daf51cd39b1f515de03638908ae6ce586cdb0",
+      "sha256": "51035c8dcea33c09e125fcf2749daf51cd39b1f515de03638908ae6ce586cdb0",
+      "paths": 22
+    },
+    {
+      "path": "apis/resource.k8s.io/v1beta2.json",
+      "upstream_path": "api/openapi-spec/v3/apis__resource.k8s.io__v1beta2_openapi.json",
+      "source_sha256": "a68c052604b9e17fd2506bd7accf2516b735e8b7a0685aed441511105d2ab0ca",
+      "sha256": "a68c052604b9e17fd2506bd7accf2516b735e8b7a0685aed441511105d2ab0ca",
+      "paths": 27
+    },
+    {
+      "path": "apis/resource.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__resource.k8s.io_openapi.json",
+      "source_sha256": "19a5c7cff68dca2ce3933e0c79257cac76b99cdfd462838c5d62ea21a1d42577",
+      "sha256": "19a5c7cff68dca2ce3933e0c79257cac76b99cdfd462838c5d62ea21a1d42577",
+      "paths": 1
+    },
+    {
+      "path": "apis/scheduling.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__scheduling.k8s.io__v1_openapi.json",
+      "source_sha256": "c832d22dcc8c28e859a9bc2a01635fe22ccbf7e433ae401a1691b7afde3e0d66",
+      "sha256": "c832d22dcc8c28e859a9bc2a01635fe22ccbf7e433ae401a1691b7afde3e0d66",
+      "paths": 5
+    },
+    {
+      "path": "apis/scheduling.k8s.io/v1alpha2.json",
+      "upstream_path": "api/openapi-spec/v3/apis__scheduling.k8s.io__v1alpha2_openapi.json",
+      "source_sha256": "34ef4f4363dd505fc2cca53e55562c926f31d92abc92e055aa1e2410aa479880",
+      "sha256": "34ef4f4363dd505fc2cca53e55562c926f31d92abc92e055aa1e2410aa479880",
+      "paths": 14
+    },
+    {
+      "path": "apis/scheduling.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__scheduling.k8s.io_openapi.json",
+      "source_sha256": "dd1139dfcaed8e8f73768e7ef57b25575fbd6b8eaae6fbfbb305f5b8a1133780",
+      "sha256": "dd1139dfcaed8e8f73768e7ef57b25575fbd6b8eaae6fbfbb305f5b8a1133780",
+      "paths": 1
+    },
+    {
+      "path": "apis/storage.k8s.io/v1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__storage.k8s.io__v1_openapi.json",
+      "source_sha256": "b6599cea1616d682816f05a4c2713c5d5284707cb1121af874f0a2eac737d77d",
+      "sha256": "b6599cea1616d682816f05a4c2713c5d5284707cb1121af874f0a2eac737d77d",
+      "paths": 28
+    },
+    {
+      "path": "apis/storage.k8s.io/v1beta1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__storage.k8s.io__v1beta1_openapi.json",
+      "source_sha256": "14eb2c1fb06ff752374c2d93ece91be7d09aee28d98fbd46a3905d246f0b9931",
+      "sha256": "14eb2c1fb06ff752374c2d93ece91be7d09aee28d98fbd46a3905d246f0b9931",
+      "paths": 5
+    },
+    {
+      "path": "apis/storage.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__storage.k8s.io_openapi.json",
+      "source_sha256": "9cf25959dd59c003609183375f830f41ace5cfb7cfac8747fd4312149b0233bf",
+      "sha256": "9cf25959dd59c003609183375f830f41ace5cfb7cfac8747fd4312149b0233bf",
+      "paths": 1
+    },
+    {
+      "path": "apis/storagemigration.k8s.io/v1beta1.json",
+      "upstream_path": "api/openapi-spec/v3/apis__storagemigration.k8s.io__v1beta1_openapi.json",
+      "source_sha256": "9235547d6fe39acf620db96acf742c7dd2075e6268f357926f5b0a07097e7d34",
+      "sha256": "9235547d6fe39acf620db96acf742c7dd2075e6268f357926f5b0a07097e7d34",
+      "paths": 6
+    },
+    {
+      "path": "apis/storagemigration.k8s.io.json",
+      "upstream_path": "api/openapi-spec/v3/apis__storagemigration.k8s.io_openapi.json",
+      "source_sha256": "3f2485bf7bdd9c8922deab59d7bf8ab1db9e8d3dbac80ec9009fc4a24cc2d828",
+      "sha256": "3f2485bf7bdd9c8922deab59d7bf8ab1db9e8d3dbac80ec9009fc4a24cc2d828",
+      "paths": 1
+    },
+    {
+      "path": "apis.json",
+      "upstream_path": "api/openapi-spec/v3/apis_openapi.json",
+      "source_sha256": "a35becf993dbb081b28fe5afcdd9b5bf22ff70a8a83b1d773e8e541bb06810de",
+      "sha256": "a35becf993dbb081b28fe5afcdd9b5bf22ff70a8a83b1d773e8e541bb06810de",
+      "paths": 1
+    },
+    {
+      "path": "logs.json",
+      "upstream_path": "api/openapi-spec/v3/logs_openapi.json",
+      "source_sha256": "6b263751854cd33af73aa5d3a753e8e406c9f32d60e8fa67af7c188141134bf7",
+      "sha256": "6b263751854cd33af73aa5d3a753e8e406c9f32d60e8fa67af7c188141134bf7",
+      "paths": 2
+    },
+    {
+      "path": "openid/v1/jwks.json",
+      "upstream_path": "api/openapi-spec/v3/openid__v1__jwks_openapi.json",
+      "source_sha256": "be0369fabc2dd2e26ddde8ffcc4829f0559c4f76841d96d154f76cb3ad2e95db",
+      "sha256": "be0369fabc2dd2e26ddde8ffcc4829f0559c4f76841d96d154f76cb3ad2e95db",
+      "paths": 1
+    },
+    {
+      "path": "version.json",
+      "upstream_path": "api/openapi-spec/v3/version_openapi.json",
+      "source_sha256": "9077133c6af1c993f466a91f9f870daaee779581adc2c3614176c273dd2f52a2",
+      "sha256": "9077133c6af1c993f466a91f9f870daaee779581adc2c3614176c273dd2f52a2",
+      "paths": 1
+    }
+  ]
+}
