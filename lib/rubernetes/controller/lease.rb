@@ -103,6 +103,10 @@ module Rubernetes
       # record moved under it, so the slow path re-reads the Lease and
       # decides again -- leader_election_slowpath_total counts those.
       private def step_now(now)
+        if leader? && @last_observed && (fast = fast_path_renew(now))
+          return fast
+        end
+
         begin
           lease = current
         rescue StandardError => error
