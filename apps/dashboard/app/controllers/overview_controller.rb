@@ -22,6 +22,8 @@ class OverviewController < ApplicationController
 
   private
 
+  CLUSTER_SCOPED = %w[nodes namespaces].freeze
+
   def list(resource, api_version: "v1")
     Array(client.get(resource, api_version: api_version)["items"])
   rescue StandardError => e
