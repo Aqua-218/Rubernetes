@@ -383,7 +383,7 @@ module M1KubernetesProtobufOracle
         detail = stderr.lines.last(20).join.strip
         raise OracleError, "Kubernetes protobuf oracle Go helper failed (#{status.exitstatus}): #{detail}"
       end
-      document = JSON.parse(stdout, create_additions: false, max_nesting: 64)
+      document = JSON.parse(stdout, max_nesting: 64)
       results = document.fetch("results")
       raise OracleError, "Kubernetes protobuf oracle results must be an array" unless results.is_a?(Array)
 
