@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-08-22",
+  "cncf_conformance_program": {
+    "repository": "https://github.com/cncf/k8s-conformance.git",
+    "commit": "691d9b951a75accf18dfc29b811a3947db874081",
+    "instructions_path": "instructions.md",
+    "instructions_sha256": "77c5bc20e5702497ee82db64a6c9115862709974921ffea8d46230e92462c18e"
+  },
+  "hydrophone": {
+    "repository": "https://github.com/kubernetes-sigs/hydrophone.git",
+    "tag": "v0.7.0",
+    "commit": "3de3e886a2f6f09635d8b981c195490af1584d97",
+    "artifacts": {
+      "linux/amd64": {
+        "name": "hydrophone_Linux_x86_64.tar.gz",
+        "sha256": "15a6c09962f9bd4a1587af068b5edef1072327a77012d8fbb84992c7c87c0475"
+      },
+      "linux/arm64": {
+        "name": "hydrophone_Linux_arm64.tar.gz",
+        "sha256": "7edf38be612c32a2ce8b77c293a5a61a22b0fc77ad9fe5c908fc9f73fb283550"
+      }
+    }
+  },
+  "sonobuoy": {
+    "repository": "https://github.com/vmware-tanzu/sonobuoy.git",
+    "tag": "v0.57.5",
+    "tag_object": "da66733240252568c257b5304f3f28bdcfbe2c99",
+    "commit": "310c51d9874a4d10d021ec8a19f8b42292ec0bfc",
+    "artifacts": {
+      "linux/amd64": {
+        "name": "sonobuoy_0.57.5_linux_amd64.tar.gz",
+        "sha256": "7c5c2250e5103c98f4dad2bcab86baf954e319c57c419c113f28f5060e62f129"
+      },
+      "linux/arm64": {
+        "name": "sonobuoy_0.57.5_linux_arm64.tar.gz",
+        "sha256": "ec482b5d1ec237f4c94b6fd7be5a69f95678a4331001b3edcb6ad7835ec40695"
+      }
+    },
+    "image": {
+      "reference": "docker.io/sonobuoy/sonobuoy:v0.57.5",
+      "index_digest": "sha256:7a65a613a53017dfbe674f61890f8f5b16b4a8085286f625eeb42b6ae64c48b8",
+      "platforms": {
+        "linux/amd64": "sha256:7778da7338f66bcc92fa0218cd3885c114312b127b90f20730b00d05ea82d84e",
+        "linux/arm64": "sha256:9f98898dc8d90d0d7de2cd2541bbc31030d384447441b5c3b5ac0391315913ae"
+      }
+    }
+  }
+}
