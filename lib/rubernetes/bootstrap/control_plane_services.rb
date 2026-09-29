@@ -2710,6 +2710,8 @@ module Rubernetes
       end
 
       def stop_components(reason:)
+        @component_server&.stop
+        @component_server = nil
         @proxy&.stop_watch if @proxy&.respond_to?(:stop_watch)
         @proxy&.stop_health_check_responder if @proxy&.respond_to?(:stop_health_check_responder)
         @proxy&.backend.detach if @proxy&.respond_to?(:backend) && @proxy.backend.respond_to?(:detach)
