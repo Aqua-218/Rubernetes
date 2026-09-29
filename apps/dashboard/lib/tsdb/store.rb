@@ -241,6 +241,11 @@ module Tsdb
         @lock_file.flush
         return
       end
+
+      owner = @lock_file.read.strip
+      @lock_file.close
+      @lock_file = nil
+      raise AlreadyOpen, "#{@dir} is being written by another process#{" (pid #{owner})" unless owner.empty?}"
     end
 
     # ------------------------------------------------------------- reading
