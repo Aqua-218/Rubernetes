@@ -39,6 +39,7 @@ module Prom
 
     # One scrape round (and rule evaluation when due).  Safe to call directly.
     def round(now_ms = @clock.call)
+      round_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       discovered = begin
         found = @targets.respond_to?(:discover) ? @targets.discover : @targets.call
         @discovery_error = nil
