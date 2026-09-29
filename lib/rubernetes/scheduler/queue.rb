@@ -395,6 +395,7 @@ module Rubernetes
           next item if @pending.key?(key)
 
           @pending[key] = item
+          @gated.delete(key)
           enforce_capacity!
           item
         end
