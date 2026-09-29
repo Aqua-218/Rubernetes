@@ -485,6 +485,8 @@ module Rubernetes
           Thread.current[:rubernetes_scheduler_sample_plugins] = @metrics.sample_plugins?
           gate_started = monotonic
           gate_result = run_pre_enqueue(typed_pod, context, trace)
+          @metrics.extension_point(:pre_enqueue, gate_result == true ? Metrics::STATUS_SUCCESS : Metrics::STATUS_UNSCHEDULABLE,
+                                   monotonic - gate_started)
           unless gate_result == true
             reason = gate_result.fetch("reason", "pod is not ready for scheduling")
             queue.enqueue_unschedulable(typed_pod, reason: reason)
