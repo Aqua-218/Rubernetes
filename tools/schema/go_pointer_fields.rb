@@ -77,7 +77,7 @@ module GoPointerFields
   end
 
   def pinned_commit
-    manifest = JSON.parse(CORPUS.join("sources.json").read, create_additions: false)
+    manifest = JSON.parse(CORPUS.join("sources.json").read)
     manifest.fetch("source").fetch("commit")
   end
 
