@@ -795,7 +795,8 @@ module Conformance
       nil
     end
 
-    def write_controller_config(root, kubeconfig, service_account_credentials: false, discovery_kubeconfig: kubeconfig)
+    def write_controller_config(root, kubeconfig, service_account_credentials: false, discovery_kubeconfig: kubeconfig,
+                                serving_port: free_port)
       write_config(root, "controller-manager", {
                      "version" => 1, "logging" => {"level" => ENV.fetch("RUBERNETES_M8_CONTROLLER_LOG_LEVEL", "info")},
                      "processes" => {"rubernetes-controller-manager" => {
