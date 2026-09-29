@@ -199,7 +199,7 @@ module Rubernetes
               # idle supervisor) as one line on stdin once a sandbox needs it.
               payload_text = ARGV.empty? ? STDIN.gets : ARGV.fetch(0)
               exit!(0) if payload_text.nil?
-              payload = JSON.parse(payload_text, create_additions: false)
+              payload = JSON.parse(payload_text)
               parent_pid = Integer(payload.fetch("parent_pid"))
               parent_start_time = Integer(payload.fetch("parent_start_time"))
               plan_class = Struct.new(:namespaces, :user_mapping, :hostname, keyword_init: true)
