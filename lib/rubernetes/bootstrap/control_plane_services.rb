@@ -1970,7 +1970,7 @@ module Rubernetes
         end
       end
 
-      def retry_unschedulable(reason, **fields)
+      def retry_unschedulable(reason, event: nil, **fields)
         return unless @framework.respond_to?(:queue)
 
         promoted = @framework.queue.promote_unschedulable
