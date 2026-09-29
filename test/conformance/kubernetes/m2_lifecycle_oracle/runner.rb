@@ -71,7 +71,7 @@ module M2KubernetesLifecycleOracleRunner
   end
 
   def harness_failure_detail(output)
-    document = JSON.parse(output.to_s, create_additions: false, max_nesting: 512)
+    document = JSON.parse(output.to_s, max_nesting: 512)
     document.is_a?(Hash) ? Array(document["errors"]).join("; ") : ""
   rescue JSON::ParserError
     ""
