@@ -31,6 +31,7 @@ module Prom
       @logger = logger
       @previous = {}   # target key -> { fingerprint => labels }
       @statuses = {}   # target key -> Status
+      @metadata = {}   # metric family name -> [{"type","help","unit"}]
       @mutex = Mutex.new
     end
 
