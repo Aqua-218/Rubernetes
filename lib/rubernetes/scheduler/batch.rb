@@ -112,6 +112,7 @@ module Rubernetes
 
         @mutex.synchronize { @state && @state[:nodes].shift }
       end
+      private :fetch_node_hint
 
       # StoreScheduleResults.  +ranked+: the other feasible nodes, best first.
       def store(signature, hinted, chosen, ranked, cycle)
