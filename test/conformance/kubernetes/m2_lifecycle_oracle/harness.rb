@@ -400,7 +400,7 @@ module M2LifecycleOracleHarness
         reader.each_line do |line|
           next if line.strip.empty?
           begin
-            document = JSON.parse(line, create_additions: false, max_nesting: 512)
+            document = JSON.parse(line, max_nesting: 512)
           rescue JSON::ParserError => error
             @mutex.synchronize { @stderr << "unparseable watch line (#{error.message}): #{line[0, 200]}\n" }
             next
