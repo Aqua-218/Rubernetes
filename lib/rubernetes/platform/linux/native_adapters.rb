@@ -2254,7 +2254,7 @@ module Rubernetes
               size = length.unpack1("L<")
               raise EffectError, "workload hook request is too large" if size > 65_536
 
-              request = JSON.parse(@status_reader.read(size).to_s, create_additions: false)
+              request = JSON.parse(@status_reader.read(size).to_s)
               begin
                 @hook_handler&.call(Integer(request.fetch("pid")))
                 @hook_reply.write("0")
