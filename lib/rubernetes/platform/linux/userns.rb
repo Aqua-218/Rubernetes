@@ -137,7 +137,7 @@ module Rubernetes
           def load
             return {} unless File.file?(@path)
 
-            document = JSON.parse(File.binread(@path), create_additions: false)
+            document = JSON.parse(File.binread(@path))
             raise Error, "user namespace allocation file has an unknown schema" unless document.is_a?(Hash) && document["schema"] == SCHEMA
             entries = document.fetch("allocations")
             raise Error, "user namespace allocations must be an object" unless entries.is_a?(Hash)
