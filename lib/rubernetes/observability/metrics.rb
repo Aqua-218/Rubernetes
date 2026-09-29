@@ -386,6 +386,16 @@ module Rubernetes
       # Every metric the inventory lists for +component+ ("kube-apiserver",
       # "kubelet", "kube-controller-manager", ...) that is not registered
       # yet; custom collectors and summaries are left to their collectors.
+      # Plain (label-less) families client-go registers unconditionally, so
+      # every upstream component shows them even when the feature behind
+      # them never runs: kept in the exposition for parity, listed as
+      # unimplemented for the inventory.  The exec plugin TTL gauge starts
+      # at +Inf upstream ("no credentials with an expiry").
+      ALWAYS_PRESENT_EMPTY = {
+        "rest_client_exec_plugin_certificate_rotation_age" => nil,
+        "rest_client_exec_plugin_ttl_seconds" => Float::INFINITY
+      }.freeze
+
       def register_upstream(component, endpoint: "/metrics")
         unimplemented = SHARED_UNIMPLEMENTED.merge(UNIMPLEMENTED.fetch(component, {}))
         self.class.upstream.each do |name, entry|
