@@ -401,7 +401,8 @@ module Tsdb
           end
         end
         if series.encoder && (all || series.encoder.max_time < boundary)
-          chunks << [series.encoder.bytes, series.encoder.min_time, series.encoder.max_time, series.encoder.count]
+          encoder = series.encoder
+          chunks << [encoder.bytes, encoder.min_time, encoder.max_time, encoder.count]
           series.instance_variable_set(:@encoder, nil)
         end
         series.chunks.replace(remaining)
