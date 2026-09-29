@@ -605,7 +605,14 @@ module Rubernetes
 
           reservation = nil
           begin
-            reservation = reserve!(typed_pod, selected.node, context: context, trace: trace)
+            reserve_started = monotonic
+            begin
+              reservation = reserve!(typed_pod, selected.node, context: context, trace: trace)
+            rescue StandardError
+              @metrics.extension_point(:reserve, Metrics::STATUS_ERROR, monotonic - reserve_started)
+              raise
+            end
+            @metrics.extension_point(:reserve, Metrics::STATUS_SUCCESS, monotonic - reserve_started)
             bound_pod = bind!(pod, typed_pod, selected.node, context: context, trace: trace)
             commit_reservation!(reservation)
             forget_nomination(typed_pod)
