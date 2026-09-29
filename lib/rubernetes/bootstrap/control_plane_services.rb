@@ -1562,7 +1562,8 @@ module Rubernetes
         @thread = nil
         @last_result = nil
         @last_error = nil
-        @metrics = scheduler_metrics
+        @scheduler_metrics = Scheduler::Metrics.new(registry: scheduler_metrics)
+        @metrics = @scheduler_metrics.registry
       end
 
       attr_reader :metrics
