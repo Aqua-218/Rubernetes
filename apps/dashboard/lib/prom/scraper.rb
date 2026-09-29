@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "target"
+
 require_relative "exposition"
 require_relative "../tsdb/store"
 
