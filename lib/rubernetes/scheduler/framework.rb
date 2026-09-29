@@ -640,6 +640,28 @@ module Rubernetes
       alias schedule_pod schedule
       alias run schedule
 
+      def monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      private :monotonic
+
+      # The plugins that rejected the Pod on some node (scheduler_unschedulable_pods).
+      def rejecting_plugins(filtered)
+        filtered.values.filter_map { |entry| entry.is_a?(Hash) ? entry["plugin"] : nil }.uniq
+      end
+      private :rejecting_plugins
+
+      # scheduler_pod_scheduling_attempts / _sli_duration_seconds for a Pod
+      # that just bound, from the queue's pop bookkeeping.
+      def record_pod_scheduled(pod)
+        attempts = queue.respond_to?(:pop_attempts) ? queue.pop_attempts(pod) : 0
+        # A Pod scheduled straight from schedule() was never popped: one attempt.
+        attempts = 1 if attempts.zero?
+        since = queue.respond_to?(:seconds_since_first_attempt) ? queue.seconds_since_first_attempt(pod) : nil
+        @metrics.pod_scheduled(attempts, since)
+      rescue StandardError
+        nil
+      end
+      private :record_pod_scheduled
+
       def schedule_next(nodes:, pods: nil, namespace_labels: nil, volume_data: nil, workload_selectors: nil)
         trace = Trace.new
         item = queue.pop(trace: trace)
