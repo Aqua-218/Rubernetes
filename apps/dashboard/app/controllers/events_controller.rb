@@ -7,7 +7,7 @@ class EventsController < ApplicationController
   end
 
   def all
-    @events = sorted(Array(client.get("events")["items"]))
+    @events = sorted(Array(client.get("events", namespace: :all)["items"]))
     render :index
   end
 
