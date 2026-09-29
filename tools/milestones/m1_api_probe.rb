@@ -263,7 +263,7 @@ module M1APIDifferential
     return nil if value.nil?
     return value.dup if value.is_a?(String)
 
-    JSON.parse(JSON.generate(value), create_additions: false)
+    JSON.parse(JSON.generate(value))
   end
 
   def response_category(oracle_response, watch: false, initial_watch: false)
