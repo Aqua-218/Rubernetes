@@ -42,6 +42,10 @@ module Dashboard
       @mutex = Mutex.new
     end
 
+    # Every component is built once, under one lock: the first web request
+    # and the collector thread race for these at boot, and two Tsdb::Store
+    # instances over the same directory would each treat the other's series
+    # as orphans and delete them.
     def client
       @client ||= begin
         require "rubernetes/client"
