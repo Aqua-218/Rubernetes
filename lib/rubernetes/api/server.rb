@@ -5130,6 +5130,28 @@ module Rubernetes
         result
       end
 
+      # ... and one whose issued certificate honoured it (the registry's
+      # status strategy compares the certificate's validity with the request).
+      def record_csr_honored_duration(existing, updated)
+        return unless existing.is_a?(Hash) && updated.is_a?(Hash)
+
+        before = existing.dig("status", "certificate").to_s
+        after = updated.dig("status", "certificate").to_s
+        return if after.empty? || after == before
+
+        requested = updated.dig("spec", "expirationSeconds")
+        return if requested.nil?
+
+        certificate = OpenSSL::X509::Certificate.new(after.unpack1("m0"))
+        issued = certificate.not_after - certificate.not_before
+        # kube-controller-manager clamps and skews by up to 5 minutes.
+        return unless (issued - requested.to_i).abs <= 600
+
+        @metrics&.increment("apiserver_certificates_registry_csr_honored_duration_total", {"signerName" => updated.dig("spec", "signerName").to_s})
+      rescue StandardError
+        nil
+      end
+
       # AfterDelete: allocations return to their pools.
       def release_registry_allocations(resource, object)
         return unless @service_allocator && @service_allocator.service?(resource)
