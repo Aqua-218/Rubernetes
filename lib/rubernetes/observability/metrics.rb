@@ -756,7 +756,7 @@ module Rubernetes
 
         @storage_counted_at = now
         begin
-          Array(source.call).each do |group, resource, count|
+          Array(source.call).each do |group, resource, count, bytes|
             set_storage_count(group, resource, count)
           end
         rescue StandardError
