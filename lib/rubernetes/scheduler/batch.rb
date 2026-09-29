@@ -71,6 +71,9 @@ module Rubernetes
 
       def enabled? = @enabled
 
+      # Scheduler::Metrics (the scheduler_batch_* and node hint series).
+      attr_accessor :metrics
+
       # The Pod's signature, or nil when it cannot be batched.
       def sign(pod)
         return nil unless @enabled
