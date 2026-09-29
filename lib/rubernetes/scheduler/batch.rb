@@ -157,7 +157,11 @@ module Rubernetes
 
       private
 
-      def drop_state
+      # scheduler_batch_cache_flushed_total{reason}: "cycle_gap" (a cycle in
+      # between), "signature_mismatch" (a different Pod shape), "expired"
+      # (older than MAX_BATCH_AGE_SECONDS), "cycle_failed" (see #failed).
+      def drop_state(reason)
+        @metrics&.batch_flushed(reason) if @state
         @state = nil
         nil
       end
