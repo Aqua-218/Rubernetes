@@ -95,6 +95,13 @@ module Rubernetes
       # previous cycle scheduled a Pod with this signature onto a node this
       # Pod no longer fits (+fits_last+ runs the filters there).
       def node_hint(signature, cycle, fits_last:)
+        started = @clock.call
+        hint = fetch_node_hint(signature, cycle, fits_last: fits_last)
+        @metrics&.node_hint(!hint.nil?, @clock.call - started)
+        hint
+      end
+
+      def fetch_node_hint(signature, cycle, fits_last:)
         @mutex.synchronize do
           return nil if @state.nil? || @state[:nodes].empty? || @last_cycle.nil?
           return drop_state if cycle != @last_cycle[:cycle] + 1
