@@ -191,6 +191,18 @@ module Prom
       nil
     end
 
+    def serving_address(config_path, executable)
+      return nil unless config_path && File.file?(config_path)
+
+      document = YAML.safe_load(File.read(config_path), aliases: true, permitted_classes: [Symbol]) || {}
+      serving = document.dig("processes", executable, "serving") || {}
+      return nil unless serving["enabled"] == true && serving["port"]
+
+      [(serving["bind_address"] || "127.0.0.1").to_s, serving["port"].to_i]
+    rescue StandardError
+      nil
+    end
+
     def apiserver_client(server)
       return nil if @kubeconfig_context.nil?
 
