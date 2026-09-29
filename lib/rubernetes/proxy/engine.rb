@@ -5,6 +5,7 @@ require "json"
 require "socket"
 require "thread"
 require "time"
+require_relative "metrics"
 require "timeout"
 
 module Rubernetes
