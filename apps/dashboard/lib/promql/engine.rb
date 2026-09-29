@@ -25,7 +25,7 @@ module Promql
       # metric name, plain one-to-one matching ignores the metric name.
       def signature(labels = nil, without: false, on: false)
         source = if on
-                   source.select { |k, _| labels.include?(k) }
+                   metric.select { |k, _| labels.include?(k) }
                  elsif without
                    source.reject { |k, _| labels.include?(k) }
                  else
