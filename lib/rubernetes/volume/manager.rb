@@ -1564,6 +1564,11 @@ module Rubernetes
         @manager.recover(observed_mounts: observed_mounts, observed_devices: observed_devices)
       end
 
+      # {attempted:, errors:} of the startup reconstruction (reconstruct_volume_operations_*).
+      def reconstruction_stats
+        @manager.respond_to?(:reconstruction_stats) ? @manager.reconstruction_stats : nil
+      end
+
       private
 
       def collect_cleanup_errors
