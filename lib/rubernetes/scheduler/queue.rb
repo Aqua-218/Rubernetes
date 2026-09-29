@@ -402,7 +402,9 @@ module Rubernetes
         end
       end
 
-      def promote_unschedulable
+      # +event+: the cluster change that moves the Pods (a node add, a Pod
+      # delete, the periodic UnschedulableTimeout flush).
+      def promote_unschedulable(event: EVENT_UNSCHEDULABLE_TIMEOUT)
         items = @mutex.synchronize do
           result = ordered(@unschedulable).map(&:last)
           @unschedulable.clear
