@@ -436,6 +436,7 @@ module Tsdb
       # Head series that are now empty leave the head; everything they had
       # is durable in the block, so the WAL can be rewritten without them.
       @head.delete_if { |_, series| series.empty? }
+      @next_cut_check = nil
       rewrite_wal
     end
 
