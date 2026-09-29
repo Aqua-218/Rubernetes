@@ -232,6 +232,7 @@ module Rubernetes
           "apiserver_flowcontrol_demand_seats_smoothed" => no_borrowing
         }.freeze,
         "kube-controller-manager" => {
+          "node_collector_update_all_nodes_health_duration_seconds" => "the node lifecycle controller reconciles Nodes one key at a time from events and resyncs; there is no periodic monitorNodeHealth pass over all Nodes to time",
           "daemonset_controller_stale_sync_skips_total" => consistency,
           "job_controller_stale_sync_skips_total" => consistency,
           "replicaset_controller_stale_sync_skips_total" => consistency,
