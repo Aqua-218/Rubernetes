@@ -171,6 +171,7 @@ module Rubernetes
           item = QueueItem.new(pod: typed, priority: typed.priority, sequence: @sequence,
                                reason: reason, unschedulable: false)
           store_pending_locked(item)
+          incoming(event, "active")
           item
         end
       end
