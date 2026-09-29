@@ -1,0 +1,185 @@
+{
+  "kind": "PriorityLevelConfigurationList",
+  "apiVersion": "flowcontrol.apiserver.k8s.io/v1",
+  "items": [
+    {
+      "metadata": {
+        "name": "catch-all",
+        "annotations": {
+          "apf.kubernetes.io/autoupdate-spec": "true"
+        }
+      },
+      "spec": {
+        "type": "Limited",
+        "limited": {
+          "nominalConcurrencyShares": 5,
+          "limitResponse": {
+            "type": "Reject"
+          },
+          "lendablePercent": 0
+        }
+      },
+      "status": {}
+    },
+    {
+      "metadata": {
+        "name": "exempt",
+        "annotations": {
+          "apf.kubernetes.io/autoupdate-spec": "true"
+        }
+      },
+      "spec": {
+        "type": "Exempt",
+        "exempt": {
+          "nominalConcurrencyShares": 0,
+          "lendablePercent": 0
+        }
+      },
+      "status": {}
+    },
+    {
+      "metadata": {
+        "name": "global-default",
+        "annotations": {
+          "apf.kubernetes.io/autoupdate-spec": "true"
+        }
+      },
+      "spec": {
+        "type": "Limited",
+        "limited": {
+          "nominalConcurrencyShares": 20,
+          "limitResponse": {
+            "type": "Queue",
+            "queuing": {
+              "queues": 128,
+              "handSize": 6,
+              "queueLengthLimit": 50
+            }
+          },
+          "lendablePercent": 50
+        }
+      },
+      "status": {}
+    },
+    {
+      "metadata": {
+        "name": "leader-election",
+        "annotations": {
+          "apf.kubernetes.io/autoupdate-spec": "true"
+        }
+      },
+      "spec": {
+        "type": "Limited",
+        "limited": {
+          "nominalConcurrencyShares": 10,
+          "limitResponse": {
+            "type": "Queue",
+            "queuing": {
+              "queues": 16,
+              "handSize": 4,
+              "queueLengthLimit": 50
+            }
+          },
+          "lendablePercent": 0
+        }
+      },
+      "status": {}
+    },
+    {
+      "metadata": {
+        "name": "node-high",
+        "annotations": {
+          "apf.kubernetes.io/autoupdate-spec": "true"
+        }
+      },
+      "spec": {
+        "type": "Limited",
+        "limited": {
+          "nominalConcurrencyShares": 40,
+          "limitResponse": {
+            "type": "Queue",
+            "queuing": {
+              "queues": 64,
+              "handSize": 6,
+              "queueLengthLimit": 50
+            }
+          },
+          "lendablePercent": 25
+        }
+      },
+      "status": {}
+    },
+    {
+      "metadata": {
+        "name": "system",
+        "annotations": {
+          "apf.kubernetes.io/autoupdate-spec": "true"
+        }
+      },
+      "spec": {
+        "type": "Limited",
+        "limited": {
+          "nominalConcurrencyShares": 30,
+          "limitResponse": {
+            "type": "Queue",
+            "queuing": {
+              "queues": 64,
+              "handSize": 6,
+              "queueLengthLimit": 50
+            }
+          },
+          "lendablePercent": 33
+        }
+      },
+      "status": {}
+    },
+    {
+      "metadata": {
+        "name": "workload-high",
+        "annotations": {
+          "apf.kubernetes.io/autoupdate-spec": "true"
+        }
+      },
+      "spec": {
+        "type": "Limited",
+        "limited": {
+          "nominalConcurrencyShares": 40,
+          "limitResponse": {
+            "type": "Queue",
+            "queuing": {
+              "queues": 128,
+              "handSize": 6,
+              "queueLengthLimit": 50
+            }
+          },
+          "lendablePercent": 50
+        }
+      },
+      "status": {}
+    },
+    {
+      "metadata": {
+        "name": "workload-low",
+        "annotations": {
+          "apf.kubernetes.io/autoupdate-spec": "true"
+        }
+      },
+      "spec": {
+        "type": "Limited",
+        "limited": {
+          "nominalConcurrencyShares": 100,
+          "limitResponse": {
+            "type": "Queue",
+            "queuing": {
+              "queues": 128,
+              "handSize": 6,
+              "queueLengthLimit": 50
+            }
+          },
+          "lendablePercent": 90
+        }
+      },
+      "status": {}
+    }
+  ]
+}
