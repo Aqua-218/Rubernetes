@@ -182,6 +182,8 @@ module Tsdb
     # Cut the head into a block when it has crossed a block boundary, then
     # apply retention.  Call after each scrape; cheap when nothing is due.
     def maintain(now_ms = current_ms)
+      return if @readonly
+
       synchronize do
         # Block cuts happen at most once per block range; between them the
         # scan of the head is skipped entirely.
