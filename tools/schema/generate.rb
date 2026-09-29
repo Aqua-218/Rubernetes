@@ -117,7 +117,7 @@ module RubernetesSchemaGenerator
     private
 
     def parse_object(path)
-      value = JSON.parse(path.binread, create_additions: false, max_nesting: 512)
+      value = JSON.parse(path.binread, max_nesting: 512)
       raise Error, "corpus document must be an object: #{path}" unless value.is_a?(Hash)
 
       value
