@@ -2533,6 +2533,8 @@ module Rubernetes
         @started_at = nil
       end
 
+      attr_reader :metrics
+
       def start
         @mutex.synchronize { raise RuntimeError, "rubernetes-proxy is already started" if @running }
         begin
