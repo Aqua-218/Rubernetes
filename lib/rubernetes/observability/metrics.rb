@@ -39,7 +39,12 @@ module Rubernetes
       DEFAULT_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10].freeze
       UPSTREAM_PATH = File.expand_path("../../../schema/kubernetes/v1.36.2-defaults/metrics.json", __dir__)
       UPSTREAM_TYPES = {"Counter" => :counter, "Gauge" => :gauge, "Histogram" => :histogram,
-                        "TimingRatioHistogram" => :histogram}.freeze
+                        "TimingRatioHistogram" => :histogram, "Summary" => :summary}.freeze
+      # client_golang summaries: the quantiles component-base declares and
+      # the default sliding window (MaxAge 10 minutes).
+      SUMMARY_OBJECTIVES = [0.5, 0.9, 0.99].freeze
+      SUMMARY_MAX_AGE_SECONDS = 600.0
+      SUMMARY_MAX_SAMPLES = 20_000
 
       # The v1.36.2 metric inventory (tools/schema/import_kubernetes_metrics.rb):
       # name => type, help, stability, labels, buckets, components.
