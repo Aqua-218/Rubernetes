@@ -2218,7 +2218,7 @@ module Rubernetes
                 unless host_pid.positive? && host_start_time.positive? && clone_pid == host_pid
                   raise EffectError, "workload readiness identities do not agree"
                 end
-                metadata = JSON.parse(metadata_raw, create_additions: false)
+                metadata = JSON.parse(metadata_raw)
                 raise EffectError, "workload readiness metadata must be an object" unless metadata.is_a?(Hash)
                 # A short-lived command can exit between the bootstrap write
                 # and this read. When it is still live, verify the procfs
