@@ -26,6 +26,42 @@ module Rubernetes
           @mutex = Mutex.new
         end
 
+        # k8s.io/apiserver/plugin/pkg/authorizer/webhook/metrics on the
+        # process-wide registry: every SubjectAccessReview round trip
+        # (result "success", "error" or "timeout") and the ones a NoOpinion
+        # failure policy let through.
+        class << self
+          def registry
+            return nil unless defined?(Rubernetes::Observability::Metrics)
+
+            Rubernetes::Observability::Metrics.global
+          end
+
+          def record_evaluation(name, result, seconds)
+            metrics = registry
+            return unless metrics
+
+            %w[apiserver_authorization_webhook_evaluations_total apiserver_authorization_webhook_evaluations_fail_open_total].each do |metric|
+              metrics.register(metric, type: :counter) unless metrics.registered?(metric)
+            end
+            metrics.register("apiserver_authorization_webhook_duration_seconds", type: :histogram) unless metrics.registered?("apiserver_authorization_webhook_duration_seconds")
+            metrics.increment("apiserver_authorization_webhook_evaluations_total", {"name" => name.to_s, "result" => result})
+            metrics.observe("apiserver_authorization_webhook_duration_seconds", seconds, {"name" => name.to_s, "result" => result})
+          rescue StandardError
+            nil
+          end
+
+          def record_fail_open(name, result)
+            metrics = registry
+            return unless metrics
+
+            metrics.register("apiserver_authorization_webhook_evaluations_fail_open_total", type: :counter) unless metrics.registered?("apiserver_authorization_webhook_evaluations_fail_open_total")
+            metrics.increment("apiserver_authorization_webhook_evaluations_fail_open_total", {"name" => name.to_s, "result" => result})
+          rescue StandardError
+            nil
+          end
+        end
+
         def name
           NAME
         end
