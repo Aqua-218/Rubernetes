@@ -216,6 +216,7 @@ module Rubernetes
             # client-go appends the per-request timeout to the webhook URL.
             target = "#{uri.request_uri}#{uri.query ? "&" : "?"}timeout=#{timeout}s"
               response = http.post(target, payload, {"content-type" => "application/json", "accept" => "application/json"})
+              record_x509(http)
             rescue Net::OpenTimeout, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
               raise if Process.clock_gettime(Process::CLOCK_MONOTONIC) + CONNECT_TIMEOUT >= deadline || attempt >= MAX_CONNECT_ATTEMPTS
 
