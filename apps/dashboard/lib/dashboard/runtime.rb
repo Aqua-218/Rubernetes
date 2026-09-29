@@ -67,7 +67,7 @@ module Dashboard
     end
 
     def store
-      @store ||= Tsdb::Store.new(Config.data_dir, block_range_ms: Config.block_range_ms, retention_ms: Config.retention_ms)
+      memoize(:store) { Tsdb::Store.new(Config.data_dir, block_range_ms: Config.block_range_ms, retention_ms: Config.retention_ms) }
     end
 
     def engine
