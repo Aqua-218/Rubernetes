@@ -925,7 +925,7 @@ module Rubernetes
         end
 
         def parse_json(bytes)
-          ::JSON.parse(bytes.dup.force_encoding(Encoding::UTF_8), create_additions: false,
+          ::JSON.parse(bytes.dup.force_encoding(Encoding::UTF_8),
                                                                  max_nesting: Codec::DEFAULT_MAX_DEPTH)
         rescue ::JSON::ParserError => error
           raise DecodeError, "embedded JSON is invalid: #{error.message}"
