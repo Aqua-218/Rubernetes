@@ -2714,7 +2714,11 @@ module Rubernetes
         @component_server = nil
         @proxy&.stop_watch if @proxy&.respond_to?(:stop_watch)
         @proxy&.stop_health_check_responder if @proxy&.respond_to?(:stop_health_check_responder)
-        @proxy&.backend.detach if @proxy&.respond_to?(:backend) && @proxy.backend.respond_to?(:detach)
+        if @proxy&.respond_to?(:detach_backend)
+          @proxy.detach_backend
+        elsif @proxy&.respond_to?(:backend) && @proxy.backend.respond_to?(:detach)
+          @proxy.backend.detach
+        end
         @subscriptions = []
       rescue StandardError => error
         log(:error, "process.stop_failed", component: "proxy", reason: reason, error: error)
