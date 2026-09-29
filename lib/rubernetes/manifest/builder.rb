@@ -17,8 +17,8 @@ module Rubernetes
       attr_reader :result
 
       def self.load(registry_path:, openapi_path:)
-        registry = JSON.parse(File.binread(registry_path), create_additions: false, max_nesting: 512)
-        openapi = JSON.parse(File.binread(openapi_path), create_additions: false, max_nesting: 512)
+        registry = JSON.parse(File.binread(registry_path), max_nesting: 512)
+        openapi = JSON.parse(File.binread(openapi_path), max_nesting: 512)
         new(registry: registry, definitions: openapi.fetch("definitions"))
       rescue JSON::ParserError, KeyError => error
         raise Error.new("cannot load generated manifest schema: #{error.message}"), cause: error
