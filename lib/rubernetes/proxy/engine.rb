@@ -697,6 +697,7 @@ module Rubernetes
 
       def apply_endpoint_slice(value)
         slice = value.is_a?(EndpointSlice) ? value : EndpointSlice.new(value)
+        @metrics&.endpoint_changed(trigger_time: slice_trigger_time(slice))
         @endpoint_store.apply_endpoint_slice(slice)
         service = @endpoint_store.service(slice.key)
         compile_service(service) if service && !@endpoint_store_subscribed
