@@ -102,7 +102,7 @@ module Rubernetes
             lines = content.each_line.filter_map do |line|
               next if line.strip.empty?
 
-              JSON.parse(line, create_additions: false)
+              JSON.parse(line)
             end
             {"schema" => TRACE_SCHEMA, "events" => lines}
           end
