@@ -1,0 +1,1137 @@
+[
+  {
+    "name": "affinity_merge",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "affinity": {
+          "podAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "labelSelector": {
+                  "matchLabels": {
+                    "app": "web"
+                  }
+                },
+                "matchLabelKeys": [
+                  "tier"
+                ],
+                "mismatchLabelKeys": [
+                  "app2"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "affinity_mismatch_merge",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "track": "canary"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "affinity": {
+          "podAntiAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "labelSelector": {
+                  "matchLabels": {
+                    "app": "web"
+                  }
+                },
+                "mismatchLabelKeys": [
+                  "track"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "affinity_missing_label",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "affinity": {
+          "podAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "labelSelector": {
+                  "matchLabels": {
+                    "app": "web"
+                  }
+                },
+                "matchLabelKeys": [
+                  "absent"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "affinity_nil_selector",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "affinity": {
+          "podAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "matchLabelKeys": [
+                  "tier"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "affinity_dup_matchlabels",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "affinity": {
+          "podAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "labelSelector": {
+                  "matchLabels": {
+                    "app": "web"
+                  }
+                },
+                "matchLabelKeys": [
+                  "app"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "affinity_dup_expression",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "affinity": {
+          "podAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "labelSelector": {
+                  "matchExpressions": [
+                    {
+                      "key": "tier",
+                      "operator": "In",
+                      "values": [
+                        "x"
+                      ]
+                    }
+                  ]
+                },
+                "matchLabelKeys": [
+                  "tier"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "affinity_match_mismatch_dup",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "affinity": {
+          "podAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "labelSelector": {
+                  "matchLabels": {
+                    "app": "web"
+                  }
+                },
+                "matchLabelKeys": [
+                  "tier"
+                ],
+                "mismatchLabelKeys": [
+                  "tier"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "affinity_bad_key",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "affinity": {
+          "podAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "labelSelector": {
+                  "matchLabels": {
+                    "app": "web"
+                  }
+                },
+                "matchLabelKeys": [
+                  "-bad"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "affinity_preferred",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "affinity": {
+          "podAffinity": {
+            "preferredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "weight": 10,
+                "podAffinityTerm": {
+                  "topologyKey": "kubernetes.io/hostname",
+                  "labelSelector": {
+                    "matchLabels": {
+                      "app": "web"
+                    }
+                  },
+                  "matchLabelKeys": [
+                    "tier"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "affinity_preferred_dup",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "affinity": {
+          "podAntiAffinity": {
+            "preferredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "weight": 10,
+                "podAffinityTerm": {
+                  "topologyKey": "kubernetes.io/hostname",
+                  "labelSelector": {
+                    "matchLabels": {
+                      "app": "web"
+                    }
+                  },
+                  "matchLabelKeys": [
+                    "app"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "spread_merge",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "labelSelector": {
+              "matchLabels": {
+                "app": "web"
+              }
+            },
+            "matchLabelKeys": [
+              "tier"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "spread_dup_matchlabels",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "labelSelector": {
+              "matchLabels": {
+                "app": "web"
+              }
+            },
+            "matchLabelKeys": [
+              "app"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "spread_dup_expression",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "labelSelector": {
+              "matchExpressions": [
+                {
+                  "key": "tier",
+                  "operator": "Exists"
+                }
+              ]
+            },
+            "matchLabelKeys": [
+              "tier"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "spread_nil_selector",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "matchLabelKeys": [
+              "tier"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "spread_bad_key",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "labelSelector": {
+              "matchLabels": {
+                "app": "web"
+              }
+            },
+            "matchLabelKeys": [
+              "bad key"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "spread_missing_label",
+    "mode": "create",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "labelSelector": {
+              "matchLabels": {
+                "app": "web"
+              }
+            },
+            "matchLabelKeys": [
+              "absent",
+              "tier"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "update_merged",
+    "mode": "update",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "labelSelector": {
+              "matchLabels": {
+                "app": "web"
+              },
+              "matchExpressions": [
+                {
+                  "key": "tier",
+                  "operator": "In",
+                  "values": [
+                    "front"
+                  ]
+                }
+              ]
+            },
+            "matchLabelKeys": [
+              "tier"
+            ]
+          }
+        ]
+      }
+    },
+    "old": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "labelSelector": {
+              "matchLabels": {
+                "app": "web"
+              },
+              "matchExpressions": [
+                {
+                  "key": "tier",
+                  "operator": "In",
+                  "values": [
+                    "front"
+                  ]
+                }
+              ]
+            },
+            "matchLabelKeys": [
+              "tier"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "update_old_violates",
+    "mode": "update",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "labelSelector": {
+              "matchExpressions": [
+                {
+                  "key": "tier",
+                  "operator": "In",
+                  "values": [
+                    "front"
+                  ]
+                },
+                {
+                  "key": "tier",
+                  "operator": "In",
+                  "values": [
+                    "front"
+                  ]
+                }
+              ]
+            },
+            "matchLabelKeys": [
+              "tier"
+            ]
+          }
+        ]
+      }
+    },
+    "old": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "labelSelector": {
+              "matchExpressions": [
+                {
+                  "key": "tier",
+                  "operator": "In",
+                  "values": [
+                    "front"
+                  ]
+                },
+                {
+                  "key": "tier",
+                  "operator": "In",
+                  "values": [
+                    "front"
+                  ]
+                }
+              ]
+            },
+            "matchLabelKeys": [
+              "tier"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "template_dup_matchlabels",
+    "mode": "template",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "affinity": {
+          "podAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "labelSelector": {
+                  "matchLabels": {
+                    "app": "web"
+                  }
+                },
+                "matchLabelKeys": [
+                  "app"
+                ]
+              }
+            ]
+          }
+        },
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "labelSelector": {
+              "matchLabels": {
+                "app": "web"
+              }
+            },
+            "matchLabelKeys": [
+              "app"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "template_dup_expression",
+    "mode": "template",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "labelSelector": {
+              "matchExpressions": [
+                {
+                  "key": "tier",
+                  "operator": "In",
+                  "values": [
+                    "a"
+                  ]
+                }
+              ]
+            },
+            "matchLabelKeys": [
+              "tier"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "template_ok",
+    "mode": "template",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "affinity": {
+          "podAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+              {
+                "topologyKey": "kubernetes.io/hostname",
+                "labelSelector": {
+                  "matchLabels": {
+                    "app": "web"
+                  }
+                },
+                "matchLabelKeys": [
+                  "pod-template-hash"
+                ]
+              }
+            ]
+          }
+        },
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "labelSelector": {
+              "matchLabels": {
+                "app": "web"
+              }
+            },
+            "matchLabelKeys": [
+              "pod-template-hash"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "template_nil_selector",
+    "mode": "template",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "p",
+        "namespace": "ns",
+        "labels": {
+          "app": "web",
+          "tier": "front"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "c",
+            "image": "i",
+            "imagePullPolicy": "IfNotPresent",
+            "terminationMessagePolicy": "File"
+          }
+        ],
+        "restartPolicy": "Always",
+        "dnsPolicy": "ClusterFirst",
+        "topologySpreadConstraints": [
+          {
+            "maxSkew": 1,
+            "topologyKey": "zone",
+            "whenUnsatisfiable": "DoNotSchedule",
+            "matchLabelKeys": [
+              "x"
+            ]
+          }
+        ]
+      }
+    }
+  }
+]
