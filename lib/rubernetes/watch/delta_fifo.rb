@@ -284,6 +284,7 @@ module Rubernetes
         return if @queued.key?(key)
 
         @queued[key] = true
+        @enqueued_at[key] = @clock.call
         @order << key
       end
 
