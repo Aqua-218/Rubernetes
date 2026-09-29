@@ -2352,7 +2352,12 @@ module Rubernetes
         while (item = @bind_queue.pop)
           break if item == :stop
 
-          complete_binding(*item)
+          @scheduler_metrics&.goroutine_started(Scheduler::Metrics::GOROUTINE_BINDING)
+          begin
+            complete_binding(*item)
+          ensure
+            @scheduler_metrics&.goroutine_finished(Scheduler::Metrics::GOROUTINE_BINDING)
+          end
         end
       end
 
