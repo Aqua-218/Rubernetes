@@ -932,7 +932,7 @@ def build_validation_list_fixture(codec:, mapping:, raw_json:, types_by_schema:,
   list_gvk = mapping.fetch("list_gvk")
   wrap = lambda do |item_json|
     JSON.generate("apiVersion" => validation_owner_api_version(list_gvk), "kind" => list_gvk.fetch("kind"), "metadata" => {},
-                  "items" => [JSON.parse(item_json, create_additions: false)])
+                  "items" => [JSON.parse(item_json)])
   end
   prefix = lambda do |errors|
     Array(errors).map { |error| error.merge("field" => "items[0].#{error["field"]}") }
