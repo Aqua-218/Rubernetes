@@ -19,6 +19,7 @@ Bundler.require(*Rails.groups)
 # that lives two directories up; no gem build is involved.
 RUBERNETES_LIB = File.expand_path("../../../lib", __dir__)
 $LOAD_PATH.unshift(RUBERNETES_LIB) unless $LOAD_PATH.include?(RUBERNETES_LIB)
+require_relative "../lib/dashboard/config"
 
 module Dashboard
   class Application < Rails::Application
