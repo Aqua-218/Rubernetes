@@ -18,7 +18,7 @@ module M3EffectControl
   module_function
 
   def run
-    request = JSON.parse($stdin.read, create_additions: false, max_nesting: 128)
+    request = JSON.parse($stdin.read, max_nesting: 128)
     raise ArgumentError, "effect control request must be an object" unless request.is_a?(Hash)
     raise ArgumentError, "effect control request schema_version must be 1" unless request["schema_version"] == 1
 
