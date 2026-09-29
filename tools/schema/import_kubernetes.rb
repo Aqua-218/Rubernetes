@@ -1009,7 +1009,7 @@ module KubernetesCorpusImporter
     end
 
     def parse_json_bytes!(bytes, label)
-      JSON.parse(bytes, object_class: DuplicateCheckingHash, create_additions: false, allow_nan: false)
+      JSON.parse(bytes, object_class: DuplicateCheckingHash, allow_nan: false)
     rescue DuplicateKeyError => error
       raise ValidationError, "#{label} contains #{error.message}"
     rescue JSON::ParserError => error
