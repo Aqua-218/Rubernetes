@@ -2018,7 +2018,7 @@ module M2Gate
             errors << "kernel inventory profile #{index} actual Native workload security evidence is required"
           else
             begin
-              child = JSON.parse(child_object.fetch("active"), create_additions: false)
+              child = JSON.parse(child_object.fetch("active"))
               errors << "kernel inventory profile #{index} actual workload PID is required" unless
                 child["pid"].is_a?(Integer) && child["pid"].positive?
               errors << "kernel inventory profile #{index} actual workload start time is required" unless
