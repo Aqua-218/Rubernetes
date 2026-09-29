@@ -213,7 +213,7 @@ module M1KubernetesOracle
       result = run("docker", "image", "inspect", reference, "--format", "{{json .RepoDigests}}")
       raise Error, "required oracle image is unavailable: #{reference}" unless result.success?
 
-      digests = JSON.parse(result.stdout, create_additions: false)
+      digests = JSON.parse(result.stdout)
       raise Error, "oracle image digest mismatch for #{reference}" unless Array(digests).include?(reference)
     rescue JSON::ParserError => error
       raise Error, "cannot verify oracle image digest for #{reference}: #{error.message}"
