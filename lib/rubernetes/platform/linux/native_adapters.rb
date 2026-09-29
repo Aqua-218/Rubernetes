@@ -612,7 +612,7 @@ module Rubernetes
             payload = reader.read
             reader.close
             _pid, status = Process.waitpid2(helper_pid)
-            document = payload.to_s.empty? ? nil : JSON.parse(payload, create_additions: false)
+            document = payload.to_s.empty? ? nil : JSON.parse(payload)
             raise EffectError, "namespace helper timed out" if status.exitstatus == 124
             raise EffectError, "namespace helper failed: #{document ? document["error"] : "exit #{status.exitstatus || 128 + status.termsig.to_i}"}" unless status.success? && document && document["ok"] == true
 
