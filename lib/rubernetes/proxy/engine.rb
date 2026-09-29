@@ -687,6 +687,7 @@ module Rubernetes
         key = value.is_a?(Service) ? value.key : normalize_service_key(value, namespace: namespace)
         service = @endpoint_store.service(key)
         @node_port_allocator.release(service_key: key) if service&.node_port?
+        @metrics&.service_changed if service
         @endpoint_store.delete_service(key)
         @mutex.synchronize { @compiled.delete(key) }
         schedule_publish
