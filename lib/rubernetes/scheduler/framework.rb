@@ -624,6 +624,7 @@ module Rubernetes
                                reservation: reservation)
           rescue StandardError => error
             @batch&.failed(cycle)
+            unreserve_started = monotonic
             rollback!(reservation, typed_pod, selected.node, error, context: context, trace: trace)
             status = requeue_after_failure(typed_pod, error)
             ScheduleResult.new(status: status, pod: typed_pod, node: selected.node,
