@@ -606,6 +606,12 @@ module Rubernetes
       # event never arrived, the compiler produced no rule or the datapath
       # rejected it; this tells them apart on a live node.
       attr_accessor :trace
+      # Proxy::Metrics (kubeproxy_*); nil records nothing.
+      attr_reader :metrics
+
+      def metrics=(observer)
+        @metrics = observer
+      end
 
       def initialize(local_node: nil, node_name: nil, node: nil, node_addresses: [], node_ips: nil,
                      node_zone: nil, zone: nil,
