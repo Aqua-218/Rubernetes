@@ -175,6 +175,10 @@ module Rubernetes
                  end
             {"id" => message["id"], "ok" => ok}
           rescue StandardError => error
+            # kubelet_pod_resources_endpoint_errors_{list,get_allocatable}: a
+            # call that failed (Get counts its own not-found).
+            count("kubelet_pod_resources_endpoint_errors_list") if message["method"] == "List"
+            count("kubelet_pod_resources_endpoint_errors_get_allocatable") if message["method"] == "GetAllocatableResources"
             {"id" => message["id"], "error" => error.message}
           end
           @mutex.synchronize { @stdin.write(JSON.generate(reply) + "\n") if @pid }
