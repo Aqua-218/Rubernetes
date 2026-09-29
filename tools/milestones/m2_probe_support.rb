@@ -57,7 +57,7 @@ module M2ProbeSupport
     def publish(pod, type: "ADDED")
       @mutex.synchronize do
         @resource_version += 1
-        value = JSON.parse(JSON.generate(pod), create_additions: false)
+        value = JSON.parse(JSON.generate(pod))
         value["metadata"] ||= {}
         value["metadata"]["resourceVersion"] = @resource_version.to_s
         @pods.reject! { |item| item.dig("metadata", "uid") == value.dig("metadata", "uid") }
