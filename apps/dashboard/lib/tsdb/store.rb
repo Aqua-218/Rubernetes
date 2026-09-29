@@ -76,6 +76,13 @@ module Tsdb
         @last_value = value
       end
 
+      def close_encoder
+        return if @encoder.nil?
+
+        @chunks << ClosedChunk.new(@encoder.bytes, @encoder.min_time, @encoder.max_time, @encoder.count)
+        @encoder = nil
+      end
+
       def samples
         list = @chunks.flat_map { |bytes| Prom::Gorilla.decode(bytes) }
         list.concat(Prom::Gorilla.decode(@encoder.bytes)) if @encoder
