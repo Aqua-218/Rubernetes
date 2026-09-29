@@ -179,7 +179,10 @@ module Rubernetes
       alias requeue enqueue
       alias push enqueue
 
-      def enqueue_unschedulable(pod, reason:)
+      # +gated+: rejected by a PreEnqueue plugin (never attempted);
+      # +plugins+: the Filter/PostFilter plugins that found it unschedulable
+      # (scheduler_unschedulable_pods); +event+: what moved it.
+      def enqueue_unschedulable(pod, reason:, gated: false, plugins: [], event: EVENT_ATTEMPT_FAILURE)
         typed = pod.is_a?(Pod) ? pod : Pod.new(pod)
         key = identity_key(typed)
         item = @mutex.synchronize do
