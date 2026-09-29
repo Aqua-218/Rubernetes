@@ -386,7 +386,7 @@ module M2KubernetesLifecycleOracle
                            "external lifecycle oracle command returned no JSON")
     end
 
-    parsed = JSON.parse(raw_output, create_additions: false, max_nesting: 512)
+    parsed = JSON.parse(raw_output, max_nesting: 512)
     normalize_external_report(
       parsed,
       request: request,
