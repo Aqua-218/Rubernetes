@@ -489,7 +489,7 @@ module Rubernetes
                                    monotonic - gate_started)
           unless gate_result == true
             reason = gate_result.fetch("reason", "pod is not ready for scheduling")
-            queue.enqueue_unschedulable(typed_pod, reason: reason)
+            queue.enqueue_unschedulable(typed_pod, reason: reason, gated: true, plugins: [gate_result["plugin"]].compact)
             return ScheduleResult.new(status: :unschedulable, pod: typed_pod, filtered: {},
                                        scores: [], victims: [], trace: trace, reason: reason, gated: true)
           end
