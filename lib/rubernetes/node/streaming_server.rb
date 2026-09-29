@@ -724,6 +724,7 @@ module Rubernetes
             registry.register("kubelet_volume_stats_health_status_abnormal", type: :gauge) unless registry.registered?("kubelet_volume_stats_health_status_abnormal")
             registry.set("kubelet_volume_stats_health_status_abnormal", abnormal, labels)
           end
+          container_log_metrics(registry, pod)
         end
       rescue StandardError => error
         @logger&.warn("node.volume_metrics.failed", error: error.class.name, message: error.message) if @logger.respond_to?(:warn)
