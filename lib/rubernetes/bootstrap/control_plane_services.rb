@@ -1580,6 +1580,12 @@ module Rubernetes
         metrics = Observability::Metrics.new(apiserver: false, component: "kube-scheduler")
         metrics.add_collector do |registry|
           registry.set("leader_election_master_status", @elector&.leader? ? 1 : 0, {"name" => "kube-scheduler"})
+          observer = @scheduler_metrics
+          next unless observer
+
+          observer.cache_size("nodes", @mutex.synchronize { @nodes.length })
+          observer.cache_size("pods", @mutex.synchronize { @pods.length })
+          observer.cache_size("assumed_pods", @mutex.synchronize { @assumed_pods&.length || 0 })
         end
         metrics
       end
