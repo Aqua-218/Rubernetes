@@ -1959,7 +1959,7 @@ module Rubernetes
 
       def delete_node(object)
         name = Scheduler::Node.new(object).name
-        @mutex.synchronize { @nodes.delete(name) }
+        timed_event("NodeDelete") { @mutex.synchronize { @nodes.delete(name) } }
       end
 
       # Accepts a raw object or a typed Node snapshot.
