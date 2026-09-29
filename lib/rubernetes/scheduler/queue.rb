@@ -467,6 +467,7 @@ module Rubernetes
           next if @pending.key?(key)
 
           @pending[key] = item
+          incoming(EVENT_BACKOFF_COMPLETE, "active")
         end
         enforce_capacity!
         ready.map { |_key, (item, _ready_at)| item }
