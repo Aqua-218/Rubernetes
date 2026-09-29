@@ -169,6 +169,7 @@ module Rubernetes
         raise BindingError, "no pod volume found for node #{node.name.inspect}" if podvolumes.nil?
         raise BindingError, "binding volumes: no API is configured" if @api.nil?
 
+        @metrics&.volume_binder_cache_request("bind")
         bind_api_update(podvolumes)
         forget(pod)
         if @defer_wait
