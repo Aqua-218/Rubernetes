@@ -1008,7 +1008,7 @@ module M3ControlPlaneChaosRunner
       raw_sha256 = Digest::SHA256.hexdigest(stdout.to_s)
       raise "external chaos control failed: #{stderr.to_s.strip.empty? ? "exit status #{status.exitstatus || 1}" : stderr.to_s.strip}" unless status.success?
 
-      result = JSON.parse(stdout, create_additions: false, max_nesting: 512)
+      result = JSON.parse(stdout, max_nesting: 512)
       raise "external chaos control must return an object" unless result.is_a?(Hash)
       result["raw_trace_sha256"] ||= raw_sha256
       result["control_command"] ||= command
