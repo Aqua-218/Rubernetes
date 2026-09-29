@@ -98,7 +98,7 @@ class M1ApiEvidenceGateTest < Minitest::Test
     )
     assert_empty(valid_errors)
 
-    forged = JSON.parse(JSON.generate(entry), create_additions: false)
+    forged = JSON.parse(JSON.generate(entry))
     forged.fetch("expected")["scope"] = "Cluster"
     forged.fetch("oracle")["fields"]["scope"] = "Cluster"
     forged.fetch("oracle")["sha256"] = M1Gate.canonical_document_digest(forged.dig("oracle", "fields"))
