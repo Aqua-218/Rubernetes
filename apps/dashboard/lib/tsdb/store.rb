@@ -99,6 +99,11 @@ module Tsdb
 
     attr_reader :dir, :block_range_ms, :retention_ms
 
+    class AlreadyOpen < StandardError; end
+
+    OPEN_WRITERS = {}
+    OPEN_WRITERS_LOCK = Mutex.new
+
     def self.stale_marker?(value)
       value.is_a?(Float) && value.nan? && [value].pack("G").unpack1("Q>") == STALE_NAN_BITS
     end
