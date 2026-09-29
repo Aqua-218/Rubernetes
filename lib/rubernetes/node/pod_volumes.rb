@@ -50,6 +50,12 @@ module Rubernetes
         end
       end
 
+      # The volume manager's startup reconstruction counts, for
+      # reconstruct_volume_operations_total.
+      def reconstruction_stats
+        @volume.respond_to?(:reconstruction_stats) ? @volume.reconstruction_stats : nil
+      end
+
       def initialize(volume:, reader: nil, node_name: nil, root: nil, clock: -> { Time.now.utc },
                      node_allocatable: nil)
         raise ArgumentError, "volume manager is required" unless volume
