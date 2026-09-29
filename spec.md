@@ -1,0 +1,31 @@
+# Rubernetes 仕様・設計書
+
+Rubernetes の規範仕様と設計書は、複数文書からなる [`spec/`](spec/README.md) を正本とする。
+本ファイルは、従来の `spec.md` 参照とIDEの入口を維持するための案内ページである。
+
+## Start Here
+
+- [仕様・設計書インデックス](spec/README.md)
+- [目的・Kubernetes互換性・完成条件](spec/foundation/goals-and-compatibility.md)
+- [全体アーキテクチャ](spec/foundation/architecture.md)
+- [Ruby Design](spec/ruby/README.md)
+- [マイルストーンと完了証拠](spec/delivery/milestones.md)
+- [Kubernetes互換性試験](spec/verification/kubernetes-compatibility.md)
+- [Project Structure](spec/delivery/project-structure.md)
+- [実装計画と受け入れ基準](spec/delivery/implementation-plan.md)
+- [構成図集](spec/diagrams/README.md)
+
+## Normative Status
+
+- Version: 0.2
+- Status: 実装基準ドラフト
+- Normative source: [`spec/`](spec/README.md)
+- Kubernetes compatibility target: v1.36.2
+
+個別文書間の優先順位、MUST/SHOULD/MAY、固定外部仕様の扱いは、
+[文書規約](spec/foundation/document-conventions.md)に従う。
+
+## Related
+
+- [外部仕様と参考資料](spec/references.md)
+- [検証戦略](spec/verification/README.md)
