@@ -1,0 +1,22 @@
+<% content_for :title, "Nodes" %>
+<h1>Nodes</h1>
+<table>
+  <thead><tr><th>Name</th><th>Status</th><th>Version</th><th>Internal IP</th><th>OS / kernel</th><th class="num">Pods</th><th class="num">CPU</th><th class="num">Memory</th><th>Age</th></tr></thead>
+  <tbody>
+    <% @nodes.each do |node| %>
+      <% name = node.dig("metadata", "name") %>
+      <% ready = Array(node.dig("status", "conditions")).find { |c| c["type"] == "Ready" } %>
+      <tr>
+        <td><%= link_to name, node_path(name) %></td>
+        <td><%= badge(ready && ready["status"] == "True" ? "Ready" : "NotReady") %></td>
+        <td class="mono"><%= node.dig("status", "nodeInfo", "kubeletVersion") %></td>
+        <td class="mono"><%= Array(node.dig("status", "addresses")).find { |a| a["type"] == "InternalIP" }&.dig("address") %></td>
+        <td class="muted"><%= node.dig("status", "nodeInfo", "osImage") %> / <%= node.dig("status", "nodeInfo", "kernelVersion") %></td>
+        <td class="num"><%= @pods_by_node[name]&.length.to_i %></td>
+        <td class="num"><%= node.dig("status", "allocatable", "cpu") %></td>
+        <td class="num"><%= node.dig("status", "allocatable", "memory") %></td>
+        <td class="muted"><%= time_ago(node.dig("metadata", "creationTimestamp")) %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
