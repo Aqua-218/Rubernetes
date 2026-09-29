@@ -704,6 +704,19 @@ module Rubernetes
         slice
       end
 
+      # The EndpointSlice's endpoints.kubernetes.io/last-change-trigger-time
+      # annotation (what kubeproxy_network_programming_duration_seconds is
+      # measured from), nil when absent or unparsable.
+      def slice_trigger_time(slice)
+        raw = slice.respond_to?(:raw) ? slice.raw : nil
+        annotations = raw.is_a?(Hash) ? ((raw["metadata"] || raw[:metadata] || {})["annotations"] || {}) : {}
+        value = annotations[Metrics::LAST_CHANGE_TRIGGER_TIME]
+        value && Time.iso8601(value.to_s)
+      rescue ArgumentError, TypeError
+        nil
+      end
+      private :slice_trigger_time
+
       alias upsert_endpoint_slice apply_endpoint_slice
       alias add_endpoint_slice apply_endpoint_slice
       alias apply_slice apply_endpoint_slice
