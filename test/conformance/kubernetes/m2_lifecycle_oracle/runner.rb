@@ -78,7 +78,7 @@ module M2KubernetesLifecycleOracleRunner
   end
 
   def read_request
-    request = JSON.parse($stdin.read, create_additions: false, max_nesting: 512)
+    request = JSON.parse($stdin.read, max_nesting: 512)
     unless request.is_a?(Hash) && request["schema_version"] == 1 &&
            request["suite"] == "m2-kubernetes-lifecycle-oracle" &&
            request["kubernetes_version"] == M2KubernetesLifecycleOracle::KUBERNETES_VERSION &&
