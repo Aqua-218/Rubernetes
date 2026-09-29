@@ -171,6 +171,7 @@ module Rubernetes
           if pod_usage
             entry["cpu"] = cpu_stats("pod/#{uid}", pod_usage["cpu"], stamp) if pod_usage["cpu"]
             entry["memory"] = memory_stats(pod_usage["memory.current"], pod_usage["memory"], stamp) if pod_usage["memory"]
+            entry["swap"] = swap_stats(pod_usage, stamp) if pod_usage.key?("memory.swap.current")
             entry["process_stats"] = {"process_count" => Integer(pod_usage["pids.current"])} if pod_usage["pids.current"]
           end
           volumes = volume_stats(record, stamp)
