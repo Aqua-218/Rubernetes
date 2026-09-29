@@ -1,0 +1,24 @@
+<table>
+  <thead>
+    <tr>
+      <% if show_namespace %><th>Namespace</th><% end %>
+      <th>Name</th><th>Ready</th><th>Status</th><th class="num">Restarts</th><th>IP</th><th>Node</th><th>Age</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% if pods.empty? %><tr><td colspan="8" class="muted">No pods</td></tr><% end %>
+    <% pods.each do |pod| %>
+      <% ns = pod.dig("metadata", "namespace") %>
+      <tr>
+        <% if show_namespace %><td><%= link_to ns, namespace_path(ns) %></td><% end %>
+        <td><%= link_to pod.dig("metadata", "name"), namespace_pod_path(ns, pod.dig("metadata", "name")) %></td>
+        <td><%= pod_ready(pod) %></td>
+        <td><%= badge(pod_status(pod)) %></td>
+        <td class="num"><%= pod_restarts(pod) %></td>
+        <td class="mono"><%= pod.dig("status", "podIP") %></td>
+        <td><% if pod.dig("spec", "nodeName") %><%= link_to pod.dig("spec", "nodeName"), node_path(pod.dig("spec", "nodeName")) %><% end %></td>
+        <td class="muted"><%= time_ago(pod.dig("metadata", "creationTimestamp")) %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
