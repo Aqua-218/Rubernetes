@@ -115,6 +115,10 @@ module Rubernetes
       private :fetch_node_hint
 
       # StoreScheduleResults.  +ranked+: the other feasible nodes, best first.
+      # scheduler_batch_attempts_total counts a cycle that was given a hint
+      # ("hit": the hinted node won, "miss": another node did);
+      # scheduler_pod_scheduled_after_flush_total the first Pod scheduled
+      # after the cache was flushed.
       def store(signature, hinted, chosen, ranked, cycle)
         @mutex.synchronize do
           @last_cycle = {cycle: cycle, chosen: chosen}
