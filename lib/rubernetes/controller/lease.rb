@@ -174,6 +174,12 @@ module Rubernetes
         holder = Support.value(Support.spec(cached), "holderIdentity", nil).to_s
         return nil unless holder == identity
 
+        # isLeaseValid: only while the cached record has not expired; an
+        # expired one may already belong to somebody else, which only the
+        # slow path's read can tell.
+        renewed_at = Support.parse_time(Support.value(Support.spec(cached), "renewTime", nil))
+        return nil if renewed_at.nil? || now - renewed_at >= lease_duration_seconds
+
         result = renew(now, cached)
         return result unless result == :contended
 
