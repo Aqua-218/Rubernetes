@@ -233,6 +233,7 @@ module Rubernetes
           path = mount.is_a?(Hash) ? mount["path"] : nil
           next if path.nil? || !File.directory?(path)
 
+          collection_started = @monotonic.call
           driver_stats = csi_volume_stats(mount["id"], path, stamp)
           next if driver_stats == :unsupported
 
