@@ -39,4 +39,8 @@ Rails.application.configure do
 
   # Raise error when a before_action's only/except options reference missing actions.
   config.action_controller.raise_on_missing_callback_actions = true
+
+  # Integration tests address the app as www.example.com; the real host list
+  # (Dashboard::Config.allowed_hosts) stays in force for everything else.
+  config.hosts << "www.example.com"
 end
