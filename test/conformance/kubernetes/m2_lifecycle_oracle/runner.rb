@@ -61,7 +61,7 @@ module M2KubernetesLifecycleOracleRunner
       raise M2KubernetesLifecycleOracle::OracleError,
             "privileged lifecycle harness failed: #{detail.empty? ? "exit status #{harness_status.exitstatus || 1}" : detail}"
     end
-    harness = JSON.parse(harness_output, create_additions: false, max_nesting: 512)
+    harness = JSON.parse(harness_output, max_nesting: 512)
     response = normalize_harness(harness, request, runtime, lock_status.fetch("lock"), image, harness_identity)
     [response, response.fetch("passed") ? 0 : 1]
   rescue JSON::ParserError => error
