@@ -480,7 +480,7 @@ module Rubernetes
       def observe(name, value, labels = {})
         @mutex.synchronize do
           metric = @metrics[name]
-          return self unless metric && metric.type == :histogram
+          return self unless metric && %i[histogram summary].include?(metric.type)
 
           key = label_key(labels)
           entry = metric.values[key] ||= {buckets: Hash.new(0), sum: 0.0, count: 0}
