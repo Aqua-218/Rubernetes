@@ -1096,6 +1096,8 @@ module Rubernetes
       # itself back after failing to commit a diff.
       def publish_rules
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        full = false
+        failed = false
         @publish_mutex.synchronize do
           all_rules = @mutex.synchronize { @compiled.values.flat_map(&:rules) }
           diff = @rule_set.apply(all_rules, revision: @endpoint_store.revision)
