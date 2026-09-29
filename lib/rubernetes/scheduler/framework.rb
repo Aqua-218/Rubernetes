@@ -1122,6 +1122,21 @@ module Rubernetes
         end
       end
 
+      # framework.Status code of a plugin's answer.
+      def plugin_status(output)
+        case output
+        when true, nil then Metrics::STATUS_SUCCESS
+        when false then Metrics::STATUS_UNSCHEDULABLE
+        when Rejection, FilterResult
+          code = output.respond_to?(:code) ? output.code.to_s : ""
+          code.empty? ? Metrics::STATUS_UNSCHEDULABLE : code
+        when Hash
+          output["accepted"] == false ? (output["code"] || Metrics::STATUS_UNSCHEDULABLE).to_s : Metrics::STATUS_SUCCESS
+        else
+          output.equal?(Scores::SKIP) ? Metrics::STATUS_SKIP : Metrics::STATUS_SUCCESS
+        end
+      end
+
       def normalize_filter_result(output, plugin)
         case output
         when true
