@@ -585,6 +585,7 @@ module Rubernetes
           end
 
           victims = []
+          score_started = monotonic
           begin
             breakdowns = score_nodes(typed_pod, candidates, context, trace)
           rescue StandardError
