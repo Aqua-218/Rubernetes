@@ -1036,6 +1036,17 @@ module Rubernetes
         @pod_volumes.metrics_observer = ->(plugin, operation, status, seconds) { observer.storage_operation(plugin, operation, status, seconds) }
       end
 
+      # reconstruct_volume_operations_total: what the volume manager rebuilt
+      # from its durable state when it started.
+      def report_volume_reconstruction(observer)
+        return unless observer.respond_to?(:volume_reconstruction) && @pod_volumes.respond_to?(:reconstruction_stats)
+
+        stats = @pod_volumes.reconstruction_stats
+        observer.volume_reconstruction(stats[:attempted], stats[:errors]) if stats
+      rescue StandardError
+        nil
+      end
+
       # A backoff ended between two periodic syncs (every five seconds) and the
       # restart waited for the next one: 2-5 s on top of each of kubelet's
       # 10/20/40 s delays ("Probing container should have monotonically
