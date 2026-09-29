@@ -588,7 +588,7 @@ module M2LifecycleOracleHarness
 
     def verify_cluster_identity!
       version, = kubectl("version", "-o", "json")
-      server = JSON.parse(version, create_additions: false)["serverVersion"] || {}
+      server = JSON.parse(version)["serverVersion"] || {}
       raise HarnessError, "kube-apiserver reports #{server["gitVersion"]} at #{server["gitCommit"]} (#{server["gitTreeState"]}), expected #{KUBERNETES_VERSION} at #{KUBERNETES_SOURCE_COMMIT}" unless
         server["gitVersion"] == KUBERNETES_VERSION && server["gitCommit"] == KUBERNETES_SOURCE_COMMIT && server["gitTreeState"] == "clean"
       kubelet, = node_exec("kubelet", "--version")
