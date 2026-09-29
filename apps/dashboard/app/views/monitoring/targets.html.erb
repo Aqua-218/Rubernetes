@@ -1,0 +1,28 @@
+<% content_for :title, "Targets" %>
+<h1>Targets</h1>
+<p class="muted">
+  Collector <%= @collector.running? ? badge("running", "ok") : badge("stopped", "bad") %> ·
+  last round <%= @collector.last_round_at ? Time.at(@collector.last_round_at / 1000.0).utc.strftime("%H:%M:%S UTC") : "never" %> ·
+  interval <%= @collector.interval_seconds %>s
+  <% if @collector.discovery_error %> · <span class="graph-error">discovery: <%= @collector.discovery_error %></span><% end %>
+</p>
+<% if @statuses.empty? %><div class="card">No targets scraped yet.</div><% end %>
+<% @by_job.each do |job, statuses| %>
+  <h2><%= job %> (<%= statuses.count { |s| s.health == "up" } %>/<%= statuses.length %> up)</h2>
+  <table>
+    <thead><tr><th>Endpoint</th><th>State</th><th>Labels</th><th>Last scrape</th><th class="num">Duration</th><th class="num">Samples</th><th>Error</th></tr></thead>
+    <tbody>
+      <% statuses.each do |status| %>
+        <tr>
+          <td class="mono"><%= status.target.url %></td>
+          <td><%= badge(status.health, status.health == "up" ? "ok" : "bad") %></td>
+          <td class="mono"><%= format_labels({"instance" => status.target.instance}.merge(status.target.labels || {})) %></td>
+          <td class="muted"><%= status.last_scrape_ms ? "#{((Time.now.to_f * 1000 - status.last_scrape_ms) / 1000).round}s ago" : "" %></td>
+          <td class="num"><%= status.last_duration_seconds %>s</td>
+          <td class="num"><%= status.samples %></td>
+          <td class="graph-error"><%= status.last_error %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>
