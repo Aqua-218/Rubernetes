@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "suite": "m2-kubernetes-lifecycle-oracle",
+  "kubernetes": {
+    "lock_path": "third_party/locks/kubernetes-v1.36.2.json",
+    "version": "v1.36.2",
+    "source_commit": "24e2b02af5543d7910c2bb074c7264df5a8f0467",
+    "source_checkout_env": "RUBERNETES_M2_KUBERNETES_SOURCE",
+    "self_contained_image": {
+      "required_when_host_runtime_identity_is_unavailable": true,
+      "build_command_env": "RUBERNETES_M2_SELF_CONTAINED_IMAGE_COMMAND",
+      "built_in_command": ["ruby", "test/conformance/kubernetes/m2_lifecycle_oracle/node_image.rb"],
+      "lock_path": "third_party/locks/m2-lifecycle-node-image.json",
+      "builder_lock_path": "third_party/locks/kind-v0.33.0.json",
+      "source_commit_required": true,
+      "image_reference_must_be_digest_pinned": true,
+      "runtime_identity_method": "containerd and runc are copied out of the node image with `docker cp`; the harness proves the copied bytes equal the binaries running inside the node by SHA-256"
+    }
+  },
+  "runtime": {
+    "containerd_command_env": "RUBERNETES_M2_CONTAINERD_COMMAND",
+    "runc_command_env": "RUBERNETES_M2_RUNC_COMMAND",
+    "containerd_path_env": "RUBERNETES_M2_CONTAINERD_PATH",
+    "runc_path_env": "RUBERNETES_M2_RUNC_PATH",
+    "allow_host_reuse": true,
+    "host_reuse_requires_explicit_paths": true,
+    "require_version_and_binary_sha256": true
+  },
+  "cni": {
+    "required_lock_path": "third_party/locks/m2-lifecycle-cni.json",
+    "required_fields": [
+      "plugin",
+      "version",
+      "source_commit",
+      "image_reference",
+      "image_digest",
+      "config_sha256"
+    ],
+    "allow_host_default": false
+  },
+  "isolation": {
+    "privileged": true,
+    "network_isolated": true,
+    "backend_env": "RUBERNETES_M2_LIFECYCLE_BACKEND",
+    "runner_command_env": "RUBERNETES_M2_LIFECYCLE_ORACLE_COMMAND",
+    "harness_command_env": "RUBERNETES_M2_LIFECYCLE_HARNESS_COMMAND",
+    "built_in_harness_command": ["ruby", "test/conformance/kubernetes/m2_lifecycle_oracle/harness.rb"],
+    "network_isolation_method": "the node runs on a dedicated `docker network create --internal` bridge; the harness proves egress is unreachable from inside the node before applying any fixture Pod",
+    "host_port_range_minimum": 20000
+  },
+  "request": {
+    "fixture_path": "test/conformance/kubernetes/m2_lifecycle_oracle/fixtures/lifecycle.json",
+    "required_cases": [
+      "init_sidecar_app_order",
+      "startup_liveness_readiness_thresholds",
+      "restart_policy_and_backoff",
+      "graceful_termination_oracle"
+    ],
+    "required_observable_fields": {
+      "init_sidecar_app_order": ["operations"],
+      "startup_liveness_readiness_thresholds": ["startup", "liveness", "readiness"],
+      "restart_policy_and_backoff": ["restartPolicy", "restartCount", "phase", "status"],
+      "graceful_termination_oracle": ["operations", "events"]
+    }
+  },
+  "observable_schema": {
+    "version": 2,
+    "rule": "Observables are compared by canonical JSON digest. They contain only externally observable Kubernetes API state (Pod phase, container statuses, Event reasons and messages) and runtime ordering. Timestamps, UIDs, node names, and IPs are never part of an observable; raw timestamps belong to the trace.",
+    "init_sidecar_app_order": {
+      "operations": "ordered list of `create:<container>`, `start:<container>`, `wait:<init-container>` derived from container runtime createdAt/startedAt/finishedAt; expected create:prepare, start:prepare, wait:prepare, create:sidecar, start:sidecar, create:app, start:app",
+      "phase": "Pod phase once the app container is running",
+      "status": {
+        "initContainerStatuses": "[{name, state (waiting|running|terminated), restartCount, ready, started?, exitCode?}] in spec order",
+        "containerStatuses": "[{name, state, restartCount, ready, started}] in spec order"
+      }
+    },
+    "startup_liveness_readiness_thresholds": {
+      "startup": {"probe": "exec:/bin/true", "successThreshold": 1, "failureThreshold": 3, "periodSeconds": 1, "result": "succeeded", "started": true},
+      "readiness": {"probe": "exec:/bin/true", "successThreshold": 2, "failureThreshold": 1, "periodSeconds": 1, "result": "succeeded", "ready": true, "ready_before_liveness_kill": true},
+      "liveness": {"probe": "exec:/bin/false", "failureThreshold": 2, "periodSeconds": 1, "initialDelaySeconds": 10, "result": "failed", "failures_before_kill": 2, "kill_reason": "Killing", "kill_message": "Container app failed liveness probe, will be restarted", "restartCount_after_kill": 1}
+    },
+    "restart_policy_and_backoff": {
+      "restartPolicy": "{variant => spec.restartPolicy}",
+      "restartCount": "{variant => restartCount at the settle point: 2 for restarting variants, 0 for terminal variants}",
+      "phase": "{variant => Pod phase at the settle point}",
+      "status": "{variant => {state, reason, exitCode?, lastState?, lastReason?, lastExitCode?}} of the single app container at the settle point",
+      "backoff_seconds": "{restarting variant => [first, second]} CrashLoopBackOff delays rounded to the nearest 10 seconds"
+    },
+    "graceful_termination_oracle": {
+      "operations": "ordered list: exec:preStop, signal:TERM, wait:<terminationGracePeriodSeconds>, signal:KILL derived from the termination message lines and exitCode 137 after the grace period",
+      "events": "ordered distinct Event reasons for the Pod recorded after the delete request (expected [\"Killing\"])",
+      "phase": "last Pod phase observed before the object disappears",
+      "status": {"state": "terminated", "exitCode": 137, "reason": "Error", "message": "preStop\\nTERM\\n"},
+      "terminationGracePeriodSeconds": 2,
+      "killed_after_grace_period": true
+    }
+  }
+}
