@@ -1354,6 +1354,13 @@ module Rubernetes
 
             # Finalizers are cleared before the Pod delete so an API server
             # without finalizer-driven garbage collection still removes the Pod.
+            # job_controller_terminated_pods_tracking_finalizer_total: "add"
+            # for each terminated Pod seen holding the tracking finalizer,
+            # "delete" as the finalizer comes off.
+            unless pods_to_remove_finalizer.empty?
+              ControllerMetrics.increment("job_controller_terminated_pods_tracking_finalizer_total", {"event" => "add"}, by: pods_to_remove_finalizer.length)
+              ControllerMetrics.increment("job_controller_terminated_pods_tracking_finalizer_total", {"event" => "delete"}, by: pods_to_remove_finalizer.length)
+            end
             pods_to_remove_finalizer.each do |pod|
               candidate = Support.deep_copy(pod)
               candidate["metadata"] ||= {}
