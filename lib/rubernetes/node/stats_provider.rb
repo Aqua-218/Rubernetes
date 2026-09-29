@@ -87,6 +87,8 @@ module Rubernetes
         stats = {"nodeName" => @node_name, "startTime" => boot_time}
         stats["cpu"] = cpu_stats("node", cpu_stat, stamp) if cpu_stat
         stats["memory"] = memory_stats(usage, memory_stat, stamp, limit: capacity) if memory_stat
+        swap = node_swap_stats(stamp)
+        stats["swap"] = swap if swap
         nodefs = fs_stats(@pod_root || "/", stamp)
         stats["fs"] = nodefs if nodefs
         imagefs = @image_root && fs_stats(@image_root, stamp)
