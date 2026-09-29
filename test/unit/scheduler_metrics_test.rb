@@ -55,6 +55,10 @@ class SchedulerMetricsTest < Minitest::Test
        scheduler_podgroup_schedule_attempts_total rest_client_exec_plugin_call_total rest_client_rate_limiter_duration_seconds].each do |name|
       refute_includes names, name, "#{name} measures machinery that does not exist here"
     end
+    # client-go registers these plain families unconditionally: present and
+    # empty (the TTL gauge at +Inf) as on every upstream component.
+    assert_includes names, "rest_client_exec_plugin_certificate_rotation_age"
+    assert_includes metrics.render, "rest_client_exec_plugin_ttl_seconds +Inf"
     text = metrics.render
     assert_equal 0.0, value(text, "disabled_metrics_total")
     # Upstream bucket bounds come from the inventory: attempt duration is
