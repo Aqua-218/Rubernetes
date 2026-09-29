@@ -913,7 +913,9 @@ module Conformance
       families(profile).map { |family| SERVICE_CIDRS.fetch(family) }
     end
 
-    def write_proxy_config(root, id, index, kubeconfig)
+    # kube-proxy's --metrics-bind-address / --healthz-bind-address (upstream
+    # 10249 / 10256), one loopback port here: /metrics, /healthz, /livez.
+    def write_proxy_config(root, id, index, kubeconfig, serving_port: free_port)
       write_config(root, "proxy-#{id}", {
                      "version" => 1, "logging" => {"level" => ENV.fetch("RUBERNETES_M8_PROXY_LOG_LEVEL", "info")},
                      "processes" => {"rubernetes-proxy" => {
