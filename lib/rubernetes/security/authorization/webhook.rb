@@ -73,6 +73,8 @@ module Rubernetes
           return cached[:decision] if cached && cached[:expires_at] > now
 
           review = {"apiVersion" => "authorization.k8s.io/#{@version}", "kind" => "SubjectAccessReview", "spec" => key}
+          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          result = "success"
           decision = begin
             code, body = @transport.call(JSON.generate(review))
             raise Error, "webhook authorizer returned HTTP #{code}" unless code.to_i.between?(200, 299)
