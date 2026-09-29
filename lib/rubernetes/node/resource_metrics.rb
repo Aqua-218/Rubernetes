@@ -174,7 +174,300 @@ module Rubernetes
 
       module_function
 
-      def render(summary, machine: {}, images: {})
+      # +usages+: [[record, pod_usage], ...] (StatsProvider#raw_pod_usages),
+      # or a Summary hash (the older, poorer rendering kept for callers
+      # without runtime access).
+      def render(usages, machine: {}, images: {}, now: Time.now, proc_root: "/proc", sys_root: "/sys", disk_usage: nil)
+        return render_summary(usages, machine: machine, images: images) if usages.is_a?(Hash)
+
+        stamp_ms = (now.to_f * 1000).to_i
+        samples = Hash.new { |hash, key| hash[key] = [] }
+        failed = false
+        Array(usages).each do |record, usage|
+          render_pod(samples, record, usage, stamp_ms, now, proc_root, sys_root, disk_usage)
+        rescue StandardError
+          failed = true
+        end
+        # cAdvisor's plain gauge: 1 when any container's metrics failed.
+        samples["container_scrape_error"] << [{}, failed ? 1 : 0, nil]
+        machine_samples(samples, machine)
+        (MACHINE_FAMILIES + CONTAINER_FAMILIES).filter_map do |name, type, help|
+          lines = samples[name]
+          next if lines.empty?
+
+          "# HELP #{name} #{help}\n# TYPE #{name} #{type}\n" +
+            lines.map { |labels, value, timestamp| ResourceMetrics.sample(name, labels.sort.to_h, value, timestamp) }.join
+        end.join
+      end
+
+      def pod_identity(record, usage)
+        pod = record.is_a?(Hash) ? (record[:pod] || record["pod"] || {}) : {}
+        uid = (record.is_a?(Hash) && (record[:uid] || record["uid"])) || pod.dig("metadata", "uid")
+        path = usage.is_a?(Hash) && usage["pod"].is_a?(Hash) ? usage["pod"]["path"] : nil
+        {"container" => "", "id" => (path || "/kubepods/pod#{uid}").to_s, "image" => "", "name" => "",
+         "namespace" => pod.dig("metadata", "namespace").to_s, "pod" => pod.dig("metadata", "name").to_s}
+      end
+
+      def render_pod(samples, record, usage, stamp_ms, now, proc_root, sys_root, disk_usage)
+        pod_labels = pod_identity(record, usage)
+        pod_usage = usage["pod"]
+        if pod_usage.is_a?(Hash)
+          add_cgroup(samples, pod_usage, pod_labels, stamp_ms, now, proc_root, sys_root)
+          started = ResourceMetrics.parse_time(record[:started_at] || record["started_at"])
+          samples["container_start_time_seconds"] << [pod_labels, started.to_f, stamp_ms] if started
+        end
+        netns_pid = usage["netns_pid"]
+        add_network(samples, pod_labels, netns_pid, stamp_ms, proc_root) if netns_pid
+        entries = Array(record[:containers] || record["containers"])
+        Array(usage["containers"]).each do |container|
+          next unless container.is_a?(Hash) && container["usage"].is_a?(Hash)
+
+          id = container["id"].to_s
+          labels = pod_labels.merge("container" => container["name"].to_s, "name" => id, "image" => container["image"].to_s,
+                                    "id" => (container["usage"]["path"] || "#{pod_labels["id"]}/#{id}").to_s)
+          add_cgroup(samples, container["usage"], labels, stamp_ms, now, proc_root, sys_root)
+          entry = entries.find { |candidate| (candidate[:id] || candidate["id"]).to_s == id }
+          started = entry && ResourceMetrics.parse_time(entry[:started_at] || entry["started_at"] || entry.dig(:status, "running", "startedAt"))
+          samples["container_start_time_seconds"] << [labels, started.to_f, stamp_ms] if started
+          add_rootfs(samples, container["rootfs"], labels, stamp_ms, disk_usage) if container["rootfs"]
+        end
+      end
+
+      def add_cgroup(samples, usage, labels, stamp_ms, now, proc_root, sys_root)
+        emit = ->(name, value, extra = {}) { samples[name] << [extra.empty? ? labels : labels.merge(extra), value, stamp_ms] }
+        emit.call("container_last_seen", now.to_f.floor)
+        cpu = usage["cpu"] || {}
+        emit.call("container_cpu_user_seconds_total", cpu["user_usec"].to_f / 1e6) if cpu.key?("user_usec")
+        emit.call("container_cpu_system_seconds_total", cpu["system_usec"].to_f / 1e6) if cpu.key?("system_usec")
+        emit.call("container_cpu_usage_seconds_total", cpu["usage_usec"].to_f / 1e6, "cpu" => "total") if cpu.key?("usage_usec")
+        emit.call("container_cpu_cfs_periods_total", cpu["nr_periods"].to_i) if cpu.key?("nr_periods")
+        emit.call("container_cpu_cfs_throttled_periods_total", cpu["nr_throttled"].to_i) if cpu.key?("nr_throttled")
+        emit.call("container_cpu_cfs_throttled_seconds_total", cpu["throttled_usec"].to_f / 1e6) if cpu.key?("throttled_usec")
+        memory = usage["memory"] || {}
+        current = usage["memory.current"]
+        emit.call("container_memory_cache", memory["file"].to_i) if memory.key?("file")
+        emit.call("container_memory_rss", memory["anon"].to_i) if memory.key?("anon")
+        emit.call("container_memory_kernel_usage", memory["kernel"].to_i) if memory.key?("kernel")
+        emit.call("container_memory_mapped_file", memory["file_mapped"].to_i) if memory.key?("file_mapped")
+        emit.call("container_memory_swap", usage["memory.swap.current"].to_i) if usage["memory.swap.current"]
+        events = usage["memory.events"] || {}
+        emit.call("container_memory_failcnt", events["max"].to_i) if events.key?("max")
+        if current
+          emit.call("container_memory_usage_bytes", current.to_i)
+          working_set = current.to_i - memory["inactive_file"].to_i
+          emit.call("container_memory_working_set_bytes", working_set.negative? ? 0 : working_set)
+        end
+        emit.call("container_memory_max_usage_bytes", usage["memory.peak"].to_i) if usage["memory.peak"]
+        %w[container hierarchy].each do |scope|
+          emit.call("container_memory_failures_total", memory["pgfault"].to_i, "failure_type" => "pgfault", "scope" => scope) if memory.key?("pgfault")
+          emit.call("container_memory_failures_total", memory["pgmajfault"].to_i, "failure_type" => "pgmajfault", "scope" => scope) if memory.key?("pgmajfault")
+        end
+        emit.call("container_oom_events_total", events["oom_kill"].to_i) if events.key?("oom_kill")
+        add_io(samples, usage["io.stat"], labels, stamp_ms, sys_root) if usage["io.stat"].is_a?(Hash)
+        add_processes(samples, usage, labels, stamp_ms, proc_root)
+        add_spec(samples, usage, labels, stamp_ms)
+      end
+
+      def add_io(samples, io, labels, stamp_ms, sys_root)
+        io.each do |device, counters|
+          major, minor = device.split(":", 2)
+          name = device_name(device, sys_root)
+          device_labels = labels.merge("device" => name)
+          samples["container_fs_reads_bytes_total"] << [device_labels, counters["rbytes"].to_i, stamp_ms]
+          samples["container_fs_writes_bytes_total"] << [device_labels, counters["wbytes"].to_i, stamp_ms]
+          samples["container_fs_reads_total"] << [device_labels, counters["rios"].to_i, stamp_ms]
+          samples["container_fs_writes_total"] << [device_labels, counters["wios"].to_i, stamp_ms]
+          samples["container_blkio_device_usage_total"] << [labels.merge("device" => name, "major" => major.to_s, "minor" => minor.to_s, "operation" => "Read"), counters["rbytes"].to_i, stamp_ms]
+          samples["container_blkio_device_usage_total"] << [labels.merge("device" => name, "major" => major.to_s, "minor" => minor.to_s, "operation" => "Write"), counters["wbytes"].to_i, stamp_ms]
+        end
+      end
+
+      def device_name(device, sys_root)
+        link = File.readlink(File.join(sys_root, "dev", "block", device))
+        "/dev/#{File.basename(link)}"
+      rescue SystemCallError
+        device
+      end
+
+      def add_rootfs(samples, path, labels, stamp_ms, disk_usage)
+        return unless File.directory?(path)
+
+        used, _inodes = disk_usage ? disk_usage.call(path) : directory_usage(path)
+        stat = statfs(path)
+        device_labels = labels.merge("device" => stat && stat[:device] ? stat[:device] : "rootfs")
+        samples["container_fs_usage_bytes"] << [device_labels, used.to_i, stamp_ms]
+        return unless stat
+
+        samples["container_fs_limit_bytes"] << [device_labels, stat[:capacity], stamp_ms]
+        samples["container_fs_inodes_free"] << [device_labels, stat[:inodes_free], stamp_ms]
+        samples["container_fs_inodes_total"] << [device_labels, stat[:inodes], stamp_ms]
+      end
+
+      def statfs(path)
+        require_relative "../platform/linux/statfs"
+        return nil unless Platform::Linux::Statfs.supported?
+
+        result = Platform::Linux::Statfs.statfs(path)
+        {capacity: result.capacity_bytes, inodes_free: result.files_free, inodes: result.files, device: nil}
+      rescue StandardError
+        nil
+      end
+
+      def directory_usage(path)
+        bytes = 0
+        inodes = 0
+        Find.find(path) do |entry|
+          stat = File.lstat(entry)
+          bytes += stat.blocks * 512
+          inodes += 1
+        rescue SystemCallError
+          Find.prune
+        end
+        [bytes, inodes]
+      end
+
+      # /proc/<pid>/net/dev of the Pod's network namespace holder: every
+      # interface but loopback, like cAdvisor.
+      def add_network(samples, labels, netns_pid, stamp_ms, proc_root)
+        path = File.join(proc_root, netns_pid.to_s, "net", "dev")
+        return unless File.readable?(path)
+
+        File.readlines(path).drop(2).each do |line|
+          interface, counters = line.split(":", 2)
+          next if interface.nil? || counters.nil?
+
+          interface = interface.strip
+          next if interface == "lo"
+
+          fields = counters.split.map { |value| Integer(value, exception: false) || 0 }
+          next if fields.length < 16
+
+          with = labels.merge("interface" => interface)
+          samples["container_network_receive_bytes_total"] << [with, fields[0], stamp_ms]
+          samples["container_network_receive_packets_total"] << [with, fields[1], stamp_ms]
+          samples["container_network_receive_errors_total"] << [with, fields[2], stamp_ms]
+          samples["container_network_receive_packets_dropped_total"] << [with, fields[3], stamp_ms]
+          samples["container_network_transmit_bytes_total"] << [with, fields[8], stamp_ms]
+          samples["container_network_transmit_packets_total"] << [with, fields[9], stamp_ms]
+          samples["container_network_transmit_errors_total"] << [with, fields[10], stamp_ms]
+          samples["container_network_transmit_packets_dropped_total"] << [with, fields[11], stamp_ms]
+        end
+      end
+
+      # The process set of the cgroup (cgroup.procs): task states, threads,
+      # file descriptors, sockets and the root process's soft ulimit.
+      def add_processes(samples, usage, labels, stamp_ms, proc_root)
+        samples["container_processes"] << [labels, usage["pids.current"].to_i, stamp_ms] if usage["pids.current"]
+        # pids.max "max" reads as nil: cAdvisor shows 0 for no limit.
+        samples["container_threads_max"] << [labels, usage["pids.max"].to_i, stamp_ms] if usage.key?("pids.max")
+        pids = Array(usage["cgroup.procs"])
+        return if pids.empty?
+
+        states = Hash.new(0)
+        threads = 0
+        descriptors = 0
+        sockets = 0
+        pids.each do |pid|
+          stat = File.read(File.join(proc_root, pid.to_s, "stat"))
+          state = stat[/\)\s+(\S)/, 1]
+          states[TASK_STATES.fetch(state, "sleeping")] += 1
+          status = File.read(File.join(proc_root, pid.to_s, "status"))
+          threads += status[/^Threads:\s+(\d+)/, 1].to_i
+          entries = Dir.children(File.join(proc_root, pid.to_s, "fd"))
+          descriptors += entries.length
+          sockets += entries.count do |fd|
+            File.readlink(File.join(proc_root, pid.to_s, "fd", fd)).start_with?("socket:")
+          rescue SystemCallError
+            false
+          end
+        rescue SystemCallError
+          next
+        end
+        TASK_STATE_NAMES.each { |name| samples["container_tasks_state"] << [labels.merge("state" => name), states[name], stamp_ms] }
+        samples["container_threads"] << [labels, threads, stamp_ms]
+        samples["container_file_descriptors"] << [labels, descriptors, stamp_ms]
+        samples["container_sockets"] << [labels, sockets, stamp_ms]
+        limits = File.read(File.join(proc_root, pids.first.to_s, "limits"))
+        open_files = limits[/^Max open files\s+(\S+)/, 1]
+        if open_files
+          value = open_files == "unlimited" ? -1 : open_files.to_i
+          samples["container_ulimits_soft"] << [labels.merge("ulimit" => "max_open_files"), value, stamp_ms]
+        end
+      rescue SystemCallError
+        nil
+      end
+
+      # cpu.max "quota period" / "max period"; cpu.weight back to cgroup v1
+      # shares (the inverse of what runc writes); memory.max "max" is the
+      # int64 cAdvisor prints for unlimited.
+      def add_spec(samples, usage, labels, stamp_ms)
+        cpu_max = Array(usage["cpu.max"])
+        if cpu_max.length == 2
+          samples["container_spec_cpu_period"] << [labels, cpu_max[1].to_i, stamp_ms]
+          samples["container_spec_cpu_quota"] << [labels, cpu_max[0].to_i, stamp_ms] unless cpu_max[0] == "max"
+        end
+        if usage["cpu.weight"]
+          weight = usage["cpu.weight"].to_i
+          shares = weight <= 1 ? 2 : ((weight - 1) * 262_142) / 9_999 + 2
+          samples["container_spec_cpu_shares"] << [labels, shares, stamp_ms]
+        end
+        if usage.key?("memory.max")
+          limit = usage["memory.max"].nil? ? UNLIMITED_MEMORY : usage["memory.max"].to_i
+          samples["container_spec_memory_limit_bytes"] << [labels, limit, stamp_ms]
+        end
+        if usage.key?("memory.swap.max")
+          swap_limit = usage["memory.swap.max"].nil? ? UNLIMITED_MEMORY : usage["memory.swap.max"].to_i
+          samples["container_spec_memory_swap_limit_bytes"] << [labels, swap_limit, stamp_ms]
+        end
+        samples["container_spec_memory_reservation_limit_bytes"] << [labels, usage["memory.low"].to_i, stamp_ms] if usage["memory.low"]
+      end
+
+      def machine_samples(samples, machine)
+        samples["cadvisor_version_info"] << [{"cadvisorRevision" => "", "cadvisorVersion" => CADVISOR_VERSION, "dockerVersion" => "",
+                                              "kernelVersion" => machine[:kernel_version].to_s, "osVersion" => machine[:os_version].to_s}, 1, nil]
+        samples["machine_cpu_cores"] << [{}, machine[:cpu_cores]] if machine[:cpu_cores]
+        samples["machine_cpu_physical_cores"] << [{}, machine[:physical_cores]] if machine[:physical_cores]
+        samples["machine_cpu_sockets"] << [{}, machine[:sockets]] if machine[:sockets]
+        samples["machine_memory_bytes"] << [{}, machine[:memory_bytes]] if machine[:memory_bytes]
+        samples["machine_swap_bytes"] << [{}, machine[:swap_bytes]] if machine[:swap_bytes]
+        samples["machine_scrape_error"] << [{}, machine[:cpu_cores] ? 0 : 1]
+      end
+
+      # The machine facts the gauges need, from /proc and the kernel.
+      def machine_info(proc_root: "/proc")
+        info = {cpu_cores: Etc.nprocessors}
+        meminfo = File.read(File.join(proc_root, "meminfo"))
+        memory = meminfo[/^MemTotal:\s+(\d+) kB/, 1]
+        swap = meminfo[/^SwapTotal:\s+(\d+) kB/, 1]
+        info[:memory_bytes] = Integer(memory) * 1024 if memory
+        info[:swap_bytes] = Integer(swap) * 1024 if swap
+        cpuinfo = File.read(File.join(proc_root, "cpuinfo"))
+        sockets = cpuinfo.scan(/^physical id\s*:\s*(\d+)/).flatten.uniq
+        cores = cpuinfo.scan(/^physical id\s*:\s*(\d+)\n(?:.*\n)*?core id\s*:\s*(\d+)/).uniq
+        info[:sockets] = sockets.empty? ? 1 : sockets.length
+        info[:physical_cores] = cores.empty? ? info[:cpu_cores] : cores.length
+        info[:kernel_version] = File.read(File.join(proc_root, "sys/kernel/osrelease")).strip
+        info[:os_version] = os_version
+        info
+      rescue StandardError
+        info
+      end
+
+      def os_version
+        File.read("/etc/os-release")[/^PRETTY_NAME="?([^"\n]*)"?/, 1].to_s
+      rescue SystemCallError
+        ""
+      end
+
+      # The Summary-based rendering (cpu, memory, rootfs) for callers
+      # without runtime access.
+      SUMMARY_DESCRIPTORS = CONTAINER_FAMILIES.to_h { |name, type, help| [name, [type, help]] }.slice(
+        "container_cpu_usage_seconds_total", "container_memory_usage_bytes", "container_memory_working_set_bytes",
+        "container_memory_rss", "container_memory_failures_total", "container_fs_usage_bytes",
+        "container_start_time_seconds", "container_last_seen"
+      ).freeze
+
+      def render_summary(summary, machine: {}, images: {})
         samples = Hash.new { |hash, key| hash[key] = [] }
         samples["machine_cpu_cores"] << [{}, machine[:cpu_cores]] if machine[:cpu_cores]
         samples["machine_memory_bytes"] << [{}, machine[:memory_bytes]] if machine[:memory_bytes]
