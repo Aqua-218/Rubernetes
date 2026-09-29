@@ -4,7 +4,10 @@ Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
   # Make code changes take effect immediately without server restart.
-  config.enable_reloading = true
+  # The scrape/evaluation loop holds engine and store objects for the life of
+  # the process; reloading would leave that thread with unloaded constants.
+  # Restart the server after code changes instead.
+  config.enable_reloading = false
 
   # Do not eager load code on boot.
   config.eager_load = false
@@ -32,13 +35,10 @@ Rails.application.configure do
   config.active_support.deprecation = :log
 
   # Raise an error on page load if there are pending migrations.
-  config.active_record.migration_error = :page_load
 
   # Highlight code that triggered database queries in logs.
-  config.active_record.verbose_query_logs = true
 
   # Append comments with runtime information tags to SQL queries in logs.
-  config.active_record.query_log_tags_enabled = true
 
   # Highlight code that enqueued background job in logs.
   config.active_job.verbose_enqueue_logs = true
