@@ -162,7 +162,7 @@ module Rubernetes
         @mutex.synchronize { @queue_sort }
       end
 
-      def enqueue(pod, reason: nil)
+      def enqueue(pod, reason: nil, event: nil)
         typed = pod.is_a?(Pod) ? pod : Pod.new(pod)
         @mutex.synchronize do
           @sequence += 1
