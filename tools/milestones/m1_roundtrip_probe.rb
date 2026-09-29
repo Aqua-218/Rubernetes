@@ -791,7 +791,7 @@ end
 # Deep-merge a fixture patch; the "__delete__" marker removes a key so a
 # generated minimal object can drop a mutually exclusive field.
 def apply_fixture_patch(base, patch)
-  result = JSON.parse(JSON.generate(base), create_additions: false)
+  result = JSON.parse(JSON.generate(base))
   Hash(patch).each do |key, value|
     if value == "__delete__"
       result.delete(key)
