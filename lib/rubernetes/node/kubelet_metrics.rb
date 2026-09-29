@@ -482,6 +482,42 @@ module Rubernetes
         @registry.observe("storage_operation_duration_seconds", seconds,
                           {"migrated" => migrated ? "true" : "false", "operation_name" => operation.to_s, "status" => status.to_s,
                            "volume_plugin" => plugin.to_s})
+        # volume_operation_total_seconds: the operation end to end (the
+        # nested operation executor's whole run, which here is the same span).
+        @registry.observe("volume_operation_total_seconds", seconds, {"operation_name" => operation.to_s, "plugin_name" => plugin.to_s})
+      end
+
+      # csi_operations_seconds{driver_name, grpc_status_code, method_name, migrated}:
+      # one CSI RPC, with the gRPC status it ended in ("OK" on success).
+      def csi_operation(driver_name, method_name, grpc_status_code, seconds, migrated: false)
+        @registry.observe("csi_operations_seconds", seconds,
+                          {"driver_name" => driver_name.to_s, "grpc_status_code" => grpc_status_code.to_s,
+                           "method_name" => method_name.to_s, "migrated" => migrated ? "true" : "false"})
+      end
+
+      # kubelet_volume_metric_collection_duration_seconds{metric_source}: one
+      # volume's stats ("csi" from NodeGetVolumeStats, "fs" from the filesystem).
+      def volume_metric_collection(source, seconds)
+        @registry.observe("kubelet_volume_metric_collection_duration_seconds", seconds, {"metric_source" => source.to_s})
+      end
+
+      # reconstruct_volume_operations_total / _errors_total: the volumes the
+      # manager rebuilt from its durable state at startup, and the ones whose
+      # backend could not be rebuilt (StateUnknown).
+      def volume_reconstruction(attempted, errors)
+        @registry.increment("reconstruct_volume_operations_total", by: attempted.to_i) if attempted.to_i.positive?
+        @registry.increment("reconstruct_volume_operations_errors_total", by: errors.to_i) if errors.to_i.positive?
+      end
+
+      # kubelet_orphan_pod_cleaned_volumes / _errors: the last recovery sweep
+      # over Pods that were gone from the API (their volumes torn down).
+      def orphan_pod_volumes(cleaned, errors)
+        @registry.set("kubelet_orphan_pod_cleaned_volumes", cleaned.to_i)
+        @registry.set("kubelet_orphan_pod_cleaned_volumes_errors", errors.to_i)
+      end
+
+      def image_volume_mount_failed(count = 1)
+        @registry.increment("kubelet_image_volume_mounted_errors_total", by: count)
       end
 
       # totalVolumesCollector: the volumes per plugin in the desired state
