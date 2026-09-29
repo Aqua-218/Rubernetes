@@ -20,7 +20,7 @@ module Rubernetes
                      resync_period: DEFAULT_RESYNC_PERIOD,
                      clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
                      sleeper: ->(seconds) { sleep(seconds) }, indexer: nil, queue: nil,
-                     error_handler: nil)
+                     error_handler: nil, name: nil)
         raise ArgumentError, "client is required" unless client
         raise ArgumentError, "resource is required" if resource.nil? || resource.to_s.empty?
         raise ArgumentError, "clock must respond to call" unless clock.respond_to?(:call)
