@@ -1,0 +1,33 @@
+<% name = @node.dig("metadata", "name") %>
+<% content_for :title, "Node #{name}" %>
+<h1>Node <%= name %></h1>
+<div class="grid">
+  <div class="card"><div class="sub">CPU usage</div><div class="big"><%= @usage["cpu_cores"] ? human_cores(@usage["cpu_cores"]) : "–" %></div><span class="muted">of <%= @node.dig("status", "allocatable", "cpu") %> allocatable</span></div>
+  <div class="card"><div class="sub">Memory working set</div><div class="big"><%= @usage["memory_bytes"] ? human_bytes(@usage["memory_bytes"]) : "–" %></div><span class="muted">of <%= @node.dig("status", "allocatable", "memory") %> allocatable</span></div>
+  <div class="card"><div class="sub">Pods</div><div class="big"><%= @pods.length %></div><span class="muted">of <%= @node.dig("status", "allocatable", "pods") %></span></div>
+</div>
+<p><%= link_to "CPU graph", graph_path(g0_expr: "rate(node_cpu_usage_seconds_total{node=\"#{name}\"}[2m])") %> · <%= link_to "memory graph", graph_path(g0_expr: "node_memory_working_set_bytes{node=\"#{name}\"}") %> · <%= link_to "kubelet up", graph_path(g0_expr: "up{job=\"kubelet\",node=\"#{name}\"}") %></p>
+<h2>Conditions</h2>
+<table>
+  <thead><tr><th>Type</th><th>Status</th><th>Reason</th><th>Message</th><th>Last transition</th></tr></thead>
+  <tbody>
+    <% Array(@node.dig("status", "conditions")).each do |c| %>
+      <tr><td><%= c["type"] %></td><td><%= badge(c["status"], (c["type"] == "Ready") == (c["status"] == "True") ? "ok" : "bad") %></td><td><%= c["reason"] %></td><td><%= c["message"] %></td><td class="muted"><%= c["lastTransitionTime"] %></td></tr>
+    <% end %>
+  </tbody>
+</table>
+<h2>Info</h2>
+<dl class="kv">
+  <% (@node.dig("status", "nodeInfo") || {}).each do |k, v| %><dt><%= k %></dt><dd class="mono"><%= v %></dd><% end %>
+  <% Array(@node.dig("status", "addresses")).each do |a| %><dt><%= a["type"] %></dt><dd class="mono"><%= a["address"] %></dd><% end %>
+  <dt>capacity</dt><dd class="mono"><%= (@node.dig("status", "capacity") || {}).map { |k, v| "#{k}=#{v}" }.join(" ") %></dd>
+  <dt>allocatable</dt><dd class="mono"><%= (@node.dig("status", "allocatable") || {}).map { |k, v| "#{k}=#{v}" }.join(" ") %></dd>
+  <dt>labels</dt><dd class="mono"><%= format_labels(@node.dig("metadata", "labels")) %></dd>
+  <dt>taints</dt><dd class="mono"><%= Array(@node.dig("spec", "taints")).map { |t| "#{t["key"]}=#{t["value"]}:#{t["effect"]}" }.join(", ") %></dd>
+</dl>
+<h2>Pods on this node (<%= @pods.length %>)</h2>
+<%= render "shared/pods_table", pods: @pods.sort_by { |p| [p.dig("metadata", "namespace"), p.dig("metadata", "name")] }, show_namespace: true %>
+<h2>Events</h2>
+<%= render "shared/events", events: @events %>
+<h2>YAML</h2>
+<details><summary>Show</summary><pre><%= @yaml %></pre></details>
