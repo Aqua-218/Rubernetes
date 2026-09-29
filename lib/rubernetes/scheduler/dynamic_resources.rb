@@ -620,7 +620,9 @@ module Rubernetes
                          "annotations" => {ExtendedResources::ANNOTATION => "true"}},
           "spec" => Support.deep_copy(node_claim["spec"] || {})
         }
-        @api.create_claim(claim)
+        created = @api.create_claim(claim)
+        @metrics&.resourceclaim_create("success")
+        created
       rescue StandardError => error
         raise PluginError.new("create ResourceClaim for extended resources #{pod.namespace}/#{pod.name}: #{error.message}",
                               plugin: NAME, phase: :pre_bind)
