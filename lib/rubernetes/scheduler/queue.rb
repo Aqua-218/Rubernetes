@@ -249,7 +249,13 @@ module Rubernetes
       # Clear a Pod's failure history without removing it from the queue.
       def forget(pod)
         key = identity_key(pod)
-        @mutex.synchronize { @attempts.delete(key) }
+        @mutex.synchronize do
+          @attempts.delete(key)
+          @pops.delete(key)
+          @first_pop.delete(key)
+          @gated.delete(key)
+          @rejecting_plugins.delete(key)
+        end
         self
       end
 
