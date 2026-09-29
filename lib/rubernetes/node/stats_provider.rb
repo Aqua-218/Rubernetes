@@ -188,6 +188,24 @@ module Rubernetes
         nil
       end
 
+      # The raw cgroup accounting of every running Pod (what /metrics/cadvisor
+      # renders): [[record, pod_usage], ...].
+      def raw_pod_usages
+        records = if @lifecycle.respond_to?(:stats_records)
+                    @lifecycle.stats_records
+                  elsif @lifecycle.respond_to?(:records)
+                    @lifecycle.records.values
+                  else
+                    []
+                  end
+        records.filter_map do |record|
+          next unless record.is_a?(Hash) && record[:state].to_s == "Running" && record[:sandbox_id]
+
+          usage = runtime_usage(record[:sandbox_id])
+          usage && [record, usage]
+        end
+      end
+
       def container_stats(uid, container, record, stamp)
         usage = container["usage"] || {}
         entry = record[:containers].to_a.find { |candidate| candidate[:id].to_s == container["id"].to_s }
