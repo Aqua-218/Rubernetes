@@ -292,6 +292,11 @@ module Rubernetes
           @dra_manager.active_pods = -> { lifecycle_for_dra.admitted_pods }
         end
         @kubelet_metrics = KubeletMetrics.new(node_name: @node_name)
+        @kubelet_metrics.plugin_manager = @plugin_manager if @plugin_manager
+        if @csi_plugins.respond_to?(:metrics_observer=)
+          kubelet_metrics = @kubelet_metrics
+          @csi_plugins.metrics_observer = ->(driver, method_name, code, seconds) { kubelet_metrics.csi_operation(driver, method_name, code, seconds) }
+        end
         if @container_manager.respond_to?(:metrics=) && !@container_manager.frozen?
           @container_manager.metrics = @kubelet_metrics.registry
         end
