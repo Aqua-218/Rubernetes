@@ -52,7 +52,7 @@ module Rubernetes
         kubelet_insecure_tls address_type_priority node_selector register tls jitter
       ].freeze
       SCHEDULER_KEYS = %w[api_server kubeconfig context identity sync lease resource_kinds serving].freeze
-      PROXY_KEYS = %w[api_server kubeconfig context node_name backend attach sync].freeze
+      PROXY_KEYS = %w[api_server kubeconfig context node_name backend attach sync serving].freeze
       AGENT_KEYS = %w[
         node_name api_server kubeconfig context runtime_profile
         sandbox_root cgroup_root log_root journal_path runtime_paths runtime
