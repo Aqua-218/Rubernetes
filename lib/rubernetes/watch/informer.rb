@@ -231,6 +231,50 @@ module Rubernetes
         processed
       end
 
+      # client-go's informer metrics (component-base legacyregistry):
+      # informer_queued_items, the keys waiting in the DeltaFIFO, and
+      # informer_processing_latency_seconds, queue wait plus handler time.
+      def informer_metric_labels(resource, name)
+        group = resource.respond_to?(:group) ? resource.group.to_s : ""
+        version = resource.respond_to?(:version) ? resource.version.to_s : ""
+        if version.empty? && resource.respond_to?(:api_version)
+          parts = resource.api_version.to_s.split("/")
+          version = parts.last.to_s
+          group = parts.length > 1 ? parts.first : "" if group.empty?
+        end
+        plural = resource.respond_to?(:resource) ? resource.resource.to_s : @resource_name.downcase
+        {"group" => group, "version" => version, "resource" => plural, "name" => (name || @resource_name).to_s}.freeze
+      end
+
+      def informer_registry
+        return nil unless defined?(Rubernetes::Observability::Metrics)
+
+        Rubernetes::Observability::Metrics.global
+      end
+
+      def observe_queued_items
+        registry = informer_registry
+        return unless registry
+
+        registry.register("informer_queued_items", type: :gauge) unless registry.registered?("informer_queued_items")
+        registry.set("informer_queued_items", @fifo.length, @metric_labels)
+      rescue StandardError
+        nil
+      end
+
+      def observe_processing(key)
+        registry = informer_registry
+        return unless registry
+
+        waited = @fifo.respond_to?(:queued_seconds) ? @fifo.queued_seconds(key) : nil
+        return if waited.nil?
+
+        registry.register("informer_processing_latency_seconds", type: :histogram) unless registry.registered?("informer_processing_latency_seconds")
+        registry.observe("informer_processing_latency_seconds", waited, @metric_labels)
+      rescue StandardError
+        nil
+      end
+
       def process_delta(delta)
         return if stale_delta?(delta)
 
