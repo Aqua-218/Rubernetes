@@ -141,6 +141,7 @@ module Rubernetes
         raise Status::Error.new(message: "request body exceeds the aggregation limit", code: 413, reason: "RequestEntityTooLarge") if request.body && request.body.bytesize > MAX_BODY_BYTES
 
         response = http.request(outbound)
+        record_x509(http)
         log_proxy(uri, target, request.method, response, sent_content_type: outbound["content-type"], body_bytes: outbound.body.to_s.bytesize)
         raise Status::Error.new(message: "aggregated API response exceeds the limit", code: 502, reason: "BadGateway") if response.body.to_s.bytesize > MAX_BODY_BYTES
 
