@@ -1,0 +1,8 @@
+<% content_for :title, "Events" %>
+<h1>Events<% if @namespace %> in <%= link_to @namespace, namespace_path(@namespace) %><% end %></h1>
+<div class="toolbar">
+  <%= link_to "All", url_for(type: nil), class: ("active" unless params[:type]) %>
+  <%= link_to "Warnings only", url_for(type: "Warning"), class: ("active" if params[:type] == "Warning") %>
+  <span class="muted"><%= @events.length %> shown</span>
+</div>
+<%= render "shared/events", events: @events %>
