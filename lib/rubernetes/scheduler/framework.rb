@@ -538,6 +538,7 @@ module Rubernetes
                 @metrics.extension_point(:post_filter, preemption ? Metrics::STATUS_SUCCESS : Metrics::STATUS_UNSCHEDULABLE,
                                          monotonic - post_filter_started)
               rescue PreemptionError, PluginError => error
+                @metrics.extension_point(:post_filter, Metrics::STATUS_ERROR, monotonic - post_filter_started)
                 @batch&.failed(cycle)
                 status = requeue_after_failure(typed_pod, error)
                 return ScheduleResult.new(status: status, pod: typed_pod, filtered: filtered,
