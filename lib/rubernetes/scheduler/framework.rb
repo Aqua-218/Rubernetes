@@ -3,6 +3,7 @@
 require "thread"
 require "monitor"
 require_relative "batch"
+require_relative "metrics"
 
 module Rubernetes
   module Scheduler
