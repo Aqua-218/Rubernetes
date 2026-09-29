@@ -514,7 +514,7 @@ module M2LifecycleOracleNodeImage
       puts JSON.pretty_generate(result)
       return 0
     end
-    input = JSON.parse($stdin.read, create_additions: false, max_nesting: 512)
+    input = JSON.parse($stdin.read, max_nesting: 512)
     puts JSON.generate(report(input))
     0
   rescue BuildError, SystemCallError, KeyError, JSON::ParserError, SocketError, Timeout::Error => error
