@@ -2539,6 +2539,7 @@ module Rubernetes
         @mutex.synchronize { raise RuntimeError, "rubernetes-proxy is already started" if @running }
         begin
           build_runtime!
+          @proxy.metrics = @proxy_metrics if @proxy.respond_to?(:metrics=)
           service_source = resource_source_for(Controller::ResourceDescriptor.parse("Service"))
           endpoint_source = resource_source_for(Controller::ResourceDescriptor.parse("EndpointSlice"))
           apply_snapshot(service_source, kind: :service)
