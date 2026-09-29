@@ -1271,6 +1271,7 @@ module Rubernetes
           key = [event["pod"], event["otherPod"], event["reason"], event["message"]]
           unique << event unless unique.any? { |existing| [existing["pod"], existing["otherPod"], existing["reason"], existing["message"]] == key }
         end
+        record_conflict_metrics(pod, events)
         result(pod, operations: [], events: events, status: Support.status(pod),
                controller: name, descriptor: POD)
       end
