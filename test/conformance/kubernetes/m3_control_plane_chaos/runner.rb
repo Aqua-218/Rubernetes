@@ -128,7 +128,7 @@ module M3ControlPlaneChaosRunner
     return BUILT_IN_CAPABILITIES.dup if path.empty?
     return nil unless File.file?(path)
 
-    document = JSON.parse(File.binread(path), create_additions: false, max_nesting: 128)
+    document = JSON.parse(File.binread(path), max_nesting: 128)
     return nil unless document.is_a?(Hash)
 
     document
