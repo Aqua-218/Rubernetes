@@ -29,7 +29,6 @@ module Rubernetes
             input,
             object_class: object_class,
             array_class: Array,
-            create_additions: false,
             allow_nan: false,
             max_nesting: [max_depth + 1, 1].max
           )
