@@ -1100,6 +1100,7 @@ module Rubernetes
         failed = false
         @publish_mutex.synchronize do
           all_rules = @mutex.synchronize { @compiled.values.flat_map(&:rules) }
+          full = @rule_set.revision.zero?
           diff = @rule_set.apply(all_rules, revision: @endpoint_store.revision)
           begin
             @backend.apply(diff)
