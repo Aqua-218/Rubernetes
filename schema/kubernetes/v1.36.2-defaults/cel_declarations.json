@@ -1,0 +1,8072 @@
+{
+  "source": "typechecking.go buildEnvSet + NewCompositedCompilerForTypeChecking (Kubernetes v1.36.2)",
+  "functions": [
+    {
+      "name": "!_",
+      "overloads": [
+        {
+          "id": "logical_not",
+          "args": [
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "-_",
+      "overloads": [
+        {
+          "id": "negate_double",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        },
+        {
+          "id": "negate_int64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "@in",
+      "overloads": [
+        {
+          "id": "in_list",
+          "args": [
+            {
+              "kind": "type_param",
+              "name": "A"
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          },
+          "type_params": [
+            "A"
+          ]
+        },
+        {
+          "id": "in_map",
+          "args": [
+            {
+              "kind": "type_param",
+              "name": "A"
+            },
+            {
+              "kind": "map",
+              "name": "map",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                },
+                {
+                  "kind": "type_param",
+                  "name": "B"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          },
+          "type_params": [
+            "B",
+            "A"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "@not_strictly_false",
+      "overloads": [
+        {
+          "id": "not_strictly_false",
+          "args": [
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "@sortByAssociatedKeys",
+      "overloads": [
+        {
+          "id": "list_int_sortByAssociatedKeys",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "int",
+                  "name": "int"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "T"
+              }
+            ]
+          },
+          "type_params": [
+            "T"
+          ]
+        },
+        {
+          "id": "list_uint_sortByAssociatedKeys",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "uint",
+                  "name": "uint"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "T"
+              }
+            ]
+          },
+          "type_params": [
+            "T"
+          ]
+        },
+        {
+          "id": "list_double_sortByAssociatedKeys",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "double",
+                  "name": "double"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "T"
+              }
+            ]
+          },
+          "type_params": [
+            "T"
+          ]
+        },
+        {
+          "id": "list_bool_sortByAssociatedKeys",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "bool",
+                  "name": "bool"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "T"
+              }
+            ]
+          },
+          "type_params": [
+            "T"
+          ]
+        },
+        {
+          "id": "list_google.protobuf.Duration_sortByAssociatedKeys",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "duration",
+                  "name": "google.protobuf.Duration"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "T"
+              }
+            ]
+          },
+          "type_params": [
+            "T"
+          ]
+        },
+        {
+          "id": "list_google.protobuf.Timestamp_sortByAssociatedKeys",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "timestamp",
+                  "name": "google.protobuf.Timestamp"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "T"
+              }
+            ]
+          },
+          "type_params": [
+            "T"
+          ]
+        },
+        {
+          "id": "list_string_sortByAssociatedKeys",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "string",
+                  "name": "string"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "T"
+              }
+            ]
+          },
+          "type_params": [
+            "T"
+          ]
+        },
+        {
+          "id": "list_bytes_sortByAssociatedKeys",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "bytes",
+                  "name": "bytes"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "T"
+              }
+            ]
+          },
+          "type_params": [
+            "T"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "_!=_",
+      "overloads": [
+        {
+          "id": "not_equals",
+          "args": [
+            {
+              "kind": "type_param",
+              "name": "A"
+            },
+            {
+              "kind": "type_param",
+              "name": "A"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          },
+          "type_params": [
+            "A"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "_%_",
+      "overloads": [
+        {
+          "id": "modulo_int64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "modulo_uint64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "uint",
+            "name": "uint"
+          }
+        }
+      ]
+    },
+    {
+      "name": "_&&_",
+      "overloads": [
+        {
+          "id": "logical_and",
+          "args": [
+            {
+              "kind": "bool",
+              "name": "bool"
+            },
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "_*_",
+      "overloads": [
+        {
+          "id": "multiply_double",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        },
+        {
+          "id": "multiply_int64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "multiply_uint64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "uint",
+            "name": "uint"
+          }
+        }
+      ]
+    },
+    {
+      "name": "_+_",
+      "overloads": [
+        {
+          "id": "add_bytes",
+          "args": [
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            },
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            }
+          ],
+          "result": {
+            "kind": "bytes",
+            "name": "bytes"
+          }
+        },
+        {
+          "id": "add_double",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        },
+        {
+          "id": "add_duration_duration",
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            },
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "duration",
+            "name": "google.protobuf.Duration"
+          }
+        },
+        {
+          "id": "add_duration_timestamp",
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            },
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "timestamp",
+            "name": "google.protobuf.Timestamp"
+          }
+        },
+        {
+          "id": "add_timestamp_duration",
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "timestamp",
+            "name": "google.protobuf.Timestamp"
+          }
+        },
+        {
+          "id": "add_int64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "add_list",
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "A"
+              }
+            ]
+          },
+          "type_params": [
+            "A"
+          ]
+        },
+        {
+          "id": "add_string",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "add_uint64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "uint",
+            "name": "uint"
+          }
+        }
+      ]
+    },
+    {
+      "name": "_-_",
+      "overloads": [
+        {
+          "id": "subtract_double",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        },
+        {
+          "id": "subtract_duration_duration",
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            },
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "duration",
+            "name": "google.protobuf.Duration"
+          }
+        },
+        {
+          "id": "subtract_int64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "subtract_timestamp_duration",
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "timestamp",
+            "name": "google.protobuf.Timestamp"
+          }
+        },
+        {
+          "id": "subtract_timestamp_timestamp",
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "duration",
+            "name": "google.protobuf.Duration"
+          }
+        },
+        {
+          "id": "subtract_uint64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "uint",
+            "name": "uint"
+          }
+        }
+      ]
+    },
+    {
+      "name": "_/_",
+      "overloads": [
+        {
+          "id": "divide_double",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        },
+        {
+          "id": "divide_int64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "divide_uint64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "uint",
+            "name": "uint"
+          }
+        }
+      ]
+    },
+    {
+      "name": "_<=_",
+      "overloads": [
+        {
+          "id": "less_equals_bool",
+          "args": [
+            {
+              "kind": "bool",
+              "name": "bool"
+            },
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_int64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_int64_double",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_int64_uint64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_uint64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_uint64_double",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_uint64_int64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_double",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_double_int64",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_double_uint64",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_string",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_bytes",
+          "args": [
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            },
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_timestamp",
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_equals_duration",
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            },
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "_<_",
+      "overloads": [
+        {
+          "id": "less_bool",
+          "args": [
+            {
+              "kind": "bool",
+              "name": "bool"
+            },
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_int64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_int64_double",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_int64_uint64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_uint64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_uint64_double",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_uint64_int64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_double",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_double_int64",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_double_uint64",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_string",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_bytes",
+          "args": [
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            },
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_timestamp",
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "less_duration",
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            },
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "_==_",
+      "overloads": [
+        {
+          "id": "equals",
+          "args": [
+            {
+              "kind": "type_param",
+              "name": "A"
+            },
+            {
+              "kind": "type_param",
+              "name": "A"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          },
+          "type_params": [
+            "A"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "_>=_",
+      "overloads": [
+        {
+          "id": "greater_equals_bool",
+          "args": [
+            {
+              "kind": "bool",
+              "name": "bool"
+            },
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_int64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_int64_double",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_int64_uint64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_uint64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_uint64_double",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_uint64_int64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_double",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_double_int64",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_double_uint64",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_string",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_bytes",
+          "args": [
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            },
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_timestamp",
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_equals_duration",
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            },
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "_>_",
+      "overloads": [
+        {
+          "id": "greater_bool",
+          "args": [
+            {
+              "kind": "bool",
+              "name": "bool"
+            },
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_int64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_int64_double",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_int64_uint64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_uint64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_uint64_double",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_uint64_int64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_double",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_double_int64",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_double_uint64",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            },
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_string",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_bytes",
+          "args": [
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            },
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_timestamp",
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "greater_duration",
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            },
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "_?._",
+      "overloads": [
+        {
+          "id": "select_optional_field",
+          "args": [
+            {
+              "kind": "dyn",
+              "name": "dyn"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "_?_:_",
+      "overloads": [
+        {
+          "id": "conditional",
+          "args": [
+            {
+              "kind": "bool",
+              "name": "bool"
+            },
+            {
+              "kind": "type_param",
+              "name": "A"
+            },
+            {
+              "kind": "type_param",
+              "name": "A"
+            }
+          ],
+          "result": {
+            "kind": "type_param",
+            "name": "A"
+          },
+          "type_params": [
+            "A"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "_[?_]",
+      "overloads": [
+        {
+          "id": "list_optindex_optional_int",
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "V"
+                }
+              ]
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V"
+          ]
+        },
+        {
+          "id": "optional_list_optindex_optional_int",
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "optional_type",
+              "params": [
+                {
+                  "kind": "list",
+                  "name": "list",
+                  "params": [
+                    {
+                      "kind": "type_param",
+                      "name": "V"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V"
+          ]
+        },
+        {
+          "id": "map_optindex_optional_value",
+          "args": [
+            {
+              "kind": "map",
+              "name": "map",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "K"
+                },
+                {
+                  "kind": "type_param",
+                  "name": "V"
+                }
+              ]
+            },
+            {
+              "kind": "type_param",
+              "name": "K"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V",
+            "K"
+          ]
+        },
+        {
+          "id": "optional_map_optindex_optional_value",
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "optional_type",
+              "params": [
+                {
+                  "kind": "map",
+                  "name": "map",
+                  "params": [
+                    {
+                      "kind": "type_param",
+                      "name": "K"
+                    },
+                    {
+                      "kind": "type_param",
+                      "name": "V"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "type_param",
+              "name": "K"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V",
+            "K"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "_[_]",
+      "overloads": [
+        {
+          "id": "index_list",
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                }
+              ]
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "type_param",
+            "name": "A"
+          },
+          "type_params": [
+            "A"
+          ]
+        },
+        {
+          "id": "index_map",
+          "args": [
+            {
+              "kind": "map",
+              "name": "map",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                },
+                {
+                  "kind": "type_param",
+                  "name": "B"
+                }
+              ]
+            },
+            {
+              "kind": "type_param",
+              "name": "A"
+            }
+          ],
+          "result": {
+            "kind": "type_param",
+            "name": "B"
+          },
+          "type_params": [
+            "B",
+            "A"
+          ]
+        },
+        {
+          "id": "optional_list_index_int",
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "optional_type",
+              "params": [
+                {
+                  "kind": "list",
+                  "name": "list",
+                  "params": [
+                    {
+                      "kind": "type_param",
+                      "name": "V"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V"
+          ]
+        },
+        {
+          "id": "optional_map_index_value",
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "optional_type",
+              "params": [
+                {
+                  "kind": "map",
+                  "name": "map",
+                  "params": [
+                    {
+                      "kind": "type_param",
+                      "name": "K"
+                    },
+                    {
+                      "kind": "type_param",
+                      "name": "V"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "type_param",
+              "name": "K"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V",
+            "K"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "__not_strictly_false__",
+      "disabled": true,
+      "overloads": [
+        {
+          "id": "__not_strictly_false__",
+          "args": [
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "_in_",
+      "disabled": true,
+      "overloads": [
+        {
+          "id": "in_list",
+          "args": [
+            {
+              "kind": "type_param",
+              "name": "A"
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          },
+          "type_params": [
+            "A"
+          ]
+        },
+        {
+          "id": "in_map",
+          "args": [
+            {
+              "kind": "type_param",
+              "name": "A"
+            },
+            {
+              "kind": "map",
+              "name": "map",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                },
+                {
+                  "kind": "type_param",
+                  "name": "B"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          },
+          "type_params": [
+            "A",
+            "B"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "_||_",
+      "overloads": [
+        {
+          "id": "logical_or",
+          "args": [
+            {
+              "kind": "bool",
+              "name": "bool"
+            },
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "add",
+      "overloads": [
+        {
+          "id": "quantity_add",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            },
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.Quantity"
+          }
+        },
+        {
+          "id": "quantity_add_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.Quantity"
+          }
+        }
+      ]
+    },
+    {
+      "name": "allowed",
+      "overloads": [
+        {
+          "id": "decision_allowed",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.Decision"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "asApproximateFloat",
+      "overloads": [
+        {
+          "id": "quantity_get_float",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        }
+      ]
+    },
+    {
+      "name": "asInteger",
+      "overloads": [
+        {
+          "id": "quantity_get_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bool",
+      "overloads": [
+        {
+          "id": "bool_to_bool",
+          "args": [
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "string_to_bool",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bytes",
+      "overloads": [
+        {
+          "id": "bytes_to_bytes",
+          "args": [
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            }
+          ],
+          "result": {
+            "kind": "bytes",
+            "name": "bytes"
+          }
+        },
+        {
+          "id": "string_to_bytes",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bytes",
+            "name": "bytes"
+          }
+        }
+      ]
+    },
+    {
+      "name": "cel.@mapInsert",
+      "overloads": [
+        {
+          "id": "@mapInsert_map_key_value",
+          "args": [
+            {
+              "kind": "map",
+              "name": "map",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "K"
+                },
+                {
+                  "kind": "type_param",
+                  "name": "V"
+                }
+              ]
+            },
+            {
+              "kind": "type_param",
+              "name": "K"
+            },
+            {
+              "kind": "type_param",
+              "name": "V"
+            }
+          ],
+          "result": {
+            "kind": "map",
+            "name": "map",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "K"
+              },
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "K",
+            "V"
+          ]
+        },
+        {
+          "id": "@mapInsert_map_map",
+          "args": [
+            {
+              "kind": "map",
+              "name": "map",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "K"
+                },
+                {
+                  "kind": "type_param",
+                  "name": "V"
+                }
+              ]
+            },
+            {
+              "kind": "map",
+              "name": "map",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "K"
+                },
+                {
+                  "kind": "type_param",
+                  "name": "V"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "map",
+            "name": "map",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "K"
+              },
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "K",
+            "V"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "charAt",
+      "overloads": [
+        {
+          "id": "string_char_at_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "check",
+      "overloads": [
+        {
+          "id": "pathcheck_check",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.PathCheck"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.authorization.Decision"
+          }
+        },
+        {
+          "id": "resourcecheck_check",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.ResourceCheck"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.authorization.Decision"
+          }
+        }
+      ]
+    },
+    {
+      "name": "cidr",
+      "overloads": [
+        {
+          "id": "string_to_cidr",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "net.CIDR"
+          }
+        }
+      ]
+    },
+    {
+      "name": "compareTo",
+      "overloads": [
+        {
+          "id": "quantity_compare_to",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            },
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "semver_compare_to",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Semver"
+            },
+            {
+              "kind": "struct",
+              "name": "kubernetes.Semver"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "contains",
+      "overloads": [
+        {
+          "id": "contains_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "containsCIDR",
+      "overloads": [
+        {
+          "id": "cidr_contains_cidr_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.CIDR"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "cidr_contains_cidr",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.CIDR"
+            },
+            {
+              "kind": "opaque",
+              "name": "net.CIDR"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "containsIP",
+      "overloads": [
+        {
+          "id": "cidr_contains_ip_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.CIDR"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "cidr_contains_ip_ip",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.CIDR"
+            },
+            {
+              "kind": "opaque",
+              "name": "net.IP"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "distinct",
+      "overloads": [
+        {
+          "id": "list_distinct",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "T"
+              }
+            ]
+          },
+          "type_params": [
+            "T"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "double",
+      "overloads": [
+        {
+          "id": "double_to_double",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        },
+        {
+          "id": "int64_to_double",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        },
+        {
+          "id": "string_to_double",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        },
+        {
+          "id": "uint64_to_double",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        }
+      ]
+    },
+    {
+      "name": "duration",
+      "overloads": [
+        {
+          "id": "duration_to_duration",
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "duration",
+            "name": "google.protobuf.Duration"
+          }
+        },
+        {
+          "id": "int64_to_duration",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "duration",
+            "name": "google.protobuf.Duration"
+          }
+        },
+        {
+          "id": "string_to_duration",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "duration",
+            "name": "google.protobuf.Duration"
+          }
+        }
+      ]
+    },
+    {
+      "name": "dyn",
+      "overloads": [
+        {
+          "id": "to_dyn",
+          "args": [
+            {
+              "kind": "type_param",
+              "name": "A"
+            }
+          ],
+          "result": {
+            "kind": "dyn",
+            "name": "dyn"
+          },
+          "type_params": [
+            "A"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "endsWith",
+      "overloads": [
+        {
+          "id": "ends_with_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "error",
+      "overloads": [
+        {
+          "id": "decision_error",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.Decision"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "errored",
+      "overloads": [
+        {
+          "id": "decision_errored",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.Decision"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "family",
+      "overloads": [
+        {
+          "id": "ip_family",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.IP"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "fieldSelector",
+      "overloads": [
+        {
+          "id": "authorizer_fieldselector",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.ResourceCheck"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.authorization.ResourceCheck"
+          }
+        }
+      ]
+    },
+    {
+      "name": "find",
+      "overloads": [
+        {
+          "id": "string_find_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "findAll",
+      "overloads": [
+        {
+          "id": "string_find_all_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "string",
+                "name": "string"
+              }
+            ]
+          }
+        },
+        {
+          "id": "string_find_all_string_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "string",
+                "name": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "first",
+      "overloads": [
+        {
+          "id": "list_first",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "V"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "flatten",
+      "overloads": [
+        {
+          "id": "list_flatten",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "list",
+                  "name": "list",
+                  "params": [
+                    {
+                      "kind": "type_param",
+                      "name": "T"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "T"
+              }
+            ]
+          },
+          "type_params": [
+            "T"
+          ]
+        },
+        {
+          "id": "list_flatten_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "dyn",
+                  "name": "dyn"
+                }
+              ]
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "dyn",
+                "name": "dyn"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "format",
+      "overloads": [
+        {
+          "id": "string_format",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "dyn",
+                  "name": "dyn"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.byte",
+      "overloads": [
+        {
+          "id": "format.byte",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.date",
+      "overloads": [
+        {
+          "id": "format.date",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.datetime",
+      "overloads": [
+        {
+          "id": "format.datetime",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.dns1035Label",
+      "overloads": [
+        {
+          "id": "format.dns1035Label",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.dns1035LabelPrefix",
+      "overloads": [
+        {
+          "id": "format.dns1035LabelPrefix",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.dns1123Label",
+      "overloads": [
+        {
+          "id": "format.dns1123Label",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.dns1123LabelPrefix",
+      "overloads": [
+        {
+          "id": "format.dns1123LabelPrefix",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.dns1123Subdomain",
+      "overloads": [
+        {
+          "id": "format.dns1123Subdomain",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.dns1123SubdomainPrefix",
+      "overloads": [
+        {
+          "id": "format.dns1123SubdomainPrefix",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.labelValue",
+      "overloads": [
+        {
+          "id": "format.labelValue",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.named",
+      "overloads": [
+        {
+          "id": "format-named",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "struct",
+                "name": "kubernetes.NamedFormat"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.qualifiedName",
+      "overloads": [
+        {
+          "id": "format.qualifiedName",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.uri",
+      "overloads": [
+        {
+          "id": "format.uri",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "format.uuid",
+      "overloads": [
+        {
+          "id": "format.uuid",
+          "args": null,
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.NamedFormat"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getDate",
+      "overloads": [
+        {
+          "id": "timestamp_to_day_of_month_1_based",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "timestamp_to_day_of_month_1_based_with_tz",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getDayOfMonth",
+      "overloads": [
+        {
+          "id": "timestamp_to_day_of_month",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "timestamp_to_day_of_month_with_tz",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getDayOfWeek",
+      "overloads": [
+        {
+          "id": "timestamp_to_day_of_week",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "timestamp_to_day_of_week_with_tz",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getDayOfYear",
+      "overloads": [
+        {
+          "id": "timestamp_to_day_of_year",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "timestamp_to_day_of_year_with_tz",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getEscapedPath",
+      "overloads": [
+        {
+          "id": "url_get_escaped_path",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.URL"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getFullYear",
+      "overloads": [
+        {
+          "id": "timestamp_to_year",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "timestamp_to_year_with_tz",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getHost",
+      "overloads": [
+        {
+          "id": "url_get_host",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.URL"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getHostname",
+      "overloads": [
+        {
+          "id": "url_get_hostname",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.URL"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getHours",
+      "overloads": [
+        {
+          "id": "timestamp_to_hours",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "timestamp_to_hours_with_tz",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "duration_to_hours",
+          "member": true,
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getMilliseconds",
+      "overloads": [
+        {
+          "id": "timestamp_to_milliseconds",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "timestamp_to_milliseconds_with_tz",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "duration_to_milliseconds",
+          "member": true,
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getMinutes",
+      "overloads": [
+        {
+          "id": "timestamp_to_minutes",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "timestamp_to_minutes_with_tz",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "duration_to_minutes",
+          "member": true,
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getMonth",
+      "overloads": [
+        {
+          "id": "timestamp_to_month",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "timestamp_to_month_with_tz",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getPort",
+      "overloads": [
+        {
+          "id": "url_get_port",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.URL"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getQuery",
+      "overloads": [
+        {
+          "id": "url_get_query",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.URL"
+            }
+          ],
+          "result": {
+            "kind": "map",
+            "name": "map",
+            "params": [
+              {
+                "kind": "string",
+                "name": "string"
+              },
+              {
+                "kind": "list",
+                "name": "list",
+                "params": [
+                  {
+                    "kind": "string",
+                    "name": "string"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "getScheme",
+      "overloads": [
+        {
+          "id": "url_get_scheme",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.URL"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "getSeconds",
+      "overloads": [
+        {
+          "id": "timestamp_to_seconds",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "timestamp_to_seconds_tz",
+          "member": true,
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "duration_to_seconds",
+          "member": true,
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "group",
+      "overloads": [
+        {
+          "id": "authorizer_group",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.Authorizer"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.authorization.GroupCheck"
+          }
+        }
+      ]
+    },
+    {
+      "name": "hasValue",
+      "overloads": [
+        {
+          "id": "optional_hasValue",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "optional_type",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "V"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          },
+          "type_params": [
+            "V"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "in",
+      "disabled": true,
+      "overloads": [
+        {
+          "id": "in_list",
+          "args": [
+            {
+              "kind": "type_param",
+              "name": "A"
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          },
+          "type_params": [
+            "A"
+          ]
+        },
+        {
+          "id": "in_map",
+          "args": [
+            {
+              "kind": "type_param",
+              "name": "A"
+            },
+            {
+              "kind": "map",
+              "name": "map",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                },
+                {
+                  "kind": "type_param",
+                  "name": "B"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          },
+          "type_params": [
+            "B",
+            "A"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "indexOf",
+      "overloads": [
+        {
+          "id": "list_a_index_of_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                }
+              ]
+            },
+            {
+              "kind": "type_param",
+              "name": "A"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          },
+          "type_params": [
+            "A"
+          ]
+        },
+        {
+          "id": "string_index_of_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "string_index_of_string_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "int",
+      "overloads": [
+        {
+          "id": "int64_to_int64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "double_to_int64",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "duration_to_int64",
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "string_to_int64",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "timestamp_to_int64",
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "uint64_to_int64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ip",
+      "overloads": [
+        {
+          "id": "string_to_ip",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "net.IP"
+          }
+        },
+        {
+          "id": "cidr_ip",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.CIDR"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "net.IP"
+          }
+        }
+      ]
+    },
+    {
+      "name": "ip.isCanonical",
+      "overloads": [
+        {
+          "id": "ip_is_canonical",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isCIDR",
+      "overloads": [
+        {
+          "id": "is_cidr",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isGlobalUnicast",
+      "overloads": [
+        {
+          "id": "ip_is_global_unicast",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.IP"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isGreaterThan",
+      "overloads": [
+        {
+          "id": "quantity_is_greater_than",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            },
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "semver_is_greater_than",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Semver"
+            },
+            {
+              "kind": "struct",
+              "name": "kubernetes.Semver"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isIP",
+      "overloads": [
+        {
+          "id": "is_ip",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isInteger",
+      "overloads": [
+        {
+          "id": "quantity_is_integer",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isLessThan",
+      "overloads": [
+        {
+          "id": "quantity_is_less_than",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            },
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "semver_is_less_than",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Semver"
+            },
+            {
+              "kind": "struct",
+              "name": "kubernetes.Semver"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isLinkLocalMulticast",
+      "overloads": [
+        {
+          "id": "ip_is_link_local_multicast",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.IP"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isLinkLocalUnicast",
+      "overloads": [
+        {
+          "id": "ip_is_link_local_unicast",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.IP"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isLoopback",
+      "overloads": [
+        {
+          "id": "ip_is_loopback",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.IP"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isQuantity",
+      "overloads": [
+        {
+          "id": "is_quantity_string",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isSemver",
+      "overloads": [
+        {
+          "id": "is_semver_string",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "is_semver_string_bool",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isSorted",
+      "overloads": [
+        {
+          "id": "list_int_is_sorted_bool",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "int",
+                  "name": "int"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "list_uint_is_sorted_bool",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "uint",
+                  "name": "uint"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "list_double_is_sorted_bool",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "double",
+                  "name": "double"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "list_bool_is_sorted_bool",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "bool",
+                  "name": "bool"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "list_duration_is_sorted_bool",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "duration",
+                  "name": "google.protobuf.Duration"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "list_timestamp_is_sorted_bool",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "timestamp",
+                  "name": "google.protobuf.Timestamp"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "list_string_is_sorted_bool",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "string",
+                  "name": "string"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "list_bytes_is_sorted_bool",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "bytes",
+                  "name": "bytes"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isURL",
+      "overloads": [
+        {
+          "id": "is_url_string",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "isUnspecified",
+      "overloads": [
+        {
+          "id": "ip_is_unspecified",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.IP"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "join",
+      "overloads": [
+        {
+          "id": "list_join",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "string",
+                  "name": "string"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "list_join_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "string",
+                  "name": "string"
+                }
+              ]
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "labelSelector",
+      "overloads": [
+        {
+          "id": "authorizer_labelselector",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.ResourceCheck"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.authorization.ResourceCheck"
+          }
+        }
+      ]
+    },
+    {
+      "name": "last",
+      "overloads": [
+        {
+          "id": "list_last",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "V"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "lastIndexOf",
+      "overloads": [
+        {
+          "id": "list_a_last_index_of_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                }
+              ]
+            },
+            {
+              "kind": "type_param",
+              "name": "A"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          },
+          "type_params": [
+            "A"
+          ]
+        },
+        {
+          "id": "string_last_index_of_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "string_last_index_of_string_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "lists.range",
+      "overloads": [
+        {
+          "id": "lists_range",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "int",
+                "name": "int"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "lowerAscii",
+      "overloads": [
+        {
+          "id": "string_lower_ascii",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "major",
+      "overloads": [
+        {
+          "id": "semver_major",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Semver"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "masked",
+      "overloads": [
+        {
+          "id": "cidr_masked",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.CIDR"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "net.CIDR"
+          }
+        }
+      ]
+    },
+    {
+      "name": "matches",
+      "overloads": [
+        {
+          "id": "matches",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "matches_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "max",
+      "overloads": [
+        {
+          "id": "list_int_max_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "int",
+                  "name": "int"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "list_uint_max_uint",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "uint",
+                  "name": "uint"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "uint",
+            "name": "uint"
+          }
+        },
+        {
+          "id": "list_double_max_double",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "double",
+                  "name": "double"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        },
+        {
+          "id": "list_bool_max_bool",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "bool",
+                  "name": "bool"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "list_duration_max_duration",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "duration",
+                  "name": "google.protobuf.Duration"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "duration",
+            "name": "google.protobuf.Duration"
+          }
+        },
+        {
+          "id": "list_timestamp_max_timestamp",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "timestamp",
+                  "name": "google.protobuf.Timestamp"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "timestamp",
+            "name": "google.protobuf.Timestamp"
+          }
+        },
+        {
+          "id": "list_string_max_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "string",
+                  "name": "string"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "list_bytes_max_bytes",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "bytes",
+                  "name": "bytes"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bytes",
+            "name": "bytes"
+          }
+        }
+      ]
+    },
+    {
+      "name": "min",
+      "overloads": [
+        {
+          "id": "list_int_min_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "int",
+                  "name": "int"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "list_uint_min_uint",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "uint",
+                  "name": "uint"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "uint",
+            "name": "uint"
+          }
+        },
+        {
+          "id": "list_double_min_double",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "double",
+                  "name": "double"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        },
+        {
+          "id": "list_bool_min_bool",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "bool",
+                  "name": "bool"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        },
+        {
+          "id": "list_duration_min_duration",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "duration",
+                  "name": "google.protobuf.Duration"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "duration",
+            "name": "google.protobuf.Duration"
+          }
+        },
+        {
+          "id": "list_timestamp_min_timestamp",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "timestamp",
+                  "name": "google.protobuf.Timestamp"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "timestamp",
+            "name": "google.protobuf.Timestamp"
+          }
+        },
+        {
+          "id": "list_string_min_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "string",
+                  "name": "string"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "list_bytes_min_bytes",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "bytes",
+                  "name": "bytes"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bytes",
+            "name": "bytes"
+          }
+        }
+      ]
+    },
+    {
+      "name": "minor",
+      "overloads": [
+        {
+          "id": "semver_minor",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Semver"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "name",
+      "overloads": [
+        {
+          "id": "resourcecheck_name",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.ResourceCheck"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.authorization.ResourceCheck"
+          }
+        }
+      ]
+    },
+    {
+      "name": "namespace",
+      "overloads": [
+        {
+          "id": "resourcecheck_namespace",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.ResourceCheck"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.authorization.ResourceCheck"
+          }
+        }
+      ]
+    },
+    {
+      "name": "optional.none",
+      "overloads": [
+        {
+          "id": "optional_none",
+          "args": null,
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "optional.of",
+      "overloads": [
+        {
+          "id": "optional_of",
+          "args": [
+            {
+              "kind": "type_param",
+              "name": "V"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "optional.ofNonZeroValue",
+      "overloads": [
+        {
+          "id": "optional_ofNonZeroValue",
+          "args": [
+            {
+              "kind": "type_param",
+              "name": "V"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "optional.unwrap",
+      "overloads": [
+        {
+          "id": "optional_unwrap",
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "opaque",
+                  "name": "optional_type",
+                  "params": [
+                    {
+                      "kind": "type_param",
+                      "name": "V"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "or",
+      "overloads": [
+        {
+          "id": "optional_or_optional",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "optional_type",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "V"
+                }
+              ]
+            },
+            {
+              "kind": "opaque",
+              "name": "optional_type",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "V"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "orValue",
+      "overloads": [
+        {
+          "id": "optional_orValue_value",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "optional_type",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "V"
+                }
+              ]
+            },
+            {
+              "kind": "type_param",
+              "name": "V"
+            }
+          ],
+          "result": {
+            "kind": "type_param",
+            "name": "V"
+          },
+          "type_params": [
+            "V"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "patch",
+      "overloads": [
+        {
+          "id": "semver_patch",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Semver"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "path",
+      "overloads": [
+        {
+          "id": "authorizer_path",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.Authorizer"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.authorization.PathCheck"
+          }
+        }
+      ]
+    },
+    {
+      "name": "prefixLength",
+      "overloads": [
+        {
+          "id": "cidr_prefix_length",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.CIDR"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "quantity",
+      "overloads": [
+        {
+          "id": "string_to_quantity",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.Quantity"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reason",
+      "overloads": [
+        {
+          "id": "decision_reason",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.Decision"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "replace",
+      "overloads": [
+        {
+          "id": "string_replace_string_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "string_replace_string_string_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "resource",
+      "overloads": [
+        {
+          "id": "groupcheck_resource",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.GroupCheck"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.authorization.ResourceCheck"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reverse",
+      "overloads": [
+        {
+          "id": "list_reverse",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "T"
+              }
+            ]
+          },
+          "type_params": [
+            "T"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "semver",
+      "overloads": [
+        {
+          "id": "string_to_semver",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.Semver"
+          }
+        },
+        {
+          "id": "string_bool_to_semver",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.Semver"
+          }
+        }
+      ]
+    },
+    {
+      "name": "serviceAccount",
+      "overloads": [
+        {
+          "id": "authorizer_serviceaccount",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.Authorizer"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.authorization.Authorizer"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sets.contains",
+      "overloads": [
+        {
+          "id": "list_sets_contains_list",
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          },
+          "type_params": [
+            "T"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sets.equivalent",
+      "overloads": [
+        {
+          "id": "list_sets_equivalent_list",
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          },
+          "type_params": [
+            "T"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sets.intersects",
+      "overloads": [
+        {
+          "id": "list_sets_intersects_list",
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          },
+          "type_params": [
+            "T"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sign",
+      "overloads": [
+        {
+          "id": "quantity_sign",
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "size",
+      "overloads": [
+        {
+          "id": "size_bytes",
+          "args": [
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "bytes_size",
+          "member": true,
+          "args": [
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "size_list",
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          },
+          "type_params": [
+            "A"
+          ]
+        },
+        {
+          "id": "list_size",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          },
+          "type_params": [
+            "A"
+          ]
+        },
+        {
+          "id": "size_map",
+          "args": [
+            {
+              "kind": "map",
+              "name": "map",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                },
+                {
+                  "kind": "type_param",
+                  "name": "B"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          },
+          "type_params": [
+            "A",
+            "B"
+          ]
+        },
+        {
+          "id": "map_size",
+          "member": true,
+          "args": [
+            {
+              "kind": "map",
+              "name": "map",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "A"
+                },
+                {
+                  "kind": "type_param",
+                  "name": "B"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          },
+          "type_params": [
+            "A",
+            "B"
+          ]
+        },
+        {
+          "id": "size_string",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "string_size",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        }
+      ]
+    },
+    {
+      "name": "slice",
+      "overloads": [
+        {
+          "id": "list_slice",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "T"
+                }
+              ]
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "T"
+              }
+            ]
+          },
+          "type_params": [
+            "T"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sort",
+      "overloads": [
+        {
+          "id": "list_int_sort",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "int",
+                  "name": "int"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "int",
+                "name": "int"
+              }
+            ]
+          }
+        },
+        {
+          "id": "list_uint_sort",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "uint",
+                  "name": "uint"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "uint",
+                "name": "uint"
+              }
+            ]
+          }
+        },
+        {
+          "id": "list_double_sort",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "double",
+                  "name": "double"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "double",
+                "name": "double"
+              }
+            ]
+          }
+        },
+        {
+          "id": "list_bool_sort",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "bool",
+                  "name": "bool"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "bool",
+                "name": "bool"
+              }
+            ]
+          }
+        },
+        {
+          "id": "list_google.protobuf.Duration_sort",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "duration",
+                  "name": "google.protobuf.Duration"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "duration",
+                "name": "google.protobuf.Duration"
+              }
+            ]
+          }
+        },
+        {
+          "id": "list_google.protobuf.Timestamp_sort",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "timestamp",
+                  "name": "google.protobuf.Timestamp"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "timestamp",
+                "name": "google.protobuf.Timestamp"
+              }
+            ]
+          }
+        },
+        {
+          "id": "list_string_sort",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "string",
+                  "name": "string"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "string",
+                "name": "string"
+              }
+            ]
+          }
+        },
+        {
+          "id": "list_bytes_sort",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "bytes",
+                  "name": "bytes"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "bytes",
+                "name": "bytes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "split",
+      "overloads": [
+        {
+          "id": "string_split_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "string",
+                "name": "string"
+              }
+            ]
+          }
+        },
+        {
+          "id": "string_split_string_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "string",
+                "name": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "startsWith",
+      "overloads": [
+        {
+          "id": "starts_with_string",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "bool",
+            "name": "bool"
+          }
+        }
+      ]
+    },
+    {
+      "name": "string",
+      "overloads": [
+        {
+          "id": "string_to_string",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "bool_to_string",
+          "args": [
+            {
+              "kind": "bool",
+              "name": "bool"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "bytes_to_string",
+          "args": [
+            {
+              "kind": "bytes",
+              "name": "bytes"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "double_to_string",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "duration_to_string",
+          "args": [
+            {
+              "kind": "duration",
+              "name": "google.protobuf.Duration"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "int64_to_string",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "timestamp_to_string",
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "uint64_to_string",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "ip_to_string",
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.IP"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "cidr_to_string",
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "net.CIDR"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "strings.quote",
+      "overloads": [
+        {
+          "id": "strings_quote",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sub",
+      "overloads": [
+        {
+          "id": "quantity_sub",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            },
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.Quantity"
+          }
+        },
+        {
+          "id": "quantity_sub_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.Quantity"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.Quantity"
+          }
+        }
+      ]
+    },
+    {
+      "name": "subresource",
+      "overloads": [
+        {
+          "id": "resourcecheck_subresource",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.authorization.ResourceCheck"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.authorization.ResourceCheck"
+          }
+        }
+      ]
+    },
+    {
+      "name": "substring",
+      "overloads": [
+        {
+          "id": "string_substring_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        },
+        {
+          "id": "string_substring_int_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            },
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sum",
+      "overloads": [
+        {
+          "id": "list_int_sum_int",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "int",
+                  "name": "int"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "int",
+            "name": "int"
+          }
+        },
+        {
+          "id": "list_uint_sum_uint",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "uint",
+                  "name": "uint"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "uint",
+            "name": "uint"
+          }
+        },
+        {
+          "id": "list_double_sum_double",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "double",
+                  "name": "double"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "double",
+            "name": "double"
+          }
+        },
+        {
+          "id": "list_duration_sum_duration",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "duration",
+                  "name": "google.protobuf.Duration"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "duration",
+            "name": "google.protobuf.Duration"
+          }
+        }
+      ]
+    },
+    {
+      "name": "timestamp",
+      "overloads": [
+        {
+          "id": "timestamp_to_timestamp",
+          "args": [
+            {
+              "kind": "timestamp",
+              "name": "google.protobuf.Timestamp"
+            }
+          ],
+          "result": {
+            "kind": "timestamp",
+            "name": "google.protobuf.Timestamp"
+          }
+        },
+        {
+          "id": "int64_to_timestamp",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "timestamp",
+            "name": "google.protobuf.Timestamp"
+          }
+        },
+        {
+          "id": "string_to_timestamp",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "timestamp",
+            "name": "google.protobuf.Timestamp"
+          }
+        }
+      ]
+    },
+    {
+      "name": "trim",
+      "overloads": [
+        {
+          "id": "string_trim",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "type",
+      "overloads": [
+        {
+          "id": "type",
+          "args": [
+            {
+              "kind": "type_param",
+              "name": "A"
+            }
+          ],
+          "result": {
+            "kind": "type",
+            "name": "type",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "A"
+              }
+            ]
+          },
+          "type_params": [
+            "A"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "uint",
+      "overloads": [
+        {
+          "id": "uint64_to_uint64",
+          "args": [
+            {
+              "kind": "uint",
+              "name": "uint"
+            }
+          ],
+          "result": {
+            "kind": "uint",
+            "name": "uint"
+          }
+        },
+        {
+          "id": "double_to_uint64",
+          "args": [
+            {
+              "kind": "double",
+              "name": "double"
+            }
+          ],
+          "result": {
+            "kind": "uint",
+            "name": "uint"
+          }
+        },
+        {
+          "id": "int64_to_uint64",
+          "args": [
+            {
+              "kind": "int",
+              "name": "int"
+            }
+          ],
+          "result": {
+            "kind": "uint",
+            "name": "uint"
+          }
+        },
+        {
+          "id": "string_to_uint64",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "uint",
+            "name": "uint"
+          }
+        }
+      ]
+    },
+    {
+      "name": "unwrapOpt",
+      "overloads": [
+        {
+          "id": "optional_unwrapOpt",
+          "member": true,
+          "args": [
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "opaque",
+                  "name": "optional_type",
+                  "params": [
+                    {
+                      "kind": "type_param",
+                      "name": "V"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "list",
+            "name": "list",
+            "params": [
+              {
+                "kind": "type_param",
+                "name": "V"
+              }
+            ]
+          },
+          "type_params": [
+            "V"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "upperAscii",
+      "overloads": [
+        {
+          "id": "string_upper_ascii",
+          "member": true,
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "string",
+            "name": "string"
+          }
+        }
+      ]
+    },
+    {
+      "name": "url",
+      "overloads": [
+        {
+          "id": "string_to_url",
+          "args": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "struct",
+            "name": "kubernetes.URL"
+          }
+        }
+      ]
+    },
+    {
+      "name": "validate",
+      "overloads": [
+        {
+          "id": "format-validate",
+          "member": true,
+          "args": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.NamedFormat"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ],
+          "result": {
+            "kind": "opaque",
+            "name": "optional_type",
+            "params": [
+              {
+                "kind": "list",
+                "name": "list",
+                "params": [
+                  {
+                    "kind": "string",
+                    "name": "string"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "value",
+      "overloads": [
+        {
+          "id": "optional_value",
+          "member": true,
+          "args": [
+            {
+              "kind": "opaque",
+              "name": "optional_type",
+              "params": [
+                {
+                  "kind": "type_param",
+                  "name": "V"
+                }
+              ]
+            }
+          ],
+          "result": {
+            "kind": "type_param",
+            "name": "V"
+          },
+          "type_params": [
+            "V"
+          ]
+        }
+      ]
+    }
+  ],
+  "macros": [
+    {
+      "function": "has",
+      "args": 1,
+      "receiver": false,
+      "key": "has:1:false"
+    },
+    {
+      "function": "all",
+      "args": 2,
+      "receiver": true,
+      "key": "all:2:true"
+    },
+    {
+      "function": "exists",
+      "args": 2,
+      "receiver": true,
+      "key": "exists:2:true"
+    },
+    {
+      "function": "exists_one",
+      "args": 2,
+      "receiver": true,
+      "key": "exists_one:2:true"
+    },
+    {
+      "function": "map",
+      "args": 2,
+      "receiver": true,
+      "key": "map:2:true"
+    },
+    {
+      "function": "map",
+      "args": 3,
+      "receiver": true,
+      "key": "map:3:true"
+    },
+    {
+      "function": "filter",
+      "args": 2,
+      "receiver": true,
+      "key": "filter:2:true"
+    },
+    {
+      "function": "optMap",
+      "args": 2,
+      "receiver": true,
+      "key": "optMap:2:true"
+    },
+    {
+      "function": "optFlatMap",
+      "args": 2,
+      "receiver": true,
+      "key": "optFlatMap:2:true"
+    },
+    {
+      "function": "all",
+      "args": 3,
+      "receiver": true,
+      "key": "all:3:true"
+    },
+    {
+      "function": "exists",
+      "args": 3,
+      "receiver": true,
+      "key": "exists:3:true"
+    },
+    {
+      "function": "existsOne",
+      "args": 3,
+      "receiver": true,
+      "key": "existsOne:3:true"
+    },
+    {
+      "function": "exists_one",
+      "args": 3,
+      "receiver": true,
+      "key": "exists_one:3:true"
+    },
+    {
+      "function": "transformList",
+      "args": 3,
+      "receiver": true,
+      "key": "transformList:3:true"
+    },
+    {
+      "function": "transformList",
+      "args": 4,
+      "receiver": true,
+      "key": "transformList:4:true"
+    },
+    {
+      "function": "transformMap",
+      "args": 3,
+      "receiver": true,
+      "key": "transformMap:3:true"
+    },
+    {
+      "function": "transformMap",
+      "args": 4,
+      "receiver": true,
+      "key": "transformMap:4:true"
+    },
+    {
+      "function": "transformMapEntry",
+      "args": 3,
+      "receiver": true,
+      "key": "transformMapEntry:3:true"
+    },
+    {
+      "function": "transformMapEntry",
+      "args": 4,
+      "receiver": true,
+      "key": "transformMapEntry:4:true"
+    },
+    {
+      "function": "sortBy",
+      "args": 2,
+      "receiver": true,
+      "key": "sortBy:2:true"
+    }
+  ],
+  "variables": {
+    "authorizer": {
+      "kind": "struct",
+      "name": "kubernetes.authorization.Authorizer"
+    },
+    "bool": {
+      "kind": "type",
+      "name": "type",
+      "params": [
+        {
+          "kind": "bool",
+          "name": "bool"
+        }
+      ]
+    },
+    "bytes": {
+      "kind": "type",
+      "name": "type",
+      "params": [
+        {
+          "kind": "bytes",
+          "name": "bytes"
+        }
+      ]
+    },
+    "double": {
+      "kind": "type",
+      "name": "type",
+      "params": [
+        {
+          "kind": "double",
+          "name": "double"
+        }
+      ]
+    },
+    "google.protobuf.Duration": {
+      "kind": "type",
+      "name": "type",
+      "params": [
+        {
+          "kind": "duration",
+          "name": "google.protobuf.Duration"
+        }
+      ]
+    },
+    "google.protobuf.Timestamp": {
+      "kind": "type",
+      "name": "type",
+      "params": [
+        {
+          "kind": "timestamp",
+          "name": "google.protobuf.Timestamp"
+        }
+      ]
+    },
+    "int": {
+      "kind": "type",
+      "name": "type",
+      "params": [
+        {
+          "kind": "int",
+          "name": "int"
+        }
+      ]
+    },
+    "list": {
+      "kind": "type",
+      "name": "type",
+      "params": [
+        {
+          "kind": "list",
+          "name": "list",
+          "params": [
+            {
+              "kind": "type_param",
+              "name": "A"
+            }
+          ]
+        }
+      ]
+    },
+    "map": {
+      "kind": "type",
+      "name": "type",
+      "params": [
+        {
+          "kind": "map",
+          "name": "map",
+          "params": [
+            {
+              "kind": "type_param",
+              "name": "A"
+            },
+            {
+              "kind": "type_param",
+              "name": "B"
+            }
+          ]
+        }
+      ]
+    },
+    "namespaceObject": {
+      "kind": "struct",
+      "name": "kubernetes.Namespace"
+    },
+    "null_type": {
+      "kind": "type",
+      "name": "type",
+      "params": [
+        {
+          "kind": "null",
+          "name": "null_type"
+        }
+      ]
+    },
+    "object": {
+      "kind": "dyn",
+      "name": "dyn"
+    },
+    "oldObject": {
+      "kind": "dyn",
+      "name": "dyn"
+    },
+    "params": {
+      "kind": "dyn",
+      "name": "dyn"
+    },
+    "request": {
+      "kind": "struct",
+      "name": "kubernetes.AdmissionRequest"
+    },
+    "string": {
+      "kind": "type",
+      "name": "type",
+      "params": [
+        {
+          "kind": "string",
+          "name": "string"
+        }
+      ]
+    },
+    "type": {
+      "kind": "type",
+      "name": "type",
+      "params": [
+        {
+          "kind": "type",
+          "name": "type"
+        }
+      ]
+    },
+    "uint": {
+      "kind": "type",
+      "name": "type",
+      "params": [
+        {
+          "kind": "uint",
+          "name": "uint"
+        }
+      ]
+    },
+    "variables": {
+      "kind": "struct",
+      "name": "kubernetes.variables"
+    }
+  },
+  "structs": {
+    "kubernetes.AdmissionRequest": [
+      {
+        "name": "dryRun",
+        "type": {
+          "kind": "bool",
+          "name": "bool"
+        }
+      },
+      {
+        "name": "kind",
+        "type": {
+          "kind": "struct",
+          "name": "kubernetes.GroupVersionKind"
+        }
+      },
+      {
+        "name": "name",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "namespace",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "operation",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "options",
+        "type": {
+          "kind": "dyn",
+          "name": "dyn"
+        }
+      },
+      {
+        "name": "requestKind",
+        "type": {
+          "kind": "struct",
+          "name": "kubernetes.GroupVersionKind"
+        }
+      },
+      {
+        "name": "requestResource",
+        "type": {
+          "kind": "struct",
+          "name": "kubernetes.GroupVersionResource"
+        }
+      },
+      {
+        "name": "requestSubResource",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "resource",
+        "type": {
+          "kind": "struct",
+          "name": "kubernetes.GroupVersionResource"
+        }
+      },
+      {
+        "name": "subResource",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "userInfo",
+        "type": {
+          "kind": "struct",
+          "name": "kubernetes.UserInfo"
+        }
+      }
+    ],
+    "kubernetes.GroupVersionKind": [
+      {
+        "name": "group",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "kind",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "version",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      }
+    ],
+    "kubernetes.GroupVersionResource": [
+      {
+        "name": "group",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "resource",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "version",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      }
+    ],
+    "kubernetes.Namespace": [
+      {
+        "name": "metadata",
+        "type": {
+          "kind": "struct",
+          "name": "kubernetes.NamespaceMetadata"
+        }
+      },
+      {
+        "name": "spec",
+        "type": {
+          "kind": "struct",
+          "name": "kubernetes.NamespaceSpec"
+        }
+      },
+      {
+        "name": "status",
+        "type": {
+          "kind": "struct",
+          "name": "kubernetes.NamespaceStatus"
+        }
+      }
+    ],
+    "kubernetes.NamespaceCondition": [
+      {
+        "name": "lastTransitionTime",
+        "type": {
+          "kind": "timestamp",
+          "name": "google.protobuf.Timestamp"
+        }
+      },
+      {
+        "name": "message",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "reason",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "status",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "type",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      }
+    ],
+    "kubernetes.NamespaceMetadata": [
+      {
+        "name": "UID",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "annotations",
+        "type": {
+          "kind": "map",
+          "name": "map",
+          "params": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ]
+        }
+      },
+      {
+        "name": "creationTimestamp",
+        "type": {
+          "kind": "timestamp",
+          "name": "google.protobuf.Timestamp"
+        }
+      },
+      {
+        "name": "deletionGracePeriodSeconds",
+        "type": {
+          "kind": "int",
+          "name": "int"
+        }
+      },
+      {
+        "name": "deletionTimestamp",
+        "type": {
+          "kind": "timestamp",
+          "name": "google.protobuf.Timestamp"
+        }
+      },
+      {
+        "name": "finalizers",
+        "type": {
+          "kind": "list",
+          "name": "list",
+          "params": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ]
+        }
+      },
+      {
+        "name": "generateName",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "generation",
+        "type": {
+          "kind": "int",
+          "name": "int"
+        }
+      },
+      {
+        "name": "labels",
+        "type": {
+          "kind": "map",
+          "name": "map",
+          "params": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ]
+        }
+      },
+      {
+        "name": "name",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "namespace",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "resourceVersion",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      }
+    ],
+    "kubernetes.NamespaceSpec": [
+      {
+        "name": "finalizers",
+        "type": {
+          "kind": "list",
+          "name": "list",
+          "params": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ]
+        }
+      }
+    ],
+    "kubernetes.NamespaceStatus": [
+      {
+        "name": "conditions",
+        "type": {
+          "kind": "list",
+          "name": "list",
+          "params": [
+            {
+              "kind": "struct",
+              "name": "kubernetes.NamespaceCondition"
+            }
+          ]
+        }
+      },
+      {
+        "name": "phase",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      }
+    ],
+    "kubernetes.UserInfo": [
+      {
+        "name": "extra",
+        "type": {
+          "kind": "map",
+          "name": "map",
+          "params": [
+            {
+              "kind": "string",
+              "name": "string"
+            },
+            {
+              "kind": "list",
+              "name": "list",
+              "params": [
+                {
+                  "kind": "string",
+                  "name": "string"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "name": "groups",
+        "type": {
+          "kind": "list",
+          "name": "list",
+          "params": [
+            {
+              "kind": "string",
+              "name": "string"
+            }
+          ]
+        }
+      },
+      {
+        "name": "uid",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      },
+      {
+        "name": "username",
+        "type": {
+          "kind": "string",
+          "name": "string"
+        }
+      }
+    ],
+    "kubernetes.variables": []
+  },
+  "type_idents": {
+    "bool": {
+      "kind": "bool",
+      "name": "bool"
+    },
+    "bytes": {
+      "kind": "bytes",
+      "name": "bytes"
+    },
+    "double": {
+      "kind": "double",
+      "name": "double"
+    },
+    "google.protobuf.Duration": {
+      "kind": "duration",
+      "name": "google.protobuf.Duration"
+    },
+    "google.protobuf.Timestamp": {
+      "kind": "timestamp",
+      "name": "google.protobuf.Timestamp"
+    },
+    "int": {
+      "kind": "int",
+      "name": "int"
+    },
+    "list": {
+      "kind": "list",
+      "name": "list",
+      "params": [
+        {
+          "kind": "dyn",
+          "name": "dyn"
+        }
+      ]
+    },
+    "map": {
+      "kind": "map",
+      "name": "map",
+      "params": [
+        {
+          "kind": "dyn",
+          "name": "dyn"
+        },
+        {
+          "kind": "dyn",
+          "name": "dyn"
+        }
+      ]
+    },
+    "net.CIDR": {
+      "kind": "opaque",
+      "name": "net.CIDR"
+    },
+    "net.IP": {
+      "kind": "opaque",
+      "name": "net.IP"
+    },
+    "null_type": {
+      "kind": "null",
+      "name": "null_type"
+    },
+    "optional_type": {
+      "kind": "opaque",
+      "name": "optional_type"
+    },
+    "string": {
+      "kind": "string",
+      "name": "string"
+    },
+    "type": {
+      "kind": "type",
+      "name": "type"
+    },
+    "uint": {
+      "kind": "uint",
+      "name": "uint"
+    }
+  },
+  "validators": [
+    "cel.validator.homogeneous_literals",
+    "cel.validator.duration",
+    "cel.validator.timestamp",
+    "cel.validator.matches",
+    "cel.validator.string_format"
+  ]
+}
