@@ -345,7 +345,7 @@ module Rubernetes
         target_real = File.realpath(target)
         return nil unless target_real == root_real || target_real.start_with?("#{root_real}#{File::SEPARATOR}")
 
-        JSON.parse(File.binread(target_real), create_additions: false)
+        JSON.parse(File.binread(target_real))
       rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP, Errno::ENOTDIR, JSON::ParserError
         nil
       end
