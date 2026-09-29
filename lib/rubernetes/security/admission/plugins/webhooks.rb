@@ -91,6 +91,7 @@ module Rubernetes
                 return false
               end
             rescue CEL::Error => error
+              record_match_condition(name, attributes, "apiserver_admission_match_condition_evaluation_errors_total")
               raise Rejected.new("failed matchConditions: #{name}: #{condition["name"]}: #{error.message}", plugin: self.name) if failure_policy == "Fail"
 
               return false
