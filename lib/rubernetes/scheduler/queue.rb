@@ -292,7 +292,8 @@ module Rubernetes
 
       def pop(trace: nil)
         @mutex.synchronize do
-          flush_backoff_locked(now_seconds)
+          now = now_seconds
+          flush_backoff_locked(now)
           key, item = ordered(@pending, trace: trace).first
           return nil unless item
 
