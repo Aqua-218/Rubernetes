@@ -393,10 +393,9 @@ module Tsdb
       @head.each_value do |series|
         chunks = []
         remaining = []
-        series.chunks.each do |bytes|
-          decoded = Prom::Gorilla.decode(bytes)
-          if decoded.last[0] < boundary
-            chunks << [bytes, decoded.first[0], decoded.last[0], decoded.length]
+        series.chunks.each do |chunk|
+          if chunk.max_time < boundary
+            chunks << [chunk.bytes, chunk.min_time, chunk.max_time, chunk.count]
           else
             remaining << bytes
           end
