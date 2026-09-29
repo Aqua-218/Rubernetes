@@ -3707,8 +3707,8 @@ module Rubernetes
           next if result.key?(key)
 
           gvr = resource.respond_to?(:storage_gvr) ? resource.storage_gvr : resource.gvr
-          result[key] = counts.fetch("registry/#{gvr}", 0)
-        end.map { |(group, name), count| [group, name, count] }
+          result[key] = [counts.fetch("registry/#{gvr}", 0), sizes.fetch("registry/#{gvr}", 0)]
+        end.map { |(group, name), (count, bytes)| [group, name, count, bytes] }
       end
 
       # The endpoint labels MonitorRequest reports: CleanScope, and the verb
