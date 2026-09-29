@@ -271,7 +271,7 @@ module Rubernetes
       # "kubelet", "kube-controller-manager", ...) that is not registered
       # yet; custom collectors and summaries are left to their collectors.
       def register_upstream(component, endpoint: "/metrics")
-        unimplemented = UNIMPLEMENTED.fetch(component, {})
+        unimplemented = SHARED_UNIMPLEMENTED.merge(UNIMPLEMENTED.fetch(component, {}))
         self.class.upstream.each do |name, entry|
           next unless entry["components"].include?(component)
           next unless Array(entry.dig("endpoints", component)).include?(endpoint)
