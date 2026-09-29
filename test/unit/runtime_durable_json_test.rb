@@ -130,7 +130,7 @@ class RuntimeDurableJSONTest < Minitest::Test
       store = Runtime::AtomicSnapshotStore.new(directory, fsync: false)
       store.write(snapshot_id: "base", state: "WorkloadStopped", identity: "base-id", payload: {})
       path = File.join(directory, "base.snapshot.json")
-      snapshot = JSON.parse(File.binread(path), create_additions: false)
+      snapshot = JSON.parse(File.binread(path))
       snapshot["checksum"] = "0" * 64
       File.write(path, JSON.generate(snapshot) << "\n")
 
