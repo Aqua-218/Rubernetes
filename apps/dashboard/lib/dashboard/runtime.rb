@@ -102,7 +102,7 @@ module Dashboard
     end
 
     def scraper
-      @scraper ||= Prom::Scraper.new(store, timeout_seconds: Config.scrape_timeout_seconds, logger: @logger)
+      memoize(:scraper) { Prom::Scraper.new(store, timeout_seconds: Config.scrape_timeout_seconds, logger: @logger) }
     end
 
     def collector
