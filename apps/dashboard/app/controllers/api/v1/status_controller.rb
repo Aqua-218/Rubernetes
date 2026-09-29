@@ -19,7 +19,7 @@ module Api
         end
         state = params[:state].to_s
         active = active.select { |t| t["health"] == "up" } if state == "active"
-        success("activeTargets" => active, "droppedTargets" => [], "droppedTargetCounts" => {})
+        success({"activeTargets" => active, "droppedTargets" => [], "droppedTargetCounts" => {}})
       end
 
       # GET /api/v1/rules
@@ -33,7 +33,7 @@ module Api
 
       # GET /api/v1/alerts
       def alerts
-        success("alerts" => runtime.rules.alerts.map { |a| runtime.rules.alert_to_api(a) })
+        success({"alerts" => runtime.rules.alerts.map { |a| runtime.rules.alert_to_api(a) }})
       end
 
       def buildinfo
@@ -43,29 +43,29 @@ module Api
       def tsdb
         stats = store.stats
         top = top_series_by_metric
-        success("headStats" => {"numSeries" => stats["head_series"], "numLabelPairs" => nil, "chunkCount" => stats["head_chunks"],
-                                "minTime" => nil, "maxTime" => nil},
-                "seriesCountByMetricName" => top,
-                "labelValueCountByLabelName" => [], "memoryInBytesByLabelName" => [], "seriesCountByLabelValuePair" => [],
-                "storage" => stats)
+        success({"headStats" => {"numSeries" => stats["head_series"], "numLabelPairs" => nil, "chunkCount" => stats["head_chunks"],
+                                 "minTime" => nil, "maxTime" => nil},
+                 "seriesCountByMetricName" => top,
+                 "labelValueCountByLabelName" => [], "memoryInBytesByLabelName" => [], "seriesCountByLabelValuePair" => [],
+                 "storage" => stats})
       end
 
       def runtimeinfo
         collector = runtime.collector
-        success("startTime" => runtime.started_at.iso8601, "CWD" => Dir.pwd, "reloadConfigSuccess" => true,
-                "lastConfigTime" => runtime.started_at.iso8601, "corruptionCount" => 0, "goroutineCount" => Thread.list.length,
-                "GOMAXPROCS" => nil, "GOGC" => nil, "GODEBUG" => nil, "storageRetention" => "#{Dashboard::Config.retention_ms / 1000}s",
-                "collectorRunning" => collector.running?, "lastRound" => collector.last_round_at,
-                "discoveryError" => collector.discovery_error)
+        success({"startTime" => runtime.started_at.iso8601, "CWD" => Dir.pwd, "reloadConfigSuccess" => true,
+                 "lastConfigTime" => runtime.started_at.iso8601, "corruptionCount" => 0, "goroutineCount" => Thread.list.length,
+                 "GOMAXPROCS" => nil, "GOGC" => nil, "GODEBUG" => nil, "storageRetention" => "#{Dashboard::Config.retention_ms / 1000}s",
+                 "collectorRunning" => collector.running?, "lastRound" => collector.last_round_at,
+                 "discoveryError" => collector.discovery_error})
       end
 
-      def config
-        success("yaml" => {"global" => {"scrape_interval" => "#{Dashboard::Config.scrape_interval_seconds.to_i}s",
+      def config_status
+        success({"yaml" => {"global" => {"scrape_interval" => "#{Dashboard::Config.scrape_interval_seconds.to_i}s",
                                         "scrape_timeout" => "#{Dashboard::Config.scrape_timeout_seconds.to_i}s",
                                         "evaluation_interval" => "#{Dashboard::Config.evaluation_interval_seconds.to_i}s"},
                            "rule_files" => [Dashboard::Config.rules_path],
                            "storage" => {"retention" => ENV.fetch("DASHBOARD_RETENTION", "15d"), "path" => Dashboard::Config.data_dir},
-                           "kubeconfig" => Dashboard::Config.kubeconfig_path}.to_yaml)
+                           "kubeconfig" => Dashboard::Config.kubeconfig_path}.to_yaml})
       end
 
       private
