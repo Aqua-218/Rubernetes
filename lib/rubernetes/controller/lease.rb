@@ -167,6 +167,41 @@ module Rubernetes
         raise
       end
 
+      # The fast path: renew the cached record; nil hands over to the slow
+      # path (a conflict, or a cached record that is not ours any more).
+      private def fast_path_renew(now)
+        cached = @last_observed
+        holder = Support.value(Support.spec(cached), "holderIdentity", nil).to_s
+        return nil unless holder == identity
+
+        result = renew(now, cached)
+        return result unless result == :contended
+
+        # The record moved under the cached copy; the slow path re-reads it
+        # and decides, so leadership is not given up here.
+        @state = :leader
+        count_slow_path
+        nil
+      rescue StandardError
+        # The cached record could not be renewed: the slow path decides.
+        count_slow_path
+        nil
+      end
+
+      private def count_slow_path
+        slowpath_counter&.increment("leader_election_slowpath_total", {"name" => name})
+      rescue StandardError
+        nil
+      end
+
+      private def slowpath_counter
+        return nil unless defined?(Rubernetes::Observability::Metrics)
+
+        registry = Rubernetes::Observability::Metrics.global
+        registry.register("leader_election_slowpath_total", type: :counter) unless registry.registered?("leader_election_slowpath_total")
+        registry
+      end
+
       public def renew(now = normalize_time(@clock.call), lease = current)
         return :follower unless lease
         holder = Support.value(Support.spec(lease), "holderIdentity", nil).to_s
