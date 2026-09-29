@@ -626,6 +626,7 @@ module Rubernetes
             @batch&.failed(cycle)
             unreserve_started = monotonic
             rollback!(reservation, typed_pod, selected.node, error, context: context, trace: trace)
+            @metrics.extension_point(:unreserve, Metrics::STATUS_SUCCESS, monotonic - unreserve_started)
             status = requeue_after_failure(typed_pod, error)
             ScheduleResult.new(status: status, pod: typed_pod, node: selected.node,
                                filtered: filtered, scores: breakdowns, victims: victims, trace: trace,
