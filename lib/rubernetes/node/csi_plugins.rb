@@ -83,6 +83,10 @@ module Rubernetes
         true
       end
 
+      # ->(driver_name, method_name, grpc_status_code, seconds), handed to
+      # every driver's bridge (csi_operations_seconds).
+      attr_accessor :metrics_observer
+
       def register_plugin(name, endpoint, versions)
         name = name.to_s
         version = highest_supported_version(name, versions)
