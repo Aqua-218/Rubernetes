@@ -178,7 +178,8 @@ module Prom
                   base.class.new(**base.to_h.merge(server: server))
                 end
       Rubernetes::Client::HTTPClient.new(context: context)
-    rescue StandardError
+    rescue StandardError => e
+      @last_error = "#{e.class}: #{e.message}"
       nil
     end
 
