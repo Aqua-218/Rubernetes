@@ -158,9 +158,20 @@ module Tsdb
     # apply retention.  Call after each scrape; cheap when nothing is due.
     def maintain(now_ms = current_ms)
       synchronize do
-        oldest = @head.values.filter_map(&:min_time).min
-        cut_head(now_ms) if oldest && now_ms - oldest >= @block_range_ms
-        apply_retention(now_ms)
+        # Block cuts happen at most once per block range; between them the
+        # scan of the head is skipped entirely.
+        if @next_cut_check.nil? || now_ms >= @next_cut_check
+          oldest = @head.values.filter_map(&:min_time).min
+          if oldest && now_ms - oldest >= @block_range_ms
+            cut_head(now_ms)
+          else
+            @next_cut_check = oldest ? oldest + @block_range_ms : now_ms + 60_000
+          end
+        end
+        if @next_retention_check.nil? || now_ms >= @next_retention_check
+          apply_retention(now_ms)
+          @next_retention_check = now_ms + 60_000
+        end
       end
     end
 
