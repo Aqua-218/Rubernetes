@@ -482,6 +482,8 @@ module Rubernetes
                                        scores: [], victims: [], trace: trace, reason: reason, gated: true)
           end
 
+          Thread.current[:rubernetes_scheduler_sample_plugins] = @metrics.sample_plugins?
+          gate_started = monotonic
           gate_result = run_pre_enqueue(typed_pod, context, trace)
           unless gate_result == true
             reason = gate_result.fetch("reason", "pod is not ready for scheduling")
