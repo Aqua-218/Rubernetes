@@ -1999,8 +1999,12 @@ module Rubernetes
       def observe_pod(object)
         typed = Scheduler::Pod.new(object)
         key = [typed.namespace, typed.name, typed.uid].freeze
-        @mutex.synchronize { @pods[key] = typed }
-        enqueue_if_schedulable(typed)
+        previous = @mutex.synchronize { @pods[key].tap { @pods[key] = typed } }
+        assigned = !typed.node_name.empty?
+        event = if previous.nil? then assigned ? "assignedPodAdd" : "PodAdd"
+                else assigned ? "assignedPodUpdate" : "PodUpdate"
+                end
+        timed_event(event) { enqueue_if_schedulable(typed) }
       end
 
       def delete_pod(object)
