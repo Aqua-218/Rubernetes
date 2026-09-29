@@ -1105,6 +1105,7 @@ module Rubernetes
           begin
             @backend.apply(diff)
           rescue StaleRevisionError
+            full = true
             resynchronize_backend(all_rules, @rule_set.revision)
           end
           diff
