@@ -192,7 +192,7 @@ module M2KubernetesLifecycleOracleRunner
     unless status.success?
       raise M2KubernetesLifecycleOracle::OracleError, "self-contained lifecycle image build failed: #{stderr.to_s.strip.empty? ? "exit status #{status.exitstatus || 1}" : stderr.to_s.strip}"
     end
-    document = JSON.parse(stdout, create_additions: false, max_nesting: 128)
+    document = JSON.parse(stdout, max_nesting: 128)
     image = document.is_a?(Hash) ? document["image"] : nil
     runtime = document.is_a?(Hash) ? document["runtime"] : nil
     unless image.is_a?(String) && image.match?(/\A[^@]+@sha256:[0-9a-f]{64}\z/)
