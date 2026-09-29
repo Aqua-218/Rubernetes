@@ -379,6 +379,31 @@ module Tsdb
       SQL
     end
 
+    # SQLite stores a binary-encoded Ruby string as a BLOB, and a BLOB never
+    # equals the TEXT a query binds: series appended from an HTTP body (which
+    # Net::HTTP hands over as ASCII-8BIT) would be invisible to every
+    # matcher.  The exposition format is UTF-8, so label text is made UTF-8
+    # here (invalid bytes are replaced rather than raised on).
+    def text(value)
+      string = value.to_s
+      return string if string.encoding == Encoding::UTF_8 && string.valid_encoding?
+
+      utf8 = string.dup.force_encoding(Encoding::UTF_8)
+      utf8.valid_encoding? ? utf8 : string.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "\uFFFD")
+    end
+
+    # Index rows written before #text existed are BLOBs; cast them once.
+    def repair_binary_text
+      blobs = @db.get_first_value("SELECT COUNT(*) FROM labels WHERE typeof(value) = 'blob' OR typeof(name) = 'blob'")
+      metrics = @db.get_first_value("SELECT COUNT(*) FROM series WHERE typeof(metric) = 'blob' OR typeof(labels) = 'blob'")
+      return if blobs.zero? && metrics.zero?
+
+      @db.transaction do
+        @db.execute("UPDATE labels SET name = CAST(name AS TEXT), value = CAST(value AS TEXT) WHERE typeof(value) = 'blob' OR typeof(name) = 'blob'")
+        @db.execute("UPDATE series SET metric = CAST(metric AS TEXT), labels = CAST(labels AS TEXT) WHERE typeof(metric) = 'blob' OR typeof(labels) = 'blob'")
+      end
+    end
+
     def fingerprint(labels)
       Digest::SHA256.hexdigest(labels.sort.map { |k, v| "#{k}\u0000#{v}" }.join("\u0001"))[0, 32]
     end
