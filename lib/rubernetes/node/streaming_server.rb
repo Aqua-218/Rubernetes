@@ -717,6 +717,12 @@ module Rubernetes
             VOLUME_STATS_METRICS.each do |name, (field, _help)|
               registry.set(name, volume[field].to_i, labels) unless volume[field].nil?
             end
+            # kubelet_volume_stats_health_status_abnormal: the CSI driver's
+            # volume condition (0 for a volume with stats and no condition).
+            condition = volume["volumeCondition"]
+            abnormal = condition.is_a?(Hash) && (condition["abnormal"] || condition[:abnormal]) ? 1 : 0
+            registry.register("kubelet_volume_stats_health_status_abnormal", type: :gauge) unless registry.registered?("kubelet_volume_stats_health_status_abnormal")
+            registry.set("kubelet_volume_stats_health_status_abnormal", abnormal, labels)
           end
         end
       rescue StandardError => error
