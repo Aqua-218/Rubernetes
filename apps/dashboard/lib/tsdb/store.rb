@@ -116,6 +116,7 @@ module Tsdb
       @dir = File.expand_path(dir)
       @block_range_ms = Integer(block_range_ms)
       @retention_ms = Integer(retention_ms)
+      @readonly = readonly
       FileUtils.mkdir_p(File.join(@dir, "wal"))
       FileUtils.mkdir_p(File.join(@dir, "blocks"))
       @db = SQLite3::Database.new(File.join(@dir, "index.sqlite"))
