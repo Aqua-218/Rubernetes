@@ -66,7 +66,8 @@ module Rubernetes
             return hit.first
           end
 
-          result = yield
+          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          result = fetch { yield }
           if result
             @mutex.synchronize do
               @entries.delete(key)
