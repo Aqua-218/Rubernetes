@@ -521,6 +521,12 @@ module Rubernetes
               # MaxUnavailableStatefulSet semantics (updateStatefulSetAfterInvariantEstablished).
               max_unavailable = [Support.quantity(Support.value(rolling, "maxUnavailable", 1), desired, mode: :floor, default: 1), 1].max
               unavailable_pods = targets.count { |pod| unavailable.call(pod) }
+              # statefulset_controller_statefulset_{max_unavailable,unavailable_replicas}:
+              # recorded, as upstream, only with the MaxUnavailableStatefulSet gate on.
+              gauge_labels = {"pod_management_policy" => Support.value(Support.spec(working_set), "podManagementPolicy", "OrderedReady").to_s,
+                              "statefulset_name" => Support.name(working_set).to_s, "statefulset_namespace" => Support.namespace(working_set).to_s}
+              ControllerMetrics.set("statefulset_controller_statefulset_max_unavailable", max_unavailable, gauge_labels)
+              ControllerMetrics.set("statefulset_controller_statefulset_unavailable_replicas", unavailable_pods, gauge_labels)
               if unavailable_pods < max_unavailable
                 budget = max_unavailable - unavailable_pods
                 deleted = 0
