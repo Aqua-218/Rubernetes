@@ -401,6 +401,15 @@ module Rubernetes
         self.class.upstream.each do |name, entry|
           next unless entry["components"].include?(component)
           next unless Array(entry.dig("endpoints", component)).include?(endpoint)
+          if ALWAYS_PRESENT_EMPTY.key?(name)
+            type = UPSTREAM_TYPES[entry["type"]]
+            next unless type && !@mutex.synchronize { @metrics.key?(name) }
+
+            register(name, type: type)
+            initial = ALWAYS_PRESENT_EMPTY[name]
+            set(name, initial) if initial
+            next
+          end
           next if unimplemented.key?(name)
 
           type = UPSTREAM_TYPES[entry["type"]]
