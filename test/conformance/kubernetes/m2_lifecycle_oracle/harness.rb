@@ -893,7 +893,7 @@ module M2LifecycleOracleHarness
       restartable = Array(document.dig("spec", "initContainers")).select { |container| container["restartPolicy"] == "Always" }.map { |container| container.fetch("name") }
       containers.map do |container|
         inspect, = node_exec("crictl", "inspect", container.fetch("id"))
-        status = JSON.parse(inspect, create_additions: false, max_nesting: 64)["status"] || {}
+        status = JSON.parse(inspect, max_nesting: 64)["status"] || {}
         name = status.dig("labels", "io.kubernetes.container.name") || status.dig("metadata", "name")
         {
           "name" => name,
