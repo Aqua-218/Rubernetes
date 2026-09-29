@@ -403,6 +403,17 @@ module Rubernetes
         self
       end
 
+      # x509metrics: a serving certificate with no Subject Alternative Name
+      # extension, and one signed with SHA-1 (the legacy checks the
+      # aggregator and webhook clients count).
+      def self.certificate_has_san?(certificate)
+        certificate.extensions.any? { |extension| extension.oid == "subjectAltName" }
+      end
+
+      def self.certificate_sha1?(certificate)
+        certificate.signature_algorithm.to_s.match?(/sha1/i)
+      end
+
       # component-base shouldHide: a deprecated metric is served for its
       # stability level's deprecation period (STABLE 3 minors, BETA 1,
       # ALPHA 0) after its deprecated version and hidden from then on --
