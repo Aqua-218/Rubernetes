@@ -2332,6 +2332,10 @@ module Rubernetes
       # and the resource's cache is now at this revision.
       def record_commit(key, terminated)
         labels = group_resource_labels(key)
+        # A committed entry is what the replica receives from its storage
+        # (the raft log): apiserver_storage_events_received_total, then the
+        # watch cache's own receipt/dispatch.
+        @metrics.increment("apiserver_storage_events_received_total", labels)
         @metrics.increment("apiserver_watch_cache_events_received_total", labels)
         @metrics.increment("apiserver_watch_cache_events_dispatched_total", labels)
         @metrics.set("apiserver_watch_cache_resource_version", @revision % 1_000_000_000_000_000, labels)
