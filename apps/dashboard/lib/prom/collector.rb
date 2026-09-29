@@ -59,6 +59,7 @@ module Prom
         end
         @last_evaluation_at = now_ms
       end
+      maintain_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       @store.maintain(now_ms)
       @last_round_at = now_ms
       @scraper.statuses.values
