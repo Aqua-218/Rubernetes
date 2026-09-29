@@ -659,6 +659,9 @@ module Rubernetes
         previous = @endpoint_store.service(service.key)
         release_previous = previous&.node_port? && !service.node_port?
         service = @node_port_allocator.allocate_for_service(service) if service.node_port?
+        # Counted before the store publishes: the sync that follows resets
+        # the pending count.
+        @metrics&.service_changed
         @endpoint_store.apply_service(service)
         @node_port_allocator.release_service(previous) if release_previous
         compile_service(service) unless @endpoint_store_subscribed
