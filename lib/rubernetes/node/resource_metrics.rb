@@ -155,6 +155,22 @@ module Rubernetes
         ["container_start_time_seconds", "gauge", "Start time of the container since unix epoch in seconds."],
         ["container_scrape_error", "gauge", "1 if there was an error while getting container metrics, 0 otherwise"]
       ].freeze
+      MACHINE_FAMILIES = [
+        ["cadvisor_version_info", "gauge", "A metric with a constant '1' value labeled by kernel version, OS version, docker version, cadvisor version & cadvisor revision."],
+        ["machine_cpu_cores", "gauge", "Number of logical CPU cores."],
+        ["machine_cpu_physical_cores", "gauge", "Number of physical CPU cores."],
+        ["machine_cpu_sockets", "gauge", "Number of CPU sockets."],
+        ["machine_memory_bytes", "gauge", "Amount of memory installed on the machine."],
+        ["machine_swap_bytes", "gauge", "Amount of swap memory available on the machine."],
+        ["machine_scrape_error", "gauge", "1 if there was an error while getting machine metrics, 0 otherwise."]
+      ].freeze
+      # cAdvisor reports an unlimited memory.max as the largest page-aligned int64.
+      UNLIMITED_MEMORY = 9_223_372_036_854_771_712
+      TASK_STATES = {"R" => "running", "S" => "sleeping", "D" => "uninterruptible", "T" => "stopped", "t" => "stopped",
+                     "Z" => "sleeping", "I" => "sleeping"}.freeze
+      TASK_STATE_NAMES = %w[sleeping running stopped uninterruptible iowaiting].freeze
+      # cAdvisor 0.52 is what kubelet v1.36 vendors.
+      CADVISOR_VERSION = "v0.52.1"
 
       module_function
 
