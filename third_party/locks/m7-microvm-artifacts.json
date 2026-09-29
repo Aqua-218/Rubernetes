@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-06T10:21:36Z",
+  "purpose": "M7 MicroVM guest artifacts: Firecracker v1.16.1 release binaries, pinned guest kernel, read-only rootfs with the Ruby guest supervisor, dm-verity hash tree",
+  "firecracker": {
+    "version": "1.16.1",
+    "release_archive_sha256": "382a02a869e4d6d5cb14c40577f9545e8458021ea8b0b2d3fc10ec14d9c242e6",
+    "release_url": "https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-x86_64.tgz"
+  },
+  "kernel": {
+    "version": "6.1.128",
+    "source_sha256": "874d67d3181570e69ac6b33853f0448f05fc90d4cf3e4baaadc4a9cede7c50f3",
+    "base_config": "firecracker v1.16.1 resources/guest_configs/microvm-kernel-ci-x86_64-6.1.config",
+    "base_config_sha256": "adbc70ab5e89213ba00594b12d25e09bdf8bb1ed3c252d7449326bb14c22963b",
+    "build_script": "tools/microvm/build_guest_kernel.sh",
+    "added_options": [
+      "CONFIG_SECURITY_LANDLOCK",
+      "CONFIG_DM_VERITY",
+      "CONFIG_IKCONFIG_PROC",
+      "CONFIG_PSI",
+      "CONFIG_CGROUP_FREEZER"
+    ]
+  },
+  "guest_image": {
+    "base": "ruby@sha256:c5a5064d190055633011c03aa800170cc36945ff3afb5f6c915329f92d6f1e00",
+    "base_image_id": "sha256:d54af8cf8ed560904650c522557cbee50ba0f7611c127194b2f6727e0ee420c8",
+    "lib_tree_sha256": "75522b0210515965942121e274805621d35c4c21801546fdd51c39d7eb8f77ca",
+    "extension_sha256": "b97e4054e85c447e4b4a26c8f0e0487198ab867bc84d5aa0ce33f4b2db3e2695",
+    "generated_platform_sha256": "f5bc74a55509d5971e40b74fdff2f66ffe00637a985b5fd127e7cd0531372920",
+    "init": "lib/rubernetes/runtime/microvm/guest/init.rb",
+    "size_mib": 768
+  },
+  "verity": {
+    "algorithm": "sha256",
+    "data_block_size": 4096,
+    "hash_block_size": 4096,
+    "root_hash": "e8114ee988804d7a0e35b65e3bb06fdb250996e8faaffbdf179241fd57cd8b5e",
+    "salt": "987696e06decfd94c320be07f2d9ab4feacddd83933639259dc54649b74212ed"
+  },
+  "guest_bundle": {
+    "sha256": "75522b0210515965942121e274805621d35c4c21801546fdd51c39d7eb8f77ca"
+  },
+  "files": {
+    "firecracker": {
+      "path": "build/microvm/artifacts/firecracker",
+      "sha256": "2fd0171309af7e24cf8dafc8a6f921c1434c49b5f9349bb996b7ed0a4deb8aa7",
+      "bytes": 3527456
+    },
+    "jailer": {
+      "path": "build/microvm/artifacts/jailer",
+      "sha256": "1f3a0c1fe86212d0001819bfe0819071c01208b3ccc9398c3b3bc1b84cf21edd",
+      "bytes": 2181264
+    },
+    "seccomp_filter": {
+      "path": "build/microvm/artifacts/seccomp-filter.json",
+      "sha256": "1b683d5c9fc51174ab1926b84aaf10dc2164678f6c2fe7c38a910556d7b5dc39",
+      "bytes": 50351
+    },
+    "kernel": {
+      "path": "build/microvm/artifacts/vmlinux",
+      "sha256": "ea02403ae4c3a3a6957f08291cf58550139de588a3e2b43a653e1ca308a71593",
+      "bytes": 44492256
+    },
+    "rootfs": {
+      "path": "build/microvm/artifacts/rootfs.ext4",
+      "sha256": "c05e233fb0ce01ad84a8e47a9fc2e08e3684ea46c457b8825de7a1b86b58b9c8",
+      "bytes": 805306368
+    },
+    "verity_hash": {
+      "path": "build/microvm/artifacts/rootfs.verity",
+      "sha256": "595a661faa33104558ffccd5ee2255bdef7efcd75eae8f0794363357072f3ead",
+      "bytes": 6348800
+    },
+    "kernel_config": {
+      "path": "build/microvm/artifacts/vmlinux.config",
+      "sha256": "da13db4a8bf5f694ee319d136226f01e0f5a94992ac372fc70554b4ffc3a8bd2",
+      "bytes": 92054
+    }
+  }
+}
