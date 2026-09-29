@@ -97,6 +97,9 @@ module Rubernetes
           end
         end
         bridge = @bridge_factory.call(endpoint.to_s)
+        # csi_operations_seconds: every RPC of this driver, by name.
+        bridge.driver_name = name if bridge.respond_to?(:driver_name=)
+        bridge.metrics_observer = @metrics_observer if bridge.respond_to?(:metrics_observer=)
         adapter = Volume::KubernetesCSIAdapter.new(driver: name, bridge: bridge, api: @api, node_name: @node_name, **@adapter_options)
         driver = Driver.new(name: name, endpoint: endpoint.to_s, version: version, adapter: adapter)
         @mutex.synchronize { @drivers[name] = driver }
