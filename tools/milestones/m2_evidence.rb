@@ -124,7 +124,7 @@ end
 def formal_runtime_claim?(report_path)
   return false unless File.file?(report_path)
 
-  document = JSON.parse(File.binread(report_path), create_additions: false, max_nesting: 512)
+  document = JSON.parse(File.binread(report_path), max_nesting: 512)
   claims = document["formal_claims"]
   claims.is_a?(Array) && claims.include?("RuntimeLifecycle")
 rescue JSON::ParserError, Errno::ENOENT, Errno::EACCES
