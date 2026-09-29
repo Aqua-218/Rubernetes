@@ -46,7 +46,7 @@ module M4VolumeObservationRunner
     raw = $stdin.read.to_s
     return {} if raw.strip.empty?
 
-    request = JSON.parse(raw, create_additions: false, max_nesting: 256)
+    request = JSON.parse(raw, max_nesting: 256)
     raise ArgumentError, "runner request must be an object" unless request.is_a?(Hash)
 
     request
