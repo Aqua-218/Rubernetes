@@ -593,6 +593,7 @@ module Rubernetes
             @batch&.failed(cycle)
             raise
           end
+          @metrics.extension_point(:score, Metrics::STATUS_SUCCESS, monotonic - score_started)
           selected = select_host(breakdowns)
           if @batch
             ranked = breakdowns.reject { |breakdown| breakdown.equal?(selected) }
