@@ -616,6 +616,9 @@ module Rubernetes
       end
 
       # /metrics/cadvisor from the Summary.
+      # /metrics/cadvisor: rendered from every running Pod's raw cgroup
+      # accounting when the stats provider has runtime access, else from
+      # the Summary.
       def cadvisor_metrics
         summary = begin
           @stats_provider.respond_to?(:summary) ? @stats_provider.summary : {"pods" => []}
