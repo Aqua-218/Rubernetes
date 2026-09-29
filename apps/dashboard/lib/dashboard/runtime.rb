@@ -47,7 +47,7 @@ module Dashboard
     # instances over the same directory would each treat the other's series
     # as orphans and delete them.
     def client
-      @client ||= begin
+      memoize(:client) do
         require "rubernetes/client"
         Rubernetes::Client::KubernetesClient.from_kubeconfig(path: Config.kubeconfig_path)
       rescue StandardError => e
