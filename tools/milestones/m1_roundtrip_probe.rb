@@ -861,7 +861,7 @@ end
 def build_validation_handler_fixture(codec:, mapping:, owner_type:, target_json:, target_schema:, types_by_schema:, augment: nil)
   owner_klass = generated_class(owner_type)
   gvk = mapping.fetch("owner_gvk")
-  base = JSON.parse(JSON.generate(minimal_required_values(owner_type, types_by_schema, include_zero_references: true)), create_additions: false)
+  base = JSON.parse(JSON.generate(minimal_required_values(owner_type, types_by_schema, include_zero_references: true)))
   base["apiVersion"] = validation_owner_api_version(gvk)
   base["kind"] = gvk.fetch("kind")
   target = JSON.parse(target_json, create_additions: false)
