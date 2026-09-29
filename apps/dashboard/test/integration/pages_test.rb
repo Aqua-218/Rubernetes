@@ -144,4 +144,17 @@ class PagesTest < ActionDispatch::IntegrationTest
     assert_select "h1", "RuntimeError"
     assert_select "pre", text: /connection refused/
   end
+
+  test "host authorization admits the configured names and rejects others" do
+    # localhost is always in Dashboard::Config.allowed_hosts; the public
+    # Ingress name arrives through DASHBOARD_EXTERNAL_URL (see the config test).
+    host! "localhost"
+    get "/"
+    assert_response :success
+    host! "evil.example.net"
+    get "/"
+    assert_response :forbidden
+    get "/up"
+    assert_response :success, "/up is excluded so load balancers can probe by address"
+  end
 end
