@@ -1,0 +1,10 @@
+version: 1
+logging:
+  level: info
+processes:
+  rubernetes-apiserver: {}
+  rubernetes-controller-manager: {}
+  rubernetes-scheduler: {}
+  rubernetes-agent: {}
+  rubernetes-proxy: {}
+  rubectl: {}
