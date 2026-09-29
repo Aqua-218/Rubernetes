@@ -2237,7 +2237,7 @@ module M1Gate
       path = REPORTS.fetch("api", {}).fetch(:names, %w[api-differential.json]).map { |name| ::File.join(@evidence_directory, name) }.find { |candidate| ::File.file?(candidate) }
       return nil unless path
 
-      document = JSON.parse(::File.binread(path), create_additions: false, max_nesting: 256)
+      document = JSON.parse(::File.binread(path), max_nesting: 256)
       index = {}
       # The API probe reports its executed requests under "operations";
       # older reports used "comparisons".
