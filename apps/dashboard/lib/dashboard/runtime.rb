@@ -79,7 +79,7 @@ module Dashboard
     end
 
     def targets
-      @targets ||= begin
+      memoize(:targets) do
         discovery = Prom::Targets.new(client: client, cluster_json: Config.cluster_json, kubeconfig_context: kubeconfig_context)
         state = kube_state
         -> { discovery.discover + (state ? [state.target] : []) }
