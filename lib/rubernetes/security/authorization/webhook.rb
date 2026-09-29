@@ -89,7 +89,10 @@ module Rubernetes
               Decision.no_opinion(status["reason"], authorizer: NAME)
             end
           rescue Error, JSON::ParserError, SystemCallError, IOError => error
-            @failure_policy == "Deny" ? Decision.deny("Webhook: #{error.message}", authorizer: NAME) : Decision.no_opinion("Webhook: #{error.message}", authorizer: NAME)
+            result = error.is_a?(Errno::ETIMEDOUT) || error.message.to_s.match?(/timed? ?out/i) ? "timeout" : "error"
+            fail_open = @failure_policy != "Deny"
+            self.class.record_fail_open(name, result) if fail_open
+            fail_open ? Decision.no_opinion("Webhook: #{error.message}", authorizer: NAME) : Decision.deny("Webhook: #{error.message}", authorizer: NAME)
           end
           ttl = decision.allowed? ? @authorized_ttl : @unauthorized_ttl
           @mutex.synchronize { @cache[key] = {decision: decision, expires_at: now + ttl} }
