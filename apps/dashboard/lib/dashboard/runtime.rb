@@ -131,6 +131,23 @@ module Dashboard
 
     private
 
+    # Memoise under the runtime lock; a nil result (a failed client) is
+    # retried on the next call so a cluster that comes up later is found.
+    def memoize(name)
+      variable = :"@#{name}"
+      value = instance_variable_get(variable)
+      return value unless value.nil?
+
+      @mutex.synchronize do
+        value = instance_variable_get(variable)
+        return value unless value.nil?
+
+        value = yield
+        instance_variable_set(variable, value)
+        value
+      end
+    end
+
     def log(level, event, **fields)
       line = {"timestamp" => Time.now.utc.iso8601(6), "level" => level.to_s, "event" => event}.merge(fields.transform_keys(&:to_s))
       if defined?(Rails) && Rails.logger
