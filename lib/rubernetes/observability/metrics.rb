@@ -758,6 +758,8 @@ module Rubernetes
         begin
           Array(source.call).each do |group, resource, count, bytes|
             set_storage_count(group, resource, count)
+            # apiserver_resource_size_estimate_bytes, when the source knows sizes.
+            set("apiserver_resource_size_estimate_bytes", bytes, {"group" => group.to_s, "resource" => resource.to_s}) if bytes
           end
         rescue StandardError
           known = @mutex.synchronize { @metrics["apiserver_resource_objects"].values.keys.map(&:to_h) }
