@@ -86,7 +86,10 @@ module Rubernetes
             started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             Array(conditions).each do |condition|
               result = cel.evaluate(condition.fetch("expression"), cel_variables(attributes))
-              return false unless result == true
+              unless result == true
+                record_match_condition(name, attributes, "apiserver_admission_match_condition_exclusions_total")
+                return false
+              end
             rescue CEL::Error => error
               raise Rejected.new("failed matchConditions: #{name}: #{condition["name"]}: #{error.message}", plugin: self.name) if failure_policy == "Fail"
 
