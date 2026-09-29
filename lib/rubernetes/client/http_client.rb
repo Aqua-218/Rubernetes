@@ -1170,6 +1170,19 @@ module Rubernetes
         end
       end
 
+      # rest_client_dns_resolution_duration_seconds{host}: one name lookup
+      # before a new connection.
+      def dns_resolution(uri, seconds)
+        metrics = registry
+        return unless metrics
+
+        name = "rest_client_dns_resolution_duration_seconds"
+        metrics.register(name, type: :histogram) unless metrics.registered?(name)
+        metrics.observe(name, seconds, {"host" => host_of(uri)})
+      rescue StandardError
+        nil
+      end
+
       def record(method, uri, code, seconds, request_size, response_size)
         attempt(method, uri, code, request_size, false)
         latency(method, uri, seconds, response_size)
