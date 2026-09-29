@@ -92,11 +92,15 @@ end
 module Rubernetes
   module Node
     # /metrics/cadvisor: the container metrics kubelet's embedded cAdvisor
-    # collector exports (cadvisor/metrics/prometheus.go), for the containers
-    # and Pods of the Summary -- the same measurements /stats/summary gives,
-    # under cAdvisor's names and labels (container, id, image, name,
-    # namespace, pod; cpu="total" for the CPU counter), plus the machine
-    # totals.  The Pod's own cgroup is the entry with an empty container.
+    # exports (cadvisor/metrics/prometheus.go with the kubelet's included
+    # metric sets: cpu, memory, disk usage and I/O, network, process, OOM),
+    # rendered straight from each running Pod's cgroup v2 accounting
+    # (Runtime#pod_usage) under cAdvisor's names, help strings and labels:
+    # id (the cgroup path), name (the container's runtime id), image,
+    # container, pod, namespace; the Pod's own cgroup is the entry with an
+    # empty container, and carries the network counters of the Pod's
+    # namespace.  Every container sample carries cAdvisor's millisecond
+    # timestamp.  The machine_* gauges and cadvisor_version_info come with it.
     module CadvisorMetrics
       DESCRIPTORS = [
         ["machine_cpu_cores", "gauge", "Number of logical CPU cores."],
