@@ -62,7 +62,12 @@ module Prom
       maintain_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       @store.maintain(now_ms)
       @last_round_at = now_ms
-      @scraper.statuses.values
+      statuses = @scraper.statuses.values
+      @last_round_seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - round_started
+      @logger&.call(:info, "collector.round", targets: discovered.length, up: statuses.count { |s| s.health == "up" },
+                                              seconds: @last_round_seconds.round(3),
+                                              maintain_seconds: (Process.clock_gettime(Process::CLOCK_MONOTONIC) - maintain_started).round(3))
+      statuses
     end
 
     def start
