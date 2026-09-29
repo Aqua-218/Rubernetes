@@ -191,7 +191,9 @@ module Prom
     def plain_http_fetch(url)
       require "net/http"
       uri = URI(url)
-      http = Net::HTTP.new(uri.host, uri.port)
+      # Pod and Service addresses are reached directly: never through the
+      # proxy the environment may configure for the outside world.
+      http = Net::HTTP.new(uri.host, uri.port, nil)
       http.use_ssl = uri.scheme == "https"
       http.verify_mode = OpenSSL::SSL::VERIFY_NONE if http.use_ssl?
       http.open_timeout = 5
