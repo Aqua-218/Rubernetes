@@ -61,6 +61,10 @@ module Rubernetes
         @items = {}
         @order = []
         @queued = {}
+        # informer_processing_latency_seconds: when each queued key was first
+        # queued (until it is popped) and, once popped, until it is done.
+        @enqueued_at = {}
+        @popped_age = {}
         @processing = {}
         @latest = {}
         @resource_version = nil
