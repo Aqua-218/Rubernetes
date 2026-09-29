@@ -1276,6 +1276,10 @@ module Rubernetes
                controller: name, descriptor: POD)
       end
 
+      CONFLICT_METRIC = "selinux_warning_controller_selinux_volume_conflict"
+      CONFLICT_SERIES = {}
+      CONFLICT_SERIES_LOCK = Mutex.new
+
       private
 
       def pod_key(pod)
