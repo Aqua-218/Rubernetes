@@ -341,7 +341,7 @@ module Rubernetes
                      reserve: nil, unreserve: nil, bind: nil, rollback: nil, delete_pod: nil,
                      restore_pod: nil, preemption: nil, namespace_labels: {}, random: nil, dynamic_resources: nil,
                      volume_binding: nil, nominate: nil, clear_nomination: nil, async_preemption: true,
-                     preemption_observer: nil, opportunistic_batching: true, **_options)
+                     preemption_observer: nil, opportunistic_batching: true, metrics: nil, **_options)
         custom = normalize_plugins(plugins, filters: filters, scores: scores)
         @dynamic_resources = dynamic_resources || DynamicResources.new
         @volume_binding = volume_binding || VolumeBinding.new
