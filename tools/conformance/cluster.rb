@@ -732,7 +732,8 @@ module Conformance
                        "sync" => {"interval_seconds" => 0.5},
                        "lease" => {"namespace" => "kube-system", "name" => lease_name,
                                    "lease_duration_seconds" => 15, "renew_deadline_seconds" => 10,
-                                   "retry_period_seconds" => 2}
+                                   "retry_period_seconds" => 2},
+                       "serving" => {"enabled" => true, "bind_address" => "127.0.0.1", "port" => serving_port}
                      }}
                    })
     end
