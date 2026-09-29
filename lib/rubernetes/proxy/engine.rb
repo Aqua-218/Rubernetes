@@ -913,6 +913,15 @@ module Rubernetes
         @backend.attach(**options)
       end
 
+      # Detach, counting a failure as a cleanup failure
+      # (kubeproxy_sync_proxy_rules_nftables_cleanup_failures_total).
+      def detach_backend(**options)
+        @backend.detach(**options)
+      rescue StandardError
+        @metrics&.cleanup_failed
+        raise
+      end
+
       def switch_backend(target = nil, reason: "manual switch")
         unless @backend.respond_to?(:switch!)
           raise BackendError, "backend does not support automatic switching"
