@@ -80,7 +80,13 @@ module Rubernetes
         end
 
         case path
-        when "/healthz", "/livez" then observed_health(path, true) { text(200, "ok") }
+        when "/healthz", "/livez"
+          if @health
+            status, message = @health.call(path)
+            observed_health(path, status == 200) { text(status, message) }
+          else
+            observed_health(path, true) { text(200, "ok") }
+          end
         when "/readyz"
           ready = ready?
           observed_health(path, ready) { ready ? text(200, "ok") : text(500, "[-]leaderElection failed: not ready") }
