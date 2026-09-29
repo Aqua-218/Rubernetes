@@ -44,6 +44,8 @@ module Rubernetes
             container_labels = {"container" => container["name"].to_s}.merge(labels)
             add_cpu(samples["container_cpu_usage_seconds_total"], container["cpu"], container_labels)
             add_memory(samples["container_memory_working_set_bytes"], container["memory"], container_labels)
+            add_swap(samples["container_swap_usage_bytes"], container["swap"], container_labels)
+            add_swap_limit(samples["container_swap_limit_bytes"], container["swap"], container_labels)
             started = parse_time(container["startTime"])
             samples["container_start_time_seconds"] << [container_labels, started.to_f, (started.to_f * 1000).to_i] if started
           end
