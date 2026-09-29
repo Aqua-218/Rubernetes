@@ -75,6 +75,10 @@ module Rubernetes
         end
         return text(405, "method not allowed") unless %w[GET HEAD].include?(request.method.to_s.upcase)
 
+        if (extra = @extra_paths[path])
+          return [200, {"content-type" => Observability::Metrics::CONTENT_TYPE}, [extra.call.to_s]]
+        end
+
         case path
         when "/healthz", "/livez" then observed_health(path, true) { text(200, "ok") }
         when "/readyz"
