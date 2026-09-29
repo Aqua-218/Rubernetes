@@ -1,0 +1,33 @@
+version: 1
+logging:
+  level: info
+processes:
+  rubernetes-apiserver:
+    bind_address: 127.0.0.1
+    port: 6443
+    max_body_bytes: 3145728
+    watch_history_limit: 100000
+  rubernetes-controller-manager: {}
+  rubernetes-scheduler: {}
+  rubernetes-agent:
+    node_name: rubernetes-node
+    api_server: http://127.0.0.1:6443
+    kubeconfig:
+    context:
+    runtime_profile: pure
+    sandbox_root: /var/lib/rubernetes/native
+    cgroup_root: /sys/fs/cgroup
+    log_root: /var/log/rubernetes/native
+    journal_path: /var/lib/rubernetes/native/ledger.jsonl
+    static_pod_path:
+    sync:
+      period_seconds: 60
+      watch_timeout_seconds: 30
+    lease:
+      namespace: kube-node-lease
+      duration_seconds: 40
+      renew_fraction: 0.25
+    privileged: false
+    l3: false
+  rubernetes-proxy: {}
+  rubectl: {}
