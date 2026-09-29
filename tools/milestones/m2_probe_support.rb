@@ -2581,7 +2581,7 @@ module M2ProbeSupport
   end
 
   def parse_json_file(path)
-    JSON.parse(File.binread(path), create_additions: false)
+    JSON.parse(File.binread(path))
   end
 
   def write_json_fsync(path, value)
