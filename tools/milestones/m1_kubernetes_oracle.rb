@@ -125,7 +125,7 @@ module M1KubernetesOracle
 
       value.lines.filter_map do |line|
         stripped = line.strip
-        JSON.parse(stripped, create_additions: false) unless stripped.empty?
+        JSON.parse(stripped) unless stripped.empty?
       end
     end
   end
