@@ -1408,7 +1408,7 @@ module M1KubernetesValidationOracle
       end
       %w[fixture_json invalid_fixture_json missing_fixture_json update_fixture_json].each do |key|
         value = entry.fetch(key)
-        parsed = JSON.parse(value, create_additions: false, max_nesting: 256)
+        parsed = JSON.parse(value, max_nesting: 256)
         if mapping && !evidence_only && (!parsed.is_a?(Hash) || parsed.empty?)
           raise OracleError, "validation oracle request #{id.inspect} #{key} must be a non-empty object fixture"
         end
