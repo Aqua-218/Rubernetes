@@ -117,7 +117,7 @@ module M1KubernetesOracle
     def parse_body(body, status: nil)
       value = body.to_s
       return nil if value.empty?
-      JSON.parse(value, create_additions: false)
+      JSON.parse(value)
     rescue JSON::ParserError => document_error
       return value if status && status >= 400
 
