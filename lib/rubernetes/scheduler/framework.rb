@@ -1042,6 +1042,7 @@ module Rubernetes
         ordered = nodes.sort_by(&:name)
         extension_scores = {}
         plugins.scores.each do |plugin|
+          @metrics.plugin_evaluated(:score, plugin.name)
           extension = plugin.score_extension
           next unless extension
 
