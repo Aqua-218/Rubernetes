@@ -169,7 +169,14 @@ module Prom
       return nil if @kubeconfig_context.nil?
 
       require "rubernetes/client"
-      context = @kubeconfig_context.merge(server: server)
+      # The resolved kubeconfig context is a Struct (KubeContext); a plain
+      # Hash is accepted too.  Only the server differs per API server.
+      base = @kubeconfig_context
+      context = if base.is_a?(Hash)
+                  base.merge(server: server)
+                else
+                  base.class.new(**base.to_h.merge(server: server))
+                end
       Rubernetes::Client::HTTPClient.new(context: context)
     rescue StandardError
       nil
