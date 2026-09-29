@@ -12,6 +12,30 @@
     <%= javascript_importmap_tags %>
   </head>
   <body>
-    <%= yield %>
+    <header class="top">
+      <a class="brand" href="/">Rubernetes</a>
+      <nav>
+        <%= nav_link "Overview", "/", active: request.path == "/" %>
+        <%= nav_link "Nodes", "/nodes" %>
+        <%= nav_link "Namespaces", "/namespaces" %>
+        <%= nav_link "Events", "/events" %>
+        <span class="sep"></span>
+        <%= nav_link "Graph", "/graph" %>
+        <%= nav_link "Alerts", "/alerts" %>
+        <%= nav_link "Rules", "/rules" %>
+        <%= nav_link "Targets", "/targets" %>
+        <%= nav_link "Status", "/status" %>
+      </nav>
+      <form class="ns-jump" action="/namespaces" method="get" onsubmit="if(this.ns.value){location.href='/namespaces/'+encodeURIComponent(this.ns.value)+'/pods';return false}">
+        <input name="ns" list="namespace-list" placeholder="namespace…" autocomplete="off">
+        <datalist id="namespace-list"><% namespaces_for_nav.each do |ns| %><option value="<%= ns %>"><% end %></datalist>
+      </form>
+    </header>
+    <% if notice %><div class="flash notice"><%= notice %></div><% end %>
+    <% if alert %><div class="flash alert"><%= alert %></div><% end %>
+    <main>
+      <%= yield %>
+    </main>
+    <footer>rubernetes dashboard · <%= Time.now.utc.strftime("%Y-%m-%d %H:%M:%S UTC") %></footer>
   </body>
 </html>
