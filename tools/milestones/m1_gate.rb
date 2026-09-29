@@ -2046,7 +2046,7 @@ module M1Gate
     end
 
     def request_stream_entry(sequence, target, request)
-      request = JSON.parse(JSON.generate(request), create_additions: false)
+      request = JSON.parse(JSON.generate(request))
       {
         "sequence" => sequence, "target" => target, "request" => request,
         "request_sha256" => canonical_document_digest(request)
