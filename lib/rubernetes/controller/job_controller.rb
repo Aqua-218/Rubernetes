@@ -1296,7 +1296,10 @@ module Rubernetes
                 if !uncounted_failed.include?(uid) && (!indexed || (index != UNKNOWN_COMPLETION_INDEX && index < completions))
                   policy = @c.pod_failure_policy(job)
                   if policy
-                    _message, count_failed, _action = @c.match_pod_failure_policy(policy, pod)
+                    _message, count_failed, action = @c.match_pod_failure_policy(policy, pod)
+                    # job_controller_pod_failures_handled_by_failure_policy_total{action}:
+                    # one per failed Pod a podFailurePolicy rule decided on.
+                    ControllerMetrics.increment("job_controller_pod_failures_handled_by_failure_policy_total", {"action" => action}) if action
                     if count_failed
                       needs_flush = true
                       uncounted["failed"] << uid
