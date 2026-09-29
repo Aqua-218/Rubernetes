@@ -97,6 +97,23 @@ module Rubernetes
               return false
             end
             true
+          ensure
+            if started
+              record_match_condition(name, attributes, "apiserver_admission_match_condition_evaluation_seconds",
+                                     Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+            end
+          end
+
+          # webhook/matchconditions/metrics: kind "webhook", type admit or
+          # validating, the hook's name and the admission operation.
+          def record_match_condition(name, attributes, metric, seconds = nil)
+            registry = metrics
+            return unless registry
+
+            labels = {"kind" => "webhook", "name" => name.to_s, "operation" => attributes.operation.to_s, "type" => webhook_type}
+            seconds ? registry.observe(metric, seconds, labels) : registry.increment(metric, labels)
+          rescue StandardError
+            nil
           end
 
           def cel
