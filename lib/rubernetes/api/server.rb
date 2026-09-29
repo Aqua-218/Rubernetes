@@ -3701,6 +3701,7 @@ module Rubernetes
         return [] unless raw.respond_to?(:object_counts)
 
         counts = raw.object_counts
+        sizes = raw.respond_to?(:object_sizes) ? raw.object_sizes : {}
         @registry.resources.each_with_object({}) do |resource, result|
           key = [resource.group.to_s, resource.resource.to_s]
           next if result.key?(key)
