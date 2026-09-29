@@ -148,7 +148,7 @@ module M1KubernetesSemanticOracle
         unless value.is_a?(String)
           raise OracleError, "oracle request #{id.inspect} #{key} must be a JSON string"
         end
-        JSON.parse(value, create_additions: false, max_nesting: 128)
+        JSON.parse(value, max_nesting: 128)
       rescue JSON::ParserError => error
         raise OracleError, "oracle request #{id.inspect} #{key} is invalid JSON: #{error.message}"
       end
