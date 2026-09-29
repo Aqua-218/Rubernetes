@@ -49,6 +49,10 @@ module Tsdb
       end
     end
 
+    # Closed head chunk with the bounds needed for block cutting, so nothing
+    # has to be decoded to know what a chunk covers.
+    ClosedChunk = Struct.new(:bytes, :min_time, :max_time, :count)
+
     class HeadSeries
       attr_reader :id, :labels, :chunks, :encoder
       attr_accessor :last_time, :last_value
