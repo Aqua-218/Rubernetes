@@ -467,7 +467,7 @@ module Rubernetes
       end
 
       def normalize_event(event)
-        return JSON.parse(event, create_additions: false) if event.is_a?(String)
+        return JSON.parse(event) if event.is_a?(String)
 
         event
       rescue JSON::ParserError => error
