@@ -1040,6 +1040,7 @@ module Rubernetes
       end
 
       def schedule_publish
+        @metrics&.sync_queued
         interval = @publish_coalescing_seconds
         return publish_rules if interval.nil?
 
