@@ -355,7 +355,13 @@ module Rubernetes
                 end
         return value if value.nil? || value == :unsupported
 
-        {"time" => stamp}.merge(value.slice("availableBytes", "capacityBytes", "usedBytes", "inodesFree", "inodes", "inodesUsed")).compact
+        {"time" => stamp}.merge(value.slice("availableBytes", "capacityBytes", "usedBytes", "inodesFree", "inodes", "inodesUsed", "volumeCondition")).compact
+      end
+
+      def observe_volume_collection(source, seconds)
+        @metrics_observer&.call(source, seconds)
+      rescue StandardError
+        nil
       end
 
       def directory_usage(path)
