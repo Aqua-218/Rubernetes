@@ -47,6 +47,8 @@ module Rubernetes
         @flags = Observability::ZPages.flags_from(arguments: ARGV.dup, config: config.to_h)
         @started_at = Observability::ZPages.process_start_time
         @slis = Observability::HealthcheckSLIs.new
+        @extra_paths = extra_paths.to_h.transform_keys(&:to_s)
+        @health = health
         @server = Transport::HTTPServer.new(method(:call), host: host, port: port, logger: logger)
       end
 
