@@ -595,6 +595,7 @@ module Rubernetes
           end
           @metrics.extension_point(:score, Metrics::STATUS_SUCCESS, monotonic - score_started)
           selected = select_host(breakdowns)
+          @metrics.algorithm(monotonic - algorithm_started)
           if @batch
             ranked = breakdowns.reject { |breakdown| breakdown.equal?(selected) }
                                .sort_by { |breakdown| [-breakdown.total, breakdown.node.name] }
