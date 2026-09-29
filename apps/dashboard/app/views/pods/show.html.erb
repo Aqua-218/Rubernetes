@@ -1,0 +1,59 @@
+<% name = @pod.dig("metadata", "name") %>
+<% content_for :title, "Pod #{name}" %>
+<h1><%= link_to @namespace, namespace_pods_path(@namespace) %> / <%= name %> <%= badge(pod_status(@pod)) %></h1>
+<div class="toolbar">
+  <%= link_to "Logs", logs_namespace_pod_path(@namespace, name), class: "btn" %>
+  <%= link_to "YAML", yaml_namespace_pod_path(@namespace, name), class: "btn", target: "_blank" %>
+  <%= link_to "CPU graph", graph_path(g0_expr: "rate(container_cpu_usage_seconds_total{namespace=\"#{@namespace}\",pod=\"#{name}\"}[2m])"), class: "btn" %>
+  <%= link_to "Memory graph", graph_path(g0_expr: "container_memory_working_set_bytes{namespace=\"#{@namespace}\",pod=\"#{name}\"}"), class: "btn" %>
+  <% if writes_allowed? %>
+    <%= button_to "Delete pod", namespace_pod_path(@namespace, name), method: :delete, class: "danger", form: {data: {turbo_confirm: "Delete pod #{name}?"}} %>
+  <% end %>
+</div>
+<dl class="kv">
+  <dt>Node</dt><dd><% if @pod.dig("spec", "nodeName") %><%= link_to @pod.dig("spec", "nodeName"), node_path(@pod.dig("spec", "nodeName")) %><% end %></dd>
+  <dt>Pod IP</dt><dd class="mono"><%= Array(@pod.dig("status", "podIPs")).map { |i| i["ip"] }.join(", ").presence || @pod.dig("status", "podIP") %></dd>
+  <dt>Phase</dt><dd><%= @pod.dig("status", "phase") %> <span class="muted"><%= @pod.dig("status", "reason") %> <%= @pod.dig("status", "message") %></span></dd>
+  <dt>QoS</dt><dd><%= @pod.dig("status", "qosClass") %></dd>
+  <dt>Service account</dt><dd><%= @pod.dig("spec", "serviceAccountName") %></dd>
+  <dt>Owner</dt><dd><%= Array(@pod.dig("metadata", "ownerReferences")).map { |o| "#{o["kind"]}/#{o["name"]}" }.join(", ") %></dd>
+  <dt>Started</dt><dd class="mono"><%= @pod.dig("status", "startTime") %> (<%= time_ago(@pod.dig("status", "startTime")) %>)</dd>
+  <dt>Labels</dt><dd class="mono"><%= format_labels(@pod.dig("metadata", "labels")) %></dd>
+  <dt>Conditions</dt><dd><% Array(@pod.dig("status", "conditions")).each do |c| %><%= badge("#{c["type"]}=#{c["status"]}", c["status"] == "True" ? "ok" : "warn") %> <% end %></dd>
+</dl>
+<h2>Containers</h2>
+<table>
+  <thead><tr><th>Name</th><th>Image</th><th>State</th><th>Ready</th><th class="num">Restarts</th><th class="num">CPU</th><th class="num">Memory</th><th>Requests / limits</th><th>Ports</th><th></th></tr></thead>
+  <tbody>
+    <% @containers.each do |c| %>
+      <% st = @statuses[c["name"]] || {} %>
+      <% state = (st["state"] || {}).keys.first %>
+      <% detail = (st.dig("state", state) || {}) %>
+      <tr>
+        <td><%= c["name"] %><% if c["_kind"] == "init" %> <span class="muted">(init)</span><% end %></td>
+        <td class="mono"><%= c["image"] %></td>
+        <td><%= badge(state.to_s.capitalize, state == "running" ? "ok" : (state == "waiting" ? "warn" : "muted")) %>
+          <span class="muted"><%= detail["reason"] %><% if detail["exitCode"] %> exit <%= detail["exitCode"] %><% end %></span>
+          <% last = st.dig("lastState", "terminated") %><% if last %><div class="muted">last: <%= last["reason"] %> exit <%= last["exitCode"] %> at <%= last["finishedAt"] %></div><% end %></td>
+        <td><%= st["ready"] ? badge("Ready") : badge("NotReady", c["_kind"] == "init" ? "muted" : "bad") %></td>
+        <td class="num"><%= st["restartCount"].to_i %></td>
+        <td class="num"><%= human_cores(@usage["cpu"][c["name"]]) %></td>
+        <td class="num"><%= human_bytes(@usage["memory"][c["name"]]) %></td>
+        <td class="mono muted"><%= (c.dig("resources", "requests") || {}).map { |k, v| "#{k}=#{v}" }.join(" ") %> / <%= (c.dig("resources", "limits") || {}).map { |k, v| "#{k}=#{v}" }.join(" ") %></td>
+        <td class="mono"><%= Array(c["ports"]).map { |p| "#{p["containerPort"]}/#{p["protocol"] || "TCP"}" }.join(", ") %></td>
+        <td><%= link_to "logs", logs_namespace_pod_path(@namespace, name, container: c["name"]) %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+<h2>Volumes</h2>
+<table><thead><tr><th>Name</th><th>Source</th></tr></thead><tbody>
+  <% Array(@pod.dig("spec", "volumes")).each do |v| %>
+    <% kind, spec = v.reject { |k, _| k == "name" }.first %>
+    <tr><td><%= v["name"] %></td><td class="mono"><%= kind %> <%= spec.is_a?(Hash) ? spec.map { |k, x| "#{k}=#{x.is_a?(Hash) || x.is_a?(Array) ? x.to_json : x}" }.join(" ") : spec %></td></tr>
+  <% end %>
+</tbody></table>
+<h2>Events</h2>
+<%= render "shared/events", events: @events, hide_namespace: true %>
+<h2>YAML</h2>
+<details><summary>Show</summary><pre><%= @yaml %></pre></details>
