@@ -1075,6 +1075,7 @@ module Rubernetes
           begin
             return @subresource_bridge.call(bridged_request, route, pod: pod)
           rescue Status::Error => error
+            record_pod_logs_tls_failure(error) if route.subresource.to_s == "log"
             # Streaming clients frequently crash on a log error rather than
             # reporting it, so the reason has to be recoverable from the
             # server's own log.
