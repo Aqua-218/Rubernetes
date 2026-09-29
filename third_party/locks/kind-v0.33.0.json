@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-04",
+  "purpose": "kind release used to build and provision the M2 lifecycle oracle node image (kubernetes-sigs/kind)",
+  "repository": "https://github.com/kubernetes-sigs/kind.git",
+  "tag": "v0.33.0",
+  "tag_object": "49aeee6b958d818ae881752fe5b09220b39b6f55",
+  "commit": "407a9675e6d9af1200b5f57f9ca52ec6cdacce74",
+  "artifacts": {
+    "linux/amd64": {
+      "name": "kind-linux-amd64",
+      "url": "https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64",
+      "sha256": "aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d",
+      "sha256sum_url": "https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64.sha256sum",
+      "sha256sum_file_sha256": "3836001f81bbf5421e6f231b2ca2df8772ce80d6aad02d318d39220470e95cbc"
+    }
+  },
+  "install_path": "build/tools/kind-v0.33.0-linux-amd64",
+  "version_output": "kind v0.33.0 go1.26.7 linux/amd64",
+  "default_base_image": {
+    "reference": "docker.io/kindest/base:v20260820-69b56db7",
+    "digest_reference": "kindest/base@sha256:8098fa3cae05bc15d9c4b93a566d19e1f8e65a25e26ebeb993b6cb41142cf791"
+  },
+  "kindnetd_source_path": "images/kindnetd",
+  "lock_sha256": "8841f4a54b6b934b27779f6754c47ebec52d68b1add7c14b3f90ca8a11bf2c99"
+}
