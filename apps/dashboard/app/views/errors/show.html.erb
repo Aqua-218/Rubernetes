@@ -1,0 +1,9 @@
+<% content_for :title, "Error" %>
+<div class="error-page">
+  <h1><%= @error.class.name %></h1>
+  <pre><%= @error.message %></pre>
+  <% if Rails.env.development? && @error.backtrace %>
+    <details><summary>Backtrace</summary><pre><%= @error.backtrace.first(20).join("\n") %></pre></details>
+  <% end %>
+  <p><%= link_to "Back to overview", root_path %></p>
+</div>
