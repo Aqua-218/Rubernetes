@@ -1698,7 +1698,7 @@ module M2ProbeSupport
     def normalize_body(body)
       return body unless body.is_a?(String)
 
-      JSON.parse(body, create_additions: false)
+      JSON.parse(body)
     rescue JSON::ParserError
       body
     end
