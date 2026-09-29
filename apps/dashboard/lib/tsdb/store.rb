@@ -204,6 +204,8 @@ module Tsdb
 
     # Force every head sample into a block (shutdown, tests).
     def flush
+      return if @readonly
+
       synchronize { cut_head(current_ms, all: true) }
     end
 
