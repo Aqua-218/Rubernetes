@@ -8,8 +8,8 @@ class NodesController < ApplicationController
 
   def show
     @node = client.get("nodes", params[:id])
-    @pods = Array(client.get("pods", query: {"fieldSelector" => "spec.nodeName=#{params[:id]}"})["items"])
-    @events = Array(client.get("events", query: {"fieldSelector" => "involvedObject.kind=Node,involvedObject.name=#{params[:id]}"})["items"])
+    @pods = Array(client.get("pods", namespace: :all, query: {"fieldSelector" => "spec.nodeName=#{params[:id]}"})["items"])
+    @events = Array(client.get("events", namespace: :all, query: {"fieldSelector" => "involvedObject.kind=Node,involvedObject.name=#{params[:id]}"})["items"])
               .sort_by { |e| e["lastTimestamp"] || "" }.reverse.first(30)
     @yaml = @node.to_yaml
     @usage = node_usage(params[:id])
