@@ -473,6 +473,16 @@ module Rubernetes
         ready.map { |_key, (item, _ready_at)| item }
       end
 
+      def known_locked?(key)
+        @pending.key?(key) || @unschedulable.key?(key) || @backoff.key?(key) || @pops.key?(key)
+      end
+
+      def incoming(event, queue)
+        @metrics&.queue_incoming(event, queue)
+      rescue StandardError
+        nil
+      end
+
       # Exponential backoff capped at the configured maximum, mirroring
       # kube-scheduler's backoffQ (1s doubling to 10s).
       def backoff_delay(attempts)
