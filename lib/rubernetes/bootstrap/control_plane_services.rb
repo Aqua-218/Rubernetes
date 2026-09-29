@@ -1763,7 +1763,10 @@ module Rubernetes
           end
           (deleted || previous != object).tap { |value| @cluster_generation += 1 if value }
         end
-        retry_unschedulable("#{kind.downcase}_changed") if changed && REQUEUE_KINDS.include?(kind)
+        return unless changed
+
+        event = "#{kind}#{deleted ? "Delete" : (added ? "Add" : "Update")}"
+        timed_event(event) { retry_unschedulable("#{kind.downcase}_changed", event: event) if REQUEUE_KINDS.include?(kind) }
       end
 
       # The plugin inputs for one cycle, rebuilt only after an informer event.
