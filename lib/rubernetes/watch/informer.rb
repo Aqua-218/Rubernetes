@@ -227,6 +227,7 @@ module Rubernetes
             processed += 1
           end
         end
+        observe_queued_items
         processed
       end
 
