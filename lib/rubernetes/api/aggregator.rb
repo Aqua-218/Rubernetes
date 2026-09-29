@@ -163,6 +163,42 @@ module Rubernetes
       # groups in /apis aggregated discovery, and the 1.36 dynamic client
       # reads only that document -- without this it cannot find an aggregated
       # resource ("could not find group version resource ... wardle/flunders").
+      # kube-aggregator's x509 and discovery metrics, on the process-wide
+      # registry (the apiserver's /metrics merges it): a backend serving
+      # certificate without SANs or signed with SHA-1, counted per proxied
+      # request; and every aggregated discovery document built.  The peer
+      # aggregated discovery counters are for the peer proxy, which does not
+      # exist here.
+      def shared_metrics
+        return nil unless defined?(Rubernetes::Observability::Metrics)
+
+        Rubernetes::Observability::Metrics.global
+      end
+
+      def record_x509(http)
+        registry = shared_metrics
+        certificate = http.respond_to?(:peer_cert) ? http.peer_cert : nil
+        return unless registry && certificate
+
+        %w[apiserver_kube_aggregator_x509_missing_san_total apiserver_kube_aggregator_x509_insecure_sha1_total].each do |name|
+          registry.register(name, type: :counter) unless registry.registered?(name)
+        end
+        registry.increment("apiserver_kube_aggregator_x509_missing_san_total") unless Rubernetes::Observability::Metrics.certificate_has_san?(certificate)
+        registry.increment("apiserver_kube_aggregator_x509_insecure_sha1_total") if Rubernetes::Observability::Metrics.certificate_sha1?(certificate)
+      rescue StandardError
+        nil
+      end
+
+      def record_discovery_aggregation
+        registry = shared_metrics
+        return unless registry
+
+        registry.register("aggregator_discovery_aggregation_count_total", type: :counter) unless registry.registered?("aggregator_discovery_aggregation_count_total")
+        registry.increment("aggregator_discovery_aggregation_count_total")
+      rescue StandardError
+        nil
+      end
+
       def discovery_items
         @mutex.synchronize { @backends.values.group_by(&:group) }.sort.map do |group, backends|
           versions = backends.sort_by { |backend| [-backend.priority[1], backend.version] }.filter_map do |backend|
