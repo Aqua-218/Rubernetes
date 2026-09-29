@@ -75,6 +75,18 @@ module Rubernetes
               @entries[key] = [result, now + @success_ttl].freeze
             end
           end
+          self.class.observe_request("miss", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+          result
+        end
+
+        # One authenticator call behind a miss: authentication_token_cache_
+        # fetch_total{status="ok"|"error"} and, while it runs,
+        # active_fetch_count{status="in_flight"} (there is no singleflight
+        # here, so nothing is ever "blocked").
+        def fetch
+          self.class.active_fetch(1)
+          result = yield
+          self.class.observe_fetch("ok")
           result
         end
       end
