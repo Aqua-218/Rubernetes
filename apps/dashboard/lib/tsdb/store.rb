@@ -125,6 +125,12 @@ module Tsdb
 
           OPEN_WRITERS[@dir] = self
         end
+        begin
+          acquire_writer_lock
+        rescue StandardError
+          OPEN_WRITERS_LOCK.synchronize { OPEN_WRITERS.delete(@dir) }
+          raise
+        end
       end
       @db = SQLite3::Database.new(File.join(@dir, "index.sqlite"))
       @db.busy_timeout = 10_000
