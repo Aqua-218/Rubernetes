@@ -566,14 +566,17 @@ module Rubernetes
 
       # Prometheus text format, metrics in registration order.
       def render(now: nil)
-        own = render_own
-        return own if equal?(self.class.global)
+        return render_own if equal?(self.class.global)
 
-        # A family this registry holds but has nothing for (a vector never
-        # observed here) is the shared registry's to show.
-        mine = @mutex.synchronize do
-          @metrics.values.reject { |metric| metric.values.empty? && metric.labels&.any? }.map(&:name)
-        end
+        # A family this registry holds but has nothing for is the shared
+        # registry's to show when it has values (client-go and the shared
+        # collectors record there); a plain series nobody observed renders
+        # here as 0, a vector nobody observed renders nowhere.
+        shared_values = self.class.global.names_with_values
+        empty_here = @mutex.synchronize { @metrics.values.select { |metric| metric.values.empty? }.map(&:name) }
+        handoff = empty_here & shared_values
+        mine = @mutex.synchronize { @metrics.keys } - handoff - empty_here.select { |name| labelled?(name) }
+        own = render_own(except: handoff)
         shared = self.class.global.render_own(except: mine)
         return own if shared.empty?
         return shared if own.empty?
