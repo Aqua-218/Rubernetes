@@ -304,6 +304,9 @@ module Rubernetes
         def note_queued(labels, mutating, delta, length)
           adjust("apiserver_flowcontrol_current_inqueue_requests", labels, delta)
           adjust("apiserver_flowcontrol_current_inqueue_seats", labels, delta)
+          # apiserver_current_inqueue_requests{request_kind}: the same queue
+          # depth by read/write, as the max-in-flight filter reports it.
+          adjust("apiserver_current_inqueue_requests", {"request_kind" => mutating ? "mutating" : "readOnly"}, delta)
           @metrics.observe("apiserver_flowcontrol_request_queue_length_after_enqueue", length, labels) if delta.positive?
           ratios = @ratios&.[](labels["priority_level"])
           ratios&.fetch(:waiting)&.add(delta)
