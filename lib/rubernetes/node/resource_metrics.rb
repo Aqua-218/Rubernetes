@@ -490,7 +490,7 @@ module Rubernetes
             end
           end
         end
-        DESCRIPTORS.filter_map do |name, type, help|
+        (MACHINE_FAMILIES.map { |name, type, help| [name, type, help] } + SUMMARY_DESCRIPTORS.map { |name, (type, help)| [name, type, help] }).filter_map do |name, type, help|
           lines = samples[name]
           next if lines.empty?
 
