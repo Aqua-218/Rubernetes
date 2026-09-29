@@ -298,6 +298,8 @@ module Rubernetes
           return nil unless item
 
           @pending.delete(key)
+          @pops[key] = @pops.fetch(key, 0) + 1
+          @first_pop[key] ||= now
           item
         end
       end
