@@ -199,6 +199,11 @@ module Rubernetes
       no_virtual_time = "API Priority and Fairness here has no fair-queuing virtual time (queues are served shortest-first)"
       no_borrowing = "API Priority and Fairness here neither lends nor borrows seats: each level's limit is its nominal one"
       consistency = "the StaleControllerConsistency consistency store (Beta, on in v1.36) is not implemented: controllers never skip a sync"
+      no_queueing_hints = "no QueueingHint plugins and no in-flight event list: an unschedulable Pod is retried on any cluster change (like SchedulerQueueingHints off)"
+      no_pod_groups = "no workload-aware (PodGroup / gang) scheduling"
+      no_conntrack_reconciler = "no conntrack reconciler: stale UDP conntrack entries are not flushed when endpoints go away"
+      iptables_only = "the iptables proxier is not implemented (nftables and eBPF backends only); iptables mode registers this"
+      no_exec_plugins = "exec credential plugins are refused by the kubeconfig loader (Kubeconfig::UnsupportedCredentialError)"
       UNIMPLEMENTED = {
         "kube-apiserver" => {
           "apiserver_storage_list_total" => no_list_to_log,
