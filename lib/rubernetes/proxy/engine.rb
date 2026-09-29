@@ -1114,7 +1114,38 @@ module Rubernetes
         failed = true
         raise
       ensure
-        record_publish(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+        seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+        record_publish(seconds)
+        if @metrics
+          if failed
+            @metrics.sync_failed
+          else
+            @metrics.synced(seconds, full: full)
+            @metrics.no_local_endpoints(count_no_local_endpoints)
+          end
+        end
+      end
+
+      # Services with a Local traffic policy and no local endpoint, per IP
+      # family and policy (kubeproxy_sync_proxy_rules_no_local_endpoints_total).
+      def count_no_local_endpoints
+        counts = Hash.new(0)
+        @mutex.synchronize { @compiled.values }.each do |compiled|
+          service = compiled.service
+          next if service.nil? || compiled.rules.empty?
+
+          families = service.respond_to?(:ip_families) && !Array(service.ip_families).empty? ? Array(service.ip_families) : ["IPv4"]
+          local = compiled.rules.any? { |rule| !Array(rule.metadata.dig("backendGroups", "local")).empty? }
+          next if local
+
+          families.each do |family|
+            counts[[family.to_s, "internal"]] += 1 if service.internal_traffic_policy.to_s == "Local"
+            counts[[family.to_s, "external"]] += 1 if service.external_traffic_policy.to_s == "Local"
+          end
+        end
+        counts
+      rescue StandardError
+        {}
       end
 
       # How long the datapath publishes took since the last call: count,
