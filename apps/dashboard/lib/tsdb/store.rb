@@ -162,6 +162,8 @@ module Tsdb
 
     # Append many samples and fsync the WAL once: [[labels, t, v], ...].
     def append_batch(rows)
+      raise AlreadyOpen, "read-only store" if @readonly
+
       appended = 0
       synchronize do
         rows.each do |labels, timestamp_ms, value|
