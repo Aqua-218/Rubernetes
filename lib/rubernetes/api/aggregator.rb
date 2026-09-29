@@ -200,6 +200,7 @@ module Rubernetes
       end
 
       def discovery_items
+        record_discovery_aggregation
         @mutex.synchronize { @backends.values.group_by(&:group) }.sort.map do |group, backends|
           versions = backends.sort_by { |backend| [-backend.priority[1], backend.version] }.filter_map do |backend|
             next nil unless @mutex.synchronize { @availability.fetch(backend.name, false) }
