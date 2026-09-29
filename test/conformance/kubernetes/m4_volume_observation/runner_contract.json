@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "suite": "m4-volume-observation",
+  "runner": "test/conformance/kubernetes/m4_volume_observation/runner.rb",
+  "worker": "test/conformance/kubernetes/m4_volume_observation/crash_worker.rb",
+  "modes": {
+    "observation": {
+      "environment": ["RUBERNETES_M4_VOLUME_OBSERVATION_COMMAND", "RUBERNETES_M4_CONTAINER_OBSERVATION_COMMAND"],
+      "command": "ruby test/conformance/kubernetes/m4_volume_observation/runner.rb --mode observation",
+      "request": {
+        "scenario": "m4-volume-lifecycle",
+        "control_dir": "directory in which the probe worker writes phase-NNN.json markers and waits for phase-NNN.release",
+        "worker": {"pid": "worker pid", "start_time_ticks": "/proc/<pid>/stat field 22", "mount_namespace_inode": "/proc/<pid>/ns/mnt inode"},
+        "root": "directory under which every mount of the lifecycle happens",
+        "require_rotation": true
+      },
+      "phase_marker": {
+        "phase": "1-based phase number", "name": "phase name", "final": "true on the last marker",
+        "worker": "the worker identity (must equal the live /proc identity)",
+        "expected": {
+          "mounts": "[{target, mountId, deviceId, root, filesystem, kernelSource, readonly}] claimed by the production adapter readback",
+          "absent": "[target] that must not be mounted",
+          "files": "[{path, sha256, bytes}] read through /proc/<pid>/root",
+          "statfs": "[{path, typeName, capacityBytes}] statfs(2) through /proc/<pid>/root",
+          "devices": "[{kind, path, deviceId, backingPath|name|uuid}] from /sys/block",
+          "absent_devices": "[path] loop/dm devices that must be released",
+          "reader": "[path] read by an nsenter reader inside the worker mount namespace",
+          "syscalls": "[{name, return_class, count|\"any\"}] mount-family syscalls the production adapter issued since the previous release"
+        },
+        "rotation": {"start": {"root": "projected volume root", "files": ["names"]}, "stop": true}
+      },
+      "observations": ["strace -f -e trace=mount,umount2,openat2,open_tree,move_mount,mount_setattr", "/proc/<pid>/mountinfo", "statfs(2) via /proc/<pid>/root", "/sys/block loop and dm identities", "nsenter -m reader digests", "projected ..data tight-loop reader"],
+      "response": {
+        "executed": true, "runner": "provenance: runner_sha256, command, process_id, mode=external, self_comparison=false, implementation, started_at, finished_at",
+        "mountinfo": "content-bound comparisons per claimed mount (line, line_sha256, expected, actual, digests, passed)",
+        "syscalls": "content-bound comparisons per observed syscall (name, return, errno, args)",
+        "container_observation": "content-bound comparisons per in-namespace reader (id, pid, mount_namespace_inode)",
+        "files": "digest comparisons", "statfs": "statfs comparisons", "devices": "sysfs comparisons",
+        "projected_rotation": "{reads, partial_generation_observed_count, missing_count, generations_observed, mount_namespace_inode}",
+        "kernel_backed": true, "errors": [], "passed": true
+      }
+    },
+    "crash": {
+      "environment": ["RUBERNETES_M4_SNAPSHOT_RECOVERY_COMMAND", "RUBERNETES_M4_VOLUME_CRASH_COMMAND"],
+      "command": "ruby test/conformance/kubernetes/m4_volume_observation/runner.rb --mode crash",
+      "request": {"scenario": "snapshot-restore-crash-recovery"},
+      "kill_points": ["before_effect", "after_effect_before_commit", "after_commit"],
+      "backends": ["emptyDir (medium Memory tmpfs)", "loopDM (loop + dm-linear, pre-formatted ext4)"],
+      "properties": [
+        "SIGKILL at each effect point in a private mount namespace",
+        "no mount leaks into the host namespace after the kill (mountinfo before/after)",
+        "loop/dm devices left by the crash are reclaimed by the restarted agent (/sys/block)",
+        "a second node cannot attach the ReadWriteOnce volume while node-a's attachment is durable (MultiAttachError)",
+        "recover leaves zero unknown operations and the lifecycle completes from the durable state",
+        "durable volume store and mount ledger are empty after cleanup",
+        "snapshot create/restore verified by independent per-file digests",
+        "tampered snapshot catalog is refused with SnapshotIntegrityError and registers no volume",
+        "restore interrupted by SIGKILL leaves the volume fenced Unknown and unusable"
+      ],
+      "response": {"comparisons": ["snapshot_create", "snapshot_restore", "crash_recovery", "effect-boundary:*"], "kill_points": "per backend/kill point records", "kernel_backed": true}
+    }
+  },
+  "evidence_fields": ["pid", "start_time_ticks", "mount_namespace_inode", "mountId", "deviceId", "root", "kernelSource", "fsid", "loop backingPath", "dm uuid", "strace_log_sha256"]
+}
