@@ -2204,8 +2204,10 @@ module Rubernetes
       end
 
       def patch_nomination(pod, node_name)
-        @client.patch("pods", {"status" => {"nominatedNodeName" => node_name}}, type: :merge, namespace: pod.namespace,
-                      api_version: "v1", name: pod.name, subresource: "status")
+        timed_status_patch do
+          @client.patch("pods", {"status" => {"nominatedNodeName" => node_name}}, type: :merge, namespace: pod.namespace,
+                        api_version: "v1", name: pod.name, subresource: "status")
+        end
         true
       rescue Client::APIError => error
         raise unless [404, 409].include?(error.status.to_i)
