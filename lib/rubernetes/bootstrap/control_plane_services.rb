@@ -1577,27 +1577,7 @@ module Rubernetes
       # the ones Rubernetes' scheduler cannot measure left out with a reason
       # (Metrics::UNIMPLEMENTED), plus the process and client-go families.
       def scheduler_metrics
-        metrics = Observability::Metrics.new(apiserver: false)
-        metrics.register("scheduler_schedule_attempts_total", type: :counter,
-                         help: "Number of attempts to schedule pods, by the result. 'unschedulable' means a pod could not be scheduled, " \
-                               "while 'error' means an internal scheduler problem.")
-        metrics.register("scheduler_scheduling_attempt_duration_seconds", type: :histogram, buckets: ATTEMPT_BUCKETS,
-                         help: "Scheduling attempt latency in seconds (scheduling algorithm + binding)")
-        metrics.register("scheduler_pending_pods", type: :gauge,
-                         help: "Number of pending pods, by the queue type. 'active' means number of pods in activeQ; 'backoff' means number of " \
-                               "pods in backoffQ; 'unschedulable' means number of pods in unschedulablePods that the scheduler attempted to " \
-                               "schedule and failed; 'gated' is the number of unschedulable pods that the scheduler never attempted to " \
-                               "schedule because they are gated.")
-        metrics.register("scheduler_preemption_attempts_total", type: :counter, help: "Total preemption attempts in the cluster till now")
-        metrics.register("scheduler_preemption_victims", type: :histogram, buckets: VICTIM_BUCKETS, help: "Number of selected preemption victims")
-        # SchedulerAsyncPreemption (Beta, on) registers these.
-        metrics.register("scheduler_preemption_goroutines_duration_seconds", type: :histogram, buckets: PREEMPTION_GOROUTINE_BUCKETS,
-                         help: "Duration in seconds for running goroutines for the preemption.")
-        metrics.register("scheduler_preemption_goroutines_execution_total", type: :counter,
-                         help: "Number of preemption goroutines executed.")
-        metrics.register("leader_election_master_status", type: :gauge,
-                         help: "Gauge of if the reporting system is master of the relevant lease, 0 indicates backup, 1 indicates master. " \
-                               "'name' is the string used to identify the lease. Please make sure to group by name.")
+        metrics = Observability::Metrics.new(apiserver: false, component: "kube-scheduler")
         metrics.add_collector do |registry|
           queue = @framework.respond_to?(:queue) ? @framework.queue : nil
           if queue
