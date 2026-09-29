@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-04",
+  "purpose": "M2 lifecycle oracle: Kubernetes v1.36.2 node image (kubelet, kubeadm, kube-apiserver, etcd, containerd, runc, kindnetd) built from the pinned source checkout",
+  "image": {
+    "reference": "localhost:25000/rubernetes/kind-node@sha256:2f0ecbdcd9d0bb44584f8700f5ae0be071c65135989e325789388d3df59c4efa",
+    "local_tag": "rubernetes/kind-node:v1.36.2",
+    "image_id": "sha256:ca5140751fd07738c436fc51c8b2a080189f260ae03482875d1ed77db3e4b980",
+    "repo_digest": "sha256:2f0ecbdcd9d0bb44584f8700f5ae0be071c65135989e325789388d3df59c4efa",
+    "os_image": "Debian GNU/Linux 13 (trixie)"
+  },
+  "build": {
+    "tool": "kind build node-image",
+    "kind_lock_path": "third_party/locks/kind-v0.33.0.json",
+    "kind_version": "v0.33.0",
+    "kind_binary_sha256": "aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d",
+    "base_image": {
+      "reference": "docker.io/kindest/base:v20260820-69b56db7",
+      "digest_reference": "kindest/base@sha256:8098fa3cae05bc15d9c4b93a566d19e1f8e65a25e26ebeb993b6cb41142cf791"
+    },
+    "kubernetes": {
+      "tag": "v1.36.2",
+      "commit": "24e2b02af5543d7910c2bb074c7264df5a8f0467",
+      "source_checkout_env": "RUBERNETES_M2_KUBERNETES_SOURCE"
+    },
+    "command": [
+      "build/tools/kind-v0.33.0-linux-amd64",
+      "build",
+      "node-image",
+      "--image",
+      "rubernetes/kind-node:v1.36.2",
+      "--base-image",
+      "docker.io/kindest/base:v20260820-69b56db7",
+      "<RUBERNETES_M2_KUBERNETES_SOURCE>"
+    ],
+    "built_at": null,
+    "build_log_sha256": "ad8b092651e7fc8108d68cf23660121cc773480c014ba2de9c804fb38dc8c3fc",
+    "reused_existing_image": true
+  },
+  "digest_pinning": {
+    "method": "docker push to an ephemeral local registry (localhost, port >= 25000); the recorded RepoDigest resolves from the local image store without the registry",
+    "registry_image": {
+      "reference": "docker.io/library/registry:3",
+      "digest_reference": "docker.io/library/registry@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33",
+      "image_id": "sha256:1bc3f1a4432290d5ac3341603f15bf99c5b2feb4a9e3195e530aadc66fbcc65e"
+    }
+  },
+  "alias_container_image": {
+    "reference": "registry.k8s.io/pause@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a",
+    "purpose": "answers host.docker.internal for the kind node entrypoint on the gateway-less internal network"
+  },
+  "cluster": {
+    "api_server_port": 26443,
+    "network": "docker network create --internal",
+    "provisioner": "kind create cluster --retain (host port export is expected to fail on an internal network)"
+  },
+  "runtime": {
+    "containerd": {
+      "in_image_path": "/usr/local/bin/containerd",
+      "version": "containerd github.com/containerd/containerd/v2 v2.3.4 db8809540e1a7a9da5d518876894933ff55692ab",
+      "binary_sha256": "01f83bbb723aaf19f68e86050d18e8a74ee4466dbe897f5583e1e8123c01d04d"
+    },
+    "runc": {
+      "in_image_path": "/usr/local/sbin/runc",
+      "version": "runc version 1.4.3",
+      "binary_sha256": "cd10ed79df34b18565ab59e0f877ce2533b33d76f5e8321fb3afb960cf139e48"
+    },
+    "kubelet": {
+      "in_image_path": "/usr/bin/kubelet",
+      "version": "Kubernetes v1.36.2",
+      "binary_sha256": "043a8beb59a312597a751584d6f2f9e4dca0b58954a057ce5c7e9e773092e480"
+    }
+  },
+  "images": {
+    "kube_apiserver": "registry.k8s.io/kube-apiserver@sha256:9234d70ce85fd203c449d5a18821f7c138356fd2fcd50adf6b96dc35139195bb",
+    "kube_controller_manager": "registry.k8s.io/kube-controller-manager@sha256:682e4deafa7d95e5bb0f32b9cce933ea2d4aff67dde0af224f99e02cb300c67a",
+    "kube_scheduler": "registry.k8s.io/kube-scheduler@sha256:ac6ee182cde0b2d2782888b3ab2b9fe1f232f4f938bee7d34a14f4eee2197feb",
+    "kube_proxy": "registry.k8s.io/kube-proxy@sha256:ffb6a673d9d5fa0c262ceaaea9e2169132bdba57dad67e6df95d61fc126c9397",
+    "etcd": "registry.k8s.io/etcd@sha256:397189418d1a00e500c0605ad18d1baf3b541a1004d768448c367e48071622e5",
+    "coredns": "registry.k8s.io/coredns/coredns@sha256:e7e6440cfd1e919280958f5b5a6ab2b184d385bba774c12ad2a9e1e4183f90d9",
+    "pause": "registry.k8s.io/pause@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a",
+    "kindnetd": "docker.io/kindest/kindnetd@sha256:526969f0a1a7a788a7a96f53a4ad3b51607bde7bb2841edf52a02916e8d52650"
+  },
+  "cri_image_ids": {
+    "kube_apiserver": {
+      "tag": "registry.k8s.io/kube-apiserver:v1.36.2",
+      "id": "sha256:14f31f5fc9a7610452a0a33b36618c0ebf94488a7341d44f8c71017524c4a494"
+    },
+    "etcd": {
+      "tag": "registry.k8s.io/etcd:3.6.8-0",
+      "id": "sha256:ee85eb1f0edd27fd11e3bed20f21a4001ad63107eb2f8d489429648a799c0e86"
+    },
+    "kindnetd": {
+      "tag": "docker.io/kindest/kindnetd:v20260820-69b56db7",
+      "id": "sha256:4626fe10df5b930638e6e1662143ee1c7a698de6174fdb61a8ce658e688be2cd"
+    }
+  },
+  "cni_manifest_sha256": "798c30289c418da2b2561ab899e80f52715ae23eab1bf75d2ddd4b40a4c18c0d",
+  "lock_sha256": "373abfa03d943d4da96f274e154b109e24bd81343e2847d1a7e803215a428212"
+}
