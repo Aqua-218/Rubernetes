@@ -56,7 +56,7 @@ module M2LifecycleOracleRegistryImage
     manifest_bytes = get_with_retries(parsed, "manifests/#{parsed.fetch("digest")}", accept: MANIFEST_ACCEPT)
     actual = "sha256:#{Digest::SHA256.hexdigest(manifest_bytes)}"
     raise FetchError, "manifest digest mismatch: expected #{parsed.fetch("digest")}, got #{actual}" unless actual == parsed.fetch("digest")
-    manifest = JSON.parse(manifest_bytes, create_additions: false)
+    manifest = JSON.parse(manifest_bytes)
     raise FetchError, "manifest must be a single-platform image manifest, got #{manifest["mediaType"].inspect}" unless manifest.is_a?(Hash) && manifest["config"].is_a?(Hash) && manifest["layers"].is_a?(Array)
 
     blobs = {}
