@@ -179,6 +179,7 @@ module Rubernetes
         wait_until_bound(pod, node.name, podvolumes)
         true
       rescue StandardError => error
+        @metrics&.volume_scheduling_stage_error("bind")
         revert(podvolumes) if podvolumes
         message = error.message.start_with?("binding volumes") ? error.message : "binding volumes: #{error.message}"
         Filters::Helpers.reject(message, code: "Error")
