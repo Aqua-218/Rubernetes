@@ -2219,6 +2219,26 @@ module Rubernetes
       # graceful delete, with the victim's own grace period applied by the API
       # server.  A victim that is already gone is a success -- something else
       # freed the room preemption was trying to make.
+      # scheduler_async_api_call_execution_* for a Pod status patch (the
+      # nominated node, the PodScheduled condition).
+      def timed_status_patch
+        @scheduler_metrics&.async_call_queued(Scheduler::Metrics::CALL_POD_STATUS_PATCH)
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        result = yield
+        @scheduler_metrics&.async_call(Scheduler::Metrics::CALL_POD_STATUS_PATCH, "success", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+        result
+      rescue StandardError
+        @scheduler_metrics&.async_call(Scheduler::Metrics::CALL_POD_STATUS_PATCH, "error", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+        raise
+      end
+
+      # /metrics/resources: kube_pod_resource_request / kube_pod_resource_limit
+      # (pkg/scheduler/metrics/resources) for every Pod the scheduler knows.
+      def resource_metrics_body
+        pods = @mutex.synchronize { @pods.values.dup }
+        Scheduler::ResourceMetrics.render(pods)
+      end
+
       def delete_victim_pod(victim)
         @elector.step
         unless @elector.leader?
