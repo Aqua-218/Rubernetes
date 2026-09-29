@@ -703,6 +703,25 @@ module Rubernetes
         http
       end
 
+      # client-go's DNS resolution hook (rest_client_dns_resolution_duration_seconds):
+      # the name is resolved here, timed, and the connection opened to the
+      # address found, so the resolution is measured once per new session
+      # and never repeated inside the connect.
+      def resolve_address(http, uri)
+        return unless http.respond_to?(:ipaddr=) && uri.hostname
+        return if http.respond_to?(:ipaddr) && http.ipaddr
+
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        addresses = Addrinfo.getaddrinfo(uri.hostname, uri.port, nil, :STREAM)
+        seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+        RestClientMetrics.dns_resolution(uri, seconds)
+        address = addresses.find(&:ipv4?) || addresses.first
+        http.ipaddr = address.ip_address if address
+      rescue SocketError, SystemCallError
+        # Resolution failed: the connect reports it with the usual error.
+        nil
+      end
+
       def call_http_stream(method, uri, body, headers, &block)
         http = nil
         session = nil
