@@ -123,9 +123,17 @@ module Rubernetes
         started = @clock.call
         @mutex.synchronize do
           @last_cycle = {cycle: cycle, chosen: chosen}
-          if hinted && hinted == chosen
-            @batched_pods += 1
-            return
+          if @flushed
+            @flushed = false
+            @metrics&.scheduled_after_flush
+          end
+          if hinted
+            hit = hinted == chosen
+            @metrics&.batch_attempt(hit ? "hit" : "miss")
+            if hit
+              @batched_pods += 1
+              return
+            end
           end
 
           @state = if signature && ranked && !ranked.empty?
