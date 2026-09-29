@@ -273,7 +273,7 @@ if options[:m0_manifest] && !prior_milestones.key?("M0")
       stdout: gate_stdout,
       stderr: gate_stderr
     )
-    prior_document = JSON.parse(File.binread(copied_manifest), create_additions: false, max_nesting: 512)
+    prior_document = JSON.parse(File.binread(copied_manifest), max_nesting: 512)
     prior_milestones["M0"] = {
       "manifest_path" => "m0/#{File.basename(copied_manifest)}",
       "manifest_sha256" => Digest::SHA256.file(copied_manifest).hexdigest,
