@@ -974,7 +974,7 @@ module Rubernetes
           trace.record(plugin: plugin.name, phase: :filter, weight: plugin.weight,
                        input: input, output: result.to_h) if trace
           unless result.accepted?
-            return result.to_h
+            return result.to_h.merge("plugin" => plugin.name)
           end
         end
         true
