@@ -23,7 +23,7 @@ class M3IdempotencyProbeTest < Minitest::Test
   # failure counts.
   def test_all_builtin_controller_reconciles_are_idempotent
     stdout, stderr, process = Open3.capture3(RbConfig.ruby, "-Ilib", PROBE, chdir: ROOT)
-    report = JSON.parse(stdout, create_additions: false)
+    report = JSON.parse(stdout)
 
     assert process.success?, "idempotency probe failed: #{stderr}\n#{report.fetch("errors", []).join("; ")}"
     assert_equal "PASS", report.fetch("status")
