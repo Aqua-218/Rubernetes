@@ -65,7 +65,7 @@ module Rubernetes
       def decode(bytes, max_bytes: DEFAULT_MAX_BYTES)
         raise ProtocolError, "document exceeds #{max_bytes} bytes" if bytes.bytesize > max_bytes
 
-        JSON.parse(bytes, object_class: StrictHash, max_nesting: MAX_DEPTH, create_additions: false)
+        JSON.parse(bytes, object_class: StrictHash, max_nesting: MAX_DEPTH)
       rescue JSON::ParserError => error
         raise ProtocolError, "invalid JSON document: #{error.message}"
       end
