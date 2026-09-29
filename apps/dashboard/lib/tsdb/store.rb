@@ -213,6 +213,7 @@ module Tsdb
       synchronize do
         @wal&.close
         @db.close
+        OPEN_WRITERS_LOCK.synchronize { OPEN_WRITERS.delete(@dir) if OPEN_WRITERS[@dir].equal?(self) } unless @readonly
       end
     end
 
