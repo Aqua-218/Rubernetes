@@ -114,7 +114,7 @@ module Rubernetes
           end
 
           def self.parse_json(text)
-            JSON.parse(text, quirks_mode: true)
+            JSON.parse(text)
           rescue JSON::ParserError => error
             raise DecodeError, error.message
           end
