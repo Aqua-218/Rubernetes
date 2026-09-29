@@ -1303,7 +1303,7 @@ def build_semantic_case(registry:, codec:, type:, wire_case:, types_by_schema:, 
   unknown_value = if scalar_schema
                     value
                   else
-                    JSON.parse(JSON.generate(value), create_additions: false).merge("m1FutureField" => {"value" => 1})
+                    JSON.parse(JSON.generate(value)).merge("m1FutureField" => {"value" => 1})
                   end
   missing_value = scalar_schema ? value : {}
   descriptor = registry.fetch(wire_case.fetch("message"))
