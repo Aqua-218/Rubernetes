@@ -351,3 +351,34 @@ AUTO_COMMIT_ARGS="--granularity file" rake repo:commit
 rake "repo:record[test:parallel]"             # run the task, then record with Cycle: trailers
 ruby tools/repo/auto_commit.rb --dry-run -v   # preview the commits without making them
 ```
+
+## Dashboard (apps/dashboard)
+
+A Rails 8 application that is both the cluster's web UI and its Prometheus:
+it browses nodes, namespaces, workloads, Pods (logs, YAML, delete, scale,
+rollout restart), events and alerts, and it scrapes every API server, every
+kubelet endpoint (`/metrics`, `/metrics/cadvisor`, `/metrics/resource`,
+`/metrics/probes`), Pods and Services annotated `prometheus.io/scrape`, and a
+built-in kube-state exporter into its own time-series store.  The store is
+Prometheus-shaped (Gorilla-compressed chunks, a write-ahead log, 2h blocks,
+time-based retention, a SQLite label index) and the query language is PromQL
+(selectors with offset/@, range vectors, subqueries, the aggregation and
+function set, vector matching with on/ignoring/group_left/right, set
+operators).  Recording and alerting rules use the Prometheus rule-file format
+(`apps/dashboard/config/rules.yml`), with pending/firing/resolved state,
+`ALERTS` series and Alertmanager-style webhook notifications.  The HTTP API is
+Prometheus-compatible (`/api/v1/query`, `query_range`, `series`, `labels`,
+`targets`, `rules`, `alerts`, `metadata`, `status/*`), so Grafana can point at
+it.
+
+```sh
+cd apps/dashboard && bin/rails test                     # 69 tests
+RUBERNETES_KUBECONFIG=/srv/rbn-app/linux-amd64-ipv4-native/kubeconfig bin/rails server -p 3000
+```
+
+`apps/dashboard/deploy/` holds a systemd unit, its environment file and an
+Ingress manifest that publishes the host-run dashboard through the cluster's
+ingress controller.  Configuration is entirely environment variables
+(`DASHBOARD_PASSWORD`, `DASHBOARD_RETENTION`, `DASHBOARD_SCRAPE_INTERVAL`,
+`DASHBOARD_RULES`, `DASHBOARD_ALERT_WEBHOOK`, `DASHBOARD_ALLOW_WRITES`, ...);
+see `apps/dashboard/lib/dashboard/config.rb`.
