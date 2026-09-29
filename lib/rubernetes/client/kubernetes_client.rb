@@ -1053,7 +1053,6 @@ module Rubernetes
         event = JSON.parse(
           stripped,
           object_class: ManifestReader::DuplicateKeyHash,
-          create_additions: false,
           max_nesting: 512
         )
         unless event.is_a?(Hash)
