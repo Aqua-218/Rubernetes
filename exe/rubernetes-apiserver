@@ -1,0 +1,6 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "rubernetes/bootstrap/cli"
+
+exit Rubernetes::Bootstrap::CLI.run(process_name: "rubernetes-apiserver", argv: ARGV)
