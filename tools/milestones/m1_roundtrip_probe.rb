@@ -677,7 +677,7 @@ def build_validation_parent_fixture(codec:, mapping:, owner_type:, target_json:,
   base = augment.call(base, owner_type) if augment
   base["apiVersion"] = validation_owner_api_version(gvk)
   base["kind"] = gvk.fetch("kind")
-  target = JSON.parse(target_json, create_additions: false)
+  target = JSON.parse(target_json)
   owner_hash = validation_embed_fixture(base, mapping.fetch("target_path"), target, target_schema)
   # REST strategies must observe a meaningful object.  The generated schema
   # does not carry Go pointer/value information for every metadata field, so
