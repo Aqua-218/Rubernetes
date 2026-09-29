@@ -310,7 +310,7 @@ module Rubernetes
             unless IO.select([reader], nil, nil, 10)
               raise EffectError, "namespace exec supervisor did not report readiness"
             end
-            response = JSON.parse(reader.gets.to_s, create_additions: false)
+            response = JSON.parse(reader.gets.to_s)
             unless response["ok"] == true
               raise EffectError, response["error"].to_s.empty? ? "namespace exec supervisor failed" : response["error"]
             end
