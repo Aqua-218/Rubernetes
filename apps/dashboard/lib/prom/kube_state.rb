@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "target"
 require_relative "targets"
 
 module Prom
