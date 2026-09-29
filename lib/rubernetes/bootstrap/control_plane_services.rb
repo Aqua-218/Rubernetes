@@ -1648,7 +1648,8 @@ module Rubernetes
           @thread = Thread.new { run_loop }
           start_scheduler_status_monitor
           @component_server = ComponentServer.from_config(component: "kube-scheduler", config: @config, metrics: @metrics,
-                                                          ready: -> { started? }, logger: @logger)&.start
+                                                          ready: -> { started? }, logger: @logger,
+                                                          extra_paths: {"/metrics/resources" => method(:resource_metrics_body)})&.start
           log(:info, "process.ready", components: %w[scheduler framework queue informers bind-loop])
           self
         rescue StandardError
