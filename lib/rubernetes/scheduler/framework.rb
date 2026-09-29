@@ -1102,7 +1102,9 @@ module Rubernetes
         started = sampled ? monotonic : nil
         status = Metrics::STATUS_ERROR
         begin
-          plugin.block.call(pod, node)
+          output = plugin.block.call(pod, node)
+          status = plugin_status(output)
+          output
         rescue FrozenError => error
           raise PluginError.new("#{phase} plugin #{plugin.name} mutated its input snapshot: #{error.message}",
                                 plugin: plugin.name, phase: phase, cause_error: error), cause: error
