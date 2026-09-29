@@ -614,7 +614,7 @@ module M2LifecycleOracleHarness
         raise HarnessError, "#{prefix} image #{tag} maps to #{digest.inspect} in the node store, lock expects #{expected}" unless digest && expected.end_with?(digest)
         cri_id = pod.dig("status", "containerStatuses", 0, "imageID").to_s
         inspect, = node_exec("crictl", "inspecti", tag)
-        cri_status = JSON.parse(inspect, create_additions: false)["status"] || {}
+        cri_status = JSON.parse(inspect)["status"] || {}
         raise HarnessError, "#{prefix} CRI image ID #{cri_status["id"]} (pod reports #{cri_id}) is not the locked #{expected_cri["id"]}" unless cri_status["id"] == expected_cri["id"] && (cri_id == expected_cri["id"] || Array(cri_status["repoDigests"]).include?(cri_id))
         {"reference" => expected, "tag" => tag, "cri_image_id" => cri_status["id"], "pod_image_id" => cri_id}
       end
