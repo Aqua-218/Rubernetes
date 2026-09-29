@@ -31,7 +31,8 @@ module Rubernetes
         return nil unless serving["enabled"] == true
 
         new(component: component, config: config, metrics: metrics, ready: ready, logger: logger,
-            host: serving.fetch("bind_address", "127.0.0.1").to_s, port: Integer(serving.fetch("port")))
+            host: serving.fetch("bind_address", "127.0.0.1").to_s, port: Integer(serving.fetch("port")),
+            extra_paths: extra_paths, health: health)
       end
 
       def initialize(component:, config:, metrics:, host:, port:, ready: -> { true }, logger: nil)
