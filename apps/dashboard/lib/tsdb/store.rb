@@ -119,6 +119,13 @@ module Tsdb
       @readonly = readonly
       FileUtils.mkdir_p(File.join(@dir, "wal"))
       FileUtils.mkdir_p(File.join(@dir, "blocks"))
+      unless @readonly
+        OPEN_WRITERS_LOCK.synchronize do
+          raise AlreadyOpen, "a Tsdb::Store is already writing #{@dir} in this process" if OPEN_WRITERS[@dir]
+
+          OPEN_WRITERS[@dir] = self
+        end
+      end
       @db = SQLite3::Database.new(File.join(@dir, "index.sqlite"))
       @db.busy_timeout = 10_000
       @db.execute("PRAGMA journal_mode=WAL")
