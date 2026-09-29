@@ -154,6 +154,11 @@ module Rubernetes
 
       def registered_names = @mutex.synchronize { @metrics.keys }
 
+      # The families that have at least one series.
+      def names_with_values
+        @mutex.synchronize { @metrics.values.reject { |metric| metric.values.empty? }.map(&:name) }
+      end
+
       # component-base's legacyregistry: the families client-go (rest_client_*)
       # and the workqueues (workqueue_*) record process-wide, which every
       # component's /metrics serves alongside its own.
