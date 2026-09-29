@@ -125,7 +125,7 @@ module M2ProbeSupport
     # `registry.k8s.io/e2e-test-images/busybox@sha256:<linux/amd64 digest>`
     def reference
       @reference ||= begin
-        lock = JSON.parse(File.binread(@lock_path), create_additions: false)
+        lock = JSON.parse(File.binread(@lock_path))
         busybox = lock.fetch("runner_support_images").fetch("busybox")
         digest = busybox.fetch("platforms").fetch("linux/amd64")
         raise "Kubernetes lock busybox digest is invalid" unless digest.match?(/\Asha256:[0-9a-f]{64}\z/)
