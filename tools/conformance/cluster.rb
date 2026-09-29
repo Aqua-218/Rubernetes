@@ -803,6 +803,9 @@ module Conformance
                        "kubeconfig" => kubeconfig, "identity" => "m8-controller-manager",
                        "controllers" => selected_controllers(discovery_kubeconfig),
                        "sync" => {"interval_seconds" => 0.5},
+                       # kube-controller-manager's --secure-port (upstream 10257): /metrics and
+                       # the health endpoints on loopback.
+                       "serving" => {"enabled" => true, "bind_address" => "127.0.0.1", "port" => serving_port},
                        # kubeadm's --cluster-signing-{cert,key}-file: the cluster CA the
                        # apiserver trusts for client certificates.
                        "cluster_signing" => {"cert_file" => File.join(root, "pki", "ca.crt"),
