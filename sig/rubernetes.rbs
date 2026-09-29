@@ -1,0 +1,489 @@
+module Rubernetes
+  VERSION: String
+
+  module Schema
+    class GVK
+      attr_reader group: String
+      attr_reader version: String
+      attr_reader kind: String
+      def initialize: (?String group, ?String? version, ?String? kind, **untyped keywords) -> void
+      def api_version: () -> String
+      def to_s: () -> String
+    end
+
+    class GVR
+      attr_reader group: String
+      attr_reader version: String
+      attr_reader resource: String
+      def initialize: (?String group, ?String? version, ?String? resource, **untyped keywords) -> void
+      def api_version: () -> String
+      def to_s: () -> String
+    end
+
+    class Reference
+      attr_reader name: String
+      def initialize: (String name) { () -> Definition } -> void
+      def resolve: () -> Definition
+    end
+
+    class Definition
+      attr_reader gvk: GVK
+      attr_reader gvr: GVR
+      def initialize: (?String | Hash[untyped, untyped] name, **untyped keywords) -> void
+      def build: (?Hash[untyped, untyped] values, **untyped keywords) -> ValueObject
+    end
+
+    class ValueObject
+      def initialize: (?Hash[untyped, untyped] values, **untyped keywords) -> void
+      def field: (String | Symbol name) -> untyped
+      def fetch: (String | Symbol name, ?untyped default) -> untyped
+      def present?: (String | Symbol name) -> bool
+      def unknown_fields: () -> Hash[String, untyped]
+      def with: (?Hash[untyped, untyped] values, **untyped changes) -> ValueObject
+      def to_h: (?include_unknown: bool) -> Hash[String, untyped]
+    end
+  end
+
+  module Bootstrap
+    class Config
+      class Error < StandardError
+      end
+
+      LEVELS: Array[String]
+      PROCESS_NAMES: Array[String]
+      DEFAULT_PATH: String
+
+      attr_reader process_name: String
+
+      def self.load: (process_name: String, ?path: String?) -> Config
+      def self.validate_process_name!: (String process_name) -> void
+      def initialize: (process_name: String, data: Hash[String, untyped]) -> void
+      def logging_level: () -> String
+      def process: () -> Hash[String, untyped]
+      def to_h: () -> Hash[String, untyped]
+    end
+
+    class StructuredLogger
+      def initialize: (io: IO, process_name: String, ?level: String, ?clock: ^() -> Time) -> void
+      def log: (String level, String event, **untyped fields) -> bool
+      def debug: (String event, **untyped fields) -> bool
+      def info: (String event, **untyped fields) -> bool
+      def warn: (String event, **untyped fields) -> bool
+      def error: (String event, **untyped fields) -> bool
+      def fatal: (String event, **untyped fields) -> bool
+    end
+
+    class Container
+      class Error < StandardError
+      end
+      class DuplicateRegistration < Error
+      end
+      class MissingDependency < Error
+      end
+      class DependencyCycle < Error
+      end
+
+      def initialize: () -> void
+      def register: (String | Symbol name, ?untyped value) ?{ (Container) -> untyped } -> self
+      def seal!: () -> self
+      def resolve: (String | Symbol name) -> untyped
+    end
+
+    class Shutdown
+      class Request
+        attr_reader signal: String
+        attr_reader requested_at: Float
+      end
+
+      def initialize: (?clock: ^() -> Float) -> void
+      def install!: () -> self
+      def request!: () -> self
+      def requested?: () -> bool
+      def wait: (?timeout: Float?) -> Request?
+      def restore!: () -> self
+      def close: () -> void
+    end
+
+    class DaemonService
+      def initialize: (process_name: String, config: Hash[String, untyped], logger: StructuredLogger) -> void
+      def start: () -> void
+      def stop: (reason: String) -> void
+    end
+
+    class APIServerService
+      def initialize: (config: Hash[String, untyped], logger: StructuredLogger, ?catalog: untyped, ?store: untyped, ?http_server_class: untyped) -> void
+      def start: () -> self
+      def stop: (reason: String) -> self
+    end
+
+    class AgentService
+      def initialize: (config: Hash[String, untyped], logger: StructuredLogger, **untyped) -> void
+      def start: () -> self
+      def stop: (reason: String) -> self
+      def started?: () -> bool
+      def subresource: (String | Symbol name) -> untyped
+    end
+
+    class Assembler
+      class Assembly
+        attr_reader config: Config
+        attr_reader logger: StructuredLogger
+        attr_reader shutdown: Shutdown
+        attr_reader service: DaemonService | APIServerService | AgentService
+      end
+
+      def initialize: (process_name: String, ?config_path: String?, ?log_io: IO, ?clock: ^() -> Time, ?runtime_adapters: Hash[Symbol | String, untyped]) -> void
+      def build: () -> Assembly
+    end
+
+    class Runner
+      def initialize: (assembly: Assembler::Assembly) -> void
+      def run: () -> Integer
+    end
+
+    class CLI
+      def self.run: (process_name: String, argv: Array[String], ?stdout: IO, ?stderr: IO) -> Integer
+      def initialize: (process_name: String, stdout: IO, stderr: IO) -> void
+      def run: (Array[String] argv) -> Integer
+    end
+  end
+
+  module Platform
+    module Linux
+      class Error < StandardError
+        attr_reader errno: Integer
+        attr_reader operation: String
+        attr_reader resource_id: String
+        attr_reader details: Hash[Symbol, untyped]
+
+        def initialize: (errno: Integer, operation: String, resource_id: String, ?details: Hash[Symbol, untyped]) -> void
+        def code: () -> Symbol?
+        def to_h: () -> Hash[Symbol, untyped]
+        def self.wrap: (SystemCallError error, operation: String, resource_id: String, ?details: Hash[Symbol, untyped]) -> Error
+      end
+
+      class ABIManifest
+        class Error < StandardError
+        end
+        class Mismatch < Error
+          attr_reader mismatches: Array[String]
+        end
+
+        attr_reader path: String
+        attr_reader data: Hash[String, untyped]
+
+        def self.current_architecture: () -> String
+        def self.load: (?architecture: String, ?path: String?) -> ABIManifest
+        def initialize: (path: String, data: Hash[String, untyped]) -> void
+        def architecture: () -> String
+        def syscall: (String | Symbol name) -> Integer
+        def structure: (String | Symbol name) -> Hash[String, Integer]
+        def constant: (String | Symbol group, String | Symbol name) -> Integer
+        def verify_ruby_layouts!: () -> true
+      end
+
+      class Clone3
+        class Args
+          attr_reader flags: Integer
+          attr_reader exit_signal: Integer
+          attr_reader stack: Integer
+          attr_reader stack_size: Integer
+          attr_reader tls: Integer
+          attr_reader set_tid: Integer
+          attr_reader set_tid_size: Integer
+          attr_reader cgroup: Integer
+
+          def initialize: (flags: Integer, ?exit_signal: Integer, ?stack: Integer, ?stack_size: Integer, ?tls: Integer, ?set_tid: Integer, ?set_tid_size: Integer, ?cgroup: Integer) -> void
+        end
+        class Result
+          attr_reader pid: Integer
+          attr_reader pidfd: Integer?
+          def child?: () -> bool
+        end
+
+        def initialize: (?manifest: ABIManifest) -> void
+        def call: (args: Args, resource_id: String, ?structure_size: Integer?) -> Result
+      end
+
+      class Pidfd
+        class WaitResult
+          attr_reader code: Integer
+          attr_reader exit_status: Integer?
+          attr_reader term_signal: Integer?
+        end
+
+        def initialize: (?manifest: ABIManifest) -> void
+        def open: (pid: Integer, ?flags: Integer, ?resource_id: String) -> Integer
+        def send_signal: (pidfd: Integer, signal: Integer, ?flags: Integer, ?resource_id: String) -> true
+        def wait: (pidfd: Integer, ?timeout: Float?, ?resource_id: String) -> WaitResult?
+      end
+
+      class NamespaceProcess
+        class Spawn
+          attr_reader pid: Integer
+          attr_reader pidfd: Integer
+          attr_reader error_fd: Integer
+        end
+        class Result
+          attr_reader pid: Integer
+          attr_reader pidfd: Integer
+          attr_reader wait_result: Pidfd::WaitResult
+        end
+
+        def spawn: (command: Array[String], output_fd: Integer, ?proc_target: String, ?flags: Integer, resource_id: String) -> Spawn
+        def wait: (spawn: Spawn, timeout: Float, resource_id: String) -> Result
+      end
+
+      class Mount
+        def mount: (source: String?, target: String, filesystem: String?, ?flags: Integer, ?data: String?, ?resource_id: String) -> true
+        def unmount: (target: String, ?flags: Integer, ?resource_id: String) -> true
+        def remount_proc: (?target: String, ?resource_id: String) -> true
+        def make_private: (?target: String, ?recursive: bool, ?resource_id: String) -> true
+      end
+
+      class Netlink
+        class Message
+          attr_reader type: Integer
+          attr_reader flags: Integer
+          attr_reader sequence: Integer
+          attr_reader payload: String
+        end
+        class Ack
+          attr_reader sequence: Integer
+          attr_reader messages: Array[Message]
+        end
+
+        def get_link: (index: Integer, ?sequence: Integer, ?timeout: Float, ?resource_id: String) -> Ack
+      end
+
+      class BPF
+        class VerifierError < Linux::Error
+          def verifier_log: () -> String
+        end
+        class Instruction
+          attr_reader code: Integer
+          attr_reader destination: Integer
+          attr_reader source: Integer
+          attr_reader offset: Integer
+          attr_reader immediate: Integer
+          def to_binary: () -> String
+        end
+        class Program
+          attr_reader fd: Integer
+          attr_reader verifier_log: String
+          def close: () -> void
+        end
+
+        def initialize: (?manifest: ABIManifest) -> void
+        def load: (instructions: Array[Instruction], ?program_type: Integer, ?license: String, ?log_size: Integer, ?resource_id: String) -> Program
+        def probe: (?resource_id: String) -> Program
+      end
+
+      class KVM
+        class Probe
+          attr_reader api_version: Integer
+          attr_reader capabilities: Hash[Integer, Integer]
+        end
+
+        def initialize: (?path: String) -> void
+        def probe: (?capabilities: Array[Integer], ?resource_id: String) -> Probe
+      end
+    end
+  end
+end
+
+# M3/M4 public control-loop and data-plane surface.
+module Rubernetes
+  module Controller
+    def self.default_registry: () -> ControllerRegistry
+    def self.controller_registry: () -> ControllerRegistry
+    def self.validate_startup!: (?registry: ControllerRegistry) -> ControllerRegistry
+
+    module BuiltinControllerCorpus
+      VERSION: String
+      def self.names: () -> Array[String]
+      def self.entries: () -> Array[untyped]
+      def self.fetch: (String | Symbol) -> untyped?
+      def self.complete?: () -> bool
+    end
+
+    class ControllerDefinition
+      attr_reader name: String
+      def initialize: (**untyped) -> void
+      def reconcile: (*untyped, **untyped) -> untyped
+      def validate!: () -> self
+    end
+
+    class ControllerRegistry
+      def initialize: (**untyped) -> void
+      def register: (ControllerDefinition definition) -> ControllerDefinition
+      def register_many: (Array[ControllerDefinition] definitions) -> self
+      def fetch: (String | Symbol name) -> ControllerDefinition
+      def []: (String | Symbol name) -> ControllerDefinition?
+      def find: (String | Symbol name) -> ControllerDefinition?
+      def definitions: () -> Array[ControllerDefinition]
+      def names: () -> Array[String]
+      def startup_validate!: () -> self
+      def seal!: () -> self
+    end
+  end
+
+  module Watch
+    class DeltaFIFO
+      def initialize: (**untyped) -> void
+      def add: (*untyped, **untyped) -> untyped
+      def update: (*untyped, **untyped) -> untyped
+      def delete: (*untyped, **untyped) -> untyped
+      def pop: (**untyped) -> [String?, Array[untyped]]
+      def done: (String) -> untyped
+    end
+    class Indexer
+      def initialize: (**untyped) -> void
+      def add: (untyped) -> untyped
+      def update: (untyped) -> untyped
+      def get: (String) -> untyped?
+      def by_index: (String, String) -> Array[untyped]
+    end
+    class WorkQueue
+      def initialize: (**untyped) -> void
+      def add: (String) -> untyped
+      def get: (**untyped) -> [String?, bool]
+      def done: (String) -> untyped
+    end
+    class Informer
+      attr_reader indexer: Indexer
+      def initialize: (**untyped) -> void
+      def run_once: () -> untyped
+    end
+  end
+
+  module Scheduler
+    def self.new: (**untyped) -> Framework
+    def self.build: (**untyped) -> Framework
+    class Framework
+      attr_reader plugins: untyped
+      attr_reader queue: untyped
+      attr_reader preemption: untyped
+      def initialize: (**untyped) -> void
+      def filter_plugins: () -> Array[untyped]
+      def score_plugins: () -> Array[untyped]
+      def schedule: (*untyped, **untyped) -> untyped
+      def filter: (*untyped, **untyped) -> untyped
+      def score: (*untyped, **untyped) -> untyped
+      def tie_break: (*untyped, **untyped) -> untyped
+      def binding: (*untyped, **untyped) -> untyped
+    end
+    class PluginRegistry
+      def initialize: (**untyped) -> void
+      def register: (untyped) -> untyped
+      def filters: () -> Array[untyped]
+      def scores: () -> Array[untyped]
+    end
+  end
+
+  module Network
+    class IPAM
+      attr_reader node_cidrs: Hash[String, untyped]
+      def initialize: (**untyped) -> void
+      def allocate_node: (**untyped) -> untyped
+      def reserve: (**untyped) -> untyped
+      def commit: (*untyped, **untyped) -> untyped
+      def release: (*untyped, **untyped) -> untyped
+      def leases: (**untyped) -> Array[untyped]
+      def recover: (**untyped) -> untyped
+    end
+    class Topology
+      attr_reader bridge_name: String
+      attr_reader mtu: Integer
+      def initialize: (**untyped) -> void
+      def desired: (*untyped, **untyped) -> untyped
+      alias plan desired
+      def apply: (*untyped, **untyped) -> untyped
+      def rollback: (*untyped, **untyped) -> untyped
+    end
+    class PolicyEngine
+      def initialize: (**untyped) -> void
+      def apply: (*untyped, **untyped) -> untyped
+      def allowed?: (**untyped) -> bool
+      def identity_set: (**untyped) -> untyped
+      def snapshot: () -> untyped
+    end
+    module DNS
+      class Resolver
+        attr_reader domain: String
+        def initialize: (**untyped) -> void
+        def add_service: (untyped) -> untyped
+        def add_endpoint_slice: (untyped) -> untyped
+        def add_pod: (untyped) -> untyped
+        def resolve: (*untyped, **untyped) -> untyped
+      end
+    end
+  end
+
+  module Proxy
+    class Proxy
+      attr_reader backend: untyped
+      def initialize: (**untyped) -> void
+      def apply_service: (untyped) -> untyped
+      def apply_endpoint_slice: (untyped) -> untyped
+      def route: (*untyped, **untyped) -> untyped?
+      def backend_name: () -> String
+      def backend_status: () -> untyped
+      def switch_backend: (*untyped, **untyped) -> untyped
+    end
+    class Backend
+      attr_reader name: String
+      def initialize: (**untyped) -> void
+      def apply: (untyped) -> untyped
+      def route: (untyped) -> untyped?
+      def digest: () -> String
+      def semantic_snapshot: () -> untyped
+    end
+    class EBPFBackend < Backend
+      def initialize: (**untyped) -> void
+      def available?: () -> bool
+      def generate_program: (**untyped) -> untyped
+    end
+    class NftablesBackend < Backend
+      def initialize: (**untyped) -> void
+      def encode_messages: (**untyped) -> untyped
+    end
+  end
+
+  module Volume
+    class Manager
+      attr_reader root: String
+      def initialize: (**untyped) -> void
+      def create_volume: (untyped, token: String) -> String
+      def delete_volume: (String, token: String) -> untyped
+      def publish: (String, String, token: String) -> untyped
+      def unpublish: (String, String, token: String) -> untyped
+      def stage: (String, String, token: String, **untyped) -> untyped
+      def node_publish: (String, untyped, String, readonly: bool, token: String, **untyped) -> untyped
+      def node_unpublish: (String, untyped, String, token: String) -> untyped
+      def unstage: (String, String, token: String, **untyped) -> untyped
+      def recover: (**untyped) -> untyped
+    end
+    class PathSecurity
+      attr_reader root: String
+      def initialize: (**untyped) -> void
+      def validate!: (String, **untyped) -> String
+      def validate_host_path!: (String, **untyped) -> untyped
+      def validate_sub_path!: (untyped, String, **untyped) -> untyped
+    end
+    class AtomicWriter
+      attr_reader root: String
+      def initialize: (String, **untyped) -> void
+      def write: (Hash[String, untyped], **untyped) -> Hash[String, untyped]
+      def current_generation: () -> String?
+      def read: (String) -> String
+    end
+    class Binder
+      def initialize: (**untyped) -> void
+      def register_storage_class: (untyped) -> untyped
+      def register_pv: (untyped) -> untyped
+      def register_pvc: (untyped) -> untyped
+      def bind: (untyped, **untyped) -> untyped
+    end
+  end
+end
