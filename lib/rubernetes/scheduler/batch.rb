@@ -148,6 +148,7 @@ module Rubernetes
       def failed(cycle)
         @mutex.synchronize do
           @last_cycle = nil
+          @metrics&.batch_flushed("cycle_failed") if @state
           @state = nil
           _ = cycle
         end
