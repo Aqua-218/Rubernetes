@@ -215,6 +215,7 @@ module Rubernetes
         result = {"name" => container["name"].to_s, "startTime" => entry && (entry[:started_at] || entry.dig(:status, "running", "startedAt"))}
         result["cpu"] = cpu_stats("container/#{uid}/#{container["id"]}", usage["cpu"], stamp) if usage["cpu"]
         result["memory"] = memory_stats(usage["memory.current"], usage["memory"], stamp) if usage["memory"]
+        result["swap"] = swap_stats(usage, stamp) if usage.key?("memory.swap.current")
         rootfs = container["rootfs"] && directory_stats(container["rootfs"], stamp, device: @pod_root || container["rootfs"])
         result["rootfs"] = rootfs if rootfs
         logs = container["logs"] && directory_stats(container["logs"], stamp, device: container["logs"])
