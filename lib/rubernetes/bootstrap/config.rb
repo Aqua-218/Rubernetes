@@ -805,6 +805,7 @@ module Rubernetes
 
       def validate_proxy!(process_config)
         reject_unknown_keys!(process_config, PROXY_KEYS, "rubernetes-proxy configuration")
+        validate_serving!(process_config["serving"], "rubernetes-proxy") if process_config.key?("serving")
         validate_api_server!(process_config["api_server"], context: "rubernetes-proxy.api_server") if process_config.key?("api_server")
         %w[kubeconfig context node_name].each do |key|
           next unless process_config.key?(key) && !process_config[key].nil?
