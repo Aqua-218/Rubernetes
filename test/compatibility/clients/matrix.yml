@@ -1,0 +1,34 @@
+# K6 client version-skew matrix
+# (spec/verification/kubernetes-compatibility.md#k6).
+#
+# Target API server minor is 1.36.  Kubernetes' version-skew policy supports a
+# kubectl within one minor of the API server, so the required set is the latest
+# patch of 1.35, 1.36.2 itself, and the latest patch of 1.37.  v1.37.0 shipped
+# after the spec's 2026-08-22 snapshot; the spec requires it to join the set
+# automatically on release, which this file does.
+#
+# Every binary is pinned by the checksum published next to it on dl.k8s.io and
+# is verified before use; a mismatch fails K6 rather than refreshing the pin.
+schema_version: 1
+target_api_server: v1.36.2
+verified_at: "2026-09-07"
+source: https://dl.k8s.io/release/
+kubectl:
+  - version: v1.35.8
+    skew: "-1"
+    path: build/tools/kubectl-v1.35.8
+    url: https://dl.k8s.io/release/v1.35.8/bin/linux/amd64/kubectl
+    sha256: 874d5e72dbb819f43cff16bcd1e4f8bac5b7f2361fe1e55049b0a6c676fb0cbf
+    stable_channel: https://dl.k8s.io/release/stable-1.35.txt
+  - version: v1.36.2
+    skew: "0"
+    path: build/tools/kubectl-v1.36.2
+    url: https://dl.k8s.io/release/v1.36.2/bin/linux/amd64/kubectl
+    sha256: 1e9045ec32bea85da43de85f0065358529ea7c7a152eca78154fba5b58c27d82
+    stable_channel: https://dl.k8s.io/release/stable-1.36.txt
+  - version: v1.37.0
+    skew: "+1"
+    path: build/tools/kubectl-v1.37.0
+    url: https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl
+    sha256: 6129359f4e1f3848a5572ccb0b26cf28b8ca08cef38c95a765b2f64a2c961a2f
+    stable_channel: https://dl.k8s.io/release/stable-1.37.txt
