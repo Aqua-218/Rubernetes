@@ -81,6 +81,9 @@ module Rubernetes
           # matchConditions: every expression must be true; an evaluation error
           # follows failurePolicy (Fail -> reject, Ignore -> skip).
           def match_conditions_pass?(conditions, attributes, failure_policy:, name:)
+            return true if Array(conditions).empty?
+
+            started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             Array(conditions).each do |condition|
               result = cel.evaluate(condition.fetch("expression"), cel_variables(attributes))
               return false unless result == true
