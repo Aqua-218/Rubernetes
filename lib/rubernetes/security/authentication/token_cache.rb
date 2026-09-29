@@ -61,7 +61,10 @@ module Rubernetes
           key = [Digest::SHA256.digest(token.to_s), audiences.nil? ? nil : Array(audiences).map(&:to_s).sort].freeze
           now = @clock.call
           hit = @mutex.synchronize { @entries[key] }
-          return hit.first if hit && hit.last > now
+          if hit && hit.last > now
+            self.class.observe_request("hit", 0.0)
+            return hit.first
+          end
 
           result = yield
           if result
