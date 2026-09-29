@@ -141,6 +141,8 @@ module Rubernetes
             if key
               @processing[key] = true
               deltas = @items.delete(key) || []
+              queued_at = @enqueued_at.delete(key)
+              @popped_age[key] = queued_at ? [queued_at, @clock.call] : nil
               return [key, deltas.freeze]
             end
             return nil if @closed
