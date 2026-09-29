@@ -106,9 +106,11 @@ module Dashboard
     end
 
     def collector
-      @collector ||= Prom::Collector.new(store: store, targets: targets, scraper: scraper, engine: engine, rules: rules,
-                                         interval_seconds: Config.scrape_interval_seconds,
-                                         evaluation_interval_seconds: Config.evaluation_interval_seconds, logger: @logger)
+      memoize(:collector) do
+        Prom::Collector.new(store: store, targets: targets, scraper: scraper, engine: engine, rules: rules,
+                            interval_seconds: Config.scrape_interval_seconds,
+                            evaluation_interval_seconds: Config.evaluation_interval_seconds, logger: @logger)
+      end
     end
 
     def start
