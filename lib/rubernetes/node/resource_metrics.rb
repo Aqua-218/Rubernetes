@@ -499,7 +499,7 @@ module Rubernetes
         end.join
       end
 
-      def add_entry(samples, entry, labels, stamp)
+      def add_summary_entry(samples, entry, labels, stamp)
         cpu = entry["cpu"]
         if cpu.is_a?(Hash) && cpu["usageCoreNanoSeconds"]
           samples["container_cpu_usage_seconds_total"] << [labels.merge("cpu" => "total"), cpu["usageCoreNanoSeconds"].to_f / 1e9]
