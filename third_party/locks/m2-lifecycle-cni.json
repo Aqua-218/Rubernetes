@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-09-04",
+  "plugin": "kindnetd",
+  "version": "v20260820-69b56db7",
+  "source_repository": "https://github.com/kubernetes-sigs/kind.git",
+  "source_path": "images/kindnetd",
+  "source_commit": "69b56db75a6e82dece4cdc980655d79b2b73eb77",
+  "source_commit_date": "2026-08-20T11:23:12Z",
+  "image_reference": "docker.io/kindest/kindnetd@sha256:526969f0a1a7a788a7a96f53a4ad3b51607bde7bb2841edf52a02916e8d52650",
+  "image_digest": "526969f0a1a7a788a7a96f53a4ad3b51607bde7bb2841edf52a02916e8d52650",
+  "image_tag": "docker.io/kindest/kindnetd:v20260820-69b56db7",
+  "cri_image_id": "sha256:4626fe10df5b930638e6e1662143ee1c7a698de6174fdb61a8ce658e688be2cd",
+  "config_path": "/etc/cni/net.d/10-kindnet.conflist",
+  "config_sha256": "effdf84a35f889af9218fe827e03dd668f05c8ec3ff9e26304a5084d120371b8",
+  "config": "\n{\n\t\"cniVersion\": \"0.3.1\",\n\t\"name\": \"kindnet\",\n\t\"plugins\": [\n\t{\n\t\t\"type\": \"ptp\",\n\t\t\"ipMasq\": false,\n\t\t\"ipam\": {\n\t\t\t\"type\": \"host-local\",\n\t\t\t\"dataDir\": \"/run/cni-ipam-state\",\n\t\t\t\"routes\": [\n\t\t\t\t\n\t\t\t\t\n\t\t\t\t{ \"dst\": \"0.0.0.0/0\" }\n\t\t\t],\n\t\t\t\"ranges\": [\n\t\t\t\t\n\t\t\t\t\n\t\t\t\t[ { \"subnet\": \"10.244.0.0/24\" } ]\n\t\t\t]\n\t\t}\n\t\t,\n\t\t\"mtu\": 1500\n\t\t\n\t},\n\t{\n\t\t\"type\": \"portmap\",\n\t\t\"capabilities\": {\n\t\t\t\"portMappings\": true\n\t\t}\n\t}\n\t]\n}\n",
+  "manifest_path": "/kind/manifests/default-cni.yaml",
+  "manifest_sha256": "798c30289c418da2b2561ab899e80f52715ae23eab1bf75d2ddd4b40a4c18c0d",
+  "plugin_binaries": {
+    "host-local": "7fac0c4203b732a32bacffb50192f61a2f3159e0d8455a7da836e7560b8f0f80",
+    "loopback": "517b8b0f7d48f73660fea906f6559ffec08ea1994c1496299483d99519bebc65",
+    "portmap": "ec94673b630134251649fe0c40434ba51e9eefaddd6cf7db7a78e07ad687ed7b",
+    "ptp": "baadd226c2658228445bb7ec6eed72063375d87bfa19a97ff1c52c8b90619f60"
+  },
+  "chained_plugins": [
+    "ptp",
+    "portmap"
+  ],
+  "ipam": "host-local",
+  "node_image_lock_path": "third_party/locks/m2-lifecycle-node-image.json",
+  "node_image_reference": "localhost:25000/rubernetes/kind-node@sha256:2f0ecbdcd9d0bb44584f8700f5ae0be071c65135989e325789388d3df59c4efa",
+  "lock_sha256": "887ddefff28ff7d2045422eede1e21ef3f279cbd698e34520eaab2cd1518a251"
+}
