@@ -66,6 +66,25 @@ class ApplicationController < ActionController::Base
     timestamp.to_s
   end
 
-  # Changes to the importmap will invalidate the etag for HTML responses
-  stale_when_importmap_changes
+  def render_error(error)
+    status = case error
+             when Dashboard::Errors::Forbidden then :forbidden
+             when Dashboard::Errors::Unavailable then :service_unavailable
+             when ActionController::RoutingError, ActiveRecord::RecordNotFound then :not_found
+             else
+               if error.class.name == "Rubernetes::Client::APIError" && error.respond_to?(:response) && error.response
+                 code = error.response.status.to_i
+                 code.between?(400, 599) ? code : :bad_gateway
+               else
+                 :internal_server_error
+               end
+             end
+    Rails.logger.error("#{error.class}: #{error.message}\n#{Array(error.backtrace).first(8).join("\n")}") unless status == :not_found
+    @error = error
+    respond_to do |format|
+      format.html { render "errors/show", status: status }
+      format.json { render json: {"status" => "error", "errorType" => error.class.name, "error" => error.message}, status: status }
+      format.any { render plain: "#{error.class}: #{error.message}", status: status }
+    end
+  end
 end
