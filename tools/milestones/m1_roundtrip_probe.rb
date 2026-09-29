@@ -701,7 +701,7 @@ def build_validation_parent_fixture(codec:, mapping:, owner_type:, target_json:,
     "metadata" => {}
   }
   invalid_patch = nested["invalid"] || fixture["invalid"]
-  owner_invalid_hash = JSON.parse(JSON.generate(owner_hash), create_additions: false)
+  owner_invalid_hash = JSON.parse(JSON.generate(owner_hash))
   if invalid_patch
     owner_invalid_hash = apply_fixture_patch(owner_invalid_hash, invalid_patch)
   else
