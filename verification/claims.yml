@@ -1,0 +1,270 @@
+# Assurance-level ledger (spec/verification/formal-methods.md 7.7).
+#
+# Each safety claim records its subject, assumptions, trusted computing base,
+# method, counterexample status, the tests that exercise it and the
+# implementation paths it binds.  The level is exactly one of
+# proved | model_checked | differentially_tested | integration_tested | assumed_tcb
+# and must never be read as a stronger statement than the level says.
+schema_version: 1
+claims:
+  - id: M5-RAFT-ELECTION-SAFETY
+    subject: At most one leader per term in the Raft protocol
+    level: integration_tested
+    method: >-
+      Deterministic Raft simulation with fault injection (partition, asymmetric
+      partition, reorder, duplication, loss, crash/restart, clock jump) asserting
+      the invariant on every simulated state. Exhaustive TLC over verification/tla/Raft.tla at the scope of spec 7.2 was measured infeasible on 2026-09-06 (1.21e9 distinct states, 7.9e8 still queued after 4 h, 133 GB of state files, not converging), so no exhaustive model-checking result backs this claim. Apalache symbolic BMC over
+      the same model at that scope found no counterexample to depth 3.
+    assumptions:
+      - message loss and duplication are arbitrary
+      - crash restarts keep persistent state
+      - no Byzantine peers
+      - >-
+        the Apalache result is bounded at depth 3; mutation testing on this model showed a no-quorum-election defect is first detected at depth 4 and a commit-without-quorum defect at depth 8, so depth 3 alone does not establish the invariant
+    tcb: [Ruby interpreter, Apalache 0.62.2, JVM]
+    counterexample: none
+    tests: [test/unit/consensus_node_simulation_test.rb, tools/milestones/m5_fault_matrix_probe.rb]
+    implementation: [lib/rubernetes/consensus/node.rb]
+  - id: M5-RAFT-LOG-MATCHING-MODEL
+    subject: Same index and term imply identical log prefixes (bounded)
+    level: integration_tested
+    method: >-
+      Deterministic Raft simulation with fault injection asserting LogMatching on
+      every simulated state; same evidence and same limits as
+      M5-RAFT-ELECTION-SAFETY. The unbounded statement of this property is proved
+      separately in Lean; see M5-RAFT-LOG-MATCHING-PROOF.
+    assumptions: [same as M5-RAFT-ELECTION-SAFETY]
+    tcb: [Ruby interpreter, Apalache 0.62.2, JVM]
+    counterexample: none
+    tests: [test/unit/consensus_node_simulation_test.rb, tools/milestones/m5_fault_matrix_probe.rb]
+    implementation: [lib/rubernetes/consensus/node.rb, lib/rubernetes/consensus/log.rb]
+  - id: M5-RAFT-LOG-MATCHING-PROOF
+    subject: LogMatching holds for all log lengths after an accepted AppendEntries; committed prefixes are never modified
+    level: proved
+    method: Lean 4 theorems logMatching_after_append, entries_agree_after_append, committed_prefix_preserved in verification/lean/RaftLog.lean
+    assumptions: [the follower's accepted prefix equals the leader's prefix, as guaranteed by the prevLogIndex/prevLogTerm check]
+    tcb: [Lean 4.16.0 kernel]
+    counterexample: none
+    tests: [test/unit/consensus_log_snapshot_test.rb]
+    implementation: [lib/rubernetes/consensus/log.rb, lib/rubernetes/consensus/node.rb]
+  - id: M5-RAFT-LEADER-COMPLETENESS
+    subject: Committed entries appear in every later leader's log; applied prefixes never diverge
+    level: integration_tested
+    method: >-
+      Deterministic Raft simulation with fault injection asserting
+      LeaderCompleteness, StateMachineSafety and CommittedInQuorum on every
+      simulated state, plus the fault-matrix and linearizability probes against
+      RaftStore; same evidence and same limits as M5-RAFT-ELECTION-SAFETY.
+    assumptions:
+      - same as M5-RAFT-ELECTION-SAFETY
+      - >-
+        mutation testing showed that a vote cast without the log-up-to-date check
+        and an AppendEntries accepted without the prevLog check are NOT detected by
+        the Apalache run at depth 8; these two defect classes rest on the simulation
+        and probe evidence alone
+    tcb: [Ruby interpreter, Apalache 0.62.2, JVM]
+    counterexample: none
+    tests: [test/unit/consensus_node_simulation_test.rb, tools/milestones/m5_fault_matrix_probe.rb, tools/milestones/m5_linearizability_probe.rb]
+    implementation: [lib/rubernetes/consensus/node.rb]
+  - id: M5-STORE-LINEARIZABILITY
+    subject: Client histories against RaftStore under partition, asymmetric partition, reorder, duplicate, loss, crash/restart and clock jump are linearizable
+    level: differentially_tested
+    method: tools/verification/linearizability.rb search against the sequential KV model, which is compared with the Lean executable reference verification/lean/KVSequential.lean on a random corpus
+    assumptions: [the deterministic simulation drives the production Node with a virtual clock; real-time order is the virtual clock order]
+    tcb: [Ruby interpreter, Lean --run]
+    counterexample: none
+    tests: [tools/milestones/m5_linearizability_probe.rb, tools/verification/kv_sequential_oracle.rb]
+    implementation: [lib/rubernetes/consensus/node.rb, lib/rubernetes/consensus/state_machine.rb, lib/rubernetes/consensus/raft_store.rb]
+  - id: M5-WAL-FAIL-CLOSED
+    subject: A WAL with a checksum failure, bounded-length violation, torn tail, short write, fsync failure or full disk is never partially applied and never acknowledged
+    level: integration_tested
+    method: Real files damaged byte-wise, real ENOSPC on a size-limited tmpfs, L1 device injection for short write and fsync failure
+    assumptions: [fsync durability semantics of the host filesystem]
+    tcb: [Linux kernel, filesystem]
+    counterexample: none
+    tests: [tools/milestones/m5_corruption_probe.rb, test/unit/consensus_wal_test.rb]
+    implementation: [lib/rubernetes/consensus/wal.rb, lib/rubernetes/consensus/storage.rb]
+  - id: M5-SNAPSHOT-FAIL-CLOSED
+    subject: A truncated, bit-flipped or undecodable snapshot is never installed
+    level: integration_tested
+    method: Corruption corpus over real snapshot files
+    assumptions: [SHA-256 collision resistance]
+    tcb: [Linux kernel, filesystem, OpenSSL SHA-256]
+    counterexample: none
+    tests: [tools/milestones/m5_corruption_probe.rb, test/unit/consensus_log_snapshot_test.rb]
+    implementation: [lib/rubernetes/consensus/snapshot.rb, lib/rubernetes/consensus/state_machine.rb]
+  - id: M5-DURABILITY-RPO-ZERO
+    subject: Acknowledged writes survive one failure in a 3-node cluster and two failures in a 5-node cluster; reads, writes and control loops resume within 60 seconds of quorum recovery
+    level: integration_tested
+    method: Real OS processes killed with SIGKILL (fault matrix) and real apiserver/controller-manager processes (RTO/RPO report)
+    assumptions: [fsync durability semantics of the host filesystem, processes on one host]
+    tcb: [Linux kernel, filesystem, TLS stack]
+    counterexample: none
+    tests: [tools/milestones/m5_fault_matrix_probe.rb, tools/milestones/m5_rto_rpo_probe.rb]
+    implementation: [lib/rubernetes/consensus/server.rb, lib/rubernetes/consensus/raft_store.rb, lib/rubernetes/bootstrap/api_server_service.rb]
+  - id: M5-MEMBERSHIP-JOINT-CONSENSUS
+    subject: Membership changes use joint consensus; leader loss during the joint configuration or a snapshot install causes neither split brain nor lost commits
+    level: integration_tested
+    method: Real processes with SIGKILL during the joint configuration and during InstallSnapshot
+    assumptions: [same as M5-DURABILITY-RPO-ZERO]
+    tcb: [Linux kernel, filesystem, TLS stack]
+    counterexample: none
+    tests: [tools/milestones/m5_fault_matrix_probe.rb, test/unit/consensus_node_simulation_test.rb]
+    implementation: [lib/rubernetes/consensus/membership.rb, lib/rubernetes/consensus/node.rb]
+  - id: M5-EFFECT-POINT-IDEMPOTENCE
+    subject: Every effect point distinguishes request loss from response loss and re-execution applies the effect exactly once
+    level: integration_tested
+    method: Durable operation journals replayed after simulated crashes at both ambiguous points; the Raft store scenarios run on a real TLS cluster
+    assumptions: [request UIDs are unique per intent]
+    tcb: [Linux kernel, filesystem]
+    counterexample: none
+    tests: [tools/milestones/m5_ownership_probe.rb]
+    implementation: [lib/rubernetes/consensus/operation_journal.rb, lib/rubernetes/runtime/ownership.rb, lib/rubernetes/controller/effect_journal.rb, lib/rubernetes/volume/ledger.rb, lib/rubernetes/network/durable_state.rb]
+  - id: M5-TRANSPORT-BOUNDED-FRAMING
+    subject: A frame length above 16 MiB is rejected before any allocation; allocations never exceed the bound
+    level: proved
+    method: Lean 4 theorems allocation_le_bound, reject_of_gt, allocate_exact, total_le in verification/lean/BoundedFraming.lean; the Ruby transport implements the same decision procedure
+    assumptions: [the Ruby Framing.read follows the modelled decision procedure (checked by test/unit/consensus_transport_test.rb)]
+    tcb: [Lean 4.16.0 kernel]
+    counterexample: none
+    tests: [test/unit/consensus_transport_test.rb]
+    implementation: [lib/rubernetes/consensus/transport.rb]
+  - id: M5-PEER-IDENTITY
+    subject: Peer identity is taken from the verified TLS certificate; a message whose payload claims another node or cluster is rejected
+    level: integration_tested
+    method: Real TLS connections with a foreign-cluster CA and spoofed sender fields
+    assumptions: [OpenSSL X.509 verification]
+    tcb: [OpenSSL]
+    counterexample: none
+    tests: [test/unit/consensus_transport_test.rb]
+    implementation: [lib/rubernetes/consensus/identity.rb, lib/rubernetes/consensus/transport.rb]
+  - id: M6-CRD-STRUCTURAL-VALIDATION
+    subject: Custom resource validation, defaulting, pruning, CEL rules, status subresource and OpenAPI publication observe the kube-apiserver v1.36.2 contract
+    level: differentially_tested
+    method: One scripted CRD/aggregation scenario executed against the pinned kube-apiserver image in Docker and against the production server; normalized observations must be identical
+    assumptions: [the pinned oracle image is the v1.36.2 reference, timestamps and server-assigned identifiers are volatile]
+    tcb: [Docker, pinned kube-apiserver and etcd images]
+    counterexample: none
+    tests: [tools/milestones/m6_crd_differential_probe.rb, test/unit/api_crd_aggregation_test.rb]
+    implementation: [lib/rubernetes/api/crd/structural_schema.rb, lib/rubernetes/api/crd/manager.rb, lib/rubernetes/api/aggregator.rb]
+  - id: M6-ADMISSION-WEBHOOK-SEMANTICS
+    subject: Webhook timeout, failure policy, reinvocation, match policy, match conditions and AdmissionReview version negotiation behave as kube-apiserver v1.36.2
+    level: differentially_tested
+    method: The same webhook configurations and requests are served to both servers by one TLS backend; outcomes, invocation counts and warnings must be identical
+    assumptions: [the pinned oracle image is the v1.36.2 reference]
+    tcb: [Docker, pinned kube-apiserver and etcd images]
+    counterexample: none
+    tests: [tools/milestones/m6_webhook_differential_probe.rb, test/unit/security_admission_plugins_test.rb]
+    implementation: [lib/rubernetes/security/admission/plugins/webhooks.rb, lib/rubernetes/security/admission/framework.rb]
+  - id: M6-SECURITY-PIPELINE-ORDER
+    subject: Authentication precedes authorization, flow control, mutating then validating admission and storage; audit records every outcome; error disclosure never leaks credentials or internals
+    level: integration_tested
+    method: Production pipeline components wrapped with an order recorder; malformed and unauthorized requests replayed
+    assumptions: [in-process transport]
+    tcb: [Ruby]
+    counterexample: none
+    tests: [tools/milestones/m6_security_pipeline_probe.rb, tools/milestones/m6_fuzz_probe.rb, test/unit/api_security_pipeline_test.rb]
+    implementation: [lib/rubernetes/security/pipeline.rb, lib/rubernetes/api/server.rb]
+  - id: M7-VMM-CONFINEMENT
+    subject: The Firecracker VMM of every microVM runs as a dedicated unprivileged UID with an empty capability set, seccomp filter mode, no_new_privs, a private PID/mount/network namespace, a chroot and cgroup v2 limits
+    level: integration_tested
+    method: The jailed VMM's /proc status, root inode, namespace links and cgroup are read by the host after every launch and after InstanceStart or snapshot load; the guest attack matrix probes the boundary from inside
+    assumptions: [Linux KVM, the jailer of the pinned Firecracker release]
+    tcb: [Linux kernel (KVM, namespaces, seccomp, dm-verity), Firecracker 1.16.1 jailer]
+    counterexample: none
+    tests: [tools/milestones/m7_kvm_probe.rb, tools/milestones/m7_attack_probe.rb]
+    implementation: [lib/rubernetes/runtime/microvm/jailer.rb, lib/rubernetes/runtime/microvm/session.rb]
+  - id: M7-IDENTITY-ROTATION
+    subject: Every restored microVM receives an identity that was never issued before (Restored(a, b) => Identity(a) != Identity(b)); the workload gate opens only after the guest's signed ACK for that identity
+    level: integration_tested
+    method: Append-only identity ledger with monotone UID/CID counters and a never-reissued value set; HMAC ACKs verified against the per-VM session key, nonce, VM id and policy digest; eight real clones compared field by field
+    assumptions: [host-generated randomness, HMAC-SHA256]
+    tcb: [OpenSSL, Ruby]
+    counterexample: none
+    tests: [tools/milestones/m7_identity_probe.rb, test/unit/microvm_protocol_test.rb]
+    implementation: [lib/rubernetes/runtime/microvm/identity.rb, lib/rubernetes/runtime/microvm/session.rb, lib/rubernetes/runtime/microvm/guest/supervisor.rb]
+  - id: M7-SNAPSHOT-FAIL-CLOSED
+    subject: A base snapshot whose memory, VM state or manifest was altered never starts a VM; a pause without ACK is SnapshotPauseUnknown and is only cleaned up
+    level: integration_tested
+    method: Real snapshot files damaged in every corpus case and restored through the production path; VMM process table, identity ledger and host inventory checked after each attempt
+    assumptions: [SHA-256 collision resistance]
+    tcb: [OpenSSL]
+    counterexample: none
+    tests: [tools/milestones/m7_snapshot_probe.rb, test/unit/microvm_protocol_test.rb]
+    implementation: [lib/rubernetes/runtime/microvm/snapshot_pool.rb, lib/rubernetes/runtime/microvm/session.rb]
+  - id: M7-VSOCK-BOUNDED-FRAMING
+    subject: A vsock frame length above 1 MiB is rejected before allocation; CBOR is decoded canonically; unrequested responses are rejected
+    level: integration_tested
+    method: Unit tests over the framing and canonical CBOR decoder; the same code runs in the guest supervisor and the host session
+    assumptions: [none]
+    tcb: [Ruby]
+    counterexample: none
+    tests: [test/unit/microvm_protocol_test.rb]
+    implementation: [lib/rubernetes/runtime/microvm/framing.rb, lib/rubernetes/runtime/microvm/cbor.rb]
+  - id: M8-CONFORMANCE-LANE-INTEGRITY
+    subject: A conformance lane result can only come from a real run whose focus was not narrowed and whose skips were not extended
+    level: integration_tested
+    method: >-
+      tools/conformance/run.rb records every lane's argv and artifacts; a lane
+      whose prerequisites are absent reports INCOMPLETE and never a pass.
+      tools/milestones/m8_integrity_probe.rb re-reads the recorded argv and
+      rejects --ginkgo.skip, --focus, E2E_SKIP and non-certified Sonobuoy modes,
+      and tools/milestones/m8_gate.rb fails the bundle on any such finding.
+    assumptions:
+      - the recorded argv is the argv that was executed, which the runner writes itself
+    tcb: [Ruby interpreter, hydrophone v0.7.0, sonobuoy v0.57.5]
+    counterexample: none
+    tests: [test/unit/m8_gate_test.rb, tools/milestones/m8_integrity_probe.rb]
+    implementation: [tools/conformance/run.rb, tools/conformance/lanes.rb]
+  - id: M8-UPSTREAM-SELECTION-COMPLETE
+    subject: Every upstream e2e spec is classified exactly once and no exclusion rests on a forbidden ground
+    level: integration_tested
+    method: >-
+      tools/conformance/build_selection_ledger.rb classifies the real Ginkgo
+      dry-run inventory of the pinned v1.36.2 test/e2e binary (7579 specs) into
+      required / platform-inapplicable / provider-private / implementation-internal,
+      and records the reason, external-contract flag and replacement test for each.
+      m8_selection_probe.rb re-checks uniqueness and that no reason cites
+      [LinuxOnly], [Disruptive], [Slow], [Serial], [Flaky], [Feature:*],
+      "unimplemented", "fails" or "timeout".
+    assumptions:
+      - the dry-run inventory is complete for the pinned binary and provider skeleton
+    tcb: [Ruby interpreter, Go 1.26.4 toolchain, Ginkgo]
+    counterexample: none
+    tests: [test/unit/m8_gate_test.rb]
+    implementation: [tools/conformance/build_selection_ledger.rb, test/compatibility/api/selection-ledger.json]
+  - id: M9-RELEASE-REPRODUCIBLE
+    subject: Rebuilding the release gem from the same source yields a byte-identical artifact
+    level: integration_tested
+    method: >-
+      tools/release/reproduce.rb builds the gem twice into isolated directories
+      with SOURCE_DATE_EPOCH, TZ and LC_ALL pinned and compares the SHA-256 of
+      the outputs. Measured identical on 2026-09-07.
+    assumptions:
+      - the independent clean-host rebuild required by milestone M9 exit criterion 2 is a separate run on another machine and is not covered by this claim
+    tcb: [Ruby interpreter, RubyGems]
+    counterexample: none
+    tests: [test/unit/m9_gate_test.rb]
+    implementation: [tools/release/reproduce.rb]
+  - id: M9-LEAN-NO-ESCAPE-HATCH
+    subject: No Lean proof in the release uses sorry, admit or native_decide, and every proof compiles
+    level: proved
+    method: >-
+      tools/milestones/m9_formal_probe.rb scans every verification/lean/**/*.lean
+      for those terms outside comments and compiles each file with the pinned
+      Lean 4.16.0 kernel.
+    assumptions:
+      - the Lean kernel is trusted
+    tcb: [Lean 4.16.0 kernel]
+    counterexample: none
+    tests: [test/unit/m9_gate_test.rb]
+    implementation: [verification/lean]
+  - id: TCB-KERNEL-FILESYSTEM
+    subject: Correctness of the Linux kernel, the filesystem's fsync semantics and the CPU
+    level: assumed_tcb
+    method: none
+    assumptions: []
+    tcb: [Linux kernel, filesystem, CPU]
+    counterexample: not applicable
+    tests: []
+    implementation: []
