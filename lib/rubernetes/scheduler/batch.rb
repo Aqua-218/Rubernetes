@@ -104,9 +104,9 @@ module Rubernetes
       def fetch_node_hint(signature, cycle, fits_last:)
         @mutex.synchronize do
           return nil if @state.nil? || @state[:nodes].empty? || @last_cycle.nil?
-          return drop_state if cycle != @last_cycle[:cycle] + 1
-          return drop_state if signature.nil? || signature != @state[:signature]
-          return drop_state if @clock.call - @state[:created] > MAX_BATCH_AGE_SECONDS
+          return drop_state("cycle_gap") if cycle != @last_cycle[:cycle] + 1
+          return drop_state("signature_mismatch") if signature.nil? || signature != @state[:signature]
+          return drop_state("expired") if @clock.call - @state[:created] > MAX_BATCH_AGE_SECONDS
         end
         return nil if fits_last.call(@last_cycle[:chosen])
 
