@@ -580,7 +580,7 @@ module M2LifecycleOracleHarness
       wait_until("node Ready", TIMEOUTS.fetch(:node_ready)) do
         stdout, _stderr, node_status = kubectl("get", "nodes", "-o", "json", allow_failure: true)
         next false unless node_status.success?
-        nodes = JSON.parse(stdout, create_additions: false, max_nesting: 512)["items"] || []
+        nodes = JSON.parse(stdout, max_nesting: 512)["items"] || []
         nodes.length == 1 && Array(nodes.first.dig("status", "conditions")).any? { |condition| condition["type"] == "Ready" && condition["status"] == "True" }
       end
       step("node_ready")
