@@ -276,6 +276,32 @@ module Rubernetes
         {"time" => stamp, "usageNanoCores" => rate, "usageCoreNanoSeconds" => total}.compact
       end
 
+      # stats/v1alpha1 SwapStats: memory.swap.current, and the limit the
+      # cgroup has (memory.swap.max, nil when unlimited).
+      def swap_stats(usage, stamp)
+        result = {"time" => stamp, "swapUsageBytes" => usage["memory.swap.current"].to_i}
+        limit = usage["memory.swap.max"]
+        result["swapAvailableBytes"] = [limit.to_i - result["swapUsageBytes"], 0].max if limit
+        result
+      end
+
+      def node_swap_stats(stamp)
+        total = nil
+        free = nil
+        File.foreach(File.join(@proc_root, "meminfo")) do |line|
+          total = Integer(line.split[1]) * 1024 if line.start_with?("SwapTotal:")
+          free = Integer(line.split[1]) * 1024 if line.start_with?("SwapFree:")
+        end
+        return nil if total.nil? || free.nil?
+
+        {"time" => stamp, "swapAvailableBytes" => free, "swapUsageBytes" => total - free}
+      rescue SystemCallError, ArgumentError
+        nil
+      end
+
+      # ->(source, seconds) for kubelet_volume_metric_collection_duration_seconds.
+      attr_accessor :metrics_observer
+
       def memory_stats(usage, memory_stat, stamp, limit: nil)
         return nil if usage.nil?
 
