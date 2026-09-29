@@ -1,0 +1,56 @@
+<% content_for :title, "Overview" %>
+<h1>Cluster overview</h1>
+<% unless api_available? %>
+  <div class="card">The Kubernetes API client is not configured: <code><%= runtime.errors[:client] %></code>.
+    Set <code>RUBERNETES_KUBECONFIG</code> (default <code><%= Dashboard::Config.kubeconfig_path %></code>).</div>
+<% else %>
+  <% if @warnings.present? %><div class="flash alert"><%= @warnings.join("; ") %></div><% end %>
+  <div class="grid">
+    <% ready_nodes = @nodes.count { |n| Array(n.dig("status", "conditions")).any? { |c| c["type"] == "Ready" && c["status"] == "True" } } %>
+    <div class="card"><div class="sub">Nodes ready</div><div class="big"><%= ready_nodes %>/<%= @nodes.length %></div><%= link_to "nodes", nodes_path %></div>
+    <div class="card"><div class="sub">Namespaces</div><div class="big"><%= @namespaces.length %></div><%= link_to "namespaces", namespaces_path %></div>
+    <div class="card"><div class="sub">Pods running</div><div class="big"><%= @pod_phases["Running"].to_i %>/<%= @pods.length %></div>
+      <span class="muted"><%= @pod_phases.reject { |k, _| k == "Running" }.map { |k, v| "#{k}: #{v}" }.join(", ") %></span></div>
+    <div class="card"><div class="sub">Deployments</div><div class="big"><%= @deployments.count { |d| d.dig("status", "availableReplicas").to_i >= d.dig("spec", "replicas").to_i } %>/<%= @deployments.length %></div><span class="muted">available</span></div>
+    <div class="card"><div class="sub">StatefulSets</div><div class="big"><%= @statefulsets.count { |d| d.dig("status", "readyReplicas").to_i >= d.dig("spec", "replicas").to_i } %>/<%= @statefulsets.length %></div><span class="muted">ready</span></div>
+    <div class="card"><div class="sub">DaemonSets</div><div class="big"><%= @daemonsets.count { |d| d.dig("status", "numberReady").to_i >= d.dig("status", "desiredNumberScheduled").to_i } %>/<%= @daemonsets.length %></div><span class="muted">ready</span></div>
+    <div class="card"><div class="sub">Services</div><div class="big"><%= @services.length %></div></div>
+    <div class="card"><div class="sub">PVCs bound</div><div class="big"><%= @pvcs.count { |p| p.dig("status", "phase") == "Bound" } %>/<%= @pvcs.length %></div></div>
+    <% up = @targets.count { |t| t.health == "up" } %>
+    <div class="card"><div class="sub">Scrape targets up</div><div class="big"><%= up %>/<%= @targets.length %></div><%= link_to "targets", targets_path %></div>
+    <% firing = @alerts.count { |a| a.state == "firing" } %>
+    <div class="card"><div class="sub">Alerts firing</div><div class="big" style="color: <%= firing.positive? ? "var(--bad)" : "var(--ok)" %>"><%= firing %></div>
+      <span class="muted"><%= @alerts.count { |a| a.state == "pending" } %> pending</span> · <%= link_to "alerts", alerts_path %></div>
+  </div>
+
+  <% if @unhealthy_pods.any? %>
+    <h2>Pods needing attention (<%= @unhealthy_pods.length %>)</h2>
+    <%= render "shared/pods_table", pods: @unhealthy_pods.first(50), show_namespace: true %>
+  <% end %>
+
+  <h2>Nodes</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Status</th><th>Roles</th><th>Version</th><th>Internal IP</th><th class="num">Pods</th><th class="num">CPU</th><th class="num">Memory</th><th>Age</th></tr></thead>
+    <tbody>
+      <% pods_by_node = @pods.group_by { |p| p.dig("spec", "nodeName") } %>
+      <% @nodes.each do |node| %>
+        <% name = node.dig("metadata", "name") %>
+        <% ready = Array(node.dig("status", "conditions")).find { |c| c["type"] == "Ready" } %>
+        <tr>
+          <td><%= link_to name, node_path(name) %></td>
+          <td><%= badge(ready && ready["status"] == "True" ? "Ready" : "NotReady") %><% if node.dig("spec", "unschedulable") %> <%= badge("SchedulingDisabled", "warn") %><% end %></td>
+          <td class="muted"><%= (node.dig("metadata", "labels") || {}).keys.grep(/node-role.kubernetes.io\//).map { |k| k.split("/").last }.join(",") %></td>
+          <td class="mono"><%= node.dig("status", "nodeInfo", "kubeletVersion") %></td>
+          <td class="mono"><%= Array(node.dig("status", "addresses")).find { |a| a["type"] == "InternalIP" }&.dig("address") %></td>
+          <td class="num"><%= pods_by_node[name]&.length.to_i %></td>
+          <td class="num"><%= node.dig("status", "allocatable", "cpu") %></td>
+          <td class="num"><%= node.dig("status", "allocatable", "memory") %></td>
+          <td class="muted"><%= time_ago(node.dig("metadata", "creationTimestamp")) %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+
+  <h2>Recent warnings</h2>
+  <%= render "shared/events", events: @events %>
+<% end %>
