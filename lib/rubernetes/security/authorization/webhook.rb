@@ -94,6 +94,7 @@ module Rubernetes
             self.class.record_fail_open(name, result) if fail_open
             fail_open ? Decision.no_opinion("Webhook: #{error.message}", authorizer: NAME) : Decision.deny("Webhook: #{error.message}", authorizer: NAME)
           end
+          self.class.record_evaluation(name, result, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
           ttl = decision.allowed? ? @authorized_ttl : @unauthorized_ttl
           @mutex.synchronize { @cache[key] = {decision: decision, expires_at: now + ttl} }
           decision
