@@ -68,8 +68,7 @@ module Tsdb
 
       def append(timestamp, value)
         if @encoder && @encoder.count >= MAX_CHUNK_SAMPLES
-          @chunks << @encoder.bytes
-          @encoder = nil
+          close_encoder
         end
         @encoder ||= Prom::Gorilla::Encoder.new
         @encoder.append(timestamp, value)
