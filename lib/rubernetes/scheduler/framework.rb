@@ -589,6 +589,7 @@ module Rubernetes
           begin
             breakdowns = score_nodes(typed_pod, candidates, context, trace)
           rescue StandardError
+            @metrics.extension_point(:score, Metrics::STATUS_ERROR, monotonic - score_started)
             @batch&.failed(cycle)
             raise
           end
