@@ -651,10 +651,7 @@ module Rubernetes
       end
 
       def machine_info
-        memory = File.read("/proc/meminfo")[/^MemTotal:\s+(\d+) kB/, 1]
-        {cpu_cores: Etc.nprocessors, memory_bytes: memory && Integer(memory) * 1024}
-      rescue StandardError
-        {cpu_cores: Etc.nprocessors}
+        @machine_info ||= CadvisorMetrics.machine_info
       end
 
       def resource_metrics
