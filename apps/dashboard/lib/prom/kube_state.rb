@@ -38,6 +38,8 @@ module Prom
 
     private
 
+    CLUSTER_SCOPED = %w[nodes namespaces persistentvolumes].freeze
+
     def list(resource, api_version: "v1")
       Array(@client.get(resource, api_version: api_version)["items"])
     rescue StandardError
