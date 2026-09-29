@@ -389,7 +389,7 @@ module Rubernetes
         configure_queue_sort!
       end
 
-      attr_reader :batch
+      attr_reader :batch, :metrics
 
       # The node this Pod is nominated to, as far as this scheduler knows.
       def nominated_node_for(pod)
