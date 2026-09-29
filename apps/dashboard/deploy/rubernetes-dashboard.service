@@ -1,0 +1,30 @@
+# systemd unit for the Rubernetes dashboard (web UI + Prometheus-compatible
+# metrics collector in one process).  Install:
+#   cp apps/dashboard/deploy/rubernetes-dashboard.service /etc/systemd/system/
+#   cp apps/dashboard/deploy/rubernetes-dashboard.env /etc/rubernetes/dashboard.env   # edit secrets
+#   systemctl daemon-reload && systemctl enable --now rubernetes-dashboard
+[Unit]
+Description=Rubernetes dashboard (cluster browser, PromQL metrics, alerting)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/Programming/Ruby/2026/apps/dashboard
+EnvironmentFile=-/etc/rubernetes/dashboard.env
+Environment=RAILS_ENV=production
+Environment=PATH=/opt/rubies/3.4.11/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=RAILS_LOG_TO_STDOUT=1
+Environment=MALLOC_ARENA_MAX=2
+# The scrape loop and the web server share one process on purpose (the
+# time-series head lives in memory); keep Puma to one worker.
+Environment=WEB_CONCURRENCY=0
+Environment=RAILS_MAX_THREADS=8
+ExecStart=/opt/rubies/3.4.11/bin/ruby bin/rails server -b 127.0.0.1 -p 3000 --no-log-to-stdout
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
