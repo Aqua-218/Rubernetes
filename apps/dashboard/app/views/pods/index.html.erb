@@ -1,0 +1,8 @@
+<% content_for :title, "Pods · #{@namespace}" %>
+<h1>Pods in <%= link_to @namespace, namespace_path(@namespace) %></h1>
+<div class="toolbar">
+  <form method="get"><input name="q" value="<%= @filter %>" placeholder="filter by name"><button>Filter</button></form>
+  <span class="muted"><%= @pods.length %> pods</span>
+  <% Dashboard::ResourceCatalog::NAMESPACED.keys.first(8).each do |kind| %><%= link_to kind, resource_index_path(kind, @namespace) %><% end %>
+</div>
+<%= render "shared/pods_table", pods: @pods, show_namespace: false %>
