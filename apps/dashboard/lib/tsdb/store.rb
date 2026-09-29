@@ -60,7 +60,7 @@ module Tsdb
       def initialize(id, labels)
         @id = id
         @labels = labels
-        @chunks = [] # closed chunk byte strings not yet cut into a block
+        @chunks = [] # ClosedChunk list not yet cut into a block
         @encoder = nil
         @last_time = nil
         @last_value = nil
