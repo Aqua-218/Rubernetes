@@ -2825,7 +2825,7 @@ module M2ProbeSupport
 
     def manifests
       Dir.glob(File.join(@directory, MANIFEST_GLOB)).sort.map do |path|
-        JSON.parse(File.binread(path), create_additions: false)
+        JSON.parse(File.binread(path))
       end
     end
 
