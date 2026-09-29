@@ -636,7 +636,7 @@ end
 # keep the owner's generated siblings (for example containers[0].name next to
 # an embedded lifecycle handler) so the owner stays a valid request object.
 def validation_embed_fixture(value, path, target, target_schema)
-  return JSON.parse(JSON.generate(target), create_additions: false) if path.empty?
+  return JSON.parse(JSON.generate(target)) if path.empty?
 
   edge = path.fetch(0)
   result = value.is_a?(Hash) ? JSON.parse(JSON.generate(value), create_additions: false) : {}
