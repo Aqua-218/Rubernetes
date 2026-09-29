@@ -2225,7 +2225,7 @@ module M1KubernetesValidationOracle
           detail = stderr.lines.last(40).join.strip
           raise OracleError, "Kubernetes validation oracle Go helper failed (#{status.exitstatus}): #{detail}"
         end
-        document = JSON.parse(stdout, create_additions: false, max_nesting: 256)
+        document = JSON.parse(stdout, max_nesting: 256)
         results = document.fetch("results")
         raise OracleError, "Kubernetes validation oracle results must be an array" unless results.is_a?(Array)
         [results, String(document.fetch("go_version"))]
