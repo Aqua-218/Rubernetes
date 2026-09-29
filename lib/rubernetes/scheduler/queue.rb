@@ -414,6 +414,7 @@ module Rubernetes
             next if @pending.key?(key)
 
             @pending[key] = item
+            incoming(event, "active")
           end
           enforce_capacity!
           result
