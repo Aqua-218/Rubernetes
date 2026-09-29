@@ -124,8 +124,8 @@ module Rubernetes
         if lease.nil?
           candidate = build_lease(now, acquire_time: now, leader_transitions: 1)
           begin
-            @adapter.create(candidate, descriptor: lease_descriptor)
-            become_leader(now, candidate)
+            stored = @adapter.create(candidate, descriptor: lease_descriptor)
+            become_leader(now, stored_record(stored, candidate))
             return :acquired
           rescue StandardError => error
             if transient_error?(error) && !contention_error?(error)
