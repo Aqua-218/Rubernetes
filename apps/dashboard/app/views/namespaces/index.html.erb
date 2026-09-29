@@ -1,0 +1,17 @@
+<% content_for :title, "Namespaces" %>
+<h1>Namespaces</h1>
+<table>
+  <thead><tr><th>Name</th><th>Status</th><th class="num">Pods</th><th>Labels</th><th>Age</th></tr></thead>
+  <tbody>
+    <% @namespaces.each do |ns| %>
+      <% name = ns.dig("metadata", "name") %>
+      <tr>
+        <td><%= link_to name, namespace_path(name) %> · <%= link_to "pods", namespace_pods_path(name) %></td>
+        <td><%= badge(ns.dig("status", "phase")) %></td>
+        <td class="num"><%= @pod_counts[name].to_i %></td>
+        <td class="mono muted"><%= format_labels((ns.dig("metadata", "labels") || {}).reject { |k, _| k == "kubernetes.io/metadata.name" }) %></td>
+        <td class="muted"><%= time_ago(ns.dig("metadata", "creationTimestamp")) %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
