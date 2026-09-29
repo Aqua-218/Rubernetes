@@ -1594,9 +1594,7 @@ module Rubernetes
       PREEMPTION_GOROUTINE_BUCKETS = Array.new(20) { |index| 0.01 * (2**index) }.freeze
 
       def observe_preemption_goroutine(result, seconds)
-        labels = {"result" => result.to_s}
-        @metrics&.observe("scheduler_preemption_goroutines_duration_seconds", seconds, labels)
-        @metrics&.increment("scheduler_preemption_goroutines_execution_total", labels)
+        @scheduler_metrics&.preemption_goroutine(result, seconds)
       rescue StandardError
         nil
       end
