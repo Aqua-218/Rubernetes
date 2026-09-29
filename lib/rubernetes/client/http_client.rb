@@ -698,6 +698,7 @@ module Rubernetes
       def start_session(http, uri)
         configure_http(http, uri)
         http.keep_alive_timeout = KEEP_ALIVE_TIMEOUT_SECONDS if http.respond_to?(:keep_alive_timeout=)
+        resolve_address(http, uri)
         http.start
         http
       end
