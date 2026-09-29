@@ -1247,11 +1247,17 @@ module Rubernetes
             nil
           end
         end
-        plugins.phase_plugins(:pre_bind).each do |plugin|
-          output = invoke_plugin(plugin, pod, node, bind_context, phase: :pre_bind)
-          trace&.record(plugin: plugin.name, phase: :pre_bind, weight: plugin.weight,
-                        input: {"pod" => pod.to_h, "node" => node.to_h}, output: output == true ? true : output)
-          raise BindError, "pre-bind plugin #{plugin.name} rejected #{pod.name}" if output == false || output.is_a?(Rejection)
+        pre_bind_started = monotonic
+        begin
+          plugins.phase_plugins(:pre_bind).each do |plugin|
+            output = invoke_plugin(plugin, pod, node, bind_context, phase: :pre_bind)
+            trace&.record(plugin: plugin.name, phase: :pre_bind, weight: plugin.weight,
+                          input: {"pod" => pod.to_h, "node" => node.to_h}, output: output == true ? true : output)
+            raise BindError, "pre-bind plugin #{plugin.name} rejected #{pod.name}" if output == false || output.is_a?(Rejection)
+          end
+        rescue StandardError
+          @metrics.extension_point(:pre_bind, Metrics::STATUS_ERROR, monotonic - pre_bind_started)
+          raise
         end
 
         if @bind_handler
