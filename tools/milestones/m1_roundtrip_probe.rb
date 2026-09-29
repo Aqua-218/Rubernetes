@@ -710,7 +710,7 @@ def build_validation_parent_fixture(codec:, mapping:, owner_type:, target_json:,
     owner_invalid_hash.fetch("metadata")["name"] = ""
   end
   update_patch = nested["update"] || fixture["update"]
-  owner_update_hash = JSON.parse(JSON.generate(owner_hash), create_additions: false)
+  owner_update_hash = JSON.parse(JSON.generate(owner_hash))
   if update_patch
     owner_update_hash = apply_fixture_patch(owner_update_hash, update_patch)
   else
