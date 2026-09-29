@@ -1338,6 +1338,21 @@ module Rubernetes
         end
       end
 
+      # apiserver_resource_size_estimate_bytes: the stored objects' encoded
+      # size per resource prefix (what etcd would hold for them).
+      def object_sizes
+        entries = @monitor.synchronize { @objects.filter_map { |key, object| [key, object] unless object.nil? } }
+        entries.each_with_object(Hash.new(0)) do |(key, object), sizes|
+          parts = key.split("/", 5)
+          width = parts[1].to_s.match?(/\Av\d/) ? 3 : 4
+          next if parts.length < width
+
+          sizes[parts.first(width).join("/")] += JSON.generate(object).bytesize
+        rescue StandardError
+          next
+        end
+      end
+
       def watcher_count
         @monitor.synchronize { @watchers.length }
       end
