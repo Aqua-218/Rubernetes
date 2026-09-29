@@ -576,7 +576,7 @@ module Rubernetes
 
           if candidates.empty?
             reason = filtered.values.map { |value| value["reason"] }.compact.first || "no feasible nodes"
-            queue.enqueue_unschedulable(typed_pod, reason: reason)
+            queue.enqueue_unschedulable(typed_pod, reason: reason, plugins: rejecting_plugins(filtered))
             @batch&.failed(cycle)
             return ScheduleResult.new(status: :unschedulable, pod: typed_pod, filtered: filtered,
                                        scores: [], victims: [], trace: trace, reason: reason,
