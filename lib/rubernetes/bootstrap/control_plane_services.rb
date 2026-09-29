@@ -2325,6 +2325,7 @@ module Rubernetes
         key = [pod.namespace, pod.name, pod.uid].freeze
         @mutex.synchronize do
           @pods[key] = assumed
+          (@assumed_pods ||= {})[key] = true
           start_bind_workers_locked
         end
         @bind_queue << [pod, node, key, assumed]
