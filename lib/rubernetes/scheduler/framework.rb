@@ -616,6 +616,7 @@ module Rubernetes
             bound_pod = bind!(pod, typed_pod, selected.node, context: context, trace: trace)
             commit_reservation!(reservation)
             forget_nomination(typed_pod)
+            record_pod_scheduled(typed_pod)
             queue.delete(typed_pod)
             queue.forget(typed_pod) if queue.respond_to?(:forget)
             ScheduleResult.new(status: :scheduled, pod: bound_pod, node: selected.node,
