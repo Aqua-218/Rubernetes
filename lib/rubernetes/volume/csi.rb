@@ -184,6 +184,29 @@ module Rubernetes
       private
 
       def invoke(operation, request, token: nil)
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        status = "OK"
+        begin
+          invoke_without_metrics(operation, request, token: token)
+        rescue CSIError, CSIUnavailable => error
+          details = error.respond_to?(:details) ? error.details : nil
+          status = (details.is_a?(Hash) && (details["grpcCode"] || details[:grpcCode])) || "Unknown"
+          raise
+        ensure
+          observe_csi_operation(operation, status, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+        end
+      end
+
+      def observe_csi_operation(operation, status, seconds)
+        observer = @metrics_observer
+        return unless observer
+
+        observer.call(@driver_name.to_s, operation.to_s, status.to_s, seconds)
+      rescue StandardError
+        nil
+      end
+
+      def invoke_without_metrics(operation, request, token: nil)
         raise CSIUnavailable, "CSI client is not configured" unless @client
         request = Types.deep_copy(request)
         value = if @client.respond_to?(:invoke)
