@@ -3,7 +3,7 @@
 class NamespacesController < ApplicationController
   def index
     @namespaces = Array(client.get("namespaces")["items"]).sort_by { |n| n.dig("metadata", "name") }
-    pods = Array(client.get("pods")["items"])
+    pods = Array(client.get("pods", namespace: :all)["items"])
     @pod_counts = pods.group_by { |p| p.dig("metadata", "namespace") }.transform_values(&:length)
   end
 
