@@ -856,6 +856,27 @@ module Rubernetes
         end
       end
 
+      # A summary: the objectives' quantiles over the samples of the last
+      # MaxAge (NaN when the window is empty, as client_golang prints), then
+      # _sum and _count over everything ever observed.
+      def render_summary(metric, lines, values = metric.values)
+        horizon = Process.clock_gettime(Process::CLOCK_MONOTONIC) - SUMMARY_MAX_AGE_SECONDS
+        values.each do |labels, entry|
+          entry[:samples].shift(entry[:samples].index { |at, _| at >= horizon } || entry[:samples].length) unless entry[:samples].empty?
+          window = entry[:samples].map(&:last).sort
+          SUMMARY_OBJECTIVES.each do |quantile|
+            value = if window.empty?
+                      Float::NAN
+                    else
+                      window[[((quantile * window.length).ceil - 1), 0].max]
+                    end
+            lines << "#{metric.name}#{format_labels(labels.to_h.merge("quantile" => format_number(quantile)))} #{format_number(value)}"
+          end
+          lines << "#{metric.name}_sum#{format_labels(labels)} #{format_number(entry[:sum])}"
+          lines << "#{metric.name}_count#{format_labels(labels)} #{entry[:count]}"
+        end
+      end
+
       def render_histogram(metric, lines, values = metric.values)
         values.each do |labels, entry|
           cumulative = 0
