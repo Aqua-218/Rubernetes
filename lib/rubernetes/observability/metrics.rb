@@ -623,6 +623,7 @@ module Rubernetes
             lines << "# TYPE #{metric.name} #{metric.type}"
             case metric.type
             when :histogram then render_histogram(metric, lines, values)
+            when :summary then render_summary(metric, lines, values)
             else
               values.each { |labels, value| lines << "#{metric.name}#{format_labels(labels)} #{format_number(value)}" }
             end
