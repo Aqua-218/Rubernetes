@@ -108,7 +108,10 @@ module Tsdb
       value.is_a?(Float) && value.nan? && [value].pack("G").unpack1("Q>") == STALE_NAN_BITS
     end
 
-    def initialize(dir, block_range_ms: DEFAULT_BLOCK_RANGE_MS, retention_ms: DEFAULT_RETENTION_MS)
+    # One writer per directory per process (the head must be unique or two
+    # instances treat each other's series as orphans); any number of
+    # `readonly: true` readers, which never touch the WAL or the index.
+    def initialize(dir, block_range_ms: DEFAULT_BLOCK_RANGE_MS, retention_ms: DEFAULT_RETENTION_MS, readonly: false)
       super()
       @dir = File.expand_path(dir)
       @block_range_ms = Integer(block_range_ms)
