@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-08-22",
+  "source": {
+    "repository": "https://github.com/kubernetes/kubernetes.git",
+    "tag": "v1.36.2",
+    "tag_object": "5ecab45c278646c9134b656fee70e891da51d0cb",
+    "commit": "24e2b02af5543d7910c2bb074c7264df5a8f0467"
+  },
+  "conformance_definition": {
+    "path": "test/conformance/testdata/conformance.yaml",
+    "sha256": "cdbad746df8e8f5f7e63ef147b579e921c1ad70a68d826f2b9c5af27dbbf7641",
+    "test_count": 446
+  },
+  "conformance_image": {
+    "reference": "registry.k8s.io/conformance:v1.36.2",
+    "index_digest": "sha256:e86cfc45351bd6937c4744477a204130af2c822682b79465490d1cd2d1f7c246",
+    "platforms": {
+      "linux/amd64": "sha256:97ff4c7cde512809bc5ecdd4e7cdb529a0e7c223cd340f5fdd32801c537082b7",
+      "linux/arm64": "sha256:f66c6b204def6a9b65824ba96d1e2fba4cdc843bf7e7678d544fa60e715d520d"
+    }
+  },
+  "runner_support_images": {
+    "busybox": {
+      "reference": "registry.k8s.io/e2e-test-images/busybox:1.36.1-1",
+      "index_digest": "sha256:a9155b13325b2abef48e71de77bb8ac015412a566829f621d06bfae5c699b1b9",
+      "platforms": {
+        "linux/amd64": "sha256:caec39cad3b12c26600baf6e67ba811ac15d28a9288d0ccdfffb4b318992c3bb",
+        "linux/arm64": "sha256:55c89c6d9404d6668eb237dda92f28a99eb14e640f1c177a55cc9d738c53c303"
+      }
+    }
+  }
+}
