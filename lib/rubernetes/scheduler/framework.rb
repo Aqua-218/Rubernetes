@@ -1259,6 +1259,21 @@ module Rubernetes
           @metrics.extension_point(:pre_bind, Metrics::STATUS_ERROR, monotonic - pre_bind_started)
           raise
         end
+        @metrics.extension_point(:pre_bind, Metrics::STATUS_SUCCESS, monotonic - pre_bind_started)
+        bind_started = monotonic
+        begin
+          bound = bind_through!(original, pod, node, bind_context, trace)
+        rescue StandardError
+          @metrics.extension_point(:bind, Metrics::STATUS_ERROR, monotonic - bind_started)
+          raise
+        end
+        @metrics.extension_point(:bind, Metrics::STATUS_SUCCESS, monotonic - bind_started)
+        bound
+      rescue BindError
+        raise
+      rescue StandardError => error
+        raise BindError.new("bind failed: #{error.message}", cause_error: error), cause: error
+      end
 
         if @bind_handler
           result = invoke_handler(@bind_handler, :bind, pod, node)
