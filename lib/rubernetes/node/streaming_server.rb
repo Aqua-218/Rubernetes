@@ -647,8 +647,7 @@ module Rubernetes
             images[[uid, container["name"].to_s]] = container["image"].to_s
           end
         end
-        body = CadvisorMetrics.render(summary, machine: machine_info, images: images)
-        [200, {"content-type" => Observability::Metrics::CONTENT_TYPE}, [body]]
+        images
       end
 
       def machine_info
