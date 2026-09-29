@@ -921,7 +921,8 @@ module Conformance
                      "processes" => {"rubernetes-proxy" => {
                        "kubeconfig" => kubeconfig, "node_name" => id,
                        "backend" => "nftables", "attach" => index.zero?,
-                       "sync" => {"interval_seconds" => 0.5}
+                       "sync" => {"interval_seconds" => 0.5},
+                       "serving" => {"enabled" => true, "bind_address" => "127.0.0.1", "port" => serving_port}
                      }}
                    })
     end
