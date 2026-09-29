@@ -35,6 +35,11 @@ module Prom
       @mutex = Mutex.new
     end
 
+    # /api/v1/metadata: family type and help as last served by any target.
+    def metadata
+      @mutex.synchronize { @metadata.dup }
+    end
+
     # Scrape one target now.  Returns the Status.
     def scrape(target)
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
