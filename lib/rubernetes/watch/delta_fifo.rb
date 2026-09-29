@@ -153,6 +153,13 @@ module Rubernetes
         end
       end
 
+      # Seconds since the popped +key+ was queued (its wait plus the caller's
+      # processing so far; nil when unknown); available until #done.
+      def queued_seconds(key)
+        queued_at, = @mutex.synchronize { @popped_age[normalize_key(key)] }
+        queued_at && @clock.call - queued_at
+      end
+
       def done(key)
         normalized = normalize_key(key)
         @mutex.synchronize do
