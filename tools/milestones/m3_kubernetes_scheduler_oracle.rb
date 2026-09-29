@@ -22,7 +22,7 @@ module M3KubernetesSchedulerOracle
 
   def run(input_bytes: STDIN.read, source_root: ENV["RUBERNETES_M3_KUBERNETES_SOURCE_ROOT"] || ENV["KUBERNETES_SOURCE_ROOT"], go: ENV.fetch("GO", "go"))
     source = verify_source!(source_root)
-    request = JSON.parse(input_bytes, create_additions: false, max_nesting: 512)
+    request = JSON.parse(input_bytes, max_nesting: 512)
     verify_request!(request)
     started_at = Time.now.utc.iso8601(6)
     # Kubernetes v1.36.2's checked-in vendor metadata is incompatible with
