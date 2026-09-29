@@ -118,6 +118,7 @@ module Rubernetes
         ["container_memory_swap", "gauge", "Container swap usage in bytes."],
         ["container_memory_failcnt", "counter", "Number of memory usage hits limits"],
         ["container_memory_usage_bytes", "gauge", "Current memory usage in bytes, including all memory regardless of when it was accessed"],
+        ["container_memory_max_usage_bytes", "gauge", "Maximum memory usage recorded in bytes"],
         ["container_memory_working_set_bytes", "gauge", "Current working set in bytes."],
         ["container_memory_rss", "gauge", "Size of RSS in bytes."],
         ["container_memory_failures_total", "counter", "Cumulative count of memory allocation failures."],
