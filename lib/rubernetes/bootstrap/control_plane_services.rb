@@ -1572,6 +1572,10 @@ module Rubernetes
       ATTEMPT_BUCKETS = Array.new(15) { |index| 0.001 * (2**index) }.freeze
       VICTIM_BUCKETS = Array.new(7) { |index| 2**index }.freeze
 
+      # The kube-scheduler registry: every series the v1.36.2 inventory
+      # declares for the component (types, labels and buckets from there),
+      # the ones Rubernetes' scheduler cannot measure left out with a reason
+      # (Metrics::UNIMPLEMENTED), plus the process and client-go families.
       def scheduler_metrics
         metrics = Observability::Metrics.new(apiserver: false)
         metrics.register("scheduler_schedule_attempts_total", type: :counter,
