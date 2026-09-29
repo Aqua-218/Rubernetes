@@ -33,6 +33,7 @@ module Rubernetes
         node = summary.fetch("node", {})
         add_cpu(samples["node_cpu_usage_seconds_total"], node["cpu"], {})
         add_memory(samples["node_memory_working_set_bytes"], node["memory"], {})
+        add_swap(samples["node_swap_usage_bytes"], node["swap"], {})
         Array(summary["pods"]).each do |pod|
           ref = pod["podRef"] || {}
           labels = {"namespace" => ref["namespace"].to_s, "pod" => ref["name"].to_s}
