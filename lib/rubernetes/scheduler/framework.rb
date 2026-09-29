@@ -523,6 +523,7 @@ module Rubernetes
             end
             nominated_status = result if name == nominated_name
           end
+          filter_started = monotonic
           candidates, filtered = filter_nodes(typed_pod, context.nodes, context, trace: trace, nominated: nominated) if candidates.nil?
 
           if candidates.empty? && @preemption
