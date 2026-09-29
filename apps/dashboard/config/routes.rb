@@ -55,6 +55,8 @@ Rails.application.routes.draw do
   Dashboard::ResourceCatalog::CLUSTER.each_key do |kind|
     next if kind == :nodes || kind == :namespaces
 
-  # Defines the root path route ("/")
-  # root "posts#index"
+    resources kind, only: %i[index show], controller: "resources", defaults: {kind: kind.to_s, cluster: true}, constraints: {id: /[^\/]+/} do
+      member { get :yaml }
+    end
+  end
 end
