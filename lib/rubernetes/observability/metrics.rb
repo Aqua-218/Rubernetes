@@ -609,7 +609,11 @@ module Rubernetes
               if metric.labels.nil?
                 next unless metric.type == :gauge
               elsif metric.labels.empty?
-                values = {[].freeze => (metric.type == :histogram ? {buckets: Hash.new(0), sum: 0.0, count: 0} : 0)}
+                values = {[].freeze => case metric.type
+                                       when :histogram then {buckets: Hash.new(0), sum: 0.0, count: 0}
+                                       when :summary then {samples: [], sum: 0.0, count: 0}
+                                       else 0
+                                       end}
               else
                 next
               end
