@@ -364,10 +364,36 @@ module Rubernetes
           end
           cpu = read.call("cpu.stat")
           memory = read.call("memory.stat")
-          current = read.call("memory.current")
-          pids = read.call("pids.current")
-          {"cpu" => cpu && parse_key_values(cpu), "memory" => memory && parse_key_values(memory),
-           "memory.current" => current && parse_scalar(current), "pids.current" => pids && parse_scalar(pids)}
+          result = {"cpu" => cpu && parse_key_values(cpu), "memory" => memory && parse_key_values(memory)}
+          SCALAR_FILES.each do |name|
+            value = read.call(name)
+            # "max" (no limit) reads as nil.
+            result[name] = value && (value.strip == "max" ? nil : parse_scalar(value))
+          end
+          events = read.call("memory.events")
+          result["memory.events"] = events && parse_key_values(events)
+          cpu_max = read.call("cpu.max")
+          result["cpu.max"] = cpu_max && cpu_max.split
+          io = read.call("io.stat")
+          result["io.stat"] = io && parse_io_stat(io)
+          procs = read.call("cgroup.procs")
+          result["cgroup.procs"] = procs && procs.split.filter_map { |pid| Integer(pid, exception: false) }
+          result["path"] = target.delete_prefix(@root).then { |rel| rel.start_with?("/") ? rel : "/#{rel}" }
+          result
+        end
+
+        # io.stat: one line per device, "MAJ:MIN rbytes=.. wbytes=.. rios=.. wios=.. dbytes=.. dios=..".
+        def parse_io_stat(text)
+          String(text).lines.each_with_object({}) do |line, devices|
+            tokens = line.split
+            device = tokens.shift
+            next if device.nil? || device.empty?
+
+            devices[device] = tokens.each_with_object({}) do |token, values|
+              key, value = token.split("=", 2)
+              values[key] = Integer(value, exception: false) || 0 if key && value
+            end
+          end
         end
 
         def freeze(handle, frozen: true)
