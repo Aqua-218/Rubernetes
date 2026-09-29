@@ -39,7 +39,7 @@ module M3KubernetesSchedulerOracle
     end
     raise "pinned Kubernetes scheduler oracle returned no JSON" if stdout.to_s.strip.empty?
 
-    response = JSON.parse(stdout, create_additions: false, max_nesting: 512)
+    response = JSON.parse(stdout, max_nesting: 512)
     comparisons = normalize_comparisons(response.fetch("comparisons"))
     raw_input_sha256 = Digest::SHA256.hexdigest(input_bytes)
     canonical_input = canonical_json(request)
