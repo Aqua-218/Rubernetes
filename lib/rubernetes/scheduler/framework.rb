@@ -1116,6 +1116,7 @@ module Rubernetes
           raise PluginError.new("#{phase} plugin #{plugin.name} failed: #{error.message}",
                                 plugin: plugin.name, phase: phase, cause_error: error), cause: error
         ensure
+          @metrics.plugin_execution(phase, plugin.name, status, monotonic - started) if started
           Thread.current[:rubernetes_scheduler_plugin_context] = previous_context
           Thread.current[:rubernetes_scheduler_plugin_phase] = previous_phase
         end
