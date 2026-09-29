@@ -23,8 +23,7 @@ class SchemaUnknownFieldsTest < Minitest::Test
       encoded = @codec.canonical_json(value)
       preserved = JSON.parse(encoded).key?("m1FutureField")
       explicit_preserved = JSON.parse(
-        @codec.canonical_json(value, unknown_fields: :preserve),
-        create_additions: false
+        @codec.canonical_json(value, unknown_fields: :preserve)
       ).key?("m1FutureField")
       rejected = begin
         @codec.canonical_json(value, unknown_fields: :reject)
