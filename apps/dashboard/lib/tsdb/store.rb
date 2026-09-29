@@ -137,6 +137,7 @@ module Tsdb
       @db.execute("PRAGMA journal_mode=WAL")
       @db.execute("PRAGMA synchronous=NORMAL")
       create_schema
+      repair_binary_text unless @readonly
       @series_by_fingerprint = {}
       @head = {}
       @wal = nil
