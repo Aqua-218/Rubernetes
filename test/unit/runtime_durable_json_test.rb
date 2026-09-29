@@ -118,7 +118,7 @@ class RuntimeDurableJSONTest < Minitest::Test
       path = File.join(directory, "runtime.wal")
       wal = Runtime::DurableWAL.new(path, fsync: false)
       wal.append(operation_id: "op", event: "state_transition", payload: {"to" => "Validated"})
-      record = JSON.parse(File.binread(path), create_additions: false).merge("previous_digest" => "f" * 64)
+      record = JSON.parse(File.binread(path)).merge("previous_digest" => "f" * 64)
       File.write(path, JSON.generate(record) << "\n")
 
       assert_raises(Runtime::JournalCorruption) { Runtime::DurableWAL.new(path, fsync: false) }
