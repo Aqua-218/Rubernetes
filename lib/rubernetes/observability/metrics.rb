@@ -584,6 +584,11 @@ module Rubernetes
         own + shared
       end
 
+      def labelled?(name)
+        metric = @mutex.synchronize { @metrics[name] }
+        metric&.labels&.any? || false
+      end
+
       # This registry's families only (+except+: names already rendered).
       def render_own(except: [])
         @mutex.synchronize { @ratio_gauges&.values.to_a }.each(&:flush)
