@@ -764,7 +764,7 @@ module Rubernetes
           result = normalize_filter_result(output, plugin)
           trace.record(plugin: plugin.name, phase: :pre_enqueue, weight: plugin.weight,
                        input: {"pod" => pod.to_h}, output: result.to_h)
-          return result.to_h unless result.accepted?
+          return result.to_h.merge("plugin" => plugin.name) unless result.accepted?
         end
         true
       end
