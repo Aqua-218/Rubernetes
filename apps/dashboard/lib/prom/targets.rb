@@ -132,6 +132,7 @@ module Prom
     end
 
     def safe_list(resource, all_namespaces: false, api_version: "v1")
+      # The client defaults to the kubeconfig namespace; :all lists cluster-wide.
       response = if all_namespaces
                    @client.get(resource, api_version: api_version)
                  else
