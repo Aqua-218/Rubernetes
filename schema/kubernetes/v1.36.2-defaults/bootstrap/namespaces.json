@@ -1,0 +1,70 @@
+{
+  "kind": "NamespaceList",
+  "apiVersion": "v1",
+  "items": [
+    {
+      "metadata": {
+        "name": "default",
+        "labels": {
+          "kubernetes.io/metadata.name": "default"
+        }
+      },
+      "spec": {
+        "finalizers": [
+          "kubernetes"
+        ]
+      },
+      "status": {
+        "phase": "Active"
+      }
+    },
+    {
+      "metadata": {
+        "name": "kube-node-lease",
+        "labels": {
+          "kubernetes.io/metadata.name": "kube-node-lease"
+        }
+      },
+      "spec": {
+        "finalizers": [
+          "kubernetes"
+        ]
+      },
+      "status": {
+        "phase": "Active"
+      }
+    },
+    {
+      "metadata": {
+        "name": "kube-public",
+        "labels": {
+          "kubernetes.io/metadata.name": "kube-public"
+        }
+      },
+      "spec": {
+        "finalizers": [
+          "kubernetes"
+        ]
+      },
+      "status": {
+        "phase": "Active"
+      }
+    },
+    {
+      "metadata": {
+        "name": "kube-system",
+        "labels": {
+          "kubernetes.io/metadata.name": "kube-system"
+        }
+      },
+      "spec": {
+        "finalizers": [
+          "kubernetes"
+        ]
+      },
+      "status": {
+        "phase": "Active"
+      }
+    }
+  ]
+}
