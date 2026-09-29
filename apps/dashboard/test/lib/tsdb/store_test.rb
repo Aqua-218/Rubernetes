@@ -128,6 +128,8 @@ class Tsdb::StoreTest < ActiveSupport::TestCase
     assert_raises(Tsdb::Store::AlreadyOpen) { Tsdb::Store.new(@dir) }
     reader = Tsdb::Store.new(@dir, readonly: true)
     begin
+      assert reader.readonly?
+      assert_raises(Tsdb::Store::AlreadyOpen) { reader.append({"__name__" => "x"}, 1, 1.0) }
       series = reader.select_series([M.new(name: "__name__", op: "=", value: "shared")]).first
       assert_equal 20, reader.samples(series.id, 0, 10_000).length
     ensure
