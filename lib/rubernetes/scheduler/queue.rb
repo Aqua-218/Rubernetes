@@ -326,6 +326,10 @@ module Rubernetes
         key = identity_key(pod)
         @mutex.synchronize do
           @attempts.delete(key)
+          @pops.delete(key)
+          @first_pop.delete(key)
+          @gated.delete(key)
+          @rejecting_plugins.delete(key)
           backed_off = @backoff.delete(key)
           @pending.delete(key) || @unschedulable.delete(key) || (backed_off && backed_off.first)
         end
