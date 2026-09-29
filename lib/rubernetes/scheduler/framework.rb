@@ -1098,6 +1098,9 @@ module Rubernetes
         previous_phase = Thread.current[:rubernetes_scheduler_plugin_phase]
         Thread.current[:rubernetes_scheduler_plugin_context] = context
         Thread.current[:rubernetes_scheduler_plugin_phase] = phase.to_sym
+        sampled = Thread.current[:rubernetes_scheduler_sample_plugins]
+        started = sampled ? monotonic : nil
+        status = Metrics::STATUS_ERROR
         begin
           plugin.block.call(pod, node)
         rescue FrozenError => error
