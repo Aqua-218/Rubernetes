@@ -2,6 +2,7 @@
 
 require "yaml"
 require "json"
+require_relative "target"
 
 module Prom
   # One scrape target: how to fetch it and the labels every sample gets.
