@@ -19,6 +19,10 @@ module Rubernetes
         ["container_start_time_seconds", "gauge", "STABLE", "Start time of the container since unix epoch in seconds"],
         ["pod_cpu_usage_seconds_total", "counter", "STABLE", "Cumulative cpu time consumed by the pod in core-seconds"],
         ["pod_memory_working_set_bytes", "gauge", "STABLE", "Current working set of the pod in bytes"],
+        ["node_swap_usage_bytes", "gauge", "ALPHA", "Current swap usage of the node in bytes. Reported only on non-windows systems"],
+        ["container_swap_usage_bytes", "gauge", "ALPHA", "Current amount of the container swap usage in bytes. Reported only on non-windows systems"],
+        ["container_swap_limit_bytes", "gauge", "ALPHA", "Current amount of the container swap limit in bytes. Reported only on non-windows systems"],
+        ["pod_swap_usage_bytes", "gauge", "ALPHA", "Current amount of the pod swap usage in bytes. Reported only on non-windows systems"],
         ["resource_scrape_error", "gauge", "STABLE", "1 if there was an error while getting container metrics, 0 otherwise"]
       ].freeze
 
