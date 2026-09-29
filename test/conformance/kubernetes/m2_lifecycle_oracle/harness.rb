@@ -888,7 +888,7 @@ module M2LifecycleOracleHarness
 
     def capture_cri(pod_name, document)
       listing, = node_exec("crictl", "ps", "-a", "-o", "json", "--label", "io.kubernetes.pod.name=#{pod_name}")
-      containers = JSON.parse(listing, create_additions: false, max_nesting: 64)["containers"] || []
+      containers = JSON.parse(listing, max_nesting: 64)["containers"] || []
       init_names = Array(document.dig("spec", "initContainers")).map { |container| container.fetch("name") }
       restartable = Array(document.dig("spec", "initContainers")).select { |container| container["restartPolicy"] == "Always" }.map { |container| container.fetch("name") }
       containers.map do |container|
