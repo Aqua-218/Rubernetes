@@ -230,7 +230,7 @@ module Rubernetes
           @state = :follower
           return :contended
         end
-        become_leader(now, candidate)
+        become_leader(now, stored_record(stored, candidate))
         @last_renew_time = now
         :renewed
       end
