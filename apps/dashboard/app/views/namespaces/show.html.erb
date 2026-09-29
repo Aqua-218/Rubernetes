@@ -1,0 +1,17 @@
+<% name = @namespace.dig("metadata", "name") %>
+<% content_for :title, "Namespace #{name}" %>
+<h1>Namespace <%= name %> <%= badge(@namespace.dig("status", "phase")) %></h1>
+<div class="grid">
+  <% @counts.each do |kind, count| %>
+    <div class="card"><div class="sub"><%= kind %></div><div class="big"><%= count %></div><%= link_to "list", kind == "pods" ? namespace_pods_path(name) : resource_index_path(kind, name) %></div>
+  <% end %>
+</div>
+<% if @quotas.any? %>
+  <h2>Resource quotas</h2>
+  <table><thead><tr><th>Quota</th><th>Resource</th><th>Used</th><th>Hard</th></tr></thead><tbody>
+  <% @quotas.each do |q| %><% (q.dig("status", "hard") || {}).each do |res, hard| %>
+    <tr><td><%= q.dig("metadata", "name") %></td><td><%= res %></td><td><%= q.dig("status", "used", res) %></td><td><%= hard %></td></tr>
+  <% end %><% end %></tbody></table>
+<% end %>
+<h2>Recent events</h2>
+<%= render "shared/events", events: @events %>
