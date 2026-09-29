@@ -22,7 +22,11 @@ module Rubernetes
       attr_reader :metrics
 
       # nil unless serving.enabled.
-      def self.from_config(component:, config:, metrics:, ready: -> { true }, logger: nil)
+      # +extra_paths+: path => callable returning the body, served as text
+      # exposition (kube-scheduler's /metrics/resources).  +health+: a
+      # callable answering [status, message] for /healthz and /livez
+      # (kube-proxy's proxier health), nil for the plain ping.
+      def self.from_config(component:, config:, metrics:, ready: -> { true }, logger: nil, extra_paths: {}, health: nil)
         serving = (config || {})["serving"] || {}
         return nil unless serving["enabled"] == true
 
