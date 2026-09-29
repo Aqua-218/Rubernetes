@@ -238,6 +238,7 @@ module Rubernetes
           next if driver_stats == :unsupported
 
           stats = driver_stats || directory_stats(path, stamp, device: path)
+          observe_volume_collection(driver_stats ? "csi" : "fs", @monotonic.call - collection_started)
           next unless stats
 
           entry = stats.merge("name" => name.to_s)
