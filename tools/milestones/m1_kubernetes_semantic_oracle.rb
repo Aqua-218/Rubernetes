@@ -621,7 +621,7 @@ module M1KubernetesSemanticOracle
         detail = stderr.lines.last(30).join.strip
         raise OracleError, "Kubernetes semantic oracle Go helper failed (#{status.exitstatus}): #{detail}"
       end
-      document = JSON.parse(stdout, create_additions: false, max_nesting: 256)
+      document = JSON.parse(stdout, max_nesting: 256)
       results = document.fetch("results")
       raise OracleError, "Kubernetes semantic oracle results must be an array" unless results.is_a?(Array)
 
