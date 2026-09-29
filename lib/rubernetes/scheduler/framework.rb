@@ -343,6 +343,7 @@ module Rubernetes
                      volume_binding: nil, nominate: nil, clear_nomination: nil, async_preemption: true,
                      preemption_observer: nil, opportunistic_batching: true, metrics: nil, **_options)
         custom = normalize_plugins(plugins, filters: filters, scores: scores)
+        @metrics = metrics || NullMetrics.new
         @dynamic_resources = dynamic_resources || DynamicResources.new
         @volume_binding = volume_binding || VolumeBinding.new
         @plugins = if standard_plugins
