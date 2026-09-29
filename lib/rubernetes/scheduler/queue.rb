@@ -223,6 +223,7 @@ module Rubernetes
           else
             @unschedulable.delete(key)
             @backoff[key] = [item, now_seconds + backoff_delay(attempts)]
+            incoming(EVENT_ATTEMPT_FAILURE, "backoff")
           end
           item
         end
