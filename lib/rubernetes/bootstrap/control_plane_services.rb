@@ -2397,6 +2397,7 @@ module Rubernetes
                                 extra: {"request_body" => binding})
         record_pod_event(pod, "Scheduled", "Successfully assigned #{pod.namespace}/#{pod.name} to #{node.name}")
       rescue StandardError => error
+        forget_assumed(key)
         binding_failed(pod, node, key, assumed, error)
       end
 
