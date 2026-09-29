@@ -256,8 +256,10 @@ module Rubernetes
             rejected = true
             raise
           ensure
-            observe("apiserver_admission_step_admission_duration_seconds", started,
-                    {"type" => type, "operation" => operation(attributes), "rejected" => rejected.to_s})
+            labels = {"type" => type, "operation" => operation(attributes), "rejected" => rejected.to_s}
+            observe("apiserver_admission_step_admission_duration_seconds", started, labels)
+            # The deprecated summary twin (ALPHA, still registered in v1.36).
+            observe("apiserver_admission_step_admission_duration_seconds_summary", started, labels)
           end
         end
 
