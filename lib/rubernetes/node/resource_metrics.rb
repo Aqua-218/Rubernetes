@@ -153,7 +153,7 @@ module Rubernetes
         ["container_spec_memory_swap_limit_bytes", "gauge", "Memory swap limit for the container."],
         ["container_spec_memory_reservation_limit_bytes", "gauge", "Memory reservation limit for the container."],
         ["container_start_time_seconds", "gauge", "Start time of the container since unix epoch in seconds."],
-        ["container_last_seen", "gauge", "Last time a container was seen by the exporter"]
+        ["container_scrape_error", "gauge", "1 if there was an error while getting container metrics, 0 otherwise"]
       ].freeze
 
       module_function
