@@ -57,7 +57,7 @@ module Dashboard
     end
 
     def kubeconfig_context
-      @kubeconfig_context ||= begin
+      memoize(:kubeconfig_context) do
         require "rubernetes/client"
         Rubernetes::Client::Kubeconfig.load(path: Config.kubeconfig_path).resolve
       rescue StandardError => e
