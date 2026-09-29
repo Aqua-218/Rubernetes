@@ -1950,7 +1950,11 @@ module Rubernetes
       def observe_node(object)
         typed = Scheduler::Node.new(object)
         previous = @mutex.synchronize { @nodes[typed.name].tap { @nodes[typed.name] = typed } }
-        retry_unschedulable("node_changed", node: typed.name) if previous.nil? || node_scheduling_view(previous) != node_scheduling_view(typed)
+        changed = previous.nil? || node_scheduling_view(previous) != node_scheduling_view(typed)
+        return unless changed
+
+        event = node_event(previous, typed)
+        timed_event(event) { retry_unschedulable("node_changed", node: typed.name, event: event) }
       end
 
       def delete_node(object)
