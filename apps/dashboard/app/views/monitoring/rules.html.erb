@@ -1,0 +1,23 @@
+<% content_for :title, "Rules" %>
+<h1>Rules</h1>
+<% if @errors[:rules] %><div class="flash alert">Rules file could not be loaded: <%= @errors[:rules] %></div><% end %>
+<% if @groups.empty? %><div class="card">No rule groups. Put Prometheus-format rules in <code><%= Dashboard::Config.rules_path %></code>.</div><% end %>
+<% @groups.each do |group| %>
+  <h2><%= group.name %> <span class="muted">· <%= group.file %> · last evaluation <%= group.last_evaluation_ms ? Time.at(group.last_evaluation_ms / 1000.0).utc.strftime("%H:%M:%S") : "never" %><%= group.evaluation_seconds ? " (#{(group.evaluation_seconds * 1000).round}ms)" : "" %></span></h2>
+  <table>
+    <thead><tr><th>Rule</th><th>Expression</th><th>State</th><th>Health</th><th>Labels</th><th>Error</th></tr></thead>
+    <tbody>
+      <% group.rules.each do |rule| %>
+        <% api = runtime.rules.rule_to_api(rule) %>
+        <tr>
+          <td><%= rule.alerting? ? "alert" : "record" %> <b><%= rule.name %></b><% if rule.alerting? && rule.for_ms.positive? %> <span class="muted">for <%= rule.for_ms / 1000 %>s</span><% end %></td>
+          <td class="mono"><%= link_to rule.expr, graph_path(g0_expr: rule.expr, g0_tab: "table") %></td>
+          <td><%= rule.alerting? ? badge(api["state"]) : "" %></td>
+          <td><%= badge(rule.health || "unknown", rule.health == "ok" ? "ok" : (rule.health ? "bad" : "muted")) %></td>
+          <td class="mono"><%= format_labels(rule.labels) %></td>
+          <td class="graph-error"><%= rule.last_error %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+<% end %>
