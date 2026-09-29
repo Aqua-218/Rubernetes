@@ -74,6 +74,9 @@ module Rubernetes
       end
 
       attr_accessor :api
+      # Scheduler::Metrics: scheduler_volume_binder_cache_requests_total and
+      # scheduler_volume_scheduling_stage_error_total.
+      attr_accessor :metrics
       # When set, PreBind returns once the bindings are written and the
       # binding cycle waits for them (#wait_for_bindings) off the scheduling
       # thread -- upstream's binding cycle is a goroutine of its own.
