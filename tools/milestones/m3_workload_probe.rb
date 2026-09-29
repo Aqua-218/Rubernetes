@@ -602,7 +602,7 @@ class M3WorkloadLocalRestClient
     return body if body.nil?
 
     parsed, string_body = if body.is_a?(String)
-                            [JSON.parse(body, create_additions: false), true]
+                            [JSON.parse(body), true]
                           else
                             [Marshal.load(Marshal.dump(body)), false]
                           end
