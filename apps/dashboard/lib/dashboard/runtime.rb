@@ -71,7 +71,7 @@ module Dashboard
     end
 
     def engine
-      @engine ||= Promql::Engine.new(store)
+      memoize(:engine) { Promql::Engine.new(store) }
     end
 
     def kube_state
