@@ -2567,7 +2567,14 @@ module Rubernetes
           @mutex.synchronize { @running = true }
           @started_at = @clock.call
           start_status_monitor
-          log(:info, "process.ready", components: %w[proxy backend service-watch endpointslice-watch])
+          # kube-proxy's metrics (--metrics-bind-address) and health
+          # (--healthz-bind-address) servers, on one loopback port here:
+          # /metrics, /healthz (the proxier's sync health) and /livez.
+          @component_server = ComponentServer.from_config(component: "kube-proxy", config: @config, metrics: @metrics,
+                                                          ready: -> { started? }, logger: @logger,
+                                                          health: method(:proxier_health))&.start
+          log(:info, "process.ready", components: %w[proxy backend service-watch endpointslice-watch] +
+                                                  (@component_server ? ["serving"] : []))
           self
         rescue StandardError
           stop_components(reason: "startup_failed")
