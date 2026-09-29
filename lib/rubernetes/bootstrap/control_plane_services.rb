@@ -1706,7 +1706,12 @@ module Rubernetes
                                                 delete_pod: method(:delete_victim_pod),
                                                 nominate: method(:nominate_pod),
                                                 clear_nomination: method(:clear_pod_nomination),
-                                                preemption_observer: method(:observe_preemption_goroutine))
+                                                preemption_observer: method(:observe_preemption_goroutine),
+                                                metrics: @scheduler_metrics)
+        end
+        if @framework.respond_to?(:queue) && @scheduler_metrics.respond_to?(:queue=)
+          @scheduler_metrics.queue = @framework.queue
+          @framework.queue.metrics = @scheduler_metrics if @framework.queue.respond_to?(:metrics=)
         end
         # DynamicResources writes allocations and reservations to claims.
         if @client && @framework.respond_to?(:dynamic_resources) && @framework.dynamic_resources&.api.nil?
