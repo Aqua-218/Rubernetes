@@ -287,7 +287,7 @@ module M3ProbeSupport
       return capture ? {"document" => nil, "execution" => execution} : nil
     end
 
-    document = JSON.parse(stdout, create_additions: false, max_nesting: 512)
+    document = JSON.parse(stdout, max_nesting: 512)
     capture ? {"document" => document, "execution" => execution} : document
   rescue ArgumentError => error
     errors << "#{label} command is invalid: #{error.message}"
