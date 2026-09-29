@@ -1336,7 +1336,7 @@ module M1Gate
         errors << "API surface generated schema registry is missing"
         return nil
       end
-      document = JSON.parse(File.binread(path), create_additions: false, max_nesting: 100)
+      document = JSON.parse(File.binread(path), max_nesting: 100)
       gvk_ids = Array(document.fetch("gvks")).map do |entry|
         identifier = entry["identifier"]
         next identifier if non_empty_string?(identifier)
