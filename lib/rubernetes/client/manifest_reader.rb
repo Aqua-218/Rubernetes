@@ -132,7 +132,7 @@ module Rubernetes
       end
 
       def parse_json(content, filename)
-        value = JSON.parse(content, object_class: DuplicateKeyHash, create_additions: false, max_nesting: 512)
+        value = JSON.parse(content, object_class: DuplicateKeyHash, max_nesting: 512)
         [value]
       rescue JSON::ParserError => error
         raise ManifestError.new("cannot parse JSON manifest #{filename}: #{error.message}", cause: error), cause: error
