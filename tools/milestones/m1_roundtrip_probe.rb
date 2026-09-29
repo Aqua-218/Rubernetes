@@ -822,7 +822,7 @@ def strip_fixture_markers(value)
   when Array
     value.map { |item| strip_fixture_markers(item) }
   else
-    JSON.parse(JSON.generate(value), create_additions: false, quirks_mode: true)
+    JSON.parse(JSON.generate(value))
   end
 end
 
