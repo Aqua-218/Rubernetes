@@ -1,0 +1,1279 @@
+{
+  "source": "Creater.New + value.NewValueReflect (Kubernetes v1.36.2)",
+  "objects": {
+    "/v1/Binding": {
+      "metadata": {},
+      "target": {}
+    },
+    "/v1/ComponentStatus": {
+      "metadata": {}
+    },
+    "/v1/ConfigMap": {
+      "metadata": {}
+    },
+    "/v1/Endpoints": {
+      "metadata": {}
+    },
+    "/v1/Event": {
+      "eventTime": null,
+      "firstTimestamp": null,
+      "involvedObject": {},
+      "lastTimestamp": null,
+      "metadata": {},
+      "reportingComponent": "",
+      "reportingInstance": "",
+      "source": {}
+    },
+    "/v1/LimitRange": {
+      "metadata": {},
+      "spec": {
+        "limits": null
+      }
+    },
+    "/v1/Namespace": {
+      "metadata": {},
+      "spec": {},
+      "status": {}
+    },
+    "/v1/Node": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "daemonEndpoints": {
+          "kubeletEndpoint": {
+            "Port": 0
+          }
+        },
+        "nodeInfo": {
+          "architecture": "",
+          "bootID": "",
+          "containerRuntimeVersion": "",
+          "kernelVersion": "",
+          "kubeProxyVersion": "",
+          "kubeletVersion": "",
+          "machineID": "",
+          "operatingSystem": "",
+          "osImage": "",
+          "systemUUID": ""
+        }
+      }
+    },
+    "/v1/NodeProxyOptions": {},
+    "/v1/PersistentVolume": {
+      "metadata": {},
+      "spec": {},
+      "status": {}
+    },
+    "/v1/PersistentVolumeClaim": {
+      "metadata": {},
+      "spec": {
+        "resources": {}
+      },
+      "status": {}
+    },
+    "/v1/Pod": {
+      "metadata": {},
+      "spec": {
+        "containers": null
+      },
+      "status": {}
+    },
+    "/v1/PodAttachOptions": {},
+    "/v1/PodExecOptions": {
+      "command": null
+    },
+    "/v1/PodLogOptions": {},
+    "/v1/PodPortForwardOptions": {},
+    "/v1/PodProxyOptions": {},
+    "/v1/PodStatusResult": {
+      "metadata": {},
+      "status": {}
+    },
+    "/v1/PodTemplate": {
+      "metadata": {},
+      "template": {
+        "metadata": {},
+        "spec": {
+          "containers": null
+        }
+      }
+    },
+    "/v1/RangeAllocation": {
+      "data": null,
+      "metadata": {},
+      "range": ""
+    },
+    "/v1/ReplicationController": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "replicas": 0
+      }
+    },
+    "/v1/ResourceQuota": {
+      "metadata": {},
+      "spec": {},
+      "status": {}
+    },
+    "/v1/Secret": {
+      "metadata": {}
+    },
+    "/v1/SerializedReference": {
+      "reference": {}
+    },
+    "/v1/Service": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "loadBalancer": {}
+      }
+    },
+    "/v1/ServiceAccount": {
+      "metadata": {}
+    },
+    "/v1/ServiceProxyOptions": {},
+    "admissionregistration.k8s.io/v1/MutatingAdmissionPolicy": {
+      "metadata": {},
+      "spec": {}
+    },
+    "admissionregistration.k8s.io/v1/MutatingAdmissionPolicyBinding": {
+      "metadata": {},
+      "spec": {}
+    },
+    "admissionregistration.k8s.io/v1/MutatingWebhookConfiguration": {
+      "metadata": {}
+    },
+    "admissionregistration.k8s.io/v1/ValidatingAdmissionPolicy": {
+      "metadata": {},
+      "spec": {},
+      "status": {}
+    },
+    "admissionregistration.k8s.io/v1/ValidatingAdmissionPolicyBinding": {
+      "metadata": {},
+      "spec": {}
+    },
+    "admissionregistration.k8s.io/v1/ValidatingWebhookConfiguration": {
+      "metadata": {}
+    },
+    "admissionregistration.k8s.io/v1alpha1/MutatingAdmissionPolicy": {
+      "metadata": {},
+      "spec": {}
+    },
+    "admissionregistration.k8s.io/v1alpha1/MutatingAdmissionPolicyBinding": {
+      "metadata": {},
+      "spec": {}
+    },
+    "admissionregistration.k8s.io/v1alpha1/ValidatingAdmissionPolicy": {
+      "metadata": {},
+      "spec": {},
+      "status": {}
+    },
+    "admissionregistration.k8s.io/v1alpha1/ValidatingAdmissionPolicyBinding": {
+      "metadata": {},
+      "spec": {}
+    },
+    "admissionregistration.k8s.io/v1beta1/MutatingAdmissionPolicy": {
+      "metadata": {},
+      "spec": {}
+    },
+    "admissionregistration.k8s.io/v1beta1/MutatingAdmissionPolicyBinding": {
+      "metadata": {},
+      "spec": {}
+    },
+    "admissionregistration.k8s.io/v1beta1/MutatingWebhookConfiguration": {
+      "metadata": {}
+    },
+    "admissionregistration.k8s.io/v1beta1/ValidatingAdmissionPolicy": {
+      "metadata": {},
+      "spec": {},
+      "status": {}
+    },
+    "admissionregistration.k8s.io/v1beta1/ValidatingAdmissionPolicyBinding": {
+      "metadata": {},
+      "spec": {}
+    },
+    "admissionregistration.k8s.io/v1beta1/ValidatingWebhookConfiguration": {
+      "metadata": {}
+    },
+    "apiextensions.k8s.io/v1/ConversionReview": {},
+    "apiextensions.k8s.io/v1/CustomResourceDefinition": {
+      "metadata": {},
+      "spec": {
+        "group": "",
+        "names": {
+          "kind": "",
+          "plural": ""
+        },
+        "scope": "",
+        "versions": null
+      },
+      "status": {
+        "acceptedNames": {
+          "kind": "",
+          "plural": ""
+        },
+        "conditions": null,
+        "storedVersions": null
+      }
+    },
+    "apiextensions.k8s.io/v1beta1/ConversionReview": {},
+    "apiextensions.k8s.io/v1beta1/CustomResourceDefinition": {
+      "metadata": {},
+      "spec": {
+        "group": "",
+        "names": {
+          "kind": "",
+          "plural": ""
+        },
+        "scope": ""
+      },
+      "status": {
+        "acceptedNames": {
+          "kind": "",
+          "plural": ""
+        },
+        "conditions": null,
+        "storedVersions": null
+      }
+    },
+    "apiregistration.k8s.io/v1/APIService": {
+      "metadata": {},
+      "spec": {
+        "groupPriorityMinimum": 0,
+        "versionPriority": 0
+      },
+      "status": {}
+    },
+    "apiregistration.k8s.io/v1beta1/APIService": {
+      "metadata": {},
+      "spec": {
+        "groupPriorityMinimum": 0,
+        "versionPriority": 0
+      },
+      "status": {}
+    },
+    "apps/v1/ControllerRevision": {
+      "data": null,
+      "metadata": {},
+      "revision": 0
+    },
+    "apps/v1/DaemonSet": {
+      "metadata": {},
+      "spec": {
+        "selector": null,
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        },
+        "updateStrategy": {}
+      },
+      "status": {
+        "currentNumberScheduled": 0,
+        "desiredNumberScheduled": 0,
+        "numberMisscheduled": 0,
+        "numberReady": 0
+      }
+    },
+    "apps/v1/Deployment": {
+      "metadata": {},
+      "spec": {
+        "selector": null,
+        "strategy": {},
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        }
+      },
+      "status": {}
+    },
+    "apps/v1/ReplicaSet": {
+      "metadata": {},
+      "spec": {
+        "selector": null,
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        }
+      },
+      "status": {
+        "replicas": 0
+      }
+    },
+    "apps/v1/StatefulSet": {
+      "metadata": {},
+      "spec": {
+        "selector": null,
+        "serviceName": "",
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        },
+        "updateStrategy": {}
+      },
+      "status": {
+        "availableReplicas": 0,
+        "replicas": 0
+      }
+    },
+    "apps/v1beta1/ControllerRevision": {
+      "data": null,
+      "metadata": {},
+      "revision": 0
+    },
+    "apps/v1beta1/Deployment": {
+      "metadata": {},
+      "spec": {
+        "strategy": {},
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        }
+      },
+      "status": {}
+    },
+    "apps/v1beta1/DeploymentRollback": {
+      "name": "",
+      "rollbackTo": {}
+    },
+    "apps/v1beta1/Scale": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "replicas": 0
+      }
+    },
+    "apps/v1beta1/StatefulSet": {
+      "metadata": {},
+      "spec": {
+        "serviceName": "",
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        },
+        "updateStrategy": {}
+      },
+      "status": {
+        "availableReplicas": 0,
+        "replicas": 0
+      }
+    },
+    "apps/v1beta2/ControllerRevision": {
+      "data": null,
+      "metadata": {},
+      "revision": 0
+    },
+    "apps/v1beta2/DaemonSet": {
+      "metadata": {},
+      "spec": {
+        "selector": null,
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        },
+        "updateStrategy": {}
+      },
+      "status": {
+        "currentNumberScheduled": 0,
+        "desiredNumberScheduled": 0,
+        "numberMisscheduled": 0,
+        "numberReady": 0
+      }
+    },
+    "apps/v1beta2/Deployment": {
+      "metadata": {},
+      "spec": {
+        "selector": null,
+        "strategy": {},
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        }
+      },
+      "status": {}
+    },
+    "apps/v1beta2/ReplicaSet": {
+      "metadata": {},
+      "spec": {
+        "selector": null,
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        }
+      },
+      "status": {
+        "replicas": 0
+      }
+    },
+    "apps/v1beta2/Scale": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "replicas": 0
+      }
+    },
+    "apps/v1beta2/StatefulSet": {
+      "metadata": {},
+      "spec": {
+        "selector": null,
+        "serviceName": "",
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        },
+        "updateStrategy": {}
+      },
+      "status": {
+        "availableReplicas": 0,
+        "replicas": 0
+      }
+    },
+    "authentication.k8s.io/v1/SelfSubjectReview": {
+      "metadata": {},
+      "status": {
+        "userInfo": {}
+      }
+    },
+    "authentication.k8s.io/v1/TokenRequest": {
+      "metadata": {},
+      "spec": {
+        "audiences": null,
+        "boundObjectRef": null,
+        "expirationSeconds": null
+      },
+      "status": {
+        "expirationTimestamp": null,
+        "token": ""
+      }
+    },
+    "authentication.k8s.io/v1/TokenReview": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "user": {}
+      }
+    },
+    "authentication.k8s.io/v1alpha1/SelfSubjectReview": {
+      "metadata": {},
+      "status": {
+        "userInfo": {}
+      }
+    },
+    "authentication.k8s.io/v1beta1/SelfSubjectReview": {
+      "metadata": {},
+      "status": {
+        "userInfo": {}
+      }
+    },
+    "authentication.k8s.io/v1beta1/TokenReview": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "user": {}
+      }
+    },
+    "authorization.k8s.io/v1/LocalSubjectAccessReview": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "allowed": false
+      }
+    },
+    "authorization.k8s.io/v1/SelfSubjectAccessReview": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "allowed": false
+      }
+    },
+    "authorization.k8s.io/v1/SelfSubjectRulesReview": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "incomplete": false,
+        "nonResourceRules": null,
+        "resourceRules": null
+      }
+    },
+    "authorization.k8s.io/v1/SubjectAccessReview": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "allowed": false
+      }
+    },
+    "authorization.k8s.io/v1beta1/LocalSubjectAccessReview": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "allowed": false
+      }
+    },
+    "authorization.k8s.io/v1beta1/SelfSubjectAccessReview": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "allowed": false
+      }
+    },
+    "authorization.k8s.io/v1beta1/SelfSubjectRulesReview": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "incomplete": false,
+        "nonResourceRules": null,
+        "resourceRules": null
+      }
+    },
+    "authorization.k8s.io/v1beta1/SubjectAccessReview": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "allowed": false
+      }
+    },
+    "autoscaling/v1/HorizontalPodAutoscaler": {
+      "metadata": {},
+      "spec": {
+        "maxReplicas": 0,
+        "scaleTargetRef": {
+          "kind": "",
+          "name": ""
+        }
+      },
+      "status": {
+        "currentReplicas": 0,
+        "desiredReplicas": 0
+      }
+    },
+    "autoscaling/v1/Scale": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "replicas": 0
+      }
+    },
+    "autoscaling/v2/HorizontalPodAutoscaler": {
+      "metadata": {},
+      "spec": {
+        "maxReplicas": 0,
+        "scaleTargetRef": {
+          "kind": "",
+          "name": ""
+        }
+      },
+      "status": {
+        "currentMetrics": null,
+        "desiredReplicas": 0
+      }
+    },
+    "batch/v1/CronJob": {
+      "metadata": {},
+      "spec": {
+        "jobTemplate": {
+          "metadata": {},
+          "spec": {
+            "template": {
+              "metadata": {},
+              "spec": {
+                "containers": null
+              }
+            }
+          }
+        },
+        "schedule": ""
+      },
+      "status": {}
+    },
+    "batch/v1/Job": {
+      "metadata": {},
+      "spec": {
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        }
+      },
+      "status": {}
+    },
+    "batch/v1beta1/CronJob": {
+      "metadata": {},
+      "spec": {
+        "jobTemplate": {
+          "metadata": {},
+          "spec": {
+            "template": {
+              "metadata": {},
+              "spec": {
+                "containers": null
+              }
+            }
+          }
+        },
+        "schedule": ""
+      },
+      "status": {}
+    },
+    "certificates.k8s.io/v1/CertificateSigningRequest": {
+      "metadata": {},
+      "spec": {
+        "request": null,
+        "signerName": ""
+      },
+      "status": {}
+    },
+    "certificates.k8s.io/v1alpha1/ClusterTrustBundle": {
+      "metadata": {},
+      "spec": {
+        "trustBundle": ""
+      }
+    },
+    "certificates.k8s.io/v1beta1/CertificateSigningRequest": {
+      "metadata": {},
+      "spec": {
+        "request": null
+      },
+      "status": {}
+    },
+    "certificates.k8s.io/v1beta1/ClusterTrustBundle": {
+      "metadata": {},
+      "spec": {
+        "trustBundle": ""
+      }
+    },
+    "certificates.k8s.io/v1beta1/PodCertificateRequest": {
+      "metadata": {},
+      "spec": {
+        "nodeName": "",
+        "nodeUID": "",
+        "pkixPublicKey": null,
+        "podName": "",
+        "podUID": "",
+        "proofOfPossession": null,
+        "serviceAccountName": "",
+        "serviceAccountUID": "",
+        "signerName": "",
+        "stubPKCS10Request": null
+      },
+      "status": {}
+    },
+    "coordination.k8s.io/v1/Lease": {
+      "metadata": {},
+      "spec": {}
+    },
+    "coordination.k8s.io/v1alpha2/LeaseCandidate": {
+      "metadata": {},
+      "spec": {
+        "binaryVersion": "",
+        "leaseName": ""
+      }
+    },
+    "coordination.k8s.io/v1beta1/Lease": {
+      "metadata": {},
+      "spec": {}
+    },
+    "coordination.k8s.io/v1beta1/LeaseCandidate": {
+      "metadata": {},
+      "spec": {
+        "binaryVersion": "",
+        "leaseName": ""
+      }
+    },
+    "discovery.k8s.io/v1/EndpointSlice": {
+      "addressType": "",
+      "endpoints": null,
+      "metadata": {},
+      "ports": null
+    },
+    "discovery.k8s.io/v1beta1/EndpointSlice": {
+      "addressType": "",
+      "endpoints": null,
+      "metadata": {},
+      "ports": null
+    },
+    "events.k8s.io/v1/Event": {
+      "deprecatedFirstTimestamp": null,
+      "deprecatedLastTimestamp": null,
+      "deprecatedSource": {},
+      "eventTime": null,
+      "metadata": {},
+      "regarding": {}
+    },
+    "events.k8s.io/v1beta1/Event": {
+      "deprecatedFirstTimestamp": null,
+      "deprecatedLastTimestamp": null,
+      "deprecatedSource": {},
+      "eventTime": null,
+      "metadata": {},
+      "regarding": {}
+    },
+    "extensions/v1beta1/DaemonSet": {
+      "metadata": {},
+      "spec": {
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        },
+        "updateStrategy": {}
+      },
+      "status": {
+        "currentNumberScheduled": 0,
+        "desiredNumberScheduled": 0,
+        "numberMisscheduled": 0,
+        "numberReady": 0
+      }
+    },
+    "extensions/v1beta1/Deployment": {
+      "metadata": {},
+      "spec": {
+        "strategy": {},
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        }
+      },
+      "status": {}
+    },
+    "extensions/v1beta1/DeploymentRollback": {
+      "name": "",
+      "rollbackTo": {}
+    },
+    "extensions/v1beta1/Ingress": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "loadBalancer": {}
+      }
+    },
+    "extensions/v1beta1/NetworkPolicy": {
+      "metadata": {},
+      "spec": {
+        "podSelector": {}
+      }
+    },
+    "extensions/v1beta1/ReplicaSet": {
+      "metadata": {},
+      "spec": {
+        "template": {
+          "metadata": {},
+          "spec": {
+            "containers": null
+          }
+        }
+      },
+      "status": {
+        "replicas": 0
+      }
+    },
+    "extensions/v1beta1/Scale": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "replicas": 0
+      }
+    },
+    "flowcontrol.apiserver.k8s.io/v1/FlowSchema": {
+      "metadata": {},
+      "spec": {
+        "matchingPrecedence": 0,
+        "priorityLevelConfiguration": {
+          "name": ""
+        }
+      },
+      "status": {}
+    },
+    "flowcontrol.apiserver.k8s.io/v1/PriorityLevelConfiguration": {
+      "metadata": {},
+      "spec": {
+        "type": ""
+      },
+      "status": {}
+    },
+    "flowcontrol.apiserver.k8s.io/v1beta1/FlowSchema": {
+      "metadata": {},
+      "spec": {
+        "matchingPrecedence": 0,
+        "priorityLevelConfiguration": {
+          "name": ""
+        }
+      },
+      "status": {}
+    },
+    "flowcontrol.apiserver.k8s.io/v1beta1/PriorityLevelConfiguration": {
+      "metadata": {},
+      "spec": {
+        "type": ""
+      },
+      "status": {}
+    },
+    "flowcontrol.apiserver.k8s.io/v1beta2/FlowSchema": {
+      "metadata": {},
+      "spec": {
+        "matchingPrecedence": 0,
+        "priorityLevelConfiguration": {
+          "name": ""
+        }
+      },
+      "status": {}
+    },
+    "flowcontrol.apiserver.k8s.io/v1beta2/PriorityLevelConfiguration": {
+      "metadata": {},
+      "spec": {
+        "type": ""
+      },
+      "status": {}
+    },
+    "flowcontrol.apiserver.k8s.io/v1beta3/FlowSchema": {
+      "metadata": {},
+      "spec": {
+        "matchingPrecedence": 0,
+        "priorityLevelConfiguration": {
+          "name": ""
+        }
+      },
+      "status": {}
+    },
+    "flowcontrol.apiserver.k8s.io/v1beta3/PriorityLevelConfiguration": {
+      "metadata": {},
+      "spec": {
+        "type": ""
+      },
+      "status": {}
+    },
+    "internal.apiserver.k8s.io/v1alpha1/StorageVersion": {
+      "metadata": {},
+      "spec": {},
+      "status": {}
+    },
+    "networking.k8s.io/v1/IPAddress": {
+      "metadata": {},
+      "spec": {}
+    },
+    "networking.k8s.io/v1/Ingress": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "loadBalancer": {}
+      }
+    },
+    "networking.k8s.io/v1/IngressClass": {
+      "metadata": {},
+      "spec": {}
+    },
+    "networking.k8s.io/v1/NetworkPolicy": {
+      "metadata": {},
+      "spec": {
+        "podSelector": {}
+      }
+    },
+    "networking.k8s.io/v1/ServiceCIDR": {
+      "metadata": {},
+      "spec": {},
+      "status": {}
+    },
+    "networking.k8s.io/v1beta1/IPAddress": {
+      "metadata": {},
+      "spec": {}
+    },
+    "networking.k8s.io/v1beta1/Ingress": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "loadBalancer": {}
+      }
+    },
+    "networking.k8s.io/v1beta1/IngressClass": {
+      "metadata": {},
+      "spec": {}
+    },
+    "networking.k8s.io/v1beta1/ServiceCIDR": {
+      "metadata": {},
+      "spec": {},
+      "status": {}
+    },
+    "node.k8s.io/v1/RuntimeClass": {
+      "handler": "",
+      "metadata": {}
+    },
+    "node.k8s.io/v1alpha1/RuntimeClass": {
+      "metadata": {},
+      "spec": {
+        "runtimeHandler": ""
+      }
+    },
+    "node.k8s.io/v1beta1/RuntimeClass": {
+      "handler": "",
+      "metadata": {}
+    },
+    "policy/v1/Eviction": {
+      "metadata": {}
+    },
+    "policy/v1/PodDisruptionBudget": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "currentHealthy": 0,
+        "desiredHealthy": 0,
+        "disruptionsAllowed": 0,
+        "expectedPods": 0
+      }
+    },
+    "policy/v1beta1/Eviction": {
+      "metadata": {}
+    },
+    "policy/v1beta1/PodDisruptionBudget": {
+      "metadata": {},
+      "spec": {},
+      "status": {
+        "currentHealthy": 0,
+        "desiredHealthy": 0,
+        "disruptionsAllowed": 0,
+        "expectedPods": 0
+      }
+    },
+    "rbac.authorization.k8s.io/v1/ClusterRole": {
+      "metadata": {},
+      "rules": null
+    },
+    "rbac.authorization.k8s.io/v1/ClusterRoleBinding": {
+      "metadata": {},
+      "roleRef": {
+        "apiGroup": "",
+        "kind": "",
+        "name": ""
+      }
+    },
+    "rbac.authorization.k8s.io/v1/Role": {
+      "metadata": {},
+      "rules": null
+    },
+    "rbac.authorization.k8s.io/v1/RoleBinding": {
+      "metadata": {},
+      "roleRef": {
+        "apiGroup": "",
+        "kind": "",
+        "name": ""
+      }
+    },
+    "rbac.authorization.k8s.io/v1alpha1/ClusterRole": {
+      "metadata": {},
+      "rules": null
+    },
+    "rbac.authorization.k8s.io/v1alpha1/ClusterRoleBinding": {
+      "metadata": {},
+      "roleRef": {
+        "apiGroup": "",
+        "kind": "",
+        "name": ""
+      }
+    },
+    "rbac.authorization.k8s.io/v1alpha1/Role": {
+      "metadata": {},
+      "rules": null
+    },
+    "rbac.authorization.k8s.io/v1alpha1/RoleBinding": {
+      "metadata": {},
+      "roleRef": {
+        "apiGroup": "",
+        "kind": "",
+        "name": ""
+      }
+    },
+    "rbac.authorization.k8s.io/v1beta1/ClusterRole": {
+      "metadata": {},
+      "rules": null
+    },
+    "rbac.authorization.k8s.io/v1beta1/ClusterRoleBinding": {
+      "metadata": {},
+      "roleRef": {
+        "apiGroup": "",
+        "kind": "",
+        "name": ""
+      }
+    },
+    "rbac.authorization.k8s.io/v1beta1/Role": {
+      "metadata": {},
+      "rules": null
+    },
+    "rbac.authorization.k8s.io/v1beta1/RoleBinding": {
+      "metadata": {},
+      "roleRef": {
+        "apiGroup": "",
+        "kind": "",
+        "name": ""
+      }
+    },
+    "resource.k8s.io/v1/DeviceClass": {
+      "metadata": {},
+      "spec": {}
+    },
+    "resource.k8s.io/v1/ResourceClaim": {
+      "metadata": {},
+      "spec": {
+        "devices": {
+          "requests": null
+        }
+      },
+      "status": {}
+    },
+    "resource.k8s.io/v1/ResourceClaimTemplate": {
+      "metadata": {},
+      "spec": {
+        "metadata": {},
+        "spec": {
+          "devices": {
+            "requests": null
+          }
+        }
+      }
+    },
+    "resource.k8s.io/v1/ResourceSlice": {
+      "metadata": {},
+      "spec": {
+        "driver": "",
+        "pool": {
+          "generation": 0,
+          "name": "",
+          "resourceSliceCount": 0
+        }
+      }
+    },
+    "resource.k8s.io/v1alpha3/DeviceTaintRule": {
+      "metadata": {},
+      "spec": {
+        "taint": {
+          "effect": "",
+          "key": ""
+        }
+      },
+      "status": {}
+    },
+    "resource.k8s.io/v1alpha3/ResourcePoolStatusRequest": {
+      "metadata": {},
+      "spec": {
+        "driver": ""
+      }
+    },
+    "resource.k8s.io/v1beta1/DeviceClass": {
+      "metadata": {},
+      "spec": {}
+    },
+    "resource.k8s.io/v1beta1/ResourceClaim": {
+      "metadata": {},
+      "spec": {
+        "devices": {
+          "requests": null
+        }
+      },
+      "status": {}
+    },
+    "resource.k8s.io/v1beta1/ResourceClaimTemplate": {
+      "metadata": {},
+      "spec": {
+        "metadata": {},
+        "spec": {
+          "devices": {
+            "requests": null
+          }
+        }
+      }
+    },
+    "resource.k8s.io/v1beta1/ResourceSlice": {
+      "metadata": {},
+      "spec": {
+        "driver": "",
+        "pool": {
+          "generation": 0,
+          "name": "",
+          "resourceSliceCount": 0
+        }
+      }
+    },
+    "resource.k8s.io/v1beta2/DeviceClass": {
+      "metadata": {},
+      "spec": {}
+    },
+    "resource.k8s.io/v1beta2/DeviceTaintRule": {
+      "metadata": {},
+      "spec": {
+        "taint": {
+          "effect": "",
+          "key": ""
+        }
+      },
+      "status": {}
+    },
+    "resource.k8s.io/v1beta2/ResourceClaim": {
+      "metadata": {},
+      "spec": {
+        "devices": {
+          "requests": null
+        }
+      },
+      "status": {}
+    },
+    "resource.k8s.io/v1beta2/ResourceClaimTemplate": {
+      "metadata": {},
+      "spec": {
+        "metadata": {},
+        "spec": {
+          "devices": {
+            "requests": null
+          }
+        }
+      }
+    },
+    "resource.k8s.io/v1beta2/ResourceSlice": {
+      "metadata": {},
+      "spec": {
+        "driver": "",
+        "pool": {
+          "generation": 0,
+          "name": "",
+          "resourceSliceCount": 0
+        }
+      }
+    },
+    "scheduling.k8s.io/v1/PriorityClass": {
+      "metadata": {},
+      "value": 0
+    },
+    "scheduling.k8s.io/v1alpha2/PodGroup": {
+      "metadata": {},
+      "spec": {
+        "podGroupTemplateRef": null,
+        "schedulingPolicy": {}
+      },
+      "status": {}
+    },
+    "scheduling.k8s.io/v1alpha2/Workload": {
+      "metadata": {},
+      "spec": {
+        "podGroupTemplates": null
+      }
+    },
+    "scheduling.k8s.io/v1beta1/PriorityClass": {
+      "metadata": {},
+      "value": 0
+    },
+    "storage.k8s.io/v1/CSIDriver": {
+      "metadata": {},
+      "spec": {}
+    },
+    "storage.k8s.io/v1/CSINode": {
+      "metadata": {},
+      "spec": {
+        "drivers": null
+      }
+    },
+    "storage.k8s.io/v1/CSIStorageCapacity": {
+      "metadata": {},
+      "storageClassName": ""
+    },
+    "storage.k8s.io/v1/StorageClass": {
+      "metadata": {},
+      "provisioner": ""
+    },
+    "storage.k8s.io/v1/VolumeAttachment": {
+      "metadata": {},
+      "spec": {
+        "attacher": "",
+        "nodeName": "",
+        "source": {}
+      },
+      "status": {
+        "attached": false
+      }
+    },
+    "storage.k8s.io/v1/VolumeAttributesClass": {
+      "driverName": "",
+      "metadata": {}
+    },
+    "storage.k8s.io/v1alpha1/CSIStorageCapacity": {
+      "metadata": {},
+      "storageClassName": ""
+    },
+    "storage.k8s.io/v1alpha1/VolumeAttachment": {
+      "metadata": {},
+      "spec": {
+        "attacher": "",
+        "nodeName": "",
+        "source": {}
+      },
+      "status": {
+        "attached": false
+      }
+    },
+    "storage.k8s.io/v1alpha1/VolumeAttributesClass": {
+      "driverName": "",
+      "metadata": {}
+    },
+    "storage.k8s.io/v1beta1/CSIDriver": {
+      "metadata": {},
+      "spec": {}
+    },
+    "storage.k8s.io/v1beta1/CSINode": {
+      "metadata": {},
+      "spec": {
+        "drivers": null
+      }
+    },
+    "storage.k8s.io/v1beta1/CSIStorageCapacity": {
+      "metadata": {},
+      "storageClassName": ""
+    },
+    "storage.k8s.io/v1beta1/StorageClass": {
+      "metadata": {},
+      "provisioner": ""
+    },
+    "storage.k8s.io/v1beta1/VolumeAttachment": {
+      "metadata": {},
+      "spec": {
+        "attacher": "",
+        "nodeName": "",
+        "source": {}
+      },
+      "status": {
+        "attached": false
+      }
+    },
+    "storage.k8s.io/v1beta1/VolumeAttributesClass": {
+      "driverName": "",
+      "metadata": {}
+    },
+    "storagemigration.k8s.io/v1beta1/StorageVersionMigration": {
+      "metadata": {},
+      "spec": {
+        "resource": {
+          "group": "",
+          "resource": ""
+        }
+      },
+      "status": {}
+    }
+  }
+}
