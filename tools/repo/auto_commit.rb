@@ -113,6 +113,13 @@ module Rubernetes
         ["examples/", "examples", "docs"],
         ["benchmarks/", "benchmarks", "tools"],
         ["ruby/", "ruby", "build"],
+        ["apps/dashboard/lib/promql/", "promql", "source"],
+        ["apps/dashboard/lib/tsdb/", "tsdb", "source"],
+        ["apps/dashboard/lib/prom/", "prom", "source"],
+        ["apps/dashboard/app/", "dashboard", "source"],
+        ["apps/dashboard/config/", "dashboard", "config"],
+        ["apps/dashboard/test/", "dashboard", "tests"],
+        ["apps/dashboard/", "dashboard", "source"],
         ["apps/", "apps", "source"]
       ].freeze
 
