@@ -410,6 +410,7 @@ module Rubernetes
           @unschedulable.clear
           result.each do |item|
             key = identity_key(item.pod)
+            @gated.delete(key)
             next if @pending.key?(key)
 
             @pending[key] = item
