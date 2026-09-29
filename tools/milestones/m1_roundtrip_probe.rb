@@ -732,10 +732,10 @@ def build_validation_parent_fixture(codec:, mapping:, owner_type:, target_json:,
     # references that never cross the wire (notably PersistentVolume source
     # pointers and Pod status).  Parse the exact request payload for the
     # Ruby-side observation so both implementations see identical input.
-    owner_wire_hash = JSON.parse(owner_json, create_additions: false)
-    owner_missing_wire_hash = JSON.parse(owner_missing_json, create_additions: false)
-    owner_update_wire_hash = JSON.parse(owner_update_json, create_additions: false)
-    owner_invalid_wire_hash = JSON.parse(owner_invalid_json, create_additions: false)
+    owner_wire_hash = JSON.parse(owner_json)
+    owner_missing_wire_hash = JSON.parse(owner_missing_json)
+    owner_update_wire_hash = JSON.parse(owner_update_json)
+    owner_invalid_wire_hash = JSON.parse(owner_invalid_json)
     # The REST validation oracle observes the object after the owning
     # strategy's PrepareForCreate/PrepareForUpdate hook.  Keep preparation
     # explicit and fixture-local: normal public validation must not require
