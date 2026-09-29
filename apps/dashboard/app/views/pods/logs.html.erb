@@ -1,0 +1,20 @@
+<% name = params[:id] %>
+<% content_for :title, "Logs #{name}" %>
+<h1><%= link_to @namespace, namespace_pods_path(@namespace) %> / <%= link_to name, namespace_pod_path(@namespace, name) %> / logs</h1>
+<form class="toolbar" method="get">
+  <label>Container
+    <select name="container" onchange="this.form.submit()">
+      <% (Array(@pod.dig("spec", "initContainers")) + Array(@pod.dig("spec", "containers"))).each do |c| %>
+        <option value="<%= c["name"] %>" <%= "selected" if c["name"] == @container %>><%= c["name"] %></option>
+      <% end %>
+    </select>
+  </label>
+  <label>Tail <input name="tail" value="<%= @tail %>" size="6"></label>
+  <label><input type="checkbox" name="previous" value="1" <%= "checked" if params[:previous] == "1" %>> previous</label>
+  <label><input type="checkbox" name="timestamps" value="1" <%= "checked" if params[:timestamps] == "1" %>> timestamps</label>
+  <button>Reload</button>
+  <%= link_to "raw", logs_namespace_pod_path(@namespace, name, container: @container, tail: @tail, previous: params[:previous], format: :text), target: "_blank" %>
+  <span class="muted"><%= @text.lines.length %> lines<% if @status != 200 %> · HTTP <%= @status %><% end %></span>
+</form>
+<pre id="log" style="max-height: 80vh"><%= @text %></pre>
+<script>document.getElementById("log").scrollTop = 1e9;</script>
