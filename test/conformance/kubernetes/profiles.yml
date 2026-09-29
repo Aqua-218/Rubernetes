@@ -1,0 +1,27 @@
+schema_version: 1
+kubernetes:
+  tag: v1.36.2
+  commit: 24e2b02af5543d7910c2bb074c7264df5a8f0467
+conformance:
+  expected_tests: 446
+  definition_sha256: cdbad746df8e8f5f7e63ef147b579e921c1ad70a68d826f2b9c5af27dbbf7641
+  image: registry.k8s.io/conformance@sha256:e86cfc45351bd6937c4744477a204130af2c822682b79465490d1cd2d1f7c246
+topology:
+  control_nodes: 3
+  worker_nodes: 3
+  datastore: raft
+runtime: native
+consecutive_clean_runs: 3
+profiles:
+  - name: linux-amd64-ipv4-native
+    os: linux
+    architecture: amd64
+    ip_families: [ipv4]
+  - name: linux-amd64-ipv6-native
+    os: linux
+    architecture: amd64
+    ip_families: [ipv6]
+  - name: linux-amd64-dualstack-native
+    os: linux
+    architecture: amd64
+    ip_families: [ipv4, ipv6]
