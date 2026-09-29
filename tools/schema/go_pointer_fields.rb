@@ -88,7 +88,7 @@ module GoPointerFields
     SOURCE_PACKAGES.each_key do |relative|
       raise Error, "source checkout lacks #{relative}" unless source.join(relative).directory?
     end
-    manifest = JSON.parse(CORPUS.join("sources.json").read, create_additions: false)
+    manifest = JSON.parse(CORPUS.join("sources.json").read)
     manifest.fetch("sources").each do |entry|
       next unless entry["kind"] == "protobuf"
 
