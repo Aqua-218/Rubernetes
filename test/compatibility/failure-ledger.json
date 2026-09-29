@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "kind": "compatibility_failure_ledger",
+  "description": "Open compatibility failures block M8. Every entry names the lane, the upstream test or project, the observed difference, and the fix that closed it.",
+  "open": [],
+  "closed": []
+}
