@@ -321,7 +321,7 @@ module M2LifecycleOracleNodeImage
       http.request(request)
     end
     raise BuildError, "GitHub commit lookup for #{ref} returned #{response.code}" unless response.is_a?(Net::HTTPSuccess)
-    document = JSON.parse(response.body, create_additions: false)
+    document = JSON.parse(response.body)
     sha = document["sha"].to_s
     raise BuildError, "GitHub returned no commit for #{ref}" unless sha.match?(/\A[0-9a-f]{40}\z/)
     {"sha" => sha, "date" => document.dig("commit", "committer", "date"), "subject" => document.dig("commit", "message").to_s.lines.first.to_s.strip}
