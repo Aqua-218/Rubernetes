@@ -721,7 +721,7 @@ module M2LifecycleOracleHarness
       stray = names.select { |name| name.start_with?("import-") && name.include?(@busybox_digest.delete_prefix("sha256:")) }
       raise HarnessError, "ctr created unresolvable image names: #{stray.join(", ")}" unless stray.empty?
       inspect, = node_exec("crictl", "inspecti", @busybox_reference)
-      status = JSON.parse(inspect, create_additions: false)["status"] || {}
+      status = JSON.parse(inspect)["status"] || {}
       raise HarnessError, "CRI does not resolve #{@busybox_reference}: #{JSON.generate(status.slice("repoDigests", "repoTags"))}" unless Array(status["repoDigests"]).include?(@busybox_reference)
       @source["workload_image"] = {"reference" => @busybox_reference, "cri_image_id" => status["id"], "oci_archive_sha256" => Digest::SHA256.file(archive).hexdigest}
       step("workload_image_imported", reference: @busybox_reference, cri_image_id: status["id"])
