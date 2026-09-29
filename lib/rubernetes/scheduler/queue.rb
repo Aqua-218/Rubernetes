@@ -165,6 +165,8 @@ module Rubernetes
       def enqueue(pod, reason: nil, event: nil)
         typed = pod.is_a?(Pod) ? pod : Pod.new(pod)
         @mutex.synchronize do
+          key = identity_key(typed)
+          event ||= known_locked?(key) ? EVENT_POD_UPDATE : EVENT_POD_ADD
           @sequence += 1
           item = QueueItem.new(pod: typed, priority: typed.priority, sequence: @sequence,
                                reason: reason, unschedulable: false)
