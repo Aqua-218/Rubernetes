@@ -525,6 +525,8 @@ module Rubernetes
           end
           filter_started = monotonic
           candidates, filtered = filter_nodes(typed_pod, context.nodes, context, trace: trace, nominated: nominated) if candidates.nil?
+          @metrics.extension_point(:filter, candidates.empty? ? Metrics::STATUS_UNSCHEDULABLE : Metrics::STATUS_SUCCESS,
+                                   monotonic - filter_started)
 
           if candidates.empty? && @preemption
             eligible = eligible_to_preempt?(typed_pod, context, nominated_name, nominated_status)
