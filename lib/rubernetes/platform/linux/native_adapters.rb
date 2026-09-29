@@ -1258,6 +1258,12 @@ module Rubernetes
           def kill(handle) = @delegate.kill(handle)
           def remove(handle, force: false) = @delegate.remove(handle, force: force)
           def stats(handle) = @delegate.stats(handle)
+          # cpu.stat / memory.stat / memory.current / pids.current of a
+          # container cgroup, or of the Pod cgroup above it (pod: true).
+          # Runtime::Native#pod_usage feeds /stats/summary, /metrics/resource
+          # and metrics.k8s.io from this; without it every Pod's CPU and
+          # memory were simply absent from all three.
+          def usage(handle, pod: false) = @delegate.usage(handle, pod: pod)
           def events(handle) = @delegate.events(handle)
           def resources = @delegate.resources
           def lookup(value) = @delegate.lookup(value)
