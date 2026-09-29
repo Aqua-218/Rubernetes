@@ -476,7 +476,7 @@ module Rubernetes
           ref = pod["podRef"] || {}
           pod_labels = {"namespace" => ref["namespace"].to_s, "pod" => ref["name"].to_s}
           pod_id = "/kubepods/pod#{ref["uid"]}"
-          add_entry(samples, pod, {"container" => "", "id" => pod_id, "image" => "", "name" => ""}.merge(pod_labels), stamp)
+          add_summary_entry(samples, pod, {"container" => "", "id" => pod_id, "image" => "", "name" => ""}.merge(pod_labels), stamp)
           Array(pod["containers"]).each do |container|
             name = container["name"].to_s
             labels = {"container" => name, "id" => "#{pod_id}/#{name}", "image" => images.fetch([ref["uid"].to_s, name], "").to_s,
