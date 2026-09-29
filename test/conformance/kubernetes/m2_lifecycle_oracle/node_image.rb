@@ -358,7 +358,7 @@ module M2LifecycleOracleNodeImage
       image_id = nil
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 120
       loop do
-        image_id = JSON.parse(pods, create_additions: false).dig("items", 0, "status", "containerStatuses", 0, "imageID").to_s
+        image_id = JSON.parse(pods).dig("items", 0, "status", "containerStatuses", 0, "imageID").to_s
         break unless image_id.empty?
         raise BuildError, "kindnet pod imageID was not reported within 120s" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
         sleep(1)
