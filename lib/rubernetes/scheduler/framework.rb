@@ -561,7 +561,7 @@ module Rubernetes
               node_name = preemption.node.name
               nominate!(typed_pod, node_name)
               reason = filtered.values.map { |value| value["reason"] }.compact.first || "no feasible nodes"
-              queue.enqueue_unschedulable(typed_pod, reason: reason)
+              queue.enqueue_unschedulable(typed_pod, reason: reason, plugins: rejecting_plugins(filtered))
               @batch&.failed(cycle)
               return ScheduleResult.new(status: :unschedulable, pod: typed_pod, filtered: filtered,
                                          scores: [], victims: preemption.victims, trace: trace, reason: reason,
