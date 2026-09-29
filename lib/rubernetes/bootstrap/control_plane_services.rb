@@ -2565,6 +2565,7 @@ module Rubernetes
                                                end)
           raise Config::Error, "rubernetes-proxy could not start Service/EndpointSlice watch loops" if @subscriptions.empty?
           @mutex.synchronize { @running = true }
+          @started_at = @clock.call
           start_status_monitor
           log(:info, "process.ready", components: %w[proxy backend service-watch endpointslice-watch])
           self
