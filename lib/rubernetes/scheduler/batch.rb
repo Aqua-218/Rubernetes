@@ -163,6 +163,7 @@ module Rubernetes
       def drop_state(reason)
         @metrics&.batch_flushed(reason) if @state
         @state = nil
+        @flushed = true
         nil
       end
     end
