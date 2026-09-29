@@ -1,0 +1,1388 @@
+{
+  "source": "k8s.io/api v1.36.2 zz_generated.prerelease-lifecycle.go (APILifecycleDeprecated/Removed/Replacement)",
+  "kinds": [
+    {
+      "group": "admission.k8s.io",
+      "version": "v1beta1",
+      "kind": "AdmissionReview",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "admission.k8s.io",
+        "version": "v1",
+        "kind": "AdmissionReview"
+      }
+    },
+    {
+      "group": "admissionregistration.k8s.io",
+      "version": "v1alpha1",
+      "kind": "MutatingAdmissionPolicy",
+      "deprecated": [
+        1,
+        35
+      ],
+      "removed": [
+        1,
+        38
+      ]
+    },
+    {
+      "group": "admissionregistration.k8s.io",
+      "version": "v1alpha1",
+      "kind": "MutatingAdmissionPolicyBinding",
+      "deprecated": [
+        1,
+        35
+      ],
+      "removed": [
+        1,
+        38
+      ]
+    },
+    {
+      "group": "admissionregistration.k8s.io",
+      "version": "v1alpha1",
+      "kind": "ValidatingAdmissionPolicy",
+      "deprecated": [
+        1,
+        29
+      ],
+      "removed": [
+        1,
+        32
+      ]
+    },
+    {
+      "group": "admissionregistration.k8s.io",
+      "version": "v1alpha1",
+      "kind": "ValidatingAdmissionPolicyBinding",
+      "deprecated": [
+        1,
+        29
+      ],
+      "removed": [
+        1,
+        32
+      ]
+    },
+    {
+      "group": "admissionregistration.k8s.io",
+      "version": "v1beta1",
+      "kind": "MutatingAdmissionPolicy",
+      "deprecated": [
+        1,
+        37
+      ],
+      "removed": [
+        1,
+        40
+      ],
+      "replacement": {
+        "group": "admissionregistration.k8s.io",
+        "version": "v1",
+        "kind": "MutatingAdmissionPolicy"
+      }
+    },
+    {
+      "group": "admissionregistration.k8s.io",
+      "version": "v1beta1",
+      "kind": "MutatingAdmissionPolicyBinding",
+      "deprecated": [
+        1,
+        37
+      ],
+      "removed": [
+        1,
+        40
+      ],
+      "replacement": {
+        "group": "admissionregistration.k8s.io",
+        "version": "v1",
+        "kind": "MutatingAdmissionPolicyBinding"
+      }
+    },
+    {
+      "group": "admissionregistration.k8s.io",
+      "version": "v1beta1",
+      "kind": "MutatingWebhookConfiguration",
+      "deprecated": [
+        1,
+        16
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "admissionregistration.k8s.io",
+        "version": "v1",
+        "kind": "MutatingWebhookConfiguration"
+      }
+    },
+    {
+      "group": "admissionregistration.k8s.io",
+      "version": "v1beta1",
+      "kind": "ValidatingAdmissionPolicy",
+      "deprecated": [
+        1,
+        31
+      ],
+      "removed": [
+        1,
+        34
+      ]
+    },
+    {
+      "group": "admissionregistration.k8s.io",
+      "version": "v1beta1",
+      "kind": "ValidatingAdmissionPolicyBinding",
+      "deprecated": [
+        1,
+        31
+      ],
+      "removed": [
+        1,
+        34
+      ]
+    },
+    {
+      "group": "admissionregistration.k8s.io",
+      "version": "v1beta1",
+      "kind": "ValidatingWebhookConfiguration",
+      "deprecated": [
+        1,
+        16
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "admissionregistration.k8s.io",
+        "version": "v1",
+        "kind": "ValidatingWebhookConfiguration"
+      }
+    },
+    {
+      "group": "apidiscovery.k8s.io",
+      "version": "v2beta1",
+      "kind": "APIGroupDiscovery",
+      "deprecated": [
+        1,
+        32
+      ],
+      "removed": [
+        1,
+        35
+      ]
+    },
+    {
+      "group": "apps",
+      "version": "v1beta1",
+      "kind": "ControllerRevision",
+      "deprecated": [
+        1,
+        8
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "apps",
+        "version": "v1",
+        "kind": "ControllerRevision"
+      }
+    },
+    {
+      "group": "apps",
+      "version": "v1beta1",
+      "kind": "Deployment",
+      "deprecated": [
+        1,
+        8
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "apps",
+        "version": "v1",
+        "kind": "Deployment"
+      }
+    },
+    {
+      "group": "apps",
+      "version": "v1beta1",
+      "kind": "DeploymentRollback",
+      "deprecated": [
+        1,
+        8
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "apps",
+        "version": "v1",
+        "kind": "DeploymentRollback"
+      }
+    },
+    {
+      "group": "apps",
+      "version": "v1beta1",
+      "kind": "Scale",
+      "deprecated": [
+        1,
+        8
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "autoscaling",
+        "version": "v1",
+        "kind": "Scale"
+      }
+    },
+    {
+      "group": "apps",
+      "version": "v1beta1",
+      "kind": "StatefulSet",
+      "deprecated": [
+        1,
+        8
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "apps",
+        "version": "v1",
+        "kind": "StatefulSet"
+      }
+    },
+    {
+      "group": "apps",
+      "version": "v1beta2",
+      "kind": "ControllerRevision",
+      "deprecated": [
+        1,
+        9
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "apps",
+        "version": "v1",
+        "kind": "ControllerRevision"
+      }
+    },
+    {
+      "group": "apps",
+      "version": "v1beta2",
+      "kind": "DaemonSet",
+      "deprecated": [
+        1,
+        9
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "apps",
+        "version": "v1",
+        "kind": "DaemonSet"
+      }
+    },
+    {
+      "group": "apps",
+      "version": "v1beta2",
+      "kind": "Deployment",
+      "deprecated": [
+        1,
+        9
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "apps",
+        "version": "v1",
+        "kind": "Deployment"
+      }
+    },
+    {
+      "group": "apps",
+      "version": "v1beta2",
+      "kind": "ReplicaSet",
+      "deprecated": [
+        1,
+        9
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "apps",
+        "version": "v1",
+        "kind": "ReplicaSet"
+      }
+    },
+    {
+      "group": "apps",
+      "version": "v1beta2",
+      "kind": "Scale",
+      "deprecated": [
+        1,
+        9
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "autoscaling",
+        "version": "v1",
+        "kind": "Scale"
+      }
+    },
+    {
+      "group": "apps",
+      "version": "v1beta2",
+      "kind": "StatefulSet",
+      "deprecated": [
+        1,
+        9
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "apps",
+        "version": "v1",
+        "kind": "StatefulSet"
+      }
+    },
+    {
+      "group": "authentication.k8s.io",
+      "version": "v1alpha1",
+      "kind": "SelfSubjectReview",
+      "deprecated": [
+        1,
+        29
+      ],
+      "removed": [
+        1,
+        32
+      ]
+    },
+    {
+      "group": "authentication.k8s.io",
+      "version": "v1beta1",
+      "kind": "SelfSubjectReview",
+      "deprecated": [
+        1,
+        30
+      ],
+      "removed": [
+        1,
+        33
+      ]
+    },
+    {
+      "group": "authentication.k8s.io",
+      "version": "v1beta1",
+      "kind": "TokenReview",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "authentication.k8s.io",
+        "version": "v1",
+        "kind": "TokenReview"
+      }
+    },
+    {
+      "group": "authorization.k8s.io",
+      "version": "v1beta1",
+      "kind": "LocalSubjectAccessReview",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "authorization.k8s.io",
+        "version": "v1",
+        "kind": "LocalSubjectAccessReview"
+      }
+    },
+    {
+      "group": "authorization.k8s.io",
+      "version": "v1beta1",
+      "kind": "SelfSubjectAccessReview",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "authorization.k8s.io",
+        "version": "v1",
+        "kind": "SelfSubjectAccessReview"
+      }
+    },
+    {
+      "group": "authorization.k8s.io",
+      "version": "v1beta1",
+      "kind": "SelfSubjectRulesReview",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "authorization.k8s.io",
+        "version": "v1",
+        "kind": "SelfSubjectRulesReview"
+      }
+    },
+    {
+      "group": "authorization.k8s.io",
+      "version": "v1beta1",
+      "kind": "SubjectAccessReview",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "authorization.k8s.io",
+        "version": "v1",
+        "kind": "SubjectAccessReview"
+      }
+    },
+    {
+      "group": "batch",
+      "version": "v1beta1",
+      "kind": "CronJob",
+      "deprecated": [
+        1,
+        21
+      ],
+      "removed": [
+        1,
+        25
+      ],
+      "replacement": {
+        "group": "batch",
+        "version": "v1",
+        "kind": "CronJob"
+      }
+    },
+    {
+      "group": "certificates.k8s.io",
+      "version": "v1alpha1",
+      "kind": "ClusterTrustBundle",
+      "deprecated": [
+        1,
+        34
+      ],
+      "removed": [
+        1,
+        37
+      ]
+    },
+    {
+      "group": "certificates.k8s.io",
+      "version": "v1beta1",
+      "kind": "CertificateSigningRequest",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "certificates.k8s.io",
+        "version": "v1",
+        "kind": "CertificateSigningRequest"
+      }
+    },
+    {
+      "group": "certificates.k8s.io",
+      "version": "v1beta1",
+      "kind": "ClusterTrustBundle",
+      "deprecated": [
+        1,
+        37
+      ],
+      "removed": [
+        1,
+        40
+      ]
+    },
+    {
+      "group": "certificates.k8s.io",
+      "version": "v1beta1",
+      "kind": "PodCertificateRequest",
+      "deprecated": [
+        1,
+        38
+      ],
+      "removed": [
+        1,
+        41
+      ]
+    },
+    {
+      "group": "coordination.k8s.io",
+      "version": "v1alpha2",
+      "kind": "LeaseCandidate",
+      "deprecated": [
+        1,
+        35
+      ],
+      "removed": [
+        1,
+        38
+      ]
+    },
+    {
+      "group": "coordination.k8s.io",
+      "version": "v1beta1",
+      "kind": "Lease",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "coordination.k8s.io",
+        "version": "v1",
+        "kind": "Lease"
+      }
+    },
+    {
+      "group": "coordination.k8s.io",
+      "version": "v1beta1",
+      "kind": "LeaseCandidate",
+      "deprecated": [
+        1,
+        36
+      ],
+      "removed": [
+        1,
+        39
+      ]
+    },
+    {
+      "group": "discovery.k8s.io",
+      "version": "v1beta1",
+      "kind": "EndpointSlice",
+      "deprecated": [
+        1,
+        21
+      ],
+      "removed": [
+        1,
+        25
+      ],
+      "replacement": {
+        "group": "discovery.k8s.io",
+        "version": "v1",
+        "kind": "EndpointSlice"
+      }
+    },
+    {
+      "group": "events.k8s.io",
+      "version": "v1beta1",
+      "kind": "Event",
+      "deprecated": [
+        1,
+        22
+      ],
+      "removed": [
+        1,
+        25
+      ]
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "kind": "DaemonSet",
+      "deprecated": [
+        1,
+        8
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "apps",
+        "version": "v1",
+        "kind": "DaemonSet"
+      }
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "kind": "Deployment",
+      "deprecated": [
+        1,
+        8
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "apps",
+        "version": "v1",
+        "kind": "Deployment"
+      }
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "kind": "DeploymentRollback",
+      "deprecated": [
+        1,
+        8
+      ],
+      "removed": [
+        1,
+        16
+      ]
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "kind": "Ingress",
+      "deprecated": [
+        1,
+        14
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "networking.k8s.io",
+        "version": "v1",
+        "kind": "Ingress"
+      }
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "kind": "NetworkPolicy",
+      "deprecated": [
+        1,
+        9
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "networking.k8s.io",
+        "version": "v1",
+        "kind": "NetworkPolicy"
+      }
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "kind": "ReplicaSet",
+      "deprecated": [
+        1,
+        8
+      ],
+      "removed": [
+        1,
+        16
+      ],
+      "replacement": {
+        "group": "apps",
+        "version": "v1",
+        "kind": "ReplicaSet"
+      }
+    },
+    {
+      "group": "extensions",
+      "version": "v1beta1",
+      "kind": "Scale",
+      "deprecated": [
+        1,
+        2
+      ],
+      "removed": [
+        1,
+        16
+      ]
+    },
+    {
+      "group": "flowcontrol.apiserver.k8s.io",
+      "version": "v1beta1",
+      "kind": "FlowSchema",
+      "deprecated": [
+        1,
+        23
+      ],
+      "removed": [
+        1,
+        26
+      ],
+      "replacement": {
+        "group": "flowcontrol.apiserver.k8s.io",
+        "version": "v1beta3",
+        "kind": "FlowSchema"
+      }
+    },
+    {
+      "group": "flowcontrol.apiserver.k8s.io",
+      "version": "v1beta1",
+      "kind": "PriorityLevelConfiguration",
+      "deprecated": [
+        1,
+        23
+      ],
+      "removed": [
+        1,
+        26
+      ],
+      "replacement": {
+        "group": "flowcontrol.apiserver.k8s.io",
+        "version": "v1beta3",
+        "kind": "PriorityLevelConfiguration"
+      }
+    },
+    {
+      "group": "flowcontrol.apiserver.k8s.io",
+      "version": "v1beta2",
+      "kind": "FlowSchema",
+      "deprecated": [
+        1,
+        26
+      ],
+      "removed": [
+        1,
+        29
+      ],
+      "replacement": {
+        "group": "flowcontrol.apiserver.k8s.io",
+        "version": "v1beta3",
+        "kind": "FlowSchema"
+      }
+    },
+    {
+      "group": "flowcontrol.apiserver.k8s.io",
+      "version": "v1beta2",
+      "kind": "PriorityLevelConfiguration",
+      "deprecated": [
+        1,
+        26
+      ],
+      "removed": [
+        1,
+        29
+      ],
+      "replacement": {
+        "group": "flowcontrol.apiserver.k8s.io",
+        "version": "v1beta3",
+        "kind": "PriorityLevelConfiguration"
+      }
+    },
+    {
+      "group": "flowcontrol.apiserver.k8s.io",
+      "version": "v1beta3",
+      "kind": "FlowSchema",
+      "deprecated": [
+        1,
+        29
+      ],
+      "removed": [
+        1,
+        32
+      ],
+      "replacement": {
+        "group": "flowcontrol.apiserver.k8s.io",
+        "version": "v1",
+        "kind": "FlowSchema"
+      }
+    },
+    {
+      "group": "flowcontrol.apiserver.k8s.io",
+      "version": "v1beta3",
+      "kind": "PriorityLevelConfiguration",
+      "deprecated": [
+        1,
+        29
+      ],
+      "removed": [
+        1,
+        32
+      ],
+      "replacement": {
+        "group": "flowcontrol.apiserver.k8s.io",
+        "version": "v1",
+        "kind": "PriorityLevelConfiguration"
+      }
+    },
+    {
+      "group": "networking.k8s.io",
+      "version": "v1beta1",
+      "kind": "IPAddress",
+      "deprecated": [
+        1,
+        34
+      ],
+      "removed": [
+        1,
+        37
+      ]
+    },
+    {
+      "group": "networking.k8s.io",
+      "version": "v1beta1",
+      "kind": "Ingress",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "networking.k8s.io",
+        "version": "v1",
+        "kind": "Ingress"
+      }
+    },
+    {
+      "group": "networking.k8s.io",
+      "version": "v1beta1",
+      "kind": "IngressClass",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "networking.k8s.io",
+        "version": "v1",
+        "kind": "IngressClassList"
+      }
+    },
+    {
+      "group": "networking.k8s.io",
+      "version": "v1beta1",
+      "kind": "ServiceCIDR",
+      "deprecated": [
+        1,
+        34
+      ],
+      "removed": [
+        1,
+        37
+      ]
+    },
+    {
+      "group": "node.k8s.io",
+      "version": "v1beta1",
+      "kind": "RuntimeClass",
+      "deprecated": [
+        1,
+        22
+      ],
+      "removed": [
+        1,
+        25
+      ]
+    },
+    {
+      "group": "policy",
+      "version": "v1beta1",
+      "kind": "Eviction",
+      "deprecated": [
+        1,
+        22
+      ],
+      "removed": [
+        1,
+        25
+      ]
+    },
+    {
+      "group": "policy",
+      "version": "v1beta1",
+      "kind": "PodDisruptionBudget",
+      "deprecated": [
+        1,
+        21
+      ],
+      "removed": [
+        1,
+        25
+      ],
+      "replacement": {
+        "group": "policy",
+        "version": "v1",
+        "kind": "PodDisruptionBudget"
+      }
+    },
+    {
+      "group": "rbac.authorization.k8s.io",
+      "version": "v1beta1",
+      "kind": "ClusterRole",
+      "deprecated": [
+        1,
+        17
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "rbac.authorization.k8s.io",
+        "version": "v1",
+        "kind": "ClusterRole"
+      }
+    },
+    {
+      "group": "rbac.authorization.k8s.io",
+      "version": "v1beta1",
+      "kind": "ClusterRoleBinding",
+      "deprecated": [
+        1,
+        17
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "rbac.authorization.k8s.io",
+        "version": "v1",
+        "kind": "ClusterRoleBinding"
+      }
+    },
+    {
+      "group": "rbac.authorization.k8s.io",
+      "version": "v1beta1",
+      "kind": "Role",
+      "deprecated": [
+        1,
+        17
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "rbac.authorization.k8s.io",
+        "version": "v1",
+        "kind": "Role"
+      }
+    },
+    {
+      "group": "rbac.authorization.k8s.io",
+      "version": "v1beta1",
+      "kind": "RoleBinding",
+      "deprecated": [
+        1,
+        17
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "rbac.authorization.k8s.io",
+        "version": "v1",
+        "kind": "RoleBinding"
+      }
+    },
+    {
+      "group": "resource.k8s.io",
+      "version": "v1alpha3",
+      "kind": "DeviceTaintRule",
+      "deprecated": [
+        1,
+        36
+      ],
+      "removed": [
+        1,
+        39
+      ]
+    },
+    {
+      "group": "resource.k8s.io",
+      "version": "v1alpha3",
+      "kind": "ResourcePoolStatusRequest",
+      "deprecated": [
+        1,
+        39
+      ],
+      "removed": [
+        1,
+        42
+      ]
+    },
+    {
+      "group": "resource.k8s.io",
+      "version": "v1beta1",
+      "kind": "DeviceClass",
+      "deprecated": [
+        1,
+        35
+      ],
+      "removed": [
+        1,
+        38
+      ]
+    },
+    {
+      "group": "resource.k8s.io",
+      "version": "v1beta1",
+      "kind": "ResourceClaim",
+      "deprecated": [
+        1,
+        35
+      ],
+      "removed": [
+        1,
+        38
+      ]
+    },
+    {
+      "group": "resource.k8s.io",
+      "version": "v1beta1",
+      "kind": "ResourceClaimTemplate",
+      "deprecated": [
+        1,
+        35
+      ],
+      "removed": [
+        1,
+        38
+      ]
+    },
+    {
+      "group": "resource.k8s.io",
+      "version": "v1beta1",
+      "kind": "ResourceSlice",
+      "deprecated": [
+        1,
+        35
+      ],
+      "removed": [
+        1,
+        38
+      ]
+    },
+    {
+      "group": "resource.k8s.io",
+      "version": "v1beta2",
+      "kind": "DeviceClass",
+      "deprecated": [
+        1,
+        36
+      ],
+      "removed": [
+        1,
+        39
+      ]
+    },
+    {
+      "group": "resource.k8s.io",
+      "version": "v1beta2",
+      "kind": "DeviceTaintRule",
+      "deprecated": [
+        1,
+        39
+      ],
+      "removed": [
+        1,
+        42
+      ]
+    },
+    {
+      "group": "resource.k8s.io",
+      "version": "v1beta2",
+      "kind": "ResourceClaim",
+      "deprecated": [
+        1,
+        36
+      ],
+      "removed": [
+        1,
+        39
+      ]
+    },
+    {
+      "group": "resource.k8s.io",
+      "version": "v1beta2",
+      "kind": "ResourceClaimTemplate",
+      "deprecated": [
+        1,
+        36
+      ],
+      "removed": [
+        1,
+        39
+      ]
+    },
+    {
+      "group": "resource.k8s.io",
+      "version": "v1beta2",
+      "kind": "ResourceSlice",
+      "deprecated": [
+        1,
+        36
+      ],
+      "removed": [
+        1,
+        39
+      ]
+    },
+    {
+      "group": "scheduling.k8s.io",
+      "version": "v1beta1",
+      "kind": "PriorityClass",
+      "deprecated": [
+        1,
+        14
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "scheduling.k8s.io",
+        "version": "v1",
+        "kind": "PriorityClass"
+      }
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1alpha1",
+      "kind": "CSIStorageCapacity",
+      "deprecated": [
+        1,
+        21
+      ],
+      "removed": [
+        1,
+        24
+      ],
+      "replacement": {
+        "group": "storage.k8s.io",
+        "version": "v1beta1",
+        "kind": "CSIStorageCapacity"
+      }
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1alpha1",
+      "kind": "VolumeAttachment",
+      "deprecated": [
+        1,
+        21
+      ],
+      "removed": [
+        1,
+        24
+      ],
+      "replacement": {
+        "group": "storage.k8s.io",
+        "version": "v1",
+        "kind": "VolumeAttachment"
+      }
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1alpha1",
+      "kind": "VolumeAttributesClass",
+      "deprecated": [
+        1,
+        32
+      ],
+      "removed": [
+        1,
+        35
+      ],
+      "replacement": {
+        "group": "storage.k8s.io",
+        "version": "v1",
+        "kind": "VolumeAttributesClass"
+      }
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1beta1",
+      "kind": "CSIDriver",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "storage.k8s.io",
+        "version": "v1",
+        "kind": "CSIDriver"
+      }
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1beta1",
+      "kind": "CSINode",
+      "deprecated": [
+        1,
+        17
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "storage.k8s.io",
+        "version": "v1",
+        "kind": "CSINode"
+      }
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1beta1",
+      "kind": "CSIStorageCapacity",
+      "deprecated": [
+        1,
+        24
+      ],
+      "removed": [
+        1,
+        27
+      ],
+      "replacement": {
+        "group": "storage.k8s.io",
+        "version": "v1",
+        "kind": "CSIStorageCapacity"
+      }
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1beta1",
+      "kind": "StorageClass",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "storage.k8s.io",
+        "version": "v1",
+        "kind": "StorageClass"
+      }
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1beta1",
+      "kind": "VolumeAttachment",
+      "deprecated": [
+        1,
+        19
+      ],
+      "removed": [
+        1,
+        22
+      ],
+      "replacement": {
+        "group": "storage.k8s.io",
+        "version": "v1",
+        "kind": "VolumeAttachment"
+      }
+    },
+    {
+      "group": "storage.k8s.io",
+      "version": "v1beta1",
+      "kind": "VolumeAttributesClass",
+      "deprecated": [
+        1,
+        34
+      ],
+      "removed": [
+        1,
+        37
+      ],
+      "replacement": {
+        "group": "storage.k8s.io",
+        "version": "v1",
+        "kind": "VolumeAttributesClass"
+      }
+    },
+    {
+      "group": "storagemigration.k8s.io",
+      "version": "v1beta1",
+      "kind": "StorageVersionMigration",
+      "deprecated": [
+        1,
+        38
+      ],
+      "removed": [
+        1,
+        41
+      ]
+    }
+  ]
+}
