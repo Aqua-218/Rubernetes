@@ -20,7 +20,12 @@ Environment=MALLOC_ARENA_MAX=2
 # time-series head lives in memory); keep Puma to one worker.
 Environment=WEB_CONCURRENCY=0
 Environment=RAILS_MAX_THREADS=8
-ExecStart=/opt/rubies/3.4.11/bin/ruby bin/rails server -b 127.0.0.1 -p 3000 --no-log-to-stdout
+Environment=DASHBOARD_BIND=10.240.0.1
+# Bind to the host's address on the pod bridge so the ingress controller can
+# reach it (deploy/ingress.yaml points its EndpointSlice there); ufw keeps
+# the port off the public interfaces.  Set DASHBOARD_PASSWORD before you
+# publish it.
+ExecStart=/opt/rubies/3.4.11/bin/ruby bin/rails server -b ${DASHBOARD_BIND} -p 3000 --no-log-to-stdout
 Restart=always
 RestartSec=3
 TimeoutStopSec=30
