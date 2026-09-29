@@ -65,6 +65,8 @@ module Rubernetes
         @last_cycle = nil
         @batched_pods = 0
         @mutex = Mutex.new
+        @metrics = nil
+        @flushed = false
       end
 
       def enabled? = @enabled
