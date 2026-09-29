@@ -5689,6 +5689,27 @@ module Rubernetes
       # the pod exists.  The kubelet waits for the container in that case, so
       # the API server waits for the assignment that precedes it instead of
       # answering "not assigned to a node" for a pod that is about to be bound.
+      # registry/core/pod/rest/log.go: kube_apiserver_pod_logs_insecure_backend_total
+      # {usage} counts every pods/log request by how the kubelet is trusted
+      # ("enforce_tls", or "skip_tls_allowed" when the caller asked for
+      # insecureSkipTLSVerifyBackend), and _backend_tls_failure_total the
+      # ones that failed on the kubelet's certificate.
+      def record_pod_logs_usage(request)
+        insecure = %w[1 true yes].include?(request.query_value("insecureSkipTLSVerifyBackend").to_s.downcase)
+        @metrics&.increment("kube_apiserver_pod_logs_insecure_backend_total", {"usage" => insecure ? "skip_tls_allowed" : "enforce_tls"})
+      rescue StandardError
+        nil
+      end
+
+      def record_pod_logs_tls_failure(error)
+        message = error.message.to_s
+        return unless message.match?(/certificate verify failed|SSL_connect|tls: |x509/i)
+
+        @metrics&.increment("kube_apiserver_pod_logs_backend_tls_failure_total")
+      rescue StandardError
+        nil
+      end
+
       def await_scheduled_pod(route, request)
         pod = subresource_object(route)
         return pod unless route.subresource.to_s == "log"
