@@ -2691,6 +2691,24 @@ module Rubernetes
         raise Config::Error, "rubernetes-proxy backend did not reach ready state" unless backend.ready?
       end
 
+      # proxier_health.go: /healthz is 200 while the proxier synced since it
+      # was last asked to (or within the timeout of that request); /livez is
+      # 200 for a running proxy.  Both are counted
+      # (kubeproxy_proxy_healthz_total / kubeproxy_proxy_livez_total).
+      def proxier_health(path)
+        if path == "/livez"
+          code = started? ? 200 : 503
+          @proxy_metrics.livez(code)
+          return [code, code == 200 ? "ok" : "not running"]
+        end
+
+        healthy = started? && @proxy_metrics.healthy?
+        code = healthy ? 200 : 503
+        @proxy_metrics.healthz(code)
+        synced = @proxy_metrics.last_synced("IPv4")
+        [code, JSON.generate("lastUpdated" => synced ? Time.at(synced).utc.iso8601 : "", "currentTime" => Time.now.utc.iso8601)]
+      end
+
       def stop_components(reason:)
         @proxy&.stop_watch if @proxy&.respond_to?(:stop_watch)
         @proxy&.stop_health_check_responder if @proxy&.respond_to?(:stop_health_check_responder)
