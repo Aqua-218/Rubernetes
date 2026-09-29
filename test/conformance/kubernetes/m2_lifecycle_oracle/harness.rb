@@ -965,7 +965,7 @@ module M2LifecycleOracleHarness
   end
 
   def read_input
-    input = JSON.parse($stdin.read, create_additions: false, max_nesting: 512)
+    input = JSON.parse($stdin.read, max_nesting: 512)
     raise HarnessError, "harness input must be an object with request, node_image, and runtime" unless input.is_a?(Hash) && input["request"].is_a?(Hash) && input["runtime"].is_a?(Hash)
     input
   rescue JSON::ParserError => error
