@@ -39,6 +39,7 @@ module Rubernetes
           labels = {"namespace" => ref["namespace"].to_s, "pod" => ref["name"].to_s}
           add_cpu(samples["pod_cpu_usage_seconds_total"], pod["cpu"], labels)
           add_memory(samples["pod_memory_working_set_bytes"], pod["memory"], labels)
+          add_swap(samples["pod_swap_usage_bytes"], pod["swap"], labels)
           Array(pod["containers"]).each do |container|
             container_labels = {"container" => container["name"].to_s}.merge(labels)
             add_cpu(samples["container_cpu_usage_seconds_total"], container["cpu"], container_labels)
