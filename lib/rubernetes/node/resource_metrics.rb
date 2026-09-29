@@ -102,9 +102,11 @@ module Rubernetes
     # namespace.  Every container sample carries cAdvisor's millisecond
     # timestamp.  The machine_* gauges and cadvisor_version_info come with it.
     module CadvisorMetrics
-      DESCRIPTORS = [
-        ["machine_cpu_cores", "gauge", "Number of logical CPU cores."],
-        ["machine_memory_bytes", "gauge", "Amount of memory installed on the machine."],
+      # Descriptors in cAdvisor's order: [name, type, help].
+      CONTAINER_FAMILIES = [
+        ["container_last_seen", "gauge", "Last time a container was seen by the exporter"],
+        ["container_cpu_user_seconds_total", "counter", "Cumulative user cpu time consumed in seconds."],
+        ["container_cpu_system_seconds_total", "counter", "Cumulative system cpu time consumed in seconds."],
         ["container_cpu_usage_seconds_total", "counter", "Cumulative cpu time consumed in seconds."],
         ["container_memory_usage_bytes", "gauge", "Current memory usage in bytes, including all memory regardless of when it was accessed"],
         ["container_memory_working_set_bytes", "gauge", "Current working set in bytes."],
