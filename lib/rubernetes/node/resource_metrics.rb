@@ -121,6 +121,10 @@ module Rubernetes
         ["container_memory_max_usage_bytes", "gauge", "Maximum memory usage recorded in bytes"],
         ["container_memory_working_set_bytes", "gauge", "Current working set in bytes."],
         ["container_memory_failures_total", "counter", "Cumulative count of memory allocation failures."],
+        ["container_oom_events_total", "counter", "Count of out of memory events observed for the container"],
+        ["container_fs_inodes_free", "gauge", "Number of available Inodes"],
+        ["container_fs_inodes_total", "gauge", "Number of Inodes"],
+        ["container_fs_limit_bytes", "gauge", "Number of bytes that can be consumed by the container on this filesystem."],
         ["container_fs_usage_bytes", "gauge", "Number of bytes that are consumed by the container on this filesystem."],
         ["container_start_time_seconds", "gauge", "Start time of the container since unix epoch in seconds."],
         ["container_last_seen", "gauge", "Last time a container was seen by the exporter"]
