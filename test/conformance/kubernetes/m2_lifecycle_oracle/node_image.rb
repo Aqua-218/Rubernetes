@@ -77,7 +77,7 @@ module M2LifecycleOracleNodeImage
   end
 
   def parse_json(path)
-    JSON.parse(File.binread(path), create_additions: false, max_nesting: 128)
+    JSON.parse(File.binread(path), max_nesting: 128)
   rescue Errno::ENOENT => error
     raise BuildError, "required input is missing: #{path}: #{error.message}"
   rescue JSON::ParserError => error
