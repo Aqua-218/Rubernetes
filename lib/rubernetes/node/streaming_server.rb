@@ -733,6 +733,20 @@ module Rubernetes
       # /runningpods/: the Pods the runtime has containers for, as
       # kubecontainer.Pod.ToAPIPod renders them -- name, namespace, UID and
       # each running container's name and image.
+      # kubelet_container_log_filesystem_used_bytes{uid, namespace, pod, container}
+      # (log_metrics collector): the bytes each container's log directory uses.
+      def container_log_metrics(registry, pod)
+        ref = pod["podRef"] || {}
+        Array(pod["containers"]).each do |container|
+          logs = container["logs"]
+          next unless logs.is_a?(Hash) && logs["usedBytes"]
+
+          registry.register("kubelet_container_log_filesystem_used_bytes", type: :gauge) unless registry.registered?("kubelet_container_log_filesystem_used_bytes")
+          registry.set("kubelet_container_log_filesystem_used_bytes", logs["usedBytes"].to_i,
+                       {"uid" => ref["uid"].to_s, "namespace" => ref["namespace"].to_s, "pod" => ref["name"].to_s, "container" => container["name"].to_s})
+        end
+      end
+
       def running_pods
         records = @lifecycle.respond_to?(:records) ? @lifecycle.records.values : []
         items = records.filter_map do |record|
