@@ -222,6 +222,7 @@ module Rubernetes
             @fifo.requeue(key, deltas)
             raise
           else
+            observe_processing(key)
             @fifo.done(key)
             processed += 1
           end
