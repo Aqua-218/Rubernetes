@@ -239,7 +239,7 @@ module M2LifecycleOracleNodeImage
     cri_ids = sections.select { |name, _| name.start_with?("cri-inspect:") }.to_h do |name, lines|
       ref = name.delete_prefix("cri-inspect:")
       id = begin
-        JSON.parse(lines.join("\n"), create_additions: false, max_nesting: 64).dig("status", "id")
+        JSON.parse(lines.join("\n"), max_nesting: 64).dig("status", "id")
       rescue JSON::ParserError => error
         raise BuildError, "crictl inspecti #{ref} returned invalid JSON: #{error.message}"
       end
