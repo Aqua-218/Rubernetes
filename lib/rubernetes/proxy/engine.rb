@@ -725,6 +725,7 @@ module Rubernetes
         slice = value.is_a?(EndpointSlice) ? value : nil
         key = slice&.key
         removed = @endpoint_store.delete_endpoint_slice(value, namespace: namespace, name: name)
+        @metrics&.endpoint_changed if removed
         key ||= removed&.key
         compile_service(@endpoint_store.service(key)) if key && @endpoint_store.service(key)
         removed
