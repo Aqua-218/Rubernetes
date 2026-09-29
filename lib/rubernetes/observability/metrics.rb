@@ -236,6 +236,24 @@ module Rubernetes
           "job_controller_stale_sync_skips_total" => consistency,
           "replicaset_controller_stale_sync_skips_total" => consistency,
           "statefulset_controller_stale_sync_skips_total" => consistency
+        }.freeze,
+        "kube-scheduler" => {
+          "scheduler_permit_wait_duration_seconds" => "no Permit extension point: none of the default plugins implements Permit, so no Pod ever waits in it",
+          "scheduler_inflight_events" => no_queueing_hints,
+          "scheduler_queueing_hint_execution_duration_seconds" => no_queueing_hints,
+          "scheduler_podgroup_schedule_attempts_total" => no_pod_groups,
+          "scheduler_podgroup_scheduling_algorithm_duration_seconds" => no_pod_groups,
+          "scheduler_podgroup_scheduling_attempt_duration_seconds" => no_pod_groups
+        }.freeze,
+        "kube-proxy" => {
+          "kubeproxy_conntrack_reconciler_deleted_entries_total" => no_conntrack_reconciler,
+          "kubeproxy_conntrack_reconciler_sync_duration_seconds" => no_conntrack_reconciler,
+          "kubeproxy_iptables_ct_state_invalid_dropped_packets_total" => iptables_only,
+          "kubeproxy_iptables_localhost_nodeports_accepted_packets_total" => iptables_only,
+          "kubeproxy_sync_proxy_rules_iptables_last" => iptables_only,
+          "kubeproxy_sync_proxy_rules_iptables_partial_restore_failures_total" => iptables_only,
+          "kubeproxy_sync_proxy_rules_iptables_restore_failures_total" => iptables_only,
+          "kubeproxy_sync_proxy_rules_iptables_total" => iptables_only
         }.freeze
       }.freeze
 
