@@ -1114,7 +1114,7 @@ module M3Gate
       end
       if execution["stdout"].is_a?(String)
         begin
-          transcript = JSON.parse(execution["stdout"], create_additions: false, max_nesting: 512)
+          transcript = JSON.parse(execution["stdout"], max_nesting: 512)
           errors << "#{label} execution stdout is not bound to the returned oracle document" unless valid_digest?(document["external_document_sha256"]) && canonical_document_digest(transcript) == document["external_document_sha256"]
         rescue JSON::ParserError
           errors << "#{label} execution stdout is not valid JSON"
