@@ -259,6 +259,32 @@ module Rubernetes
         self
       end
 
+      # How many times the Pod was popped (queuedPodInfo.Attempts).
+      def pop_attempts(pod)
+        @mutex.synchronize { @pops.fetch(identity_key(pod), 0) }
+      end
+
+      # Seconds since the Pod's first pop (InitialAttemptTimestamp), nil when
+      # it was never popped.
+      def seconds_since_first_attempt(pod)
+        first = @mutex.synchronize { @first_pop[identity_key(pod)] }
+        first && [now_seconds - first, 0.0].max
+      end
+
+      # Unschedulable entries a PreEnqueue plugin gated.
+      def gated_size
+        @mutex.synchronize { @unschedulable.keys.count { |key| @gated[key] } }
+      end
+
+      # plugin name => number of unschedulable (not gated) Pods it rejected.
+      def unschedulable_plugins
+        @mutex.synchronize do
+          @unschedulable.keys.reject { |key| @gated[key] }.each_with_object(Hash.new(0)) do |key, counts|
+            @rejecting_plugins.fetch(key, []).each { |plugin| counts[plugin] += 1 }
+          end
+        end
+      end
+
       # Move every Pod whose backoff has expired back into the active queue.
       def flush_backoff(now = nil)
         @mutex.synchronize { flush_backoff_locked(now || now_seconds) }
