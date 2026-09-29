@@ -864,7 +864,7 @@ def build_validation_handler_fixture(codec:, mapping:, owner_type:, target_json:
   base = JSON.parse(JSON.generate(minimal_required_values(owner_type, types_by_schema, include_zero_references: true)))
   base["apiVersion"] = validation_owner_api_version(gvk)
   base["kind"] = gvk.fetch("kind")
-  target = JSON.parse(target_json, create_additions: false)
+  target = JSON.parse(target_json)
   base = validation_embed_fixture(base, mapping.fetch("target_path"), target, target_schema)
   fixture = mapping.fetch("fixture")
   # A nested descriptor keeps its embedded instance valid through the
