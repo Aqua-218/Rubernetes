@@ -1141,8 +1141,8 @@ class M1GateTest < Minitest::Test
       "body" => {},
       "ownership" => []
     }
-    expected = JSON.parse(JSON.generate(packet), create_additions: false)
-    actual = JSON.parse(JSON.generate(packet), create_additions: false)
+    expected = JSON.parse(JSON.generate(packet))
+    actual = JSON.parse(JSON.generate(packet))
     expected_digest = M1Gate.canonical_document_digest(expected)
     request = inventory.fetch("request")
     {
