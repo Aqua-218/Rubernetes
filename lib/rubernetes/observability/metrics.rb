@@ -257,6 +257,16 @@ module Rubernetes
         }.freeze
       }.freeze
 
+      # client-go families every component would serve but that measure
+      # machinery Rubernetes' client does not have.
+      SHARED_UNIMPLEMENTED = {
+        "rest_client_exec_plugin_call_total" => no_exec_plugins,
+        "rest_client_exec_plugin_certificate_rotation_age" => no_exec_plugins,
+        "rest_client_exec_plugin_policy_call_total" => no_exec_plugins,
+        "rest_client_exec_plugin_ttl_seconds" => no_exec_plugins,
+        "rest_client_rate_limiter_duration_seconds" => "no client-side rate limiter: the client has no QPS/burst token bucket, requests are never delayed before sending"
+      }.freeze
+
       # Every metric the inventory lists for +component+ ("kube-apiserver",
       # "kubelet", "kube-controller-manager", ...) that is not registered
       # yet; custom collectors and summaries are left to their collectors.
