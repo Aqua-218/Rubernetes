@@ -483,6 +483,14 @@ module Rubernetes
           return self unless metric && %i[histogram summary].include?(metric.type)
 
           key = label_key(labels)
+          if metric.type == :summary
+            entry = metric.values[key] ||= {samples: [], sum: 0.0, count: 0}
+            entry[:sum] += value.to_f
+            entry[:count] += 1
+            entry[:samples] << [Process.clock_gettime(Process::CLOCK_MONOTONIC), value.to_f]
+            entry[:samples].shift(entry[:samples].length - SUMMARY_MAX_SAMPLES) if entry[:samples].length > SUMMARY_MAX_SAMPLES
+            return self
+          end
           entry = metric.values[key] ||= {buckets: Hash.new(0), sum: 0.0, count: 0}
           entry[:sum] += value.to_f
           entry[:count] += 1
