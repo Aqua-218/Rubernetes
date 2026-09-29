@@ -120,6 +120,7 @@ module Rubernetes
       # scheduler_pod_scheduled_after_flush_total the first Pod scheduled
       # after the cache was flushed.
       def store(signature, hinted, chosen, ranked, cycle)
+        started = @clock.call
         @mutex.synchronize do
           @last_cycle = {cycle: cycle, chosen: chosen}
           if hinted && hinted == chosen
