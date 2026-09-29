@@ -1,0 +1,574 @@
+[
+  {
+    "name": "unknown_name",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "foo": "1"
+        }
+      }
+    }
+  },
+  {
+    "name": "storage_name",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "storage": "1Gi"
+        }
+      }
+    }
+  },
+  {
+    "name": "negative",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "cpu": "-1"
+        }
+      }
+    }
+  },
+  {
+    "name": "fraction_pods",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1500m"
+        }
+      }
+    }
+  },
+  {
+    "name": "extended_fraction",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "example.com/gpu": "500m"
+        }
+      }
+    }
+  },
+  {
+    "name": "requests_extended_fraction",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "requests.example.com/gpu": "1500m"
+        }
+      }
+    }
+  },
+  {
+    "name": "bad_qualified",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "example.com/-gpu": "1"
+        }
+      }
+    }
+  },
+  {
+    "name": "hugepages",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "requests.hugepages-2Mi": "2Mi",
+          "hugepages-1Gi": "1Gi"
+        }
+      }
+    }
+  },
+  {
+    "name": "besteffort_cpu",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "cpu": "1",
+          "pods": "2"
+        },
+        "scopes": [
+          "BestEffort"
+        ]
+      }
+    }
+  },
+  {
+    "name": "conflicting",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        },
+        "scopes": [
+          "BestEffort",
+          "NotBestEffort"
+        ]
+      }
+    }
+  },
+  {
+    "name": "bogus_scope",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        },
+        "scopes": [
+          "Bogus"
+        ]
+      }
+    }
+  },
+  {
+    "name": "vac_scope",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1",
+          "requests.storage": "1Gi"
+        },
+        "scopes": [
+          "VolumeAttributesClass"
+        ]
+      }
+    }
+  },
+  {
+    "name": "selector_ok",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        },
+        "scopeSelector": {
+          "matchExpressions": [
+            {
+              "scopeName": "PriorityClass",
+              "operator": "In",
+              "values": [
+                "high"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "selector_in_novalues",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        },
+        "scopeSelector": {
+          "matchExpressions": [
+            {
+              "scopeName": "PriorityClass",
+              "operator": "In"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "selector_exists_values",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        },
+        "scopeSelector": {
+          "matchExpressions": [
+            {
+              "scopeName": "PriorityClass",
+              "operator": "Exists",
+              "values": [
+                "x"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "selector_besteffort_in",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        },
+        "scopeSelector": {
+          "matchExpressions": [
+            {
+              "scopeName": "BestEffort",
+              "operator": "In",
+              "values": [
+                "x"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "selector_bad_op",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        },
+        "scopeSelector": {
+          "matchExpressions": [
+            {
+              "scopeName": "Terminating",
+              "operator": "Gt"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "selector_besteffort_cpu",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "cpu": "1"
+        },
+        "scopeSelector": {
+          "matchExpressions": [
+            {
+              "scopeName": "BestEffort",
+              "operator": "Exists"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "selector_conflict",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        },
+        "scopeSelector": {
+          "matchExpressions": [
+            {
+              "scopeName": "Terminating",
+              "operator": "Exists"
+            },
+            {
+              "scopeName": "NotTerminating",
+              "operator": "Exists"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "selector_unknown",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        },
+        "scopeSelector": {
+          "matchExpressions": [
+            {
+              "scopeName": "Nope",
+              "operator": "Exists"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "status_bad",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        }
+      },
+      "status": {
+        "hard": {
+          "pods": "1"
+        },
+        "used": {
+          "foo": "-1"
+        }
+      }
+    }
+  },
+  {
+    "name": "update_scopes",
+    "mode": "update",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        },
+        "scopes": [
+          "Terminating"
+        ]
+      }
+    },
+    "old": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        },
+        "scopes": [
+          "NotTerminating"
+        ]
+      }
+    }
+  },
+  {
+    "name": "update_same",
+    "mode": "update",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "2"
+        },
+        "scopes": [
+          "Terminating"
+        ]
+      }
+    },
+    "old": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        },
+        "scopes": [
+          "Terminating"
+        ]
+      }
+    }
+  },
+  {
+    "name": "status_update",
+    "mode": "status",
+    "new": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        }
+      },
+      "status": {
+        "used": {
+          "pods": "-1",
+          "bogus": "1"
+        }
+      }
+    },
+    "old": {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "q",
+        "namespace": "ns",
+        "resourceVersion": "1"
+      },
+      "spec": {
+        "hard": {
+          "pods": "1"
+        }
+      }
+    }
+  }
+]
