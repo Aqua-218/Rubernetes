@@ -136,6 +136,9 @@ module Tsdb
       @wal = nil
       @wal_path = nil
       replay_wal
+      return if @readonly
+
+      remove_unreferenced_blocks
       open_wal
     end
 
