@@ -218,6 +218,8 @@ module Rubernetes
           if parked
             @backoff.delete(key)
             @unschedulable[key] = item
+            @gated.delete(key)
+            incoming(EVENT_ATTEMPT_FAILURE, "unschedulable")
           else
             @unschedulable.delete(key)
             @backoff[key] = [item, now_seconds + backoff_delay(attempts)]
