@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "suite": "m3-kubernetes-workload-oracle",
+  "kubernetes": {
+    "version": "v1.36.2",
+    "source_commit": "24e2b02af5543d7910c2bb074c7264df5a8f0467",
+    "lock_path": "third_party/locks/kubernetes-v1.36.2.json",
+    "source_root_env": "RUBERNETES_M3_KUBERNETES_SOURCE_ROOT"
+  },
+  "request": {
+    "stream_version": 1,
+    "case_count": 20,
+    "workload_types": ["deployment", "statefulset", "daemonset", "job", "cronjob"],
+    "operations": ["rollout", "rollback", "scale", "delete"],
+    "independent_required": true,
+    "deadline_required": true,
+    "stream_digest_required": true
+  },
+  "execution": {
+    "kube_apiserver_image_digest_pinned": true,
+    "etcd_image_digest_pinned": true,
+    "controller_manager_source_build_required": true,
+    "controller_manager_image_used": false,
+    "network_isolated": true
+  },
+  "output": {
+    "required_provenance": [
+      "runner_sha256",
+      "source",
+      "build",
+      "image",
+      "input",
+      "output"
+    ],
+    "required_observable_fields": [
+      "resource",
+      "owned_resources",
+      "status",
+      "conditions",
+      "events",
+      "request_trace",
+      "deadline"
+    ],
+    "raw_and_canonical_digests_required": true,
+    "expected_fixtures_allowed": false,
+    "self_comparison_allowed": false
+  }
+}
