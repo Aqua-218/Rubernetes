@@ -1755,6 +1755,7 @@ module Rubernetes
         changed = @mutex.synchronize do
           key = cluster_key(object)
           previous = @cluster_objects[kind][key]
+          added = previous.nil? && !deleted
           if deleted
             @cluster_objects[kind].delete(key)
           else
