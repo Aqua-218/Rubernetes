@@ -32,7 +32,33 @@ module Prom
     end
 
     def discover
-      apiserver_targets + kubelet_targets + pod_targets + service_targets
+      apiserver_targets + control_plane_targets + kubelet_targets + pod_targets + service_targets
+    end
+
+    # The scheduler, controller manager and proxies serve /metrics on the
+    # loopback port their config's `serving` section names (cluster.rb turns
+    # it on); the scheduler also serves /metrics/resources.
+    CONTROL_PLANE_JOBS = {
+      "rubernetes-scheduler" => [["kube-scheduler", "/metrics"], ["kube-scheduler-resources", "/metrics/resources"]],
+      "rubernetes-controller-manager" => [["kube-controller-manager", "/metrics"]],
+      "rubernetes-proxy" => [["kube-proxy", "/metrics"]]
+    }.freeze
+
+    def control_plane_targets
+      Array(@cluster_json["processes"]).flat_map do |process|
+        jobs = CONTROL_PLANE_JOBS[process["executable"]]
+        next [] unless jobs
+
+        host, port = serving_address(process["config"], process["executable"])
+        next [] if port.nil?
+
+        labels = {"process" => process["name"].to_s}
+        labels["node"] = process["name"].to_s.delete_prefix("proxy-") if process["executable"] == "rubernetes-proxy"
+        jobs.map do |job, path|
+          url = "http://#{format_host(host)}:#{port}#{path}"
+          Target.new(job: job, instance: "#{format_host(host)}:#{port}", labels: labels, url: url, fetch: -> { @http.call(url) })
+        end
+      end
     end
 
     def apiserver_targets
