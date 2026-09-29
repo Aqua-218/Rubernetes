@@ -347,6 +347,14 @@ module Rubernetes
         # setMemoryStats / setCPUStats inputs): cpu.stat, memory.stat and
         # memory.current, of the handle's cgroup or (+pod: true+) of the Pod
         # cgroup above it.  Missing files are nil.
+        # The cgroup's live accounting, as the Summary API and the kubelet's
+        # cAdvisor endpoint read it: cpu.stat, memory.stat and the scalar
+        # files cAdvisor's container metrics are built from (limits, swap,
+        # peak, memory.events, pids, io.stat), plus the cgroup's path
+        # relative to the root (cAdvisor's container id).
+        SCALAR_FILES = %w[memory.current memory.max memory.low memory.min memory.high memory.peak
+                          memory.swap.current memory.swap.max pids.current pids.max cpu.weight].freeze
+
         def usage(handle, pod: false)
           target = handle_path(handle)
           target = File.dirname(target) if pod
