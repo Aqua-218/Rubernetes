@@ -42,4 +42,12 @@ class ComponentClientMetricsTest < Minitest::Test
     assert_match(/rest_client_request_duration_seconds_count\{host="10.0.0.1:6443",verb="GET"\} \d+/, text)
     assert_match(/rest_client_response_size_bytes_bucket\{host="10.0.0.1:6443",verb="GET",le="1024"\} \d+/, text)
   end
+
+  def test_dns_resolution_is_timed_per_host
+    uri = URI("https://api.example.test:6443/api")
+    Rubernetes::Client::RestClientMetrics.dns_resolution(uri, 0.003)
+    text = Rubernetes::Observability::Metrics.new(apiserver: false).render
+    assert_match(/rest_client_dns_resolution_duration_seconds_count\{host="api.example.test:6443"\} \d+/, text)
+    assert_match(/rest_client_dns_resolution_duration_seconds_bucket\{host="api.example.test:6443",le="0.005"\} \d+/, text)
+  end
 end
