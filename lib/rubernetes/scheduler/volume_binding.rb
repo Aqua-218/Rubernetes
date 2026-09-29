@@ -119,6 +119,7 @@ module Rubernetes
         @mutex.synchronize { state.by_node[node.name] = podvolumes }
         true
       rescue BindingError => error
+        @metrics&.volume_scheduling_stage_error("predicate")
         Filters::Helpers.reject(error.message, code: "Error")
       end
 
