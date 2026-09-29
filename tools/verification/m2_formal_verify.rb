@@ -181,7 +181,6 @@ module Rubernetes
           JSON.parse(
             File.binread(@proof_profile).force_encoding(Encoding::UTF_8),
             object_class: DuplicateCheckingHash,
-            create_additions: false,
             allow_nan: false,
             max_nesting: 100
           )
