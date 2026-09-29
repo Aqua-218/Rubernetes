@@ -1,0 +1,26 @@
+<% content_for :title, "Graph" %>
+<h1>Expression browser</h1>
+<div data-graph-panel data-tab="<%= @tab %>">
+  <form class="graph-form" onsubmit="return false">
+    <textarea name="expr" placeholder="Expression (press Enter for a query, Shift+Enter for a new line)" list="metric-names"><%= @expression %></textarea>
+    <button type="submit" class="primary">Execute</button>
+    <select class="refresh" title="auto refresh"><option value="">Off</option><option value="5s">5s</option><option value="15s">15s</option><option value="30s">30s</option><option value="1m">1m</option></select>
+  </form>
+  <details><summary>Metric names (<%= @metric_names.length %>)</summary>
+    <div class="legend"><% @metric_names.each do |name| %><span class="item" onclick="const t=this.closest('[data-graph-panel]').querySelector('textarea');t.value=this.textContent;t.focus()"><%= name %></span><% end %></div>
+  </details>
+  <div class="tabs">
+    <button type="button" data-tab="table">Table</button>
+    <button type="button" data-tab="graph">Graph</button>
+  </div>
+  <div class="toolbar range-controls">
+    <span class="range-picker">
+      <% %w[5m 15m 1h 6h 1d 7d].each do |r| %><button type="button" data-range="<%= r %>"><%= r %></button><% end %>
+    </span>
+    <label>Range <input name="range" value="<%= @range %>" size="6"></label>
+    <label>Step <input name="step" placeholder="auto" size="6"></label>
+    <label>End <input name="end" type="datetime-local" step="1"></label>
+  </div>
+  <div class="graph-status muted"></div>
+  <div class="graph-output"></div>
+</div>
