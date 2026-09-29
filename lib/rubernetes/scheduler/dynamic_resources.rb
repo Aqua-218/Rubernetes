@@ -624,6 +624,7 @@ module Rubernetes
         @metrics&.resourceclaim_create("success")
         created
       rescue StandardError => error
+        @metrics&.resourceclaim_create("failure")
         raise PluginError.new("create ResourceClaim for extended resources #{pod.namespace}/#{pod.name}: #{error.message}",
                               plugin: NAME, phase: :pre_bind)
       end
