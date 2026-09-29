@@ -113,7 +113,7 @@ module M3ControlPlaneChaosRunner
   end
 
   def parse_request
-    request = JSON.parse($stdin.read, create_additions: false, max_nesting: 512)
+    request = JSON.parse($stdin.read, max_nesting: 512)
     raise ArgumentError, "M3 chaos request must be an object" unless request.is_a?(Hash)
 
     missing = REQUIRED_REQUEST_KEYS.reject { |key| request.key?(key) }
