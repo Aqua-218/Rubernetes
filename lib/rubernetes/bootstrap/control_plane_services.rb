@@ -2383,7 +2383,15 @@ module Rubernetes
         binding = {"apiVersion" => "v1", "kind" => "Binding",
                    "metadata" => {"name" => pod.name, "namespace" => pod.namespace, "uid" => pod.uid.to_s.empty? ? nil : pod.uid}.compact,
                    "target" => {"apiVersion" => "v1", "kind" => "Node", "name" => node.name}}
-        response = bind_through_api(binding, pod, node)
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        begin
+          response = bind_through_api(binding, pod, node)
+        rescue StandardError
+          @scheduler_metrics&.async_call(Scheduler::Metrics::CALL_POD_BINDING, "error", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+          raise
+        end
+        @scheduler_metrics&.async_call(Scheduler::Metrics::CALL_POD_BINDING, "success", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+        forget_assumed(key)
         @effect_journal&.record(effect_type: "bind", reconcile_key: "v1/pods/#{pod.namespace}/#{pod.name}",
                                 action: :bind, object: assumed.to_h, response: response,
                                 extra: {"request_body" => binding})
