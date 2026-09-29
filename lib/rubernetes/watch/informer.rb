@@ -30,6 +30,7 @@ module Rubernetes
         @clock = clock
         @sleeper = sleeper
         @resource_name = resource.respond_to?(:kind) ? resource.kind.to_s : resource.to_s
+        @metric_labels = informer_metric_labels(resource, name)
         @handler_stats = {seconds: 0.0, events: 0, max: 0.0}
         @resync_period = Float(resync_period)
         raise ArgumentError, "resync_period must be non-negative" if @resync_period.negative? || !@resync_period.finite?
