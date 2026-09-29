@@ -620,11 +620,22 @@ module Rubernetes
       # accounting when the stats provider has runtime access, else from
       # the Summary.
       def cadvisor_metrics
-        summary = begin
-          @stats_provider.respond_to?(:summary) ? @stats_provider.summary : {"pods" => []}
-        rescue StandardError
-          {"pods" => []}
-        end
+        body = if @stats_provider.respond_to?(:raw_pod_usages)
+                 CadvisorMetrics.render(@stats_provider.raw_pod_usages, machine: machine_info)
+               else
+                 summary = begin
+                   @stats_provider.respond_to?(:summary) ? @stats_provider.summary : {"pods" => []}
+                 rescue StandardError
+                   {"pods" => []}
+                 end
+                 CadvisorMetrics.render(summary, machine: machine_info, images: container_images)
+               end
+        [200, {"content-type" => Observability::Metrics::CONTENT_TYPE}, [body]]
+      rescue StandardError => error
+        [500, {"content-type" => "text/plain"}, ["failed to render cadvisor metrics: #{error.message}\n"]]
+      end
+
+      def container_images
         images = {}
         records = @lifecycle.respond_to?(:records) ? @lifecycle.records.values : []
         records.each do |record|
