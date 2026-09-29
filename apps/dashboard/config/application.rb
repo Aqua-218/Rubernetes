@@ -41,5 +41,17 @@ module Dashboard
 
     # Don't generate system test files.
     config.generators.system_tests = nil
+
+    # Host authorization: the Ingress forwards the public name
+    # (dashboard.<domain>) as the Host header, which the development default
+    # (localhost and IP literals) would reject.  DASHBOARD_HOSTS lists the
+    # names, empty disables the check (see Dashboard::Config.allowed_hosts).
+    hosts = Dashboard::Config.allowed_hosts
+    if hosts.empty?
+      config.hosts.clear
+    else
+      config.hosts.concat(hosts)
+    end
+    config.host_authorization = {exclude: ->(request) { request.path == "/up" }}
   end
 end
