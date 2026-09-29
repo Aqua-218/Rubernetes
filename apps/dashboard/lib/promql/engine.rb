@@ -20,6 +20,9 @@ module Promql
     # One series in a result.  `metric` is the label set (metric name in
     # __name__ when present).  Instant results carry `point`; matrices `points`.
     Series = Struct.new(:metric, :point, :points, keyword_init: true) do
+      # The grouping key: `by`/`on` keep only the listed labels (which may
+      # name __name__), `without`/`ignoring` drop the listed labels and the
+      # metric name, plain one-to-one matching ignores the metric name.
       def signature(labels = nil, without: false, on: false)
         source = metric.reject { |k, _| k == "__name__" }
         source = if on
