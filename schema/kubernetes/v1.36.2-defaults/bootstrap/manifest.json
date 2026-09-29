@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "oracle": {
+    "kube_apiserver_image": "registry.k8s.io/kube-apiserver@sha256:0535dde1a857029209d7effe681c919a1580d2eb24eda4bd122d24e9a372e1b8",
+    "etcd_image": "registry.k8s.io/etcd@sha256:397189418d1a00e500c0605ad18d1baf3b541a1004d768448c367e48071622e5",
+    "version": null
+  },
+  "profiles": {
+    "default": [],
+    "rbac": [
+      "--authorization-mode=Node,RBAC"
+    ],
+    "all-beta": [
+      "--feature-gates=AllBeta=true"
+    ],
+    "alpha-apis": [
+      "--feature-gates=MutatingAdmissionPolicy=true,ClusterTrustBundle=true,PodCertificateRequest=true,CoordinatedLeaderElection=true,MultiCIDRServiceAllocator=true,DynamicResourceAllocation=true,GenericWorkload=true,VolumeAttributesClass=true,StorageVersionMigrator=true",
+      "--runtime-config=api/all=true"
+    ]
+  },
+  "files": {
+    "flowschemas.json": {
+      "sha256": "08fa62d4de3a4d0bffea925ed0557633830655e106a77e32d775afed9ea9eac3",
+      "items": 11
+    },
+    "prioritylevelconfigurations.json": {
+      "sha256": "ddc347f43009efcdb3de8c7086c1117ff45b801301ade884df215d327c57db8c",
+      "items": 8
+    },
+    "namespaces.json": {
+      "sha256": "841ab2e8daa72226a6c3159808abf0ac75fcd1663a65d0f3e62854ccd68fe2f2",
+      "items": 4
+    },
+    "discovery-default.json": {
+      "sha256": "466cc2f51ddb89303f57d46afdcd09f663c497a54592df558d55f98165bf82d1",
+      "items": 25
+    },
+    "clusterroles.json": {
+      "sha256": "f24c66a6e2d09842d3d065180f79f1168bc4478017439756dc9328833fa47a0e",
+      "items": 69
+    },
+    "clusterrolebindings.json": {
+      "sha256": "494922a5f04208d2ec19db08ea72463694b60e2ead80fff39d80d6075a717155",
+      "items": 50
+    },
+    "roles.json": {
+      "sha256": "db4cddba47084b1093f15812b37ab3d87f8515265b709ebe799af1777f5f73e2",
+      "items": 7
+    },
+    "rolebindings.json": {
+      "sha256": "d9480c2a256c7f114f902386c9b30df8b5e1d98cc894a960a16a5d84ca93ceba",
+      "items": 7
+    },
+    "discovery-all-beta.json": {
+      "sha256": "466cc2f51ddb89303f57d46afdcd09f663c497a54592df558d55f98165bf82d1",
+      "items": 25
+    },
+    "discovery-alpha-apis.json": {
+      "sha256": "e772d9ab91533090b52e43531bd83df784b75ce918cb253275c909bde033ccf2",
+      "items": 39
+    }
+  }
+}
