@@ -261,7 +261,7 @@ module Rubernetes
           return :contended
         end
         @leader_transitions = candidate["spec"]["leaderTransitions"]
-        become_leader(now, candidate)
+        become_leader(now, stored_record(stored, candidate))
         :acquired
       end
 
