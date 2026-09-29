@@ -143,6 +143,7 @@ module Rubernetes
         state.all_bound = assume(pod, node.name, podvolumes, data)
         true
       rescue BindingError => error
+        @metrics&.volume_scheduling_stage_error("assume")
         Filters::Helpers.reject(error.message, code: "Error")
       end
 
