@@ -18,6 +18,11 @@ require "rails/test_unit/railtie"
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
 
+# The dashboard talks to the cluster through the Rubernetes client library
+# that lives two directories up; no gem build is involved.
+RUBERNETES_LIB = File.expand_path("../../../lib", __dir__)
+$LOAD_PATH.unshift(RUBERNETES_LIB) unless $LOAD_PATH.include?(RUBERNETES_LIB)
+
 module Dashboard
   class Application < Rails::Application
     # Initialize configuration defaults for originally generated Rails version.
