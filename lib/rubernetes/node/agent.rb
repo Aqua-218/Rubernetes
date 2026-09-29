@@ -355,6 +355,10 @@ module Rubernetes
                                               image_root: image_root, allocatable_memory: quantity_bytes(@allocatable["memory"]),
                                               volume_stats: volume.respond_to?(:csi_volume_stats) ? volume.method(:csi_volume_stats) : nil)
         end
+        if @stats_provider.respond_to?(:metrics_observer=) && @kubelet_metrics
+          kubelet_metrics = @kubelet_metrics
+          @stats_provider.metrics_observer = ->(source, seconds) { kubelet_metrics.volume_metric_collection(source, seconds) }
+        end
         # Image garbage collection over the resolver's unpacked images.
         image_gc = Helpers.string_keys(image_gc || {})
         @image_gc_manager = nil
