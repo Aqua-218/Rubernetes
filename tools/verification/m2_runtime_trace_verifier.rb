@@ -97,7 +97,7 @@ module Rubernetes
         def load_file(path)
           content = File.binread(path)
           begin
-            JSON.parse(content, create_additions: false)
+            JSON.parse(content)
           rescue JSON::ParserError
             lines = content.each_line.filter_map do |line|
               next if line.strip.empty?
