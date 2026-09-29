@@ -345,6 +345,20 @@ module Rubernetes
           # "validating" for validating ones (webhook dispatchers).
           def webhook_type = is_a?(MutatingAdmissionWebhook) ? "admit" : "validating"
 
+          # x509 metrics (k8s.io/apiserver/pkg/util/x509metrics): a webhook
+          # serving certificate without Subject Alternative Names, or signed
+          # with SHA-1, counted per call made over it.
+          def record_x509(http)
+            registry = metrics
+            certificate = http.respond_to?(:peer_cert) ? http.peer_cert : nil
+            return unless registry && certificate
+
+            registry.increment("apiserver_webhooks_x509_missing_san_total") unless ::Rubernetes::Observability::Metrics.certificate_has_san?(certificate)
+            registry.increment("apiserver_webhooks_x509_insecure_sha1_total") if ::Rubernetes::Observability::Metrics.certificate_sha1?(certificate)
+          rescue StandardError
+            nil
+          end
+
           # ObserveWebhook / ObserveWebhookRejection / ObserveWebhookFailOpen.
           def record_webhook(hook, attributes, started, code:, rejected:, error_type: nil, rejection_code: nil, fail_open: false)
             registry = metrics
