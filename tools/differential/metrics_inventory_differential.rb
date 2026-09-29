@@ -237,7 +237,7 @@ module MetricsInventoryDifferential
       return scrape_report(scrapes, insecure: argv.include?("--insecure"), token: token)
     end
 
-    components = argv.include?("--component") ? [argv[argv.index("--component") + 1]] : %w[kube-apiserver kube-controller-manager]
+    components = argv.include?("--component") ? [argv[argv.index("--component") + 1]] : COMPONENTS
     static_report(components, unwired_only: argv.include?("--unwired-only"))
     0
   end
