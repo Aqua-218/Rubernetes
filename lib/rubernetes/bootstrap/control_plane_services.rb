@@ -1843,6 +1843,29 @@ module Rubernetes
         end
       end
 
+      # scheduler_event_handling_duration_seconds{event}: one informer
+      # handler, labelled as framework.ClusterEvent.Label() spells the event.
+      def timed_event(event)
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        yield
+      ensure
+        @scheduler_metrics&.event_handled(event, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+      end
+
+      # Which part of a Node changed, in ActionType terms.
+      def node_event(previous, node)
+        return "NodeAdd" if previous.nil?
+
+        before = node_scheduling_view(previous)
+        after = node_scheduling_view(node)
+        return "NodeUpdateNodeLabel" if before[1] != after[1]
+        return "NodeUpdateNodeAllocatable" if before[2] != after[2] || before[3] != after[3]
+        return "NodeUpdateNodeCondition" if before[4] != after[4]
+        return "NodeUpdateNodeTaint" if before[0] != after[0]
+
+        "NodeUpdate"
+      end
+
       def prime_informers!
         nodes, = @node_informer.reflector.list!
         pods, = @pod_informer.reflector.list!
