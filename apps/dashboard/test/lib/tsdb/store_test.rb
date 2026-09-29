@@ -125,7 +125,8 @@ class Tsdb::StoreTest < ActiveSupport::TestCase
     store = open_store(block_range_ms: 1000)
     20.times { |i| store.append(labels("shared"), i * 100, i.to_f) }
     store.flush
-    reader = Tsdb::Store.new(@dir)
+    assert_raises(Tsdb::Store::AlreadyOpen) { Tsdb::Store.new(@dir) }
+    reader = Tsdb::Store.new(@dir, readonly: true)
     begin
       series = reader.select_series([M.new(name: "__name__", op: "=", value: "shared")]).first
       assert_equal 20, reader.samples(series.id, 0, 10_000).length
