@@ -1,0 +1,63 @@
+# Expose the dashboard (running on the host) through the cluster's ingress
+# controller: a selector-less Service, an EndpointSlice pointing at the host
+# address on the pod bridge, and an Ingress with TLS from cert-manager.
+# Apply with: kubectl apply -f apps/dashboard/deploy/ingress.yaml
+# Change the host and the endpoint address for your environment.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rubernetes-dashboard
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: rubernetes-dashboard
+spec:
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: dashboard-host
+  namespace: rubernetes-dashboard
+  labels:
+    kubernetes.io/service-name: dashboard
+addressType: IPv4
+ports:
+- name: http
+  port: 3000
+  protocol: TCP
+endpoints:
+- addresses: ["10.240.0.1"]
+  conditions:
+    ready: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dashboard
+  namespace: rubernetes-dashboard
+  annotations:
+    cert-manager.io/cluster-issuer: selfsigned
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts: [dashboard.dev.provn-vm.jp]
+    secretName: dashboard-tls
+  rules:
+  - host: dashboard.dev.provn-vm.jp
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: dashboard
+            port:
+              number: 3000
