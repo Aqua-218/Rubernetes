@@ -70,7 +70,7 @@ module Promql
     # Instant query.  `time_ms` defaults to now.  Returns a Result.
     def query(expression, time_ms = nil)
       time_ms ||= now_ms
-      ast = expression.is_a?(String) ? Parser.parse(expression) : expression
+      ast = expression.is_a?(String) ? Promql::Parser.parse(expression) : expression
       context = Context.new(self, start_ms: time_ms, end_ms: time_ms, step_ms: 0)
       value = eval_node(ast, time_ms, context)
       wrap_instant(value, time_ms)
@@ -83,7 +83,7 @@ module Promql
       raise EvalError, "end must not be before start" if end_ms < start_ms
       raise EvalError, "exceeded maximum resolution of 11,000 points per timeseries" if (end_ms - start_ms) / step_ms > 11_000
 
-      ast = expression.is_a?(String) ? Parser.parse(expression) : expression
+      ast = expression.is_a?(String) ? Promql::Parser.parse(expression) : expression
       context = Context.new(self, start_ms: start_ms, end_ms: end_ms, step_ms: step_ms)
       raise EvalError, "invalid expression type #{ast.type} for range query, must be Scalar or instant Vector" unless %i[scalar vector].include?(ast.type)
 
