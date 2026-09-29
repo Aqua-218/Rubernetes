@@ -191,7 +191,7 @@ module M2LifecycleOracleRegistryImage
       http.request(Net::HTTP::Get.new(uri))
     end
     raise FetchError, "token endpoint returned #{response.code}" unless response.is_a?(Net::HTTPSuccess)
-    document = JSON.parse(response.body, create_additions: false)
+    document = JSON.parse(response.body)
     token = document["token"] || document["access_token"]
     raise FetchError, "token endpoint returned no token" unless token.is_a?(String) && !token.empty?
     token
