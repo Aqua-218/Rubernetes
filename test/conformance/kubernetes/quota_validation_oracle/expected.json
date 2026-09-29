@@ -1,0 +1,72 @@
+{
+  "bad_qualified": [
+    "spec.hard[example.com/-gpu]: Invalid value: \"example.com/-gpu\": name part must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character (e.g. 'MyName',  or 'my.name',  or '123-abc', regex used for validation is '([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]')"
+  ],
+  "besteffort_cpu": [
+    "spec.scopes: Invalid value: [\"BestEffort\"]: unsupported scope applied to resource"
+  ],
+  "bogus_scope": [
+    "spec.scopes: Invalid value: [\"Bogus\"]: unsupported scope"
+  ],
+  "conflicting": [
+    "spec.scopes: Invalid value: [\"BestEffort\",\"NotBestEffort\"]: conflicting scopes"
+  ],
+  "extended_fraction": [
+    "spec.hard[example.com/gpu]: Invalid value: \"500m\": must be an integer"
+  ],
+  "fraction_pods": [
+    "spec.hard[pods]: Invalid value: \"1500m\": must be an integer"
+  ],
+  "hugepages": null,
+  "negative": [
+    "spec.hard[cpu]: Invalid value: \"-1\": must be greater than or equal to 0"
+  ],
+  "requests_extended_fraction": null,
+  "selector_bad_op": [
+    "spec.scopeSelector.matchExpressions.operator: Invalid value: \"Gt\": must be 'Exists' when scope is any of ResourceQuotaScopeTerminating, ResourceQuotaScopeNotTerminating, ResourceQuotaScopeBestEffort, ResourceQuotaScopeNotBestEffort or ResourceQuotaScopeCrossNamespacePodAffinity",
+    "spec.scopeSelector.matchExpressions.operator: Invalid value: \"Gt\": not a valid selector operator"
+  ],
+  "selector_besteffort_cpu": [
+    "spec.scopeSelector.matchExpressions: Invalid value: {\"MatchExpressions\":[{\"ScopeName\":\"BestEffort\",\"Operator\":\"Exists\",\"Values\":null}]}: unsupported scope applied to resource"
+  ],
+  "selector_besteffort_in": [
+    "spec.scopeSelector.matchExpressions.operator: Invalid value: \"In\": must be 'Exists' when scope is any of ResourceQuotaScopeTerminating, ResourceQuotaScopeNotTerminating, ResourceQuotaScopeBestEffort, ResourceQuotaScopeNotBestEffort or ResourceQuotaScopeCrossNamespacePodAffinity"
+  ],
+  "selector_conflict": [
+    "spec.scopeSelector.matchExpressions: Invalid value: null: conflicting scopes"
+  ],
+  "selector_exists_values": [
+    "spec.scopeSelector.matchExpressions.values: Invalid value: [\"x\"]: must be no value when `operator` is 'Exist' or 'DoesNotExist' for scope selector"
+  ],
+  "selector_in_novalues": [
+    "spec.scopeSelector.matchExpressions.values: Required value: must be at least one value when `operator` is 'In' or 'NotIn' for scope selector"
+  ],
+  "selector_ok": null,
+  "selector_unknown": [
+    "spec.scopeSelector.matchExpressions.scopeName: Invalid value: \"Nope\": unsupported scope"
+  ],
+  "status_bad": [
+    "status.used[foo]: Invalid value: \"-1\": must be greater than or equal to 0",
+    "status.used[foo]: Invalid value: \"foo\": must be a standard resource for quota",
+    "status.used[foo]: Invalid value: \"foo\": must be a standard resource type or fully qualified"
+  ],
+  "status_update": [
+    "status.used[bogus]: Invalid value: \"bogus\": must be a standard resource for quota",
+    "status.used[bogus]: Invalid value: \"bogus\": must be a standard resource type or fully qualified",
+    "status.used[pods]: Invalid value: \"-1\": must be greater than or equal to 0"
+  ],
+  "storage_name": [
+    "spec.hard[storage]: Invalid value: \"storage\": must be a standard resource for quota"
+  ],
+  "unknown_name": [
+    "spec.hard[foo]: Invalid value: \"foo\": must be a standard resource for quota",
+    "spec.hard[foo]: Invalid value: \"foo\": must be a standard resource type or fully qualified"
+  ],
+  "update_same": null,
+  "update_scopes": [
+    "spec.scopes: Invalid value: [\"Terminating\"]: field is immutable"
+  ],
+  "vac_scope": [
+    "spec.scopes: Invalid value: [\"VolumeAttributesClass\"]: unsupported scope applied to resource"
+  ]
+}
