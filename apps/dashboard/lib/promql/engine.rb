@@ -27,7 +27,7 @@ module Promql
         source = if on
                    metric.select { |k, _| labels.include?(k) }
                  elsif without
-                   source.reject { |k, _| labels.include?(k) }
+                   metric.reject { |k, _| labels.include?(k) || k == "__name__" }
                  else
                    source
                  end
