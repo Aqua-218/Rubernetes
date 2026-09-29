@@ -472,7 +472,7 @@ module Rubernetes
         end
         raw = event
         if event.is_a?(String)
-          raw = JSON.parse(event, create_additions: false)
+          raw = JSON.parse(event)
         end
         if event.respond_to?(:type) && event.respond_to?(:object)
           type = event.type
