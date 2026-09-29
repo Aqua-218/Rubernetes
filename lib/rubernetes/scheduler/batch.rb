@@ -140,6 +140,8 @@ module Rubernetes
                      {signature: signature, nodes: ranked.dup, created: @clock.call}
                    end
         end
+      ensure
+        @metrics&.store_schedule_results(@clock.call - started)
       end
 
       # A cycle that did not schedule its Pod makes the state unusable.
