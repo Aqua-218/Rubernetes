@@ -150,6 +150,7 @@ module Rubernetes
           @last_cycle = nil
           @metrics&.batch_flushed("cycle_failed") if @state
           @state = nil
+          @flushed = true
           _ = cycle
         end
       end
