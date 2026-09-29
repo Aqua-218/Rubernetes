@@ -297,6 +297,12 @@ module Rubernetes
 
       private
 
+      # The record the store returned (it carries the new resourceVersion the
+      # next fast-path renewal is conditioned on), else what we sent.
+      def stored_record(stored, candidate)
+        stored.is_a?(Hash) && Support.value(Support.metadata(stored), "resourceVersion", nil) ? stored : candidate
+      end
+
       def become_leader(now, lease)
         @state = :leader
         @last_observed = Support.immutable_copy(lease)
