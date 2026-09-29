@@ -88,6 +88,65 @@ module Rubernetes
           result = yield
           self.class.observe_fetch("ok")
           result
+        rescue StandardError
+          self.class.observe_fetch("error")
+          raise
+        ensure
+          self.class.active_fetch(-1)
+        end
+
+        # k8s.io/apiserver/pkg/authentication/token/cache metrics, on the
+        # process-wide registry every component serves.
+        class << self
+          ACTIVE_FETCH_LOCK = Mutex.new
+
+          def registry
+            return nil unless defined?(Rubernetes::Observability::Metrics)
+
+            Rubernetes::Observability::Metrics.global
+          end
+
+          def observe_request(status, seconds)
+            metrics = registry
+            return unless metrics
+
+            ensure_registered(metrics)
+            metrics.increment("authentication_token_cache_request_total", {"status" => status})
+            metrics.observe("authentication_token_cache_request_duration_seconds", seconds, {"status" => status})
+          rescue StandardError
+            nil
+          end
+
+          def observe_fetch(status)
+            metrics = registry
+            return unless metrics
+
+            ensure_registered(metrics)
+            metrics.increment("authentication_token_cache_fetch_total", {"status" => status})
+          rescue StandardError
+            nil
+          end
+
+          def active_fetch(delta)
+            metrics = registry
+            return unless metrics
+
+            ensure_registered(metrics)
+            ACTIVE_FETCH_LOCK.synchronize do
+              @active_fetches = [(@active_fetches || 0) + delta, 0].max
+              metrics.set("authentication_token_cache_active_fetch_count", @active_fetches, {"status" => "in_flight"})
+              metrics.set("authentication_token_cache_active_fetch_count", 0, {"status" => "blocked"})
+            end
+          rescue StandardError
+            nil
+          end
+
+          def ensure_registered(metrics)
+            {"authentication_token_cache_request_total" => :counter, "authentication_token_cache_request_duration_seconds" => :histogram,
+             "authentication_token_cache_fetch_total" => :counter, "authentication_token_cache_active_fetch_count" => :gauge}.each do |name, type|
+              metrics.register(name, type: type) unless metrics.registered?(name)
+            end
+          end
         end
       end
     end
