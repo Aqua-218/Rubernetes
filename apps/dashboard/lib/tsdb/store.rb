@@ -220,7 +220,26 @@ module Tsdb
       synchronize do
         @wal&.close
         @db.close
-        OPEN_WRITERS_LOCK.synchronize { OPEN_WRITERS.delete(@dir) if OPEN_WRITERS[@dir].equal?(self) } unless @readonly
+        unless @readonly
+          OPEN_WRITERS_LOCK.synchronize { OPEN_WRITERS.delete(@dir) if OPEN_WRITERS[@dir].equal?(self) }
+          @lock_file&.close
+          @lock_file = nil
+        end
+      end
+    end
+
+    # One writer per directory across processes, like Prometheus' data lock:
+    # a second writer (a stray `rails test` or runner against the live data
+    # directory) would treat the first's head series as orphans and delete
+    # them.  The lock is an flock on <dir>/lock, released when the process
+    # exits, so a crash never leaves the directory unwritable.
+    def acquire_writer_lock
+      @lock_file = File.open(File.join(@dir, "lock"), File::RDWR | File::CREAT, 0o644)
+      if @lock_file.flock(File::LOCK_EX | File::LOCK_NB)
+        @lock_file.truncate(0)
+        @lock_file.write(Process.pid.to_s)
+        @lock_file.flush
+        return
       end
     end
 
