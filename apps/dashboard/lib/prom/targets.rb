@@ -126,7 +126,9 @@ module Prom
 
     def server_url
       context = @kubeconfig_context
-      (context && (context[:server] || context["server"])) || "https://apiserver"
+      return "https://apiserver" if context.nil?
+
+      (context.respond_to?(:server) ? context.server : (context[:server] || context["server"])) || "https://apiserver"
     end
 
     def safe_list(resource, all_namespaces: false, api_version: "v1")
