@@ -35,7 +35,7 @@ module Rubernetes
             extra_paths: extra_paths, health: health)
       end
 
-      def initialize(component:, config:, metrics:, host:, port:, ready: -> { true }, logger: nil)
+      def initialize(component:, config:, metrics:, host:, port:, ready: -> { true }, logger: nil, extra_paths: {}, health: nil)
         unless LOOPBACK.include?(host)
           raise Config::Error, "#{component} serving.bind_address #{host.inspect} is not loopback: the component endpoints have no authorizer"
         end
