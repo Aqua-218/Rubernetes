@@ -4143,7 +4143,7 @@ module Rubernetes
             seen.pop
           elsif (literal = scanner.scan(/"(?:\\.|[^"\\])*"/))
             if seen.last.is_a?(Hash) && scanner.check(/\s*:/)
-              key = JSON.parse(literal, quirks_mode: true).to_s
+              key = JSON.parse(literal).to_s
               path = (stack.compact + [key]).join(".")
               duplicates << path if seen.last.key?(key)
               seen.last[key] = true
