@@ -175,6 +175,14 @@ module Rubernetes
 
       private
 
+      # ->(driver_name, method_name, grpc_status_code, seconds) for
+      # csi_operations_seconds; the driver's name as registered.
+      public
+
+      attr_accessor :metrics_observer, :driver_name
+
+      private
+
       def invoke(operation, request, token: nil)
         raise CSIUnavailable, "CSI client is not configured" unless @client
         request = Types.deep_copy(request)
