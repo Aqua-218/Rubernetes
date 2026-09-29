@@ -135,4 +135,13 @@ class Prom::ScraperTest < ActiveSupport::TestCase
     assert_equal [1.0, 2.0], @store.samples(@store.select_series([M.new(name: "__name__", op: "=", value: "gauge")]).first.id, 0, @now + 1).map(&:last)
     assert_equal 1, collector.targets.length
   end
+
+  test "a binary-encoded body yields UTF-8 labels the index can match" do
+    body = "# TYPE http_requests_total counter\nhttp_requests_total{path=\"/caf\u00e9\"} 3\n".b
+    status = @scraper.scrape(target(body))
+    assert_equal "up", status.health
+    rows = value_of("http_requests_total", "path" => "/caf\u00e9")
+    assert_equal 1, rows.length
+    assert_equal 3.0, rows.first.last.last
+  end
 end
