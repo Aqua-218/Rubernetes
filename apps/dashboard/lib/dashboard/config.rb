@@ -82,6 +82,31 @@ module Dashboard
       ENV.fetch("DASHBOARD_EXTERNAL_URL", "")
     end
 
+    # Host names Rails' host authorization accepts (DNS-rebinding guard).
+    # DASHBOARD_HOSTS is comma separated; ".example.com" also matches every
+    # subdomain, like Rails' own config.hosts.  Empty means "any host".
+    # The default admits the bind address, loopback, the machine's names and
+    # the host of DASHBOARD_EXTERNAL_URL, which is how the Ingress reaches it.
+    def allowed_hosts
+      text = ENV.fetch("DASHBOARD_HOSTS") { default_hosts.join(",") }
+      text.split(",").map(&:strip).reject(&:empty?)
+    end
+
+    def default_hosts
+      hosts = ["localhost", "127.0.0.1", "[::1]", ENV.fetch("DASHBOARD_BIND", "")]
+      hosts << Socket.gethostname rescue nil
+      hosts << ".#{Socket.gethostname}" rescue nil
+      unless external_url.empty?
+        begin
+          host = URI.parse(external_url).host
+          hosts << host if host
+        rescue URI::InvalidURIError
+          nil
+        end
+      end
+      hosts.compact.reject(&:empty?).uniq
+    end
+
     # "15d", "2h", "90s", "500ms"
     def duration_seconds(text)
       match = /\A(\d+(?:\.\d+)?)(ms|s|m|h|d|w|y)?\z/.match(text.to_s.strip)
