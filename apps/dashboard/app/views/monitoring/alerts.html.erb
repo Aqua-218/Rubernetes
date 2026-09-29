@@ -1,0 +1,34 @@
+<% content_for :title, "Alerts" %>
+<h1>Alerts</h1>
+<% if @alerting.empty? %><div class="card">No alerting rules configured.</div><% end %>
+<% @alerting.each do |rule| %>
+  <% api = @rules.rule_to_api(rule) %>
+  <div class="card" style="margin-bottom: 10px">
+    <div><b><%= rule.name %></b> <%= badge(api["state"]) %> <span class="muted">(<%= api["alerts"].length %> active)</span></div>
+    <div class="mono muted"><%= rule.expr %><% if rule.for_ms.positive? %> · for <%= rule.for_ms / 1000 %>s<% end %></div>
+    <% unless rule.annotations.empty? %><div class="muted"><%= rule.annotations.map { |k, v| "#{k}: #{v}" }.join(" · ") %></div><% end %>
+    <% if api["alerts"].any? %>
+      <table style="margin-top: 8px">
+        <thead><tr><th>Labels</th><th>State</th><th>Active since</th><th class="num">Value</th><th>Annotations</th></tr></thead>
+        <tbody>
+          <% api["alerts"].each do |alert| %>
+            <tr>
+              <td class="mono"><%= format_labels(alert["labels"]) %></td>
+              <td><%= badge(alert["state"]) %></td>
+              <td class="muted"><%= alert["activeAt"] %></td>
+              <td class="num"><%= alert["value"] %></td>
+              <td><%= alert["annotations"].map { |k, v| "#{k}: #{v}" }.join(" · ") %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% end %>
+  </div>
+<% end %>
+<h2>Recent notifications</h2>
+<% if @notifications.empty? %><p class="muted">None yet.<% if Dashboard::Config.alert_webhook_url.nil? %> No webhook configured (DASHBOARD_ALERT_WEBHOOK); transitions are recorded here only.<% end %></p><% end %>
+<% @notifications.each do |note| %>
+  <div class="card" style="margin-bottom: 6px"><span class="muted"><%= note["at"] %></span>
+    <% note["alerts"].each do |a| %><div><%= badge(a["status"]) %> <span class="mono"><%= format_labels(a["labels"]) %></span></div><% end %>
+  </div>
+<% end %>
