@@ -148,6 +148,8 @@ module Tsdb
 
     # Append one sample.  Labels must include "__name__".
     def append(labels, timestamp_ms, value)
+      raise AlreadyOpen, "read-only store" if @readonly
+
       synchronize do
         series = head_series_for(labels)
         return false if series.last_time && timestamp_ms <= series.last_time
