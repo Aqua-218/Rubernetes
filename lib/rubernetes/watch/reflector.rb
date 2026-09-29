@@ -338,7 +338,7 @@ module Rubernetes
 
       def parse_event(event)
         parsed = if event.is_a?(String)
-                   JSON.parse(event, create_additions: false)
+                   JSON.parse(event)
                  elsif event.is_a?(Hash)
                    event
                  elsif event.respond_to?(:to_h)
