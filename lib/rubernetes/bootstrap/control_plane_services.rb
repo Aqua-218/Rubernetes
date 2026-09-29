@@ -1973,7 +1973,12 @@ module Rubernetes
       def retry_unschedulable(reason, event: nil, **fields)
         return unless @framework.respond_to?(:queue)
 
-        promoted = @framework.queue.promote_unschedulable
+        queue = @framework.queue
+        promoted = if event && queue.method(:promote_unschedulable).parameters.any? { |_kind, name| name == :event }
+                     queue.promote_unschedulable(event: event)
+                   else
+                     queue.promote_unschedulable
+                   end
         return if promoted.empty?
 
         log(:info, "scheduler.retry_unschedulable", reason: reason, pods: promoted.length, **fields)
