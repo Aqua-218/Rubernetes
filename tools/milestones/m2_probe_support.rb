@@ -1456,7 +1456,7 @@ module M2ProbeSupport
             break unless reserve_delivery
 
             begin
-              event = JSON.parse(line, create_additions: false)
+              event = JSON.parse(line)
               @observer.call(event)
             ensure
               release_delivery
