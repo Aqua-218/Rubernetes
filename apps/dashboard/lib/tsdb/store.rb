@@ -142,6 +142,8 @@ module Tsdb
       open_wal
     end
 
+    def readonly? = @readonly
+
     # ------------------------------------------------------------- writing
 
     # Append one sample.  Labels must include "__name__".
