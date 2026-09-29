@@ -1282,6 +1282,32 @@ module Rubernetes
 
       private
 
+      # selinux_warning_controller_selinux_volume_conflict: one series (value
+      # 1) per conflicting Pod pair and property, as upstream's volume cache
+      # collector emits them; this Pod's series are replaced on every sync so
+      # a resolved conflict disappears.
+      def record_conflict_metrics(pod, events)
+        registry = Controller.metrics
+        return unless registry
+
+        key = pod_key(pod)
+        series = events.select { |event| event["pod"] == key }.map do |event|
+          namespace, name = event["pod"].to_s.split("/", 2)
+          other_namespace, other_name = event["otherPod"].to_s.split("/", 2)
+          {"property" => event["property"].to_s,
+           "pod1_namespace" => namespace.to_s, "pod1_name" => name.to_s, "pod1_value" => event["propertyValue"].to_s,
+           "pod2_namespace" => other_namespace.to_s, "pod2_name" => other_name.to_s, "pod2_value" => event["otherPropertyValue"].to_s}
+        end.uniq
+        registry.register(CONFLICT_METRIC, type: :gauge) unless registry.registered?(CONFLICT_METRIC)
+        CONFLICT_SERIES_LOCK.synchronize do
+          Array(CONFLICT_SERIES[key]).each { |labels| registry.delete(CONFLICT_METRIC, labels) unless series.include?(labels) }
+          series.each { |labels| registry.set(CONFLICT_METRIC, 1, labels) }
+          series.empty? ? CONFLICT_SERIES.delete(key) : CONFLICT_SERIES[key] = series
+        end
+      rescue StandardError
+        nil
+      end
+
       def pod_key(pod)
         [Support.namespace(pod), Support.name(pod)].compact.join("/")
       end
