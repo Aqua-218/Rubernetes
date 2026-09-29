@@ -1614,8 +1614,7 @@ module Rubernetes
         victims = result.respond_to?(:victims) ? Array(result.victims) : []
         return if victims.empty?
 
-        @metrics.increment("scheduler_preemption_attempts_total")
-        @metrics.observe("scheduler_preemption_victims", victims.length)
+        @scheduler_metrics.preemption(victims.length)
       rescue StandardError
         nil
       end
