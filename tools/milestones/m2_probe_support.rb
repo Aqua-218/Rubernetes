@@ -1628,7 +1628,7 @@ module M2ProbeSupport
     end
 
     def request_events
-      @mutex.synchronize { JSON.parse(JSON.generate(@request_events), create_additions: false) }
+      @mutex.synchronize { JSON.parse(JSON.generate(@request_events)) }
     end
 
     def watch_events
