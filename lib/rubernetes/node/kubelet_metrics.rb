@@ -69,6 +69,22 @@ module Rubernetes
       end
 
       attr_reader :registry, :startup
+      # The Plugins::Manager whose registry directory plugin_manager_total_plugins reports.
+      attr_accessor :plugin_manager
+
+      def collect_plugin_manager(registry)
+        manager = @plugin_manager
+        return unless manager.respond_to?(:plugin_states)
+
+        # A Custom collector upstream: not in the registry until declared here.
+        registry.register("plugin_manager_total_plugins", type: :gauge) unless registry.registered?("plugin_manager_total_plugins")
+        registry.reset("plugin_manager_total_plugins")
+        manager.plugin_states.each do |socket, state|
+          registry.set("plugin_manager_total_plugins", 1, {"socket_path" => socket.to_s, "state" => state})
+        end
+      rescue StandardError
+        nil
+      end
 
       # util/node_startup_latency_tracker.go: boot -> kubelet start -> first
       # registration attempt -> Node created -> first Ready status.  Times
