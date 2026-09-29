@@ -1386,7 +1386,7 @@ def build_semantic_case(registry:, codec:, type:, wire_case:, types_by_schema:, 
       "accepted" => true,
       "unknown_accepted" => true,
       "unknown_field_preserved" => begin
-        parsed_unknown = JSON.parse(unknown_json, create_additions: false)
+        parsed_unknown = JSON.parse(unknown_json)
         parsed_unknown.is_a?(Hash) && parsed_unknown.key?("m1FutureField")
       end,
       "strict_unknown_accepted" => unknown_field_errors.empty?,
