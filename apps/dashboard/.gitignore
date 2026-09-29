@@ -12,3 +12,4 @@
 /config/credentials/*.key
 /data/
 /config/dashboard.local.env
+/data*/
