@@ -54,6 +54,11 @@ module Rubernetes
            kubelet_server_expiration_renew_errors
            kubelet_credential_provider_plugin_errors_total kubelet_credential_provider_plugin_duration].each { |name| @registry.unregister(name) }
         @startup = PodStartupLatencyTracker.new(registry: @registry, clock: wall_clock)
+        # kubelet_metrics_provider: the container metrics come from the
+        # embedded cAdvisor-equivalent, never from the CRI stats.
+        @registry.set("kubelet_metrics_provider", 1, {"provider" => "cadvisor"})
+        @plugin_manager = nil
+        @registry.add_collector { |registry| collect_plugin_manager(registry) }
         @node_startup = {kubelet: wall_clock.call.to_f}
         @worker_started = {}
         @worker_synced = Set.new
