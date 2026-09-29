@@ -1,0 +1,4784 @@
+{
+  "schema_version": 1,
+  "kubernetes": {
+    "tag": "v1.36.2",
+    "commit": "24e2b02af5543d7910c2bb074c7264df5a8f0467"
+  },
+  "target_version": "1.36",
+  "sources": {
+    "kubernetes": {
+      "path": "pkg/features/kube_features.go",
+      "sha256": "c170e0e53e485674820e0a6e54feba77e5bc74b66365ec20a2a245157084e639"
+    },
+    "apiserver": {
+      "path": "staging/src/k8s.io/apiserver/pkg/features/kube_features.go",
+      "sha256": "3d25cd549db1f33baa0c471fbfdf7dd8698d78a36f8cb729d75401f834d2831c"
+    },
+    "client-go": {
+      "path": "staging/src/k8s.io/client-go/features/known_features.go",
+      "sha256": "9932f4d23cf7da222206a0f3967f8fb49a3d21627e2c4c5eabf227fa3033a48b"
+    },
+    "component-base-zpages": {
+      "path": "staging/src/k8s.io/component-base/zpages/features/kube_features.go",
+      "sha256": "8ef43af23af6143494252cfaab9bf3f2cf0a1e5c8be079564d534fde8bfec7b1"
+    }
+  },
+  "gate_count": 225,
+  "gates": {
+    "APIResponseCompression": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.16",
+      "history": [
+        {
+          "version": "1.8",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.16",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "APIServerIdentity": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.26",
+      "history": [
+        {
+          "version": "1.20",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.26",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "APIServerTracing": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.22",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.27",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "APIServingWithRoutine": {
+      "source": "apiserver",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.30",
+      "history": [
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "AggregatedDiscoveryRemoveBetaType": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Deprecated",
+      "lock_to_default": true,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.0",
+          "default": false,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Deprecated",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "AllowDNSOnlyNodeCSR": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Deprecated",
+      "lock_to_default": false,
+      "since": "1.31",
+      "history": [
+        {
+          "version": "1.0",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "AllowInsecureKubeletCertificateSigningRequests": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Deprecated",
+      "lock_to_default": false,
+      "since": "1.31",
+      "history": [
+        {
+          "version": "1.0",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "AllowOverwriteTerminationGracePeriodSeconds": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Deprecated",
+      "lock_to_default": true,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.0",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "AllowParsingUserUIDFromCertAuth": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "AllowServiceExternalIPs": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": false,
+      "since": "1.0",
+      "history": [
+        {
+          "version": "1.0",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "AllowUnsafeMalformedObjectDeletion": {
+      "source": "apiserver",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.32",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "AnonymousAuthConfigurableEndpoints": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "AnyVolumeDataSource": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.18",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.24",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "AuthorizeNodeWithSelectors": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "AuthorizePodWebsocketUpgradeCreatePermission": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "AuthorizeWithSelectors": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "BtreeWatchCache": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "CBORServingAndStorage": {
+      "source": "apiserver",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.32",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "CPUManagerPolicyAlphaOptions": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.23",
+      "history": [
+        {
+          "version": "1.23",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "CPUManagerPolicyBetaOptions": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.23",
+      "history": [
+        {
+          "version": "1.23",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "CPUManagerPolicyOptions": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.22",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.23",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "CRDObservedGenerationTracking": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "CRDValidationRatcheting": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.28",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "CRIListStreaming": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "CSIServiceAccountTokenSecrets": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "CSIVolumeHealth": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.21",
+      "history": [
+        {
+          "version": "1.21",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ChangeContainerStatusOnKubeletRestart": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Deprecated",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.0",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ClearingNominatedNodeNameAfterBinding": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "CloudControllerManagerWatchBasedRoutesReconciliation": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "CloudControllerManagerWebhook": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.27",
+      "history": [
+        {
+          "version": "1.27",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ClusterTrustBundle": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.27",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ClusterTrustBundleProjection": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ComponentFlagz": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ComponentStatusz": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ConcurrentWatchObjectDecode": {
+      "source": "apiserver",
+      "default": false,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.31",
+      "history": [
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ConsistentListFromCache": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.28",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ConstrainedImpersonation": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ContainerCheckpoint": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.30",
+      "history": [
+        {
+          "version": "1.25",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ContainerRestartRules": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ContainerStopSignals": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "CoordinatedLeaderElection": {
+      "source": "apiserver",
+      "default": false,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "CrossNamespaceVolumeDataSource": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.26",
+      "history": [
+        {
+          "version": "1.26",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "CustomCPUCFSQuotaPeriod": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.12",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "CustomResourceFieldSelectors": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.31",
+      "history": [
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRAAdminAccess": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "DRAConsumableCapacity": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRADeviceBindingConditions": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRADeviceTaintRules": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRADeviceTaints": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRAExtendedResource": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRAListTypeAttributes": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRANodeAllocatableResources": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRAPartitionableDevices": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRAPrioritizedList": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRAResourceClaimDeviceStatus": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRAResourceClaimGranularStatusAuthorization": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRAResourcePoolStatus": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRASchedulerFilterTimeout": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DRAWorkloadResourceClaims": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DeclarativeValidation": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "DeclarativeValidationBeta": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DeclarativeValidationTakeover": {
+      "source": "apiserver",
+      "default": false,
+      "stage": "Deprecated",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DeploymentReplicaSetTerminatingReplicas": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DetectCacheInconsistency": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DisableAllocatorDualWrite": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "DisableCPUQuotaWithExclusiveCPUs": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Deprecated",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "DisableNodeKubeProxyVersion": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Deprecated",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Deprecated",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "DynamicResourceAllocation": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.26",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "EnvFiles": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "EventedPLEG": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.26",
+      "history": [
+        {
+          "version": "1.26",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ExecProbeTimeout": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.20",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ExtendWebSocketsToKubelet": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ExternalServiceAccountTokenSigner": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "GangScheduling": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "GenericWorkload": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "GitRepoVolumeDriver": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Deprecated",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.0",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "GracefulNodeShutdown": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.21",
+      "history": [
+        {
+          "version": "1.20",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.21",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "GracefulNodeShutdownBasedOnPodPriority": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.24",
+      "history": [
+        {
+          "version": "1.23",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.24",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "HPAConfigurableTolerance": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "HPAScaleToZero": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.16",
+      "history": [
+        {
+          "version": "1.16",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "HostnameOverride": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ImageMaximumGCAge": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ImageVolume": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ImageVolumeWithDigest": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "InPlacePodLevelResourcesVerticalScaling": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "InPlacePodVerticalScaling": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.27",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "InPlacePodVerticalScalingExclusiveCPUs": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.32",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "InPlacePodVerticalScalingExclusiveMemory": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "InPlacePodVerticalScalingInitContainers": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "JobBackoffLimitPerIndex": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.28",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.29",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "JobManagedBy": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "JobPodReplacementPolicy": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.28",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.29",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "JobSuccessPolicy": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "KMSv1": {
+      "source": "apiserver",
+      "default": false,
+      "stage": "Deprecated",
+      "lock_to_default": false,
+      "since": "1.29",
+      "history": [
+        {
+          "version": "1.0",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.28",
+          "default": true,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "KubeletCgroupDriverFromCRI": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.28",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "KubeletCrashLoopBackOffMax": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "KubeletEnsureSecretPulledImages": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "KubeletFineGrainedAuthz": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "KubeletInUserNamespace": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.22",
+      "history": [
+        {
+          "version": "1.22",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "KubeletPSI": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "KubeletPodResourcesDynamicResources": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.27",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "KubeletPodResourcesGet": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.27",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "KubeletPodResourcesListUseActivePods": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Deprecated",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.0",
+          "default": false,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "KubeletRegistrationGetOnExistsOnly": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Deprecated",
+      "lock_to_default": false,
+      "since": "1.32",
+      "history": [
+        {
+          "version": "1.0",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "KubeletSeparateDiskGC": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.31",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "KubeletServiceAccountTokenForCredentialProviders": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "KubeletTracing": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.25",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.27",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ListFromCacheSnapshot": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "LocalStorageCapacityIsolationFSQuotaMonitoring": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.31",
+      "history": [
+        {
+          "version": "1.15",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "LogarithmicScaleDown": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.31",
+      "history": [
+        {
+          "version": "1.21",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.22",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ManifestBasedAdmissionControlConfig": {
+      "source": "apiserver",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "MatchLabelKeysInPodAffinity": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "MatchLabelKeysInPodTopologySpread": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.27",
+      "history": [
+        {
+          "version": "1.25",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.27",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "MatchLabelKeysInPodTopologySpreadSelectorMerge": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "MaxUnavailableStatefulSet": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.24",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "MemoryQoS": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.22",
+      "history": [
+        {
+          "version": "1.22",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "MultiCIDRServiceAllocator": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.27",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "MutableCSINodeAllocatableCount": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "MutablePVNodeAffinity": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "MutablePodResourcesForSuspendedJobs": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "MutableSchedulingDirectivesForSuspendedJobs": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "MutatingAdmissionPolicy": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "NFTablesProxyMode": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "NodeDeclaredFeatures": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "NodeInclusionPolicyInPodTopologySpread": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.25",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.26",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "NodeLogQuery": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.27",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "NodeSwap": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.22",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.28",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "NominatedNodeNameForExpectation": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "OpenAPIEnums": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.24",
+      "history": [
+        {
+          "version": "1.23",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.24",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "OpportunisticBatching": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "OrderedNamespaceDeletion": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "PLEGOnDemandRelist": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "PersistentVolumeClaimUnusedSinceTime": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "PodAndContainerStatsFromCRI": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.23",
+      "history": [
+        {
+          "version": "1.23",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "PodCertificateRequest": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "PodDeletionCost": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.22",
+      "history": [
+        {
+          "version": "1.21",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.22",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "PodLevelResourceManagers": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "PodLevelResources": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "PodLifecycleSleepAction": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "PodLifecycleSleepActionAllowZero": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "PodLogsQuerySplitStreams": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.32",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "PodObservedGenerationTracking": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "PodReadyToStartContainersCondition": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.29",
+      "history": [
+        {
+          "version": "1.28",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.29",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "PodSchedulingReadiness": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.30",
+      "history": [
+        {
+          "version": "1.26",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.27",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "PodTopologyLabelsAdmission": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "PodsAPI": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "PortForwardWebsockets": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.31",
+      "history": [
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "PreferSameTrafficDistribution": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "PreventStaticPodAPIReferences": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ProcMountType": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.12",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "QOSReserved": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.11",
+      "history": [
+        {
+          "version": "1.11",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "RecoverVolumeExpansionFailure": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.23",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "RecursiveReadOnlyMounts": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ReduceDefaultCrashLoopBackOffDecay": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "RelaxedDNSSearchValidation": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "RelaxedEnvironmentVariableValidation": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "RelaxedServiceNameValidation": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ReloadKubeletClientCAFile": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ReloadKubeletServerCertificateFile": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.31",
+      "history": [
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "RemoteRequestHeaderUID": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ResilientWatchCacheInitialization": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ResourceHealthStatus": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ResourceHealthStatusMessage": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "RestartAllContainersOnContainerExits": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "RetryGenerateName": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.31",
+      "history": [
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "RotateKubeletServerCertificate": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.12",
+      "history": [
+        {
+          "version": "1.7",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.12",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "RuntimeClassInImageCriApi": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.29",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "SELinuxChangePolicy": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "SELinuxMount": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "SELinuxMountReadWriteOncePod": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.25",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.27",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.28",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "SchedulerAsyncAPICalls": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.34",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "SchedulerAsyncPreemption": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "SchedulerPopFromBackoffQ": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "SchedulerQueueingHints": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.28",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "SeparateCacheWatchRPC": {
+      "source": "apiserver",
+      "default": false,
+      "stage": "Deprecated",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.28",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "SeparateTaintEvictionController": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.29",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ServiceAccountNodeAudienceRestriction": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ServiceAccountTokenJTI": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.32",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ServiceAccountTokenNodeBinding": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ServiceAccountTokenNodeBindingValidation": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.32",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ServiceAccountTokenPodNodeInfo": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.32",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "ServiceCIDRStatusFieldWiping": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Deprecated",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.0",
+          "default": false,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "ShardedListAndWatch": {
+      "source": "apiserver",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "SidecarContainers": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.29",
+      "history": [
+        {
+          "version": "1.28",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.29",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "SizeBasedListCostEstimate": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StaleControllerConsistencyDaemonSet": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StaleControllerConsistencyJob": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StaleControllerConsistencyReplicaSet": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StaleControllerConsistencyStatefulSet": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StatefulSetSemanticRevisionComparison": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.0",
+      "history": [
+        {
+          "version": "1.0",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StorageCapacityScoring": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StorageNamespaceIndex": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Deprecated",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.30",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StorageVersionAPI": {
+      "source": "apiserver",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.20",
+      "history": [
+        {
+          "version": "1.20",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StorageVersionHash": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.15",
+      "history": [
+        {
+          "version": "1.14",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.15",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StorageVersionMigrator": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StreamingCollectionEncodingToJSON": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "StreamingCollectionEncodingToProtobuf": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "StrictIPCIDRValidation": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StructuredAuthenticationConfiguration": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "StructuredAuthenticationConfigurationEgressSelector": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "StructuredAuthenticationConfigurationJWKSMetrics": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "SupplementalGroupsPolicy": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "SystemdWatchdog": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.35",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "TaintTolerationComparisonOperators": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "TokenRequestServiceAccountUIDValidation": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "TopologyAwareWorkloadScheduling": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "TopologyManagerPolicyAlphaOptions": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.26",
+      "history": [
+        {
+          "version": "1.26",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "TopologyManagerPolicyBetaOptions": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.28",
+      "history": [
+        {
+          "version": "1.26",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.28",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "TopologyManagerPolicyOptions": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.32",
+      "history": [
+        {
+          "version": "1.26",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.28",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "TranslateStreamCloseWebsocketRequests": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.30",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "UnauthenticatedHTTP2DOSMitigation": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.29",
+      "history": [
+        {
+          "version": "1.25",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.29",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "UnknownVersionInteroperabilityProxy": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.28",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "UserNamespacesHostNetworkSupport": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "UserNamespacesSupport": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.25",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.30",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "VolumeAttributesClass": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.29",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "VolumeLimitScaling": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.35",
+      "history": [
+        {
+          "version": "1.35",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "WatchCacheInitializationPostStartHook": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.31",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.36",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "WatchList": {
+      "source": "apiserver",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.27",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.32",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "WinDSR": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.14",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "WinOverlay": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "GA",
+      "lock_to_default": true,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.14",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.20",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "GA",
+          "lock_to_default": true
+        }
+      ]
+    },
+    "WindowsCPUAndMemoryAffinity": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.32",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "WindowsGracefulNodeShutdown": {
+      "source": "kubernetes",
+      "default": true,
+      "stage": "Beta",
+      "lock_to_default": false,
+      "since": "1.34",
+      "history": [
+        {
+          "version": "1.32",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.34",
+          "default": true,
+          "prerelease": "Beta",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "WindowsHostNetwork": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Deprecated",
+      "lock_to_default": false,
+      "since": "1.33",
+      "history": [
+        {
+          "version": "1.26",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        },
+        {
+          "version": "1.33",
+          "default": false,
+          "prerelease": "Deprecated",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "WorkloadAwarePreemption": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    },
+    "WorkloadWithJob": {
+      "source": "kubernetes",
+      "default": false,
+      "stage": "Alpha",
+      "lock_to_default": false,
+      "since": "1.36",
+      "history": [
+        {
+          "version": "1.36",
+          "default": false,
+          "prerelease": "Alpha",
+          "lock_to_default": false
+        }
+      ]
+    }
+  }
+}
