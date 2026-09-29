@@ -43,7 +43,6 @@ module Rubernetes
           utf8,
           object_class: DuplicateCheckingHash,
           array_class: Array,
-          create_additions: false,
           allow_nan: false,
           max_nesting: max_depth + 1
         )
