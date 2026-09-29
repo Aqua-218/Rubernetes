@@ -40,7 +40,9 @@ module Dashboard
       @logger = logger || method(:log)
       @started_at = Time.now.utc
       @errors = {}
-      @mutex = Mutex.new
+      # Re-entrant: building the collector builds the store, the scraper and
+      # the engine inside the same critical section.
+      @mutex = Monitor.new
     end
 
     # Every component is built once, under one lock: the first web request
