@@ -4627,6 +4627,7 @@ module Rubernetes
       def status_update(existing, candidate, resource: nil)
         result = deep_copy(existing)
         result["status"] = deep_copy(candidate["status"] || {})
+        record_csr_honored_duration(existing, result) if resource && csr_resource?(resource)
         result["metadata"] ||= {}
         metadata = candidate.is_a?(Hash) && candidate["metadata"].is_a?(Hash) ? candidate["metadata"] : {}
         kind = resource.respond_to?(:kind) ? resource.kind.to_s : nil
