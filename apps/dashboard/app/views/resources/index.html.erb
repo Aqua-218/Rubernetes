@@ -1,0 +1,23 @@
+<% content_for :title, "#{@entry.kind}s#{@namespace ? " · #{@namespace}" : ""}" %>
+<h1><%= @entry.kind %>s<% if @namespace %> in <%= link_to @namespace, namespace_path(@namespace) %><% end %> <span class="muted">(<%= @objects.length %>)</span></h1>
+<% if @namespace %>
+  <div class="toolbar">
+    <%= link_to "pods", namespace_pods_path(@namespace) %>
+    <% Dashboard::ResourceCatalog::NAMESPACED.each_key do |kind| %><%= link_to kind, resource_index_path(kind, @namespace), class: ("active" if kind.to_s == @kind) %><% end %>
+  </div>
+<% end %>
+<table>
+  <thead><tr><th>Name</th><% @entry.columns.each_key do |col| %><th><%= col %></th><% end %></tr></thead>
+  <tbody>
+    <% if @objects.empty? %><tr><td colspan="<%= @entry.columns.length + 1 %>" class="muted">None</td></tr><% end %>
+    <% @objects.each do |object| %>
+      <tr>
+        <td><%= link_to object.dig("metadata", "name"), resource_show_path(@kind, object.dig("metadata", "name"), @namespace) %></td>
+        <% @entry.columns.each do |col, fn| %>
+          <% value = (fn.call(object) rescue "?") %>
+          <td class="<%= "muted" if col == "Age" %>"><%= col == "Age" ? time_ago(value) : value %></td>
+        <% end %>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
