@@ -1008,6 +1008,12 @@ module Rubernetes
                        read_seats: DEFAULT_READ_SEATS, mutating_seats: DEFAULT_MUTATING_SEATS, object_stats: nil, after: nil,
                        borrowing_adjustment_seconds: BORROWING_ADJUSTMENT_SECONDS)
           @clock = clock
+          @mutex = Mutex.new
+          @ratios = {}
+          @read_write = nil
+          @metrics = nil
+          @fair_frac = 0.0
+          @targets = {}
           @flow_schemas = Array(flow_schemas).sort_by { |schema| [schema.dig("spec", "matchingPrecedence").to_i, schema.dig("metadata", "name").to_s] }
           total_shares = Array(priority_level_configurations).sum { |plc| plc.dig("spec", "limited", "nominalConcurrencyShares").to_i }
           total_seats = read_seats + mutating_seats
