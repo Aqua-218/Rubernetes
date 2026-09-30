@@ -593,8 +593,8 @@ module Rubernetes
       end
 
       def selinux_volume_context_mismatch(plugin, access_mode, error:)
-        @registry.increment("volume_manager_selinux_volume_context_mismatch_#{error ? "errors" : "warnings"}_total",
-                            {"access_mode" => access_mode.to_s, "volume_plugin" => plugin.to_s})
+        name = error ? "volume_manager_selinux_volume_context_mismatch_errors_total" : "volume_manager_selinux_volume_context_mismatch_warnings_total"
+        @registry.increment(name, {"access_mode" => access_mode.to_s, "volume_plugin" => plugin.to_s})
       end
       public :csi_operation, :volume_metric_collection, :volume_reconstruction, :orphan_pod_volumes, :image_volume_mount_failed,
              :selinux_volume_admitted, :selinux_container_context, :selinux_pod_context_mismatch, :selinux_volume_context_mismatch
