@@ -189,6 +189,7 @@ module Rubernetes
             mounts[name] = Mount.new(name: name, id: id, path: target, readonly: readonly,
                                      source: source_kind(entry), backend: backend,
                                      sub_paths: {}, direct: direct, unique_name: attachable_name(spec)).to_h
+            mounts[name]["selinuxVolume"] = selinux_volumes[name] if selinux_volumes[name]
             observe_operation(current_plugin, "volume_mount", "success", operation_started)
           end
         rescue StandardError => error
