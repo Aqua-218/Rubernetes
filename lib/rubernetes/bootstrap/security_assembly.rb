@@ -199,6 +199,8 @@ module Rubernetes
       # ------------------------------------------------------------ authz
 
       def build_authorizer(authz)
+        return build_authorizer_from_file(authz["config_file"]) if authz["config_file"]
+
         modes = Array(authz["modes"])
         modes = %w[Node RBAC] if modes.empty?
         authorizers = modes.map do |mode|
