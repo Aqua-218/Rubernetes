@@ -2367,7 +2367,7 @@ module Rubernetes
       end
 
       SECRET_PROJECTION_SOURCE_KEYS = %w[secret serviceAccountToken service_account_token].freeze
-      SECRET_PROJECTION_PAYLOAD_KEYS = %w[data binaryData binary_data stringData string_data token tokenRotator token_rotator].freeze
+      SECRET_PROJECTION_PAYLOAD_KEYS = %w[data binaryData binary_data stringData string_data token tokenRotator token_rotator podCertificateProvider pod_certificate_provider].freeze
 
       def secret_projection_present?(value)
         case value
