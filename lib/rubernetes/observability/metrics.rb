@@ -227,7 +227,6 @@ module Rubernetes
       no_evented_pleg = "EventedPLEG (Beta, off by default) is not implemented; upstream registers these only with the gate on"
       no_pull_records = "no image pull record store: KubeletEnsureSecretPulledImages' pulled/pull-intent files and their must-pull checks are not implemented"
       windows_only = "Windows HostProcess containers do not exist on Linux"
-      no_force_clean = "a failed unmount is retried through the volume operation ledger until it succeeds; there is no retry limit after which the mount point is force-cleaned"
       no_selinux_mounts = "SELinux mount option computation (SELinuxMount / SELinuxMountReadWriteOncePod context checks) is not implemented: labels from seLinuxOptions are applied by an adapter, contexts are never compared"
       UNIMPLEMENTED = {
         "kube-apiserver" => {
