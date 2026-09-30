@@ -1065,7 +1065,6 @@ module Rubernetes
         # executing limits, seat utilisation, seat demand) and the server's
         # read-vs-write ones.
         def register_seat_metrics(registry)
-          @ratios = {}
           max_waiting = 0
           max_executing = 0
           @priority_levels.each do |name, level|
