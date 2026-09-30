@@ -878,7 +878,7 @@ module Rubernetes
         EPSILON = 0.0000001
 
         Ticket = Struct.new(:priority_level, :flow_schema, :queue_index, :seats, :queued_seconds, :exempt, :dispatched_at, :mutating, :watch,
-                            keyword_init: true)
+                            :request, :forget_watch, :work, keyword_init: true)
 
         class PriorityLevel
           attr_reader :name, :seats, :queues, :hand_size, :queue_length_limit, :wait_limit, :exempt, :inflight
