@@ -1044,6 +1044,14 @@ module Rubernetes
           authn = value["authentication"]
           validate_mapping!(authn, "#{context}.authentication")
           reject_unknown_keys!(authn, AUTHENTICATION_KEYS, "#{context}.authentication")
+          if authn.key?("config_file")
+            # --authentication-config is mutually exclusive with the flag-style
+            # JWT (--oidc-*) and --anonymous-auth settings.
+            validate_absolute_path!(authn["config_file"], "#{context}.authentication.config_file")
+            %w[jwt anonymous].each do |key|
+              raise Error, "#{context}.authentication.#{key} cannot be combined with config_file (the AuthenticationConfiguration file owns it)" if authn.key?(key)
+            end
+          end
           %w[client_ca_file token_file].each { |key| validate_absolute_path!(authn[key], "#{context}.authentication.#{key}") if authn.key?(key) }
           if authn.key?("service_account")
             sa = authn["service_account"]
