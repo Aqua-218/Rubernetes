@@ -1860,7 +1860,12 @@ module Rubernetes
 
       # Which part of a Node changed, in ActionType terms.
       def node_event(previous, node)
-        return "NodeAdd" if previous.nil?
+        node_events(previous, node).first
+      end
+
+      # nodeSchedulingPropertiesChange: one event per changed property.
+      def node_events(previous, node)
+        return ["NodeAdd"] if previous.nil?
 
         before = node_scheduling_view(previous)
         after = node_scheduling_view(node)
