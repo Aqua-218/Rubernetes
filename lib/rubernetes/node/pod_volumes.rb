@@ -151,6 +151,8 @@ module Rubernetes
         ids = []
         operation_started = nil
         current_plugin = nil
+        selinux_contexts = nil
+        selinux_volumes = {}
         begin
           volumes.each do |volume|
             entry = Helpers.string_keys(volume)
