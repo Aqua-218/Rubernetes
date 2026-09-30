@@ -755,6 +755,10 @@ module Rubernetes
           result = client.update(candidate, namespace: namespace_for(descriptor, existing), subresource: subresource)
         rescue Rubernetes::Client::APIError => error
           refresh_after_failed_update(descriptor, candidate, error)
+          # Which loop chose UpdateStatus for this kind: the answer to "why a
+          # PUT and not the PATCH the table promises" lives in the log line.
+          issuer = Controller::Support.current_controller.inspect
+          error.define_singleton_method(:message) { "#{super()} [UpdateStatus by controller #{issuer}]" }
           raise
         end
         record_effect!(descriptor: descriptor, object: candidate, action: :status_update, response: result)
@@ -1394,7 +1398,7 @@ module Rubernetes
           @service_account_credentials ||= Controller::ServiceAccountCredentials.new(root_client: client)
           client = @service_account_credentials.client_for("metrics-server")
         end
-        @metrics_server = Rubernetes::MetricsServer::Server.new(client: client, config: options.reject { |key, _| key == "enabled" },
+        @metrics_server = Rubernetes::MetricsServer::Server.new(client: client, config: options.except("enabled"),
                                                                 logger: logger, clock: @clock || -> { Time.now.utc })
         @metrics_server.start
         log(:info, "metrics_server.ready", port: @metrics_server.port)
