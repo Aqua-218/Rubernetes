@@ -73,6 +73,7 @@ module Rubernetes
         @registry = build_registry(@catalog)
         @raft_server = nil
         @store = store || build_store(@config)
+        @store = encrypt_store(@store, @config)
         @security = build_security(@config)
         # kube-apiserver --proxy-client-cert-file / --proxy-client-key-file:
         # the client certificate the aggregator (and webhook calls) present,
