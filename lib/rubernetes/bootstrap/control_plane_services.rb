@@ -1778,7 +1778,7 @@ module Rubernetes
       end
 
       # The plugin inputs for one cycle, rebuilt only after an informer event.
-      EMPTY_CLUSTER_VIEW = {namespace_labels: nil, volume_data: nil, workload_selectors: nil}.freeze
+      EMPTY_CLUSTER_VIEW = {namespace_labels: nil, volume_data: nil, workload_selectors: nil, pod_groups: nil}.freeze
 
       def cluster_view
         return EMPTY_CLUSTER_VIEW if @cluster_objects.nil? || @cluster_informers.nil?
