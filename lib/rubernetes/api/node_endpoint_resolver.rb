@@ -349,7 +349,7 @@ module Rubernetes
           uri.query = URI.encode_www_form(query) unless query.empty?
           return follow_stream(uri) if follow
 
-          http = Net::HTTP.new(uri.hostname, uri.port)
+          http = Security::Egress.http(uri, "cluster")
           KubeletClientTLS.configure(http, uri, @tls)
           http.open_timeout = @open_timeout
           http.read_timeout = @read_timeout if @read_timeout
