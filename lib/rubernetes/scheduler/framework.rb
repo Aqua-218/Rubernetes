@@ -1050,7 +1050,7 @@ module Rubernetes
         deduplicate_pods(values)
       end
 
-      def build_context(nodes, pods, namespace_labels, volume_data = nil, workload_selectors = nil)
+      def build_context(nodes, pods, namespace_labels, volume_data = nil, workload_selectors = nil, pod_groups = nil)
         node_objects = nodes.map do |node|
           assigned = pods.select { |pod| pod.node_name == node.name }
           node.with_pods(assigned, preserve_requested: assigned.empty?)
