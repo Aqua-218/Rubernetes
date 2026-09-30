@@ -422,6 +422,7 @@ module Rubernetes
                      custom
                    end.freeze
         @queue = queue || SchedulingQueue.new
+        @queue.hint_strategy = method(:queueing_strategy) if @queue.respond_to?(:hint_strategy=)
         @reserve_handler = reserve
         @unreserve_handler = unreserve
         @bind_handler = bind
