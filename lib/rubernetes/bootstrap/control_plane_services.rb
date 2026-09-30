@@ -2657,6 +2657,12 @@ module Rubernetes
           clock: @clock
         )
         @proxy.publish_coalescing_seconds = PROXY_PUBLISH_COALESCE_SECONDS if @proxy.respond_to?(:publish_coalescing_seconds=)
+        # A memory backend programs no kernel datapath, so there are no
+        # kernel conntrack entries of its making to reconcile.
+        if @proxy.respond_to?(:conntrack_reconciler=) && !backend.is_a?(Proxy::MemoryBackend)
+          @proxy.conntrack_reconciler = @runtime_adapters[:conntrack_reconciler] || @runtime_adapters["conntrack_reconciler"] ||
+                                        Proxy::ConntrackReconciler.new(families: proxy_ip_families, metrics: @proxy_metrics, logger: @logger)
+        end
         trace_keys = defined?(Controller::Manager::TRACE_KEYS) ? Controller::Manager::TRACE_KEYS : nil
         if trace_keys && @proxy.respond_to?(:trace=)
           @proxy.trace = lambda do |fields|
