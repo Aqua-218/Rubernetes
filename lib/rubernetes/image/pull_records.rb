@@ -1,5 +1,13 @@
 # frozen_string_literal: true
 
+require "time"
+
+require "json"
+
+require "fileutils"
+
+require "digest"
+
 module Rubernetes
   module Image
     # KubeletEnsureSecretPulledImages (Beta, on in v1.36;
