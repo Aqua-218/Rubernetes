@@ -133,6 +133,10 @@ module Rubernetes
           Security::Authentication::JWTAuthenticator.api_server_id = KubernetesServiceReconciler.apiserver_id(identity)
           Security::Authentication::JWTAuthenticator.metrics = @api_server.metrics if @api_server.respond_to?(:metrics)
         end
+        # apiserver_externaljwt_*: only with --service-account-signing-endpoint.
+        if @config.dig("security", "authentication", "service_account", "signing_endpoint") && @api_server.respond_to?(:metrics)
+          Security::Authentication::ExternalJWTSigner.metrics = @api_server.metrics
+        end
         @authentication_trust = if @security&.authentication_info
                                   ClusterAuthenticationTrust.new(api_server: @api_server, authentication_info: @security.authentication_info,
                                                                  logger: @logger,
