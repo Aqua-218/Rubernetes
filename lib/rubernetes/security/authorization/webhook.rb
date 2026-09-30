@@ -96,7 +96,7 @@ module Rubernetes
             response = body.is_a?(String) ? JSON.parse(body) : body
             status = response.is_a?(Hash) ? (response["status"] || {}) : {}
             if status["allowed"] == true
-              Decision.allow(status["reason"], authorizer: NAME)
+              Decision.allow(status["reason"], authorizer: name)
             elsif status["denied"] == true
               Decision.deny(status["reason"], authorizer: NAME)
             else
