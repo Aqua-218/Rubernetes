@@ -35,6 +35,10 @@ module Rubernetes
         freeze
       end
 
+      def pod_group(namespace, name)
+        @pod_groups && @pod_groups["#{namespace}/#{name}"]
+      end
+
       def namespace_labels(namespace)
         Support.snapshot(@namespace_data[namespace.to_s] || {})
       end
