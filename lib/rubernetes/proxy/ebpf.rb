@@ -141,7 +141,7 @@ module Rubernetes
           messages = []
           loop do
             remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
-            if remaining <= 0 || IO.select([socket], nil, nil, remaining).nil?
+            if remaining <= 0 || socket.wait_readable(remaining).nil?
               raise Rubernetes::Platform::Linux::Error.new(
                 errno: Errno::ETIMEDOUT::Errno, operation: "rtnetlink_ack", resource_id: resource_id
               )
@@ -802,7 +802,7 @@ module Rubernetes
       end
 
       def observed_helper_ids
-        return [].freeze unless @program&.respond_to?(:helper_ids)
+        return [].freeze unless @program.respond_to?(:helper_ids)
 
         Array(@program.helper_ids).map(&:to_i).uniq.sort.freeze
       end

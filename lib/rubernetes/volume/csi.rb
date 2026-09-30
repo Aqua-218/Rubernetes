@@ -36,7 +36,7 @@ module Rubernetes
       attr_reader :client, :timeout
 
       def probe
-        value = if @client&.respond_to?(:probe)
+        value = if @client.respond_to?(:probe)
                   @client.probe
                 else
                   invoke("Probe", {})

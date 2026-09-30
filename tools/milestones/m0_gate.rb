@@ -518,7 +518,7 @@ module M0Gate
 
         errors << "built gem payload differs from current source #{relative}"
       end
-    rescue Gem::Package::Error, Gem::Exception, Zlib::Error, IOError, EOFError, ArgumentError => error
+    rescue Gem::Exception, Zlib::Error, IOError, ArgumentError => error
       errors << "built gem is invalid: #{error.class}: #{error.message}"
     end
 

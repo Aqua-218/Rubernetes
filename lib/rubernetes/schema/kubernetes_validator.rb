@@ -3781,7 +3781,7 @@ module Rubernetes
               [issue(path, :invalid,
                      "must be in canonical form (\"#{canonical}\")")]
             end
-          rescue IPAddr::Error, ArgumentError
+          rescue ArgumentError
             [issue(path, :invalid, "must be a valid IP address, (e.g. 10.9.8.7 or 2001:db8::ffff)")]
           end
         when "APIService"

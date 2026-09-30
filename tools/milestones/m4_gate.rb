@@ -1207,7 +1207,7 @@ module M4Gate
       closing_parenthesis = value.rindex(")")
       return nil unless closing_parenthesis
 
-      fields_from_state = value.byteslice(closing_parenthesis + 2..).to_s.split
+      fields_from_state = value.byteslice((closing_parenthesis + 2)..).to_s.split
       start_time = Integer(fields_from_state.fetch(19))
       start_time.positive? ? start_time : nil
     rescue ArgumentError, TypeError, IndexError, Errno::ENOENT, Errno::EACCES, Errno::ESRCH
@@ -1219,7 +1219,7 @@ module M4Gate
       closing_parenthesis = value.rindex(")")
       return nil unless closing_parenthesis
 
-      fields_from_state = value.byteslice(closing_parenthesis + 2..).to_s.split
+      fields_from_state = value.byteslice((closing_parenthesis + 2)..).to_s.split
       parent = Integer(fields_from_state.fetch(1))
       parent.positive? ? parent : nil
     rescue ArgumentError, TypeError, IndexError, Errno::ENOENT, Errno::EACCES, Errno::ESRCH

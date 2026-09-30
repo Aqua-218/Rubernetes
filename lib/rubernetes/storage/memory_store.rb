@@ -1816,13 +1816,12 @@ module Rubernetes
           # RV for a chunked list.  An unchunked list uses the latest
           # consistent revision (including when the requested RV was compacted).
           if resource_version.nil? || resource_version == "" || resource_version == 0 || resource_version == "0"
-            @revision
           else
             requested = parse_revision(resource_version)
             raise InvalidResourceVersion, "resourceVersion #{requested} is ahead of current revision #{@revision}" if requested > @revision
 
-            @revision
           end
+          @revision
         end
       end
 
@@ -2386,7 +2385,7 @@ module Rubernetes
       end
 
       def bookmark_identity(resource)
-        return {} unless resource&.respond_to?(:api_version) && resource.respond_to?(:kind)
+        return {} unless resource.respond_to?(:api_version) && resource.respond_to?(:kind)
 
         {"apiVersion" => resource.api_version.to_s, "kind" => resource.kind.to_s}
       end

@@ -297,7 +297,7 @@ module Rubernetes
           # operation to bind or commit: asking for one failed the Pod with
           # "unknown IPAM operation".
           unless Support.host_network?(config_hash)
-            if @ipam&.respond_to?(:bind_kernel_identity)
+            if @ipam.respond_to?(:bind_kernel_identity)
               @ipam.bind_kernel_identity(operation_id: operation_id, resources: resources,
                                          require_complete: @require_observer)
             end
@@ -423,7 +423,7 @@ module Rubernetes
         return false unless operation && operation.fetch("state") == "committed"
 
         namespace_lease, = bind_namespace_request(sandbox_hash, config_hash)
-        if @adapter&.respond_to?(:check)
+        if @adapter.respond_to?(:check)
           !!@adapter.check(sandbox_hash)
         elsif @observer
           plan = plan_from_record(operation.fetch("plan"))
@@ -480,7 +480,7 @@ module Rubernetes
             ledger_only.concat(missing)
             audit << {"kind" => "ledger_only", "operation_id" => operation.fetch("id"), "resources" => missing}
           end
-          if @adapter&.respond_to?(:recover)
+          if @adapter.respond_to?(:recover)
             begin
               @adapter.recover(options)
             rescue StandardError => error
@@ -851,7 +851,7 @@ module Rubernetes
         proofs = []
         loop do
           attempts += 1
-          proofs = if @observer&.respond_to?(:resources_for)
+          proofs = if @observer.respond_to?(:resources_for)
                      Array(@observer.resources_for(operation))
                    else
                      []
@@ -859,7 +859,7 @@ module Rubernetes
           # resources_for carries the complete kernel tuple used by IPAM and
           # recovery. Never downgrade to identity_for merely because a
           # resources_for read raced DAD/rtnetlink propagation.
-          if proofs.empty? && !@observer&.respond_to?(:resources_for) && @observer&.respond_to?(:identity_for)
+          if proofs.empty? && !@observer.respond_to?(:resources_for) && @observer.respond_to?(:identity_for)
             identity = @observer.identity_for(operation)
             proofs = [{"identity" => identity}] if identity
           end
@@ -904,7 +904,7 @@ module Rubernetes
       # releases the same identity. Unrelated host objects are never inferred
       # to be ours from their name alone.
       def compensate_effect_orphans(records, observed, source, candidates:)
-        return [[], [], []] unless @ledger && source&.respond_to?(:resources_for)
+        return [[], [], []] unless @ledger && source.respond_to?(:resources_for)
 
         compensated = []
         audit = []
@@ -1055,7 +1055,7 @@ module Rubernetes
                  else
                    raise ValidationError, "network observer must respond to call, resources, list_resources, or observe"
                  end
-        if source&.respond_to?(:resources) && !source.respond_to?(:resources_for)
+        if source.respond_to?(:resources) && !source.respond_to?(:resources_for)
           targets = operation_values.filter_map do |operation|
             parameters = operation.respond_to?(:parameters) ? operation.parameters : Support.fetch(operation, "parameters", default: {})
             Support.fetch(parameters, "namespace_fd", "namespace", default: nil)

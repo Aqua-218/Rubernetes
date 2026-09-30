@@ -336,7 +336,7 @@ module Rubernetes
       end
 
       def infer_kind
-        self.class.name.to_s.split("::").last.sub(/Controller\z/, "")
+        self.class.name.to_s.split("::").last.delete_suffix('Controller')
       end
 
       public :resource_descriptor

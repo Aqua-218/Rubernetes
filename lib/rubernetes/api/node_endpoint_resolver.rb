@@ -189,7 +189,7 @@ module Rubernetes
             end
           end
           head = buffer.byteslice(0, index)
-          leftover = buffer.byteslice(index + 4..) || "".b
+          leftover = buffer.byteslice((index + 4)..) || "".b
           lines = head.split("\r\n")
           status_line = lines.shift.to_s
           status = status_line.split(" ", 3)[1].to_i
@@ -216,7 +216,7 @@ module Rubernetes
             body = decode_chunked(raw)
           end
           body
-        rescue EOFError, IOError, SystemCallError
+        rescue IOError, SystemCallError
           body || "".b
         end
 

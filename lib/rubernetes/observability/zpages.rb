@@ -90,7 +90,7 @@ module Rubernetes
       # statusz registry's GetProcessStart.
       def process_start_time
         stat = File.read("/proc/self/stat")
-        ticks = Integer(stat[stat.rindex(")") + 2..].split.fetch(19))
+        ticks = Integer(stat[(stat.rindex(")") + 2)..].split.fetch(19))
         boot = File.foreach("/proc/stat").find { |line| line.start_with?("btime ") }
         Time.at(Integer(boot.split[1]) + (ticks / 100))
       rescue SystemCallError, ArgumentError, IndexError, NoMethodError

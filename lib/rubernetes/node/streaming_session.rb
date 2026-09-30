@@ -634,7 +634,7 @@ module Rubernetes
                 @duplex.stdout.read(READ_CHUNK, timeout: nil)
               rescue StreamTimeout, IO::WaitReadable
                 retry
-              rescue StreamClosed, EOFError, IOError
+              rescue StreamClosed, IOError
                 nil
               end
               break if chunk.nil?

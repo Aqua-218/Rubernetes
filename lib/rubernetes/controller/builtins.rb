@@ -854,7 +854,7 @@ module Rubernetes
 
             Support.namespace(revision) == Support.namespace(owner) &&
               Support.name(revision).start_with?("#{Support.name(owner)}-")
-          end.sort_by { |revision| [revision_number(revision), Support.creation_time(revision)&.to_f || 0.0, Support.name(revision)] }
+          end.sort_by { |revision| [revision_number(revision), Support.creation_time(revision).to_f, Support.name(revision)] }
           next_number = owned_revisions.empty? ? 1 : revision_number(owned_revisions.last) + 1
           operations = []
           equivalent = owned_revisions.select { |revision| revision_data_equal?(revision, data) }

@@ -98,7 +98,7 @@ module Rubernetes
         return unless @directory
 
         path = File.join(@directory, "pulling", "#{digest_name(key)}.json")
-        File.unlink(path) if File.exist?(path)
+        FileUtils.rm_f(path)
       rescue SystemCallError
         nil
       end

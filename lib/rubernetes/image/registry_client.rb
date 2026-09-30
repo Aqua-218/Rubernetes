@@ -102,7 +102,7 @@ module Rubernetes
           captured = RegistryResponse.new(status: http_response.code, headers: response_headers(http_response), body: response_body)
         end
         captured || RegistryResponse.new(status: 599, headers: {}, body: response_body)
-      rescue URI::InvalidURIError, SocketError, SystemCallError, IOError, EOFError, Timeout::Error,
+      rescue URI::InvalidURIError, SocketError, SystemCallError, IOError, Timeout::Error,
              OpenSSL::SSL::SSLError => error
         raise RegistryError.new("registry HTTPS request failed: #{error.message}", cause: error), cause: error
       rescue NameError => error

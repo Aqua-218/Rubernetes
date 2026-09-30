@@ -294,7 +294,7 @@ module Rubernetes
 
       def process_start_time(pid)
         stat = File.read("/proc/#{Integer(pid)}/stat")
-        Integer(stat[stat.rindex(")") + 1..].split.fetch(19))
+        Integer(stat[(stat.rindex(")") + 1)..].split.fetch(19))
       rescue SystemCallError, ArgumentError, IndexError
         nil
       end

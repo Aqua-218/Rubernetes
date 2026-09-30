@@ -43,7 +43,7 @@ module Rubernetes
           text = "#{head}:#{octets.map(&:to_i).join(".")}"
         end
         [IPAddr.new(text), leading]
-      rescue IPAddr::Error, ArgumentError
+      rescue ArgumentError
         nil
       end
 

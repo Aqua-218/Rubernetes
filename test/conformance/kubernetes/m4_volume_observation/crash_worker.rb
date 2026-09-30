@@ -25,7 +25,7 @@ module M4CrashWorker
   def proc_start_time_ticks(pid = Process.pid)
     value = File.binread("/proc/#{pid}/stat", 16 * 1024)
     closing = value.rindex(")")
-    Integer(value.byteslice(closing + 2..).to_s.split.fetch(19))
+    Integer(value.byteslice((closing + 2)..).to_s.split.fetch(19))
   end
 
   def identity

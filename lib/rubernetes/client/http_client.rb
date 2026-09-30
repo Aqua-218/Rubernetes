@@ -188,7 +188,7 @@ module Rubernetes
       rescue APIError, ConfigurationError, Error
         raise
       rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Net::HTTPBadResponse,
-             IOError, EOFError, SocketError, SystemCallError, OpenSSL::SSL::SSLError => error
+             IOError, SocketError, SystemCallError, OpenSSL::SSL::SSLError => error
         raise TransportError.new("HTTP #{normalized_method} #{uri}: #{error.message}", cause: error), cause: error
       rescue URI::InvalidURIError => error
         raise ConfigurationError.new("invalid Kubernetes API URL: #{error.message}", cause: error), cause: error
@@ -243,7 +243,7 @@ module Rubernetes
       rescue APIError, ConfigurationError, Error
         raise
       rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Net::HTTPBadResponse,
-             IOError, EOFError, SocketError, SystemCallError, OpenSSL::SSL::SSLError => error
+             IOError, SocketError, SystemCallError, OpenSSL::SSL::SSLError => error
         raise TransportError.new("HTTP #{normalized_method} #{uri}: #{error.message}", cause: error), cause: error
       rescue URI::InvalidURIError => error
         raise ConfigurationError.new("invalid Kubernetes API URL: #{error.message}", cause: error), cause: error
@@ -355,7 +355,7 @@ module Rubernetes
             errors << error
           end
         end
-        if transport&.respond_to?(:close)
+        if transport.respond_to?(:close)
           begin
             errors.concat(close_resource(transport))
           rescue StandardError => error

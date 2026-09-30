@@ -82,7 +82,7 @@ module Rubernetes
                      end
                    end)
                 end
-          ips.map(&:to_s).join(",")
+          ips.join(",")
         else
           raise Error, "unsupported fieldPath #{field_path.inspect}"
         end

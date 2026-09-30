@@ -75,7 +75,7 @@ module Rubernetes
         normalize_sandbox_resources(resources, path)
       rescue ManifestError
         raise
-      rescue Rubernetes::Manifest::Error, ArgumentError, IOError, SystemCallError, Timeout::Error, JSON::ParserError, RuntimeError => error
+      rescue Rubernetes::Manifest::Error, ArgumentError, IOError, SystemCallError, JSON::ParserError, RuntimeError => error
         raise RubyManifestIsolationError.new("isolated Ruby manifest failed for #{path}: #{error.message}", cause: error), cause: error
       end
 

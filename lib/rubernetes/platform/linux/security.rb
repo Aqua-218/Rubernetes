@@ -534,7 +534,7 @@ module Rubernetes
             values = parse_status(status)
             capabilities = CAPABILITIES.keys.to_h do |name|
                              [name, bit_set?(values.fetch("CapBnd", 0), CAPABILITIES.fetch(name))]
-                           end
+            end
             Probe.new(
               architecture: normalize_architecture(@architecture),
               capabilities: capabilities.freeze,
@@ -584,7 +584,7 @@ module Rubernetes
           end
 
           def bit_set?(value, bit)
-            Integer(value).anybits?((1 << bit))
+            Integer(value).anybits?(1 << bit)
           end
 
           def normalize_architecture(value)

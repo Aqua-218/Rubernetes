@@ -472,7 +472,7 @@ module Rubernetes
         # probe/http formatURL: the host and port joined as net.JoinHostPort
         # does, so an IPv6 Pod IP is bracketed (URI() rejects a bare one).
         uri = URI("#{scheme}://#{Helpers.join_host_port(host, port)}#{path}")
-        if @http_client.nil? && @runtime&.respond_to?(:http_get)
+        if @http_client.nil? && @runtime.respond_to?(:http_get)
           # The connector runs inside the sandbox and knows nothing about the
           # container's named ports: hand it the resolved number (a named port
           # such as "healthcheck" failed every probe and restarted the container).
@@ -508,7 +508,7 @@ module Rubernetes
         host = Helpers.key(definition, "host", Helpers.key(context, "host", "127.0.0.1"))
         port = resolve_port(Helpers.key(definition, "port", nil), context)
         raise ArgumentError, "tcpSocket probe port is required" if port.nil?
-        if @tcp_client.nil? && @runtime&.respond_to?(:tcp_socket)
+        if @tcp_client.nil? && @runtime.respond_to?(:tcp_socket)
           return invoke_with_timeout(timeout) do
             @runtime.tcp_socket(container_id, definition.merge("port" => port), timeout: timeout, context: context)
           rescue ArgumentError => error
@@ -545,7 +545,7 @@ module Rubernetes
         service = Helpers.key(definition, "service", "")
         # A runtime that can probe from inside the Pod's namespace is
         # preferred over a client dialing from the agent's own.
-        if @runtime&.respond_to?(:grpc_check)
+        if @runtime.respond_to?(:grpc_check)
           return invoke_with_timeout(timeout) do
             @runtime.grpc_check(container_id, definition.merge("port" => port), timeout: timeout, context: context)
           end
@@ -567,7 +567,7 @@ module Rubernetes
         if ports.is_a?(Array)
           ports = ports.to_h do |entry|
                     [Helpers.key(entry, "name", ""), Helpers.key(entry, "containerPort", nil)]
-                  end
+          end
         end
         resolved = Helpers.key(ports, value, nil)
         raise ArgumentError, "named probe port #{value.inspect} is not defined" if resolved.nil?

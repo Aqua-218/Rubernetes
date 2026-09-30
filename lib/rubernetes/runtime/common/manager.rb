@@ -136,23 +136,17 @@ module Rubernetes
         @ledger.set_result(stop_operation.id, {"sandbox_id" => operation.target_id})
         begin
           stop_child_containers(operation.target_id, timeout: timeout)
+          @ledger.transition(operation_id: stop_operation.id, to: "Validated")
+          @ledger.transition(operation_id: stop_operation.id, to: "ImagePinned")
+          @ledger.transition(operation_id: stop_operation.id, to: "WorkspaceAllocated")
+          @ledger.transition(operation_id: stop_operation.id, to: "IsolationCreated")
+          @ledger.transition(operation_id: stop_operation.id, to: "ResourcesAttached")
+          @ledger.transition(operation_id: stop_operation.id, to: "WorkloadStopped")
           if operation.state == "WorkloadStopped"
-            @ledger.transition(operation_id: stop_operation.id, to: "Validated")
-            @ledger.transition(operation_id: stop_operation.id, to: "ImagePinned")
-            @ledger.transition(operation_id: stop_operation.id, to: "WorkspaceAllocated")
-            @ledger.transition(operation_id: stop_operation.id, to: "IsolationCreated")
-            @ledger.transition(operation_id: stop_operation.id, to: "ResourcesAttached")
-            @ledger.transition(operation_id: stop_operation.id, to: "WorkloadStopped")
             raise Error, "stop_sandbox backend effect returned false" if invoke_optional(:stop_sandbox, {id: id, timeout: timeout}) == false
 
             @ledger.transition(operation_id: stop_operation.id, to: "RollingBack")
           else
-            @ledger.transition(operation_id: stop_operation.id, to: "Validated")
-            @ledger.transition(operation_id: stop_operation.id, to: "ImagePinned")
-            @ledger.transition(operation_id: stop_operation.id, to: "WorkspaceAllocated")
-            @ledger.transition(operation_id: stop_operation.id, to: "IsolationCreated")
-            @ledger.transition(operation_id: stop_operation.id, to: "ResourcesAttached")
-            @ledger.transition(operation_id: stop_operation.id, to: "WorkloadStopped")
             @ledger.transition(operation_id: stop_operation.id, to: "Running")
             @ledger.transition(operation_id: stop_operation.id, to: "Stopping")
             raise Error, "stop_sandbox backend effect returned false" if invoke_optional(:stop_sandbox, {id: id, timeout: timeout}) == false

@@ -111,7 +111,7 @@ module Rubernetes
       private
 
       def ensure_bridge(operation)
-        if @adapter&.respond_to?(:apply)
+        if @adapter.respond_to?(:apply)
           result = @adapter.apply(operation, operation_id: "node-bridge:#{operation.parameters.fetch("name")}")
           raise EffectError, "node bridge adapter rejected link_add" if result == false
 
@@ -140,7 +140,7 @@ module Rubernetes
 
       def delete_bridge(state)
         operation = state.fetch("operation")
-        if @adapter&.respond_to?(:apply)
+        if @adapter.respond_to?(:apply)
           inverse = Operation.new(action: "link_delete", resource: operation.resource, identity: operation.identity,
                                   parameters: Support.immutable("name" => state.fetch("name"))).freeze
           @adapter.apply(inverse, operation_id: "node-bridge:shutdown")
@@ -400,9 +400,9 @@ module Rubernetes
         return operation unless operation.action == "link_set"
         return operation if operation.parameters.key?("previous_state")
         return operation if owned_links.include?(operation.resource)
-        return operation if @adapter&.respond_to?(:apply)
+        return operation if @adapter.respond_to?(:apply)
         return operation unless operation.parameters["name"] || operation.parameters["index"]
-        return operation unless @netlink&.respond_to?(:link_state)
+        return operation unless @netlink.respond_to?(:link_state)
 
         params = operation.parameters
         previous = @netlink.link_state(name: params["name"], index: params["index"],
@@ -419,13 +419,13 @@ module Rubernetes
       end
 
       def execute(operation, operation_id: nil)
-        if @adapter&.respond_to?(:apply)
+        if @adapter.respond_to?(:apply)
           result = @adapter.apply(operation, operation_id: operation_id)
           raise EffectError, "network adapter rejected #{operation.action}" if result == false
 
           return result
         end
-        if @adapter&.respond_to?(:call) && !@netlink
+        if @adapter.respond_to?(:call) && !@netlink
           result = @adapter.call(operation, operation_id: operation_id)
           raise EffectError, "network adapter rejected #{operation.action}" if result == false
 

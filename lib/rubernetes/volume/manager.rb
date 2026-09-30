@@ -758,7 +758,7 @@ module Rubernetes
       end
 
       def ensure_descriptor_target_security!
-        return true if @path_security&.respond_to?(:descriptor_capable?) && @path_security.descriptor_capable?
+        return true if @path_security.respond_to?(:descriptor_capable?) && @path_security.descriptor_capable?
 
         raise PathSecurityError, "CSI target dispatch requires an openat2 descriptor lease"
       end
@@ -1515,7 +1515,6 @@ module Rubernetes
           @manager.ensure_known!(record, action: "Cleanup")
           key = "#{pod_id}\0#{target}"
           if record.publishes.empty? || !record.publishes.key?(key)
-            true
           else
             entry = record.publishes.fetch(key)
             transitional = record.with(state: "Unpublishing", generation: record.generation + 1)
@@ -1546,8 +1545,8 @@ module Rubernetes
             state = publishes.empty? ? "Staged" : "Published"
             @manager.volume_store[id] = transitional.with(state: state, publishes: publishes, attachments: attachments,
                                                           generation: transitional.generation + 1)
-            true
           end
+          true
         end
       end
 
@@ -1585,10 +1584,9 @@ module Rubernetes
             stages.delete(path)
             state = transitional.attachments.empty? ? "Detached" : "Attached"
             @manager.volume_store[id] = transitional.with(state: state, stages: stages, generation: transitional.generation + 1)
-            true
           else
-            true
           end
+          true
         end
       end
 
@@ -2807,14 +2805,11 @@ module Rubernetes
             return nil unless snapshot
 
             backends.fetch(snapshot.source_id).delete_snapshot(snapshot_id, token: entry.token)
-            snapshot_manager.store.delete(snapshot_id.to_s)
-            operations.finish!(key: entry.key, operation: operation, token: entry.token, result: true)
-            "succeeded"
           else
-            snapshot_manager.store.delete(snapshot_id.to_s)
-            operations.finish!(key: entry.key, operation: operation, token: entry.token, result: true)
-            "succeeded"
           end
+          snapshot_manager.store.delete(snapshot_id.to_s)
+          operations.finish!(key: entry.key, operation: operation, token: entry.token, result: true)
+          "succeeded"
         else
           # Mountinfo can describe the local effect, but a failed CSI
           # observation still cannot authorize follow-up NodeExpand or local

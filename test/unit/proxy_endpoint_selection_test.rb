@@ -18,7 +18,7 @@ class ProxyEndpointSelectionTest < Minitest::Test
   def adapter = Adapter.allocate
 
   def hash_length(expressions)
-    blob = expressions.map(&:to_s).join
+    blob = expressions.join
     # NFTA_HASH_LEN is attribute 3; its u32 value is the byte count hashed.
     blob.bytesize
   end
@@ -27,7 +27,7 @@ class ProxyEndpointSelectionTest < Minitest::Test
     ipv4 = adapter.send(:source_port_expression, Adapter::NFPROTO_IPV4)
     ipv6 = adapter.send(:source_port_expression, Adapter::NFPROTO_IPV6)
 
-    refute_equal(ipv4.map(&:to_s).join, ipv6.map(&:to_s).join,
+    refute_equal(ipv4.join, ipv6.join,
                  "IPv6 addresses fill NFT_REG_2, so the port goes one register later")
   end
 
@@ -35,14 +35,13 @@ class ProxyEndpointSelectionTest < Minitest::Test
     without = adapter.send(:source_hash_expression, Adapter::NFPROTO_IPV4, 3, nil)
     with = adapter.send(:source_hash_expression, Adapter::NFPROTO_IPV4, 3, nil, include_port: true)
 
-    refute_equal(without.map(&:to_s).join, with.map(&:to_s).join)
+    refute_equal(without.join, with.join)
   end
 
   # The selector stays a deterministic hash in both modes; never numgen.
   def test_selection_is_never_a_random_number_generator
     [false, true].each do |include_port|
-      blob = adapter.send(:source_hash_expression, Adapter::NFPROTO_IPV4, 3, nil, include_port: include_port)
-        .map(&:to_s).join
+      blob = adapter.send(:source_hash_expression, Adapter::NFPROTO_IPV4, 3, nil, include_port: include_port).join
 
       assert_includes(blob, "hash")
       refute_includes(blob, "numgen")

@@ -13,7 +13,7 @@ def m4_proc_start_time_ticks(pid)
   closing_parenthesis = value.rindex(")")
   raise "process stat has no closing command name" unless closing_parenthesis
 
-  start_time = Integer(value.byteslice(closing_parenthesis + 2..).to_s.split.fetch(19))
+  start_time = Integer(value.byteslice((closing_parenthesis + 2)..).to_s.split.fetch(19))
   raise "process start time is invalid" unless start_time.positive?
 
   start_time

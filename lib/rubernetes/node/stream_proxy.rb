@@ -74,7 +74,7 @@ module Rubernetes
         body = leftover.dup
         body << socket.readpartial(CHUNK) while body.bytesize < length && socket.wait_readable(5)
         body.byteslice(0, length.positive? ? length : body.bytesize)
-      rescue EOFError, IOError, SystemCallError
+      rescue IOError, SystemCallError
         body.to_s
       end
 
@@ -96,7 +96,7 @@ module Rubernetes
 
       def copy(from, to)
         loop { to.write(from.readpartial(CHUNK)) }
-      rescue EOFError, IOError, SystemCallError
+      rescue IOError, SystemCallError
         begin
           to.close_write if to.respond_to?(:close_write)
         rescue IOError, SystemCallError

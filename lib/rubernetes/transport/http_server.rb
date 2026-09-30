@@ -231,11 +231,10 @@ module Rubernetes
         if background
           @accept_thread = Thread.new { accept_loop }
           @accept_thread.name = "rubernetes-http-accept" if @accept_thread.respond_to?(:name=)
-          self
         else
           accept_loop
-          self
         end
+        self
       end
 
       alias start! start
@@ -584,7 +583,7 @@ module Rubernetes
         end
       rescue RequestError => error
         write_error(active_socket, error) if tls_ready
-      rescue ResponseTimeout, IOError, EOFError, SystemCallError, OpenSSL::SSL::SSLError
+      rescue ResponseTimeout, IOError, SystemCallError, OpenSSL::SSL::SSLError
         # A peer closing its socket or a blocked response write is a normal
         # end to a connection. Never append a second error response after a
         # response write has timed out or partially sent.
@@ -1413,7 +1412,7 @@ module Rubernetes
               sleep 0.01
             end
           end
-        rescue IOError, EOFError, SystemCallError, OpenSSL::SSL::SSLError
+        rescue IOError, SystemCallError, OpenSSL::SSL::SSLError
           close_body.call(true)
         rescue NotImplementedError, ArgumentError, TypeError
           # A non-standard wrapper may not support either peer probe. The
@@ -1567,7 +1566,7 @@ module Rubernetes
         write_response(socket, error_response(error), request: request, keep_alive: false)
       rescue ResponseTooLarge
         write_raw_error(socket)
-      rescue ResponseTimeout, IOError, EOFError, SystemCallError, OpenSSL::SSL::SSLError
+      rescue ResponseTimeout, IOError, SystemCallError, OpenSSL::SSL::SSLError
         nil
       end
 
@@ -1578,7 +1577,7 @@ module Rubernetes
                    "Content-Length: #{body.bytesize}\r\n" \
                    "Connection: close\r\n\r\n".b
         write_all(socket, response + body, deadline: monotonic_time + @write_timeout, timeout_error: ResponseTimeout)
-      rescue ResponseTimeout, IOError, EOFError, SystemCallError, OpenSSL::SSL::SSLError
+      rescue ResponseTimeout, IOError, SystemCallError, OpenSSL::SSL::SSLError
         nil
       end
 

@@ -266,7 +266,7 @@ module Rubernetes
         return [] unless attribute && attribute.value.respond_to?(:value)
 
         extension = Array(attribute.value.value).find do |candidate|
-          candidate.respond_to?(:value) && Array(candidate.value).first&.respond_to?(:oid) &&
+          candidate.respond_to?(:value) && Array(candidate.value).first.respond_to?(:oid) &&
             extension_oid.include?(Array(candidate.value).first.oid.to_s)
         end
         return [] unless extension
@@ -553,7 +553,7 @@ module Rubernetes
         rescue StoreError
           return nil
         rescue ArgumentError
-          raise SyncError, "#{descriptor.resource}.#{descriptor.group} does not implement the scale subresource".sub(/\.\z/, "")
+          raise SyncError, "#{descriptor.resource}.#{descriptor.group} does not implement the scale subresource".delete_suffix('.')
         end
         return nil unless Support.uid(snapshot.target).to_s == Support.value(reference, "uid", "").to_s
 
@@ -1397,7 +1397,7 @@ module Rubernetes
       def cidr_label(cidr)
         address_text, prefix_text = cidr.to_s.split("/", 2)
         "#{IPAddr.new(address_text).mask(Integer(prefix_text))}/#{Integer(prefix_text)}"
-      rescue IPAddr::InvalidAddressError, ArgumentError, TypeError
+      rescue ArgumentError, TypeError
         nil
       end
 
@@ -1419,7 +1419,7 @@ module Rubernetes
         raise ArgumentError, "node CIDR mask size for #{family} is required" if value.nil?
 
         Integer(value)
-      rescue IPAddr::InvalidAddressError, ArgumentError, TypeError => error
+      rescue ArgumentError, TypeError => error
         raise ArgumentError, "invalid cluster CIDR #{cidr.inspect}: #{error.message}"
       end
 
@@ -1433,7 +1433,7 @@ module Rubernetes
         raise ArgumentError, "assigned Pod CIDR prefix is outside address family" unless prefix.between?(0, bits)
 
         "#{address.mask(prefix)}/#{prefix}"
-      rescue IPAddr::InvalidAddressError, ArgumentError => error
+      rescue ArgumentError => error
         raise ArgumentError, "invalid assigned Pod CIDR #{value.inspect}: #{error.message}"
       end
 
@@ -1454,7 +1454,7 @@ module Rubernetes
 
         start = address.to_i & (((1 << bits) - 1) ^ ((1 << (bits - prefix)) - 1))
         [start, start + (1 << (bits - prefix)) - 1, bits]
-      rescue IPAddr::InvalidAddressError, ArgumentError => error
+      rescue ArgumentError => error
         raise ArgumentError, "invalid CIDR #{value.inspect}: #{error.message}"
       end
 
@@ -1478,7 +1478,7 @@ module Rubernetes
           network = IPAddr.new(cluster_network + (index * subnet_size), family)
           "#{network.mask(node_prefix)}/#{node_prefix}"
         end
-      rescue IPAddr::InvalidAddressError, ArgumentError => error
+      rescue ArgumentError => error
         raise ArgumentError, "invalid CIDR allocation input #{cidr.inspect}: #{error.message}"
       end
     end

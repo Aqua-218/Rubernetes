@@ -186,7 +186,7 @@ module Rubernetes
             allow_nan: false,
             max_nesting: 100
           )
-        rescue JSON::ParserError, DuplicateProfileKeyError, EncodingError, JSON::NestingError => error
+        rescue JSON::ParserError, DuplicateProfileKeyError, EncodingError => error
           return profile_failure("invalid", "external proof profile is not strict JSON: #{error.message}")
         end
         return profile_failure("invalid_schema", "external proof profile root must be an object") unless profile.is_a?(Hash)

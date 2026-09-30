@@ -77,7 +77,7 @@ class ProbeIPv6HostsTest < Minitest::Test
       # nothing), then sends the request on a second one.
       loop do
         client = server.accept
-        data = if IO.select([client], nil, nil, 1.0)
+        data = if client.wait_readable(1.0)
                  begin
                    client.read_nonblock(4096, exception: false)
                  rescue StandardError

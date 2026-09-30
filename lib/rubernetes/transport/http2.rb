@@ -203,7 +203,7 @@ module Rubernetes
         rescue HPACK::DecodingError => error
           log(:warn, "HTTP/2 header compression error", error: error.message)
           send_goaway(COMPRESSION_ERROR, error.message)
-        rescue IOError, EOFError, SystemCallError, OpenSSL::SSL::SSLError
+        rescue IOError, SystemCallError, OpenSSL::SSL::SSLError
           nil
         ensure
           finish
@@ -262,7 +262,7 @@ module Rubernetes
         def wait_io(readable:, handshake:)
           loop do
             io = @io.respond_to?(:to_io) ? @io.to_io : @io
-            ready = readable ? IO.select([io], nil, nil, TICK_SECONDS) : IO.select(nil, [io], nil, TICK_SECONDS)
+            ready = readable ? io.wait_readable(TICK_SECONDS) : io.wait_writable(TICK_SECONDS)
             return true if ready
             raise EOFError, "HTTP/2 writer stopped" if @mutex.synchronize { @closed }
 
@@ -867,7 +867,7 @@ module Rubernetes
 
             @server.__send__(:write_all, @io, batch, deadline: monotonic_time + @write_timeout, timeout_error: ResponseTimeout)
           end
-        rescue ResponseTimeout, IOError, EOFError, SystemCallError, OpenSSL::SSL::SSLError
+        rescue ResponseTimeout, IOError, SystemCallError, OpenSSL::SSL::SSLError
           abort_connection
         rescue StandardError => error
           log(:error, "HTTP/2 writer failed", error: error.class.name, message: error.message)

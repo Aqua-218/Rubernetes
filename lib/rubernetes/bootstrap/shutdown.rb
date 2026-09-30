@@ -125,7 +125,7 @@ module Rubernetes
       end
 
       def requested?
-        !IO.select([@reader], nil, nil, 0).nil?
+        !@reader.wait_readable(0).nil?
       end
 
       def wait(timeout: nil)

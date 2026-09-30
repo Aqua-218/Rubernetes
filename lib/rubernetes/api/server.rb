@@ -1769,7 +1769,7 @@ module Rubernetes
         raise
       rescue Errno::ETIMEDOUT, Timeout::Error
         raise Status::ServiceUnavailable.new("proxy request to #{uri} timed out")
-      rescue SystemCallError, IOError, OpenSSL::SSL::SSLError, EOFError => error
+      rescue SystemCallError, IOError, OpenSSL::SSL::SSLError => error
         raise Status::ServiceUnavailable.new("proxy request to #{uri} failed: #{error.message}")
       end
 
@@ -1892,7 +1892,7 @@ module Rubernetes
           raise Status::ServiceUnavailable.new("proxied response head is too large") if buffer.bytesize > PROXY_MAX_HEAD_BYTES
         end
         head = buffer.byteslice(0, index)
-        leftover = buffer.byteslice(index + 4..) || "".b
+        leftover = buffer.byteslice((index + 4)..) || "".b
         lines = head.split("\r\n")
         status = lines.shift.to_s.split(" ", 3)[1].to_i
         headers = Hash.new { |hash, key| hash[key] = [] }

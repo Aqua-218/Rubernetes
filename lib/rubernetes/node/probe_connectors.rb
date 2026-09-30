@@ -37,7 +37,7 @@ module Rubernetes
             body = response.body.to_s.byteslice(0, MAX_BODY_BYTES)
             return {"status" => code, "success" => code.between?(200, 399), "message" => "HTTP probe #{code}: #{body}".strip}
           end
-        rescue Timeout::Error, Net::OpenTimeout, Net::ReadTimeout
+        rescue Timeout::Error
           {"status" => 0, "success" => false, "message" => "HTTP probe timed out after #{timeout}s"}
         rescue SystemCallError, IOError, OpenSSL::SSL::SSLError, SocketError => error
           {"status" => 0, "success" => false, "message" => "HTTP probe failed: #{error.message}"}

@@ -215,7 +215,7 @@ class CSIUDSClientTest < Minitest::Test
     @clients.reverse_each(&:close)
     @server&.stop
     @server_thread&.join(5)
-    FileUtils.remove_entry(@directory) if File.exist?(@directory)
+    FileUtils.rm_rf(@directory)
   end
 
   def new_client

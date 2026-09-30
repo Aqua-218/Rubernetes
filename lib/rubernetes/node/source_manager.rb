@@ -75,7 +75,7 @@ module Rubernetes
       alias handle_api_event apply_api_event
 
       def watch(**)
-        return nil unless @api_source&.respond_to?(:watch)
+        return nil unless @api_source.respond_to?(:watch)
 
         @api_source.watch(**)
       end

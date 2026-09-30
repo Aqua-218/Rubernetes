@@ -1534,8 +1534,8 @@ module Rubernetes
         @metrics_server&.stop
         @metrics_server = nil
         @informers.each { |informer| informer.stop(join: true) if informer.respond_to?(:stop) }
-        @manager.elector.release if @manager&.respond_to?(:elector) && @manager.elector.respond_to?(:release) && @manager.elector.leader?
-        @manager&.stop if @manager&.respond_to?(:stop)
+        @manager.elector.release if @manager.respond_to?(:elector) && @manager.elector.respond_to?(:release) && @manager.elector.leader?
+        @manager&.stop if @manager.respond_to?(:stop)
         @thread&.join if @thread && @thread != Thread.current
         @thread = nil
       rescue StandardError => error
@@ -2610,8 +2610,8 @@ module Rubernetes
       def stop_components(reason:)
         @component_server&.stop
         @component_server = nil
-        @node_informer&.stop(join: true) if @node_informer&.respond_to?(:stop)
-        @pod_informer&.stop(join: true) if @pod_informer&.respond_to?(:stop)
+        @node_informer&.stop(join: true) if @node_informer.respond_to?(:stop)
+        @pod_informer&.stop(join: true) if @pod_informer.respond_to?(:stop)
         @cluster_informers.each_value { |informer| informer.stop(join: true) if informer.respond_to?(:stop) }
         @elector.release if @elector&.leader?
         @thread&.join if @thread && @thread != Thread.current
@@ -2848,11 +2848,11 @@ module Rubernetes
       def stop_components(reason:)
         @component_server&.stop
         @component_server = nil
-        @proxy&.stop_watch if @proxy&.respond_to?(:stop_watch)
-        @proxy&.stop_health_check_responder if @proxy&.respond_to?(:stop_health_check_responder)
-        if @proxy&.respond_to?(:detach_backend)
+        @proxy&.stop_watch if @proxy.respond_to?(:stop_watch)
+        @proxy&.stop_health_check_responder if @proxy.respond_to?(:stop_health_check_responder)
+        if @proxy.respond_to?(:detach_backend)
           @proxy.detach_backend
-        elsif @proxy&.respond_to?(:backend) && @proxy.backend.respond_to?(:detach)
+        elsif @proxy.respond_to?(:backend) && @proxy.backend.respond_to?(:detach)
           @proxy.backend.detach
         end
         @subscriptions = []

@@ -692,7 +692,7 @@ module Rubernetes
       def find_gvk(identifier = nil, *parts, group: nil, version: nil, kind: nil, gvk: nil)
         key = normalize_gvk_lookup(identifier, parts, group, version, kind, gvk)
         @gvk_entries_by_gvk[key]
-      rescue ArgumentError, KeyError, IndexError
+      rescue ArgumentError, IndexError
         nil
       end
 
@@ -716,7 +716,7 @@ module Rubernetes
                 parse_gvr(identifier)
               end
         @served_gvrs_by_gvr[gvr]
-      rescue ArgumentError, KeyError, IndexError
+      rescue ArgumentError, IndexError
         nil
       end
 

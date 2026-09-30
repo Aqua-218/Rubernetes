@@ -120,7 +120,7 @@ module Rubernetes
         # perform the mount inside a private mount namespace.  Pure adapters
         # do not implement activation and therefore retain the no-op path.
         def activate(workspace, namespace:)
-          return true unless @adapter&.respond_to?(:activate)
+          return true unless @adapter.respond_to?(:activate)
 
           @adapter.activate(workspace, namespace: namespace)
         end
@@ -143,7 +143,7 @@ module Rubernetes
         # is intentionally insufficient for restart adoption.
         def resource_metadata(workspace)
           identity = workspace.respond_to?(:identity) ? workspace.identity : String(workspace)
-          return {} unless @adapter&.respond_to?(:resources)
+          return {} unless @adapter.respond_to?(:resources)
 
           entry = Array(@adapter.resources).find do |value|
             hash = value.respond_to?(:to_h) ? value.to_h : value

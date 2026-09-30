@@ -115,7 +115,7 @@ module Rubernetes
         parse_tar(reader)
         drain_trailing_archive(reader)
         compressed_bytes
-      rescue Zlib::Error, IOError, EOFError => error
+      rescue Zlib::Error, IOError => error
         raise LayerError.new("cannot read OCI layer: #{error.message}", cause: error), cause: error
       ensure
         begin

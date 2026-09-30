@@ -2133,7 +2133,7 @@ module M2ProbeSupport
         remaining_watch_bodies = api_transport&.active_watch_count.to_i
         remaining_stream_monitors = server&.active_stream_monitors.to_i
         remaining_http_clients = server&.active_connections.to_i
-        remaining_sync_thread = sync_loop&.respond_to?(:thread_alive?) && sync_loop.thread_alive?
+        remaining_sync_thread = sync_loop.respond_to?(:thread_alive?) && sync_loop.thread_alive?
         remaining_agent = agent&.started? || node_agent&.running?
         cleanup_errors << "NativeAPITransport watch bodies remain: #{remaining_watch_bodies}" if remaining_watch_bodies.positive?
         cleanup_errors << "HTTPServer stream monitors remain: #{remaining_stream_monitors}" if remaining_stream_monitors.positive?
@@ -2564,7 +2564,7 @@ module M2ProbeSupport
 
   def process_start_time(pid)
     stat = File.read("/proc/#{Integer(pid)}/stat")
-    stat[stat.rindex(")") + 1..].split.fetch(19)
+    stat[(stat.rindex(")") + 1)..].split.fetch(19)
   rescue StandardError
     ""
   end

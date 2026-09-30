@@ -131,13 +131,13 @@ module Rubernetes
           File.rename(temporary, final)
           sync_directory
         rescue Errno::ENOSPC, Errno::EDQUOT => error
-          File.delete(temporary) if File.exist?(temporary)
+          FileUtils.rm_f(temporary)
           raise DiskFull, "snapshot write failed: #{error.message}"
         rescue Errno::EIO => error
-          File.delete(temporary) if File.exist?(temporary)
+          FileUtils.rm_f(temporary)
           raise FsyncFailed, "snapshot write failed: #{error.message}"
         rescue StandardError
-          File.delete(temporary) if File.exist?(temporary)
+          FileUtils.rm_f(temporary)
           raise
         end
         Metadata.new(index: index, term: term, membership: Canonical.normalize(membership),

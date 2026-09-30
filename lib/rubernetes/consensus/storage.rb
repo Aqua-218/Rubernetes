@@ -67,10 +67,10 @@ module Rubernetes
           File.rename(temporary, final)
           sync_directory
         rescue Errno::ENOSPC => error
-          File.delete(temporary) if File.exist?(temporary)
+          FileUtils.rm_f(temporary)
           raise DiskFull, "WAL rotation failed: #{error.message}"
         rescue StandardError
-          File.delete(temporary) if File.exist?(temporary)
+          FileUtils.rm_f(temporary)
           raise
         end
         old = @wal

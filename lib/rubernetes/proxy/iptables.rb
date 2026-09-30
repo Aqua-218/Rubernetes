@@ -98,7 +98,7 @@ module Rubernetes
 
         def family_of(ip)
           IPAddr.new(ip.to_s).ipv6? ? "IPv6" : "IPv4"
-        rescue IPAddr::Error, ArgumentError
+        rescue ArgumentError
           nil
         end
 
@@ -482,7 +482,7 @@ module Rubernetes
           deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
           loop do
             remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
-            raise Errno::ETIMEDOUT, "nfacct" if remaining <= 0 || !IO.select([socket], nil, nil, remaining)
+            raise Errno::ETIMEDOUT, "nfacct" if remaining <= 0 || !socket.wait_readable(remaining)
 
             buffer = socket.recv(65_536)
             offset = 0

@@ -133,7 +133,7 @@ module Rubernetes
 
       def initialize(issues)
         @issues = Array(issues).freeze
-        message = @issues.map(&:to_s).join("; ")
+        message = @issues.join("; ")
         super(message.empty? ? "schema validation failed" : "schema validation failed: #{message}")
       end
     end

@@ -107,7 +107,7 @@ module Rubernetes
 
           # The comm field may contain spaces and parentheses, so field 22 is
           # counted from after the final ')'.
-          tail = stat[(stat.rindex(")") || -1) + 1..].to_s.split
+          tail = stat[((stat.rindex(")") || -1) + 1)..].to_s.split
           tail[19]
         end
 

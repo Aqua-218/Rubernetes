@@ -404,7 +404,7 @@ class HTTPTransportTest < Minitest::Test
 
     assert_equal "200", response.code
     assert_predicate tls_server, :tls?
-    if tls_server.instance_variable_get(:@ssl_context)&.respond_to?(:min_version)
+    if tls_server.instance_variable_get(:@ssl_context).respond_to?(:min_version)
       assert_equal OpenSSL::SSL::TLS1_2_VERSION, tls_server.instance_variable_get(:@ssl_context).min_version
 
       if OpenSSL::SSL.const_defined?(:TLS1_1_VERSION)

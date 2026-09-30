@@ -1611,7 +1611,7 @@ module Rubernetes
         workspace_data = workspace_resource.fetch("metadata")
         workspace_fields = %w[id root upper work identity image_digest].to_h do |field|
                              [field.to_sym, workspace_data.fetch(field)]
-                           end
+        end
         workspace = Filesystem::Workspace.new(**workspace_fields)
         @filesystem.adopt(workspace, namespace: namespace, metadata: workspace_resource.fetch("metadata", {}))
         sandbox = Sandbox.new(id: sandbox_id, identity: owner, config: {}, clock: @clock)
@@ -2311,7 +2311,7 @@ module Rubernetes
           seccomp_root: config.seccomp_root
         )
         process_adapter = @adapters[:process_adapter]
-        process_adapter.security = security if process_adapter&.respond_to?(:security=)
+        process_adapter.security = security if process_adapter.respond_to?(:security=)
         security
       end
 

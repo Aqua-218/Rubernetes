@@ -68,7 +68,7 @@ class PodLogWebSocketTest < Minitest::Test
     assert thread.join(10), "the reader must finish once the stream ends"
     server.close unless server.closed?
     data = +"".b
-    while IO.select([client], nil, nil, 3)
+    while client.wait_readable(3)
       chunk = begin
         client.read_nonblock(65_536)
       rescue IO::WaitReadable

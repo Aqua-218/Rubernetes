@@ -28,7 +28,7 @@ class NodeStreamProxyTest < Minitest::Test
         socket.write("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 6\r\n\r\ndenied")
         socket.close
       end
-    rescue EOFError, IOError
+    rescue IOError
       socket&.close
     end
     [server, thread, seen]

@@ -832,7 +832,7 @@ module Rubernetes
         container = await_container(namespace, pod, CGI.unescape(match[:container]), follow: false)
         result = @exec_service.exec(container, command: cmd.split, tty: false, stdin: false,
                                                stdout: true, stderr: true, identity: "node-streaming")
-        output = exec_body(result).map(&:to_s).join
+        output = exec_body(result).join
         [200, {"content-type" => "application/json"}, [output]]
       rescue StandardError => error
         [500, {"content-type" => "text/plain"}, ["#{error.class}: #{error.message}\n"]]

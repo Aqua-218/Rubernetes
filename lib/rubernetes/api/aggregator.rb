@@ -175,7 +175,7 @@ module Rubernetes
         body = response.body.to_s
         body = JSON.parse(body) if (headers["content-type"] || "").start_with?("application/json") && !body.empty?
         Response.new(status: response.code.to_i, headers: headers, body: body)
-      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, Net::HTTPFatalError, OpenSSL::SSL::SSLError, SystemCallError,
+      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, OpenSSL::SSL::SSLError, SystemCallError,
              SocketError, IOError => error
         unavailable_response("Error trying to reach service: '#{error.message}'")
       rescue JSON::ParserError
@@ -265,7 +265,7 @@ module Rubernetes
         return nil unless response.code.to_i == 200
 
         JSON.parse(response.body)
-      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, Net::HTTPFatalError, OpenSSL::SSL::SSLError, SystemCallError,
+      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, OpenSSL::SSL::SSLError, SystemCallError,
              SocketError, IOError, JSON::ParserError
         nil
       end
@@ -275,7 +275,7 @@ module Rubernetes
         response = build_http(uri, backend).get("/apis/#{backend.group}/#{backend.version}",
                                                 {"accept" => "application/json"}.merge(AGGREGATOR_IDENTITY))
         response.code.to_i.between?(200, 299)
-      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, Net::HTTPFatalError, OpenSSL::SSL::SSLError, SystemCallError,
+      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, OpenSSL::SSL::SSLError, SystemCallError,
              SocketError, IOError
         false
       end
@@ -344,7 +344,7 @@ module Rubernetes
         return nil if response.code.to_i.between?(200, 299)
 
         "bad status from #{uri}/apis/#{backend.group}/#{backend.version}: #{response.code}"
-      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, Net::HTTPFatalError, OpenSSL::SSL::SSLError, SystemCallError,
+      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, OpenSSL::SSL::SSLError, SystemCallError,
              SocketError, IOError => error
         error.message
       end

@@ -25,7 +25,7 @@ module Rubernetes
       # make concurrent listers disagree about ownership, so duplicate names
       # fail closed instead of silently changing query semantics.
       def add_index(name, &function)
-        raise ArgumentError, "index function is required" unless function&.respond_to?(:call)
+        raise ArgumentError, "index function is required" unless function.respond_to?(:call)
 
         index_name = normalize_index_name(name)
         loop do

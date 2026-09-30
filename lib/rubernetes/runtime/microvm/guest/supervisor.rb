@@ -593,7 +593,7 @@ module Rubernetes
               log("umount #{target}: #{error.message}")
             end
             @mounted.clear
-            File.delete("/run/machine-id") if File.exist?("/run/machine-id")
+            FileUtils.rm_f("/run/machine-id")
             set_hostname("rubernetes-base")
             @state.identity = nil
             @state.session_key = nil
@@ -948,7 +948,7 @@ module Rubernetes
               chunk = io.readpartial(MAX_STREAM_CHUNK)
               write_stream_frame(connection, channel, chunk)
             end
-          rescue EOFError, IOError, SystemCallError
+          rescue IOError, SystemCallError
             nil
           end
 

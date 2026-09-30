@@ -159,7 +159,7 @@ module Rubernetes
           destination
         rescue StandardError
           begin
-            File.unlink(temporary) if File.exist?(temporary)
+            FileUtils.rm_f(temporary)
           rescue SystemCallError
             # Preserve the original storage failure; cleanup is best effort and
             # the uniquely named temporary file cannot become a valid blob key.

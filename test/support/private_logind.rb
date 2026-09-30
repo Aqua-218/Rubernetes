@@ -50,7 +50,7 @@ module PrivateLogind
     def address = "unix:path=#{@socket_path}"
 
     def start
-      File.delete(@socket_path) if File.exist?(@socket_path)
+      FileUtils.rm_f(@socket_path)
       config = File.join(@directory, "bus.conf")
       File.write(config, format(CONFIG, socket: @socket_path))
       @pid = Process.spawn("dbus-daemon", "--config-file=#{config}", "--nofork", "--nosyslog",

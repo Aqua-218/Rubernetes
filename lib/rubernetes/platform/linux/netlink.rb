@@ -43,7 +43,7 @@ module Rubernetes
           messages = []
           loop do
             remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
-            if remaining <= 0 || IO.select([socket], nil, nil, remaining).nil?
+            if remaining <= 0 || socket.wait_readable(remaining).nil?
               raise Linux::Error.new(errno: Errno::ETIMEDOUT::Errno, operation: "netlink_ack", resource_id: resource_id)
             end
 

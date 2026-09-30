@@ -101,7 +101,7 @@ module Rubernetes
           @max_packet_bytes = Support.integer(max_packet_bytes, "DNS packet size", min: 512, max: 65_535)
           @clock = clock
           @adapter = adapter
-          @upstream_adapter = upstream_adapter || (adapter if adapter&.respond_to?(:query))
+          @upstream_adapter = upstream_adapter || (adapter if adapter.respond_to?(:query))
           @upstreams = validate_upstreams(Array(upstreams || upstream || []))
           @services = {}
           @endpoint_slices = {}

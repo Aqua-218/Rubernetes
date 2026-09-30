@@ -320,7 +320,7 @@ module Rubernetes
 
         def process_start_time(pid)
           stat = File.read("/proc/#{pid}/stat")
-          Integer(stat[stat.rindex(")") + 2..].split[19])
+          Integer(stat[(stat.rindex(")") + 2)..].split[19])
         end
 
         def kill_pid(pid)

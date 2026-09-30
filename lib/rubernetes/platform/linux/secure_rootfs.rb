@@ -19,7 +19,7 @@ module Rubernetes
 
           def initialize(message, cause: nil)
             @cause = cause
-            @errno = cause.errno if cause&.respond_to?(:errno)
+            @errno = cause.errno if cause.respond_to?(:errno)
             super(message)
           end
         end

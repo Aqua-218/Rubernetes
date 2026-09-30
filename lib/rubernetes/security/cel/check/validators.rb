@@ -230,7 +230,7 @@ module Rubernetes
               return FormatError.new(nil, "unexpected end of string") if index + 1 >= text.bytesize
               return FormatError.new(nil, "index #{argument_index} out of range") if argument_index >= arguments.length
 
-              read, error = format_clause(text.byteslice(index + 1..), arguments[argument_index], types)
+              read, error = format_clause(text.byteslice((index + 1)..), arguments[argument_index], types)
               return error if error
 
               index += 1 + read

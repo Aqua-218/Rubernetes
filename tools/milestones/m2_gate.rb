@@ -1982,7 +1982,7 @@ module M2Gate
         errors << "#{label} actual Native workload must use clone3" unless actual_workload["creation_method"] == "clone3"
         errors << "#{label} actual Native workload must have CLONE_PIDFD and CLONE_NEWPID" unless
           integer?(actual_workload["clone_flags"]) &&
-          actual_workload["clone_flags"].allbits?((CLONE_PIDFD | CLONE_NEWPID))
+          actual_workload["clone_flags"].allbits?(CLONE_PIDFD | CLONE_NEWPID)
         unless valid_digest?(actual_workload["executable_digest"].to_s.delete_prefix("sha256:"))
           errors << "#{label} actual Native workload executable digest is invalid"
         end

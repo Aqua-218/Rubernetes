@@ -178,7 +178,7 @@ module Rubernetes
       def read_disk_usage
         return nil unless @image_store
         return @image_store.disk_usage if @image_store.respond_to?(:disk_usage)
-        return @runtime.disk_usage if @runtime&.respond_to?(:disk_usage)
+        return @runtime.disk_usage if @runtime.respond_to?(:disk_usage)
 
         nil
       end

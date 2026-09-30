@@ -302,7 +302,7 @@ module Rubernetes
                   IPAddr.new(source_ip).hton
                 end
         jenkins_hash(bytes)
-      rescue ArgumentError, IPAddr::InvalidAddressError
+      rescue ArgumentError
         0
       end
 

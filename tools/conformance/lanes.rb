@@ -102,7 +102,7 @@ module Conformance
 
           Array(ready && ready.first).each do |io|
             readers.fetch(io) << io.readpartial(65_536)
-          rescue EOFError, IOError
+          rescue IOError
             readers.delete(io)
           end
         end

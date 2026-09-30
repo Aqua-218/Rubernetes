@@ -528,7 +528,7 @@ module Rubernetes
 
             handle(frame)
           end
-        rescue EOFError, IOError, SystemCallError, ProtocolError => error
+        rescue IOError, SystemCallError, ProtocolError => error
           @logger&.call(:debug, "spdy.session_ended", error: error.class.name, message: error.message)
         ensure
           shutdown

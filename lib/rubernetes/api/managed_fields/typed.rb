@@ -614,7 +614,7 @@ module Rubernetes
             merged_right[element] = true
             merge_item.call(element, observed_left.fetch(element, ABSENT), observed_right.fetch(element, ABSENT))
             right_index += 1
-            next_shared = shared.shift if next_shared&.eql?(element)
+            next_shared = shared.shift if next_shared.eql?(element)
           end
           state.out = out unless out.empty?
         end

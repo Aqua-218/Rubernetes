@@ -173,7 +173,7 @@ module Rubernetes
         def read_byte(io, remaining)
           io.read_nonblock(1)
         rescue IO::WaitReadable
-          IO.select([io], nil, nil, remaining) ? retry : raise(DialError, "CONNECT response timed out")
+          io.wait_readable(remaining) ? retry : raise(DialError, "CONNECT response timed out")
         rescue EOFError
           nil
         end
@@ -181,11 +181,10 @@ module Rubernetes
         def split_address(address)
           if address.start_with?("[")
             host, port = address[1..].split("]:", 2)
-            [host, Integer(port)]
           else
             host, port = address.rpartition(":").values_at(0, 2)
-            [host, Integer(port)]
           end
+          [host, Integer(port)]
         end
       end
 
@@ -331,13 +330,12 @@ module Rubernetes
           context.key = OpenSSL::PKey.read(File.binread(client_key))
           ca = config["caBundle"].to_s
           if ca.empty?
-            context.verify_mode = OpenSSL::SSL::VERIFY_PEER
           else
             store = OpenSSL::X509::Store.new
             File.binread(ca).scan(/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/m).each { |pem| store.add_cert(OpenSSL::X509::Certificate.new(pem)) }
             context.cert_store = store
-            context.verify_mode = OpenSSL::SSL::VERIFY_PEER
           end
+          context.verify_mode = OpenSSL::SSL::VERIFY_PEER
           {context: context, server_name: config["tlsServerName"].to_s.empty? ? nil : config["tlsServerName"].to_s}
         rescue SystemCallError, OpenSSL::OpenSSLError => error
           raise Error, "#{path}.transport.tcp.tlsConfig: #{error.message}"

@@ -62,7 +62,7 @@ module Rubernetes
           version = (gvk_object || gvr_object).version
           kind = gvk_object&.kind || keywords[:kind]
           resource = gvr_object&.resource || keywords[:resource]
-          kind ||= resource.to_s.sub(/s\z/, "").split(/[-_]/).map { |part| part[0].to_s.upcase + part[1..].to_s }.join
+          kind ||= resource.to_s.delete_suffix('s').split(/[-_]/).map { |part| part[0].to_s.upcase + part[1..].to_s }.join
           attributes = keywords.merge(group: group, version: version)
           attributes[:kind] = kind if kind
           attributes[:resource] = resource if resource

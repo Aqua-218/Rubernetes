@@ -272,7 +272,7 @@ module Rubernetes
           rescue Net::OpenTimeout, Net::ReadTimeout
             raise WebhookTimeout,
                   "failed to call webhook: Post #{"#{url}#{uri.query ? "&" : "?"}timeout=#{timeout}s".inspect}: context deadline exceeded"
-          rescue OpenSSL::SSL::SSLError, SystemCallError, SocketError, IOError, Net::ProtocolError, Net::HTTPFatalError => error
+          rescue OpenSSL::SSL::SSLError, SystemCallError, SocketError, IOError, Net::ProtocolError => error
             raise Error, "failed to call webhook: Post #{"#{url}#{uri.query ? "&" : "?"}timeout=#{timeout}s".inspect}: #{error.message}"
           ensure
             # The request's webhook time, which its SLI latency leaves out

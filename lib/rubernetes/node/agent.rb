@@ -628,7 +628,7 @@ module Rubernetes
                      accepted = callable.parameters.filter_map { |kind, name| name if %i[key keyreq].include?(kind) }
                      callable.call(**options.select { |key, _| accepted.include?(key) })
                    end
-                 elsif @runtime&.respond_to?(:recover)
+                 elsif @runtime.respond_to?(:recover)
                    callable = @runtime.method(:recover)
                    options = {observer: observer, cleaner: cleaner}
                    if callable.parameters.any? { |kind, _| kind == :keyrest }

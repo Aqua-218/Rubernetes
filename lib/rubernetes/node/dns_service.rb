@@ -94,7 +94,7 @@ module Rubernetes
         body = response.respond_to?(:json) ? response.json : response
         body = body.to_h if body.respond_to?(:to_h) && !body.is_a?(Hash)
         items = Array(body["items"])
-        kind = body["kind"].to_s.sub(/List\z/, "")
+        kind = body["kind"].to_s.delete_suffix('List')
         items.each do |item|
           object = item.merge("kind" => item["kind"] || kind)
           consume_object("ADDED", object, resource)

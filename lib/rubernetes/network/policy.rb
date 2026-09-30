@@ -242,7 +242,7 @@ module Rubernetes
           candidate = PolicySnapshot.new(revision: candidate_revision, policies: @policies.dup.freeze,
                                          entries: Support.immutable(entries),
                                          created_at: Support.now(@clock).iso8601(6))
-          if entries.dig("kernel", "pod_index_present") == false && @adapter&.respond_to?(:detach)
+          if entries.dig("kernel", "pod_index_present") == false && @adapter.respond_to?(:detach)
             @adapter.detach
           else
             publish!(candidate)

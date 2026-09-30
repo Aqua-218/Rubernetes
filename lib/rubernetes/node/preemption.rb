@@ -225,7 +225,7 @@ module Rubernetes
       end
 
       def self.requirements_to_s(requirements)
-        "[#{requirements.map(&:to_s).join}]"
+        "[#{requirements.join}]"
       end
 
       # sortPodsByQOS: the preemptable Pods by QoS class.

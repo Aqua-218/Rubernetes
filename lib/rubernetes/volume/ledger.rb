@@ -295,7 +295,7 @@ module Rubernetes
         end
 
         def legacy_identity
-          [mount_id, filesystem_uuid, device_id, target].map(&:to_s).join("/")
+          [mount_id, filesystem_uuid, device_id, target].join("/")
         end
 
         def identity
@@ -743,7 +743,7 @@ module Rubernetes
                   value_for(hash, "deviceId", :device_id), value_for(hash, "target", :target)]
         return nil if values.any?(&:nil?)
 
-        values.map(&:to_s).join("/")
+        values.join("/")
       end
 
       def value_for(hash, string_key, symbol_key)

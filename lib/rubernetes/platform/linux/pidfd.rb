@@ -50,7 +50,7 @@ module Rubernetes
         def wait(pidfd:, timeout: nil, resource_id: "pidfd:#{pidfd}")
           descriptor = Integer(pidfd)
           io = IO.for_fd(descriptor, autoclose: false)
-          return nil unless IO.select([io], nil, nil, timeout)
+          return nil unless io.wait_readable(timeout)
 
           storage = Fiddle::Pointer.malloc(SIGINFO_SIZE, Fiddle::RUBY_FREE)
           storage[0, SIGINFO_SIZE] = "\0" * SIGINFO_SIZE
@@ -76,7 +76,7 @@ module Rubernetes
         def alive?(pidfd:)
           descriptor = Integer(pidfd)
           io = IO.for_fd(descriptor, autoclose: false)
-          IO.select([io], nil, nil, 0).nil?
+          io.wait_readable(0).nil?
         rescue Errno::EBADF
           false
         end

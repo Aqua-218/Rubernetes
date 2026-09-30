@@ -98,7 +98,7 @@ class M4VolumeTest < Minitest::Test
   end
 
   def teardown
-    FileUtils.remove_entry(@directory) if File.exist?(@directory)
+    FileUtils.rm_rf(@directory)
   end
 
   def test_attach_stage_publish_and_reverse_lifecycle_is_idempotent

@@ -585,7 +585,7 @@ module Rubernetes
           namespaced: !self.class.cluster_scoped_resources.include?(plural),
           verbs: %w[get list watch create update patch delete deletecollection],
           short_names: [],
-          singular_name: plural.sub(/s\z/, ""),
+          singular_name: plural.delete_suffix('s'),
           list_kind: "#{kind || resource_name}List",
           subresource: subresource
         )
@@ -950,7 +950,7 @@ module Rubernetes
             raise unless transport_disconnect?(error)
 
             reconnect_count += 1
-          rescue TransportError, EOFError, IOError
+          rescue TransportError, IOError
             raise unless reconnect && reconnect_count < reconnect_limit
 
             reconnect_count += 1

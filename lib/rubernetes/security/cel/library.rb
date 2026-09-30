@@ -317,7 +317,7 @@ module Rubernetes
             raise EvaluationError, "substring range out of bounds" if start.negative? || finish > text.length || start > finish
 
             text[start...finish]
-          when "indexOf" then index_of(string_target(target), string_argument(arguments, 0), arguments[1]&.to_i || 0)
+          when "indexOf" then index_of(string_target(target), string_argument(arguments, 0), arguments[1].to_i)
           when "lastIndexOf" then last_index_of(string_target(target), string_argument(arguments, 0), arguments[1]&.to_i)
           when "charAt"
             text = string_target(target)

@@ -79,7 +79,7 @@ module Rubernetes
 
       # byEvictionAndCreationTimestamp.
       def sorted(pods)
-        pods.sort_by { |pod| [evicted?(pod) ? 0 : 1, Support.creation_time(pod)&.to_f || 0.0, Support.name(pod)] }
+        pods.sort_by { |pod| [evicted?(pod) ? 0 : 1, Support.creation_time(pod).to_f, Support.name(pod)] }
       end
 
       def gc_terminated(pods, threshold)

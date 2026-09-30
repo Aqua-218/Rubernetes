@@ -827,7 +827,7 @@ module Rubernetes
       end
 
       def path_for(path, key)
-        (path + [key]).map(&:to_s).join(".").then { |item| item.empty? ? "$" : item }
+        (path + [key]).join(".").then { |item| item.empty? ? "$" : item }
       end
 
       def display_path(path)

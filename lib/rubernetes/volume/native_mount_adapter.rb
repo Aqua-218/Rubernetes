@@ -528,7 +528,7 @@ module Rubernetes
 
       def fs_group_root_matches?(root, group, mask)
         stat = File.lstat(root)
-        stat.gid == group && stat.mode.allbits?((SETGID | EXEC_MASK | mask))
+        stat.gid == group && stat.mode.allbits?(SETGID | EXEC_MASK | mask)
       rescue SystemCallError
         false
       end

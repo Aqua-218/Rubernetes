@@ -504,7 +504,7 @@ module Rubernetes
       end
 
       def close_resource(resource)
-        return false unless resource&.respond_to?(:close) || resource&.respond_to?(:stop)
+        return false unless resource.respond_to?(:close) || resource.respond_to?(:stop)
 
         if resource.respond_to?(:close)
           resource.close
@@ -966,8 +966,8 @@ module Rubernetes
 
       def start_watch(service_source: nil, endpoint_slice_source: nil, **)
         subscriptions = []
-        subscriptions << watch_source(service_source, kind: :service, **) if service_source&.respond_to?(:watch)
-        subscriptions << watch_source(endpoint_slice_source, kind: :endpoint_slice, **) if endpoint_slice_source&.respond_to?(:watch)
+        subscriptions << watch_source(service_source, kind: :service, **) if service_source.respond_to?(:watch)
+        subscriptions << watch_source(endpoint_slice_source, kind: :endpoint_slice, **) if endpoint_slice_source.respond_to?(:watch)
         @subscriptions.concat(subscriptions.compact)
         subscriptions
       end
@@ -1030,7 +1030,7 @@ module Rubernetes
             compile_service(event.object)
           when :endpoint_slice
             service_object = @endpoint_store.service(event.object.key)
-            service_object ||= @service_store.service(event.object.key) if @service_store&.respond_to?(:service)
+            service_object ||= @service_store.service(event.object.key) if @service_store.respond_to?(:service)
             compile_service(service_object) if service_object
           end
         end

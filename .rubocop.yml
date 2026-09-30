@@ -117,3 +117,31 @@ Minitest/AssertTruthy:
   Enabled: false
 Minitest/RefuteFalse:
   Enabled: false
+
+# Judged not worth a tree-wide rewrite (2026-09-30), with the reason:
+# - ChainArrayAllocation (1,095): `map.select.first` chains read better than
+#   hand-fused loops; the arrays are small and never on a hot path we measured.
+# - CollectionLiteralInLoop (93): hoisting every `%w[]` out of a loop trades
+#   locality for a constant; the literals are tiny.
+# - MultilineBlockChain (84) / DuplicateBranch (102): the branches and chains are
+#   intentional for readability (parallel cases stay visibly parallel).
+# - UselessConstantScoping (247): `private` never scoped constants; the
+#   constants are referenced by tests and tools, so private_constant is wrong.
+# - StructNewOverride (27): Struct members named count/size/hash are wire-field
+#   names; renaming them would ripple through every caller and serializer.
+# - NoReturnInBeginEndBlocks (28): every `return` inside an assigned begin/end
+#   is meant to leave the method (early exit on a parse failure).
+Performance/ChainArrayAllocation:
+  Enabled: false
+Performance/CollectionLiteralInLoop:
+  Enabled: false
+Style/MultilineBlockChain:
+  Enabled: false
+Lint/DuplicateBranch:
+  Enabled: false
+Lint/UselessConstantScoping:
+  Enabled: false
+Lint/StructNewOverride:
+  Enabled: false
+Lint/NoReturnInBeginEndBlocks:
+  Enabled: false

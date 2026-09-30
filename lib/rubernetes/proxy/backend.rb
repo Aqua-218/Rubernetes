@@ -150,7 +150,7 @@ module Rubernetes
       # Concrete production adapters expose identities read from the live
       # kernel. Model and fixture adapters intentionally return nil.
       def kernel_identity
-        return nil unless @syscall_adapter&.respond_to?(:kernel_identity)
+        return nil unless @syscall_adapter.respond_to?(:kernel_identity)
 
         @syscall_adapter.kernel_identity
       rescue ArgumentError, IOError, NoMethodError, RuntimeError, SystemCallError, TypeError
@@ -231,7 +231,7 @@ module Rubernetes
 
       def detach(**)
         @apply_mutex.synchronize do
-          @syscall_adapter.detach(backend: self, **) if @syscall_adapter&.respond_to?(:detach)
+          @syscall_adapter.detach(backend: self, **) if @syscall_adapter.respond_to?(:detach)
           @mutex.synchronize do
             @attach_state = :detached
             @last_error = nil
@@ -1023,7 +1023,7 @@ module Rubernetes
                                                                                                             "case_inventory_sha256"))
         backends = %w[ebpf nftables].to_h do |name|
                      [name, value[name] || value[name.to_sym]]
-                   end
+        end
         backends.each do |name, entry|
           validate_kernel_backend_readback(entry, name, name == "ebpf" ? left_digest : right_digest,
                                            expected_rules: expected_rules && expected_rules[name], failures: failures)
@@ -1696,7 +1696,7 @@ module Rubernetes
       def test_adapter_mode?
         [@ebpf, @nftables].all? do |backend|
           adapter = backend.instance_variable_get(:@syscall_adapter)
-          adapter&.respond_to?(:test_adapter?) && adapter.test_adapter? == true
+          adapter.respond_to?(:test_adapter?) && adapter.test_adapter? == true
         end
       rescue StandardError
         false

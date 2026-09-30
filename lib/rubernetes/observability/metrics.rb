@@ -665,7 +665,7 @@ module Rubernetes
       # /proc/self/stat (utime, stime, vsize, rss) and fd counts, read at
       # every scrape as the Go collector does.
       def collect_process_metrics
-        fields = File.read("/proc/self/stat").then { |stat| stat[stat.rindex(")") + 2..].split }
+        fields = File.read("/proc/self/stat").then { |stat| stat[(stat.rindex(")") + 2)..].split }
         set("process_cpu_seconds_total", (Integer(fields[11]) + Integer(fields[12])).to_f / CLOCK_TICKS)
         set("process_virtual_memory_bytes", Integer(fields[20]))
         set("process_resident_memory_bytes", Integer(fields[21]) * PAGE_SIZE)
@@ -708,7 +708,7 @@ module Rubernetes
       # starttime (field 22, clock ticks after boot) + btime.
       def process_start_time
         stat = File.read("/proc/self/stat")
-        ticks = Integer(stat[stat.rindex(")") + 2..].split.fetch(19))
+        ticks = Integer(stat[(stat.rindex(")") + 2)..].split.fetch(19))
         boot = File.foreach("/proc/stat").find { |line| line.start_with?("btime ") }
         Integer(boot.split[1]) + (ticks.to_f / CLOCK_TICKS)
       rescue SystemCallError, ArgumentError, IndexError, NoMethodError

@@ -123,7 +123,7 @@ module M4CSIOracleRunner
                                   in: File::NULL, out: stdout_write, err: @plugin_stderr)
       stdout_write.close
       ready = M4ObserverSupport.wait_for(timeout: 15) do
-        IO.select([stdout_read], nil, nil, 0.05) ? stdout_read.gets : nil
+        stdout_read.wait_readable(0.05) ? stdout_read.gets : nil
       end
       raise "CSI oracle plugin did not report readiness: #{File.read(@plugin_stderr) if File.file?(@plugin_stderr)}" unless ready
 

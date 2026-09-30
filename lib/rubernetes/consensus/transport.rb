@@ -356,7 +356,7 @@ module Rubernetes
         rescue PeerIdentityMismatch => error
           @logger&.warn("consensus.transport.peer_identity_mismatch", peer: @peer_id, error: error.message)
           nil
-        rescue OpenSSL::SSL::SSLError, IOError, SystemCallError, Errno::ETIMEDOUT
+        rescue OpenSSL::SSL::SSLError, IOError, SystemCallError
           nil
         end
 

@@ -194,7 +194,7 @@ module Rubernetes
         raise ValidationError, "#{name} prefix must be between 0 and #{max}" unless (0..max).cover?(prefix)
 
         [IPAddr.new(address.mask(prefix).to_s), prefix]
-      rescue IPAddr::InvalidAddressError, ArgumentError => error
+      rescue ArgumentError => error
         raise ValidationError, "#{name} is not a valid CIDR: #{error.message}"
       end
 

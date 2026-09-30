@@ -52,7 +52,7 @@ server = C::Server.new(id: options.fetch(:id), cluster_id: options.fetch(:cluste
 journal = options[:journal] ? C::OperationJournal.new(options[:journal], component: "m5-worker-#{options[:id]}") : nil
 store = C::RaftStore.new(server, journal: journal)
 server.start
-File.delete(options[:control]) if File.exist?(options[:control])
+FileUtils.rm_f(options[:control])
 control = UNIXServer.new(options.fetch(:control))
 # Announce readiness with the bound transport address.
 $stdout.puts(JSON.generate("event" => "ready", "id" => options[:id], "address" => server.address, "pid" => Process.pid))

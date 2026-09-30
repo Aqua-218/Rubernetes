@@ -478,7 +478,7 @@ module Rubernetes
 
       def bookmark_object(resource, initial_events_end: false)
         object = {"metadata" => {"resourceVersion" => @revision.to_s}}
-        if resource&.respond_to?(:api_version) && resource.respond_to?(:kind)
+        if resource.respond_to?(:api_version) && resource.respond_to?(:kind)
           object["apiVersion"] = resource.api_version.to_s
           object["kind"] = resource.kind.to_s
         end
@@ -628,7 +628,7 @@ module Rubernetes
           group = value.group.to_s
           return "#{group.empty? ? value.version : "#{group}/#{value.version}"}/#{value.resource}"
         end
-        value.to_s.delete_prefix('/').delete_prefix('registry/').sub(%r{/\z}, "")
+        value.to_s.delete_prefix('/').delete_prefix('registry/').delete_suffix('/')
       end
 
       def prepare_object(object, key, existing: nil)

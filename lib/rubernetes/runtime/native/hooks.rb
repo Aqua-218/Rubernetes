@@ -129,7 +129,7 @@ module Rubernetes
           output = +""
           status = nil
           until status
-            ready = output_reader.closed? ? nil : IO.select([output_reader], nil, nil, 0.05)
+            ready = output_reader.closed? ? nil : output_reader.wait_readable(0.05)
             if ready
               begin
                 chunk = output_reader.read_nonblock(4096)
@@ -164,7 +164,7 @@ module Rubernetes
         # pipe open is not waited for.
         def drain(reader, output)
           output << reader.read_nonblock(4096) until reader.closed? || output.bytesize >= OUTPUT_LIMIT
-        rescue IO::WaitReadable, EOFError, IOError
+        rescue IO::WaitReadable, IOError
           nil
         end
 

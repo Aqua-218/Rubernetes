@@ -225,7 +225,7 @@ module Rubernetes
 
         canonical = "#{address}/#{length_text.to_i}"
         canonical == value ? [] : ["must be in canonical form (#{canonical.inspect})"]
-      rescue IPAddr::Error, ArgumentError
+      rescue ArgumentError
         ["must be a valid address in CIDR form, (e.g. 10.9.8.7/24 or 2001:db8::1/64)"]
       end
 

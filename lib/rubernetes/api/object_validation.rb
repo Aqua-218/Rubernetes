@@ -168,7 +168,7 @@ module Rubernetes
         require "ipaddr"
         address = IPAddr.new(name)
         address.to_s == name ? [] : ["must be a canonical IP address (#{address})"]
-      rescue IPAddr::Error, ArgumentError
+      rescue ArgumentError
         ["must be a valid IP address"]
       end
 

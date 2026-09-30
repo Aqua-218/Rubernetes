@@ -80,7 +80,7 @@ class CRIBackendIntegrationTest < Minitest::Test
       FileUtils.rm_rf(@dir)
     end
     begin
-      Dir.rmdir("/sys/fs/cgroup/rbn-cri-test") if Dir.exist?("/sys/fs/cgroup/rbn-cri-test")
+      FileUtils.rm_f("/sys/fs/cgroup/rbn-cri-test")
     rescue StandardError
       nil
     end

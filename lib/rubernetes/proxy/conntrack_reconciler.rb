@@ -191,7 +191,7 @@ module Rubernetes
 
       def address(bytes)
         IPAddr.new_ntoh(bytes).to_s
-      rescue IPAddr::Error, ArgumentError
+      rescue ArgumentError
         nil
       end
 
@@ -258,8 +258,7 @@ module Rubernetes
       def receive_bytes(socket, deadline:)
         remaining = deadline - monotonic_now
         raise ConntrackNetlinkError.new("conntrack dump timed out", errno: Errno::ETIMEDOUT::Errno) if remaining <= 0
-        raise ConntrackNetlinkError.new("conntrack dump timed out", errno: Errno::ETIMEDOUT::Errno) unless IO.select([socket], nil, nil,
-                                                                                                                     remaining)
+        raise ConntrackNetlinkError.new("conntrack dump timed out", errno: Errno::ETIMEDOUT::Errno) unless socket.wait_readable(remaining)
 
         socket.recv(MAX_MESSAGE_BYTES)
       rescue SystemCallError => error
@@ -433,7 +432,7 @@ module Rubernetes
 
       def self.canonical(ip)
         IPAddr.new(ip.to_s).to_s
-      rescue IPAddr::Error, ArgumentError
+      rescue ArgumentError
         ip.to_s
       end
     end

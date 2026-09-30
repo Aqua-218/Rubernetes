@@ -39,7 +39,7 @@ class APINodeLogFollowStreamTest < Minitest::Test
 
               sleep 0.02
             end
-          rescue IOError, SystemCallError, EOFError
+          rescue IOError, SystemCallError
             nil
           ensure
             @closed << true

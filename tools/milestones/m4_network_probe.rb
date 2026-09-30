@@ -225,7 +225,7 @@ module M4NetworkKernelProbe
     path = "/proc/#{pid}/ns/net"
     stat = File.binread("/proc/#{pid}/stat", 16 * 1024)
     closing = stat.rindex(")") || raise("namespace keeper stat is malformed")
-    start_time = Integer(stat.byteslice(closing + 2..).split.fetch(19))
+    start_time = Integer(stat.byteslice((closing + 2)..).split.fetch(19))
     pidfd = Rubernetes::Platform::Linux::Pidfd.new.open(pid: pid, resource_id: "m4-keeper:#{pid}")
     {"sandbox_id" => "m4-sandbox-#{pid}",
      "netns" => {"handle" => "m4-keeper:#{pid}", "path" => path, "inode" => File.stat(path).ino,

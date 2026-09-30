@@ -237,11 +237,10 @@ module Rubernetes
         parameters = method.parameters
         accepts_keywords = parameters.any? { |kind, _| %i[key keyreq keyrest].include?(kind) }
         if accepts_keywords
+          names = parameters.filter_map { |kind, parameter| parameter if %i[key keyreq].include?(kind) }
           accepted = if parameters.any? { |kind, _| kind == :keyrest }
-                       names = parameters.filter_map { |kind, parameter| parameter if %i[key keyreq].include?(kind) }
                        names.include?(:selectors) ? options : options.reject { |key, _| key == :selectors }
                      else
-                       names = parameters.filter_map { |kind, parameter| parameter if %i[key keyreq].include?(kind) }
                        options.select { |key, _| names.include?(key) }
                      end
           positional = parameters.any? { |kind, _| %i[req opt].include?(kind) }

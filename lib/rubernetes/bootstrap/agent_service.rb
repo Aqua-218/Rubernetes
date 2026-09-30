@@ -119,7 +119,7 @@ module Rubernetes
             recovery_options = {}
             recovery_options[:observer] = @runtime_observer if @runtime_observer
             recovery_options[:cleaner] = @runtime_cleaner if @runtime_cleaner
-            if @node_agent&.respond_to?(:recover)
+            if @node_agent.respond_to?(:recover)
               @recovery_report = invoke_lifecycle(@node_agent, :recover, **recovery_options)
               ensure_recovery_ready!(@recovery_report)
             elsif @runtime.respond_to?(:recover)
@@ -157,7 +157,7 @@ module Rubernetes
         end
         ready_fields = {subresources: %w[logs exec attach portforward], ready: ready?,
                         streaming_port: @streaming_server&.port}
-        if @node_agent&.respond_to?(:startup_error) && (error = @node_agent.startup_error)
+        if @node_agent.respond_to?(:startup_error) && (error = @node_agent.startup_error)
           ready_fields[:node_startup_deferred] = error
         end
         log(:info, "process.ready", **ready_fields)
@@ -198,7 +198,7 @@ module Rubernetes
 
       def ready?
         return false unless started?
-        return false if @node_agent&.respond_to?(:ready?) && !@node_agent.ready?
+        return false if @node_agent.respond_to?(:ready?) && !@node_agent.ready?
 
         report = @recovery_report
         return true unless report.is_a?(Hash)
@@ -541,7 +541,7 @@ module Rubernetes
       attr_reader :dns_service
 
       def register_node_endpoint
-        return unless @node_resolver&.respond_to?(:register)
+        return unless @node_resolver.respond_to?(:register)
         return if @node_name.nil? || @node_name.empty?
 
         @node_resolver.register(@node_name, self)
@@ -550,7 +550,7 @@ module Rubernetes
 
       def unregister_node_endpoint
         return unless @node_endpoint_registered
-        return unless @node_resolver&.respond_to?(:unregister)
+        return unless @node_resolver.respond_to?(:unregister)
 
         begin
           @node_resolver.unregister(@node_name, endpoint: self)

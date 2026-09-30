@@ -269,7 +269,7 @@ module Rubernetes
           private
 
           def size
-            return Integer(@adapter.size(@path)) if @adapter&.respond_to?(:size)
+            return Integer(@adapter.size(@path)) if @adapter.respond_to?(:size)
             return File.size(@path) if File.exist?(@path)
 
             0
@@ -332,7 +332,7 @@ module Rubernetes
             (@max_files - 1).downto(1) do |index|
               source = index == 1 ? @path : "#{@path}.#{index - 1}"
               destination = "#{@path}.#{index}"
-              File.delete(destination) if File.exist?(destination)
+              FileUtils.rm_f(destination)
               File.rename(source, destination) if File.exist?(source)
             end
             File.open(@path, File::WRONLY | File::CREAT | File::TRUNC, 0o600) do |file|
@@ -941,7 +941,7 @@ module Rubernetes
               # the two streams actually arrived in -- the interleaving a
               # reader of the container's log expects.
               handle.combined_log&.append(chunk)
-            rescue IO::WaitReadable, EOFError, IOError
+            rescue IO::WaitReadable, IOError
               break
             end
           end
@@ -956,7 +956,7 @@ module Rubernetes
 
         def process_start_time(pid)
           stat = File.read("/proc/#{Integer(pid)}/stat")
-          Integer(stat[stat.rindex(")") + 1..].split.fetch(19))
+          Integer(stat[(stat.rindex(")") + 1)..].split.fetch(19))
         end
 
         def executable_digest(pid)

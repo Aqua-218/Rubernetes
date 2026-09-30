@@ -86,7 +86,7 @@ class HTTP2ServerTest < Minitest::Test
       while @buffer.bytesize < count
         chunk = @socket.read_nonblock(65_536, exception: false)
         if chunk == :wait_readable
-          raise "timed out waiting for a frame" unless IO.select([@socket], nil, nil, timeout)
+          raise "timed out waiting for a frame" unless @socket.wait_readable(timeout)
         elsif chunk.nil?
           raise EOFError
         else

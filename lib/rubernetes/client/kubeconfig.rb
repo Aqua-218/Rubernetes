@@ -281,7 +281,7 @@ module Rubernetes
       end
 
       def self.singularize(key)
-        key.sub(/s\z/, "").sub(/ie\z/, "y")
+        key.delete_suffix('s').sub(/ie\z/, "y")
       end
 
       def self.validate_source_path(path, label)

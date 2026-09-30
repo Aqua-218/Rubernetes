@@ -1192,11 +1192,10 @@ module Rubernetes
         @snapshot_store.install(bytes)
         @apply_mutex.synchronize do
           if @log.term_at(snapshot.index) == snapshot.term && snapshot.index <= @log.last_index
-            @log.compact_to(index: snapshot.index, term: snapshot.term)
           else
             @log.truncate_from(@log.snapshot_index + 1) if @log.last_index > @log.snapshot_index
-            @log.compact_to(index: snapshot.index, term: snapshot.term)
           end
+          @log.compact_to(index: snapshot.index, term: snapshot.term)
           @log.rotate! if @log.respond_to?(:rotate!)
           @state_machine.restore(snapshot.state)
           @commit_index = [@commit_index, snapshot.index].max

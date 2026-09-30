@@ -263,10 +263,9 @@ module Rubernetes
         raise Client::UsageError, "get accepts RESOURCE [NAME]" unless arguments.empty?
 
         if target.start_with?("/")
-          client.get(target, name, namespace: options[:namespace])
         else
-          client.get(target, name, namespace: options[:namespace])
         end
+        client.get(target, name, namespace: options[:namespace])
       end
 
       def run_create(client, arguments, options)

@@ -678,7 +678,7 @@ module Rubernetes
 
         cloud = provider_from(provider || cloud_provider || cloud)
         provider_id = Support.value(Support.spec(node), "providerID", "").to_s
-        result = if cloud&.respond_to?(:instance_exists_by_provider_id)
+        result = if cloud.respond_to?(:instance_exists_by_provider_id)
                    call_provider(cloud, [:instance_exists_by_provider_id], positional: [provider_id],
                                                                            keywords: {node: node, provider_id: provider_id})
                  else

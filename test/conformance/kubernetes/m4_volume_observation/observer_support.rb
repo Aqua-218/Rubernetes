@@ -71,7 +71,7 @@ module M4ObserverSupport
     closing = value.rindex(")")
     raise ArgumentError, "process stat has no closing command name" unless closing
 
-    Integer(value.byteslice(closing + 2..).to_s.split.fetch(19))
+    Integer(value.byteslice((closing + 2)..).to_s.split.fetch(19))
   end
 
   def process_identity(pid)

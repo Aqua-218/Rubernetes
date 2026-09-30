@@ -353,7 +353,7 @@ module Rubernetes
               true
             end
             unless accepted
-              watcher.close if watcher&.respond_to?(:close)
+              watcher.close if watcher.respond_to?(:close)
               break
             end
             consume_watcher(watcher)

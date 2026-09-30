@@ -427,7 +427,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
   end
 
   def teardown
-    FileUtils.remove_entry(@directory) if File.exist?(@directory)
+    FileUtils.rm_rf(@directory)
   end
 
   # Requirement: ControllerPublishVolume's result is node-scoped and the

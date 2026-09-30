@@ -95,11 +95,11 @@ module Rubernetes
           raise OwnershipError, "network namespace pidfd belongs to a different holder" unless fd_pid == @pid
 
           pidfd_io = IO.for_fd(@pidfd, autoclose: false)
-          raise OwnershipError, "network namespace holder pidfd is no longer alive" unless IO.select([pidfd_io], nil, nil, 0).nil?
+          raise OwnershipError, "network namespace holder pidfd is no longer alive" unless pidfd_io.wait_readable(0).nil?
 
           current_inode = File.stat(@path).ino
           raise OwnershipError, "network namespace path inode changed" unless current_inode == @inode
-        rescue Errno::ENOENT, Errno::ESRCH, Errno::EBADF, IOError, SystemCallError => error
+        rescue IOError, SystemCallError => error
           raise OwnershipError, "network namespace holder is unavailable: #{error.message}"
         end
 
@@ -351,7 +351,7 @@ module Rubernetes
           messages = []
           loop do
             remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
-            if remaining <= 0 || IO.select([socket], nil, nil, remaining).nil?
+            if remaining <= 0 || socket.wait_readable(remaining).nil?
               raise NetlinkError.new("netlink ACK timed out", errno: Errno::ETIMEDOUT::Errno,
                                                               operation: "netlink_ack", sequence: sequence)
             end
@@ -583,7 +583,7 @@ module Rubernetes
           "mac" => address,
           "netns_inode" => File.stat(THREAD_NAMESPACE_PATH).ino
         }.compact.freeze
-      rescue Errno::ENOENT, Errno::ENODEV, SocketError, SystemCallError => error
+      rescue SocketError, SystemCallError => error
         raise NetlinkError.new("failed to observe link state: #{error.message}",
                                errno: error.respond_to?(:errno) ? error.errno : Errno::ENODEV::Errno,
                                operation: "link_state")

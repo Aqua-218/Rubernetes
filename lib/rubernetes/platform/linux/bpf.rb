@@ -573,7 +573,7 @@ module Rubernetes
             raise ArgumentError, "BPF_PSEUDO_FUNC target #{target} is outside the program" unless target.between?(0, resolved.length - 1)
           end
           resolved.freeze
-        rescue IndexError, KeyError, TypeError, ArgumentError => error
+        rescue IndexError, TypeError, ArgumentError => error
           raise ArgumentError, "invalid BPF_PSEUDO_FUNC relocation: #{error.message}"
         end
 
@@ -720,7 +720,7 @@ module Rubernetes
                                    details: {translated_program_bytes: buffer.bytesize})
           end
 
-          Array.new((buffer.bytesize / 8)) do |index|
+          Array.new(buffer.bytesize / 8) do |index|
             code, registers, offset, immediate = buffer.byteslice(index * 8, 8).unpack("CCs<l<")
             Instruction.new(code: code, destination: registers & 0x0f, source: (registers >> 4) & 0x0f,
                             offset: offset, immediate: immediate)

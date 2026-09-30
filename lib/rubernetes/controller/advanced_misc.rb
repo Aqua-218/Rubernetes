@@ -1007,7 +1007,7 @@ module Rubernetes
         return nil unless prefix_i.between?(0, bits)
 
         [parsed_address.mask(prefix_i), prefix_i, bits]
-      rescue IPAddr::InvalidAddressError, ArgumentError, TypeError
+      rescue ArgumentError, TypeError
         nil
       end
 
@@ -1026,7 +1026,7 @@ module Rubernetes
       def containing_cidrs(address, service_cidrs)
         Array(service_cidrs).select do |candidate|
           cidr_strings(candidate).any? { |cidr| IPAddr.new(cidr).include?(address) }
-        rescue IPAddr::InvalidAddressError, ArgumentError
+        rescue ArgumentError
           false
         end
       end
@@ -1049,7 +1049,7 @@ module Rubernetes
         own_cidrs.none? do |own_cidr|
           begin
             network = IPAddr.new(own_cidr)
-          rescue IPAddr::InvalidAddressError, ArgumentError
+          rescue ArgumentError
             next false
           end
           Array(ip_addresses).any? do |ip_address|
@@ -1070,7 +1070,7 @@ module Rubernetes
 
               containing = containing_cidrs(address, candidates)
               containing.length == 1 && Support.name(containing.first) == Support.name(service_cidr)
-            rescue IPAddr::InvalidAddressError, ArgumentError
+            rescue ArgumentError
               false
             end
           end
@@ -1411,7 +1411,7 @@ module Rubernetes
         security_context = Support.value(Support.spec(pod), "securityContext", {})
         options = value_at(volume, "seLinuxOptions") || value_at(security_context, "seLinuxOptions", "selinuxOptions")
         if options.is_a?(Hash)
-          [value_at(options, "user"), value_at(options, "role"), value_at(options, "type"), value_at(options, "level")].map(&:to_s).join(":").then { |label| label == ":::" ? "" : label }
+          [value_at(options, "user"), value_at(options, "role"), value_at(options, "type"), value_at(options, "level")].join(":").then { |label| label == ":::" ? "" : label }
         else
           value_at(pod, "seLinuxLabel", "selinuxLabel").to_s
         end

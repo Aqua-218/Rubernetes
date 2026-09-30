@@ -367,7 +367,7 @@ module M1APIDifferential
     Hash(headers || {}).each_with_object({}) do |(raw_name, raw_value), normalized|
       name = raw_name.to_s.downcase
       value = if raw_value.is_a?(Array)
-                raw_value.map(&:to_s).join(", ")
+                raw_value.join(", ")
               else
                 raw_value.to_s
               end

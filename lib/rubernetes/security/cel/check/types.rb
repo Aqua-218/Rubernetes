@@ -84,7 +84,7 @@ module Rubernetes
               return Check.format_function(params[0], params[1..], false) if kind == :opaque && name == "function"
               return declared_name if params.empty?
 
-              "#{name}(#{params.map(&:to_s).join(", ")})"
+              "#{name}(#{params.join(", ")})"
             end
           end
 
@@ -128,7 +128,7 @@ module Rubernetes
             out << args.first.to_s << "."
             args = args[1..]
           end
-          out << "(" << args.map(&:to_s).join(", ") << ")"
+          out << "(" << args.join(", ") << ")"
           rendered = result.to_s
           out << " -> " << rendered unless rendered.empty?
           out

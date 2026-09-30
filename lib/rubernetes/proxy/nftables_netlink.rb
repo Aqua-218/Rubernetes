@@ -1178,10 +1178,10 @@ module Rubernetes
 
       def service_match_expressions(rule, family:, destination_address:, source_range: nil)
         expressions = []
-        if destination_address
-          expressions << expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
+        expressions << expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
                                                        attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO))))
-          expressions << compare_expression(1, family)
+        expressions << compare_expression(1, family)
+        if destination_address
           payload_offset = family == NFPROTO_IPV6 ? 24 : 16
           payload_length = family == NFPROTO_IPV6 ? 16 : 4
           expressions << expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(1)),
@@ -1190,9 +1190,6 @@ module Rubernetes
                                                           attribute(NFTA_PAYLOAD_LEN, u32(payload_length))))
           expressions << compare_expression(1, IPAddr.new(destination_address).hton)
         else
-          expressions << expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
-                                                       attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO))))
-          expressions << compare_expression(1, family)
         end
         expressions.concat(source_range_expression(family, source_range)) if source_range
         protocol = protocol_number(rule.protocol)
@@ -1220,7 +1217,7 @@ module Rubernetes
         ranges.filter_map do |value|
           range = IPAddr.new(value.to_s)
           range if family_for_address(range.to_s) == family
-        rescue ArgumentError, IPAddr::InvalidAddressError
+        rescue ArgumentError
           nil
         end
       end
@@ -1473,7 +1470,7 @@ module Rubernetes
       end
 
       def rule_identity(rule)
-        Array(rule.key).map(&:to_s).join("\0")
+        Array(rule.key).join("\0")
       end
 
       def rule_digest(rule)
@@ -1542,7 +1539,7 @@ module Rubernetes
           next unless foreign
 
           raise NftablesNetlinkError,
-                "refusing to modify unmarked nftables #{key.sub(/s\z/, "")} in owned table #{@table_name.inspect}"
+                "refusing to modify unmarked nftables #{key.delete_suffix('s')} in owned table #{@table_name.inspect}"
         end
         affinity_sets = affinity_set_names(actual.fetch("sets"))
         foreign_element = actual.fetch("set_elements").find do |item|
@@ -1555,7 +1552,7 @@ module Rubernetes
       end
 
       def read_kernel_ruleset
-        if @transport&.respond_to?(:readback)
+        if @transport.respond_to?(:readback)
           return normalize_transport_readback(@transport.readback(table_name: @table_name, family: NFPROTO_INET))
         end
 
@@ -1603,7 +1600,7 @@ module Rubernetes
       end
 
       def dump(type, attributes: "")
-        if @transport&.respond_to?(:dump)
+        if @transport.respond_to?(:dump)
           value = @transport.dump(type: type, family: NFPROTO_INET, attributes: attributes)
           return Array(value).map { |entry| normalize_readback_entry(entry, type) }
         end
@@ -1718,7 +1715,7 @@ module Rubernetes
       def send_transaction(messages)
         return {"messageCount" => 0, "acknowledgedSequences" => [], "bytes" => 0} if messages.empty?
 
-        if @transport&.respond_to?(:send_transaction)
+        if @transport.respond_to?(:send_transaction)
           result = @transport.send_transaction(messages: messages, family: NFPROTO_INET)
           raise NftablesNetlinkError, "transport did not return a transaction acknowledgment" unless result
 

@@ -78,7 +78,7 @@ module Rubernetes
         end
 
         def self.names(mask)
-          NUMBERS.select { |_name, bit| Integer(mask).anybits?((1 << bit)) }.keys.sort
+          NUMBERS.select { |_name, bit| Integer(mask).anybits?(1 << bit) }.keys.sort
         end
 
         # Highest capability the running kernel knows, read from the kernel
@@ -189,7 +189,7 @@ module Rubernetes
           current = capget
           capset(effective: current.permitted, permitted: current.permitted, inheritable: 0)
           (0..Integer(last_cap)).each do |bit|
-            next unless target.nobits?((1 << bit))
+            next unless target.nobits?(1 << bit)
             next unless bounding_set_has?(bit)
 
             bounding_set_drop(bit)

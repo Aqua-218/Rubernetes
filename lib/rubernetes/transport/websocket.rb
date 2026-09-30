@@ -159,7 +159,7 @@ module Rubernetes
               raise ProtocolError, "unsupported websocket opcode #{frame[:opcode]}"
             end
           end
-        rescue EOFError, IOError, SystemCallError
+        rescue IOError, SystemCallError
           @closed = true
           nil
         end

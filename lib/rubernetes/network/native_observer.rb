@@ -436,7 +436,7 @@ module Rubernetes
         raise ValidationError, "network address prefix is out of range" unless prefix.between?(0, max)
 
         prefix
-      rescue ArgumentError, IPAddr::InvalidAddressError
+      rescue ArgumentError
         nil
       end
 

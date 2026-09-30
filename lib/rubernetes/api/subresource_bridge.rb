@@ -272,7 +272,7 @@ module Rubernetes
           to.write(chunk)
           to.flush if to.respond_to?(:flush)
         end
-      rescue EOFError, IOError, SystemCallError, OpenSSL::SSL::SSLError
+      rescue IOError, SystemCallError, OpenSSL::SSL::SSLError
         nil
       ensure
         begin
@@ -450,7 +450,7 @@ module Rubernetes
 
         lifecycle = if node.respond_to?(:lifecycle)
                       node.lifecycle
-                    elsif node.respond_to?(:node_agent) && node.node_agent&.respond_to?(:lifecycle)
+                    elsif node.respond_to?(:node_agent) && node.node_agent.respond_to?(:lifecycle)
                       node.node_agent.lifecycle
                     end
         record = lifecycle&.record(pod)
@@ -850,7 +850,7 @@ module Rubernetes
           write_loop(socket)
           close_frame(socket)
           reader.join(1)
-        rescue IOError, SystemCallError, EOFError
+        rescue IOError, SystemCallError
           nil
         ensure
           @stream.close if @stream.respond_to?(:close) && !(@stream.respond_to?(:closed?) && @stream.closed?)
@@ -878,7 +878,7 @@ module Rubernetes
             socket.read(length) if length.positive?
             break if opcode == 0x8
           end
-        rescue IOError, SystemCallError, EOFError
+        rescue IOError, SystemCallError
           nil
         ensure
           @write_mutex.synchronize { @closed = true }
@@ -906,7 +906,7 @@ module Rubernetes
           nil
         rescue (defined?(Rubernetes::Node::StreamTimeout) ? Rubernetes::Node::StreamTimeout : IOError), IO::WaitReadable
           "".b
-        rescue IOError, SystemCallError, EOFError
+        rescue IOError, SystemCallError
           nil
         end
 

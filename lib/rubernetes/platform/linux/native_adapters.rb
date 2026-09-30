@@ -69,7 +69,7 @@ module Rubernetes
 
           def process_start_time(pid, proc_root: "/proc")
             stat = File.read(File.join(proc_root, Integer(pid).to_s, "stat"))
-            suffix = stat[stat.rindex(")") + 1..]
+            suffix = stat[(stat.rindex(")") + 1)..]
             Integer(suffix.split.fetch(19))
           rescue SystemCallError, ArgumentError, IndexError
             raise Linux::Error.new(errno: Errno::ESRCH::Errno, operation: "procfs(start_time)", resource_id: "process:#{pid}")
@@ -306,7 +306,7 @@ module Rubernetes
               )
               writer.close
             end
-            raise EffectError, "namespace exec supervisor did not report readiness" unless IO.select([reader], nil, nil, 10)
+            raise EffectError, "namespace exec supervisor did not report readiness" unless reader.wait_readable(10)
 
             response = JSON.parse(reader.gets.to_s)
             unless response["ok"] == true
@@ -441,7 +441,7 @@ module Rubernetes
             )
             @mutex.synchronize { @handles[handle.id] = handle }
             handle
-          rescue Errno::ECHILD, SystemCallError, UserNamespace::Error => error
+          rescue SystemCallError, UserNamespace::Error => error
             terminate_process(supervisor_pid) if supervisor_pid
             close_fd(clone_result.pidfd) if clone_result&.pidfd
             raise EffectError, "namespace creation failed: #{error.message}"
@@ -829,7 +829,7 @@ module Rubernetes
           # process before it is ever signalled or cleaned up.
           def kernel_identity(pid, namespaces)
             stat = File.read("/proc/#{Integer(pid)}/stat")
-            start_time = Integer(stat[stat.rindex(")") + 1..].split.fetch(19))
+            start_time = Integer(stat[(stat.rindex(")") + 1)..].split.fetch(19))
             links = Array(namespaces).to_h do |name|
               proc_name = NAMESPACE_TYPES.fetch(name).fetch(1)
               [name.to_s, File.readlink("/proc/#{Integer(pid)}/ns/#{proc_name}")]
@@ -1010,7 +1010,7 @@ module Rubernetes
               # is alive and only skip that impossible readback in this case.
               cleanup_mounted_workspace(workspace, metadata, namespace_handle) unless namespace_holder_gone?(namespace_handle)
             end
-            FileUtils.remove_entry_secure(File.join(@root, String(workspace.id))) if File.exist?(File.join(@root, String(workspace.id)))
+            FileUtils.rm_rf(File.join(@root, String(workspace.id)))
             @mutex.synchronize { @workspaces.delete(workspace.identity) }
             true
           rescue SystemCallError => error
@@ -1039,7 +1039,7 @@ module Rubernetes
             end
             raise EffectError, "orphan workspace #{workspace.identity} is still mounted" if mounted
 
-            FileUtils.remove_entry_secure(directory) if File.exist?(directory)
+            FileUtils.rm_rf(directory)
             true
           end
 
@@ -3219,7 +3219,7 @@ module Rubernetes
           # time is the one the parent can verify from outside.
           def self_start_time
             stat = File.read("/proc/self/stat")
-            Integer(stat[stat.rindex(")") + 1..].split.fetch(19))
+            Integer(stat[(stat.rindex(")") + 1)..].split.fetch(19))
           end
 
           def c_string(value)
@@ -3478,7 +3478,7 @@ module Rubernetes
               loop do
                 wait = remaining.call
                 raise EffectError, "HTTP probe timed out" if wait <= 0
-                break unless IO.select([socket], nil, nil, wait)
+                break unless socket.wait_readable(wait)
 
                 begin
                   chunk = socket.read_nonblock(16 * 1024, exception: false)
@@ -3563,7 +3563,7 @@ module Rubernetes
                   chunk = reader.read_nonblock(16 * 1024)
                   @buffer << pair.fetch(1).chr.b << chunk.b
                   return consume(requested)
-                rescue EOFError, IOError
+                rescue IOError
                   @readers.delete(pair)
                 rescue IO::WaitReadable
                   next

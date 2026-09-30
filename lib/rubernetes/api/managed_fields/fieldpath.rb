@@ -136,7 +136,7 @@ module Rubernetes
         end
 
         # Path.String.
-        def self.path_string(path) = path.map(&:to_s).join
+        def self.path_string(path) = path.join
 
         # A set of paths as a trie: the elements that are members at this
         # level and the child sets below elements.  Sets are never changed

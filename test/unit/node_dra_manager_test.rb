@@ -255,7 +255,7 @@ class NodeDRAManagerTest < Minitest::Test
       assert_equal [DRIVER], dra.registered_drivers
       Process.kill("TERM", pid)
       Process.wait(pid)
-      File.unlink(File.join(registry, "#{DRIVER}-reg.sock")) if File.exist?(File.join(registry, "#{DRIVER}-reg.sock"))
+      FileUtils.rm_f(File.join(registry, "#{DRIVER}-reg.sock"))
       plugins.reconcile
 
       assert_empty dra.registered_drivers

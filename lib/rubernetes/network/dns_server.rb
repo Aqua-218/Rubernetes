@@ -67,8 +67,7 @@ module Rubernetes
           deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
           loop do
             remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
-            raise DNSUpstreamError, "upstream #{address} did not answer within #{@timeout}s" if remaining <= 0 || IO.select([socket], nil,
-                                                                                                                            nil, remaining).nil?
+            raise DNSUpstreamError, "upstream #{address} did not answer within #{@timeout}s" if remaining <= 0 || socket.wait_readable(remaining).nil?
 
             reply, sender = socket.recvfrom(@max_packet_bytes + 1)
             # A connected UDP socket already filters foreign sources in the
@@ -98,7 +97,7 @@ module Rubernetes
         def read_exactly(socket, length)
           buffer = "".b
           while buffer.bytesize < length
-            raise DNSUpstreamError, "upstream TCP reply timed out" if IO.select([socket], nil, nil, @timeout).nil?
+            raise DNSUpstreamError, "upstream TCP reply timed out" if socket.wait_readable(@timeout).nil?
 
             chunk = socket.read_nonblock(length - buffer.bytesize, exception: false)
             raise DNSUpstreamError, "upstream closed the TCP connection" if chunk.nil?
@@ -490,7 +489,7 @@ module Rubernetes
           Thread.current.report_on_exception = false
           while running?
             ready = begin
-              IO.select([socket], nil, nil, 0.5)
+              socket.wait_readable(0.5)
             rescue IOError
               # #stop closes the socket from another thread; the select
               # wakes with IOError and the loop condition ends the thread.
@@ -524,7 +523,7 @@ module Rubernetes
           Thread.current.report_on_exception = false
           while running?
             ready = begin
-              IO.select([server], nil, nil, 0.5)
+              server.wait_readable(0.5)
             rescue IOError
               break
             end
@@ -574,7 +573,7 @@ module Rubernetes
         def read_tcp(connection, length)
           buffer = "".b
           while buffer.bytesize < length
-            return nil if IO.select([connection], nil, nil, TCP_IDLE_TIMEOUT).nil?
+            return nil if connection.wait_readable(TCP_IDLE_TIMEOUT).nil?
 
             chunk = connection.read_nonblock(length - buffer.bytesize, exception: false)
             return nil if chunk.nil?
