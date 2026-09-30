@@ -29,7 +29,7 @@ module Rubernetes
       SERVICE_ACCOUNT_KEYS = %w[issuer signing_key_file key_files api_audiences max_expiration_seconds].freeze
       REQUEST_HEADER_KEYS = %w[ca_file allowed_names username_headers group_headers extra_header_prefixes uid_headers].freeze
       AUTHENTICATION_WEBHOOK_KEYS = %w[url ca_file client_cert_file client_key_file cache_authenticated_ttl cache_unauthenticated_ttl].freeze
-      AUTHORIZATION_KEYS = %w[modes abac_policy_file webhook].freeze
+      AUTHORIZATION_KEYS = %w[modes abac_policy_file webhook config_file].freeze
       AUTHORIZATION_WEBHOOK_KEYS = %w[url ca_file client_cert_file client_key_file cache_authorized_ttl cache_unauthorized_ttl failure_policy].freeze
       ADMISSION_KEYS = %w[enable disable config].freeze
       AUDIT_KEYS = %w[policy_file log_path max_queue webhook].freeze
