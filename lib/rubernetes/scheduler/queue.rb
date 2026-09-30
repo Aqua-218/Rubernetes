@@ -118,6 +118,13 @@ module Rubernetes
         @first_pop = {}
         @gated = {}
         @rejecting_plugins = {}
+        # SchedulerQueueingHints: Pods popped and not yet done, and the
+        # cluster events that arrived while they were in flight (each event
+        # is kept until every Pod popped before it is done).
+        @in_flight = {}
+        @in_flight_events = []
+        @event_sequence = 0
+        @hint_strategy = nil
       end
 
       # The Scheduler::Metrics observer (scheduler_queue_incoming_pods_total
