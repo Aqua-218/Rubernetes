@@ -1089,17 +1089,25 @@ module Rubernetes
           authz = value["authorization"]
           validate_mapping!(authz, "#{context}.authorization")
           reject_unknown_keys!(authz, AUTHORIZATION_KEYS, "#{context}.authorization")
-          modes = authz["modes"]
-          raise Error, "#{context}.authorization.modes must be a non-empty list" unless modes.is_a?(Array) && !modes.empty?
-          unknown = modes - %w[AlwaysAllow AlwaysDeny ABAC Webhook RBAC Node]
-          raise Error, "#{context}.authorization.modes contains unknown modes #{unknown.join(", ")}" unless unknown.empty?
-          raise Error, "#{context}.authorization.modes must be unique" unless modes.uniq.length == modes.length
-          validate_absolute_path!(authz["abac_policy_file"], "#{context}.authorization.abac_policy_file") if modes.include?("ABAC")
-          if modes.include?("Webhook")
-            hook = authz["webhook"]
-            validate_mapping!(hook, "#{context}.authorization.webhook")
-            reject_unknown_keys!(hook, AUTHORIZATION_WEBHOOK_KEYS, "#{context}.authorization.webhook")
-            validate_non_empty_string!(hook["url"], "#{context}.authorization.webhook.url")
+          if authz.key?("config_file")
+            # --authorization-config is mutually exclusive with --authorization-mode and --authorization-webhook-*.
+            validate_absolute_path!(authz["config_file"], "#{context}.authorization.config_file")
+            %w[modes webhook abac_policy_file].each do |key|
+              raise Error, "#{context}.authorization.#{key} cannot be combined with config_file (the AuthorizationConfiguration file owns it)" if authz.key?(key)
+            end
+          else
+            modes = authz["modes"]
+            raise Error, "#{context}.authorization.modes must be a non-empty list" unless modes.is_a?(Array) && !modes.empty?
+            unknown = modes - %w[AlwaysAllow AlwaysDeny ABAC Webhook RBAC Node]
+            raise Error, "#{context}.authorization.modes contains unknown modes #{unknown.join(", ")}" unless unknown.empty?
+            raise Error, "#{context}.authorization.modes must be unique" unless modes.uniq.length == modes.length
+            validate_absolute_path!(authz["abac_policy_file"], "#{context}.authorization.abac_policy_file") if modes.include?("ABAC")
+            if modes.include?("Webhook")
+              hook = authz["webhook"]
+              validate_mapping!(hook, "#{context}.authorization.webhook")
+              reject_unknown_keys!(hook, AUTHORIZATION_WEBHOOK_KEYS, "#{context}.authorization.webhook")
+              validate_non_empty_string!(hook["url"], "#{context}.authorization.webhook.url")
+            end
           end
         end
         if value.key?("admission")
