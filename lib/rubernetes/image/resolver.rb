@@ -283,6 +283,7 @@ module Rubernetes
       private :join_or_lead
 
       def pull_and_resolve(image_reference, target, owned_stage, rootfs, credentials, cache_key, pull_secret = nil)
+        @pull_records&.record_intent(image_reference.to_s)
         destination, stage_token = owned_stage ? allocate_staging_root : [File.expand_path(String(rootfs)), nil]
         puller = @puller || build_puller(image_reference, credentials)
         image = puller.pull(image_reference, platform: target, rootfs: destination, unpack: true)
