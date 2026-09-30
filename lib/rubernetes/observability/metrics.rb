@@ -216,7 +216,6 @@ module Rubernetes
       no_exec_plugins = "exec credential plugins are refused by the kubeconfig loader (Kubeconfig::UnsupportedCredentialError)"
       no_encryption_at_rest = "encryption at rest is not plumbed into the raft store: the Security::Encryption providers (aesgcm, KMS v2) exist as a library with no EncryptionConfiguration wiring, so no envelope, data key or transformation happens on a stored object"
       no_stream_translation = "exec, attach and port-forward websocket requests are served natively by the subresource bridge: nothing is translated to SPDY (no StreamTranslator) and no SPDY is tunneled over websocket (no StreamTunnel)"
-      no_repair = "no ClusterIP / NodePort repair controller: allocations are committed with the Service in one raft entry, so there is no periodic sweep to find leaked or duplicated allocations"
       no_peer_proxy = "no UnknownVersionInteroperabilityProxy / peer aggregated discovery: every replica serves the same API set from the shared raft log, so no request is rerouted to a peer and no peer discovery is fetched"
       no_config_reload = "authentication and authorization come from the process config read at startup: there is no AuthenticationConfiguration / AuthorizationConfiguration file with automatic reload"
       no_authz_match_conditions = "no structured AuthorizationConfiguration: the webhook authorizer has no matchConditions to evaluate"
