@@ -539,6 +539,27 @@ module Rubernetes
         end
       end
 
+      # The ClusterIP / NodePort repair controllers (RunUntil every 3
+      # minutes upstream): each API server sweeps allocations against the
+      # Services and IPAddresses and repairs leaks.
+      def start_allocation_repair
+        allocator = @api_server.respond_to?(:service_allocator) ? @api_server.service_allocator : nil
+        return unless allocator.respond_to?(:repair!)
+
+        interval = Float(ENV.fetch("RUBERNETES_ALLOCATION_REPAIR_INTERVAL", API::ServiceAllocator::REPAIR_INTERVAL_SECONDS))
+        @repair_thread = Thread.new do
+          Thread.current.name = "apiserver-allocation-repair"
+          loop do
+            sleep(interval)
+            report = allocator.repair!
+            findings = report["ip_errors"].values.sum + report["port_errors"].values.sum
+            @logger.info("allocation.repair", **report.transform_values { |value| value.is_a?(Hash) ? value.to_h : value }) if findings.positive?
+          rescue StandardError => error
+            @logger.warn("allocation.repair.failed", error: error.class.name, message: error.message)
+          end
+        end
+      end
+
       def build_store(config)
         datastore = config["datastore"] || {}
         history = config.fetch("watch_history_limit")
