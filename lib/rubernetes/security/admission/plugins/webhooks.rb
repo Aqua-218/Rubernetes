@@ -192,8 +192,7 @@ module Rubernetes
                 service = client_config.fetch("service")
                 raise Error, "no endpoints available for service #{service["namespace"]}/#{service["name"]}"
               end
-              http = Net::HTTP.new(uri.host, address_port || uri.port, nil)
-              http.ipaddr = address if address && http.respond_to?(:ipaddr=)
+              http = Security::Egress.http(uri, "cluster", ipaddr: address, port: address_port || uri.port)
               http.use_ssl = uri.scheme == "https"
               remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
               # The connect is bounded separately from the whole call: a
