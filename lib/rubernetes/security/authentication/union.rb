@@ -25,7 +25,7 @@ module Rubernetes
         attr_reader :authenticators, :anonymous
 
         def initialize(authenticators:, anonymous: Anonymous.new(enabled: true, conditions: nil))
-          @authenticators = Array(authenticators)
+          @authenticators = Array(authenticators).freeze
           @anonymous = anonymous
         end
 
