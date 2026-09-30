@@ -349,6 +349,8 @@ module Rubernetes
         Security::Authorization::StoreRBACSource.new(@store, key_for: ->(resource, namespace) { @key_for.call("rbac.authorization.k8s.io", "v1", resource, namespace, nil) })
       end
 
+      # The node authorizer's graph: fed by the store's watches when the
+      # store has them (the API server), read live otherwise (tests, tools).
       def node_graph
         assembly = self
         graph = Object.new
