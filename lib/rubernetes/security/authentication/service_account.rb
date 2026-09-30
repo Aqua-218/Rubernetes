@@ -138,7 +138,7 @@ module Rubernetes
           # Tokens requested for longer than an hour are still issued for the
           # requested duration but the kubelet-style warnAfter marks them.
           claims[PRIVATE_CLAIM]["warnafter"] = issued + WARN_AFTER_SECONDS if capped > WARN_AFTER_SECONDS
-          [JWT.sign(claims, key: @signing_key, algorithm: algorithm, key_id: @key_id), Time.at(issued + capped).utc]
+          [sign_claims(claims), Time.at(issued + capped).utc]
         end
 
         def authenticate(context)
