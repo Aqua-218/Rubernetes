@@ -1054,6 +1054,11 @@ module Rubernetes
           registry.register("apiserver_flowcontrol_request_wait_duration_seconds", type: :histogram, buckets: WAIT_BUCKETS,
                                                                                    help: "Length of time a request spent waiting in its queue") unless registry.registered?("apiserver_flowcontrol_request_wait_duration_seconds")
           register_seat_metrics(registry)
+          @priority_levels.each_value do |level|
+            set_priority_level_configuration(level.name, level.nominal_seats, level.min_seats, level.max_seats, exempt: level.exempt)
+            level.queue_set.configure(concurrency_limit: level.current_seats, concurrency_denominator: [level.current_seats, 1].max)
+          end
+          record_borrowing_metrics
         end
 
         # A request's seats (one: there is no work estimator), its limits
