@@ -1537,6 +1537,15 @@ M1ProbeSupport.run_probe("m1_roundtrip_report", pretty: false) do |_current, inp
       validator = klass.definition.validator
       declared_required = klass.definition.required_fields.map(&:json_name).sort
       registry_required = Array(type.fetch("required", [])).map(&:to_s).sort
+      # kube-apiserver decodes an absent or null list/map to Go's nil slice or
+      # map and never fails "required" on it (a client marshals an empty
+      # slice as null); only scalar and struct fields are enforced by the
+      # schema, entries by kind-specific validation.  The validator follows
+      # that, so an empty object must report exactly the non-collection
+      # required fields.
+      enforced_required = klass.definition.required_fields.reject do |field|
+        field.array? || (field.type == :object && !field.additional_properties.nil?)
+      end.map(&:json_name).sort
       known_issues = validator.errors(value, unknown_fields: :reject)
       missing_value = klass.new({})
       missing_issues = validator.errors(missing_value, unknown_fields: :reject)
@@ -1548,11 +1557,11 @@ M1ProbeSupport.run_probe("m1_roundtrip_report", pretty: false) do |_current, inp
       end
       expected_unknown_rejected = !klass.definition.preserve_unknown_fields
       checks["validation"] = declared_required == registry_required &&
-                             required_issues == declared_required &&
+                             required_issues == enforced_required &&
                              known_issues.empty? && unexpected_missing_issues.empty? &&
                              (unknown_rejected == expected_unknown_rejected)
       errors << "generated and registry required-field inventories differ" unless declared_required == registry_required
-      errors << "required-field validation result differs from the generated definition" unless required_issues == declared_required
+      errors << "required-field validation result differs from the generated definition" unless required_issues == enforced_required
       errors << "type-compatible required-field sample failed validation" unless known_issues.empty?
       errors << "empty value produced unexpected validation issues" unless unexpected_missing_issues.empty?
       errors << "unknown-field validation policy differs from the generated schema" unless unknown_rejected == expected_unknown_rejected
