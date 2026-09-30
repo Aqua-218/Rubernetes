@@ -938,42 +938,10 @@ module Rubernetes
             @controller.set_priority_level_configuration(@name, @nominal_seats, @min_seats, @max_seats, exempt: @exempt)
           end
 
-            @monitor.synchronize do
-              queue_index = shuffle_shard(flow_hash)
-              started = clock.call
-              if @inflight < @seats && @queue_lengths[queue_index].zero?
-                @inflight += 1
-                @dispatched += 1
-                return [queue_index, 0.0]
-              end
-              if @queue_lengths[queue_index] >= @queue_length_limit
-                @rejected += 1
-                raise RejectedError.new("too many requests queued for priority level #{@name}", retry_after: 1,
-                                                                                                  reason: @reject ? "concurrency-limit" : "queue-full")
-              end
-              @queue_lengths[queue_index] += 1
-              on_queue&.call(1, @queue_lengths[queue_index])
-              deadline = started + @wait_limit
-              begin
-                loop do
-                  remaining = deadline - clock.call
-                  if remaining <= 0
-                    @rejected += 1
-                    raise RejectedError.new("request waited #{@wait_limit}s for priority level #{@name}", retry_after: [@wait_limit.ceil, 1].max,
-                                                                                                         reason: "time-out")
-                  end
-                  break if @inflight < @seats && oldest_waiting?(queue_index)
-
-                  @condition.wait([remaining, 0.05].min)
-                end
-              ensure
-                @queue_lengths[queue_index] -= 1
-                on_queue&.call(-1, @queue_lengths[queue_index])
-              end
-              @inflight += 1
-              @dispatched += 1
-              [queue_index, clock.call - started]
-            end
+          def apply_current_seats!(current, denominator)
+            @current_seats = current
+            @queue_set.configure(concurrency_limit: current, concurrency_denominator: denominator)
+            @controller.set_demand_denominator(@name, denominator)
           end
 
           def release
