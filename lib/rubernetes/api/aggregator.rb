@@ -360,7 +360,7 @@ module Rubernetes
         # Never route cluster-internal traffic through an environment proxy.
         # URI#hostname: an IPv6 literal without the brackets URI#host keeps.
         address = resolved_address(backend)
-        http.ipaddr = address[0] if address && address[0] != uri.hostname
+        http = Security::Egress.http(uri, "cluster", ipaddr: address && address[0] != uri.hostname ? address[0] : nil)
         http.use_ssl = uri.scheme == "https"
         http.open_timeout = TIMEOUT
         http.read_timeout = TIMEOUT
