@@ -1134,6 +1134,8 @@ module Rubernetes
                                                                                                              reason: "time-out")
               end
             end
+          rescue RejectedError
+            observe("apiserver_flowcontrol_request_wait_duration_seconds", 0.0, labels.merge("execute" => "false"))
             raise
           end
           record_dispatch(labels, waited, executing: true)
