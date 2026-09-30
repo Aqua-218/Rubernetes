@@ -222,15 +222,6 @@ module Rubernetes
       windows_only = "Windows HostProcess containers do not exist on Linux"
       UNIMPLEMENTED = {
         "kube-apiserver" => {
-          "apiserver_authentication_config_controller_automatic_reload_last_timestamp_seconds" => no_config_reload,
-          "apiserver_authentication_config_controller_automatic_reloads_total" => no_config_reload,
-          "apiserver_authentication_config_controller_last_config_info" => no_config_reload,
-          "apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds" => no_config_reload,
-          "apiserver_authorization_config_controller_automatic_reloads_total" => no_config_reload,
-          "apiserver_authorization_config_controller_last_config_info" => no_config_reload,
-          "apiserver_authorization_match_condition_evaluation_errors_total" => no_authz_match_conditions,
-          "apiserver_authorization_match_condition_evaluation_seconds" => no_authz_match_conditions,
-          "apiserver_authorization_match_condition_exclusions_total" => no_authz_match_conditions,
           "apiserver_externaljwt_fetch_keys_data_timestamp" => no_external_jwt,
           "apiserver_externaljwt_fetch_keys_request_total" => no_external_jwt,
           "apiserver_externaljwt_fetch_keys_success_timestamp" => no_external_jwt,
