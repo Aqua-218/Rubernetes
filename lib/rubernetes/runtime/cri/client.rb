@@ -117,6 +117,38 @@ module Rubernetes
           @mutex.synchronize { @pending.delete(id) } if id
         end
 
+        # A server-streaming RPC (GetContainerEvents): yields :connected once
+        # the stream is open, then each response Hash; returns when the
+        # runtime ends the stream; raises Error when it fails.
+        def stream(service, method, request = {})
+          raise ArgumentError, "unknown CRI service #{service}" unless SERVICES.include?(service.to_s)
+
+          queue = Queue.new
+          id = @mutex.synchronize do
+            start_helper_locked
+            @next_id += 1
+            @pending[@next_id] = queue
+            begin
+              @helper[:input].write(JSON.generate("id" => @next_id, "service" => service.to_s, "method" => method.to_s,
+                                                  "request" => request, "stream" => true) + "\n")
+            rescue IOError, SystemCallError => error
+              @pending.delete(@next_id)
+              stop_helper_locked
+              raise Error, "CRI helper is gone: #{error.message}"
+            end
+            @next_id
+          end
+          loop do
+            outcome = queue.pop
+            raise Error.new(outcome["error"].to_s, code: outcome["code"]) if outcome.key?("error")
+            return true if outcome["done"]
+
+            yield(outcome.key?("connected") ? :connected : outcome["event"])
+          end
+        ensure
+          @mutex.synchronize { @pending.delete(id) } if id
+        end
+
         def runtime(method, request = {}, **options) = call("RuntimeService", method, request, **options)
         def image(method, request = {}, **options) = call("ImageService", method, request, **options)
 
