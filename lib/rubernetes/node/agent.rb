@@ -876,6 +876,34 @@ module Rubernetes
         end
       end
 
+      # EventedPLEG (feature gate, off by default): with a CRI runtime that
+      # streams container events, the generic relist slows to 300 s and the
+      # events drive the lifecycle; if the stream keeps failing the relist
+      # period is restored.
+      def start_evented_pleg
+        return unless @feature_gates.fetch("EventedPLEG", false) == true
+        return unless @runtime.respond_to?(:client) && @runtime.client.respond_to?(:stream)
+        return unless @lifecycle.respond_to?(:observe_exits)
+        return if @evented_pleg&.in_use?
+
+        default_period = @relist_period
+        @evented_pleg = EventedPLEG.new(
+          client: @runtime.client, metrics: @kubelet_metrics, logger: @logger,
+          on_event: lambda do |uid, _type, _container_id|
+            @lifecycle.observe_exits(uid)
+          rescue StandardError => error
+            @error_handler&.call(error, :evented_pleg, uid)
+          end,
+          relist: -> { relist_once },
+          on_fallback: lambda do
+            @relist_period = default_period
+            @error_handler&.call(RuntimeError.new("evented PLEG gave up after #{EventedPLEG::MAX_STREAM_RETRIES} stream failures; generic relist at #{default_period}s"), :evented_pleg)
+          end
+        )
+        @relist_period = EventedPLEG::GENERIC_RELIST_SECONDS_WITH_EVENTS
+        @evented_pleg.start
+      end
+
       def relist_loop
         until @mutex.synchronize { @stop_requested }
           begin
