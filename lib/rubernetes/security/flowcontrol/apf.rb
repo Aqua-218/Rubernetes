@@ -1379,8 +1379,7 @@ module Rubernetes
           return unless @metrics
 
           @metrics.increment("apiserver_flowcontrol_dispatched_requests_total", labels)
-          @metrics.observe("apiserver_flowcontrol_request_wait_duration_seconds", waited.to_f, labels.merge("execute" => "true"))
-          adjust("apiserver_flowcontrol_current_executing_requests", labels, 1) if executing
+          observe("apiserver_flowcontrol_request_wait_duration_seconds", waited.to_f, labels.merge("execute" => "true"))
         rescue StandardError
           nil
         end
