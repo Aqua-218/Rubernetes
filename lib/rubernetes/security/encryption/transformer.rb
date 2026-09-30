@@ -199,6 +199,7 @@ module Rubernetes
             end
             note_cache_state
           end
+          note_key_id(document.fetch("keyID"), "from_storage")
           bytes = Base64.strict_decode64(document.fetch("ciphertext"))
           cipher = OpenSSL::Cipher.new("aes-256-gcm").decrypt
           cipher.key = dek
