@@ -475,6 +475,47 @@ module Rubernetes
         alias filter call
       end
 
+      # plugins/gangscheduling: a Pod in a gang PodGroup waits in PreEnqueue
+      # until minCount members exist; Permit, run at the end of a pod-group
+      # cycle, allows once minCount are assumed (the group cycle never binds
+      # a partial gang, so there is nothing left to wait for).
+      class GangScheduling
+        PERMIT_TIMEOUT_SECONDS = 300.0
+
+        def pre_enqueue(pod, _node = nil, context = nil)
+          group_name = pod.respond_to?(:scheduling_group) ? pod.scheduling_group : nil
+          return true if group_name.nil?
+
+          group = context.respond_to?(:pod_group) ? context.pod_group(pod.namespace, group_name) : nil
+          return Helpers.reject("waiting for pods's pod group #{group_name.inspect} to appear in scheduling queue", code: "GangScheduling") if group.nil?
+
+          gang = Support.value(Support.value(Support.value(group, "spec", {}), "schedulingPolicy", {}), "gang", nil)
+          return true if gang.nil?
+
+          members = Array(context&.pods).count { |other| other.namespace == pod.namespace && other.scheduling_group == group_name && other.uid != pod.uid } + 1
+          return true if members >= Support.value(gang, "minCount", 0).to_i
+
+          Helpers.reject("waiting for minCount pods from a gang to appear in scheduling queue", code: "GangScheduling")
+        end
+
+        # Permit.
+        def call(pod, _node = nil, context = nil)
+          group_name = pod.respond_to?(:scheduling_group) ? pod.scheduling_group : nil
+          return true if group_name.nil?
+
+          group = context.respond_to?(:pod_group) ? context.pod_group(pod.namespace, group_name) : nil
+          gang = group && Support.value(Support.value(Support.value(group, "spec", {}), "schedulingPolicy", {}), "gang", nil)
+          return true if gang.nil?
+
+          scheduled = Array(context&.pods).count { |other| other.namespace == pod.namespace && other.scheduling_group == group_name && !other.node_name.empty? } + 1
+          return true if scheduled >= Support.value(gang, "minCount", 0).to_i
+
+          Permit::Wait.new(PERMIT_TIMEOUT_SECONDS)
+        end
+
+        alias permit call
+      end
+
       class NodeResourcesFit
         def call(pod, node, context = nil)
           requested = pod.requests
