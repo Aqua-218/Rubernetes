@@ -25,7 +25,7 @@ module Rubernetes
         attr_reader :authorizers
 
         def initialize(authorizers:, privileged_groups: [UserInfo::MASTERS_GROUP])
-          @authorizers = Array(authorizers)
+          @authorizers = Array(authorizers).freeze
           @privileged_groups = Array(privileged_groups)
         end
 
