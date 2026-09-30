@@ -98,7 +98,7 @@ module Rubernetes
             if status["allowed"] == true
               Decision.allow(status["reason"], authorizer: name)
             elsif status["denied"] == true
-              Decision.deny(status["reason"], authorizer: NAME)
+              Decision.deny(status["reason"], authorizer: name)
             else
               Decision.no_opinion(status["reason"], authorizer: NAME)
             end
