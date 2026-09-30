@@ -1000,7 +1000,7 @@ module Rubernetes
           end
         end
 
-        attr_reader :priority_levels, :flow_schemas
+        attr_reader :priority_levels, :flow_schemas, :server_seats, :work_estimator, :watch_tracker, :object_counts
 
         def initialize(flow_schemas:, priority_level_configurations:, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
                        read_seats: DEFAULT_READ_SEATS, mutating_seats: DEFAULT_MUTATING_SEATS)
