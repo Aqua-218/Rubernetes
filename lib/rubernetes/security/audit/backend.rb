@@ -5,6 +5,7 @@ require "fileutils"
 require "monitor"
 require "uri"
 require "openssl"
+require_relative "../egress"
 
 module Rubernetes
   module Security
