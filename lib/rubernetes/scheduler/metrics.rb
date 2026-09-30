@@ -126,6 +126,18 @@ module Rubernetes
       end
 
       # scheduler_event_handling_duration_seconds: one informer handler run.
+      # scheduler_podgroup_schedule_attempts_total / _scheduling_attempt_duration_seconds
+      # {profile,result} and the algorithm latency (GenericWorkload).
+      def pod_group_attempt(profile, result, seconds)
+        labels = {"profile" => profile.to_s, "result" => result.to_s}
+        increment("scheduler_podgroup_schedule_attempts_total", labels)
+        observe("scheduler_podgroup_scheduling_attempt_duration_seconds", seconds, labels)
+      end
+
+      def pod_group_algorithm(seconds)
+        observe("scheduler_podgroup_scheduling_algorithm_duration_seconds", seconds)
+      end
+
       # scheduler_queueing_hint_execution_duration_seconds{event,hint,plugin}.
       def queueing_hint(plugin, event, hint, seconds)
         observe("scheduler_queueing_hint_execution_duration_seconds", seconds, {"event" => event.to_s, "hint" => hint.to_s, "plugin" => plugin.to_s})
