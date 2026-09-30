@@ -1709,7 +1709,7 @@ module Rubernetes
         # reconstruction): records with mounts or attachments, and the ones
         # whose backend is unknown.
         restored = @volume_store.values
-        @reconstruction_stats = {
+        stats = {
           attempted: restored.count { |record| !record.publishes.to_h.empty? || !record.attachments.to_h.empty? },
           errors: restored.count { |record| record.state.to_s == "Unknown" }
         }.freeze
