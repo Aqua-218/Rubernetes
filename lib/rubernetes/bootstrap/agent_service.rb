@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "socket"
+
 require_relative "../node"
 require_relative "../image"
 require_relative "../runtime/native"
