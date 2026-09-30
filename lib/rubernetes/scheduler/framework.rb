@@ -825,6 +825,10 @@ module Rubernetes
         item = queue.pop(trace: trace)
         return nil unless item
 
+        if gang_scheduled?(item.pod, pod_groups)
+          return schedule_pod_group(item.pod, nodes: nodes, pods: pods, namespace_labels: namespace_labels, volume_data: volume_data,
+                                              workload_selectors: workload_selectors, pod_groups: pod_groups)
+        end
         schedule(item.pod, nodes, pods: pods, namespace_labels: namespace_labels, volume_data: volume_data,
                                   workload_selectors: workload_selectors, trace: trace)
       rescue StandardError => error
