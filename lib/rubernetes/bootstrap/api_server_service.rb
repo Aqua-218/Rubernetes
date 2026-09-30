@@ -175,6 +175,7 @@ module Rubernetes
         bootstrap_dynamic_apis
         start_dynamic_api_reconciler
         bootstrap_service_cidr
+        start_allocation_repair
         @http_server.start
         @kubernetes_service.start
         @authentication_trust&.start
