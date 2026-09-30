@@ -1354,6 +1354,10 @@ module Rubernetes
         super
         @mount_identity = Types.key(Types.key(spec, "backendResult", {}), "mountIdentity")
         @token_rotator = Types.key(spec, "tokenRotator")
+        # The provider object never reaches the ledger: a backend rebuilt
+        # from a durable record finds the node's manager here.
+        @pod_certificates = Types.key(spec, "podCertificateProvider") || self.class.pod_certificate_provider
+        @certificate_versions = {}
         @projected_files = {}
         @token = nil
         @token_path = nil
