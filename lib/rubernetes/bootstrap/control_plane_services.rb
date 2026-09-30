@@ -2056,7 +2056,7 @@ module Rubernetes
         timed_event(event) do
           @mutex.synchronize { @pods.delete(key) }
           @framework.forget_nomination(typed) if @framework.respond_to?(:forget_nomination)
-          retry_unschedulable("pod_deleted", pod: "#{typed.namespace}/#{typed.name}", event: event)
+          retry_unschedulable("pod_deleted", pod: "#{typed.namespace}/#{typed.name}", event: event, old_object: typed, new_object: nil)
           @framework.queue.delete(typed) if @framework.respond_to?(:queue)
         end
       end
