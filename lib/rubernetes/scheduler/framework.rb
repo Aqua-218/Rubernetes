@@ -13,7 +13,7 @@ module Rubernetes
     # blocks receive only Pod/Node snapshots; the context is intentionally not
     # exposed as mutable plugin state.
     class CycleContext
-      attr_reader :nodes, :pods, :namespace_data, :volume_data, :workload_selectors, :cycle_state
+      attr_reader :nodes, :pods, :namespace_data, :volume_data, :workload_selectors, :cycle_state, :pod_groups
 
       # +workload_selectors+: {"services" => [{namespace, selector}], "controllers" =>
       # {"<Kind>/<namespace>/<name>" => selector}} -- what PodTopologySpread's
