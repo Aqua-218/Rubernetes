@@ -306,6 +306,7 @@ module Rubernetes
         return nil unless config["security"]
 
         SecurityAssembly.new(config: config["security"], store: @store, key_for: store_key_for, logger: @logger,
+                             apiserver_id: config["identity"] || Socket.gethostname,
                              service_resolver: service_endpoint_resolver,
                              resource_resolver: lambda { |group, kind|
                                resource = @registry.resources.find { |candidate| candidate.group == group && candidate.kind == kind }
