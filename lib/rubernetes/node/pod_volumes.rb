@@ -459,7 +459,9 @@ module Rubernetes
       # Tear the Pod's volumes down in reverse: sub-path publishes, the main
       # publish, the stage, the attachment, then the volume itself.  Every
       # failure is collected so the caller records all of them.
-      def release(pod, handle, token: nil)
+      # +keep_certificates+: a rollback of a failed setup keeps the Pod's
+      # PodCertificateRequests in flight (the retry needs their answers).
+      def release(pod, handle, token: nil, keep_certificates: false)
         object = Helpers.string_keys(pod.respond_to?(:to_h) ? pod.to_h : pod)
         uid = pod_uid(object)
         token ||= "release-#{uid}"
