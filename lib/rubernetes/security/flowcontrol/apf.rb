@@ -1138,11 +1138,12 @@ module Rubernetes
             observe("apiserver_flowcontrol_request_wait_duration_seconds", 0.0, labels.merge("execute" => "false"))
             raise
           end
-          record_dispatch(labels, waited, executing: true)
-          note_executing(labels, mutating, 1)
-          Ticket.new(priority_level: level_name, flow_schema: schema_name, queue_index: queue_index, seats: 1, queued_seconds: waited, exempt: false,
-                     dispatched_at: @metrics ? Process.clock_gettime(Process::CLOCK_MONOTONIC) : nil, mutating: mutating,
-                     watch: attributes.verb.to_s == "watch")
+          waited = @clock.call - started
+          record_dispatch(labels, waited)
+          note_read_write("executing", mutating, 1)
+          Ticket.new(priority_level: level_name, flow_schema: schema_name, queue_index: queue_request.queue&.index, seats: work.max_seats,
+                     queued_seconds: waited, exempt: level.exempt, dispatched_at: Process.clock_gettime(Process::CLOCK_MONOTONIC),
+                     mutating: mutating, watch: attributes.verb.to_s == "watch", request: queue_request, work: work)
         end
 
         def release(ticket)
