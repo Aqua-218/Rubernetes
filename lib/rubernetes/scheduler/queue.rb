@@ -232,6 +232,9 @@ module Rubernetes
         key = identity_key(typed)
         @mutex.synchronize do
           attempts = (@attempts[key] = @attempts.fetch(key, 0) + 1)
+          (@first_failure_at ||= {})[key] = now_seconds
+          @in_flight.delete(key)
+          prune_in_flight_events_locked
           @sequence += 1
           parked = @max_active_attempts && attempts >= @max_active_attempts
           item = QueueItem.new(pod: typed, priority: typed.priority, sequence: @sequence,
