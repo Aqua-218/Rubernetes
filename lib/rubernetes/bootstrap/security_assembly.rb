@@ -144,7 +144,7 @@ module Rubernetes
           )
           @service_account_issuer = Security::Authentication::ServiceAccount.new(
             issuer: sa.fetch("issuer"), signing_key: signing_key, verification_keys: verification.empty? ? nil : verification,
-            api_audiences: audiences, lookup: lookup, clock: @clock, max_expiration_seconds: sa["max_expiration_seconds"],
+            api_audiences: audiences, lookup: lookup, clock: @clock, max_expiration_seconds: max_expiration, external_signer: external_signer,
             secret_writer: ->(namespace, name, labels) { merge_labels("secrets", namespace, name, labels) }
           )
           authenticators << cache_token.call(@service_account_issuer)
