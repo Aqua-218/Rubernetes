@@ -206,7 +206,7 @@ module Rubernetes
           selinux_volumes.each_value { |unique| @selinux_tracker&.forget(pod_uid: uid, volume_name: nil, unique_name: unique) }
           begin
             release(object, {"ids" => ids, "mounts" => mounts, "stage_paths" => stage_paths},
-                    token: "#{token}-rollback")
+                    token: "#{token}-rollback", keep_certificates: true)
           rescue StandardError => cleanup_error
             raise error.class, "#{error.message} (rollback: #{cleanup_error.message})", error.backtrace
           end
