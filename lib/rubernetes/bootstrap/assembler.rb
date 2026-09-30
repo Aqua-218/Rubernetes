@@ -166,7 +166,7 @@ module Rubernetes
             process_name: @process_name,
             level: config.logging_level,
             clock: @clock
-          )
+          ).tap { |logger| Observability::Metrics.logger = logger }
         end
         container.register(:shutdown) { Shutdown.new }
         if @process_name == "rubernetes-agent"

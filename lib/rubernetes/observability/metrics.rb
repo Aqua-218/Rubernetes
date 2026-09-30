@@ -78,6 +78,7 @@ module Rubernetes
         @mutex = Mutex.new
         @metrics = {}
         @hidden_names = {}
+        @unimplemented_reasons = {}
         @storage_source = nil
         @storage_counted_at = nil
         @collectors = []
@@ -289,9 +290,11 @@ module Rubernetes
             set(name, initial) if initial
             next
           end
-          next if unimplemented.key?(name)
-
           type = UPSTREAM_TYPES[entry["type"]]
+          if unimplemented.key?(name)
+            register_unimplemented(component, name, entry, unimplemented[name], type)
+            next
+          end
           next unless type
           next if @mutex.synchronize { @metrics.key?(name) }
 
@@ -299,6 +302,32 @@ module Rubernetes
         end
         set("hidden_metrics_total", @hidden_names.length) unless @hidden_names.empty?
         self
+      end
+
+      # A family whose feature Rubernetes does not have is still declared, so
+      # a dashboard built for upstream finds the series name: its HELP says
+      # why it never moves, and the reason is logged once at registration
+      # (Metrics.logger, set by the bootstrap) as metrics.unimplemented.
+      def register_unimplemented(component, name, entry, reason, type)
+        return if @mutex.synchronize { @metrics.key?(name) }
+
+        type ||= name.end_with?("_total") ? :counter : :gauge
+        register(name, type: type)
+        @mutex.synchronize do
+          @metrics[name].help = "#{self.class.annotated_help(entry)} (not implemented in Rubernetes, always empty: #{reason})"
+          @unimplemented_reasons[name] = reason
+        end
+        logger = self.class.logger
+        logger.info("metrics.unimplemented", component: component, metric: name, reason: reason) if logger.respond_to?(:info)
+        self
+      end
+
+      # {metric name => reason} for the families register_unimplemented declared.
+      def unimplemented_reasons = @mutex.synchronize { @unimplemented_reasons.dup }
+
+      class << self
+        # The process logger unimplemented registrations are reported to.
+        attr_accessor :logger
       end
 
       # x509metrics: a serving certificate with no Subject Alternative Name

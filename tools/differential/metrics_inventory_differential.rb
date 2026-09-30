@@ -12,8 +12,9 @@
 #   hidden       -- deprecated long enough that component-base hides it
 #                   (Metrics.hidden?): not served, upstream or here,
 #   upstream-unused -- declared upstream but recorded nowhere in v1.36.2,
-#   unimplemented -- Metrics::UNIMPLEMENTED keeps it unregistered because the
-#                   feature it measures does not exist in Rubernetes,
+#   unimplemented -- Metrics::UNIMPLEMENTED: the feature it measures does not
+#                   exist in Rubernetes; declared with the reason in its HELP
+#                   (and logged as metrics.unimplemented), never written,
 #   unwired      -- neither: registered from the inventory and never written.
 #
 # Scrape mode (--scrape component[:endpoint]=path|url, repeatable; endpoint
