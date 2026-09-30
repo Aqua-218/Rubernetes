@@ -2,6 +2,7 @@
 
 # openssl before net/http: the TLS accessors are conditionally defined.
 require "openssl"
+require_relative "../security/egress"
 require "net/http"
 require "net/https"
 require "socket"
