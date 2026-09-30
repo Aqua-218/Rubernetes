@@ -80,8 +80,9 @@ class APIServerFlowControlExtrasMetricsTest < Minitest::Test
     Thread.pass until @registry.render.include?('apiserver_flowcontrol_current_inqueue_seats{flow_schema="all",priority_level="tiny"} 1')
     @now = 2.0
     text = @registry.render
-    assert_equal "1", line(text, "apiserver_flowcontrol_request_queue_length_after_enqueue_count", '{flow_schema="all",priority_level="tiny"}')
-    assert_equal "1", line(text, "apiserver_flowcontrol_request_queue_length_after_enqueue_bucket", '{flow_schema="all",priority_level="tiny",le="10"}')
+    # Every request passes through its queue (the first was dispatched at once): two enqueues.
+    assert_equal "2", line(text, "apiserver_flowcontrol_request_queue_length_after_enqueue_count", '{flow_schema="all",priority_level="tiny"}')
+    assert_equal "2", line(text, "apiserver_flowcontrol_request_queue_length_after_enqueue_bucket", '{flow_schema="all",priority_level="tiny",le="10"}')
     # Waiting limit: one queue of one; the whole server queues at most one.
     assert_equal "2e+09", line(text, "apiserver_flowcontrol_priority_level_request_utilization_sum", '{phase="waiting",priority_level="tiny"}')
     assert_equal "2e+09", line(text, "apiserver_flowcontrol_read_vs_write_current_requests_sum", '{phase="waiting",request_kind="mutating"}')
