@@ -1477,6 +1477,8 @@ module Rubernetes
             @token = token
             @token_path = Types.key(inner, "path", "token").to_s
             {@token_path => token.respond_to?(:value) ? token.value : Types.key(token, "value")}
+          elsif value.key?("podCertificate") || value.key?(:podCertificate)
+            pod_certificate_files(Types.key(value, "podCertificate", {}))
           else
             value
           end
