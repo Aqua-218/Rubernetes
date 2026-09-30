@@ -210,7 +210,7 @@ module Rubernetes
           rescue StandardError => cleanup_error
             raise error.class, "#{error.message} (rollback: #{cleanup_error.message})", error.backtrace
           end
-          raise
+          raise error
         end
         {"ids" => ids, "mounts" => mounts}
       end
