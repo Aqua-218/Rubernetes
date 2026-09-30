@@ -707,6 +707,10 @@ module Rubernetes
               raise
             end
             @metrics.extension_point(:reserve, Metrics::STATUS_SUCCESS, monotonic - reserve_started)
+            if assume_only
+              return ScheduleResult.new(status: :assumed, pod: typed_pod, node: selected.node, filtered: filtered, scores: breakdowns,
+                                        victims: victims, trace: trace, reservation: reservation)
+            end
             run_permit(typed_pod, selected.node, context, trace)
             bound_pod = bind!(pod, typed_pod, selected.node, context: context, trace: trace)
             commit_reservation!(reservation)
