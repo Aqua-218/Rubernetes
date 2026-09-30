@@ -117,6 +117,13 @@ module Rubernetes
       end
       # ->(plugin, operation, status, seconds): storage_operation_duration_seconds.
       attr_accessor :metrics_observer
+      # Volume::SELinux::Tracker: the label each volume is mounted with and
+      # the KEP-1710 mismatch checks; nil mounts without -o context.
+      attr_accessor :selinux_tracker
+
+      # A volume whose containers or Pods disagree on an SELinux label and
+      # whose access mode makes that an error (MountVolume.SetUp fails).
+      class SELinuxConflict < Error; end
 
       def pod_directory(pod)
         File.join(@root, pod_uid(pod))
