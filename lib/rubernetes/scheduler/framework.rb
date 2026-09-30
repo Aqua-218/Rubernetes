@@ -830,7 +830,7 @@ module Rubernetes
                                               workload_selectors: workload_selectors, pod_groups: pod_groups)
         end
         schedule(item.pod, nodes, pods: pods, namespace_labels: namespace_labels, volume_data: volume_data,
-                                  workload_selectors: workload_selectors, trace: trace)
+                                  workload_selectors: workload_selectors, trace: trace, pod_groups: pod_groups)
       rescue StandardError => error
         requeue_after_failure(item.pod, error) if item
         raise
