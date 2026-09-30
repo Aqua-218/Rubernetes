@@ -63,7 +63,7 @@ module Rubernetes
         system_reserved kube_reserved reserved_system_cpus cpu_manager memory_manager topology_manager shutdown
         cgroups_per_qos enforce_node_allocatable system_reserved_cgroup kube_reserved_cgroup cri crash_loop_back_off
         device_plugins pod_resources image_pull_credentials image_credential_provider
-        bootstrap_kubeconfig rotate_certificates cert_dir
+        bootstrap_kubeconfig rotate_certificates server_tls_bootstrap cert_dir
       ].freeze
       # A CRI runtime (containerd, CRI-O) serving RuntimeClass handlers:
       # handlers maps the node's handler name to the CRI runtime handler.
