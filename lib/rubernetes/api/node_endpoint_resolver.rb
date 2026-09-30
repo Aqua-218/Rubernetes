@@ -162,8 +162,12 @@ module Rubernetes
         end
 
         def open_socket(uri)
-          tcp = Socket.tcp(uri.hostname, uri.port, connect_timeout: @open_timeout)
-          tcp.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
+          tcp = Security::Egress.tcp_socket(uri.hostname, uri.port, "cluster", connect_timeout: @open_timeout)
+          begin
+            tcp.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
+          rescue SystemCallError
+            nil # an egress tunnel over a Unix socket
+          end
           return tcp unless uri.scheme == "https"
 
           ssl = OpenSSL::SSL::SSLSocket.new(tcp, KubeletClientTLS.context(@tls))
