@@ -14,7 +14,7 @@ require "time"
 
 module M34EvidenceSupport
   ROOT = File.expand_path("../..", __dir__).freeze
-  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/}.freeze
+  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}.freeze
   # External observers are allowed to hand the evidence runner a path to a
   # capture, but the path is only a transport pointer.  The pointer must
   # never become part of a milestone claim: the bytes are copied into the

@@ -23,7 +23,7 @@ module M3Gate
   SOURCE_EXCLUDED_ROOTS = %w[.git artifacts build pkg tmp .bundle].freeze
   # Anchored generator scratch directories (a11-generated.XXXXXX) are
   # excluded from the source identity by every milestone (M0-M2 rule).
-  SOURCE_EXCLUDED_PATTERNS = [%r{\Aa11-generated\.[A-Za-z0-9]{6,}/}].freeze
+  SOURCE_EXCLUDED_PATTERNS = [%r{\Aa11-generated\.[A-Za-z0-9]{6,}/}, %r{\Aapps/[^/]+/(?:log|tmp|storage)/}].freeze
   PROJECT_ROOT = File.expand_path("../..", __dir__).freeze
   M0_GATE = File.join(__dir__, "m0_gate.rb").freeze
   M1_GATE = File.join(__dir__, "m1_gate.rb").freeze

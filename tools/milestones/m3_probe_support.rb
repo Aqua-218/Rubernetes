@@ -20,7 +20,7 @@ require File.expand_path("../../lib/rubernetes/version", __dir__)
 
 module M3ProbeSupport
   ROOT = File.expand_path("../..", __dir__).freeze
-  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/}.freeze
+  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}.freeze
   SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
   KUBERNETES_VERSION = "v1.36.2".freeze
   KUBERNETES_SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467".freeze

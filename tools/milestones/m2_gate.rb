@@ -131,7 +131,7 @@ module M2Gate
     "kernel" => "m2-kernel-probe"
   }.freeze
   SOURCE_EXCLUDED_ROOTS = %w[.git artifacts build pkg tmp .bundle].freeze
-  SOURCE_EXCLUDED_PATTERNS = [%r{\Aa11-generated\.[A-Za-z0-9]{6,}/}].freeze
+  SOURCE_EXCLUDED_PATTERNS = [%r{\Aa11-generated\.[A-Za-z0-9]{6,}/}, %r{\Aapps/[^/]+/(?:log|tmp|storage)/}].freeze
   PROJECT_ROOT = File.expand_path("../..", __dir__).freeze
   M0_GATE = File.join(__dir__, "m0_gate.rb").freeze
   M1_GATE = File.join(__dir__, "m1_gate.rb").freeze

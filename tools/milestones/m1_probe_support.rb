@@ -13,7 +13,7 @@ ROOT = File.expand_path("../..", __dir__).freeze unless defined?(ROOT)
 # Generator runs use a root-level mktemp directory. Keep the exclusion anchored
 # to that exact name shape so an arbitrary similarly named source directory is
 # still part of the content-addressed input.
-SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/}.freeze unless defined?(SOURCE_EXCLUSIONS)
+SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}.freeze unless defined?(SOURCE_EXCLUSIONS)
 SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze unless defined?(SHA256_PATTERN)
 
 module M1ProbeSupport

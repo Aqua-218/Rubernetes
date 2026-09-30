@@ -22,7 +22,7 @@ require_relative "m2_gate"
 ROOT = File.expand_path("../..", __dir__) unless defined?(ROOT)
 # Keep the temporary generator exclusion anchored to a root-level mktemp name;
 # broad prefixes would let a real source directory disappear from the input.
-SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/}.freeze unless defined?(SOURCE_EXCLUSIONS)
+SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}.freeze unless defined?(SOURCE_EXCLUSIONS)
 REPORT_SPECS = {
   "runtime" => {filename: "runtime-report.json", kind: "m2_runtime_profiles", default: [RbConfig.ruby, "tools/milestones/m2_runtime_probe.rb"]},
   "attacks" => {filename: "oci-attack-corpus.json", kind: "m2_oci_attack_corpus", default: [RbConfig.ruby, "tools/milestones/m2_attack_probe.rb"]},

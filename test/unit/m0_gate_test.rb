@@ -29,6 +29,10 @@ class M0GateTest < Minitest::Test
     assert(M0SourceInventory.excluded?("a11-generated.ABC123/sentinel"))
     refute(M0SourceInventory.excluded?("lib/a11-generated.ABC123/sentinel"))
     refute(M0SourceInventory.excluded?("a11-generated.short/sentinel"))
+    assert(M0SourceInventory.excluded?("apps/dashboard/log/development.log"))
+    assert(M0SourceInventory.excluded?("apps/dashboard/tmp/cache/x"))
+    refute(M0SourceInventory.excluded?("apps/dashboard/app/models/user.rb"))
+    refute(M0SourceInventory.excluded?("lib/apps/dashboard/log/x"))
   end
 
   def self.authoritative_minitest_inventory

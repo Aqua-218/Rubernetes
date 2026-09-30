@@ -22,7 +22,7 @@ require_relative "m1_gate"
 ROOT = File.expand_path("../..", __dir__)
 # Keep the temporary generator exclusion anchored to a root-level mktemp name;
 # broad prefixes would let a real source directory disappear from the input.
-SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/}.freeze
+SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}.freeze
 REPORT_SPECS = {
   "corpus" => {filename: "corpus-coverage.json", kind: "m1_corpus_coverage"},
   "generation" => {filename: "generation-diff.json", kind: "m1_generation_diff"},

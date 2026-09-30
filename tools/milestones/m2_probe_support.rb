@@ -28,7 +28,7 @@ module M2ProbeSupport
   ROOT = File.expand_path("../..", __dir__).freeze
   # Generator runs use a root-level mktemp directory. The anchored suffix
   # avoids excluding arbitrary source directories with a shared prefix.
-  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/}.freeze
+  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}.freeze
   REQUIRED_ARCHITECTURES = M2Gate::REQUIRED_ARCHITECTURES
   RESOURCE_KINDS = M2Gate::REQUIRED_RESOURCE_KINDS
 
