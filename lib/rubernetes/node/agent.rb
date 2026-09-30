@@ -399,6 +399,7 @@ module Rubernetes
         # kubelet /metrics (the registry exists from the container manager's start).
         @lifecycle.metrics_observer = @kubelet_metrics if @lifecycle.respond_to?(:metrics_observer=)
         attach_selinux_tracker
+        attach_pod_certificate_manager
         kubelet_metrics = @kubelet_metrics
         if @status.respond_to?(:sync_observer=) && !@status.frozen?
           @status.sync_observer = ->(pod, status, seconds) { kubelet_metrics.pod_status_synced(pod, status, seconds) }
