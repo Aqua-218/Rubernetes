@@ -1104,11 +1104,16 @@ module Rubernetes
           level = @priority_levels[level_name]
           raise RejectedError.new("priority level #{level_name} is not configured", retry_after: 1) if level.nil?
 
-          schema_name = schema.dig("metadata", "name")
-          labels = {"flow_schema" => schema_name.to_s, "priority_level" => level_name.to_s}
-          if long_running?(attributes) || level.exempt
-            record_dispatch(labels, 0.0, executing: false)
-            return Ticket.new(priority_level: level_name, flow_schema: schema_name, queue_index: nil, seats: 0, queued_seconds: 0.0, exempt: true)
+          schema_name = schema.dig("metadata", "name").to_s
+          labels = {"flow_schema" => schema_name, "priority_level" => level_name.to_s}
+          query = query_of(request)
+          if long_running?(attributes)
+            # Long-running requests hold no seat; a watch is remembered so
+            # the mutating work estimator knows who receives its events.
+            forget = @watch_tracker.register(attributes, field_selector: query["fieldSelector"] || attributes.field_selector)
+            record_dispatch(labels, 0.0)
+            return Ticket.new(priority_level: level_name, flow_schema: schema_name, queue_index: nil, seats: 0, queued_seconds: 0.0, exempt: true,
+                              forget_watch: forget, watch: attributes.verb.to_s == "watch")
           end
           mutating = !NON_MUTATING_VERBS.include?(attributes.verb.to_s)
           on_queue = @metrics ? ->(delta, length) { note_queued(labels, mutating, delta, length) } : nil
