@@ -867,6 +867,9 @@ module Rubernetes
         DEFAULT_REQUEST_WAIT_LIMIT = 60.0
         DEFAULT_READ_SEATS = 400
         DEFAULT_MUTATING_SEATS = 200
+        BORROWING_ADJUSTMENT_SECONDS = 10.0
+        SEAT_DEMAND_SMOOTHING_COEFFICIENT = 0.977
+        PRIORITY_LEVEL_MAX_SEATS_PERCENT = 0.15
         LONG_RUNNING_VERBS = %w[watch].freeze
         LONG_RUNNING_SUBRESOURCES = %w[exec attach portforward proxy log].freeze
 
