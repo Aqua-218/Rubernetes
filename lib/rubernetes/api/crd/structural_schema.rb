@@ -305,6 +305,55 @@ module Rubernetes
           true
         end
 
+        # CRDValidationRatcheting: on an update, a structural error inside a
+        # subtree that is unchanged from the stored object is not the
+        # caller's doing and is dropped (it was accepted when stored).  Lists
+        # correlate by index.  apiextensions_apiserver_validation_ratcheting_seconds
+        # is the time the old/new comparison takes.
+        def ratchet!(causes, object, old)
+          return if causes.empty?
+
+          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          unchanged = []
+          collect_unchanged(object, old, [], unchanged)
+          unless unchanged.empty?
+            causes.reject! do |cause|
+              field = cause["field"].to_s
+              unchanged.any? { |prefix| field == prefix || field.start_with?("#{prefix}.", "#{prefix}[") }
+            end
+          end
+        ensure
+          observe_ratcheting(Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) if started
+        end
+
+        def collect_unchanged(value, old, path, unchanged)
+          if value == old
+            unchanged << join(path) unless path.empty?
+            return
+          end
+          case value
+          when Hash
+            return unless old.is_a?(Hash)
+
+            value.each { |key, child| collect_unchanged(child, old[key], path + [key.to_s], unchanged) if old.key?(key) }
+          when Array
+            return unless old.is_a?(Array)
+
+            value.each_with_index { |child, index| collect_unchanged(child, old[index], path + ["[#{index}]"], unchanged) if index < old.length }
+          end
+        end
+
+        def observe_ratcheting(seconds)
+          return unless defined?(Rubernetes::Observability::Metrics)
+
+          registry = Rubernetes::Observability::Metrics.global
+          name = "apiextensions_apiserver_validation_ratcheting_seconds"
+          registry.register(name, type: :histogram) unless registry.registered?(name)
+          registry.observe(name, seconds)
+        rescue StandardError
+          nil
+        end
+
         def has_validations?(schema)
           return false unless schema.is_a?(Hash)
           return true unless Array(schema["x-kubernetes-validations"]).empty?
