@@ -231,7 +231,7 @@ module Rubernetes
 
         def post(body)
           require "net/http"
-          http = Net::HTTP.new(@uri.host, @uri.port, nil)
+          http = Egress.http(@uri, "controlplane")
           http.use_ssl = @uri.scheme == "https"
           if http.use_ssl?
             http.verify_mode = OpenSSL::SSL::VERIFY_PEER
