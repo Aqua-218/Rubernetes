@@ -221,7 +221,7 @@ module Rubernetes
           uri = URI.parse(url)
           raise ConfigurationError, "jwt: #{url} must be https" unless uri.scheme == "https"
 
-          http = Net::HTTP.new(uri.host, uri.port, nil)
+          http = Egress.http(uri, (@config.dig("issuer", "egressSelectorType") || "controlplane").to_s)
           http.use_ssl = true
           http.open_timeout = 10
           http.read_timeout = 10
