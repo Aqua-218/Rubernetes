@@ -69,6 +69,45 @@ module Rubernetes
         @records = {}
         @intents = {}
         @mutex = Mutex.new
+        @directory = directory && File.expand_path(directory.to_s)
+        @metrics_observer = metrics_observer
+        load_from_disk if @directory
+      end
+
+      attr_accessor :metrics_observer
+
+      # An ImagePullIntent: written before a pull starts, so a pull that the
+      # kubelet died in the middle of is known to need verification.
+      def record_intent(image)
+        key = image.to_s
+        return if key.empty?
+
+        @mutex.synchronize do
+          @intents[key] = @clock.call
+          @intents.shift while @intents.length > MEMORY_INTENTS_CAPACITY
+        end
+        write_json(File.join(@directory, "pulling", "#{digest_name(key)}.json"),
+                   {"kind" => "ImagePullIntent", "apiVersion" => "kubelet.config.k8s.io/v1alpha1", "image" => key}) if @directory
+      end
+
+      def clear_intent(image)
+        key = image.to_s
+        @mutex.synchronize { @intents.delete(key) }
+        return unless @directory
+
+        path = File.join(@directory, "pulling", "#{digest_name(key)}.json")
+        File.unlink(path) if File.exist?(path)
+      rescue SystemCallError
+        nil
+      end
+
+      # {in_memory_records:, in_memory_intents:, on_disk_records:, on_disk_intents:,
+      # records_capacity:, intents_capacity:} for the kubelet_imagemanager_* gauges.
+      def usage
+        records, intents = @mutex.synchronize { [@records.length, @intents.length] }
+        {in_memory_records: records, in_memory_intents: intents,
+         records_capacity: MEMORY_RECORDS_CAPACITY, intents_capacity: MEMORY_INTENTS_CAPACITY,
+         on_disk_records: count_files("pulled"), on_disk_intents: count_files("pulling")}
       end
 
       # getAllowlistImagePattern: "registry/path" exactly, or a "registry/path/*"
