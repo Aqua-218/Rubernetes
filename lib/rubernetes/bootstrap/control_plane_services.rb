@@ -1983,8 +1983,9 @@ module Rubernetes
         changed = previous.nil? || node_scheduling_view(previous) != node_scheduling_view(typed)
         return unless changed
 
-        event = node_event(previous, typed)
-        timed_event(event) { retry_unschedulable("node_changed", node: typed.name, event: event) }
+        node_events(previous, typed).each do |event|
+          timed_event(event) { retry_unschedulable("node_changed", node: typed.name, event: event, old_object: previous, new_object: typed) }
+        end
       end
 
       def delete_node(object)
