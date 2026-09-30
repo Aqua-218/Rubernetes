@@ -912,6 +912,11 @@ module Rubernetes
                                       concurrency_limit: 0, concurrency_denominator: 1, clock: clock, observer: self, after: after)
           end
 
+          # The seats this level owns by its shares (nominal_limit_seats).
+          def seats = @exempt ? Float::INFINITY : @nominal_seats
+          def inflight = @queue_set.total_executing
+          def waiting = @queue_set.total_waiting
+
           def stats
             @monitor.synchronize { {"name" => @name, "seats" => @seats, "inflight" => @inflight, "queued" => @queue_lengths.sum, "rejected" => @rejected, "dispatched" => @dispatched, "exempt" => @exempt} }
           end
