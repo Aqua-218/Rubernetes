@@ -222,7 +222,6 @@ module Rubernetes
       no_declarative = "declarative validation (DeclarativeValidation / +k8s: validation tags) is not implemented; every rule is hand-written in Schema::KubernetesValidator"
       no_evented_pleg = "EventedPLEG (Beta, off by default) is not implemented; upstream registers these only with the gate on"
       windows_only = "Windows HostProcess containers do not exist on Linux"
-      no_selinux_mounts = "SELinux mount option computation (SELinuxMount / SELinuxMountReadWriteOncePod context checks) is not implemented: labels from seLinuxOptions are applied by an adapter, contexts are never compared"
       UNIMPLEMENTED = {
         "kube-apiserver" => {
           "apiserver_authentication_config_controller_automatic_reload_last_timestamp_seconds" => no_config_reload,
