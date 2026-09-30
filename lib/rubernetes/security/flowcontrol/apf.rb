@@ -1061,12 +1061,9 @@ module Rubernetes
           record_borrowing_metrics
         end
 
-        # A request's seats (one: there is no work estimator), its limits
-        # and the time-integrated utilisation ratios of each Limited level
-        # (queueset's reqsGaugePair, execSeatsGauge and seatDemandIntegrator)
-        # and of the whole server by read-only / mutating kind.  A level's
-        # current limit is its nominal one -- seats are neither lent nor
-        # borrowed.
+        # The per-level TimingRatioHistograms (utilisation of the waiting and
+        # executing limits, seat utilisation, seat demand) and the server's
+        # read-vs-write ones.
         def register_seat_metrics(registry)
           @ratios = {}
           max_waiting = 0
