@@ -126,6 +126,22 @@ module Rubernetes
       end
 
       # scheduler_event_handling_duration_seconds: one informer handler run.
+      # scheduler_queueing_hint_execution_duration_seconds{event,hint,plugin}.
+      def queueing_hint(plugin, event, hint, seconds)
+        observe("scheduler_queueing_hint_execution_duration_seconds", seconds, {"event" => event.to_s, "hint" => hint.to_s, "plugin" => plugin.to_s})
+      end
+
+      # scheduler_inflight_events{event}: the events the queue still holds
+      # for the Pods being scheduled.
+      def inflight_events(counts)
+        @inflight_labels ||= []
+        (@inflight_labels - counts.keys).each { |event| @registry.set("scheduler_inflight_events", 0, {"event" => event}) }
+        counts.each { |event, count| @registry.set("scheduler_inflight_events", count, {"event" => event.to_s}) }
+        @inflight_labels = counts.keys
+      rescue StandardError
+        nil
+      end
+
       def event_handled(event, seconds)
         observe("scheduler_event_handling_duration_seconds", seconds, {"event" => event.to_s})
       end
