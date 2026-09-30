@@ -85,7 +85,7 @@ module Rubernetes
                     "#{LEGACY_PREFIX}namespace" => namespace, "#{LEGACY_PREFIX}secret.name" => secret_name,
                     "#{LEGACY_PREFIX}service-account.name" => service_account_name,
                     "#{LEGACY_PREFIX}service-account.uid" => service_account_uid}
-          JWT.sign(claims, key: @signing_key, algorithm: algorithm, key_id: @key_id)
+          sign_claims(claims)
         end
 
         def name
