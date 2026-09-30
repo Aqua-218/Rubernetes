@@ -561,6 +561,10 @@ module Rubernetes
           return finalize_response(request, error_response(Status::Unauthorized.new("Unauthorized")))
         rescue Security::Pipeline::BadRequest => bad_request
           return finalize_response(request, error_response(Status::BadRequest.new(bad_request.message)))
+        rescue Security::Pipeline::AuditRejected => audit_rejected
+          # A blocking-strict audit webhook refused the RequestReceived event.
+          return finalize_response(request, error_response(Status::Error.new(message: "audit logging failed: #{audit_rejected.message}",
+                                                                              code: 500, reason: "InternalError")))
         rescue Security::Pipeline::Forbidden => forbidden
           if (status_error = forbidden.status_error)
             return finalize_response(request, error_response(Status::Forbidden.new(status_error.message, details: status_error.details)))
