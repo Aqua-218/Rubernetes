@@ -206,7 +206,6 @@ module Rubernetes
       # tools/differential/metrics_inventory_differential.rb reports.
       no_list_to_log = "every LIST is served by the apiserver's local replica (apiserver_cache_list_*); none reaches the raft log"
       no_ring = "no per-resource watch cache ring: one shared MVCC history, sized by revisions and age"
-      no_pod_groups = "no workload-aware (PodGroup / gang) scheduling"
       iptables_only = "the iptables proxier is not implemented (nftables and eBPF backends only); iptables mode registers this"
       no_exec_plugins = "exec credential plugins are refused by the kubeconfig loader (Kubeconfig::UnsupportedCredentialError)"
       no_stream_translation = "exec, attach and port-forward websocket requests are served natively by the subresource bridge: nothing is translated to SPDY (no StreamTranslator) and no SPDY is tunneled over websocket (no StreamTunnel)"
