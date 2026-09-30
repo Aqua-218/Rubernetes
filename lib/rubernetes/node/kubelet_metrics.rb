@@ -183,6 +183,27 @@ module Rubernetes
         @registry.increment("kubelet_server_expiration_renew_errors")
       end
 
+      # KubeletEnsureSecretPulledImages: the pull manager's cache usage and
+      # on-disk record counts (kubelet_imagemanager_*), and its must-pull
+      # checks counter through #image_mustpull_check.
+      def pull_records=(records)
+        @pull_records = records
+        records.metrics_observer = method(:image_mustpull_check) if records.respond_to?(:metrics_observer=)
+        @registry.add_collector do |registry|
+          usage = records.respond_to?(:usage) ? records.usage : nil
+          next unless usage
+
+          registry.set("kubelet_imagemanager_inmemory_pulledrecords_usage_percent", usage[:in_memory_records] * 100.0 / usage[:records_capacity])
+          registry.set("kubelet_imagemanager_inmemory_pullintents_usage_percent", usage[:in_memory_intents] * 100.0 / usage[:intents_capacity])
+          registry.set("kubelet_imagemanager_ondisk_pulledrecords", usage[:on_disk_records])
+          registry.set("kubelet_imagemanager_ondisk_pullintents", usage[:on_disk_intents])
+        end
+      end
+
+      def image_mustpull_check(result)
+        @registry.increment("kubelet_imagemanager_image_mustpull_checks_total", {"result" => result.to_s})
+      end
+
       # The sync loop saw the Pod (kubelet's first-seen time).
       def pod_seen(pod)
         uid = pod.is_a?(Hash) ? pod.dig("metadata", "uid").to_s : ""
