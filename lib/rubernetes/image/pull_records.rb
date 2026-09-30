@@ -183,6 +183,12 @@ module Rubernetes
       # record holds Secrets or ServiceAccounts: -> [[secret...], service_account]
       # with the Pod's own keyring entries for the repository.
       def must_attempt_pull?(repository, image_ref, pod_credentials)
+        required = must_attempt_pull_uncounted?(repository, image_ref, pod_credentials)
+        observe_check(required ? "pull_required" : "pull_not_required")
+        required
+      end
+
+      def must_attempt_pull_uncounted?(repository, image_ref, pod_credentials)
         return true if image_ref.to_s.empty?
 
         cached = @mutex.synchronize { @records.dig(image_ref.to_s, :mapping, repository) }
