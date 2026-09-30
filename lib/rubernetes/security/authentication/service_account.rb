@@ -46,9 +46,9 @@ module Rubernetes
           raise ArgumentError, "a signing key or an external signer is required" if signing_key.nil? && external_signer.nil?
 
           @signing_key = signing_key
-          @key_id = JWT.key_id(public_key(signing_key))
-          keys = Array(verification_keys).empty? ? [public_key(signing_key)] : Array(verification_keys)
-          @verification_keys = keys.to_h { |key| [JWT.key_id(key), key] }
+          @key_id = signing_key ? JWT.key_id(public_key(signing_key)) : nil
+          keys = Array(verification_keys).empty? ? [signing_key && public_key(signing_key)].compact : Array(verification_keys)
+          @static_verification_keys = keys.to_h { |key| [JWT.key_id(key), key] }
           @api_audiences = Array(api_audiences).map(&:to_s)
           @lookup = lookup
           @clock = clock
