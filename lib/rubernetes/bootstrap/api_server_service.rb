@@ -182,6 +182,11 @@ module Rubernetes
           Security::Encryption.apiserver_id = @config["identity"] || Socket.gethostname
           @encryption_reload.start
         end
+        Array(@security&.reload_controllers).each do |controller|
+          controller.metrics = @api_server.metrics if @api_server.respond_to?(:metrics)
+          controller.note_loaded
+          controller.start
+        end
         @http_server.start
         @kubernetes_service.start
         @authentication_trust&.start
