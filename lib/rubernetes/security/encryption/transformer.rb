@@ -146,7 +146,16 @@ module Rubernetes
         end
 
         def status
-          @client.status
+          response = timed_kms("Status") { @client.status }
+          key_id = response.is_a?(Hash) ? response["key_id"].to_s : ""
+          if key_id.empty? || key_id.bytesize > 1024
+            Encryption.increment("apiserver_envelope_encryption_invalid_key_id_from_status_total",
+                                 {"error" => key_id.empty? ? "empty" : "too_long", "provider_name" => @name})
+          else
+            Encryption.set("apiserver_envelope_encryption_key_id_hash_status_last_timestamp_seconds", Time.now.to_f,
+                           {"apiserver_id_hash" => Encryption.apiserver_id_hash, "key_id_hash" => "sha256:#{Digest::SHA256.hexdigest(key_id)}", "provider_name" => @name})
+          end
+          response
         end
 
         def encrypt(plaintext, associated_data)
