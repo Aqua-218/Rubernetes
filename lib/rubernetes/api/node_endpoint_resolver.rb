@@ -268,7 +268,7 @@ module Rubernetes
           def each
             return to_enum(:each) unless block_given?
 
-            http = Net::HTTP.new(@uri.hostname, @uri.port)
+            http = Security::Egress.http(@uri, "cluster")
             KubeletClientTLS.configure(http, @uri, @tls)
             http.open_timeout = @open_timeout
             # A follow must not be cut off by a read timeout: an idle log is
