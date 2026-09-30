@@ -1021,6 +1021,18 @@ module Rubernetes
             name = plc.dig("metadata", "name").to_s
             levels[name] = PriorityLevel.new(controller: self, name: name, spec: plc["spec"] || {}, clock: clock, after: after)
           end
+          @share_sum = @priority_levels.values.reject(&:exempt).sum(&:nominal_shares).to_f
+          @priority_levels.each_value { |level| level.configure_bounds!(@server_seats, @share_sum) }
+          @nominal_sum = @priority_levels.values.sum(&:nominal_seats)
+          @watch_tracker = WatchTracker.new
+          @object_counts = ObjectCountTracker.new(source: object_stats, clock: clock)
+          @work_estimator = WorkEstimator.new(object_counts: @object_counts, watch_tracker: @watch_tracker,
+                                              max_seats: ->(level_name) { @priority_levels[level_name]&.estimator_max_seats.to_i },
+                                              watch_count_observer: lambda { |level_name, schema, count|
+                                                observe("apiserver_flowcontrol_watch_count_samples", count, {"flow_schema" => schema.to_s, "priority_level" => level_name.to_s})
+                                              })
+          @borrowing_thread = nil
+          adjust_borrowing!
         end
 
         def long_running?(attributes)
