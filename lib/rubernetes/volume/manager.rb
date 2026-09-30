@@ -2857,6 +2857,43 @@ module Rubernetes
                                                generation: record.generation + 1)
       end
 
+      # kubelet's reconstruction fallback: a volume whose backend could not
+      # be rebuilt (state Unknown) still has mount points on the node; they
+      # are unmounted and forgotten so the Pod directory can go
+      # (force_cleaned_failed_volume_operations_total counts every such
+      # cleanup, _errors_total the ones that failed).
+      def force_clean_unknown!(records, stats)
+        return unless @mount_adapter.respond_to?(:unmount)
+
+        records.each do |record|
+          next unless record.state.to_s == "Unknown" && !record.publishes.to_h.empty?
+
+          remaining = Types.deep_copy(record.publishes)
+          record.publishes.each do |key, publish|
+            target = Types.key(publish, "target")
+            next if target.to_s.empty?
+
+            stats[:force_cleaned] += 1
+            begin
+              present = !@mount_adapter.respond_to?(:find_mount) || @mount_adapter.find_mount(target)
+              AdapterSupport.call(@mount_adapter, :unmount, target: target) if present
+              remaining.delete(key)
+            rescue StandardError => error
+              if error.class.name.to_s.end_with?("MountIdentityError") && error.message.to_s.include?("not present")
+                remaining.delete(key)
+              else
+                stats[:force_clean_errors] += 1
+              end
+            end
+          end
+          next if remaining == record.publishes
+
+          @volume_store[record.id] = record.with(publishes: remaining, generation: record.generation + 1)
+        end
+      rescue StandardError
+        nil
+      end
+
       def restored_state(record, default_state)
         Types.key(record.operation || {}, "previousState", default_state).to_s
       end
