@@ -946,10 +946,19 @@ module Rubernetes
 
           def go_round(value) = value.negative? ? -((-value) + 0.5).floor : (value + 0.5).floor
 
-            @monitor.synchronize do
-              @inflight -= 1 if @inflight.positive?
-              @condition.broadcast
-            end
+          # seatDemandStats.update on the integrator's reset.
+          def update_seat_demand_stats!
+            results = @seat_demand_integrator.reset
+            stats = @seat_demand_stats
+            stats.high_watermark = results.max.round
+            return stats if results.duration <= 0
+
+            deviation = results.deviation.nan? ? 0.0 : results.deviation
+            stats.average = results.average.nan? ? 0.0 : results.average
+            stats.stdev = deviation
+            envelope = stats.average + deviation
+            stats.smoothed = [envelope, SEAT_DEMAND_SMOOTHING_COEFFICIENT * stats.smoothed + (1 - SEAT_DEMAND_SMOOTHING_COEFFICIENT) * envelope].max
+            stats
           end
 
           private
