@@ -1447,13 +1447,7 @@ module Rubernetes
 
         # hashFlowID: sha256(fsName + NUL + distinguisher), first eight bytes little-endian.
         def flow_hash(schema, attributes)
-          method = schema.dig("spec", "distinguisherMethod", "type")
-          distinguisher = case method
-                          when "ByUser" then attributes.user.name
-                          when "ByNamespace" then attributes.namespace.to_s
-                          else ""
-                          end
-          Digest::SHA256.hexdigest("#{schema.dig("metadata", "name")}\0#{distinguisher}").to_i(16)
+          Digest::SHA256.digest("#{schema.dig("metadata", "name")}\0#{distinguisher(schema, attributes)}").unpack1("Q<")
         end
 
         def matches?(schema, attributes)
