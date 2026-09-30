@@ -127,7 +127,6 @@ module Rubernetes
       private
 
       # ->() after a failed renewal (CertificateRenewFailure).
-      attr_writer :on_renew_failure
 
       def stopped? = @mutex.synchronize { @stop }
 
