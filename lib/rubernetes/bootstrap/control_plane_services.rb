@@ -1989,8 +1989,11 @@ module Rubernetes
       end
 
       def delete_node(object)
-        name = Scheduler::Node.new(object).name
-        timed_event("NodeDelete") { @mutex.synchronize { @nodes.delete(name) } }
+        typed = Scheduler::Node.new(object)
+        timed_event("NodeDelete") do
+          @mutex.synchronize { @nodes.delete(typed.name) }
+          retry_unschedulable("node_deleted", node: typed.name, event: "NodeDelete", old_object: typed, new_object: nil)
+        end
       end
 
       # Accepts a raw object or a typed Node snapshot.
