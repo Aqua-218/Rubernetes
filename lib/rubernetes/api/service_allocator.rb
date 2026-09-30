@@ -57,6 +57,115 @@ module Rubernetes
 
       def cidr_label(cidr) = "#{cidr}/#{cidr.prefix}"
 
+      # pkg/registry/core/service/ipallocator/controller + portallocator/
+      # controller: the periodic repair sweep.  Every Service's ClusterIPs
+      # must be inside a CIDR, unique, and backed by an IPAddress that
+      # points at it; every managed IPAddress must have a Service; every
+      # nodePort must be in range and unique.  Leaked allocations are
+      # released, missing ones recreated, and each finding counts in
+      # apiserver_{clusterip,nodeport}_repair_*_errors_total.  Returns the
+      # findings; raises nothing (a failed sweep counts a reconcile error).
+      REPAIR_INTERVAL_SECONDS = 180
+
+      def repair!
+        report = {"ip_errors" => Hash.new(0), "port_errors" => Hash.new(0), "released" => 0, "recreated" => 0}
+        repair_cluster_ips!(report)
+        repair_node_ports!(report)
+        report
+      end
+
+      def repair_cluster_ips!(report)
+        return if service_resource.nil?
+
+        services = list_items(service_resource, namespace: :all)
+        seen = {}
+        services.each do |service|
+          spec = service["spec"] || {}
+          next if spec["type"].to_s == "ExternalName"
+
+          Array(spec["clusterIPs"]).each do |raw|
+            next if raw.to_s.empty? || raw == "None"
+
+            ip = begin
+              IPAddr.new(raw.to_s)
+            rescue IPAddr::Error
+              repair_ip_error(report, "invalid")
+              next
+            end
+            cidr = @service_cidrs.find { |candidate| candidate.include?(ip) }
+            unless cidr
+              repair_ip_error(report, "outside_range")
+              next
+            end
+            if seen.key?(raw.to_s)
+              repair_ip_error(report, "duplicate")
+              next
+            end
+            seen[raw.to_s] = service_reference(service)
+            owner = ipaddress_owner(raw.to_s)
+            if owner.nil?
+              # The IPAddress leaked away (or predates it): recreate it.
+              repair_ip_error(report, "repair")
+              report["recreated"] += 1 if create_ipaddress(raw.to_s, service)
+            elsif owner != service_reference(service)
+              repair_ip_error(report, "duplicate")
+            end
+          end
+        end
+        return if ipaddress_resource.nil?
+
+        list_items(ipaddress_resource, namespace: :cluster).each do |address|
+          name = address.dig("metadata", "name").to_s
+          next unless (address.dig("metadata", "labels") || {})[MANAGED_BY_LABEL] == MANAGED_BY
+          next if seen.key?(name)
+
+          repair_ip_error(report, "leak")
+          delete_ipaddress(name)
+          report["released"] += 1
+        end
+      rescue StandardError
+        @metrics&.increment("apiserver_clusterip_repair_reconcile_errors_total")
+      end
+
+      def repair_node_ports!(report)
+        return if service_resource.nil?
+
+        used = {}
+        list_items(service_resource, namespace: :all).each do |service|
+          spec = service["spec"] || {}
+          ports = Array(spec["ports"]).map { |port| port["nodePort"].to_i }.select(&:positive?)
+          ports << spec["healthCheckNodePort"].to_i if spec["healthCheckNodePort"].to_i.positive?
+          ports.each do |port|
+            unless @node_port_range.cover?(port)
+              repair_port_error(report, "outside_range")
+              next
+            end
+            if used.key?(port) && used[port] != service_reference(service)
+              repair_port_error(report, "duplicate")
+              next
+            end
+            used[port] = service_reference(service)
+          end
+        end
+      rescue StandardError
+        @metrics&.increment("apiserver_nodeport_repair_reconcile_errors_total")
+      end
+
+      def repair_ip_error(report, type)
+        report["ip_errors"][type] += 1
+        @metrics&.increment("apiserver_clusterip_repair_ip_errors_total", {"type" => type})
+      end
+
+      def repair_port_error(report, type)
+        report["port_errors"][type] += 1
+        @metrics&.increment("apiserver_nodeport_repair_port_errors_total", {"type" => type})
+      end
+
+      def list_items(resource, namespace:)
+        result = @store.list(resource: resource, namespace: namespace, selectors: nil)
+        result.respond_to?(:items) ? Array(result.items) : Array(result)
+      end
+
       # hostsPerNetwork: the network address is never used, nor an IPv4
       # broadcast address.
       def hosts_per_network(cidr)
