@@ -574,7 +574,28 @@ module Rubernetes
       def image_volume_mount_failed(count = 1)
         @registry.increment("kubelet_image_volume_mounted_errors_total", by: count)
       end
-      public :csi_operation, :volume_metric_collection, :volume_reconstruction, :orphan_pod_volumes, :image_volume_mount_failed
+
+      # volume_manager_selinux_*: the desired state of world's KEP-1710
+      # checks (Volume::SELinux::Tracker).  +error:+ picks the _errors_
+      # family (the access mode is SELinux-mounted) over _warnings_.
+      def selinux_volume_admitted(plugin, access_mode)
+        @registry.increment("volume_manager_selinux_volumes_admitted_total", {"access_mode" => access_mode.to_s, "volume_plugin" => plugin.to_s})
+      end
+
+      def selinux_container_context(access_mode, error:)
+        @registry.increment("volume_manager_selinux_container_#{error ? "errors" : "warnings"}_total", {"access_mode" => access_mode.to_s})
+      end
+
+      def selinux_pod_context_mismatch(access_mode, error:)
+        @registry.increment("volume_manager_selinux_pod_context_mismatch_#{error ? "errors" : "warnings"}_total", {"access_mode" => access_mode.to_s})
+      end
+
+      def selinux_volume_context_mismatch(plugin, access_mode, error:)
+        @registry.increment("volume_manager_selinux_volume_context_mismatch_#{error ? "errors" : "warnings"}_total",
+                            {"access_mode" => access_mode.to_s, "volume_plugin" => plugin.to_s})
+      end
+      public :csi_operation, :volume_metric_collection, :volume_reconstruction, :orphan_pod_volumes, :image_volume_mount_failed,
+             :selinux_volume_admitted, :selinux_container_context, :selinux_pod_context_mismatch, :selinux_volume_context_mismatch
 
       # totalVolumesCollector: the volumes per plugin in the desired state
       # (every live Pod's) and the actual state (every mounted one).
