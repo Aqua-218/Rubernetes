@@ -218,11 +218,6 @@ module Rubernetes
       windows_only = "Windows HostProcess containers do not exist on Linux"
       UNIMPLEMENTED = {
         "kube-apiserver" => {
-          "apiserver_externaljwt_fetch_keys_data_timestamp" => no_external_jwt,
-          "apiserver_externaljwt_fetch_keys_request_total" => no_external_jwt,
-          "apiserver_externaljwt_fetch_keys_success_timestamp" => no_external_jwt,
-          "apiserver_externaljwt_request_duration_seconds" => no_external_jwt,
-          "apiserver_externaljwt_sign_request_total" => no_external_jwt,
           "apiserver_delegated_authn_request_duration_seconds" => no_delegation,
           "apiserver_delegated_authn_request_total" => no_delegation,
           "apiserver_delegated_authz_request_duration_seconds" => no_delegation,
