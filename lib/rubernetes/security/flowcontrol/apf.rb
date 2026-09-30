@@ -1039,8 +1039,6 @@ module Rubernetes
           LONG_RUNNING_VERBS.include?(attributes.verb) || LONG_RUNNING_SUBRESOURCES.include?(attributes.subresource.to_s)
         end
 
-        WAIT_BUCKETS = [0, 0.005, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30].freeze
-
         # apiserver/pkg/util/flowcontrol/metrics.
         def metrics=(registry)
           @metrics = registry
