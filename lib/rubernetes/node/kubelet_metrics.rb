@@ -507,6 +507,8 @@ module Rubernetes
       def volume_reconstruction(attempted, errors, force_cleaned: 0, force_clean_errors: 0)
         @registry.increment("reconstruct_volume_operations_total", by: attempted.to_i) if attempted.to_i.positive?
         @registry.increment("reconstruct_volume_operations_errors_total", by: errors.to_i) if errors.to_i.positive?
+        @registry.increment("force_cleaned_failed_volume_operations_total", by: force_cleaned.to_i) if force_cleaned.to_i.positive?
+        @registry.increment("force_cleaned_failed_volume_operation_errors_total", by: force_clean_errors.to_i) if force_clean_errors.to_i.positive?
       end
 
       # kubelet_orphan_pod_cleaned_volumes / _errors: the last recovery sweep
