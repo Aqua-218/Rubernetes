@@ -112,6 +112,12 @@ module Rubernetes
         increment("scheduler_preemption_goroutines_execution_total", labels)
       end
 
+      # scheduler_permit_wait_duration_seconds{result}: a Pod's stay in the
+      # Permit waiting list (Success when allowed, Unschedulable otherwise).
+      def permit_wait(result, seconds)
+        observe("scheduler_permit_wait_duration_seconds", seconds, {"result" => result.to_s})
+      end
+
       # -- queue -------------------------------------------------------------
 
       # scheduler_queue_incoming_pods_total{event, queue}.
