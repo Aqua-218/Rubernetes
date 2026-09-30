@@ -177,10 +177,34 @@ module Rubernetes
           MAX_TIMEOUT = 30
           MAX_BODY_BYTES = 3 * 1024 * 1024
 
-          def initialize(client_certificate: nil, client_key: nil, service_resolver: nil)
+          # +metrics+: the apiserver registry, or a callable returning it (the
+          # plugin receives its registry after construction).
+          def initialize(client_certificate: nil, client_key: nil, service_resolver: nil, metrics: nil)
             @client_certificate = client_certificate
             @client_key = client_key
             @service_resolver = service_resolver
+            @metrics = metrics
+          end
+
+          # x509 metrics (k8s.io/apiserver/pkg/util/x509metrics): a webhook
+          # serving certificate without Subject Alternative Names, or signed
+          # with SHA-1, counted per call made over it.  Lives on the client,
+          # which is the object that made the call: defined on the plugin it
+          # was a NoMethodError on every webhook call (2026-09-30, conformance
+          # webhook specs all failed "the server could not complete the request").
+          def record_x509(http)
+            registry = @metrics.respond_to?(:call) ? @metrics.call : @metrics
+            certificate = http.respond_to?(:peer_cert) ? http.peer_cert : nil
+            return unless registry && certificate
+
+            unless ::Rubernetes::Observability::Metrics.certificate_has_san?(certificate)
+              registry.increment("apiserver_webhooks_x509_missing_san_total")
+            end
+            if ::Rubernetes::Observability::Metrics.certificate_sha1?(certificate)
+              registry.increment("apiserver_webhooks_x509_insecure_sha1_total")
+            end
+          rescue StandardError
+            nil
           end
 
           # Returns [status_code, parsed_body_or_nil].
@@ -227,8 +251,13 @@ module Rubernetes
               end
               # client-go appends the per-request timeout to the webhook URL.
               target = "#{uri.request_uri}#{uri.query ? "&" : "?"}timeout=#{timeout}s"
-              response = http.post(target, payload, {"content-type" => "application/json", "accept" => "application/json"})
-              record_x509(http)
+              # Inside #start: the peer certificate is only readable while the
+              # connection is open (a one-shot #post has closed it already).
+              response = http.start do |session|
+                session.post(target, payload, {"content-type" => "application/json", "accept" => "application/json"}).tap do
+                  record_x509(session)
+                end
+              end
             rescue Net::OpenTimeout, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH
               raise if Process.clock_gettime(Process::CLOCK_MONOTONIC) + CONNECT_TIMEOUT >= deadline || attempt >= MAX_CONNECT_ATTEMPTS
 
@@ -317,7 +346,7 @@ module Rubernetes
           def initialize(name, context:, config:)
             super
             @client = config["client"] || WebhookClient.new(client_certificate: config["client_certificate"], client_key: config["client_key"],
-                                                            service_resolver: config["service_resolver"])
+                                                            service_resolver: config["service_resolver"], metrics: -> { metrics })
           end
 
           def handles?(attributes)
@@ -359,24 +388,6 @@ module Rubernetes
           # The webhook admission type label: "admit" for mutating hooks,
           # "validating" for validating ones (webhook dispatchers).
           def webhook_type = is_a?(MutatingAdmissionWebhook) ? "admit" : "validating"
-
-          # x509 metrics (k8s.io/apiserver/pkg/util/x509metrics): a webhook
-          # serving certificate without Subject Alternative Names, or signed
-          # with SHA-1, counted per call made over it.
-          def record_x509(http)
-            registry = metrics
-            certificate = http.respond_to?(:peer_cert) ? http.peer_cert : nil
-            return unless registry && certificate
-
-            unless ::Rubernetes::Observability::Metrics.certificate_has_san?(certificate)
-              registry.increment("apiserver_webhooks_x509_missing_san_total")
-            end
-            if ::Rubernetes::Observability::Metrics.certificate_sha1?(certificate)
-              registry.increment("apiserver_webhooks_x509_insecure_sha1_total")
-            end
-          rescue StandardError
-            nil
-          end
 
           # ObserveWebhook / ObserveWebhookRejection / ObserveWebhookFailOpen.
           def record_webhook(hook, attributes, started, code:, rejected:, error_type: nil, rejection_code: nil, fail_open: false)
