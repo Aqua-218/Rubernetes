@@ -29,6 +29,31 @@ module Rubernetes
           @anonymous = anonymous
         end
 
+        # --authentication-config reload: the file's JWT authenticators are
+        # replaced in place (at the position of the ones they succeed), the
+        # other authenticators and the anonymous settings stay.
+        def replace(previous, replacement)
+          previous = Array(previous)
+          replacement = Array(replacement)
+          if previous.empty?
+            @authenticators = (@authenticators + replacement).freeze
+          else
+            inserted = false
+            @authenticators = @authenticators.flat_map do |authenticator|
+              if previous.any? { |old| old.equal?(authenticator) }
+                next [] if inserted
+
+                inserted = true
+                replacement
+              else
+                [authenticator]
+              end
+            end.freeze
+            @authenticators = (@authenticators + replacement).freeze unless inserted
+          end
+          self
+        end
+
         # Returns an AuthenticationResult or raises AuthenticationError.
         def authenticate(context)
           results = []
