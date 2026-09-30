@@ -2037,10 +2037,16 @@ module Rubernetes
         key = [typed.namespace, typed.name, typed.uid].freeze
         previous = @mutex.synchronize { @pods[key].tap { @pods[key] = typed } }
         assigned = !typed.node_name.empty?
-        event = if previous.nil? then assigned ? "assignedPodAdd" : "PodAdd"
-                else assigned ? "assignedPodUpdate" : "PodUpdate"
-                end
-        timed_event(event) { enqueue_if_schedulable(typed) }
+        events = pod_events(previous, typed, assigned)
+        events.each_with_index do |event, index|
+          timed_event(event) do
+            enqueue_if_schedulable(typed) if index.zero?
+            # An assigned Pod's add/update (and an unassigned Pod's changed
+            # tolerations, labels, gates or claims) may unblock other Pods.
+            hinted = assigned || event.include?("UpdatePod")
+            retry_unschedulable("pod_changed", pod: "#{typed.namespace}/#{typed.name}", event: event, old_object: previous, new_object: typed) if hinted && event != "assignedPodUpdate"
+          end
+        end
       end
 
       def delete_pod(object)
