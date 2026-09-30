@@ -247,7 +247,6 @@ module Rubernetes
           "apiserver_watch_cache_initializations_total" => "the local replica is built once for all resources, never initialized per resource",
         }.freeze,
         "kube-controller-manager" => {
-          "node_collector_update_all_nodes_health_duration_seconds" => "the node lifecycle controller reconciles Nodes one key at a time from events and resyncs; there is no periodic monitorNodeHealth pass over all Nodes to time",
         }.freeze,
         "kube-scheduler" => {
           "scheduler_inflight_events" => no_queueing_hints,
