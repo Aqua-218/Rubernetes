@@ -457,6 +457,8 @@ module Rubernetes
                                Registration.new(resource: "DeviceClass", actions: %w[Add Update], hint: nil),
                                Registration.new(resource: "ResourceSlice", actions: %w[Add Update], hint: nil)],
         "SchedulingGates" => pod_registration(%w[UpdatePodSchedulingGatesEliminated], SAME_POD),
+        "GangScheduling" => [*pod_registration(%w[Add], SAME_GANG_POD_ADDED),
+                             Registration.new(resource: "PodGroup", actions: %w[Add], hint: OWN_POD_GROUP_ADDED)],
         "NodeDeclaredFeatures" => [node(%w[Add UpdateNodeDeclaredFeature])],
         "DefaultPreemption" => pod_registration(%w[Delete], nil)
       }.freeze
