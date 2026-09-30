@@ -103,6 +103,7 @@ module Rubernetes
           @dek_cache = {}
           @mutex = Mutex.new
           @cache_size = cache_size
+          @last_miss_at = nil
         end
 
         attr_reader :name
