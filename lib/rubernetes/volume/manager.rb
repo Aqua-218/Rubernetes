@@ -2026,7 +2026,7 @@ module Rubernetes
         when Hash
           value.each_with_object({}) do |(key, child), result|
             text = key.to_s
-            next if %w[secrets stringData token tokenRotator].include?(text) && !text.end_with?("Ref", "Reference")
+            next if %w[secrets stringData token tokenRotator podCertificateProvider].include?(text) && !text.end_with?("Ref", "Reference")
 
             result[redact_secret_text(text)] = sanitize_for_persistence(child)
           end
