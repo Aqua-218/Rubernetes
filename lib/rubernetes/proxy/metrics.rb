@@ -1,24 +1,42 @@
 # frozen_string_literal: true
 
 require_relative "../observability/metrics"
+require_relative "iptables"
 
 module Rubernetes
   module Proxy
     # pkg/proxy/metrics: what kube-proxy records around a rules sync, with
     # upstream's names, labels and buckets (declared by the v1.36.2
-    # inventory).  The proxy engine and ConntrackReconciler call these; the
-    # iptables-only families stay unregistered with a reason
-    # (Observability::Metrics::UNIMPLEMENTED["kube-proxy"]).
+    # inventory).  The proxy engine, ConntrackReconciler and the iptables
+    # backend call these.  metrics.RegisterMetrics(mode): the iptables
+    # families exist only in iptables mode and the nftables sync-failure
+    # counter only in nftables mode.
     class Metrics
       FAMILIES = %w[IPv4 IPv6].freeze
+      IPTABLES_FAMILIES = %w[kubeproxy_sync_proxy_rules_iptables_last kubeproxy_sync_proxy_rules_iptables_total
+                             kubeproxy_sync_proxy_rules_iptables_restore_failures_total
+                             kubeproxy_sync_proxy_rules_iptables_partial_restore_failures_total].freeze
+      # Custom collectors over the nfacct counters (iptables mode only).
+      IPTABLES_NFACCT_FAMILIES = {
+        "kubeproxy_iptables_ct_state_invalid_dropped_packets_total" => Iptables::CT_STATE_INVALID_COUNTER,
+        "kubeproxy_iptables_localhost_nodeports_accepted_packets_total" => Iptables::LOCALHOST_NODEPORTS_COUNTER
+      }.freeze
+      NFTABLES_FAMILIES = %w[kubeproxy_sync_proxy_rules_nftables_sync_failures_total kubeproxy_sync_proxy_rules_nftables_cleanup_failures_total].freeze
       # EndpointSlice annotation the network programming latency starts from.
       LAST_CHANGE_TRIGGER_TIME = "endpoints.kubernetes.io/last-change-trigger-time"
 
       attr_reader :registry
 
-      def initialize(registry: nil, clock: -> { Time.now.to_f })
+      attr_reader :mode
+      # ->() { {counter_name => [packets, bytes]} }: the iptables backend's nfacct reader.
+      attr_accessor :nfacct_counters
+
+      def initialize(registry: nil, clock: -> { Time.now.to_f }, mode: :nftables)
         @registry = registry || Observability::Metrics.new(apiserver: false, component: "kube-proxy")
         @clock = clock
+        @mode = mode.to_s.downcase.to_sym
+        @nfacct_counters = nil
+        register_mode_families
         @mutex = Mutex.new
         @service_changes_pending = 0
         @endpoint_changes_pending = 0
@@ -124,11 +142,39 @@ module Rubernetes
 
       def last_synced(family) = @mutex.synchronize { @last_synced[family] }
 
+      # -- iptables proxier (pkg/proxy/iptables) --
+
+      # One syncProxyRules: rules written this sync and owned in total, per table.
+      def iptables_synced(family, filter_last:, filter_total:, nat_last:, nat_total:)
+        set("kubeproxy_sync_proxy_rules_iptables_last", filter_last, {"ip_family" => family.to_s, "table" => "filter"})
+        set("kubeproxy_sync_proxy_rules_iptables_last", nat_last, {"ip_family" => family.to_s, "table" => "nat"})
+        set("kubeproxy_sync_proxy_rules_iptables_total", filter_total, {"ip_family" => family.to_s, "table" => "filter"})
+        set("kubeproxy_sync_proxy_rules_iptables_total", nat_total, {"ip_family" => family.to_s, "table" => "nat"})
+      end
+
+      # iptables-restore failed (a partial sync also counts the partial family).
+      def iptables_restore_failed(family, partial: false)
+        increment("kubeproxy_sync_proxy_rules_iptables_restore_failures_total", {"ip_family" => family.to_s})
+        increment("kubeproxy_sync_proxy_rules_iptables_partial_restore_failures_total", {"ip_family" => family.to_s}) if partial
+      end
+
       def render(now: nil) = @registry.render(now: now)
 
       private
 
+      def register_mode_families
+        if @mode == :iptables
+          NFTABLES_FAMILIES.each { |name| @registry.unregister(name) }
+          IPTABLES_NFACCT_FAMILIES.each_key do |name|
+            @registry.register(name, type: :counter) unless @registry.registered?(name)
+          end
+        else
+          (IPTABLES_FAMILIES + IPTABLES_NFACCT_FAMILIES.keys).each { |name| @registry.unregister(name) }
+        end
+      end
+
       def collect(registry)
+        collect_nfacct(registry) if @mode == :iptables && @nfacct_counters
         services, endpoints, no_local = @mutex.synchronize { [@service_changes_pending, @endpoint_changes_pending, @no_local_endpoints.dup] }
         registry.set("kubeproxy_sync_proxy_rules_service_changes_pending", services)
         registry.set("kubeproxy_sync_proxy_rules_endpoint_changes_pending", endpoints)
@@ -138,6 +184,18 @@ module Rubernetes
             registry.set("kubeproxy_sync_proxy_rules_no_local_endpoints_total", no_local[[family, policy]], {"ip_family" => family, "traffic_policy" => policy})
           end
         end
+      end
+
+      # nfacct counter values as the two Custom counters (a missing counter
+      # publishes nothing, as upstream's collector does on a failed Get).
+      def collect_nfacct(registry)
+        counters = @nfacct_counters.call
+        IPTABLES_NFACCT_FAMILIES.each do |name, counter|
+          packets = counters[counter]&.first
+          registry.set(name, packets) if packets
+        end
+      rescue StandardError
+        nil
       end
 
       public

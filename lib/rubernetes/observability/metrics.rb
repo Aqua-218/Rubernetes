@@ -206,7 +206,6 @@ module Rubernetes
       # tools/differential/metrics_inventory_differential.rb reports.
       no_list_to_log = "every LIST is served by the apiserver's local replica (apiserver_cache_list_*); none reaches the raft log"
       no_ring = "no per-resource watch cache ring: one shared MVCC history, sized by revisions and age"
-      iptables_only = "the iptables proxier is not implemented (nftables and eBPF backends only); iptables mode registers this"
       no_exec_plugins = "exec credential plugins are refused by the kubeconfig loader (Kubeconfig::UnsupportedCredentialError)"
       no_stream_translation = "exec, attach and port-forward websocket requests are served natively by the subresource bridge: nothing is translated to SPDY (no StreamTranslator) and no SPDY is tunneled over websocket (no StreamTunnel)"
       no_peer_proxy = "no UnknownVersionInteroperabilityProxy / peer aggregated discovery: every replica serves the same API set from the shared raft log, so no request is rerouted to a peer and no peer discovery is fetched"
@@ -251,14 +250,6 @@ module Rubernetes
           "kubelet_started_host_process_containers_total" => windows_only,
           "kubelet_started_host_process_containers_errors_total" => windows_only,
         }.freeze,
-        "kube-proxy" => {
-          "kubeproxy_iptables_ct_state_invalid_dropped_packets_total" => iptables_only,
-          "kubeproxy_iptables_localhost_nodeports_accepted_packets_total" => iptables_only,
-          "kubeproxy_sync_proxy_rules_iptables_last" => iptables_only,
-          "kubeproxy_sync_proxy_rules_iptables_partial_restore_failures_total" => iptables_only,
-          "kubeproxy_sync_proxy_rules_iptables_restore_failures_total" => iptables_only,
-          "kubeproxy_sync_proxy_rules_iptables_total" => iptables_only
-        }.freeze
       }.freeze
 
       # client-go families every component would serve but that measure

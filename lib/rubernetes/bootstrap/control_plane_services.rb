@@ -2593,7 +2593,7 @@ module Rubernetes
         @running = false
         @last_error = nil
         @mutex = Mutex.new
-        @proxy_metrics = Proxy::Metrics.new
+        @proxy_metrics = Proxy::Metrics.new(mode: backend_name == :iptables ? :iptables : :nftables)
         @metrics = @proxy_metrics.registry
         @started_at = nil
       end

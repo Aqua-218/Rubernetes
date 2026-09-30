@@ -614,6 +614,10 @@ module Rubernetes
 
       def metrics=(observer)
         @metrics = observer
+        return unless @backend.respond_to?(:metrics=)
+
+        @backend.metrics = observer
+        observer.nfacct_counters = -> { @backend.nfacct_counters } if observer.respond_to?(:nfacct_counters=) && @backend.respond_to?(:nfacct_counters)
       end
 
       def initialize(local_node: nil, node_name: nil, node: nil, node_addresses: [], node_ips: nil,
@@ -990,6 +994,8 @@ module Rubernetes
           ebpf || EBPFBackend.new
         when :nftables, "nftables", :nft, "nft"
           nftables || NftablesBackend.new
+        when :iptables, "iptables", "ipt"
+          Iptables::Backend.new(clock: @clock, node_name: @local_node, node_addresses: @node_addresses)
         else
           value.respond_to?(:apply) ? value : raise(ArgumentError, "unsupported proxy backend #{value.inspect}")
         end

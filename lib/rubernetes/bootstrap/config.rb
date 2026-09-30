@@ -823,8 +823,8 @@ module Rubernetes
 
           validate_non_empty_string!(process_config[key], "rubernetes-proxy.#{key}")
         end
-        if process_config.key?("backend") && !%w[auto ebpf bpf nftables nft memory].include?(process_config["backend"].to_s.downcase)
-          raise Error, "rubernetes-proxy.backend must be one of auto, ebpf, bpf, nftables, nft, or memory"
+        if process_config.key?("backend") && !%w[auto ebpf bpf nftables nft iptables memory].include?(process_config["backend"].to_s.downcase)
+          raise Error, "rubernetes-proxy.backend must be one of auto, ebpf, bpf, nftables, nft, iptables, or memory"
         end
         if process_config.key?("attach") && ![true, false].include?(process_config["attach"])
           raise Error, "rubernetes-proxy.attach must be true or false"

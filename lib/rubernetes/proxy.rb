@@ -10,6 +10,7 @@ require_relative "proxy/conntrack_reconciler"
 require_relative "proxy/node_port_allocator"
 require_relative "proxy/nftables_netlink"
 require_relative "proxy/backend"
+require_relative "proxy/iptables"
 require_relative "proxy/ebpf"
 require_relative "proxy/engine"
 
