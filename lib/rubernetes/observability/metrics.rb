@@ -246,9 +246,6 @@ module Rubernetes
         "kube-controller-manager" => {
         }.freeze,
         "kube-scheduler" => {
-          "scheduler_podgroup_schedule_attempts_total" => no_pod_groups,
-          "scheduler_podgroup_scheduling_algorithm_duration_seconds" => no_pod_groups,
-          "scheduler_podgroup_scheduling_attempt_duration_seconds" => no_pod_groups
         }.freeze,
         "kubelet" => {
           "kubelet_cri_losing_support" => "set upstream only for a container runtime on a CRI API version about to lose support; the native runtime has no CRI version and the CRI backend speaks runtime.v1",
