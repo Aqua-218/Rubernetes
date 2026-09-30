@@ -158,9 +158,42 @@ module Rubernetes
           @tls_options[:request_client_certificates] = true
           @tls_options[:client_ca_certificates] = client_cas
         end
-        anonymous = authn["anonymous"] || {"enabled" => true}
-        Security::Authentication::Union.new(authenticators: authenticators,
-                                            anonymous: Security::Authentication::Union::Anonymous.new(enabled: anonymous["enabled"] != false, conditions: anonymous["conditions"]))
+        anonymous = authn["anonymous"] || file_configuration&.anonymous || {"enabled" => true}
+        union = Security::Authentication::Union.new(authenticators: authenticators,
+                                                    anonymous: Security::Authentication::Union::Anonymous.new(enabled: anonymous["enabled"] != false, conditions: anonymous["conditions"]))
+        if file_configuration
+          original_anonymous = file_configuration.anonymous
+          current = file_authenticators
+          issuers = service_account_issuers(authn)
+          @reload_controllers << Security::ConfigReloadController.new(
+            kind: "authentication", path: authn["config_file"], apiserver_id: @apiserver_id, logger: @logger,
+            initial_bytes: file_bytes, initial_config: file_configuration,
+            load: lambda do |bytes|
+              configuration = Security::Authentication::Configuration.from_bytes(bytes, disallowed_issuers: issuers)
+              # The anonymous settings are read once; a change is refused (field.Forbidden).
+              raise Security::Authentication::Configuration::InvalidError, "anonymous: Forbidden: changed from initial configuration file" unless configuration.anonymous == original_anonymous
+
+              configuration
+            end,
+            apply: lambda do |configuration|
+              replacement = build_file_jwt_authenticators(configuration, cache_token)
+              union.replace(current, replacement)
+              current = replacement
+            end
+          )
+        end
+        union
+      end
+
+      def service_account_issuers(authn)
+        sa = authn["service_account"]
+        sa ? [sa["issuer"].to_s] : []
+      end
+
+      def build_file_jwt_authenticators(configuration, cache_token)
+        configuration.jwt.map do |jwt_config|
+          cache_token.call(Security::Authentication::JWTAuthenticator.new(config: jwt_config, cel: cel_evaluator, clock: @clock))
+        end
       end
 
       # ------------------------------------------------------------ authz
