@@ -364,6 +364,12 @@ module Rubernetes
 
           [provider.decrypt(envelope, associated_data), provider.equal?(writer) && provider.current_key?(envelope)]
         end
+
+        # The prefix of the provider that will read +envelope+ ("" for identity).
+        def prefix_of(envelope)
+          provider = @providers.find { |candidate| envelope.start_with?(candidate.prefix) }
+          provider ? provider.prefix : ""
+        end
       end
 
       # Store wrapper: encrypts configured resources before they reach the
