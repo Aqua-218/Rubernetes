@@ -119,8 +119,22 @@ module Rubernetes
         authenticators << cache_token.call(Security::Authentication::StaticTokenFile.load(authn["token_file"])) if authn["token_file"]
         if authn["service_account"]
           sa = authn["service_account"]
-          signing_key = OpenSSL::PKey.read(File.binread(sa.fetch("signing_key_file")))
-          verification = Array(sa["key_files"]).map { |path| OpenSSL::PKey.read(File.binread(path)) }
+          external_signer = nil
+          max_expiration = sa["max_expiration_seconds"]
+          if sa["signing_endpoint"]
+            external_signer = Security::Authentication::ExternalJWTSigner.new(socket: sa["signing_endpoint"], issuer: sa.fetch("issuer"),
+                                                                              allow_signing_with_non_oidc_keys: sa["allow_signing_with_non_oidc_keys"] == true,
+                                                                              clock: @clock, logger: @logger)
+            external_signer.start!
+            @external_jwt_signer = external_signer
+            signer_max = external_signer.max_token_expiration_seconds
+            max_expiration = [max_expiration, signer_max.positive? ? signer_max : nil].compact.min
+            signing_key = nil
+            verification = []
+          else
+            signing_key = OpenSSL::PKey.read(File.binread(sa.fetch("signing_key_file")))
+            verification = Array(sa["key_files"]).map { |path| OpenSSL::PKey.read(File.binread(path)) }
+          end
           audiences = Array(sa["api_audiences"]).empty? ? [sa.fetch("issuer")] : Array(sa["api_audiences"])
           lookup = Security::Authentication::ServiceAccount::Lookup.new(
             service_account: ->(namespace, name) { read_object("serviceaccounts", namespace, name) },
