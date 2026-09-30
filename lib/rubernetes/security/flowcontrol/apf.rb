@@ -988,15 +988,15 @@ module Rubernetes
           def requests_executing(delta) = @controller.ratio(@name, :executing)&.add(delta)
           def exec_seats(delta) = @controller.ratio(@name, :seats)&.add(delta)
 
-            candidates = []
-            value = flow_hash
-            [@hand_size, @queues].min.times do
-              index = value % @queues
-              value /= @queues
-              index = (index + 1) % @queues while candidates.include?(index)
-              candidates << index
-            end
-            candidates.min_by { |index| [@queue_lengths[index], index] }
+          def seat_demand(value)
+            @seat_demand_integrator.set(value)
+            @controller.ratio(@name, :demand)&.set(value)
+          end
+
+          def set_denominators(waiting:, executing:)
+            @controller.ratio(@name, :waiting)&.set_denominator(waiting)
+            @controller.ratio(@name, :executing)&.set_denominator(executing)
+            @controller.ratio(@name, :seats)&.set_denominator(executing)
           end
         end
 
