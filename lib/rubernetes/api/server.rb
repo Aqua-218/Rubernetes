@@ -405,11 +405,13 @@ module Rubernetes
         Thread.current[REQUEST_PHASES_KEY] = {} if pattern && pattern.match?(request.path.to_s)
         response = with_request_read_barrier do
           route = catch_up_dynamic_route(request, route)
-          if @security
-            secured_call(request, route)
-          else
-            note_deprecated_api(request, route, nil)
-            finalize_response(request, dispatch(request, route), route: route)
+          with_request_timeout(request, route) do
+            if @security
+              secured_call(request, route)
+            else
+              note_deprecated_api(request, route, nil)
+              finalize_response(request, dispatch(request, route), route: route)
+            end
           end
         end
         metric[:route] = route
