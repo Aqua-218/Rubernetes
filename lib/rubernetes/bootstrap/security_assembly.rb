@@ -352,6 +352,20 @@ module Rubernetes
       # The node authorizer's graph: fed by the store's watches when the
       # store has them (the API server), read live otherwise (tests, tools).
       def node_graph
+        return @node_graph if @node_graph
+        if @store.respond_to?(:watch)
+          graph = Security::Authorization::NodeGraph.new
+          @node_graph_populator = Security::Authorization::NodeGraph::Populator.new(graph: graph, store: @store, logger: @logger)
+          return @node_graph = graph
+        end
+
+        @node_graph = live_node_graph
+      end
+
+      # Started by the service once the store is serving.
+      attr_reader :node_graph_populator
+
+      def live_node_graph
         assembly = self
         graph = Object.new
         graph.define_singleton_method(:pods_on_node) do |node_name|
