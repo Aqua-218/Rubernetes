@@ -284,16 +284,19 @@ module M4NetworkObservationRunner
       run.call("ip", "link", "set", @host_link, "up")
       run.call(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ip", "link", "set", "lo", "up"))
       run.call(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ip", "addr", "add", "#{POD_V4}/#{V4_PREFIX}", "dev", pod_link))
-      run.call(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ip", "-6", "addr", "add", "#{POD_V6}/#{V6_PREFIX}", "dev", pod_link, "nodad"))
+      run.call(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ip", "-6", "addr", "add", "#{POD_V6}/#{V6_PREFIX}", "dev", pod_link,
+                                                        "nodad"))
       run.call(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ip", "link", "set", pod_link, "up"))
       run.call(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ip", "route", "add", "default", "via", HOST_V4, "dev", pod_link))
-      run.call(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ip", "-6", "route", "add", "default", "via", HOST_V6, "dev", pod_link))
+      run.call(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ip", "-6", "route", "add", "default", "via", HOST_V6, "dev",
+                                                        pod_link))
       # IPv6 link-local addresses finish duplicate address detection
       # asynchronously; wait until nothing is tentative so the readback is
       # the steady state the gate will observe later.
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
       loop do
-        stdout, = M4NetworkObservationRunner.run_command(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ip", "-6", "addr", "show", "dev", pod_link))
+        stdout, = M4NetworkObservationRunner.run_command(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ip", "-6", "addr", "show",
+                                                                                                  "dev", pod_link))
         break unless stdout.include?("tentative")
         raise "IPv6 duplicate address detection did not finish" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
 
@@ -309,14 +312,20 @@ module M4NetworkObservationRunner
       pid = Process.spawn(*command, in: File::NULL, out: File::NULL, err: log_path)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
       until File.file?(pcap_path) && File.size(pcap_path) >= 24
-        raise "tcpdump did not start: #{File.file?(log_path) ? File.binread(log_path).strip : "no log"}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+        if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+          raise "tcpdump did not start: #{File.file?(log_path) ? File.binread(log_path).strip : "no log"}"
+        end
 
         sleep 0.05
       end
       sleep 0.2
       results = {}
-      results["ipv4_ping"] = M4NetworkObservationRunner.run_command(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ping", "-c", "2", "-W", "2", HOST_V4), allow_failure: true)[2].success?
-      results["ipv6_ping"] = M4NetworkObservationRunner.run_command(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ping", "-6", "-c", "2", "-W", "2", HOST_V6), allow_failure: true)[2].success?
+      results["ipv4_ping"] =
+        M4NetworkObservationRunner.run_command(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ping", "-c", "2", "-W", "2", HOST_V4),
+                                               allow_failure: true)[2].success?
+      results["ipv6_ping"] =
+        M4NetworkObservationRunner.run_command(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ping", "-6", "-c", "2", "-W", "2", HOST_V6),
+                                               allow_failure: true)[2].success?
       results["ipv4_tcp"] = tcp_exchange(HOST_V4, Socket::AF_INET)
       results["ipv6_tcp"] = tcp_exchange(HOST_V6, Socket::AF_INET6)
       results.each { |name, passed| @errors << "traffic case #{name} failed inside the keeper namespace" unless passed }
@@ -330,7 +339,8 @@ module M4NetworkObservationRunner
       # The traffic left neighbour cache entries whose state decays over time;
       # flush them so the namespace readback below is the steady state the
       # gate re-reads later.
-      M4NetworkObservationRunner.run_command(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ip", "neigh", "flush", "dev", "eth0"), allow_failure: true)
+      M4NetworkObservationRunner.run_command(*M4NetworkObservationRunner.in_namespace(@keeper_pid, "ip", "neigh", "flush", "dev", "eth0"),
+                                             allow_failure: true)
       M4NetworkObservationRunner.run_command("ip", "neigh", "flush", "dev", @host_link, allow_failure: true)
       count = M4NetworkObservationRunner.pcap_packet_count(pcap_path)
       @errors << "packet capture is empty" unless count.positive?
@@ -344,14 +354,14 @@ module M4NetworkObservationRunner
 
     # A TCP exchange from the keeper namespace to a listener in the daemon
     # namespace: the listener runs here, the client runs via nsenter.
-    def tcp_exchange(address, family)
+    def tcp_exchange(address, _family)
       server = TCPServer.new(address, 0)
       port = server.addr[1]
       payload = "m4-network-observation-#{Process.pid}"
       client = Thread.new do
         M4NetworkObservationRunner.run_command(*M4NetworkObservationRunner.in_namespace(@keeper_pid, RbConfig.ruby, "-rsocket", "-e",
-                                                                                            "s = TCPSocket.new(ARGV[0], Integer(ARGV[1])); s.write(ARGV[2]); s.close_write; print s.read; s.close",
-                                                                                            address, port.to_s, payload), allow_failure: true)
+                                                                                        "s = TCPSocket.new(ARGV[0], Integer(ARGV[1])); s.write(ARGV[2]); s.close_write; print s.read; s.close",
+                                                                                        address, port.to_s, payload), allow_failure: true)
       end
       connection = nil
       begin
@@ -419,7 +429,11 @@ module M4NetworkObservationRunner
     removed = []
     killed = []
     Dir.glob(File.join(STATE_ROOT, "*.json")).each do |path|
-      record = JSON.parse(File.binread(path)) rescue next
+      record = begin
+        JSON.parse(File.binread(path))
+      rescue StandardError
+        next
+      end
       pid = record["pid"]
       alive = lambda do
         proc_start_time_ticks(pid) == record["start_time_ticks"]
@@ -427,13 +441,25 @@ module M4NetworkObservationRunner
         false
       end
       if alive.call
-        Process.kill("TERM", pid) rescue nil
+        begin
+          Process.kill("TERM", pid)
+        rescue StandardError
+          nil
+        end
         removed << pid
         deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + REAP_GRACE_SECONDS
         sleep 0.2 while alive.call && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
         if alive.call
           # The daemon is its own session leader (setsid); the keeper is in it.
-          Process.kill("KILL", -Integer(pid)) rescue (Process.kill("KILL", pid) rescue nil)
+          begin
+            Process.kill("KILL", -Integer(pid))
+          rescue StandardError
+            begin
+              Process.kill("KILL", pid)
+            rescue StandardError
+              nil
+            end
+          end
           killed << pid
           sleep 0.2 while alive.call && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline + 5
         end
@@ -497,7 +523,11 @@ module M4NetworkObservationRunner
     result_read.close
     Process.detach(daemon_pid)
     puts document
-    parsed = JSON.parse(document) rescue nil
+    parsed = begin
+      JSON.parse(document)
+    rescue StandardError
+      nil
+    end
     exit(parsed.is_a?(Hash) && parsed["passed"] == true ? 0 : 1)
   end
 end

@@ -34,7 +34,8 @@ module Rubernetes
 
         Record = Struct.new(:vm_id, :sandbox_id, :state, :fields, :created_at, :released_at, keyword_init: true) do
           def to_h
-            {"vm_id" => vm_id, "sandbox_id" => sandbox_id, "state" => state, "fields" => fields, "created_at" => created_at, "released_at" => released_at}
+            {"vm_id" => vm_id, "sandbox_id" => sandbox_id, "state" => state, "fields" => fields, "created_at" => created_at,
+             "released_at" => released_at}
           end
         end
 
@@ -60,7 +61,9 @@ module Rubernetes
         # then bound with bind_network.
         def allocate(sandbox_id:, runtime_class:, artifact_digest:, policy_digest:, request_id: nil, workspace_id: nil)
           @mutex.synchronize do
-            raise IdentityError, "sandbox #{sandbox_id} already holds a live identity" if @records.values.any? { |record| record.sandbox_id == sandbox_id && record.state == "live" }
+            raise IdentityError, "sandbox #{sandbox_id} already holds a live identity" if @records.values.any? do |record|
+              record.sandbox_id == sandbox_id && record.state == "live"
+            end
 
             uid = @next_uid
             raise IdentityError, "jail UID range exhausted" if uid >= UID_LIMIT
@@ -83,7 +86,9 @@ module Rubernetes
               "entropy" => SecureRandom.hex(32),
               "hostname" => "vm-#{SecureRandom.hex(6)}",
               "machine_id" => SecureRandom.hex(16),
-              "mac_address" => (MAC_PREFIX + Array.new(4) { SecureRandom.random_number(256) }).map { |byte| format("%02x", byte) }.join(":"),
+              "mac_address" => (MAC_PREFIX + Array.new(4) do
+                SecureRandom.random_number(256)
+              end).map { |byte| format("%02x", byte) }.join(":"),
               "ip" => nil,
               "routes" => [],
               "workspace_id" => workspace_id || "ws-#{SecureRandom.hex(8)}",
@@ -101,7 +106,8 @@ module Rubernetes
               "guest_cid" => cid
             }
             ensure_unique!(fields)
-            record = Record.new(vm_id: vm_id, sandbox_id: sandbox_id, state: "live", fields: fields, created_at: @clock.call.iso8601(6), released_at: nil)
+            record = Record.new(vm_id: vm_id, sandbox_id: sandbox_id, state: "live", fields: fields, created_at: @clock.call.iso8601(6),
+                                released_at: nil)
             append!("allocate", record)
             @records[vm_id] = record
             record
@@ -111,7 +117,9 @@ module Rubernetes
         def bind_network(vm_id, ip:, routes: [], gateway: nil, prefix_length: nil)
           @mutex.synchronize do
             record = live!(vm_id)
-            raise IdentityError, "IP #{ip} is held by a live identity" if ip && @records.values.any? { |other| other.state == "live" && other.vm_id != vm_id && other.fields["ip"] == ip }
+            raise IdentityError, "IP #{ip} is held by a live identity" if ip && @records.values.any? do |other|
+              other.state == "live" && other.vm_id != vm_id && other.fields["ip"] == ip
+            end
 
             record.fields = record.fields.merge("ip" => ip, "routes" => routes, "gateway" => gateway, "prefix_length" => prefix_length)
             append!("bind_network", record)
@@ -122,7 +130,9 @@ module Rubernetes
         def revoke!
           @mutex.synchronize do
             @revocation_epoch += 1
-            append!("revoke", Record.new(vm_id: nil, sandbox_id: nil, state: "epoch", fields: {"revocation_epoch" => @revocation_epoch}, created_at: @clock.call.iso8601(6)))
+            append!("revoke",
+                    Record.new(vm_id: nil, sandbox_id: nil, state: "epoch", fields: {"revocation_epoch" => @revocation_epoch},
+                               created_at: @clock.call.iso8601(6)))
             @revocation_epoch
           end
         end

@@ -28,8 +28,10 @@ class ControllerEventPublishingTest < Minitest::Test
     service
   end
 
-  def pdb = {"apiVersion" => "policy/v1", "kind" => "PodDisruptionBudget",
-             "metadata" => {"name" => "web", "namespace" => "ns", "uid" => "u1", "resourceVersion" => "7"}}
+  def pdb
+    {"apiVersion" => "policy/v1", "kind" => "PodDisruptionBudget",
+     "metadata" => {"name" => "web", "namespace" => "ns", "uid" => "u1", "resourceVersion" => "7"}}
+  end
 
   def flush(service)
     service.instance_variable_get(:@controller_event_recorders).each_value do |recorder|
@@ -47,7 +49,8 @@ class ControllerEventPublishingTest < Minitest::Test
                                                                             "name" => "p", "uid" => "pu"}}]))
     flush(subject)
     created = subject.instance_variable_get(:@client).created
-    assert_equal %w[NoPods NotDeleted], created.map { |event| event["reason"] }
+
+    assert_equal(%w[NoPods NotDeleted], created.map { |event| event["reason"] })
     assert_equal({"component" => "controllermanager"}, created.first["source"])
     assert_equal({"apiVersion" => "policy/v1", "kind" => "PodDisruptionBudget", "namespace" => "ns", "name" => "web", "uid" => "u1",
                   "resourceVersion" => "7"}.slice("apiVersion", "kind", "namespace", "name", "uid"),
@@ -64,10 +67,13 @@ class ControllerEventPublishingTest < Minitest::Test
                                                                [{"type" => "Normal", "reason" => "R#{index}", "message" => "m"}]))
     end
     flush(subject)
+
     assert_equal 25, subject.instance_variable_get(:@client).created.length
     time += 300
-    subject.send(:publish_controller_events, pdb, Result.new("deployment-controller", [{"type" => "Normal", "reason" => "Later", "message" => "m"}]))
+    subject.send(:publish_controller_events, pdb,
+                 Result.new("deployment-controller", [{"type" => "Normal", "reason" => "Later", "message" => "m"}]))
     flush(subject)
+
     assert_equal "Later", subject.instance_variable_get(:@client).created.last["reason"]
   end
 end

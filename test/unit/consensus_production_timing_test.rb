@@ -15,9 +15,9 @@ class ConsensusProductionTimingTest < Minitest::Test
   def test_production_timing_follows_etcd_defaults
     timing = Timing.production.validate!
 
-    assert_equal 0.100, timing.heartbeat_interval
-    assert_equal 1.0, timing.election_timeout_min
-    assert_equal 2.0, timing.election_timeout_max
+    assert_in_delta(0.100, timing.heartbeat_interval)
+    assert_in_delta(1.0, timing.election_timeout_min)
+    assert_in_delta(2.0, timing.election_timeout_max)
   end
 
   def test_a_pause_of_half_a_second_does_not_reach_the_election_timeout

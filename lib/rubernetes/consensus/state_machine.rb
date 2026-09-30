@@ -73,8 +73,8 @@ module Rubernetes
           when "update"
             expected = command["expected_resource_version"]
             object = @store.guaranteed_update(command.fetch("key"), prec: expected, request_uid: command["request_uid"],
-                                              max_retries: 0,
-                                              replay_precondition: command["client_precondition"]) do |_current|
+                                                                    max_retries: 0,
+                                                                    replay_precondition: command["client_precondition"]) do |_current|
               command.fetch("object")
             end
             {"ok" => true, "object" => object}
@@ -167,7 +167,13 @@ module Rubernetes
         @applied_index = Integer(applied)
         # A snapshot from before the counters existed carries none: start
         # the invariant from what the snapshot holds.
-        @effects = effects.is_a?(Hash) ? @effects.merge(effects.slice(*@effects.keys).transform_values { |value| Integer(value) }) : {"create" => live_objects, "update" => 0, "delete" => 0, "rejected" => 0}
+        @effects = if effects.is_a?(Hash)
+                     @effects.merge(effects.slice(*@effects.keys).transform_values do |value|
+                       Integer(value)
+                     end)
+                   else
+                     {"create" => live_objects, "update" => 0, "delete" => 0, "rejected" => 0}
+                   end
         @digest = digest.is_a?(Integer) ? digest : 0
         @since_checkpoint = 0
         # The watches opened against the old store would never see another
@@ -208,7 +214,7 @@ module Rubernetes
 
       def build_store
         Rubernetes::Storage::MemoryStore.new(history_revisions: @history_revisions, history_seconds: @history_seconds,
-                                 clock: -> { @clock_value }, sleeper: ->(_seconds) { nil }, token_secret: "raft-replica")
+                                             clock: -> { @clock_value }, sleeper: ->(_seconds) {}, token_secret: "raft-replica")
       end
 
       def error_document(error)

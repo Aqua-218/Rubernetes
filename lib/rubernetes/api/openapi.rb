@@ -32,9 +32,7 @@ module Rubernetes
         @static = {}
       end
 
-      attr_reader :generation
-
-      attr_reader :root
+      attr_reader :generation, :root
 
       def document_for(path)
         relative = relative_path(path)
@@ -42,7 +40,8 @@ module Rubernetes
 
         dynamic = @mutex.synchronize { @dynamic[relative] }
         return dynamic if dynamic
-        if relative == "v3/index.json" || relative == "v2.json"
+
+        if ["v3/index.json", "v2.json"].include?(relative)
           generation = @mutex.synchronize { @generation }
           cached = @mutex.synchronize { @merged[relative] }
           return cached.last if cached && cached.first == generation
@@ -187,7 +186,9 @@ module Rubernetes
         case value
         when Hash
           reference = value["$ref"]
-          found << reference.delete_prefix("#/components/schemas/") if reference.is_a?(String) && reference.start_with?("#/components/schemas/")
+          if reference.is_a?(String) && reference.start_with?("#/components/schemas/")
+            found << reference.delete_prefix("#/components/schemas/")
+          end
           value.each_value { |child| collect_refs(child, found) }
         when Array
           value.each { |child| collect_refs(child, found) }
@@ -204,9 +205,9 @@ module Rubernetes
         segments = segments.drop(1)
         return "v2.json" if segments == ["v2"]
         return "v3/index.json" if segments == ["v3"]
-        return "v3/api/#{segments[2]}.json" if segments.length == 3 && segments.first(2) == ["v3", "api"]
-        return "v3/apis/#{segments[2]}/#{segments[3]}.json" if segments.length == 4 && segments.first(2) == ["v3", "apis"]
-        return "v3/apis/#{segments[2]}.json" if segments.length == 3 && segments.first(2) == ["v3", "apis"]
+        return "v3/api/#{segments[2]}.json" if segments.length == 3 && segments.first(2) == %w[v3 api]
+        return "v3/apis/#{segments[2]}/#{segments[3]}.json" if segments.length == 4 && segments.first(2) == %w[v3 apis]
+        return "v3/apis/#{segments[2]}.json" if segments.length == 3 && segments.first(2) == %w[v3 apis]
         return "v3/#{segments[1]}.json" if segments.length == 2 && %w[api apis version logs].include?(segments[1])
         return "v3/openid/v1/jwks.json" if segments == %w[v3 openid v1 jwks]
         return "v3/.well-known/openid-configuration.json" if segments == %w[v3 .well-known openid-configuration]
@@ -272,13 +273,9 @@ module Rubernetes
         node.delete("type") if preserve && node["type"] == "object"
         node["required"] = v2_required(node) if node["required"].is_a?(Array)
         node.delete("required") if node["required"].is_a?(Array) && node["required"].empty?
-        if node["properties"].is_a?(Hash)
-          node["properties"] = node["properties"].transform_values { |value| v2_structural(value) }
-        end
+        node["properties"] = node["properties"].transform_values { |value| v2_structural(value) } if node["properties"].is_a?(Hash)
         node["items"] = v2_structural(node["items"]) if node["items"].is_a?(Hash)
-        if node["additionalProperties"].is_a?(Hash)
-          node["additionalProperties"] = v2_structural(node["additionalProperties"])
-        end
+        node["additionalProperties"] = v2_structural(node["additionalProperties"]) if node["additionalProperties"].is_a?(Hash)
         node
       end
 

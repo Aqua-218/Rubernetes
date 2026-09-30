@@ -50,7 +50,8 @@ module Rubernetes
 
         Sets = Data.define(:effective, :permitted, :inheritable) do
           def to_h
-            {"effective" => format("%016x", effective), "permitted" => format("%016x", permitted), "inheritable" => format("%016x", inheritable)}
+            {"effective" => format("%016x", effective), "permitted" => format("%016x", permitted),
+             "inheritable" => format("%016x", inheritable)}
           end
         end
 
@@ -102,9 +103,7 @@ module Rubernetes
           adds = Array(add).map { |name| normalize_name(name) }
           names = [] if drops.include?("ALL")
           names -= drops
-          if adds.include?("ALL")
-            return full_mask(last_cap)
-          end
+          return full_mask(last_cap) if adds.include?("ALL")
 
           adds.each { |name| names << name unless names.include?(name) }
           mask(names) & full_mask(last_cap)
@@ -196,9 +195,8 @@ module Rubernetes
             bounding_set_drop(bit)
           end
           missing = target & ~current.permitted
-          unless missing.zero?
-            raise Error, "capabilities #{self.class.names(missing).join(", ")} are not in the permitted set"
-          end
+          raise Error, "capabilities #{self.class.names(missing).join(", ")} are not in the permitted set" unless missing.zero?
+
           ambient_clear_all
           capset(effective: target, permitted: target, inheritable: 0)
           keep_caps(false)
@@ -218,7 +216,9 @@ module Rubernetes
           expected = {"CapBnd" => target, "CapEff" => target, "CapPrm" => target, "CapInh" => 0, "CapAmb" => 0}
           mismatch = expected.reject { |key, value| observed.fetch(key) == value }
           unless mismatch.empty?
-            detail = mismatch.map { |key, value| "#{key} expected=#{format("%016x", value)} actual=#{format("%016x", observed.fetch(key))}" }
+            detail = mismatch.map do |key, value|
+              "#{key} expected=#{format("%016x", value)} actual=#{format("%016x", observed.fetch(key))}"
+            end
             raise Error, "capability readback mismatch: #{detail.join("; ")}"
           end
           observed

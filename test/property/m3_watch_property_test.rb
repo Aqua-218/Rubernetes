@@ -43,10 +43,12 @@ class M3WatchPropertyTest < Minitest::Test
       break unless item
 
       key, deltas = item
+
       refute_empty(deltas)
       seen_keys << key
       fifo.done(key)
     end
+
     assert_equal(seen_keys.uniq.sort, seen_keys.sort)
     assert_equal(names.sort, seen_keys.sort)
 
@@ -59,6 +61,7 @@ class M3WatchPropertyTest < Minitest::Test
       work_keys << key
       queue.done(key)
     end
+
     assert_equal(names.sort, work_keys.sort)
   end
 
@@ -76,6 +79,7 @@ class M3WatchPropertyTest < Minitest::Test
 
     assert_equal(400, indexer.size)
     snapshot = indexer.snapshot
+
     assert_predicate(snapshot, :frozen?)
     assert_equal(400, snapshot.size)
     assert_equal(8, indexer.by_index("generation", "1").size)
@@ -91,10 +95,12 @@ class M3WatchPropertyTest < Minitest::Test
     writers.each(&:join)
     fifo.done(key)
     second_key, second = fifo.pop(timeout: 0)
+
     assert_equal("pod", second_key)
     assert_equal(10, second.length)
     assert_equal((2..11).to_a, second.map { |delta| delta.object.dig("metadata", "resourceVersion").to_i })
     fifo.done(second_key)
+
     assert_nil(fifo.pop(timeout: 0))
   end
 

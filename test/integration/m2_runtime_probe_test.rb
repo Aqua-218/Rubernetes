@@ -26,7 +26,7 @@ class M2ProbesTest < Minitest::Test
         assert_equal true, report.fetch("passed")
         assert_equal "PASS", report.fetch("status")
         assert_empty report.fetch("errors")
-        assert_equal M2Gate::REQUIRED_ATTACKS, report.fetch("cases").map { |entry| entry.fetch("id") }
+        assert_equal(M2Gate::REQUIRED_ATTACKS, report.fetch("cases").map { |entry| entry.fetch("id") })
         assert(report.fetch("cases").all? { |entry| entry.fetch("fail_closed") })
       when "lifecycle"
         # The CNI lock (third_party/locks/m2-lifecycle-cni.json) is present, so
@@ -34,9 +34,14 @@ class M2ProbesTest < Minitest::Test
         # source checkout configured it must execute on the real v1.36.2 node;
         # otherwise it must name the missing input instead of fabricating.
         oracle = report.fetch("lifecycle_oracle")
+
         refute_equal "BLOCKED", oracle.fetch("status")
         refute_includes report.fetch("errors"), M2KubernetesLifecycleOracle::CNI_LOCK_BLOCKER
-        assert_equal M2KubernetesLifecycleOracle::REQUIRED_CASES, oracle.fetch("comparisons").map { |entry| entry.fetch("id") } if oracle.fetch("executed")
+        if oracle.fetch("executed")
+          assert_equal(M2KubernetesLifecycleOracle::REQUIRED_CASES, oracle.fetch("comparisons").map do |entry|
+            entry.fetch("id")
+          end)
+        end
         if ENV.fetch("RUBERNETES_M2_KUBERNETES_SOURCE", "").empty?
           refute_predicate status, :success?, "#{name} must fail closed without the pinned Kubernetes source checkout"
           assert_equal false, oracle.fetch("executed")
@@ -45,10 +50,13 @@ class M2ProbesTest < Minitest::Test
         else
           assert_equal true, oracle.fetch("executed"), oracle.fetch("errors").inspect
           assert_includes %w[PASS FAIL], oracle.fetch("status")
-          assert(oracle.fetch("comparisons").all? { |entry| M2KubernetesLifecycleOracle.valid_digest?(entry["expected_sha256"]) }, "Kubernetes observables must be digested")
-          assert_equal oracle.fetch("passed"), oracle.fetch("comparisons").all? { |entry| entry.fetch("passed") }
+          assert(oracle.fetch("comparisons").all? do |entry|
+            M2KubernetesLifecycleOracle.valid_digest?(entry["expected_sha256"])
+          end, "Kubernetes observables must be digested")
+          assert_equal(oracle.fetch("passed"), oracle.fetch("comparisons").all? { |entry| entry.fetch("passed") })
           assert_equal report.fetch("passed"), status.success?
         end
+
         assert_operator report.fetch("trace").length, :>, 0
         assert_equal 0, report.fetch("live_leak_count")
         assert_equal 0, report.fetch("orphan_count")
@@ -56,7 +64,7 @@ class M2ProbesTest < Minitest::Test
         assert_equal M2Gate::REQUIRED_RESOURCE_KINDS, report.fetch("inventory_measurement").fetch("required_resource_kinds")
         assert_empty report.fetch("inventory_measurement").fetch("missing_resource_kinds")
         assert_equal "PASS", report.fetch("inventory_measurement").fetch("profile_status")
-        assert_equal M2Gate::REQUIRED_EFFECT_POINTS, report.fetch("sigkill_matrix").map { |entry| entry.fetch("effect_point") }
+        assert_equal(M2Gate::REQUIRED_EFFECT_POINTS, report.fetch("sigkill_matrix").map { |entry| entry.fetch("effect_point") })
         assert(report.fetch("sigkill_matrix").all? do |entry|
           entry.fetch("kill_observed") && entry.fetch("restart_observed") && entry.fetch("wal_replayed") &&
             entry.fetch("wait_status").fetch("signal") == "SIGKILL" &&
@@ -70,6 +78,7 @@ class M2ProbesTest < Minitest::Test
           refute_predicate status, :success?, "#{name} must fail closed without L3 kernel evidence"
           assert(report.fetch("errors").any? { |error| error.start_with?("L3 ") })
         end
+
         assert_equal report.fetch("l3_available"), report.fetch("passed")
         assert_equal expected_ledger_cycles, report.fetch("cycle_count")
         assert_equal 4, report.fetch("failure_injection_count")
@@ -79,10 +88,11 @@ class M2ProbesTest < Minitest::Test
         assert_equal M2Gate::REQUIRED_RESOURCE_KINDS, report.fetch("inventory_measurement").fetch("required_resource_kinds")
         assert_empty report.fetch("inventory_measurement").fetch("missing_resource_kinds")
         assert_equal "PASS", report.fetch("inventory_measurement").fetch("profile_status")
-        assert_equal report.fetch("cycle_inventory_measurement").fetch("measurement_id"), report.fetch("cycles").first.fetch("inventory_measurement_id")
+        assert_equal report.fetch("cycle_inventory_measurement").fetch("measurement_id"),
+                     report.fetch("cycles").first.fetch("inventory_measurement_id")
         assert_equal expected_ledger_cycles, report.fetch("cycle_inventory_measurement").fetch("cycle_count")
         assert_equal "Rubernetes::Platform::Linux::NativeAdapters", report.fetch("cycle_inventory_measurement").fetch("adapter_class")
-        assert_equal M2Gate::REQUIRED_EFFECT_POINTS, report.fetch("sigkill_matrix").map { |entry| entry.fetch("effect_point") }
+        assert_equal(M2Gate::REQUIRED_EFFECT_POINTS, report.fetch("sigkill_matrix").map { |entry| entry.fetch("effect_point") })
         assert(report.fetch("sigkill_matrix").all? { |entry| entry.fetch("dead_residual_count").zero? })
       end
     end
@@ -113,11 +123,12 @@ class M2ProbesTest < Minitest::Test
 
     assert_equal ["x86_64"], runtime.fetch("required_architectures")
     assert_equal ["x86_64"], kernel.fetch("required_architectures")
-    assert_equal ["x86_64"], runtime.fetch("profiles").map { |profile| profile.fetch("architecture") }
-    assert_equal ["x86_64"], kernel.fetch("architectures").map { |profile| profile.fetch("architecture") }
+    assert_equal(["x86_64"], runtime.fetch("profiles").map { |profile| profile.fetch("architecture") })
+    assert_equal(["x86_64"], kernel.fetch("architectures").map { |profile| profile.fetch("architecture") })
     if kernel.fetch("architectures").first.fetch("available")
       assert_operator kernel.fetch("architectures").first.fetch("objects").length, :>, 0
     end
+
     refute(runtime.fetch("profiles").any? { |profile| profile.fetch("skip") })
     refute(kernel.fetch("architectures").any? { |profile| profile.fetch("skip") })
   end
@@ -145,8 +156,10 @@ class M2ProbesTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       result = JSON.parse(stdout)
+
       assert_equal false, result.fetch("passed")
       manifest = JSON.parse(File.read(File.join(directory, "missing-chain", "manifest.json")))
+
       assert_equal "INCOMPLETE", manifest.fetch("status")
       assert_equal manifest.fetch("input_capture").fetch("stable"), manifest.fetch("input_stable")
       assert_equal 5, manifest.fetch("result_counts").fetch("reports")

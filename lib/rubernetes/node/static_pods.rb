@@ -239,7 +239,8 @@ module Rubernetes
         metadata = mirror["metadata"]
         metadata.delete("uid")
         metadata["annotations"][CONFIG_MIRROR] = metadata["annotations"][CONFIG_HASH]
-        metadata["ownerReferences"] = [{"apiVersion" => "v1", "kind" => "Node", "name" => @node_name, "uid" => node_uid, "controller" => true}]
+        metadata["ownerReferences"] =
+          [{"apiVersion" => "v1", "kind" => "Node", "name" => @node_name, "uid" => node_uid, "controller" => true}]
         mirror.delete("status")
         @api.create_mirror_pod(mirror)
       rescue StandardError => error
@@ -248,7 +249,8 @@ module Rubernetes
       end
 
       def delete_mirror(mirror)
-        @api.delete_pod(namespace: mirror.dig("metadata", "namespace"), name: mirror.dig("metadata", "name"), uid: mirror.dig("metadata", "uid"))
+        @api.delete_pod(namespace: mirror.dig("metadata", "namespace"), name: mirror.dig("metadata", "name"),
+                        uid: mirror.dig("metadata", "uid"))
       rescue StandardError => error
         log(:warn, "static_pod.mirror_delete_failed", pod: mirror.dig("metadata", "name"), error: error.message)
       end

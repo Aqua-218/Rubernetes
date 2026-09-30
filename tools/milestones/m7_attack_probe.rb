@@ -30,19 +30,21 @@ module M7AttackProbe
       attacker = S.start_pod(runtime, network, "attack-source")
       session = attacker["session"]
       victim_session = victim["session"]
-      host_paths = [S::LOCK, session.instance.chroot, session.instance.api_socket, File.join(S::ROOT, "lib/rubernetes/runtime/microvm/session.rb")]
+      host_paths = [S::LOCK, session.instance.chroot, session.instance.api_socket,
+                    File.join(S::ROOT, "lib/rubernetes/runtime/microvm/session.rb")]
       targets = {"other_cid" => victim_session.identity.fields["guest_cid"], "unlisted_port" => 9999,
                  "other_tenant_ip" => victim["lease"]["ip"], "other_tenant_port" => 80,
                  "host_ip" => network.gateway, "host_port" => 22, "host_paths" => host_paths}
       matrix = session.attack_matrix(targets)
-      expected_denied = %w[rootfs_write raw_block_write jailer_root other_vm_vsock host_vsock_unlisted_port other_tenant_network host_filesystem shared_host_mounts]
+      expected_denied = %w[rootfs_write raw_block_write jailer_root other_vm_vsock host_vsock_unlisted_port other_tenant_network
+                           host_filesystem shared_host_mounts]
       denied = expected_denied.select { |key| matrix.dig(key, "outcome") == "denied" }
       cases << {"id" => "guest_attack_matrix", "targets" => targets, "matrix" => matrix, "expected_denied" => expected_denied, "denied" => denied,
                 "host_filesystem" => matrix["host_filesystem"], "passed" => denied == expected_denied}
       confinement = session.confinement_report
       jail_root = session.instance.chroot
       jail_listing = Dir.glob(File.join(jail_root, "**", "*"), File::FNM_DOTMATCH).select { |path| File.file?(path) || File.blockdev?(path) || File.chardev?(path) }
-                        .map { |path| path.delete_prefix("#{jail_root}/") }.sort
+        .map { |path| path.delete_prefix("#{jail_root}/") }.sort
       forbidden_in_jail = jail_listing.select { |path| path.end_with?(".pem", ".key", "kubeconfig") || path.include?("secret") }
       cases << {"id" => "host_confinement", "confinement" => confinement, "jail_files" => jail_listing, "forbidden_in_jail" => forbidden_in_jail,
                 "passed" => confinement["uid"] == [session.uid] && confinement["cap_eff"].to_i(16).zero? && confinement["seccomp"] == "2" &&
@@ -87,17 +89,22 @@ module M7AttackProbe
       rescue M::PolicyError => error
         "denied: #{error.message[0, 60]}"
       end
-      cases << {"id" => "broker_fail_closed", "results" => broker_results, "passed" => broker_results.values.all? { |value| value.start_with?("denied") }}
+      cases << {"id" => "broker_fail_closed", "results" => broker_results, "passed" => broker_results.values.all? do |value|
+        value.start_with?("denied")
+      end}
       # Restricted class: no NIC at all.
       restricted_pod = S.start_pod(restricted, nil, "attack-restricted")
       restricted_hello = restricted_pod["session"].guest_hello
       restricted_matrix = restricted_pod["session"].attack_matrix({"other_cid" => 3, "unlisted_port" => 9999})
       cases << {"id" => "restricted_no_network_device", "interfaces" => restricted_matrix["network_interfaces"], "guest" => restricted_hello.slice("isolation_profile", "phase"),
                 "passed" => restricted_matrix["network_interfaces"] == ["lo"] && restricted_hello["isolation_profile"] == "l3"}
-      stop_errors = S.stop_pod(restricted, nil, restricted_pod) + S.stop_pod(runtime, network, attacker) + S.stop_pod(runtime, other_network, victim)
+      stop_errors = S.stop_pod(restricted, nil,
+                               restricted_pod) + S.stop_pod(runtime, network, attacker) + S.stop_pod(runtime, other_network, victim)
       leftovers = runtime.adapter.list_resources + restricted.adapter.list_resources
       cases << {"id" => "cleanup", "errors" => stop_errors, "resources" => leftovers,
-                "live_identities" => (runtime.identity_ledger.live + restricted.identity_ledger.live).map { |record| record.fields.slice("vm_id", "sandbox_id", "workspace_id") },
+                "live_identities" => (runtime.identity_ledger.live + restricted.identity_ledger.live).map do |record|
+                  record.fields.slice("vm_id", "sandbox_id", "workspace_id")
+                end,
                 "passed" => stop_errors.empty? && leftovers.empty?}
     ensure
       network.detach_all

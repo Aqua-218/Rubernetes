@@ -57,7 +57,11 @@ module Release
       end
 
       stdout, stderr, status = Open3.capture3(binary, "check", "--format", "json", chdir: ROOT)
-      document = JSON.parse(stdout) rescue nil
+      document = begin
+        JSON.parse(stdout)
+      rescue StandardError
+        nil
+      end
       if document.nil? && !status.success? && !stderr.empty?
         return {"id" => "dependency_audit", "passed" => false, "available" => true,
                 "detail" => stderr.lines.last(3).join.strip}
@@ -84,7 +88,11 @@ module Release
     def pinned_inputs
       unpinned = []
       Dir.glob(File.join(ROOT, "third_party/locks/*.json")).sort.each do |path|
-        document = JSON.parse(File.read(path)) rescue next
+        document = begin
+          JSON.parse(File.read(path))
+        rescue StandardError
+          next
+        end
         walk(document) do |trail, value|
           next unless value.is_a?(Hash)
           next unless value.key?("reference") || value.key?("url")
@@ -111,7 +119,7 @@ module Release
       path = File.join(ROOT, "verification/claims.yml")
       return {"id" => "claim_levels", "passed" => false, "detail" => "verification/claims.yml is missing"} unless File.file?(path)
 
-      claims = YAML.safe_load(File.read(path)).fetch("claims", [])
+      claims = YAML.safe_load_file(path).fetch("claims", [])
       levels = %w[proved model_checked differentially_tested integration_tested assumed_tcb]
       missing = claims.reject { |claim| levels.include?(claim["level"]) }
       {"id" => "claim_levels", "passed" => missing.empty?,
@@ -137,14 +145,14 @@ module Release
 
     def which(name)
       ENV.fetch("PATH", "").split(File::PATH_SEPARATOR)
-         .map { |dir| File.join(dir, name) }.find { |path| File.executable?(path) }
+        .map { |dir| File.join(dir, name) }.find { |path| File.executable?(path) }
     end
 
-    def walk(node, trail = [], &block)
-      block.call(trail, node)
+    def walk(node, trail = [], &)
+      yield(trail, node)
       return unless node.is_a?(Hash)
 
-      node.each { |key, value| walk(value, trail + [key], &block) }
+      node.each { |key, value| walk(value, trail + [key], &) }
     end
   end
 end

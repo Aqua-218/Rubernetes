@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
 require_relative "../observability/metrics"
 require_relative "pod_startup_latency_tracker"
 require_relative "../schema/quantity"
@@ -212,8 +211,10 @@ module Rubernetes
           usage = records.respond_to?(:usage) ? records.usage : nil
           next unless usage
 
-          registry.set("kubelet_imagemanager_inmemory_pulledrecords_usage_percent", usage[:in_memory_records] * 100.0 / usage[:records_capacity])
-          registry.set("kubelet_imagemanager_inmemory_pullintents_usage_percent", usage[:in_memory_intents] * 100.0 / usage[:intents_capacity])
+          registry.set("kubelet_imagemanager_inmemory_pulledrecords_usage_percent",
+                       usage[:in_memory_records] * 100.0 / usage[:records_capacity])
+          registry.set("kubelet_imagemanager_inmemory_pullintents_usage_percent",
+                       usage[:in_memory_intents] * 100.0 / usage[:intents_capacity])
           registry.set("kubelet_imagemanager_ondisk_pulledrecords", usage[:on_disk_records])
           registry.set("kubelet_imagemanager_ondisk_pullintents", usage[:on_disk_intents])
         end
@@ -416,8 +417,10 @@ module Rubernetes
       # each container's cpu / memory requests and limits (pod-level
       # resources have no metric upstream yet).
       def resize_requested(old_pod, new_pod)
-        spec = ->(pod) { (pod["spec"] || {}) }
-        new_containers = %w[containers initContainers].flat_map { |field| Array(spec.call(new_pod)[field]) }.to_h { |item| [item["name"], item] }
+        spec = ->(pod) { pod["spec"] || {} }
+        new_containers = %w[containers initContainers].flat_map do |field|
+          Array(spec.call(new_pod)[field])
+        end.to_h { |item| [item["name"], item] }
         %w[containers initContainers].flat_map { |field| Array(spec.call(old_pod)[field]) }.each do |old|
           current = new_containers[old["name"]]
           next unless current
@@ -492,7 +495,9 @@ module Rubernetes
             states[container_state(container)] += 1
           end
         end
-        %w[created running exited unknown].each { |state| registry.set("kubelet_running_containers", states[state], {"container_state" => state}) }
+        %w[created running exited unknown].each do |state|
+          registry.set("kubelet_running_containers", states[state], {"container_state" => state})
+        end
         static = live.count { |record| static?(record) }
         %w[false true].each do |flag|
           count = flag == "true" ? static : live.length - static
@@ -518,8 +523,10 @@ module Rubernetes
         {"kubelet_node_name" => [:gauge, "The node's name. The count is always 1."],
          "kubelet_running_pods" => [:gauge, "Number of pods that have a running pod sandbox"],
          "kubelet_running_containers" => [:gauge, "Number of containers currently running"],
-         "kubelet_desired_pods" => [:gauge, "The number of pods the kubelet is being instructed to run. static is true if the pod is not from the apiserver."],
-         "kubelet_active_pods" => [:gauge, "The number of pods the kubelet considers active and which are being considered when admitting new pods. static is true if the pod is not from the apiserver."],
+         "kubelet_desired_pods" => [:gauge,
+                                    "The number of pods the kubelet is being instructed to run. static is true if the pod is not from the apiserver."],
+         "kubelet_active_pods" => [:gauge,
+                                   "The number of pods the kubelet considers active and which are being considered when admitting new pods. static is true if the pod is not from the apiserver."],
          "kubelet_mirror_pods" => [:gauge, "The number of mirror pods the kubelet will try to create (one per admitted static pod)"],
          "kubelet_cgroup_version" => [:gauge, "cgroup version on the hosts."],
          "kubelet_started_pods_total" => [:counter, "Cumulative number of pods started"],
@@ -527,11 +534,13 @@ module Rubernetes
          "kubelet_started_containers_total" => [:counter, "Cumulative number of containers started"],
          "kubelet_started_containers_errors_total" => [:counter, "Cumulative number of errors when starting containers"],
          "kubelet_terminated_containers_total" => [:counter, "Cumulative number of container terminations."],
-         "kubelet_restarted_pods_total" => [:counter, "Number of pods that have been restarted because they were deleted and recreated with the same UID while the kubelet was watching them (common for static pods, extremely uncommon for API pods)"],
+         "kubelet_restarted_pods_total" => [:counter,
+                                            "Number of pods that have been restarted because they were deleted and recreated with the same UID while the kubelet was watching them (common for static pods, extremely uncommon for API pods)"],
          "kubelet_evictions" => [:counter, "Cumulative number of pod evictions by eviction signal"],
          "kubelet_preemptions" => [:counter, "Cumulative number of pod preemptions by preemption resource"],
          "kubelet_pleg_discard_events" => [:counter, "The number of discard events in PLEG."],
-         "kubelet_orphaned_runtime_pods_total" => [:counter, "Number of pods that have been detected in the container runtime without being already known to the pod worker. This typically indicates the kubelet was restarted while a pod was force deleted in the API or in the local configuration, which is unusual."]}.each do |name, (type, help)|
+         "kubelet_orphaned_runtime_pods_total" => [:counter,
+                                                   "Number of pods that have been detected in the container runtime without being already known to the pod worker. This typically indicates the kubelet was restarted while a pod was force deleted in the API or in the local configuration, which is unusual."]}.each do |name, (type, help)|
           @registry.register(name, type: type, help: help)
         end
         @registry.register("kubelet_image_pull_duration_seconds", type: :histogram, buckets: IMAGE_PULL_BUCKETS,
@@ -550,9 +559,9 @@ module Rubernetes
         @registry.register("kubelet_runtime_operations_duration_seconds", type: :histogram, buckets: RUNTIME_BUCKETS,
                                                                           help: "Duration in seconds of runtime operations. Broken down by operation type.")
         @registry.register("kubelet_first_network_pod_start_sli_duration_seconds", type: :gauge,
-                           help: "[INTERNAL] Duration in seconds to start the first network pod, excluding time to pull images and run " \
-                                 "init containers, measured from pod creation timestamp to when all its containers are reported as " \
-                                 "started and observed via watch")
+                                                                                   help: "[INTERNAL] Duration in seconds to start the first network pod, excluding time to pull images and run " \
+                                                                                         "init containers, measured from pod creation timestamp to when all its containers are reported as " \
+                                                                                         "started and observed via watch")
         @registry.register("kubelet_pod_start_duration_seconds", type: :histogram, buckets: POD_START_BUCKETS,
                                                                  help: "Duration in seconds from kubelet seeing a pod for the first time to the pod starting to run")
         # volume/util/metrics.go and volumemanager/metrics.
@@ -601,7 +610,10 @@ module Rubernetes
         @registry.increment("reconstruct_volume_operations_total", by: attempted.to_i) if attempted.to_i.positive?
         @registry.increment("reconstruct_volume_operations_errors_total", by: errors.to_i) if errors.to_i.positive?
         @registry.increment("force_cleaned_failed_volume_operations_total", by: force_cleaned.to_i) if force_cleaned.to_i.positive?
-        @registry.increment("force_cleaned_failed_volume_operation_errors_total", by: force_clean_errors.to_i) if force_clean_errors.to_i.positive?
+        return unless force_clean_errors.to_i.positive?
+
+        @registry.increment("force_cleaned_failed_volume_operation_errors_total",
+                            by: force_clean_errors.to_i)
       end
 
       # kubelet_orphan_pod_cleaned_volumes / _errors: the last recovery sweep
@@ -619,7 +631,8 @@ module Rubernetes
       # checks (Volume::SELinux::Tracker).  +error:+ picks the _errors_
       # family (the access mode is SELinux-mounted) over _warnings_.
       def selinux_volume_admitted(plugin, access_mode)
-        @registry.increment("volume_manager_selinux_volumes_admitted_total", {"access_mode" => access_mode.to_s, "volume_plugin" => plugin.to_s})
+        @registry.increment("volume_manager_selinux_volumes_admitted_total",
+                            {"access_mode" => access_mode.to_s, "volume_plugin" => plugin.to_s})
       end
 
       def selinux_container_context(access_mode, error:)
@@ -670,8 +683,12 @@ module Rubernetes
             desired[plugin] += 1 if plugin
           end
         end
-        desired.each { |plugin, count| registry.set("volume_manager_total_volumes", count, {"plugin_name" => plugin, "state" => "desired_state_of_world"}) }
-        actual.each { |plugin, count| registry.set("volume_manager_total_volumes", count, {"plugin_name" => plugin, "state" => "actual_state_of_world"}) }
+        desired.each do |plugin, count|
+          registry.set("volume_manager_total_volumes", count, {"plugin_name" => plugin, "state" => "desired_state_of_world"})
+        end
+        actual.each do |plugin, count|
+          registry.set("volume_manager_total_volumes", count, {"plugin_name" => plugin, "state" => "actual_state_of_world"})
+        end
       end
 
       # The plugin behind a recorded mount: the PV's backend for a claim, the
@@ -699,7 +716,8 @@ module Rubernetes
           value.nil? ? 0 : Schema::Quantity.parse(value.to_s).value
         end
         [%w[memory requests], %w[memory limits], %w[cpu requests], %w[cpu limits]].each do |resource, kind|
-          operation = self.class.resize_operation(quantity.call(new_resources, kind, resource), quantity.call(old_resources, kind, resource))
+          operation = self.class.resize_operation(quantity.call(new_resources, kind, resource),
+                                                  quantity.call(old_resources, kind, resource))
           @registry.increment(name, {"resource" => resource, "requirement" => kind, "operation" => operation}) if operation
         end
       end
@@ -793,11 +811,15 @@ module Rubernetes
         return if image_volumes.empty?
 
         @registry.increment("kubelet_image_volume_requested_total", by: image_volumes.length)
-        entry = Array(record[:containers] || record["containers"]).find { |candidate| (candidate[:name] || candidate["name"]).to_s == name.to_s }
+        entry = Array(record[:containers] || record["containers"]).find do |candidate|
+          (candidate[:name] || candidate["name"]).to_s == name.to_s
+        end
         spec = entry && (entry[:spec] || entry["spec"])
         mounts = spec.is_a?(Hash) ? Array(spec["volumeMounts"]) : []
         mounts.each do |mount|
-          @registry.increment("kubelet_image_volume_mounted_succeed_total") if mount.is_a?(Hash) && image_volumes.include?(mount["name"].to_s)
+          if mount.is_a?(Hash) && image_volumes.include?(mount["name"].to_s)
+            @registry.increment("kubelet_image_volume_mounted_succeed_total")
+          end
         end
       end
 
@@ -827,7 +849,9 @@ module Rubernetes
       end
 
       def container_type(record, name)
-        entry = Array(record[:containers] || record["containers"]).find { |candidate| (candidate[:name] || candidate["name"]).to_s == name.to_s }
+        entry = Array(record[:containers] || record["containers"]).find do |candidate|
+          (candidate[:name] || candidate["name"]).to_s == name.to_s
+        end
         category = entry && (entry[:category] || entry["category"]).to_s
         CONTAINER_TYPES.fetch(category.to_s, "container")
       end

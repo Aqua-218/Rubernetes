@@ -21,7 +21,10 @@ module Rubernetes
 
           index = value["index"]
           term = value["term"]
-          raise WALCorruption, "log entry index/term must be positive integers" unless index.is_a?(Integer) && index.positive? && term.is_a?(Integer) && term >= 0
+          unless index.is_a?(Integer) && index.positive? && term.is_a?(Integer) && term >= 0
+            raise WALCorruption,
+                  "log entry index/term must be positive integers"
+          end
 
           new(index: index, term: term, command: value["command"])
         end
@@ -207,7 +210,8 @@ module Rubernetes
             elsif entry.index == last_index + 1
               @entries << entry
             else
-              raise WALCorruption.new("WAL entry #{entry.index} is not contiguous with #{last_index}", path: @wal.path, offset: record.offset)
+              raise WALCorruption.new("WAL entry #{entry.index} is not contiguous with #{last_index}", path: @wal.path,
+                                                                                                       offset: record.offset)
             end
           when WAL::TYPE_TRUNCATE
             from = Integer(record.payload.fetch("from_index"))

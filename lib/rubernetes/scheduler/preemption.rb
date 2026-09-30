@@ -12,7 +12,7 @@ module Rubernetes
         def initialize(evaluations:, max_evaluations:)
           @evaluations = evaluations
           @max_evaluations = max_evaluations
-          super("preemption exact-search budget exhausted after #{evaluations} evaluations " +                "(max #{max_evaluations})")
+          super("preemption exact-search budget exhausted after #{evaluations} evaluations " + "(max #{max_evaluations})")
         end
       end
 
@@ -45,13 +45,14 @@ module Rubernetes
 
         def initialize(exact_limit: DEFAULT_EXACT_LIMIT, max_evaluations: DEFAULT_MAX_EVALUATIONS)
           @exact_limit = if exact_limit.is_a?(Integer)
-                            exact_limit
-                          elsif exact_limit.is_a?(String) && exact_limit.match?(/\A\+?\d+\z/)
-                            Integer(exact_limit, 10)
-                          else
-                            raise ValidationError, "preemption exact_limit must be a positive integer"
-                          end
+                           exact_limit
+                         elsif exact_limit.is_a?(String) && exact_limit.match?(/\A\+?\d+\z/)
+                           Integer(exact_limit, 10)
+                         else
+                           raise ValidationError, "preemption exact_limit must be a positive integer"
+                         end
           raise ValidationError, "preemption exact_limit must be positive" unless @exact_limit.positive?
+
           @max_evaluations = if max_evaluations.is_a?(Integer)
                                max_evaluations
                              elsif max_evaluations.is_a?(String) && max_evaluations.match?(/\A\+?\d+\z/)
@@ -116,9 +117,8 @@ module Rubernetes
 
             candidates << Result.new(node: node, victims: evicted, reason: "preempted lower-priority pods")
           end
-          if search_exhausted
-            raise BudgetExceeded.new(evaluations: evaluations, max_evaluations: @max_evaluations)
-          end
+          raise BudgetExceeded.new(evaluations: evaluations, max_evaluations: @max_evaluations) if search_exhausted
+
           candidates.min_by { |result| ordering(result) }
         end
 
@@ -129,13 +129,13 @@ module Rubernetes
           return nil unless context && context.respond_to?(:nodes) && context.respond_to?(:pods)
 
           find(pod, nodes: context.nodes, pods: context.pods,
-               filter: lambda do |candidate_node, remaining_pods|
-                 candidate_node_filter = Thread.current[:rubernetes_scheduler_filter]
-                 # The framework's filter takes the remaining Pods; handing it
-                 # the context made its trial context hold a CycleContext as
-                 # its only "Pod".
-                 candidate_node_filter ? candidate_node_filter.call(candidate_node, remaining_pods) : true
-               end)
+                    filter: lambda do |candidate_node, remaining_pods|
+                      candidate_node_filter = Thread.current[:rubernetes_scheduler_filter]
+                      # The framework's filter takes the remaining Pods; handing it
+                      # the context made its trial context hold a CycleContext as
+                      # its only "Pod".
+                      candidate_node_filter ? candidate_node_filter.call(candidate_node, remaining_pods) : true
+                    end)
         end
 
         alias find_victims find

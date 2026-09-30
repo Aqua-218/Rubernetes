@@ -60,7 +60,7 @@ class RcStatusNeverAheadOfPodsTest < Minitest::Test
 
     result = Controller::ReplicationControllerController.new.plan(rc(2), pods: existing)
 
-    assert_equal 1, result.operations.count { |operation| operation.action == :status_update }
+    assert_equal(1, result.operations.count { |operation| operation.action == :status_update })
     assert_equal 2, result.status.fetch("replicas")
   end
 end

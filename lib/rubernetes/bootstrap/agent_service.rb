@@ -7,7 +7,6 @@ require_relative "../image"
 require_relative "../runtime/native"
 require "openssl"
 require "securerandom"
-require "thread"
 
 module Rubernetes
   module Bootstrap
@@ -17,6 +16,7 @@ module Rubernetes
     # remains testable without requiring a privileged kernel.
     class AgentService
       class Error < StandardError; end
+
       class StopError < Error
         attr_reader :errors
 
@@ -104,14 +104,14 @@ module Rubernetes
         @exec_service = exec_service || subresources[:exec] || subresources["exec"] || Node::ExecService.new(**service_options)
         @attach_service = attach_service || subresources[:attach] || subresources["attach"] || Node::AttachService.new(**service_options)
         @port_forward_service = port_forward_service || subresources[:portforward] || subresources[:port_forward] ||
-                                 subresources["portforward"] || subresources["port-forward"] || Node::PortForwardService.new(**service_options)
+                                subresources["portforward"] || subresources["port-forward"] || Node::PortForwardService.new(**service_options)
         @mutex = Mutex.new
         @started = false
       end
 
       def start
         @mutex.synchronize do
-          raise RuntimeError, "rubernetes-agent is already started" if @started
+          raise "rubernetes-agent is already started" if @started
 
           begin
             reclaim_abandoned_image_stages!
@@ -180,13 +180,11 @@ module Rubernetes
         stop_dns_service!
         stop_streaming_server!
         [@sync_loop, @api_adapter, @runtime].compact.uniq.each do |component|
-          begin
-            operation = component.respond_to?(:stop) ? :stop : :close
-            invoke_lifecycle(component, operation, reason: reason)
-          rescue StandardError => error
-            errors << error
-            log(:error, "process.stop_failed", component: component.class.name, error: error)
-          end
+          operation = component.respond_to?(:stop) ? :stop : :close
+          invoke_lifecycle(component, operation, reason: reason)
+        rescue StandardError => error
+          errors << error
+          log(:error, "process.stop_failed", component: component.class.name, error: error)
         end
         log(:info, "process.stopped", reason: reason)
         raise StopError, errors if errors.any?
@@ -284,7 +282,10 @@ module Rubernetes
       def deep_freeze(value)
         case value
         when Hash
-          value.each { |key, child| key.freeze; deep_freeze(child) }
+          value.each do |key, child|
+            key.freeze
+            deep_freeze(child)
+          end
         when Array
           value.each { |child| deep_freeze(child) }
         end
@@ -326,7 +327,7 @@ module Rubernetes
         return true if ready == true && errors.empty? && blocked.empty?
 
         detail = (errors + blocked.map { |entry| "#{entry} is pending" }).join("; ")
-        raise Error, "agent recovery is not complete#{detail.empty? ? "" : ": #{detail}"}"
+        raise Error, "agent recovery is not complete#{": #{detail}" unless detail.empty?}"
       end
 
       def recovery_resource_key(entry)
@@ -371,11 +372,11 @@ module Rubernetes
         # the API server as its authorization boundary rather than re-deciding
         # with no identity to decide on.
         @streaming_server = Node::StreamingServer.new(
-          log_service: Node::LogService.new(**@service_options.merge(trusted: true)),
+          log_service: Node::LogService.new(**@service_options, trusted: true),
           lifecycle: @node_agent.respond_to?(:lifecycle) ? @node_agent.lifecycle : nil,
-          exec_service: Node::ExecService.new(**@service_options.merge(trusted: true)),
-          attach_service: Node::AttachService.new(**@service_options.merge(trusted: true)),
-          port_forward_service: Node::PortForwardService.new(**@service_options.merge(trusted: true)),
+          exec_service: Node::ExecService.new(**@service_options, trusted: true),
+          attach_service: Node::AttachService.new(**@service_options, trusted: true),
+          port_forward_service: Node::PortForwardService.new(**@service_options, trusted: true),
           # /stats/summary and /metrics/resource.
           stats_provider: @node_agent.respond_to?(:stats_provider) ? @node_agent.stats_provider : nil,
           # kubelet enableSystemLogHandler (default on) / enableSystemLogQuery
@@ -416,8 +417,8 @@ module Rubernetes
         if tls["client_ca_file"]
           result[:request_client_certificates] = true
           result[:client_ca_certificates] = File.read(tls["client_ca_file"])
-                                                .scan(/-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----/m)
-                                                .map { |pem| OpenSSL::X509::Certificate.new(pem) }
+            .scan(/-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----/m)
+            .map { |pem| OpenSSL::X509::Certificate.new(pem) }
         end
         result
       end
@@ -482,7 +483,11 @@ module Rubernetes
         cert_dir = @config["cert_dir"] || File.join(File.dirname(File.expand_path(kubeconfig)), "pki")
         addresses = lambda do
           listed = @node_agent.respond_to?(:node_addresses) ? Array(@node_agent.node_addresses) : []
-          listed = Socket.ip_address_list.reject { |address| address.ipv4_loopback? || address.ipv6_loopback? || address.ipv6_linklocal? }.map(&:ip_address) if listed.empty?
+          if listed.empty?
+            listed = Socket.ip_address_list.reject do |address|
+              address.ipv4_loopback? || address.ipv6_loopback? || address.ipv6_linklocal?
+            end.map(&:ip_address)
+          end
           listed
         end
         @serving_certificate_manager = Node::ServingCertificateManager.new(

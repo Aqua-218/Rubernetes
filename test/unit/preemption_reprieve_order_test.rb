@@ -37,6 +37,7 @@ class PreemptionReprieveOrderTest < Minitest::Test
     scheduler = Scheduler.new(delete_pod: ->(victim) { deleted << victim.name })
 
     scheduler.schedule(pod("pod4", 4, "500"), [node], pods: running)
+
     assert scheduler.wait_for_preemptions
 
     assert_equal %w[rs-pod1 rs-pod2], deleted.sort
@@ -48,6 +49,7 @@ class PreemptionReprieveOrderTest < Minitest::Test
     scheduler = Scheduler.new(delete_pod: ->(victim) { deleted << victim.name })
 
     scheduler.schedule(pod("huge", 4, "2k"), [node], pods: running)
+
     assert scheduler.wait_for_preemptions
 
     assert_empty deleted

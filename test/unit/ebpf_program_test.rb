@@ -45,8 +45,8 @@ class EBPFProgramTest < Minitest::Test
     assert_includes immediates, 14
     assert_includes codes, 0x85 # bpf_map_lookup_elem / helper call
     assert_includes codes, 0x95 # exit
-    assert instructions.any? { |instruction| instruction.immediate == 9 }
-    assert instructions.any? { |instruction| instruction.immediate == 26 }
+    assert(instructions.any? { |instruction| instruction.immediate == 9 })
+    assert(instructions.any? { |instruction| instruction.immediate == 26 })
   end
 
   def test_feature_matrix_exposes_sctp_crc32c_loop_contract
@@ -61,22 +61,23 @@ class EBPFProgramTest < Minitest::Test
     assert_equal true, features.fetch(:load_balancer_source_ranges)
     assert_equal true, features.fetch(:health_check_node_port)
     contract = Rubernetes::Proxy::EBPFProgram::ServiceDatapath.new(map_fds: MAP_FDS).sctp_crc32c_loop_contract
+
     assert_equal "bpf_loop", contract.fetch("helper")
     assert_equal "BPF_PSEUDO_FUNC", contract.fetch("relocation")
-    refute adapter.sctp_crc32c_kernel_supported?
+    refute_predicate adapter, :sctp_crc32c_kernel_supported?
     assert_match(/Linux >= 6\.12/, adapter.production_capability_error)
-    refute adapter.production_capable?
+    refute_predicate adapter, :production_capable?
   end
 
   def test_sctp_kernel_capability_boundary_is_explicit
     unsupported = Rubernetes::Proxy::LinuxEBPFAdapter.new(kernel_release: "6.11.99-generic")
     supported = Rubernetes::Proxy::LinuxEBPFAdapter.new(kernel_release: "6.12.0-generic")
 
-    refute unsupported.sctp_crc32c_kernel_supported?
+    refute_predicate unsupported, :sctp_crc32c_kernel_supported?
     assert_match(/Linux >= 6\.12/, unsupported.production_capability_error)
     assert_raises(RuntimeError) { unsupported.attach(ifindex: 1) }
-    assert supported.sctp_crc32c_kernel_supported?
-    assert supported.service_semantics_complete?
+    assert_predicate supported, :sctp_crc32c_kernel_supported?
+    assert_predicate supported, :service_semantics_complete?
     refute_match(/unsupported on kernel/, supported.production_capability_error)
   end
 
@@ -87,6 +88,7 @@ class EBPFProgramTest < Minitest::Test
 
       [index, instruction.immediate]
     end
+
     refute_empty function_relocations
     function_relocations.each do |index, target|
       assert_operator index + 1 + target, :>, index
@@ -116,6 +118,7 @@ class EBPFProgramTest < Minitest::Test
     padded.setbyte(59, 0xff)
 
     expected = crc.crc32c(sctp)
+
     assert_equal 60, frame.bytesize
     assert_equal expected, crc.sctp_crc32c(frame, family: 4, l3_offset: 14, transport_offset: 34)
     assert_equal expected, crc.sctp_crc32c(padded, family: 4, l3_offset: 14, transport_offset: 34)
@@ -136,6 +139,7 @@ class EBPFProgramTest < Minitest::Test
     padded.setbyte(-1, 0xff)
 
     expected = crc.crc32c(sctp)
+
     assert_equal expected, crc.sctp_crc32c(frame, family: 6, l3_offset: 14, transport_offset: 62)
     assert_equal expected, crc.sctp_crc32c(padded, family: 6, l3_offset: 14, transport_offset: 62)
 
@@ -150,8 +154,8 @@ class EBPFProgramTest < Minitest::Test
     assert_equal Etc.uname.fetch(:release), adapter.actual_kernel_release
     assert_equal "6.12.0-test", adapter.kernel_release_override
     assert_equal Etc.uname.fetch(:release), adapter.kernel_release
-    refute adapter.production_release_attested?
-    refute adapter.production_capable?
+    refute_predicate adapter, :production_release_attested?
+    refute_predicate adapter, :production_capable?
   end
 
   def test_deterministic_hash_vector_matches_kernel_contract
@@ -172,6 +176,7 @@ class EBPFProgramTest < Minitest::Test
     exit_instruction = Rubernetes::Platform::Linux::BPF::Instruction.new(code: 0x95, destination: 0, source: 0, offset: 0, immediate: 0)
 
     relocated = loader.send(:relocate_function_references, [instruction, high, exit_instruction], {0 => 2})
+
     assert_equal 1, relocated.fetch(0).immediate
     assert_raises(ArgumentError) do
       loader.send(:relocate_function_references, [instruction, high, exit_instruction], {0 => 99})
@@ -243,6 +248,7 @@ class EBPFProgramTest < Minitest::Test
     adapter.instance_variable_set(:@actual_kernel_release, "6.12.0-test")
 
     identity = adapter.kernel_identity
+
     assert_equal [181], identity.fetch("helperIds")
     assert_equal [181], identity.fetch("program").fetch("helperIds")
   end
@@ -252,6 +258,7 @@ class EBPFProgramTest < Minitest::Test
     adapter = Rubernetes::Proxy::LinuxEBPFAdapter.new(bpf: unavailable_program_info_bpf)
 
     external = external_helper_attestation(program, helper_ids: [181])
+
     assert_nil adapter.send(:helper_attestation_for, program, external)
     refute adapter.instance_variable_get(:@helper_live_readback_attested)
   end
@@ -289,6 +296,7 @@ class EBPFProgramTest < Minitest::Test
     adapter = Rubernetes::Proxy::LinuxEBPFAdapter.new(bpf: bpf)
 
     external = external_helper_attestation(program, helper_ids: [181])
+
     assert_nil adapter.send(:helper_attestation_for, program, external)
     refute adapter.instance_variable_get(:@helper_live_readback_attested)
   end
@@ -312,7 +320,7 @@ class EBPFProgramTest < Minitest::Test
     adapter = Rubernetes::Proxy::LinuxEBPFAdapter.new
     service_key, service_value = adapter.send(:encode_service_rule_for_family, rule, 4)
     backend_key, backend_value = adapter.send(:encode_backend, endpoint,
-                                               token: adapter.send(:service_token, rule), index: 0, family: 4)
+                                              token: adapter.send(:service_token, rule), index: 0, family: 4)
 
     assert_equal 40, service_key.bytesize
     assert_equal 64, service_value.bytesize
@@ -330,8 +338,8 @@ class EBPFProgramTest < Minitest::Test
       "metadata" => {"name" => "web", "namespace" => "default"},
       "spec" => {
         "type" => "NodePort", "clusterIP" => "10.96.0.10",
-        "clusterIPs" => ["10.96.0.10", "fd00::10"], "ipFamilies" => ["IPv4", "IPv6"],
-        "ports" => [{"port" => 80, "targetPort" => 8080, "nodePort" => 30080}]
+        "clusterIPs" => ["10.96.0.10", "fd00::10"], "ipFamilies" => %w[IPv4 IPv6],
+        "ports" => [{"port" => 80, "targetPort" => 8080, "nodePort" => 30_080}]
       }
     }
     endpoints = [
@@ -347,8 +355,8 @@ class EBPFProgramTest < Minitest::Test
     adapter.instance_variable_set(:@service_keys, adapter.send(:current_service_keys, rules).freeze)
     adapter.send(:sync_maps, maps, [])
 
-    assert_equal 4, bpf.updates.count { |call| call.fetch(:value).bytesize == 64 }
-    assert_equal 4, bpf.updates.count { |call| call.fetch(:value).bytesize == 96 }
+    assert_equal(4, bpf.updates.count { |call| call.fetch(:value).bytesize == 64 })
+    assert_equal(4, bpf.updates.count { |call| call.fetch(:value).bytesize == 96 })
     assert_equal 4, bpf.deletes.length
     assert_empty bpf.deletes.map { |call| call.fetch(:resource_id) }.grep(/backend/)
   end
@@ -367,8 +375,8 @@ class EBPFProgramTest < Minitest::Test
     service = Rubernetes::Proxy::Service.new(
       "metadata" => {"name" => "public"},
       "spec" => {"type" => "LoadBalancer", "clusterIP" => "10.96.0.40",
-                  "loadBalancerIP" => "192.0.2.40", "loadBalancerSourceRanges" => ["198.51.100.0/24"],
-                  "ports" => [{"port" => 80, "targetPort" => 8080}]}
+                 "loadBalancerIP" => "192.0.2.40", "loadBalancerSourceRanges" => ["198.51.100.0/24"],
+                 "ports" => [{"port" => 80, "targetPort" => 8080}]}
     )
     endpoint = Rubernetes::Proxy::Endpoint.new(address: "10.1.0.40", port: 8080, protocol: "TCP")
     rule = Rubernetes::Proxy::RuleCompiler.new(node_addresses: ["192.0.2.1"]).compile(service, endpoints: [endpoint]).rules.find do |entry|
@@ -383,6 +391,7 @@ class EBPFProgramTest < Minitest::Test
     assert_equal 28, range_key.bytesize
     assert_equal [1].pack("L<"), range_value
     ipv6_range_key, = adapter.send(:encode_source_range, rule, "2001:db8:40::/64")
+
     assert_equal [128].pack("L<"), ipv6_range_key.byteslice(0, 4)
     unrestricted = Rubernetes::Proxy::Rule.new(
       service_key: rule.service_key, service_type: rule.service_type, kind: rule.kind,
@@ -393,13 +402,15 @@ class EBPFProgramTest < Minitest::Test
       metadata: rule.metadata.merge("loadBalancerSourceRanges" => [])
     )
     _unrestricted_key, unrestricted_value = adapter.send(:encode_service_rule_for_family, unrestricted, 4)
+
     assert_equal 3, unrestricted_value.getbyte(60)
 
     bpf = RecordingBPF.new
     maps = (MAP_FDS.keys + %w[source_ranges snat]).to_h { |name| [name, FakeMap.new(1)] }
     adapter_with_recorder = Rubernetes::Proxy::LinuxEBPFAdapter.new(bpf: bpf)
     adapter_with_recorder.send(:sync_maps, maps, [rule])
-    assert_equal 1, bpf.updates.count { |call| call.fetch(:resource_id).to_s.include?("source_range:update") }
+
+    assert_equal(1, bpf.updates.count { |call| call.fetch(:resource_id).to_s.include?("source_range:update") })
   end
 
   def test_topology_hints_select_only_endpoints_advertising_the_local_zone
@@ -408,7 +419,7 @@ class EBPFProgramTest < Minitest::Test
       "spec" => {"clusterIP" => "10.96.0.41", "ports" => [{"port" => 80}]}
     )
     zonal = Rubernetes::Proxy::Endpoint.new(address: "10.1.0.41", port: 80, protocol: "TCP",
-                                             hints: {"forZones" => [{"name" => "zone-a"}]})
+                                            hints: {"forZones" => [{"name" => "zone-a"}]})
     remote = Rubernetes::Proxy::Endpoint.new(address: "10.1.0.42", port: 80, protocol: "TCP",
                                              hints: {"forZones" => [{"name" => "zone-b"}]})
     rule = Rubernetes::Proxy::RuleCompiler.new(node_zone: "zone-a").compile(service, endpoints: [zonal, remote]).rules.first

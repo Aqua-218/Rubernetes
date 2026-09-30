@@ -11,7 +11,7 @@ module Rubernetes
     # The inventory is deliberately data, not a list inferred from loaded Ruby
     # classes: a missing entry must fail closed before the manager starts.
     module BuiltinControllerCorpus
-      VERSION = "v1.36.2".freeze
+      VERSION = "v1.36.2"
 
       Entry = Struct.new(:name, :kind, :startup_conditions, :feature_gates,
                          :sync_targets, :status_fields, :events, :aliases,
@@ -81,61 +81,110 @@ module Rubernetes
       # for every entry, including controllers whose implementation is not a
       # workload reconciler in this Ruby package.
       RAW_ENTRIES = [
-        ["serviceaccount-token-controller", "ServiceAccount", ["API server available"], [], ["ServiceAccount", "Secret"], ["secrets"], ["TokenCreated"]],
-        ["endpoints-controller", "Endpoints", ["API server available"], [], ["Service", "Pod", "Endpoints"], ["subsets"], ["EndpointsUpdated"]],
-        ["endpointslice-controller", "EndpointSlice", ["API server available"], [], ["Service", "Pod", "EndpointSlice"], ["endpoints", "conditions"], ["EndpointSliceUpdated"]],
-        ["endpointslice-mirroring-controller", "EndpointSlice", ["API server available"], [], ["Endpoints", "EndpointSlice"], ["endpoints"], ["EndpointSliceMirrored"]],
-        ["replicationcontroller-controller", "ReplicationController", ["API server available"], [], ["ReplicationController", "Pod"], ["replicas", "fullyLabeledReplicas"], ["SuccessfulCreate", "SuccessfulDelete"]],
-        ["pod-garbage-collector-controller", "Pod", ["API server available"], [], ["Pod", "Node"], ["terminatedAll", "reason"], ["TerminatedAll"]],
-        ["resourcequota-controller", "ResourceQuota", ["API server available"], [], ["ResourceQuota", "Pod", "Service", "ConfigMap", "Secret"], ["hard", "used"], ["ResourceQuotaSyncFailed"]],
-        ["namespace-controller", "Namespace", ["API server available"], [], ["Namespace", "all namespaced resources"], ["phase"], ["NamespaceDeletionContentFailure"]],
-        ["serviceaccount-controller", "ServiceAccount", ["API server available"], [], ["Namespace", "ServiceAccount"], ["secrets"], ["ServiceAccountCreated"]],
-        ["garbage-collector-controller", "GarbageCollector", ["API server available", "Discovery complete"], [], ["all resources", "ownerReferences"], ["deletion"], ["OwnerReferenceCycle"]],
-        ["daemonset-controller", "DaemonSet", ["API server available"], [], ["DaemonSet", "Pod", "Node"], ["desiredNumberScheduled", "numberReady", "updatedNumberScheduled"], ["SuccessfulCreate", "SuccessfulDelete"]],
-        ["job-controller", "Job", ["API server available"], [], ["Job", "Pod"], ["active", "succeeded", "failed", "conditions"], ["SuccessfulCreate", "SuccessfulDelete", "Completed"]],
-        ["deployment-controller", "Deployment", ["API server available"], [], ["Deployment", "ReplicaSet", "Pod"], ["observedGeneration", "replicas", "updatedReplicas", "availableReplicas", "unavailableReplicas"], ["ScalingReplicaSet", "DeploymentComplete", "DeploymentProgressing"]],
-        ["replicaset-controller", "ReplicaSet", ["API server available"], [], ["ReplicaSet", "Pod"], ["replicas", "fullyLabeledReplicas", "readyReplicas", "availableReplicas"], ["SuccessfulCreate", "SuccessfulDelete"]],
-        ["horizontal-pod-autoscaler-controller", "HorizontalPodAutoscaler", ["API server available"], ["HPAContainerMetrics"], ["HorizontalPodAutoscaler", "scale target", "metrics"], ["observedGeneration", "currentReplicas", "desiredReplicas", "conditions"], ["SuccessfulRescale", "FailedRescale"]],
-        ["disruption-controller", "PodDisruptionBudget", ["API server available"], [], ["PodDisruptionBudget", "Pod"], ["currentHealthy", "desiredHealthy", "disruptionsAllowed"], ["NoPods"]],
-        ["statefulset-controller", "StatefulSet", ["API server available"], [], ["StatefulSet", "Pod", "ControllerRevision", "PersistentVolumeClaim"], ["observedGeneration", "currentReplicas", "updatedReplicas", "readyReplicas", "currentRevision", "updateRevision"], ["SuccessfulCreate", "SuccessfulDelete", "SuccessfulRescale"]],
-        ["cronjob-controller", "CronJob", ["API server available"], [], ["CronJob", "Job"], ["active", "lastScheduleTime", "lastSuccessfulTime"], ["SawCompletedJob", "TooManyMissedTimes"]],
-        ["certificatesigningrequest-signing-controller", "CertificateSigningRequest", ["API server available"], [], ["CertificateSigningRequest"], ["certificate", "conditions"], ["CertificateIssued", "CertificateFailed"]],
-        ["certificatesigningrequest-approving-controller", "CertificateSigningRequest", ["API server available"], [], ["CertificateSigningRequest"], ["conditions"], ["CertificateApproved"]],
-        ["certificatesigningrequest-cleaner-controller", "CertificateSigningRequest", ["API server available"], [], ["CertificateSigningRequest"], ["deletion"], ["CertificateDeleted"]],
-        ["podcertificaterequest-cleaner-controller", "PodCertificateRequest", ["API server available"], ["PodCertificateRequest"], ["PodCertificateRequest"], ["deletion"], ["PodCertificateRequestDeleted"]],
+        ["serviceaccount-token-controller", "ServiceAccount", ["API server available"], [], %w[ServiceAccount Secret], ["secrets"],
+         ["TokenCreated"]],
+        ["endpoints-controller", "Endpoints", ["API server available"], [], %w[Service Pod Endpoints], ["subsets"],
+         ["EndpointsUpdated"]],
+        ["endpointslice-controller", "EndpointSlice", ["API server available"], [], %w[Service Pod EndpointSlice],
+         %w[endpoints conditions], ["EndpointSliceUpdated"]],
+        ["endpointslice-mirroring-controller", "EndpointSlice", ["API server available"], [], %w[Endpoints EndpointSlice],
+         ["endpoints"], ["EndpointSliceMirrored"]],
+        ["replicationcontroller-controller", "ReplicationController", ["API server available"], [], %w[ReplicationController Pod],
+         %w[replicas fullyLabeledReplicas], %w[SuccessfulCreate SuccessfulDelete]],
+        ["pod-garbage-collector-controller", "Pod", ["API server available"], [], %w[Pod Node], %w[terminatedAll reason],
+         ["TerminatedAll"]],
+        ["resourcequota-controller", "ResourceQuota", ["API server available"], [],
+         %w[ResourceQuota Pod Service ConfigMap Secret], %w[hard used], ["ResourceQuotaSyncFailed"]],
+        ["namespace-controller", "Namespace", ["API server available"], [], ["Namespace", "all namespaced resources"], ["phase"],
+         ["NamespaceDeletionContentFailure"]],
+        ["serviceaccount-controller", "ServiceAccount", ["API server available"], [], %w[Namespace ServiceAccount], ["secrets"],
+         ["ServiceAccountCreated"]],
+        ["garbage-collector-controller", "GarbageCollector", ["API server available", "Discovery complete"], [],
+         ["all resources", "ownerReferences"], ["deletion"], ["OwnerReferenceCycle"]],
+        ["daemonset-controller", "DaemonSet", ["API server available"], [], %w[DaemonSet Pod Node],
+         %w[desiredNumberScheduled numberReady updatedNumberScheduled], %w[SuccessfulCreate SuccessfulDelete]],
+        ["job-controller", "Job", ["API server available"], [], %w[Job Pod], %w[active succeeded failed conditions],
+         %w[SuccessfulCreate SuccessfulDelete Completed]],
+        ["deployment-controller", "Deployment", ["API server available"], [], %w[Deployment ReplicaSet Pod],
+         %w[observedGeneration replicas updatedReplicas availableReplicas unavailableReplicas], %w[ScalingReplicaSet DeploymentComplete DeploymentProgressing]],
+        ["replicaset-controller", "ReplicaSet", ["API server available"], [], %w[ReplicaSet Pod],
+         %w[replicas fullyLabeledReplicas readyReplicas availableReplicas], %w[SuccessfulCreate SuccessfulDelete]],
+        ["horizontal-pod-autoscaler-controller", "HorizontalPodAutoscaler", ["API server available"], ["HPAContainerMetrics"],
+         ["HorizontalPodAutoscaler", "scale target", "metrics"], %w[observedGeneration currentReplicas desiredReplicas conditions], %w[SuccessfulRescale FailedRescale]],
+        ["disruption-controller", "PodDisruptionBudget", ["API server available"], [], %w[PodDisruptionBudget Pod],
+         %w[currentHealthy desiredHealthy disruptionsAllowed], ["NoPods"]],
+        ["statefulset-controller", "StatefulSet", ["API server available"], [],
+         %w[StatefulSet Pod ControllerRevision PersistentVolumeClaim], %w[observedGeneration currentReplicas updatedReplicas readyReplicas currentRevision updateRevision], %w[SuccessfulCreate SuccessfulDelete SuccessfulRescale]],
+        ["cronjob-controller", "CronJob", ["API server available"], [], %w[CronJob Job],
+         %w[active lastScheduleTime lastSuccessfulTime], %w[SawCompletedJob TooManyMissedTimes]],
+        ["certificatesigningrequest-signing-controller", "CertificateSigningRequest", ["API server available"], [],
+         ["CertificateSigningRequest"], %w[certificate conditions], %w[CertificateIssued CertificateFailed]],
+        ["certificatesigningrequest-approving-controller", "CertificateSigningRequest", ["API server available"], [],
+         ["CertificateSigningRequest"], ["conditions"], ["CertificateApproved"]],
+        ["certificatesigningrequest-cleaner-controller", "CertificateSigningRequest", ["API server available"], [],
+         ["CertificateSigningRequest"], ["deletion"], ["CertificateDeleted"]],
+        ["podcertificaterequest-cleaner-controller", "PodCertificateRequest", ["API server available"], ["PodCertificateRequest"],
+         ["PodCertificateRequest"], ["deletion"], ["PodCertificateRequestDeleted"]],
         # v1.36.2's ttlafterfinished controller watches Jobs only.  The
         # generic name is retained for the upstream controller entry, but its
         # sync contract must not claim kinds the implementation cannot serve.
         ["ttl-controller", "Job", ["API server available"], [], ["Job"], ["deletion"], ["TTLExpired"]],
-        ["bootstrap-signer-controller", "ConfigMap", ["API server available"], [], ["ConfigMap", "Secret"], ["data"], ["BootstrapSignerError"]],
-        ["token-cleaner-controller", "Secret", ["API server available"], [], ["Secret", "ServiceAccount"], ["deletion"], ["TokenCleaned"]],
-        ["node-ipam-controller", "Node", ["API server available"], [], ["Node", "CIDR"], ["podCIDR", "conditions"], ["CIDRAssignmentFailed"]],
-        ["node-lifecycle-controller", "Node", ["API server available"], [], ["Node", "Pod"], ["conditions", "taints"], ["NodeNotReady", "NodeReady"]],
-        ["taint-eviction-controller", "Node", ["API server available"], ["SeparateTaintEvictionController"], ["Node", "Pod"], ["taints"], ["TaintManagerEviction"]],
-        ["device-taint-eviction-controller", "Node", ["API server available"], ["DynamicResourceAllocation"], ["Node", "Pod"], ["taints"], ["DeviceTaintEviction"]],
-        ["service-lb-controller", "Service", ["cloud provider configured"], [], ["Service", "Node", "LoadBalancer"], ["loadBalancer"], ["EnsuringLoadBalancer", "EnsuredLoadBalancer", "DeletingLoadBalancer"], [], true],
-        ["node-route-controller", "Node", ["cloud provider configured"], [], ["Node", "Route"], ["routes"], ["RouteCreated", "RouteDeleted"], [], true],
-        ["cloud-node-lifecycle-controller", "Node", ["cloud provider configured"], [], ["Node"], ["conditions"], ["CloudNodeNotReady"], [], true],
-        ["persistentvolume-binder-controller", "PersistentVolumeClaim", ["API server available"], [], ["PersistentVolume", "PersistentVolumeClaim"], ["phase", "capacity"], ["ProvisioningSucceeded", "ProvisioningFailed"]],
-        ["persistent-volume-attach-detach-controller", "PersistentVolume", ["API server available"], [], ["PersistentVolume", "Node", "VolumeAttachment"], ["attached"], ["SuccessfulAttachVolume", "FailedAttachVolume"]],
-        ["persistent-volume-expander-controller", "PersistentVolumeClaim", ["API server available"], [], ["PersistentVolumeClaim", "PersistentVolume"], ["capacity", "conditions"], ["VolumeResizeSuccessful", "VolumeResizeFailed"]],
-        ["clusterrole-aggregation-controller", "ClusterRole", ["API server available"], [], ["ClusterRole"], ["rules"], ["ClusterRoleAggregated"]],
-        ["persistentvolumeclaim-protection-controller", "PersistentVolumeClaim", ["API server available"], [], ["PersistentVolumeClaim", "Pod"], ["finalizers"], ["PVCProtectionFinalizer"]],
-        ["persistent-volume-protection-controller", "PersistentVolume", ["API server available"], [], ["PersistentVolume"], ["finalizers"], ["PVProtectionFinalizer"]],
-        ["podgroup-protection-controller", "PodGroup", ["API server available"], ["GenericWorkload"], ["PodGroup", "Pod"], ["finalizers"], ["PodGroupProtectionFinalizer"]],
-        ["volume-attributes-class-protection-controller", "VolumeAttributesClass", ["API server available"], [], ["VolumeAttributesClass", "PersistentVolume"], ["finalizers"], ["VolumeAttributesClassProtectionFinalizer"]],
+        ["bootstrap-signer-controller", "ConfigMap", ["API server available"], [], %w[ConfigMap Secret], ["data"],
+         ["BootstrapSignerError"]],
+        ["token-cleaner-controller", "Secret", ["API server available"], [], %w[Secret ServiceAccount], ["deletion"], ["TokenCleaned"]],
+        ["node-ipam-controller", "Node", ["API server available"], [], %w[Node CIDR], %w[podCIDR conditions],
+         ["CIDRAssignmentFailed"]],
+        ["node-lifecycle-controller", "Node", ["API server available"], [], %w[Node Pod], %w[conditions taints],
+         %w[NodeNotReady NodeReady]],
+        ["taint-eviction-controller", "Node", ["API server available"], ["SeparateTaintEvictionController"], %w[Node Pod], ["taints"],
+         ["TaintManagerEviction"]],
+        ["device-taint-eviction-controller", "Node", ["API server available"], ["DynamicResourceAllocation"], %w[Node Pod], ["taints"],
+         ["DeviceTaintEviction"]],
+        ["service-lb-controller", "Service", ["cloud provider configured"], [], %w[Service Node LoadBalancer], ["loadBalancer"],
+         %w[EnsuringLoadBalancer EnsuredLoadBalancer DeletingLoadBalancer], [], true],
+        ["node-route-controller", "Node", ["cloud provider configured"], [], %w[Node Route], ["routes"],
+         %w[RouteCreated RouteDeleted], [], true],
+        ["cloud-node-lifecycle-controller", "Node", ["cloud provider configured"], [], ["Node"], ["conditions"], ["CloudNodeNotReady"], [],
+         true],
+        ["persistentvolume-binder-controller", "PersistentVolumeClaim", ["API server available"], [],
+         %w[PersistentVolume PersistentVolumeClaim], %w[phase capacity], %w[ProvisioningSucceeded ProvisioningFailed]],
+        ["persistent-volume-attach-detach-controller", "PersistentVolume", ["API server available"], [],
+         %w[PersistentVolume Node VolumeAttachment], ["attached"], %w[SuccessfulAttachVolume FailedAttachVolume]],
+        ["persistent-volume-expander-controller", "PersistentVolumeClaim", ["API server available"], [],
+         %w[PersistentVolumeClaim PersistentVolume], %w[capacity conditions], %w[VolumeResizeSuccessful VolumeResizeFailed]],
+        ["clusterrole-aggregation-controller", "ClusterRole", ["API server available"], [], ["ClusterRole"], ["rules"],
+         ["ClusterRoleAggregated"]],
+        ["persistentvolumeclaim-protection-controller", "PersistentVolumeClaim", ["API server available"], [],
+         %w[PersistentVolumeClaim Pod], ["finalizers"], ["PVCProtectionFinalizer"]],
+        ["persistent-volume-protection-controller", "PersistentVolume", ["API server available"], [], ["PersistentVolume"], ["finalizers"],
+         ["PVProtectionFinalizer"]],
+        ["podgroup-protection-controller", "PodGroup", ["API server available"], ["GenericWorkload"], %w[PodGroup Pod], ["finalizers"],
+         ["PodGroupProtectionFinalizer"]],
+        ["volume-attributes-class-protection-controller", "VolumeAttributesClass", ["API server available"], [],
+         %w[VolumeAttributesClass PersistentVolume], ["finalizers"], ["VolumeAttributesClassProtectionFinalizer"]],
         ["ttl-after-finished-controller", "Job", ["API server available"], [], ["Job"], ["deletion"], ["TTLExpired"]],
-        ["root-ca-certificate-publisher-controller", "ConfigMap", ["API server available"], [], ["Namespace", "ConfigMap"], ["data"], ["RootCACertificatePublisher"]],
-        ["kube-apiserver-serving-clustertrustbundle-publisher-controller", "ClusterTrustBundle", ["API server available", "ClusterTrustBundle API served"], ["ClusterTrustBundle"], ["ClusterTrustBundle", "ConfigMap"], ["data"], ["ClusterTrustBundlePublished"]],
-        ["ephemeral-volume-controller", "Pod", ["API server available"], ["GenericEphemeralVolume"], ["Pod", "PersistentVolumeClaim"], ["volume"], ["EphemeralVolumeCreated", "EphemeralVolumeFailed"]],
-        ["storageversion-garbage-collector-controller", "StorageVersion", ["API server available"], [], ["StorageVersion"], ["deletion"], ["StorageVersionGarbageCollected"]],
-        ["resourceclaim-controller", "ResourceClaim", ["API server available"], ["DynamicResourceAllocation"], ["ResourceClaim", "ResourceSlice", "Pod"], ["allocation", "reservedFor"], ["ResourceClaimAllocated", "ResourceClaimFailed"]],
-        ["resourcepoolstatusrequest-controller", "ResourcePoolStatusRequest", ["API server available"], ["DynamicResourceAllocation"], ["ResourcePoolStatusRequest", "ResourceSlice", "ResourceClaim"], ["status"], ["ResourcePoolStatusUpdated"]],
-        ["legacy-serviceaccount-token-cleaner-controller", "Secret", ["API server available"], [], ["Secret", "ServiceAccount"], ["deletion"], ["LegacyTokenCleaned"]],
-        ["validatingadmissionpolicy-status-controller", "ValidatingAdmissionPolicy", ["API server available"], ["ValidatingAdmissionPolicy"], ["ValidatingAdmissionPolicy", "ValidatingAdmissionPolicyBinding"], ["observedGeneration", "typeChecking"], ["ValidatingAdmissionPolicyStatusUpdated"]],
-        ["service-cidr-controller", "ServiceCIDR", ["API server available"], ["MultiCIDRServiceAllocator"], ["ServiceCIDR", "Node"], ["status"], ["ServiceCIDRUpdated"]],
-        ["storage-version-migrator-controller", "StorageVersionMigration", ["API server available"], ["StorageVersionMigrator"], ["StorageVersionMigration"], ["conditions"], ["MigrationSucceeded", "MigrationFailed"]],
-        ["selinux-warning-controller", "Pod", ["API server available"], ["SELinuxChangePolicy"], ["Pod", "Node"], ["conditions"], ["SELinuxWarning"]]
+        ["root-ca-certificate-publisher-controller", "ConfigMap", ["API server available"], [], %w[Namespace ConfigMap], ["data"],
+         ["RootCACertificatePublisher"]],
+        ["kube-apiserver-serving-clustertrustbundle-publisher-controller", "ClusterTrustBundle",
+         ["API server available", "ClusterTrustBundle API served"], ["ClusterTrustBundle"], %w[ClusterTrustBundle ConfigMap], ["data"], ["ClusterTrustBundlePublished"]],
+        ["ephemeral-volume-controller", "Pod", ["API server available"], ["GenericEphemeralVolume"], %w[Pod PersistentVolumeClaim],
+         ["volume"], %w[EphemeralVolumeCreated EphemeralVolumeFailed]],
+        ["storageversion-garbage-collector-controller", "StorageVersion", ["API server available"], [], ["StorageVersion"], ["deletion"],
+         ["StorageVersionGarbageCollected"]],
+        ["resourceclaim-controller", "ResourceClaim", ["API server available"], ["DynamicResourceAllocation"],
+         %w[ResourceClaim ResourceSlice Pod], %w[allocation reservedFor], %w[ResourceClaimAllocated ResourceClaimFailed]],
+        ["resourcepoolstatusrequest-controller", "ResourcePoolStatusRequest", ["API server available"], ["DynamicResourceAllocation"],
+         %w[ResourcePoolStatusRequest ResourceSlice ResourceClaim], ["status"], ["ResourcePoolStatusUpdated"]],
+        ["legacy-serviceaccount-token-cleaner-controller", "Secret", ["API server available"], [], %w[Secret ServiceAccount],
+         ["deletion"], ["LegacyTokenCleaned"]],
+        ["validatingadmissionpolicy-status-controller", "ValidatingAdmissionPolicy", ["API server available"],
+         ["ValidatingAdmissionPolicy"], %w[ValidatingAdmissionPolicy ValidatingAdmissionPolicyBinding], %w[observedGeneration typeChecking], ["ValidatingAdmissionPolicyStatusUpdated"]],
+        ["service-cidr-controller", "ServiceCIDR", ["API server available"], ["MultiCIDRServiceAllocator"], %w[ServiceCIDR Node],
+         ["status"], ["ServiceCIDRUpdated"]],
+        ["storage-version-migrator-controller", "StorageVersionMigration", ["API server available"], ["StorageVersionMigrator"],
+         ["StorageVersionMigration"], ["conditions"], %w[MigrationSucceeded MigrationFailed]],
+        ["selinux-warning-controller", "Pod", ["API server available"], ["SELinuxChangePolicy"], %w[Pod Node], ["conditions"],
+         ["SELinuxWarning"]]
       ].freeze
 
       ENTRIES = RAW_ENTRIES.map do |row|
@@ -204,21 +253,21 @@ module Rubernetes
 
       def register(definition, incomplete_reasons: [])
         raise ArgumentError, "controller definition is required" unless definition.is_a?(ControllerDefinition)
+
         reasons = Array(incomplete_reasons).map(&:to_s).reject(&:empty?).uniq
-        if reasons.any?
-          definition = definition.with_incomplete_reasons(reasons)
-        end
+        definition = definition.with_incomplete_reasons(reasons) if reasons.any?
         @mutex.synchronize do
           raise RegistrySealedError, "controller registry is sealed" if @sealed
           if @definitions.key?(definition.name)
             raise DuplicateControllerError, "controller #{definition.name.inspect} is already registered"
           end
+
           validate_definition!(definition)
           @definitions[definition.name] = definition
           definition.owns.each do |edge|
             @ownership_index.register(edge.owner, edge.dependent,
-                                       controller: edge.controller,
-                                       block_owner_deletion: edge.block_owner_deletion)
+                                      controller: edge.controller,
+                                      block_owner_deletion: edge.block_owner_deletion)
           end
         end
         definition
@@ -254,6 +303,7 @@ module Rubernetes
 
       def each(&block)
         return enum_for(__method__) unless block
+
         definitions.each(&block)
       end
 
@@ -335,17 +385,18 @@ module Rubernetes
       def resource_registered?(descriptor)
         return true if ResourceDescriptor::KNOWN.any? do |_kind, values|
           values[0] == descriptor.group && values[1] == descriptor.version &&
-            values[2] == descriptor.resource && values[3] == descriptor.scope
+          values[2] == descriptor.resource && values[3] == descriptor.scope
         end
+
         if @corpus.respond_to?(:descriptors_for)
           return true if @corpus.descriptors_for(descriptor.kind).any? do |expected|
             expected.gvk == descriptor.gvk && expected.gvr == descriptor.gvr && expected.scope == descriptor.scope
           end
-        else
-          return true if @corpus.entries.any? do |entry|
-            expected = ResourceDescriptor.parse(entry.kind)
-            expected.group == descriptor.group && expected.version == descriptor.version && expected.kind == descriptor.kind
-          end
+        elsif @corpus.entries.any? do |entry|
+          expected = ResourceDescriptor.parse(entry.kind)
+          expected.group == descriptor.group && expected.version == descriptor.version && expected.kind == descriptor.kind
+        end
+          return true
         end
         return false unless schema_registry
 
@@ -362,9 +413,8 @@ module Rubernetes
       end
 
       def validate_descriptor!(descriptor)
-        unless resource_registered?(descriptor)
-          raise UnknownGVKError, "unknown or unregistered GVK #{descriptor.identifier}"
-        end
+        raise UnknownGVKError, "unknown or unregistered GVK #{descriptor.identifier}" unless resource_registered?(descriptor)
+
         descriptor
       end
 
@@ -373,10 +423,9 @@ module Rubernetes
       def validate_definition!(definition)
         corpus_entry = @require_corpus ? @corpus.fetch(definition.name) : nil
         definition.validate!(corpus_entry: corpus_entry)
-        if @require_corpus
-          if corpus_entry && corpus_entry.descriptor != definition.kind
-            raise ValidationError, "controller #{definition.name.inspect} is registered for #{definition.kind.identifier}, expected #{corpus_entry.descriptor.identifier}"
-          end
+        if @require_corpus && corpus_entry && corpus_entry.descriptor != definition.kind
+          raise ValidationError,
+                "controller #{definition.name.inspect} is registered for #{definition.kind.identifier}, expected #{corpus_entry.descriptor.identifier}"
         end
         validate_descriptor!(definition.kind)
         definition.owns.each do |edge|
@@ -398,12 +447,11 @@ module Rubernetes
       end
 
       def validate_scope_edge!(owner, dependent)
-        if owner.cluster_scoped? && dependent.cluster_scoped?
-          return true
-        end
+        return true if owner.cluster_scoped? && dependent.cluster_scoped?
         if owner.namespaced? && dependent.cluster_scoped?
           raise ScopeMismatchError, "namespaced owner #{owner.identifier} cannot own cluster-scoped #{dependent.identifier}"
         end
+
         true
       end
 

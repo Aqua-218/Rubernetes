@@ -32,12 +32,13 @@ class NodeRemovedPodKillTest < Minitest::Test
     records["running"] = record("running")
     records["removed"] = record("removed", state: "Stopping", config_removed: true)
 
-    assert_equal ["running"], lifecycle.send(:admitted_pods).map { |item| item.dig("metadata", "uid") }
+    assert_equal(["running"], lifecycle.send(:admitted_pods).map { |item| item.dig("metadata", "uid") })
   end
 
   def test_the_kill_grace_period
     lifecycle = Lifecycle.new(runtime: Object.new)
     entry = record("p")
+
     assert_equal 80, lifecycle.send(:kill_grace_seconds, entry, pod("p"))
     assert_equal 0, lifecycle.send(:kill_grace_seconds, entry, pod("p", deletion_grace: 0))
     assert_equal 30, lifecycle.send(:kill_grace_seconds, entry, pod("p", deletion_grace: 30))
@@ -51,6 +52,7 @@ class NodeRemovedPodKillTest < Minitest::Test
     entry[:containers][0][:spec] = {"name" => "c", "lifecycle" => {"preStop" => {"sleep" => {"seconds" => 79}}}}
 
     lifecycle.send(:run_pre_stop_hooks, entry[:pod], entry, budget: 0)
+
     assert_empty slept, "a force delete runs no preStop hook"
 
     # runSleepHandler: cut off by the grace period, the hook fails (the
@@ -62,6 +64,7 @@ class NodeRemovedPodKillTest < Minitest::Test
 
     slept.clear
     lifecycle.send(:run_pre_stop_hooks, entry[:pod], entry, budget: 80)
+
     assert_equal [79], slept
   end
 
@@ -85,6 +88,7 @@ class NodeRemovedPodKillTest < Minitest::Test
               "spec" => {"nodeName" => "node-a"}}
     sync.process_event({"type" => "ADDED", "object" => object})
     sync.process_event({"type" => "DELETED", "object" => object})
+
     assert_equal ["uid-victim"], removed
   ensure
     3.times { blocker&.push(true) }
@@ -93,8 +97,10 @@ class NodeRemovedPodKillTest < Minitest::Test
   def test_pod_removed_takes_the_pod_out_of_admission
     lifecycle = Lifecycle.new(runtime: Object.new)
     lifecycle.instance_variable_get(:@records)["busy"] = record("busy", state: "Stopping")
+
     assert_equal 1, lifecycle.send(:admitted_pods).length
     lifecycle.pod_removed("busy")
+
     assert_empty lifecycle.send(:admitted_pods)
   end
 end

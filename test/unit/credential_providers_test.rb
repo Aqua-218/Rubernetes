@@ -31,7 +31,8 @@ class CredentialProvidersTest < Minitest::Test
 
   def config(dir, providers, file: "config.yaml")
     path = File.join(dir, file)
-    File.write(path, JSON.generate({"apiVersion" => "kubelet.config.k8s.io/v1", "kind" => "CredentialProviderConfig", "providers" => providers}))
+    File.write(path,
+               JSON.generate({"apiVersion" => "kubelet.config.k8s.io/v1", "kind" => "CredentialProviderConfig", "providers" => providers}))
     path
   end
 
@@ -47,17 +48,21 @@ class CredentialProvidersTest < Minitest::Test
     body
   end
 
-  def log(dir, name) = File.exist?(File.join(dir, "#{name}.log")) ? File.readlines(File.join(dir, "#{name}.log")).map { |line| JSON.parse(line) } : []
+  def log(dir, name)
+    File.exist?(File.join(dir, "#{name}.log")) ? File.readlines(File.join(dir, "#{name}.log")).map { |line| JSON.parse(line) } : []
+  end
 
   def test_a_matching_image_execs_the_plugin_and_caches_its_answer
     Dir.mktmpdir do |dir|
       write_plugin(dir, "ecr", response({"registry.example" => {"username" => "u", "password" => "p"}}))
       providers = CP.load(config_path: config(dir, [provider("ecr")]), bin_dir: dir)
       credentials = providers.lookup("registry.example/team/app:1")
-      assert_equal [["registry.example", "u", "p", nil]], credentials.map { |c| [c.registry, c.username, c.password, c.service_account] }
+
+      assert_equal([["registry.example", "u", "p", nil]], credentials.map { |c| [c.registry, c.username, c.password, c.service_account] })
       assert_equal [{"kind" => "CredentialProviderRequest", "apiVersion" => "credentialprovider.kubelet.k8s.io/v1",
                      "image" => "registry.example/team/app:1", "env" => "yes"}], log(dir, "ecr")
       providers.lookup("registry.example/other:2")
+
       assert_equal 1, log(dir, "ecr").length, "the Registry cache key served the second image"
       assert_empty providers.lookup("docker.io/library/busybox")
       assert_equal 1, log(dir, "ecr").length, "an unmatched image never runs the plugin"
@@ -76,10 +81,12 @@ class CredentialProvidersTest < Minitest::Test
       registry = Rubernetes::Observability::Metrics.new(apiserver: false, process: false, component: "kubelet")
       providers.metrics = registry
       providers.lookup("registry.example/app:1")
+
       assert_empty providers.lookup("other.example/app:1"), "a failing plugin gives no credentials"
       data = File.binread(path)
       expected = "sha256:#{Digest::SHA256.hexdigest([data.bytesize].pack("Q>") + data)}"
       text = registry.render
+
       assert_includes text, %(kubelet_credential_provider_config_info{hash="#{expected}"} 1)
       assert_includes text, %(kubelet_credential_provider_plugin_duration_count{plugin_name="ecr"} 1)
       assert_includes text, %(kubelet_credential_provider_plugin_errors_total{plugin_name="broken"} 1)
@@ -91,6 +98,7 @@ class CredentialProvidersTest < Minitest::Test
       write_plugin(dir, "p", response({"registry.example" => {"username" => "u", "password" => "p"}}, duration: "0s"))
       providers = CP.load(config_path: config(dir, [provider("p")]), bin_dir: dir)
       2.times { providers.lookup("registry.example/app") }
+
       assert_equal 2, log(dir, "p").length
     end
   end
@@ -111,9 +119,11 @@ class CredentialProvidersTest < Minitest::Test
                           token_requester: requester, service_account_reader: ->(ns, name) { accounts["#{ns}/#{name}"] })
       pod = {"metadata" => {"namespace" => "ns", "name" => "p", "uid" => "pod-uid"}, "spec" => {"serviceAccountName" => "builder"}}
       credential = providers.lookup("registry.example/app", pod: pod).first
+
       assert_equal({uid: "sa-uid", namespace: "ns", name: "builder"}, credential.service_account)
       assert_equal [["ns", "builder", "registry.example", "sa-uid", "p", "pod-uid"]], tokens
       request = log(dir, "wi").first
+
       assert_equal "token-1", request["serviceAccountToken"]
       assert_equal({"example.com/role" => "pull"}, request["serviceAccountAnnotations"])
       # A missing required annotation, or no ServiceAccount at all: nothing.
@@ -131,6 +141,7 @@ class CredentialProvidersTest < Minitest::Test
                           token_requester: ->(*_args, **_kw) { "the-token" },
                           service_account_reader: ->(_ns, _name) { {"metadata" => {"uid" => "u"}} })
       pod = {"metadata" => {"namespace" => "ns", "name" => "p", "uid" => "pu"}, "spec" => {"serviceAccountName" => "sa"}}
+
       assert_empty providers.lookup("registry.example/app", pod: pod)
     end
   end
@@ -143,6 +154,7 @@ class CredentialProvidersTest < Minitest::Test
       Dir.mkdir(configs)
       config(configs, [provider("a")], file: "10-a.yaml")
       config(configs, [provider("b")], file: "20-b.json")
+
       assert_equal %w[a b], CP.load(config_path: configs, bin_dir: dir).providers.map(&:name)
       config(configs, [provider("a")], file: "30-dup.yml")
       error = assert_raises(CP::ConfigError) { CP.load(config_path: configs, bin_dir: dir) }
@@ -151,12 +163,15 @@ class CredentialProvidersTest < Minitest::Test
     errors = CP.validate([{"name" => "../x", "apiVersion" => "v9", "matchImages" => [], "defaultCacheDuration" => "-1m",
                            "tokenAttributes" => {"cacheType" => "Forever", "requireServiceAccount" => false,
                                                  "requiredServiceAccountAnnotationKeys" => ["k"], "optionalServiceAccountAnnotationKeys" => ["k"]}}])
-    [/provider name cannot contain '\/'/, /apiVersion: Unsupported value/, /at least 1 item in matchImages/, /must be greater than or equal to 0/,
+
+    [%r{provider name cannot contain '/'}, /apiVersion: Unsupported value/, /at least 1 item in matchImages/, /must be greater than or equal to 0/,
      /serviceAccountTokenAudience: Required/, /requireServiceAccount cannot be false/, /cannot be both required and optional/,
-     /cacheType: Unsupported value: "Forever"/].each { |pattern| assert(errors.any? { |error| error.match?(pattern) }, pattern.inspect) }
+     /cacheType: Unsupported value: "Forever"/].each do |pattern|
+      assert(errors.any? { |error| error.match?(pattern) }, pattern.inspect)
+    end
     assert_includes CP.validate([]), "providers: Required value: at least 1 item in plugins is required"
     assert(CP.validate([provider("x", tokenAttributes: {"serviceAccountTokenAudience" => "a", "requireServiceAccount" => true,
-                                                         "cacheType" => "Token"})], sa_tokens: false)
+                                                        "cacheType" => "Token"})], sa_tokens: false)
              .any? { |error| error.include?("feature gate is disabled") })
     Dir.mktmpdir do |dir|
       assert_raises(CP::ConfigError) { CP.load(config_path: config(dir, [provider("missing")]), bin_dir: dir) }
@@ -182,11 +197,13 @@ class CredentialProvidersTest < Minitest::Test
       pod = {"metadata" => {"namespace" => "ns", "name" => "p", "uid" => "pu"}, "spec" => {"serviceAccountName" => "sa"}}
       keyring = Rubernetes::Node::ImageCredentials.new(providers: providers, pod: pod)
       credential = keyring.lookup("registry.example/app:1")
+
       assert_equal "oauth", credential.username
       assert_equal({service_account: {uid: "sa-u", namespace: "ns", name: "sa"}}, credential.pull_secret)
       assert_equal({uid: "sa-u", namespace: "ns", name: "sa"}, keyring.service_account_for("registry.example/app:1"))
       keyring.add_secret({"type" => "kubernetes.io/dockerconfigjson", "metadata" => {"name" => "s", "uid" => "su", "namespace" => "ns"},
                           "data" => {".dockerconfigjson" => [JSON.generate({"auths" => {"registry.example" => {"username" => "secret", "password" => "p"}}})].pack("m0")}})
+
       assert_equal "secret", keyring.lookup("registry.example/app:1").username
     end
   end

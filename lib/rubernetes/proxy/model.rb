@@ -52,7 +52,10 @@ module Rubernetes
       def deep_freeze(value)
         case value
         when Hash
-          value.each { |name, child| deep_freeze(name); deep_freeze(child) }
+          value.each do |name, child|
+            deep_freeze(name)
+            deep_freeze(child)
+          end
         when Array
           value.each { |child| deep_freeze(child) }
         end
@@ -65,7 +68,7 @@ module Rubernetes
 
       def bool(value, default = false)
         return default if value.nil?
-        return value if value == true || value == false
+        return value if [true, false].include?(value)
 
         %w[true yes 1].include?(value.to_s.downcase)
       end
@@ -167,7 +170,7 @@ module Rubernetes
 
       attr_reader :name, :port, :target_port, :protocol, :node_port, :app_protocol
 
-      def initialize(name: nil, port:, target_port: nil, protocol: "TCP", node_port: nil, app_protocol: nil)
+      def initialize(port:, name: nil, target_port: nil, protocol: "TCP", node_port: nil, app_protocol: nil)
         @name = name.to_s.empty? ? nil : name.to_s
         @port = Integer(port)
         @target_port = if target_port.nil? || target_port == ""
@@ -215,18 +218,14 @@ module Rubernetes
 
       def validate!
         raise ValidationError, "service port must be between 1 and 65535" unless port.between?(1, 65_535)
-        if target_port.is_a?(Integer) && !target_port.between?(1, 65_535)
-          raise ValidationError, "target port must be between 1 and 65535"
-        end
-        if name && !valid_port_name?(name)
-          raise ValidationError, "invalid service port name #{name.inspect}"
-        end
+        raise ValidationError, "target port must be between 1 and 65535" if target_port.is_a?(Integer) && !target_port.between?(1, 65_535)
+        raise ValidationError, "invalid service port name #{name.inspect}" if name && !valid_port_name?(name)
         if target_port.is_a?(String) && !valid_port_name?(target_port)
           raise ValidationError, "invalid named target port #{target_port.inspect}"
         end
-        if node_port && !node_port.between?(1, 65_535)
-          raise ValidationError, "node port must be between 1 and 65535"
-        end
+        return unless node_port && !node_port.between?(1, 65_535)
+
+        raise ValidationError, "node port must be between 1 and 65535"
       end
 
       def valid_port_name?(value)
@@ -261,7 +260,9 @@ module Rubernetes
                      health_check_node_port: nil, publish_not_ready_addresses: nil,
                      allocate_load_balancer_node_ports: nil, load_balancer_source_ranges: nil,
                      topology_aware_hints: nil, topology_hints: nil, **_options)
-        object = _options if object.nil? && (_options.key?(:metadata) || _options.key?("metadata") || _options.key?(:spec) || _options.key?("spec"))
+        if object.nil? && (_options.key?(:metadata) || _options.key?("metadata") || _options.key?(:spec) || _options.key?("spec"))
+          object = _options
+        end
         source = ModelSupport.string_keys(object || {})
         metadata = ModelSupport.key(source, "metadata", {})
         spec = ModelSupport.key(source, "spec", source)
@@ -280,17 +281,20 @@ module Rubernetes
         raw_cluster_ips = cluster_ips || (cluster_ip.nil? ? ModelSupport.key(spec, "clusterIPs", nil) : [cluster_ip])
         raw_cluster_ips = [ModelSupport.key(spec, "clusterIP", nil)] if raw_cluster_ips.nil?
         raw_cluster_ips = Array(raw_cluster_ips).reject { |value| value.nil? || value.to_s.empty? }
-        @cluster_ips = raw_cluster_ips.reject { |value| value.to_s.casecmp("none").zero? }.map { |value| ModelSupport.canonical_ip(value) }.compact.uniq.freeze
+        @cluster_ips = raw_cluster_ips.reject do |value|
+          value.to_s.casecmp("none").zero?
+        end.map { |value| ModelSupport.canonical_ip(value) }.compact.uniq.freeze
         primary_cluster_ip = cluster_ip.nil? ? ModelSupport.key(spec, "clusterIP", nil) : cluster_ip
         if primary_cluster_ip && !primary_cluster_ip.to_s.empty? && primary_cluster_ip.to_s.casecmp("none").nonzero?
           canonical_primary = ModelSupport.canonical_ip(primary_cluster_ip)
-          unless @cluster_ips.first == canonical_primary
-            raise ValidationError, "clusterIP must match the first clusterIPs entry"
-          end
+          raise ValidationError, "clusterIP must match the first clusterIPs entry" unless @cluster_ips.first == canonical_primary
         end
-        raw_ip_families = Array(ip_families || ModelSupport.key(spec, "ipFamilies", nil)).map { |family| ModelSupport.normalize_family(family) }
+        raw_ip_families = Array(ip_families || ModelSupport.key(spec, "ipFamilies", nil)).map do |family|
+          ModelSupport.normalize_family(family)
+        end
         raise ValidationError, "unsupported IP family" unless raw_ip_families.all? { |family| IP_FAMILIES.include?(family) }
         raise ValidationError, "service IP families must be unique" unless raw_ip_families.uniq.length == raw_ip_families.length
+
         @ip_families = raw_ip_families
         @ip_families = @cluster_ips.map { |ip| ModelSupport.ip_family(ip) } if @ip_families.empty? && @cluster_ips.any?
         @ip_families = @ip_families.uniq.freeze
@@ -298,25 +302,39 @@ module Rubernetes
         raw_ports = ports || ModelSupport.key(spec, "ports", [])
         @ports = Array(raw_ports).map { |entry| self.class.port_from(entry) }.sort.freeze
         raise ValidationError, "service must define at least one port" if @ports.empty? && @service_type != "ExternalName"
+
         ensure_unique_ports!
         @selector = ModelSupport.immutable(selector || ModelSupport.key(spec, "selector", {}) || {})
         @session_affinity = (session_affinity || ModelSupport.key(spec, "sessionAffinity", "None")).to_s
         raise ValidationError, "unsupported session affinity #{@session_affinity.inspect}" unless AFFINITIES.include?(@session_affinity)
+
         affinity_config = ModelSupport.key(ModelSupport.key(spec, "sessionAffinityConfig", {}) || {}, "clientIP", {}) || {}
-        timeout_value = session_affinity_timeout_seconds || session_affinity_timeout || ModelSupport.key(affinity_config, "timeoutSeconds", 10_800)
+        timeout_value = session_affinity_timeout_seconds || session_affinity_timeout || ModelSupport.key(affinity_config, "timeoutSeconds",
+                                                                                                         10_800)
         @session_affinity_timeout_seconds = ModelSupport.strict_integer(timeout_value, "session affinity timeout") || 10_800
-        raise ValidationError, "session affinity timeout must be between 1 and #{MAX_SESSION_AFFINITY_TIMEOUT}" unless @session_affinity_timeout_seconds.between?(1, MAX_SESSION_AFFINITY_TIMEOUT)
+        unless @session_affinity_timeout_seconds.between?(
+          1, MAX_SESSION_AFFINITY_TIMEOUT
+        )
+          raise ValidationError,
+                "session affinity timeout must be between 1 and #{MAX_SESSION_AFFINITY_TIMEOUT}"
+        end
 
         @internal_traffic_policy = (internal_traffic_policy || ModelSupport.key(spec, "internalTrafficPolicy", "Cluster")).to_s
         @external_traffic_policy = (external_traffic_policy || ModelSupport.key(spec, "externalTrafficPolicy", "Cluster")).to_s
         [@internal_traffic_policy, @external_traffic_policy].each do |policy|
           raise ValidationError, "unsupported traffic policy #{policy.inspect}" unless TRAFFIC_POLICIES.include?(policy)
         end
-        @external_ips = Array(external_ips || ModelSupport.key(spec, "externalIPs", [])).map { |ip| ModelSupport.canonical_ip(ip) }.compact.uniq.freeze
+        @external_ips = Array(external_ips || ModelSupport.key(spec, "externalIPs", [])).map do |ip|
+          ModelSupport.canonical_ip(ip)
+        end.compact.uniq.freeze
         status = ModelSupport.key(source, "status", {}) || {}
         ingress = Array(ModelSupport.key(ModelSupport.key(status, "loadBalancer", {}) || {}, "ingress", []) || {})
         status_load_balancer_ips = ingress.filter_map { |entry| ModelSupport.key(ModelSupport.string_keys(entry || {}), "ip", nil) }
-        @load_balancer_ips = Array(load_balancer_ips || ModelSupport.key(spec, "loadBalancerIPs", nil) || ModelSupport.key(spec, "loadBalancerIP", nil) || status_load_balancer_ips).map { |ip| ModelSupport.canonical_ip(ip) }.compact.uniq.freeze
+        @load_balancer_ips = Array(load_balancer_ips || ModelSupport.key(spec, "loadBalancerIPs",
+                                                                         nil) || ModelSupport.key(spec, "loadBalancerIP",
+                                                                                                  nil) || status_load_balancer_ips).map do |ip|
+          ModelSupport.canonical_ip(ip)
+        end.compact.uniq.freeze
         @external_name = (external_name || ModelSupport.key(spec, "externalName", nil))&.to_s
         health_port_value = health_check_node_port || ModelSupport.key(spec, "healthCheckNodePort", nil)
         @health_check_node_port = ModelSupport.strict_integer(health_port_value, "healthCheckNodePort")
@@ -324,12 +342,18 @@ module Rubernetes
           publish_not_ready_addresses.nil? ? ModelSupport.key(spec, "publishNotReadyAddresses", false) : publish_not_ready_addresses
         )
         @allocate_load_balancer_node_ports = ModelSupport.bool(
-          allocate_load_balancer_node_ports.nil? ? ModelSupport.key(spec, "allocateLoadBalancerNodePorts", true) : allocate_load_balancer_node_ports,
+          allocate_load_balancer_node_ports.nil? ? ModelSupport.key(spec, "allocateLoadBalancerNodePorts",
+                                                                    true) : allocate_load_balancer_node_ports,
           true
         )
-        @load_balancer_source_ranges = Array(load_balancer_source_ranges || ModelSupport.key(spec, "loadBalancerSourceRanges", [])).map(&:to_s).freeze
+        @load_balancer_source_ranges = Array(load_balancer_source_ranges || ModelSupport.key(spec, "loadBalancerSourceRanges",
+                                                                                             [])).map(&:to_s).freeze
         @topology_aware_hints = ModelSupport.bool(
-          topology_aware_hints.nil? ? (topology_hints.nil? ? true : topology_hints) : topology_aware_hints, true
+          if topology_aware_hints.nil?
+            topology_hints.nil? || topology_hints
+          else
+            topology_aware_hints
+          end, true
         )
         @raw = ModelSupport.immutable(source)
         validate_service!
@@ -398,7 +422,9 @@ module Rubernetes
         normalized_protocol = ModelSupport.normalize_protocol(protocol)
         candidates = ports.select { |candidate| candidate.protocol == normalized_protocol }
         candidates = candidates.select { |candidate| candidate.name == name.to_s } if name
-        candidates.find { |candidate| candidate.port == Integer(port) } || candidates.find { |candidate| candidate.node_port == Integer(port) }
+        candidates.find { |candidate| candidate.port == Integer(port) } || candidates.find do |candidate|
+          candidate.node_port == Integer(port)
+        end
       rescue ArgumentError, TypeError
         nil
       end
@@ -450,21 +476,19 @@ module Rubernetes
           raise ValidationError, "ExternalName must use a DNS name, not an IP address" if external_name_ip_address?
           raise ValidationError, "ExternalName contains an invalid DNS name" unless valid_external_name?
         end
-        if headless? && service_type == "LoadBalancer"
-          raise ValidationError, "LoadBalancer requires a cluster IP"
-        end
+        raise ValidationError, "LoadBalancer requires a cluster IP" if headless? && service_type == "LoadBalancer"
         if health_check_node_port && !health_check_node_port.between?(1, 65_535)
           raise ValidationError, "healthCheckNodePort must be between 1 and 65535"
         end
         if health_check_node_port && external_traffic_policy != "Local"
           raise ValidationError, "healthCheckNodePort requires externalTrafficPolicy Local"
         end
+
         # A headless Service has ipFamilies but no ClusterIP ("None" is
         # dropped above); only an allocated address list must line up.
         if ip_families.any? && cluster_ips.any?
-          if cluster_ips.length != ip_families.length
-            raise ValidationError, "clusterIPs and ipFamilies must have the same length"
-          end
+          raise ValidationError, "clusterIPs and ipFamilies must have the same length" if cluster_ips.length != ip_families.length
+
           cluster_ips.each_with_index do |ip, index|
             next if ModelSupport.ip_family(ip) == ip_families[index]
 
@@ -508,14 +532,18 @@ module Rubernetes
                      family: nil, slice_name: nil, port_name: nil, **_options)
         source = ModelSupport.string_keys(value || {})
         address ||= ip
-        raw_addresses = addresses || ModelSupport.key(source, "addresses", nil) || ModelSupport.key(source, "address", nil) || address || ModelSupport.key(source, "ip", nil)
+        raw_addresses = addresses || ModelSupport.key(source, "addresses",
+                                                      nil) || ModelSupport.key(source, "address",
+                                                                               nil) || address || ModelSupport.key(source, "ip", nil)
         @addresses = Array(raw_addresses).map(&:to_s).reject(&:empty?).map { |ip| ModelSupport.canonical_ip(ip) }.compact.freeze
         @address = (address || @addresses.first)&.to_s
         @address = ModelSupport.canonical_ip(@address) if @address
         raise ValidationError, "endpoint address is required" if @address.to_s.empty?
+
         @port = ModelSupport.integer(port || ModelSupport.key(source, "port", nil), nil)
         raise ValidationError, "endpoint port is required" if @port.nil?
         raise ValidationError, "endpoint port must be between 1 and 65535" unless @port.between?(1, 65_535)
+
         @protocol = ModelSupport.normalize_protocol(protocol || ModelSupport.key(source, "protocol", "TCP"))
         @port_name = (port_name || ModelSupport.key(source, "name", nil))&.to_s
         @node_name = (node_name || ModelSupport.key(source, "nodeName", ModelSupport.key(source, "node_name", nil)))&.to_s
@@ -531,10 +559,12 @@ module Rubernetes
         end.reject(&:empty?).uniq.freeze
         @family = ModelSupport.normalize_family(family || ModelSupport.key(source, "addressType", nil) || ModelSupport.ip_family(@address))
         raise ValidationError, "endpoint address family must be IPv4 or IPv6" unless Service::IP_FAMILIES.include?(@family)
+
         address_families = @addresses.map { |candidate| ModelSupport.ip_family(candidate) }.uniq
         if address_families.any? { |candidate| candidate != @family }
           raise ValidationError, "endpoint address does not match address family #{@family}"
         end
+
         @slice_name = slice_name&.to_s
         freeze
       end
@@ -643,7 +673,8 @@ module Rubernetes
       def target_ref_identity
         return "" unless target_ref.is_a?(Hash)
 
-        [ModelSupport.key(target_ref, "namespace", ""), ModelSupport.key(target_ref, "name", ""), ModelSupport.key(target_ref, "uid", "")].join("/")
+        [ModelSupport.key(target_ref, "namespace", ""), ModelSupport.key(target_ref, "name", ""),
+         ModelSupport.key(target_ref, "uid", "")].join("/")
       end
     end
 
@@ -654,7 +685,9 @@ module Rubernetes
 
       def initialize(object = nil, name: nil, namespace: nil, service_name: nil,
                      address_type: nil, ports: nil, endpoints: nil, **_options)
-        object = _options if object.nil? && (_options.key?(:metadata) || _options.key?("metadata") || _options.key?(:spec) || _options.key?("spec"))
+        if object.nil? && (_options.key?(:metadata) || _options.key?("metadata") || _options.key?(:spec) || _options.key?("spec"))
+          object = _options
+        end
         source = ModelSupport.string_keys(object || {})
         metadata = ModelSupport.key(source, "metadata", {})
         @name = (name || ModelSupport.key(metadata, "name", nil)).to_s
@@ -662,13 +695,15 @@ module Rubernetes
         @uid = ModelSupport.key(metadata, "uid", nil)&.to_s
         @resource_version = ModelSupport.key(metadata, "resourceVersion", nil)&.to_s
         labels = ModelSupport.key(metadata, "labels", {}) || {}
-        @service_name = (service_name || ModelSupport.key(labels, "kubernetes.io/service-name", nil) || ModelSupport.key(source, "serviceName", nil)).to_s
+        @service_name = (service_name || ModelSupport.key(labels, "kubernetes.io/service-name",
+                                                          nil) || ModelSupport.key(source, "serviceName", nil)).to_s
         raise ValidationError, "endpoint slice name is required" if @name.empty?
         raise ValidationError, "endpoint slice service name is required" if @service_name.empty?
 
         spec = ModelSupport.key(source, "spec", source)
         @address_type = ModelSupport.normalize_family(address_type || ModelSupport.key(spec, "addressType", "IPv4"))
         raise ValidationError, "endpoint slice addressType must be IPv4 or IPv6" unless %w[IPv4 IPv6].include?(@address_type)
+
         raw_ports = ports || ModelSupport.key(spec, "ports", [])
         @ports = ModelSupport.immutable(Array(raw_ports).map { |entry| ModelSupport.string_keys(entry || {}) })
         raw_endpoints = endpoints || ModelSupport.key(spec, "endpoints", [])
@@ -678,7 +713,7 @@ module Rubernetes
           @ports.flat_map do |port|
             addresses.map do |address|
               Endpoint.from_endpoint_slice(endpoint: source_endpoint.merge("addresses" => [address]), port: port,
-                                            slice: source, family: @address_type)
+                                           slice: source, family: @address_type)
             end
           end
         end.freeze
@@ -717,10 +752,13 @@ module Rubernetes
                      destination_port: nil, protocol: nil, node_name: nil, zone: nil,
                      external: nil, connection_id: nil, metadata: {}, **_options)
         source = ModelSupport.string_keys(value || {})
-        @source_ip = ModelSupport.canonical_ip(source_ip || ModelSupport.key(source, "sourceIP", ModelSupport.key(source, "srcIP", ModelSupport.key(source, "source", nil))))
+        @source_ip = ModelSupport.canonical_ip(source_ip || ModelSupport.key(source, "sourceIP",
+                                                                             ModelSupport.key(source, "srcIP", ModelSupport.key(source, "source", nil))))
         @source_port = ModelSupport.integer(source_port || ModelSupport.key(source, "sourcePort", ModelSupport.key(source, "srcPort", nil)))
-        @destination_ip = ModelSupport.canonical_ip(destination_ip || ModelSupport.key(source, "destinationIP", ModelSupport.key(source, "dstIP", ModelSupport.key(source, "destination", nil))))
-        @destination_port = ModelSupport.integer(destination_port || ModelSupport.key(source, "destinationPort", ModelSupport.key(source, "dstPort", nil)))
+        @destination_ip = ModelSupport.canonical_ip(destination_ip || ModelSupport.key(source, "destinationIP",
+                                                                                       ModelSupport.key(source, "dstIP", ModelSupport.key(source, "destination", nil))))
+        @destination_port = ModelSupport.integer(destination_port || ModelSupport.key(source, "destinationPort",
+                                                                                      ModelSupport.key(source, "dstPort", nil)))
         @protocol = ModelSupport.normalize_protocol(protocol || ModelSupport.key(source, "protocol", "TCP"))
         @node_name = (node_name || ModelSupport.key(source, "nodeName", ModelSupport.key(source, "node", nil)))&.to_s
         @zone = (zone || ModelSupport.key(source, "zone", nil))&.to_s
@@ -733,6 +771,7 @@ module Rubernetes
         raise ValidationError, "destination port is required" if @destination_port.nil?
         raise ValidationError, "source port must be between 0 and 65535" if @source_port && !@source_port.between?(0, 65_535)
         raise ValidationError, "destination port must be between 1 and 65535" unless @destination_port.between?(1, 65_535)
+
         freeze
       end
 

@@ -52,32 +52,32 @@ module Rubernetes
       end
 
       class BadRequest < Error
-        def initialize(message, **options)
-          super(message: message, code: 400, reason: REASONS.fetch(:bad_request), **options)
+        def initialize(message, **)
+          super(message: message, code: 400, reason: REASONS.fetch(:bad_request), **)
         end
       end
 
       class AlreadyExists < Error
-        def initialize(message, **options)
-          super(message: message, code: 409, reason: REASONS.fetch(:already_exists), **options)
+        def initialize(message, **)
+          super(message: message, code: 409, reason: REASONS.fetch(:already_exists), **)
         end
       end
 
       class Conflict < Error
-        def initialize(message, **options)
-          super(message: message, code: 409, reason: REASONS.fetch(:conflict), **options)
+        def initialize(message, **)
+          super(message: message, code: 409, reason: REASONS.fetch(:conflict), **)
         end
       end
 
       class Forbidden < Error
-        def initialize(message, **options)
-          super(message: message, code: 403, reason: REASONS.fetch(:forbidden), **options)
+        def initialize(message, **)
+          super(message: message, code: 403, reason: REASONS.fetch(:forbidden), **)
         end
       end
 
       class Unauthorized < Error
-        def initialize(message, **options)
-          super(message: message, code: 401, reason: REASONS.fetch(:unauthorized), **options)
+        def initialize(message, **)
+          super(message: message, code: 401, reason: REASONS.fetch(:unauthorized), **)
         end
       end
 
@@ -95,8 +95,8 @@ module Rubernetes
       end
 
       class Gone < Error
-        def initialize(message, **options)
-          super(message: message, code: 410, reason: REASONS.fetch(:gone), **options)
+        def initialize(message, **)
+          super(message: message, code: 410, reason: REASONS.fetch(:gone), **)
         end
       end
 
@@ -104,61 +104,61 @@ module Rubernetes
       # watch/list history. Kubernetes uses the Expired reason for this
       # condition so clients know that a fresh list is required.
       class Expired < Error
-        def initialize(message, **options)
-          super(message: message, code: 410, reason: REASONS.fetch(:expired), **options)
+        def initialize(message, **)
+          super(message: message, code: 410, reason: REASONS.fetch(:expired), **)
         end
       end
 
       class Invalid < Error
-        def initialize(message, **options)
-          super(message: message, code: 422, reason: REASONS.fetch(:invalid), **options)
+        def initialize(message, **)
+          super(message: message, code: 422, reason: REASONS.fetch(:invalid), **)
         end
       end
 
       class MethodNotAllowed < Error
-        def initialize(message, **options)
-          super(message: message, code: 405, reason: REASONS.fetch(:method_not_allowed), **options)
+        def initialize(message, **)
+          super(message: message, code: 405, reason: REASONS.fetch(:method_not_allowed), **)
         end
       end
 
       class NotFound < Error
-        def initialize(message, **options)
-          super(message: message, code: 404, reason: REASONS.fetch(:not_found), **options)
+        def initialize(message, **)
+          super(message: message, code: 404, reason: REASONS.fetch(:not_found), **)
         end
       end
 
       # No representation acceptable to the client can be produced (Accept
       # negotiation failed or the object cannot be converted as requested).
       class NotAcceptable < Error
-        def initialize(message, **options)
-          super(message: message, code: 406, reason: REASONS.fetch(:not_acceptable), **options)
+        def initialize(message, **)
+          super(message: message, code: 406, reason: REASONS.fetch(:not_acceptable), **)
         end
       end
 
       class NotImplemented < Error
-        def initialize(message, **options)
-          super(message: message, code: 501, reason: REASONS.fetch(:not_implemented), **options)
+        def initialize(message, **)
+          super(message: message, code: 501, reason: REASONS.fetch(:not_implemented), **)
         end
       end
 
       class ServiceUnavailable < Error
-        def initialize(message, **options)
-          super(message: message, code: 503, reason: REASONS.fetch(:service_unavailable), **options)
+        def initialize(message, **)
+          super(message: message, code: 503, reason: REASONS.fetch(:service_unavailable), **)
         end
       end
 
       class UnsupportedMediaType < Error
-        def initialize(message, **options)
-          super(message: message, code: 415, reason: REASONS.fetch(:unsupported_media_type), **options)
+        def initialize(message, **)
+          super(message: message, code: 415, reason: REASONS.fetch(:unsupported_media_type), **)
         end
       end
 
       # errors.NewInternalError: "Internal error occurred: <err>", the error
       # repeated as the only cause.
       class InternalError < Error
-        def initialize(message, **options)
+        def initialize(message, **)
           super(message: "Internal error occurred: #{message}", code: 500, reason: "InternalError",
-                details: {"causes" => [{"message" => message.to_s}]}, **options)
+                details: {"causes" => [{"message" => message.to_s}]}, **)
         end
       end
 

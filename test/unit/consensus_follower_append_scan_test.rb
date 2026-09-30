@@ -17,7 +17,10 @@ class ConsensusFollowerAppendScanTest < Minitest::Test
     followers = cluster.processes.values.map(&:node).reject { |node| node.id == leader.id }
     scans = Hash.new(0)
     followers.each do |node|
-      node.define_singleton_method(:membership_from_log) { |fallback| scans[id] += 1; super(fallback) }
+      node.define_singleton_method(:membership_from_log) do |fallback|
+        scans[id] += 1
+        super(fallback)
+      end
     end
     20.times do |index|
       leader.propose({"type" => "create", "key" => "k/#{index}", "object" => {"metadata" => {"name" => "o#{index}"}},
@@ -25,6 +28,7 @@ class ConsensusFollowerAppendScanTest < Minitest::Test
       cluster.run(0.05)
     end
     cluster.run(0.3)
+
     followers.each { |node| assert_equal 21, node.commit_index }
     assert_equal({}, scans.to_h, "no follower rescanned its log for plain appends")
   ensure

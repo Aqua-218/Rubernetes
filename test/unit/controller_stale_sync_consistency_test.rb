@@ -61,23 +61,28 @@ class ControllerStaleSyncConsistencyTest < Minitest::Test
 
     fresh = adapter.find(descriptor, name: "build", namespace: "default")
     result = controller.reconcile(fresh, store: adapter, apply: true)
+
     assert result.applied
     written = Controller::StoreAdapter.new(store).find(descriptor, name: "build", namespace: "default")
+
     assert_equal 1, written.dig("status", "active")
     refute_equal fresh.dig("metadata", "resourceVersion"), written.dig("metadata", "resourceVersion")
 
     # The informer still holds the pre-write copy: skip, count, retry soon.
     adapter.cached = fresh
     skipped = controller.reconcile(fresh, store: adapter, apply: true)
+
     refute skipped.applied
     assert_in_delta 0.1, skipped.requeue_after, 0.001
     assert_equal 1, Controller::StoreAdapter.new(store).find(descriptor, name: "build", namespace: "default").dig("status", "active")
     text = @metrics.render_own
+
     assert_match(/job_controller_stale_sync_skips_total\{group="batch",resource="jobs"\} 1/, text)
 
     # Once the informer delivers the written revision the sync runs again.
     adapter.cached = nil
     result = controller.reconcile(written, store: adapter, apply: true)
+
     assert result.applied
     assert_equal 2, Controller::StoreAdapter.new(store).find(descriptor, name: "build", namespace: "default").dig("status", "active")
   end
@@ -90,6 +95,7 @@ class ControllerStaleSyncConsistencyTest < Minitest::Test
     controller = controller_class.new(store: store, name: "custom-controller")
     fresh = adapter.find(descriptor, name: "other", namespace: "default")
     controller.reconcile(fresh, store: store, apply: true)
+
     assert controller.reconcile(fresh, store: store, apply: true).applied
   end
 end

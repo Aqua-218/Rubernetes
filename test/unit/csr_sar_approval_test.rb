@@ -52,8 +52,10 @@ class CSRSARApprovalTest < Minitest::Test
   def test_a_node_renewing_its_own_certificate_is_approved_as_selfnodeclient
     client = Client.new([["system:node:worker-0", "selfnodeclient"]])
     result = controller.plan(csr("system:node:worker-0"), store: Store.new(client))
+
     assert_equal "Auto approving self kubelet client certificate after SubjectAccessReview.", approval(result)["message"]
     review = client.reviews.first
+
     assert_equal "system:node:worker-0", review["user"]
     assert_equal "requester-uid", review["uid"]
     assert_equal ["system:nodes", "system:authenticated"], review["groups"]
@@ -64,6 +66,7 @@ class CSRSARApprovalTest < Minitest::Test
   def test_a_bootstrap_requester_is_approved_as_nodeclient
     client = Client.new([["system:bootstrap:abcdef", "nodeclient"]])
     result = controller.plan(csr("system:bootstrap:abcdef"), store: Store.new(client))
+
     assert_equal "Auto approving kubelet client certificate after SubjectAccessReview.", approval(result)["message"]
     assert_equal ["nodeclient"], client.reviews.map { |review| review.dig("resourceAttributes", "subresource") },
                  "selfnodeclient is only tried when the requester is the CN"
@@ -71,8 +74,9 @@ class CSRSARApprovalTest < Minitest::Test
 
   def test_an_unauthorized_request_is_left_alone
     client = Client.new([])
+
     assert_empty controller.plan(csr("system:node:worker-0"), store: Store.new(client)).operations
-    assert_equal %w[selfnodeclient nodeclient], client.reviews.map { |review| review.dig("resourceAttributes", "subresource") }
+    assert_equal(%w[selfnodeclient nodeclient], client.reviews.map { |review| review.dig("resourceAttributes", "subresource") })
     assert_empty controller.plan(csr("system:node:worker-0")).operations, "no API client: no approval"
   end
 end

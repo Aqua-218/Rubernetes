@@ -38,8 +38,10 @@ class EndpointSlicePlaceholderTest < Minitest::Test
     result = reconcile(service)
 
     created = creates(result)
+
     assert_equal 1, created.length, "a Service with a selector must own a placeholder slice"
     slice = created.first.object
+
     assert_equal "ns", slice.dig("metadata", "namespace")
     assert_equal "example-empty-selector", slice.dig("metadata", "labels", "kubernetes.io/service-name")
     assert_empty Array(slice["endpoints"])
@@ -71,6 +73,7 @@ class EndpointSlicePlaceholderTest < Minitest::Test
     result = reconcile(service(selector: {"app" => "demo"}), pods: [pod])
 
     created = creates(result)
+
     assert_equal 1, created.length
     refute_empty Array(created.first.object["endpoints"]),
                  "a Service with a matching Pod must get a real slice"
@@ -85,7 +88,7 @@ class EndpointSlicePlaceholderTest < Minitest::Test
                                          "containers" => [{"name" => "c", "ports" => [{"containerPort" => 80}]}]},
                               "status" => {"podIP" => "10.0.0.5", "phase" => "Running",
                                            "conditions" => [{"type" => "Ready", "status" => "True"}]}}])
-              .operations.first.object
+      .operations.first.object
 
     # The Pod is gone now: the populated slice goes and a placeholder arrives.
     result = reconcile(service(selector: {"app" => "demo"}), pods: [], slices: [stale])
@@ -105,10 +108,12 @@ class EndpointSlicePlaceholderTest < Minitest::Test
                             "labels" => {"kubernetes.io/service-name" => "example-empty-selector",
                                          "endpointslice.kubernetes.io/managed-by" => "endpointslice-controller.k8s.io"}}}
     result = Controller.new.plan(slice, store: MissingServiceStore.new)
+
     assert_equal [:delete], result.operations.map(&:action)
 
     foreign = Rubernetes::Controller::Support.deep_copy(slice)
     foreign["metadata"]["labels"]["endpointslice.kubernetes.io/managed-by"] = "someone-else"
+
     assert_empty Controller.new.plan(foreign, store: MissingServiceStore.new).operations
   end
 end

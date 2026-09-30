@@ -121,8 +121,14 @@ module KubernetesDefaultsImporter
     # Comments in the default-on list occasionally differ in case from the
     # canonical plugin name; resolve them against the ordered list.
     canonical = order.to_h { |name| [name.downcase, name] }
-    on = default_on.scan(%r{//\s*([A-Za-z0-9]+)}).flatten.map { |name| canonical.fetch(name.downcase) { raise "unknown default-on plugin #{name}" } }
-    conditional = text.scan(/if utilfeature\.DefaultFeatureGate\.Enabled\(\w+\.(\w+)\) \{\n\s*defaultOnPlugins\.Insert\(\w+\.PluginName\) \/\/ ([A-Za-z0-9]+)/).map { |gate, plugin| {"plugin" => plugin, "feature_gate" => gate} }
+    on = default_on.scan(%r{//\s*([A-Za-z0-9]+)}).flatten.map do |name|
+      canonical.fetch(name.downcase) do
+        raise "unknown default-on plugin #{name}"
+      end
+    end
+    conditional = text.scan(%r{if utilfeature\.DefaultFeatureGate\.Enabled\(\w+\.(\w+)\) \{\n\s*defaultOnPlugins\.Insert\(\w+\.PluginName\) // ([A-Za-z0-9]+)}).map do |gate, plugin|
+      {"plugin" => plugin, "feature_gate" => gate}
+    end
     {"schema_version" => 1, "kubernetes" => {"tag" => "v1.36.2", "commit" => EXPECTED_COMMIT},
      "source" => {"path" => PLUGINS_FILE, "sha256" => digest(PLUGINS_FILE)},
      "ordered_plugins" => order, "default_on" => on, "default_on_when_gate_enabled" => conditional,

@@ -23,6 +23,7 @@ class M6GateTest < Minitest::Test
 
   def test_missing_manifest_fails_closed
     result = M6Gate.evaluate(File.join(Dir.tmpdir, "rubernetes-m6-missing-#{Process.pid}.json"))
+
     refute result.fetch("passed")
     assert_operator result.fetch("error_count"), :>, 0
   end
@@ -32,9 +33,11 @@ class M6GateTest < Minitest::Test
       path = File.join(directory, "manifest.json")
       File.write(path, JSON.generate(base_manifest))
       result = M6Gate.evaluate(path)
+
       refute result.fetch("passed")
       errors = result.fetch("errors")
-      assert errors.any? { |error| error.include?("M5") }
+
+      assert(errors.any? { |error| error.include?("M5") })
       M6Gate::REPORTS.each_value do |specification|
         assert errors.any? { |error| error.include?(specification.fetch(:names).first) }, specification.inspect
       end
@@ -47,7 +50,8 @@ class M6GateTest < Minitest::Test
       manifest = base_manifest
       manifest["host"]["architecture"] = "aarch64"
       File.write(path, JSON.generate(manifest))
-      assert M6Gate.evaluate(path).fetch("errors").any? { |error| error.include?("x86_64") }
+
+      assert(M6Gate.evaluate(path).fetch("errors").any? { |error| error.include?("x86_64") })
     end
   end
 
@@ -58,12 +62,13 @@ class M6GateTest < Minitest::Test
   end
 
   def sources
-    [{"path" => "lib/rubernetes/api/server.rb", "sha256" => Digest::SHA256.file(File.expand_path("../../lib/rubernetes/api/server.rb", __dir__)).hexdigest}]
+    [{"path" => "lib/rubernetes/api/server.rb",
+      "sha256" => Digest::SHA256.file(File.expand_path("../../lib/rubernetes/api/server.rb", __dir__)).hexdigest}]
   end
 
   def oracle
     {"executed" => true, "kubernetes_version" => "v1.36.2", "source_commit" => "abc", "kube_apiserver_image" => "registry.k8s.io/kube-apiserver@sha256:1",
-     "etcd_image" => "registry.k8s.io/etcd@sha256:2", "container_execution" => [{"argv" => ["docker", "run"]}]}
+     "etcd_image" => "registry.k8s.io/etcd@sha256:2", "container_execution" => [{"argv" => %w[docker run]}]}
   end
 
   def manifest_identity
@@ -76,7 +81,8 @@ class M6GateTest < Minitest::Test
     errors = []
     M6Gate.send(:validate_report, "crd", report("m6_crd_aggregation_differential", cases, "measurement_level" => "differentially_tested", "oracle" => oracle, "sources" => sources),
                 "m6_crd_aggregation_differential", manifest_identity, errors)
-    assert errors.any? { |error| error.include?("create_ok") && error.include?("differ") }
+
+    assert(errors.any? { |error| error.include?("create_ok") && error.include?("differ") })
   end
 
   def test_differential_without_oracle_execution_is_rejected
@@ -84,7 +90,8 @@ class M6GateTest < Minitest::Test
     errors = []
     M6Gate.send(:validate_report, "webhook", report("m6_webhook_differential", cases, "measurement_level" => "differentially_tested", "docker_gateway" => "172.17.0.1", "sources" => sources),
                 "m6_webhook_differential", manifest_identity, errors)
-    assert errors.any? { |error| error.include?("oracle") }
+
+    assert(errors.any? { |error| error.include?("oracle") })
   end
 
   def test_feature_gate_profile_with_differences_is_rejected
@@ -93,20 +100,24 @@ class M6GateTest < Minitest::Test
     cases << {"id" => "gate_corpus", "passed" => true, "gate_count" => 225}
     errors = []
     M6Gate.send(:validate_report, "feature_gate", report("m6_feature_gate_matrix", cases, "measurement_level" => "differentially_tested",
-                                                          "profiles" => {"default" => [], "all-beta" => [], "alpha-apis" => []}, "sources" => sources),
+                                                                                          "profiles" => {"default" => [], "all-beta" => [], "alpha-apis" => []}, "sources" => sources),
                 "m6_feature_gate_matrix", manifest_identity, errors)
-    assert errors.any? { |error| error.include?("profile-default") }
+
+    assert(errors.any? { |error| error.include?("profile-default") })
   end
 
   def test_fuzz_summary_with_a_panic_is_rejected
     cases = Array.new(110) { |index| {"id" => "random-#{index}", "passed" => true} }
-    %w[body-invalid_utf8-post body-oversized-post body-duplicate_keys-post body-deep_nesting-post negotiation-0 path-1].each { |id| cases << {"id" => id, "passed" => true} }
+    %w[body-invalid_utf8-post body-oversized-post body-duplicate_keys-post body-deep_nesting-post negotiation-0 path-1].each do |id|
+      cases << {"id" => id, "passed" => true}
+    end
     6.times { |index| cases << {"id" => "bypass-#{index}", "passed" => true} }
     errors = []
     M6Gate.send(:validate_report, "fuzz", report("m6_fuzz_summary", cases, "measurement_level" => "integration_tested", "seed" => 1, "panics" => 1, "hangs" => 0,
-                                                  "policy_bypasses" => 0, "crash_corpus" => [], "sources" => sources),
+                                                                           "policy_bypasses" => 0, "crash_corpus" => [], "sources" => sources),
                 "m6_fuzz_summary", manifest_identity, errors)
-    assert errors.any? { |error| error.include?("panics") }
+
+    assert(errors.any? { |error| error.include?("panics") })
   end
 
   def test_security_trace_with_wrong_stage_order_is_rejected
@@ -117,18 +128,22 @@ class M6GateTest < Minitest::Test
     cases.find { |entry| entry["id"] == "invalid_credentials_stop_at_authentication" }["status"] = 401
     errors = []
     M6Gate.send(:validate_report, "security", report("m6_security_pipeline_trace", cases, "measurement_level" => "integration_tested",
-                                                      "specified_order" => Array.new(13) { |index| "stage#{index}" }, "sources" => sources),
+                                                                                          "specified_order" => Array.new(13) do |index|
+                                                                                            "stage#{index}"
+                                                                                          end, "sources" => sources),
                 "m6_security_pipeline_trace", manifest_identity, errors)
-    assert errors.any? { |error| error.include?("stage order") }
+
+    assert(errors.any? { |error| error.include?("stage order") })
   end
 
   def test_source_digest_mismatch_is_rejected
     cases = [{"id" => "gate_corpus", "passed" => true, "gate_count" => 225}] + M6Gate::FEATURE_PROFILES.map { |id| {"id" => id, "passed" => true, "difference_count" => 0, "differences" => [], "documents_compared" => 60} }
     errors = []
     M6Gate.send(:validate_report, "feature_gate", report("m6_feature_gate_matrix", cases, "measurement_level" => "differentially_tested",
-                                                          "profiles" => {"default" => [], "all-beta" => [], "alpha-apis" => []},
-                                                          "sources" => [{"path" => "lib/rubernetes/api/server.rb", "sha256" => "1" * 64}]),
+                                                                                          "profiles" => {"default" => [], "all-beta" => [], "alpha-apis" => []},
+                                                                                          "sources" => [{"path" => "lib/rubernetes/api/server.rb", "sha256" => "1" * 64}]),
                 "m6_feature_gate_matrix", manifest_identity, errors)
-    assert errors.any? { |error| error.include?("digest does not match") }
+
+    assert(errors.any? { |error| error.include?("digest does not match") })
   end
 end

@@ -33,7 +33,11 @@ module M8ProbeSupport
   # Every conformance run manifest under the run root, newest first.
   def run_manifests
     Dir.glob(File.join(RUN_ROOT, "*", "manifest.json")).sort.reverse.filter_map do |path|
-      document = JSON.parse(File.read(path)) rescue nil
+      document = begin
+        JSON.parse(File.read(path))
+      rescue StandardError
+        nil
+      end
       document && document.merge("_path" => path.delete_prefix("#{ROOT}/"))
     end
   end
@@ -43,7 +47,7 @@ module M8ProbeSupport
   end
 
   def profiles
-    YAML.safe_load(File.read(File.join(ROOT, "test/conformance/kubernetes/profiles.yml")))
+    YAML.safe_load_file(File.join(ROOT, "test/conformance/kubernetes/profiles.yml"))
   end
 
   # The spec requires N consecutive clean runs per profile; a failed or
@@ -52,7 +56,7 @@ module M8ProbeSupport
   def consecutive_clean_runs(lane)
     required = profiles.fetch("consecutive_clean_runs")
     by_profile = Hash.new { |hash, key| hash[key] = [] }
-    run_manifests.reverse.each do |manifest|
+    run_manifests.reverse_each do |manifest|
       profile = manifest["profile"]
       next if profile.nil?
 

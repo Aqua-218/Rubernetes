@@ -108,6 +108,7 @@ class EvictionDisruptionBudgetTest < Minitest::Test
     end
     store = Store.new([budget])
     server_for(store).send(:check_disruption_budgets!, "ns", pod("app" => "elsewhere"))
+
     assert_empty store.updates
   end
 

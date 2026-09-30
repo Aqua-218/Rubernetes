@@ -5,7 +5,7 @@ require "open3"
 require "rbconfig"
 
 class ProxyNftablesKernelTest < Minitest::Test
-  KERNEL_SCRIPT = <<~'RUBY'.freeze
+  KERNEL_SCRIPT = <<~'RUBY'
     require "rubernetes/proxy"
 
     begin
@@ -45,13 +45,12 @@ class ProxyNftablesKernelTest < Minitest::Test
     output, error, status = Open3.capture3(
       "unshare", "-n", "--", RbConfig.ruby, "-Ilib", "-e", KERNEL_SCRIPT
     )
-    if status.exitstatus == 77 && error.start_with?("SKIP:")
-      skip error.strip
-    end
+    skip error.strip if status.exitstatus == 77 && error.start_with?("SKIP:")
     if !status.success? && error.match?(/Operation not permitted|Permission denied/i)
       skip "missing CAP_SYS_ADMIN/CAP_NET_ADMIN for isolated nftables test: #{error.strip}"
     end
-    assert status.success?, "isolated nftables kernel script failed: #{error.empty? ? output : error}"
+
+    assert_predicate status, :success?, "isolated nftables kernel script failed: #{error.empty? ? output : error}"
     assert_includes output, "isolated-nft-ok"
   rescue Errno::ENOENT => exception
     flunk "unshare is required for the isolated nftables integration test: #{exception.message}"

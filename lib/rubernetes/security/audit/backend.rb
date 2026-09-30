@@ -22,7 +22,8 @@ module Rubernetes
                                                            help: "Counter of audit events generated and sent to the audit backend.")
           registry.register("apiserver_audit_error_total", type: :counter,
                                                            help: "Counter of audit events that failed to be audited properly. Plugin identifies the plugin affected by the error.")
-          registry.register("apiserver_audit_level_total", type: :counter, help: "Counter of policy levels for audit events (1 per request).")
+          registry.register("apiserver_audit_level_total", type: :counter,
+                                                           help: "Counter of policy levels for audit events (1 per request).")
           registry.register("apiserver_audit_requests_rejected_total", type: :counter,
                                                                        help: "Counter of apiserver requests rejected due to an error in audit logging backend.")
         end
@@ -53,6 +54,7 @@ module Rubernetes
       # unnoticed.
       class LogBackend
         include BackendMetrics
+
         attr_reader :path, :dropped, :written
 
         def initialize(path:, max_queue: 10_000, overflow_path: nil, fsync: false)
@@ -280,6 +282,7 @@ module Rubernetes
 
       class MemoryBackend
         include BackendMetrics
+
         attr_reader :events
 
         def initialize

@@ -90,11 +90,9 @@ module Rubernetes
       end
 
       def socket_available?
-        begin
-          File.lstat(@socket).socket?
-        rescue Errno::ENOENT
-          false
-        end
+        File.lstat(@socket).socket?
+      rescue Errno::ENOENT
+        false
       end
 
       def close
@@ -106,7 +104,7 @@ module Rubernetes
 
       def probe
         response = rpc(:identity, :probe, Csi::V1::ProbeRequest.new, response_class: Csi::V1::ProbeResponse,
-                       operation: "Probe", mutating: false)
+                                                                     operation: "Probe", mutating: false)
         {"ready" => response.ready ? response.ready.value : true}
       end
 
@@ -174,18 +172,19 @@ module Rubernetes
         source = content_source_for(spec)
         request.volume_content_source = source if source
         response = rpc(:controller, :create_volume, request, response_class: Csi::V1::CreateVolumeResponse,
-                       operation: "CreateVolume")
+                                                             operation: "CreateVolume")
         volume = response.volume
         raise CSIError.new("CSI CreateVolume returned no volume", operation: "CreateVolume") unless volume
+
         volume_hash(volume).merge("volume" => volume_hash(volume))
       end
 
       def delete_volume(id, token:, secrets: {})
         ensure_controller_rpc!("CREATE_DELETE_VOLUME", "DeleteVolume")
         request = Csi::V1::DeleteVolumeRequest.new(volume_id: required_identifier(id, "volume id"),
-                                                    secrets: string_map(secrets, "secrets"))
+                                                   secrets: string_map(secrets, "secrets"))
         rpc(:controller, :delete_volume, request, response_class: Csi::V1::DeleteVolumeResponse,
-            operation: "DeleteVolume", idempotent_absent: true)
+                                                  operation: "DeleteVolume", idempotent_absent: true)
         {}
       end
 
@@ -230,18 +229,19 @@ module Rubernetes
           secrets: string_map(secrets, "secrets"), parameters: string_map(parameters, "parameters")
         )
         response = rpc(:controller, :create_snapshot, request, response_class: Csi::V1::CreateSnapshotResponse,
-                       operation: "CreateSnapshot")
+                                                               operation: "CreateSnapshot")
         snapshot = response.snapshot
         raise CSIError.new("CSI CreateSnapshot returned no snapshot", operation: "CreateSnapshot") unless snapshot
+
         snapshot_hash(snapshot).merge("snapshot" => snapshot_hash(snapshot))
       end
 
       def delete_snapshot(id, token: nil, secrets: {})
         ensure_controller_rpc!("CREATE_DELETE_SNAPSHOT", "DeleteSnapshot")
         request = Csi::V1::DeleteSnapshotRequest.new(snapshot_id: required_identifier(id, "snapshot id"),
-                                                      secrets: string_map(secrets, "secrets"))
+                                                     secrets: string_map(secrets, "secrets"))
         rpc(:controller, :delete_snapshot, request, response_class: Csi::V1::DeleteSnapshotResponse,
-            operation: "DeleteSnapshot", idempotent_absent: true)
+                                                    operation: "DeleteSnapshot", idempotent_absent: true)
         {}
       end
 
@@ -250,13 +250,14 @@ module Rubernetes
         ensure_controller_rpc!("LIST_SNAPSHOTS", "ListSnapshots")
         max_entries = Integer(max_entries || 0)
         raise ValidationError, "ListSnapshots max_entries must be non-negative" if max_entries.negative?
+
         request = Csi::V1::ListSnapshotsRequest.new(
           max_entries: max_entries, starting_token: starting_token.to_s,
           source_volume_id: source_volume_id.to_s, snapshot_id: snapshot_id.to_s,
           secrets: string_map(secrets, "secrets")
         )
         response = rpc(:controller, :list_snapshots, request, response_class: Csi::V1::ListSnapshotsResponse,
-                       operation: "ListSnapshots", mutating: false)
+                                                              operation: "ListSnapshots", mutating: false)
         {"entries" => response.entries.map { |entry| snapshot_hash(entry.snapshot) }, "nextToken" => response.next_token.to_s}
       rescue ArgumentError, TypeError => error
         raise ValidationError, "ListSnapshots max_entries must be a non-negative integer: #{error.message}"
@@ -266,10 +267,11 @@ module Rubernetes
         ensure_controller_rpc!("LIST_VOLUMES", "ListVolumes")
         max_entries = Integer(max_entries || 0)
         raise ValidationError, "ListVolumes max_entries must be non-negative" if max_entries.negative?
+
         request = Csi::V1::ListVolumesRequest.new(max_entries: max_entries,
                                                   starting_token: starting_token.to_s)
         response = rpc(:controller, :list_volumes, request, response_class: Csi::V1::ListVolumesResponse,
-                       operation: "ListVolumes", mutating: false)
+                                                            operation: "ListVolumes", mutating: false)
         entries = response.entries.map do |entry|
           value = volume_hash(entry.volume)
           if entry.status
@@ -312,16 +314,16 @@ module Rubernetes
                                      "volume context")
         )
         rpc(:node, :node_stage_volume, request, response_class: Csi::V1::NodeStageVolumeResponse,
-            operation: "NodeStageVolume")
+                                                operation: "NodeStageVolume")
         {"volumeId" => id.to_s, "source" => "csi://#{id}", "target" => path.to_s, "stage" => true}
       end
 
       def unstage(id, path, token:)
         ensure_node_rpc!("STAGE_UNSTAGE_VOLUME", "NodeUnstageVolume")
         request = Csi::V1::NodeUnstageVolumeRequest.new(volume_id: required_identifier(id, "volume id"),
-                                                         staging_target_path: required_path(path, "staging target path"))
+                                                        staging_target_path: required_path(path, "staging target path"))
         rpc(:node, :node_unstage_volume, request, response_class: Csi::V1::NodeUnstageVolumeResponse,
-            operation: "NodeUnstageVolume", idempotent_absent: true)
+                                                  operation: "NodeUnstageVolume", idempotent_absent: true)
         {}
       end
 
@@ -340,7 +342,7 @@ module Rubernetes
                                      "volume context")
         )
         response = rpc(:node, :node_publish_volume, request, response_class: Csi::V1::NodePublishVolumeResponse,
-                       operation: "NodePublishVolume")
+                                                             operation: "NodePublishVolume")
         {"volumeId" => id.to_s, "source" => "csi://#{id}", "target" => target.to_s, "stage" => false,
          "readonly" => readonly == true, "response" => response.to_h}
       end
@@ -349,18 +351,18 @@ module Rubernetes
         request = Csi::V1::NodeUnpublishVolumeRequest.new(volume_id: required_identifier(id, "volume id"),
                                                           target_path: required_path(target, "target path"))
         rpc(:node, :node_unpublish_volume, request, response_class: Csi::V1::NodeUnpublishVolumeResponse,
-            operation: "NodeUnpublishVolume", idempotent_absent: true)
+                                                    operation: "NodeUnpublishVolume", idempotent_absent: true)
         {}
       end
 
       def stats(id, token: nil, path: nil)
         ensure_node_rpc!("GET_VOLUME_STATS", "NodeGetVolumeStats")
         request = Csi::V1::NodeGetVolumeStatsRequest.new(volume_id: required_identifier(id, "volume id"),
-                                                          volume_path: path.to_s)
+                                                         volume_path: path.to_s)
         response = rpc(:node, :node_get_volume_stats, request, response_class: Csi::V1::NodeGetVolumeStatsResponse,
-                       operation: "NodeGetVolumeStats", mutating: false)
-        usage = response.usage.find { |entry| entry.unit == :BYTES || entry.unit == 1 } || response.usage.first
-        inodes = response.usage.find { |entry| entry.unit == :INODES || entry.unit == 2 }
+                                                               operation: "NodeGetVolumeStats", mutating: false)
+        usage = response.usage.find { |entry| [:BYTES, 1].include?(entry.unit) } || response.usage.first
+        inodes = response.usage.find { |entry| [:INODES, 2].include?(entry.unit) }
         result = {
           "volumeId" => id.to_s, "availableBytes" => usage&.available || 0, "capacityBytes" => usage&.total || 0,
           "usedBytes" => usage&.used || 0, "volumeCondition" => response.volume_condition&.to_h
@@ -383,7 +385,7 @@ module Rubernetes
           secrets: string_map(secrets, "secrets")
         )
         response = rpc(:node, :node_expand_volume, request, response_class: Csi::V1::NodeExpandVolumeResponse,
-                       operation: "NodeExpandVolume")
+                                                            operation: "NodeExpandVolume")
         {"capacityBytes" => response.capacity_bytes}
       end
 
@@ -402,13 +404,13 @@ module Rubernetes
         when "CreateVolume" then create_volume(request, token: token || Types.key(request, "name"))
         when "DeleteVolume" then delete_volume(Types.key(request, "volumeId"), token: token)
         when "ControllerPublishVolume" then publish(Types.key(request, "volumeId"), Types.key(request, "nodeId"),
-                                                     token: token, readonly: Types.key(request, "readonly", false), context: request)
+                                                    token: token, readonly: Types.key(request, "readonly", false), context: request)
         when "ControllerUnpublishVolume" then unpublish(Types.key(request, "volumeId"), Types.key(request, "nodeId"),
-                                                           token: token, context: request)
+                                                        token: token, context: request)
         when "CreateSnapshot" then create_snapshot(Types.key(request, "sourceVolumeId"), token: token || Types.key(request, "name"),
-                                                    name: Types.key(request, "name"), secrets: Types.key(request, "secrets", {}))
+                                                                                         name: Types.key(request, "name"), secrets: Types.key(request, "secrets", {}))
         when "DeleteSnapshot" then delete_snapshot(Types.key(request, "snapshotId"), token: token,
-                                                    secrets: Types.key(request, "secrets", {}))
+                                                                                     secrets: Types.key(request, "secrets", {}))
         when "ListSnapshots"
           list_snapshots(token: token, source_volume_id: Types.key(request, "sourceVolumeId"),
                          snapshot_id: Types.key(request, "snapshotId"), max_entries: Types.key(request, "maxEntries", 0),
@@ -418,22 +420,22 @@ module Rubernetes
                        starting_token: Types.key(request, "startingToken"))
         when "ControllerExpandVolume" then expand(
           Types.key(request, "volumeId"), Types.key(request, "capacityRange", {})["requiredBytes"], token: token,
-          secrets: Types.key(request, "secrets", {}), volume_capability: Types.key(request, "volumeCapability")
+                                                                                                    secrets: Types.key(request, "secrets", {}), volume_capability: Types.key(request, "volumeCapability")
         )
         when "NodeStageVolume" then stage(Types.key(request, "volumeId"), Types.key(request, "stagingTargetPath"), token: token,
-                                           readonly: Types.key(request, "readonly", false), context: request)
+                                                                                                                   readonly: Types.key(request, "readonly", false), context: request)
         when "NodeUnstageVolume" then unstage(Types.key(request, "volumeId"), Types.key(request, "stagingTargetPath"), token: token)
         when "NodePublishVolume" then publish_node(Types.key(request, "volumeId"), Types.key(request, "stagingTargetPath"),
-                                                    Types.key(request, "targetPath"), token: token,
-                                                    readonly: Types.key(request, "readonly", false), context: request)
+                                                   Types.key(request, "targetPath"), token: token,
+                                                                                     readonly: Types.key(request, "readonly", false), context: request)
         when "NodeUnpublishVolume" then unpublish_node(Types.key(request, "volumeId"), Types.key(request, "targetPath"), token: token)
         when "NodeGetVolumeStats" then stats(Types.key(request, "volumeId"), path: Types.key(request, "volumePath"))
         when "NodeExpandVolume" then expand_node(
           Types.key(request, "volumeId"), Types.key(request, "volumePath"), token: token,
-          capacity_bytes: Types.key(Types.key(request, "capacityRange", {}), "requiredBytes"),
-          volume_capability: Types.key(request, "volumeCapability"),
-          secrets: Types.key(request, "secrets", {}),
-          staging_path: Types.key(request, "stagingTargetPath")
+                                                                            capacity_bytes: Types.key(Types.key(request, "capacityRange", {}), "requiredBytes"),
+                                                                            volume_capability: Types.key(request, "volumeCapability"),
+                                                                            secrets: Types.key(request, "secrets", {}),
+                                                                            staging_path: Types.key(request, "stagingTargetPath")
         )
         else
           raise CSIUnavailable, "CSI operation #{operation} is not supported by the typed client"
@@ -456,8 +458,8 @@ module Rubernetes
         ensure_socket!
         @cache_lock.synchronize do
           @plugin_capabilities ||= rpc(:identity, :get_plugin_capabilities, Csi::V1::GetPluginCapabilitiesRequest.new,
-                                        response_class: Csi::V1::GetPluginCapabilitiesResponse,
-                                        operation: "GetPluginCapabilities", mutating: false)
+                                       response_class: Csi::V1::GetPluginCapabilitiesResponse,
+                                       operation: "GetPluginCapabilities", mutating: false)
         end
       end
 
@@ -466,9 +468,9 @@ module Rubernetes
         ensure_socket!
         @cache_lock.synchronize do
           @controller_capabilities ||= rpc(:controller, :controller_get_capabilities,
-                                            Csi::V1::ControllerGetCapabilitiesRequest.new,
-                                            response_class: Csi::V1::ControllerGetCapabilitiesResponse,
-                                            operation: "ControllerGetCapabilities", mutating: false)
+                                           Csi::V1::ControllerGetCapabilitiesRequest.new,
+                                           response_class: Csi::V1::ControllerGetCapabilitiesResponse,
+                                           operation: "ControllerGetCapabilities", mutating: false)
         end
       end
 
@@ -550,10 +552,11 @@ module Rubernetes
       rescue GRPC::BadStatus => error
         code = error.code
         return response_class.new if idempotent_absent && code == GRPC::Core::StatusCodes::NOT_FOUND
+
         raise mapped_status_error(operation, code, error, mutating: mutating)
       rescue GRPC::Core::CallError, IOError, SystemCallError => error
         raise CSIError.new("CSI #{operation} transport failed: #{error.message}", operation: operation,
-                           ambiguous: mutating), cause: error
+                                                                                  ambiguous: mutating), cause: error
       end
 
       def mapped_status_error(operation, code, error, mutating:)
@@ -564,7 +567,7 @@ module Rubernetes
           CSIUnavailable.new("#{message}; plugin capability negotiation is incomplete", operation: operation, details: details)
         else
           CSIError.new(message, operation: operation, details: details,
-                       ambiguous: mutating && AMBIGUOUS_STATUS_CODES.include?(name.to_sym))
+                                ambiguous: mutating && AMBIGUOUS_STATUS_CODES.include?(name.to_sym))
         end
       end
 
@@ -576,9 +579,7 @@ module Rubernetes
         observed = observe_endpoint_identity
         @endpoint_lock.synchronize do
           if @endpoint_identity
-            unless observed == @endpoint_identity
-              raise CSIUnavailable, "CSI Unix socket or peer identity changed after it was pinned"
-            end
+            raise CSIUnavailable, "CSI Unix socket or peer identity changed after it was pinned" unless observed == @endpoint_identity
           else
             @endpoint_identity = observed.freeze
           end
@@ -600,11 +601,10 @@ module Rubernetes
           raise CSIUnavailable, "CSI socket owner gid #{stat.gid} does not match pinned gid #{@expected_socket_gid}"
         end
         if @expected_socket_mode && mode != @expected_socket_mode
-          raise CSIUnavailable, "CSI socket mode #{format('%04o', mode)} does not match pinned mode #{format('%04o', @expected_socket_mode)}"
+          raise CSIUnavailable,
+                "CSI socket mode #{format("%04o", mode)} does not match pinned mode #{format("%04o", @expected_socket_mode)}"
         end
-        if @expected_socket_mode.nil? && (mode & 0o002).positive?
-          raise CSIUnavailable, "CSI socket must not be world-writable"
-        end
+        raise CSIUnavailable, "CSI socket must not be world-writable" if @expected_socket_mode.nil? && (mode & 0o002).positive?
 
         peer_pid, peer_uid, peer_gid = peer_credentials
         if @expected_peer_uid && peer_uid != @expected_peer_uid
@@ -613,6 +613,7 @@ module Rubernetes
         if @expected_peer_gid && peer_gid != @expected_peer_gid
           raise CSIUnavailable, "CSI peer gid #{peer_gid} does not match pinned gid #{@expected_peer_gid}"
         end
+
         {
           "device" => stat.dev, "inode" => stat.ino, "uid" => stat.uid, "gid" => stat.gid,
           "mode" => mode, "peerPid" => peer_pid, "peerUid" => peer_uid, "peerGid" => peer_gid
@@ -638,9 +639,7 @@ module Rubernetes
       end
 
       def peer_credentials
-        unless Socket.const_defined?(:SO_PEERCRED)
-          raise CSIUnavailable, "CSI peer credentials are unavailable on this platform"
-        end
+        raise CSIUnavailable, "CSI peer credentials are unavailable on this platform" unless Socket.const_defined?(:SO_PEERCRED)
 
         connection = UNIXSocket.new(@socket)
         payload = connection.getsockopt(Socket::SOL_SOCKET, Socket::SO_PEERCRED).to_s
@@ -732,6 +731,7 @@ module Rubernetes
           limit = Integer(Types.key(range, "limitBytes", Types.key(range, "limit_bytes", 0)))
           raise CapacityError, "capacity range values must be non-negative" if required.negative? || limit.negative?
           raise CapacityError, "capacity range limit is smaller than required capacity" if limit.positive? && required > limit
+
           return Csi::V1::CapacityRange.new(
             required_bytes: required,
             limit_bytes: limit
@@ -844,6 +844,7 @@ module Rubernetes
 
       def snapshot_hash(snapshot)
         raise CSIError.new("CSI snapshot response contained no snapshot", operation: "snapshot") unless snapshot
+
         {
           "snapshotId" => snapshot.snapshot_id.to_s,
           "sizeBytes" => snapshot.size_bytes,

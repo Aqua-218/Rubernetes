@@ -21,7 +21,8 @@ class PodDeletionRankingTest < Minitest::Test
     {"apiVersion" => "v1", "kind" => "Pod", "metadata" => metadata,
      "spec" => {"nodeName" => node, "containers" => [{"name" => "app", "image" => "x"}]},
      "status" => {"phase" => "Running",
-                  "conditions" => [{"type" => "Ready", "status" => ready ? "True" : "False", "lastTransitionTime" => (NOW - created).iso8601}],
+                  "conditions" => [{"type" => "Ready", "status" => ready ? "True" : "False",
+                                    "lastTransitionTime" => (NOW - created).iso8601}],
                   "containerStatuses" => [{"name" => "app", "restartCount" => restarts}]}}
   end
 
@@ -29,13 +30,16 @@ class PodDeletionRankingTest < Minitest::Test
 
   def test_the_deletion_cost_annotation_orders_otherwise_equal_pods
     pods = [pod("expensive", cost: "100"), pod("default"), pod("cheap", cost: "-5"), pod("invalid", cost: "+7")]
+
     assert_equal %w[cheap default invalid], names(Ranking.pods_to_delete(pods, 3, now: NOW)), "an invalid cost counts as 0"
   end
 
   def test_not_ready_then_doubled_up_then_restarts_go_first
     pods = [pod("ready-alone", node: "n2"), pod("ready-shared-a"), pod("ready-shared-b"), pod("not-ready", node: "n3", ready: false)]
+
     assert_equal %w[not-ready ready-shared-a ready-shared-b], names(Ranking.pods_to_delete(pods, 3, now: NOW))
     restarted = [pod("steady", node: "a"), pod("crashy", node: "b", restarts: 4)]
+
     assert_equal %w[crashy], names(Ranking.pods_to_delete(restarted, 1, now: NOW))
   end
 
@@ -43,8 +47,10 @@ class PodDeletionRankingTest < Minitest::Test
     # 3600 s and 3700 s ago fall in the same log2(ns) bucket: the lower UID
     # goes first, not the newer Pod.
     pods = [pod("newer", created: 3600, uid: "b"), pod("older", created: 3700, uid: "a")]
+
     assert_equal %w[older], names(Ranking.pods_to_delete(pods, 1, now: NOW))
     far = [pod("hour", created: 3600, uid: "a"), pod("day", created: 86_400, uid: "b")]
+
     assert_equal %w[hour], names(Ranking.pods_to_delete(far, 1, now: NOW)), "a different bucket: the newer goes"
   end
 
@@ -63,6 +69,7 @@ class PodDeletionRankingTest < Minitest::Test
     pods = [pod("new-on-n1", node: "n1", owner: new_set), pod("new-on-n2", node: "n2", owner: new_set),
             pod("old-on-n2", node: "n2", owner: old_set)]
     result = Controller::ReplicaSetController.new.plan(new_set, store: adapter, pods: pods, now: NOW)
-    assert_equal %w[new-on-n2], result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+
+    assert_equal(%w[new-on-n2], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
   end
 end

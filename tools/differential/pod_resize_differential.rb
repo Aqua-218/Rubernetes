@@ -65,7 +65,9 @@ module PodResizeDifferential
       {"status" => status, "reason" => document["reason"], "message" => document["message"], "causes" => causes.sort_by(&:to_s)}
     else
       {"status" => status, "generation" => document.dig("metadata", "generation"), "labels" => document.dig("metadata", "labels"),
-       "resources" => document.dig("spec", "resources"), "containers" => Array(document.dig("spec", "containers")).map { |c| c.slice("image", "resources") }}
+       "resources" => document.dig("spec", "resources"), "containers" => Array(document.dig("spec", "containers")).map do |c|
+                                                           c.slice("image", "resources")
+                                                         end}
     end
   rescue JSON::ParserError
     {"status" => status, "body" => body.to_s[0, 300]}
@@ -80,12 +82,14 @@ module PodResizeDifferential
       next [id, {"create" => normalize(status, created)}] if status >= 300
 
       name = object.dig("metadata", "name")
-      path = "/api/v1/namespaces/diff-resize/pods/#{name}#{subresource.empty? ? "" : "/#{subresource}"}"
+      path = "/api/v1/namespaces/diff-resize/pods/#{name}#{"/#{subresource}" unless subresource.empty?}"
       if verb == "PUT"
         current = created.is_a?(String) ? JSON.parse(created) : created
         body = current.merge("spec" => current["spec"].merge(body["spec"].to_h { |key, value| [key, value] }).tap do |spec|
           if body["spec"]["containers"]
-            spec["containers"] = current["spec"]["containers"].each_with_index.map { |c, i| c.merge("resources" => body["spec"]["containers"][i]["resources"]) }
+            spec["containers"] = current["spec"]["containers"].each_with_index.map do |c, i|
+              c.merge("resources" => body["spec"]["containers"][i]["resources"])
+            end
           end
         end)
         [id, normalize(*call.call("PUT", path, body, nil))]

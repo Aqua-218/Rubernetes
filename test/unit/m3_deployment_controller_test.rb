@@ -18,6 +18,7 @@ class M3DeploymentControllerTest < Minitest::Test
     result = controller.plan(deployment, replicasets: [], now: NOW)
     create = result.creates.first
     hash = create.object.dig("metadata", "labels", "pod-template-hash")
+
     assert_match HASH_ALPHABET, hash
     assert_equal "web-#{hash}", create.object.dig("metadata", "name")
     assert_equal hash, create.object.dig("spec", "selector", "matchLabels", "pod-template-hash")
@@ -28,8 +29,9 @@ class M3DeploymentControllerTest < Minitest::Test
                   "deployment.kubernetes.io/max-replicas" => "3"}, create.object.dig("metadata", "annotations"))
     assert_equal 2, create.object.dig("spec", "replicas")
     progressing = result.status.fetch("conditions").find { |condition| condition.fetch("type") == "Progressing" }
+
     assert_equal "NewReplicaSetCreated", progressing.fetch("reason")
-    assert_equal ["Scaled up replica set web-#{hash} from 0 to 2"], result.events.map { |event| event.fetch("message") }
+    assert_equal(["Scaled up replica set web-#{hash} from 0 to 2"], result.events.map { |event| event.fetch("message") })
   end
 
   def test_hash_collision_bumps_collision_count_instead_of_adopting_a_foreign_replica_set
@@ -40,10 +42,11 @@ class M3DeploymentControllerTest < Minitest::Test
 
     assert_empty result.creates
     assert_equal 1, result.status.fetch("collisionCount")
-    assert_equal 0.0, result.requeue_after
+    assert_in_delta(0.0, result.requeue_after)
 
     retried = controller.plan(deployment.merge("status" => result.status), replicasets: [foreign], now: NOW)
     created = retried.creates.first.object
+
     assert_equal Support.pod_template_hash(deployment.dig("spec", "template"), 1), created.dig("metadata", "labels", "pod-template-hash")
   end
 
@@ -55,6 +58,7 @@ class M3DeploymentControllerTest < Minitest::Test
 
     assert_empty result.creates
     update = result.updates.find { |operation| operation.resource.kind == "ReplicaSet" }
+
     assert_equal "web-old", update.object.dig("metadata", "name")
     assert_equal "3", update.object.dig("metadata", "annotations", "deployment.kubernetes.io/revision")
     assert_equal "1", update.object.dig("metadata", "annotations", "deployment.kubernetes.io/revision-history")
@@ -68,6 +72,7 @@ class M3DeploymentControllerTest < Minitest::Test
     result = controller.plan(deployment, replicasets: [old_rs, new_rs], now: NOW)
 
     update = result.updates.find { |operation| operation.resource.kind == "Deployment" }
+
     assert_equal "example/web:1", update.object.dig("spec", "template", "spec", "containers", 0, "image")
     refute update.object.dig("metadata", "annotations").key?("deprecated.deployment.rollback.to")
     assert_includes result.events.map { |event| event.fetch("reason") }, "DeploymentRollback"
@@ -85,11 +90,15 @@ class M3DeploymentControllerTest < Minitest::Test
                             "terminatingReplicas" => 0, "conditions" => [available, progressing]}
     deployment["metadata"]["annotations"] = {"deployment.kubernetes.io/revision" => "1"}
     waiting = controller.plan(deployment, replicasets: [stuck], now: NOW)
+
     assert_in_delta 61.0, waiting.requeue_after, 0.001
-    assert_equal "ReplicaSetUpdated", waiting.status.fetch("conditions").find { |condition| condition.fetch("type") == "Progressing" }.fetch("reason")
+    assert_equal "ReplicaSetUpdated", waiting.status.fetch("conditions").find { |condition|
+      condition.fetch("type") == "Progressing"
+    }.fetch("reason")
 
     expired = controller.plan(deployment, replicasets: [stuck], now: NOW + 70)
     condition = expired.status.fetch("conditions").find { |candidate| candidate.fetch("type") == "Progressing" }
+
     assert_equal "False", condition.fetch("status")
     assert_equal "ProgressDeadlineExceeded", condition.fetch("reason")
     assert_equal "ReplicaSet \"web-stuck\" has timed out progressing.", condition.fetch("message")
@@ -98,9 +107,11 @@ class M3DeploymentControllerTest < Minitest::Test
   def test_complete_rollout_sets_new_replica_set_available_and_minimum_availability
     deployment = deployment(replicas: 2, generation: 1)
     deployment["metadata"]["annotations"] = {"deployment.kubernetes.io/revision" => "1"}
-    ready = replica_set("web-ready", deployment, revision: 1, replicas: 2, image: "example/web:1", available: 2, status_replicas: 2, ready: 2)
+    ready = replica_set("web-ready", deployment, revision: 1, replicas: 2, image: "example/web:1", available: 2, status_replicas: 2,
+                                                 ready: 2)
     result = controller.plan(deployment, replicasets: [ready], now: NOW)
     reasons = result.status.fetch("conditions").to_h { |condition| [condition.fetch("type"), condition.fetch("reason")] }
+
     assert_equal({"Available" => "MinimumReplicasAvailable", "Progressing" => "NewReplicaSetAvailable"}, reasons)
     assert_equal 2, result.status.fetch("availableReplicas")
     assert_equal 2, result.status.fetch("readyReplicas")
@@ -114,14 +125,17 @@ class M3DeploymentControllerTest < Minitest::Test
 
     assert_empty result.creates, "no rollout while paused"
     scaled = result.updates.find { |operation| operation.resource.kind == "ReplicaSet" }
+
     assert_equal 3, scaled.object.dig("spec", "replicas"), "the single active ReplicaSet follows the deployment size"
     condition = result.status.fetch("conditions").find { |candidate| candidate.fetch("type") == "Progressing" }
-    assert_equal ["Unknown", "DeploymentPaused", "Deployment is paused"], %w[status reason message].map { |key| condition.fetch(key) }
+
+    assert_equal(["Unknown", "DeploymentPaused", "Deployment is paused"], %w[status reason message].map { |key| condition.fetch(key) })
   end
 
   def test_min_ready_seconds_is_propagated_to_the_replica_set_and_gates_availability
     deployment = deployment(replicas: 1, min_ready_seconds: 30)
     created = controller.plan(deployment, replicasets: [], now: NOW).creates.first.object
+
     assert_equal 30, created.dig("spec", "minReadySeconds")
 
     rs = created.merge("metadata" => created.fetch("metadata").merge("uid" => "uid-rs"))
@@ -133,17 +147,21 @@ class M3DeploymentControllerTest < Minitest::Test
            "status" => {"phase" => "Running", "conditions" => [{"type" => "Ready", "status" => "True", "lastTransitionTime" => (NOW - 10).iso8601(6)}]}}
     rs_controller = Controller::ReplicaSetController.new(clock: -> { NOW })
     early = rs_controller.plan(rs, pods: [pod], now: NOW)
+
     assert_equal 1, early.status.fetch("readyReplicas")
     assert_equal 0, early.status.fetch("availableReplicas")
-    assert_equal 30.0, early.requeue_after
+    assert_in_delta(30.0, early.requeue_after)
     late = rs_controller.plan(rs, pods: [pod], now: NOW + 31)
+
     assert_equal 1, late.status.fetch("availableReplicas")
   end
 
   def test_scaling_event_distributes_replicas_proportionally_across_active_replica_sets
     deployment = deployment(replicas: 10, image: "example/web:2", generation: 2)
-    old_rs = replica_set("web-old", deployment, revision: 1, replicas: 3, image: "example/web:1", available: 3, status_replicas: 3, desired: 5, max: 7)
-    new_rs = replica_set("web-new", deployment, revision: 2, replicas: 4, image: "example/web:2", available: 4, status_replicas: 4, desired: 5, max: 7)
+    old_rs = replica_set("web-old", deployment, revision: 1, replicas: 3, image: "example/web:1", available: 3, status_replicas: 3,
+                                                desired: 5, max: 7)
+    new_rs = replica_set("web-new", deployment, revision: 2, replicas: 4, image: "example/web:2", available: 4, status_replicas: 4,
+                                                desired: 5, max: 7)
     deployment["metadata"]["annotations"] = {"deployment.kubernetes.io/revision" => "2"}
     deployment["status"] = {"replicas" => 7}
     result = controller.plan(deployment, replicasets: [old_rs, new_rs], now: NOW)
@@ -151,6 +169,7 @@ class M3DeploymentControllerTest < Minitest::Test
     sizes = result.updates.select { |operation| operation.resource.kind == "ReplicaSet" }.to_h do |operation|
       [operation.object.dig("metadata", "name"), operation.object.dig("spec", "replicas")]
     end
+
     assert_equal 11, sizes.values.sum, "allowed size is replicas plus maxSurge"
     assert_equal({"web-new" => 6, "web-old" => 5}, sizes)
   end

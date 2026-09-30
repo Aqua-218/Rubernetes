@@ -4,7 +4,6 @@ require "digest"
 require "fileutils"
 require "json"
 require "socket"
-require "thread"
 require "time"
 
 module Rubernetes
@@ -18,8 +17,8 @@ module Rubernetes
     # stable across leader replacement, allowing a verifier to distinguish a
     # retry from a second side effect.
     class EffectJournal
-      PATH_ENV = "RUBERNETES_M3_EFFECT_JOURNAL".freeze
-      SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
+      PATH_ENV = "RUBERNETES_M3_EFFECT_JOURNAL"
+      SHA256_PATTERN = /\A[0-9a-f]{64}\z/
 
       class << self
         def from_env(component: nil, identity: nil)
@@ -92,7 +91,7 @@ module Rubernetes
         normalized_key = reconcile_key.to_s
         normalized_type = effect_type.to_s
         attempt_id = effect_id || self.effect_id(reconcile_key: normalized_key, effect_type: normalized_type,
-                                                  generation: generation)
+                                                 generation: generation)
         event = {
           "schema_version" => 1,
           "kind" => "api_mutation",

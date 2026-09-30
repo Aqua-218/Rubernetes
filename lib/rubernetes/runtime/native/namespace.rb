@@ -34,10 +34,10 @@ module Rubernetes
         Handle = Data.define(:id, :identity, :plan, :adapter_handle) do
           def to_h
             adapter_identity = if adapter_handle.respond_to?(:to_h)
-              adapter_handle.to_h
-            else
-              {"handle" => adapter_handle}
-            end
+                                 adapter_handle.to_h
+                               else
+                                 {"handle" => adapter_handle}
+                               end
             {"id" => id, "identity" => identity, "plan" => plan.to_h,
              "kernel_identity" => adapter_identity}
           end
@@ -115,10 +115,10 @@ module Rubernetes
           end
           shared = truthy?(input, :share_process_namespace) ? [:pid] : []
           host_users = if input.key?("host_users")
-            input["host_users"] != false
-          else
-            true
-          end
+                         input["host_users"] != false
+                       else
+                         true
+                       end
           # shareProcessNamespace keeps the PID namespace on the holder (the
           # Pod-wide PID 1) and lets every container join it instead of
           # creating a private one.
@@ -127,21 +127,25 @@ module Rubernetes
           namespaces << :user unless host_users || host.include?(:user)
           user_mapping = host_users ? nil : build_user_mapping(input)
           hostname = input["hostname"] || input["subdomain"]
-          Plan.new(namespaces: namespaces.freeze, shared: shared.freeze, host: host.freeze, user_mapping: user_mapping, hostname: hostname && String(hostname).freeze)
+          Plan.new(namespaces: namespaces.freeze, shared: shared.freeze, host: host.freeze, user_mapping: user_mapping,
+                   hostname: hostname && String(hostname).freeze)
         end
 
         def validate!(plan)
-          unless plan.is_a?(Plan)
-            raise InvalidPlan, "namespace plan must be a Namespace::Plan"
-          end
+          raise InvalidPlan, "namespace plan must be a Namespace::Plan" unless plan.is_a?(Plan)
+
           unknown = plan.namespaces - NAMESPACES
           raise InvalidPlan, "unknown namespace #{unknown.first.inspect}" unless unknown.empty?
           raise InvalidPlan, "host and private namespace selections overlap" unless (plan.host & plan.namespaces).empty?
-          raise InvalidPlan, "a shared PID namespace requires the holder PID namespace" if plan.shared.include?(:pid) && !plan.namespaces.include?(:pid) && !plan.host.include?(:pid)
+          if plan.shared.include?(:pid) && !plan.namespaces.include?(:pid) && !plan.host.include?(:pid)
+            raise InvalidPlan,
+                  "a shared PID namespace requires the holder PID namespace"
+          end
           raise InvalidPlan, "the user namespace requires a uid/gid mapping" if plan.namespaces.include?(:user) && plan.user_mapping.nil?
           if plan.user_mapping && Integer(plan.user_mapping.fetch(:size) { plan.user_mapping.fetch("size") }) != 65_536
             raise InvalidPlan, "user namespace mapping must allocate exactly 65536 IDs"
           end
+
           true
         end
 
@@ -151,6 +155,7 @@ module Rubernetes
           if plan.host.any? && !%i[host_integration kernel_isolation l3].include?(@profile)
             raise Unsupported, "host namespace participation requires an explicit host integration profile"
           end
+
           resource_identity = String(identity || @identity_allocator.call(String(id))).freeze
           adapter_handle = invoke_create(plan, String(id), resource_identity)
           handle = Handle.new(id: String(id).freeze, identity: resource_identity, plan: plan, adapter_handle: adapter_handle)
@@ -161,12 +166,12 @@ module Rubernetes
         def destroy(value)
           handle = lookup(value)
           result = if @adapter.respond_to?(:destroy)
-            @adapter.destroy(handle: handle.adapter_handle, id: handle.id, identity: handle.identity)
-          elsif @adapter.respond_to?(:call)
-            @adapter.call(:destroy, handle: handle.adapter_handle, id: handle.id, identity: handle.identity)
-          else
-            raise Unsupported, "namespace adapter cannot destroy resources"
-          end
+                     @adapter.destroy(handle: handle.adapter_handle, id: handle.id, identity: handle.identity)
+                   elsif @adapter.respond_to?(:call)
+                     @adapter.call(:destroy, handle: handle.adapter_handle, id: handle.id, identity: handle.identity)
+                   else
+                     raise Unsupported, "namespace adapter cannot destroy resources"
+                   end
           # A false adapter response means the holder is still live or its
           # release is otherwise unconfirmed. Keep the handle so a durable
           # cleanup retry can start at this owner again.
@@ -178,20 +183,24 @@ module Rubernetes
         # replay.  The adapter performs the kernel start-time/inode checks;
         # this wrapper only restores the Ruby ownership index.
         def adopt(id:, identity:, plan:, metadata:)
-          value = plan.is_a?(Plan) ? plan : Plan.new(
-            namespaces: Array(plan.fetch("namespaces")).map(&:to_sym).freeze,
-            shared: Array(plan.fetch("shared", [])).map(&:to_sym).freeze,
-            host: Array(plan.fetch("host", [])).map(&:to_sym).freeze,
-            user_mapping: plan["user_mapping"],
-            hostname: plan["hostname"]
-          )
+          value = if plan.is_a?(Plan)
+                    plan
+                  else
+                    Plan.new(
+                      namespaces: Array(plan.fetch("namespaces")).map(&:to_sym).freeze,
+                      shared: Array(plan.fetch("shared", [])).map(&:to_sym).freeze,
+                      host: Array(plan.fetch("host", [])).map(&:to_sym).freeze,
+                      user_mapping: plan["user_mapping"],
+                      hostname: plan["hostname"]
+                    )
+                  end
           validate!(value)
           adapter_metadata = metadata["kernel_identity"] || metadata[:kernel_identity] || metadata
           adapter_handle = if @adapter.respond_to?(:adopt)
-            @adapter.adopt(id: String(id), identity: String(identity), plan: value, metadata: adapter_metadata)
-          else
-            raise Unsupported, "namespace adapter cannot adopt a live holder"
-          end
+                             @adapter.adopt(id: String(id), identity: String(identity), plan: value, metadata: adapter_metadata)
+                           else
+                             raise Unsupported, "namespace adapter cannot adopt a live holder"
+                           end
           handle = Handle.new(id: String(id).freeze, identity: String(identity).freeze, plan: value,
                               adapter_handle: adapter_handle)
           @mutex.synchronize { @handles[handle.id] = handle }
@@ -202,11 +211,10 @@ module Rubernetes
           handle = lookup(value)
           name = String(namespace).to_sym
           raise InvalidPlan, "cannot join unknown namespace #{namespace.inspect}" unless NAMESPACES.include?(name)
-          if @adapter.respond_to?(:join)
-            @adapter.join(handle: handle.adapter_handle, namespace: name, identity: handle.identity)
-          else
-            raise Unsupported, "namespace adapter cannot join namespaces"
-          end
+
+          raise Unsupported, "namespace adapter cannot join namespaces" unless @adapter.respond_to?(:join)
+
+          @adapter.join(handle: handle.adapter_handle, namespace: name, identity: handle.identity)
         end
 
         def lookup(value)

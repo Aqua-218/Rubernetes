@@ -24,9 +24,9 @@ class TransportHTTPServerNagleTest < Minitest::Test
       @writes = []
     end
 
-    def write_nonblock(data, *args, **options)
+    def write_nonblock(data, *, **)
       @writes << data.bytesize
-      __getobj__.write_nonblock(data, *args, **options)
+      __getobj__.write_nonblock(data, *, **)
     end
 
     def to_io
@@ -51,8 +51,9 @@ class TransportHTTPServerNagleTest < Minitest::Test
 
   def test_a_small_response_is_one_write
     writes, wire = response_through("{\"kind\":\"Namespace\"}")
+
     assert_equal 1, writes.length, writes.inspect
-    assert_match(/\AHTTP\/1.1 200 OK\r\n/, wire)
+    assert_match(%r{\AHTTP/1.1 200 OK\r\n}, wire)
     assert_match(/Content-Length: 20\r\n/, wire)
     assert wire.end_with?("\r\n\r\n{\"kind\":\"Namespace\"}"), wire[-60..].inspect
   end
@@ -60,6 +61,7 @@ class TransportHTTPServerNagleTest < Minitest::Test
   def test_a_large_body_still_follows_the_head_intact
     body = "x" * (Server::COALESCED_BODY_BYTES + 1)
     writes, wire = response_through(body)
+
     assert_operator writes.length, :>=, 2
     assert wire.end_with?(body)
     assert_match(/Content-Length: #{body.bytesize}\r\n/, wire)
@@ -69,8 +71,10 @@ class TransportHTTPServerNagleTest < Minitest::Test
     listener = TCPServer.new("127.0.0.1", 0)
     client = TCPSocket.new("127.0.0.1", listener.addr[1])
     accepted = listener.accept
+
     assert_equal 0, accepted.getsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY).int, "a fresh socket has Nagle on"
     server.send(:disable_nagle, accepted)
+
     assert_equal 1, accepted.getsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY).int
   ensure
     [client, accepted, listener].each { |io| io&.close }
@@ -80,12 +84,16 @@ class TransportHTTPServerNagleTest < Minitest::Test
     seen = Queue.new
     subject = server
     subject.define_singleton_method(:disable_nagle) do |client|
-      seen << client.getsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY).int.then { |before| super(client); [before, client.getsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY).int] }
+      seen << client.getsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY).int.then do |before|
+        super(client)
+        [before, client.getsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY).int]
+      end
     end
     subject.start
     client = TCPSocket.new("127.0.0.1", subject.port)
     client.write("GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
     client.read
+
     assert_equal [0, 1], seen.pop(timeout: 2)
   ensure
     client&.close

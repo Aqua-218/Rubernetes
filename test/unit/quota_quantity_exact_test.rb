@@ -17,8 +17,8 @@ class QuotaQuantityExactTest < Minitest::Test
 
   def test_binary_and_decimal_suffixes_are_exact
     assert_equal 1024r**3, Quantity.parse("1Gi")
-    assert_equal 30 * 1024r**3, Quantity.parse("30Gi")
-    assert_equal 252 * 1024r**2, Quantity.parse("252Mi")
+    assert_equal 30 * (1024r**3), Quantity.parse("30Gi")
+    assert_equal 252 * (1024r**2), Quantity.parse("252Mi")
     assert_equal 10r**9, Quantity.parse("1G")
     assert_equal Rational(1, 10**9), Quantity.parse("1n")
     assert_equal 32_212_254_720r, Quantity.parse("32212254720")

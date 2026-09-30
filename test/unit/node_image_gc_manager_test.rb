@@ -47,9 +47,9 @@ class NodeImageGCManagerTest < Minitest::Test
 
   def key(name) = "registry.example/#{name}:1|linux|amd64"
 
-  def manager(resolver, sizes, **options)
+  def manager(resolver, sizes, **)
     GC.new(resolver: resolver, fs_stats: -> { @fs }, pods: -> { @pods }, monotonic: -> { @now },
-           size_of: ->(root) { sizes.fetch(root) }, recorder: @recorder, node_ref: {"kind" => "Node", "name" => "n"}, **options)
+           size_of: ->(root) { sizes.fetch(root) }, recorder: @recorder, node_ref: {"kind" => "Node", "name" => "n"}, **)
   end
 
   def test_frees_least_recently_used_unused_images_down_to_the_low_threshold
@@ -75,18 +75,24 @@ class NodeImageGCManagerTest < Minitest::Test
     subject = manager(resolver, {"/a" => GI})
     subject.garbage_collect
     @now += 500
+
     assert_empty subject.garbage_collect
   end
 
   def test_insufficient_space_raises_and_records_free_disk_space_failed
     resolver = Resolver.new(key("a") => [Image.new("/a"), 1.0])
     subject = manager(resolver, {"/a" => GI})
-    subject.garbage_collect rescue nil
+    begin
+      subject.garbage_collect
+    rescue StandardError
+      nil
+    end
     @now += 121
     error = assert_raises(GC::Error) { subject.garbage_collect }
     message = "Insufficient free disk space on the node's image filesystem (90% of 100.0 GiB used). Failed to free sufficient " \
               "space by deleting unused images (freed #{GI} bytes). Investigate disk usage, as it could be used by active " \
               "images, logs, volumes, or other data."
+
     assert_equal message, error.message
     assert_equal "FreeDiskSpaceFailed", @events.last[:reason]
     assert_equal message, @events.last[:message]
@@ -102,9 +108,14 @@ class NodeImageGCManagerTest < Minitest::Test
   def test_an_image_handed_out_after_the_pass_began_is_kept
     resolver = Resolver.new(key("a") => [Image.new("/a"), 1.0])
     subject = manager(resolver, {"/a" => GI})
-    subject.garbage_collect rescue nil
+    begin
+      subject.garbage_collect
+    rescue StandardError
+      nil
+    end
     @now += 121
     resolver.entries[key("a")][1] = @now + 1 # a Pod resolved it mid-pass
+
     assert_empty subject.delete_unused_images
   end
 
@@ -115,14 +126,17 @@ class NodeImageGCManagerTest < Minitest::Test
     subject.garbage_collect
     @now += 601
     resolver.entries[key("fresh")][1] = @now - 10
+
     assert_equal [key("stale")], subject.garbage_collect
   end
 
   def test_delete_unused_images_honours_the_minimum_age
     resolver = Resolver.new(key("a") => [Image.new("/a"), 1.0], key("b") => [Image.new("/b"), 2.0])
     subject = manager(resolver, {"/a" => GI, "/b" => GI})
+
     assert_empty subject.delete_unused_images
     @now += 121
+
     assert_equal [key("a"), key("b")], subject.delete_unused_images
   end
 
@@ -139,6 +153,7 @@ class NodeImageGCManagerTest < Minitest::Test
     resolved = Struct.new(:rootfs, :stage_token).new(Dir.mktmpdir, nil)
     resolver.send(:store_image, "k|linux|amd64", resolved)
     key, image, last = resolver.cached_images.first
+
     assert_equal "k|linux|amd64", key
     assert_same resolved, image
     refute_nil last

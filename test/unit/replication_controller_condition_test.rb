@@ -83,6 +83,7 @@ class ReplicationControllerConditionTest < Minitest::Test
     result = controller.plan(replication_controller, pods: [pod("a"), pod("b")])
 
     found = condition(result)
+
     refute_nil(found, "no ReplicaFailure condition: #{result.status.inspect}")
     assert_equal("True", found["status"])
     assert_equal("FailedCreate", found["reason"])

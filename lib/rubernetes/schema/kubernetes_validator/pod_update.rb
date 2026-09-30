@@ -86,11 +86,11 @@ module Rubernetes
 
                 k = j2len.fetch(j - 1, 0) + 1
                 newj2len[j] = k
-                if k > bestsize
-                  besti = i - k + 1
-                  bestj = j - k + 1
-                  bestsize = k
-                end
+                next unless k > bestsize
+
+                besti = i - k + 1
+                bestj = j - k + 1
+                bestsize = k
               end
               j2len = newj2len
             end
@@ -282,7 +282,6 @@ module Rubernetes
           value.nil? || value == false || value == 0 || value == "" || (value.is_a?(Array) && value.empty?) || (value.is_a?(Hash) && value.empty?)
         end
 
-
         # json.MarshalIndent(value, "", " ").
         def render(value, depth = 0)
           case value
@@ -333,7 +332,7 @@ module Rubernetes
 
         # encoding/json floatEncoder for float64.
         def go_float(value)
-          return value.to_i.to_s if value == value.floor && value.abs < 1e21 && value.abs >= 1e-6 || value.zero?
+          return value.to_i.to_s if (value == value.floor && value.abs < 1e21 && value.abs >= 1e-6) || value.zero?
 
           if value.abs < 1e-6 || value.abs >= 1e21
             mantissa, exponent = format("%.17g", value).then { |s| Float(s) }.to_s.split("e")
@@ -372,7 +371,9 @@ module Rubernetes
 
         unless old.is_a?(Hash)
           containers = fetch(fetch(root, "spec"), "containers")
-          return containers.is_a?(Array) && containers.first.is_a?(Hash) && blank?(fetch(containers.first, "image")) ? [issue(%w[spec containers 0 image], :required, "")] : []
+          return containers.is_a?(Array) && containers.first.is_a?(Hash) && blank?(fetch(containers.first,
+                                                                                         "image")) ? [issue(%w[spec containers 0 image],
+                                                                                                            :required, "")] : []
         end
         new_spec = InternalPodSpec.convert(root, keep_empty: true)
         old_spec = InternalPodSpec.convert(old)
@@ -408,12 +409,16 @@ module Rubernetes
         old_text = InternalPodSpec.render(old_spec)
         new_text = InternalPodSpec.render(munged)
         spec_diff = GoDiffLib.unified_diff(GoDiffLib.split_lines(old_text), GoDiffLib.split_lines(new_text))
-        issues << issue(%w[spec], :forbidden, "pod updates may not change fields other than #{UPDATABLE_POD_SPEC_FIELDS.join(",")}\n#{spec_diff}")
+        issues << issue(%w[spec], :forbidden,
+                        "pod updates may not change fields other than #{UPDATABLE_POD_SPEC_FIELDS.join(",")}\n#{spec_diff}")
       end
 
       # ValidateContainerUpdates.
       def container_update_errors(new_containers, old_containers, path)
-        return [[issue(path, :forbidden, "pod updates may not add or remove containers")], true] if new_containers.length != old_containers.length
+        if new_containers.length != old_containers.length
+          return [[issue(path, :forbidden, "pod updates may not add or remove containers")],
+                  true]
+        end
 
         issues = []
         new_containers.each_with_index do |container, index|
@@ -432,7 +437,10 @@ module Rubernetes
       def only_added_toleration_errors(new_tolerations, old_tolerations)
         old_tolerations.each do |old|
           found = new_tolerations.any? { |candidate| old.with("TolerationSeconds", candidate["TolerationSeconds"]) == candidate }
-          return [issue(%w[spec tolerations], :forbidden, "existing toleration can not be modified except its tolerationSeconds")] unless found
+          unless found
+            return [issue(%w[spec tolerations], :forbidden,
+                          "existing toleration can not be modified except its tolerationSeconds")]
+          end
         end
         []
       end
@@ -446,7 +454,8 @@ module Rubernetes
         new_gates.each_with_index { |gate, index| added[gate["Name"]] = index }
         old_gates.each { |gate| added.delete(gate["Name"]) }
         added.sort_by { |_name, index| index }.map do |name, index|
-          issue(["spec", "schedulingGates", index.to_s, "name"], :forbidden, "only deletion is allowed, but found new scheduling gate '#{name}'")
+          issue(["spec", "schedulingGates", index.to_s, "name"], :forbidden,
+                "only deletion is allowed, but found new scheduling gate '#{name}'")
         end
       end
 
@@ -458,11 +467,13 @@ module Rubernetes
           containers = munged[go]
           next munged = munged.with(go, nil) if containers.nil? || containers.empty?
 
-          munged = munged.with(go, containers.each_with_index.map { |container, index| container.with("Image", old_spec[go][index]["Image"]) })
+          munged = munged.with(go, containers.each_with_index.map do |container, index|
+            container.with("Image", old_spec[go][index]["Image"])
+          end)
         end
         munged = munged.with("ActiveDeadlineSeconds", old_spec["ActiveDeadlineSeconds"])
-                       .with("SchedulingGates", old_spec["SchedulingGates"])
-                       .with("Tolerations", old_spec["Tolerations"])
+          .with("SchedulingGates", old_spec["SchedulingGates"])
+          .with("Tolerations", old_spec["Tolerations"])
         old_grace = old_spec["TerminationGracePeriodSeconds"]
         if !old_grace.nil? && old_grace.negative? && munged["TerminationGracePeriodSeconds"] == 1
           munged = munged.with("TerminationGracePeriodSeconds", old_grace)
@@ -487,7 +498,8 @@ module Rubernetes
           munged = if affinity.nil? && old_affinity.nil?
                      munged
                    elsif affinity.nil?
-                     munged.with("Affinity", InternalPodSpec.zero_struct(InternalPodSpec::CORE + "Affinity").with("NodeAffinity", old_affinity))
+                     munged.with("Affinity",
+                                 InternalPodSpec.zero_struct(InternalPodSpec::CORE + "Affinity").with("NodeAffinity", old_affinity))
                    elsif old_spec["Affinity"].nil? && affinity["PodAntiAffinity"].nil? && affinity["PodAffinity"].nil?
                      munged.with("Affinity", nil)
                    else
@@ -535,7 +547,9 @@ module Rubernetes
         new_expressions = Array(new_term["MatchExpressions"])
         new_fields = Array(new_term["MatchFields"])
         return false if old_expressions.empty? && old_fields.empty? && (new_expressions.any? || new_fields.any?)
-        return false if old_expressions.any? && (new_expressions.length < old_expressions.length || new_expressions.first(old_expressions.length) != old_expressions)
+        if old_expressions.any? && (new_expressions.length < old_expressions.length || new_expressions.first(old_expressions.length) != old_expressions)
+          return false
+        end
         return false if old_fields.any? && (new_fields.length < old_fields.length || new_fields.first(old_fields.length) != old_fields)
 
         true

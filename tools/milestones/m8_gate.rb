@@ -22,7 +22,7 @@ module M8Gate
   PROJECT_ROOT = File.expand_path("../..", __dir__).freeze
   PRIOR_GATES = M7Gate::PRIOR_GATES.merge("M8" => File.join(__dir__, "m7_gate.rb")).freeze
   ARTIFACT_LOCK = "third_party/locks/conformance-runners.json"
-  
+
   REPORTS = {
     "conformance" => {kind: "m8_conformance", names: %w[conformance-result.json]},
     "selection" => {kind: "m8_selection", names: %w[selection-ledger-result.json]},
@@ -89,10 +89,15 @@ module M8Gate
       errors << "schema_version must be #{MANIFEST_SCHEMA_VERSION}" unless manifest["schema_version"] == MANIFEST_SCHEMA_VERSION
       errors << "milestone must be M8" unless manifest["milestone"] == "M8"
       errors << "input_sha256 must be a SHA-256 digest" unless valid_digest?(manifest["input_sha256"])
-      errors << "input_file_count must be positive" unless manifest["input_file_count"].is_a?(Integer) && manifest["input_file_count"].positive?
+      unless manifest["input_file_count"].is_a?(Integer) && manifest["input_file_count"].positive?
+        errors << "input_file_count must be positive"
+      end
       errors << "source input must remain stable during evidence capture" unless manifest["input_stable"] == true
       host = manifest["host"]
-      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel ruby].all? { |key| non_empty_string?(host[key]) }
+      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel
+                                                                                                             ruby].all? do |key|
+        non_empty_string?(host[key])
+      end
       errors << "M8 evidence must be captured on x86_64" unless host.is_a?(Hash) && host["architecture"] == "x86_64"
       %w[started_at finished_at].each { |key| errors << "#{key} must be an ISO-8601 timestamp" unless iso8601?(manifest[key]) }
       M4Gate.send(:validate_input_capture, manifest, errors)
@@ -130,7 +135,9 @@ module M8Gate
       valid.each do |entry|
         path = File.expand_path(entry.fetch("path"), PROJECT_ROOT)
         errors << "source inventory entry #{entry.fetch("path")} is missing" unless File.file?(path)
-        errors << "source inventory digest mismatch #{entry.fetch("path")}" if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+        if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+          errors << "source inventory digest mismatch #{entry.fetch("path")}"
+        end
       end
       errors << "source inventory must include #{ARTIFACT_LOCK}" unless paths.include?(ARTIFACT_LOCK)
     end
@@ -199,7 +206,9 @@ module M8Gate
         end
         path = File.join(PROJECT_ROOT, entry["path"])
         errors << "#{name} source #{entry["path"]} is missing" unless File.file?(path)
-        errors << "#{name} source #{entry["path"]} digest does not match the source tree" if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+        if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+          errors << "#{name} source #{entry["path"]} digest does not match the source tree"
+        end
       end
     end
 
@@ -213,35 +222,48 @@ module M8Gate
       errors << "#{name} report must be measured on a KVM host" unless host["kvm"] == true && host["vhost_vsock"] == true
       errors << "#{name} report must record CPU virtualization support" unless %w[vmx svm].include?(host["cpu_virtualization"])
       artifacts = host["artifacts"]
-      errors << "#{name} report must bind Firecracker #{FIRECRACKER_VERSION}" unless artifacts.is_a?(Hash) && artifacts["firecracker_version"] == FIRECRACKER_VERSION
-      errors << "#{name} report must bind the artifact digest" unless artifacts.is_a?(Hash) && valid_digest?(artifacts["digest"]) && valid_digest?(artifacts["verity_root_hash"])
-      lock = File.join(PROJECT_ROOT, ARTIFACT_LOCK)
-      if File.file?(lock) && artifacts.is_a?(Hash)
-        document = JSON.parse(File.read(lock))
-        errors << "#{name} report verity root hash does not match the artifact lock" unless document.dig("verity", "root_hash") == artifacts["verity_root_hash"]
+      unless artifacts.is_a?(Hash) && artifacts["firecracker_version"] == FIRECRACKER_VERSION
+        errors << "#{name} report must bind Firecracker #{FIRECRACKER_VERSION}"
       end
+      unless artifacts.is_a?(Hash) && valid_digest?(artifacts["digest"]) && valid_digest?(artifacts["verity_root_hash"])
+        errors << "#{name} report must bind the artifact digest"
+      end
+      lock = File.join(PROJECT_ROOT, ARTIFACT_LOCK)
+      return unless File.file?(lock) && artifacts.is_a?(Hash)
+
+      document = JSON.parse(File.read(lock))
+      errors << "#{name} report verity root hash does not match the artifact lock" unless document.dig("verity",
+                                                                                                       "root_hash") == artifacts["verity_root_hash"]
     end
 
     # K1/K2: 446 selected, 446 passed, nothing failed, skipped or flaked, the
     # codename join is complete, and each of the three release profiles has the
     # required number of consecutive clean runs.
-    def validate_conformance(document, cases, errors)
+    def validate_conformance(_document, cases, errors)
       by_id = cases.to_h { |entry| [entry["id"], entry] }
       CONFORMANCE_REQUIRED_PREFIXES.each do |prefix|
         errors << "conformance report must contain a #{prefix} case" unless cases.any? { |entry| entry["id"].to_s.start_with?(prefix) }
       end
       cases.select { |entry| entry["id"].to_s.start_with?("k1_totals-") }.each do |entry|
         summary = entry["summary"] || {}
-        errors << "K1 run #{entry["id"]} must select #{EXPECTED_CONFORMANCE_TESTS} tests" unless summary["selected"] == EXPECTED_CONFORMANCE_TESTS
-        errors << "K1 run #{entry["id"]} must pass #{EXPECTED_CONFORMANCE_TESTS} tests" unless summary["passed"] == EXPECTED_CONFORMANCE_TESTS
+        unless summary["selected"] == EXPECTED_CONFORMANCE_TESTS
+          errors << "K1 run #{entry["id"]} must select #{EXPECTED_CONFORMANCE_TESTS} tests"
+        end
+        unless summary["passed"] == EXPECTED_CONFORMANCE_TESTS
+          errors << "K1 run #{entry["id"]} must pass #{EXPECTED_CONFORMANCE_TESTS} tests"
+        end
         %w[failed skipped flaked].each do |key|
           errors << "K1 run #{entry["id"]} must record #{key} 0" unless summary[key].to_i.zero?
         end
       end
       streaks = cases.select { |entry| entry["id"].to_s.start_with?("k1_consecutive_clean-") }
-      errors << "K1 must record a clean-run streak for each of the #{REQUIRED_PROFILES} release profiles" unless streaks.length == REQUIRED_PROFILES
+      unless streaks.length == REQUIRED_PROFILES
+        errors << "K1 must record a clean-run streak for each of the #{REQUIRED_PROFILES} release profiles"
+      end
       streaks.each do |entry|
-        errors << "profile #{entry["profile"]} needs #{REQUIRED_CLEAN_RUNS} consecutive clean K1 runs, has #{entry["clean_streak"]}" unless entry["clean_streak"].to_i >= REQUIRED_CLEAN_RUNS
+        unless entry["clean_streak"].to_i >= REQUIRED_CLEAN_RUNS
+          errors << "profile #{entry["profile"]} needs #{REQUIRED_CLEAN_RUNS} consecutive clean K1 runs, has #{entry["clean_streak"]}"
+        end
       end
       errors << "K2 certified-conformance evidence is required" unless by_id.dig("k2_certified_conformance", "passed") == true
     end
@@ -255,8 +277,10 @@ module M8Gate
       end
       errors << "selection ledger must classify every spec" unless by_id.dig("every_spec_classified_once", "unclassified").to_i.zero?
       errors << "selection ledger must not reuse a test id" unless by_id.dig("every_spec_classified_once", "duplicate_ids").to_i.zero?
-      errors << "selection ledger must not exclude on a forbidden ground" unless by_id.dig("no_forbidden_exclusion_reason", "passed") == true
-      errors << "every excluded external contract needs a replacement test" unless by_id.dig("external_contracts_have_replacements", "unlinked").to_i.zero?
+      errors << "selection ledger must not exclude on a forbidden ground" unless by_id.dig("no_forbidden_exclusion_reason",
+                                                                                           "passed") == true
+      errors << "every excluded external contract needs a replacement test" unless by_id.dig("external_contracts_have_replacements",
+                                                                                             "unlinked").to_i.zero?
       counts = document["counts"]
       errors << "selection report must carry the classification counts" unless counts.is_a?(Hash) && counts["required"].to_i.positive?
     end
@@ -264,7 +288,7 @@ module M8Gate
     # K6: the client matrix covers the supported skew with checksum-pinned
     # binaries, and the project corpus meets every minimum with nothing on a
     # mutable tag.
-    def validate_corpus(document, cases, errors)
+    def validate_corpus(_document, cases, errors)
       by_id = cases.to_h { |entry| [entry["id"], entry] }
       CORPUS_REQUIRED.each do |id|
         errors << "corpus report must contain the #{id} case" unless by_id.key?(id)
@@ -281,13 +305,15 @@ module M8Gate
         errors << "corpus needs at least #{minimum} #{category} projects" unless categories[category].to_i >= minimum
       end
       errors << "corpus must cover every required domain" unless Array(by_id.dig("corpus_domain_coverage", "missing")).empty?
-      errors << "every corpus project must pin its chart and image digests" unless Array(by_id.dig("corpus_fully_pinned", "unpinned")).empty?
-      errors << "corpus projects must carry no Rubernetes-specific patch" unless by_id.dig("corpus_has_no_rubernetes_patch", "passed") == true
+      errors << "every corpus project must pin its chart and image digests" unless Array(by_id.dig("corpus_fully_pinned",
+                                                                                                   "unpinned")).empty?
+      errors << "corpus projects must carry no Rubernetes-specific patch" unless by_id.dig("corpus_has_no_rubernetes_patch",
+                                                                                           "passed") == true
       errors << "the corpus must actually have been executed against a cluster" unless by_id.dig("k6_executed", "passed") == true
     end
 
     # K0/K5/K7 plus the milestone's "nothing was silenced" criterion.
-    def validate_integrity(document, cases, errors)
+    def validate_integrity(_document, cases, errors)
       by_id = cases.to_h { |entry| [entry["id"], entry] }
       INTEGRITY_REQUIRED.each do |id|
         errors << "integrity report must contain the #{id} case" unless by_id.key?(id)
@@ -296,10 +322,11 @@ module M8Gate
       violations = Array(by_id.dig("no_focus_narrowing_or_added_skip", "violations"))
       errors << "runs must not narrow focus, add skips or change mode: #{violations.first(3).inspect}" unless violations.empty?
       errors << "K5 differential must report zero differences" unless by_id.dig("k5_api_wire_differential", "passed") == true
-      errors << "K7 upgrade and recovery must pass with no data loss or stuck operation" unless by_id.dig("k7_upgrade_and_recovery", "passed") == true
-      errors << "the compatibility failure ledger must have no open item" unless by_id.dig("failure_ledger_has_no_open_items", "open").to_i.zero?
+      errors << "K7 upgrade and recovery must pass with no data loss or stuck operation" unless by_id.dig("k7_upgrade_and_recovery",
+                                                                                                          "passed") == true
+      errors << "the compatibility failure ledger must have no open item" unless by_id.dig("failure_ledger_has_no_open_items",
+                                                                                           "open").to_i.zero?
     end
-
 
     def validate_result_counts(manifest, artifacts, subjects, errors)
       counts = manifest["result_counts"]

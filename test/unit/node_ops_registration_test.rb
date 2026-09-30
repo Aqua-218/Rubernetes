@@ -39,6 +39,7 @@ class NodeOpsRegistrationTest < Minitest::Test
 
     node = registration.build_node
     lease = registration.build_lease
+
     assert_equal("Node", node["kind"])
     assert_equal("node-a", node.dig("metadata", "name"))
     assert_equal("amd64", node.dig("status", "nodeInfo", "architecture"))

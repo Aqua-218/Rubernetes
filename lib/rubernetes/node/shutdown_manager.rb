@@ -49,7 +49,8 @@ module Rubernetes
                     if requested.zero? || default.negative? || critical.negative?
                       []
                     else
-                      [Period.new(DEFAULT_PRIORITY, default / 1_000_000_000), Period.new(SYSTEM_CRITICAL_PRIORITY, critical / 1_000_000_000)]
+                      [Period.new(DEFAULT_PRIORITY, default / 1_000_000_000),
+                       Period.new(SYSTEM_CRITICAL_PRIORITY, critical / 1_000_000_000)]
                     end
                   end
         periods.sort_by(&:priority)
@@ -287,8 +288,8 @@ module Rubernetes
           threads = members.map do |pod|
             Thread.new do
               @kill_pod.call(pod, kill_grace(period, pod), message: SHUTDOWN_MESSAGE, reason: SHUTDOWN_REASON,
-                                         condition: {"type" => "DisruptionTarget", "status" => "True",
-                                                     "reason" => "TerminationByKubelet", "message" => SHUTDOWN_MESSAGE})
+                                                           condition: {"type" => "DisruptionTarget", "status" => "True",
+                                                                       "reason" => "TerminationByKubelet", "message" => SHUTDOWN_MESSAGE})
             rescue StandardError => error
               @error_handler&.call(error, :shutdown_manager)
             end

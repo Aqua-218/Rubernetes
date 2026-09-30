@@ -34,10 +34,14 @@ class ControllerAdoptionGuardTest < Minitest::Test
 
     adapter.live = rc
     adopting = controller.plan(rc, store: adapter, pods: [orphan])
-    assert adopting.operations.any? { |op| op.action == :update && op.reason.to_s.include?("adoption") }, adopting.operations.map(&:reason).inspect
+
+    assert adopting.operations.any? { |op|
+      op.action == :update && op.reason.to_s.include?("adoption")
+    }, adopting.operations.map(&:reason).inspect
 
     adapter.live = rc(deleting: true)
     refusing = controller.plan(rc, store: adapter, pods: [orphan])
+
     refute refusing.operations.any? { |op| op.reason.to_s.include?("adoption") }, refusing.operations.map(&:reason).inspect
   end
 end

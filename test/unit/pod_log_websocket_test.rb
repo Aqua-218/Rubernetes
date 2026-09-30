@@ -94,9 +94,11 @@ class PodLogWebSocketTest < Minitest::Test
       length = data.getbyte(i + 1) & 0x7f
       i += 2
       if length == 126
-        length = data.byteslice(i, 2).unpack1("n"); i += 2
+        length = data.byteslice(i, 2).unpack1("n")
+        i += 2
       elsif length == 127
-        length = data.byteslice(i, 8).unpack1("Q>"); i += 8
+        length = data.byteslice(i, 8).unpack1("Q>")
+        i += 8
       end
       out << [first & 0x0f, data.byteslice(i, length)]
       i += length

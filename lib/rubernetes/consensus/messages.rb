@@ -221,6 +221,7 @@ module Rubernetes
           end
         when "install_snapshot"
           raise ProtocolError, "snapshot data must be a String" unless fields[:data].is_a?(String)
+
           %i[last_included_index last_included_term offset total_bytes].each do |key|
             raise ProtocolError, "#{key} must be a non-negative integer" unless fields[key].is_a?(Integer) && fields[key] >= 0
           end

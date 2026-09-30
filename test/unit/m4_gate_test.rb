@@ -10,7 +10,7 @@ require_relative "../../tools/milestones/m3_evidence_support"
 
 class M4GateTest < Minitest::Test
   def test_source_exclusions_match_the_m0_to_m2_rule
-    excluded = ->(path) do
+    excluded = lambda do |path|
       M4Gate::SOURCE_EXCLUDED_ROOTS.include?(path.split("/", 2).first) ||
         M4Gate::SOURCE_EXCLUDED_PATTERNS.any? { |pattern| pattern.match?(path) }
     end
@@ -46,7 +46,7 @@ class M4GateTest < Minitest::Test
       result = M4Gate.evaluate(path)
 
       refute result.fetch("passed")
-      assert result.fetch("errors").any? { |error| error.include?("M3") || error.include?("source inventory") }
+      assert(result.fetch("errors").any? { |error| error.include?("M3") || error.include?("source inventory") })
     end
   end
 
@@ -58,36 +58,40 @@ class M4GateTest < Minitest::Test
                 "host" => {"architecture" => "x86_64", "kernel" => "5.15.0-test", "ruby" => RUBY_DESCRIPTION},
                 "started_at" => now, "finished_at" => now,
                 "input_capture" => {"stable" => true, "start" => {"sha256" => "0" * 64, "file_count" => 1},
-                                     "finish" => {"sha256" => "0" * 64, "file_count" => 1}},
+                                    "finish" => {"sha256" => "0" * 64, "file_count" => 1}},
                 "git_metadata_capture" => {"stable" => true, "start_paths" => [], "finish_paths" => [], "count" => 0},
                 "commands" => [{"name" => "fixture", "command" => ["fixture"], "started_at" => now, "finished_at" => now, "exit_status" => 0}],
                 "artifacts" => [], "subjects" => [], "result_counts" => {"commands" => 1, "command_failures" => 0,
-                  "artifacts" => 0, "subjects" => 0, "reports" => 5, "source_files" => 1}}
+                                                                         "artifacts" => 0, "subjects" => 0, "reports" => 5, "source_files" => 1}}
 
     M4Gate.send(:validate_manifest_shape, manifest, errors)
 
-    assert errors.any? { |error| error.include?("kernel") && error.include?("6.12") }
+    assert(errors.any? { |error| error.include?("kernel") && error.include?("6.12") })
   end
 
   def test_kernel_requirement_accepts_only_an_explicit_host_bound_waiver
     host = {"architecture" => "x86_64", "kernel" => "6.8.0-138-generic", "ruby" => RUBY_DESCRIPTION}
     errors = []
     M4Gate.send(:validate_kernel_requirement, {"waivers" => []}, host, errors)
-    assert errors.any? { |error| error.include?("Linux kernel >= 6.12") && error.include?("waiver") }
+
+    assert(errors.any? { |error| error.include?("Linux kernel >= 6.12") && error.include?("waiver") })
 
     waiver = {"requirement" => "linux>=6.12", "scope" => "m4-kernel-release", "reason" => "host cannot be rebooted",
               "host_kernel" => "6.8.0-138-generic", "waived_at" => Time.now.utc.iso8601}
     errors = []
     M4Gate.send(:validate_kernel_requirement, {"waivers" => [waiver]}, host, errors)
+
     assert_empty errors
     assert_equal [waiver], M4Gate.send(:result, []).fetch("waivers")
 
     errors = []
     M4Gate.send(:validate_kernel_requirement, {"waivers" => [waiver.merge("host_kernel" => "6.5.0")]}, host, errors)
-    assert errors.any? { |error| error.include?("waiver") }
+
+    assert(errors.any? { |error| error.include?("waiver") })
 
     errors = []
     M4Gate.send(:validate_kernel_requirement, {"waivers" => [waiver]}, host.merge("kernel" => "6.12.0"), errors)
+
     assert_empty errors
     assert_empty M4Gate.send(:result, []).fetch("waivers")
   end
@@ -96,7 +100,7 @@ class M4GateTest < Minitest::Test
     now = Time.now.utc.iso8601
     observation = {"executed" => true, "runner_sha256" => "1" * 64,
                    "runner" => {"runner_sha256" => "1" * 64, "command" => ["network-runner"],
-                                 "process_id" => 10, "started_at" => now, "finished_at" => now},
+                                "process_id" => 10, "started_at" => now, "finished_at" => now},
                    "netns" => {"path" => "/proc/10/ns/net", "pid" => 10, "inode" => 11},
                    "kernel_objects" => [{"kind" => "netns", "id" => "11", "observed" => true}],
                    "packet_trace" => {"format" => "text", "sha256" => "2" * 64, "packet_count" => 0, "command" => ["tcpdump"]}}
@@ -104,14 +108,14 @@ class M4GateTest < Minitest::Test
 
     M4Gate.send(:validate_network_observation, observation, errors)
 
-    assert errors.any? { |error| error.include?("packet trace") }
+    assert(errors.any? { |error| error.include?("packet trace") })
   end
 
   def test_proxy_readback_rejects_in_process_rule_digest_without_kernel_ids
     now = Time.now.utc.iso8601
     readback = {"executed" => true, "runner_sha256" => "3" * 64,
                 "runner" => {"runner_sha256" => "3" * 64, "command" => ["proxy-runner"],
-                              "process_id" => 12, "started_at" => now, "finished_at" => now},
+                             "process_id" => 12, "started_at" => now, "finished_at" => now},
                 "ebpf" => {"verified" => true, "readback" => true, "program_id" => 0, "map_id" => 0,
                            "verifier_log_sha256" => "4" * 64, "rules" => [{"id" => "r"}]},
                 "nftables" => {"readback" => true, "family" => "inet", "table" => "rubernetes",
@@ -123,7 +127,7 @@ class M4GateTest < Minitest::Test
 
     M4Gate.send(:validate_proxy_readback, readback, errors)
 
-    assert errors.any? { |error| error.include?("eBPF") }
+    assert(errors.any? { |error| error.include?("eBPF") })
   end
 
   def test_policy_oracle_rejects_boolean_observables
@@ -134,7 +138,7 @@ class M4GateTest < Minitest::Test
 
     M4Gate.send(:validate_observable_comparison, comparison, errors, "policy mutation")
 
-    assert errors.any? { |error| error.include?("structured") || error.include?("observable") }
+    assert(errors.any? { |error| error.include?("structured") || error.include?("observable") })
   end
 
   def test_external_kernel_observation_rejects_a_local_probe_digest
@@ -142,17 +146,17 @@ class M4GateTest < Minitest::Test
     local_digest = "7" * 64
     observation = {"executed" => true, "runner_sha256" => local_digest,
                    "runner" => {"runner_sha256" => local_digest, "command" => ["network-runner"],
-                                 "process_id" => 20, "started_at" => now, "finished_at" => now},
+                                "process_id" => 20, "started_at" => now, "finished_at" => now},
                    "netns" => {"path" => "/proc/20/ns/net", "pid" => 20, "inode" => 21},
                    "kernel_objects" => [{"kind" => "netns", "id" => "21", "observed" => true}],
                    "packet_trace" => {"format" => "pcap", "sha256" => "8" * 64,
-                                       "packet_count" => 1, "command" => ["tcpdump"]}}
+                                      "packet_count" => 1, "command" => ["tcpdump"]}}
     owner = {"adapter" => {"runner_sha256" => local_digest}}
     errors = []
 
     M4Gate.send(:validate_network_observation, observation, errors, owner_document: owner)
 
-    assert errors.any? { |error| error.include?("digest") && error.include?("local probe") }
+    assert(errors.any? { |error| error.include?("digest") && error.include?("local probe") })
   end
 
   def test_volume_observation_rejects_an_observed_flag_without_content_bound_values
@@ -170,7 +174,7 @@ class M4GateTest < Minitest::Test
 
     M4Gate.send(:validate_volume_observation, {"kernel_observation" => observation}, errors)
 
-    assert errors.any? { |error| error.include?("expected and actual observations") }
+    assert(errors.any? { |error| error.include?("expected and actual observations") })
   end
 
   def test_volume_observation_requires_content_digests_and_the_complete_csi_snapshot_operation_sets
@@ -194,7 +198,9 @@ class M4GateTest < Minitest::Test
       NodeStageVolume NodeUnstageVolume NodePublishVolume NodeUnpublishVolume NodeGetVolumeStats
     ]
     csi = {"executed" => true, "runner_sha256" => runner["runner_sha256"], "runner" => runner,
-           "comparisons" => csi_operations.map { |operation| {"id" => operation}.merge(content_record.call({"operation" => operation, "result" => "ok"})) }}
+           "comparisons" => csi_operations.map do |operation|
+             {"id" => operation}.merge(content_record.call({"operation" => operation, "result" => "ok"}))
+           end}
     snapshot = {"executed" => true, "runner_sha256" => runner["runner_sha256"], "runner" => runner,
                 "comparisons" => %w[snapshot_create snapshot_restore crash_recovery].map do |operation|
                   {"id" => operation}.merge(content_record.call({"operation" => operation, "result" => "ok"}))
@@ -202,15 +208,15 @@ class M4GateTest < Minitest::Test
     errors = []
 
     M4Gate.send(:validate_volume_observation, {"kernel_observation" => observation,
-                                                "csi_oracle" => csi, "snapshot_recovery" => snapshot}, errors)
+                                               "csi_oracle" => csi, "snapshot_recovery" => snapshot}, errors)
 
     assert_empty errors
     csi["comparisons"].reject! { |entry| entry["id"] == "NodeUnstageVolume" }
     errors = []
     M4Gate.send(:validate_volume_observation, {"kernel_observation" => observation,
-                                                "csi_oracle" => csi, "snapshot_recovery" => snapshot}, errors)
+                                               "csi_oracle" => csi, "snapshot_recovery" => snapshot}, errors)
 
-    assert errors.any? { |error| error.include?("NodeUnstageVolume") }
+    assert(errors.any? { |error| error.include?("NodeUnstageVolume") })
   end
 
   def test_volume_component_source_rejects_fabricated_production_module_labels
@@ -226,7 +232,7 @@ class M4GateTest < Minitest::Test
                 errors, "volume kind")
 
     assert_equal 2, errors.length
-    assert errors.all? { |error| error.include?("volume kind") }
+    assert(errors.all? { |error| error.include?("volume kind") })
   end
 
   def test_packet_trace_rejects_an_external_tmp_path_even_when_digest_looks_valid
@@ -238,8 +244,8 @@ class M4GateTest < Minitest::Test
     M4Gate.send(:validate_materialized_packet_trace, packet, errors, "network kernel observation",
                 evidence_directory: Dir.tmpdir, artifacts: [])
 
-    assert errors.any? { |error| error.include?("bundle-relative") }
-    refute errors.empty?
+    assert(errors.any? { |error| error.include?("bundle-relative") })
+    refute_empty errors
   end
 
   def test_network_observation_rejects_namespace_object_without_inode_identity_binding
@@ -265,7 +271,7 @@ class M4GateTest < Minitest::Test
 
     M4Gate.send(:validate_network_observation, observation, errors)
 
-    assert errors.any? { |error| error.include?("kernel object") && error.include?("namespace inode") }
+    assert(errors.any? { |error| error.include?("kernel object") && error.include?("namespace inode") })
   end
 
   def test_external_packet_capture_is_copied_as_regular_content_addressed_bytes
@@ -286,6 +292,7 @@ class M4GateTest < Minitest::Test
       assert_equal 58, result.fetch("bytes")
       assert_equal result.fetch("sha256"), Digest::SHA256.file(File.join(bundle, "network.pcap")).hexdigest
       document = JSON.parse(File.read(report))
+
       assert_equal "network.pcap", document.dig("kernel_observation", "packet_trace", "path")
       assert_equal result.fetch("sha256"), document.dig("kernel_observation", "packet_trace", "sha256")
       assert_equal true, document.dig("kernel_observation", "packet_trace", "materialized")
@@ -398,7 +405,7 @@ class M4GateTest < Minitest::Test
       M4Gate.send(:validate_materialized_packet_trace, packet, errors, "network observation",
                   evidence_directory: directory, artifacts: artifacts)
 
-      assert errors.any? { |error| error.include?("packet_count") && error.include?("parsed records") }
+      assert(errors.any? { |error| error.include?("packet_count") && error.include?("parsed records") })
     end
   end
 
@@ -426,7 +433,7 @@ class M4GateTest < Minitest::Test
 
     M4Gate.send(:validate_live_network_namespace, netns, runner, keeper, errors, "network observation")
 
-    assert errors.any? { |error| error.include?("inode") && error.include?("/proc readback") }
+    assert(errors.any? { |error| error.include?("inode") && error.include?("/proc readback") })
   end
 
   def test_live_namespace_rejects_dead_external_runner_even_with_a_live_keeper
@@ -461,7 +468,7 @@ class M4GateTest < Minitest::Test
 
     M4Gate.send(:validate_live_network_namespace, netns, runner, keeper, errors, "network observation")
 
-    assert errors.any? { |error| error.include?("runner process") }
+    assert(errors.any? { |error| error.include?("runner process") })
   end
 
   def test_bundle_descriptor_walk_rejects_a_renamed_parent_symlink
@@ -502,8 +509,8 @@ class M4GateTest < Minitest::Test
     M4Gate.send(:validate_live_kernel_object, object, 0, [live],
                 {"inode" => 100}, errors, "network observation")
 
-    assert errors.any? { |error| error.include?("differs from the live kernel object") }
-    assert errors.any? { |error| error.include?("live ifindex") }
+    assert(errors.any? { |error| error.include?("differs from the live kernel object") })
+    assert(errors.any? { |error| error.include?("live ifindex") })
   end
 
   def test_node_crash_recovery_rejects_filesystem_adapter_and_unbound_observation
@@ -519,9 +526,9 @@ class M4GateTest < Minitest::Test
 
     M4Gate.send(:validate_node_crash_recovery, fake, errors, owner_document: owner)
 
-    assert errors.any? { |error| error.include?("measurement source must be native") }
-    assert errors.any? { |error| error.include?("native mount adapter") }
-    assert errors.any? { |error| error.include?("runner/child/observation binding") }
+    assert(errors.any? { |error| error.include?("measurement source must be native") })
+    assert(errors.any? { |error| error.include?("native mount adapter") })
+    assert(errors.any? { |error| error.include?("runner/child/observation binding") })
   end
 
   def test_node_crash_recovery_accepts_bound_native_mount_namespace_evidence
@@ -621,7 +628,9 @@ class M4GateTest < Minitest::Test
     interface = pcapng_block(0x00000001, [1, 0, 65_535].pack("v2V"))
     enhanced_payload = ethernet_frame("PING")
     enhanced_padding = "\0" * ((4 - (enhanced_payload.bytesize % 4)) % 4)
-    enhanced = pcapng_block(0x00000006, [0, 0, 0, enhanced_payload.bytesize, enhanced_payload.bytesize].pack("V5") + enhanced_payload + enhanced_padding)
+    enhanced = pcapng_block(0x00000006,
+                            [0, 0, 0, enhanced_payload.bytesize,
+                             enhanced_payload.bytesize].pack("V5") + enhanced_payload + enhanced_padding)
     simple_payload = ethernet_frame("END")
     simple_padding = "\0" * ((4 - (simple_payload.bytesize % 4)) % 4)
     simple = pcapng_block(0x00000003, [simple_payload.bytesize].pack("V") + simple_payload + simple_padding)

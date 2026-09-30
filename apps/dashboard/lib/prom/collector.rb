@@ -11,7 +11,7 @@ module Prom
   # process; the web server reads from the same Tsdb::Store (its head is
   # in this process), exactly like a Prometheus server.
   class Collector
-    attr_reader :store, :scraper, :engine, :rules, :interval_seconds, :last_round_at, :discovery_error
+    attr_reader :store, :scraper, :engine, :rules, :interval_seconds, :last_round_at, :discovery_error, :last_round_seconds
 
     def initialize(store:, targets:, scraper: nil, engine: nil, rules: nil, interval_seconds: 15.0,
                    evaluation_interval_seconds: nil, logger: nil, clock: -> { (Time.now.to_f * 1000).to_i })
@@ -51,7 +51,7 @@ module Prom
       end
       @mutex.synchronize { @current_targets = discovered }
       @scraper.scrape_all(discovered)
-      if @rules && (@last_evaluation_at.nil? || now_ms - @last_evaluation_at >= @evaluation_interval_seconds * 1000 - 1)
+      if @rules && (@last_evaluation_at.nil? || now_ms - @last_evaluation_at >= (@evaluation_interval_seconds * 1000) - 1)
         begin
           @rules.evaluate(@engine, now_ms)
         rescue StandardError => e
@@ -69,8 +69,6 @@ module Prom
                                               maintain_seconds: (Process.clock_gettime(Process::CLOCK_MONOTONIC) - maintain_started).round(3))
       statuses
     end
-
-    attr_reader :last_round_seconds
 
     def start
       return @thread if @thread&.alive?

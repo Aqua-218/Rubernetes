@@ -270,7 +270,8 @@ module Rubernetes
             raise BindingError, %(persistentvolumeclaim "#{name}" not found)
           end
           if value(claim, "status", "phase").to_s == "Lost"
-            raise BindingError, %(persistentvolumeclaim "#{name}" bound to non-existent persistentvolume "#{value(claim, "spec", "volumeName")}")
+            raise BindingError,
+                  %(persistentvolumeclaim "#{name}" bound to non-existent persistentvolume "#{value(claim, "spec", "volumeName")}")
           end
           raise BindingError, %(persistentvolumeclaim "#{name}" is being deleted) if value(claim, "metadata", "deletionTimestamp")
 
@@ -288,7 +289,9 @@ module Rubernetes
       end
 
       def owned_by_pod!(pod, claim)
-        owner = Array(value(claim, "metadata", "ownerReferences")).find { |reference| Support.value(reference, "controller", false) == true }
+        owner = Array(value(claim, "metadata", "ownerReferences")).find do |reference|
+          Support.value(reference, "controller", false) == true
+        end
         return if owner && Support.value(owner, "uid", "").to_s == pod.uid.to_s
 
         raise BindingError, "PVC #{value(claim, "metadata", "namespace")}/#{value(claim, "metadata", "name")} was not created for pod " \
@@ -339,7 +342,7 @@ module Rubernetes
       end
 
       # FindPodVolumes: [PodVolumes, reasons].
-      def find_pod_volumes(pod, claims, node, data)
+      def find_pod_volumes(_pod, claims, node, data)
         reasons = []
         podvolumes = PodVolumes.new(bindings: [], provisions: [])
         unless claims.bound.empty?
@@ -367,9 +370,7 @@ module Rubernetes
           unbound_satisfied, podvolumes.bindings, unmatched = find_matching_volumes(to_match, claims.volumes_by_class, node, data)
           to_provision.concat(unmatched)
         end
-        unless to_provision.empty?
-          unbound_satisfied, sufficient, podvolumes.provisions = check_volume_provisions(to_provision, node, data)
-        end
+        unbound_satisfied, sufficient, podvolumes.provisions = check_volume_provisions(to_provision, node, data) unless to_provision.empty?
         reasons << REASON_BIND_CONFLICT unless unbound_satisfied
         reasons << REASON_NOT_ENOUGH_SPACE unless sufficient
         [podvolumes, reasons]
@@ -440,7 +441,10 @@ module Rubernetes
         provisions = []
         claims.each do |claim|
           class_name = claim_class(claim)
-          raise BindingError, %(no class for claim "#{value(claim, "metadata", "namespace")}/#{value(claim, "metadata", "name")}") if class_name.empty?
+          if class_name.empty?
+            raise BindingError,
+                  %(no class for claim "#{value(claim, "metadata", "namespace")}/#{value(claim, "metadata", "name")}")
+          end
 
           storage_class = index(data)[:classes][class_name]
           raise BindingError, %(failed to find storage class "#{class_name}") if storage_class.nil?
@@ -573,7 +577,8 @@ module Rubernetes
           end
 
           reference = value(volume, "spec", "claimRef")
-          raise BindingError, %(ClaimRef got reset for pv "#{name_of(volume)}") if reference.nil? || Support.value(reference, "uid", "").to_s.empty?
+          raise BindingError, %(ClaimRef got reset for pv "#{name_of(volume)}") if reference.nil? || Support.value(reference, "uid",
+                                                                                                                   "").to_s.empty?
           return false unless fully_bound?(current)
         end
         podvolumes.provisions.each do |written|
@@ -583,7 +588,10 @@ module Rubernetes
 
           annotations = value(current, "metadata", "annotations")
           raise BindingError, %(selectedNode annotation reset for PVC "#{value(current, "metadata", "name")}") if annotations.nil?
-          raise BindingError, %(provisioning failed for PVC "#{value(current, "metadata", "name")}") if annotations[ANN_SELECTED_NODE] != node_name
+          if annotations[ANN_SELECTED_NODE] != node_name
+            raise BindingError,
+                  %(provisioning failed for PVC "#{value(current, "metadata", "name")}")
+          end
 
           volume_name = value(current, "spec", "volumeName").to_s
           unless volume_name.empty?

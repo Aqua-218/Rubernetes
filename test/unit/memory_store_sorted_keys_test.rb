@@ -23,11 +23,14 @@ class MemoryStoreSortedKeysTest < Minitest::Test
   def test_new_and_deleted_keys_are_reflected_immediately
     store = Store.new
     store.create("registry/things/ns/b", object("b"))
+
     assert_equal %w[b], names(store.list("registry/things/"))
     store.create("registry/things/ns/a", object("a"))
     store.create("registry/others/ns/z", object("z"))
+
     assert_equal %w[a b], names(store.list("registry/things/"))
     store.delete("registry/things/ns/a")
+
     assert_equal %w[b], names(store.list("registry/things/"))
     assert_equal %w[z], names(store.list("registry/others/"))
     assert_equal %w[b], names(store.list("registry/thing")), "a plain string prefix, not only a key space"
@@ -38,6 +41,7 @@ class MemoryStoreSortedKeysTest < Minitest::Test
     %w[registry/a/ns/x registry/things/ns/a registry/things/ns/b registry/thingsx/ns/c registry/z/ns/y].each do |key|
       store.create(key, object(key.split("/").last))
     end
+
     assert_equal %w[a b], names(store.list("registry/things/"))
     assert_equal %w[a b c], names(store.list("registry/things"))
     assert_equal [], names(store.list("registry/nothing/"))
@@ -47,10 +51,13 @@ class MemoryStoreSortedKeysTest < Minitest::Test
     store = Store.new
     %w[a b c d e].each { |name| store.create("registry/things/ns/#{name}", object(name)) }
     first = store.list("registry/things/", limit: 2)
+
     assert_equal %w[a b], names(first)
     second = store.list("registry/things/", limit: 2, continue: first.continue_token)
+
     assert_equal %w[c d], names(second)
     third = store.list("registry/things/", limit: 2, continue: second.continue_token)
+
     assert_equal %w[e], names(third)
     assert_nil third.continue_token
   end
@@ -61,8 +68,10 @@ class MemoryStoreSortedKeysTest < Minitest::Test
     store.delete("registry/things/ns/b")
     restored = Store.new
     restored.import_state(store.export_state)
+
     assert_equal %w[a], names(restored.list("registry/things/"))
     restored.create("registry/things/ns/c", object("c"))
+
     assert_equal %w[a c], names(restored.list("registry/things/"))
   end
 end

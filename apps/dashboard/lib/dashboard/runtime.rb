@@ -94,7 +94,7 @@ module Dashboard
         path = Config.rules_path
         if File.file?(path)
           Prom::Rules.load_file(path, webhook_url: Config.alert_webhook_url, logger: @logger,
-                                default_interval_ms: (Config.evaluation_interval_seconds * 1000).to_i)
+                                      default_interval_ms: (Config.evaluation_interval_seconds * 1000).to_i)
         else
           Prom::Rules.new({"groups" => []}, webhook_url: Config.alert_webhook_url, logger: @logger)
         end

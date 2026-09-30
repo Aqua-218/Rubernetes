@@ -38,12 +38,16 @@ module VAPValidationDifferential
       end
     end
     if D.maybe(random, 0.3)
-      spec["auditAnnotations"] = [{"key" => "a", "valueExpression" => D.pick(random, ["'x'", "null", "1", " object.metadata.name ", "params.x", "variables.v0", "object.spec"])}]
+      spec["auditAnnotations"] =
+        [{"key" => "a",
+          "valueExpression" => D.pick(random, ["'x'", "null", "1", " object.metadata.name ", "params.x", "variables.v0", "object.spec"])}]
     end
     policy
   end
 
-  def cel_errors(errors) = errors.select { |error| error.match?(CEL_FIELD) && !error.include?("Syntax error") }.map { |error| error.gsub(/\b_var\d+/, "_var#") }
+  def cel_errors(errors)
+    errors.select { |error| error.match?(CEL_FIELD) && !error.include?("Syntax error") }.map { |error| error.gsub(/\b_var\d+/, "_var#") }
+  end
 
   def run_port(policy)
     KV.validating_admission_policy_errors(policy).map do |issue|

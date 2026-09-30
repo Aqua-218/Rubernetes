@@ -47,7 +47,9 @@ module MemoryManagerDifferential
         machine = machine(random, nodes)
         reservations = machine.select { random.rand < 0.8 }.map do |node|
           limits = {"memory" => "#{random.rand(1..4) * 256}Mi"}
-          limits["hugepages-2Mi"] = "#{random.rand(0..2) * 2}Mi" if node["hugepages"].any? { |page| page["page_size"] == 2048 } && random.rand < 0.4
+          limits["hugepages-2Mi"] = "#{random.rand(0..2) * 2}Mi" if node["hugepages"].any? do |page|
+            page["page_size"] == 2048
+          end && random.rand < 0.4
           {"numa_node" => node["id"], "limits" => limits}
         end
         reservations = [{"numa_node" => 0, "limits" => {"memory" => "512Mi"}}] if reservations.empty?
@@ -65,7 +67,9 @@ module MemoryManagerDifferential
             containers = Array.new(random.rand(1..3)) do |i|
               memory = "#{[256, 512, 1024, 2048, 4096, 8192, 12_288].sample(random: random)}Mi"
               requests = {"memory" => memory, "cpu" => "1"}
-              requests["hugepages-2Mi"] = "#{random.rand(1..8) * 2}Mi" if machine.first["hugepages"].any? { |page| page["page_size"] == 2048 } && random.rand < 0.3
+              requests["hugepages-2Mi"] = "#{random.rand(1..8) * 2}Mi" if machine.first["hugepages"].any? do |page|
+                page["page_size"] == 2048
+              end && random.rand < 0.3
               guaranteed = random.rand < 0.85
               {"name" => "c#{i}", "requests" => requests, "limits" => guaranteed ? requests.dup : {"memory" => memory},
                "init" => i.zero? && random.rand < 0.3, "sidecar" => false}
@@ -80,7 +84,8 @@ module MemoryManagerDifferential
             end
           when "remove"
             pod_uid, containers = pods.sample(random: random)
-            steps << {"action" => "remove", "podUID" => pod_uid, "containers" => containers, "container" => containers.sample(random: random)["name"]}
+            steps << {"action" => "remove", "podUID" => pod_uid, "containers" => containers,
+                      "container" => containers.sample(random: random)["name"]}
           end
         end
         cases << {"name" => "numa-#{nodes}/policy/#{index}", "op" => "policy", "machine" => machine, "reservedMemory" => reservations,
@@ -106,7 +111,8 @@ module MemoryManagerDifferential
           action = pods.empty? ? "allocatePod" : %w[allocatePod allocatePod remove podHints hints].sample(random: random)
           if action == "remove"
             uid, containers = pods.sample(random: random)
-            steps << {"action" => "remove", "podUID" => uid, "containers" => containers, "container" => containers.sample(random: random)["name"]}
+            steps << {"action" => "remove", "podUID" => uid, "containers" => containers,
+                      "container" => containers.sample(random: random)["name"]}
             next
           end
           uid = "pl-#{index}-#{step}"
@@ -137,14 +143,17 @@ module MemoryManagerDifferential
   end
 
   def checkpoint_cases
-    table = ->(total, reserved, free) { {"total" => total, "systemReserved" => 0, "allocatable" => total, "reserved" => reserved, "free" => free} }
+    table = lambda { |total, reserved, free|
+      {"total" => total, "systemReserved" => 0, "allocatable" => total, "reserved" => reserved, "free" => free}
+    }
     [
       {"name" => "checkpoint/empty", "op" => "checkpoint", "policyName" => "Static", "machineState" => {}, "entries" => {}},
       {"name" => "checkpoint/state", "op" => "checkpoint", "policyName" => "Static",
        "machineState" => {"0" => {"numberOfAssignments" => 2, "memoryMap" => {"memory" => table.call(4 * GI, GI, 3 * GI),
-                                                                               "hugepages-2Mi" => table.call(64 * MI, 0, 64 * MI)},
+                                                                              "hugepages-2Mi" => table.call(64 * MI, 0, 64 * MI)},
                                   "cells" => [0, 1]},
-                          "1" => {"numberOfAssignments" => 1, "memoryMap" => {"memory" => table.call(4 * GI, 0, 4 * GI)}, "cells" => [0, 1]}},
+                          "1" => {"numberOfAssignments" => 1, "memoryMap" => {"memory" => table.call(4 * GI, 0, 4 * GI)},
+                                  "cells" => [0, 1]}},
        "entries" => {"pod-b" => {"app" => [{"numaAffinity" => [0, 1], "type" => "memory", "size" => GI}]},
                      "pod-a" => {"x" => [{"numaAffinity" => [0], "type" => "hugepages-2Mi", "size" => 4 * MI},
                                          {"numaAffinity" => [0], "type" => "memory", "size" => 512 * MI}]}}},
@@ -190,13 +199,19 @@ module MemoryManagerDifferential
   end
 
   def render_hints(hints)
-    hints.transform_values { |list| list.map { |hint| {"affinity" => hint.affinity ? hint.affinity.bits : [], "preferred" => hint.preferred} } }
+    hints.transform_values do |list|
+      list.map do |hint|
+        {"affinity" => hint.affinity ? hint.affinity.bits : [], "preferred" => hint.preferred}
+      end
+    end
   end
 
   def run_policy(test_case)
     store = FixedAffinity.new
     machine = test_case["machine"].map do |node|
-      {id: node["id"], memory: node["memory"], hugepages: node["hugepages"].map { |page| {page_size: page["page_size"], num_pages: page["num_pages"]} }}
+      {id: node["id"], memory: node["memory"], hugepages: node["hugepages"].map do |page|
+        {page_size: page["page_size"], num_pages: page["num_pages"]}
+      end}
     end
     reservations = test_case["reservedMemory"].map { |entry| {numa_node: entry["numa_node"], limits: entry["limits"]} }
     result = {"name" => test_case["name"]}

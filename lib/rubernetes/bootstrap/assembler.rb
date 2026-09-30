@@ -33,8 +33,8 @@ module Rubernetes
         @policy_mutex = Mutex.new
       end
 
-      def add(sandbox, config = nil, **options)
-        result = @interface.add(sandbox, config, **options)
+      def add(sandbox, config = nil, **)
+        result = @interface.add(sandbox, config, **)
         return result unless @policy_engine
 
         sandbox_id = sandbox_id_for(sandbox)
@@ -56,7 +56,7 @@ module Rubernetes
             rescue StandardError => cleanup_error
               cleanup_errors << "network rollback failed: #{cleanup_error.message}"
             end
-            detail = cleanup_errors.empty? ? "" : "; #{cleanup_errors.join('; ')}"
+            detail = cleanup_errors.empty? ? "" : "; #{cleanup_errors.join("; ")}"
             raise Network::PolicyRevisionError,
                   "Pod network policy publication failed for #{sandbox_id}: #{policy_error.message}#{detail}"
           end
@@ -92,18 +92,18 @@ module Rubernetes
         end
       end
 
-      def check(*arguments, **options)
-        @interface.check(*arguments, **options)
+      def check(*, **)
+        @interface.check(*, **)
       end
 
-      def recover(*arguments, **options)
-        @interface.recover(*arguments, **options)
+      def recover(*, **)
+        @interface.recover(*, **)
       end
 
-      def method_missing(name, *arguments, **options, &block)
+      def method_missing(name, ...)
         return super unless @interface.respond_to?(name)
 
-        @interface.public_send(name, *arguments, **options, &block)
+        @interface.public_send(name, ...)
       end
 
       def respond_to_missing?(name, include_private = false)
@@ -203,7 +203,10 @@ module Rubernetes
                         nil
                       else
                         state_dir = section["state_dir"] ||
-                                    (process["kubeconfig"] ? File.join(File.dirname(File.expand_path(process["kubeconfig"].to_s)), "image_manager") : nil)
+                                    (if process["kubeconfig"]
+                                       File.join(File.dirname(File.expand_path(process["kubeconfig"].to_s)),
+                                                 "image_manager")
+                                     end)
                         Image::PullRecords.new(policy: section.fetch("verification_policy", Image::PullRecords::NEVER_VERIFY_PRELOADED),
                                                allowlist: section.fetch("preloaded_images_verification_allowlist", []),
                                                directory: state_dir)
@@ -265,7 +268,11 @@ module Rubernetes
             network = LifecycleNetworkAdapter.new(network, policy_engine: network.policy_engine) if network.is_a?(Network::Interface)
             native = native_agent_profile?(process)
             gateways = native && raw_network.is_a?(Network::Interface) ? node_gateway_addresses(raw_network, process) : []
-            resource_reader = native ? Node::ResourceReader.new(client: adapter, logger: ->(level, event, **fields) { logger.public_send(level, event, **fields) }) : nil
+            resource_reader = if native
+                                Node::ResourceReader.new(client: adapter, logger: lambda { |level, event, **fields|
+                                  logger.public_send(level, event, **fields)
+                                })
+                              end
             # CRI pulls carry the Pod's imagePullSecrets the way native pulls do.
             if resource_reader && runtime.respond_to?(:backends)
               runtime.backends.each_value do |backend|
@@ -340,8 +347,10 @@ module Rubernetes
               # forever.  gRPC has no namespace connector, so it keeps the
               # node-local client.
               probe_connectors: native ? {grpc: Node::ProbeConnectors::GRPC.new} : nil,
-              pod_files: native ? Node::PodFiles.new(cluster_dns: gateways, cluster_domain: cluster_domain(process),
-                                                     resolv_conf: dns_options(process)["resolv_conf"]) : nil,
+              pod_files: if native
+                           Node::PodFiles.new(cluster_dns: gateways, cluster_domain: cluster_domain(process),
+                                              resolv_conf: dns_options(process)["resolv_conf"])
+                         end,
               detect_host_resources: native,
               max_pods: process.fetch("max_pods", Node::HostResources::DEFAULT_MAX_PODS),
               crash_loop_back_off_max: (process["crash_loop_back_off"] || {})["max_container_restart_period_seconds"],
@@ -463,6 +472,7 @@ module Rubernetes
       def adapter_for(*names)
         names.each do |name|
           return @runtime_adapters[name] if @runtime_adapters.key?(name)
+
           string_name = name.to_s
           return @runtime_adapters[string_name] if @runtime_adapters.key?(string_name)
         end
@@ -523,6 +533,7 @@ module Rubernetes
            [mount_adapter, device_adapter, volume_adapter].all?(&:nil?)
           raise Config::Error, "volume.profile must explicitly select test for the fake volume adapter"
         end
+
         if native_profile
           uuid_resolver = adapters[:filesystem_uuid_resolver] || adapters["filesystem_uuid_resolver"]
           uuid_resolver ||= Volume::FilesystemUuidResolver.new
@@ -542,6 +553,7 @@ module Rubernetes
                             unless defined?(Rubernetes::Platform::Linux::Openat2)
                               raise Config::Error, "volume path security requires the Linux openat2 resolver"
                             end
+
                             openat2 = Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true)
                             Volume::PathSecurity.new(root: "/", adapter: openat2, require_openat2: true)
                           end
@@ -639,7 +651,7 @@ module Rubernetes
         # CIDR is required" while the config plainly sets one.
         ipam_options = config.slice("cluster_cidr", "ipv4_cidr", "ipv6_cidr", "node_subnet_prefix",
                                     "ipv4_node_prefix", "ipv6_node_prefix")
-                             .transform_keys(&:to_sym)
+          .transform_keys(&:to_sym)
         state_path = config.fetch("state_path")
         ipam = Network::IPAM.new(**ipam_options, state_path: "#{state_path}.ipam.json", fsync: config.fetch("fsync", true))
         observer = adapters[:network_observer] || adapters["network_observer"]
@@ -654,15 +666,15 @@ module Rubernetes
         sysctl_manager = adapters[:network_sysctl_manager] || adapters["network_sysctl_manager"]
         if native_profile && sysctl_manager.nil?
           sysctl_manager = Network::SysctlManager.new(state_path: "#{state_path}.sysctl.json", journal: journal,
-                                                       fsync: config.fetch("fsync", true))
+                                                      fsync: config.fetch("fsync", true))
         end
         policy_engine = build_network_policy(config, native_profile: native_profile, adapters: adapters)
         bridge_manager = adapters[:network_bridge_manager] || adapters["network_bridge_manager"] ||
-          Network::BridgeManager.new(netlink: netlink, adapter: adapter)
+                         Network::BridgeManager.new(netlink: netlink, adapter: adapter)
         topology = adapters[:network_topology] || adapters["network_topology"] ||
-          Network::Topology.new(netlink: netlink, adapter: adapter,
-                                bridge_name: config.fetch("bridge_name", Network::Topology::DEFAULT_BRIDGE),
-                                mtu: config.fetch("mtu", 1500), bridge_manager: bridge_manager, clock: @clock)
+                   Network::Topology.new(netlink: netlink, adapter: adapter,
+                                         bridge_name: config.fetch("bridge_name", Network::Topology::DEFAULT_BRIDGE),
+                                         mtu: config.fetch("mtu", 1500), bridge_manager: bridge_manager, clock: @clock)
         interface = Network::Interface.new(
           ipam: ipam,
           topology: topology,
@@ -753,11 +765,14 @@ module Rubernetes
           l3: process.fetch("l3", false),
           security_context: {"privileged" => privileged},
           # kubelet: Localhost seccomp profiles live under <root-dir>/seccomp.
-          seccomp_root: process.fetch("seccomp_root", File.join(File.dirname(process.fetch("journal_path", paths.fetch("journal_path", Runtime::Native::Configuration::DEFAULT_JOURNAL_PATH))), "seccomp"))
+          seccomp_root: process.fetch("seccomp_root",
+                                      File.join(File.dirname(process.fetch("journal_path", paths.fetch("journal_path", Runtime::Native::Configuration::DEFAULT_JOURNAL_PATH))),
+                                                "seccomp"))
         )
         if privileged && !privileged_capabilities_available?(runtime)
           raise Runtime::Native::CapabilityError, "privileged agent runtime capabilities are unavailable"
         end
+
         wrap_microvm_backends(runtime, process)
       end
 
@@ -806,8 +821,9 @@ module Rubernetes
           artifacts_lock: section["artifacts_lock"]
         }.compact
         {
-          "rubernetes-firecracker" => Runtime::MicroVM.new(**options.merge(data_dir: File.join(options[:data_dir], "firecracker"))),
-          "rubernetes-firecracker-restricted" => Runtime::MicroVMRestricted.new(**options.merge(data_dir: File.join(options[:data_dir], "restricted")))
+          "rubernetes-firecracker" => Runtime::MicroVM.new(**options, data_dir: File.join(options[:data_dir], "firecracker")),
+          "rubernetes-firecracker-restricted" => Runtime::MicroVMRestricted.new(**options, data_dir: File.join(options[:data_dir],
+                                                                                                               "restricted"))
         }
       end
 

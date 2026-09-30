@@ -34,10 +34,12 @@ class OpenAPIV2StructuralTest < Minitest::Test
                                    "components" => {"schemas" => {"com.example.shared.v1.Bar" => {"type" => "object"}}}})
 
     definitions = @repository.document_for("/openapi/v2").fetch("definitions")
+
     assert(definitions.key?("com.example.shared.v1.Foo"))
     assert(definitions.key?("com.example.shared.v1.Bar"))
 
     v3 = @repository.document_for("/openapi/v3/apis/shared.example.com/v1")
+
     assert_equal(%w[/apis/shared.example.com/v1/bars /apis/shared.example.com/v1/foos], v3.fetch("paths").keys.sort)
   end
 
@@ -49,6 +51,7 @@ class OpenAPIV2StructuralTest < Minitest::Test
     @repository.withdraw(group: "shared.example.com", version: "v1", owner: "bars.shared.example.com")
 
     definitions = @repository.document_for("/openapi/v2").fetch("definitions")
+
     assert(definitions.key?("com.example.shared.v1.Foo"))
     refute(definitions.key?("com.example.shared.v1.Bar"))
   end

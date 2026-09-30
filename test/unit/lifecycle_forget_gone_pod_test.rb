@@ -11,7 +11,7 @@ class LifecycleForgetGonePodTest < Minitest::Test
   class Runtime
     def run_sandbox(_pod, runtime_class: nil) = "sandbox-1"
 
-    def create_container(_sandbox, spec)
+    def create_container(_sandbox, _spec)
       @sequence = @sequence.to_i + 1
       "container-#{@sequence}"
     end
@@ -41,22 +41,26 @@ class LifecycleForgetGonePodTest < Minitest::Test
     deleter = ->(**) { raise %(Kubernetes API request DELETE /api/v1/namespaces/ns/pods/p failed with HTTP 404: pods "p" not found) }
     subject = lifecycle(deleter)
     subject.reconcile(pod(deleting: true))
+
     assert_nil subject.record(pod)
   end
 
   def test_a_deleted_event_forgets_the_record
     subject = lifecycle(nil)
     subject.reconcile(pod, action: "DELETED")
+
     assert_nil subject.record(pod)
   end
 
   def test_a_successful_final_delete_still_forgets_and_a_transient_failure_keeps_it
     subject = lifecycle(->(**) { true })
     subject.reconcile(pod(deleting: true))
+
     assert_nil subject.record(pod)
 
     kept = lifecycle(->(**) { raise "Kubernetes API request DELETE failed with HTTP 500: boom" })
     kept.reconcile(pod(deleting: true))
+
     refute_nil kept.record(pod), "a transient failure keeps the record so the next sync retries"
   end
 end

@@ -34,8 +34,8 @@ module Conformance
       options = {
         lanes: LANES.dup,
         profile: nil,
-        kubeconfig: ENV["RUBERNETES_CONFORMANCE_KUBECONFIG"],
-        oracle_kubeconfig: ENV["RUBERNETES_CONFORMANCE_ORACLE_KUBECONFIG"],
+        kubeconfig: ENV.fetch("RUBERNETES_CONFORMANCE_KUBECONFIG", nil),
+        oracle_kubeconfig: ENV.fetch("RUBERNETES_CONFORMANCE_ORACLE_KUBECONFIG", nil),
         source_root: ENV.fetch("RUBERNETES_KUBERNETES_SOURCE", "/tmp/kubernetes-v1.36.2"),
         output_root: File.join(ROOT, "artifacts/conformance"),
         platform: "linux/amd64"
@@ -88,7 +88,9 @@ module Conformance
       File.write(path, "#{JSON.pretty_generate(manifest)}\n")
       manifest["artifacts"] = artifact_entries(directory)
       File.write(path, "#{JSON.pretty_generate(manifest)}\n")
-      puts JSON.pretty_generate(manifest.reject { |key, _| key == "lanes" }.merge("lanes" => results.map { |lane| lane.slice("lane", "status", "passed", "reason") }))
+      puts JSON.pretty_generate(manifest.reject { |key, _| key == "lanes" }.merge("lanes" => results.map { |lane|
+        lane.slice("lane", "status", "passed", "reason")
+      }))
       manifest.fetch("summary").fetch("passed") ? 0 : 1
     end
 

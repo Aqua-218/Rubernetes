@@ -32,22 +32,26 @@ class ImmutableConfigMapSecretTest < Minitest::Test
 
   def test_an_immutable_config_map_may_not_change_its_data
     old = config_map("immutable" => true)
+
     refute_empty errors(config_map("immutable" => true, "data" => {"key" => "other"}), old, "ConfigMap")
   end
 
   def test_an_immutable_config_map_may_not_become_mutable
     old = config_map("immutable" => true)
+
     refute_empty errors(config_map("immutable" => false), old, "ConfigMap")
     refute_empty errors(config_map, old, "ConfigMap")
   end
 
   def test_an_immutable_config_map_that_does_not_change_is_accepted
     old = config_map("immutable" => true)
+
     assert_empty errors(config_map("immutable" => true), old, "ConfigMap")
   end
 
   def test_binary_data_is_covered_too
     old = config_map("immutable" => true, "binaryData" => {"b" => "AA=="})
+
     refute_empty errors(config_map("immutable" => true, "binaryData" => {"b" => "AQ=="}), old, "ConfigMap")
   end
 
@@ -57,6 +61,7 @@ class ImmutableConfigMapSecretTest < Minitest::Test
 
   def test_an_immutable_secret_may_not_change_its_data
     old = secret("immutable" => true)
+
     refute_empty errors(secret("immutable" => true, "data" => {"key" => "b3RoZXI="}), old, "Secret")
   end
 

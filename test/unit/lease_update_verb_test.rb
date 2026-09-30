@@ -46,6 +46,7 @@ class LeaseUpdateVerbTest < Minitest::Test
     adapter.update(renewed, descriptor: Rubernetes::Controller::ResourceDescriptor.parse("Lease"), existing: current)
 
     verb, namespace, body = client.calls.fetch(0)
+
     assert_equal :update, verb
     assert_equal "kube-system", namespace
     assert_equal "7", body.dig("metadata", "resourceVersion")
@@ -58,10 +59,12 @@ class LeaseUpdateVerbTest < Minitest::Test
     forbidden = Rubernetes::Client::APIError.allocate
     forbidden.define_singleton_method(:status) { 403 }
     forbidden.define_singleton_method(:message) { "leases is forbidden" }
+
     refute elector.send(:transient_error?, forbidden)
     unavailable = Rubernetes::Client::APIError.allocate
     unavailable.define_singleton_method(:status) { 503 }
     unavailable.define_singleton_method(:message) { "unavailable" }
+
     assert elector.send(:transient_error?, unavailable)
   end
 end

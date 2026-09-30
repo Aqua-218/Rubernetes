@@ -114,7 +114,7 @@ module Rubernetes
         flags
       end
 
-      SECRET_KEY = /(password|secret|token|private_key)\z/i.freeze
+      SECRET_KEY = /(password|secret|token|private_key)\z/i
 
       def flatten(value, prefix, into)
         case value
@@ -128,9 +128,7 @@ module Rubernetes
       end
 
       def respond(accept, kind)
-        if accept.to_s.strip.empty?
-          return [200, {"content-type" => "text/plain; charset=utf-8"}, yield(:text, nil)]
-        end
+        return [200, {"content-type" => "text/plain; charset=utf-8"}, yield(:text, nil)] if accept.to_s.strip.empty?
 
         choice = negotiate(accept, kind)
         if choice.nil?
@@ -163,11 +161,10 @@ module Rubernetes
 
             next
           end
-          if %w[application/json application/yaml].include?(media) || media == "*/*"
-            next unless options["as"] == kind && options["g"] == GROUP && VERSIONS.include?(options["v"])
+          next unless %w[application/json application/yaml].include?(media) || media == "*/*"
+          next unless options["as"] == kind && options["g"] == GROUP && VERSIONS.include?(options["v"])
 
-            return [media == "*/*" ? "application/json" : media, options["v"]]
-          end
+          return [media == "*/*" ? "application/json" : media, options["v"]]
         end
         nil
       end

@@ -47,6 +47,6 @@ class LayerExtractorSpeedTest < Minitest::Test
   def test_the_secure_rootfs_still_syncs_by_default
     parameters = Rubernetes::Platform::Linux::SecureRootfs.instance_method(:write_file).parameters
 
-    assert_includes parameters, [:key, :sync]
+    assert_includes parameters, %i[key sync]
   end
 end

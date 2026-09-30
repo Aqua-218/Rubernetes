@@ -43,6 +43,7 @@ class SchedulerMetricsTest < Minitest::Test
   def test_registry_declares_the_inventory_and_leaves_unimplemented_series_out
     metrics = Scheduler::Metrics.new
     names = metrics.registry.registered_names
+
     %w[scheduler_schedule_attempts_total scheduler_scheduling_attempt_duration_seconds scheduler_pending_pods
        scheduler_framework_extension_point_duration_seconds scheduler_plugin_execution_duration_seconds
        scheduler_queue_incoming_pods_total scheduler_unschedulable_pods scheduler_cache_size scheduler_goroutines
@@ -60,16 +61,21 @@ class SchedulerMetricsTest < Minitest::Test
     end
     # An unlabelled family renders its (annotated) HELP even while empty.
     apiserver = Rubernetes::Observability::Metrics.new
-    assert_match(/# HELP aggregator_discovery_nopeer_requests_total .*\(not implemented in Rubernetes, always empty: no UnknownVersionInteroperabilityProxy/, apiserver.render_own)
+
+    assert_match(
+      /# HELP aggregator_discovery_nopeer_requests_total .*\(not implemented in Rubernetes, always empty: no UnknownVersionInteroperabilityProxy/, apiserver.render_own
+    )
     # client-go registers these plain families unconditionally: present and
     # empty (the TTL gauge at +Inf) as on every upstream component.
     assert_includes names, "rest_client_exec_plugin_certificate_rotation_age"
     assert_includes metrics.render, "rest_client_exec_plugin_ttl_seconds +Inf"
     text = metrics.render
-    assert_equal 0.0, value(text, "disabled_metrics_total")
+
+    assert_in_delta(0.0, value(text, "disabled_metrics_total"))
     # Upstream bucket bounds come from the inventory: attempt duration is
     # ExponentialBuckets(0.001, 2, 15), victims ExponentialBuckets(1, 2, 7).
     entry = Rubernetes::Observability::Metrics.upstream.fetch("scheduler_scheduling_attempt_duration_seconds")
+
     assert_equal 15, entry["buckets"].length
     assert_in_delta 0.001, entry["buckets"].first
   end
@@ -78,52 +84,71 @@ class SchedulerMetricsTest < Minitest::Test
     metrics = Scheduler::Metrics.new
     fw = framework(metrics)
     result = fw.schedule(pod("web"), [node("a"), node("b")], enqueue: true)
-    assert result.scheduled?
+
+    assert_predicate result, :scheduled?
     text = metrics.render
-    assert_equal 1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "PreEnqueue", status: "Success")
-    assert_equal 1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Filter", status: "Success")
-    assert_equal 1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Score", status: "Success")
-    assert_equal 1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Reserve", status: "Success")
-    assert_equal 1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "PreBind", status: "Success")
-    assert_equal 1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Bind", status: "Success")
-    assert_equal 1.0, value(text, "scheduler_scheduling_algorithm_duration_seconds_count")
+
+    assert_in_delta(1.0,
+                    value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "PreEnqueue",
+                                                                                              status: "Success"))
+    assert_in_delta(1.0,
+                    value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Filter", status: "Success"))
+    assert_in_delta(1.0,
+                    value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Score", status: "Success"))
+    assert_in_delta(1.0,
+                    value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Reserve",
+                                                                                              status: "Success"))
+    assert_in_delta(1.0,
+                    value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "PreBind",
+                                                                                              status: "Success"))
+    assert_in_delta(1.0,
+                    value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Bind", status: "Success"))
+    assert_in_delta(1.0, value(text, "scheduler_scheduling_algorithm_duration_seconds_count"))
     # Filter plugins are counted once per node, Score plugins once per cycle.
-    assert_equal 2.0, value(text, "scheduler_plugin_evaluation_total", extension_point: "Filter", plugin: "NodeName", profile: "default-scheduler")
-    assert_equal 1.0, value(text, "scheduler_plugin_evaluation_total", extension_point: "Score", plugin: "NodeResourcesFit")
-    assert_equal 1.0, value(text, "scheduler_queue_incoming_pods_total", event: "PodAdd", queue: "active")
-    assert_equal 1.0, value(text, "scheduler_pod_scheduling_attempts_count")
-    assert_equal 0.0, value(text, "scheduler_pending_pods", queue: "active")
-    assert_equal 0.0, value(text, "scheduler_pending_pods", queue: "gated")
+    assert_in_delta(2.0, value(text, "scheduler_plugin_evaluation_total", extension_point: "Filter", plugin: "NodeName",
+                                                                          profile: "default-scheduler"))
+    assert_in_delta(1.0, value(text, "scheduler_plugin_evaluation_total", extension_point: "Score", plugin: "NodeResourcesFit"))
+    assert_in_delta(1.0, value(text, "scheduler_queue_incoming_pods_total", event: "PodAdd", queue: "active"))
+    assert_in_delta(1.0, value(text, "scheduler_pod_scheduling_attempts_count"))
+    assert_in_delta(0.0, value(text, "scheduler_pending_pods", queue: "active"))
+    assert_in_delta(0.0, value(text, "scheduler_pending_pods", queue: "gated"))
   end
 
   def test_an_unschedulable_pod_is_counted_against_the_rejecting_plugin
     metrics = Scheduler::Metrics.new
     fw = framework(metrics)
     result = fw.schedule(pod("big", cpu: "8"), [node("a"), node("b")], enqueue: true)
-    assert result.unschedulable?
+
+    assert_predicate result, :unschedulable?
     text = metrics.render
-    assert_equal 1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Filter", status: "Unschedulable")
-    assert_equal 1.0, value(text, "scheduler_unschedulable_pods", plugin: "NodeResourcesFit", profile: "default-scheduler")
-    assert_equal 1.0, value(text, "scheduler_queue_incoming_pods_total", event: "ScheduleAttemptFailure", queue: "unschedulable")
-    assert_equal 1.0, value(text, "scheduler_pending_pods", queue: "unschedulable")
+
+    assert_in_delta(1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Filter",
+                                                                                                   status: "Unschedulable"))
+    assert_in_delta(1.0, value(text, "scheduler_unschedulable_pods", plugin: "NodeResourcesFit", profile: "default-scheduler"))
+    assert_in_delta(1.0, value(text, "scheduler_queue_incoming_pods_total", event: "ScheduleAttemptFailure", queue: "unschedulable"))
+    assert_in_delta(1.0, value(text, "scheduler_pending_pods", queue: "unschedulable"))
     # A retry moves it back to the active queue under the triggering event.
     fw.queue.promote_unschedulable(event: "NodeAdd")
     text = metrics.render
-    assert_equal 1.0, value(text, "scheduler_queue_incoming_pods_total", event: "NodeAdd", queue: "active")
-    assert_equal 0.0, value(text, "scheduler_unschedulable_pods", plugin: "NodeResourcesFit") || 0.0
+
+    assert_in_delta(1.0, value(text, "scheduler_queue_incoming_pods_total", event: "NodeAdd", queue: "active"))
+    assert_in_delta(0.0, value(text, "scheduler_unschedulable_pods", plugin: "NodeResourcesFit") || 0.0)
   end
 
   def test_a_gated_pod_is_pending_as_gated_and_never_attempted
     metrics = Scheduler::Metrics.new
     fw = framework(metrics)
     result = fw.schedule(pod("gated", spec: {"schedulingGates" => [{"name" => "example.com/wait"}]}), [node("a")], enqueue: true)
-    assert result.gated?
+
+    assert_predicate result, :gated?
     text = metrics.render
-    assert_equal 1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "PreEnqueue", status: "Unschedulable")
-    assert_equal 1.0, value(text, "scheduler_pending_pods", queue: "gated")
-    assert_equal 0.0, value(text, "scheduler_pending_pods", queue: "unschedulable")
+
+    assert_in_delta(1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "PreEnqueue",
+                                                                                                   status: "Unschedulable"))
+    assert_in_delta(1.0, value(text, "scheduler_pending_pods", queue: "gated"))
+    assert_in_delta(0.0, value(text, "scheduler_pending_pods", queue: "unschedulable"))
     # Never observed: the label-less histogram shows count 0, like client_golang.
-    assert_equal 0.0, value(text, "scheduler_scheduling_algorithm_duration_seconds_count")
+    assert_in_delta(0.0, value(text, "scheduler_scheduling_algorithm_duration_seconds_count"))
   end
 
   def test_pop_attempts_feed_the_scheduling_attempts_histogram
@@ -135,14 +160,17 @@ class SchedulerMetricsTest < Minitest::Test
     queue.enqueue_backoff(popped.pod, reason: "bind failed")
     queue.flush_backoff(Process.clock_gettime(Process::CLOCK_MONOTONIC) + 60)
     popped = queue.pop
+
     assert_equal 2, queue.pop_attempts(popped.pod)
     result = fw.schedule(popped.pod, [node("a")])
-    assert result.scheduled?
+
+    assert_predicate result, :scheduled?
     text = metrics.render
-    assert_equal 1.0, value(text, "scheduler_queue_incoming_pods_total", event: "BackoffComplete", queue: "active")
-    assert_equal 1.0, value(text, "scheduler_queue_incoming_pods_total", event: "ScheduleAttemptFailure", queue: "backoff")
-    assert_equal 1.0, value(text, "scheduler_pod_scheduling_sli_duration_seconds_count", attempts: "2")
-    assert_equal 2.0, value(text, "scheduler_pod_scheduling_attempts_sum")
+
+    assert_in_delta(1.0, value(text, "scheduler_queue_incoming_pods_total", event: "BackoffComplete", queue: "active"))
+    assert_in_delta(1.0, value(text, "scheduler_queue_incoming_pods_total", event: "ScheduleAttemptFailure", queue: "backoff"))
+    assert_in_delta(1.0, value(text, "scheduler_pod_scheduling_sli_duration_seconds_count", attempts: "2"))
+    assert_in_delta(2.0, value(text, "scheduler_pod_scheduling_attempts_sum"))
   end
 
   def test_plugin_execution_durations_are_sampled_per_cycle
@@ -151,7 +179,9 @@ class SchedulerMetricsTest < Minitest::Test
     fw = framework(metrics)
     fw.schedule(pod("web"), [node("a")])
     text = metrics.render
-    assert_operator value(text, "scheduler_plugin_execution_duration_seconds_count", extension_point: "Filter", plugin: "NodeName", status: "Success"), :>=, 1.0
+
+    assert_operator value(text, "scheduler_plugin_execution_duration_seconds_count", extension_point: "Filter", plugin: "NodeName", status: "Success"),
+                    :>=, 1.0
   end
 
   def test_async_calls_goroutines_and_cache_sizes
@@ -160,15 +190,17 @@ class SchedulerMetricsTest < Minitest::Test
     metrics.goroutine_started("binding")
     metrics.cache_size("nodes", 3)
     text = metrics.render
-    assert_equal 1.0, value(text, "scheduler_pending_async_api_calls", call_type: "pod_binding")
-    assert_equal 1.0, value(text, "scheduler_goroutines", operation: "binding")
-    assert_equal 3.0, value(text, "scheduler_cache_size", type: "nodes")
+
+    assert_in_delta(1.0, value(text, "scheduler_pending_async_api_calls", call_type: "pod_binding"))
+    assert_in_delta(1.0, value(text, "scheduler_goroutines", operation: "binding"))
+    assert_in_delta(3.0, value(text, "scheduler_cache_size", type: "nodes"))
     metrics.async_call("pod_binding", "success", 0.01)
     metrics.goroutine_finished("binding")
     text = metrics.render
-    assert_equal 0.0, value(text, "scheduler_pending_async_api_calls", call_type: "pod_binding")
-    assert_equal 1.0, value(text, "scheduler_async_api_call_execution_total", call_type: "pod_binding", result: "success")
-    assert_equal 0.0, value(text, "scheduler_goroutines", operation: "binding")
+
+    assert_in_delta(0.0, value(text, "scheduler_pending_async_api_calls", call_type: "pod_binding"))
+    assert_in_delta(1.0, value(text, "scheduler_async_api_call_execution_total", call_type: "pod_binding", result: "success"))
+    assert_in_delta(0.0, value(text, "scheduler_goroutines", operation: "binding"))
   end
 
   def test_resource_metrics_render_requests_and_limits_per_pod
@@ -185,11 +217,12 @@ class SchedulerMetricsTest < Minitest::Test
     ]
     text = Scheduler::ResourceMetrics.render(pods)
     # init container 1.5 cores > 0.5 + 0.25 of the app containers.
-    assert_equal 1.5, value(text, "kube_pod_resource_request", pod: "web", resource: "cpu", unit: "cores", node: "a", priority: "10", scheduler: "default-scheduler")
+    assert_in_delta(1.5, value(text, "kube_pod_resource_request", pod: "web", resource: "cpu", unit: "cores", node: "a", priority: "10",
+                                                                  scheduler: "default-scheduler"))
     assert_equal 128 * 1024 * 1024.0, value(text, "kube_pod_resource_request", pod: "web", resource: "memory", unit: "bytes")
     assert_equal 256 * 1024 * 1024.0, value(text, "kube_pod_resource_limit", pod: "web", resource: "memory")
     assert_nil line(text, "kube_pod_resource_request", pod: "done")
-    assert_equal 1.0, value(text, "kube_pod_resource_request", pod: "pending", resource: "nvidia.com/gpu", unit: "integer", node: "")
+    assert_in_delta(1.0, value(text, "kube_pod_resource_request", pod: "pending", resource: "nvidia.com/gpu", unit: "integer", node: ""))
     assert_includes text, "# TYPE kube_pod_resource_request gauge"
   end
 
@@ -197,12 +230,17 @@ class SchedulerMetricsTest < Minitest::Test
     now = Time.utc(2026, 9, 29, 12, 0, 0)
     store = Rubernetes::Storage::MemoryStore.new(history_revisions: nil, history_seconds: nil)
     elector = Controller::LeaseElector.new(store: store, identity: "one", clock: -> { now }, name: "kube-scheduler")
+
     assert_equal :acquired, elector.step
     reads = 0
     adapter = elector.instance_variable_get(:@adapter)
     original_get = adapter.method(:get)
-    adapter.define_singleton_method(:get) { |*args, **options| reads += 1; original_get.call(*args, **options) }
+    adapter.define_singleton_method(:get) do |*args, **options|
+      reads += 1
+      original_get.call(*args, **options)
+    end
     now += 3
+
     assert_equal :renewed, elector.step(force: true)
     assert_equal 0, reads, "a leader renews from its cached record without reading the Lease"
     # Somebody else rewrote the Lease: the cached update conflicts, the slow
@@ -216,6 +254,7 @@ class SchedulerMetricsTest < Minitest::Test
     registry = Rubernetes::Observability::Metrics.global
     before = value(registry.render_own, "leader_election_slowpath_total", name: "kube-scheduler") || 0.0
     now += 3
+
     assert_equal :renewed, elector.step(force: true)
     assert_equal before + 1, value(registry.render_own, "leader_election_slowpath_total", name: "kube-scheduler")
   end
@@ -227,8 +266,10 @@ class SchedulerMetricsTest < Minitest::Test
     clock_now = 3.0
     key, = fifo.pop(timeout: 0)
     clock_now = 4.0
+
     assert_in_delta 3.0, fifo.queued_seconds(key)
     fifo.done(key)
+
     assert_nil fifo.queued_seconds(key)
   end
 end

@@ -53,7 +53,10 @@ module Rubernetes
 
             env = Array(hook["env"] || hook[:env]).map(&:to_s)
             env.each do |entry|
-              raise Error, "invalid hook #{stage.dump}: environment variable #{entry.dump} is not NAME=value" unless entry.match?(/\A[^=\0]+=/)
+              unless entry.match?(/\A[^=\0]+=/)
+                raise Error,
+                      "invalid hook #{stage.dump}: environment variable #{entry.dump} is not NAME=value"
+              end
             end
             args = Array(hook["args"] || hook[:args]).map(&:to_s)
             raise Error, "invalid hook #{stage.dump}: argument contains NUL" if (args + env + [path]).any? { |value| value.include?("\0") }
@@ -108,7 +111,7 @@ module Rubernetes
           output_reader, output_writer = IO.pipe
           begin
             pid = Process.spawn(env, [hook["path"], argv.first], *argv.drop(1), unsetenv_others: true, pgroup: true,
-                                in: input_reader, out: output_writer, err: output_writer, close_others: true, chdir: "/")
+                                                                                in: input_reader, out: output_writer, err: output_writer, close_others: true, chdir: "/")
           rescue SystemCallError => error
             raise Error, "error running #{stage} hook ##{index}: #{error.message}"
           ensure
@@ -122,7 +125,7 @@ module Rubernetes
           ensure
             input_writer.close
           end
-          deadline = hook["timeout"] && clock.call + hook["timeout"]
+          deadline = hook["timeout"] && (clock.call + hook["timeout"])
           output = +""
           status = nil
           until status
@@ -160,9 +163,7 @@ module Rubernetes
         # What the hook wrote before it exited; a descendant that kept the
         # pipe open is not waited for.
         def drain(reader, output)
-          until reader.closed? || output.bytesize >= OUTPUT_LIMIT
-            output << reader.read_nonblock(4096)
-          end
+          output << reader.read_nonblock(4096) until reader.closed? || output.bytesize >= OUTPUT_LIMIT
         rescue IO::WaitReadable, EOFError, IOError
           nil
         end

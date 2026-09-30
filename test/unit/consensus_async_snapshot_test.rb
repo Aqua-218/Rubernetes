@@ -24,7 +24,11 @@ class ConsensusAsyncSnapshotTest < Minitest::Test
   end
 
   def teardown
-    @servers.each_value { |server| server.stop rescue nil }
+    @servers.each_value do |server|
+      server.stop
+    rescue StandardError
+      nil
+    end
     FileUtils.rm_rf(@root)
   end
 
@@ -61,12 +65,14 @@ class ConsensusAsyncSnapshotTest < Minitest::Test
     end
 
     snapshot, = leader.send(:instance_variable_get, :@storage).snapshots.latest(strict: true)
+
     refute_nil snapshot
     assert_operator snapshot.index, :>=, 10
     assert_equal snapshot.index, leader.status["snapshot_index"]
     # The state kept serving and accepting writes throughout.
     assert_equal({"v" => 29}, store.get("k/29")["spec"])
     store.create("k/after", {"metadata" => {"name" => "after"}})
+
     assert_equal "after", store.get("k/after").dig("metadata", "name")
     # The term did not move: no election was caused by the snapshot.
     assert_equal term_before, leader.status["term"], "a snapshot must not cost the leader its term"
@@ -83,7 +89,8 @@ class ConsensusAsyncSnapshotTest < Minitest::Test
       # Drive a lone voter to leadership and through 12 committed entries.
       node.tick(10.0)
       node.drain
-      assert node.leader?, "a single voter elects itself"
+
+      assert_predicate node, :leader?, "a single voter elects itself"
       12.times do |i|
         node.propose({"type" => "create", "key" => "k/#{i}", "object" => {"metadata" => {"name" => "o#{i}"}}}, now: 10.0 + i)
         node.flush(10.0 + i)
@@ -93,10 +100,12 @@ class ConsensusAsyncSnapshotTest < Minitest::Test
 
       assert_equal 1, captures.length, "the due snapshot was handed to the writer once"
       capture = captures.first
+
       assert_equal node.last_applied, capture.index
       assert_equal 0, storage.log.snapshot_index, "nothing is compacted until the writer reports back"
-      assert node.snapshot_in_flight?
+      assert_predicate node, :snapshot_in_flight?
       node.tick(31.0)
+
       assert_equal 1, captures.length, "no second capture while one is in flight"
 
       bytes = C::KVStateMachine.encode_snapshot(capture.document)
@@ -105,9 +114,10 @@ class ConsensusAsyncSnapshotTest < Minitest::Test
       node.complete_snapshot!(capture, metadata)
 
       assert_equal capture.index, storage.log.snapshot_index
-      refute node.snapshot_in_flight?
+      refute_predicate node, :snapshot_in_flight?
       restored = C::KVStateMachine.new
       restored.restore(storage.snapshots.read_bytes(metadata.path).then { |raw| C::SnapshotStore.decode(raw).state })
+
       assert_equal 12, restored.store.list("k/").items.length
       storage.close
     end
@@ -128,6 +138,7 @@ class ConsensusAsyncSnapshotTest < Minitest::Test
         node.drain
       end
       node.tick(30.0)
+
       assert_equal 1, captures.length
 
       node.abandon_snapshot!(captures.first, RuntimeError.new("disk hiccup"))

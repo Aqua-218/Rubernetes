@@ -24,11 +24,11 @@ class NetlinkNamespaceTopologyTest < Minitest::Test
       @delegate.link_set(**parameters)
     end
 
-    def method_missing(name, *arguments, **keywords, &block)
+    def method_missing(name, *, **keywords, &)
       if keywords.empty?
-        @delegate.public_send(name, *arguments, &block)
+        @delegate.public_send(name, *, &)
       else
-        @delegate.public_send(name, *arguments, **keywords, &block)
+        @delegate.public_send(name, *, **keywords, &)
       end
     end
 
@@ -44,11 +44,12 @@ class NetlinkNamespaceTopologyTest < Minitest::Test
     # namespace.  The user+network namespace form gives the child its own
     # capability set on constrained CI while still exercising a real kernel
     # namespace boundary.
-    namespace_pid = Process.spawn("unshare", "-Urn", "--", "sleep", "30", [:out, :err] => File::NULL)
+    namespace_pid = Process.spawn("unshare", "-Urn", "--", "sleep", "30", %i[out err] => File::NULL)
     namespace_path = "/proc/#{namespace_pid}/ns/net"
     host_namespace_inode = File.stat("/proc/self/ns/net").ino
     100.times do
       break if File.exist?(namespace_path) && File.stat(namespace_path).ino != host_namespace_inode
+
       sleep 0.02
     end
     skip "unshare is unavailable or denied" unless File.exist?(namespace_path)
@@ -76,11 +77,13 @@ class NetlinkNamespaceTopologyTest < Minitest::Test
       addresses = resources.select { |entry| entry["kind"] == "address" && entry.dig("metadata", "ifname") == peer_ifname }
       found_route = resources.find { |entry| entry["kind"] == "route" && entry.dig("metadata", "destination") == route }
       found_ipv6_route = resources.find { |entry| entry["kind"] == "route" && entry.dig("metadata", "destination") == ipv6_route }
+
       assert link, "peer link must be dumped from the target namespace"
       assert_equal 2, addresses.length, "IPv4 and IPv6 addresses must be dumped from the target namespace"
       assert found_route, "route must be dumped from the target namespace"
       assert found_ipv6_route, "IPv6 route must be dumped from the target namespace"
       address = addresses.find { |entry| entry.dig("metadata", "address") == "198.18.2.1" }
+
       assert_equal link.fetch("metadata").fetch("ifindex"), address.fetch("metadata").fetch("ifindex")
       assert_equal link.fetch("identity").split(":")[1], address.fetch("identity").split(":")[1]
       assert_equal link.fetch("identity"), observer.identity_for(
@@ -104,6 +107,7 @@ class NetlinkNamespaceTopologyTest < Minitest::Test
         vxlan = observer.resources(namespace_fd: namespace_fd).find do |entry|
           entry["kind"] == "link" && entry.dig("metadata", "name") == vxlan_ifname
         end
+
         assert_equal "vxlan", vxlan.dig("metadata", "kind")
         assert_equal 4096, vxlan.dig("metadata", "vni")
         assert_equal 4789, vxlan.dig("metadata", "dstport")
@@ -114,6 +118,7 @@ class NetlinkNamespaceTopologyTest < Minitest::Test
         fdb = observer.resources(namespace_fd: namespace_fd).find do |entry|
           entry["kind"] == "fdb" && entry.dig("metadata", "ifname") == vxlan_ifname
         end
+
         assert fdb, "VXLAN FDB must be dumped from the target namespace"
         assert_equal fdb.fetch("identity"), observer.identity_for(
           Rubernetes::Network::Operation.new(action: "fdb_add", resource: "fdb:test", identity: "fdb",
@@ -137,8 +142,9 @@ class NetlinkNamespaceTopologyTest < Minitest::Test
       moved_peer = observer.resources(namespace_fd: namespace_fd).find do |entry|
         entry["kind"] == "link" && entry.dig("metadata", "name") == move_peer_ifname
       end
+
       assert moved_peer, "link_set must move a source-namespace veth peer into the target"
-      refute observer.resources.any? { |entry| entry.dig("metadata", "name") == move_peer_ifname }
+      refute(observer.resources.any? { |entry| entry.dig("metadata", "name") == move_peer_ifname })
       netlink.link_delete(name: move_host_ifname)
 
       netlink.route_delete(destination: route, dev: peer_ifname, namespace_fd: namespace_fd)
@@ -149,7 +155,7 @@ class NetlinkNamespaceTopologyTest < Minitest::Test
     netlink.link_delete(name: host_ifname)
   rescue Rubernetes::Network::NetlinkError => error
     skip "kernel denied isolated namespace operation (errno #{error.errno})" if [Errno::EPERM::Errno, Errno::EACCES::Errno,
-                                                                               Errno::EOPNOTSUPP::Errno].include?(error.errno)
+                                                                                 Errno::EOPNOTSUPP::Errno].include?(error.errno)
     raise
   ensure
     begin
@@ -168,11 +174,12 @@ class NetlinkNamespaceTopologyTest < Minitest::Test
   def test_native_link_set_failure_restores_previous_target_state
     skip "Linux only" unless RUBY_PLATFORM.include?("linux")
 
-    namespace_pid = Process.spawn("unshare", "-Urn", "--", "sleep", "30", [:out, :err] => File::NULL)
+    namespace_pid = Process.spawn("unshare", "-Urn", "--", "sleep", "30", %i[out err] => File::NULL)
     namespace_path = "/proc/#{namespace_pid}/ns/net"
     host_namespace_inode = File.stat("/proc/self/ns/net").ino
     100.times do
       break if File.exist?(namespace_path) && File.stat(namespace_path).ino != host_namespace_inode
+
       sleep 0.02
     end
     skip "unshare is unavailable or denied" unless File.exist?(namespace_path)
@@ -198,10 +205,11 @@ class NetlinkNamespaceTopologyTest < Minitest::Test
       error = assert_raises(Rubernetes::Network::EffectError) { topology.apply(plan) }
       assert_equal 1, error.applied.length
       topology.rollback(Rubernetes::Network::Plan.new(operations: error.applied, mtu: 1500, backend: nil,
-                                                       revision: 1, metadata: {}))
+                                                      revision: 1, metadata: {}))
       restored = observer.resources(namespace_fd: namespace_fd).find do |entry|
         entry["kind"] == "link" && entry.dig("metadata", "name") == peer_ifname
       end
+
       assert_equal true, restored.dig("metadata", "up")
       assert_equal 1500, restored.dig("metadata", "mtu")
     end

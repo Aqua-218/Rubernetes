@@ -92,6 +92,7 @@ class NodeRestartBackoffTest < Minitest::Test
 
   def test_the_first_failure_restarts_without_a_backoff
     crash_once
+
     assert_equal 0, @restarts.backoff("u1/app")
     @lifecycle.reconcile(pod)
 

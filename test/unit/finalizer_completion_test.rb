@@ -45,6 +45,7 @@ class FinalizerCompletionTest < Minitest::Test
                            "metadata" => {"name" => "probe", "finalizers" => finalizers},
                            "spec" => {"accessModes" => ["ReadWriteOnce"],
                                       "resources" => {"requests" => {"storage" => "1Gi"}}}})
+
     assert_equal(201, response.status, response.body.inspect)
     response.body
   end

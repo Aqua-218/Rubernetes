@@ -54,7 +54,7 @@ class EndpointsOrphanDeletionTest < Minitest::Test
   def test_endpoints_are_kept_while_the_service_exists
     result = plan_for([endpoints, service], endpoints)
 
-    assert_empty result.operations.select { |operation| operation.action == :delete }
+    assert_empty(result.operations.select { |operation| operation.action == :delete })
   end
 end
 

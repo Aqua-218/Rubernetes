@@ -112,18 +112,21 @@ class NetworkObserverNamedLinkTest < Minitest::Test
   def test_a_named_link_readback_uses_a_single_get
     netlink = Netlink.new
     Observer.new(netlink: netlink).resources(kinds: ["link"], link_name: "veth1234")
+
     assert_equal [[:get, "veth1234"]], netlink.calls
   end
 
   def test_a_link_add_proof_by_name_does_not_dump
     netlink = Netlink.new
     Observer.new(netlink: netlink).resources_for({"action" => "link_set", "parameters" => {"name" => "veth1234", "up" => true}})
+
     assert_equal [[:get, "veth1234"]], netlink.calls
   end
 
   def test_a_failed_get_falls_back_to_the_dump
     netlink = Netlink.new(fail_get: true)
     Observer.new(netlink: netlink).resources(kinds: ["link"], link_name: "veth1234")
+
     assert_equal [[:get, "veth1234"], [:dump]], netlink.calls
   end
 
@@ -131,6 +134,7 @@ class NetworkObserverNamedLinkTest < Minitest::Test
     netlink = Netlink.new
     netlink.define_singleton_method(:address_dump) { [] }
     Observer.new(netlink: netlink).resources(kinds: ["address"], link_name: "veth1234")
+
     assert_equal [[:dump]], netlink.calls, "an address proof needs every link to resolve interfaces"
   end
 end

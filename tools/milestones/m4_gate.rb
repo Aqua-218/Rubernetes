@@ -20,7 +20,7 @@ module M4Gate
   MANIFEST_SCHEMA_VERSION = 3
   REPORT_SCHEMA_VERSION = 1
   MAX_JSON_BYTES = 32 * 1024 * 1024
-  SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
+  SHA256_PATTERN = /\A[0-9a-f]{64}\z/
   SOURCE_EXCLUDED_ROOTS = %w[.git artifacts build pkg tmp .bundle].freeze
   # Anchored generator scratch directories (a11-generated.XXXXXX) are
   # excluded from the source identity by every milestone (M0-M2 rule).
@@ -114,8 +114,10 @@ module M4Gate
       validate_prior_milestones(manifest, directory, artifacts, errors)
       REPORTS.each do |name, specification|
         document = report_document(name, specification, directory, artifact_index, errors)
-        validate_report(name, document, specification.fetch(:kind), manifest, errors,
-                        evidence_directory: directory, artifacts: artifacts) if document
+        if document
+          validate_report(name, document, specification.fetch(:kind), manifest, errors,
+                          evidence_directory: directory, artifacts: artifacts)
+        end
       end
       validate_result_counts(manifest, artifacts, subjects, errors)
       validate_manifest_status(manifest, errors)
@@ -146,7 +148,7 @@ module M4Gate
        "waivers" => Array(@accepted_waivers)}
     end
 
-    KERNEL_WAIVER_REQUIREMENT = "linux>=6.12".freeze
+    KERNEL_WAIVER_REQUIREMENT = "linux>=6.12"
 
     # The kernel release requirement may only be relaxed by an explicit
     # manifest waiver that names the requirement, a reason, and the very host
@@ -192,7 +194,10 @@ module M4Gate
       errors << "input_file_count must be positive" unless positive_integer?(manifest["input_file_count"])
       errors << "source input must remain stable during evidence capture" unless manifest["input_stable"] == true
       host = manifest["host"]
-      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel ruby].all? { |key| non_empty_string?(host[key]) }
+      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel
+                                                                                                             ruby].all? do |key|
+        non_empty_string?(host[key])
+      end
       validate_kernel_requirement(manifest, host, errors)
       %w[started_at finished_at].each { |key| errors << "#{key} must be an ISO-8601 timestamp" unless iso8601?(manifest[key]) }
       validate_input_capture(manifest, errors)
@@ -215,7 +220,9 @@ module M4Gate
         errors << "input_capture must include start and finish identities"
         return
       end
-      errors << "input_capture identities must match the manifest input" unless start["sha256"] == manifest["input_sha256"] && finish["sha256"] == manifest["input_sha256"] && start["file_count"] == manifest["input_file_count"] && finish["file_count"] == manifest["input_file_count"]
+      unless start["sha256"] == manifest["input_sha256"] && finish["sha256"] == manifest["input_sha256"] && start["file_count"] == manifest["input_file_count"] && finish["file_count"] == manifest["input_file_count"]
+        errors << "input_capture identities must match the manifest input"
+      end
       errors << "input_capture start and finish identities differ" unless start == finish
     end
 
@@ -227,7 +234,9 @@ module M4Gate
       end
       starts = capture["start_paths"]
       finishes = capture["finish_paths"]
-      unless starts.is_a?(Array) && finishes.is_a?(Array) && starts.all? { |path| non_empty_string?(path) } && finishes.all? { |path| non_empty_string?(path) }
+      unless starts.is_a?(Array) && finishes.is_a?(Array) && starts.all? { |path| non_empty_string?(path) } && finishes.all? do |path|
+        non_empty_string?(path)
+      end
         errors << "git_metadata_capture paths must be arrays of paths"
         return
       end
@@ -264,10 +273,14 @@ module M4Gate
           names[name] = true
         end
         argv = command["command"]
-        errors << "command #{index} must record its argv" unless (argv.is_a?(Array) && !argv.empty? && argv.all? { |part| non_empty_string?(part) }) || non_empty_string?(argv)
+        errors << "command #{index} must record its argv" unless (argv.is_a?(Array) && !argv.empty? && argv.all? do |part|
+          non_empty_string?(part)
+        end) || non_empty_string?(argv)
         errors << "command #{index} must have an exit status" unless integer?(command["exit_status"])
         errors << "command #{index} did not exit zero" unless command["exit_status"] == 0
-        %w[started_at finished_at].each { |key| errors << "command #{index} #{key} must be an ISO-8601 timestamp" unless iso8601?(command[key]) }
+        %w[started_at finished_at].each do |key|
+          errors << "command #{index} #{key} must be an ISO-8601 timestamp" unless iso8601?(command[key])
+        end
         if iso8601?(command["started_at"]) && iso8601?(command["finished_at"]) && Time.iso8601(command["finished_at"]) < Time.iso8601(command["started_at"])
           errors << "command #{index} finished before it started"
         end
@@ -309,7 +322,9 @@ module M4Gate
           next
         end
         errors << "#{label} #{path_value} must not be a symlink" if stat.symlink? || path_component_symlink?(directory, path)
-        errors << "#{label} digest mismatch #{path_value}" if valid_digest?(entry["sha256"]) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+        if valid_digest?(entry["sha256"]) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+          errors << "#{label} digest mismatch #{path_value}"
+        end
         errors << "#{label} byte count mismatch #{path_value}" if integer?(entry["bytes"]) && File.size(path) != entry["bytes"]
         entry
       end
@@ -318,6 +333,7 @@ module M4Gate
     def evidence_path(directory, relative_path)
       return nil unless non_empty_string?(relative_path)
       return nil if relative_path.include?("\0") || relative_path.start_with?("/") || relative_path.match?(%r{\A[A-Za-z]:[\\/]})
+
       path = File.expand_path(relative_path, directory)
       return nil unless path.start_with?("#{directory}/")
       return nil if File.exist?(path) && !File.realpath(path).start_with?("#{File.realpath(directory)}/")
@@ -332,6 +348,7 @@ module M4Gate
       artifacts.each_with_object({}) do |artifact, index|
         next unless artifact.is_a?(Hash) && non_empty_string?(artifact["path"])
         next if artifact["path"].include?("/")
+
         name = File.basename(artifact["path"])
         errors << "duplicate artifact basename #{name}" if index.key?(name)
         index[name] ||= artifact
@@ -341,9 +358,13 @@ module M4Gate
     def validate_inventory(manifest, directory, artifact_index, errors)
       artifact = find_named_artifact(INVENTORY_NAMES, artifact_index, errors, "source inventory")
       return unless artifact
+
       document = parse_json(evidence_path(directory, artifact["path"]), errors, "source inventory")
       return unless document.is_a?(Hash)
-      errors << "source inventory schema_version must be #{REPORT_SCHEMA_VERSION}" unless document["schema_version"] == REPORT_SCHEMA_VERSION
+
+      unless document["schema_version"] == REPORT_SCHEMA_VERSION
+        errors << "source inventory schema_version must be #{REPORT_SCHEMA_VERSION}"
+      end
       errors << "source inventory kind must be m4_source_inventory" unless document["kind"] == "m4_source_inventory"
       errors << "source inventory input_sha256 must match manifest" unless document["input_sha256"] == manifest["input_sha256"]
       errors << "source inventory input_file_count must match manifest" unless document["input_file_count"] == manifest["input_file_count"]
@@ -376,12 +397,16 @@ module M4Gate
         valid_entries << entry
       end
       errors << "source inventory entries must be sorted by path" unless paths.sort == paths
-      errors << "source inventory digest does not match manifest input" unless canonical_inventory_digest(valid_entries) == manifest["input_sha256"]
+      unless canonical_inventory_digest(valid_entries) == manifest["input_sha256"]
+        errors << "source inventory digest does not match manifest input"
+      end
       errors << "source inventory file count does not match manifest input" unless valid_entries.length == manifest["input_file_count"]
       valid_entries.each do |entry|
         path = File.expand_path(entry.fetch("path"), PROJECT_ROOT)
         errors << "source inventory entry #{entry.fetch("path")} is missing" unless File.file?(path)
-        errors << "source inventory digest mismatch #{entry.fetch("path")}" if File.file?(path) && valid_digest?(entry["sha256"]) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+        if File.file?(path) && valid_digest?(entry["sha256"]) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+          errors << "source inventory digest mismatch #{entry.fetch("path")}"
+        end
       end
     end
 
@@ -409,18 +434,25 @@ module M4Gate
       errors << "#{name} manifest must be content-addressed by M4" unless manifest_entry
       errors << "#{name} gate result must be content-addressed by M4" unless result_entry
       return unless manifest_entry && result_entry
+
       manifest_path = evidence_path(directory, manifest_value)
       result_path = evidence_path(directory, result_value)
       return unless manifest_path && result_path
+
       prior_manifest = parse_json(manifest_path, errors, "#{name} manifest")
       prior_result = parse_json(result_path, errors, "#{name} gate result")
       return unless prior_manifest.is_a?(Hash) && prior_result.is_a?(Hash)
+
       errors << "#{name} manifest reference digest is incorrect" unless reference["manifest_sha256"] == manifest_entry["sha256"]
       errors << "#{name} gate result reference digest is incorrect" unless reference["gate_result_sha256"] == result_entry["sha256"]
       errors << "#{name} manifest milestone is incorrect" unless prior_manifest["milestone"] == name
       errors << "#{name} manifest status must be COMPLETE" unless prior_manifest["status"] == "COMPLETE"
-      errors << "#{name} evidence must use the same source input as M4" unless prior_manifest["input_sha256"] == manifest["input_sha256"] && prior_manifest["input_file_count"] == manifest["input_file_count"]
-      errors << "#{name} reference identity must match the M4 source input" unless reference["input_sha256"] == manifest["input_sha256"] && reference["input_file_count"] == manifest["input_file_count"]
+      unless prior_manifest["input_sha256"] == manifest["input_sha256"] && prior_manifest["input_file_count"] == manifest["input_file_count"]
+        errors << "#{name} evidence must use the same source input as M4"
+      end
+      unless reference["input_sha256"] == manifest["input_sha256"] && reference["input_file_count"] == manifest["input_file_count"]
+        errors << "#{name} reference identity must match the M4 source input"
+      end
       errors << "#{name} reference must record a passing gate" unless reference["gate_passed"] == true
       errors << "stored #{name} gate result must be passing" unless prior_result["passed"] == true && prior_result["milestone"] == name
       %w[artifacts subjects].each do |collection|
@@ -435,13 +467,19 @@ module M4Gate
             next
           end
           nested_path = File.join(File.dirname(manifest_value.to_s), entry["path"])
-          errors << "#{name} #{collection} entry is not content-addressed by M4: #{nested_path}" unless artifacts.any? { |candidate| candidate["path"] == nested_path }
+          errors << "#{name} #{collection} entry is not content-addressed by M4: #{nested_path}" unless artifacts.any? do |candidate|
+            candidate["path"] == nested_path
+          end
         end
       end
       gate_stdout, gate_stderr, gate_status = Open3.capture3(RbConfig.ruby, gate_path, manifest_path, chdir: PROJECT_ROOT)
       errors << "#{name} gate emitted stderr during cumulative validation" unless gate_stderr.empty?
       unless gate_status.success?
-        prior_errors = JSON.parse(gate_stdout).fetch("errors", []) rescue []
+        prior_errors = begin
+          JSON.parse(gate_stdout).fetch("errors", [])
+        rescue StandardError
+          []
+        end
         errors << "#{name} gate does not pass: #{prior_errors.join("; ")}"
       end
     rescue SystemCallError => error
@@ -451,6 +489,7 @@ module M4Gate
     def report_document(name, specification, directory, artifact_index, errors)
       artifact = find_named_artifact(specification.fetch(:names), artifact_index, errors, "#{name} report")
       return nil unless artifact
+
       parse_json(evidence_path(directory, artifact["path"]), errors, "#{name} report")
     end
 
@@ -468,6 +507,7 @@ module M4Gate
       label = "#{name} report"
       validate_common_document(document, expected_kind, manifest, errors, label)
       return unless document.is_a?(Hash) && document["schema_version"] == REPORT_SCHEMA_VERSION && document["kind"] == expected_kind
+
       case name
       when "network" then validate_network(document, errors, evidence_directory: evidence_directory, artifacts: artifacts)
       when "policy" then validate_policy(document, errors)
@@ -480,6 +520,7 @@ module M4Gate
     def validate_common_document(document, expected_kind, manifest, errors, label)
       errors << "#{label} must be a JSON object" unless document.is_a?(Hash)
       return unless document.is_a?(Hash)
+
       errors << "#{label} schema_version must be #{REPORT_SCHEMA_VERSION}" unless document["schema_version"] == REPORT_SCHEMA_VERSION
       errors << "#{label} kind must be #{expected_kind}" unless document["kind"] == expected_kind
       errors << "#{label} milestone must be M4" unless document["milestone"] == "M4"
@@ -498,65 +539,106 @@ module M4Gate
       errors << "#{label} available must be true" unless document["available"] == true
       errors << "#{label} errors must be an empty array" unless document["errors"] == []
       errors << "#{label} attempt_count must be one" unless document["attempt_count"] == 1
-      %w[retry_count unexpected_skip_count unclassified_count flake_count failure_count].each { |key| errors << "#{label} #{key} must be zero" unless document[key] == 0 }
+      %w[retry_count unexpected_skip_count unclassified_count flake_count failure_count].each do |key|
+        errors << "#{label} #{key} must be zero" unless document[key] == 0
+      end
       adapter = document["adapter"]
-      errors << "#{label} adapter provenance is incomplete" unless adapter.is_a?(Hash) && non_empty_string?(adapter["name"]) && non_empty_string?(adapter["version"]) && valid_digest?(adapter["runner_sha256"])
+      unless adapter.is_a?(Hash) && non_empty_string?(adapter["name"]) && non_empty_string?(adapter["version"]) && valid_digest?(adapter["runner_sha256"])
+        errors << "#{label} adapter provenance is incomplete"
+      end
       provenance = document["provenance"]
-      unless provenance.is_a?(Hash)
-        errors << "#{label} provenance is required"
-      else
+      if provenance.is_a?(Hash)
         errors << "#{label} provenance source_sha256 must match manifest" unless provenance["source_sha256"] == manifest["input_sha256"]
-        errors << "#{label} provenance source_file_count must match manifest" unless provenance["source_file_count"] == manifest["input_file_count"]
-        errors << "#{label} provenance runner_sha256 must match adapter" unless valid_digest?(provenance["runner_sha256"]) && provenance["runner_sha256"] == adapter["runner_sha256"]
-        errors << "#{label} provenance command must be a non-empty argv" unless provenance["command"].is_a?(Array) && !provenance["command"].empty? && provenance["command"].all? { |part| non_empty_string?(part) }
-        errors << "#{label} provenance process_id must be positive" unless provenance["process_id"].is_a?(Integer) && provenance["process_id"].positive?
+        unless provenance["source_file_count"] == manifest["input_file_count"]
+          errors << "#{label} provenance source_file_count must match manifest"
+        end
+        unless valid_digest?(provenance["runner_sha256"]) && provenance["runner_sha256"] == adapter["runner_sha256"]
+          errors << "#{label} provenance runner_sha256 must match adapter"
+        end
+        errors << "#{label} provenance command must be a non-empty argv" unless provenance["command"].is_a?(Array) && !provenance["command"].empty? && provenance["command"].all? do |part|
+          non_empty_string?(part)
+        end
+        unless provenance["process_id"].is_a?(Integer) && provenance["process_id"].positive?
+          errors << "#{label} provenance process_id must be positive"
+        end
         errors << "#{label} provenance measurement_id is required" unless non_empty_string?(provenance["measurement_id"])
         %w[started_at finished_at].each { |key| errors << "#{label} provenance #{key} must be ISO-8601" unless iso8601?(provenance[key]) }
-        errors << "#{label} provenance_sha256 does not match canonical content" unless valid_digest?(provenance["provenance_sha256"]) && canonical_document_digest(provenance, excluded_keys: ["provenance_sha256"]) == provenance["provenance_sha256"]
+        errors << "#{label} provenance_sha256 does not match canonical content" unless valid_digest?(provenance["provenance_sha256"]) && canonical_document_digest(
+          provenance, excluded_keys: ["provenance_sha256"]
+        ) == provenance["provenance_sha256"]
+      else
+        errors << "#{label} provenance is required"
       end
-      errors << "#{label} report_sha256 does not match canonical content" unless valid_digest?(document["report_sha256"]) && canonical_document_digest(document, excluded_keys: ["report_sha256"]) == document["report_sha256"]
+      errors << "#{label} report_sha256 does not match canonical content" unless valid_digest?(document["report_sha256"]) && canonical_document_digest(
+        document, excluded_keys: ["report_sha256"]
+      ) == document["report_sha256"]
     end
 
     def validate_network(document, errors, evidence_directory: nil, artifacts: [])
       families = document["address_families"] || document["profiles"]
-      errors << "network matrix address families are incomplete" unless families.is_a?(Array) && families.map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["family"]) : nil }.sort == REQUIRED_ADDRESS_FAMILIES.sort
+      errors << "network matrix address families are incomplete" unless families.is_a?(Array) && families.map do |entry|
+        entry.is_a?(Hash) ? (entry["id"] || entry["family"]) : nil
+      end.sort == REQUIRED_ADDRESS_FAMILIES.sort
       cases = document["cases"]
-      unless cases.is_a?(Array) && cases.map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["case"]) : nil }.sort == REQUIRED_NETWORK_CASES.sort
+      unless cases.is_a?(Array) && cases.map do |entry|
+        entry.is_a?(Hash) ? (entry["id"] || entry["case"]) : nil
+      end.sort == REQUIRED_NETWORK_CASES.sort
         errors << "network matrix must cover pod, service, DNS, ingress, and egress"
       end
       Array(families).each_with_index do |entry, index|
-        errors << "network family #{index} must pass from production module" unless entry.is_a?(Hash) && entry["passed"] == true && entry["measurement_source"] == "production_module" && entry["packet_trace_sha256"].to_s.match?(SHA256_PATTERN)
+        unless entry.is_a?(Hash) && entry["passed"] == true && entry["measurement_source"] == "production_module" && entry["packet_trace_sha256"].to_s.match?(SHA256_PATTERN)
+          errors << "network family #{index} must pass from production module"
+        end
       end
       packet_trace_sha256 = document.dig("kernel_observation", "packet_trace", "sha256")
       Array(families).each_with_index do |entry, index|
-        errors << "network family #{index} must reference the captured kernel packet trace" unless entry.is_a?(Hash) && entry["packet_trace_source"] == "kernel_capture" && entry["packet_trace_sha256"] == packet_trace_sha256
+        unless entry.is_a?(Hash) && entry["packet_trace_source"] == "kernel_capture" && entry["packet_trace_sha256"] == packet_trace_sha256
+          errors << "network family #{index} must reference the captured kernel packet trace"
+        end
       end
       Array(cases).each_with_index do |entry, index|
-        errors << "network case #{index} must pass once" unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1 && entry["packet_trace_sha256"].to_s.match?(SHA256_PATTERN)
-        errors << "network case #{index} must reference the captured kernel packet trace" unless entry.is_a?(Hash) && entry["packet_trace_source"] == "kernel_capture" && entry["packet_trace_sha256"] == packet_trace_sha256
+        unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1 && entry["packet_trace_sha256"].to_s.match?(SHA256_PATTERN)
+          errors << "network case #{index} must pass once"
+        end
+        unless entry.is_a?(Hash) && entry["packet_trace_source"] == "kernel_capture" && entry["packet_trace_sha256"] == packet_trace_sha256
+          errors << "network case #{index} must reference the captured kernel packet trace"
+        end
       end
       errors << "network connection leak count must be zero" unless document["connection_loss_count"] == 0
       errors << "network IP leak count must be zero" unless document["ip_leak_count"] == 0
       validate_network_observation(document["kernel_observation"], errors, owner_document: document,
-                                   evidence_directory: evidence_directory, artifacts: artifacts)
-      %w[failure_count difference_count unexpected_skip_count unclassified_count].each { |key| errors << "network #{key} must be zero" unless document[key] == 0 }
+                                                                           evidence_directory: evidence_directory, artifacts: artifacts)
+      %w[failure_count difference_count unexpected_skip_count unclassified_count].each do |key|
+        errors << "network #{key} must be zero" unless document[key] == 0
+      end
     end
 
     def validate_policy(document, errors)
       cases = document["cases"]
       ids = Array(cases).filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["case"]) : nil }
-      errors << "policy differential cases are incomplete" unless ids.sort == REQUIRED_POLICY_CASES.sort && ids.uniq.length == REQUIRED_POLICY_CASES.length
+      unless ids.sort == REQUIRED_POLICY_CASES.sort && ids.uniq.length == REQUIRED_POLICY_CASES.length
+        errors << "policy differential cases are incomplete"
+      end
       Array(cases).each_with_index do |entry, index|
-        errors << "policy case #{index} must pass from production module" unless entry.is_a?(Hash) && entry["passed"] == true && entry["measurement_source"] == "production_module" && entry["attempt_count"] == 1
+        unless entry.is_a?(Hash) && entry["passed"] == true && entry["measurement_source"] == "production_module" && entry["attempt_count"] == 1
+          errors << "policy case #{index} must pass from production module"
+        end
         errors << "policy case #{index} oracle result differs" if entry.is_a?(Hash) && entry["expected"] != entry["actual"]
       end
       oracle = document["oracle"]
-      errors << "policy oracle differential evidence is incomplete" unless oracle.is_a?(Hash) && oracle["executed"] == true && valid_digest?(oracle["runner_sha256"]) && oracle["comparison_count"] == REQUIRED_POLICY_CASES.length
+      unless oracle.is_a?(Hash) && oracle["executed"] == true && valid_digest?(oracle["runner_sha256"]) && oracle["comparison_count"] == REQUIRED_POLICY_CASES.length
+        errors << "policy oracle differential evidence is incomplete"
+      end
       validate_external_runner_observation(oracle, errors, "network-policy oracle", owner_document: document)
       if oracle.is_a?(Hash) && oracle["comparisons"].is_a?(Array)
-        oracle["comparisons"].each_with_index { |comparison, index| validate_observable_comparison(comparison, errors, "network-policy oracle comparison #{index}") }
+        oracle["comparisons"].each_with_index do |comparison, index|
+          validate_observable_comparison(comparison, errors, "network-policy oracle comparison #{index}")
+        end
       end
-      %w[failure_count difference_count default_deny_bypass_count selector_mismatch_count named_port_mismatch_count end_port_mismatch_count sctp_mismatch_count unexpected_skip_count unclassified_count].each { |key| errors << "policy #{key} must be zero" unless document[key] == 0 }
+      %w[failure_count difference_count default_deny_bypass_count selector_mismatch_count named_port_mismatch_count end_port_mismatch_count
+         sctp_mismatch_count unexpected_skip_count unclassified_count].each do |key|
+        errors << "policy #{key} must be zero" unless document[key] == 0
+      end
     end
 
     def validate_proxy(document, errors)
@@ -564,17 +646,31 @@ module M4Gate
       ids = Array(backends).filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["backend"]) : nil }
       errors << "proxy backend inventory must contain eBPF and nftables" unless ids.sort == REQUIRED_PROXY_BACKENDS.sort
       Array(backends).each_with_index do |entry, index|
-        errors << "proxy backend #{index} must pass from production module" unless entry.is_a?(Hash) && entry["passed"] == true && entry["measurement_source"] == "production_module" && entry["attempt_count"] == 1
-        errors << "proxy backend #{index} must record a packet trace" unless entry.is_a?(Hash) && valid_digest?(entry["packet_trace_sha256"])
-        errors << "proxy backend #{index} must reference verified kernel readback" unless entry.is_a?(Hash) && entry["kernel_readback"].is_a?(Hash) && entry["kernel_readback"]["readback"] == true && entry["kernel_readback"]["rules"].is_a?(Array) && !entry["kernel_readback"]["rules"].empty?
+        unless entry.is_a?(Hash) && entry["passed"] == true && entry["measurement_source"] == "production_module" && entry["attempt_count"] == 1
+          errors << "proxy backend #{index} must pass from production module"
+        end
+        unless entry.is_a?(Hash) && valid_digest?(entry["packet_trace_sha256"])
+          errors << "proxy backend #{index} must record a packet trace"
+        end
+        unless entry.is_a?(Hash) && entry["kernel_readback"].is_a?(Hash) && entry["kernel_readback"]["readback"] == true && entry["kernel_readback"]["rules"].is_a?(Array) && !entry["kernel_readback"]["rules"].empty?
+          errors << "proxy backend #{index} must reference verified kernel readback"
+        end
       end
       parity = document["parity"]
-      errors << "proxy backend parity must be measured" unless parity.is_a?(Hash) && parity["passed"] == true && parity["observable_semantics_equal"] == true && valid_digest?(parity["comparison_sha256"])
-      errors << "proxy backend parity must be independently production-verified" unless parity.is_a?(Hash) && parity["production_capable"] == true && parity["production_verified"] == true
-      errors << "proxy backend connection loss must be measured and zero" unless document["connection_loss_count"] == 0 && document["connection_loss_measured"] == true
+      unless parity.is_a?(Hash) && parity["passed"] == true && parity["observable_semantics_equal"] == true && valid_digest?(parity["comparison_sha256"])
+        errors << "proxy backend parity must be measured"
+      end
+      unless parity.is_a?(Hash) && parity["production_capable"] == true && parity["production_verified"] == true
+        errors << "proxy backend parity must be independently production-verified"
+      end
+      unless document["connection_loss_count"] == 0 && document["connection_loss_measured"] == true
+        errors << "proxy backend connection loss must be measured and zero"
+      end
       validate_proxy_external_parity(parity, errors)
       validate_proxy_readback(document["backend_readback"], errors, owner_document: document)
-      %w[failure_count difference_count unexpected_skip_count unclassified_count].each { |key| errors << "proxy #{key} must be zero" unless document[key] == 0 }
+      %w[failure_count difference_count unexpected_skip_count unclassified_count].each do |key|
+        errors << "proxy #{key} must be zero" unless document[key] == 0
+      end
     end
 
     def validate_proxy_external_parity(parity, errors)
@@ -589,37 +685,70 @@ module M4Gate
         errors << "proxy parity packet corpus and kernel readback are required"
         return
       end
-      errors << "proxy packet corpus must be executed externally" unless packet["executed"] == true && non_empty_string?(packet["measurementSource"])
-      errors << "proxy packet runner provenance is incomplete" unless non_empty_string?(packet["runnerIdentity"]) && valid_digest?(packet["runnerDigest"]) && non_empty_string?(packet["mode"]) && packet["mode"] != "model"
+      unless packet["executed"] == true && non_empty_string?(packet["measurementSource"])
+        errors << "proxy packet corpus must be executed externally"
+      end
+      unless non_empty_string?(packet["runnerIdentity"]) && valid_digest?(packet["runnerDigest"]) && non_empty_string?(packet["mode"]) && packet["mode"] != "model"
+        errors << "proxy packet runner provenance is incomplete"
+      end
       runner = packet["runner"] || packet["runner_provenance"]
-      errors << "proxy packet runner PID/start-time/source/argv/stdout provenance is incomplete" unless runner.is_a?(Hash) && runner["pid"].is_a?(Integer) && runner["pid"].positive? && iso8601?(runner["startedAt"] || runner["started_at"] || runner["startTime"] || runner["start_time"]) && non_empty_string?(runner["source"] || runner["sourcePath"] || runner["source_path"]) && Array(runner["argv"] || runner["command"]).any? && Array(runner["argv"] || runner["command"]).all? { |arg| non_empty_string?(arg) } && runner["stdout"].is_a?(String) && valid_digest?(runner["stdoutSha256"] || runner["stdout_sha256"]) && Digest::SHA256.hexdigest(runner["stdout"]) == (runner["stdoutSha256"] || runner["stdout_sha256"])
+      errors << "proxy packet runner PID/start-time/source/argv/stdout provenance is incomplete" unless runner.is_a?(Hash) && runner["pid"].is_a?(Integer) && runner["pid"].positive? && iso8601?(runner["startedAt"] || runner["started_at"] || runner["startTime"] || runner["start_time"]) && non_empty_string?(runner["source"] || runner["sourcePath"] || runner["source_path"]) && Array(runner["argv"] || runner["command"]).any? && Array(runner["argv"] || runner["command"]).all? do |arg|
+        non_empty_string?(arg)
+      end && runner["stdout"].is_a?(String) && valid_digest?(runner["stdoutSha256"] || runner["stdout_sha256"]) && Digest::SHA256.hexdigest(runner["stdout"]) == (runner["stdoutSha256"] || runner["stdout_sha256"])
       execution = packet["executionIdentity"]
-      errors << "proxy packet immutable execution identity is incomplete" unless execution.is_a?(Hash) && execution["runnerIdentity"] == packet["runnerIdentity"] && execution["runnerDigest"] == packet["runnerDigest"] && execution["mode"] == packet["mode"] && valid_digest?(packet["executionIdentitySha256"]) && packet["executionIdentitySha256"] == canonical_document_digest(execution)
+      unless execution.is_a?(Hash) && execution["runnerIdentity"] == packet["runnerIdentity"] && execution["runnerDigest"] == packet["runnerDigest"] && execution["mode"] == packet["mode"] && valid_digest?(packet["executionIdentitySha256"]) && packet["executionIdentitySha256"] == canonical_document_digest(execution)
+        errors << "proxy packet immutable execution identity is incomplete"
+      end
       binding = packet["inputBinding"]
-      errors << "proxy packet immutable input binding is incomplete" unless binding.is_a?(Hash) && valid_digest?(binding["leftDigest"]) && valid_digest?(binding["rightDigest"]) && valid_digest?(packet["inputBindingSha256"]) && packet["inputBindingSha256"] == canonical_document_digest(binding)
-      errors << "proxy packet corpus raw trace digest is invalid" unless packet["rawPacketTrace"] && valid_digest?(packet["packetTraceSha256"]) && packet["packetTraceSha256"] == canonical_document_digest(packet["rawPacketTrace"])
+      unless binding.is_a?(Hash) && valid_digest?(binding["leftDigest"]) && valid_digest?(binding["rightDigest"]) && valid_digest?(packet["inputBindingSha256"]) && packet["inputBindingSha256"] == canonical_document_digest(binding)
+        errors << "proxy packet immutable input binding is incomplete"
+      end
+      unless packet["rawPacketTrace"] && valid_digest?(packet["packetTraceSha256"]) && packet["packetTraceSha256"] == canonical_document_digest(packet["rawPacketTrace"])
+        errors << "proxy packet corpus raw trace digest is invalid"
+      end
       capture = packet["packetCapture"] || packet["packet_capture"] || packet["pcap"]
       capture_count = capture.is_a?(Hash) ? (capture["packetCount"] || capture["packet_count"] || capture["count"]) : nil
-      errors << "proxy packet bytes/PCAP provenance is incomplete" unless capture.is_a?(Hash) && %w[pcap packet_bytes raw].include?((capture["format"] || capture["type"]).to_s) && valid_digest?(capture["sha256"] || capture["packetBytesSha256"] || capture["packet_bytes_sha256"] || capture["pcapSha256"] || capture["pcap_sha256"]) && capture_count.is_a?(Integer) && capture_count.positive? && non_empty_string?(capture["source"] || capture["sourcePath"] || capture["source_path"])
+      errors << "proxy packet bytes/PCAP provenance is incomplete" unless capture.is_a?(Hash) && %w[pcap packet_bytes
+                                                                                                    raw].include?((capture["format"] || capture["type"]).to_s) && valid_digest?(capture["sha256"] || capture["packetBytesSha256"] || capture["packet_bytes_sha256"] || capture["pcapSha256"] || capture["pcap_sha256"]) && capture_count.is_a?(Integer) && capture_count.positive? && non_empty_string?(capture["source"] || capture["sourcePath"] || capture["source_path"])
       cases = packet["cases"]
       inventory = packet["caseInventory"]
       ids = Array(cases).filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["case"] || entry["caseId"]) : nil }.map(&:to_s)
-      inventory_ids = Array(inventory).filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["case"] || entry["caseId"]) : nil }.map(&:to_s)
-      errors << "proxy packet corpus case inventory is incomplete" unless ids.sort == REQUIRED_PROXY_CASES.sort && inventory_ids.sort == REQUIRED_PROXY_CASES.sort && ids.uniq.length == REQUIRED_PROXY_CASES.length
-      errors << "proxy packet corpus case inventory digest is invalid" unless valid_digest?(packet["caseInventorySha256"]) && packet["caseInventorySha256"] == canonical_document_digest(inventory)
+      inventory_ids = Array(inventory).filter_map do |entry|
+        entry.is_a?(Hash) ? (entry["id"] || entry["case"] || entry["caseId"]) : nil
+      end.map(&:to_s)
+      unless ids.sort == REQUIRED_PROXY_CASES.sort && inventory_ids.sort == REQUIRED_PROXY_CASES.sort && ids.uniq.length == REQUIRED_PROXY_CASES.length
+        errors << "proxy packet corpus case inventory is incomplete"
+      end
+      unless valid_digest?(packet["caseInventorySha256"]) && packet["caseInventorySha256"] == canonical_document_digest(inventory)
+        errors << "proxy packet corpus case inventory digest is invalid"
+      end
       Array(cases).each_with_index do |entry, index|
         expected = entry.is_a?(Hash) ? entry["expected"] : nil
         actual = entry.is_a?(Hash) ? entry["actual"] : nil
         errors << "proxy packet case #{index} expected/actual mismatch" unless expected == actual
-        errors << "proxy packet case #{index} expected digest is invalid" unless entry.is_a?(Hash) && valid_digest?(entry["expectedSha256"]) && entry["expectedSha256"] == canonical_document_digest(expected)
-        errors << "proxy packet case #{index} actual digest is invalid" unless entry.is_a?(Hash) && valid_digest?(entry["actualSha256"]) && entry["actualSha256"] == canonical_document_digest(actual)
+        unless entry.is_a?(Hash) && valid_digest?(entry["expectedSha256"]) && entry["expectedSha256"] == canonical_document_digest(expected)
+          errors << "proxy packet case #{index} expected digest is invalid"
+        end
+        unless entry.is_a?(Hash) && valid_digest?(entry["actualSha256"]) && entry["actualSha256"] == canonical_document_digest(actual)
+          errors << "proxy packet case #{index} actual digest is invalid"
+        end
       end
-      errors << "proxy kernel readback must bind packet trace and case inventory" unless valid_digest?(kernel["packetTraceSha256"]) && kernel["packetTraceSha256"] == packet["packetTraceSha256"] && valid_digest?(kernel["caseInventorySha256"]) && kernel["caseInventorySha256"] == packet["caseInventorySha256"]
-      errors << "proxy kernel runner provenance must match packet runner" unless kernel["runnerIdentity"] == packet["runnerIdentity"] && kernel["runnerDigest"] == packet["runnerDigest"] && kernel["mode"] == packet["mode"] && valid_digest?(kernel["executionIdentitySha256"])
+      unless valid_digest?(kernel["packetTraceSha256"]) && kernel["packetTraceSha256"] == packet["packetTraceSha256"] && valid_digest?(kernel["caseInventorySha256"]) && kernel["caseInventorySha256"] == packet["caseInventorySha256"]
+        errors << "proxy kernel readback must bind packet trace and case inventory"
+      end
+      unless kernel["runnerIdentity"] == packet["runnerIdentity"] && kernel["runnerDigest"] == packet["runnerDigest"] && kernel["mode"] == packet["mode"] && valid_digest?(kernel["executionIdentitySha256"])
+        errors << "proxy kernel runner provenance must match packet runner"
+      end
       kernel_runner = kernel["runner"] || kernel["runner_provenance"]
-      errors << "proxy kernel runner PID/start-time/source/argv/stdout provenance is incomplete" unless kernel_runner.is_a?(Hash) && kernel_runner["pid"] == runner["pid"] && (kernel_runner["startedAt"] || kernel_runner["started_at"] || kernel_runner["startTime"] || kernel_runner["start_time"]) == (runner["startedAt"] || runner["started_at"] || runner["startTime"] || runner["start_time"]) && (kernel_runner["source"] || kernel_runner["sourcePath"] || kernel_runner["source_path"]) == (runner["source"] || runner["sourcePath"] || runner["source_path"]) && Array(kernel_runner["argv"] || kernel_runner["command"]) == Array(runner["argv"] || runner["command"]) && kernel_runner["stdout"] == runner["stdout"] && (kernel_runner["stdoutSha256"] || kernel_runner["stdout_sha256"]) == (runner["stdoutSha256"] || runner["stdout_sha256"]) && kernel_runner["stdout"].is_a?(String) && valid_digest?(kernel_runner["stdoutSha256"] || kernel_runner["stdout_sha256"]) && Digest::SHA256.hexdigest(kernel_runner["stdout"]) == (kernel_runner["stdoutSha256"] || kernel_runner["stdout_sha256"])
-      errors << "proxy kernel input binding must match packet binding" unless kernel["inputBinding"] == binding && valid_digest?(kernel["inputBindingSha256"]) && kernel["inputBindingSha256"] == packet["inputBindingSha256"]
-      errors << "proxy packet/kernel execution identity must match" unless valid_digest?(packet["executionIdentitySha256"]) && packet["executionIdentitySha256"] == kernel["executionIdentitySha256"]
+      unless kernel_runner.is_a?(Hash) && kernel_runner["pid"] == runner["pid"] && (kernel_runner["startedAt"] || kernel_runner["started_at"] || kernel_runner["startTime"] || kernel_runner["start_time"]) == (runner["startedAt"] || runner["started_at"] || runner["startTime"] || runner["start_time"]) && (kernel_runner["source"] || kernel_runner["sourcePath"] || kernel_runner["source_path"]) == (runner["source"] || runner["sourcePath"] || runner["source_path"]) && Array(kernel_runner["argv"] || kernel_runner["command"]) == Array(runner["argv"] || runner["command"]) && kernel_runner["stdout"] == runner["stdout"] && (kernel_runner["stdoutSha256"] || kernel_runner["stdout_sha256"]) == (runner["stdoutSha256"] || runner["stdout_sha256"]) && kernel_runner["stdout"].is_a?(String) && valid_digest?(kernel_runner["stdoutSha256"] || kernel_runner["stdout_sha256"]) && Digest::SHA256.hexdigest(kernel_runner["stdout"]) == (kernel_runner["stdoutSha256"] || kernel_runner["stdout_sha256"])
+        errors << "proxy kernel runner PID/start-time/source/argv/stdout provenance is incomplete"
+      end
+      unless kernel["inputBinding"] == binding && valid_digest?(kernel["inputBindingSha256"]) && kernel["inputBindingSha256"] == packet["inputBindingSha256"]
+        errors << "proxy kernel input binding must match packet binding"
+      end
+      unless valid_digest?(packet["executionIdentitySha256"]) && packet["executionIdentitySha256"] == kernel["executionIdentitySha256"]
+        errors << "proxy packet/kernel execution identity must match"
+      end
       %w[ebpf nftables].each do |backend|
         entry = kernel[backend]
         expected_input_digest = if backend == "ebpf"
@@ -632,15 +761,23 @@ module M4Gate
                          else
                            parity["rightRules"] || parity["right_rules"]
                          end
-        errors << "proxy #{backend} kernel readback identity is incomplete" unless entry.is_a?(Hash) && entry["readback"] == true && entry["identity"].is_a?(Hash) && entry["identity"].any? && valid_digest?(entry["identityDigest"]) && entry["identityDigest"] == canonical_document_digest(entry["identity"]) && entry["rules"].is_a?(Array) && !entry["rules"].empty? && valid_digest?(entry["rulesDigest"]) && entry["rulesDigest"] == canonical_document_digest(entry["rules"])
-        errors << "proxy #{backend} kernel readback must bind model rules" unless entry.is_a?(Hash) && expected_rules.is_a?(Array) && !expected_rules.empty? && entry["inputDigest"] == expected_input_digest && entry["rulesModelDigest"] == expected_input_digest && entry["rules"] == expected_rules && entry["rulesDigest"] == canonical_document_digest(expected_rules)
+        unless entry.is_a?(Hash) && entry["readback"] == true && entry["identity"].is_a?(Hash) && entry["identity"].any? && valid_digest?(entry["identityDigest"]) && entry["identityDigest"] == canonical_document_digest(entry["identity"]) && entry["rules"].is_a?(Array) && !entry["rules"].empty? && valid_digest?(entry["rulesDigest"]) && entry["rulesDigest"] == canonical_document_digest(entry["rules"])
+          errors << "proxy #{backend} kernel readback identity is incomplete"
+        end
+        unless entry.is_a?(Hash) && expected_rules.is_a?(Array) && !expected_rules.empty? && entry["inputDigest"] == expected_input_digest && entry["rulesModelDigest"] == expected_input_digest && entry["rules"] == expected_rules && entry["rulesDigest"] == canonical_document_digest(expected_rules)
+          errors << "proxy #{backend} kernel readback must bind model rules"
+        end
         if backend == "ebpf"
           program = entry.is_a?(Hash) ? entry["program"] : nil
           maps = entry.is_a?(Hash) ? entry["maps"] : nil
           filters = entry.is_a?(Hash) ? entry["filters"] : nil
-          errors << "proxy eBPF program/map/TC readback identities are incomplete" unless program.is_a?(Hash) && program["id"].is_a?(Integer) && program["id"].positive? && valid_bpf_tag?(program["tag"]) && maps.is_a?(Array) && !maps.empty? && filters.is_a?(Array) && !filters.empty?
+          unless program.is_a?(Hash) && program["id"].is_a?(Integer) && program["id"].positive? && valid_bpf_tag?(program["tag"]) && maps.is_a?(Array) && !maps.empty? && filters.is_a?(Array) && !filters.empty?
+            errors << "proxy eBPF program/map/TC readback identities are incomplete"
+          end
         else
-          errors << "proxy nftables table/chain/set readback identities are incomplete" unless entry.is_a?(Hash) && entry["table"].is_a?(Hash) && non_empty_string?(entry["table"]["name"]) && Array(entry["chains"]).any? && Array(entry["sets"]).any?
+          unless entry.is_a?(Hash) && entry["table"].is_a?(Hash) && non_empty_string?(entry["table"]["name"]) && Array(entry["chains"]).any? && Array(entry["sets"]).any?
+            errors << "proxy nftables table/chain/set readback identities are incomplete"
+          end
         end
       end
     end
@@ -648,7 +785,9 @@ module M4Gate
     def validate_volume(document, errors)
       kinds = document["volume_kinds"] || document["kinds"]
       ids = Array(kinds).filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["kind"]) : nil }
-      errors << "volume lifecycle inventory is incomplete" unless ids.sort == REQUIRED_VOLUME_KINDS.sort && ids.uniq.length == REQUIRED_VOLUME_KINDS.length
+      unless ids.sort == REQUIRED_VOLUME_KINDS.sort && ids.uniq.length == REQUIRED_VOLUME_KINDS.length
+        errors << "volume lifecycle inventory is incomplete"
+      end
       Array(kinds).each_with_index do |entry, index|
         errors << "volume kind #{index} must pass from an identified production measurement source" unless
           entry.is_a?(Hash) && entry["passed"] == true && VALID_VOLUME_MEASUREMENT_SOURCES.include?(entry["measurement_source"]) && entry["attempt_count"] == 1
@@ -663,11 +802,15 @@ module M4Gate
         validate_content_bound_observation(entry, errors, "volume stage #{index}") if entry.is_a?(Hash)
       end
       projection = document["projected_atomicity"]
-      errors << "projected volume updates must be atomic" unless projection.is_a?(Hash) && projection["passed"] == true && projection["partial_generation_observed"] == false
+      unless projection.is_a?(Hash) && projection["passed"] == true && projection["partial_generation_observed"] == false
+        errors << "projected volume updates must be atomic"
+      end
       errors << "volume duplicate attach count must be zero" unless document["duplicate_attach_count"] == 0
       errors << "volume mount leak count must be zero" unless document["mount_leak_count"] == 0
       validate_volume_observation(document, errors, owner_document: document)
-      %w[failure_count difference_count unexpected_skip_count unclassified_count].each { |key| errors << "volume #{key} must be zero" unless document[key] == 0 }
+      %w[failure_count difference_count unexpected_skip_count unclassified_count].each do |key|
+        errors << "volume #{key} must be zero" unless document[key] == 0
+      end
     end
 
     def validate_volume_component_source(entry, errors, label)
@@ -680,27 +823,34 @@ module M4Gate
          adapter_class.end_with?("FilesystemAdapter")
         errors << "#{label} must not label FilesystemAdapter evidence as production_module"
       end
-      if source == "production_module" && detail["execution"] == "object_construction"
-        errors << "#{label} must label object construction separately from production execution"
-      end
+      return unless source == "production_module" && detail["execution"] == "object_construction"
+
+      errors << "#{label} must label object construction separately from production execution"
     end
 
     def validate_mount_attacks(document, errors)
       cases = document["cases"]
       ids = Array(cases).filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["case"]) : nil }
-      errors << "mount attack corpus is incomplete" unless ids.sort == REQUIRED_MOUNT_ATTACKS.sort && ids.uniq.length == REQUIRED_MOUNT_ATTACKS.length
+      unless ids.sort == REQUIRED_MOUNT_ATTACKS.sort && ids.uniq.length == REQUIRED_MOUNT_ATTACKS.length
+        errors << "mount attack corpus is incomplete"
+      end
       Array(cases).each_with_index do |entry, index|
         if entry.is_a?(Hash) && (entry["id"] || entry["case"]).to_s == "node_crash_double_attach"
           errors << "mount attack case #{index} must pass from bound native crash evidence" unless
             entry["passed"] == true && entry["blocked"] == true &&
             VALID_NODE_CRASH_MEASUREMENT_SOURCES.include?(entry["measurement_source"]) && entry["attempt_count"] == 1
         else
-          errors << "mount attack case #{index} must be rejected by production module" unless entry.is_a?(Hash) && entry["passed"] == true && entry["blocked"] == true && entry["measurement_source"] == "production_module" && entry["attempt_count"] == 1
+          unless entry.is_a?(Hash) && entry["passed"] == true && entry["blocked"] == true && entry["measurement_source"] == "production_module" && entry["attempt_count"] == 1
+            errors << "mount attack case #{index} must be rejected by production module"
+          end
         end
       end
       validate_node_crash_recovery(document["node_crash_recovery"], errors, owner_document: document)
       validate_mount_observation(document["kernel_observation"], errors, owner_document: document)
-      %w[live_escape_count host_path_escape_count attach_race_count double_attach_count failure_count unexpected_skip_count unclassified_count].each { |key| errors << "mount attack #{key} must be zero" unless document[key] == 0 }
+      %w[live_escape_count host_path_escape_count attach_race_count double_attach_count failure_count unexpected_skip_count
+         unclassified_count].each do |key|
+        errors << "mount attack #{key} must be zero" unless document[key] == 0
+      end
     end
 
     # A crash result is only useful when it proves that a real node operation
@@ -717,7 +867,9 @@ module M4Gate
       errors << "#{label} measurement source must be native" unless VALID_NODE_CRASH_MEASUREMENT_SOURCES.include?(source)
       errors << "#{label} mode must identify a mount namespace or real CSI operation" unless
         %w[native_mount_namespace real_csi_node_operation].include?(document["mode"])
-      errors << "#{label} must pass only when native crash evidence is complete" unless document["passed"] == true && document["available"] == true
+      unless document["passed"] == true && document["available"] == true
+        errors << "#{label} must pass only when native crash evidence is complete"
+      end
       errors << "#{label} must report durable recovery with no unknown operations" unless
         document.dig("recovery", "unknown_count") == 0 && document.dig("recovery", "state_after_recovery") == "Attached"
       errors << "#{label} must report durable cleanup after restart" unless document["cleanup_passed"] == true
@@ -725,13 +877,19 @@ module M4Gate
       errors << "#{label} must exercise NodeStageVolume or NodePublishVolume" unless
         %w[NodeStageVolume NodePublishVolume].include?(operation)
       mount_adapter = document["mount_adapter_class"] || document["adapter_class"]
-      errors << "#{label} must identify a native mount adapter" unless non_empty_string?(mount_adapter) && !mount_adapter.end_with?("FilesystemAdapter")
-      errors << "#{label} must not use FilesystemAdapter as the mount adapter" if non_empty_string?(document["adapter_class"]) && document["adapter_class"].end_with?("FilesystemAdapter")
+      unless non_empty_string?(mount_adapter) && !mount_adapter.end_with?("FilesystemAdapter")
+        errors << "#{label} must identify a native mount adapter"
+      end
+      if non_empty_string?(document["adapter_class"]) && document["adapter_class"].end_with?("FilesystemAdapter")
+        errors << "#{label} must not use FilesystemAdapter as the mount adapter"
+      end
       errors << "#{label} native mount namespace evidence must use the production NativeMountAdapter" if
         source == "native_mount_namespace" && mount_adapter != "Rubernetes::Volume::NativeMountAdapter"
 
       local_runner_sha256 = owner_document.is_a?(Hash) ? owner_document.dig("adapter", "runner_sha256") : nil
-      errors << "#{label} must bind evidence to the local report runner" unless valid_digest?(local_runner_sha256) && document["runner_sha256"] == local_runner_sha256
+      unless valid_digest?(local_runner_sha256) && document["runner_sha256"] == local_runner_sha256
+        errors << "#{label} must bind evidence to the local report runner"
+      end
       binding = document["binding"]
       expected_binding = {"runner_sha256" => document["runner_sha256"],
                           "child_identity_sha256" => document["child_identity_sha256"],
@@ -759,15 +917,13 @@ module M4Gate
              document["effect_boundary_sha256"] == canonical_document_digest(effect)
         errors << "#{label} effect boundary must bind the native operation before durable commit"
       end
-      if child.is_a?(Hash) && effect.is_a?(Hash)
-        errors << "#{label} effect boundary PID/start-time/namespace does not match child" unless
-          effect["pid"] == child["pid"] && effect["start_time_ticks"] == child["start_time_ticks"] &&
-          effect["mount_namespace_inode"] == child["mount_namespace_inode"]
+      if child.is_a?(Hash) && effect.is_a?(Hash) && !(effect["pid"] == child["pid"] && effect["start_time_ticks"] == child["start_time_ticks"] &&
+          effect["mount_namespace_inode"] == child["mount_namespace_inode"])
+        errors << "#{label} effect boundary PID/start-time/namespace does not match child"
       end
-      if target.is_a?(Hash) && effect.is_a?(Hash)
-        errors << "#{label} effect boundary does not bind target path/mount identity" unless
-          effect["target"] == target["path"] && effect["mount_id"] == target["mount_id"] &&
-          effect["target_device"] == target["device"] && effect["target_inode"] == target["inode"]
+      if target.is_a?(Hash) && effect.is_a?(Hash) && !(effect["target"] == target["path"] && effect["mount_id"] == target["mount_id"] &&
+          effect["target_device"] == target["device"] && effect["target_inode"] == target["inode"])
+        errors << "#{label} effect boundary does not bind target path/mount identity"
       end
       mountinfo = observation["mountinfo"]
       unless mountinfo.is_a?(Array) && !mountinfo.empty? && mountinfo.all? { |line| non_empty_string?(line) } &&
@@ -775,10 +931,12 @@ module M4Gate
              document["mountinfo_sha256"] == Digest::SHA256.hexdigest(mountinfo.join("\n"))
         errors << "#{label} child mountinfo is missing or not content-bound"
       end
-      if target.is_a?(Hash) && mountinfo.is_a?(Array)
-        errors << "#{label} target mountinfo line is not in the child mountinfo" unless mountinfo.include?(target["mountinfo_line"])
+      if target.is_a?(Hash) && mountinfo.is_a?(Array) && !mountinfo.include?(target["mountinfo_line"])
+        errors << "#{label} target mountinfo line is not in the child mountinfo"
       end
-      errors << "#{label} must record SIGKILL after the effect boundary" unless document["signal"] == "SIGKILL" && document["child_killed"] == true
+      unless document["signal"] == "SIGKILL" && document["child_killed"] == true
+        errors << "#{label} must record SIGKILL after the effect boundary"
+      end
 
       restart = document["restart"]
       unless restart.is_a?(Hash) && restart["performed"] == true && restart["marker"].is_a?(Hash)
@@ -798,7 +956,8 @@ module M4Gate
       end
       errors << "#{label} restart observation operations do not bind both node operations" unless
         Array(restart_observation["operation"]).sort == %w[NodePublishVolume NodeStageVolume]
-      validate_node_crash_process_identity(restart_observation["child"], restart_marker["child_identity_sha256"], errors, "#{label} restart child")
+      validate_node_crash_process_identity(restart_observation["child"], restart_marker["child_identity_sha256"], errors,
+                                           "#{label} restart child")
       %w[stage_target publish_target].each do |key|
         validate_node_crash_target_identity(restart_observation[key], nil, errors, "#{label} restart #{key}")
       end
@@ -807,12 +966,12 @@ module M4Gate
         restart_mountinfo.is_a?(Array) && !restart_mountinfo.empty? && restart_mountinfo.all? { |line| non_empty_string?(line) } &&
         valid_digest?(restart_marker["mountinfo_sha256"]) &&
         restart_marker["mountinfo_sha256"] == Digest::SHA256.hexdigest(restart_mountinfo.join("\n"))
-      if restart_mountinfo.is_a?(Array)
-        %w[stage_target publish_target].each do |key|
-          target_identity = restart_observation[key]
-          errors << "#{label} restart #{key} mountinfo line is not in the child mountinfo" unless
-            target_identity.is_a?(Hash) && restart_mountinfo.include?(target_identity["mountinfo_line"])
-        end
+      return unless restart_mountinfo.is_a?(Array)
+
+      %w[stage_target publish_target].each do |key|
+        target_identity = restart_observation[key]
+        errors << "#{label} restart #{key} mountinfo line is not in the child mountinfo" unless
+          target_identity.is_a?(Hash) && restart_mountinfo.include?(target_identity["mountinfo_line"])
       end
     end
 
@@ -862,9 +1021,13 @@ module M4Gate
       errors << "#{label} runner provenance mode must be external" unless runner.is_a?(Hash) && runner["mode"] == "external"
       errors << "#{label} runner provenance must not be a self-comparison" unless runner.is_a?(Hash) && runner["self_comparison"] == false
       errors << "#{label} runner implementation is required" unless runner.is_a?(Hash) && non_empty_string?(runner["implementation"])
-      errors << "#{label} runner must not be a milestone probe" if Array(runner && runner["command"]).any? { |part| part.to_s.match?(/m4_.*_probe\.rb\z/) }
+      errors << "#{label} runner must not be a milestone probe" if Array(runner && runner["command"]).any? do |part|
+        part.to_s.match?(/m4_.*_probe\.rb\z/)
+      end
       local_runner_sha256 = owner_document.is_a?(Hash) ? owner_document.dig("adapter", "runner_sha256") : nil
-      errors << "#{label} runner digest must differ from the local probe" if valid_digest?(local_runner_sha256) && runner.is_a?(Hash) && runner["runner_sha256"] == local_runner_sha256
+      if valid_digest?(local_runner_sha256) && runner.is_a?(Hash) && runner["runner_sha256"] == local_runner_sha256
+        errors << "#{label} runner digest must differ from the local probe"
+      end
       %w[started_at finished_at].each { |key| errors << "#{label} runner #{key} must be ISO-8601" unless iso8601?(runner && runner[key]) }
       if iso8601?(runner && runner["started_at"]) && iso8601?(runner && runner["finished_at"]) && Time.iso8601(runner["finished_at"]) < Time.iso8601(runner["started_at"])
         errors << "#{label} runner finished before it started"
@@ -879,12 +1042,20 @@ module M4Gate
       expected = comparison["expected_observable"]
       actual = comparison["actual_observable"]
       structured = ->(value) { value.is_a?(Hash) || value.is_a?(Array) }
-      errors << "#{label} must include structured expected and actual observations" unless structured.call(expected) && structured.call(actual)
+      unless structured.call(expected) && structured.call(actual)
+        errors << "#{label} must include structured expected and actual observations"
+      end
       expected_digest = comparison["expected_sha256"]
       actual_digest = comparison["actual_sha256"]
-      errors << "#{label} expected digest does not match observable" unless structured.call(expected) && valid_digest?(expected_digest) && canonical_document_digest(expected) == expected_digest
-      errors << "#{label} actual digest does not match observable" unless structured.call(actual) && valid_digest?(actual_digest) && canonical_document_digest(actual) == actual_digest
-      errors << "#{label} passed flag does not match observables" unless comparison["passed"] == (valid_digest?(expected_digest) && expected_digest == actual_digest)
+      unless structured.call(expected) && valid_digest?(expected_digest) && canonical_document_digest(expected) == expected_digest
+        errors << "#{label} expected digest does not match observable"
+      end
+      unless structured.call(actual) && valid_digest?(actual_digest) && canonical_document_digest(actual) == actual_digest
+        errors << "#{label} actual digest does not match observable"
+      end
+      unless comparison["passed"] == (valid_digest?(expected_digest) && expected_digest == actual_digest)
+        errors << "#{label} passed flag does not match observables"
+      end
       errors << "#{label} must pass the independent comparison" unless comparison["passed"] == true
     end
 
@@ -892,18 +1063,17 @@ module M4Gate
       label = "network kernel observation"
       validate_external_runner_observation(observation, errors, label, owner_document: owner_document)
       return unless observation.is_a?(Hash)
+
       netns = observation["netns"] || observation["network_namespace"]
       runner = observation["runner"]
       keeper = observation["keeper"] || (netns.is_a?(Hash) && netns["keeper"]) ||
                (runner.is_a?(Hash) && runner["keeper"])
       live_namespace = validate_live_network_namespace(netns, runner, keeper, errors, label)
       live_resources = live_namespace &&
-        live_network_resources(netns.fetch("path"), live_namespace, netns, errors, label)
+                       live_network_resources(netns.fetch("path"), live_namespace, netns, errors, label)
 
       objects = observation["kernel_objects"]
-      unless objects.is_a?(Array) && !objects.empty?
-        errors << "#{label} must record kernel network objects"
-      else
+      if objects.is_a?(Array) && !objects.empty?
         objects.each_with_index do |object, index|
           valid_object = object.is_a?(Hash) && non_empty_string?(object["kind"]) &&
                          non_empty_string?((object["id"] || object["name"]).to_s) &&
@@ -919,6 +1089,8 @@ module M4Gate
             netns.is_a?(Hash) && valid_digest?(object_digest) && object_digest == netns["identity_sha256"]
           validate_live_kernel_object(object, index, live_resources, live_namespace, errors, label)
         end
+      else
+        errors << "#{label} must record kernel network objects"
       end
       packet = observation["packet_trace"]
       unless packet.is_a?(Hash) && %w[pcap pcapng].include?(packet["format"]) &&
@@ -937,7 +1109,7 @@ module M4Gate
         return nil
       end
 
-      match = netns["path"].to_s.match(/\A\/proc\/(\d+)\/ns\/net\z/)
+      match = netns["path"].to_s.match(%r{\A/proc/(\d+)/ns/net\z})
       path_pid = match && match[1].to_i
       keeper_pid = keeper["pid"] || keeper["keeper_pid"]
       unless match && netns["pid"].is_a?(Integer) && netns["pid"].positive? &&
@@ -1019,7 +1191,11 @@ module M4Gate
       # namespace replacement during the gate invalidates the evidence.
       unless proc_start_time_ticks(keeper_pid) == actual_start_time &&
              runner_pid.is_a?(Integer) && proc_start_time_ticks(runner_pid) == actual_runner_start_time &&
-             (File.stat(netns.fetch("path")).ino rescue nil) == actual_inode
+             begin
+               File.stat(netns.fetch("path")).ino
+             rescue StandardError
+               nil
+             end == actual_inode
         errors << "#{label} keeper identity changed during gate validation"
         return nil
       end
@@ -1081,7 +1257,8 @@ module M4Gate
                   else
                     # The observer enters a foreign namespace only through a
                     # pidfd-verified lease on the live keeper.
-                    pidfd = Rubernetes::Platform::Linux::Pidfd.new.open(pid: live_namespace.fetch("pid"), resource_id: "m4-gate:#{live_namespace.fetch("pid")}")
+                    pidfd = Rubernetes::Platform::Linux::Pidfd.new.open(pid: live_namespace.fetch("pid"),
+                                                                        resource_id: "m4-gate:#{live_namespace.fetch("pid")}")
                     begin
                       lease = Rubernetes::Network::Netlink::NamespaceLease.open(
                         "handle" => "m4-gate:#{live_namespace.fetch("pid")}", "path" => path, "inode" => live_namespace.fetch("inode"),
@@ -1115,7 +1292,11 @@ module M4Gate
       }
       resources = [namespace_resource, *Array(resources)]
       unless proc_start_time_ticks(live_namespace.fetch("pid")) == live_namespace.fetch("start_time_ticks") &&
-             (File.stat(path).ino rescue nil) == live_namespace.fetch("inode")
+             begin
+               File.stat(path).ino
+             rescue StandardError
+               nil
+             end == live_namespace.fetch("inode")
         errors << "#{label} keeper identity changed during native rtnetlink readback"
         return nil
       end
@@ -1171,6 +1352,7 @@ module M4Gate
       label = "proxy backend kernel readback"
       validate_external_runner_observation(readback, errors, label, owner_document: owner_document)
       return unless readback.is_a?(Hash)
+
       ebpf = readback["ebpf"]
       nftables = readback["nftables"]
       unless ebpf.is_a?(Hash) && ebpf["verified"] == true && ebpf["readback"] == true && ebpf["program_id"].is_a?(Integer) && ebpf["program_id"].positive? && ebpf["map_id"].is_a?(Integer) && ebpf["map_id"].positive? && valid_digest?(ebpf["verifier_log_sha256"]) && ebpf["rules"].is_a?(Array) && !ebpf["rules"].empty?
@@ -1191,41 +1373,42 @@ module M4Gate
       validate_external_runner_observation(csi, errors, "CSI oracle", owner_document: owner_document)
       validate_external_runner_observation(snapshot, errors, "snapshot/restore crash-recovery runner", owner_document: owner_document)
       validate_volume_external_operations(csi, REQUIRED_CSI_OPERATIONS, errors, "csi_oracle", owner_document: owner_document)
-      validate_volume_external_operations(snapshot, REQUIRED_SNAPSHOT_OPERATIONS, errors, "snapshot_recovery", owner_document: owner_document)
+      validate_volume_external_operations(snapshot, REQUIRED_SNAPSHOT_OPERATIONS, errors, "snapshot_recovery",
+                                          owner_document: owner_document)
       return unless observation.is_a?(Hash)
+
       mountinfo = observation["mountinfo"]
       syscalls = observation["syscalls"]
       containers = observation["container_observation"] || observation["containers"]
-      unless mountinfo.is_a?(Array) && !mountinfo.empty?
-        errors << "volume kernel/container observation must include mountinfo records"
-      else
+      if mountinfo.is_a?(Array) && !mountinfo.empty?
         mountinfo.each_with_index do |entry, index|
           valid_line = entry.is_a?(Hash) && non_empty_string?(entry["line"]) && valid_digest?(entry["line_sha256"]) &&
                        Digest::SHA256.hexdigest(entry["line"]) == entry["line_sha256"]
           errors << "volume mountinfo record #{index} has no content-bound line" unless valid_line
           validate_content_bound_observation(entry, errors, "volume mountinfo record #{index}") if entry.is_a?(Hash)
         end
-      end
-      unless syscalls.is_a?(Array) && !syscalls.empty?
-        errors << "volume kernel/container observation must include syscall records"
       else
+        errors << "volume kernel/container observation must include mountinfo records"
+      end
+      if syscalls.is_a?(Array) && !syscalls.empty?
         syscalls.each_with_index do |entry, index|
           errors << "volume syscall record #{index} has no syscall identity" unless
             entry.is_a?(Hash) && non_empty_string?(entry["name"]) && entry.key?("return")
           validate_content_bound_observation(entry, errors, "volume syscall record #{index}") if entry.is_a?(Hash)
         end
-      end
-      unless containers.is_a?(Array) && !containers.empty?
-        errors << "volume kernel/container observation must include container observations"
       else
+        errors << "volume kernel/container observation must include syscall records"
+      end
+      if containers.is_a?(Array) && !containers.empty?
         containers.each_with_index do |entry, index|
           errors << "volume container observation #{index} has no process identity" unless
             entry.is_a?(Hash) && non_empty_string?((entry["container_id"] || entry["id"]).to_s) &&
             entry["pid"].is_a?(Integer) && entry["pid"].positive?
           validate_content_bound_observation(entry, errors, "volume container observation #{index}") if entry.is_a?(Hash)
         end
+      else
+        errors << "volume kernel/container observation must include container observations"
       end
-
     end
 
     # Volume observations are comparisons, not liveness flags.  Every record
@@ -1237,8 +1420,16 @@ module M4Gate
         errors << "#{label} must be an object"
         return
       end
-      expected_key = observation.key?("expected") ? "expected" : (observation.key?("expected_observable") ? "expected_observable" : nil)
-      actual_key = observation.key?("actual") ? "actual" : (observation.key?("actual_observable") ? "actual_observable" : nil)
+      expected_key = if observation.key?("expected")
+                       "expected"
+                     else
+                       (observation.key?("expected_observable") ? "expected_observable" : nil)
+                     end
+      actual_key = if observation.key?("actual")
+                     "actual"
+                   else
+                     (observation.key?("actual_observable") ? "actual_observable" : nil)
+                   end
       unless expected_key && actual_key
         errors << "#{label} must include expected and actual observations"
         return
@@ -1252,9 +1443,15 @@ module M4Gate
 
       expected_digest = observation["expected_sha256"]
       actual_digest = observation["actual_sha256"]
-      errors << "#{label} must include valid expected and actual SHA-256 digests" unless valid_digest?(expected_digest) && valid_digest?(actual_digest)
-      errors << "#{label} expected digest does not match observation" unless valid_digest?(expected_digest) && canonical_document_digest(expected) == expected_digest
-      errors << "#{label} actual digest does not match observation" unless valid_digest?(actual_digest) && canonical_document_digest(actual) == actual_digest
+      unless valid_digest?(expected_digest) && valid_digest?(actual_digest)
+        errors << "#{label} must include valid expected and actual SHA-256 digests"
+      end
+      unless valid_digest?(expected_digest) && canonical_document_digest(expected) == expected_digest
+        errors << "#{label} expected digest does not match observation"
+      end
+      unless valid_digest?(actual_digest) && canonical_document_digest(actual) == actual_digest
+        errors << "#{label} actual digest does not match observation"
+      end
       expected_pass = valid_digest?(expected_digest) && valid_digest?(actual_digest) && expected_digest == actual_digest
       errors << "#{label} passed flag must match content-bound observations" unless observation["passed"] == expected_pass
       errors << "#{label} must pass the content-bound comparison" unless observation["passed"] == true
@@ -1321,12 +1518,19 @@ module M4Gate
       label = "mount attack kernel observation"
       validate_external_runner_observation(observation, errors, label, owner_document: owner_document)
       return unless observation.is_a?(Hash)
+
       mountinfo = observation["mountinfo"]
       syscalls = observation["syscalls"]
       containers = observation["containers"] || observation["container_observation"]
-      errors << "#{label} must include actual mountinfo" unless mountinfo.is_a?(Array) && !mountinfo.empty? && mountinfo.all? { |entry| entry.is_a?(Hash) && non_empty_string?(entry["line"]) }
-      errors << "#{label} must include actual syscall observations" unless syscalls.is_a?(Array) && !syscalls.empty? && syscalls.all? { |entry| entry.is_a?(Hash) && non_empty_string?(entry["name"]) && entry.key?("return") }
-      errors << "#{label} must include actual container observations" unless containers.is_a?(Array) && !containers.empty? && containers.all? { |entry| entry.is_a?(Hash) && non_empty_string?(entry["container_id"] || entry["id"]) && entry["pid"].is_a?(Integer) && entry["pid"].positive? && entry["observed"] == true }
+      errors << "#{label} must include actual mountinfo" unless mountinfo.is_a?(Array) && !mountinfo.empty? && mountinfo.all? do |entry|
+        entry.is_a?(Hash) && non_empty_string?(entry["line"])
+      end
+      errors << "#{label} must include actual syscall observations" unless syscalls.is_a?(Array) && !syscalls.empty? && syscalls.all? do |entry|
+        entry.is_a?(Hash) && non_empty_string?(entry["name"]) && entry.key?("return")
+      end
+      errors << "#{label} must include actual container observations" unless containers.is_a?(Array) && !containers.empty? && containers.all? do |entry|
+        entry.is_a?(Hash) && non_empty_string?(entry["container_id"] || entry["id"]) && entry["pid"].is_a?(Integer) && entry["pid"].positive? && entry["observed"] == true
+      end
     end
 
     def validate_materialized_packet_trace(packet, errors, label, evidence_directory:, artifacts:)
@@ -1377,16 +1581,16 @@ module M4Gate
         errors << "#{label} packet trace is structurally invalid: #{error.message}"
         nil
       end
-      if parsed
-        errors << "#{label} packet trace format is not encoded by the capture bytes" unless
-          %w[pcap pcapng].include?(format) && parsed["format"] == format
-        errors << "#{label} packet trace packet_count does not match parsed records" unless
-          packet["packet_count"].is_a?(Integer) && packet["packet_count"].positive? &&
-          packet["packet_count"] == parsed["packet_count"] &&
-          packet["parsed_packet_count"] == parsed["packet_count"]
-        errors << "#{label} packet trace parser identity is invalid" unless
-          packet["parser"] == "rubernetes-m4-packet-capture-v1"
-      end
+      return unless parsed
+
+      errors << "#{label} packet trace format is not encoded by the capture bytes" unless
+        %w[pcap pcapng].include?(format) && parsed["format"] == format
+      errors << "#{label} packet trace packet_count does not match parsed records" unless
+        packet["packet_count"].is_a?(Integer) && packet["packet_count"].positive? &&
+        packet["packet_count"] == parsed["packet_count"] &&
+        packet["parsed_packet_count"] == parsed["packet_count"]
+      errors << "#{label} packet trace parser identity is invalid" unless
+        packet["parser"] == "rubernetes-m4-packet-capture-v1"
     end
 
     def path_component_symlink?(root, path)
@@ -1412,7 +1616,10 @@ module M4Gate
     def validate_result_counts(manifest, artifacts, subjects, errors)
       counts = manifest["result_counts"]
       return unless counts.is_a?(Hash)
-      expected = {"commands" => manifest.fetch("commands", []).length, "command_failures" => manifest.fetch("commands", []).count { |command| command["exit_status"] != 0 }, "artifacts" => artifacts.length, "subjects" => subjects.length, "reports" => REPORTS.length, "source_files" => manifest["input_file_count"]}
+
+      expected = {"commands" => manifest.fetch("commands", []).length, "command_failures" => manifest.fetch("commands", []).count do |command|
+        command["exit_status"] != 0
+      end, "artifacts" => artifacts.length, "subjects" => subjects.length, "reports" => REPORTS.length, "source_files" => manifest["input_file_count"]}
       expected.each do |key, value|
         errors << "result_counts #{key} is missing or invalid" unless integer?(counts[key])
         errors << "result_counts #{key} is incorrect" if integer?(counts[key]) && counts[key] != value

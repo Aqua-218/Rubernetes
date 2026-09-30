@@ -9,33 +9,34 @@ class M3SecondaryControllerBatch1Test < Minitest::Test
   Controller = Rubernetes::Controller
   Store = Rubernetes::Storage::MemoryStore
 
-# 1.24+ (LegacyServiceAccountTokenNoAutoGeneration): no Secret is minted
-# per ServiceAccount; one a user created with the name annotation is filled in.
-def test_serviceaccount_token_controller_populates_only_annotated_secrets
-  store = Store.new(history_revisions: nil, history_seconds: nil)
-  adapter = Controller::StoreAdapter.new(store)
-  service_account = object("ServiceAccount", "builder", uid: "sa-1")
-  adapter.create(service_account, descriptor: descriptor("ServiceAccount"))
-  controller = Controller::ServiceAccountTokenController.new(store: store)
+  # 1.24+ (LegacyServiceAccountTokenNoAutoGeneration): no Secret is minted
+  # per ServiceAccount; one a user created with the name annotation is filled in.
+  def test_serviceaccount_token_controller_populates_only_annotated_secrets
+    store = Store.new(history_revisions: nil, history_seconds: nil)
+    adapter = Controller::StoreAdapter.new(store)
+    service_account = object("ServiceAccount", "builder", uid: "sa-1")
+    adapter.create(service_account, descriptor: descriptor("ServiceAccount"))
+    controller = Controller::ServiceAccountTokenController.new(store: store)
 
-  untouched = controller.reconcile(service_account, store: store, apply: true)
-  assert_empty untouched.operations
-  assert_empty adapter.list("Secret", namespace: "default")
+    untouched = controller.reconcile(service_account, store: store, apply: true)
 
-  secret = object("Secret", "builder-token", uid: "secret-1")
-  secret["type"] = "kubernetes.io/service-account-token"
-  secret["metadata"]["annotations"] = {"kubernetes.io/service-account.name" => "builder"}
-  adapter.create(secret, descriptor: descriptor("Secret"))
-  first = controller.reconcile(service_account, store: store, apply: true)
-  populated = adapter.find("Secret", name: "builder-token", namespace: "default")
-  second = controller.reconcile(service_account, store: store, apply: true)
+    assert_empty untouched.operations
+    assert_empty adapter.list("Secret", namespace: "default")
 
-  assert_equal [:update], first.operations.map(&:action)
-  assert_equal "sa-1", populated.dig("metadata", "annotations", "kubernetes.io/service-account.uid")
-  assert_equal "default", Base64.strict_decode64(populated.dig("data", "namespace"))
-  refute_empty Base64.strict_decode64(populated.dig("data", "token"))
-  assert_empty second.operations
-end
+    secret = object("Secret", "builder-token", uid: "secret-1")
+    secret["type"] = "kubernetes.io/service-account-token"
+    secret["metadata"]["annotations"] = {"kubernetes.io/service-account.name" => "builder"}
+    adapter.create(secret, descriptor: descriptor("Secret"))
+    first = controller.reconcile(service_account, store: store, apply: true)
+    populated = adapter.find("Secret", name: "builder-token", namespace: "default")
+    second = controller.reconcile(service_account, store: store, apply: true)
+
+    assert_equal [:update], first.operations.map(&:action)
+    assert_equal "sa-1", populated.dig("metadata", "annotations", "kubernetes.io/service-account.uid")
+    assert_equal "default", Base64.strict_decode64(populated.dig("data", "namespace"))
+    refute_empty Base64.strict_decode64(populated.dig("data", "token"))
+    assert_empty second.operations
+  end
 
   def test_endpointslice_controller_publishes_selected_pods_and_converges
     store = Store.new(history_revisions: nil, history_seconds: nil)
@@ -86,7 +87,7 @@ end
     replication_controller = object("ReplicationController", "workers", uid: "rc-1")
     replication_controller["spec"] = {"replicas" => 2, "selector" => {"app" => "worker"},
                                       "template" => {"metadata" => {"labels" => {"app" => "worker"}},
-                                                      "spec" => {"containers" => [{"name" => "worker", "image" => "example/worker"}]}}}
+                                                     "spec" => {"containers" => [{"name" => "worker", "image" => "example/worker"}]}}}
     adapter.create(replication_controller, descriptor: descriptor("ReplicationController"))
 
     controller = Controller::ReplicationControllerController.new(store: store)
@@ -101,9 +102,9 @@ end
     # reaches a fixed point.
     assert_equal 2, first.status.fetch("replicas")
     assert_empty second.operations
-    assert adapter.list("Pod", namespace: "default").all? { |pod|
+    assert(adapter.list("Pod", namespace: "default").all? do |pod|
       pod.dig("metadata", "ownerReferences", 0, "uid") == "rc-1"
-    }
+    end)
   end
 
   def test_pod_garbage_collector_deletes_oldest_excess_terminal_pods
@@ -122,7 +123,7 @@ end
     second = controller.plan(pods.fetch(2), store: store, threshold: 1)
 
     assert_equal 2, first.deletes.length
-    assert_equal ["done-0", "done-1"], first.deletes.map { |operation| operation.object.dig("metadata", "name") }
+    assert_equal(%w[done-0 done-1], first.deletes.map { |operation| operation.object.dig("metadata", "name") })
     assert_empty second.operations
   end
 
@@ -133,12 +134,14 @@ end
     pod_value["spec"]["containers"] = [{"name" => "worker", "resources" => {"requests" => {"cpu" => "500m"}}}]
 
     result = Controller::ResourceQuotaController.new.plan(quota, objects: [quota, pod_value])
+
     assert_equal "1", result.status.dig("used", "pods")
     assert_equal "500m", result.status.dig("used", "requests.cpu")
     assert_equal :status_update, result.operations.fetch(0).action
     updated = Controller::Support.deep_copy(quota)
     updated["status"] = result.status
     converged = Controller::ResourceQuotaController.new.plan(updated, objects: [updated, pod_value])
+
     assert_empty converged.operations
   end
 
@@ -161,7 +164,7 @@ end
     final["spec"] = {"finalizers" => []}
     third = controller.plan(final, objects: [final])
 
-    assert_equal [:delete, :status_update], first.operations.map(&:action)
+    assert_equal %i[delete status_update], first.operations.map(&:action)
     assert_equal [], second.operations.find { |operation| operation.action == :update }.object.dig("spec", "finalizers")
     assert_empty third.operations
   end
@@ -173,7 +176,7 @@ end
     controller = Controller::ServiceAccountController.new
     first = controller.plan(namespace, namespaces: [namespace], service_accounts: [])
     second = controller.plan(namespace, namespaces: [namespace],
-                             service_accounts: [first.creates.fetch(0).object])
+                                        service_accounts: [first.creates.fetch(0).object])
 
     assert_equal [:create], first.operations.map(&:action)
     assert_equal "default", first.creates.fetch(0).object.dig("metadata", "name")
@@ -202,7 +205,7 @@ end
     hpa["spec"] = {"scaleTargetRef" => {"apiVersion" => "apps/v1", "kind" => "Deployment", "name" => "web"},
                    "minReplicas" => 1, "maxReplicas" => 6,
                    "metrics" => [{"type" => "Resource", "resource" => {"name" => "cpu",
-                                  "target" => {"type" => "Utilization", "averageUtilization" => 50}}}]}
+                                                                       "target" => {"type" => "Utilization", "averageUtilization" => 50}}}]}
     deployment = object("Deployment", "web", uid: "deployment-1")
     deployment["spec"] = {"replicas" => 2, "selector" => {"matchLabels" => {"app" => "web"}}}
     deployment["status"] = {"replicas" => 2}
@@ -219,16 +222,18 @@ end
     end
     clock = -> { Time.utc(2026, 1, 1, 0, 10) }
     first = Controller::HorizontalPodAutoscalerController.new(clock: clock)
-                                                        .plan(hpa, pods: pods, scale_client: scales.new(deployment),
-                                                                   metrics_client: Controller::MetricsClient.new(client: PodMetricsClient.new(100)))
+      .plan(hpa, pods: pods, scale_client: scales.new(deployment),
+                 metrics_client: Controller::MetricsClient.new(client: PodMetricsClient.new(100)))
+
     assert_equal 4, first.updates.fetch(0).object.dig("spec", "replicas")
     assert_equal 4, first.status.fetch("desiredReplicas")
 
     persisted_target = Controller::Support.deep_copy(deployment)
     persisted_target["spec"]["replicas"] = 4
     second = Controller::HorizontalPodAutoscalerController.new(clock: clock)
-                                                         .plan(hpa.merge("status" => first.status), pods: pods, scale_client: scales.new(persisted_target),
-                                                                                                  metrics_client: Controller::MetricsClient.new(client: PodMetricsClient.new(50)))
+      .plan(hpa.merge("status" => first.status), pods: pods, scale_client: scales.new(persisted_target),
+                                                 metrics_client: Controller::MetricsClient.new(client: PodMetricsClient.new(50)))
+
     assert_empty second.operations.select { |operation| operation.action == :update }, "at the target utilization the scale converges"
   end
 

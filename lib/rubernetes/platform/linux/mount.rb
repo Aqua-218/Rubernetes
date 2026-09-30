@@ -93,9 +93,7 @@ module Rubernetes
         def open_tree(dirfd:, path: "", flags: OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC | AT_EMPTY_PATH, resource_id: "open_tree:#{dirfd}")
           number = SYS_OPEN_TREE.fetch(RbConfig::CONFIG.fetch("host_cpu"))
           result = Syscall.call(number, Integer(dirfd), Fiddle::Pointer["#{path}\0"], Integer(flags))
-          if result.value == -1
-            raise Linux::Error.new(errno: result.errno, operation: "open_tree", resource_id: resource_id)
-          end
+          raise Linux::Error.new(errno: result.errno, operation: "open_tree", resource_id: resource_id) if result.value == -1
 
           Integer(result.value)
         end
@@ -108,9 +106,7 @@ module Rubernetes
           number = SYS_MOVE_MOUNT.fetch(RbConfig::CONFIG.fetch("host_cpu"))
           result = Syscall.call(number, Integer(from_dirfd), Fiddle::Pointer["#{from_path}\0"],
                                 Integer(to_dirfd), Fiddle::Pointer["#{to_path}\0"], Integer(flags))
-          if result.value == -1
-            raise Linux::Error.new(errno: result.errno, operation: "move_mount", resource_id: resource_id)
-          end
+          raise Linux::Error.new(errno: result.errno, operation: "move_mount", resource_id: resource_id) if result.value == -1
 
           true
         end
@@ -126,9 +122,7 @@ module Rubernetes
 
           result = Syscall.call(number, Integer(dirfd), Fiddle::Pointer["#{path}\0"], Integer(flags),
                                 Fiddle::Pointer[attributes], MOUNT_ATTR_SIZE_VER0)
-          if result.value == -1
-            raise Linux::Error.new(errno: result.errno, operation: "mount_setattr", resource_id: resource_id)
-          end
+          raise Linux::Error.new(errno: result.errno, operation: "mount_setattr", resource_id: resource_id) if result.value == -1
 
           true
         end
@@ -209,6 +203,7 @@ module Rubernetes
             mount(source: path, target: path, filesystem: nil, flags: MS_BIND, resource_id: "#{resource_id}:bind")
             entry = mountinfo_entry(path)
             raise Linux::Error.new(errno: Errno::ENOENT::Errno, operation: "mount", resource_id: resource_id) if entry.nil?
+
             changed = true
           end
           unless entry.any? { |field| field.start_with?("shared:") }

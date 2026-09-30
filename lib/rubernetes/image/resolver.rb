@@ -69,9 +69,7 @@ module Rubernetes
       # +pull_records+: KubeletEnsureSecretPulledImages (on by default, with
       # the NeverVerifyPreloadedImages policy); nil turns the check off.
       def initialize(puller: nil, puller_factory: nil, platform: nil, staging_root: nil, pull_records: PullRecords.new)
-        if puller && puller_factory
-          raise ArgumentError, "puller and puller_factory are mutually exclusive"
-        end
+        raise ArgumentError, "puller and puller_factory are mutually exclusive" if puller && puller_factory
 
         @puller = puller
         @puller_factory = puller_factory || lambda do |reference, credentials = nil|
@@ -198,6 +196,7 @@ module Rubernetes
           # imagePullPolicy Never: only an image already here, never a pull.
           if policy.casecmp("Never").zero?
             raise NeverPullError, "Container image #{reference.to_s.inspect} is not present with pull policy of Never" unless cached
+
             if @pull_records && @pull_records.must_attempt_pull?(repository_key(image_reference), cached.digest.to_s,
                                                                  pod_credentials || default_pod_credentials(pull_secret))
               on_pull&.call(:required)
@@ -290,9 +289,7 @@ module Rubernetes
         config = normalize_config(image)
         image_platform = validate_platform!(config, target)
         runtime_config = config.fetch("config", {})
-        unless runtime_config.is_a?(Hash)
-          raise ManifestError, "image config field must be a JSON object"
-        end
+        raise ManifestError, "image config field must be a JSON object" unless runtime_config.is_a?(Hash)
 
         resolved = ResolvedImage.new(
           reference: Reference.parse(image.reference),
@@ -534,6 +531,7 @@ module Rubernetes
         if image_architecture && Platform::ARCHITECTURES.fetch(image_architecture.to_s, image_architecture.to_s) != target.architecture
           raise ManifestError, "image config architecture #{image_architecture.inspect} does not match #{target.architecture.inspect}"
         end
+
         target
       end
 
@@ -558,7 +556,10 @@ module Rubernetes
         value.each_with_object({}) do |entry, result|
           text = String(entry)
           name, separator, content = text.partition("=")
-          raise ManifestError, "image Env entry must contain a variable name" if separator.empty? || !name.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+          if separator.empty? || !name.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
+            raise ManifestError,
+                  "image Env entry must contain a variable name"
+          end
           raise ManifestError, "image Env contains NUL" if text.include?("\0")
 
           result[name] = content
@@ -569,6 +570,7 @@ module Rubernetes
 
       def normalize_working_dir(value)
         return nil if value.nil? || value.to_s.empty?
+
         text = String(value)
         raise ManifestError, "image WorkingDir must be absolute" unless text.start_with?("/")
         raise ManifestError, "image WorkingDir contains NUL" if text.include?("\0")

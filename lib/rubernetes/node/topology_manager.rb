@@ -46,15 +46,15 @@ module Rubernetes
         def self.empty = new(0)
 
         # IterateBitMasks: every non-empty subset, by size, then in order.
-        def self.iterate(bits)
-          iterate = lambda do |rest, accum, size, &block|
+        def self.iterate(bits, &)
+          iterate = lambda do |rest, accum, size|
             if accum.length == size
-              block.call(of(*accum))
+              yield(of(*accum))
               next
             end
-            rest.each_index { |i| iterate.call(rest[(i + 1)..], accum + [rest[i]], size, &block) }
+            rest.each_index { |i| iterate.call(rest[(i + 1)..], accum + [rest[i]], size, &) }
           end
-          (1..bits.length).each { |size| iterate.call(bits, [], size) { |mask| yield mask } }
+          (1..bits.length).each { |size| iterate.call(bits, [], size, &) }
         end
 
         def initialize(value)
@@ -214,7 +214,8 @@ module Rubernetes
               number = begin
                 Integer(value.to_s, 10)
               rescue ArgumentError
-                raise Error, "unable to convert policy option to integer #{name.dump}: strconv.Atoi: parsing #{value.to_s.dump}: invalid syntax"
+                raise Error,
+                      "unable to convert policy option to integer #{name.dump}: strconv.Atoi: parsing #{value.to_s.dump}: invalid syntax"
               end
               if number < DEFAULT_MAX_ALLOWABLE_NUMA_NODES
                 raise Error, "the minimum value of #{name.dump} should not be less than #{DEFAULT_MAX_ALLOWABLE_NUMA_NODES}"
@@ -297,7 +298,12 @@ module Rubernetes
         def compare_masks(current, candidate)
           return current if candidate.affinity == current.affinity
 
-          best = @closest ? @numa_info.closest(current.affinity, candidate.affinity) : @numa_info.narrowest(current.affinity, candidate.affinity)
+          best = if @closest
+                   @numa_info.closest(current.affinity,
+                                      candidate.affinity)
+                 else
+                   @numa_info.narrowest(current.affinity, candidate.affinity)
+                 end
           best == current.affinity ? current : candidate
         end
 
@@ -312,6 +318,7 @@ module Rubernetes
           current_count = current.affinity.count
           candidate_count = candidate.affinity.count
           return compare_masks(current, candidate) if current_count > best
+
           if current_count == best
             return current if candidate_count != best
 
@@ -336,10 +343,10 @@ module Rubernetes
 
         private
 
-        def iterate(index, accum, &block)
-          return block.call(accum) if index == @hints.length
+        def iterate(index, accum, &)
+          return yield(accum) if index == @hints.length
 
-          @hints[index].each { |hint| iterate(index + 1, accum + [hint], &block) }
+          @hints[index].each { |hint| iterate(index + 1, accum + [hint], &) }
         end
       end
 
@@ -493,7 +500,10 @@ module Rubernetes
               unless admit
                 count("kubelet_container_aligned_compute_resources_failure_count", "container") if alignment_guaranteed?
                 admission_error
-                raise PodLevelTopologyAffinityError, "pod with pod-level resources failed admission with a container-level topology manager" if pod_level?(pod)
+                if pod_level?(pod)
+                  raise PodLevelTopologyAffinityError,
+                        "pod with pod-level resources failed admission with a container-level topology manager"
+                end
 
                 raise TopologyAffinityError
               end
@@ -610,7 +620,8 @@ module Rubernetes
           @metrics&.increment("kubelet_topology_manager_admission_requests_total")
           started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           result = @scope.admit(pod)
-          @metrics&.observe("kubelet_topology_manager_admission_duration_ms", ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).floor)
+          @metrics&.observe("kubelet_topology_manager_admission_duration_ms",
+                            ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).floor)
           result
         end
       end

@@ -59,9 +59,7 @@ module Rubernetes
             {"generation" => generation_name, "root" => @root, "files" => normalized.keys.freeze,
              "secret" => secret == true}.freeze
           rescue StandardError
-            if File.exist?(generation_path) && !File.symlink?(generation_path)
-              FileUtils.rm_rf(generation_path)
-            end
+            FileUtils.rm_rf(generation_path) if File.exist?(generation_path) && !File.symlink?(generation_path)
             raise
           end
         end
@@ -81,6 +79,7 @@ module Rubernetes
         relative = validate_relative(path)
         link = File.join(@root, DATA_LINK)
         raise SecurityError, "projected data link is missing" unless File.symlink?(link)
+
         File.binread(File.join(@root, DATA_LINK, relative))
       rescue SystemCallError => error
         raise SecurityError, "failed to read projected file #{path.inspect}: #{error.message}"
@@ -97,18 +96,14 @@ module Rubernetes
       def ensure_target!(secret:)
         return true unless secret == true
 
-        unless @tmpfs || (@mount_adapter && tmpfs_mount_present?)
-          raise SecretPersistenceError, "Secret projection requires an injected tmpfs mount"
-        end
+        return if @tmpfs || (@mount_adapter && tmpfs_mount_present?)
+
+        raise SecretPersistenceError, "Secret projection requires an injected tmpfs mount"
       end
 
       def tmpfs_mount_present?
-        if @mount_adapter.respond_to?(:tmpfs?)
-          return @mount_adapter.tmpfs?(@root)
-        end
-        if @mount_adapter.respond_to?(:ensure_tmpfs)
-          return @mount_adapter.ensure_tmpfs(@root)
-        end
+        return @mount_adapter.tmpfs?(@root) if @mount_adapter.respond_to?(:tmpfs?)
+        return @mount_adapter.ensure_tmpfs(@root) if @mount_adapter.respond_to?(:ensure_tmpfs)
 
         false
       end
@@ -133,9 +128,13 @@ module Rubernetes
 
         hash.each_with_object({}) do |(path, value), result|
           relative = validate_relative(path)
-          raise ValidationError, "projected path #{relative.inspect} is reserved" if relative.split("/").any? { |part| part.start_with?("..") }
+          raise ValidationError, "projected path #{relative.inspect} is reserved" if relative.split("/").any? do |part|
+            part.start_with?("..")
+          end
+
           content = value.is_a?(String) ? value.b : String(value).b
           raise ValidationError, "projected file #{relative.inspect} exceeds 1 MiB" if content.bytesize > 1_048_576
+
           result[relative] = content.freeze
         end.freeze
       end
@@ -144,9 +143,14 @@ module Rubernetes
         value = String(path)
         raise PathSecurityError, "projected path must not contain NUL" if value.include?("\0")
         raise PathSecurityError, "projected path must be relative" if value.start_with?("/")
+
         components = value.split("/")
         raise PathSecurityError, "projected path is empty" if value.empty?
-        raise PathSecurityError, "projected path contains traversal" if components.empty? || components.include?("..") || components.include?(".") || components.any?(&:empty?)
+        if components.empty? || components.include?("..") || components.include?(".") || components.any?(&:empty?)
+          raise PathSecurityError,
+                "projected path contains traversal"
+        end
+
         value
       rescue TypeError
         raise PathSecurityError, "projected path must be a string"
@@ -156,6 +160,7 @@ module Rubernetes
         value = requested && String(requested)
         if value
           raise ValidationError, "generation contains unsafe characters" unless value.match?(/\A\.[.][A-Za-z0-9_-]{1,128}\z/)
+
           return value
         end
 
@@ -184,9 +189,8 @@ module Rubernetes
       end
 
       def ensure_root!
-        if File.symlink?(@root)
-          raise PathSecurityError, "projection root must not be a symlink"
-        end
+        raise PathSecurityError, "projection root must not be a symlink" if File.symlink?(@root)
+
         FileUtils.mkdir_p(@root)
         raise PathSecurityError, "projection root is not a directory" unless File.directory?(@root)
       rescue SystemCallError => error
@@ -194,9 +198,8 @@ module Rubernetes
       end
 
       def ensure_generation_directory!(path)
-        if File.symlink?(path)
-          raise PathSecurityError, "projection generation must not be a symlink"
-        end
+        raise PathSecurityError, "projection generation must not be a symlink" if File.symlink?(path)
+
         FileUtils.mkdir_p(path)
         raise PathSecurityError, "projection generation is not a directory" unless File.directory?(path)
       rescue SystemCallError => error
@@ -220,6 +223,7 @@ module Rubernetes
         if File.exist?(destination) && !File.symlink?(destination)
           raise PathSecurityError, "projected data link was replaced by a non-symlink"
         end
+
         File.symlink(generation_name, temporary)
         File.rename(temporary, destination)
       rescue SystemCallError => error
@@ -237,6 +241,7 @@ module Rubernetes
           if File.exist?(link) && !File.symlink?(link)
             raise PathSecurityError, "projected file #{segment.inspect} was replaced by a non-symlink"
           end
+
           temporary = "#{link}.tmp-#{Process.pid}-#{SecureRandom.hex(4)}"
           target = File.join(DATA_LINK, segment)
           File.symlink(target, temporary)
@@ -255,13 +260,14 @@ module Rubernetes
       def walk_exposed(directory, prefix, desired)
         Dir.children(directory).each do |name|
           next if name == DATA_LINK || generation_directory?(name)
+
           relative = prefix.empty? ? name : "#{prefix}/#{name}"
           path = File.join(directory, name)
           if File.symlink?(path)
             File.delete(path) unless desired.key?(relative)
           elsif File.directory?(path)
             walk_exposed(path, relative, desired)
-            Dir.rmdir(path) if Dir.children(path).empty?
+            Dir.rmdir(path) if Dir.empty?(path)
           end
         end
       rescue SystemCallError => error
@@ -323,6 +329,7 @@ module Rubernetes
           raise ValidationError, "token ttl must be an integer"
         end
         raise ValidationError, "token ttl must be positive" unless requested_ttl.positive?
+
         raw = if @provider.respond_to?(:issue)
                 @provider.issue(audience: audience, pod_uid: pod_uid, ttl: requested_ttl)
               elsif @provider.respond_to?(:call)
@@ -332,6 +339,7 @@ module Rubernetes
               end
         value, expiry = normalize(raw, issued_at, requested_ttl, audience: audience, pod_uid: pod_uid)
         raise SecurityError, "token provider returned an expired token" unless expiry > issued_at
+
         Token.new(value: value.freeze, audience: audience.freeze, pod_uid: pod_uid.freeze,
                   issued_at: issued_at, expires_at: expiry).freeze
       end
@@ -358,16 +366,25 @@ module Rubernetes
           value = hash["token"] || hash[:token] || hash["value"] || hash[:value]
           expires = hash["expiresAt"] || hash[:expires_at] || hash["expires_at"]
           raise SecurityError, "token provider returned no token" if value.nil?
+
           returned_audience = hash["audience"] || hash[:audience]
           returned_pod_uid = hash["podUid"] || hash[:pod_uid] || hash["pod_uid"]
-          raise SecurityError, "token provider returned an unexpected audience" if returned_audience && returned_audience.to_s != audience.to_s
-          raise SecurityError, "token provider returned an unexpected pod identity" if returned_pod_uid && returned_pod_uid.to_s != pod_uid.to_s
+          if returned_audience && returned_audience.to_s != audience.to_s
+            raise SecurityError,
+                  "token provider returned an unexpected audience"
+          end
+          if returned_pod_uid && returned_pod_uid.to_s != pod_uid.to_s
+            raise SecurityError,
+                  "token provider returned an unexpected pod identity"
+          end
+
           expiry = expires.nil? ? issued_at + ttl : timestamp(expires)
         else
           value = raw
           expiry = issued_at + ttl
         end
         raise SecurityError, "token provider returned an empty token" if String(value).empty?
+
         [String(value), expiry]
       end
     end
@@ -392,6 +409,7 @@ module Rubernetes
           source_files.each do |path, value|
             path = String(path)
             raise ValidationError, "projected path collision at #{path.inspect}" if files.key?(path)
+
             files[path] = value
           end
         end

@@ -7,7 +7,6 @@
 # the scheduler advances a global clock and each node sees its own offset
 # (so clock jumps can be modelled per node).
 
-require "set"
 require "tmpdir"
 require "fileutils"
 
@@ -63,7 +62,7 @@ module RaftSimulation
 
       copies = @duplicate_rate.positive? && @random.rand < @duplicate_rate ? 2 : 1
       copies.times do
-        delay = @min_delay + @random.rand * (@max_delay - @min_delay)
+        delay = @min_delay + (@random.rand * (@max_delay - @min_delay))
         delay += @random.rand * @max_delay * 4 if @reorder_rate.positive? && @random.rand < @reorder_rate
         @sequence += 1
         @queue << Packet.new(now + delay, @sequence, message)
@@ -118,7 +117,7 @@ module RaftSimulation
     def start(recover_torn_tail: false)
       @generation = (@generation || 0) + 1
       @storage = Rubernetes::Consensus::Storage.new(@directory, recover_torn_tail: recover_torn_tail,
-                                                    device_factory: @device_factory, fsync: false)
+                                                                device_factory: @device_factory, fsync: false)
       @state_machine = Rubernetes::Consensus::KVStateMachine.new
       wall = @sim
       offset_reader = -> { @clock_offset }
@@ -154,7 +153,6 @@ module RaftSimulation
   end
 
   class Cluster
-    attr_reader :processes, :network, :random, :cluster_id, :root
     # Messages a Consensus::Server answers itself rather than handing to the
     # node (ForwardProposalResponse, ReadIndexResponse) go to this handler
     # when one is set; without it they are dropped like the node would.
@@ -188,9 +186,7 @@ module RaftSimulation
     CLIENT_MESSAGES = [Rubernetes::Consensus::Messages::ForwardProposalResponse,
                        Rubernetes::Consensus::Messages::ReadIndexResponse].freeze
 
-    def now
-      @now
-    end
+    attr_reader :processes, :network, :random, :cluster_id, :root, :now
 
     def node(id)
       @processes.fetch(id).node

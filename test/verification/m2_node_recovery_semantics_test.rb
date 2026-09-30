@@ -175,6 +175,7 @@ class M2NodeRecoverySemanticsTest < Minitest::Test
     lifecycle.start(object)
 
     pending = lifecycle.terminate(object)
+
     assert_equal "CleanupPending", pending.state
     assert_equal "Unknown", pending.phase
     assert_equal [{"kind" => "sandbox", "id" => "sandbox-1"}], pending.resources
@@ -182,6 +183,7 @@ class M2NodeRecoverySemanticsTest < Minitest::Test
 
     runtime.fail_sandbox_remove = false
     removed = lifecycle.terminate(object)
+
     assert_equal "Removed", removed.state
     assert_equal "Succeeded", removed.phase
     assert_empty removed.resources
@@ -196,13 +198,15 @@ class M2NodeRecoverySemanticsTest < Minitest::Test
     lifecycle.start(object)
 
     pending = lifecycle.terminate(object)
+
     assert_equal "CleanupPending", pending.state
     assert_equal [{"kind" => "sandbox", "id" => "sandbox-1"}], pending.resources
-    refute runtime.calls.any? { |call| call.first == :remove }
+    refute(runtime.calls.any? { |call| call.first == :remove })
 
     runtime.stop_result = true
     runtime.stuck = false
     removed = lifecycle.terminate(object)
+
     assert_equal "Removed", removed.state
     assert_empty removed.resources
   end
@@ -231,20 +235,24 @@ class M2NodeRecoverySemanticsTest < Minitest::Test
     manager.register("container-1", probes: {"livenessProbe" => probe}, started_at: 0.0)
 
     deferred = manager.check("container-1", probe: probe, type: "liveness", now: 4.0)
+
     assert deferred.deferred
     assert_empty runtime.timeouts
 
     first = manager.check("container-1", probe: probe, type: "liveness", now: 5.0)
-    assert first.failed?
+
+    assert_predicate first, :failed?
     assert_equal [7], runtime.timeouts
     refute manager.liveness_failed?("container-1")
 
     deferred = manager.check("container-1", probe: probe, type: "liveness", now: 10.0)
+
     assert deferred.deferred
     assert_equal [7], runtime.timeouts
 
     second = manager.check("container-1", probe: probe, type: "liveness", now: 15.0)
-    assert second.failed?
+
+    assert_predicate second, :failed?
     assert_equal [7, 7], runtime.timeouts
     assert manager.liveness_failed?("container-1")
   end
@@ -321,6 +329,7 @@ class M2NodeRecoverySemanticsTest < Minitest::Test
     assert_raises(Rubernetes::Platform::Linux::ProcessSupervisor::Error) { supervisor.alive?(handle) }
 
     pidfd.wait_result = {"exit_status" => 0, "term_signal" => nil, "code" => 0}
+
     refute supervisor.alive?(handle)
     assert handle.stopped? || supervisor.handles.fetch(handle.id).stopped?
   end

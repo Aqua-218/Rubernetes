@@ -16,9 +16,9 @@ module Rubernetes
         NODE = ResourceDescriptor.parse("Node")
         CONTROLLER_REVISION = ResourceDescriptor.parse("ControllerRevision")
         POD = WorkloadController::POD
-        HASH_LABEL = "controller-revision-hash".freeze
-        TEMPLATE_GENERATION_LABEL = "pod-template-generation".freeze
-        TEMPLATE_GENERATION_ANNOTATION = "deprecated.daemonset.template.generation".freeze
+        HASH_LABEL = "controller-revision-hash"
+        TEMPLATE_GENERATION_LABEL = "pod-template-generation"
+        TEMPLATE_GENERATION_ANNOTATION = "deprecated.daemonset.template.generation"
         DEFAULT_REVISION_HISTORY_LIMIT = 10
         DEFAULT_MAX_UNAVAILABLE = 1
         BURST_REPLICAS = 250
@@ -29,7 +29,7 @@ module Rubernetes
 
         def initialize(**options)
           @clock = options.delete(:clock) || -> { Time.now.utc }
-          super(**options)
+          super
         end
 
         def plan(daemon_set, store: nil, pods: nil, nodes: nil, revisions: nil, controller_revisions: nil, now: nil, **_options)
@@ -54,14 +54,20 @@ module Rubernetes
           nil
         end
 
-        def scale(daemon_set, _replicas = nil, **options)
-          plan(daemon_set, **options)
+        def scale(daemon_set, _replicas = nil, **)
+          plan(daemon_set, **)
         end
 
         def delete(daemon_set, pods: nil, store: nil, orphan: false)
           adapter = store || (self.store && StoreAdapter.new(self.store))
           pods ||= list_children(adapter, POD, Support.namespace(daemon_set))
-          operations = orphan ? [] : owned(daemon_set, pods).map { |pod| operation_delete(pod, descriptor: POD, reason: "daemonset deletion") }
+          operations = if orphan
+                         []
+                       else
+                         owned(daemon_set, pods).map do |pod|
+                           operation_delete(pod, descriptor: POD, reason: "daemonset deletion")
+                         end
+                       end
           operations << operation_delete(daemon_set, descriptor: DESCRIPTOR, reason: "daemonset deletion")
           ReconcileResult.new(operations: operations, controller: name)
         end
@@ -351,7 +357,8 @@ module Rubernetes
             template = @c.template(@ds)
             template["spec"] ||= {}
             template["spec"]["tolerations"] = daemon_tolerations(Array(template["spec"]["tolerations"]),
-                                                                 host_network: Support.value(template["spec"], "hostNetwork", false) == true)
+                                                                 host_network: Support.value(template["spec"], "hostNetwork",
+                                                                                             false) == true)
             template
           end
 
@@ -404,7 +411,9 @@ module Rubernetes
 
             terms.any? do |term|
               Array(Support.value(term, "matchExpressions", [])).all? { |expression| requirement_matches?(expression, labels) } &&
-                Array(Support.value(term, "matchFields", [])).all? { |expression| requirement_matches?(expression, {"metadata.name" => Support.name(node)}) }
+                Array(Support.value(term, "matchFields", [])).all? do |expression|
+                  requirement_matches?(expression, {"metadata.name" => Support.name(node)})
+                end
             end
           end
 
@@ -434,7 +443,8 @@ module Rubernetes
             operator = Support.value(toleration, "operator", "Equal").to_s
             case operator
             when "Exists" then key.empty? || key == Support.value(taint, "key", "").to_s
-            else key == Support.value(taint, "key", "").to_s && Support.value(toleration, "value", "").to_s == Support.value(taint, "value", "").to_s
+            else key == Support.value(taint, "key",
+                                      "").to_s && Support.value(toleration, "value", "").to_s == Support.value(taint, "value", "").to_s
             end
           end
 
@@ -524,11 +534,7 @@ module Rubernetes
                   end
                   to_delete << pod
                 end
-                if oldest_new && oldest_old
-                  if !Support.ready?(oldest_old) || pod_available?(oldest_new)
-                    to_delete << oldest_old
-                  end
-                end
+                to_delete << oldest_old if oldest_new && oldest_old && (!Support.ready?(oldest_old) || pod_available?(oldest_new))
               elsif !should_continue && daemon_pods
                 daemon_pods.each { |pod| to_delete << pod unless @c.pod_deleting?(pod) }
               end
@@ -557,7 +563,7 @@ module Rubernetes
               candidate["metadata"]["generateName"] = "#{Support.name(ds)}-"
               candidate["spec"]["affinity"] = replace_node_name_affinity(Support.value(candidate["spec"], "affinity", nil), node_name)
               @operations << @c.operation_create(candidate, owner: ds, descriptor: POD, reason: "daemonset node assignment",
-                                                 operation_key: "registry/v1/pods/#{Support.namespace(ds)}/#{Support.uid(ds)}:#{node_name}:#{hash}")
+                                                            operation_key: "registry/v1/pods/#{Support.namespace(ds)}/#{Support.uid(ds)}:#{node_name}:#{hash}")
               @events << @c.event("Normal", "SuccessfulCreate", "Created pod: #{Support.name(ds)}-#{node_name}-#{hash}")
             end
             pods_to_delete.uniq { |pod| Support.uid(pod) || Support.name(pod) }.first(BURST_REPLICAS).each do |pod|
@@ -619,7 +625,7 @@ module Rubernetes
               num_unavailable = 0
               allowed_replacements = []
               candidates = []
-              node_to_pods.sort_by { |node_name, _| node_name }.each do |node_name, pods|
+              node_to_pods.sort_by { |node_name, _| node_name }.each do |_node_name, pods|
                 new_pod, old_pod, ok = updated_pods_on_node(pods, hash, generation)
                 unless ok
                   num_unavailable += 1
@@ -667,13 +673,7 @@ module Rubernetes
               elsif new_pod.nil?
                 node = nodes_by_name[node_name]
                 should_run = node ? node_should_run?(node).first : false
-                if !pod_available?(old_pod)
-                  unless should_run
-                    old_pods_to_delete << old_pod
-                    next
-                  end
-                  allowed_nodes << node_name
-                else
+                if pod_available?(old_pod)
                   unless should_run
                     should_not_run_pods << old_pod
                     next
@@ -681,6 +681,12 @@ module Rubernetes
                   next if num_surge >= max_surge
 
                   candidate_nodes << node_name
+                else
+                  unless should_run
+                    old_pods_to_delete << old_pod
+                    next
+                  end
+                  allowed_nodes << node_name
                 end
               elsif !pod_available?(new_pod)
                 num_surge += 1
@@ -737,7 +743,8 @@ module Rubernetes
             unavailable = desired - available
             status["numberUnavailable"] = unavailable
             status.delete("numberScheduled")
-            status["observedGeneration"] = Support.integer(Support.metadata(ds)["generation"], Support.integer(status["observedGeneration"], 0))
+            status["observedGeneration"] =
+              Support.integer(Support.metadata(ds)["generation"], Support.integer(status["observedGeneration"], 0))
             status
           end
 
@@ -749,7 +756,8 @@ module Rubernetes
               if template_generation.positive? && current_annotation != template_generation.to_s
                 candidate = Support.deep_copy(ds)
                 candidate["metadata"] ||= {}
-                candidate["metadata"]["annotations"] = Support.annotations(candidate).merge(TEMPLATE_GENERATION_ANNOTATION => template_generation.to_s)
+                candidate["metadata"]["annotations"] =
+                  Support.annotations(candidate).merge(TEMPLATE_GENERATION_ANNOTATION => template_generation.to_s)
                 @operations.unshift(@c.operation_update(ds, candidate, descriptor: DESCRIPTOR, reason: "daemonset template generation"))
               end
               status_operation = @c.operation_status(ds, status, descriptor: DESCRIPTOR)

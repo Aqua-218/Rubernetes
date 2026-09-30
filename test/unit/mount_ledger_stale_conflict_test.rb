@@ -22,7 +22,7 @@ class MountLedgerStaleConflictTest < Minitest::Test
 
     register(ledger, volume_id: "vol-new", target: "/mnt/new", mount_id: "4800")
 
-    assert_equal %w[vol-new], ledger.entries.map { |entry| entry.fetch("volumeId") }
+    assert_equal(%w[vol-new], ledger.entries.map { |entry| entry.fetch("volumeId") })
     assert_equal 1, ledger.stale_dropped
   end
 

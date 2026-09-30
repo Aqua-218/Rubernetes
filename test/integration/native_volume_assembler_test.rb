@@ -62,9 +62,9 @@ class NativeVolumeAssemblerIntegrationTest < Minitest::Test
       identity
     end
 
-    def bind(source:, target:, readonly: false, options: {}, **kwargs)
+    def bind(source:, target:, readonly: false, options: {}, **)
       mount(source: source, target: target, filesystem: nil, readonly: readonly,
-            options: options.merge("bind" => true), **kwargs)
+            options: options.merge("bind" => true), **)
     end
 
     def unmount(target:, **_kwargs)
@@ -103,7 +103,7 @@ class NativeVolumeAssemblerIntegrationTest < Minitest::Test
       assert_instance_of Rubernetes::Volume::NativeDeviceAdapter, manager.device_adapter
       assert_same manager.mount_adapter, manager.adapter
       assert_instance_of Rubernetes::Volume::PathSecurity, manager.path_security
-      assert manager.path_security.descriptor_capable?
+      assert_predicate manager.path_security, :descriptor_capable?
       assert_instance_of Rubernetes::Platform::Linux::Openat2,
                          manager.path_security.resolver.instance_variable_get(:@adapter)
       assert_predicate manager, :require_real_readback
@@ -158,7 +158,7 @@ class NativeVolumeAssemblerIntegrationTest < Minitest::Test
 
       assert_instance_of Rubernetes::Volume::FilesystemAdapter, manager.mount_adapter
       assert_instance_of Rubernetes::Volume::PathSecurity, manager.path_security
-      assert manager.path_security.descriptor_capable?
+      assert_predicate manager.path_security, :descriptor_capable?
       assert_instance_of Rubernetes::Platform::Linux::Openat2,
                          manager.path_security.resolver.instance_variable_get(:@adapter)
       refute_predicate manager, :require_real_readback
@@ -213,6 +213,7 @@ class NativeVolumeAssemblerIntegrationTest < Minitest::Test
       assert_equal "csi", manager.fetch_record(id).backend
       assert_equal %i[identity probe], csi.calls.first(2)
       create_call = csi.calls.find { |call| call.is_a?(Array) && call.first == :create_volume }
+
       assert_equal({"credential" => "runtime-only"}, create_call.fetch(1).fetch("secrets"))
     end
   end

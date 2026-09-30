@@ -48,6 +48,7 @@ class NodeWaitingReasonTest < Minitest::Test
                                    reason: "CreateContainerConfigError", message: "bad subPath").to_h
 
     waiting = result.fetch("containerStatuses").first.dig("state", "waiting")
+
     assert_equal("CreateContainerConfigError", waiting.fetch("reason"))
     assert_equal("bad subPath", waiting.fetch("message"))
   end

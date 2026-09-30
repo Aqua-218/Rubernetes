@@ -21,6 +21,7 @@ class APIServerStorageMetricsTest < Minitest::Test
     call.call("GET", "/api/v1/namespaces/team/configmaps/missing")
     call.call("GET", "/api/v1/namespaces/team/configmaps")
     text = server.metrics.render
+
     assert_match(/^etcd_requests_total\{group="",operation="create",resource="configmaps"\} 1/, text)
     assert_match(/^etcd_requests_total\{group="",operation="get",resource="configmaps"\} [2-9]/, text)
     assert_match(/^etcd_request_errors_total\{group="",operation="get",resource="configmaps"\} 1/, text)

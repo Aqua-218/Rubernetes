@@ -25,12 +25,16 @@ module Rubernetes
                           proxy_client kubelet_client encryption_config_file encryption_config_reload_interval_seconds egress_selector_config_file].freeze
       TLS_KEYS = %w[cert_file key_file].freeze
       SECURITY_KEYS = %w[authentication authorization admission audit flow_control feature_gates].freeze
-      AUTHENTICATION_KEYS = %w[client_ca_file token_file service_account bootstrap_tokens request_header jwt webhook anonymous config_file].freeze
-      SERVICE_ACCOUNT_KEYS = %w[issuer signing_key_file key_files api_audiences max_expiration_seconds signing_endpoint allow_signing_with_non_oidc_keys].freeze
+      AUTHENTICATION_KEYS = %w[client_ca_file token_file service_account bootstrap_tokens request_header jwt webhook anonymous
+                               config_file].freeze
+      SERVICE_ACCOUNT_KEYS = %w[issuer signing_key_file key_files api_audiences max_expiration_seconds signing_endpoint
+                                allow_signing_with_non_oidc_keys].freeze
       REQUEST_HEADER_KEYS = %w[ca_file allowed_names username_headers group_headers extra_header_prefixes uid_headers].freeze
-      AUTHENTICATION_WEBHOOK_KEYS = %w[url ca_file client_cert_file client_key_file cache_authenticated_ttl cache_unauthenticated_ttl].freeze
+      AUTHENTICATION_WEBHOOK_KEYS = %w[url ca_file client_cert_file client_key_file cache_authenticated_ttl
+                                       cache_unauthenticated_ttl].freeze
       AUTHORIZATION_KEYS = %w[modes abac_policy_file webhook config_file].freeze
-      AUTHORIZATION_WEBHOOK_KEYS = %w[url ca_file client_cert_file client_key_file cache_authorized_ttl cache_unauthorized_ttl failure_policy].freeze
+      AUTHORIZATION_WEBHOOK_KEYS = %w[url ca_file client_cert_file client_key_file cache_authorized_ttl cache_unauthorized_ttl
+                                      failure_policy].freeze
       ADMISSION_KEYS = %w[enable disable config].freeze
       AUDIT_KEYS = %w[policy_file log_path max_queue webhook].freeze
       AUDIT_WEBHOOK_KEYS = %w[url mode ca_file token token_file timeout_seconds batch_max_size batch_max_wait_seconds].freeze
@@ -87,13 +91,15 @@ module Rubernetes
       AGENT_EVICTION_KEYS = %w[enabled hard soft soft_grace_period minimum_reclaim pressure_transition_period
                                max_pod_grace_period_seconds].freeze
       AGENT_DNS_KEYS = %w[enabled port bind_addresses upstreams cluster_domain resolv_conf positive_ttl negative_ttl kubeconfig].freeze
-      AGENT_MICROVM_KEYS = %w[enabled data_dir chroot_base netns_root run_root parent_cgroup vcpu_count mem_size_mib use_base_snapshot artifacts_lock workspace_mib].freeze
+      AGENT_MICROVM_KEYS = %w[enabled data_dir chroot_base netns_root run_root parent_cgroup vcpu_count mem_size_mib use_base_snapshot
+                              artifacts_lock workspace_mib].freeze
       AGENT_RUNTIME_PATH_KEYS = %w[sandbox_root cgroup_root log_root journal_path].freeze
       AGENT_SYNC_KEYS = %w[period_seconds watch_timeout_seconds resync_period watch_timeout].freeze
       AGENT_LEASE_KEYS = %w[namespace duration_seconds renew_fraction].freeze
       CONTROL_PLANE_SYNC_KEYS = %w[period_seconds interval_seconds].freeze
       CONTROL_PLANE_LEASE_KEYS = %w[namespace name lease_duration_seconds renew_deadline_seconds retry_period_seconds].freeze
-      NETWORK_KEYS = %w[cluster_cidr ipv4_cidr ipv6_cidr node_subnet_prefix ipv4_node_prefix ipv6_node_prefix state_path bridge_name mtu fsync policy_backend policy_table].freeze
+      NETWORK_KEYS = %w[cluster_cidr ipv4_cidr ipv6_cidr node_subnet_prefix ipv4_node_prefix ipv6_node_prefix state_path bridge_name mtu
+                        fsync policy_backend policy_table].freeze
       NETWORK_POLICY_BACKENDS = %w[ebpf nftables disabled].freeze
       VOLUME_KEYS = %w[data_dir root fsync profile csi].freeze
       VOLUME_CSI_KEYS = %w[
@@ -193,6 +199,7 @@ module Rubernetes
         unknown_processes = processes.keys - PROCESS_NAMES
         raise Error, "unknown process configuration: #{unknown_processes.sort.join(", ")}" unless unknown_processes.empty?
         raise Error, "missing process configuration: #{process_name}" unless processes[process_name].is_a?(Hash)
+
         processes.each do |name, process_config|
           raise Error, "process configuration must be a mapping: #{name}" unless process_config.is_a?(Hash)
 
@@ -205,9 +212,11 @@ module Rubernetes
             validate_metrics_server!(process_config["metrics_server"]) if process_config.key?("metrics_server")
             validate_cluster_signing!(process_config["cluster_signing"]) if process_config.key?("cluster_signing")
             if process_config.key?("service_account_private_key_file")
-              validate_absolute_path!(process_config["service_account_private_key_file"], "rubernetes-controller-manager.service_account_private_key_file")
+              validate_absolute_path!(process_config["service_account_private_key_file"],
+                                      "rubernetes-controller-manager.service_account_private_key_file")
             end
-            if process_config.key?("use_service_account_credentials") && ![true, false].include?(process_config["use_service_account_credentials"])
+            if process_config.key?("use_service_account_credentials") && ![true,
+                                                                           false].include?(process_config["use_service_account_credentials"])
               raise Error, "rubernetes-controller-manager.use_service_account_credentials must be true or false"
             end
           elsif name == "rubernetes-scheduler"
@@ -238,12 +247,17 @@ module Rubernetes
           next unless options.key?(key)
 
           value = options[key]
-          raise Error, "rubernetes-controller-manager.metrics_server.#{key} must be a port" unless value.is_a?(Integer) && value.between?(0, 65_535)
+          raise Error, "rubernetes-controller-manager.metrics_server.#{key} must be a port" unless value.is_a?(Integer) && value.between?(
+            0, 65_535
+          )
         end
         %w[metric_resolution_seconds scrape_timeout_seconds].each do |key|
           next unless options.key?(key)
 
-          raise Error, "rubernetes-controller-manager.metrics_server.#{key} must be positive" unless options[key].is_a?(Numeric) && options[key].positive?
+          unless options[key].is_a?(Numeric) && options[key].positive?
+            raise Error,
+                  "rubernetes-controller-manager.metrics_server.#{key} must be positive"
+          end
         end
         if options.key?("kubelet_scheme") && !%w[http https].include?(options["kubelet_scheme"])
           raise Error, "rubernetes-controller-manager.metrics_server.kubelet_scheme must be http or https"
@@ -268,7 +282,10 @@ module Rubernetes
         validate_non_empty_string!(process_config.fetch("node_name"), "rubernetes-agent.node_name")
         validate_api_server!(process_config.fetch("api_server")) if process_config.key?("api_server")
         %w[kubeconfig context].each do |key|
-          validate_non_empty_string!(process_config[key], "rubernetes-agent.#{key}") if process_config.key?(key) && !process_config[key].nil?
+          if process_config.key?(key) && !process_config[key].nil?
+            validate_non_empty_string!(process_config[key],
+                                       "rubernetes-agent.#{key}")
+          end
         end
         # --bootstrap-kubeconfig / --rotate-certificates / --cert-dir.
         %w[bootstrap_kubeconfig cert_dir].each do |key|
@@ -288,7 +305,9 @@ module Rubernetes
         if process_config.key?("feature_gates")
           gates = process_config["feature_gates"]
           validate_mapping!(gates, "rubernetes-agent.feature_gates")
-          gates.each { |gate, enabled| raise Error, "rubernetes-agent.feature_gates.#{gate} must be a boolean" unless [true, false].include?(enabled) }
+          gates.each do |gate, enabled|
+            raise Error, "rubernetes-agent.feature_gates.#{gate} must be a boolean" unless [true, false].include?(enabled)
+          end
         end
         validate_eviction!(process_config["eviction"]) if process_config.key?("eviction")
         validate_image_gc!(process_config["image_gc"]) if process_config.key?("image_gc")
@@ -334,6 +353,7 @@ module Rubernetes
         unless profile.is_a?(String) && %w[pure fake_io host_integration kernel_isolation l3].include?(profile.downcase.tr("-", "_"))
           raise Error, "rubernetes-agent.runtime_profile must be one of pure, fake_io, host_integration, kernel_isolation, l3"
         end
+
         %w[sandbox_root cgroup_root log_root journal_path].each do |key|
           validate_absolute_path!(process_config[key], "rubernetes-agent.#{key}") if process_config.key?(key)
         end
@@ -347,7 +367,10 @@ module Rubernetes
             validate_absolute_path!(paths[key], "rubernetes-agent.#{container_key}.#{key}") if paths.key?(key)
           end
         end
-        validate_absolute_path!(process_config["static_pod_path"], "rubernetes-agent.static_pod_path") if process_config.key?("static_pod_path") && !process_config["static_pod_path"].nil?
+        if process_config.key?("static_pod_path") && !process_config["static_pod_path"].nil?
+          validate_absolute_path!(process_config["static_pod_path"],
+                                  "rubernetes-agent.static_pod_path")
+        end
 
         sync = process_config.fetch("sync", {})
         validate_mapping!(sync, "rubernetes-agent.sync")
@@ -378,12 +401,16 @@ module Rubernetes
         if normalized_profile == "l3" && process_config["l3"] != true
           raise Error, "rubernetes-agent.l3 must be true for the l3 runtime_profile"
         end
+
         validate_network!(process_config["network"], "rubernetes-agent.network") if process_config.key?("network")
         validate_volume!(process_config["volume"], "rubernetes-agent.volume") if process_config.key?("volume")
         %w[pod_root seccomp_root resolv_conf].each do |key|
           validate_absolute_path!(process_config[key], "rubernetes-agent.#{key}") if process_config.key?(key) && !process_config[key].nil?
         end
-        validate_non_empty_string!(process_config["cluster_domain"], "rubernetes-agent.cluster_domain") if process_config.key?("cluster_domain")
+        if process_config.key?("cluster_domain")
+          validate_non_empty_string!(process_config["cluster_domain"],
+                                     "rubernetes-agent.cluster_domain")
+        end
         validate_positive_integer!(process_config["max_pods"], "rubernetes-agent.max_pods") if process_config.key?("max_pods")
         validate_agent_dns!(process_config["dns"]) if process_config.key?("dns")
       end
@@ -394,10 +421,16 @@ module Rubernetes
         if section.key?("enabled") && ![true, false].include?(section["enabled"])
           raise Error, "rubernetes-agent.dns.enabled must be true or false"
         end
+
         validate_positive_integer!(section["port"], "rubernetes-agent.dns.port") if section.key?("port")
         %w[bind_addresses upstreams].each do |key|
           next unless section.key?(key)
-          raise Error, "rubernetes-agent.dns.#{key} must be a list of addresses" unless section[key].is_a?(Array) && section[key].all? { |value| value.is_a?(String) && !value.empty? }
+          next if section[key].is_a?(Array) && section[key].all? do |value|
+            value.is_a?(String) && !value.empty?
+          end
+
+          raise Error,
+                "rubernetes-agent.dns.#{key} must be a list of addresses"
         end
         validate_non_empty_string!(section["cluster_domain"], "rubernetes-agent.dns.cluster_domain") if section.key?("cluster_domain")
         validate_absolute_path!(section["resolv_conf"], "rubernetes-agent.dns.resolv_conf") if section.key?("resolv_conf")
@@ -410,15 +443,11 @@ module Rubernetes
       # MicroVM backend section (spec/node/runtime.md 5.8.11): every path is
       # absolute, the machine shape is positive, and unknown keys are rejected.
 
-
-
       def validate_dra!(value)
         validate_mapping!(value, "rubernetes-agent.dra")
         unknown = value.keys.map(&:to_s) - AGENT_DRA_KEYS
         raise Error, "rubernetes-agent.dra has unknown fields: #{unknown.sort.join(", ")}" unless unknown.empty?
-        if value.key?("enabled") && ![true, false].include?(value["enabled"])
-          raise Error, "rubernetes-agent.dra.enabled must be a boolean"
-        end
+        raise Error, "rubernetes-agent.dra.enabled must be a boolean" if value.key?("enabled") && ![true, false].include?(value["enabled"])
 
         %w[plugins_registry state_dir].each do |key|
           next unless value.key?(key)
@@ -440,6 +469,7 @@ module Rubernetes
         if process_config.key?("cgroups_per_qos") && ![true, false].include?(process_config["cgroups_per_qos"])
           raise Error, "rubernetes-agent.cgroups_per_qos must be a boolean"
         end
+
         %w[system_reserved_cgroup kube_reserved_cgroup].each do |key|
           next unless process_config.key?(key)
           next if process_config[key].is_a?(String) && process_config[key].start_with?("/")
@@ -454,10 +484,14 @@ module Rubernetes
           raise Error, "rubernetes-agent.enforce_node_allocatable must be a list of pods, system-reserved, kube-reserved, " \
                        "system-reserved-compressible, kube-reserved-compressible or none"
         end
-        raise Error, "rubernetes-agent.enforce_node_allocatable: none cannot be combined with other values" if values.include?("none") && values.length > 1
+        if values.include?("none") && values.length > 1
+          raise Error,
+                "rubernetes-agent.enforce_node_allocatable: none cannot be combined with other values"
+        end
         if values.include?("pods") && process_config["cgroups_per_qos"] == false
           raise Error, "rubernetes-agent.enforce_node_allocatable: pods requires cgroups_per_qos"
         end
+
         # ValidateKubeletConfiguration: a reservation cgroup is required for
         # either enforcement of it, and the two cannot both be asked for.
         {"system-reserved" => "system_reserved_cgroup", "kube-reserved" => "kube_reserved_cgroup",
@@ -527,7 +561,10 @@ module Rubernetes
         entries.each_with_index do |entry, index|
           path = "#{name}.reserved_memory[#{index}]"
           validate_mapping!(entry, path)
-          raise Error, "#{path}.numa_node must be a non-negative integer" unless entry["numa_node"].is_a?(Integer) && !entry["numa_node"].negative?
+          unless entry["numa_node"].is_a?(Integer) && !entry["numa_node"].negative?
+            raise Error,
+                  "#{path}.numa_node must be a non-negative integer"
+          end
 
           validate_reservation!(entry.fetch("limits", {}), "memory_manager.reserved_memory[#{index}].limits")
         end
@@ -584,7 +621,6 @@ module Rubernetes
       end
 
       def validate_image_gc!(value)
-
         validate_mapping!(value, "rubernetes-agent.image_gc")
 
         unknown = value.keys.map(&:to_s) - AGENT_IMAGE_GC_KEYS
@@ -602,13 +638,9 @@ module Rubernetes
         low = value.fetch("low_threshold_percent", 80)
 
         [["high_threshold_percent", high], ["low_threshold_percent", low]].each do |key, percent|
+          next if percent.is_a?(Integer) && (0..100).cover?(percent)
 
-          unless percent.is_a?(Integer) && (0..100).cover?(percent)
-
-            raise Error, "rubernetes-agent.image_gc.#{key} must be an integer in range [0-100]"
-
-          end
-
+          raise Error, "rubernetes-agent.image_gc.#{key} must be an integer in range [0-100]"
         end
 
         raise Error, "rubernetes-agent.image_gc.low_threshold_percent can not be higher than high_threshold_percent" if low > high
@@ -616,15 +648,10 @@ module Rubernetes
         require_relative "../node/eviction_manager"
 
         %w[minimum_age maximum_age].each do |key|
-
           Node::EvictionManager.parse_duration(value[key]) if value.key?(key)
-
         end
-
       rescue Node::EvictionManager::ConfigError => error
-
         raise Error, "rubernetes-agent.image_gc: #{error.message}"
-
       end
 
       def validate_eviction!(value)
@@ -634,6 +661,7 @@ module Rubernetes
         if value.key?("enabled") && ![true, false].include?(value["enabled"])
           raise Error, "rubernetes-agent.eviction.enabled must be a boolean"
         end
+
         %w[hard soft soft_grace_period minimum_reclaim].each do |key|
           validate_mapping!(value[key], "rubernetes-agent.eviction.#{key}") if value.key?(key)
         end
@@ -649,12 +677,15 @@ module Rubernetes
       rescue Node::EvictionManager::ConfigError, Schema::Quantity::ParseError => error
         raise Error, "rubernetes-agent.eviction: #{error.message}"
       end
+
       def validate_microvm!(section)
         raise Error, "rubernetes-agent.microvm must be an object" unless section.is_a?(Hash)
 
         unknown = section.keys.map(&:to_s) - AGENT_MICROVM_KEYS
         raise Error, "rubernetes-agent.microvm has unknown fields: #{unknown.join(", ")}" unless unknown.empty?
-        raise Error, "rubernetes-agent.microvm.enabled must be true or false" if section.key?("enabled") && ![true, false].include?(section["enabled"])
+        raise Error, "rubernetes-agent.microvm.enabled must be true or false" if section.key?("enabled") && ![true,
+                                                                                                              false].include?(section["enabled"])
+
         %w[data_dir chroot_base netns_root run_root artifacts_lock].each do |key|
           next unless section.key?(key)
 
@@ -663,10 +694,17 @@ module Rubernetes
         end
         %w[vcpu_count mem_size_mib workspace_mib].each do |key|
           next unless section.key?(key)
-          raise Error, "rubernetes-agent.microvm.#{key} must be a positive integer" unless section[key].is_a?(Integer) && section[key].positive?
+          unless section[key].is_a?(Integer) && section[key].positive?
+            raise Error,
+                  "rubernetes-agent.microvm.#{key} must be a positive integer"
+          end
         end
-        raise Error, "rubernetes-agent.microvm.parent_cgroup must be a relative cgroup path" if section.key?("parent_cgroup") && !(section["parent_cgroup"].is_a?(String) && section["parent_cgroup"].match?(%r{\A[a-zA-Z0-9_./-]+\z}) && !section["parent_cgroup"].start_with?("/"))
-        raise Error, "rubernetes-agent.microvm.use_base_snapshot must be true or false" if section.key?("use_base_snapshot") && ![true, false].include?(section["use_base_snapshot"])
+        if section.key?("parent_cgroup") && !(section["parent_cgroup"].is_a?(String) && section["parent_cgroup"].match?(%r{\A[a-zA-Z0-9_./-]+\z}) && !section["parent_cgroup"].start_with?("/"))
+          raise Error,
+                "rubernetes-agent.microvm.parent_cgroup must be a relative cgroup path"
+        end
+        raise Error, "rubernetes-agent.microvm.use_base_snapshot must be true or false" if section.key?("use_base_snapshot") && ![true,
+                                                                                                                                  false].include?(section["use_base_snapshot"])
       end
 
       # kubelet crashLoopBackOff (KubeletCrashLoopBackOffMax, Beta, on):
@@ -684,16 +722,23 @@ module Rubernetes
         if gates["KubeletEnsureSecretPulledImages"] == false
           raise Error, "#{context} must not be set if KubeletEnsureSecretPulledImages feature gate is not enabled"
         end
+
         require_relative "../image/pull_records"
         policy = section.fetch("verification_policy", Image::PullRecords::NEVER_VERIFY_PRELOADED).to_s
         unless Image::PullRecords::POLICIES.include?(policy)
           raise Error, "#{context}.verification_policy must be one of #{Image::PullRecords::POLICIES.join(", ")}"
         end
+
         allowlist = section.fetch("preloaded_images_verification_allowlist", [])
-        raise Error, "#{context}.preloaded_images_verification_allowlist must be a list of strings" unless allowlist.is_a?(Array) && allowlist.all?(String)
-        if !allowlist.empty? && policy != Image::PullRecords::NEVER_VERIFY_ALLOWLISTED
-          raise Error, "#{context}: can't set preloaded_images_verification_allowlist unless verification_policy is NeverVerifyAllowlistedImages"
+        unless allowlist.is_a?(Array) && allowlist.all?(String)
+          raise Error,
+                "#{context}.preloaded_images_verification_allowlist must be a list of strings"
         end
+        if !allowlist.empty? && policy != Image::PullRecords::NEVER_VERIFY_ALLOWLISTED
+          raise Error,
+                "#{context}: can't set preloaded_images_verification_allowlist unless verification_policy is NeverVerifyAllowlistedImages"
+        end
+
         Image::PullRecords.parse_allowlist(allowlist)
       rescue Image::PullRecords::InvalidPolicy => error
         raise Error, "#{context}: invalid image pattern in preloaded_images_verification_allowlist: #{error.message}"
@@ -712,7 +757,9 @@ module Rubernetes
       def validate_agent_cri!(section)
         validate_mapping!(section, "rubernetes-agent.cri")
         reject_unknown_keys!(section, AGENT_CRI_KEYS, "rubernetes-agent.cri")
-        raise Error, "rubernetes-agent.cri.enabled must be a boolean" if section.key?("enabled") && ![true, false].include?(section["enabled"])
+        raise Error, "rubernetes-agent.cri.enabled must be a boolean" if section.key?("enabled") && ![true,
+                                                                                                      false].include?(section["enabled"])
+
         %w[endpoint log_root cgroup_parent].each do |key|
           next unless section.key?(key)
           next if section[key].is_a?(String) && section[key].delete_prefix("unix://").start_with?("/")
@@ -722,16 +769,16 @@ module Rubernetes
         if section["enabled"] == true && !section.key?("endpoint")
           raise Error, "rubernetes-agent.cri.endpoint is required when cri is enabled"
         end
+
         handlers = section.fetch("handlers", {})
         unless handlers.is_a?(Hash) && handlers.all? { |name, handler| name.is_a?(String) && !name.empty? && handler.is_a?(String) }
           raise Error, "rubernetes-agent.cri.handlers must map handler names to CRI runtime handlers"
         end
-        if handlers.key?("rubernetes-native")
-          raise Error, "rubernetes-agent.cri.handlers cannot take over the rubernetes-native handler"
-        end
+        raise Error, "rubernetes-agent.cri.handlers cannot take over the rubernetes-native handler" if handlers.key?("rubernetes-native")
         if section.key?("container_log_max_files") && !(section["container_log_max_files"].is_a?(Integer) && section["container_log_max_files"] >= 2)
           raise Error, "rubernetes-agent.cri.container_log_max_files must be an integer of at least 2"
         end
+
         if section.key?("container_log_max_size")
           begin
             require_relative "../resource_helpers"
@@ -747,7 +794,12 @@ module Rubernetes
       end
 
       def validate_runtime_classes!(section)
-        raise Error, "rubernetes-agent.runtime_classes must be an object of name => handler" unless section.is_a?(Hash) && section.all? { |name, handler| name.is_a?(String) && handler.is_a?(String) && !name.empty? && !handler.empty? }
+        unless section.is_a?(Hash) && section.all? do |name, handler|
+          name.is_a?(String) && handler.is_a?(String) && !name.empty? && !handler.empty?
+        end
+          raise Error,
+                "rubernetes-agent.runtime_classes must be an object of name => handler"
+        end
       end
 
       def validate_control_plane!(process_config, allowed_keys, process_name, lease: false)
@@ -807,11 +859,12 @@ module Rubernetes
         if section.key?("enabled") && ![true, false].include?(section["enabled"])
           raise Error, "#{process_name}.serving.enabled must be true or false"
         end
+
         validate_non_empty_string!(section["bind_address"], "#{process_name}.serving.bind_address") if section.key?("bind_address")
         port = section["port"]
-        if section["enabled"] == true && !(port.is_a?(Integer) && port.between?(1, 65_535))
-          raise Error, "#{process_name}.serving.port must be an integer between 1 and 65535"
-        end
+        return unless section["enabled"] == true && !(port.is_a?(Integer) && port.between?(1, 65_535))
+
+        raise Error, "#{process_name}.serving.port must be an integer between 1 and 65535"
       end
 
       def validate_proxy!(process_config)
@@ -823,12 +876,14 @@ module Rubernetes
 
           validate_non_empty_string!(process_config[key], "rubernetes-proxy.#{key}")
         end
-        if process_config.key?("backend") && !%w[auto ebpf bpf nftables nft iptables memory].include?(process_config["backend"].to_s.downcase)
+        if process_config.key?("backend") && !%w[auto ebpf bpf nftables nft iptables
+                                                 memory].include?(process_config["backend"].to_s.downcase)
           raise Error, "rubernetes-proxy.backend must be one of auto, ebpf, bpf, nftables, nft, iptables, or memory"
         end
         if process_config.key?("attach") && ![true, false].include?(process_config["attach"])
           raise Error, "rubernetes-proxy.attach must be true or false"
         end
+
         validate_sync!(process_config["sync"], "rubernetes-proxy") if process_config.key?("sync")
       end
 
@@ -852,9 +907,9 @@ module Rubernetes
       end
 
       def validate_resource_kinds!(value, process_name)
-        unless value.is_a?(Array) && value.all? { |kind| kind.is_a?(String) && !kind.empty? }
-          raise Error, "#{process_name}.resource_kinds must be an array of non-empty strings"
-        end
+        return if value.is_a?(Array) && value.all? { |kind| kind.is_a?(String) && !kind.empty? }
+
+        raise Error, "#{process_name}.resource_kinds must be an array of non-empty strings"
       end
 
       def validate_controllers!(value, process_name)
@@ -869,12 +924,11 @@ module Rubernetes
         reject_unknown_keys!(value, NETWORK_KEYS, context)
         validate_absolute_path!(value["state_path"], "#{context}.state_path") if value.key?("state_path")
         validate_positive_integer!(value["mtu"], "#{context}.mtu") if value.key?("mtu")
-        if value.key?("fsync") && ![true, false].include?(value["fsync"])
-          raise Error, "#{context}.fsync must be true or false"
-        end
+        raise Error, "#{context}.fsync must be true or false" if value.key?("fsync") && ![true, false].include?(value["fsync"])
         if value.key?("policy_backend") && !NETWORK_POLICY_BACKENDS.include?(value["policy_backend"].to_s.downcase)
-          raise Error, "#{context}.policy_backend must be one of #{NETWORK_POLICY_BACKENDS.join(', ')}"
+          raise Error, "#{context}.policy_backend must be one of #{NETWORK_POLICY_BACKENDS.join(", ")}"
         end
+
         validate_non_empty_string!(value["policy_table"], "#{context}.policy_table") if value.key?("policy_table")
       end
 
@@ -884,15 +938,14 @@ module Rubernetes
         %w[data_dir root].each do |key|
           validate_absolute_path!(value[key], "#{context}.#{key}") if value.key?(key)
         end
-        if value.key?("fsync") && ![true, false].include?(value["fsync"])
-          raise Error, "#{context}.fsync must be true or false"
-        end
+        raise Error, "#{context}.fsync must be true or false" if value.key?("fsync") && ![true, false].include?(value["fsync"])
         if value.key?("profile") && !value["profile"].is_a?(String)
           raise Error, "#{context}.profile must be one of #{VOLUME_PROFILES.join(", ")}"
         end
         if value.key?("profile") && !VOLUME_PROFILES.include?(value["profile"].downcase.tr("-", "_"))
           raise Error, "#{context}.profile must be one of #{VOLUME_PROFILES.join(", ")}"
         end
+
         validate_volume_csi!(value["csi"], "#{context}.csi") if value.key?("csi")
       end
 
@@ -909,15 +962,14 @@ module Rubernetes
           validate_linux_identity!(value[key], "#{context}.#{key}") if value.key?(key)
         end
         validate_file_mode!(value["socket_mode"], "#{context}.socket_mode") if value.key?("socket_mode")
-        if value.key?("probe") && ![true, false].include?(value["probe"])
-          raise Error, "#{context}.probe must be true or false"
-        end
+        raise Error, "#{context}.probe must be true or false" if value.key?("probe") && ![true, false].include?(value["probe"])
         return unless value.key?("identity")
 
         identity = value["identity"]
         validate_mapping!(identity, "#{context}.identity")
         reject_unknown_keys!(identity, VOLUME_CSI_IDENTITY_KEYS, "#{context}.identity")
         raise Error, "#{context}.identity.name is required" unless identity.key?("name")
+
         validate_non_empty_string!(identity["name"], "#{context}.identity.name")
         %w[vendor_version vendorVersion].each do |key|
           validate_non_empty_string!(identity[key], "#{context}.identity.#{key}") if identity.key?(key)
@@ -957,9 +1009,9 @@ module Rubernetes
       end
 
       def validate_linux_identity!(value, context)
-        unless value.is_a?(Integer) && value.between?(0, 4_294_967_294)
-          raise Error, "#{context} must be an integer between 0 and 4294967294"
-        end
+        return if value.is_a?(Integer) && value.between?(0, 4_294_967_294)
+
+        raise Error, "#{context} must be an integer between 0 and 4294967294"
       end
 
       def validate_file_mode!(value, context)
@@ -975,10 +1027,17 @@ module Rubernetes
 
       def validate_apiserver!(process_config)
         reject_unknown_keys!(process_config, APISERVER_KEYS, "rubernetes-apiserver configuration")
-        validate_absolute_path!(process_config["encryption_config_file"], "rubernetes-apiserver.encryption_config_file") if process_config.key?("encryption_config_file")
-        validate_absolute_path!(process_config["egress_selector_config_file"], "rubernetes-apiserver.egress_selector_config_file") if process_config.key?("egress_selector_config_file")
+        if process_config.key?("encryption_config_file")
+          validate_absolute_path!(process_config["encryption_config_file"],
+                                  "rubernetes-apiserver.encryption_config_file")
+        end
+        if process_config.key?("egress_selector_config_file")
+          validate_absolute_path!(process_config["egress_selector_config_file"],
+                                  "rubernetes-apiserver.egress_selector_config_file")
+        end
         if process_config.key?("encryption_config_reload_interval_seconds")
-          validate_positive_integer!(process_config["encryption_config_reload_interval_seconds"], "rubernetes-apiserver.encryption_config_reload_interval_seconds")
+          validate_positive_integer!(process_config["encryption_config_reload_interval_seconds"],
+                                     "rubernetes-apiserver.encryption_config_reload_interval_seconds")
         end
         address = process_config["bind_address"]
         raise Error, "rubernetes-apiserver.bind_address must be a non-empty String" unless address.is_a?(String) && !address.empty?
@@ -995,11 +1054,16 @@ module Rubernetes
         end
         if process_config.key?("node_port_range")
           value = process_config["node_port_range"]
-          unless value.is_a?(String) && value.match?(/\A\d+-\d+\z/) && value.split("-").map(&:to_i).then { |lo, hi| lo.between?(1, 65_535) && hi.between?(lo, 65_535) }
+          unless value.is_a?(String) && value.match?(/\A\d+-\d+\z/) && value.split("-").map(&:to_i).then do |lo, hi|
+            lo.between?(1, 65_535) && hi.between?(lo, 65_535)
+          end
             raise Error, "rubernetes-apiserver.node_port_range must be like 30000-32767"
           end
         end
-        validate_non_empty_string!(process_config["advertise_address"], "rubernetes-apiserver.advertise_address") if process_config.key?("advertise_address")
+        if process_config.key?("advertise_address")
+          validate_non_empty_string!(process_config["advertise_address"],
+                                     "rubernetes-apiserver.advertise_address")
+        end
         max_body_bytes = process_config["max_body_bytes"]
         unless max_body_bytes.is_a?(Integer) && max_body_bytes.between?(1, 16 * 1024 * 1024)
           raise Error, "rubernetes-apiserver.max_body_bytes must be between 1 and 16777216"
@@ -1015,11 +1079,14 @@ module Rubernetes
         validate_tls!(process_config["proxy_client"], "rubernetes-apiserver.proxy_client") if process_config.key?("proxy_client")
         validate_kubelet_client!(process_config["kubelet_client"]) if process_config.key?("kubelet_client")
         validate_security!(process_config["security"]) if process_config.key?("security")
-        if process_config.key?("runtime_config")
-          validate_mapping!(process_config["runtime_config"], "rubernetes-apiserver.runtime_config")
-          process_config["runtime_config"].each do |key, value|
-            raise Error, "rubernetes-apiserver.runtime_config.#{key} must be a boolean" unless [true, false].include?(value)
-            raise Error, "rubernetes-apiserver.runtime_config key #{key.inspect} must be api/all or group/version" unless key == "api/all" || key.match?(%r{\A[a-z0-9.-]*/?v\d+[a-z0-9]*\z})
+        return unless process_config.key?("runtime_config")
+
+        validate_mapping!(process_config["runtime_config"], "rubernetes-apiserver.runtime_config")
+        process_config["runtime_config"].each do |key, value|
+          raise Error, "rubernetes-apiserver.runtime_config.#{key} must be a boolean" unless [true, false].include?(value)
+          unless key == "api/all" || key.match?(%r{\A[a-z0-9.-]*/?v\d+[a-z0-9]*\z})
+            raise Error,
+                  "rubernetes-apiserver.runtime_config key #{key.inspect} must be api/all or group/version"
           end
         end
       end
@@ -1056,10 +1123,15 @@ module Rubernetes
             # JWT (--oidc-*) and --anonymous-auth settings.
             validate_absolute_path!(authn["config_file"], "#{context}.authentication.config_file")
             %w[jwt anonymous].each do |key|
-              raise Error, "#{context}.authentication.#{key} cannot be combined with config_file (the AuthenticationConfiguration file owns it)" if authn.key?(key)
+              if authn.key?(key)
+                raise Error,
+                      "#{context}.authentication.#{key} cannot be combined with config_file (the AuthenticationConfiguration file owns it)"
+              end
             end
           end
-          %w[client_ca_file token_file].each { |key| validate_absolute_path!(authn[key], "#{context}.authentication.#{key}") if authn.key?(key) }
+          %w[client_ca_file token_file].each do |key|
+            validate_absolute_path!(authn[key], "#{context}.authentication.#{key}") if authn.key?(key)
+          end
           if authn.key?("service_account")
             sa = authn["service_account"]
             validate_mapping!(sa, "#{context}.authentication.service_account")
@@ -1078,9 +1150,14 @@ module Rubernetes
               validate_absolute_path!(sa["signing_key_file"], "#{context}.authentication.service_account.signing_key_file")
             end
             Array(sa["key_files"]).each { |path| validate_absolute_path!(path, "#{context}.authentication.service_account.key_files[]") }
-            raise Error, "#{context}.authentication.service_account.api_audiences must be a non-empty list" if sa.key?("api_audiences") && !(sa["api_audiences"].is_a?(Array) && !sa["api_audiences"].empty?)
+            if sa.key?("api_audiences") && !(sa["api_audiences"].is_a?(Array) && !sa["api_audiences"].empty?)
+              raise Error,
+                    "#{context}.authentication.service_account.api_audiences must be a non-empty list"
+            end
           end
-          raise Error, "#{context}.authentication.bootstrap_tokens must be a boolean" if authn.key?("bootstrap_tokens") && ![true, false].include?(authn["bootstrap_tokens"])
+          raise Error, "#{context}.authentication.bootstrap_tokens must be a boolean" if authn.key?("bootstrap_tokens") && ![true,
+                                                                                                                             false].include?(authn["bootstrap_tokens"])
+
           if authn.key?("request_header")
             rh = authn["request_header"]
             validate_mapping!(rh, "#{context}.authentication.request_header")
@@ -1089,6 +1166,7 @@ module Rubernetes
           end
           if authn.key?("jwt")
             raise Error, "#{context}.authentication.jwt must be a list of JWT authenticator configurations" unless authn["jwt"].is_a?(Array)
+
             authn["jwt"].each { |entry| validate_mapping!(entry, "#{context}.authentication.jwt[]") }
           end
           if authn.key?("webhook")
@@ -1111,14 +1189,19 @@ module Rubernetes
             # --authorization-config is mutually exclusive with --authorization-mode and --authorization-webhook-*.
             validate_absolute_path!(authz["config_file"], "#{context}.authorization.config_file")
             %w[modes webhook abac_policy_file].each do |key|
-              raise Error, "#{context}.authorization.#{key} cannot be combined with config_file (the AuthorizationConfiguration file owns it)" if authz.key?(key)
+              if authz.key?(key)
+                raise Error,
+                      "#{context}.authorization.#{key} cannot be combined with config_file (the AuthorizationConfiguration file owns it)"
+              end
             end
           else
             modes = authz["modes"]
             raise Error, "#{context}.authorization.modes must be a non-empty list" unless modes.is_a?(Array) && !modes.empty?
+
             unknown = modes - %w[AlwaysAllow AlwaysDeny ABAC Webhook RBAC Node]
             raise Error, "#{context}.authorization.modes contains unknown modes #{unknown.join(", ")}" unless unknown.empty?
             raise Error, "#{context}.authorization.modes must be unique" unless modes.uniq.length == modes.length
+
             validate_absolute_path!(authz["abac_policy_file"], "#{context}.authorization.abac_policy_file") if modes.include?("ABAC")
             if modes.include?("Webhook")
               hook = authz["webhook"]
@@ -1134,7 +1217,12 @@ module Rubernetes
           reject_unknown_keys!(admission, ADMISSION_KEYS, "#{context}.admission")
           %w[enable disable].each do |key|
             next unless admission.key?(key)
-            raise Error, "#{context}.admission.#{key} must be a list of plugin names" unless admission[key].is_a?(Array) && admission[key].all? { |name| name.is_a?(String) }
+            next if admission[key].is_a?(Array) && admission[key].all? do |name|
+              name.is_a?(String)
+            end
+
+            raise Error,
+                  "#{context}.admission.#{key} must be a list of plugin names"
           end
           validate_mapping!(admission["config"], "#{context}.admission.config") if admission.key?("config")
         end
@@ -1153,6 +1241,7 @@ module Rubernetes
             if webhook.key?("mode") && !%w[batch blocking blocking-strict].include?(webhook["mode"].to_s)
               raise Error, "#{context}.audit.webhook.mode must be batch, blocking or blocking-strict"
             end
+
             validate_absolute_path!(webhook["ca_file"], "#{context}.audit.webhook.ca_file") if webhook.key?("ca_file")
             validate_absolute_path!(webhook["token_file"], "#{context}.audit.webhook.token_file") if webhook.key?("token_file")
           end
@@ -1162,12 +1251,17 @@ module Rubernetes
           validate_mapping!(apf, "#{context}.flow_control")
           reject_unknown_keys!(apf, FLOW_CONTROL_KEYS, "#{context}.flow_control")
           raise Error, "#{context}.flow_control.enabled must be a boolean" if apf.key?("enabled") && ![true, false].include?(apf["enabled"])
-          %w[read_seats mutating_seats].each { |key| validate_positive_integer!(apf[key], "#{context}.flow_control.#{key}") if apf.key?(key) }
+
+          %w[read_seats mutating_seats].each do |key|
+            validate_positive_integer!(apf[key], "#{context}.flow_control.#{key}") if apf.key?(key)
+          end
         end
-        if value.key?("feature_gates")
-          gates = value["feature_gates"]
-          validate_mapping!(gates, "#{context}.feature_gates")
-          gates.each { |gate, enabled| raise Error, "#{context}.feature_gates.#{gate} must be a boolean" unless [true, false].include?(enabled) }
+        return unless value.key?("feature_gates")
+
+        gates = value["feature_gates"]
+        validate_mapping!(gates, "#{context}.feature_gates")
+        gates.each do |gate, enabled|
+          raise Error, "#{context}.feature_gates.#{gate} must be a boolean" unless [true, false].include?(enabled)
         end
       end
 
@@ -1186,20 +1280,33 @@ module Rubernetes
 
         %w[node_id cluster_id].each do |key|
           identifier = value[key]
-          raise Error, "#{context}.#{key} must match [A-Za-z0-9][A-Za-z0-9._-]*" unless identifier.is_a?(String) && identifier.match?(/\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/)
+          unless identifier.is_a?(String) && identifier.match?(/\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/)
+            raise Error,
+                  "#{context}.#{key} must match [A-Za-z0-9][A-Za-z0-9._-]*"
+          end
         end
         %w[data_dir pki_dir].each { |key| validate_absolute_path!(value[key], "#{context}.#{key}") }
         validate_non_empty_string!(value["listen_address"], "#{context}.listen_address")
         port = value["listen_port"]
         raise Error, "#{context}.listen_port must be between 0 and 65535" unless port.is_a?(Integer) && port.between?(0, 65_535)
+
         voters = value["voters"]
-        raise Error, "#{context}.voters must be a non-empty list of node ids" unless voters.is_a?(Array) && !voters.empty? && voters.all? { |id| id.is_a?(String) && !id.empty? }
+        unless voters.is_a?(Array) && !voters.empty? && voters.all? do |id|
+          id.is_a?(String) && !id.empty?
+        end
+          raise Error,
+                "#{context}.voters must be a non-empty list of node ids"
+        end
         raise Error, "#{context}.voters must include node_id #{value["node_id"]}" unless voters.include?(value["node_id"])
         raise Error, "#{context}.voters must be unique" unless voters.uniq.length == voters.length
+
         peers = value["peers"] || {}
         validate_mapping!(peers, "#{context}.peers")
         peers.each do |id, address|
-          raise Error, "#{context}.peers[#{id}] must be host:port" unless id.is_a?(String) && address.is_a?(String) && address.match?(/\A.+:\d{1,5}\z/)
+          unless id.is_a?(String) && address.is_a?(String) && address.match?(/\A.+:\d{1,5}\z/)
+            raise Error,
+                  "#{context}.peers[#{id}] must be host:port"
+          end
           raise Error, "#{context}.peers must not include node_id" if id == value["node_id"]
         end
         (voters - [value["node_id"]]).each do |id|
@@ -1221,7 +1328,10 @@ module Rubernetes
       def deep_freeze(value)
         case value
         when Hash
-          value.each { |key, child| key.freeze; deep_freeze(child) }
+          value.each do |key, child|
+            key.freeze
+            deep_freeze(child)
+          end
         when Array
           value.each { |child| deep_freeze(child) }
         end

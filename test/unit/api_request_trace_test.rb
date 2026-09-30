@@ -23,8 +23,10 @@ class APIRequestTraceTest < Minitest::Test
     server.call(method: "GET", path: "/api/v1/namespaces/dev/secrets")
 
     traces = logger.lines.select { |event, _| event == "request.trace" }
+
     assert_equal 1, traces.length, "only the matching path is traced"
     fields = traces.first.last
+
     assert_equal "POST", fields[:method]
     assert_equal 201, fields[:status]
     assert fields[:phases].keys.any? { |name| name.start_with?("store.") }, fields[:phases].inspect
@@ -37,6 +39,6 @@ class APIRequestTraceTest < Minitest::Test
 
     server.call(method: "GET", path: "/api/v1/namespaces/dev/configmaps")
 
-    assert_empty logger.lines.select { |event, _| event == "request.trace" }
+    assert_empty(logger.lines.select { |event, _| event == "request.trace" })
   end
 end

@@ -88,7 +88,7 @@ module Rubernetes
 
           def display(issue)
             line, column = @source.location(issue.offset)
-            out = +"ERROR: <input>:#{line}:#{column + 1}: #{issue.message}"
+            out = "ERROR: <input>:#{line}:#{column + 1}: #{issue.message}"
             snippet = @source.snippet(line)
             return out if snippet.nil? || snippet.bytesize > 16_384
 
@@ -373,9 +373,7 @@ module Rubernetes
             result = ERROR
             type_name = node.name.delete_prefix(".")
             if ident.kind != :error
-              if ident.kind != :type
-                error(node, "'#{ident.declared_name}' is not a type")
-              else
+              if ident.kind == :type
                 result = ident.params[0]
                 if result.kind == :struct
                   type_name = result.name
@@ -383,6 +381,8 @@ module Rubernetes
                   error(node, "'#{result.declared_name}' is not a message type")
                   result = ERROR
                 end
+              else
+                error(node, "'#{ident.declared_name}' is not a type")
               end
             end
             set_type(node, result)
@@ -392,7 +392,10 @@ module Rubernetes
               value_type = type_of(field.value)
               if field.optional
                 value_type, is_optional = Types.unwrap_optional(value_type)
-                error(field.value, "expected type '#{Type.optional(value_type)}' but found '#{value_type}'") if !is_optional && !value_type.dyn?
+                if !is_optional && !value_type.dyn?
+                  error(field.value,
+                        "expected type '#{Type.optional(value_type)}' but found '#{value_type}'")
+                end
               end
               next if assignable?(field_type, value_type)
 
@@ -413,7 +416,8 @@ module Rubernetes
                                     assignable?(DYN, range_type)
                                     [DYN, node.iter_var2 && DYN]
                                   else
-                                    error(node.iter_range, "expression of type '#{range_type}' cannot be range of a comprehension (must be list, map, or dynamic)")
+                                    error(node.iter_range,
+                                          "expression of type '#{range_type}' cannot be range of a comprehension (must be list, map, or dynamic)")
                                     [ERROR, node.iter_var2 && ERROR]
                                   end
             scope = {node.iter_var => var_type}

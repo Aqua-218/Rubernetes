@@ -95,11 +95,11 @@ class ResourceQuotaComputeUsageTest < Minitest::Test
   def test_used_quantities_are_canonical
     usage = used({"requests.storage" => "10Gi", "gold.storageclass.storage.k8s.io/requests.storage" => "10Gi", "memory" => "500Mi"},
                  [claim("a", storage: "512Mi"), claim("b", storage: "512Mi")])
+
     assert_equal "1Gi", usage["requests.storage"]
     assert_equal "0", usage["gold.storageclass.storage.k8s.io/requests.storage"]
     assert_equal "0", usage["memory"]
   end
-
 end
 
 # resource_quota_controller.go only enqueues a quota whose spec changed; a
@@ -183,7 +183,8 @@ class ResourceQuotaFreshReadsTest < Minitest::Test
   end
 
   def test_only_the_kinds_named_by_the_hard_limits_are_listed_and_fresh
-    svc = {"apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => "s", "namespace" => "ns"}, "spec" => {"type" => "NodePort", "ports" => [{"port" => 80}]}}
+    svc = {"apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => "s", "namespace" => "ns"},
+           "spec" => {"type" => "NodePort", "ports" => [{"port" => 80}]}}
     adapter = RecordingAdapter.new([svc])
     hard = {"services.nodeports" => "1", "services" => "10", "pods" => "5", "cpu" => "1", "count/replicasets.apps" => "5",
             "gold.storageclass.storage.k8s.io/requests.storage" => "10Gi", "resourcequotas" => "1"}

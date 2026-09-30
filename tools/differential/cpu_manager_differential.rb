@@ -39,7 +39,7 @@ module CPUManagerDifferential
       sockets.times do |socket|
         cores.times do |c|
           numa = socket / sockets_per_numa
-          uncore_id = numa * uncore + (c * uncore / cores)
+          uncore_id = (numa * uncore) + (c * uncore / cores)
           placements << [numa, socket, uncore_id, core_index]
           core_index += 1
         end
@@ -48,7 +48,7 @@ module CPUManagerDifferential
       numas.times do |numa|
         socket = numa / numa_per_socket
         cores.times do |c|
-          uncore_id = numa * uncore + (c * uncore / cores)
+          uncore_id = (numa * uncore) + (c * uncore / cores)
           placements << [numa, socket, uncore_id, core_index]
           core_index += 1
         end
@@ -56,7 +56,7 @@ module CPUManagerDifferential
     end
     placements.each do |numa, socket, uncore_id, index|
       thread_ids = Array.new(threads) do |t|
-        numbering == :adjacent ? index * threads + t : index + t * physical
+        numbering == :adjacent ? (index * threads) + t : index + (t * physical)
       end
       thread_ids.each do |cpu|
         details[cpu] = [numa, socket, thread_ids.min, uncore_id]
@@ -135,7 +135,13 @@ module CPUManagerDifferential
           options["prefer-align-cpus-by-uncorecache"] = "true"
         end
         reserved = random.rand(1..3)
-        explicit = random.rand < 0.3 ? M::CPUSet.new(topo["details"].keys.map { |cpu| Integer(cpu) }.sample(reserved, random: random)).to_s : ""
+        explicit = if random.rand < 0.3
+                     M::CPUSet.new(topo["details"].keys.map do |cpu|
+                       Integer(cpu)
+                     end.sample(reserved, random: random)).to_s
+                   else
+                     ""
+                   end
         steps = []
         pods = []
         random.rand(3..8).times do |step|
@@ -231,7 +237,11 @@ module CPUManagerDifferential
 
     def initialize = @affinity = {}
     def policy = Policy.new("none")
-    def set(uid, name, bits) = @affinity["#{uid}/#{name}"] = Rubernetes::Node::TopologyManager::Hint.new(Rubernetes::Node::TopologyManager::BitMask.of(*bits), true)
+
+    def set(uid, name, bits)
+      @affinity["#{uid}/#{name}"] = Rubernetes::Node::TopologyManager::Hint.new(Rubernetes::Node::TopologyManager::BitMask.of(*bits), true)
+    end
+
     def affinity(uid, name) = @affinity["#{uid}/#{name}"] || Rubernetes::Node::TopologyManager::Hint.new(nil, false)
   end
 
@@ -264,7 +274,9 @@ module CPUManagerDifferential
         if hints.nil?
           result["hintsNil"] = true
         else
-          result["hints"] = hints["cpu"].map { |hint| {"affinity" => hint.affinity ? hint.affinity.bits : [], "preferred" => hint.preferred} }
+          result["hints"] = hints["cpu"].map do |hint|
+            {"affinity" => hint.affinity ? hint.affinity.bits : [], "preferred" => hint.preferred}
+          end
         end
       when "allocate"
         pod = oracle_pod(step["podUID"], step["containers"], requests: step["podRequests"], limits: step["podLimits"])
@@ -283,7 +295,9 @@ module CPUManagerDifferential
         if hints.nil?
           result["hintsNil"] = true
         else
-          result["hints"] = hints["cpu"].map { |hint| {"affinity" => hint.affinity ? hint.affinity.bits : [], "preferred" => hint.preferred} }
+          result["hints"] = hints["cpu"].map do |hint|
+            {"affinity" => hint.affinity ? hint.affinity.bits : [], "preferred" => hint.preferred}
+          end
         end
       end
       result["assignments"] = state.assignments.transform_values { |containers| containers.transform_values(&:to_s) }
@@ -312,7 +326,7 @@ module CPUManagerDifferential
       available = M::CPUSet.parse(test_case["available"])
       cpus = if test_case["op"] == "packed"
                M::Assignment.take_by_topology_numa_packed(topo, available, test_case["count"], strategy: test_case["strategy"],
-                                                                                              prefer_align_by_uncore_cache: test_case["uncore"])
+                                                                                               prefer_align_by_uncore_cache: test_case["uncore"])
              else
                M::Assignment.take_by_topology_numa_distributed(topo, available, test_case["count"], test_case["groupSize"],
                                                                strategy: test_case["strategy"])
@@ -362,7 +376,9 @@ module CPUManagerDifferential
       if test_case["op"] == "policy"
         # Go omits empty strings / false; compare on the port's shape.
         want = {"name" => want["name"], "error" => want["error"], "reserved" => want["reserved"],
-                "steps" => want["steps"]&.map { |step| step.slice("error", "assignments", "default", "hints", "hintsNil", "podSets").compact }}.compact
+                "steps" => want["steps"]&.map do |step|
+                  step.slice("error", "assignments", "default", "hints", "hintsNil", "podSets").compact
+                end}.compact
         # omitempty drops an empty hint list, as it does upstream.
         got = got.merge("steps" => got["steps"]&.map { |step| step.compact.reject { |key, value| key == "hints" && value.empty? } }).compact
       end

@@ -38,9 +38,11 @@ class NodeEventSinkAsyncTest < Minitest::Test
     sink = Sink.new(client: client)
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     sink.record_event(event("a"))
+
     assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.05, "record must not wait for the write"
     assert_equal 1, sink.pending
     gate << :go
+
     assert sink.flush(timeout: 2.0)
     assert_equal "a", client.created.pop(timeout: 1)
     assert_equal 0, sink.pending
@@ -50,6 +52,7 @@ class NodeEventSinkAsyncTest < Minitest::Test
     client = Client.new
     sink = Sink.new(client: client)
     10.times { |index| sink.record_event(event("e#{index}")) }
+
     assert sink.flush(timeout: 2.0)
     assert_equal (0...10).map { |index| "e#{index}" }, Array.new(10) { client.created.pop(timeout: 1) }
   end
@@ -59,9 +62,11 @@ class NodeEventSinkAsyncTest < Minitest::Test
     client = Client.new(gate: gate)
     sink = Sink.new(client: client)
     (Sink::MAX_PENDING + 3).times { |index| sink.record_event(event("e#{index}")) }
+
     assert_operator sink.dropped, :>=, 2
     assert_operator sink.pending, :<=, Sink::MAX_PENDING + 1
     (Sink::MAX_PENDING + 3).times { gate << :go }
+
     assert sink.flush(timeout: 5.0)
   end
 
@@ -69,6 +74,7 @@ class NodeEventSinkAsyncTest < Minitest::Test
     client = Client.new
     sink = Sink.new(client: client, async: false)
     sink.record_event(event("s"))
+
     assert_equal "s", client.created.pop(true)
   end
 end
@@ -100,6 +106,7 @@ class NodeEventSinkHandoffTest < Minitest::Test
     sink.instance_variable_set(:@idle_timeout, 0.01)
     # Retire the writer, then record again: a new writer must start.
     sink.record_event(event("a"))
+
     assert sink.flush(timeout: 2.0)
     assert_equal "a", client.created.pop(timeout: 1)
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2.0
@@ -107,6 +114,7 @@ class NodeEventSinkHandoffTest < Minitest::Test
 
     30.times do |index|
       sink.record_event(event("b#{index}"))
+
       assert_equal "b#{index}", client.created.pop(timeout: 2), "record #{index} was not written promptly"
     end
   end
@@ -122,6 +130,7 @@ class NodeEventSinkHandoffTest < Minitest::Test
     sink = Sink.new(client: client)
     sink.record_event(event("poison"))
     sink.record_event(event("after"))
+
     assert_equal "after", client.created.pop(timeout: 2), "the queue keeps draining after a writer error"
     assert sink.flush(timeout: 2.0)
     assert_equal 0, sink.pending

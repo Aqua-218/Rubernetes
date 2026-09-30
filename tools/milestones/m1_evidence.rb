@@ -22,7 +22,7 @@ require_relative "m1_gate"
 ROOT = File.expand_path("../..", __dir__)
 # Keep the temporary generator exclusion anchored to a root-level mktemp name;
 # broad prefixes would let a real source directory disappear from the input.
-SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}.freeze
+SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}
 REPORT_SPECS = {
   "corpus" => {filename: "corpus-coverage.json", kind: "m1_corpus_coverage"},
   "generation" => {filename: "generation-diff.json", kind: "m1_generation_diff"},
@@ -121,7 +121,7 @@ end
 options = {
   run_id: Time.now.utc.strftime("%Y%m%dT%H%M%S.%6NZ"),
   output_root: File.join(ROOT, "artifacts/milestones/M1"),
-  m0_manifest: ENV["RUBERNETES_M1_M0_MANIFEST"],
+  m0_manifest: ENV.fetch("RUBERNETES_M1_M0_MANIFEST", nil),
   reports: {},
   commands: {}
 }
@@ -133,7 +133,9 @@ OptionParser.new do |parser|
     options[:m0_manifest] = File.expand_path(value)
   end
   REPORT_SPECS.each_key do |name|
-    parser.on("--#{name}-report PATH", "copy a machine-readable #{name} report") { |value| options[:reports][name] = File.expand_path(value) }
+    parser.on("--#{name}-report PATH", "copy a machine-readable #{name} report") do |value|
+      options[:reports][name] = File.expand_path(value)
+    end
     parser.on("--#{name}-command COMMAND", "run the #{name} adapter and read JSON from stdout") { |value| options[:commands][name] = value }
   end
 end.parse!(ARGV)
@@ -143,12 +145,10 @@ REPORT_SPECS.each_key do |name|
   report_environment_key = "RUBERNETES_M1_#{name.upcase}_REPORT"
   options[:commands][name] = ENV.fetch(command_environment_key) if ENV.key?(command_environment_key) && !options[:commands].key?(name)
   options[:reports][name] = File.expand_path(ENV.fetch(report_environment_key)) if ENV.key?(report_environment_key) &&
-                                                                    !options[:commands].key?(name) && !options[:reports].key?(name)
+                                                                                   !options[:commands].key?(name) && !options[:reports].key?(name)
 end
 
-unless options[:run_id].match?(/\A[0-9A-Za-z._-]+\z/)
-  abort "run ID may contain only letters, digits, dot, underscore, and hyphen"
-end
+abort "run ID may contain only letters, digits, dot, underscore, and hyphen" unless options[:run_id].match?(/\A[0-9A-Za-z._-]+\z/)
 
 directory = File.join(options[:output_root], options[:run_id])
 FileUtils.mkdir_p(directory)
@@ -219,18 +219,18 @@ REPORT_SPECS.each do |name, specification|
   destination = File.join(directory, specification.fetch(:filename))
   if options[:commands].key?(name)
     command = command_words(options[:commands].fetch(name))
-    if command.empty?
-      commands << command_record(
-        "m1_#{name}",
-        ["<empty adapter command>"],
-        iso8601_now,
-        iso8601_now,
-        127,
-        error: "adapter command is empty"
-      )
-    else
-      commands << capture_command("m1_#{name}", command, destination, starting_input)
-    end
+    commands << if command.empty?
+                  command_record(
+                    "m1_#{name}",
+                    ["<empty adapter command>"],
+                    iso8601_now,
+                    iso8601_now,
+                    127,
+                    error: "adapter command is empty"
+                  )
+                else
+                  capture_command("m1_#{name}", command, destination, starting_input)
+                end
   elsif options[:reports].key?(name)
     copy_started = iso8601_now
     begin

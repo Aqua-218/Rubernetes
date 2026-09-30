@@ -52,12 +52,13 @@ class NodeSyncLoopTest < Minitest::Test
 
     assert_equal ["watch-local"], loop_.cache.keys.sort
     assert_equal "11", loop_.resource_version
-    assert_equal [["watch-local", "ADDED", "10"]], seen
+    assert_equal [%w[watch-local ADDED 10]], seen
 
     loop_.run_once(resync: true)
     loop_.instance_variable_get(:@workers).drain(timeout: 1)
+
     assert_equal ["from-list"], loop_.cache.keys.sort
-    assert_equal ["from-list", "watch-local", "watch-local"], seen.map(&:first).sort
+    assert_equal %w[from-list watch-local watch-local], seen.map(&:first).sort
     assert_equal "DELETED", seen.last.fetch(1)
   end
 
@@ -80,9 +81,9 @@ class NodeSyncLoopTest < Minitest::Test
                             {"type" => "DELETED", "object" => object}], resync: false)
     loop_.instance_variable_get(:@workers).drain(timeout: 1)
 
-    assert_equal(["DELETED", "serial"], seen.last)
+    assert_equal(%w[DELETED serial], seen.last)
     assert_equal(1, seen.count { |entry| entry.first == "DELETED" })
-    refute(seen.any? { |entry| entry.first == "MODIFIED" && seen.index(entry) > seen.index(["DELETED", "serial"]) })
+    refute(seen.any? { |entry| entry.first == "MODIFIED" && seen.index(entry) > seen.index(%w[DELETED serial]) })
     assert_empty loop_.cache
   end
 
@@ -99,6 +100,6 @@ class NodeSyncLoopTest < Minitest::Test
     loop_.run_once(events: [{"type" => "ADDED", "object" => pod("solo")}], resync: false)
     loop_.instance_variable_get(:@workers).drain(timeout: 1)
 
-    assert_equal([["ADDED", "solo"]], seen)
+    assert_equal([%w[ADDED solo]], seen)
   end
 end

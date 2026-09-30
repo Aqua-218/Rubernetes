@@ -14,7 +14,10 @@ module Rubernetes
                           :omit_managed_fields, keyword_init: true)
 
         def self.from_h(document)
-          raise ConfigurationError, "audit policy must be audit.k8s.io/v1 Policy" unless document["kind"] == "Policy" && document["apiVersion"] == "audit.k8s.io/v1"
+          unless document["kind"] == "Policy" && document["apiVersion"] == "audit.k8s.io/v1"
+            raise ConfigurationError,
+                  "audit policy must be audit.k8s.io/v1 Policy"
+          end
 
           rules = Array(document["rules"]).map do |rule|
             level = rule["level"].to_s
@@ -61,7 +64,9 @@ module Rubernetes
             return false unless rule.resources.empty? || rule.resources.any? { |group_rule| resource_rule_matches?(group_rule, attributes) }
           else
             return false unless rule.resources.empty? && rule.namespaces.empty?
-            return false unless rule.non_resource_urls.empty? || rule.non_resource_urls.any? { |pattern| url_matches?(pattern, attributes.path) }
+            return false unless rule.non_resource_urls.empty? || rule.non_resource_urls.any? do |pattern|
+              url_matches?(pattern, attributes.path)
+            end
           end
           true
         end
@@ -69,6 +74,7 @@ module Rubernetes
         def resource_rule_matches?(group_rule, attributes)
           group = group_rule["group"].to_s
           return false unless group == attributes.api_group
+
           resources = Array(group_rule["resources"])
           resource_ok = resources.empty? || resources.any? do |candidate|
             candidate == attributes.resource || candidate == attributes.resource_with_subresource ||

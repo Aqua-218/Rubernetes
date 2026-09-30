@@ -28,7 +28,7 @@ class HTTPClientPersistentSessionsTest < Minitest::Test
       @started = false
     end
 
-    def request(req, _body = nil)
+    def request(_req, _body = nil)
       self.class.requests += 1
       if self.class.fail_next
         self.class.fail_next = false

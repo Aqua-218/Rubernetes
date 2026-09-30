@@ -27,6 +27,7 @@ class M4VolumePropertyTest < Minitest::Test
     id = manager.create_volume({"name" => "same", "emptyDir" => {}}, token: "create")
     first = manager.controller.publish(id, "node-a", token: "attach")
     second = manager.controller.publish(id, "node-a", token: "attach")
+
     assert_equal first, second
     assert_empty adapter.list_mounts
   ensure

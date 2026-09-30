@@ -167,7 +167,7 @@ class M2HostileVerificationTest < Minitest::Test
       assert_raises(Image::SecurityError) do
         extractor.extract(layer, digest: digest_for(layer), media_type: Image::MediaTypes::OCI_IMAGE_LAYER_GZIP)
       end
-      refute File.exist?(File.join(outside, "child"))
+      refute_path_exists File.join(outside, "child")
     end
   end
 
@@ -219,7 +219,7 @@ class M2HostileVerificationTest < Minitest::Test
       container = runtime.create_container(sandbox, {"name" => "app", "command" => ["/bin/true"]})
       runtime.start_container(container)
 
-      assert_equal [:spawn, :attach, :release_gate], events
+      assert_equal %i[spawn attach release_gate], events
       assert_equal "running", runtime.container_status(container).fetch("state")
     end
   end
@@ -233,6 +233,7 @@ class M2HostileVerificationTest < Minitest::Test
         journal_path: File.join(directory, "journal.wal")
       )
       runtime.run_sandbox({}, request_id: "recovery")
+
       refute_empty runtime.ledger.resources
 
       report = runtime.recover(observer: -> { [] }, cleaner: ->(resource:) { true })
@@ -266,13 +267,14 @@ class M2HostileVerificationTest < Minitest::Test
 
     assert_raises(RuntimeError) { runtime.run_sandbox({}, request_id: "rollback-order") }
 
-    assert_equal %i[cgroup_release namespace_release workspace_release],
-                 events.select { |event| event.to_s.end_with?("_release") }
+    assert_equal(%i[cgroup_release namespace_release workspace_release],
+                 events.select { |event| event.to_s.end_with?("_release") })
     released = runtime.ledger.journal.records.filter_map do |record|
       next unless record.event == "resource_released"
 
       record.payload.fetch("kind")
     end
+
     assert_equal %w[cgroup namespace workspace], released
     assert_empty runtime.ledger.resources
   end
@@ -283,16 +285,18 @@ class M2HostileVerificationTest < Minitest::Test
 
     error = assert_raises(RuntimeError) { runtime.run_sandbox({}, request_id: "rollback-errors") }
 
-    assert_equal %i[cgroup_release],
-                 events.select { |event| event.to_s.end_with?("_release") }
+    assert_equal(%i[cgroup_release],
+                 events.select { |event| event.to_s.end_with?("_release") })
     cleanup = runtime.events.find { |event| event["event"] == "cleanup" }
+
     assert_equal 3, cleanup.fetch("errors").length
-    assert_equal %w[cgroup namespace workspace], cleanup.fetch("errors").map { |entry| entry.fetch("resource").split(":", 2).first }
+    assert_equal(%w[cgroup namespace workspace], cleanup.fetch("errors").map { |entry| entry.fetch("resource").split(":", 2).first })
     assert_equal cleanup.fetch("errors").first.fetch("resource"), cleanup.fetch("errors").fetch(1).fetch("blocked_by")
     assert_equal cleanup.fetch("errors").first.fetch("resource"), cleanup.fetch("errors").fetch(2).fetch("blocked_by")
     assert_equal cleanup.fetch("errors"), error.cleanup_errors
     pending = runtime.events.find { |event| event["event"] == "cleanup_pending" }
-    assert_equal %w[cgroup namespace workspace], pending.fetch("errors").map { |entry| entry.fetch("resource").split(":", 2).first }
+
+    assert_equal(%w[cgroup namespace workspace], pending.fetch("errors").map { |entry| entry.fetch("resource").split(":", 2).first })
     assert_equal "CleanupPending", runtime.ledger.operation_for_request("rollback-errors").state
   end
 
@@ -323,6 +327,7 @@ class M2HostileVerificationTest < Minitest::Test
 
     refute manager.ready?("container-1"), "readiness must remain false until successThreshold is met"
     manager.check("container-1", probe: probe, type: "readiness", now: 1)
+
     assert manager.ready?("container-1")
   end
 
@@ -372,6 +377,7 @@ class M2HostileVerificationTest < Minitest::Test
     service.start
 
     thread = node_agent.instance_variable_get(:@lease_thread)
+
     assert thread && thread.alive?, "AgentService must enable lease renewal/retry for Node::Agent"
   ensure
     service&.stop(reason: "test") if service&.started?
@@ -393,7 +399,6 @@ class M2HostileVerificationTest < Minitest::Test
       duplicate_line = JSON.generate(body).sub('"event":"evil"', '"event":"state_transition","event":"evil"')
       File.write(wal_path, duplicate_line << "\n")
       assert_raises(Runtime::JournalCorruption) { Runtime::DurableWAL.new(wal_path, fsync: false) }
-
     end
   end
 
@@ -474,9 +479,9 @@ class M2HostileVerificationTest < Minitest::Test
     )
   end
 
-  def gzip_layer
+  def gzip_layer(&)
     tar_io = StringIO.new("".b)
-    Gem::Package::TarWriter.new(tar_io) { |tar| yield tar }
+    Gem::Package::TarWriter.new(tar_io, &)
     output = StringIO.new("".b)
     gzip = Zlib::GzipWriter.new(output)
     gzip.write(tar_io.string)

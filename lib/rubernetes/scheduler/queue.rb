@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
-
 module Rubernetes
   module Scheduler
     # QueueSort implementation corresponding to Kubernetes' PrioritySort
@@ -27,7 +25,11 @@ module Rubernetes
       private
 
       def pod_for(value)
-        value.respond_to?(:pod) ? value.pod : value.is_a?(Pod) ? value : Pod.new(value)
+        if value.respond_to?(:pod)
+          value.pod
+        else
+          value.is_a?(Pod) ? value : Pod.new(value)
+        end
       end
 
       def sort_key(pod)
@@ -100,6 +102,7 @@ module Rubernetes
         if @max_backoff_seconds < @initial_backoff_seconds
           raise ValidationError, "maximum backoff cannot be shorter than the initial backoff"
         end
+
         @max_active_attempts = if max_active_attempts.nil?
                                  nil
                                elsif max_active_attempts.is_a?(Integer) && max_active_attempts.positive?
@@ -555,7 +558,7 @@ module Rubernetes
       # +event+: the cluster change that moves the Pods (a node add, a Pod
       # delete, the periodic UnschedulableTimeout flush).
       def promote_unschedulable(event: EVENT_UNSCHEDULABLE_TIMEOUT)
-        items = @mutex.synchronize do
+        @mutex.synchronize do
           result = ordered(@unschedulable).map(&:last)
           @unschedulable.clear
           result.each do |item|
@@ -569,7 +572,6 @@ module Rubernetes
           enforce_capacity!
           result
         end
-        items
       end
 
       private
@@ -675,8 +677,10 @@ module Rubernetes
           left_key, left_item = left
           right_key, right_item = right
           comparison = compare_items(left_item, right_item, trace: trace)
-          comparison = [left_item.key, left_item.sequence, left_key] <=>
-                       [right_item.key, right_item.sequence, right_key] if comparison.zero?
+          if comparison.zero?
+            comparison = [left_item.key, left_item.sequence, left_key] <=>
+                         [right_item.key, right_item.sequence, right_key]
+          end
           comparison
         end
       end

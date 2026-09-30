@@ -7,7 +7,7 @@ class ResourcesController < ApplicationController
 
   def index
     @objects = Array(client.get(@entry.resource, namespace: @namespace, api_version: @entry.api_version)["items"])
-               .sort_by { |o| o.dig("metadata", "name") }
+      .sort_by { |o| o.dig("metadata", "name") }
   end
 
   def show
@@ -15,8 +15,8 @@ class ResourcesController < ApplicationController
     @yaml = @object.to_yaml
     @pods = related_pods
     @events = Array(client.get("events", namespace: @namespace,
-                               query: {"fieldSelector" => "involvedObject.name=#{params[:id]},involvedObject.kind=#{@entry.kind}"})["items"])
-              .sort_by { |e| e["lastTimestamp"] || "" }.reverse.first(30)
+                                         query: {"fieldSelector" => "involvedObject.name=#{params[:id]},involvedObject.kind=#{@entry.kind}"})["items"])
+      .sort_by { |e| e["lastTimestamp"] || "" }.last(30).reverse
   rescue StandardError => e
     raise e unless @object
 
@@ -35,14 +35,15 @@ class ResourcesController < ApplicationController
     raise Dashboard::Errors::BadRequest, "replicas must be >= 0" if replicas.negative?
 
     client.patch(@entry.resource, params[:id], {"spec" => {"replicas" => replicas}}, namespace: @namespace,
-                                                                                        api_version: @entry.api_version, type: :merge)
+                                                                                     api_version: @entry.api_version, type: :merge)
     redirect_to resource_path, notice: "#{@entry.kind} #{params[:id]} scaled to #{replicas}"
   end
 
   # kubectl rollout restart: bump the pod template annotation.
   def restart
     require_writes!
-    raise Dashboard::Errors::BadRequest, "#{@entry.kind} has no pod template to restart" unless %w[Deployment StatefulSet DaemonSet].include?(@entry.kind)
+    raise Dashboard::Errors::BadRequest, "#{@entry.kind} has no pod template to restart" unless %w[Deployment StatefulSet
+                                                                                                   DaemonSet].include?(@entry.kind)
 
     patch = {"spec" => {"template" => {"metadata" => {"annotations" => {"kubectl.kubernetes.io/restartedAt" => Time.now.utc.iso8601}}}}}
     client.patch(@entry.resource, params[:id], patch, namespace: @namespace, api_version: @entry.api_version, type: :strategic)

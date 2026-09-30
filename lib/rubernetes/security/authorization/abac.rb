@@ -22,8 +22,14 @@ module Rubernetes
             next if stripped.empty? || stripped.start_with?("#")
 
             policy = JSON.parse(stripped)
-            raise ConfigurationError, "abac policy line #{number} must be a Policy object" unless policy.is_a?(Hash) && policy["kind"] == "Policy"
-            raise ConfigurationError, "abac policy line #{number} must be v1beta1" unless policy["apiVersion"] == "abac.authorization.kubernetes.io/v1beta1"
+            unless policy.is_a?(Hash) && policy["kind"] == "Policy"
+              raise ConfigurationError,
+                    "abac policy line #{number} must be a Policy object"
+            end
+            unless policy["apiVersion"] == "abac.authorization.kubernetes.io/v1beta1"
+              raise ConfigurationError,
+                    "abac policy line #{number} must be v1beta1"
+            end
 
             policy["spec"] || {}
           rescue JSON::ParserError => error

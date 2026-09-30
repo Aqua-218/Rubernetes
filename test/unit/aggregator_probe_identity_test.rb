@@ -35,9 +35,11 @@ class AggregatorProbeIdentityTest < Minitest::Test
                                 "service" => {"namespace" => "aggregator", "name" => "sample-api", "port" => 7443}}})
     backend = aggregator.backend("v1alpha1.wardle.example.com")
     condition = aggregator.availability_condition(backend, skip_endpoint_checks: true)
+
     assert_equal "True", condition["status"], condition.inspect
     assert aggregator.available?(backend)
     aggregator.resource_list("wardle.example.com", "v1alpha1")
+
     assert_equal 3, calls.length
     calls.each do |path, headers|
       assert_equal "/apis/wardle.example.com/v1alpha1", path

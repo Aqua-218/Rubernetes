@@ -35,7 +35,10 @@ module Rubernetes
         issues = []
 
         reserved = Array(fetch(status, "reservedFor"))
-        issues << issue(%w[status reservedFor], :too_many, "must have at most #{RESERVED_FOR_MAX} items") if reserved.length > RESERVED_FOR_MAX
+        if reserved.length > RESERVED_FOR_MAX
+          issues << issue(%w[status reservedFor], :too_many,
+                          "must have at most #{RESERVED_FOR_MAX} items")
+        end
         seen = {}
         reserved.each_with_index do |consumer, index|
           consumer = {} unless consumer.is_a?(Hash)
@@ -152,7 +155,10 @@ module Rubernetes
             issues << issue(item + ["status"], :unsupported, 'supported values: "False", "True", "Unknown"')
           end
           observed = fetch(condition, "observedGeneration")
-          issues << issue(item + ["observedGeneration"], :invalid, "must be greater than or equal to zero") if observed.is_a?(Integer) && observed.negative?
+          if observed.is_a?(Integer) && observed.negative?
+            issues << issue(item + ["observedGeneration"], :invalid,
+                            "must be greater than or equal to zero")
+          end
           issues << issue(item + ["lastTransitionTime"], :required, "") if blank?(fetch(condition, "lastTransitionTime"))
           reason = fetch(condition, "reason").to_s
           if reason.empty?
@@ -209,7 +215,9 @@ module Rubernetes
       # canonical form.
       def interface_address_messages(value)
         address_text, slash, length_text = value.rpartition("/")
-        return ["must be a valid address in CIDR form, (e.g. 10.9.8.7/24 or 2001:db8::1/64)"] if slash.empty? || !length_text.match?(/\A\d+\z/)
+        if slash.empty? || !length_text.match?(/\A\d+\z/)
+          return ["must be a valid address in CIDR form, (e.g. 10.9.8.7/24 or 2001:db8::1/64)"]
+        end
 
         address = IPAddr.new(address_text)
         maximum = address.ipv4? ? 32 : 128
@@ -238,7 +246,10 @@ module Rubernetes
           issues.concat(claim_device_name_errors(fetch(result, "device"), item + ["device"]))
           %w[bindingConditions bindingFailureConditions].each do |field|
             values = Array(fetch(result, field))
-            issues << issue(item + [field], :too_many, "must have at most #{BINDING_CONDITIONS_MAX} items") if values.length > BINDING_CONDITIONS_MAX
+            if values.length > BINDING_CONDITIONS_MAX
+              issues << issue(item + [field], :too_many,
+                              "must have at most #{BINDING_CONDITIONS_MAX} items")
+            end
             values.each_with_index do |value, position|
               issues.concat(invalid_messages(item + [field, position.to_s], qualified_name_messages(value.to_s)))
               issues << issue(item + [field, position.to_s], :duplicate, "") if values[0...position].include?(value)
@@ -310,10 +321,14 @@ module Rubernetes
 
       def claim_uid_errors(uid, path)
         uid = uid.to_s
-        return [issue(path, :invalid, "error validating uid: invalid UUID length: #{uid.length}")] unless uid.length == 36 && uid.match?(UUID)
+        unless uid.length == 36 && uid.match?(UUID)
+          return [issue(path, :invalid,
+                        "error validating uid: invalid UUID length: #{uid.length}")]
+        end
         return [] if uid == uid.downcase
 
-        [issue(path, :invalid, "uid must be in RFC 4122 normalized form, `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` with lowercase hexadecimal characters")]
+        [issue(path, :invalid,
+               "uid must be in RFC 4122 normalized form, `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` with lowercase hexadecimal characters")]
       end
     end
   end

@@ -135,11 +135,11 @@ module Rubernetes
               char = next_char
               if char == EOF || end_of_line?(char)
                 raise Error, "unclosed action"
-              elsif char == " " || char == "@" || char == "$"
+              elsif [" ", "@", "$"].include?(char)
                 consume
               elsif char == "["
                 return parse_array(current)
-              elsif char == '"' || char == "'"
+              elsif ['"', "'"].include?(char)
                 return parse_quote(current, char)
               elsif char == "."
                 return parse_field(current)
@@ -224,7 +224,7 @@ module Rubernetes
           def parse_array(current)
             loop do
               char = next_char
-              raise Error, "unterminated array" if char == EOF || char == "\n"
+              raise Error, "unterminated array" if [EOF, "\n"].include?(char)
               break if char == "]"
             end
             text = consume[1...-1]
@@ -275,7 +275,7 @@ module Rubernetes
             pair = nil
             loop do
               char = next_char
-              raise Error, "unterminated filter" if char == EOF || char == "\n"
+              raise Error, "unterminated filter" if [EOF, "\n"].include?(char)
 
               if ['"', "'"].include?(char)
                 unless opened
@@ -291,18 +291,18 @@ module Rubernetes
             raise Error, "unclosed array expect ]" unless next_char == "]"
 
             text = consume[0...-2]
-            if (match = FILTER.match(text))
-              current.nodes << FilterNode.new(Parser.parse_action(match[1]), Parser.parse_action(match[3]), match[2])
-            else
-              current.nodes << FilterNode.new(Parser.parse_action(text), ListNode.new([]), "exists")
-            end
+            current.nodes << if (match = FILTER.match(text))
+                               FilterNode.new(Parser.parse_action(match[1]), Parser.parse_action(match[3]), match[2])
+                             else
+                               FilterNode.new(Parser.parse_action(text), ListNode.new([]), "exists")
+                             end
             parse_inside_action(current)
           end
 
           def parse_quote(current, quote)
             loop do
               char = next_char
-              raise Error, "unterminated quoted string" if char == EOF || char == "\n"
+              raise Error, "unterminated quoted string" if [EOF, "\n"].include?(char)
               break if char == quote && @input[@pos - 2] != "\\"
             end
             value = consume
@@ -352,6 +352,7 @@ module Rubernetes
           while index < body.length
             char = body[index]
             raise Error, "invalid syntax" if char == quote
+
             if char != "\\"
               bytes << char.b
               index += 1

@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
 require "time"
 
 require_relative "status"
@@ -92,7 +91,11 @@ module Rubernetes
           next false unless codes.is_a?(Hash)
 
           operator = (codes["operator"] || codes[:operator]).to_s
-          values = Array(codes["values"] || codes[:values]).map { |item| Integer(item) rescue nil }.compact
+          values = Array(codes["values"] || codes[:values]).map do |item|
+            Integer(item)
+          rescue StandardError
+            nil
+          end.compact
           case operator
           when "In" then values.include?(Integer(exit_code))
           when "NotIn" then !values.include?(Integer(exit_code))
@@ -140,10 +143,8 @@ module Rubernetes
         normalized = normalize_policy(policy)
         @mutex.synchronize do
           current = @attempts[identifier]
-          current = initial_attempt(identifier, normalized) unless current
-          if current.running_since && timestamp - current.running_since >= @reset_after
-            current = reset_attempt(current, timestamp)
-          end
+          current ||= initial_attempt(identifier, normalized)
+          current = reset_attempt(current, timestamp) if current.running_since && timestamp - current.running_since >= @reset_after
           should_restart = should_restart?(
             policy: normalized,
             exit_code: exit_code,
@@ -297,7 +298,7 @@ module Rubernetes
 
       def normalize_key(key, container_id: nil)
         value = container_id || key
-        value = value.is_a?(Hash) ? Helpers.key(value, "id", Helpers.key(value, "name", nil)) : value
+        value = Helpers.key(value, "id", Helpers.key(value, "name", nil)) if value.is_a?(Hash)
         value = value.to_s
         raise ArgumentError, "container key must not be empty" if value.empty?
 

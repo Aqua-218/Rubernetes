@@ -73,9 +73,11 @@ class NetworkPersistBatchingTest < Minitest::Test
     store2 = CountingStore.new
     other = interface_with(store2)
     result = other.add({"sandbox_id" => "sb-2"}, {"node" => "worker-0", "ips" => [], "default_route" => false})
+
     assert result
     operation = store2.read.fetch("operations").values.last
     identities = Array(operation["resources"]).map { |resource| resource["identity"] }.sort
+
     assert_equal %w[host-identity peer-identity], identities, "both proofs are recorded"
     assert_operator store2.writes, :<, baseline + 8, "a veth effect must not rewrite the state per claim"
   end

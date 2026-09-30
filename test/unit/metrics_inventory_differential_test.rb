@@ -37,6 +37,7 @@ class MetricsInventoryDifferentialTest < Minitest::Test
     family = {"name" => "apiserver_watch_list_duration_seconds", "type" => "HISTOGRAM", "help" => M.annotated_help(entry),
               "labels" => [%w[group resource scope version]],
               "buckets" => entry["buckets"].map { |bound| M.go_float(bound.to_f) } + ["+Inf"]}
+
     assert_empty D.family_problems("kube-apiserver", family)
     assert_match(/labels/, D.family_problems("kube-apiserver", family.merge("labels" => [%w[group resource]])).join)
     assert_match(/type COUNTER/, D.family_problems("kube-apiserver", family.merge("type" => "COUNTER")).join)
@@ -44,12 +45,14 @@ class MetricsInventoryDifferentialTest < Minitest::Test
     assert_match(/does not serve/, D.family_problems("kubelet", family).join)
     # Const labels are part of the label set.
     seat = M.upstream.fetch("apiserver_flowcontrol_priority_level_seat_utilization")
+
     assert_empty D.family_problems("kube-apiserver", {"name" => "apiserver_flowcontrol_priority_level_seat_utilization", "type" => "HISTOGRAM",
                                                       "help" => M.annotated_help(seat), "labels" => [%w[phase priority_level]]})
   end
 
   def test_inventory_buckets_are_numbers
     bad = M.upstream.select { |_name, entry| Array(entry["buckets"]).any? { |bound| !bound.is_a?(Numeric) } }
+
     assert_empty bad.keys
   end
 end

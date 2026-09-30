@@ -49,6 +49,7 @@ class FieldManagerUpdateTest < Minitest::Test
     status, = call("POST", "/api/v1/namespaces/team/configmaps",
                    {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm", "labels" => {"a" => "1"}},
                     "data" => {"x" => "1", "y" => "2"}}, manager: "creator")
+
     assert_equal 201, status
   end
 
@@ -60,12 +61,14 @@ class FieldManagerUpdateTest < Minitest::Test
 
     current["data"]["x"] = "changed"
     status, updated = call("PUT", configmap_path, current, manager: "editor")
+
     assert_equal 200, status
     assert_equal [%w[data x]], owned(updated)["editor"]
     assert_equal [%w[data], %w[data y], %w[metadata labels], %w[metadata labels a]], owned(updated)["creator"]
 
     status, patched = call("PATCH", configmap_path, {"data" => {"y" => "3"}, "metadata" => {"labels" => {"a" => "1"}}},
                            content_type: "application/merge-patch+json", manager: "patcher")
+
     assert_equal 200, status
     # The label was sent unchanged, so it stays the creator's.
     assert_equal [%w[data y]], owned(patched)["patcher"]
@@ -77,6 +80,7 @@ class FieldManagerUpdateTest < Minitest::Test
     status, patched = call("PATCH", configmap_path,
                            {"data" => nil, "metadata" => {"labels" => nil}},
                            content_type: "application/merge-patch+json", manager: "taker")
+
     assert_equal 200, status
     # Removing a field takes it from every manager; the remover owns nothing
     # it removed.
@@ -89,19 +93,22 @@ class FieldManagerUpdateTest < Minitest::Test
     _, current = call("GET", configmap_path)
     current["metadata"]["managedFields"] = [{}]
     _, stripped = call("PUT", configmap_path, current, manager: "editor")
+
     assert_nil stripped.dig("metadata", "managedFields")
 
     # An existing object without managed fields is not tracked by updates
     # (skipNonAppliedManager); [] resets exactly like [{}].
     stripped["data"]["x"] = "again"
     _, untracked = call("PUT", configmap_path, stripped, manager: "editor")
+
     assert_nil untracked.dig("metadata", "managedFields")
 
     # An apply starts tracking again: what was there before belongs to
     # before-first-apply.
     status, applied = call("PATCH", "#{configmap_path}", {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm"},
-                                                           "data" => {"z" => "1"}},
+                                                          "data" => {"z" => "1"}},
                            content_type: "application/apply-patch+yaml", manager: "applier")
+
     assert_equal 200, status
     assert_equal [%w[data z]], owned(applied)["applier"]
     assert_equal [%w[data], %w[data x], %w[data y], %w[metadata labels], %w[metadata labels a]],
@@ -110,6 +117,7 @@ class FieldManagerUpdateTest < Minitest::Test
     applied["metadata"]["managedFields"] = []
     applied["data"]["x"] = "third"
     _, reset = call("PUT", configmap_path, applied, manager: "editor")
+
     assert_nil reset.dig("metadata", "managedFields")
   end
 
@@ -119,13 +127,16 @@ class FieldManagerUpdateTest < Minitest::Test
       @now += 1
       status, = call("PATCH", configmap_path, {"data" => {"k#{index}" => "v"}},
                      content_type: "application/merge-patch+json", manager: "m#{index}")
+
       assert_equal 200, status
     end
     _, current = call("GET", configmap_path)
     managers = owned(current)
+
     assert_equal 10, managers.length
     assert_includes managers.keys, "ancient-changes"
     ancient = managers["ancient-changes"]
+
     assert_includes ancient, %w[data x]
     assert_includes ancient, %w[data k0]
     assert_includes ancient, %w[data k1]
@@ -138,6 +149,7 @@ class FieldManagerUpdateTest < Minitest::Test
                              "template" => {"metadata" => {"labels" => {"app" => "d"}},
                                             "spec" => {"containers" => [{"name" => "c", "image" => "i"}]}}}}
     status, created = call("POST", "/apis/apps/v1/namespaces/team/deployments", deployment, manager: "creator")
+
     assert_equal 201, status
     assert_includes owned(created)["creator"], %w[spec replicas]
     # Defaults applied at decode time belong to the creator; status never does.
@@ -147,16 +159,20 @@ class FieldManagerUpdateTest < Minitest::Test
     status, = call("PUT", "/apis/apps/v1/namespaces/team/deployments/d/scale",
                    {"apiVersion" => "autoscaling/v1", "kind" => "Scale", "metadata" => {"name" => "d", "namespace" => "team"},
                     "spec" => {"replicas" => 3}}, manager: "scaler")
+
     assert_equal 200, status
     _, scaled = call("GET", "/apis/apps/v1/namespaces/team/deployments/d")
+
     assert_equal [%w[spec replicas]], owned(scaled)["scaler/scale"]
     refute_includes owned(scaled)["creator"], %w[spec replicas]
     assert_equal "apps/v1", scaled["metadata"]["managedFields"].find { |entry| entry["manager"] == "scaler" }["apiVersion"]
 
     status, = call("PATCH", "/apis/apps/v1/namespaces/team/deployments/d/status", {"status" => {"observedGeneration" => 2}},
                    content_type: "application/merge-patch+json", manager: "controller")
+
     assert_equal 200, status
     _, reported = call("GET", "/apis/apps/v1/namespaces/team/deployments/d")
+
     assert_equal [%w[status], %w[status observedGeneration]], owned(reported)["controller/status"]
   end
 
@@ -166,6 +182,7 @@ class FieldManagerUpdateTest < Minitest::Test
     before = current.dig("metadata", "managedFields")
     @now += 60
     _, same = call("PUT", configmap_path, current, manager: "someone-else")
+
     assert_equal before, same.dig("metadata", "managedFields")
     assert_equal current.dig("metadata", "resourceVersion"), same.dig("metadata", "resourceVersion")
   end

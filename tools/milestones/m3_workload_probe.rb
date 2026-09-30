@@ -97,8 +97,8 @@ module M3Workload
         "apiVersion" => "batch/v1", "kind" => "CronJob", "metadata" => metadata,
         "spec" => {"schedule" => "*/5 * * * *", "suspend" => true,
                    "jobTemplate" => {"metadata" => {"labels" => {"m3-case" => "cronjob"}},
-                                      "spec" => {"parallelism" => 1, "completions" => 1,
-                                                 "template" => pod_template(type, namespace: namespace, version: version)}}}
+                                     "spec" => {"parallelism" => 1, "completions" => 1,
+                                                "template" => pod_template(type, namespace: namespace, version: version)}}}
       }
     else
       raise ArgumentError, "unsupported workload type #{type.inspect}"
@@ -143,14 +143,13 @@ module M3Workload
       when "cronjob" then {"spec" => {"jobTemplate" => {"spec" => {"parallelism" => 2}}}}
       else raise ArgumentError, "unsupported workload type #{type.inspect}"
       end
-    else
-      nil
     end
   end
 
   def image_patch(type, version)
     if type == "cronjob"
-      {"spec" => {"jobTemplate" => {"spec" => {"template" => {"spec" => {"containers" => [{"name" => "app", "image" => image(type, version)}]}}}}}}
+      {"spec" => {"jobTemplate" => {"spec" => {"template" => {"spec" => {"containers" => [{"name" => "app",
+                                                                                           "image" => image(type, version)}]}}}}}}
     else
       {"spec" => {"template" => {"spec" => {"containers" => [{"name" => "app", "image" => image(type, version)}]}}}}
     end
@@ -232,7 +231,12 @@ module M3Workload
     stream << {"id" => "create-workload", "method" => "POST", "path" => paths.fetch("collection"),
                "body" => resource, "headers" => {"Content-Type" => "application/json"}}
     stream << {"id" => "wait-after-create", "wait" => "created"}
-    unless operation == "delete"
+    if operation == "delete"
+      stream << {"id" => "delete-workload", "method" => "DELETE", "path" => paths.fetch("member"),
+                 "body" => {"apiVersion" => "v1", "kind" => "DeleteOptions", "propagationPolicy" => "Background", "gracePeriodSeconds" => 0},
+                 "headers" => {"Accept" => "application/json", "Content-Type" => "application/json"}}
+      stream << {"id" => "wait-after-delete", "wait" => "deleted"}
+    else
       if type == "daemonset" && operation == "scale"
         [1, 2].each do |index|
           stream << {"id" => "scale-create-node-#{index}", "method" => "POST", "path" => "/api/v1/nodes",
@@ -244,11 +248,6 @@ module M3Workload
                    "headers" => {"Content-Type" => "application/merge-patch+json"}}
       end
       stream << {"id" => "wait-after-operation", "wait" => "updated"}
-    else
-      stream << {"id" => "delete-workload", "method" => "DELETE", "path" => paths.fetch("member"),
-                 "body" => {"apiVersion" => "v1", "kind" => "DeleteOptions", "propagationPolicy" => "Background", "gracePeriodSeconds" => 0},
-                 "headers" => {"Accept" => "application/json", "Content-Type" => "application/json"}}
-      stream << {"id" => "wait-after-delete", "wait" => "deleted"}
     end
     {
       "id" => "#{type}:#{operation}", "workload_type" => type, "operation" => operation,
@@ -274,13 +273,16 @@ module M3Workload
   end
 
   def canonical_key_value(key, value)
-    dynamic_keys = %w[uid resourceVersion creationTimestamp deletionTimestamp time eventTime firstTimestamp lastTimestamp completionTime startTime lastScheduleTime lastSuccessfulTime lastTransitionTime lastUpdateTime lastProbeTime]
+    dynamic_keys = %w[uid resourceVersion creationTimestamp deletionTimestamp time eventTime firstTimestamp lastTimestamp completionTime
+                      startTime lastScheduleTime lastSuccessfulTime lastTransitionTime lastUpdateTime lastProbeTime]
     return dynamic_value(key, value) if dynamic_keys.include?(key)
     if %w[currentRevision updateRevision].include?(key) && value.is_a?(String)
       return value.sub(/-[bcdfghjklmnpqrstvwxz2456789]{1,10}\z/, "-<generated>")
     end
     if key == "conditions" && value.is_a?(Array)
-      return canonical(value.sort_by { |condition| [condition.is_a?(Hash) ? condition["type"].to_s : "", condition.is_a?(Hash) ? condition["reason"].to_s : ""] })
+      return canonical(value.sort_by do |condition|
+        [condition.is_a?(Hash) ? condition["type"].to_s : "", condition.is_a?(Hash) ? condition["reason"].to_s : ""]
+      end)
     end
     return canonical_message(value) if key == "message" && value.is_a?(String)
 
@@ -289,10 +291,10 @@ module M3Workload
 
   def canonical_message(value)
     normalized = value.gsub(/(replica set\s+|ReplicaSet\s+")(\S+?)-[bcdfghjklmnpqrstvwxz2456789]{1,10}(?=[\s"]|\z)/) do
-      "#{$1}#{$2}-<generated>"
+      "#{::Regexp.last_match(1)}#{::Regexp.last_match(2)}-<generated>"
     end
     normalized.gsub(/((?:Created|Deleted) pod:\s+)[A-Za-z0-9._-]+/) do
-      "#{$1}workload-<generated>"
+      "#{::Regexp.last_match(1)}workload-<generated>"
     end
   end
 
@@ -316,8 +318,10 @@ module M3Workload
     values = Array(resources)
     event_like = values.all? { |resource| resource["kind"].to_s == "Event" || inferred_resource_kind(resource) == "Event" }
     if event_like
-      values.sort_by { |resource| [resource["firstTimestamp"].to_s, resource.dig("metadata", "creationTimestamp").to_s, resource.dig("metadata", "name").to_s] }
-           .map { |resource| canonical_resource(resource, strip_type_metadata: true) }
+      values.sort_by do |resource|
+        [resource["firstTimestamp"].to_s, resource.dig("metadata", "creationTimestamp").to_s, resource.dig("metadata", "name").to_s]
+      end
+        .map { |resource| canonical_resource(resource, strip_type_metadata: true) }
     else
       values.map { |resource| canonical_resource(resource, strip_type_metadata: true) }.sort_by do |resource|
         [resource["apiVersion"].to_s, resource["kind"].to_s,
@@ -400,17 +404,16 @@ module M3Workload
       spec = candidate["spec"]
       spec["template"] = semantic_template(spec["template"]) if spec.is_a?(Hash) && spec["template"].is_a?(Hash)
       selector = spec && spec["selector"]
-      selector["matchLabels"]["pod-template-hash"] = "<generated>" if selector.is_a?(Hash) && selector["matchLabels"].is_a?(Hash) && selector["matchLabels"].key?("pod-template-hash")
+      if selector.is_a?(Hash) && selector["matchLabels"].is_a?(Hash) && selector["matchLabels"].key?("pod-template-hash")
+        selector["matchLabels"]["pod-template-hash"] =
+          "<generated>"
+      end
     when "Deployment"
       spec = candidate["spec"]
-      if spec.is_a?(Hash)
-        spec["template"] = semantic_template(spec["template"]) if spec["template"].is_a?(Hash)
-      end
+      spec["template"] = semantic_template(spec["template"]) if spec.is_a?(Hash) && spec["template"].is_a?(Hash)
     when "StatefulSet"
       spec = candidate["spec"]
-      if spec.is_a?(Hash)
-        spec["template"] = semantic_template(spec["template"]) if spec["template"].is_a?(Hash)
-      end
+      spec["template"] = semantic_template(spec["template"]) if spec.is_a?(Hash) && spec["template"].is_a?(Hash)
       status = candidate["status"]
       if status.is_a?(Hash)
         # Replica availability is observed before StatefulSet's transient
@@ -424,9 +427,7 @@ module M3Workload
       end
     when "DaemonSet"
       spec = candidate["spec"]
-      if spec.is_a?(Hash)
-        spec["template"] = semantic_template(spec["template"]) if spec["template"].is_a?(Hash)
-      end
+      spec["template"] = semantic_template(spec["template"]) if spec.is_a?(Hash) && spec["template"].is_a?(Hash)
     when "Job"
       spec = candidate["spec"]
       if spec.is_a?(Hash)
@@ -440,13 +441,12 @@ module M3Workload
       spec = candidate["spec"]
       if spec.is_a?(Hash)
         job_spec = spec["jobTemplate"]
-        job_spec["spec"]["template"] = semantic_template(job_spec["spec"]["template"]) if job_spec.is_a?(Hash) && job_spec.dig("spec", "template").is_a?(Hash)
+        job_spec["spec"]["template"] = semantic_template(job_spec["spec"]["template"]) if job_spec.is_a?(Hash) && job_spec.dig("spec",
+                                                                                                                               "template").is_a?(Hash)
       end
     when "ControllerRevision"
       data = candidate["data"]
-      if data.is_a?(Hash) && data.dig("spec", "template").is_a?(Hash)
-        data["spec"]["template"] = semantic_template(data["spec"]["template"])
-      end
+      data["spec"]["template"] = semantic_template(data["spec"]["template"]) if data.is_a?(Hash) && data.dig("spec", "template").is_a?(Hash)
     end
     candidate
   end
@@ -483,9 +483,11 @@ module M3Workload
       end
       Array(spec["containers"]).each do |container|
         container["volumeMounts"] = Array(container["volumeMounts"]) if container.is_a?(Hash) && container.key?("volumeMounts")
+        next unless container.is_a?(Hash)
+
         Array(container["volumeMounts"]).each do |mount|
           mount["name"] = "kube-api-access-<generated>" if mount.is_a?(Hash) && projected_names.include?(mount["name"].to_s)
-        end if container.is_a?(Hash)
+        end
       end
     end
     status = candidate["status"]
@@ -592,13 +594,13 @@ class M3WorkloadLocalRestClient
     response = request(method, path, body: body, headers: headers, query: query)
     return response unless consumer
 
-    response.body.each { |chunk| consumer.call(chunk) }
+    response.body.each(&consumer)
     response
   end
 
   private
 
-  def normalize_body(method, path, body)
+  def normalize_body(_method, _path, body)
     return body if body.nil?
 
     parsed, string_body = if body.is_a?(String)
@@ -727,7 +729,7 @@ class M3WorkloadLocalResourceSource
 
   def list(resource: nil, namespace: :all, selector: nil, selectors: nil, resource_version: nil, **options)
     response = call("GET", namespace: namespace,
-                    query: query(selector || selectors, resource_version: resource_version, options: options))
+                           query: query(selector || selectors, resource_version: resource_version, options: options))
     raise "local informer list failed with HTTP #{response.status}: #{response.body.inspect}" unless response.success?
 
     response.body
@@ -738,8 +740,8 @@ class M3WorkloadLocalResourceSource
     watch_options = options.dup
     watch_options["timeoutSeconds"] = timeout_seconds || timeout if timeout_seconds || timeout
     response = call("GET", namespace: namespace,
-                    query: query(selector || selectors, resource_version: resource_version,
-                                 options: watch_options).merge("watch" => "true"))
+                           query: query(selector || selectors, resource_version: resource_version,
+                                                               options: watch_options).merge("watch" => "true"))
     raise "local informer watch failed with HTTP #{response.status}: #{response.body.inspect}" unless response.success?
     raise "local informer watch did not return a stream" unless response.body.respond_to?(:each)
 
@@ -763,7 +765,15 @@ class M3WorkloadLocalResourceSource
 
   def query(selector, resource_version:, options:)
     result = {}
-    result["labelSelector"] = selector.is_a?(Hash) ? selector.map { |key, value| "#{key}=#{value}" }.join(",") : selector.to_s unless selector.nil?
+    unless selector.nil?
+      result["labelSelector"] = if selector.is_a?(Hash)
+                                  selector.map do |key, value|
+                                    "#{key}=#{value}"
+                                  end.join(",")
+                                else
+                                  selector.to_s
+                                end
+    end
     result["resourceVersion"] = resource_version.to_s unless resource_version.nil?
     options.each { |key, value| result[key.to_s] = value unless value.nil? }
     result
@@ -779,8 +789,8 @@ class M3WorkloadLocalHarness
     server, = M1ProbeSupport.build_api_server
     @client = Rubernetes::Client::KubernetesClient.new(rest_client: M3WorkloadLocalRestClient.new(server))
     @client.raw("POST", "/api/v1/namespaces", body: {"apiVersion" => "v1", "kind" => "Namespace",
-                                                       "metadata" => {"name" => "kube-system"}},
-                headers: {"Content-Type" => "application/json"}, raise_for_status: false)
+                                                     "metadata" => {"name" => "kube-system"}},
+                                              headers: {"Content-Type" => "application/json"}, raise_for_status: false)
     event_recorder = M3WorkloadEventRecorder.new(@client)
     @controller_config = Tempfile.new(["rubernetes-m3-controller-manager-", ".yml"])
     @controller_config.write(Psych.dump(
@@ -830,10 +840,13 @@ module M3WorkloadRunner
     case_document.fetch("stream").each do |action|
       if action["method"]
         response = client.raw(action.fetch("method"), action.fetch("path"), body: action["body"],
-                              headers: action.fetch("headers", {}), raise_for_status: false)
+                                                                            headers: action.fetch("headers", {}), raise_for_status: false)
         trace << {"id" => action.fetch("id"), "method" => action.fetch("method"),
                   "path" => action.fetch("path"), "status" => response.status}
-        case_document["_observed_uid"] = response.body.dig("metadata", "uid") if action.fetch("id") == "create-workload" && response.body.is_a?(Hash)
+        if action.fetch("id") == "create-workload" && response.body.is_a?(Hash)
+          case_document["_observed_uid"] =
+            response.body.dig("metadata", "uid")
+        end
         unless response.success?
           raise "#{case_document.fetch("id")} #{action.fetch("id")} returned HTTP #{response.status}: #{response.body.inspect}"
         end
@@ -968,6 +981,7 @@ module M3WorkloadRunner
       return false if pods.empty?
       return false unless pods.length == owner.dig("status", "desiredNumberScheduled").to_i
       return false if state.fetch("events").length < 3
+
       return pods.all? do |pod|
         M3Workload.path_value(pod, ["spec", "containers", 0, "image"]) == case_document.fetch("target_value")
       end
@@ -1017,7 +1031,7 @@ module M3WorkloadRunner
         refs = Array(candidate.dig("metadata", "ownerReferences"))
         owned << candidate if refs.any? do |reference|
           reference["uid"].to_s == uid.to_s && reference["kind"].to_s == case_document.fetch("resource").fetch("kind") &&
-            reference["name"].to_s == case_document.fetch("resource").dig("metadata", "name").to_s
+          reference["name"].to_s == case_document.fetch("resource").dig("metadata", "name").to_s
         end
       end
     end

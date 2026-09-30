@@ -26,10 +26,11 @@ class M3SchedulerRuntimeRegressionTest < Minitest::Test
     assert_predicate result, :scheduled?
     assert_equal "zulu", result.pod.name
     queue_events = result.trace.events.select { |event| event.fetch("phase") == "queue_sort" }
+
     refute_empty queue_events
     assert_equal ["PrioritySort"], queue_events.map { |event| event.fetch("plugin") }.uniq
-    assert queue_events.all? { |event| event.fetch("output").is_a?(Integer) }
-    assert queue_events.all? { |event| event.fetch("input_snapshot_sha256").match?(/\A[0-9a-f]{64}\z/) }
+    assert(queue_events.all? { |event| event.fetch("output").is_a?(Integer) })
+    assert(queue_events.all? { |event| event.fetch("input_snapshot_sha256").match?(/\A[0-9a-f]{64}\z/) })
   end
 
   def test_registered_post_filter_override_is_invoked_instead_of_hardcoded_evaluator
@@ -62,7 +63,7 @@ class M3SchedulerRuntimeRegressionTest < Minitest::Test
     post_filter_events = result.trace.events.select { |event| event.fetch("phase") == "post_filter" }
     # DynamicResources runs first (applyDynamicResources) and has no claim to
     # deallocate for a Pod without claims.
-    assert_equal ["DynamicResources", "DefaultPreemption"], post_filter_events.map { |event| event.fetch("plugin") }
+    assert_equal(%w[DynamicResources DefaultPreemption], post_filter_events.map { |event| event.fetch("plugin") })
     assert_equal "custom post-filter", post_filter_events.last.fetch("output").fetch("reason")
   end
 

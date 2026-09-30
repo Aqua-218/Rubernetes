@@ -79,9 +79,7 @@ module Rubernetes
           pointer = Fiddle::Pointer[bytes]
           size = structure_size || @manifest.structure("clone_args").fetch("size")
           result = Syscall.call(@manifest.syscall("clone3"), pointer, size)
-          if result.value == -1
-            raise Linux::Error.new(errno: result.errno, operation: "clone3", resource_id: resource_id)
-          end
+          raise Linux::Error.new(errno: result.errno, operation: "clone3", resource_id: resource_id) if result.value == -1
 
           child = result.value.zero?
           pidfd = child || (args.flags & CLONE_PIDFD).zero? ? nil : pidfd_storage[0, 4].unpack1("l")

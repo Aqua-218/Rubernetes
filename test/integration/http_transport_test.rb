@@ -19,21 +19,21 @@ class HTTPTransportTest < Minitest::Test
       @requests << request
       case request.path
       when "/get"
-        Rubernetes::Transport::Response.json({ "method" => request.method, "query" => request.query }, status: 200)
+        Rubernetes::Transport::Response.json({"method" => request.method, "query" => request.query}, status: 200)
       when "/echo"
-        { status: 201, headers: { "Content-Type" => "text/plain" }, body: request.body }
+        {status: 201, headers: {"Content-Type" => "text/plain"}, body: request.body}
       when "/watch"
         events = Enumerator.new do |yielder|
-          yielder << { "type" => "ADDED", "object" => { "metadata" => { "name" => "one" } } }
-          yielder << { "type" => "MODIFIED", "object" => { "metadata" => { "name" => "one" } } }
+          yielder << {"type" => "ADDED", "object" => {"metadata" => {"name" => "one"}}}
+          yielder << {"type" => "MODIFIED", "object" => {"metadata" => {"name" => "one"}}}
         end
         Rubernetes::Transport::Response.new(body: events)
       when "/bad-response"
-        { status: 200, headers: { "X-Unsafe" => "ok\r\nInjected: yes" }, body: "unsafe" }
+        {status: 200, headers: {"X-Unsafe" => "ok\r\nInjected: yes"}, body: "unsafe"}
       when "/error"
         raise "handler failure"
       else
-        { status: 404, body: { "message" => "not found" } }
+        {status: 404, body: {"message" => "not found"}}
       end
     end
     @server = Rubernetes::Transport::HTTPServer.new(@handler, host: "127.0.0.1", port: 0, shutdown_timeout: 1)
@@ -49,8 +49,9 @@ class HTTPTransportTest < Minitest::Test
     response = request(Net::HTTP::Get.new("/get?watch=false"))
 
     assert_equal "200", response.code
-    assert_equal({ "method" => "GET", "query" => { "watch" => ["false"] } }, JSON.parse(response.body))
+    assert_equal({"method" => "GET", "query" => {"watch" => ["false"]}}, JSON.parse(response.body))
     received = @requests.pop
+
     assert_instance_of Rubernetes::Transport::Request, received
     assert_equal "/get", received.path
     assert_equal "false", received.query.fetch("watch").first
@@ -61,6 +62,7 @@ class HTTPTransportTest < Minitest::Test
     request["Content-Type"] = "text/plain"
     request.body = "hello"
     response = request(request)
+
     assert_equal "201", response.code
     assert_equal "hello", response.body
 
@@ -76,6 +78,7 @@ class HTTPTransportTest < Minitest::Test
     )
     raw_response = socket.read
     socket.close
+
     assert_includes raw_response, "HTTP/1.1 201 Created"
     assert_includes raw_response, "Wikipedia"
   end
@@ -85,6 +88,7 @@ class HTTPTransportTest < Minitest::Test
 
     assert_equal "500", response.code
     body = JSON.parse(response.body)
+
     assert_equal "Failure", body.fetch("status")
     refute_includes body.fetch("message"), "handler failure"
   end
@@ -101,6 +105,7 @@ class HTTPTransportTest < Minitest::Test
     )
     response = socket.read
     socket.close
+
     assert_includes response, "HTTP/1.1 400 Bad Request"
 
     socket = TCPSocket.new("127.0.0.1", @server.port)
@@ -114,6 +119,7 @@ class HTTPTransportTest < Minitest::Test
     )
     response = socket.read
     socket.close
+
     assert_includes response, "HTTP/1.1 400 Bad Request"
 
     response = raw_http(
@@ -124,6 +130,7 @@ class HTTPTransportTest < Minitest::Test
       "Connection: close\r\n\r\n" \
       "x"
     )
+
     assert_includes response, "HTTP/1.1 400 Bad Request"
   end
 
@@ -131,13 +138,15 @@ class HTTPTransportTest < Minitest::Test
     response = raw_http(
       "GET /get HTTP/1.1\r\n" \
       "Host: localhost\r\n" \
-      "X-Test: first\r\n" \
-      " folded\r\n" \
+      "X-Test: first\r\n " \
+      "folded\r\n" \
       "Connection: close\r\n\r\n"
     )
+
     assert_includes response, "HTTP/1.1 400 Bad Request"
 
     response = raw_http("GET /get HTTP/1.1\nHost: localhost\n\n")
+
     assert_includes response, "HTTP/1.1 400 Bad Request"
 
     response = raw_http(
@@ -146,6 +155,7 @@ class HTTPTransportTest < Minitest::Test
       "Bad Header: value\r\n" \
       "Connection: close\r\n\r\n"
     )
+
     assert_includes response, "HTTP/1.1 400 Bad Request"
 
     response = raw_http(
@@ -154,6 +164,7 @@ class HTTPTransportTest < Minitest::Test
       "X-Test: value\x7f\r\n" \
       "Connection: close\r\n\r\n"
     )
+
     assert_includes response, "HTTP/1.1 400 Bad Request"
   end
 
@@ -167,6 +178,7 @@ class HTTPTransportTest < Minitest::Test
       "5;flag=yes\r\npedia\r\n" \
       "0;done\r\nX-Stream-End: ok\r\n\r\n"
     )
+
     assert_includes response, "HTTP/1.1 201 Created"
     assert_includes response, "Wikipedia"
 
@@ -177,6 +189,7 @@ class HTTPTransportTest < Minitest::Test
       "Connection: close\r\n\r\n" \
       "1;broken=\r\nx\r\n0\r\n\r\n"
     )
+
     assert_includes response, "HTTP/1.1 400 Bad Request"
 
     response = raw_http(
@@ -186,6 +199,7 @@ class HTTPTransportTest < Minitest::Test
       "Connection: close\r\n\r\n" \
       "0\r\nContent-Length: 0\r\n\r\n"
     )
+
     assert_includes response, "HTTP/1.1 400 Bad Request"
   end
 
@@ -201,6 +215,7 @@ class HTTPTransportTest < Minitest::Test
     socket = TCPSocket.new("127.0.0.1", limited.port)
     socket.write("GET /get HTTP/1.1\r\nHost: ")
     response = socket.read
+
     assert_includes response, "HTTP/1.1 408 Request Timeout"
   ensure
     socket&.close
@@ -220,12 +235,15 @@ class HTTPTransportTest < Minitest::Test
     first.write("GET /get HTTP/1.1\r\nHost: ")
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 1
     sleep 0.01 while limited.active_connections < 1 && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+
     assert_equal 1, limited.active_connections
 
     second = TCPSocket.new("127.0.0.1", limited.port)
     ready = IO.select([second], nil, nil, 1)
+
     refute_nil ready, "connection limit did not close the excess socket"
     result = second.read_nonblock(128, exception: false)
+
     assert(result.nil? || result == :wait_readable || result.start_with?("HTTP/1.1 503"))
   ensure
     first&.close
@@ -235,6 +253,7 @@ class HTTPTransportTest < Minitest::Test
 
   def test_response_header_injection_is_rejected_and_server_name_is_validated
     response = request(Net::HTTP::Get.new("/bad-response"))
+
     assert_equal "500", response.code
     refute_includes response.to_hash.values.flatten.join("\n"), "Injected:"
 
@@ -255,7 +274,7 @@ class HTTPTransportTest < Minitest::Test
       define_method(:close) { @queue << :closed }
     end.new(closed)
     server = Rubernetes::Transport::HTTPServer.new(
-      lambda { |_request| Rubernetes::Transport::Response.new(body: stream) },
+      ->(_request) { Rubernetes::Transport::Response.new(body: stream) },
       port: 0,
       max_response_bytes: 64 * 1024 * 1024,
       write_timeout: 0.2,
@@ -270,7 +289,8 @@ class HTTPTransportTest < Minitest::Test
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2
     sleep 0.01 while closed.empty? && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
-    refute closed.empty?, "stream body was not closed after client disconnect"
+
+    refute_empty closed, "stream body was not closed after client disconnect"
   ensure
     socket&.close
     server&.stop(graceful: false, timeout: 1)
@@ -284,7 +304,7 @@ class HTTPTransportTest < Minitest::Test
       define_method(:close) { @queue << :closed }
     end.new(closed)
     server = Rubernetes::Transport::HTTPServer.new(
-      lambda { |_request| Rubernetes::Transport::Response.new(body: stream) },
+      ->(_request) { Rubernetes::Transport::Response.new(body: stream) },
       port: 0,
       max_response_bytes: 64 * 1024 * 1024,
       write_timeout: 0.05,
@@ -298,7 +318,8 @@ class HTTPTransportTest < Minitest::Test
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2
     sleep 0.01 while closed.empty? && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
-    refute closed.empty?, "stream body was not closed after a blocked response write"
+
+    refute_empty closed, "stream body was not closed after a blocked response write"
     response = +"".b
     read_deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 1
     while response.empty? && Process.clock_gettime(Process::CLOCK_MONOTONIC) < read_deadline
@@ -306,6 +327,7 @@ class HTTPTransportTest < Minitest::Test
       response << chunk if chunk.is_a?(String)
       sleep 0.01 if chunk == :wait_readable
     end
+
     assert_equal 1, response.scan("HTTP/1.1").length
   ensure
     socket&.close
@@ -318,7 +340,8 @@ class HTTPTransportTest < Minitest::Test
     assert_equal "200", response.code
     assert_equal "chunked", response["transfer-encoding"]
     events = response.body.lines.map { |line| JSON.parse(line) }
-    assert_equal %w[ADDED MODIFIED], events.map { |event| event.fetch("type") }
+
+    assert_equal(%w[ADDED MODIFIED], events.map { |event| event.fetch("type") })
   end
 
   def test_body_limit_returns_413
@@ -330,6 +353,7 @@ class HTTPTransportTest < Minitest::Test
     request["Content-Type"] = "text/plain"
     request.body = "four"
     response = client.request(request)
+
     assert_equal "413", response.code
   ensure
     limited&.stop(timeout: 1)
@@ -339,7 +363,7 @@ class HTTPTransportTest < Minitest::Test
     port = @server.port
     @server.stop(timeout: 1)
 
-    assert @server.stopped?
+    assert_predicate @server, :stopped?
     assert_nil @server.port
     assert_raises(Errno::ECONNREFUSED, Errno::ECONNRESET) do
       TCPSocket.new("127.0.0.1", port)
@@ -356,7 +380,7 @@ class HTTPTransportTest < Minitest::Test
     certificate.public_key = key.public_key
     certificate.not_before = Time.now - 60
     certificate.not_after = Time.now + 300
-    certificate.sign(key, OpenSSL::Digest::SHA256.new)
+    certificate.sign(key, OpenSSL::Digest.new("SHA256"))
 
     cert_file = Tempfile.new(["rubernetes", ".crt"])
     key_file = Tempfile.new(["rubernetes", ".key"])
@@ -377,8 +401,9 @@ class HTTPTransportTest < Minitest::Test
     client.use_ssl = true
     client.verify_mode = OpenSSL::SSL::VERIFY_NONE
     response = client.get("/get")
+
     assert_equal "200", response.code
-    assert tls_server.tls?
+    assert_predicate tls_server, :tls?
     if tls_server.instance_variable_get(:@ssl_context)&.respond_to?(:min_version)
       assert_equal OpenSSL::SSL::TLS1_2_VERSION, tls_server.instance_variable_get(:@ssl_context).min_version
 
@@ -409,7 +434,7 @@ class HTTPTransportTest < Minitest::Test
     certificate.public_key = key.public_key
     certificate.not_before = Time.now - 60
     certificate.not_after = Time.now + 300
-    certificate.sign(key, OpenSSL::Digest::SHA256.new)
+    certificate.sign(key, OpenSSL::Digest.new("SHA256"))
 
     cert_file = Tempfile.new(["rubernetes-hostile", ".crt"])
     key_file = Tempfile.new(["rubernetes-hostile", ".key"])
@@ -432,6 +457,7 @@ class HTTPTransportTest < Minitest::Test
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     tls_server.stop(timeout: 1)
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
     assert_operator elapsed, :<, 1.0
   ensure
     socket&.close
@@ -458,6 +484,7 @@ class HTTPTransportTest < Minitest::Test
     wait_for_port(tls_server)
 
     disconnect_socket, disconnect_response = open_tls_watch(tls_server, "/api/v1/pods?watch=true", timeout: 2)
+
     assert_includes disconnect_response, "HTTP/1.1 200 OK"
     assert_includes disconnect_response.downcase, "transfer-encoding: chunked"
     wait_until(timeout: 1) do
@@ -470,6 +497,7 @@ class HTTPTransportTest < Minitest::Test
       store_watcher_count(service.store).zero? && tls_server.active_connections.zero? &&
         tls_server.active_stream_monitors.zero?
     end
+
     assert_equal 0, store_watcher_count(service.store), "TLS disconnect did not unregister the server watcher"
     assert_equal 0, tls_server.active_stream_monitors
     assert_equal 0, tls_server.active_connections
@@ -487,6 +515,7 @@ class HTTPTransportTest < Minitest::Test
       store_watcher_count(service.store).zero? && tls_server.active_connections.zero? &&
         tls_server.active_stream_monitors.zero?
     end
+
     assert_includes timeout_response, "0\r\n\r\n"
     assert_equal 0, store_watcher_count(service.store), "timed-out TLS watch remained registered"
     assert_equal 0, tls_server.active_stream_monitors
@@ -495,6 +524,7 @@ class HTTPTransportTest < Minitest::Test
     timeout_socket = nil
 
     shutdown_socket, shutdown_response = open_tls_watch(tls_server, "/api/v1/pods?watch=true", timeout: 2)
+
     assert_includes shutdown_response, "HTTP/1.1 200 OK"
     wait_until(timeout: 1) do
       store_watcher_count(service.store) == 1 && tls_server.active_connections == 1 &&
@@ -503,11 +533,13 @@ class HTTPTransportTest < Minitest::Test
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     tls_server.stop(timeout: 0.2)
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
     assert_operator elapsed, :<, 1.0
     wait_until(timeout: 2) do
       store_watcher_count(service.store).zero? && tls_server.active_connections.zero? &&
         tls_server.active_stream_monitors.zero?
     end
+
     assert_equal 0, store_watcher_count(service.store), "TLS shutdown did not unregister the server watcher"
     assert_equal 0, tls_server.active_stream_monitors
     assert_equal 0, tls_server.active_connections
@@ -549,6 +581,7 @@ class HTTPTransportTest < Minitest::Test
 
       assert_includes kubectl_run(service, "apply", "--validate=false", "-f", manifest.path), "pod/web created"
       pod = JSON.parse(kubectl_run(service, "get", "pod", "web", "-n", "default", "-o", "json"))
+
       assert_equal "web", pod.dig("metadata", "name")
 
       assert_includes kubectl_run(
@@ -557,6 +590,7 @@ class HTTPTransportTest < Minitest::Test
         "-p", '{"metadata":{"labels":{"app":"transport"}}}'
       ), "pod/web patched"
       patched = JSON.parse(kubectl_run(service, "get", "pod", "web", "-n", "default", "-o", "json"))
+
       assert_equal "transport", patched.dig("metadata", "labels", "app")
 
       assert_includes kubectl_run(service, "delete", "pod", "web", "-n", "default"), "pod \"web\" deleted"
@@ -590,19 +624,30 @@ class HTTPTransportTest < Minitest::Test
     end
 
     watch_transcript = read_until(watch_output, "watch-web", timeout: 5)
+
     assert_includes watch_transcript, "watch-web"
     Process.kill("TERM", watch_wait.pid)
     watch_wait.value
     wait_until(timeout: 5) { store_watcher_count(service.store) == baseline_watchers }
+
     assert_equal baseline_watchers, store_watcher_count(service.store)
 
     service.stop(reason: "integration test")
-    assert service.http_server.stopped?
+
+    assert_predicate service.http_server, :stopped?
     assert_equal 0, service.http_server.active_connections
   ensure
     if watch_wait && watch_wait.alive?
-      Process.kill("TERM", watch_wait.pid) rescue nil
-      watch_wait.value rescue nil
+      begin
+        Process.kill("TERM", watch_wait.pid)
+      rescue StandardError
+        nil
+      end
+      begin
+        watch_wait.value
+      rescue StandardError
+        nil
+      end
     end
     [watch_input, watch_output, watch_error].compact.each { |io| io.close unless io.closed? }
     service&.stop(reason: "integration test")
@@ -625,10 +670,11 @@ class HTTPTransportTest < Minitest::Test
     ]
   end
 
-  def kubectl_run(service, *arguments)
-    command = kubectl_args(service, *arguments)
-    output = IO.popen(command, err: [:child, :out], &:read)
+  def kubectl_run(service, *)
+    command = kubectl_args(service, *)
+    output = IO.popen(command, err: %i[child out], &:read)
     status = $?.exitstatus
+
     assert_equal 0, status, "kubectl failed: #{command.join(" ")}\n#{output}"
     output
   end
@@ -673,7 +719,7 @@ class HTTPTransportTest < Minitest::Test
     certificate.public_key = key.public_key
     certificate.not_before = Time.now - 60
     certificate.not_after = Time.now + 300
-    certificate.sign(key, OpenSSL::Digest::SHA256.new)
+    certificate.sign(key, OpenSSL::Digest.new("SHA256"))
 
     cert_file = Tempfile.new(["rubernetes-idle-watch", ".crt"])
     key_file = Tempfile.new(["rubernetes-idle-watch", ".key"])

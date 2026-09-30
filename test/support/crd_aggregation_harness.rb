@@ -16,7 +16,8 @@ module CRDAggregationHarness
     @openapi = API::OpenAPIRepository.new
     @crd_manager = API::CRD::Manager.new(registry: @registry, store: @store, openapi: @openapi, cel: Rubernetes::Security::CEL::Evaluator.new)
     @aggregator = API::Aggregator.new(http_factory: ->(uri, backend) { FakeHTTP.new(uri, backend) })
-    @server = API::Server.new(registry: @registry, store: @store, crd_manager: @crd_manager, aggregator: @aggregator, openapi_repository: @openapi)
+    @server = API::Server.new(registry: @registry, store: @store, crd_manager: @crd_manager, aggregator: @aggregator,
+                              openapi_repository: @openapi)
   end
 
   # Only the two configuration resources are needed from the corpus.
@@ -28,7 +29,8 @@ module CRDAggregationHarness
                                         subresources: [{resource: "status", verbs: %w[get patch update]}]))
     registry.register(API::Resource.new(group: "", version: "v1", resource: "namespaces", kind: "Namespace", scope: :cluster))
     registry.register(API::Resource.new(group: "", version: "v1", resource: "services", kind: "Service", scope: :namespaced))
-    registry.register(API::Resource.new(group: "discovery.k8s.io", version: "v1", resource: "endpointslices", kind: "EndpointSlice", scope: :namespaced))
+    registry.register(API::Resource.new(group: "discovery.k8s.io", version: "v1", resource: "endpointslices", kind: "EndpointSlice",
+                                        scope: :namespaced))
     registry
   end
 

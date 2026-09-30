@@ -20,6 +20,7 @@ class NetlinkThreadNamespaceTest < Minitest::Test
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2.0
     loop do
       break if File.readlink("/proc/#{@holder}/ns/net") != File.readlink("/proc/self/ns/net")
+
       flunk "unshare did not create a namespace" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
       sleep 0.01
     end
@@ -28,9 +29,17 @@ class NetlinkThreadNamespaceTest < Minitest::Test
 
   def teardown
     @namespace&.close
-    if @holder
-      Process.kill("KILL", @holder) rescue nil
-      Process.wait(@holder) rescue nil
+    return unless @holder
+
+    begin
+      Process.kill("KILL", @holder)
+    rescue StandardError
+      nil
+    end
+    begin
+      Process.wait(@holder)
+    rescue StandardError
+      nil
     end
   end
 
@@ -47,6 +56,7 @@ class NetlinkThreadNamespaceTest < Minitest::Test
     inside = nil
     names = link_names(netlink.link_dump(namespace_fd: @namespace.fileno))
     netlink.with_namespace(@namespace.fileno) { inside = File.readlink("/proc/thread-self/ns/net") }
+
     assert_equal ["lo"], names, "a fresh namespace holds only lo"
     assert_equal File.readlink("/proc/#{@holder}/ns/net"), inside
     assert_equal host_before, File.readlink("/proc/thread-self/ns/net")
@@ -63,12 +73,15 @@ class NetlinkThreadNamespaceTest < Minitest::Test
     observer = Rubernetes::Network::NativeObserver.new(netlink: Netlink.new)
     pod_inode = File.stat("/proc/#{@holder}/ns/net").ino
     host_inode = File.stat("/proc/self/ns/net").ino
+
     refute_equal host_inode, pod_inode
     inside = observer.resources(namespace_fd: @namespace.fileno, kinds: %w[link])
+
     refute_empty inside
     assert inside.all? { |resource| resource.dig("metadata", "netns_inode") == pod_inode }, inside.first.inspect
     outside = observer.resources(kinds: %w[link])
-    assert outside.all? { |resource| resource.dig("metadata", "netns_inode") == host_inode }
+
+    assert(outside.all? { |resource| resource.dig("metadata", "netns_inode") == host_inode })
   end
 
   def test_other_threads_never_see_the_switch
@@ -85,6 +98,7 @@ class NetlinkThreadNamespaceTest < Minitest::Test
     entered.pop
     observed << File.readlink("/proc/thread-self/ns/net")
     worker.join
+
     assert_equal host, observed.pop
   end
 

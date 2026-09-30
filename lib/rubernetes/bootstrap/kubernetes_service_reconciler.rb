@@ -256,7 +256,9 @@ module Rubernetes
             "apiVersion" => "discovery.k8s.io/v1", "kind" => "EndpointSlice",
             "metadata" => {"name" => name, "namespace" => SERVICE_NAMESPACE, "labels" => labels},
             "addressType" => family,
-            "endpoints" => entries.map { |entry| entry.fetch("ip") }.uniq.map { |ip| {"addresses" => [ip], "conditions" => {"ready" => true}} },
+            "endpoints" => entries.map do |entry|
+              entry.fetch("ip")
+            end.uniq.map { |ip| {"addresses" => [ip], "conditions" => {"ready" => true}} },
             "ports" => [{"name" => "https", "port" => port, "protocol" => "TCP"}]
           }
         end

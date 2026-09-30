@@ -32,15 +32,11 @@ module Conformance
       end.parse!(argv)
 
       source = options[:source_root]
-      unless File.directory?(source)
-        abort JSON.pretty_generate(failure("the pinned Kubernetes checkout #{source} does not exist"))
-      end
+      abort JSON.pretty_generate(failure("the pinned Kubernetes checkout #{source} does not exist")) unless File.directory?(source)
 
       observed = git(source, "rev-parse", "HEAD")
       expected = L.source_commit
-      unless observed == expected
-        abort JSON.pretty_generate(failure("checkout is at #{observed}, but the lock pins #{expected}"))
-      end
+      abort JSON.pretty_generate(failure("checkout is at #{observed}, but the lock pins #{expected}")) unless observed == expected
 
       FileUtils.mkdir_p(BIN)
       built = TARGETS.map { |target| build(source, target) }
@@ -71,8 +67,8 @@ module Conformance
        "stderr" => installed ? nil : stderr.to_s[-4000..] || stderr.to_s}
     end
 
-    def git(source, *arguments)
-      stdout, _stderr, status = Open3.capture3("git", "-C", source, *arguments)
+    def git(source, *)
+      stdout, _stderr, status = Open3.capture3("git", "-C", source, *)
       status.success? ? stdout.strip : nil
     end
 

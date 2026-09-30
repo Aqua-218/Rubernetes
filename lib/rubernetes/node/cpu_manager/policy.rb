@@ -107,6 +107,7 @@ module Rubernetes
         rescue StandardError
           false
         end
+
         def init_container?(pod, container) = Array(pod.dig("spec", "initContainers")).any? { |entry| entry["name"] == container["name"] }
 
         def cpu_request(container)
@@ -182,9 +183,7 @@ module Rubernetes
           physical = CPUSet.empty
           reserved.each do |cpu|
             info = topology.cpu_details[cpu]
-            unless info
-              raise Error, "[cpumanager] unable to build the reserved physical CPUs from the reserved set: unknown CPU ID: #{cpu}"
-            end
+            raise Error, "[cpumanager] unable to build the reserved physical CPUs from the reserved set: unknown CPU ID: #{cpu}" unless info
 
             physical = physical.union(topology.cpu_details.cpus_in_cores(info.core_id))
           end
@@ -228,7 +227,8 @@ module Rubernetes
             containers.each do |container, cpus|
               next if default.intersection(cpus).empty?
 
-              raise Error, "pod: #{pod}, container: #{container} cpuset: #{cpus.to_s.dump} overlaps with default cpuset #{default.to_s.dump}"
+              raise Error,
+                    "pod: #{pod}, container: #{container} cpuset: #{cpus.to_s.dump} overlaps with default cpuset #{default.to_s.dump}"
             end
           end
           known = default.union(*assignments.values.flat_map(&:values))
@@ -266,7 +266,10 @@ module Rubernetes
             end
           rescue StandardError
             metric(:increment, "kubelet_cpu_manager_pinning_errors_total")
-            metric(:increment, "kubelet_container_aligned_compute_resources_failure_count", ALIGNED_PHYSICAL_CPU) if @options.full_physical_cpus_only
+            if @options.full_physical_cpus_only
+              metric(:increment, "kubelet_container_aligned_compute_resources_failure_count",
+                     ALIGNED_PHYSICAL_CPU)
+            end
             raise
           end
           metric(:increment, "kubelet_container_aligned_compute_resources_count", ALIGNED_PHYSICAL_CPU) if @options.full_physical_cpus_only
@@ -373,9 +376,7 @@ module Rubernetes
           return 0 unless PodResources.qos(pod) == "Guaranteed"
           # A container of a pod-level Pod gets exclusive CPUs only when it is
           # Guaranteed on its own terms.
-          if @pod_level && PodResources.pod_level_resources?(pod) && !PodResources.container_equivalent_guaranteed?(container)
-            return 0
-          end
+          return 0 if @pod_level && PodResources.pod_level_resources?(pod) && !PodResources.container_equivalent_guaranteed?(container)
 
           quantity = PodResources.cpu_request(container)
           return 0 if quantity.nil?
@@ -418,7 +419,7 @@ module Rubernetes
           end
 
           Assignment.take_by_topology_numa_packed(@topology, available, count, strategy: strategy,
-                                                                              prefer_align_by_uncore_cache: @options.prefer_align_by_uncore_cache)
+                                                                               prefer_align_by_uncore_cache: @options.prefer_align_by_uncore_cache)
         end
 
         # validatePodScopeResources: containers left for the Pod's shared

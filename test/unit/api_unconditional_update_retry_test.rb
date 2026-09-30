@@ -14,12 +14,12 @@ class APIUnconditionalUpdateRetryTest < Minitest::Test
   class RacingStore < SimpleDelegator
     attr_accessor :races
 
-    def update(*arguments, **keywords)
+    def update(*, **keywords)
       if races.to_i.positive?
         self.races -= 1
         raise Rubernetes::Storage::MemoryStore::Conflict, "raced"
       end
-      __getobj__.update(*arguments, **keywords)
+      __getobj__.update(*, **keywords)
     end
   end
 
@@ -30,6 +30,7 @@ class APIUnconditionalUpdateRetryTest < Minitest::Test
     @store = RacingStore.new(Rubernetes::Storage::MemoryStore.new)
     @server = API::Server.new(registry: registry, store: @store)
     call("POST", "/api/v1/namespaces", {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "ns"}})
+
     assert_equal 201, call("POST", "/api/v1/namespaces/ns/configmaps",
                            {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm"}, "data" => {"a" => "1"}}).status
   end
@@ -43,6 +44,7 @@ class APIUnconditionalUpdateRetryTest < Minitest::Test
     @store.races = 2
     response = call("PUT", "/api/v1/namespaces/ns/configmaps/cm",
                     {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm"}, "data" => {"a" => "2"}})
+
     assert_equal 200, response.status, response.body.inspect
     assert_equal({"a" => "2"}, response.body["data"])
   end
@@ -53,6 +55,7 @@ class APIUnconditionalUpdateRetryTest < Minitest::Test
                    {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm"}, "data" => {"a" => "3"}}).body
     @store.races = 1
     response = call("PUT", "/api/v1/namespaces/ns/configmaps/cm", current.merge("data" => {"a" => "4"}))
+
     assert_equal 409, response.status, response.body.inspect
   end
 end

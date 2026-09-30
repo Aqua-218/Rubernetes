@@ -61,19 +61,31 @@ module Rubernetes
       end
 
       def self.decode(bytes, path: nil)
-        raise SnapshotCorruption.new("snapshot is shorter than its header", path: path, offset: 0) if bytes.bytesize < MAGIC.bytesize + 4 + DIGEST_BYTES
+        if bytes.bytesize < MAGIC.bytesize + 4 + DIGEST_BYTES
+          raise SnapshotCorruption.new("snapshot is shorter than its header", path: path,
+                                                                              offset: 0)
+        end
         raise SnapshotCorruption.new("snapshot magic mismatch", path: path, offset: 0) unless bytes.byteslice(0, MAGIC.bytesize) == MAGIC
 
         header_length = bytes.byteslice(MAGIC.bytesize, 4).unpack1("N")
-        raise SnapshotCorruption.new("snapshot header length #{header_length} exceeds bound", path: path, offset: MAGIC.bytesize) if header_length > MAX_HEADER_BYTES
+        if header_length > MAX_HEADER_BYTES
+          raise SnapshotCorruption.new("snapshot header length #{header_length} exceeds bound", path: path,
+                                                                                                offset: MAGIC.bytesize)
+        end
 
         body_offset = MAGIC.bytesize + 4
         body_length = bytes.bytesize - body_offset - DIGEST_BYTES
-        raise SnapshotCorruption.new("snapshot body is shorter than its header", path: path, offset: body_offset) if body_length < header_length
+        if body_length < header_length
+          raise SnapshotCorruption.new("snapshot body is shorter than its header", path: path,
+                                                                                   offset: body_offset)
+        end
 
         body = bytes.byteslice(body_offset, body_length)
         trailer = bytes.byteslice(body_offset + body_length, DIGEST_BYTES)
-        raise SnapshotCorruption.new("snapshot file digest mismatch", path: path, offset: body_offset + body_length) unless Digest::SHA256.digest(body) == trailer
+        unless Digest::SHA256.digest(body) == trailer
+          raise SnapshotCorruption.new("snapshot file digest mismatch", path: path,
+                                                                        offset: body_offset + body_length)
+        end
 
         header = begin
           Canonical.decode(body.byteslice(0, header_length), max_bytes: MAX_HEADER_BYTES)
@@ -84,12 +96,21 @@ module Rubernetes
 
         state = body.byteslice(header_length, body_length - header_length)
         declared = header["state_bytes"]
-        raise SnapshotCorruption.new("snapshot state length mismatch", path: path, offset: body_offset + header_length) unless declared == state.bytesize
-        raise SnapshotCorruption.new("snapshot state digest mismatch", path: path, offset: body_offset + header_length) unless header["state_sha256"] == Digest::SHA256.hexdigest(state)
+        unless declared == state.bytesize
+          raise SnapshotCorruption.new("snapshot state length mismatch", path: path,
+                                                                         offset: body_offset + header_length)
+        end
+        unless header["state_sha256"] == Digest::SHA256.hexdigest(state)
+          raise SnapshotCorruption.new("snapshot state digest mismatch", path: path,
+                                                                         offset: body_offset + header_length)
+        end
 
         index = header["index"]
         term = header["term"]
-        raise SnapshotCorruption.new("snapshot index/term are invalid", path: path, offset: body_offset) unless index.is_a?(Integer) && index >= 0 && term.is_a?(Integer) && term >= 0
+        unless index.is_a?(Integer) && index >= 0 && term.is_a?(Integer) && term >= 0
+          raise SnapshotCorruption.new("snapshot index/term are invalid", path: path,
+                                                                          offset: body_offset)
+        end
 
         Snapshot.new(index: index, term: term, membership: header["membership"], state: state,
                      state_sha256: header["state_sha256"], created_at: header["created_at"], path: path, bytes: bytes.bytesize)
@@ -149,13 +170,11 @@ module Rubernetes
       def latest(strict: true)
         rejected = []
         candidates.reverse_each do |path|
-          begin
-            return [read(path), rejected]
-          rescue SnapshotCorruption => error
-            raise if strict
+          return [read(path), rejected]
+        rescue SnapshotCorruption => error
+          raise if strict
 
-            rejected << {"path" => path, "error" => error.message}
-          end
+          rejected << {"path" => path, "error" => error.message}
         end
         [nil, rejected]
       end

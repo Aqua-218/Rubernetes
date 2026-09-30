@@ -184,7 +184,9 @@ module Rubernetes
           until (index = buffer.index("\r\n\r\n"))
             chunk = socket.readpartial(4096)
             buffer << chunk
-            raise Status::ServiceUnavailable.new("node streaming endpoint sent an oversized response head") if buffer.bytesize > MAX_HEAD_BYTES
+            if buffer.bytesize > MAX_HEAD_BYTES
+              raise Status::ServiceUnavailable.new("node streaming endpoint sent an oversized response head")
+            end
           end
           head = buffer.byteslice(0, index)
           leftover = buffer.byteslice(index + 4..) || "".b
@@ -282,9 +284,7 @@ module Rubernetes
             begin
               http.start do |connection|
                 connection.request(Net::HTTP::Get.new(@uri)) do |response|
-                  unless response.code.to_i == 200
-                    raise Status::ServiceUnavailable.new("node streaming endpoint returned #{response.code}")
-                  end
+                  raise Status::ServiceUnavailable.new("node streaming endpoint returned #{response.code}") unless response.code.to_i == 200
 
                   response.read_body do |chunk|
                     raise StreamClosed, "node log stream was closed" if closed?
@@ -493,7 +493,7 @@ module Rubernetes
         class LogSubresource
           def initialize(owner) = @owner = owner
 
-          def logs(container_id = nil, **options) = @owner.fetch_logs(container_id, **options)
+          def logs(container_id = nil, **) = @owner.fetch_logs(container_id, **)
         end
 
         # The service the bridge invokes for exec.  Result retrieval (every
@@ -502,7 +502,7 @@ module Rubernetes
         class ExecSubresource
           def initialize(owner) = @owner = owner
 
-          def exec(container_id = nil, **options) = @owner.run_exec(container_id, **options)
+          def exec(container_id = nil, **) = @owner.run_exec(container_id, **)
         end
 
         # The node endpoint is name-addressed, like the kubelet's: it maps the
@@ -520,11 +520,11 @@ module Rubernetes
         def run_exec(container_id = nil, command: nil, **_options)
           container_id = container_id_for if container_id.to_s.empty?
           @endpoint.exec(container_id, command: Array(command),
-                         namespace: @pod.dig("metadata", "namespace"),
-                         pod: @pod.dig("metadata", "name"))
+                                       namespace: @pod.dig("metadata", "namespace"),
+                                       pod: @pod.dig("metadata", "name"))
         end
 
-        def fetch_logs(container_id = nil, **options)
+        def fetch_logs(container_id = nil, **)
           # An empty container makes the node URL ambiguous ("/containerLogs/
           # ns/pod/"), so fall back to the pod's first container the way
           # `kubectl logs` does for a single-container pod.
@@ -532,7 +532,7 @@ module Rubernetes
           @endpoint.logs(container_id,
                          namespace: @pod.dig("metadata", "namespace"),
                          pod: @pod.dig("metadata", "name"),
-                         **options)
+                         **)
         end
       end
 

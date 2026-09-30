@@ -10,7 +10,6 @@
 # address, and rejects oversized or looping traffic before decoding it.
 require "socket"
 require "securerandom"
-require "thread"
 
 require_relative "errors"
 require_relative "support"
@@ -68,7 +67,8 @@ module Rubernetes
           deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
           loop do
             remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
-            raise DNSUpstreamError, "upstream #{address} did not answer within #{@timeout}s" if remaining <= 0 || IO.select([socket], nil, nil, remaining).nil?
+            raise DNSUpstreamError, "upstream #{address} did not answer within #{@timeout}s" if remaining <= 0 || IO.select([socket], nil,
+                                                                                                                            nil, remaining).nil?
 
             reply, sender = socket.recvfrom(@max_packet_bytes + 1)
             # A connected UDP socket already filters foreign sources in the
@@ -115,10 +115,11 @@ module Rubernetes
 
           decoded = Wire.decode(reply)
           raise DNSUpstreamError, "upstream reply is not a response" unless decoded.qr
+
           answered = decoded.questions.first
-          unless answered && answered.name == question.name && answered.type == question.type && answered.klass == question.klass
-            raise DNSUpstreamError, "upstream reply question does not match the query"
-          end
+          return if answered && answered.name == question.name && answered.type == question.type && answered.klass == question.klass
+
+          raise DNSUpstreamError, "upstream reply question does not match the query"
         end
       end
 
@@ -174,14 +175,18 @@ module Rubernetes
 
         # Addresses actually bound (the ephemeral port is resolved here).
         def endpoints
-          udp = @udp_sockets.map { |socket| {"transport" => "udp", "address" => socket.local_address.ip_address, "port" => socket.local_address.ip_port} }
-          tcp = @tcp_servers.map { |socket| {"transport" => "tcp", "address" => socket.local_address.ip_address, "port" => socket.local_address.ip_port} }
+          udp = @udp_sockets.map do |socket|
+            {"transport" => "udp", "address" => socket.local_address.ip_address, "port" => socket.local_address.ip_port}
+          end
+          tcp = @tcp_servers.map do |socket|
+            {"transport" => "tcp", "address" => socket.local_address.ip_address, "port" => socket.local_address.ip_port}
+          end
           (udp + tcp).freeze
         end
 
         def start
           @mutex.synchronize do
-            raise RuntimeError, "DNS server is already running" if @running
+            raise "DNS server is already running" if @running
 
             udp_sockets = []
             tcp_servers = []
@@ -198,18 +203,22 @@ module Rubernetes
                   bound_port = socket.local_address.ip_port if bound_port.zero?
                   udp_sockets << socket
                 end
-                if @tcp
-                  server = Socket.new(family, Socket::SOCK_STREAM, 0)
-                  server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, 1)
-                  server.setsockopt(Socket::IPPROTO_IPV6, Socket::IPV6_V6ONLY, 1) if family == Socket::AF_INET6
-                  server.bind(Socket.sockaddr_in(bound_port, address))
-                  server.listen(128)
-                  bound_port = server.local_address.ip_port if bound_port.zero?
-                  tcp_servers << server
-                end
+                next unless @tcp
+
+                server = Socket.new(family, Socket::SOCK_STREAM, 0)
+                server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, 1)
+                server.setsockopt(Socket::IPPROTO_IPV6, Socket::IPV6_V6ONLY, 1) if family == Socket::AF_INET6
+                server.bind(Socket.sockaddr_in(bound_port, address))
+                server.listen(128)
+                bound_port = server.local_address.ip_port if bound_port.zero?
+                tcp_servers << server
               end
             rescue SystemCallError
-              (udp_sockets + tcp_servers).each { |socket| socket.close rescue nil }
+              (udp_sockets + tcp_servers).each do |socket|
+                socket.close
+              rescue StandardError
+                nil
+              end
               raise
             end
             @port = bound_port
@@ -229,7 +238,11 @@ module Rubernetes
             return true unless @running
 
             @running = false
-            (@udp_sockets + @tcp_servers).each { |socket| socket.close rescue nil }
+            (@udp_sockets + @tcp_servers).each do |socket|
+              socket.close
+            rescue StandardError
+              nil
+            end
             @threads
           end
           threads.each { |thread| thread.join(TCP_IDLE_TIMEOUT + 1) }
@@ -305,7 +318,7 @@ module Rubernetes
           response = base_response(message, aa: true)
           response.edns = edns_reply(message)
           type_name = Wire::TYPE_NAMES[question.type]
-          if type_name.nil? || !Resolver::SUPPORTED_TYPES.include?(type_name) && type_name != "ANY"
+          if type_name.nil? || (!Resolver::SUPPORTED_TYPES.include?(type_name) && type_name != "ANY")
             # Types the zone never contains (NS, TXT, MX, ...) are NODATA for
             # existing names and NXDOMAIN otherwise.
             exists = @resolver.name_exists?(question.name)
@@ -551,7 +564,11 @@ module Rubernetes
         rescue IOError, SystemCallError => error
           log(:debug, "dns.tcp_connection_closed", client: client, error: error.message)
         ensure
-          connection.close rescue nil
+          begin
+            connection.close
+          rescue StandardError
+            nil
+          end
         end
 
         def read_tcp(connection, length)

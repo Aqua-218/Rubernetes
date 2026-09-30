@@ -58,9 +58,6 @@ module Rubernetes
         end
       end
 
-      attr_reader :api_server, :catalog, :http_server, :registry, :store,
-                  :node_resolver, :authorizer, :identity_resolver
-
       def initialize(config:, logger:, catalog: nil, store: nil, http_server_class: Transport::HTTPServer,
                      subresource_bridge: nil, node_resolver: nil, authorizer: nil,
                      identity_resolver: nil, trusted_subresources: false)
@@ -111,7 +108,9 @@ module Rubernetes
           security: @security&.pipeline,
           feature_gates: @security ? @security.feature_gates : {},
           service_account_issuer: @security&.service_account_issuer,
-          api_audiences: (@security&.service_account_issuer&.api_audiences unless @security&.service_account_issuer&.api_audiences.to_a.empty?),
+          api_audiences: (unless @security&.service_account_issuer&.api_audiences.to_a.empty?
+                            @security&.service_account_issuer&.api_audiences
+                          end),
           openapi_repository: @openapi,
           crd_manager: @crd_manager,
           aggregator: @aggregator,
@@ -158,8 +157,6 @@ module Rubernetes
         @started = false
       end
 
-      attr_reader :raft_server
-
       def install_tls_handshake_metric
         metrics = @api_server.respond_to?(:metrics) ? @api_server.metrics : @api_server.instance_variable_get(:@metrics)
         return unless metrics && @http_server.respond_to?(:on_tls_handshake_error=)
@@ -170,7 +167,7 @@ module Rubernetes
       end
 
       def start
-        raise RuntimeError, "rubernetes-apiserver is already started" if @started
+        raise "rubernetes-apiserver is already started" if @started
 
         if @raft_server
           @raft_server.start
@@ -273,7 +270,8 @@ module Rubernetes
         !@raft_server.failed? && @raft_server.quorum_available?
       end
 
-      attr_reader :security
+      attr_reader :api_server, :catalog, :http_server, :registry, :store, :node_resolver, :authorizer, :identity_resolver, :raft_server,
+                  :security
 
       private
 
@@ -520,7 +518,7 @@ module Rubernetes
         "rolebindings" => ["rbac.authorization.k8s.io/v1", "RoleBinding"],
         "flowschemas" => ["flowcontrol.apiserver.k8s.io/v1", "FlowSchema"],
         "prioritylevelconfigurations" => ["flowcontrol.apiserver.k8s.io/v1", "PriorityLevelConfiguration"],
-        "namespaces" => ["v1", "Namespace"]
+        "namespaces" => %w[v1 Namespace]
       }.freeze
 
       def with_type_meta(collection, object)
@@ -581,7 +579,11 @@ module Rubernetes
             sleep(interval)
             report = allocator.repair!
             findings = report["ip_errors"].values.sum + report["port_errors"].values.sum
-            @logger.info("allocation.repair", **report.transform_values { |value| value.is_a?(Hash) ? value.to_h : value }) if findings.positive?
+            if findings.positive?
+              @logger.info("allocation.repair", **report.transform_values do |value|
+                value.is_a?(Hash) ? value.to_h : value
+              end)
+            end
           rescue StandardError => error
             @logger.warn("allocation.repair.failed", error: error.class.name, message: error.message)
           end
@@ -600,7 +602,9 @@ module Rubernetes
         wrapped = configuration.wrap(store)
         interval = Float(config.fetch("encryption_config_reload_interval_seconds", Security::Encryption::ReloadController::POLL_INTERVAL))
         @encryption_reload = Security::Encryption::ReloadController.new(path: path, wrapped: wrapped, interval: interval,
-                                                                       logger: ->(level, event, **fields) { @logger.public_send(level, event, **fields) })
+                                                                        logger: lambda { |level, event, **fields|
+                                                                          @logger.public_send(level, event, **fields)
+                                                                        })
         @encryption_reload.note_loaded(configuration)
         @logger.info("encryption.config.loaded", hash: configuration.hash, groups: configuration.groups.map(&:names))
         wrapped
@@ -673,11 +677,15 @@ module Rubernetes
       # and converted (API::BuiltinConversion).
       def multi_version_options(entries)
         served = API::Server::DEFAULT_SERVED_GROUP_VERSIONS
-        entries.group_by { |entry| [entry.group.to_s, entry.resource.to_s] }.each_with_object({}) do |((group, resource), versions), options|
+        entries.group_by do |entry|
+          [entry.group.to_s, entry.resource.to_s]
+        end.each_with_object({}) do |((group, resource), versions), options|
           names = versions.map { |entry| entry.version.to_s }.uniq
           next if names.length < 2
 
-          default_served = served ? ->(version) { served.include?(group.empty? ? version : "#{group}/#{version}") } : nil
+          default_served = if served
+                             ->(version) { served.include?(group.empty? ? version : "#{group}/#{version}") }
+                           end
           options[[group, resource]] = {
             storage_version: API::BuiltinConversion.storage_version(group, resource, names, default_served: default_served),
             converter: API::BuiltinConversion::Converter.new(group: group, resource: resource)

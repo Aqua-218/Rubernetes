@@ -76,7 +76,7 @@ module Conformance
     def profiles
       @profiles ||= begin
         require "yaml"
-        YAML.safe_load(File.read(PROFILES)).freeze
+        YAML.safe_load_file(PROFILES).freeze
       end
     end
 

@@ -35,11 +35,13 @@ class DaemonSetLiveAvailabilityTest < Minitest::Test
 
   def test_a_pod_the_cache_thinks_unavailable_but_is_ready_live_counts_as_available
     stale = pod("a", ready: false)
+
     assert sync({"a" => pod("a", ready: true)}).send(:old_pod_available?, stale)
   end
 
   def test_a_pod_unavailable_live_too_is_replaceable
     stale = pod("a", ready: false)
+
     refute sync({"a" => pod("a", ready: false)}).send(:old_pod_available?, stale)
     refute sync({}).send(:old_pod_available?, stale), "a Pod already gone is not available"
   end

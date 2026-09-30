@@ -58,9 +58,7 @@ module Rubernetes
           end
         end
         result = Storage::Batch.empty
-        if node.timestamp && node.cumulative_cpu.positive? && node.memory.positive?
-          result.nodes[node_name] = node
-        end
+        result.nodes[node_name] = node if node.timestamp && node.cumulative_cpu.positive? && node.memory.positive?
         pods.each do |key, containers|
           next if containers.empty?
 

@@ -23,6 +23,7 @@ class NativeDeviceAdapterIntegrationTest < Minitest::Test
       dm_identity = nil
       begin
         loop_identity = adapter.create_loop(path: backing_path, volume_id: "integration", size_bytes: SIZE_BYTES)
+
         assert_match(%r{\A/dev/loop\d+\z}, loop_identity.fetch("id"))
         assert_equal SIZE_BYTES, loop_identity.fetch("sizeBytes")
         assert_equal loop_identity.fetch("id"),
@@ -33,6 +34,7 @@ class NativeDeviceAdapterIntegrationTest < Minitest::Test
         # through the errno rescue rather than a pre-check.
 
         dm_identity = adapter.create_dm(device: loop_identity.fetch("id"), volume_id: "integration", size_bytes: SIZE_BYTES)
+
         assert_match(%r{\A/dev/mapper/}, dm_identity.fetch("id"))
         assert_equal SIZE_BYTES, dm_identity.fetch("sizeBytes")
         assert_equal dm_identity.fetch("id"),

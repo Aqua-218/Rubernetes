@@ -55,7 +55,10 @@ def verify_release!
   raise "missing #{tgz}" unless File.file?(tgz)
   raise "firecracker release digest mismatch" unless sha256(tgz) == FIRECRACKER_TGZ_SHA256
 
-  sums = File.read(File.join(RELEASE, "SHA256SUMS")).lines.to_h { |line| digest, name = line.split; [File.basename(name), digest] }
+  sums = File.read(File.join(RELEASE, "SHA256SUMS")).lines.to_h do |line|
+    digest, name = line.split
+    [File.basename(name), digest]
+  end
   %w[firecracker-v1.16.1-x86_64 jailer-v1.16.1-x86_64 seccomp-filter-v1.16.1-x86_64.json].each do |name|
     path = File.join(RELEASE, name)
     raise "#{name} digest does not match SHA256SUMS" unless sha256(path) == sums.fetch(name)
@@ -72,7 +75,9 @@ def build_rootfs(staging)
   ext_output = File.join(BUILD, "ext-musl")
   FileUtils.rm_rf(ext_output)
   FileUtils.mkdir_p(ext_output)
-  proxy_env = ENV.select { |key, _| key =~ /\A(https?_proxy|HTTPS?_PROXY|no_proxy|NO_PROXY)\z/ }.flat_map { |key, value| ["-e", "#{key}=#{value}"] }
+  proxy_env = ENV.select do |key, _|
+    key =~ /\A(https?_proxy|HTTPS?_PROXY|no_proxy|NO_PROXY)\z/
+  end.flat_map { |key, value| ["-e", "#{key}=#{value}"] }
   run!("docker", "run", "--rm", *proxy_env, "-v", "#{File.join(ROOT, "ext")}:/src/ext:ro", "-v", "#{ext_output}:/out", reference, "sh", "-c",
        "apk add --no-cache build-base linux-headers >/dev/null && mkdir -p /build && cp -r /src/ext/rubernetes_linux /build/ && cd /build/rubernetes_linux && ruby extconf.rb >/dev/null && make >/dev/null && cp rubernetes_linux.so /out/ && chmod 644 /out/rubernetes_linux.so")
   raise "extension build produced no rubernetes_linux.so" unless File.file?(File.join(ext_output, "rubernetes_linux.so"))
@@ -142,7 +147,9 @@ def main
   end
   File.chmod(0o755, ARTIFACTS)
   files = %w[firecracker jailer seccomp-filter.json vmlinux rootfs.ext4 rootfs.verity vmlinux.config].to_h do |name|
-    key = {"seccomp-filter.json" => "seccomp_filter", "vmlinux" => "kernel", "rootfs.ext4" => "rootfs", "rootfs.verity" => "verity_hash", "vmlinux.config" => "kernel_config"}.fetch(name, name)
+    key = {"seccomp-filter.json" => "seccomp_filter", "vmlinux" => "kernel", "rootfs.ext4" => "rootfs", "rootfs.verity" => "verity_hash", "vmlinux.config" => "kernel_config"}.fetch(
+      name, name
+    )
     path = File.join(ARTIFACTS, name)
     [key, {"path" => path.delete_prefix("#{ROOT}/"), "sha256" => sha256(path), "bytes" => File.size(path)}]
   end
@@ -163,7 +170,9 @@ def main
     "files" => files
   }
   File.write(LOCK, JSON.pretty_generate(lock) + "\n") if options[:write_lock]
-  puts JSON.pretty_generate({"artifacts" => ARTIFACTS, "root_hash" => root_hash, "files" => files.transform_values { |entry| entry["sha256"] }})
+  puts JSON.pretty_generate({"artifacts" => ARTIFACTS, "root_hash" => root_hash, "files" => files.transform_values do |entry|
+    entry["sha256"]
+  end})
 end
 
 main if $PROGRAM_NAME == __FILE__

@@ -16,7 +16,6 @@
 # after it agrees with the Lean reference on the corpus.
 
 require "json"
-require "set"
 
 module Linearizability
   # Sequential key/value model with resourceVersion semantics matching the
@@ -116,7 +115,7 @@ module Linearizability
     end
 
     def check
-      complete = @operations.select { |op| op.status == "ok" || op.status == "fail" }
+      complete = @operations.select { |op| %w[ok fail].include?(op.status) }
       unknown = @operations.select { |op| op.status == "info" }
       result = search(complete, unknown)
       if result[:linearizable]
@@ -175,6 +174,7 @@ module Linearizability
           # Unknown operations may be dropped; every completed operation is linearized.
           return {linearizable: true, "order" => order.map { |id| by_id[id].input.merge("id" => id) }, "explored" => @explored}
         end
+
         minimal_return = remaining.select { |op| op.status != "info" }.map(&:return_time).min || Float::INFINITY
         candidates = remaining.select { |op| op.invoke_time <= minimal_return }
         candidates.each do |op|
@@ -200,13 +200,17 @@ module Linearizability
     end
 
     # Shrink to a small conflicting operation pair set for the report.
-    def minimal_conflict(complete, unknown)
+    def minimal_conflict(complete, _unknown)
       ordered = complete.sort_by(&:invoke_time)
       (2..[ordered.length, 6].min).each do |size|
         ordered.combination(size).each do |subset|
           @explored = 0
           result = search(subset, [])
-          return subset.map { |op| {"process" => op.process, "input" => op.input, "output" => op.output, "status" => op.status} } unless result[:linearizable]
+          unless result[:linearizable]
+            return subset.map do |op|
+              {"process" => op.process, "input" => op.input, "output" => op.output, "status" => op.status}
+            end
+          end
         end
       end
       ordered.first(6).map { |op| {"process" => op.process, "input" => op.input, "output" => op.output, "status" => op.status} }

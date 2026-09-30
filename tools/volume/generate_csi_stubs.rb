@@ -78,11 +78,15 @@ module CSIStubGenerator
     cpu = RbConfig::CONFIG.fetch("host_cpu").downcase
     os = RbConfig::CONFIG.fetch("host_os").downcase
     architecture = case cpu
-                  when "x86_64", "amd64" then "x86_64"
-                  when "aarch64", "arm64" then "aarch64"
-                  else cpu
-                  end
-    operating_system = os.include?("linux") ? "linux" : os.include?("darwin") ? "macos" : "windows"
+                   when "x86_64", "amd64" then "x86_64"
+                   when "aarch64", "arm64" then "aarch64"
+                   else cpu
+                   end
+    operating_system = if os.include?("linux")
+                         "linux"
+                       else
+                         os.include?("darwin") ? "macos" : "windows"
+                       end
     "#{architecture}-#{operating_system}"
   end
 end

@@ -9,6 +9,7 @@ module Rubernetes
     module Linux
       class ABIManifest
         class Error < StandardError; end
+
         class Mismatch < Error
           attr_reader :mismatches
 
@@ -76,9 +77,13 @@ module Rubernetes
           mismatches = []
           expected_architecture = self.class.current_architecture
           mismatches << "architecture expected=#{expected_architecture} actual=#{architecture}" unless architecture == expected_architecture
-          mismatches << "word_size expected=#{Fiddle::SIZEOF_VOIDP * 8} actual=#{data.fetch("word_size")}" unless data.fetch("word_size") == Fiddle::SIZEOF_VOIDP * 8
+          unless data.fetch("word_size") == Fiddle::SIZEOF_VOIDP * 8
+            mismatches << "word_size expected=#{Fiddle::SIZEOF_VOIDP * 8} actual=#{data.fetch("word_size")}"
+          end
           expected_byte_order = [1].pack("S").getbyte(0) == 1 ? "little" : "big"
-          mismatches << "byte_order expected=#{expected_byte_order} actual=#{data.fetch("byte_order")}" unless data.fetch("byte_order") == expected_byte_order
+          unless data.fetch("byte_order") == expected_byte_order
+            mismatches << "byte_order expected=#{expected_byte_order} actual=#{data.fetch("byte_order")}"
+          end
           {"clone_args" => 88, "bpf_insn" => 8, "nlmsghdr" => 16, "sockaddr_nl" => 12}.each do |name, size|
             actual = structure(name).fetch("size")
             mismatches << "#{name}.size expected=#{size} actual=#{actual}" unless actual == size
@@ -103,7 +108,10 @@ module Rubernetes
         def deep_freeze(value)
           case value
           when Hash
-            value.each { |key, child| key.freeze; deep_freeze(child) }
+            value.each do |key, child|
+              key.freeze
+              deep_freeze(child)
+            end
           when Array
             value.each { |child| deep_freeze(child) }
           end

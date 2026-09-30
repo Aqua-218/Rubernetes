@@ -25,9 +25,7 @@ module Rubernetes
       existing = primary_error.respond_to?(:cleanup_errors) ? Array(primary_error.cleanup_errors) : []
       combined = (existing + failures).freeze
       primary_error.instance_variable_set(:@cleanup_errors, combined)
-      unless primary_error.respond_to?(:cleanup_errors)
-        primary_error.define_singleton_method(:cleanup_errors) { @cleanup_errors }
-      end
+      primary_error.define_singleton_method(:cleanup_errors) { @cleanup_errors } unless primary_error.respond_to?(:cleanup_errors)
       primary_error
     rescue StandardError
       # A frozen or otherwise restricted exception cannot carry a singleton

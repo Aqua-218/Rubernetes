@@ -87,7 +87,7 @@ module Rubernetes
               errors << error.message
             end
           end
-          raise Error, "no usable unix transport in D-Bus address #{address.inspect}#{errors.empty? ? "" : ": #{errors.join("; ")}"}"
+          raise Error, "no usable unix transport in D-Bus address #{address.inspect}#{": #{errors.join("; ")}" unless errors.empty?}"
         end
 
         # Splits a signature into its complete types.
@@ -310,6 +310,7 @@ module Rubernetes
           def close
             @socket.close unless @socket.closed?
           end
+
           def closed? = @socket.closed?
 
           # A method call; returns the reply body, raises RemoteError.
@@ -338,7 +339,7 @@ module Rubernetes
           def next_signal(timeout: nil)
             return @signals.shift unless @signals.empty?
 
-            deadline = timeout && Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+            deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout)
             loop do
               message = next_message(deadline)
               return nil if message.nil?
@@ -352,7 +353,7 @@ module Rubernetes
           def next_method_call(timeout: nil)
             return @method_calls.shift unless @method_calls.empty?
 
-            deadline = timeout && Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+            deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout)
             loop do
               message = next_message(deadline)
               return nil if message.nil?

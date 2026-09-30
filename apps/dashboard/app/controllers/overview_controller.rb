@@ -13,7 +13,7 @@ class OverviewController < ApplicationController
     @services = list("services")
     @pvcs = list("persistentvolumeclaims")
     @events = list("events").select { |e| e["type"] == "Warning" }
-                            .sort_by { |e| e["lastTimestamp"] || e.dig("metadata", "creationTimestamp") || "" }.reverse.first(15)
+      .sort_by { |e| e["lastTimestamp"] || e.dig("metadata", "creationTimestamp") || "" }.last(15).reverse
     @pod_phases = @pods.group_by { |p| p.dig("status", "phase") }.transform_values(&:length)
     @unhealthy_pods = @pods.reject { |p| healthy_pod?(p) }
     @targets = runtime.scraper.statuses.values

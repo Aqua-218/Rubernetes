@@ -212,7 +212,8 @@ module Rubernetes
       def container_stats(uid, container, record, stamp)
         usage = container["usage"] || {}
         entry = record[:containers].to_a.find { |candidate| candidate[:id].to_s == container["id"].to_s }
-        result = {"name" => container["name"].to_s, "startTime" => entry && (entry[:started_at] || entry.dig(:status, "running", "startedAt"))}
+        result = {"name" => container["name"].to_s,
+                  "startTime" => entry && (entry[:started_at] || entry.dig(:status, "running", "startedAt"))}
         result["cpu"] = cpu_stats("container/#{uid}/#{container["id"]}", usage["cpu"], stamp) if usage["cpu"]
         result["memory"] = memory_stats(usage["memory.current"], usage["memory"], stamp) if usage["memory"]
         result["swap"] = swap_stats(usage, stamp) if usage.key?("memory.swap.current")
@@ -269,9 +270,7 @@ module Rubernetes
         rate = @mutex.synchronize do
           previous = @cpu_samples[key]
           @cpu_samples[key] = [now, total]
-          if previous && now > previous[0] && total >= previous[1]
-            ((total - previous[1]) / (now - previous[0])).to_i
-          end
+          ((total - previous[1]) / (now - previous[0])).to_i if previous && now > previous[0] && total >= previous[1]
         end
         {"time" => stamp, "usageNanoCores" => rate, "usageCoreNanoSeconds" => total}.compact
       end
@@ -355,7 +354,8 @@ module Rubernetes
                 end
         return value if value.nil? || value == :unsupported
 
-        {"time" => stamp}.merge(value.slice("availableBytes", "capacityBytes", "usedBytes", "inodesFree", "inodes", "inodesUsed", "volumeCondition")).compact
+        {"time" => stamp}.merge(value.slice("availableBytes", "capacityBytes", "usedBytes", "inodesFree", "inodes", "inodesUsed",
+                                            "volumeCondition")).compact
       end
 
       def observe_volume_collection(source, seconds)

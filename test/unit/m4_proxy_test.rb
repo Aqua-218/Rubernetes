@@ -119,13 +119,13 @@ class M4ProxyTest < Minitest::Test
       "metadata" => {"name" => "web", "namespace" => "apps"},
       "spec" => {
         "type" => "NodePort", "clusterIP" => "10.96.0.10", "clusterIPs" => ["10.96.0.10", "fd00::10"],
-        "ipFamilies" => ["IPv4", "IPv6"], "internalTrafficPolicy" => "Local",
+        "ipFamilies" => %w[IPv4 IPv6], "internalTrafficPolicy" => "Local",
         "externalTrafficPolicy" => "Local", "sessionAffinity" => "ClientIP",
         "sessionAffinityConfig" => {"clientIP" => {"timeoutSeconds" => 60}},
         "ports" => [
-          {"name" => "http", "port" => 80, "targetPort" => 8080, "nodePort" => 30080, "protocol" => "TCP"},
-          {"name" => "dns", "port" => 53, "targetPort" => 5353, "nodePort" => 30053, "protocol" => "UDP"},
-          {"name" => "sctp", "port" => 9899, "targetPort" => 9899, "nodePort" => 30989, "protocol" => "SCTP"}
+          {"name" => "http", "port" => 80, "targetPort" => 8080, "nodePort" => 30_080, "protocol" => "TCP"},
+          {"name" => "dns", "port" => 53, "targetPort" => 5353, "nodePort" => 30_053, "protocol" => "UDP"},
+          {"name" => "sctp", "port" => 9899, "targetPort" => 9899, "nodePort" => 30_989, "protocol" => "SCTP"}
         ]
       }
     }
@@ -155,7 +155,7 @@ class M4ProxyTest < Minitest::Test
 
     assert_equal "apps/web", service.key
     assert_equal ["10.96.0.10", "fd00::10"], service.cluster_ips
-    assert service.headless? == false
+    assert_equal false, service.headless?
     assert_equal %w[UDP TCP SCTP], service.ports.map(&:protocol)
     assert_equal 9, slice.endpoints.length
     assert_equal 6, slice.endpoints.count(&:healthy?)
@@ -167,19 +167,21 @@ class M4ProxyTest < Minitest::Test
     @proxy.apply_endpoint_slice(@slice)
 
     rules = @proxy.rules
+
     assert_equal 9, rules.length # two ClusterIPs plus one NodePort for each of 3 protocols
-    assert_equal 6, rules.count { |rule| rule.kind == "ClusterIP" }
-    assert_equal 3, rules.count { |rule| rule.kind == "NodePort" }
-    assert @proxy.backend.messages.any? { |message| message["operation"] == "replace" }
+    assert_equal(6, rules.count { |rule| rule.kind == "ClusterIP" })
+    assert_equal(3, rules.count { |rule| rule.kind == "NodePort" })
+    assert(@proxy.backend.messages.any? { |message| message["operation"] == "replace" })
 
     modified = Marshal.load(Marshal.dump(@slice))
     modified["metadata"]["name"] = "web-2"
     modified["endpoints"][0]["conditions"]["ready"] = false
     @proxy.apply_endpoint_slice(modified)
     diff = @proxy.rule_diff
+
     assert_equal 0, diff.added.length
     assert_equal 0, diff.deleted.length
-    assert diff.updated.any?
+    assert_predicate diff.updated, :any?
   end
 
   def test_client_ip_affinity_and_conntrack_keep_same_backend
@@ -189,7 +191,8 @@ class M4ProxyTest < Minitest::Test
               "destinationIP" => "10.96.0.10", "destinationPort" => 80, "protocol" => "TCP", "zone" => "zone-b"}
     first = @proxy.route(packet)
     second = @proxy.route(packet.merge("sourcePort" => 10_002))
-    assert first.success?
+
+    assert_predicate first, :success?
     assert_equal first.endpoint.identity, second.endpoint.identity
   end
 
@@ -197,10 +200,11 @@ class M4ProxyTest < Minitest::Test
     @proxy.apply_service(@service)
     @proxy.apply_endpoint_slice(@slice)
     packet = {"sourceIP" => "203.0.113.7", "sourcePort" => 12_000,
-              "destinationIP" => "192.0.2.10", "destinationPort" => 30080,
+              "destinationIP" => "192.0.2.10", "destinationPort" => 30_080,
               "protocol" => "TCP", "external" => true}
     route = @proxy.route(packet)
-    assert route.success?
+
+    assert_predicate route, :success?
     assert_equal "10.1.0.1", route.address
     assert route.source_preserved
 
@@ -212,14 +216,16 @@ class M4ProxyTest < Minitest::Test
     @proxy.delete_endpoint_slice(@slice)
     @proxy.apply_endpoint_slice(terminating_only)
     route = @proxy.route(packet.merge("sourcePort" => 12_001))
-    assert route.success?
-    assert route.endpoint.terminating?
+
+    assert_predicate route, :success?
+    assert_predicate route.endpoint, :terminating?
   end
 
   def test_node_port_allocator_is_atomic_and_uses_default_range
     store = Rubernetes::Proxy::NodePortStore.new
     allocator = Rubernetes::Proxy::NodePortAllocator.new(store: store, min: 30_000, max: 30_001)
     first = allocator.allocate(service_key: "apps/a", protocol: "TCP", port: 80)
+
     assert_equal 30_000, first.node_port
     assert_raises(Rubernetes::Proxy::AllocationError) do
       allocator.allocate(service_key: "apps/b", protocol: "TCP", port: 80, requested: 30_000)
@@ -233,11 +239,13 @@ class M4ProxyTest < Minitest::Test
                                               syscall_adapter: ProxyEBPFModelTestAdapter.new,
                                               test_adapter: true)
     nftables = Rubernetes::Proxy::NftablesBackend.new(netlink_adapter: ProxyNftablesModelTestAdapter.new,
-                                                       test_adapter: true)
+                                                      test_adapter: true)
     auto = Rubernetes::Proxy::AutoBackend.new(ebpf: ebpf, nftables: nftables,
                                               capability_probe: Rubernetes::Proxy::CapabilityProbe.new(bpf: ebpf))
+
     assert_equal "ebpf", auto.selected_backend
     measurement = auto.switch!(target: "nftables", reason: "test")
+
     assert_equal "ebpf", measurement.from_backend
     assert_equal "nftables", measurement.to_backend
     assert_equal 1, auto.measurements.length
@@ -245,22 +253,24 @@ class M4ProxyTest < Minitest::Test
 
   def test_kernel_backends_fail_closed_without_a_production_capable_adapter
     ebpf = Rubernetes::Proxy::EBPFBackend.new(capability: true)
-    refute ebpf.available?
+
+    refute_predicate ebpf, :available?
     error = assert_raises(Rubernetes::Proxy::BackendError) { ebpf.attach }
     assert_match(/production-capable kernel adapter|adapter/, error.message)
     assert_equal :failed, ebpf.attach_state
-    refute ebpf.ready?
+    refute_predicate ebpf, :ready?
     assert_same error, ebpf.last_error
     assert_equal "failed", ebpf.status.state
 
     nftables = Rubernetes::Proxy::NftablesBackend.new
-    refute nftables.available?
-    refute nftables.ready?
+
+    refute_predicate nftables, :available?
+    refute_predicate nftables, :ready?
     # The native adapter is mechanically attachable before any packet proof,
     # so the state is "unattached"; it becomes available only after attach
     # and verified packet semantics.
     assert_equal "unattached", nftables.status.state
-    refute nftables.production_capable?
+    refute_predicate nftables, :production_capable?
   end
 
   def test_no_op_adapters_cannot_attach_even_when_explicitly_marked_as_test
@@ -268,9 +278,9 @@ class M4ProxyTest < Minitest::Test
     nftables = Rubernetes::Proxy::NftablesBackend.new(netlink_adapter: Object.new, test_adapter: true)
 
     [ebpf, nftables].each do |backend|
-      refute backend.available?
+      refute_predicate backend, :available?
       assert_raises(Rubernetes::Proxy::BackendError) { backend.attach }
-      refute backend.ready?
+      refute_predicate backend, :ready?
       assert_equal :failed, backend.attach_state
     end
   end
@@ -282,10 +292,10 @@ class M4ProxyTest < Minitest::Test
     adapter.define_singleton_method(:update) { |**| {verified: true} }
     backend = Rubernetes::Proxy::EBPFBackend.new(capability: true, syscall_adapter: adapter)
 
-    refute backend.available?
+    refute_predicate backend, :available?
     error = assert_raises(Rubernetes::Proxy::BackendError) { backend.attach }
     assert_match(/verification|readback/, error.message)
-    refute backend.ready?
+    refute_predicate backend, :ready?
     assert_equal :failed, backend.attach_state
   end
 
@@ -294,7 +304,7 @@ class M4ProxyTest < Minitest::Test
     ebpf_adapter.fail_next_attach!
     ebpf = Rubernetes::Proxy::EBPFBackend.new(capability: true, syscall_adapter: ebpf_adapter, test_adapter: true)
     assert_raises(Rubernetes::Proxy::BackendError) { ebpf.attach }
-    refute ebpf.ready?
+    refute_predicate ebpf, :ready?
     assert_equal :failed, ebpf.attach_state
     assert_match(/attach failure/, ebpf.last_error.message)
 
@@ -302,7 +312,7 @@ class M4ProxyTest < Minitest::Test
     nftables_adapter.fail_next_attach!
     nftables = Rubernetes::Proxy::NftablesBackend.new(netlink_adapter: nftables_adapter, test_adapter: true)
     assert_raises(Rubernetes::Proxy::BackendError) { nftables.attach }
-    refute nftables.ready?
+    refute_predicate nftables, :ready?
     assert_equal :failed, nftables.attach_state
     assert_match(/attach failure/, nftables.last_error.message)
   end
@@ -313,8 +323,8 @@ class M4ProxyTest < Minitest::Test
     auto = Rubernetes::Proxy::AutoBackend.new(ebpf: ebpf, nftables: nftables, capability_probe: -> { true })
 
     assert_equal "nftables", auto.selected_backend
-    refute auto.available?
-    refute auto.ready?
+    refute_predicate auto, :available?
+    refute_predicate auto, :ready?
     # Selected because the native adapter can attach; not yet available
     # because no verified packet semantics exist.
     assert_equal "unattached", auto.status.state
@@ -329,8 +339,8 @@ class M4ProxyTest < Minitest::Test
     auto = Rubernetes::Proxy::AutoBackend.new(ebpf: ebpf, nftables: nftables, capability_probe: -> { true })
 
     assert_equal "nftables", auto.selected_backend
-    assert auto.available?
-    refute auto.ready?
+    assert_predicate auto, :available?
+    refute_predicate auto, :ready?
     assert_equal "unattached", auto.status.state
   end
 
@@ -343,6 +353,7 @@ class M4ProxyTest < Minitest::Test
     proxy.apply_service(service)
     route = proxy.route({"sourceIP" => "10.0.0.2", "sourcePort" => 1000,
                          "destinationIP" => "192.0.2.20", "destinationPort" => 5432}, service: service)
+
     assert_instance_of Rubernetes::Proxy::ExternalNameRoute, route
     assert_equal "db.example.test", route.hostname
   end
@@ -351,7 +362,7 @@ class M4ProxyTest < Minitest::Test
     service = Rubernetes::Proxy::Service.new(
       "metadata" => {"name" => "published"},
       "spec" => {"clusterIP" => "10.96.0.30", "publishNotReadyAddresses" => true,
-                  "ports" => [{"port" => 80, "targetPort" => 8080}]}
+                 "ports" => [{"port" => 80, "targetPort" => 8080}]}
     )
     slice = {
       "metadata" => {"name" => "published-1", "labels" => {"kubernetes.io/service-name" => "published"}},
@@ -364,7 +375,8 @@ class M4ProxyTest < Minitest::Test
 
     route = @proxy.route({"sourceIP" => "198.51.100.1", "sourcePort" => 1,
                           "destinationIP" => "10.96.0.30", "destinationPort" => 80})
-    assert route.success?
+
+    assert_predicate route, :success?
     assert_equal "10.1.0.20", route.address
   end
 
@@ -399,6 +411,7 @@ class M4ProxyTest < Minitest::Test
       @proxy.route({"sourceIP" => "198.51.100.#{index + 1}", "sourcePort" => index + 1,
                     "destinationIP" => "10.96.0.31", "destinationPort" => 80, "zone" => "zone-a"}).address
     end
+
     assert_includes destinations, "10.1.0.32"
   end
 
@@ -406,14 +419,15 @@ class M4ProxyTest < Minitest::Test
     service = Rubernetes::Proxy::Service.new(
       "metadata" => {"name" => "udp-health"},
       "spec" => {"type" => "NodePort", "clusterIP" => "10.96.0.32", "externalTrafficPolicy" => "Local",
-                  "healthCheckNodePort" => 30090,
-                  "ports" => [{"port" => 53, "targetPort" => 5353, "nodePort" => 30053, "protocol" => "UDP"}]}
+                 "healthCheckNodePort" => 30_090,
+                 "ports" => [{"port" => 53, "targetPort" => 5353, "nodePort" => 30_053, "protocol" => "UDP"}]}
     )
     rules = Rubernetes::Proxy::RuleCompiler.new(local_node: "node-a").compile(service, endpoints: []).rules
     health = rules.find { |rule| rule.health_check }
+
     assert_equal "TCP", health.protocol
-    assert_equal 30090, health.port
-    assert_equal 30090, health.node_port
+    assert_equal 30_090, health.port
+    assert_equal 30_090, health.node_port
   end
 
   def test_health_check_node_port_responder_returns_200_and_503_from_local_endpoints
@@ -431,23 +445,25 @@ class M4ProxyTest < Minitest::Test
       end
     end
     raise "could not reserve a NodePort-range test port" unless probe
+
     probe.close
     service = Rubernetes::Proxy::Service.new(
       "metadata" => {"name" => "health-responder"},
       "spec" => {"type" => "NodePort", "clusterIP" => "10.96.0.90", "externalTrafficPolicy" => "Local",
-                  "healthCheckNodePort" => health_port,
-                  "ports" => [{"port" => 80, "targetPort" => 8080, "nodePort" => 30080, "protocol" => "TCP"}]}
+                 "healthCheckNodePort" => health_port,
+                 "ports" => [{"port" => 80, "targetPort" => 8080, "nodePort" => 30_080, "protocol" => "TCP"}]}
     )
     slice = {
       "metadata" => {"name" => "health-responder-1", "labels" => {"kubernetes.io/service-name" => "health-responder"}},
       "addressType" => "IPv4", "ports" => [{"port" => 8080, "protocol" => "TCP"}],
       "endpoints" => [{"addresses" => ["10.1.0.90"], "nodeName" => "node-a",
-                        "conditions" => {"ready" => true, "serving" => true}}]
+                       "conditions" => {"ready" => true, "serving" => true}}]
     }
     proxy = Rubernetes::Proxy::Proxy.new(local_node: "node-a", backend: :nftables)
     proxy.apply_service(service)
     proxy.apply_endpoint_slice(slice)
     responder = proxy.start_health_check_responder(bind_address: "127.0.0.1")
+
     assert_includes responder.ports, health_port
 
     request = lambda do
@@ -458,12 +474,14 @@ class M4ProxyTest < Minitest::Test
     ensure
       socket&.close
     end
-    assert_match(/\AHTTP\/1\.1 200 OK\r\n/, request.call)
+
+    assert_match(%r{\AHTTP/1\.1 200 OK\r\n}, request.call)
 
     unhealthy = Marshal.load(Marshal.dump(slice))
     unhealthy["endpoints"][0]["conditions"] = {"ready" => false, "serving" => false}
     proxy.apply_endpoint_slice(unhealthy)
-    assert_match(/\AHTTP\/1\.1 503 Service Unavailable\r\n/, request.call)
+
+    assert_match(%r{\AHTTP/1\.1 503 Service Unavailable\r\n}, request.call)
   ensure
     proxy&.stop_health_check_responder
   end
@@ -472,13 +490,15 @@ class M4ProxyTest < Minitest::Test
     store = Rubernetes::Proxy::NodePortStore.new
     allocator = Rubernetes::Proxy::NodePortAllocator.new(store: store, min: 30_000, max: 30_010)
     first = Rubernetes::Proxy::Service.new("metadata" => {"name" => "ports"},
-                                            "spec" => {"type" => "NodePort", "ports" => [{"port" => 80}]})
+                                           "spec" => {"type" => "NodePort", "ports" => [{"port" => 80}]})
     second = Rubernetes::Proxy::Service.new("metadata" => {"name" => "ports"},
-                                             "spec" => {"type" => "NodePort", "ports" => [{"port" => 81}]})
+                                            "spec" => {"type" => "NodePort", "ports" => [{"port" => 81}]})
     allocator.allocate_for_service(first)
     allocator.allocate_for_service(second)
+
     assert_equal [81], allocator.allocations.map(&:port)
     allocator.release_service(second)
+
     assert_empty allocator.allocations
   end
 
@@ -488,10 +508,11 @@ class M4ProxyTest < Minitest::Test
     service = Rubernetes::Proxy::Service.new(
       "metadata" => {"name" => "health-reserved"},
       "spec" => {"type" => "NodePort", "externalTrafficPolicy" => "Local",
-                  "healthCheckNodePort" => 30_000,
-                  "ports" => [{"port" => 80, "nodePort" => 30_001}]}
+                 "healthCheckNodePort" => 30_000,
+                 "ports" => [{"port" => 80, "nodePort" => 30_001}]}
     )
     allocator.allocate_for_service(service)
+
     assert_equal [30_000, 30_001], allocator.allocations.map(&:node_port).sort
     assert_raises(Rubernetes::Proxy::AllocationError) do
       allocator.allocate(service_key: "default/other", protocol: "TCP", port: 81, requested: 30_000)
@@ -502,6 +523,7 @@ class M4ProxyTest < Minitest::Test
       "spec" => {"type" => "NodePort", "ports" => [{"port" => 80, "nodePort" => 30_001}]}
     )
     allocator.allocate_for_service(updated)
+
     assert_equal [30_001], allocator.allocations.map(&:node_port)
   end
 
@@ -515,10 +537,11 @@ class M4ProxyTest < Minitest::Test
     service = Rubernetes::Proxy::Service.new("metadata" => {"name" => "failover"},
                                              "spec" => {"clusterIP" => "10.96.0.33", "ports" => [{"port" => 80}]})
     compiled = Rubernetes::Proxy::RuleCompiler.new.compile(service,
-                                                            endpoints: [Rubernetes::Proxy::Endpoint.new(address: "10.1.0.33", port: 80)],
-                                                            revision: 1)
+                                                           endpoints: [Rubernetes::Proxy::Endpoint.new(address: "10.1.0.33", port: 80)],
+                                                           revision: 1)
     auto.apply(compiled)
     auto.switch!(target: "nftables", reason: "test")
+
     assert_equal 1, nftables.messages.length
     assert_equal 1, adapter.calls.length
     assert_equal 1, adapter.calls.last.first.length
@@ -543,7 +566,7 @@ class M4ProxyTest < Minitest::Test
     assert_equal 0, backend.revision
     assert_empty backend.rules
     assert_empty backend.messages
-    assert_equal [[], ["add"], ["delete"]], adapter.calls.map { |messages, _| messages.map { |message| message.fetch("operation") } }
+    assert_equal([[], ["add"], ["delete"]], adapter.calls.map { |messages, _| messages.map { |message| message.fetch("operation") } })
   end
 
   def test_ebpf_adapter_failure_rolls_back_program_and_rules
@@ -571,6 +594,7 @@ class M4ProxyTest < Minitest::Test
       _operation, backend_name, diff, program = call
       [backend_name, diff.added.length, diff.deleted.length, program.length]
     end
+
     assert_equal [["ebpf", 1, 0, 7], ["ebpf", 0, 1, 6]], update_calls
   end
 
@@ -628,7 +652,8 @@ class M4ProxyTest < Minitest::Test
     assert_equal "10.96.0.36", @proxy.service("watched").cluster_ip
     assert_nil @proxy.service("stale")
     subscription.close
-    refute subscription.thread.alive?
+
+    refute_predicate subscription.thread, :alive?
   end
 
   def test_rule_set_rejects_out_of_order_revision

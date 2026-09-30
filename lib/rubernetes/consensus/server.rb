@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "securerandom"
-require "thread"
 
 require_relative "errors"
 require_relative "node"
@@ -48,8 +47,6 @@ module Rubernetes
 
       DEFAULT_TIMEOUT = 10.0
       TICK_INTERVAL = 0.001
-
-      attr_reader :node, :storage, :state_machine, :transport, :id, :cluster_id, :data_directory
 
       def initialize(id:, cluster_id:, data_directory:, bundle:, initial_voters:, peers: {}, host: "127.0.0.1", port: 0,
                      timing: Node::Timing.default, logger: nil, recover_torn_tail: true, device_factory: nil,
@@ -207,7 +204,7 @@ module Rubernetes
         !@failure.nil?
       end
 
-      attr_reader :failure, :logger
+      attr_reader :node, :storage, :state_machine, :transport, :id, :cluster_id, :data_directory, :failure, :logger
 
       def leader?
         @mutex.synchronize { @node.leader? }
@@ -369,8 +366,8 @@ module Rubernetes
         @state_machine.store
       end
 
-      def synchronize(&block)
-        @mutex.synchronize(&block)
+      def synchronize(&)
+        @mutex.synchronize(&)
       end
 
       private
@@ -385,19 +382,17 @@ module Rubernetes
       # compaction goes back under the lock.
       def write_snapshot_async(capture)
         @snapshot_thread = Thread.new do
-          begin
-            state = KVStateMachine.encode_snapshot(capture.document)
-            metadata = @storage.snapshots.write(state: state, index: capture.index, term: capture.term,
-                                                membership: capture.membership, created_at: capture.created_at)
-            @mutex.synchronize { @node.complete_snapshot!(capture, metadata) }
-            @logger&.info("consensus.snapshot_written", index: capture.index, term: capture.term, bytes: metadata.bytes,
-                                                         seconds: (Process.clock_gettime(Process::CLOCK_MONOTONIC) - capture.started_at).round(3))
-          rescue DurabilityError, CorruptionError => error
-            fail_closed!(error)
-          rescue StandardError => error
-            @mutex.synchronize { @node.abandon_snapshot!(capture, error) }
-            @logger&.error("consensus.snapshot_failed", index: capture.index, error: "#{error.class}: #{error.message}")
-          end
+          state = KVStateMachine.encode_snapshot(capture.document)
+          metadata = @storage.snapshots.write(state: state, index: capture.index, term: capture.term,
+                                              membership: capture.membership, created_at: capture.created_at)
+          @mutex.synchronize { @node.complete_snapshot!(capture, metadata) }
+          @logger&.info("consensus.snapshot_written", index: capture.index, term: capture.term, bytes: metadata.bytes,
+                                                      seconds: (Process.clock_gettime(Process::CLOCK_MONOTONIC) - capture.started_at).round(3))
+        rescue DurabilityError, CorruptionError => error
+          fail_closed!(error)
+        rescue StandardError => error
+          @mutex.synchronize { @node.abandon_snapshot!(capture, error) }
+          @logger&.error("consensus.snapshot_failed", index: capture.index, error: "#{error.class}: #{error.message}")
         end
         @snapshot_thread.name = "raft-snapshot-#{@id}"
         @snapshot_thread
@@ -624,7 +619,7 @@ module Rubernetes
         end
       end
 
-      def wait_for(index, term, request_id, timeout)
+      def wait_for(index, term, _request_id, timeout)
         future = @applied_mutex.synchronize do
           applied = @applied_by_index && @applied_by_index[index]
           if applied && applied[:term] == term
@@ -719,7 +714,9 @@ module Rubernetes
         return unless previous == :leader && current != :leader
 
         pending = @applied_mutex.synchronize { @pending.values.tap { @pending.clear } }
-        pending.each { |future| future.resolve(nil, NotLeader.new("leadership lost before the entry was applied", leader_id: @node.leader_id)) }
+        pending.each do |future|
+          future.resolve(nil, NotLeader.new("leadership lost before the entry was applied", leader_id: @node.leader_id))
+        end
       end
 
       def forward(leader, command, request_id, timeout)
@@ -765,7 +762,7 @@ module Rubernetes
         if @logger && (@last_forward_timeout_report.nil? || now - @last_forward_timeout_report >= 5.0)
           @last_forward_timeout_report = now
           @logger.warn("consensus.forward_read_timeout", leader: leader, timeout: timeout,
-                                                          term: @node.current_term, pending: @read_waiters.length)
+                                                         term: @node.current_term, pending: @read_waiters.length)
         end
         nil
       ensure

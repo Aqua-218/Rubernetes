@@ -53,12 +53,14 @@ class ConsensusStaleSnapshotTest < Minitest::Test
     follower = cluster.processes.values.map(&:node).find { |node| node.id != leader.id }
     applied = follower.last_applied
     message = stale_snapshot_message(leader, follower, captured)
+
     assert_operator message.last_included_index, :<, applied, "precondition: the snapshot is behind the follower"
     follower.drain
 
     outbound = follower.handle(message, cluster.now)
 
     reply = Array(outbound).find { |sent| sent.is_a?(C::Messages::InstallSnapshotResponse) }
+
     refute_nil reply, "the follower must answer, or the leader streams the snapshot for ever"
     assert reply.success, "a snapshot already passed is ignored and acknowledged"
     assert_equal applied, follower.last_applied, "the follower must not move backwards"

@@ -17,7 +17,7 @@ class ResourceClaimStatusAuthorizationTest < Minitest::Test
   def server(rules)
     source = Object.new
     roles = [{"metadata" => {"name" => "writer"}, "rules" => [{"apiGroups" => ["resource.k8s.io"], "resources" => %w[resourceclaims resourceclaims/status],
-                                                                "verbs" => %w[get create update patch]}] + rules}]
+                                                               "verbs" => %w[get create update patch]}] + rules}]
     bindings = [{"metadata" => {"name" => "writer"}, "roleRef" => {"kind" => "ClusterRole", "name" => "writer"},
                  "subjects" => [{"kind" => "User", "name" => "driver"}, {"kind" => "User", "name" => "admin-setup"}]}]
     source.define_singleton_method(:cluster_roles) { roles }
@@ -50,31 +50,40 @@ class ResourceClaimStatusAuthorizationTest < Minitest::Test
   end
 
   ALLOCATION = {"devices" => {"results" => [{"request" => "r", "driver" => "gpu.example", "pool" => "p", "device" => "d0"}]},
-                "nodeSelector" => {"nodeSelectorTerms" => [{"matchFields" => [{"key" => "metadata.name", "operator" => "In", "values" => ["n1"]}]}]}}.freeze
+                "nodeSelector" => {"nodeSelectorTerms" => [{"matchFields" => [{"key" => "metadata.name", "operator" => "In",
+                                                                               "values" => ["n1"]}]}]}}.freeze
   DEVICES = [{"driver" => "gpu.example", "pool" => "p", "device" => "d0", "conditions" => [{"type" => "Ready", "status" => "True"}]}].freeze
 
   def test_allocation_needs_the_binding_subresource
     server([])
     denied = put_status({"allocation" => ALLOCATION})
+
     assert_equal 422, denied.status, denied.body.inspect
-    assert_match(/changing status.allocation or status.reservedFor requires resource="resourceclaims\/binding", verb="update"/, denied.body["message"])
+    assert_match(%r{changing status.allocation or status.reservedFor requires resource="resourceclaims/binding", verb="update"},
+                 denied.body["message"])
     server([{"apiGroups" => ["resource.k8s.io"], "resources" => %w[resourceclaims/binding], "verbs" => %w[update]}])
+
     assert_equal 200, put_status({"allocation" => ALLOCATION}).status
   end
 
   def test_device_status_needs_the_driver_subresource_for_that_driver
     binding = {"apiGroups" => ["resource.k8s.io"], "resources" => %w[resourceclaims/binding], "verbs" => %w[update]}
     server([binding])
+
     assert_equal 200, put_status({"allocation" => ALLOCATION}).status
     denied = put_status({"allocation" => ALLOCATION, "devices" => DEVICES})
+
     assert_equal 422, denied.status
-    assert_match(/changing status.devices requires resource="resourceclaims\/driver", verb="\[arbitrary-node:update\]"/, denied.body["message"])
+    assert_match(%r{changing status.devices requires resource="resourceclaims/driver", verb="\[arbitrary-node:update\]"},
+                 denied.body["message"])
     server([binding, {"apiGroups" => ["resource.k8s.io"], "resources" => %w[resourceclaims/driver], "resourceNames" => %w[other.example],
                       "verbs" => %w[arbitrary-node:update]}])
+
     assert_equal 200, put_status({"allocation" => ALLOCATION}).status
     assert_equal 422, put_status({"allocation" => ALLOCATION, "devices" => DEVICES}).status
     server([binding, {"apiGroups" => ["resource.k8s.io"], "resources" => %w[resourceclaims/driver], "resourceNames" => %w[gpu.example],
                       "verbs" => %w[arbitrary-node:update]}])
+
     assert_equal 200, put_status({"allocation" => ALLOCATION}).status
     assert_equal 200, put_status({"allocation" => ALLOCATION, "devices" => DEVICES}).status
   end
@@ -86,15 +95,18 @@ class ResourceClaimStatusAuthorizationTest < Minitest::Test
     # Re-seeded: the claim is created without status by server(); give it one.
     @unsecured.call(API::Request.new(method: "PUT", path: "#{PATH}/c/status", headers: {"content-type" => "application/json"},
                                      body: JSON.generate(JSON.parse(JSON.generate(@unsecured.call(API::Request.new(method: "GET", path: "#{PATH}/c")).body)).merge("status" => {"allocation" => ALLOCATION}))))
+
     assert_equal 200, put_status({"allocation" => ALLOCATION}).status
   end
 
   def test_modified_drivers
     server([])
     old = {"devices" => DEVICES}
+
     assert_empty @api.send(:claim_device_status_drivers, old, {"devices" => DEVICES})
     assert_equal ["gpu.example"], @api.send(:claim_device_status_drivers, old, {"devices" => []})
     user = S::UserInfo.new(name: "system:serviceaccount:kube-system:gpu", extra: {"authentication.kubernetes.io/node-name" => ["n1"]})
+
     assert @api.send(:claim_node_service_account?, user, ALLOCATION)
     refute @api.send(:claim_node_service_account?, S::UserInfo.new(name: "driver"), ALLOCATION)
   end

@@ -89,7 +89,7 @@ module Rubernetes
           no_new_privs: [:securebits],
           lsm: [:no_new_privs],
           rlimit: [:lsm],
-          seccomp: [:no_new_privs, :capabilities, :rlimit],
+          seccomp: %i[no_new_privs capabilities rlimit],
           close_fds: [:seccomp],
           execveat: [:close_fds]
         }.freeze
@@ -211,6 +211,7 @@ module Rubernetes
           def self.fetch(input, *keys, default: nil)
             keys.each do |key|
               return input[key] if input.key?(key)
+
               string = key.to_s
               return input[string] if input.key?(string)
             end
@@ -218,7 +219,7 @@ module Rubernetes
           end
 
           def self.Boolean(value)
-            return value if value == true || value == false
+            return value if [true, false].include?(value)
 
             return false if value.nil?
 
@@ -360,10 +361,10 @@ module Rubernetes
             @architecture = normalize_architecture(architecture)
             @manifest = manifest || ABIManifest.load(architecture: @architecture)
             defaults = if @manifest.respond_to?(:seccomp_syscalls)
-              @manifest.seccomp_syscalls
-            else
-              @architecture == "aarch64" ? {} : DEFAULT_SYSCALL_NUMBERS
-            end
+                         @manifest.seccomp_syscalls
+                       else
+                         @architecture == "aarch64" ? {} : DEFAULT_SYSCALL_NUMBERS
+                       end
             @syscall_numbers = defaults.merge(syscall_numbers.transform_keys(&:to_s)).transform_values { |value| Integer(value) }
             names = allowlist.nil? ? nil : Array(allowlist).map(&:to_s)
             names -= ["arch_prctl"] if names && @architecture == "aarch64"
@@ -391,7 +392,8 @@ module Rubernetes
                                                rules: [Seccomp::Rule.new(names: @allowlist, action: :allow, errno_ret: nil, args: [].freeze)],
                                                architectures: [@architecture], name: "allowlist")
                         else
-                          Seccomp::Profile.runtime_default(architecture: @architecture, capabilities: capabilities || CRI_DEFAULT_CAPABILITIES)
+                          Seccomp::Profile.runtime_default(architecture: @architecture,
+                                                           capabilities: capabilities || CRI_DEFAULT_CAPABILITIES)
                         end
             unless profile.architectures.empty? || profile.architectures.include?(@architecture)
               raise Unsupported, "seccomp profile does not list architecture #{@architecture}"
@@ -501,7 +503,16 @@ module Rubernetes
           def normalize_architecture(value)
             value ||= RbConfig::CONFIG.fetch("host_cpu")
             key = String(value).downcase
-            ARCHITECTURES.key?(key) ? (key == "amd64" ? "x86_64" : key == "arm64" ? "aarch64" : key) : raise(Unsupported, "unsupported seccomp architecture #{value.inspect}")
+            if ARCHITECTURES.key?(key)
+              if key == "amd64"
+                "x86_64"
+              else
+                key == "arm64" ? "aarch64" : key
+              end
+            else
+              raise(Unsupported,
+                    "unsupported seccomp architecture #{value.inspect}")
+            end
           end
         end
 
@@ -537,7 +548,8 @@ module Rubernetes
               ).freeze
             )
           rescue SystemCallError => error
-            Probe.new(architecture: normalize_architecture(@architecture), capabilities: {}, no_new_privs: false, seccomp: false, landlock: false, details: {"error" => "#{error.class}: #{error.message}"}.freeze)
+            Probe.new(architecture: normalize_architecture(@architecture), capabilities: {}, no_new_privs: false, seccomp: false,
+                      landlock: false, details: {"error" => "#{error.class}: #{error.message}"}.freeze)
           end
 
           alias probe call
@@ -550,7 +562,9 @@ module Rubernetes
             input = value.respond_to?(:to_h) ? value.to_h : {}
             Probe.new(
               architecture: String(input[:architecture] || input["architecture"] || normalize_architecture(@architecture)),
-              capabilities: (input[:capabilities] || input["capabilities"] || {}).to_h.transform_keys { |key| String(key).upcase.sub(/\ACAP_/, "") }.freeze,
+              capabilities: (input[:capabilities] || input["capabilities"] || {}).to_h.transform_keys do |key|
+                String(key).upcase.sub(/\ACAP_/, "")
+              end.freeze,
               no_new_privs: input.key?(:no_new_privs) ? input[:no_new_privs] : input.fetch("no_new_privs", false),
               seccomp: input.key?(:seccomp) ? input[:seccomp] : input.fetch("seccomp", false),
               landlock: input.key?(:landlock) ? input[:landlock] : input.fetch("landlock", false),
@@ -564,7 +578,8 @@ module Rubernetes
               next unless raw
 
               token = raw.strip
-              values[key] = token.match?(/\A[0-9a-fA-F]+\z/) && key.start_with?("Cap") ? token.to_i(16) : Integer(token, exception: false) || token
+              values[key] =
+                token.match?(/\A[0-9a-fA-F]+\z/) && key.start_with?("Cap") ? token.to_i(16) : Integer(token, exception: false) || token
             end
           end
 
@@ -645,7 +660,8 @@ module Rubernetes
           compiler ||= @seccomp_compiler || SeccompCompiler.new
           capabilities = context.effective_capability_names
           profile = if context.seccomp_name == "Localhost"
-                      load_localhost_profile(context.seccomp_localhost_profile, capabilities: capabilities, architecture: compiler.architecture)
+                      load_localhost_profile(context.seccomp_localhost_profile, capabilities: capabilities,
+                                                                                architecture: compiler.architecture)
                     else
                       Seccomp::Profile.runtime_default(architecture: compiler.architecture, capabilities: capabilities)
                     end
@@ -704,6 +720,7 @@ module Rubernetes
           if context.privileged? && context.allow_privilege_escalation == false
             raise InvalidContext, "privileged security context cannot disable privilege escalation"
           end
+
           validate_id(context.run_as_user, "run_as_user") if context.run_as_user
           validate_id(context.run_as_group, "run_as_group") if context.run_as_group
           context.supplemental_groups.each { |group| validate_id(group, "supplemental_groups") }
@@ -727,6 +744,7 @@ module Rubernetes
           if context.landlock_required? && !probe.available?(:landlock)
             raise Unsupported, "Landlock is required by the security context but unavailable"
           end
+
           context
         end
 
@@ -739,8 +757,7 @@ module Rubernetes
 
         def normalize_capability(value)
           key = String(value).upcase
-          key = CAPABILITY_ALIASES.fetch(key, key.sub(/\ACAP_/, ""))
-          key
+          CAPABILITY_ALIASES.fetch(key, key.sub(/\ACAP_/, ""))
         end
 
         def topological_steps

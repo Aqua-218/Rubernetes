@@ -24,6 +24,7 @@ class M1KubernetesSemanticOracleTest < Minitest::Test
       go_package: "k8s.io/api/extensions/v1beta1",
       go_type: "NetworkPolicy"
     )
+
     assert_equal(true, network_policy.fetch("applicable"))
     assert(network_policy.fetch("source_paths").any? { |path| path.end_with?("zz_generated.validations.go") })
 
@@ -32,6 +33,7 @@ class M1KubernetesSemanticOracleTest < Minitest::Test
       go_package: "k8s.io/api/apps/v1",
       go_type: "Deployment"
     )
+
     assert_equal(false, deployment.fetch("applicable"))
     assert_match(/upstream source has no zz_generated\.validations\.go|does not register Deployment/, deployment.fetch("reason"))
   end
@@ -50,10 +52,12 @@ class M1KubernetesSemanticOracleTest < Minitest::Test
     skip("pinned Kubernetes source checkout is unavailable") unless File.directory?(SOURCE_ROOT)
 
     report = M1KubernetesSemanticOracle.compare(source_root: SOURCE_ROOT, requests: [valid_request])
+
     assert_equal(true, report.fetch("executed"))
     assert_equal(1, report.fetch("comparison_count"))
     assert_equal(M1Gate::KUBERNETES_SEMANTICS_ORACLE_KIND, report.dig("provenance", "kind"))
     comparison = report.fetch("comparisons").fetch(0)
+
     assert_equal(true, comparison.dig("json", "accepted"))
     assert_equal(false, comparison.dig("json", "unknown", "field_preserved"))
     assert_equal(true, comparison.dig("defaulting", "applicable"))

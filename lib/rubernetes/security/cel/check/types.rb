@@ -33,7 +33,7 @@ module Rubernetes
           def self.struct(name) = new(:struct, name)
           def self.optional(elem) = opaque("optional_type", elem)
           def self.type_type(param = nil) = new(:type, "type", param ? [param] : [])
-          def self.function(result, *args) = opaque("function", result, *args)
+          def self.function(result, *) = opaque("function", result, *)
 
           def dyn_like? = %i[dyn any type_param].include?(kind)
           def dyn? = kind == :dyn
@@ -81,9 +81,7 @@ module Rubernetes
             when :type_param then name
             when :unspecified then ""
             else
-              if kind == :opaque && name == "function"
-                return Check.format_function(params[0], params[1..], false)
-              end
+              return Check.format_function(params[0], params[1..], false) if kind == :opaque && name == "function"
               return declared_name if params.empty?
 
               "#{name}(#{params.map(&:to_s).join(", ")})"

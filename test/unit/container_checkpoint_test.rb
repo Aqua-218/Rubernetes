@@ -47,8 +47,10 @@ class ContainerCheckpointTest < Minitest::Test
     backend = CheckpointingBackend.new
     runtime = Rubernetes::Runtime::Multiplexer.new(backends: {"rubernetes-native" => backend})
     status, body = post(server(runtime), "/checkpoint/ns/web/app?timeout=7")
+
     assert_equal 200, status, body
     location = JSON.parse(body).fetch("items").first
+
     assert_match(%r{\A#{Regexp.escape(@dir)}/checkpoint-web_ns-app-\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(Z|[+-]\d\d:\d\d)\.tar\z}, location)
     assert_equal [["ctr-app", location, 7]], backend.calls
   end
@@ -56,10 +58,12 @@ class ContainerCheckpointTest < Minitest::Test
   def test_errors_follow_the_kubelet
     runtime = Rubernetes::Runtime::Multiplexer.new(backends: {"rubernetes-native" => Object.new})
     subject = server(runtime)
+
     assert_equal [404, "pod does not exist\n"], post(subject, "/checkpoint/ns/missing/app")
     assert_equal [404, "container nope does not exist\n"], post(subject, "/checkpoint/ns/web/nope")
     assert_equal [404, "cannot parse value of timeout parameter\n"], post(subject, "/checkpoint/ns/web/app?timeout=x")
     status, body = post(subject, "/checkpoint/ns/web/app")
+
     assert_equal 500, status
     assert_match(%r{\Acheckpointing of ns/web/app failed \(checkpoint/restore support not available}, body)
   end

@@ -37,10 +37,11 @@ class ProbeIPv6HostsTest < Minitest::Test
   def test_http_probe_url_is_formatted_like_upstream
     http = HTTP.new
     manager = Rubernetes::Node::ProbeManager.new(runtime: Object.new, http_client: http)
-    assert manager.check("c", {"httpGet" => {"host" => "fd00::2", "port" => 8080, "path" => "/healthz"}}).success?
-    assert manager.check("c", {"httpGet" => {"host" => "10.0.0.5", "port" => 8080, "path" => "healthz"}}).success?
+
+    assert_predicate manager.check("c", {"httpGet" => {"host" => "fd00::2", "port" => 8080, "path" => "/healthz"}}), :success?
+    assert_predicate manager.check("c", {"httpGet" => {"host" => "10.0.0.5", "port" => 8080, "path" => "healthz"}}), :success?
     # The Pod IP comes from the context when the probe names no host.
-    assert manager.check("c", {"httpGet" => {"port" => 8081}}, context: {"host" => "fd00::9"}).success?
+    assert_predicate manager.check("c", {"httpGet" => {"port" => 8081}}, context: {"host" => "fd00::9"}), :success?
     assert_equal ["http://[fd00::2]:8080/healthz", "http://10.0.0.5:8080/healthz", "http://[fd00::9]:8081/"], http.uris
   end
 
@@ -51,12 +52,15 @@ class ProbeIPv6HostsTest < Minitest::Test
       skip "no IPv6 loopback"
     end
     port = server.addr[1]
+
     assert_equal true, Connector.blocking_tcp_connect("::1", port, 1.0).fetch("connected")
     assert_equal true, Connector.blocking_tcp_connect("[::1]", port, 1.0).fetch("connected")
     server.close
     v4 = TCPServer.new("127.0.0.1", 0)
+
     assert_equal true, Connector.blocking_tcp_connect("127.0.0.1", v4.addr[1], 1.0).fetch("connected")
     v4.close
+
     refute Connector.blocking_tcp_connect("::1", port, 0.5).fetch("connected"), "closed port"
   end
 
@@ -73,7 +77,13 @@ class ProbeIPv6HostsTest < Minitest::Test
       # nothing), then sends the request on a second one.
       loop do
         client = server.accept
-        data = IO.select([client], nil, nil, 1.0) ? (client.read_nonblock(4096, exception: false) rescue nil) : nil
+        data = if IO.select([client], nil, nil, 1.0)
+                 begin
+                   client.read_nonblock(4096, exception: false)
+                 rescue StandardError
+                   nil
+                 end
+               end
         if data.is_a?(String) && data.start_with?("GET")
           seen = data
           client.write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
@@ -86,7 +96,8 @@ class ProbeIPv6HostsTest < Minitest::Test
     result = Connector.blocking_http_get("::1", port, "/healthz", {}, 2.0)
     thread.join
     server.close
+
     assert_equal 200, result.fetch("status")
-    assert_match(/^GET \/healthz HTTP\/1.1\r\nHost: \[::1\]:#{port}\r\n/, seen)
+    assert_match(%r{^GET /healthz HTTP/1.1\r\nHost: \[::1\]:#{port}\r\n}, seen)
   end
 end

@@ -17,9 +17,9 @@ module Rubernetes
 
       def initialize(format: "json")
         @format = format.to_s.downcase
-        unless FORMATS.include?(@format)
-          raise UsageError, "unsupported output format #{@format.inspect}; choose " + FORMATS.join(", ")
-        end
+        return if FORMATS.include?(@format)
+
+        raise UsageError, "unsupported output format #{@format.inspect}; choose " + FORMATS.join(", ")
       end
 
       def render(value)
@@ -54,6 +54,7 @@ module Rubernetes
                     end
         resources.filter_map do |resource|
           next unless resource.is_a?(Hash)
+
           kind = resource["kind"]
           name = resource.dig("metadata", "name")
           next if kind.to_s.empty? || name.to_s.empty?

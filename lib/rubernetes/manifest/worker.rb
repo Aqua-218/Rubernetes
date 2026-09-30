@@ -7,7 +7,7 @@ require "optparse"
 options = {}
 OptionParser.new do |parser|
   %i[manifest registry openapi library max_output max_resources].each do |name|
-    parser.on("--#{name.to_s.tr('_', '-')} VALUE") { |value| options[name] = value }
+    parser.on("--#{name.to_s.tr("_", "-")} VALUE") { |value| options[name] = value }
   end
 end.parse!(ARGV)
 

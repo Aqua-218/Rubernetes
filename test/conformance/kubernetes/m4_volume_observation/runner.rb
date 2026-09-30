@@ -36,7 +36,7 @@ require File.join(__dir__, "..", "..", "..", "..", "lib", "rubernetes", "volume"
 module M4VolumeObservationRunner
   RUNNER_PATH = File.expand_path(__FILE__).freeze
   WORKER_PATH = File.expand_path("crash_worker.rb", __dir__).freeze
-  IMPLEMENTATION = "test/conformance/kubernetes/m4_volume_observation/runner.rb".freeze
+  IMPLEMENTATION = "test/conformance/kubernetes/m4_volume_observation/runner.rb"
   KILL_POINTS = %w[before_effect after_effect_before_commit after_commit].freeze
   CRASH_BACKENDS = %w[emptyDir loopDM].freeze
 
@@ -67,6 +67,7 @@ module M4VolumeObservationRunner
     unless live_worker["start_time_ticks"] == worker["start_time_ticks"]
       raise ArgumentError, "worker #{worker["pid"]} start time does not match the request"
     end
+
     errors << "worker shares the runner's mount namespace; no private namespace evidence" if
       live_worker["mount_namespace_inode"] == File.stat("/proc/self/ns/mnt").ino
 
@@ -158,7 +159,8 @@ module M4VolumeObservationRunner
     end
 
     def release_step(process, name)
-      File.write(File.join(process.fetch("control_dir"), "step-#{name}.release"), JSON.generate("released_at" => M4ObserverSupport.iso8601_now))
+      File.write(File.join(process.fetch("control_dir"), "step-#{name}.release"),
+                 JSON.generate("released_at" => M4ObserverSupport.iso8601_now))
     end
 
     def finish(process, timeout: 120)
@@ -173,6 +175,7 @@ module M4VolumeObservationRunner
           [process.fetch("pid"), process["status"]]
         end
         break if status
+
         if M4ObserverSupport.monotonic > deadline
           begin
             Process.kill("KILL", -process.fetch("pid"))
@@ -252,7 +255,7 @@ module M4VolumeObservationRunner
       volume_id = "m4-crash-#{backend.downcase}-#{point.tr("_", "-")}"
       record["volume_id"] = volume_id
       before_host = host_mounts_under(scenario_dir)
-      before_devices = backing_file ? devices_for(backing_file, volume_id: volume_id) : nil
+      backing_file ? devices_for(backing_file, volume_id: volume_id) : nil
 
       process = spawn_worker(role: "node-a", data_dir: data_dir, control_dir: control_dir, kill_point: point,
                              backend: backend, node: "node-a", backing_file: backing_file, volume_id: volume_id)
@@ -271,15 +274,18 @@ module M4VolumeObservationRunner
       record["mounts_in_worker_namespace_at_kill"] = namespace_mounts.map { |entry| M4ObserverSupport.stable_identity(entry) }
       record["worker_namespace_is_private"] = worker_identity["mount_namespace_inode"] != @host_ns
       @errors << "#{label}: worker did not run in a private mount namespace" unless record["worker_namespace_is_private"]
-      if point != "before_effect"
-        @errors << "#{label}: no kernel mount was visible in the worker namespace at the kill point" if namespace_mounts.empty?
+      if (point != "before_effect") && namespace_mounts.empty?
+        @errors << "#{label}: no kernel mount was visible in the worker namespace at the kill point"
       end
       if marker["identity"].is_a?(Hash)
         claimed = marker["identity"]
         observed = namespace_mounts.find { |entry| entry["target"] == claimed["target"] }
         comparison = M4ObserverSupport.comparison("effect-boundary:#{label}",
                                                   claimed.slice("target", "mountId", "deviceId", "root", "filesystem", "kernelSource"),
-                                                  observed ? M4ObserverSupport.stable_identity(observed).slice("target", "mountId", "deviceId", "root", "filesystem", "kernelSource") : {"target" => claimed["target"], "mounted" => false})
+                                                  observed ? M4ObserverSupport.stable_identity(observed).slice("target", "mountId",
+                                                                                                               "deviceId", "root", "filesystem", "kernelSource") : {
+                                                                                                                 "target" => claimed["target"], "mounted" => false
+                                                                                                               })
         record["effect_boundary_comparison"] = comparison
         @errors << "#{label}: production readback at the effect boundary does not match the kernel" unless comparison["passed"]
       end
@@ -333,8 +339,12 @@ module M4VolumeObservationRunner
 
             observed = restart_mounts.find { |entry| entry["target"] == claimed["target"] }
             comparison = M4ObserverSupport.comparison("restart:#{label}:#{key}",
-                                                      {"target" => claimed["target"], "mountId" => claimed["mountId"], "deviceId" => claimed["deviceId"], "root" => claimed["root"], "filesystem" => claimed["filesystem"], "kernelSource" => claimed["kernelSource"]},
-                                                      observed ? M4ObserverSupport.stable_identity(observed).slice("target", "mountId", "deviceId", "root", "filesystem", "kernelSource") : {"target" => claimed["target"], "mounted" => false})
+                                                      {"target" => claimed["target"], "mountId" => claimed["mountId"],
+                                                       "deviceId" => claimed["deviceId"], "root" => claimed["root"], "filesystem" => claimed["filesystem"], "kernelSource" => claimed["kernelSource"]},
+                                                      observed ? M4ObserverSupport.stable_identity(observed).slice("target", "mountId",
+                                                                                                                   "deviceId", "root", "filesystem", "kernelSource") : {
+                                                                                                                     "target" => claimed["target"], "mounted" => false
+                                                                                                                   })
             record["restart_#{key}_comparison"] = comparison
             @errors << "#{label}: restarted #{key} identity does not match the kernel" unless comparison["passed"]
           end
@@ -347,7 +357,9 @@ module M4VolumeObservationRunner
       end
       restart_result = finish(restart)
       record["restart_result"] = restart_result.merge("stdout" => restart_result["stdout"]&.reject { |key, _| key == "worker" })
-      @errors << "#{label}: restart lifecycle failed: #{restart_result["stderr"].to_s.strip.lines.last}" unless restart_result["exit_status"] == 0
+      unless restart_result["exit_status"] == 0
+        @errors << "#{label}: restart lifecycle failed: #{restart_result["stderr"].to_s.strip.lines.last}"
+      end
       final_host = host_mounts_under(scenario_dir)
       record["host_mounts_under_scenario_after_restart"] = final_host.map { |entry| entry["line"] }
       @errors << "#{label}: mounts remain in the host namespace after restart cleanup" unless final_host.length == before_host.length
@@ -382,7 +394,8 @@ module M4VolumeObservationRunner
                                                 mount_adapter: adapter, path_security: security, require_real_readback: true, fsync: true)
       record = {"scenario" => "snapshot-restore-crash-recovery", "comparisons" => []}
       files = {"payload.bin" => Random.new(42).bytes(65_536), "nested/config.txt" => "m4-snapshot-config\n" * 64}
-      source_id = manager.create_volume({"id" => "m4-snap-source", "name" => "m4-snap-source", "backend" => "emptyDir"}, token: "snap-create")
+      source_id = manager.create_volume({"id" => "m4-snap-source", "name" => "m4-snap-source", "backend" => "emptyDir"},
+                                        token: "snap-create")
       source_root = File.join(data_dir, "volumes", source_id)
       files.each do |relative, bytes|
         path = File.join(source_root, relative)
@@ -398,7 +411,8 @@ module M4VolumeObservationRunner
                                                             {"operation" => "CreateSnapshot", "source_volume_id" => source_id, "ready_to_use" => true, "content_sha256" => expected_digests},
                                                             {"operation" => "CreateSnapshot", "source_volume_id" => snapshot.source_id, "ready_to_use" => snapshot.ready_to_use, "content_sha256" => catalog_digests},
                                                             "operation" => "CreateSnapshot", "snapshot_id" => snapshot_id)
-      restored_id = manager.restore(snapshot_id, spec: {"id" => "m4-snap-restored", "name" => "m4-snap-restored", "backend" => "emptyDir"}, token: "snap-restore")
+      restored_id = manager.restore(snapshot_id, spec: {"id" => "m4-snap-restored", "name" => "m4-snap-restored", "backend" => "emptyDir"},
+                                                 token: "snap-restore")
       restored_root = File.join(data_dir, "volumes", restored_id)
       restored_digests = files.keys.to_h { |relative| [relative, Digest::SHA256.file(File.join(restored_root, relative)).hexdigest] }
       record["comparisons"] << M4ObserverSupport.comparison("snapshot_restore",
@@ -417,7 +431,8 @@ module M4VolumeObservationRunner
       tampered_manager = Rubernetes::Volume::Manager.new(data_dir: data_dir, root: File.join(data_dir, "volumes"), adapter: adapter,
                                                          mount_adapter: adapter, path_security: security, require_real_readback: true, fsync: true)
       tamper_outcome = begin
-        tampered_manager.restore(snapshot_id, spec: {"id" => "m4-snap-tampered", "name" => "m4-snap-tampered", "backend" => "emptyDir"}, token: "snap-restore-tampered")
+        tampered_manager.restore(snapshot_id, spec: {"id" => "m4-snap-tampered", "name" => "m4-snap-tampered", "backend" => "emptyDir"},
+                                              token: "snap-restore-tampered")
         {"restored" => true}
       rescue Rubernetes::Volume::SnapshotIntegrityError => error
         {"restored" => false, "error_class" => error.class.name, "message" => error.message}
@@ -432,7 +447,11 @@ module M4VolumeObservationRunner
                                                             "operation" => "CrashRecovery", "tamper" => tamper_outcome)
       manager.delete_volume(source_id, token: "snap-delete-source")
       record["passed"] = record["comparisons"].all? { |entry| entry["passed"] }
-      @errors << "snapshot scenarios failed: #{record["comparisons"].reject { |entry| entry["passed"] }.map { |entry| entry["id"] }.join(", ")}" unless record["passed"]
+      unless record["passed"]
+        @errors << "snapshot scenarios failed: #{record["comparisons"].reject do |entry|
+          entry["passed"]
+        end.map { |entry| entry["id"] }.join(", ")}"
+      end
       record
     rescue StandardError => error
       @errors << "snapshot scenarios raised #{error.class}: #{error.message}"
@@ -466,7 +485,9 @@ module M4VolumeObservationRunner
       RUBY
       _stdout, _stderr, status = Open3.capture3(RbConfig.ruby, "-e", script, chdir: M4ObserverSupport::ROOT)
       killed = status.signaled? && status.termsig == 9
-      entry = durable_volume_entries(File.join(data_dir, "volumes.json")).find { |volume| volume.is_a?(Hash) && volume["id"] == "m4-snap-interrupted" }
+      entry = durable_volume_entries(File.join(data_dir, "volumes.json")).find do |volume|
+        volume.is_a?(Hash) && volume["id"] == "m4-snap-interrupted"
+      end
       usable = begin
         require "rubernetes/volume"
         openat2 = Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true)
@@ -495,7 +516,9 @@ module M4VolumeObservationRunner
     result = scenario.run
     result.merge(
       "scenario" => request["scenario"] || "snapshot-restore-crash-recovery", "work_dir" => work_dir,
-      "comparisons" => Array(result.dig("snapshot", "comparisons")) + Array(result["kill_points"]).filter_map { |entry| entry["effect_boundary_comparison"] },
+      "comparisons" => Array(result.dig("snapshot", "comparisons")) + Array(result["kill_points"]).filter_map do |entry|
+        entry["effect_boundary_comparison"]
+      end,
       "kernel_backed" => true, "measurement_source" => "external_kernel_observation",
       "mount_adapter_class" => "Rubernetes::Volume::NativeMountAdapter",
       "device_adapter_class" => "Rubernetes::Volume::NativeDeviceAdapter"

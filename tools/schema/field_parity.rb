@@ -5,7 +5,6 @@ require "digest"
 require "fileutils"
 require "json"
 require "optparse"
-require "set"
 require "tempfile"
 
 require_relative "../../lib/rubernetes/schema"
@@ -13,8 +12,8 @@ require_relative "../../lib/rubernetes/schema/codec/proto_descriptor"
 
 module RubernetesFieldParity
   ROOT = File.expand_path("../..", __dir__).freeze
-  CORPUS_RELATIVE_PATH = "schema/kubernetes/v1.36.2".freeze
-  GENERATED_RELATIVE_PATH = "generated".freeze
+  CORPUS_RELATIVE_PATH = "schema/kubernetes/v1.36.2"
+  GENERATED_RELATIVE_PATH = "generated"
 
   EXPECTED_TYPE_COUNT = 771
   EXPECTED_TYPE_GVK_COUNT = 311
@@ -201,7 +200,10 @@ module RubernetesFieldParity
         compare("rbs_methods", constant, methods, rbs_class.fetch("methods").sort)
 
         ruby_class.fetch("methods").each do |method_name, field_name|
-          issue("reserved_accessor", "#{constant}##{method_name}", "not reserved", method_name) if RubernetesFieldParity.reserved_methods.include?(method_name)
+          if RubernetesFieldParity.reserved_methods.include?(method_name)
+            issue("reserved_accessor", "#{constant}##{method_name}", "not reserved",
+                  method_name)
+          end
           expected_field = fields.find { |field| RubernetesFieldParity.ruby_method(field) == method_name }
           compare("accessor_target", "#{constant}##{method_name}", expected_field, field_name)
         end
@@ -285,7 +287,7 @@ module RubernetesFieldParity
         routes << identifier
         Array(resource.fetch("subresources")).each do |subresource|
           routes << gvr_identifier(resource.fetch("group"), resource.fetch("version"),
-                                   "#{resource.fetch('resource')}/#{subresource.fetch('resource')}")
+                                   "#{resource.fetch("resource")}/#{subresource.fetch("resource")}")
         end
       end
       validate_unique_array(primary, "primary GVR", "registry resources")
@@ -334,10 +336,10 @@ module RubernetesFieldParity
         begin
           bytes = registry.encode(descriptor, {})
           decoded = registry.decode(descriptor, bytes)
-          unless decoded.respond_to?(:to_h) && decoded.to_h.empty?
-            issue("protobuf_roundtrip", schema_name, {}, decoded.respond_to?(:to_h) ? decoded.to_h : decoded)
-          else
+          if decoded.respond_to?(:to_h) && decoded.to_h.empty?
             roundtrip_count += 1
+          else
+            issue("protobuf_roundtrip", schema_name, {}, decoded.respond_to?(:to_h) ? decoded.to_h : decoded)
           end
         rescue StandardError => error
           issue("protobuf_roundtrip", schema_name, "empty object roundtrip", "#{error.class}: #{error.message}")
@@ -501,7 +503,10 @@ module RubernetesFieldParity
         methods = body.scan(/^      def (\S+): \(\) -> untyped$/).flatten
         duplicate_values(methods).each { |name| issue("duplicate_rbs_method", "#{constant}##{name}", "unique", methods.count(name)) }
         methods.each do |method_name|
-          issue("reserved_accessor", "#{constant}##{method_name}", "not reserved", method_name) if RubernetesFieldParity.reserved_methods.include?(method_name)
+          if RubernetesFieldParity.reserved_methods.include?(method_name)
+            issue("reserved_accessor", "#{constant}##{method_name}", "not reserved",
+                  method_name)
+          end
         end
         blocks[constant] = {"methods" => methods}
       end
@@ -531,6 +536,7 @@ module RubernetesFieldParity
       result = {}
       records.each do |record|
         raise Error, "#{label} must be an object" unless record.is_a?(Hash)
+
         key = record.fetch(field)
         issue("duplicate_#{field}", "#{label}:#{key}", "unique", 2) if result.key?(key)
         result[key] ||= record
@@ -583,11 +589,11 @@ module RubernetesFieldParity
     end
 
     def gvk_identifier(group, version, kind)
-      "#{group.to_s.empty? ? 'core' : group}/#{version}/#{kind}"
+      "#{group.to_s.empty? ? "core" : group}/#{version}/#{kind}"
     end
 
     def gvr_identifier(group, version, resource)
-      "#{group.to_s.empty? ? 'core' : group}/#{version}/#{resource}"
+      "#{group.to_s.empty? ? "core" : group}/#{version}/#{resource}"
     end
 
     def report

@@ -18,8 +18,8 @@ module Rubernetes
 
       # +addresses+: the node's IP addresses and DNS names for the SANs, or
       # a callable returning them (they may not be known at construction).
-      def initialize(node_name:, cert_dir:, addresses: nil, **options)
-        super(node_name: node_name, cert_dir: cert_dir, **options)
+      def initialize(node_name:, cert_dir:, addresses: nil, **)
+        super(node_name: node_name, cert_dir: cert_dir, **)
         @addresses = addresses
       end
 
@@ -39,7 +39,9 @@ module Rubernetes
       private
 
       def satisfies_template?(certificate)
-        super && certificate.extensions.any? { |extension| extension.oid == "extendedKeyUsage" && extension.value.include?("Server Authentication") }
+        super && certificate.extensions.any? do |extension|
+          extension.oid == "extendedKeyUsage" && extension.value.include?("Server Authentication")
+        end
       end
 
       def certificate_request(key)
@@ -61,7 +63,15 @@ module Rubernetes
           value = address.to_s
           next if value.empty?
 
-          names << (value.match?(/\A[0-9a-fA-F:.]+\z/) && (IPAddr.new(value) rescue nil) ? "IP:#{value}" : "DNS:#{value}")
+          names << (if value.match?(/\A[0-9a-fA-F:.]+\z/) && begin
+            IPAddr.new(value)
+          rescue StandardError
+            nil
+          end
+                      "IP:#{value}"
+                    else
+                      "DNS:#{value}"
+                    end)
         end
         names.uniq
       end
@@ -73,7 +83,7 @@ module Rubernetes
         object = {"apiVersion" => "certificates.k8s.io/v1", "kind" => "CertificateSigningRequest",
                   "metadata" => {"generateName" => "csr-"}, "spec" => spec}
         created = client.create(object, api_version: "certificates.k8s.io/v1",
-                                         path: "/apis/certificates.k8s.io/v1/certificatesigningrequests")
+                                        path: "/apis/certificates.k8s.io/v1/certificatesigningrequests")
         name = created.to_h.dig("metadata", "name").to_s
         raise Error, "the CertificateSigningRequest was created without a name" if name.empty?
 

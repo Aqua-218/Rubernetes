@@ -21,7 +21,8 @@ class NativeCpusetTest < Minitest::Test
                                                       "limits" => {"cpuset.cpus" => "2-3", "cpuset.mems" => "0"}})
     id = container.respond_to?(:id) ? container.id : container
     handle = runtime.sandbox(sandbox_id).container(id).cgroup
-    assert limits_written(cgroup, handle).any? { |limits| limits["cpuset.cpus"] == "2-3" && limits["cpuset.mems"] == "0" }
+
+    assert(limits_written(cgroup, handle).any? { |limits| limits["cpuset.cpus"] == "2-3" && limits["cpuset.mems"] == "0" })
 
     assert runtime.update_container_cpuset(container, "0-1,4")
     assert_equal({"cpuset.cpus" => "0-1,4"}, limits_written(cgroup, handle).last)

@@ -48,10 +48,17 @@ module BuiltinConversionDifferential
                  end
         {"type" => "Resource", "resource" => {"name" => pick("cpu", "memory"), "target" => target}}
       when "ContainerResource"
-        target = chance(0.5) ? {"type" => "Utilization", "averageUtilization" => 60} : {"type" => "AverageValue", "averageValue" => quantity}
+        target = if chance(0.5)
+                   {"type" => "Utilization",
+                    "averageUtilization" => 60}
+                 else
+                   {"type" => "AverageValue", "averageValue" => quantity}
+                 end
         {"type" => "ContainerResource", "containerResource" => {"name" => "cpu", "container" => "c", "target" => target}}
       when "Pods"
-        {"type" => "Pods", "pods" => {"metric" => {"name" => "qps", "selector" => selector}.compact, "target" => {"type" => "AverageValue", "averageValue" => quantity}}}
+        {"type" => "Pods",
+         "pods" => {"metric" => {"name" => "qps", "selector" => selector}.compact,
+                    "target" => {"type" => "AverageValue", "averageValue" => quantity}}}
       when "Object"
         target = if chance(0.5) then {"type" => "Value", "value" => quantity}
                  else {"type" => "AverageValue", "averageValue" => quantity, "value" => chance(0.3) ? quantity : nil}.compact
@@ -70,10 +77,16 @@ module BuiltinConversionDifferential
         current = {"averageValue" => quantity}
         current["averageUtilization"] = 40 if chance(0.6)
         {"type" => "Resource", "resource" => {"name" => metric.dig("resource", "name"), "current" => current}}
-      when "ContainerResource" then {"type" => "ContainerResource", "containerResource" => {"name" => "cpu", "container" => "c", "current" => {"averageValue" => quantity, "averageUtilization" => 30}}}
+      when "ContainerResource" then {"type" => "ContainerResource",
+                                     "containerResource" => {"name" => "cpu", "container" => "c",
+                                                             "current" => {"averageValue" => quantity, "averageUtilization" => 30}}}
       when "Pods" then {"type" => "Pods", "pods" => {"metric" => {"name" => "qps"}, "current" => {"averageValue" => quantity}}}
-      when "Object" then {"type" => "Object", "object" => {"metric" => {"name" => "rps"}, "describedObject" => {"kind" => "Service", "name" => "s"}, "current" => {"value" => quantity, "averageValue" => chance(0.5) ? quantity : nil}.compact}}
-      else {"type" => "External", "external" => {"metric" => {"name" => "queue"}, "current" => {"value" => quantity, "averageValue" => chance(0.5) ? quantity : nil}.compact}}
+      when "Object" then {"type" => "Object",
+                          "object" => {"metric" => {"name" => "rps"}, "describedObject" => {"kind" => "Service", "name" => "s"},
+                                       "current" => {"value" => quantity, "averageValue" => chance(0.5) ? quantity : nil}.compact}}
+      else {"type" => "External",
+            "external" => {"metric" => {"name" => "queue"},
+                           "current" => {"value" => quantity, "averageValue" => chance(0.5) ? quantity : nil}.compact}}
       end
     end
 
@@ -81,13 +94,18 @@ module BuiltinConversionDifferential
       rules = {}
       rules["stabilizationWindowSeconds"] = int(0..600) if chance(0.5)
       rules["selectPolicy"] = pick("Max", "Min", "Disabled") if chance(0.5)
-      rules["policies"] = Array.new(int(1..2)) { {"type" => pick("Pods", "Percent"), "value" => int(1..100), "periodSeconds" => int(1..1800)} } if chance(0.5)
+      if chance(0.5)
+        rules["policies"] = Array.new(int(1..2)) do
+          {"type" => pick("Pods", "Percent"), "value" => int(1..100), "periodSeconds" => int(1..1800)}
+        end
+      end
       rules
     end
 
     def hpa_v2
       metrics = Array.new(int(0..3)) { v2_metric }
-      spec = {"scaleTargetRef" => {"kind" => "Deployment", "name" => "d", "apiVersion" => "apps/v1"}, "maxReplicas" => int(1..10), "metrics" => metrics}
+      spec = {"scaleTargetRef" => {"kind" => "Deployment", "name" => "d", "apiVersion" => "apps/v1"}, "maxReplicas" => int(1..10),
+              "metrics" => metrics}
       spec["minReplicas"] = int(1..3) if chance(0.7)
       if chance(0.4)
         behavior = {}
@@ -115,28 +133,41 @@ module BuiltinConversionDifferential
           pick({"type" => "Pods", "pods" => {"metricName" => "qps", "targetAverageValue" => quantity}},
                {"type" => "External", "external" => {"metricName" => "q", "targetAverageValue" => quantity}},
                {"type" => "External", "external" => {"metricName" => "q", "targetValue" => quantity}},
-               {"type" => "Object", "object" => {"target" => {"kind" => "Service", "name" => "s"}, "metricName" => "m", "targetValue" => quantity}},
+               {"type" => "Object",
+                "object" => {"target" => {"kind" => "Service", "name" => "s"}, "metricName" => "m", "targetValue" => quantity}},
                {"type" => "Resource", "resource" => {"name" => "memory", "targetAverageValue" => quantity}})
         end)
       end
-      annotations["autoscaling.alpha.kubernetes.io/behavior"] = JSON.generate({"ScaleUp" => {"StabilizationWindowSeconds" => 30, "SelectPolicy" => "Min", "Policies" => [{"Type" => "Pods", "Value" => 2, "PeriodSeconds" => 60}]}}) if chance(0.2)
-      if chance(0.3)
-        annotations["autoscaling.alpha.kubernetes.io/conditions"] = JSON.generate([{"type" => "AbleToScale", "status" => "True", "lastTransitionTime" => "2026-09-23T10:00:00Z", "reason" => "SucceededRescale"}])
+      if chance(0.2)
+        annotations["autoscaling.alpha.kubernetes.io/behavior"] =
+          JSON.generate({"ScaleUp" => {"StabilizationWindowSeconds" => 30, "SelectPolicy" => "Min",
+                                       "Policies" => [{"Type" => "Pods", "Value" => 2, "PeriodSeconds" => 60}]}})
       end
       if chance(0.3)
-        annotations["autoscaling.alpha.kubernetes.io/current-metrics"] = JSON.generate([{"type" => "Pods", "pods" => {"metricName" => "qps", "currentAverageValue" => quantity}}])
+        annotations["autoscaling.alpha.kubernetes.io/conditions"] =
+          JSON.generate([{"type" => "AbleToScale", "status" => "True", "lastTransitionTime" => "2026-09-23T10:00:00Z",
+                          "reason" => "SucceededRescale"}])
       end
-      spec = {"scaleTargetRef" => {"kind" => "Deployment", "name" => "d", "apiVersion" => pick("apps/v1", nil)}.compact, "maxReplicas" => int(1..10)}
+      if chance(0.3)
+        annotations["autoscaling.alpha.kubernetes.io/current-metrics"] =
+          JSON.generate([{"type" => "Pods", "pods" => {"metricName" => "qps", "currentAverageValue" => quantity}}])
+      end
+      spec = {"scaleTargetRef" => {"kind" => "Deployment", "name" => "d", "apiVersion" => pick("apps/v1", nil)}.compact,
+              "maxReplicas" => int(1..10)}
       spec["minReplicas"] = int(1..3) if chance(0.7)
       spec["targetCPUUtilizationPercentage"] = pick(50, 80) if chance(0.6)
       status = {"currentReplicas" => int(0..3), "desiredReplicas" => 1}
       status["currentCPUUtilizationPercentage"] = 33 if chance(0.5)
       status["lastScaleTime"] = "@T-60" if chance(0.3)
-      {"apiVersion" => "autoscaling/v1", "kind" => "HorizontalPodAutoscaler", "metadata" => metadata(annotations), "spec" => spec, "status" => status}
+      {"apiVersion" => "autoscaling/v1", "kind" => "HorizontalPodAutoscaler", "metadata" => metadata(annotations), "spec" => spec,
+       "status" => status}
     end
 
     def selectors = Array.new(int(0..2)) { {"cel" => {"expression" => "device.driver == \"gpu.example.com\""}} }
-    def tolerations = Array.new(int(0..2)) { {"key" => "k", "operator" => pick("Exists", "Equal"), "effect" => pick("NoSchedule", "NoExecute")} }
+
+    def tolerations
+      Array.new(int(0..2)) { {"key" => "k", "operator" => pick("Exists", "Equal"), "effect" => pick("NoSchedule", "NoExecute")} }
+    end
 
     def request(version)
       request = {"name" => "r#{int(0..9)}"}
@@ -149,7 +180,9 @@ module BuiltinConversionDifferential
       main["tolerations"] = tolerations if chance(0.3)
       main["capacity"] = {"requests" => {"memory" => quantity}} if chance(0.2)
       if chance(0.15)
-        request["firstAvailable"] = Array.new(int(1..2)) { |index| {"name" => "s#{index}", "deviceClassName" => "gpu.example.com", "allocationMode" => "ExactCount", "count" => 1} }
+        request["firstAvailable"] = Array.new(int(1..2)) do |index|
+          {"name" => "s#{index}", "deviceClassName" => "gpu.example.com", "allocationMode" => "ExactCount", "count" => 1}
+        end
         return request
       end
       version == "v1beta1" ? request.merge(main) : request.merge("exactly" => main.merge("deviceClassName" => main["deviceClassName"] || "gpu.example.com"))
@@ -157,7 +190,10 @@ module BuiltinConversionDifferential
 
     def claim(version, kind)
       devices = {"requests" => Array.new(int(1..3)) { request(version) }.uniq { |entry| entry["name"] }}
-      devices["constraints"] = [{"requests" => [devices["requests"].first["name"]], "matchAttribute" => "gpu.example.com/numa"}] if chance(0.2)
+      if chance(0.2)
+        devices["constraints"] =
+          [{"requests" => [devices["requests"].first["name"]], "matchAttribute" => "gpu.example.com/numa"}]
+      end
       spec = {"devices" => devices}
       body = kind == "ResourceClaim" ? {"spec" => spec} : {"spec" => {"metadata" => {"labels" => {"a" => "b"}}, "spec" => spec}}
       object = {"apiVersion" => "resource.k8s.io/#{version}", "kind" => kind, "metadata" => metadata}.merge(body)
@@ -218,7 +254,8 @@ module BuiltinConversionDifferential
                  end
         to = "resource.k8s.io/#{(RESOURCE_VERSIONS - [version]).sample(random: random)}"
       end
-      {"name" => "convert/#{index}/#{object["kind"]}/#{object["apiVersion"]}->#{to}", "convertor" => "convert", "to" => to, "object" => object}
+      {"name" => "convert/#{index}/#{object["kind"]}/#{object["apiVersion"]}->#{to}", "convertor" => "convert", "to" => to,
+       "object" => object}
     end
   end
 

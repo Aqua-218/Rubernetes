@@ -103,9 +103,7 @@ module Rubernetes
         SCHEMA_INT_FIELDS.each { |key, number| fields << [number, Integer(schema[key]), :int64] if schema[key].is_a?(Integer) }
         Array(schema["required"]).each { |value| fields << [19, string(value), :string] }
         Array(schema["enum"]).each { |value| fields << [20, encode_any(value), :bytes] } if schema.key?("enum")
-        if schema.key?("additionalProperties")
-          fields << [21, encode_additional_properties(schema["additionalProperties"]), :bytes]
-        end
+        fields << [21, encode_additional_properties(schema["additionalProperties"]), :bytes] if schema.key?("additionalProperties")
         if schema.key?("type")
           type_names = schema["type"].is_a?(Array) ? schema["type"] : [schema["type"]]
           types = type_names.map { |value| [1, string(value), :string] }
@@ -119,7 +117,9 @@ module Rubernetes
         end
         Array(schema["allOf"]).each { |value| fields << [24, encode_schema(value), :bytes] }
         if schema["properties"].is_a?(Hash)
-          properties = schema["properties"].keys.sort.map { |name| [1, encode_named_schema(name, schema["properties"].fetch(name)), :bytes] }
+          properties = schema["properties"].keys.sort.map do |name|
+            [1, encode_named_schema(name, schema["properties"].fetch(name)), :bytes]
+          end
           fields << [25, Protobuf.encode_message(properties), :bytes]
         end
         fields << [28, encode_xml(schema["xml"]), :bytes] if schema["xml"].is_a?(Hash)

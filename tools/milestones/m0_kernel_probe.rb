@@ -17,7 +17,7 @@ STARTED_AT = Time.now.utc
 # the interpreter, the -I flag for the compiled extension (visible only
 # through $LOAD_PATH), the repository-relative script path, and the options.
 EXTENSION_INCLUDES = $LOAD_PATH.select { |entry| File.expand_path(entry).start_with?(File.join(ROOT, "build/ext/")) }
-                              .map { |entry| "-I#{File.expand_path(entry)}" }.freeze
+  .map { |entry| "-I#{File.expand_path(entry)}" }.freeze
 COMMAND = [RbConfig.ruby, *EXTENSION_INCLUDES,
            File.expand_path($PROGRAM_NAME).delete_prefix("#{ROOT}/"), *ARGV].freeze
 $LOAD_PATH.unshift(File.join(ROOT, "lib"))
@@ -122,6 +122,7 @@ def regular_source_file?(path)
 
   current = ROOT
   return false if File.symlink?(current)
+
   path.delete_prefix("#{ROOT}/").split("/").each do |component|
     next if component.empty? || component == "."
 
@@ -199,77 +200,65 @@ ensure
 end
 suite.probe("kvm_capability") { Linux::KVM.new.probe(resource_id: "kvm:m0-kernel-probe") }
 suite.probe("errno_clone3") do
-  begin
-    Linux::Clone3.new.call(
-      args: Linux::Clone3::Args.new(flags: 0),
-      structure_size: 0,
-      resource_id: "intentional:clone3"
-    )
-    raise "intentional clone3 failure unexpectedly succeeded"
-  rescue Linux::Error => error
-    raise unless error.errno.positive? && error.operation == "clone3" && error.resource_id == "intentional:clone3"
+  Linux::Clone3.new.call(
+    args: Linux::Clone3::Args.new(flags: 0),
+    structure_size: 0,
+    resource_id: "intentional:clone3"
+  )
+  raise "intentional clone3 failure unexpectedly succeeded"
+rescue Linux::Error => error
+  raise unless error.errno.positive? && error.operation == "clone3" && error.resource_id == "intentional:clone3"
 
-    error.to_h
-  end
+  error.to_h
 end
 suite.probe("errno_pidfd") do
-  begin
-    Linux::Pidfd.new.open(pid: -1, resource_id: "intentional:pidfd")
-    raise "intentional pidfd failure unexpectedly succeeded"
-  rescue Linux::Error => error
-    raise unless error.errno.positive? && error.operation == "pidfd_open" && error.resource_id == "intentional:pidfd"
+  Linux::Pidfd.new.open(pid: -1, resource_id: "intentional:pidfd")
+  raise "intentional pidfd failure unexpectedly succeeded"
+rescue Linux::Error => error
+  raise unless error.errno.positive? && error.operation == "pidfd_open" && error.resource_id == "intentional:pidfd"
 
-    error.to_h
-  end
+  error.to_h
 end
 suite.probe("errno_mount") do
-  begin
-    Linux::Mount.new.mount(
-      source: "none",
-      target: "/rubernetes/m0/intentional-missing",
-      filesystem: "none",
-      resource_id: "intentional:mount"
-    )
-    raise "intentional mount failure unexpectedly succeeded"
-  rescue Linux::Error => error
-    raise unless error.errno.positive? && error.operation == "mount" && error.resource_id == "intentional:mount"
+  Linux::Mount.new.mount(
+    source: "none",
+    target: "/rubernetes/m0/intentional-missing",
+    filesystem: "none",
+    resource_id: "intentional:mount"
+  )
+  raise "intentional mount failure unexpectedly succeeded"
+rescue Linux::Error => error
+  raise unless error.errno.positive? && error.operation == "mount" && error.resource_id == "intentional:mount"
 
-    error.to_h
-  end
+  error.to_h
 end
 suite.probe("errno_netlink") do
-  begin
-    Linux::Netlink.new.get_link(index: -1, sequence: 60_001, resource_id: "intentional:netlink")
-    raise "intentional netlink failure unexpectedly succeeded"
-  rescue Linux::Error => error
-    raise unless error.errno.positive? && error.operation == "netlink_ack" && error.resource_id == "intentional:netlink"
+  Linux::Netlink.new.get_link(index: -1, sequence: 60_001, resource_id: "intentional:netlink")
+  raise "intentional netlink failure unexpectedly succeeded"
+rescue Linux::Error => error
+  raise unless error.errno.positive? && error.operation == "netlink_ack" && error.resource_id == "intentional:netlink"
 
-    error.to_h
-  end
+  error.to_h
 end
 suite.probe("errno_bpf") do
-  begin
-    unexpected_program = Linux::BPF.new.load(
-      instructions: [Linux::BPF::Instruction.new(code: 0xff, destination: 0, source: 0, offset: 0, immediate: 0)],
-      resource_id: "intentional:bpf"
-    )
-    unexpected_program.close
-    raise "intentional BPF failure unexpectedly succeeded"
-  rescue Linux::BPF::VerifierError => error
-    raise unless error.errno.positive? && error.operation == "bpf(BPF_PROG_LOAD)" && error.resource_id == "intentional:bpf"
+  unexpected_program = Linux::BPF.new.load(
+    instructions: [Linux::BPF::Instruction.new(code: 0xff, destination: 0, source: 0, offset: 0, immediate: 0)],
+    resource_id: "intentional:bpf"
+  )
+  unexpected_program.close
+  raise "intentional BPF failure unexpectedly succeeded"
+rescue Linux::BPF::VerifierError => error
+  raise unless error.errno.positive? && error.operation == "bpf(BPF_PROG_LOAD)" && error.resource_id == "intentional:bpf"
 
-    error.to_h.merge(verifier_log: error.verifier_log)
-  end
+  error.to_h.merge(verifier_log: error.verifier_log)
 end
 suite.probe("errno_kvm") do
-  begin
-    Linux::KVM.new(path: "/rubernetes/m0/missing-kvm").probe(resource_id: "intentional:kvm")
-    raise "intentional KVM failure unexpectedly succeeded"
-  rescue Linux::Error => error
-    raise unless error.errno.positive? && error.operation == "kvm_probe" && error.resource_id == "intentional:kvm"
+  Linux::KVM.new(path: "/rubernetes/m0/missing-kvm").probe(resource_id: "intentional:kvm")
+  raise "intentional KVM failure unexpectedly succeeded"
+rescue Linux::Error => error
+  raise unless error.errno.positive? && error.operation == "kvm_probe" && error.resource_id == "intentional:kvm"
 
-    error.to_h
-  end
+  error.to_h
 end
 suite.probe("errno_namespace_exec") do
   reader, writer = IO.pipe

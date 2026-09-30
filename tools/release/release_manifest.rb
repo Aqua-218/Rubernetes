@@ -76,9 +76,9 @@ module Release
       SOURCE_ROOTS.flat_map do |root|
         Dir.glob(File.join(ROOT, root, "**", "*")).select { |path| File.file?(path) }
       end.map { |path| path.delete_prefix("#{ROOT}/") }
-         .reject { |path| EXCLUDED.include?(path.split("/").first) }
-         .sort
-         .map { |path| {"path" => path, "sha256" => Digest::SHA256.file(File.join(ROOT, path)).hexdigest} }
+        .reject { |path| EXCLUDED.include?(path.split("/").first) }
+        .sort
+        .map { |path| {"path" => path, "sha256" => Digest::SHA256.file(File.join(ROOT, path)).hexdigest} }
     end
 
     # Same canonical form the milestone gates use: path, NUL, digest.

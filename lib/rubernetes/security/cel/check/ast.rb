@@ -193,9 +193,7 @@ module Rubernetes
               return count.even? ? operand : global_call_or_macro(first, "!_", operand)
             end
             if operator?("-")
-              if %i[int double].include?(peek(1).type) && !operator?("-", 1)
-                return parse_member
-              end
+              return parse_member if %i[int double].include?(peek(1).type) && !operator?("-", 1)
 
               first = peek.position
               count = 0
@@ -239,7 +237,7 @@ module Rubernetes
             when :ident then [expression.name]
             when :select
               parent = message_path(expression.operand)
-              parent && parent + [expression.name]
+              parent && (parent + [expression.name])
             end
           end
 
@@ -423,7 +421,8 @@ module Rubernetes
             when "all"
               [literal(at, true), call(at, "@not_strictly_false", accu(at)), call(at, "_&&_", accu(at), predicate), accu(at)]
             when "exists"
-              [literal(at, false), call(at, "@not_strictly_false", call(at, "!_", accu(at))), call(at, "_||_", accu(at), predicate), accu(at)]
+              [literal(at, false), call(at, "@not_strictly_false", call(at, "!_", accu(at))), call(at, "_||_", accu(at), predicate),
+               accu(at)]
             else
               [literal(at, 0), literal(at, true),
                call(at, "_?_:_", predicate, call(at, "_+_", accu(at), literal(at, 1)), accu(at)),
@@ -492,7 +491,8 @@ module Rubernetes
 
           def sort_by(at, target, args)
             unless %i[list select ident comprehension call].include?(target.kind)
-              raise MacroError.new("sortBy can only be applied to a list, identifier, comprehension, call or select expression", target.offset)
+              raise MacroError.new("sortBy can only be applied to a list, identifier, comprehension, call or select expression",
+                                   target.offset)
             end
 
             input = ident(at, "@__sortBy_input__")

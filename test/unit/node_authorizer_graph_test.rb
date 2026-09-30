@@ -14,7 +14,7 @@ class NodeAuthorizerGraphTest < Minitest::Test
     volumes = secrets.map { |secret| {"name" => secret, "secret" => {"secretName" => secret}} }
     volumes << {"name" => "data", "persistentVolumeClaim" => {"claimName" => claim}} if claim
     {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => name, "namespace" => "ns", "uid" => "u-#{name}",
-                                                          "annotations" => mirror ? {"kubernetes.io/config.mirror" => "x"} : {}},
+                                                           "annotations" => mirror ? {"kubernetes.io/config.mirror" => "x"} : {}},
      "spec" => {"nodeName" => node, "serviceAccountName" => "sa-#{name}", "containers" => [{"name" => "c", "env" => [{"name" => "K", "valueFrom" => {"configMapKeyRef" => {"name" => "cm-#{name}", "key" => "k"}}}]}],
                 "volumes" => volumes}}
   end
@@ -59,13 +59,18 @@ class NodeAuthorizerGraphTest < Minitest::Test
     assert graph.references?("n1", :podcertificaterequests, "ns", "pcr")
 
     graph.delete_pv("pv-1")
+
     refute graph.references?("n1", :secrets, "ns", "csi-secret")
     graph.delete_pod("ns", "web")
+
     refute graph.references?("n1", :secrets, "ns", "tls")
     graph.delete_volume_attachment("va-1")
+
     refute graph.references?("n1", :volumeattachments, "", "va-1")
     text = @metrics.render_own
-    %w[AddPod DeletePod AddPV DeletePV AddVolumeAttachment DeleteVolumeAttachment AddResourceSlice AddPodCertificateRequest].each do |operation|
+
+    %w[AddPod DeletePod AddPV DeletePV AddVolumeAttachment DeleteVolumeAttachment AddResourceSlice
+       AddPodCertificateRequest].each do |operation|
       assert_match(/node_authorizer_graph_actions_duration_seconds_count\{operation="#{operation}"\} \d/, text)
     end
   end
@@ -80,17 +85,21 @@ class NodeAuthorizerGraphTest < Minitest::Test
       wait_until { graph.references?("n1", :secrets, "ns", "early-secret") }
       store.create("registry/v1/pods/ns/late", pod("late", node: "n2", secrets: ["late-secret"]))
       store.create("registry/v1/persistentvolumes/_cluster/pv-9", pv("pv-9", claim: "c9", secret: "s9"))
-      store.create("registry/storage.k8s.io/v1/volumeattachments/_cluster/va-9", {"metadata" => {"name" => "va-9"}, "spec" => {"nodeName" => "n2", "attacher" => "d"}})
+      store.create("registry/storage.k8s.io/v1/volumeattachments/_cluster/va-9",
+                   {"metadata" => {"name" => "va-9"}, "spec" => {"nodeName" => "n2", "attacher" => "d"}})
       wait_until { graph.references?("n2", :secrets, "ns", "late-secret") && graph.references?("n2", :volumeattachments, "", "va-9") }
       store.delete("registry/v1/pods/ns/late")
       wait_until { !graph.references?("n2", :secrets, "ns", "late-secret") }
 
       authorizer = Z::Node.new(graph: graph)
       node = Rubernetes::Security::UserInfo.new(name: "system:node:n1", groups: ["system:nodes"])
-      allowed = Z::Attributes.new(user: node, verb: "get", api_group: "", api_version: "v1", resource: "secrets", namespace: "ns", name: "early-secret")
-      denied = Z::Attributes.new(user: node, verb: "get", api_group: "", api_version: "v1", resource: "secrets", namespace: "ns", name: "other")
-      assert authorizer.authorize(allowed).allowed?
-      refute authorizer.authorize(denied).allowed?
+      allowed = Z::Attributes.new(user: node, verb: "get", api_group: "", api_version: "v1", resource: "secrets", namespace: "ns",
+                                  name: "early-secret")
+      denied = Z::Attributes.new(user: node, verb: "get", api_group: "", api_version: "v1", resource: "secrets", namespace: "ns",
+                                 name: "other")
+
+      assert_predicate authorizer.authorize(allowed), :allowed?
+      refute_predicate authorizer.authorize(denied), :allowed?
     ensure
       populator.stop
     end

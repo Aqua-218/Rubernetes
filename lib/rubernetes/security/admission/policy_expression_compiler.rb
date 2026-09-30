@@ -46,7 +46,8 @@ module Rubernetes
         # or nil when the expression compiles to an allowed type and its
         # program can be planned.
         def compile(expression, return_types:, has_params:, has_authorizer:, patch_types: false)
-          output, issues, root = compile_with_issues(expression, has_params: has_params, has_authorizer: has_authorizer, patch_types: patch_types)
+          output, issues, root = compile_with_issues(expression, has_params: has_params, has_authorizer: has_authorizer,
+                                                                 patch_types: patch_types)
           @last_output = nil
           return [:invalid, "compilation failed: #{issues}"] unless issues.empty?
 
@@ -104,7 +105,8 @@ module Rubernetes
         end
 
         def compile_with_issues(expression, has_params:, has_authorizer:, patch_types: false)
-          PolicyTypeChecker.compile(environment(has_params: has_params, has_authorizer: has_authorizer, patch_types: patch_types), expression)
+          PolicyTypeChecker.compile(environment(has_params: has_params, has_authorizer: has_authorizer, patch_types: patch_types),
+                                    expression)
         end
 
         # createEnvForOpts: object/oldObject dyn, params dyn with a

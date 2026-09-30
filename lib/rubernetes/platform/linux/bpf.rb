@@ -216,16 +216,14 @@ module Rubernetes
                  function_relocations: {})
           raise ArgumentError, "instructions must not be empty" if instructions.empty?
           raise ArgumentError, "too many BPF instructions" if instructions.length > MAX_INSTRUCTIONS
-          unless log_size.positive? && log_size <= MAX_LOG_SIZE
-            raise ArgumentError, "log_size must be between 1 and #{MAX_LOG_SIZE}"
-          end
+          raise ArgumentError, "log_size must be between 1 and #{MAX_LOG_SIZE}" unless log_size.positive? && log_size <= MAX_LOG_SIZE
 
           relocated_instructions = relocate_function_references(instructions, function_relocations)
           requested_helper_ids = helper_ids_from_instructions(relocated_instructions)
           requested_helper_calls = helper_call_values(relocated_instructions)
           function_targets = pseudo_function_targets(relocated_instructions)
           btf_fd = nil
-          btf_blob = nil
+          nil
           func_info_blob = nil
           if function_targets.any?
             btf_blob = build_function_btf
@@ -397,8 +395,10 @@ module Rubernetes
             initial.fetch(:func_info_rec_size) * initial.fetch(:nr_func_info), MAX_FUNC_INFO_BYTES, "BPF function info",
             resource_id: resource_id
           )
-          return initial.merge(xlated_prog_bytes: "".b.freeze, func_info_bytes: "".b.freeze,
-                               xlated_instructions: [].freeze, helper_ids: [].freeze, helper_calls: [].freeze).freeze if xlated_length.zero? && func_info_length.zero?
+          if xlated_length.zero? && func_info_length.zero?
+            return initial.merge(xlated_prog_bytes: "".b.freeze, func_info_bytes: "".b.freeze,
+                                 xlated_instructions: [].freeze, helper_ids: [].freeze, helper_calls: [].freeze).freeze
+          end
 
           xlated_bytes = "\0".b * xlated_length
           func_info_bytes = "\0".b * func_info_length
@@ -423,9 +423,9 @@ module Rubernetes
           )
           if actual_xlated_length > xlated_bytes.bytesize || actual_func_info_length > func_info_bytes.bytesize
             raise Linux::Error.new(errno: Errno::EOVERFLOW::Errno, operation: "bpf(BPF_OBJ_GET_INFO_BY_FD)",
-                                    resource_id: resource_id,
-                                    details: {translated_program_bytes: actual_xlated_length,
-                                              function_info_bytes: actual_func_info_length})
+                                   resource_id: resource_id,
+                                   details: {translated_program_bytes: actual_xlated_length,
+                                             function_info_bytes: actual_func_info_length})
           end
           xlated_bytes = xlated_bytes.byteslice(0, actual_xlated_length).to_s.b.freeze
           func_info_bytes = func_info_bytes.byteslice(0, actual_func_info_length).to_s.b.freeze
@@ -451,8 +451,8 @@ module Rubernetes
         # readback. A kernel release string is not evidence that a helper was
         # accepted for this program type and privilege context.
         def helper_capability_probe(instructions:, helper_id:, program_type: BPF_PROG_TYPE_SOCKET_FILTER,
-                                    resource_id: "bpf:helper-probe", **options)
-          program = load(instructions: instructions, program_type: program_type, resource_id: resource_id, **options)
+                                    resource_id: "bpf:helper-probe", **)
+          program = load(instructions: instructions, program_type: program_type, resource_id: resource_id, **)
           observed = if program.respond_to?(:translated_helper_calls)
                        Array(program.translated_helper_calls)
                      else
@@ -468,9 +468,9 @@ module Rubernetes
           return true if requested.include?(Integer(helper_id)) && observed.length == requested.length && !observed.empty?
 
           raise Linux::Error.new(errno: Errno::EPROTO::Errno, operation: "bpf(BPF_PROG_LOAD)",
-                                  resource_id: resource_id,
-                                  details: {required_helper_id: Integer(helper_id), requested_helper_ids: requested,
-                                            translated_helper_ids: observed})
+                                 resource_id: resource_id,
+                                 details: {required_helper_id: Integer(helper_id), requested_helper_ids: requested,
+                                           translated_helper_ids: observed})
         ensure
           program&.close
         end
@@ -560,6 +560,7 @@ module Rubernetes
             unless instruction.code == (BPF_LD | BPF_DW | BPF_IMM) && instruction.source == BPF_PSEUDO_FUNC
               raise ArgumentError, "BPF function relocation #{index} does not reference a BPF_PSEUDO_FUNC ldimm64"
             end
+
             resolved[index] = instruction.with(immediate: target - index - 1)
           end
 
@@ -569,9 +570,7 @@ module Rubernetes
             raise ArgumentError, "BPF_PSEUDO_FUNC relocation is missing its ldimm64 high word" unless resolved[index + 1]&.code == 0
 
             target = index + 1 + Integer(instruction.immediate)
-            unless target.between?(0, resolved.length - 1)
-              raise ArgumentError, "BPF_PSEUDO_FUNC target #{target} is outside the program"
-            end
+            raise ArgumentError, "BPF_PSEUDO_FUNC target #{target} is outside the program" unless target.between?(0, resolved.length - 1)
           end
           resolved.freeze
         rescue IndexError, KeyError, TypeError, ArgumentError => error
@@ -704,9 +703,11 @@ module Rubernetes
 
         def bounded_info_length(value, maximum, label, resource_id: "bpf:program:info")
           length = Integer(value)
-          raise Linux::Error.new(errno: Errno::EPROTO::Errno, operation: "bpf(BPF_OBJ_GET_INFO_BY_FD)",
-                                  resource_id: resource_id,
-                                  details: {label => length, maximum: maximum}) if length.negative? || length > maximum
+          if length.negative? || length > maximum
+            raise Linux::Error.new(errno: Errno::EPROTO::Errno, operation: "bpf(BPF_OBJ_GET_INFO_BY_FD)",
+                                   resource_id: resource_id,
+                                   details: {label => length, maximum: maximum})
+          end
 
           length
         end
@@ -715,8 +716,8 @@ module Rubernetes
           buffer = String(bytes).b
           unless (buffer.bytesize % 8).zero?
             raise Linux::Error.new(errno: Errno::EPROTO::Errno, operation: "bpf(BPF_OBJ_GET_INFO_BY_FD)",
-                                    resource_id: resource_id,
-                                    details: {translated_program_bytes: buffer.bytesize})
+                                   resource_id: resource_id,
+                                   details: {translated_program_bytes: buffer.bytesize})
           end
 
           (buffer.bytesize / 8).times.map do |index|
@@ -771,11 +772,11 @@ module Rubernetes
         end
 
         def map_details(map)
-          if map.respond_to?(:fd) && map.respond_to?(:key_size) && map.respond_to?(:value_size)
-            [Integer(map.fd), Integer(map.key_size), Integer(map.value_size)]
-          else
+          unless map.respond_to?(:fd) && map.respond_to?(:key_size) && map.respond_to?(:value_size)
             raise ArgumentError, "map must expose fd, key_size, and value_size"
           end
+
+          [Integer(map.fd), Integer(map.key_size), Integer(map.value_size)]
         end
 
         def map_fd(map)

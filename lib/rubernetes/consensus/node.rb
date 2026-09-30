@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "securerandom"
-require "set"
 
 require_relative "errors"
 require_relative "canonical"
@@ -53,7 +52,10 @@ module Rubernetes
         end
 
         def validate!
-          raise ArgumentError, "election timeout must be at least 3x the heartbeat interval" if election_timeout_min + 1e-9 < heartbeat_interval * 3
+          if election_timeout_min + 1e-9 < heartbeat_interval * 3
+            raise ArgumentError,
+                  "election timeout must be at least 3x the heartbeat interval"
+          end
           raise ArgumentError, "election timeout range is inverted" if election_timeout_max < election_timeout_min
 
           self
@@ -484,9 +486,7 @@ module Rubernetes
         case @role
         when :leader
           flush_batch(now) if !@external_sync && @batch_deadline && now >= @batch_deadline
-          if @heartbeat_deadline.nil? || now >= @heartbeat_deadline
-            broadcast_heartbeat(now)
-          end
+          broadcast_heartbeat(now) if @heartbeat_deadline.nil? || now >= @heartbeat_deadline
           maybe_snapshot(now)
           report_stuck_read_waiters(now)
         else
@@ -639,7 +639,9 @@ module Rubernetes
         @pending_batch_ids.clear
         @pending_batch_bytes = 0
         @batch_deadline = nil
-        (@read_waiters + @queued_reads).each { |waiter| safe_call(waiter[:block], nil, NotLeader.new("leadership lost: #{reason}", leader_id: @leader_id)) }
+        (@read_waiters + @queued_reads).each do |waiter|
+          safe_call(waiter[:block], nil, NotLeader.new("leadership lost: #{reason}", leader_id: @leader_id))
+        end
         @read_waiters.clear
         @queued_reads.clear
         @inflight.clear
@@ -858,14 +860,11 @@ module Rubernetes
         apply_up_to_commit_index { |entry| finish_membership_change(entry) if config_entry?(entry) }
       end
 
-      attr_reader :async_apply
+      attr_accessor :async_apply
 
       # Installed by the server before it starts its apply loop.  The
       # callback is invoked while this node's lock is held, so it must do no
       # more than wake the loop.
-      def async_apply=(callback)
-        @async_apply = callback
-      end
 
       def apply_pending?
         @apply_mutex.synchronize { @last_applied < @commit_index }
@@ -898,8 +897,8 @@ module Rubernetes
       # race entries being applied.  Callers hold the node's lock, and the
       # apply loop never takes that lock while holding this one, so the two
       # orders never meet.
-      def with_apply_lock(&block)
-        @apply_mutex.synchronize(&block)
+      def with_apply_lock(&)
+        @apply_mutex.synchronize(&)
       end
 
       def signal_apply
@@ -1137,7 +1136,8 @@ module Rubernetes
 
         chunk = message.data.unpack1("m0")
         if message.offset.zero?
-          @incoming_snapshot = {index: message.last_included_index, term: message.last_included_term, buffer: "".b, total: message.total_bytes}
+          @incoming_snapshot = {index: message.last_included_index, term: message.last_included_term, buffer: "".b,
+                                total: message.total_bytes}
         end
         incoming = @incoming_snapshot
         success = false
@@ -1181,7 +1181,10 @@ module Rubernetes
       # orders never meet.
       def install_snapshot_bytes(bytes, expected_index:, expected_term:)
         snapshot = SnapshotStore.decode(bytes)
-        raise SnapshotCorruption, "snapshot index/term differ from the leader's announcement" unless snapshot.index == expected_index && snapshot.term == expected_term
+        unless snapshot.index == expected_index && snapshot.term == expected_term
+          raise SnapshotCorruption,
+                "snapshot index/term differ from the leader's announcement"
+        end
         raise Error, "refusing to install a snapshot below committed and applied state" if snapshot.index < @last_applied
 
         # Verify, persist, then switch state: a corrupt snapshot never
@@ -1202,7 +1205,9 @@ module Rubernetes
         @snapshot_installs += 1
         @membership = membership_from_log(Membership.from_h(snapshot.membership))
         @snapshot_store.prune(keep: 2)
-        @applied_listeners.each { |listener| safe_call(listener, Applied.new(index: snapshot.index, term: snapshot.term, command: {"type" => "snapshot"}, result: nil)) }
+        @applied_listeners.each do |listener|
+          safe_call(listener, Applied.new(index: snapshot.index, term: snapshot.term, command: {"type" => "snapshot"}, result: nil))
+        end
       end
 
       def handle_install_snapshot_response(message, now)
@@ -1375,9 +1380,7 @@ module Rubernetes
         snapshot, _rejected = @snapshot_store.latest(strict: true)
         return if snapshot.nil?
 
-        if snapshot.index > @log.snapshot_index
-          @log.compact_to(index: snapshot.index, term: snapshot.term)
-        end
+        @log.compact_to(index: snapshot.index, term: snapshot.term) if snapshot.index > @log.snapshot_index
         @state_machine.restore(snapshot.state)
         @commit_index = snapshot.index
         @last_applied = snapshot.index
@@ -1440,15 +1443,15 @@ module Rubernetes
 
       def reset_election_timer(now)
         span = @timing.election_timeout_max - @timing.election_timeout_min
-        @election_deadline = now + @timing.election_timeout_min + @random.rand * span
+        @election_deadline = now + @timing.election_timeout_min + (@random.rand * span)
       end
 
       def send(message)
         @outbox << message
       end
 
-      def safe_call(callable, *arguments)
-        callable.call(*arguments)
+      def safe_call(callable, *)
+        callable.call(*)
       rescue StandardError => error
         @logger&.warn("consensus.listener_error", error: "#{error.class}: #{error.message}")
         nil

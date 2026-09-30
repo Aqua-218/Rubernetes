@@ -17,13 +17,14 @@ module Rubernetes
         # namespaces, runtimeClasses).
         class PodSecurity < Plugin
           include Helpers
+
           PS = Security::PodSecurity
 
           POD_SPEC_RESOURCES = {
             ["", "pods"] => [], ["", "replicationcontrollers"] => %w[spec template], ["", "podtemplates"] => %w[template],
-            ["apps", "replicasets"] => %w[spec template], ["apps", "deployments"] => %w[spec template],
-            ["apps", "statefulsets"] => %w[spec template], ["apps", "daemonsets"] => %w[spec template],
-            ["batch", "jobs"] => %w[spec template], ["batch", "cronjobs"] => %w[spec jobTemplate spec template]
+            %w[apps replicasets] => %w[spec template], %w[apps deployments] => %w[spec template],
+            %w[apps statefulsets] => %w[spec template], %w[apps daemonsets] => %w[spec template],
+            %w[batch jobs] => %w[spec template], %w[batch cronjobs] => %w[spec jobTemplate spec template]
           }.freeze
           IGNORED_POD_SUBRESOURCES = %w[exec attach binding eviction log portforward proxy status].freeze
           NAMESPACE_MAX_PODS_TO_CHECK = 3000
@@ -113,7 +114,7 @@ module Rubernetes
             return nil unless exempt_namespace?(name)
             return nil if policy.fully_privileged? || policy.equivalent?(@default_policy)
 
-            labels = labels.is_a?(Hash) ? labels : {}
+            labels = {} unless labels.is_a?(Hash)
             parts = []
             {"enforce" => policy.enforce, "audit" => policy.audit, "warn" => policy.warn}.each do |mode, level_version|
               next if level_version.level == "privileged"
@@ -311,7 +312,8 @@ module Rubernetes
             end
             audit = cached[key(policy.audit)] ||= PS.aggregate(@evaluator.evaluate(policy.audit, pod_metadata, pod_spec))
             unless audit.allowed
-              annotations[PS::AUDIT_VIOLATIONS_ANNOTATION] = "would violate PodSecurity #{policy.audit.to_s.inspect}: #{audit.forbidden_detail}"
+              annotations[PS::AUDIT_VIOLATIONS_ANNOTATION] =
+                "would violate PodSecurity #{policy.audit.to_s.inspect}: #{audit.forbidden_detail}"
               record_evaluation("deny", policy.audit, "audit", attributes)
             end
             if response.allowed
@@ -339,8 +341,8 @@ module Rubernetes
             summary = causes.map { |cause| "#{cause["field"]}: #{cause["message"]}" }
             message = "Namespace #{name.inspect} is invalid: #{summary.length == 1 ? summary.first : "[#{summary.join(", ")}]"}"
             Response.new(false, [], {}, Rejected.new(message, code: 422, reason: "Invalid",
-                                                            details: {"name" => name, "kind" => "Namespace", "causes" => causes},
-                                                            plugin: self.name))
+                                                              details: {"name" => name, "kind" => "Namespace", "causes" => causes},
+                                                              plugin: self.name))
           end
 
           def bad_request(message) = Rejected.new(message, code: 400, reason: "BadRequest", plugin: name)

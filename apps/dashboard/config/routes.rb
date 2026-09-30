@@ -12,7 +12,7 @@ Rails.application.routes.draw do
       match "query_range", to: "query#range", via: %i[get post]
       match "series", to: "query#series", via: %i[get post]
       get "labels", to: "query#labels"
-      get "label/:name/values", to: "query#label_values", constraints: {name: /[^\/]+/}
+      get "label/:name/values", to: "query#label_values", constraints: {name: %r{[^/]+}}
       get "metadata", to: "query#metadata"
       get "targets", to: "status#targets"
       get "rules", to: "status#rules"
@@ -32,9 +32,9 @@ Rails.application.routes.draw do
   get "status", to: "monitoring#status"
 
   # Cluster browser.
-  resources :nodes, only: %i[index show], constraints: {id: /[^\/]+/}
-  resources :namespaces, only: %i[index show], constraints: {id: /[^\/]+/} do
-    resources :pods, only: %i[index show destroy], constraints: {id: /[^\/]+/} do
+  resources :nodes, only: %i[index show], constraints: {id: %r{[^/]+}}
+  resources :namespaces, only: %i[index show], constraints: {id: %r{[^/]+}} do
+    resources :pods, only: %i[index show destroy], constraints: {id: %r{[^/]+}} do
       member do
         get :logs
         get :yaml
@@ -42,7 +42,7 @@ Rails.application.routes.draw do
     end
     resources :events, only: %i[index]
     Dashboard::ResourceCatalog::NAMESPACED.each_key do |kind|
-      resources kind, only: %i[index show destroy], controller: "resources", defaults: {kind: kind.to_s}, constraints: {id: /[^\/]+/} do
+      resources kind, only: %i[index show destroy], controller: "resources", defaults: {kind: kind.to_s}, constraints: {id: %r{[^/]+}} do
         member do
           get :yaml
           post :scale
@@ -53,9 +53,10 @@ Rails.application.routes.draw do
   end
   get "events", to: "events#all"
   Dashboard::ResourceCatalog::CLUSTER.each_key do |kind|
-    next if kind == :nodes || kind == :namespaces
+    next if %i[nodes namespaces].include?(kind)
 
-    resources kind, only: %i[index show], controller: "resources", defaults: {kind: kind.to_s, cluster: true}, constraints: {id: /[^\/]+/} do
+    resources kind, only: %i[index show], controller: "resources", defaults: {kind: kind.to_s, cluster: true},
+                    constraints: {id: %r{[^/]+}} do
       member { get :yaml }
     end
   end

@@ -24,11 +24,13 @@ class M3RegistryIntegrationTest < Minitest::Test
   def test_each_definition_validates_gvk_watch_scope_and_ownership_contract
     @registry.definitions.each do |definition|
       definition.validate!(corpus_entry: @registry.entry(definition.name))
+
       assert_instance_of Class, definition.implementation, definition.name
       implementation = definition.implementation
-      assert implementation.public_instance_methods(true).include?(:plan) ||
-             implementation.protected_instance_methods(true).include?(:plan), definition.name
-      assert definition.reconcile_block.respond_to?(:call), definition.name
+
+      assert implementation.public_method_defined?(:plan) ||
+             implementation.protected_method_defined?(:plan), definition.name
+      assert_respond_to definition.reconcile_block, :call, definition.name
       assert definition.owns.all? { |edge| edge.owner == definition.kind }, definition.name
       assert definition.watches.all? { |watch| watch.scope == watch.resource.scope }, definition.name
       assert_equal definition.watches.map { |watch| [watch.resource.gvk, watch.via, watch.index_name] }.uniq.length,

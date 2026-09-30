@@ -36,11 +36,14 @@ class Prom::KubeStateTest < ActiveSupport::TestCase
                        "spec" => {"replicas" => 2},
                        "status" => {"replicas" => 2, "availableReplicas" => 1, "readyReplicas" => 1, "updatedReplicas" => 2, "observedGeneration" => 4,
                                     "conditions" => [{"type" => "Available", "status" => "False"}]}}],
-    "statefulsets" => [{"metadata" => {"name" => "db", "namespace" => "gitlab"}, "spec" => {"replicas" => 1}, "status" => {"replicas" => 1, "readyReplicas" => 1}}],
-    "daemonsets" => [{"metadata" => {"name" => "ds", "namespace" => "kube-system"}, "status" => {"desiredNumberScheduled" => 3, "numberReady" => 2}}],
+    "statefulsets" => [{"metadata" => {"name" => "db", "namespace" => "gitlab"}, "spec" => {"replicas" => 1},
+                        "status" => {"replicas" => 1, "readyReplicas" => 1}}],
+    "daemonsets" => [{"metadata" => {"name" => "ds", "namespace" => "kube-system"},
+                      "status" => {"desiredNumberScheduled" => 3, "numberReady" => 2}}],
     "jobs" => [{"metadata" => {"name" => "migrate", "namespace" => "gitlab"},
                 "status" => {"succeeded" => 1, "conditions" => [{"type" => "Complete", "status" => "True"}]}}],
-    "services" => [{"metadata" => {"name" => "web", "namespace" => "gitlab"}, "spec" => {"clusterIP" => "10.96.0.5", "type" => "ClusterIP"}}],
+    "services" => [{"metadata" => {"name" => "web", "namespace" => "gitlab"},
+                    "spec" => {"clusterIP" => "10.96.0.5", "type" => "ClusterIP"}}],
     "persistentvolumeclaims" => [{"metadata" => {"name" => "data", "namespace" => "gitlab"}, "spec" => {"resources" => {"requests" => {"storage" => "50Gi"}}},
                                   "status" => {"phase" => "Bound"}}]
   }.freeze
@@ -52,38 +55,53 @@ class Prom::KubeStateTest < ActiveSupport::TestCase
     samples = families.flat_map(&:samples)
 
     ready = samples.find { |s| s.name == "kube_node_status_condition" && s.labels["condition"] == "Ready" && s.labels["status"] == "true" }
-    assert_equal 1.0, ready.value
+
+    assert_in_delta(1.0, ready.value)
     cpu = samples.find { |s| s.name == "kube_node_status_allocatable" && s.labels["resource"] == "cpu" }
-    assert_equal 63.5, cpu.value
+
+    assert_in_delta(63.5, cpu.value)
     memory = samples.find { |s| s.name == "kube_node_status_capacity" && s.labels["resource"] == "memory" }
-    assert_equal 128 * 1024**3, memory.value
+
+    assert_equal 128 * (1024**3), memory.value
 
     phase = samples.find { |s| s.name == "kube_pod_status_phase" && s.labels["pod"] == "web-1" && s.labels["phase"] == "Running" }
-    assert_equal 1.0, phase.value
+
+    assert_in_delta(1.0, phase.value)
     restarts = samples.find { |s| s.name == "kube_pod_container_status_restarts_total" && s.labels["pod"] == "crash" }
-    assert_equal 9.0, restarts.value
+
+    assert_in_delta(9.0, restarts.value)
     assert_equal "counter", by_name["kube_pod_container_status_restarts_total"].type
     waiting = samples.find { |s| s.name == "kube_pod_container_status_waiting_reason" }
+
     assert_equal "CrashLoopBackOff", waiting.labels["reason"]
     request = samples.find { |s| s.name == "kube_pod_container_resource_requests" && s.labels["resource"] == "cpu" }
-    assert_equal 0.25, request.value
+
+    assert_in_delta(0.25, request.value)
     owner = samples.find { |s| s.name == "kube_pod_owner" }
-    assert_equal({"namespace" => "gitlab", "pod" => "web-1", "uid" => "u1", "owner_kind" => "ReplicaSet", "owner_name" => "web-abc", "owner_is_controller" => "true"}, owner.labels)
+
+    assert_equal(
+      {"namespace" => "gitlab", "pod" => "web-1", "uid" => "u1", "owner_kind" => "ReplicaSet", "owner_name" => "web-abc",
+       "owner_is_controller" => "true"}, owner.labels
+    )
 
     available = samples.find { |s| s.name == "kube_deployment_status_replicas_available" }
-    assert_equal 1.0, available.value
+
+    assert_in_delta(1.0, available.value)
     condition = samples.find { |s| s.name == "kube_deployment_status_condition" && s.labels["status"] == "false" }
-    assert_equal 1.0, condition.value
-    assert_equal 3.0, samples.find { |s| s.name == "kube_daemonset_status_desired_number_scheduled" }.value
-    assert_equal 1.0, samples.find { |s| s.name == "kube_job_complete" && s.labels["condition"] == "true" }.value
-    assert_equal 50 * 1024**3, samples.find { |s| s.name == "kube_persistentvolumeclaim_resource_requests_storage_bytes" }.value
-    assert_equal 1.0, samples.find { |s| s.name == "kube_namespace_status_phase" && s.labels["phase"] == "Active" }.value
+
+    assert_in_delta(1.0, condition.value)
+    assert_in_delta(3.0, samples.find { |s| s.name == "kube_daemonset_status_desired_number_scheduled" }.value)
+    assert_in_delta(1.0, samples.find { |s| s.name == "kube_job_complete" && s.labels["condition"] == "true" }.value)
+    assert_equal 50 * (1024**3), samples.find { |s| s.name == "kube_persistentvolumeclaim_resource_requests_storage_bytes" }.value
+    assert_in_delta(1.0, samples.find { |s| s.name == "kube_namespace_status_phase" && s.labels["phase"] == "Active" }.value)
   end
 
   test "is an in-process scrape target" do
     target = Prom::KubeState.new(client: FakeClient.new(OBJECTS)).target
+
     assert_equal "kube-state", target.job
     status, body = target.fetch.call
+
     assert_equal 200, status
     assert_includes body, "kube_pod_info{"
   end

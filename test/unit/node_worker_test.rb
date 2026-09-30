@@ -24,11 +24,13 @@ class NodeWorkerTest < Minitest::Test
     started.pop
     second = Thread.new { worker.process({"metadata" => {"name" => "pod"}}) }
     sleep 0.01
+
     assert_equal 1, maximum
     release << true
     started.pop
     release << true
     [first, second].each(&:join)
+
     assert_equal 1, maximum
     assert_equal 2, worker.processed
   end
@@ -51,8 +53,10 @@ class NodeWorkerTest < Minitest::Test
     pool.enqueue({"metadata" => {"uid" => "pod-a", "name" => "a"}})
     pool.enqueue({"metadata" => {"uid" => "pod-b", "name" => "b"}})
     2.times { started.pop }
+
     assert_equal 2, maximum
     2.times { release << true }
+
     assert pool.drain(timeout: 1)
     pool.stop
   end

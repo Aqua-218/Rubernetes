@@ -8,4 +8,3 @@ class VersionTest < Minitest::Test
     assert_predicate(Rubernetes::VERSION, :frozen?)
   end
 end
-

@@ -31,10 +31,10 @@ module Rubernetes
 
         def immutable(value)
           copied = case value
-          when Hash then value.to_h { |key, child| [String(key), immutable(child)] }
-          when Array then value.map { |child| immutable(child) }
-          else value
-          end
+                   when Hash then value.to_h { |key, child| [String(key), immutable(child)] }
+                   when Array then value.map { |child| immutable(child) }
+                   else value
+                   end
           copied.freeze
         end
       end
@@ -86,6 +86,7 @@ module Rubernetes
           if adapters[:security_probe] && testing_adapter?(adapters[:security_probe])
             raise Error, "security probe #{adapters[:security_probe].class} is a fake adapter and cannot be used by a host profile"
           end
+
           requirements = Requirements.dup
           requirements.delete(:pidfd) unless %i[kernel_isolation l3].include?(profile.to_sym)
           requirements.each do |name, requirement|
@@ -101,6 +102,7 @@ module Rubernetes
           if testing_adapter?(adapter)
             raise Error, "#{name} adapter #{adapter.class} is a recording/fake adapter and cannot be used by a host profile"
           end
+
           missing_methods = requirement.fetch(:methods).reject { |method| adapter.respond_to?(method) }
           unless missing_methods.empty?
             raise Error, "#{name} adapter #{adapter.class} is missing required effects: #{missing_methods.join(", ")}"
@@ -110,6 +112,7 @@ module Rubernetes
           unless declaration.respond_to?(:to_h)
             raise Error, "#{name} adapter #{adapter.class} must declare native_capabilities and validate them"
           end
+
           capabilities = declaration.to_h
           capability = requirement.fetch(:capability)
           declared = capabilities[capability] || capabilities[capability.to_s]
@@ -120,6 +123,7 @@ module Rubernetes
 
           result = adapter.validate_native_capabilities!
           raise Error, "#{name} adapter #{adapter.class} failed native capability validation" unless result == true
+
           true
         rescue NoMethodError => error
           raise Error, "#{name} adapter #{adapter.class} returned an invalid native capability contract: #{error.message}"
@@ -153,7 +157,8 @@ module Rubernetes
         end
 
         def create(qos:, pod_id:, container_id:, identity: nil, limits: nil, pod_limits: nil)
-          handle = Handle.new(path: "fake/#{qos}/#{pod_id}/#{container_id}", qos: qos, pod_id: pod_id, container_id: container_id, identity: identity || "cgroup:#{pod_id}:#{container_id}")
+          handle = Handle.new(path: "fake/#{qos}/#{pod_id}/#{container_id}", qos: qos, pod_id: pod_id, container_id: container_id,
+                              identity: identity || "cgroup:#{pod_id}:#{container_id}")
           @handles[handle.path] = handle
           @calls << [:create, handle]
           @limits ||= {}
@@ -246,7 +251,8 @@ module Rubernetes
 
         def spawn(command:, env: {}, cwd: nil, gate: true, cgroup: nil, **_options)
           @next_pid += 1
-          value = ProcessResult.new(pid: @next_pid, pidfd: @next_pid, gate: gate ? Object.new : nil, stdout: nil, stderr: nil, cgroup: cgroup)
+          value = ProcessResult.new(pid: @next_pid, pidfd: @next_pid, gate: gate ? Object.new : nil, stdout: nil, stderr: nil,
+                                    cgroup: cgroup)
           @running[value.pidfd] = true
           @calls << [:spawn, command, env, cwd, gate, cgroup]
           value

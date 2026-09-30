@@ -30,6 +30,7 @@ def regular_source_file?(path)
 
   current = ROOT
   return false if File.symlink?(current)
+
   path.delete_prefix("#{ROOT}/").split("/").each do |component|
     next if component.empty? || component == "."
 
@@ -57,7 +58,8 @@ uname = Etc.uname
 document = {
   "schema_version" => 2,
   "kind" => "native_boundary_scan",
-  "command" => [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output", options[:output] && File.expand_path(options[:output])].compact,
+  "command" => [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output",
+                options[:output] && File.expand_path(options[:output])].compact,
   "output_path" => options[:output] && File.expand_path(options[:output]),
   "tool_path" => "tools/milestones/native_boundary_scan.rb",
   "tool_sha256" => Digest::SHA256.file(File.expand_path($PROGRAM_NAME)).hexdigest,

@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
 require "time"
 require_relative "support"
 require_relative "types"
@@ -17,13 +16,13 @@ module Rubernetes
       class JobController < WorkloadController
         DESCRIPTOR = ResourceDescriptor.parse("Job")
         POD = WorkloadController::POD
-        LABEL_PREFIX = "batch.kubernetes.io/".freeze
+        LABEL_PREFIX = "batch.kubernetes.io/"
         TRACKING_FINALIZER = "#{LABEL_PREFIX}job-tracking".freeze
         COMPLETION_INDEX_ANNOTATION = "#{LABEL_PREFIX}job-completion-index".freeze
         INDEX_FAILURE_COUNT_ANNOTATION = "#{LABEL_PREFIX}job-index-failure-count".freeze
         INDEX_IGNORED_FAILURE_COUNT_ANNOTATION = "#{LABEL_PREFIX}job-index-ignored-failure-count".freeze
-        COMPLETION_INDEX_ENV = "JOB_COMPLETION_INDEX".freeze
-        JOB_CONTROLLER_NAME = "kubernetes.io/job-controller".freeze
+        COMPLETION_INDEX_ENV = "JOB_COMPLETION_INDEX"
+        JOB_CONTROLLER_NAME = "kubernetes.io/job-controller"
         UNKNOWN_COMPLETION_INDEX = -1
         # pkg/controller/job/job_controller.go:76-86
         DEFAULT_POD_FAILURE_BACKOFF_SECONDS = 10.0
@@ -33,12 +32,12 @@ module Rubernetes
         SLOW_START_INITIAL_BATCH_SIZE = 1
         # apps validation: backoffLimit defaults to MaxInt32 when only per-index
         # limits are declared (pkg/apis/batch/v1/defaults.go).
-        BACKOFF_LIMIT_WITH_PER_INDEX = 2**31 - 1
+        BACKOFF_LIMIT_WITH_PER_INDEX = (2**31) - 1
         POD_PHASE_ORDINAL = {"Pending" => 0, "Unknown" => 1, "Running" => 2}.freeze
 
         def initialize(**options)
           @clock = options.delete(:clock) || -> { Time.now.utc }
-          super(**options)
+          super
         end
 
         def orphan_cleanup?
@@ -89,6 +88,7 @@ module Rubernetes
           raise ArgumentError, "clock must return Time or RFC3339 value" unless now
 
           return result(job, []) if finished?(job)
+
           if externally_managed?(job)
             count_external_job(job)
             return result(job, [])
@@ -97,7 +97,7 @@ module Rubernetes
           completion_mode = Support.value(Support.spec(job), "completionMode", "NonIndexed").to_s
           unless %w[NonIndexed Indexed].include?(completion_mode)
             return result(job, [], events: [event("Warning", "UnknownCompletionMode",
-                                                     "Skipped Job sync because completion mode is unknown")])
+                                                  "Skipped Job sync because completion mode is unknown")])
           end
 
           all_pods = Array(pods)
@@ -107,7 +107,8 @@ module Rubernetes
           adoption = adoption_operations(job, all_pods)
           owned_pods += adoption.fetch(:pods)
           started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          instrument(job, Sync.new(self, job, owned_pods, now).run(release.fetch(:operations) + adoption.fetch(:operations)), started, completion_mode)
+          instrument(job, Sync.new(self, job, owned_pods, now).run(release.fetch(:operations) + adoption.fetch(:operations)), started,
+                     completion_mode)
         end
 
         # job/metrics: the sync (by what it did), the Pods it creates, and --
@@ -121,17 +122,21 @@ module Rubernetes
                    else "tracking"
                    end
           labels = {"completion_mode" => completion_mode, "result" => "success", "action" => action}
-          ControllerMetrics.observe("job_controller_job_sync_duration_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, labels)
+          ControllerMetrics.observe("job_controller_job_sync_duration_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started,
+                                    labels)
           ControllerMetrics.increment("job_controller_job_syncs_total", labels)
           reason = creation_reason(job)
           old_status = Support.status(job)
           planned.map_operations do |operation|
             if creates.include?(operation)
               operation.observed do |succeeded, _|
-                ControllerMetrics.increment("job_controller_job_pods_creation_total", {"reason" => reason, "status" => succeeded ? "succeeded" : "failed"})
+                ControllerMetrics.increment("job_controller_job_pods_creation_total",
+                                            {"reason" => reason, "status" => succeeded ? "succeeded" : "failed"})
               end
             elsif operation.action == :status_update && operation.resource.kind == "Job"
-              operation.observed { |succeeded, _| record_status_counters(job, old_status, operation.patch || planned.status, completion_mode) if succeeded }
+              operation.observed do |succeeded, _|
+                record_status_counters(job, old_status, operation.patch || planned.status, completion_mode) if succeeded
+              end
             else
               operation
             end
@@ -161,17 +166,24 @@ module Rubernetes
             backoff = backoff_limit_per_index?(job) ? "perIndex" : "global"
             total = ->(status, field) { intervals_total(parse_indexes(Support.value(status, field, nil), count)) }
             succeeded = total.call(new_status, "completedIndexes") - total.call(old_status, "completedIndexes")
-            ControllerMetrics.increment("job_controller_job_finished_indexes_total", {"status" => "succeeded", "backoffLimit" => backoff}, by: succeeded)
+            ControllerMetrics.increment("job_controller_job_finished_indexes_total", {"status" => "succeeded", "backoffLimit" => backoff},
+                                        by: succeeded)
             if backoff_limit_per_index?(job)
               failed_indexes = total.call(new_status, "failedIndexes") - total.call(old_status, "failedIndexes")
-              ControllerMetrics.increment("job_controller_job_finished_indexes_total", {"status" => "failed", "backoffLimit" => backoff}, by: failed_indexes) if failed_indexes.positive?
+              if failed_indexes.positive?
+                ControllerMetrics.increment("job_controller_job_finished_indexes_total", {"status" => "failed", "backoffLimit" => backoff},
+                                            by: failed_indexes)
+              end
             end
           else
-            succeeded = Support.integer(Support.value(new_status, "succeeded", 0), 0) - Support.integer(Support.value(old_status, "succeeded", 0), 0)
+            succeeded = Support.integer(Support.value(new_status, "succeeded", 0),
+                                        0) - Support.integer(Support.value(old_status, "succeeded", 0), 0)
           end
-          ControllerMetrics.increment("job_controller_job_pods_finished_total", {"completion_mode" => completion_mode, "result" => "succeeded"}, by: succeeded)
+          ControllerMetrics.increment("job_controller_job_pods_finished_total",
+                                      {"completion_mode" => completion_mode, "result" => "succeeded"}, by: succeeded)
           failed = Support.integer(Support.value(new_status, "failed", 0), 0) - Support.integer(Support.value(old_status, "failed", 0), 0)
-          ControllerMetrics.increment("job_controller_job_pods_finished_total", {"completion_mode" => completion_mode, "result" => "failed"}, by: failed)
+          ControllerMetrics.increment("job_controller_job_pods_finished_total",
+                                      {"completion_mode" => completion_mode, "result" => "failed"}, by: failed)
           finished = Array(Support.value(new_status, "conditions", [])).find do |condition|
             %w[Complete Failed].include?(Support.value(condition, "type", "").to_s) && Support.value(condition, "status", "").to_s == "True"
           end
@@ -182,7 +194,8 @@ module Rubernetes
 
           result = Support.value(finished, "type", "") == "Complete" ? "succeeded" : "failed"
           ControllerMetrics.increment("job_controller_jobs_finished_total",
-                                      {"completion_mode" => completion_mode, "result" => result, "reason" => Support.value(finished, "reason", "").to_s})
+                                      {"completion_mode" => completion_mode, "result" => result,
+                                       "reason" => Support.value(finished, "reason", "").to_s})
         end
 
         # addJob: a Job another controller manages, once.
@@ -191,8 +204,10 @@ module Rubernetes
 
         def count_external_job(job)
           first = EXTERNAL_JOBS_MUTEX.synchronize { EXTERNAL_JOBS.add?(Support.uid(job).to_s) }
+          return unless first
+
           ControllerMetrics.increment("job_controller_jobs_by_external_controller_total",
-                                      {"controller_name" => Support.value(Support.spec(job), "managedBy", "").to_s}) if first
+                                      {"controller_name" => Support.value(Support.spec(job), "managedBy", "").to_s})
         end
 
         def scale(job, replicas, pods: nil, store: nil)
@@ -242,12 +257,14 @@ module Rubernetes
 
           value = Support.integer(raw, 0)
           raise ArgumentError, "completions must be non-negative" if value.negative?
+
           value
         end
 
         def parallelism(job)
           value = Support.integer(Support.value(Support.spec(job), "parallelism", 1), 1)
           raise ArgumentError, "parallelism must be non-negative" if value.negative?
+
           value
         end
 
@@ -257,6 +274,7 @@ module Rubernetes
 
           value = Support.integer(raw, 6)
           raise ArgumentError, "backoffLimit must be non-negative" if value.negative?
+
           value
         end
 
@@ -363,7 +381,7 @@ module Rubernetes
           return 0 if raw.nil?
 
           value = Integer(raw.to_s, 10)
-          value.negative? || value > 2**31 - 1 ? 0 : value
+          value.negative? || value > (2**31) - 1 ? 0 : value
         rescue ArgumentError, TypeError
           0
         end
@@ -392,7 +410,8 @@ module Rubernetes
               when "Count" then return [nil, true, "Count"]
               when "FailJob"
                 code = Support.value(Support.value(Support.value(container_status, "state", {}), "terminated", {}), "exitCode", 0)
-                message = "Container #{Support.value(container_status, 'name', '')} for pod #{Support.namespace(pod)}/#{Support.name(pod)} " \
+                message = "Container #{Support.value(container_status, "name",
+                                                     "")} for pod #{Support.namespace(pod)}/#{Support.name(pod)} " \
                           "failed with exit code #{code} matching #{action} rule at index #{index}"
                 return [message, true, "FailJob"]
               end
@@ -405,7 +424,7 @@ module Rubernetes
               when "FailIndex" then return [nil, true, "FailIndex"]
               when "Count" then return [nil, true, "Count"]
               when "FailJob"
-                message = "Pod #{Support.namespace(pod)}/#{Support.name(pod)} has condition #{Support.value(condition, 'type', '')} " \
+                message = "Pod #{Support.namespace(pod)}/#{Support.name(pod)} has condition #{Support.value(condition, "type", "")} " \
                           "matching #{action} rule at index #{index}"
                 return [message, true, "FailJob"]
               end
@@ -534,7 +553,9 @@ module Rubernetes
           operations = released.filter_map do |pod|
             candidate = Support.deep_copy(pod)
             candidate["metadata"] ||= {}
-            candidate["metadata"]["ownerReferences"] = Support.owner_references(pod).map { |reference| Support.deep_copy(reference) }.reject do |reference|
+            candidate["metadata"]["ownerReferences"] = Support.owner_references(pod).map do |reference|
+              Support.deep_copy(reference)
+            end.reject do |reference|
               Support.ref_value(reference, "uid", nil).to_s == Support.uid(job).to_s
             end
             finalizers = Array(candidate["metadata"]["finalizers"]) - [TRACKING_FINALIZER]
@@ -692,7 +713,7 @@ module Rubernetes
             status["startTime"] = @now.utc.iso8601(6) if status["startTime"].nil? && !suspended
             start_time = Support.parse_time(status["startTime"])
 
-            finished = nil
+            nil
             exceeds_backoff = failed > @c.backoff_limit(job)
             finished = success_criteria_met_condition(status)
             if finished.nil?
@@ -753,7 +774,7 @@ module Rubernetes
               ready -= deleted_pods.count { |pod| @c.pod_ready?(pod) }
             else
               manage_called = false
-              if !@c.pod_deleting?(job)
+              unless @c.pod_deleting?(job)
                 manage_called = true
                 active, deleted_pods = manage_job(active_pods, succeeded, succeeded_indexes, failed_indexes,
                                                   delayed_deletion, terminating, completions)
@@ -821,7 +842,8 @@ module Rubernetes
               next 0 unless %w[Running Pending].include?(@c.pod_phase(pod))
 
               status = Support.status(pod)
-              (Array(Support.value(status, "initContainerStatuses", [])) + Array(Support.value(status, "containerStatuses", []))).sum do |container|
+              (Array(Support.value(status, "initContainerStatuses",
+                                   [])) + Array(Support.value(status, "containerStatuses", []))).sum do |container|
                 Support.integer(Support.value(container, "restartCount", 0), 0)
               end
             end
@@ -925,7 +947,9 @@ module Rubernetes
 
           # pkg/controller/job/indexed_job_utils.go:323
           def pods_with_delayed_deletion_per_index(active_pods, succeeded_indexes, failed_indexes, completions)
-            active_indexes = Set.new(active_pods.map { |pod| @c.completion_index(pod) }.reject { |index| index == UNKNOWN_COMPLETION_INDEX })
+            active_indexes = Set.new(active_pods.map do |pod|
+              @c.completion_index(pod)
+            end.reject { |index| index == UNKNOWN_COMPLETION_INDEX })
             result = {}
             valid_pods(nil) do |pod|
               next false unless @c.pod_failed?(pod, @job)
@@ -958,9 +982,7 @@ module Rubernetes
                 required = @c.parse_indexes(rule_indexes, completions)
                 next if required.empty?
 
-                if succeeded_indexes_rule_matches?(required, succeeded_indexes, rule_count)
-                  return ["Matched rules at index #{index}", true]
-                end
+                return ["Matched rules at index #{index}", true] if succeeded_indexes_rule_matches?(required, succeeded_indexes, rule_count)
               elsif !rule_count.nil? && @c.intervals_total(succeeded_indexes) >= Support.integer(rule_count, 0)
                 return ["Matched rules at index #{index}", true]
               end
@@ -1070,7 +1092,7 @@ module Rubernetes
                 end
               end
               @operations << @c.operation_create(candidate, owner: job, descriptor: POD, reason: "job pod creation",
-                                                 operation_key: "registry/v1/pods/#{Support.namespace(job)}/#{identity}")
+                                                            operation_key: "registry/v1/pods/#{Support.namespace(job)}/#{identity}")
               @events << @c.event("Normal", "SuccessfulCreate", "Created pod: #{Support.name(job)}-#{active + slot}-pending")
             end
           end
@@ -1207,12 +1229,8 @@ module Rubernetes
           def active_pods_for_removal(active_pods, rm_at_least, completions)
             rm = []
             left = active_pods
-            if @c.indexed?(@job)
-              rm, left = duplicated_index_pods_for_removal(active_pods, completions)
-            end
-            if rm.length < rm_at_least
-              rm += left.sort_by { |pod| active_pod_sort_key(pod) }.first(rm_at_least - rm.length)
-            end
+            rm, left = duplicated_index_pods_for_removal(active_pods, completions) if @c.indexed?(@job)
+            rm += left.sort_by { |pod| active_pod_sort_key(pod) }.first(rm_at_least - rm.length) if rm.length < rm_at_least
             rm
           end
 
@@ -1239,9 +1257,7 @@ module Rubernetes
           # first, newest creation first.
           def active_pod_sort_key(pod)
             ready = @c.pod_ready?(pod)
-            ready_time = if ready
-                           Support.parse_time(Support.value(Support.condition(pod, "Ready"), "lastTransitionTime", nil))
-                         end
+            ready_time = (Support.parse_time(Support.value(Support.condition(pod, "Ready"), "lastTransitionTime", nil)) if ready)
             restarts = Array(Support.value(Support.status(pod), "containerStatuses", [])).map do |container|
               Support.integer(Support.value(container, "restartCount", 0), 0)
             end.max || 0
@@ -1299,7 +1315,10 @@ module Rubernetes
                     _message, count_failed, action = @c.match_pod_failure_policy(policy, pod)
                     # job_controller_pod_failures_handled_by_failure_policy_total{action}:
                     # one per failed Pod a podFailurePolicy rule decided on.
-                    ControllerMetrics.increment("job_controller_pod_failures_handled_by_failure_policy_total", {"action" => action}) if action
+                    if action
+                      ControllerMetrics.increment("job_controller_pod_failures_handled_by_failure_policy_total",
+                                                  {"action" => action})
+                    end
                     if count_failed
                       needs_flush = true
                       uncounted["failed"] << uid
@@ -1358,13 +1377,17 @@ module Rubernetes
             # for each terminated Pod seen holding the tracking finalizer,
             # "delete" as the finalizer comes off.
             unless pods_to_remove_finalizer.empty?
-              ControllerMetrics.increment("job_controller_terminated_pods_tracking_finalizer_total", {"event" => "add"}, by: pods_to_remove_finalizer.length)
-              ControllerMetrics.increment("job_controller_terminated_pods_tracking_finalizer_total", {"event" => "delete"}, by: pods_to_remove_finalizer.length)
+              ControllerMetrics.increment("job_controller_terminated_pods_tracking_finalizer_total", {"event" => "add"},
+                                          by: pods_to_remove_finalizer.length)
+              ControllerMetrics.increment("job_controller_terminated_pods_tracking_finalizer_total", {"event" => "delete"},
+                                          by: pods_to_remove_finalizer.length)
             end
             pods_to_remove_finalizer.each do |pod|
               candidate = Support.deep_copy(pod)
               candidate["metadata"] ||= {}
-              candidate["metadata"]["finalizers"] = Array(candidate["metadata"]["finalizers"]).reject { |value| value == TRACKING_FINALIZER }
+              candidate["metadata"]["finalizers"] = Array(candidate["metadata"]["finalizers"]).reject do |value|
+                value == TRACKING_FINALIZER
+              end
               @operations << @c.operation_update(pod, candidate, descriptor: POD, reason: "job tracking finalizer removal")
               uids_with_finalizer.delete(Support.uid(pod).to_s)
             end
@@ -1381,9 +1404,7 @@ module Rubernetes
             final_status = compact_status(status)
             record_job_finished(final_status, final_condition) if job_finished
             final_operation = @c.operation_status(job, final_status, descriptor: DESCRIPTOR, reason: "job status")
-            if final_operation && (interim_operation.nil? || !needs_flush || interim_status != final_status)
-              @operations << final_operation
-            end
+            @operations << final_operation if final_operation && (interim_operation.nil? || !needs_flush || interim_status != final_status)
             ReconcileResult.new(operations: @operations, status: final_status, events: @events, controller: @c.name,
                                 key: [Support.namespace(job), Support.name(job)].compact.join("/"),
                                 requeue_after: @requeue_after)
@@ -1429,9 +1450,9 @@ module Rubernetes
             return false if Support.integer(status["terminating"], 0).positive?
 
             status["conditions"], = @c.ensure_condition_status(status["conditions"], Support.value(condition, "type", ""),
-                                                                Support.value(condition, "status", ""),
-                                                                Support.value(condition, "reason", ""),
-                                                                Support.value(condition, "message", ""), @now)
+                                                               Support.value(condition, "status", ""),
+                                                               Support.value(condition, "reason", ""),
+                                                               Support.value(condition, "message", ""), @now)
             if Support.value(condition, "type", "").to_s == "Complete"
               status["completionTime"] = Support.value(condition, "lastTransitionTime", @now.utc.iso8601(6))
             end

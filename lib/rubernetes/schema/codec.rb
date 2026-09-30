@@ -52,8 +52,8 @@ module Rubernetes
           normalize_typed_value(value, schema, mode, path: [])
         else
           validate_schema_fields!(value, schema: schema, known_fields: known_fields || fields,
-                                  strict: strict, preserve_unknown: preserve_unknown,
-                                  unknown_fields: mode)
+                                         strict: strict, preserve_unknown: preserve_unknown,
+                                         unknown_fields: mode)
         end
       end
 
@@ -73,8 +73,8 @@ module Rubernetes
                        normalize_typed_value(object, schema, mode, path: [])
                      else
                        validate_schema_fields!(object, schema: schema, known_fields: known_fields || fields,
-                                               strict: strict, preserve_unknown: preserve_unknown,
-                                               unknown_fields: mode)
+                                                       strict: strict, preserve_unknown: preserve_unknown,
+                                                       unknown_fields: mode)
                        object
                      end
         JSONCodec.dump(
@@ -85,16 +85,16 @@ module Rubernetes
         )
       end
 
-      def canonical_json(object, **options)
-        dump_json(object, **options.merge(canonical: true))
+      def canonical_json(object, **)
+        dump_json(object, **, canonical: true)
       end
 
-      def strict_load_json(input, **options)
-        load_json(input, **options.merge(strict: true))
+      def strict_load_json(input, **)
+        load_json(input, **, strict: true)
       end
 
-      def strict_dump_json(object, **options)
-        dump_json(object, **options.merge(strict: true))
+      def strict_dump_json(object, **)
+        dump_json(object, **, strict: true)
       end
 
       def load_yaml(input, strict: @strict, schema: nil, known_fields: nil, fields: nil,
@@ -119,8 +119,8 @@ module Rubernetes
           normalize_typed_value(value, schema, mode, path: [])
         else
           validate_schema_fields!(value, schema: schema, known_fields: known_fields || fields,
-                                  strict: strict, preserve_unknown: preserve_unknown,
-                                  unknown_fields: mode)
+                                         strict: strict, preserve_unknown: preserve_unknown,
+                                         unknown_fields: mode)
         end
       end
 
@@ -140,8 +140,8 @@ module Rubernetes
                        normalize_typed_value(object, schema, mode, path: [])
                      else
                        validate_schema_fields!(object, schema: schema, known_fields: known_fields || fields,
-                                               strict: strict, preserve_unknown: preserve_unknown,
-                                               unknown_fields: mode)
+                                                       strict: strict, preserve_unknown: preserve_unknown,
+                                                       unknown_fields: mode)
                        object
                      end
         YAMLCodec.dump(
@@ -152,12 +152,12 @@ module Rubernetes
         )
       end
 
-      def strict_load_yaml(input, **options)
-        load_yaml(input, **options.merge(strict: true))
+      def strict_load_yaml(input, **)
+        load_yaml(input, **, strict: true)
       end
 
-      def strict_dump_yaml(object, **options)
-        dump_yaml(object, **options.merge(strict: true))
+      def strict_dump_yaml(object, **)
+        dump_yaml(object, **, strict: true)
       end
 
       def encode_cbor(object, canonical: true, max_bytes: @max_bytes, max_depth: @max_depth)
@@ -268,23 +268,23 @@ module Rubernetes
           new(**codec_options(options)).decode_protobuf_json(input, **options)
         end
 
-        def load(input, format: :json, **options)
+        def load(input, format: :json, **)
           case format.to_sym
-          when :json then load_json(input, **options)
-          when :yaml, :yml then load_yaml(input, **options)
-          when :cbor then decode_cbor(input, **options)
-          when :protobuf, :kubernetes_protobuf then decode_protobuf(input, **options)
+          when :json then load_json(input, **)
+          when :yaml, :yml then load_yaml(input, **)
+          when :cbor then decode_cbor(input, **)
+          when :protobuf, :kubernetes_protobuf then decode_protobuf(input, **)
           else
             raise ArgumentError, "unsupported codec format #{format.inspect}"
           end
         end
 
-        def dump(object, format: :json, **options)
+        def dump(object, format: :json, **)
           case format.to_sym
-          when :json then dump_json(object, **options)
-          when :yaml, :yml then dump_yaml(object, **options)
-          when :cbor then encode_cbor(object, **options)
-          when :protobuf, :kubernetes_protobuf then encode_protobuf(object, **options)
+          when :json then dump_json(object, **)
+          when :yaml, :yml then dump_yaml(object, **)
+          when :cbor then encode_cbor(object, **)
+          when :protobuf, :kubernetes_protobuf then encode_protobuf(object, **)
           else
             raise ArgumentError, "unsupported codec format #{format.inspect}"
           end
@@ -324,9 +324,8 @@ module Rubernetes
           begin
             value.each_with_object({}) do |(key, child), normalized|
               normalized_key = normalize_key(key)
-              if normalized.key?(normalized_key)
-                raise DuplicateKeyError, "object contains duplicate key #{normalized_key.inspect}"
-              end
+              raise DuplicateKeyError, "object contains duplicate key #{normalized_key.inspect}" if normalized.key?(normalized_key)
+
               normalized[normalized_key] = normalize_value(
                 child,
                 depth: depth + 1,
@@ -338,16 +337,13 @@ module Rubernetes
             seen.delete(value.object_id)
           end
         else
-          if value.respond_to?(:to_h)
-            hash = value.to_h
-            unless hash.is_a?(Hash)
-              raise UnsupportedTypeError, "to_h for #{value.class} must return a Hash"
-            end
+          raise UnsupportedTypeError, "unsupported codec value #{value.class}" unless value.respond_to?(:to_h)
 
-            normalize_value(hash, depth: depth, max_depth: max_depth, seen: seen)
-          else
-            raise UnsupportedTypeError, "unsupported codec value #{value.class}"
-          end
+          hash = value.to_h
+          raise UnsupportedTypeError, "to_h for #{value.class} must return a Hash" unless hash.is_a?(Hash)
+
+          normalize_value(hash, depth: depth, max_depth: max_depth, seen: seen)
+
         end
       end
 
@@ -376,9 +372,7 @@ module Rubernetes
       end
 
       def self.validate_body!(input, max_bytes)
-        unless input.is_a?(String)
-          raise ParseError, "codec input must be a String, got #{input.class}"
-        end
+        raise ParseError, "codec input must be a String, got #{input.class}" unless input.is_a?(String)
 
         raise LimitError, "codec body exceeds #{max_bytes} bytes" if input.bytesize > max_bytes
 
@@ -441,20 +435,20 @@ module Rubernetes
       end
 
       def unknown_mode(unknown_fields:, preserve_unknown:, schema:, object:, operation:, strict:)
-        if unknown_fields
-          mode = unknown_fields.to_sym
-        elsif !preserve_unknown.nil?
-          mode = preserve_unknown ? :preserve : :reject
-        elsif schema
-          # JSON/YAML decoding into a concrete Kubernetes type is strict by
-          # default, while encoding a typed value follows the generated schema's
-          # pruning policy.  Callers can select :preserve or :prune explicitly.
-          mode = operation == :load && strict ? :reject : :prune
-        elsif object.respond_to?(:to_h_for_codec)
-          mode = :prune
-        else
-          mode = :preserve
-        end
+        mode = if unknown_fields
+                 unknown_fields.to_sym
+               elsif !preserve_unknown.nil?
+                 preserve_unknown ? :preserve : :reject
+               elsif schema
+                 # JSON/YAML decoding into a concrete Kubernetes type is strict by
+                 # default, while encoding a typed value follows the generated schema's
+                 # pruning policy.  Callers can select :preserve or :prune explicitly.
+                 operation == :load && strict ? :reject : :prune
+               elsif object.respond_to?(:to_h_for_codec)
+                 :prune
+               else
+                 :preserve
+               end
         return mode if UNKNOWN_MODES.include?(mode)
 
         raise ArgumentError, "unknown_fields must be :preserve, :prune, or :reject"
@@ -465,7 +459,10 @@ module Rubernetes
 
         union_target = union_object_definition(object_definition)
         if union_target
-          return normalize_generic_value(value, path: path, mode: mode) unless value.is_a?(Hash) || (value.respond_to?(:raw_values) && value.respond_to?(:unknown_fields))
+          unless value.is_a?(Hash) || (value.respond_to?(:raw_values) && value.respond_to?(:unknown_fields))
+            return normalize_generic_value(value, path: path,
+                                                  mode: mode)
+          end
 
           value = value.raw_values.merge(value.unknown_fields) unless value.is_a?(Hash)
           return normalize_typed_value(value, union_target, mode, path: path)
@@ -504,9 +501,7 @@ module Rubernetes
           return {known: known, unknown: value.unknown_fields}
         end
 
-        unless value.is_a?(Hash)
-          raise EncodeError, "expected an object for #{object_definition.kind}, got #{value.class}"
-        end
+        raise EncodeError, "expected an object for #{object_definition.kind}, got #{value.class}" unless value.is_a?(Hash)
 
         known = {}
         unknown = {}
@@ -520,7 +515,10 @@ module Rubernetes
 
             known[field.name] = item
           else
-            raise UnsupportedTypeError, "object keys must be String or Symbol, got #{key.class}" unless key.is_a?(String) || key.is_a?(Symbol)
+            unless key.is_a?(String) || key.is_a?(Symbol)
+              raise UnsupportedTypeError,
+                    "object keys must be String or Symbol, got #{key.class}"
+            end
 
             raise DuplicateKeyError, "object contains duplicate key #{key_string.inspect}" if unknown.key?(key_string)
 
@@ -534,9 +532,7 @@ module Rubernetes
         return nil if value.nil?
 
         if field.array?
-          unless value.is_a?(Array)
-            raise EncodeError, "expected an array at #{display_path(path)}, got #{value.class}"
-          end
+          raise EncodeError, "expected an array at #{display_path(path)}, got #{value.class}" unless value.is_a?(Array)
 
           return value.each_with_index.map do |item, index|
             normalize_typed_item(item, field.items, mode, path: path + [index.to_s])
@@ -552,9 +548,7 @@ module Rubernetes
           return normalize_typed_value(value, nested, mode, path: path)
         end
 
-        if field.object? && value.is_a?(Hash)
-          return normalize_typed_map(value, field, mode, path: path)
-        end
+        return normalize_typed_map(value, field, mode, path: path) if field.object? && value.is_a?(Hash)
 
         normalize_generic_value(value, path: path, mode: mode)
       end
@@ -562,6 +556,7 @@ module Rubernetes
       def normalize_typed_item(value, item, mode, path:)
         return nil if value.nil?
         return normalize_typed_field(value, item, mode, path: path) if item.respond_to?(:type) && item.respond_to?(:name)
+
         if item && item.respond_to?(:fields) && item.respond_to?(:preserve_unknown_fields)
           return normalize_generic_value(value, path: path, mode: mode) if opaque_scalar?(item, value)
 
@@ -602,9 +597,11 @@ module Rubernetes
         properties = field.properties
         if additional == false && properties.empty?
           unknown = value.keys.map(&:to_s)
-          return value.each_with_object({}) do |(key, item), result|
-            handle_unknown_field!(result, key.to_s, item, field, mode, path)
-          end if unknown.any?
+          if unknown.any?
+            return value.each_with_object({}) do |(key, item), result|
+              handle_unknown_field!(result, key.to_s, item, field, mode, path)
+            end
+          end
         end
 
         value.each_with_object({}) do |(key, item), result|
@@ -625,9 +622,7 @@ module Rubernetes
 
       def normalize_generic_value(value, path:, mode: :preserve)
         nested_schema = schema_definition_for(value)
-        if nested_schema
-          return normalize_typed_value(value, nested_schema, mode, path: path)
-        end
+        return normalize_typed_value(value, nested_schema, mode, path: path) if nested_schema
         if value.respond_to?(:to_h_for_codec)
           return normalize_generic_value(value.to_h_for_codec(unknown_fields: mode), path: path, mode: mode)
         end
@@ -667,9 +662,7 @@ module Rubernetes
       end
 
       def handle_unknown_field!(result, name, value, object_definition, mode, path)
-        if mode == :reject && !object_definition.respond_to?(:preserve_unknown_fields)
-          raise_unknown_field!(path + [name])
-        end
+        raise_unknown_field!(path + [name]) if mode == :reject && !object_definition.respond_to?(:preserve_unknown_fields)
         if mode == :reject && object_definition.respond_to?(:preserve_unknown_fields) &&
            !object_definition.preserve_unknown_fields
           raise_unknown_field!(path + [name])
@@ -714,9 +707,7 @@ module Rubernetes
         unknown = value.keys.map(&:to_s).reject { |name| allowed.include?(name) }
         return value if unknown.empty?
 
-        if unknown_fields == :reject && strict
-          raise UnknownFieldError, "unknown fields: #{unknown.sort.join(', ')}"
-        end
+        raise UnknownFieldError, "unknown fields: #{unknown.sort.join(", ")}" if unknown_fields == :reject && strict
         return value unless unknown_fields == :prune
 
         value.each_with_object({}) do |(key, item), result|
@@ -747,6 +738,4 @@ end
 
 # The descriptor registry is part of the codec surface, while schema registry
 # loading remains owned by the higher-level schema layer.
-unless Rubernetes::Schema::Codec.const_defined?(:ProtoDescriptor, false)
-  require_relative "codec/proto_descriptor"
-end
+require_relative "codec/proto_descriptor" unless Rubernetes::Schema::Codec.const_defined?(:ProtoDescriptor, false)

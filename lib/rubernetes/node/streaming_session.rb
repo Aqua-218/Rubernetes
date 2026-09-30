@@ -2,7 +2,6 @@
 
 require "base64"
 require "json"
-require "thread"
 
 require_relative "../transport/websocket"
 require_relative "../transport/spdy"
@@ -259,6 +258,7 @@ module Rubernetes
 
         def exit_code_of(status)
           return nil if status.nil?
+
           if status.is_a?(Process::Status) || status.respond_to?(:exitstatus)
             code = status.exitstatus
             return code unless code.nil?
@@ -267,6 +267,7 @@ module Rubernetes
             return nil
           end
           return Integer(status) if status.is_a?(Integer)
+
           if status.respond_to?(:exit_status)
             code = status.exit_status
             return code unless code.nil?
@@ -453,7 +454,7 @@ module Rubernetes
           @close_callbacks << block
           Thread.new do
             @session.join
-            block.call unless @closed
+            yield unless @closed
           rescue StandardError
             nil
           end
@@ -585,7 +586,8 @@ module Rubernetes
 
         def accept_stream(stream)
           type = stream.header(STREAM_TYPE).to_s
-          return false unless [STREAM_TYPE_STDIN, STREAM_TYPE_STDOUT, STREAM_TYPE_STDERR, STREAM_TYPE_ERROR, STREAM_TYPE_RESIZE].include?(type)
+          return false unless [STREAM_TYPE_STDIN, STREAM_TYPE_STDOUT, STREAM_TYPE_STDERR, STREAM_TYPE_ERROR,
+                               STREAM_TYPE_RESIZE].include?(type)
 
           @mutex.synchronize do
             return false if @streams.key?(type)
@@ -765,19 +767,21 @@ module Rubernetes
             pair = @pairs[request_id] ||= Pair.new(request_id, nil, nil, Process.clock_gettime(Process::CLOCK_MONOTONIC))
             if type == STREAM_TYPE_ERROR
               raise Error, "error stream already assigned" if pair.error
+
               pair.error = stream
             else
               raise Error, "data stream already assigned" if pair.data
+
               pair.data = stream
             end
             complete = pair.data && pair.error
             @pairs.delete(request_id) if complete
           end
-          if complete
-            @workers << Thread.new { forward(pair, port.to_i) }
-          else
-            @workers << Thread.new { monitor(pair, request_id) }
-          end
+          @workers << if complete
+                        Thread.new { forward(pair, port.to_i) }
+                      else
+                        Thread.new { monitor(pair, request_id) }
+                      end
           true
         end
 
@@ -861,19 +865,19 @@ module Rubernetes
           @ports.each_with_index do |port, index|
             announcement = [port].pack("v")
             channels.write_channel(index * 2, announcement)
-            channels.write_channel(index * 2 + 1, announcement)
+            channels.write_channel((index * 2) + 1, announcement)
           end
           workers = @ports.each_with_index.map do |port, index|
             Thread.new do
               duplex = @connector.call(port)
               PortForwardBridge.new(duplex: duplex,
                                     data: ChannelEndpoint.new(channels, index * 2, readable: true),
-                                    error: ChannelEndpoint.new(channels, index * 2 + 1, readable: false),
+                                    error: ChannelEndpoint.new(channels, (index * 2) + 1, readable: false),
                                     port: port, pod: @pod, uid: @uid, logger: @logger).run
             rescue StandardError => error
               @logger&.call(:warn, "streaming.port_forward_failed", port: port, error: error.class.name, message: error.message)
               begin
-                channels.write_channel(index * 2 + 1, "error forwarding port #{port} to pod #{@pod}, uid #{@uid}: #{error.message}".b)
+                channels.write_channel((index * 2) + 1, "error forwarding port #{port} to pod #{@pod}, uid #{@uid}: #{error.message}".b)
               rescue StandardError
                 nil
               end

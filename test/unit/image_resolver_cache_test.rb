@@ -95,6 +95,7 @@ class ImageResolverCacheTest < Minitest::Test
       resolver.resolve("registry.example.com/app:1.0")
       Dir.mktmpdir("explicit") do |explicit|
         resolved = resolver.resolve("registry.example.com/app:1.0", rootfs: explicit)
+
         assert_equal File.expand_path(explicit), resolved.rootfs
       end
 

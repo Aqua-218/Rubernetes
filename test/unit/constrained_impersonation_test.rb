@@ -63,10 +63,12 @@ class ConstrainedImpersonationTest < Minitest::Test
     t, authorizer = tracker(["impersonate-on:user-info:list", "", "pods", "", "", "default"],
                             ["impersonate:user-info", AUTHN, "users", "", "bob", ""])
     result = t.impersonate(wanted("bob"), request_attributes)
+
     assert_equal "bob", result.user.name
     assert_equal %w[system:authenticated], result.user.groups
     assert_equal "impersonate:user-info", result.constraint
     verbs = authorizer.checks.map(&:verb)
+
     assert_includes verbs, "impersonate-on:user-info:list"
     assert_includes verbs, "impersonate:user-info"
   end
@@ -74,6 +76,7 @@ class ConstrainedImpersonationTest < Minitest::Test
   def test_legacy_impersonate_is_the_last_mode_and_has_no_constraint
     t, = tracker(["impersonate", "", "users", "", "bob", ""])
     result = t.impersonate(wanted("bob"), request_attributes)
+
     assert_equal "bob", result.user.name
     assert_equal "", result.constraint
   end
@@ -97,6 +100,7 @@ class ConstrainedImpersonationTest < Minitest::Test
     t, authorizer = tracker(["impersonate-on:arbitrary-node:get", "*", "*", "*", "*", "*"],
                             ["impersonate:arbitrary-node", AUTHN, "nodes", "", "n1", ""])
     result = t.impersonate(wanted("system:node:n1"), request_attributes(verb: "get", name: "p"))
+
     assert_equal "system:node:n1", result.user.name
     assert_equal %w[system:nodes system:authenticated], result.user.groups
     assert_equal "impersonate:arbitrary-node", result.constraint
@@ -107,6 +111,7 @@ class ConstrainedImpersonationTest < Minitest::Test
     t, = tracker(["impersonate-on:serviceaccount:list", "*", "*", "*", "*", "*"],
                  ["impersonate:serviceaccount", AUTHN, "serviceaccounts", "", "builder", "ci"])
     result = t.impersonate(wanted("system:serviceaccount:ci:builder"), request_attributes)
+
     assert_equal %w[system:serviceaccounts system:serviceaccounts:ci system:authenticated], result.user.groups
     assert_equal "impersonate:serviceaccount", result.constraint
   end
@@ -123,6 +128,7 @@ class ConstrainedImpersonationTest < Minitest::Test
   def test_associated_node_sees_extra_keys_only_and_a_wildcard_node_name
     t, authorizer = tracker(*associated_rules)
     result = t.impersonate(wanted("system:node:n1"), request_attributes(agent("n1"), verb: "get", name: "p"))
+
     assert_equal "system:node:n1", result.user.name
     assert_equal %w[system:nodes system:authenticated], result.user.groups
     assert_equal "impersonate:associated-node", result.constraint
@@ -139,9 +145,11 @@ class ConstrainedImpersonationTest < Minitest::Test
   def test_associated_node_cache_is_shared_across_nodes_but_keeps_each_name
     t, authorizer = tracker(*associated_rules)
     first = t.impersonate(wanted("system:node:n1"), request_attributes(agent("n1"), verb: "get", name: "p"))
+
     assert_equal "system:node:n1", first.user.name
     checks = authorizer.checks.length
     second = t.impersonate(wanted("system:node:n2"), request_attributes(agent("n2"), verb: "get", name: "p"))
+
     assert_equal "system:node:n2", second.user.name
     assert_equal checks, authorizer.checks.length, "the second node reused the cached decision"
   end
@@ -155,6 +163,7 @@ class ConstrainedImpersonationTest < Minitest::Test
     assert_match(/groups.authentication.k8s.io "system:masters" is forbidden/, error.message)
     # The legacy verb still allows it: the tracker falls through to legacy.
     t, = tracker(ANY)
+
     assert_equal "", t.impersonate(masters, request_attributes).constraint
     node = wanted("system:node:n1", groups: %w[g])
     error = assert_raises(I::Forbidden) do
@@ -164,8 +173,10 @@ class ConstrainedImpersonationTest < Minitest::Test
   end
 
   def test_many_groups_try_a_wildcard_check_first
-    authorizer = RuleAuthorizer.new(["impersonate:user-info", AUTHN, "groups", "", "*", ""], ["impersonate:user-info", AUTHN, "users", "", "bob", ""])
+    authorizer = RuleAuthorizer.new(["impersonate:user-info", AUTHN, "groups", "", "*", ""],
+                                    ["impersonate:user-info", AUTHN, "users", "", "bob", ""])
     result = state_check(I::ModeState.new(authorizer, "impersonate:user-info", true), wanted("bob", groups: %w[a b c d]))
+
     assert_equal %w[a b c d system:authenticated], result.user.groups
     assert_equal ["*"], authorizer.checks.select { |check| check.resource == "groups" }.map(&:name)
   end
@@ -187,9 +198,11 @@ class ConstrainedImpersonationTest < Minitest::Test
     t.impersonate(wanted("bob"), request_attributes)
     before = authorizer.checks.length
     t.impersonate(wanted("bob"), request_attributes)
+
     assert_equal before, authorizer.checks.length
     # Another request re-checks impersonate-on but reuses the identity decision.
     t.impersonate(wanted("bob"), request_attributes(verb: "get", name: "p"))
+
     assert_equal ["impersonate-on:user-info:get"], authorizer.checks[before..].map(&:verb)
   end
 
@@ -197,8 +210,10 @@ class ConstrainedImpersonationTest < Minitest::Test
     now = 100.0
     cache = I::ExpiringCache.new(ttl: 10.0, clock: -> { now })
     cache.set([:k], :v)
+
     assert_equal :v, cache.get([:k])
     now = 110.5
+
     assert_nil cache.get([:k])
   end
 
@@ -207,10 +222,12 @@ class ConstrainedImpersonationTest < Minitest::Test
                                     ["impersonate", AUTHN, "userextras", "scopes", "view", ""])
     result = I::LegacyFilter.new(authorizer).impersonate(wanted("system:serviceaccount:ci:builder", uid: "u-1", extra: {"scopes" => ["view"]}),
                                                          request_attributes)
+
     assert_equal %w[system:serviceaccounts system:serviceaccounts:ci system:authenticated], result.user.groups
     assert_equal "u-1", result.user.uid
     assert_equal({"scopes" => ["view"]}, result.user.extra)
     anonymous = I::LegacyFilter.new(nil).impersonate(wanted("system:anonymous"), request_attributes)
+
     assert_equal %w[system:unauthenticated], anonymous.user.groups
   end
 
@@ -223,6 +240,7 @@ class ConstrainedImpersonationTest < Minitest::Test
     headers.add("Impersonate-Uid", "u-1")
     request = API::Request.new(method: "GET", path: "/api/v1/pods", headers: headers)
     who = I.wanted_user(request)
+
     assert_equal "bob", who.name
     assert_equal ["a, b", "c"], who.groups
     assert_equal({"example.com/scopes" => ["view"]}, who.extra)
@@ -237,10 +255,12 @@ class ConstrainedImpersonationTest < Minitest::Test
 
   def test_filter_records_attempt_and_authorization_metrics
     metrics = Rubernetes::Observability::Metrics.new
-    filter = I::Filter.new(RuleAuthorizer.new(["impersonate-on:user-info:list", "*", "*", "*", "*", "*"], ["impersonate:user-info", "*", "*", "*", "*", "*"]))
+    filter = I::Filter.new(RuleAuthorizer.new(["impersonate-on:user-info:list", "*", "*", "*", "*", "*"],
+                                              ["impersonate:user-info", "*", "*", "*", "*", "*"]))
     filter.metrics = metrics
     filter.impersonate(wanted("bob"), request_attributes)
     text = metrics.render
+
     assert_match(/apiserver_impersonation_attempts_total\{decision="allowed",mode="user-info"\} 1/, text)
     assert_match(/apiserver_impersonation_authorization_attempts_total\{decision="allowed",mode="user-info"\} 2/, text)
   end
@@ -285,19 +305,25 @@ class ConstrainedImpersonationTest < Minitest::Test
 
   def test_rbac_constrained_impersonation_authorizes_as_the_impersonated_user_and_audits_both
     server = rbac_server([{"apiGroups" => [""], "resources" => %w[pods], "verbs" => %w[impersonate-on:user-info:list]},
-                          {"apiGroups" => [AUTHN], "resources" => %w[users], "resourceNames" => %w[bob carol], "verbs" => %w[impersonate:user-info]}])
+                          {"apiGroups" => [AUTHN], "resources" => %w[users], "resourceNames" => %w[bob carol],
+                           "verbs" => %w[impersonate:user-info]}])
     response = list_pods_as(server, "bob")
+
     assert_equal 200, response.status, response.body.inspect
     complete = @audit.events.find { |event| event["stage"] == "ResponseComplete" }
+
     assert_equal "alice", complete.dig("user", "username")
     assert_equal "bob", complete.dig("impersonatedUser", "username")
     assert_equal({"impersonationConstraint" => "impersonate:user-info"}, complete["authenticationMetadata"])
     # carol may be impersonated but has no pod access: authorization runs as
     # the impersonated user.
     denied = list_pods_as(server, "carol")
+
     assert_equal 403, denied.status
-    assert_equal 'pods is forbidden: User "carol" cannot list resource "pods" in API group "" in the namespace "default"', denied.body["message"]
+    assert_equal 'pods is forbidden: User "carol" cannot list resource "pods" in API group "" in the namespace "default"',
+                 denied.body["message"]
     stranger = list_pods_as(server, "dave")
+
     assert_equal 403, stranger.status
     assert_match(/users.authentication.k8s.io "dave" is forbidden: User "alice" cannot impersonate:user-info/, stranger.body["message"])
     assert_equal "users", stranger.body.dig("details", "kind")
@@ -307,6 +333,7 @@ class ConstrainedImpersonationTest < Minitest::Test
     server = rbac_server([{"apiGroups" => [""], "resources" => %w[pods], "verbs" => %w[impersonate-on:user-info:get]},
                           {"apiGroups" => [AUTHN], "resources" => %w[users], "verbs" => %w[impersonate:user-info]}])
     response = list_pods_as(server, "bob")
+
     assert_equal 403, response.status
     assert_match(/cannot impersonate-on:user-info:list resource "pods"/, response.body["message"])
   end
@@ -315,8 +342,10 @@ class ConstrainedImpersonationTest < Minitest::Test
     rules = [{"apiGroups" => [""], "resources" => %w[users], "verbs" => %w[impersonate]}]
     [true, false].each do |constrained|
       server = rbac_server(rules, constrained: constrained)
+
       assert_equal 200, list_pods_as(server, "bob").status
       complete = @audit.events.find { |event| event["stage"] == "ResponseComplete" }
+
       assert_equal "bob", complete.dig("impersonatedUser", "username")
       assert_nil complete["authenticationMetadata"]
     end
@@ -333,9 +362,12 @@ class ConstrainedImpersonationTest < Minitest::Test
     %w[system:authenticated developers].each { |group| headers.add("Impersonate-Group", group) }
     %w[python javascript].each { |language| headers.add("Impersonate-Extra-Known-Languages", language) }
     body = JSON.generate({"apiVersion" => "authentication.k8s.io/v1", "kind" => "SelfSubjectReview"})
-    response = server.call(API::Request.new(method: "POST", path: "/apis/authentication.k8s.io/v1/selfsubjectreviews", headers: headers, body: body))
+    response = server.call(API::Request.new(method: "POST", path: "/apis/authentication.k8s.io/v1/selfsubjectreviews", headers: headers,
+                                            body: body))
+
     assert_equal 201, response.status, response.body.inspect
     user = response.body.dig("status", "userInfo")
+
     assert_equal "jane-doe", user["username"]
     assert_equal "uniq-id", user["uid"]
     assert_equal %w[system:authenticated developers], user["groups"]
@@ -355,17 +387,22 @@ class ConstrainedImpersonationTest < Minitest::Test
                                        "resourceAttributes" => {"verb" => "list", "resource" => "pods", "namespace" => "default", "version" => "v1"}}})
       response = server.call(API::Request.new(method: "POST", path: "/apis/authorization.k8s.io/v1/subjectaccessreviews",
                                               headers: {"authorization" => "Bearer alice-token", "content-type" => "application/json"}, body: body))
+
       assert_equal 201, response.status, response.body.inspect
       response.body.dig("status", "allowed")
     end
     sa = "system:serviceaccount:default:e2e"
     sa_groups = %w[system:authenticated system:serviceaccounts system:serviceaccounts:default]
+
     assert_equal false, review.call(sa, sa_groups)
     assert_equal true, review.call("bob", [])
     headers = Rubernetes::Transport::Headers.new
-    {"Authorization" => "Bearer alice-token", "Impersonate-User" => sa, "Impersonate-Uid" => "u-1"}.each { |name, value| headers.add(name, value) }
+    {"Authorization" => "Bearer alice-token", "Impersonate-User" => sa, "Impersonate-Uid" => "u-1"}.each do |name, value|
+      headers.add(name, value)
+    end
     sa_groups.each { |group| headers.add("Impersonate-Group", group) }
     listed = server.call(API::Request.new(method: "GET", path: "/api/v1/namespaces/default/pods", headers: headers))
+
     assert_equal 403, listed.status
     assert_equal 200, list_pods_as(server, "bob").status
   end
@@ -374,6 +411,7 @@ class ConstrainedImpersonationTest < Minitest::Test
     server = rbac_server([])
     response = server.call(API::Request.new(method: "GET", path: "/api/v1/namespaces/default/pods",
                                             headers: {"authorization" => "Bearer alice-token", "impersonate-group" => "g"}))
+
     assert_equal 400, response.status
     assert_equal "BadRequest", response.body["reason"]
   end

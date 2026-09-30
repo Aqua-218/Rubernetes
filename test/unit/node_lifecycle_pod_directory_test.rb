@@ -38,7 +38,7 @@ class NodeLifecyclePodDirectoryTest < Minitest::Test
 
     @lifecycle.send(:forget_pod, "uid-1")
 
-    refute File.exist?(File.join(@root, "uid-1"))
+    refute_path_exists File.join(@root, "uid-1")
     assert File.directory?(File.join(@root, "uid-2"))
     assert File.directory?(File.join(@root, "volumes"))
   end
@@ -47,6 +47,7 @@ class NodeLifecyclePodDirectoryTest < Minitest::Test
     Rubernetes::Node::Lifecycle.new(runtime: Runtime.new).send(:forget_pod, "uid-1")
     @lifecycle.send(:forget_pod, "never-created")
     @lifecycle.send(:forget_pod, "")
+
     assert File.directory?(@root)
   end
 end

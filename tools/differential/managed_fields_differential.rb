@@ -212,7 +212,10 @@ module ManagedFieldsDifferential
     return {"error" => step["error"]} if step["error"]
 
     fields = Array(step["managedFields"]).map { |entry| entry.reject { |_, value| value.nil? || value == "" } }
-                                          .sort_by { |entry| [entry["operation"], entry["manager"], entry["apiVersion"], entry["subresource"].to_s] }
+      .sort_by do |entry|
+      [entry["operation"], entry["manager"], entry["apiVersion"],
+       entry["subresource"].to_s]
+    end
     {"object" => canonical(step["object"]), "managedFields" => canonical(fields)}
   end
 
@@ -253,7 +256,9 @@ module ManagedFieldsDifferential
     end
     mismatches.first(3).each do |test_case, index, want, got|
       puts "MISMATCH #{test_case["name"]} step #{index}"
-      test_case["steps"].first(index + 1).each { |step| puts "  #{step["op"]} #{step["manager"]} force=#{step["force"]} #{JSON.generate(step["object"])}" }
+      test_case["steps"].first(index + 1).each do |step|
+        puts "  #{step["op"]} #{step["manager"]} force=#{step["force"]} #{JSON.generate(step["object"])}"
+      end
       puts "  upstream: #{JSON.generate(normalize(want["steps"][index]))}"
       puts "  port:     #{JSON.generate(normalize(got["steps"][index] || {}))}"
     end

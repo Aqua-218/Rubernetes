@@ -40,6 +40,7 @@ class QuotaNamespaceRoutingTest < Minitest::Test
   def test_a_replica_set_delete_reaches_the_quota_controller
     controller = Rubernetes::Controller::ResourceQuotaController.allocate
     replica_set = {"apiVersion" => "apps/v1", "kind" => "ReplicaSet", "metadata" => {"name" => "rs", "namespace" => "ns"}}
+
     refute controller.skip_event?(replica_set, nil, :delete), "a delete recomputes usage"
     assert controller.skip_event?(replica_set, nil, :add), "a create was already charged by admission"
   end

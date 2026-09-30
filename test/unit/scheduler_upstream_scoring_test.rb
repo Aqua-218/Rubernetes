@@ -29,8 +29,8 @@ class SchedulerUpstreamScoringTest < Minitest::Test
     Scheduler::Pod.new({"apiVersion" => "v1", "kind" => "Pod", "metadata" => metadata, "spec" => spec})
   end
 
-  def context(nodes, pods, **options)
-    Scheduler::CycleContext.new(nodes: nodes, pods: pods, **options)
+  def context(nodes, pods, **)
+    Scheduler::CycleContext.new(nodes: nodes, pods: pods, **)
   end
 
   def test_taint_toleration_is_reversed_by_the_highest_count
@@ -43,14 +43,18 @@ class SchedulerUpstreamScoringTest < Minitest::Test
 
   def test_node_affinity_and_balanced_allocation_skip
     nodes = [node("a", "z1")]
+
     assert_same Scores::SKIP, Scores::NodeAffinity.new.score_nodes(pod("p"), nodes, context(nodes, []))
-    best_effort = Scheduler::Pod.new({"metadata" => {"name" => "be", "namespace" => "default"}, "spec" => {"containers" => [{"name" => "c"}]}})
+    best_effort = Scheduler::Pod.new({"metadata" => {"name" => "be", "namespace" => "default"},
+                                      "spec" => {"containers" => [{"name" => "c"}]}})
+
     assert_same Scores::SKIP, Scores::NodeResourcesBalancedAllocation.new.score_nodes(best_effort, nodes, context(nodes, []))
   end
 
   def test_skipped_plugins_are_left_out_of_the_breakdown
     result = Scheduler.new.schedule(pod("p").to_h, [node("a", "z1").to_h])
     names = result.scores.first.plugins.map { |entry| entry["plugin"] }
+
     refute_includes names, "NodeAffinity"
     refute_includes names, "InterPodAffinity"
     refute_includes names, "PodTopologySpread"
@@ -60,20 +64,27 @@ class SchedulerUpstreamScoringTest < Minitest::Test
   def test_inter_pod_affinity_counts_existing_pods_terms_symmetrically
     nodes = [node("a", "z1"), node("b", "z2")]
     wants_web = {"podAffinity" => {"preferredDuringSchedulingIgnoredDuringExecution" => [
-      {"weight" => 4, "podAffinityTerm" => {"labelSelector" => {"matchLabels" => {"app" => "web"}}, "topologyKey" => "topology.kubernetes.io/zone"}}]}}
+      {"weight" => 4,
+       "podAffinityTerm" => {"labelSelector" => {"matchLabels" => {"app" => "web"}}, "topologyKey" => "topology.kubernetes.io/zone"}}
+    ]}}
     existing = [pod("peer", node: "b", affinity: wants_web)]
     scores = Scores::InterPodAffinity.new.score_nodes(pod("web", labels: {"app" => "web"}), nodes, context(nodes, existing))
+
     assert_equal({"a" => 0, "b" => 100}, scores)
     # Nothing contributes: Skip.
-    assert_same Scores::SKIP, Scores::InterPodAffinity.new.score_nodes(pod("other", labels: {"app" => "db"}), nodes, context(nodes, existing))
+    assert_same Scores::SKIP,
+                Scores::InterPodAffinity.new.score_nodes(pod("other", labels: {"app" => "db"}), nodes, context(nodes, existing))
   end
 
   def test_inter_pod_affinity_equal_scores_normalize_to_zero
     nodes = [node("a", "z1"), node("b", "z1")]
     wants_web = {"podAffinity" => {"preferredDuringSchedulingIgnoredDuringExecution" => [
-      {"weight" => 4, "podAffinityTerm" => {"labelSelector" => {"matchLabels" => {"app" => "web"}}, "topologyKey" => "topology.kubernetes.io/zone"}}]}}
+      {"weight" => 4,
+       "podAffinityTerm" => {"labelSelector" => {"matchLabels" => {"app" => "web"}}, "topologyKey" => "topology.kubernetes.io/zone"}}
+    ]}}
     existing = [pod("peer", node: "b", affinity: wants_web)]
     scores = Scores::InterPodAffinity.new.score_nodes(pod("web", labels: {"app" => "web"}), nodes, context(nodes, existing))
+
     assert_equal({"a" => 0, "b" => 0}, scores)
   end
 
@@ -86,6 +97,7 @@ class SchedulerUpstreamScoringTest < Minitest::Test
     assert_same Scores::SKIP, plugin.score_nodes(incoming, nodes, context(nodes, existing))
     selectors = {"services" => [{"namespace" => "default", "selector" => {"app" => "web"}}], "controllers" => {}}
     scores = plugin.score_nodes(incoming, nodes, context(nodes, existing, workload_selectors: selectors))
+
     assert_operator scores.fetch("b"), :>, scores.fetch("a")
     assert_equal 100, scores.fetch("b")
   end
@@ -97,6 +109,7 @@ class SchedulerUpstreamScoringTest < Minitest::Test
     selectors = {"services" => [], "controllers" => {"ReplicaSet/default/rs" => {"matchLabels" => {"app" => "web"}}}}
     scores = Scores::TopologySpread.new.score_nodes(pod("w2", labels: {"app" => "web"}, owner: owner), nodes,
                                                     context(nodes, existing, workload_selectors: selectors))
+
     assert_operator scores.fetch("a"), :>, scores.fetch("b")
   end
 
@@ -104,6 +117,8 @@ class SchedulerUpstreamScoringTest < Minitest::Test
     nodes = [node("a", "z1"), node("b", "z2")]
     hard = [{"maxSkew" => 1, "topologyKey" => "topology.kubernetes.io/zone", "whenUnsatisfiable" => "DoNotSchedule",
              "labelSelector" => {"matchLabels" => {"app" => "web"}}}]
-    assert_same Scores::SKIP, Scores::TopologySpread.new.score_nodes(pod("w", labels: {"app" => "web"}, spread: hard), nodes, context(nodes, []))
+
+    assert_same Scores::SKIP,
+                Scores::TopologySpread.new.score_nodes(pod("w", labels: {"app" => "web"}, spread: hard), nodes, context(nodes, []))
   end
 end

@@ -52,7 +52,7 @@ class GarbageCollectorUnknownOwnerTest < Minitest::Test
     collector = Controller::GarbageCollector.new(known_kinds: KNOWN, owner_lookup: lookup)
 
     assert_empty(collector.plan([dependent(owner_api_version: "v1", owner_kind: "Service")]).operations)
-    assert_equal([["Service", "ns"]], asked)
+    assert_equal([%w[Service ns]], asked)
   end
 
   def test_a_live_read_that_confirms_the_owner_is_gone_collects_the_dependent

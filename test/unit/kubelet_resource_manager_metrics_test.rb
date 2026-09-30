@@ -15,7 +15,7 @@ class KubeletResourceManagerMetricsTest < Minitest::Test
   def machine
     nodes = [0, 1].map do |numa|
       cores = Array.new(4) do |index|
-        core = numa * 4 + index
+        core = (numa * 4) + index
         {id: index, socket_id: numa, threads: [core, core + 8], uncore_caches: []}
       end
       {id: numa, cores: cores, memory: 8 * GI, hugepages: [], distances: [numa.zero? ? 10 : 20, numa.zero? ? 20 : 10]}
@@ -46,14 +46,17 @@ class KubeletResourceManagerMetricsTest < Minitest::Test
       pods = []
       manager.start(active_pods: -> { pods }, container_statuses: ->(_p) { [] }, update_cpuset: ->(*) {})
       text = registry.render
+
       assert_equal "15000", sample(text, "kubelet_cpu_manager_shared_pool_size_millicores")
       assert_equal "0", sample(text, %(kubelet_container_aligned_compute_resources_count{boundary="numa_node",scope="pod"}))
 
       admitted = pod("a", cpu: "2")
       pods << admitted
-      assert manager.admit(admitted).admit?
-      refute manager.admit(pod("huge", cpu: "12")).admit?
+
+      assert_predicate manager.admit(admitted), :admit?
+      refute_predicate manager.admit(pod("huge", cpu: "12")), :admit?
       text = registry.render
+
       assert_equal "2", sample(text, "kubelet_topology_manager_admission_requests_total")
       assert_equal "1", sample(text, "kubelet_topology_manager_admission_errors_total")
       assert_equal "1", sample(text, %(kubelet_container_aligned_compute_resources_count{boundary="numa_node",scope="container"}))
@@ -67,6 +70,7 @@ class KubeletResourceManagerMetricsTest < Minitest::Test
 
       manager.cpu_manager.policy.remove_container(manager.cpu_manager.state, "a", "app")
       text = registry.render
+
       assert_equal "0", sample(text, "kubelet_cpu_manager_exclusive_cpu_allocation_count")
       assert_equal "15000", sample(text, "kubelet_cpu_manager_shared_pool_size_millicores")
     end

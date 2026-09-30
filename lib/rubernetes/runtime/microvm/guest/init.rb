@@ -17,12 +17,10 @@ ENV["HOME"] = "/root"
 # PID 1 stays a minimal orphan reaper; the supervisor runs as its child so
 # the Native backend inside the guest owns the wait status of its helpers.
 supervisor = Process.fork do
-  begin
-    Rubernetes::Runtime::MicroVM::Guest::Supervisor.new(prepare_filesystem: true).run!
-  rescue Exception => error # rubocop:disable Lint/RescueException
-    warn "[rubernetes-guest] fatal: #{error.class}: #{error.message}\n#{error.backtrace.first(10).join("\n")}"
-    exit!(1)
-  end
+  Rubernetes::Runtime::MicroVM::Guest::Supervisor.new(prepare_filesystem: true).run!
+rescue Exception => error # rubocop:disable Lint/RescueException
+  warn "[rubernetes-guest] fatal: #{error.class}: #{error.message}\n#{error.backtrace.first(10).join("\n")}"
+  exit!(1)
 end
 loop do
   pid = Process.wait(-1)

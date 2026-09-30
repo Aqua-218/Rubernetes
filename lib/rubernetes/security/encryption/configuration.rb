@@ -161,7 +161,9 @@ module Rubernetes
           return Float(value) if value.match?(/\A\d+(\.\d+)?\z/)
 
           total = 0.0
-          value.scan(/(\d+(?:\.\d+)?)(ms|s|m|h)/) { |number, unit| total += Float(number) * {"ms" => 0.001, "s" => 1, "m" => 60, "h" => 3600}.fetch(unit) }
+          value.scan(/(\d+(?:\.\d+)?)(ms|s|m|h)/) do |number, unit|
+            total += Float(number) * {"ms" => 0.001, "s" => 1, "m" => 60, "h" => 3600}.fetch(unit)
+          end
           total
         end
 
@@ -250,9 +252,10 @@ module Rubernetes
           registry = Encryption.metrics
           if registry && !registry.registered?("apiserver_encryption_config_controller_last_config_info")
             registry.register("apiserver_encryption_config_controller_last_config_info", type: :gauge,
-                                                                                          help: "Information about the last applied encryption configuration with hash as label, split by apiserver identity.")
+                                                                                         help: "Information about the last applied encryption configuration with hash as label, split by apiserver identity.")
           end
-          Encryption.set("apiserver_encryption_config_controller_last_config_info", 1, {"apiserver_id_hash" => Encryption.apiserver_id_hash, "hash" => "sha256:#{configuration.hash}"})
+          Encryption.set("apiserver_encryption_config_controller_last_config_info", 1,
+                         {"apiserver_id_hash" => Encryption.apiserver_id_hash, "hash" => "sha256:#{configuration.hash}"})
         end
 
         def check!
@@ -264,7 +267,10 @@ module Rubernetes
           configuration.apply_to(@wrapped)
           previous = @last_hash
           note_loaded(configuration)
-          Encryption.metrics&.delete("apiserver_encryption_config_controller_last_config_info", {"apiserver_id_hash" => Encryption.apiserver_id_hash, "hash" => "sha256:#{previous}"}) if previous
+          if previous
+            Encryption.metrics&.delete("apiserver_encryption_config_controller_last_config_info",
+                                       {"apiserver_id_hash" => Encryption.apiserver_id_hash, "hash" => "sha256:#{previous}"})
+          end
           record("success")
           @logger&.call(:info, "encryption.config.reloaded", hash: hash)
           true

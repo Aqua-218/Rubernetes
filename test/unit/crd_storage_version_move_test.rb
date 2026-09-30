@@ -73,6 +73,7 @@ class CRDStorageVersionMoveTest < Minitest::Test
     response = call("POST", "/apis/example.com/#{version}/namespaces/team/widgets",
                     body: {"apiVersion" => "example.com/#{version}", "kind" => "Widget",
                            "metadata" => {"name" => name}, "hostPort" => "localhost:8080"})
+
     assert_equal(201, response.status, response.body.inspect)
     response.body
   end
@@ -86,6 +87,7 @@ class CRDStorageVersionMoveTest < Minitest::Test
 
   def establish!(storage:)
     response = call("POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", body: crd(storage: storage))
+
     assert_includes([201, 409], response.status, response.body.inspect)
     assert(wait_until { call("GET", "/apis/example.com/v1/namespaces/team/widgets").status == 200 })
   end
@@ -94,6 +96,7 @@ class CRDStorageVersionMoveTest < Minitest::Test
     current = call("GET", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/widgets.example.com").body
     response = call("PUT", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/widgets.example.com",
                     body: crd(storage: "v2").merge("metadata" => current.fetch("metadata")))
+
     assert_equal(200, response.status, response.body.inspect)
   end
 

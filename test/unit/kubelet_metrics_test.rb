@@ -56,8 +56,12 @@ class KubeletMetricsTest < Minitest::Test
     metrics = Rubernetes::Node::KubeletMetrics.new(node_name: "worker-0")
     lifecycle = Struct.new(:records).new({})
     server = Rubernetes::Node::StreamingServer.new(log_service: Object.new, lifecycle: lifecycle, kubelet_metrics: metrics)
-    request = Struct.new(:path, :method) { def headers = {}; def header(_) = nil }.new("/metrics", "GET")
+    request = Struct.new(:path, :method) do
+      def headers = {}
+      def header(_) = nil
+    end.new("/metrics", "GET")
     status, _headers, body = server.call(request)
+
     assert_equal 200, status
     assert_includes body.join, "kubelet_node_name{node=\"worker-0\"} 1"
     assert_equal 1, body.join.scan(/^# TYPE process_start_time_seconds /).length
@@ -68,6 +72,7 @@ class KubeletMetricsTest < Minitest::Test
     metrics.runtime_operation("run_podsandbox", 0.01)
     metrics.runtime_operation("run_podsandbox", 0.02, failed: true)
     text = metrics.render([])
+
     assert_includes text, 'kubelet_runtime_operations_total{operation_type="run_podsandbox"} 2'
     assert_includes text, 'kubelet_runtime_operations_errors_total{operation_type="run_podsandbox"} 1'
     assert_includes text, 'kubelet_runtime_operations_duration_seconds_bucket{operation_type="run_podsandbox",le="0.0125"} 1'
@@ -80,42 +85,54 @@ class KubeletMetricsTest < Minitest::Test
     metrics.pleg_relist(10.0, 0.02)
     metrics.pleg_relist(11.0, 0.03)
     text = metrics.render([])
+
     assert_includes text, "kubelet_pleg_relist_duration_seconds_count 2"
     assert_includes text, "kubelet_pleg_relist_interval_seconds_count 1"
     assert_includes text, "kubelet_pleg_relist_interval_seconds_sum 1"
     assert_match(/^kubelet_pleg_last_seen_seconds \d+/, text)
   end
+
   # server.go ServeHTTP.
   def test_the_server_counts_its_requests
     metrics = Rubernetes::Node::KubeletMetrics.new(node_name: "worker-0")
-    server = Rubernetes::Node::StreamingServer.new(log_service: Object.new, lifecycle: Struct.new(:records).new({}), kubelet_metrics: metrics)
-    request = Struct.new(:path, :method) { def headers = {}; def header(_) = nil }
+    server = Rubernetes::Node::StreamingServer.new(log_service: Object.new, lifecycle: Struct.new(:records).new({}),
+                                                   kubelet_metrics: metrics)
+    request = Struct.new(:path, :method) do
+      def headers = {}
+      def header(_) = nil
+    end
     server.call(request.new("/healthz", "GET"))
     server.call(request.new("/metrics/probes", "GET"))
     server.call(request.new("/nowhere/at/all", "BREW"))
     text = metrics.registry.render
+
     assert_includes text, %(kubelet_http_requests_total{long_running="false",method="GET",path="healthz",server_type="readonly"} 1)
     assert_includes text, %(kubelet_http_requests_total{long_running="false",method="GET",path="metrics/probes",server_type="readonly"} 1)
     assert_includes text, %(kubelet_http_requests_total{long_running="false",method="other",path="other",server_type="readonly"} 1)
     assert_includes text, %(kubelet_http_inflight_requests{long_running="false",method="GET",path="healthz",server_type="readonly"} 0)
-    assert_includes text, %(kubelet_http_requests_duration_seconds_count{long_running="false",method="GET",path="healthz",server_type="readonly"} 1)
+    assert_includes text,
+                    %(kubelet_http_requests_duration_seconds_count{long_running="false",method="GET",path="healthz",server_type="readonly"} 1)
     assert_equal "exec", Rubernetes::Node::StreamingServer.metric_path("/exec/ns/pod/c")
     assert_equal "metrics", Rubernetes::Node::StreamingServer.metric_path("/metrics")
   end
+
   # The client certificate metrics exist only with rotation; the serving
   # ones never (serving certificates are not rotated here).
   def test_certificate_metrics_follow_the_managers
     now = Time.utc(2026, 9, 25)
     metrics = Rubernetes::Node::KubeletMetrics.new(node_name: "worker-0", wall_clock: -> { now })
+
     refute_includes metrics.render([]), "kubelet_certificate_manager"
     certificate = Struct.new(:not_after).new(now + 3600.7)
     metrics.client_certificate_source = -> { certificate }
     metrics.client_certificate_renew_failed
     text = metrics.render([])
+
     assert_includes text, "kubelet_certificate_manager_client_ttl_seconds 3600\n"
     assert_includes text, "kubelet_certificate_manager_client_expiration_renew_errors 1\n"
     refute_includes text, "kubelet_certificate_manager_server_ttl_seconds"
     certificate = nil
+
     assert_includes metrics.render([]), "kubelet_certificate_manager_client_ttl_seconds +Inf\n"
   end
 end

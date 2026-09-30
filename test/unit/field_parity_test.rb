@@ -27,10 +27,12 @@ class FieldParityTest < Minitest::Test
       report.fetch("counts")
     )
     protobuf = report.fetch("protobuf")
+
     assert_equal(770, protobuf.fetch("supported_count"))
     assert_equal(770, protobuf.fetch("roundtrip_count"))
     assert_equal(1, protobuf.fetch("unsupported_count"))
     unsupported = protobuf.fetch("capabilities").reject { |entry| entry.fetch("protobuf_supported") }
+
     assert_equal(
       [{
         "schema" => "io.k8s.apimachinery.pkg.version.Info",
@@ -81,6 +83,7 @@ class FieldParityTest < Minitest::Test
       source = File.binread(path)
       marker = "      def nullable\n        field(\"nullable\")\n      end\n"
       replacement = marker + "      def not\n        field(\"not\")\n      end\n"
+
       assert_includes(source, marker)
       File.binwrite(path, source.sub(marker, replacement))
 
@@ -132,7 +135,7 @@ class FieldParityTest < Minitest::Test
 
   def failure_summary(report)
     report.fetch("issues").first(5).map do |issue|
-      "#{issue.fetch('code')}: #{issue.fetch('subject')}"
+      "#{issue.fetch("code")}: #{issue.fetch("subject")}"
     end.join("\n")
   end
 end

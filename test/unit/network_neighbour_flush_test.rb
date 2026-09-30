@@ -28,9 +28,12 @@ class NetworkNeighbourFlushTest < Minitest::Test
 
     result = network.add({"sandbox_id" => "sandbox-a", "pod_uid" => "pod-a"}, "node" => "node-a", "families" => ["ipv4"])
     ip = result.fetch("ip")
-    assert_equal [[ip, Rubernetes::Network::Topology::DEFAULT_BRIDGE]], netlink.deleted.uniq, "flushed once on attach (a missing entry is not an error)"
+
+    assert_equal [[ip, Rubernetes::Network::Topology::DEFAULT_BRIDGE]], netlink.deleted.uniq,
+                 "flushed once on attach (a missing entry is not an error)"
 
     network.delete("sandbox-a", stopped: true)
+
     assert_equal 2, netlink.deleted.length, "flushed again on release"
     assert_equal ip, netlink.deleted.last.first
   end

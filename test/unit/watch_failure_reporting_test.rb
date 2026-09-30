@@ -49,6 +49,7 @@ class WatchFailureReportingTest < Minitest::Test
     subject = reflector(IOError.new("connection reset"), ->(error) { seen << error })
 
     subject.list!
+
     refute subject.watch_once
 
     assert_equal 1, seen.length, "the watch failure must be reported, not only remembered"

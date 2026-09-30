@@ -15,7 +15,8 @@ class SubPathDirectoryModeTest < Minitest::Test
 
   def test_a_created_sub_path_takes_the_volume_directory_mode
     Dir.mktmpdir("subpath-mode") do |root|
-      security = PathSecurity.new(root: "/", adapter: Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true), require_openat2: true)
+      security = PathSecurity.new(root: "/", adapter: Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true),
+                                  require_openat2: true)
       {"empty-dir" => 0o777, "group-dir" => 0o2775, "plain" => 0o755}.each do |name, mode|
         volume = File.join(root, name)
         Dir.mkdir(volume)
@@ -27,6 +28,7 @@ class SubPathDirectoryModeTest < Minitest::Test
         ensure
           handle.close if handle.respond_to?(:close)
         end
+
         assert_equal mode, File.stat(File.join(volume, "app")).mode & 0o7777, "#{name}: first component"
         assert_equal mode, File.stat(File.join(volume, "app", "tmp-dir")).mode & 0o7777, "#{name}: leaf"
       end
@@ -35,7 +37,8 @@ class SubPathDirectoryModeTest < Minitest::Test
 
   def test_an_explicit_mode_still_wins
     Dir.mktmpdir("subpath-mode") do |root|
-      security = PathSecurity.new(root: "/", adapter: Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true), require_openat2: true)
+      security = PathSecurity.new(root: "/", adapter: Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true),
+                                  require_openat2: true)
       volume = File.join(root, "v")
       Dir.mkdir(volume)
       File.chmod(0o777, volume)
@@ -43,6 +46,7 @@ class SubPathDirectoryModeTest < Minitest::Test
       created = security.validate_sub_path!(handle, "conf", create: true, mode: 0o750)
       created.close if created.respond_to?(:close)
       handle.close if handle.respond_to?(:close)
+
       assert_equal 0o750, File.stat(File.join(volume, "conf")).mode & 0o7777
     end
   end

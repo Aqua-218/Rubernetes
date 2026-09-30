@@ -19,7 +19,7 @@ module M3Gate
   MANIFEST_SCHEMA_VERSION = 3
   REPORT_SCHEMA_VERSION = 1
   MAX_JSON_BYTES = 32 * 1024 * 1024
-  SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
+  SHA256_PATTERN = /\A[0-9a-f]{64}\z/
   SOURCE_EXCLUDED_ROOTS = %w[.git artifacts build pkg tmp .bundle].freeze
   # Anchored generator scratch directories (a11-generated.XXXXXX) are
   # excluded from the source identity by every milestone (M0-M2 rule).
@@ -28,8 +28,8 @@ module M3Gate
   M0_GATE = File.join(__dir__, "m0_gate.rb").freeze
   M1_GATE = File.join(__dir__, "m1_gate.rb").freeze
   M2_GATE = File.join(__dir__, "m2_gate.rb").freeze
-  KUBERNETES_VERSION = "v1.36.2".freeze
-  KUBERNETES_SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467".freeze
+  KUBERNETES_VERSION = "v1.36.2"
+  KUBERNETES_SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467"
 
   # This is the pinned v1.36.2 built-in controller corpus exposed by the
   # production registry.  Keeping it in the gate prevents a registry from
@@ -221,9 +221,9 @@ module M3Gate
         "watch_wiring" => watch_wiring,
         "registered_metadata" => registered_metadata,
         "metadata_digest" => canonical_document_digest({
-          "corpus" => corpus_metadata,
-          "registered" => registered_metadata
-        }),
+                                                         "corpus" => corpus_metadata,
+                                                         "registered" => registered_metadata
+                                                       }),
         "ownership_edges_digest" => canonical_document_digest(ownership_edges),
         "watch_wiring_digest" => canonical_document_digest(watch_wiring)
       }
@@ -394,6 +394,7 @@ module M3Gate
     def evidence_path(directory, relative_path)
       return nil unless non_empty_string?(relative_path)
       return nil if relative_path.include?("\0") || relative_path.start_with?("/") || relative_path.match?(%r{\A[A-Za-z]:[\\/]})
+
       path = File.expand_path(relative_path, directory)
       return nil unless path.start_with?("#{directory}/")
       return nil if File.exist?(path) && !File.realpath(path).start_with?("#{File.realpath(directory)}/")
@@ -417,9 +418,13 @@ module M3Gate
     def validate_inventory(manifest, directory, artifact_index, errors)
       artifact = find_named_artifact(INVENTORY_NAMES, artifact_index, errors, "source inventory")
       return unless artifact
+
       document = parse_json(evidence_path(directory, artifact["path"]), errors, "source inventory")
       return unless document.is_a?(Hash)
-      errors << "source inventory schema_version must be #{REPORT_SCHEMA_VERSION}" unless document["schema_version"] == REPORT_SCHEMA_VERSION
+
+      unless document["schema_version"] == REPORT_SCHEMA_VERSION
+        errors << "source inventory schema_version must be #{REPORT_SCHEMA_VERSION}"
+      end
       errors << "source inventory kind must be m3_source_inventory" unless document["kind"] == "m3_source_inventory"
       errors << "source inventory input_sha256 must match manifest" unless document["input_sha256"] == manifest["input_sha256"]
       errors << "source inventory input_file_count must match manifest" unless document["input_file_count"] == manifest["input_file_count"]
@@ -452,13 +457,15 @@ module M3Gate
         valid_entries << entry
       end
       errors << "source inventory entries must be sorted by path" unless paths.sort == paths
-      errors << "source inventory digest does not match manifest input" unless canonical_inventory_digest(valid_entries) == manifest["input_sha256"]
+      unless canonical_inventory_digest(valid_entries) == manifest["input_sha256"]
+        errors << "source inventory digest does not match manifest input"
+      end
       errors << "source inventory file count does not match manifest input" unless valid_entries.length == manifest["input_file_count"]
       valid_entries.each do |entry|
         path = File.expand_path(entry.fetch("path"), PROJECT_ROOT)
         errors << "source inventory entry #{entry.fetch("path")} is missing" unless File.file?(path)
-        if File.file?(path) && valid_digest?(entry["sha256"])
-          errors << "source inventory digest mismatch #{entry.fetch("path")}" unless Digest::SHA256.file(path).hexdigest == entry["sha256"]
+        if File.file?(path) && valid_digest?(entry["sha256"]) && !(Digest::SHA256.file(path).hexdigest == entry["sha256"])
+          errors << "source inventory digest mismatch #{entry.fetch("path")}"
         end
       end
     end
@@ -487,20 +494,23 @@ module M3Gate
       errors << "#{name} manifest must be content-addressed by M3" unless manifest_entry
       errors << "#{name} gate result must be content-addressed by M3" unless result_entry
       return unless manifest_entry && result_entry
+
       manifest_path = evidence_path(directory, manifest_value)
       result_path = evidence_path(directory, result_value)
       return unless manifest_path && result_path
+
       prior_manifest = parse_json(manifest_path, errors, "#{name} manifest")
       prior_result = parse_json(result_path, errors, "#{name} gate result")
       return unless prior_manifest.is_a?(Hash) && prior_result.is_a?(Hash)
+
       errors << "#{name} manifest reference digest is incorrect" unless reference["manifest_sha256"] == manifest_entry["sha256"]
       errors << "#{name} gate result reference digest is incorrect" unless reference["gate_result_sha256"] == result_entry["sha256"]
       errors << "#{name} manifest milestone is incorrect" unless prior_manifest["milestone"] == name
       errors << "#{name} manifest status must be COMPLETE" unless prior_manifest["status"] == "COMPLETE"
       errors << "#{name} evidence must use the same source input as M3" unless prior_manifest["input_sha256"] == manifest["input_sha256"] &&
-                                                                                prior_manifest["input_file_count"] == manifest["input_file_count"]
+                                                                               prior_manifest["input_file_count"] == manifest["input_file_count"]
       errors << "#{name} reference identity must match the M3 source input" unless reference["input_sha256"] == manifest["input_sha256"] &&
-                                                                                    reference["input_file_count"] == manifest["input_file_count"]
+                                                                                   reference["input_file_count"] == manifest["input_file_count"]
       errors << "#{name} reference must record a passing gate" unless reference["gate_passed"] == true
       errors << "stored #{name} gate result must be passing" unless prior_result["passed"] == true && prior_result["milestone"] == name
       %w[artifacts subjects].each do |collection|
@@ -515,13 +525,19 @@ module M3Gate
             next
           end
           nested_path = File.join(File.dirname(manifest_value.to_s), entry["path"])
-          errors << "#{name} #{collection} entry is not content-addressed by M3: #{nested_path}" unless artifacts.any? { |candidate| candidate["path"] == nested_path }
+          errors << "#{name} #{collection} entry is not content-addressed by M3: #{nested_path}" unless artifacts.any? do |candidate|
+            candidate["path"] == nested_path
+          end
         end
       end
       gate_stdout, gate_stderr, gate_status = Open3.capture3(RbConfig.ruby, gate_path, manifest_path, chdir: PROJECT_ROOT)
       errors << "#{name} gate emitted stderr during cumulative validation" unless gate_stderr.empty?
       unless gate_status.success?
-        prior_errors = JSON.parse(gate_stdout).fetch("errors", []) rescue []
+        prior_errors = begin
+          JSON.parse(gate_stdout).fetch("errors", [])
+        rescue StandardError
+          []
+        end
         errors << "#{name} gate does not pass: #{prior_errors.join("; ")}"
       end
     rescue SystemCallError => error
@@ -531,6 +547,7 @@ module M3Gate
     def report_document(name, specification, directory, artifact_index, errors)
       artifact = find_named_artifact(specification.fetch(:names), artifact_index, errors, "#{name} report")
       return nil unless artifact
+
       parse_json(evidence_path(directory, artifact["path"]), errors, "#{name} report")
     end
 
@@ -548,6 +565,7 @@ module M3Gate
       label = "#{name} report"
       validate_common_document(document, expected_kind, manifest, errors, label)
       return unless document.is_a?(Hash) && document["schema_version"] == REPORT_SCHEMA_VERSION && document["kind"] == expected_kind
+
       case name
       when "controller_registry" then validate_controller_registry(document, errors)
       when "reconcile_idempotency" then validate_idempotency(document, errors)
@@ -561,6 +579,7 @@ module M3Gate
     def validate_common_document(document, expected_kind, manifest, errors, label)
       errors << "#{label} must be a JSON object" unless document.is_a?(Hash)
       return unless document.is_a?(Hash)
+
       errors << "#{label} schema_version must be #{REPORT_SCHEMA_VERSION}" unless document["schema_version"] == REPORT_SCHEMA_VERSION
       errors << "#{label} kind must be #{expected_kind}" unless document["kind"] == expected_kind
       errors << "#{label} milestone must be M3" unless document["milestone"] == "M3"
@@ -582,14 +601,20 @@ module M3Gate
         errors << "#{label} adapter provenance is incomplete"
       end
       provenance = document["provenance"]
-      unless provenance.is_a?(Hash)
-        errors << "#{label} provenance is required"
-      else
+      if provenance.is_a?(Hash)
         errors << "#{label} provenance source_sha256 must match manifest" unless provenance["source_sha256"] == manifest["input_sha256"]
-        errors << "#{label} provenance source_file_count must match manifest" unless provenance["source_file_count"] == manifest["input_file_count"]
-        errors << "#{label} provenance runner_sha256 must match adapter" unless valid_digest?(provenance["runner_sha256"]) && provenance["runner_sha256"] == adapter["runner_sha256"]
-        errors << "#{label} provenance command must be a non-empty argv" unless provenance["command"].is_a?(Array) && !provenance["command"].empty? && provenance["command"].all? { |part| non_empty_string?(part) }
-        errors << "#{label} provenance process_id must be positive" unless provenance["process_id"].is_a?(Integer) && provenance["process_id"].positive?
+        unless provenance["source_file_count"] == manifest["input_file_count"]
+          errors << "#{label} provenance source_file_count must match manifest"
+        end
+        unless valid_digest?(provenance["runner_sha256"]) && provenance["runner_sha256"] == adapter["runner_sha256"]
+          errors << "#{label} provenance runner_sha256 must match adapter"
+        end
+        errors << "#{label} provenance command must be a non-empty argv" unless provenance["command"].is_a?(Array) && !provenance["command"].empty? && provenance["command"].all? do |part|
+          non_empty_string?(part)
+        end
+        unless provenance["process_id"].is_a?(Integer) && provenance["process_id"].positive?
+          errors << "#{label} provenance process_id must be positive"
+        end
         errors << "#{label} provenance measurement_id is required" unless non_empty_string?(provenance["measurement_id"])
         %w[started_at finished_at].each { |key| errors << "#{label} provenance #{key} must be ISO-8601" unless iso8601?(provenance[key]) }
         if valid_digest?(provenance["provenance_sha256"])
@@ -598,6 +623,8 @@ module M3Gate
         else
           errors << "#{label} provenance_sha256 is required"
         end
+      else
+        errors << "#{label} provenance is required"
       end
       if valid_digest?(document["report_sha256"])
         expected = canonical_document_digest(document, excluded_keys: ["report_sha256"])
@@ -655,7 +682,9 @@ module M3Gate
       required = Array(document["required_controller_names"])
       registered = Array(document["registered_controller_names"] || document["registered_names"])
       errors << "controller registry required controller corpus differs" unless required.sort == REQUIRED_CONTROLLER_NAMES.sort
-      errors << "controller registry registered controller count must equal corpus" unless registered.length == REQUIRED_CONTROLLER_NAMES.length
+      unless registered.length == REQUIRED_CONTROLLER_NAMES.length
+        errors << "controller registry registered controller count must equal corpus"
+      end
       errors << "controller registry contains duplicate names" unless registered.uniq.length == registered.length
       errors << "controller registry has missing or unexpected controllers" unless registered.sort == REQUIRED_CONTROLLER_NAMES.sort
       entries = document["controllers"] || document["entries"]
@@ -673,35 +702,55 @@ module M3Gate
       errors << "controller registry entry identifiers must be unique" unless ids.length == ids.uniq.length
       errors << "controller registry entry inventory differs from corpus" unless ids.sort == REQUIRED_CONTROLLER_NAMES.sort
       authoritative_bindings, startup_error = authoritative_controller_bindings
-      errors << "controller registry authoritative corpus recomputation failed: #{startup_error.class}: #{startup_error.message}" if startup_error
+      if startup_error
+        errors << "controller registry authoritative corpus recomputation failed: #{startup_error.class}: #{startup_error.message}"
+      end
       entries.each_with_index do |entry, index|
         unless entry.is_a?(Hash)
           errors << "controller registry entry #{index} must be an object"
           next
         end
         errors << "controller registry entry #{index} did not pass" unless entry["passed"] == true
-        errors << "controller registry entry #{index} must validate ownership and reconcile" unless entry["owns_declared"] == true && entry["reconcile_declared"] == true
-        errors << "controller registry entry #{index} must execute against production registry" unless entry["measurement_source"] == "production_module"
+        unless entry["owns_declared"] == true && entry["reconcile_declared"] == true
+          errors << "controller registry entry #{index} must validate ownership and reconcile"
+        end
+        unless entry["measurement_source"] == "production_module"
+          errors << "controller registry entry #{index} must execute against production registry"
+        end
         errors << "controller registry entry #{index} must run once" unless entry["attempt_count"] == 1
         implementation = entry["implementation_class"]
-        errors << "controller registry entry #{index} must record a concrete implementation" unless entry["implementation_present"] == true && non_empty_string?(implementation)
-        errors << "controller registry entry #{index} must not use CorpusController fallback" if entry["uses_corpus_controller"] == true || implementation.to_s.end_with?("::CorpusController") || implementation.to_s == "Rubernetes::Controller::CorpusController"
+        unless entry["implementation_present"] == true && non_empty_string?(implementation)
+          errors << "controller registry entry #{index} must record a concrete implementation"
+        end
+        if entry["uses_corpus_controller"] == true || implementation.to_s.end_with?("::CorpusController") || implementation.to_s == "Rubernetes::Controller::CorpusController"
+          errors << "controller registry entry #{index} must not use CorpusController fallback"
+        end
         expected_binding = authoritative_bindings && authoritative_bindings[entry["id"].to_s]
-        if expected_binding
-          errors << "controller registry entry #{index} is not bound to the authoritative descriptor/GVK/ownership/watch corpus" unless entry["binding"] == expected_binding
-          errors << "controller registry entry #{index} descriptor evidence aliases disagree with the authoritative binding" unless
-            entry["authoritative_descriptor"] == expected_binding.dig("authoritative_corpus", "descriptor") &&
-            entry["authoritative_gvk"] == expected_binding.dig("authoritative_corpus", "gvk") &&
-            entry["authoritative_gvr"] == expected_binding.dig("authoritative_corpus", "gvr") &&
-            entry["ownership_edges"] == expected_binding["ownership_edges"] &&
-            entry["watch_wiring"] == expected_binding["watch_wiring"]
-          errors << "controller registry entry #{index} metadata digest is not bound to the authoritative corpus" unless entry["metadata_digest"] == expected_binding["metadata_digest"]
-          errors << "controller registry entry #{index} binding digest is invalid" unless entry["binding_digest"] == expected_binding["binding_digest"]
+        next unless expected_binding
+
+        unless entry["binding"] == expected_binding
+          errors << "controller registry entry #{index} is not bound to the authoritative descriptor/GVK/ownership/watch corpus"
+        end
+        errors << "controller registry entry #{index} descriptor evidence aliases disagree with the authoritative binding" unless
+          entry["authoritative_descriptor"] == expected_binding.dig("authoritative_corpus", "descriptor") &&
+          entry["authoritative_gvk"] == expected_binding.dig("authoritative_corpus", "gvk") &&
+          entry["authoritative_gvr"] == expected_binding.dig("authoritative_corpus", "gvr") &&
+          entry["ownership_edges"] == expected_binding["ownership_edges"] &&
+          entry["watch_wiring"] == expected_binding["watch_wiring"]
+        unless entry["metadata_digest"] == expected_binding["metadata_digest"]
+          errors << "controller registry entry #{index} metadata digest is not bound to the authoritative corpus"
+        end
+        unless entry["binding_digest"] == expected_binding["binding_digest"]
+          errors << "controller registry entry #{index} binding digest is invalid"
         end
       end
-      %w[duplicate_count missing_count unexpected_count unregistered_count failure_count binding_failure_count].each { |key| errors << "controller registry #{key} must be zero" unless document[key] == 0 }
+      %w[duplicate_count missing_count unexpected_count unregistered_count failure_count binding_failure_count].each do |key|
+        errors << "controller registry #{key} must be zero" unless document[key] == 0
+      end
       expected_duplicate_error = "Rubernetes::Controller::DuplicateControllerError"
-      errors << "controller registry duplicate registration must raise #{expected_duplicate_error}" unless document["duplicate_exception_class"] == expected_duplicate_error
+      unless document["duplicate_exception_class"] == expected_duplicate_error
+        errors << "controller registry duplicate registration must raise #{expected_duplicate_error}"
+      end
       errors << "controller registry duplicate registration check did not pass" unless document["duplicate_check_passed"] == true
     end
 
@@ -721,10 +770,12 @@ module M3Gate
         end
         errors << "reconcile idempotency case #{index} did not pass" unless entry["passed"] == true
         errors << "reconcile idempotency case #{index} must execute exactly twice" unless entry["execution_count"] == 2
-        errors << "reconcile idempotency case #{index} must use production Manager" unless entry["manager_class"].to_s.end_with?("::Manager")
+        unless entry["manager_class"].to_s.end_with?("::Manager")
+          errors << "reconcile idempotency case #{index} must use production Manager"
+        end
         backend_class = entry["store_backend_class"].to_s
         errors << "reconcile idempotency case #{index} must use production StoreAdapter" unless entry["store_class"] == "Rubernetes::Controller::StoreAdapter" &&
-          (backend_class.end_with?("::MemoryStore") || backend_class == "M3TransientMemoryStore")
+                                                                                                (backend_class.end_with?("::MemoryStore") || backend_class == "M3TransientMemoryStore")
         first_observable = entry["first_effect_observable"]
         # A status-subresource write is an update for conflict/retry purposes
         # (upstream issues it as its own PUT and retries it on Conflict).
@@ -732,62 +783,82 @@ module M3Gate
           (Array(mutation["actions"]) & %w[update status_update]).any?
         end
         if update_observed
-          errors << "reconcile idempotency case #{index} must observe a real queue retry" unless entry["error_class"] == "Rubernetes::Storage::Conflict" && entry["queue_retry_observed"] == true
+          unless entry["error_class"] == "Rubernetes::Storage::Conflict" && entry["queue_retry_observed"] == true
+            errors << "reconcile idempotency case #{index} must observe a real queue retry"
+          end
         else
-          errors << "reconcile idempotency case #{index} must report that no update retry was applicable" unless entry["queue_retry_observed"] == false
+          unless entry["queue_retry_observed"] == false
+            errors << "reconcile idempotency case #{index} must report that no update retry was applicable"
+          end
         end
-        errors << "reconcile idempotency case #{index} must check owner scope and foreign resources" unless entry["owner_scope_checked"] == true && entry["foreign_resource_preserved"] == true
+        unless entry["owner_scope_checked"] == true && entry["foreign_resource_preserved"] == true
+          errors << "reconcile idempotency case #{index} must check owner scope and foreign resources"
+        end
         errors << "reconcile idempotency case #{index} attempt_count must be one" unless entry["attempt_count"] == 1
         first = entry["first_effect_sha256"] || entry["first_result_sha256"]
         second = entry["second_effect_sha256"] || entry["second_result_sha256"]
         errors << "reconcile idempotency case #{index} must record effect digests" unless valid_digest?(first) && valid_digest?(second)
         second_observable = entry["second_effect_observable"]
-        errors << "reconcile idempotency case #{index} must record structured effect observables" unless structured_observable?(first_observable) && structured_observable?(second_observable)
+        unless structured_observable?(first_observable) && structured_observable?(second_observable)
+          errors << "reconcile idempotency case #{index} must record structured effect observables"
+        end
         validate_idempotency_step_observable(first_observable, errors, index, "first")
         validate_idempotency_step_observable(second_observable, errors, index, "second")
         validate_provider_applicability(first_observable, second_observable, errors, index)
         validate_idempotency_effect_inventory(first_observable, second_observable, errors, index)
-        if structured_observable?(first_observable) && valid_digest?(first)
-          errors << "reconcile idempotency case #{index} first effect digest does not match observable" unless canonical_document_digest(first_observable) == first
+        if structured_observable?(first_observable) && valid_digest?(first) && !(canonical_document_digest(first_observable) == first)
+          errors << "reconcile idempotency case #{index} first effect digest does not match observable"
         end
-        if structured_observable?(second_observable) && valid_digest?(second)
-          errors << "reconcile idempotency case #{index} second effect digest does not match observable" unless canonical_document_digest(second_observable) == second
+        if structured_observable?(second_observable) && valid_digest?(second) && !(canonical_document_digest(second_observable) == second)
+          errors << "reconcile idempotency case #{index} second effect digest does not match observable"
         end
-        if first_observable.is_a?(Hash) && second_observable.is_a?(Hash)
-          errors << "reconcile idempotency case #{index} final store state changed during replay" unless first_observable["store"] == second_observable["store"]
+        if first_observable.is_a?(Hash) && second_observable.is_a?(Hash) && !(first_observable["store"] == second_observable["store"])
+          errors << "reconcile idempotency case #{index} final store state changed during replay"
         end
         first_snapshot = entry["first_run_raw_snapshot"]
         second_snapshot = entry["second_run_raw_snapshot"]
         errors << "reconcile idempotency case #{index} must record a first-run raw snapshot" unless first_snapshot.is_a?(Hash)
         errors << "reconcile idempotency case #{index} must record a second-run raw snapshot" unless second_snapshot.is_a?(Hash)
-        if first_snapshot.is_a?(Hash)
-          errors << "reconcile idempotency case #{index} first-run snapshot aliases disagree" unless entry["first_run_snapshot"] == first_snapshot &&
-            entry["first_run_raw_entries"] == first_snapshot["raw_entries"]
+        if first_snapshot.is_a?(Hash) && !(entry["first_run_snapshot"] == first_snapshot &&
+                                                                                                     entry["first_run_raw_entries"] == first_snapshot["raw_entries"])
+          errors << "reconcile idempotency case #{index} first-run snapshot aliases disagree"
         end
-        if second_snapshot.is_a?(Hash)
-          errors << "reconcile idempotency case #{index} second-run snapshot aliases disagree" unless entry["second_run_snapshot"] == second_snapshot &&
-            entry["second_run_raw_entries"] == second_snapshot["raw_entries"]
+        if second_snapshot.is_a?(Hash) && !(entry["second_run_snapshot"] == second_snapshot &&
+                                                                                                      entry["second_run_raw_entries"] == second_snapshot["raw_entries"])
+          errors << "reconcile idempotency case #{index} second-run snapshot aliases disagree"
         end
         if first_snapshot.is_a?(Hash) && first_observable.is_a?(Hash)
           journal_snapshot = first_observable.dig("durable_journal", "raw_snapshot")
-          errors << "reconcile idempotency case #{index} first-run snapshot is not bound to the observable" unless journal_snapshot == first_snapshot
+          unless journal_snapshot == first_snapshot
+            errors << "reconcile idempotency case #{index} first-run snapshot is not bound to the observable"
+          end
         end
         if second_snapshot.is_a?(Hash) && second_observable.is_a?(Hash)
           journal_snapshot = second_observable.dig("durable_journal", "raw_snapshot")
-          errors << "reconcile idempotency case #{index} second-run snapshot is not bound to the observable" unless journal_snapshot == second_snapshot
+          unless journal_snapshot == second_snapshot
+            errors << "reconcile idempotency case #{index} second-run snapshot is not bound to the observable"
+          end
         end
         durable_journal = entry["durable_journal"]
         unless durable_journal.is_a?(Hash) && durable_journal["first_run"] == first_snapshot && durable_journal["second_run"] == second_snapshot &&
-          durable_journal["first_run_inventory"] == first_observable&.dig("durable_journal", "after") &&
-          durable_journal["second_run_inventory"] == second_observable&.dig("durable_journal", "after")
+               durable_journal["first_run_inventory"] == first_observable&.dig("durable_journal", "after") &&
+               durable_journal["second_run_inventory"] == second_observable&.dig("durable_journal", "after")
           errors << "reconcile idempotency case #{index} durable journal must contain separate first and second run snapshots"
         end
-        errors << "reconcile idempotency case #{index} must come from production module" unless entry["measurement_source"] == "production_module"
+        unless entry["measurement_source"] == "production_module"
+          errors << "reconcile idempotency case #{index} must come from production module"
+        end
         implementation = entry["implementation_class"]
-        errors << "reconcile idempotency case #{index} must record a concrete implementation" unless entry["implementation_present"] == true && non_empty_string?(implementation)
-        errors << "reconcile idempotency case #{index} must not use CorpusController fallback" if entry["uses_corpus_controller"] == true || implementation.to_s.end_with?("::CorpusController") || implementation.to_s == "Rubernetes::Controller::CorpusController"
+        unless entry["implementation_present"] == true && non_empty_string?(implementation)
+          errors << "reconcile idempotency case #{index} must record a concrete implementation"
+        end
+        if entry["uses_corpus_controller"] == true || implementation.to_s.end_with?("::CorpusController") || implementation.to_s == "Rubernetes::Controller::CorpusController"
+          errors << "reconcile idempotency case #{index} must not use CorpusController fallback"
+        end
       end
-      %w[failure_count difference_count non_idempotent_count unexpected_skip_count unclassified_count].each { |key| errors << "reconcile idempotency #{key} must be zero" unless document[key] == 0 }
+      %w[failure_count difference_count non_idempotent_count unexpected_skip_count unclassified_count].each do |key|
+        errors << "reconcile idempotency #{key} must be zero" unless document[key] == 0
+      end
     end
 
     def validate_idempotency_effect_inventory(first_observable, second_observable, errors, index)
@@ -807,7 +878,9 @@ module M3Gate
           errors << "#{label} durable side-effect journal is required for run #{run_index + 1}"
           next
         end
-        errors << "#{label} durable journal run label is invalid for run #{run_index + 1}" unless journal["run"] == (run_index.zero? ? "first" : "second")
+        unless journal["run"] == (run_index.zero? ? "first" : "second")
+          errors << "#{label} durable journal run label is invalid for run #{run_index + 1}"
+        end
         errors << "#{label} durable journal before inventory is required for run #{run_index + 1}" unless journal["before"].is_a?(Hash)
         errors << "#{label} durable journal after inventory is required for run #{run_index + 1}" unless journal["after"].is_a?(Hash)
         snapshot = journal["raw_snapshot"]
@@ -816,21 +889,25 @@ module M3Gate
           next
         end
         inventory = validate_idempotency_run_snapshot(snapshot, observable, errors, label, run_index + 1)
-        if inventory
-          errors << "#{label} durable journal after inventory is not bound to raw snapshot for run #{run_index + 1}" unless journal["after"] == inventory
-          %w[api_mutations events provider_calls].each do |inventory_key|
-            errors << "#{label} #{inventory_key} inventory is not bound to durable journal for run #{run_index + 1}" unless observable[inventory_key] == inventory[inventory_key]
+        next unless inventory
+
+        unless journal["after"] == inventory
+          errors << "#{label} durable journal after inventory is not bound to raw snapshot for run #{run_index + 1}"
+        end
+        %w[api_mutations events provider_calls].each do |inventory_key|
+          unless observable[inventory_key] == inventory[inventory_key]
+            errors << "#{label} #{inventory_key} inventory is not bound to durable journal for run #{run_index + 1}"
           end
         end
       end
 
       first_inventory = first_observable.is_a?(Hash) ? first_observable.dig("durable_journal", "after") : nil
       second_inventory = second_observable.is_a?(Hash) ? second_observable.dig("durable_journal", "after") : nil
-      if first_inventory.is_a?(Hash) && second_inventory.is_a?(Hash)
-        errors << "#{label} replay must not apply API mutations" unless second_inventory["api_mutation_count"] == 0
-        errors << "#{label} replay must not append controller events" unless second_inventory["event_count"] == 0
-        errors << "#{label} replay must not append provider calls" unless second_inventory["provider_call_count"] == 0
-      end
+      return unless first_inventory.is_a?(Hash) && second_inventory.is_a?(Hash)
+
+      errors << "#{label} replay must not apply API mutations" unless second_inventory["api_mutation_count"] == 0
+      errors << "#{label} replay must not append controller events" unless second_inventory["event_count"] == 0
+      errors << "#{label} replay must not append provider calls" unless second_inventory["provider_call_count"] == 0
     end
 
     def validate_idempotency_step_observable(observable, errors, index, run_label)
@@ -866,39 +943,53 @@ module M3Gate
       first_calls = first_observable.fetch("provider_calls", []) if first_observable.is_a?(Hash)
       second_calls = second_observable.fetch("provider_calls", []) if second_observable.is_a?(Hash)
       if first["applicable"] == true
-        errors << "#{label} applicable provider path must record a first-run provider call" unless first_calls.is_a?(Array) && !first_calls.empty?
+        unless first_calls.is_a?(Array) && !first_calls.empty?
+          errors << "#{label} applicable provider path must record a first-run provider call"
+        end
       elsif first_calls.is_a?(Array) && !first_calls.empty?
         errors << "#{label} inapplicable provider path must not record a provider call"
       end
       errors << "#{label} provider replay must not record a provider call" unless second_calls.is_a?(Array) && second_calls.empty?
     end
 
-    def validate_idempotency_run_snapshot(snapshot, observable, errors, label, run_number)
+    def validate_idempotency_run_snapshot(snapshot, _observable, errors, label, run_number)
       raw_entries = snapshot["raw_entries"]
       unless raw_entries.is_a?(Array)
         errors << "#{label} raw snapshot must contain raw entries for run #{run_number}"
         return nil
       end
-      errors << "#{label} raw snapshot contains a non-object entry for run #{run_number}" unless raw_entries.all? { |entry| entry.is_a?(Hash) }
-      errors << "#{label} raw snapshot entry count is incorrect for run #{run_number}" unless snapshot["raw_entry_count"] == raw_entries.length
-      errors << "#{label} raw snapshot digest is invalid for run #{run_number}" unless valid_digest?(snapshot["raw_sha256"]) && snapshot["raw_sha256"] == canonical_document_digest(raw_entries)
+      errors << "#{label} raw snapshot contains a non-object entry for run #{run_number}" unless raw_entries.all? do |entry|
+        entry.is_a?(Hash)
+      end
+      unless snapshot["raw_entry_count"] == raw_entries.length
+        errors << "#{label} raw snapshot entry count is incorrect for run #{run_number}"
+      end
+      unless valid_digest?(snapshot["raw_sha256"]) && snapshot["raw_sha256"] == canonical_document_digest(raw_entries)
+        errors << "#{label} raw snapshot digest is invalid for run #{run_number}"
+      end
       inventory = recompute_idempotency_inventory(raw_entries)
       errors << "#{label} raw snapshot inventory was not recomputed for run #{run_number}" unless snapshot["inventory"] == inventory
       %w[effect_ids effect_id_counts effect_signature_counts api_effect_key_counts api_mutation_count event_count provider_call_count
-          event_effect_key_counts provider_effect_key_counts event_signatures event_signature_counts
-          provider_call_signatures provider_call_signature_counts].each do |key|
+         event_effect_key_counts provider_effect_key_counts event_signatures event_signature_counts
+         provider_call_signatures provider_call_signature_counts].each do |key|
         errors << "#{label} raw snapshot #{key} is not recomputed for run #{run_number}" unless snapshot[key] == inventory[key]
       end
       duplicate_effects = inventory.fetch("effect_signature_counts").select { |_signature, count| count > 1 }
       errors << "#{label} duplicate API effects detected in run #{run_number}" unless duplicate_effects.empty?
       duplicate_effect_keys = inventory.fetch("api_effect_key_counts").select { |_key, count| count > 1 }
-      errors << "#{label} duplicate semantic API effect keys detected in run #{run_number}: #{duplicate_effect_keys.keys.join(", ")}" unless duplicate_effect_keys.empty?
+      unless duplicate_effect_keys.empty?
+        errors << "#{label} duplicate semantic API effect keys detected in run #{run_number}: #{duplicate_effect_keys.keys.join(", ")}"
+      end
       duplicate_event_keys = inventory.fetch("event_effect_key_counts").select { |_key, count| count > 1 }
-      errors << "#{label} duplicate controller events detected in run #{run_number}: #{duplicate_event_keys.keys.join(", ")}" unless duplicate_event_keys.empty?
+      unless duplicate_event_keys.empty?
+        errors << "#{label} duplicate controller events detected in run #{run_number}: #{duplicate_event_keys.keys.join(", ")}"
+      end
       duplicate_event_signatures = inventory.fetch("event_signature_counts").select { |_signature, count| count > 1 }
       errors << "#{label} duplicate controller event signatures detected in run #{run_number}" unless duplicate_event_signatures.empty?
       duplicate_provider_keys = inventory.fetch("provider_effect_key_counts").select { |_key, count| count > 1 }
-      errors << "#{label} duplicate provider calls detected in run #{run_number}: #{duplicate_provider_keys.keys.join(", ")}" unless duplicate_provider_keys.empty?
+      unless duplicate_provider_keys.empty?
+        errors << "#{label} duplicate provider calls detected in run #{run_number}: #{duplicate_provider_keys.keys.join(", ")}"
+      end
       duplicate_provider_signatures = inventory.fetch("provider_call_signature_counts").select { |_signature, count| count > 1 }
       errors << "#{label} duplicate provider call signatures detected in run #{run_number}" unless duplicate_provider_signatures.empty?
       missing_effect_ids = raw_entries.select do |entry|
@@ -958,9 +1049,7 @@ module M3Gate
 
     def validate_scheduler(document, errors)
       cases = document["cases"]
-      unless cases.is_a?(Array) && cases.length == REQUIRED_SCHEDULER_CASES.length
-        errors << "scheduler cases must cover filter, score, tie_break, preemption, binding, and volume_binding"
-      else
+      if cases.is_a?(Array) && cases.length == REQUIRED_SCHEDULER_CASES.length
         ids = cases.filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["name"]) : nil }
         errors << "scheduler case identifiers must be unique" unless ids.length == ids.uniq.length
         errors << "scheduler case inventory is incomplete" unless ids.sort == REQUIRED_SCHEDULER_CASES.sort
@@ -972,50 +1061,69 @@ module M3Gate
           errors << "scheduler case #{index} did not pass" unless entry["passed"] == true
           errors << "scheduler case #{index} must run once" unless entry["attempt_count"] == 1
           errors << "scheduler case #{index} must record an observable digest" unless valid_digest?(entry["evidence_sha256"])
-          errors << "scheduler case #{index} must include structured local and oracle observables" unless structured_observable?(entry["actual_observable"]) && structured_observable?(entry["expected_observable"])
-          if structured_observable?(entry["actual_observable"]) && valid_digest?(entry["evidence_sha256"])
-            errors << "scheduler case #{index} observable digest does not match local result" unless canonical_document_digest(entry["actual_observable"]) == entry["evidence_sha256"]
+          unless structured_observable?(entry["actual_observable"]) && structured_observable?(entry["expected_observable"])
+            errors << "scheduler case #{index} must include structured local and oracle observables"
           end
-          if structured_observable?(entry["actual_observable"]) && structured_observable?(entry["expected_observable"])
-            expected_sha = canonical_document_digest(entry["expected_observable"])
-            actual_sha = canonical_document_digest(entry["actual_observable"])
-            errors << "scheduler case #{index} passed flag does not match independent observables" unless entry["passed"] == (expected_sha == actual_sha)
+          if structured_observable?(entry["actual_observable"]) && valid_digest?(entry["evidence_sha256"]) && !(canonical_document_digest(entry["actual_observable"]) == entry["evidence_sha256"])
+            errors << "scheduler case #{index} observable digest does not match local result"
+          end
+          next unless structured_observable?(entry["actual_observable"]) && structured_observable?(entry["expected_observable"])
+
+          expected_sha = canonical_document_digest(entry["expected_observable"])
+          actual_sha = canonical_document_digest(entry["actual_observable"])
+          unless entry["passed"] == (expected_sha == actual_sha)
+            errors << "scheduler case #{index} passed flag does not match independent observables"
           end
         end
+      else
+        errors << "scheduler cases must cover filter, score, tie_break, preemption, binding, and volume_binding"
       end
       plugins = document["plugins"]
-      unless plugins.is_a?(Array) && !plugins.empty?
-        errors << "scheduler plugin inventory is required"
-      else
+      if plugins.is_a?(Array) && !plugins.empty?
         plugin_ids = plugins.filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["name"]) : nil }
         errors << "scheduler plugin identifiers must be unique" unless plugin_ids.length == plugin_ids.uniq.length
-        errors << "scheduler plugin inventory must match the pinned Kubernetes v1.36.2 default inventory" unless plugin_ids.sort == REQUIRED_SCHEDULER_PLUGIN_NAMES.sort
+        unless plugin_ids.sort == REQUIRED_SCHEDULER_PLUGIN_NAMES.sort
+          errors << "scheduler plugin inventory must match the pinned Kubernetes v1.36.2 default inventory"
+        end
         plugins.each_with_index do |plugin, index|
-          errors << "scheduler plugin #{index} must be measured from production module" unless plugin.is_a?(Hash) && plugin["measurement_source"] == "production_module" && plugin["passed"] == true
-          if plugin.is_a?(Hash)
-            name = (plugin["id"] || plugin["name"]).to_s
-            errors << "scheduler plugin #{index} has an unexpected default weight" unless REQUIRED_SCHEDULER_PLUGIN_WEIGHTS[name] == plugin["weight"]
+          unless plugin.is_a?(Hash) && plugin["measurement_source"] == "production_module" && plugin["passed"] == true
+            errors << "scheduler plugin #{index} must be measured from production module"
+          end
+          next unless plugin.is_a?(Hash)
+
+          name = (plugin["id"] || plugin["name"]).to_s
+          unless REQUIRED_SCHEDULER_PLUGIN_WEIGHTS[name] == plugin["weight"]
+            errors << "scheduler plugin #{index} has an unexpected default weight"
           end
         end
+      else
+        errors << "scheduler plugin inventory is required"
       end
       oracle = document["oracle"]
-      unless oracle.is_a?(Hash)
-        errors << "scheduler oracle differential evidence is incomplete"
-      else
+      if oracle.is_a?(Hash)
         validate_external_runner(oracle, document, errors, "scheduler oracle")
-        errors << "scheduler oracle comparison count must cover every scheduler case" unless oracle["comparison_count"] == REQUIRED_SCHEDULER_CASES.length
+        unless oracle["comparison_count"] == REQUIRED_SCHEDULER_CASES.length
+          errors << "scheduler oracle comparison count must cover every scheduler case"
+        end
         comparisons = oracle["comparisons"]
-        unless comparisons.is_a?(Array) && comparisons.length == REQUIRED_SCHEDULER_CASES.length
-          errors << "scheduler oracle comparisons are required for every scheduler case"
-        else
+        if comparisons.is_a?(Array) && comparisons.length == REQUIRED_SCHEDULER_CASES.length
           ids = comparisons.filter_map { |entry| entry.is_a?(Hash) ? entry["id"] : nil }
-          errors << "scheduler oracle comparison identifiers are incomplete" unless ids.sort == REQUIRED_SCHEDULER_CASES.sort && ids.uniq.length == REQUIRED_SCHEDULER_CASES.length
+          unless ids.sort == REQUIRED_SCHEDULER_CASES.sort && ids.uniq.length == REQUIRED_SCHEDULER_CASES.length
+            errors << "scheduler oracle comparison identifiers are incomplete"
+          end
           comparisons.each_with_index do |comparison, index|
             validate_observable_comparison(comparison, errors, "scheduler oracle comparison #{index}")
           end
+        else
+          errors << "scheduler oracle comparisons are required for every scheduler case"
         end
+      else
+        errors << "scheduler oracle differential evidence is incomplete"
       end
-      %w[failure_count difference_count filter_mismatch_count score_mismatch_count tie_break_mismatch_count preemption_mismatch_count binding_mismatch_count unexpected_skip_count unclassified_count].each { |key| errors << "scheduler #{key} must be zero" unless document[key] == 0 }
+      %w[failure_count difference_count filter_mismatch_count score_mismatch_count tie_break_mismatch_count preemption_mismatch_count
+         binding_mismatch_count unexpected_skip_count unclassified_count].each do |key|
+        errors << "scheduler #{key} must be zero" unless document[key] == 0
+      end
     end
 
     def validate_external_runner(document, owner_document, errors, label)
@@ -1031,14 +1139,20 @@ module M3Gate
       errors << "#{label} runner provenance digest must match oracle" unless runner["runner_sha256"] == document["runner_sha256"]
       errors << "#{label} runner provenance version is invalid" unless runner["version"] == KUBERNETES_VERSION
       errors << "#{label} runner provenance source commit is invalid" unless runner["source_commit"] == KUBERNETES_SOURCE_COMMIT
-      errors << "#{label} runner command must be an argv" unless runner["command"].is_a?(Array) && !runner["command"].empty? && runner["command"].all? { |part| non_empty_string?(part) }
+      errors << "#{label} runner command must be an argv" unless runner["command"].is_a?(Array) && !runner["command"].empty? && runner["command"].all? do |part|
+        non_empty_string?(part)
+      end
       errors << "#{label} runner process_id must be positive" unless runner["process_id"].is_a?(Integer) && runner["process_id"].positive?
       errors << "#{label} runner provenance mode must be external" unless runner["mode"] == "external"
       errors << "#{label} runner provenance must not be a self-comparison" unless runner["self_comparison"] == false
       errors << "#{label} runner implementation is required" unless non_empty_string?(runner["implementation"])
       local_runner_sha256 = owner_document.is_a?(Hash) ? owner_document.dig("adapter", "runner_sha256") : nil
-      errors << "#{label} runner_sha256 must differ from the Ruby probe runner" if valid_digest?(local_runner_sha256) && runner["runner_sha256"] == local_runner_sha256
-      errors << "#{label} runner command must not invoke this Ruby probe" if Array(runner["command"]).any? { |part| part.to_s.match?(/m3_(?:scheduler|workload)_probe\.rb\z/) }
+      if valid_digest?(local_runner_sha256) && runner["runner_sha256"] == local_runner_sha256
+        errors << "#{label} runner_sha256 must differ from the Ruby probe runner"
+      end
+      errors << "#{label} runner command must not invoke this Ruby probe" if Array(runner["command"]).any? do |part|
+        part.to_s.match?(/m3_(?:scheduler|workload)_probe\.rb\z/)
+      end
       source = runner["source"]
       unless source.is_a?(Hash) && non_empty_string?(source["root"]) && non_empty_string?(source["repository"]) &&
              source["version"] == KUBERNETES_VERSION && source["tag"] == KUBERNETES_VERSION &&
@@ -1056,7 +1170,9 @@ module M3Gate
       end
       if valid_digest?(runner["provenance_sha256"])
         expected_provenance = canonical_document_digest(runner, excluded_keys: ["provenance_sha256"])
-        errors << "#{label} runner provenance digest does not match canonical content" unless expected_provenance == runner["provenance_sha256"]
+        unless expected_provenance == runner["provenance_sha256"]
+          errors << "#{label} runner provenance digest does not match canonical content"
+        end
       else
         errors << "#{label} runner provenance digest is required"
       end
@@ -1068,11 +1184,9 @@ module M3Gate
       end
       input = document["input"]
       output = document["output"]
-      unless input.is_a?(Hash) && output.is_a?(Hash) && valid_digest?(input["raw_sha256"]) && valid_digest?(input["canonical_sha256"]) &&
-             valid_digest?(output["raw_sha256"]) && valid_digest?(output["canonical_sha256"]) &&
-             positive_integer?(input["bytes"]) && positive_integer?(output["bytes"]) && input["case_ids"].is_a?(Array)
-        errors << "#{label} raw and canonical input/output digests are required"
-      else
+      if input.is_a?(Hash) && output.is_a?(Hash) && valid_digest?(input["raw_sha256"]) && valid_digest?(input["canonical_sha256"]) &&
+         valid_digest?(output["raw_sha256"]) && valid_digest?(output["canonical_sha256"]) &&
+         positive_integer?(input["bytes"]) && positive_integer?(output["bytes"]) && input["case_ids"].is_a?(Array)
         # The transported stdin is byte-bound to the reported input payload
         # (validate_external_execution), which makes the raw input bytes the
         # canonical serialisation; raw and canonical input digests therefore
@@ -1081,12 +1195,14 @@ module M3Gate
         all_digests = [document["runner_sha256"], input["raw_sha256"], output["raw_sha256"], output["canonical_sha256"]]
         all_digests << input["canonical_sha256"] unless input["canonical_sha256"] == input["raw_sha256"]
         errors << "#{label} runner/input/raw/canonical digests must remain distinct" unless all_digests.uniq.length == all_digests.length
+      else
+        errors << "#{label} raw and canonical input/output digests are required"
       end
       validate_external_execution(document, owner_document, source, errors, label)
       validate_pinned_source(source, errors, label)
     end
 
-    def validate_external_execution(document, owner_document, source, errors, label)
+    def validate_external_execution(document, _owner_document, source, errors, label)
       execution = document["execution"]
       unless execution.is_a?(Hash)
         errors << "#{label} exact external execution transcript is required"
@@ -1098,13 +1214,17 @@ module M3Gate
                           File.expand_path("m3_workload_oracle/runner.rb", File.join(PROJECT_ROOT, "test", "conformance", "kubernetes"))
                         end
       expected_argv = [RbConfig.ruby, expected_runner]
-      errors << "#{label} execution argv is not the built-in runner" unless execution["argv"] == expected_argv && execution["built_in"] == expected_argv
+      unless execution["argv"] == expected_argv && execution["built_in"] == expected_argv
+        errors << "#{label} execution argv is not the built-in runner"
+      end
       errors << "#{label} evidence mode must be enabled" unless execution["evidence_mode"] == true
       errors << "#{label} external execution must exit successfully" unless execution["success"] == true && execution["exit_status"] == 0
       %w[stdin stdout stderr].each do |stream|
         value = execution[stream]
         digest = execution["#{stream}_sha256"]
-        errors << "#{label} execution #{stream} transcript is required" unless value.is_a?(String) && valid_digest?(digest) && Digest::SHA256.hexdigest(value) == digest
+        unless value.is_a?(String) && valid_digest?(digest) && Digest::SHA256.hexdigest(value) == digest
+          errors << "#{label} execution #{stream} transcript is required"
+        end
       end
       if execution["stdin"].is_a?(String) && document["input_payload"].is_a?(Hash)
         expected_stdin = JSON.generate(document["input_payload"])
@@ -1115,7 +1235,9 @@ module M3Gate
       if execution["stdout"].is_a?(String)
         begin
           transcript = JSON.parse(execution["stdout"], max_nesting: 512)
-          errors << "#{label} execution stdout is not bound to the returned oracle document" unless valid_digest?(document["external_document_sha256"]) && canonical_document_digest(transcript) == document["external_document_sha256"]
+          unless valid_digest?(document["external_document_sha256"]) && canonical_document_digest(transcript) == document["external_document_sha256"]
+            errors << "#{label} execution stdout is not bound to the returned oracle document"
+          end
         rescue JSON::ParserError
           errors << "#{label} execution stdout is not valid JSON"
         end
@@ -1125,13 +1247,17 @@ module M3Gate
                         else
                           File.expand_path("m3_workload_oracle/runner.rb", File.join(PROJECT_ROOT, "test", "conformance", "kubernetes"))
                         end
-      if source.is_a?(Hash)
-        actual_source = source["runner_source"].to_s
-        errors << "#{label} runner source path is not the project-owned pinned wrapper" unless File.expand_path(actual_source) == expected_source
-        if File.file?(expected_source) && valid_digest?(source["runner_sha256"])
-          errors << "#{label} runner source digest does not match the checked-in source" unless Digest::SHA256.file(expected_source).hexdigest == source["runner_sha256"]
-        end
+      return unless source.is_a?(Hash)
+
+      actual_source = source["runner_source"].to_s
+      unless File.expand_path(actual_source) == expected_source
+        errors << "#{label} runner source path is not the project-owned pinned wrapper"
       end
+      return unless File.file?(expected_source) && valid_digest?(source["runner_sha256"])
+
+      return if Digest::SHA256.file(expected_source).hexdigest == source["runner_sha256"]
+
+      errors << "#{label} runner source digest does not match the checked-in source"
     end
 
     def validate_pinned_source(source, errors, label)
@@ -1147,7 +1273,9 @@ module M3Gate
       tree = git_output(root, "rev-parse", "HEAD^{tree}")
       source_inventory = git_output(root, "ls-tree", "-r", "--full-tree", "--name-only", "HEAD")
       status = git_output(root, "status", "--porcelain", "--untracked-files=all")
-      errors << "#{label} pinned source commit was not recomputed from the checkout" unless commit == KUBERNETES_SOURCE_COMMIT && source["commit"] == commit
+      unless commit == KUBERNETES_SOURCE_COMMIT && source["commit"] == commit
+        errors << "#{label} pinned source commit was not recomputed from the checkout"
+      end
       errors << "#{label} pinned source tag was not recomputed from the checkout" unless tag == KUBERNETES_VERSION && source["tag"] == tag
       errors << "#{label} pinned source tree was not recomputed from the checkout" unless tree == source["tree"]
       errors << "#{label} pinned source tree is dirty" unless status.to_s.empty? && source["tree_clean"] == true
@@ -1155,8 +1283,12 @@ module M3Gate
       errors << "#{label} pinned source tree digest is not content-bound" unless source["source_tree_sha256"] == expected_tree_digest
       expected_inventory_digest = Digest::SHA256.hexdigest("#{source_inventory}\n")
       expected_inventory_count = source_inventory.lines.reject { |line| line.strip.empty? }.length
-      errors << "#{label} pinned source inventory digest was not recomputed" unless source["source_inventory_sha256"] == expected_inventory_digest
-      errors << "#{label} pinned source inventory count was not recomputed" unless source["source_inventory_file_count"] == expected_inventory_count
+      unless source["source_inventory_sha256"] == expected_inventory_digest
+        errors << "#{label} pinned source inventory digest was not recomputed"
+      end
+      unless source["source_inventory_file_count"] == expected_inventory_count
+        errors << "#{label} pinned source inventory count was not recomputed"
+      end
       errors << "#{label} pinned source repository is not the official Kubernetes repository" unless source["repository"] == "https://github.com/kubernetes/kubernetes.git"
     rescue StandardError => error
       errors << "#{label} pinned source verification failed closed: #{error.class}: #{error.message}"
@@ -1177,7 +1309,9 @@ module M3Gate
       expected = comparison["expected_observable"]
       actual = comparison["actual_observable"]
       errors << "#{label} must include expected and actual observables" if expected.nil? || actual.nil?
-      errors << "#{label} observables must contain structured observations" unless structured_observable?(expected) && structured_observable?(actual)
+      unless structured_observable?(expected) && structured_observable?(actual)
+        errors << "#{label} observables must contain structured observations"
+      end
       expected_digest = comparison["expected_sha256"]
       actual_digest = comparison["actual_sha256"]
       errors << "#{label} expected observable digest is invalid" unless valid_digest?(expected_digest)
@@ -1188,7 +1322,9 @@ module M3Gate
       if actual.nil? || !valid_digest?(actual_digest) || canonical_document_digest(actual) != actual_digest
         errors << "#{label} actual digest does not match observable"
       end
-      errors << "#{label} passed flag does not match independent observables" unless comparison["passed"] == (valid_digest?(expected_digest) && expected_digest == actual_digest)
+      unless comparison["passed"] == (valid_digest?(expected_digest) && expected_digest == actual_digest)
+        errors << "#{label} passed flag does not match independent observables"
+      end
       errors << "#{label} must pass the independent comparison" unless comparison["passed"] == true
     end
 
@@ -1213,16 +1349,24 @@ module M3Gate
         return
       end
       ids = trace.filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["event"]) : nil }
-      %w[acquire loss fence recovery].each { |required| errors << "leader-loss trace event #{required} is missing" unless ids.include?(required) }
+      %w[acquire loss fence recovery].each do |required|
+        errors << "leader-loss trace event #{required} is missing" unless ids.include?(required)
+      end
       trace.each_with_index do |entry, index|
-        errors << "leader-loss trace entry #{index} must pass" unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1
+        unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1
+          errors << "leader-loss trace entry #{index} must pass"
+        end
       end
       errors << "leader-loss trace must not double-apply side effects" unless document["double_side_effect_count"] == 0
       errors << "leader-loss trace must fence stale leaders" unless document["stale_side_effect_count"] == 0
       errors << "leader-loss trace must resume after quorum recovery" unless document["quorum_recovered"] == true
-      errors << "leader-loss trace recovery must be within 60 seconds" unless document["recovery_seconds"].is_a?(Numeric) && document["recovery_seconds"] >= 0 && document["recovery_seconds"] <= 60
+      unless document["recovery_seconds"].is_a?(Numeric) && document["recovery_seconds"] >= 0 && document["recovery_seconds"] <= 60
+        errors << "leader-loss trace recovery must be within 60 seconds"
+      end
       validate_process_chaos(document, errors, "leader-loss process chaos", %w[acquire process_kill fence recovery])
-      %w[failure_count duplicate_side_effect_count unexpected_skip_count unclassified_count].each { |key| errors << "leader-loss #{key} must be zero" unless document[key] == 0 }
+      %w[failure_count duplicate_side_effect_count unexpected_skip_count unclassified_count].each do |key|
+        errors << "leader-loss #{key} must be zero" unless document[key] == 0
+      end
     end
 
     def validate_process_chaos(document, errors, label, required_events)
@@ -1244,7 +1388,9 @@ module M3Gate
         return
       end
       runner = chaos["runner"]
-      unless runner.is_a?(Hash) && valid_digest?(runner["runner_sha256"]) && runner["command"].is_a?(Array) && !runner["command"].empty? && runner["command"].all? { |part| non_empty_string?(part) } && runner["process_id"].is_a?(Integer) && runner["process_id"].positive?
+      unless runner.is_a?(Hash) && valid_digest?(runner["runner_sha256"]) && runner["command"].is_a?(Array) && !runner["command"].empty? && runner["command"].all? do |part|
+        non_empty_string?(part)
+      end && runner["process_id"].is_a?(Integer) && runner["process_id"].positive?
         errors << "#{label} runner provenance is incomplete"
       end
       errors << "#{label} runner provenance mode must be external" unless runner.is_a?(Hash) && runner["mode"] == "external"
@@ -1260,22 +1406,26 @@ module M3Gate
         end
       end
       %w[started_at finished_at].each { |key| errors << "#{label} runner #{key} must be ISO-8601" unless iso8601?(runner && runner[key]) }
-      errors << "#{label} runner must not be the Ruby probe" if Array(runner && runner["command"]).any? { |part| part.to_s.match?(/m3_(?:leader|queue)_probe\.rb\z/) }
+      errors << "#{label} runner must not be the Ruby probe" if Array(runner && runner["command"]).any? do |part|
+        part.to_s.match?(/m3_(?:leader|queue)_probe\.rb\z/)
+      end
       local_runner_sha256 = document.dig("adapter", "runner_sha256")
-      errors << "#{label} runner digest must differ from the local probe" if valid_digest?(local_runner_sha256) && runner.is_a?(Hash) && runner["runner_sha256"] == local_runner_sha256
+      if valid_digest?(local_runner_sha256) && runner.is_a?(Hash) && runner["runner_sha256"] == local_runner_sha256
+        errors << "#{label} runner digest must differ from the local probe"
+      end
       if iso8601?(runner && runner["started_at"]) && iso8601?(runner && runner["finished_at"]) && Time.iso8601(runner["finished_at"]) < Time.iso8601(runner["started_at"])
         errors << "#{label} runner finished before it started"
       end
       processes = chaos["processes"] || chaos["process_observations"]
-      unless processes.is_a?(Array) && !processes.empty?
-        errors << "#{label} must include process observations"
-      else
+      if processes.is_a?(Array) && !processes.empty?
         processes.each_with_index do |process, index|
           unless process.is_a?(Hash) && process["pid"].is_a?(Integer) && process["pid"].positive? && process["start_time"].is_a?(Integer) && process["start_time"].positive? && non_empty_string?(process["generation"]) && process["generation"].include?(":#{process["pid"]}:") && process["observed_exit"] == true && process["exit_status"].is_a?(Integer)
             errors << "#{label} process observation #{index} must include pid, kernel start time, process generation, and exit status"
           end
           validate_process_provenance(process, errors, "#{label} process observation #{index}") if process.is_a?(Hash)
         end
+      else
+        errors << "#{label} must include process observations"
       end
       events = chaos["events"]
       ids = Array(events).filter_map { |event| event.is_a?(Hash) ? event["id"] || event["event"] : nil }
@@ -1299,9 +1449,9 @@ module M3Gate
       errors << "#{label} role is required" unless non_empty_string?(process["role"])
       errors << "#{label} identity is required" unless non_empty_string?(process["identity"])
       command = process["command"]
-      unless command.is_a?(Array) && !command.empty? && command.all? { |part| non_empty_string?(part) }
-        errors << "#{label} command provenance is required"
-      end
+      return if command.is_a?(Array) && !command.empty? && command.all? { |part| non_empty_string?(part) }
+
+      errors << "#{label} command provenance is required"
     end
 
     def validate_chaos_trace_digests(chaos, errors, label)
@@ -1310,53 +1460,61 @@ module M3Gate
       errors << "#{label} raw trace digest is required" unless valid_digest?(raw)
       errors << "#{label} canonical trace digest is required" unless valid_digest?(canonical)
       trace = chaos["trace"]
-      if valid_digest?(canonical) && trace.is_a?(Array)
-        errors << "#{label} canonical trace digest does not match trace" unless canonical_document_digest(trace) == canonical
-      end
+      return unless valid_digest?(canonical) && trace.is_a?(Array)
+
+      errors << "#{label} canonical trace digest does not match trace" unless canonical_document_digest(trace) == canonical
     end
 
     def validate_chaos_leases_and_effects(chaos, errors, label)
       leases = chaos["lease_observations"]
-      unless leases.is_a?(Array) && !leases.empty?
-        errors << "#{label} lease observations are required"
-      else
+      if leases.is_a?(Array) && !leases.empty?
         leases.each_with_index do |observation, index|
-          unless observation.is_a?(Hash) && non_empty_string?(observation["namespace"]) &&
-                 non_empty_string?(observation["name"]) && non_empty_string?(observation["resource_version"]) &&
-                 non_empty_string?(observation["observed_at"])
-            errors << "#{label} lease observation #{index} must include namespace, name, resourceVersion, and timestamp"
-          end
+          next if observation.is_a?(Hash) && non_empty_string?(observation["namespace"]) &&
+                  non_empty_string?(observation["name"]) && non_empty_string?(observation["resource_version"]) &&
+                  non_empty_string?(observation["observed_at"])
+
+          errors << "#{label} lease observation #{index} must include namespace, name, resourceVersion, and timestamp"
         end
+      else
+        errors << "#{label} lease observations are required"
       end
       effect_ids = chaos["effect_ids"]
-      unless effect_ids.is_a?(Array) && !effect_ids.empty? && effect_ids.all? { |value| non_empty_string?(value) }
-        errors << "#{label} effect IDs are required"
-      else
+      if effect_ids.is_a?(Array) && !effect_ids.empty? && effect_ids.all? { |value| non_empty_string?(value) }
         errors << "#{label} effect IDs must be unique" unless effect_ids.length == effect_ids.uniq.length
+      else
+        errors << "#{label} effect IDs are required"
       end
     end
 
     def validate_chaos_components(chaos, errors, label)
       components = chaos["component_runs"]
-      unless components.is_a?(Array) && components.map { |entry| entry.is_a?(Hash) ? entry["component"] : nil }.sort == %w[controller-manager scheduler]
+      unless components.is_a?(Array) && components.map do |entry|
+        entry.is_a?(Hash) ? entry["component"] : nil
+      end.sort == %w[controller-manager scheduler]
         errors << "#{label} must record separate controller-manager and scheduler runs"
         return
       end
       components.each_with_index do |component, index|
         errors << "#{label} component #{index} must pass" unless component["passed"] == true
-        errors << "#{label} component #{index} must record at least two process identities" unless Array(component["process_identities"]).uniq.length >= 2
+        unless Array(component["process_identities"]).uniq.length >= 2
+          errors << "#{label} component #{index} must record at least two process identities"
+        end
         versions = Array(component["lease_resource_versions"])
-        errors << "#{label} component #{index} must record lease resourceVersions" if versions.empty? || versions.any? { |value| !non_empty_string?(value) }
+        errors << "#{label} component #{index} must record lease resourceVersions" if versions.empty? || versions.any? do |value|
+          !non_empty_string?(value)
+        end
         seconds = component["recovery_seconds"]
-        errors << "#{label} component #{index} recovery must be measured within 60 seconds" unless seconds.is_a?(Numeric) && seconds >= 0 && seconds <= 60
+        unless seconds.is_a?(Numeric) && seconds >= 0 && seconds <= 60
+          errors << "#{label} component #{index} recovery must be measured within 60 seconds"
+        end
         errors << "#{label} component #{index} duplicate side effects must be zero" unless component["duplicate_side_effect_count"] == 0
         recovery = component["recovery_observation"]
-        unless recovery.is_a?(Hash) && recovery["restarted_process_alive"] == true && recovery["resource_version_changed"] == true &&
-               recovery["renew_time_changed"] == true && recovery["holder_transition"] == true && recovery["generation_changed"] == true &&
-               non_empty_string?(recovery["process_generation"]) && non_empty_string?(recovery["resource_version_before"]) &&
-               non_empty_string?(recovery["resource_version_after"])
-          errors << "#{label} component #{index} recovery must prove live process generation and Lease resourceVersion/renewTime transition"
-        end
+        next if recovery.is_a?(Hash) && recovery["restarted_process_alive"] == true && recovery["resource_version_changed"] == true &&
+                recovery["renew_time_changed"] == true && recovery["holder_transition"] == true && recovery["generation_changed"] == true &&
+                non_empty_string?(recovery["process_generation"]) && non_empty_string?(recovery["resource_version_before"]) &&
+                non_empty_string?(recovery["resource_version_after"])
+
+        errors << "#{label} component #{index} recovery must prove live process generation and Lease resourceVersion/renewTime transition"
       end
     end
 
@@ -1369,9 +1527,15 @@ module M3Gate
       %w[entries inventory api_mutations api_events provider_events].each do |key|
         errors << "#{label} durable effect journal #{key} inventory is required" unless journal[key].is_a?(Array)
       end
-      errors << "#{label} durable effect journal entry count is invalid" unless integer?(journal["entry_count"]) && journal["entry_count"] == journal["entries"].length
-      errors << "#{label} durable effect journal inventory digest is invalid" unless valid_digest?(journal["inventory_sha256"]) && journal["inventory_sha256"] == canonical_document_digest(journal["inventory"])
-      errors << "#{label} durable effect journal canonical digest is invalid" unless valid_digest?(journal["canonical_sha256"]) && journal["canonical_sha256"] == canonical_document_digest(journal["entries"])
+      unless integer?(journal["entry_count"]) && journal["entry_count"] == journal["entries"].length
+        errors << "#{label} durable effect journal entry count is invalid"
+      end
+      unless valid_digest?(journal["inventory_sha256"]) && journal["inventory_sha256"] == canonical_document_digest(journal["inventory"])
+        errors << "#{label} durable effect journal inventory digest is invalid"
+      end
+      unless valid_digest?(journal["canonical_sha256"]) && journal["canonical_sha256"] == canonical_document_digest(journal["entries"])
+        errors << "#{label} durable effect journal canonical digest is invalid"
+      end
       errors << "#{label} durable effect journal raw digest is required" unless valid_digest?(journal["raw_sha256"])
       errors << "#{label} durable effect journal must report zero duplicate semantic effects" unless journal["duplicate_effect_count"] == 0
       journal["api_mutations"].each_with_index do |entry, index|
@@ -1385,12 +1549,22 @@ module M3Gate
     def validate_workload(document, errors)
       types = Array(document["workload_types"]).map(&:to_s).sort
       operations = Array(document["operations"]).map(&:to_s).sort
-      errors << "workload differential must cover deployment, statefulset, daemonset, job, and cronjob" unless types == REQUIRED_WORKLOAD_TYPES.sort
-      errors << "workload differential must cover rollout, rollback, scale, and delete" unless operations == REQUIRED_WORKLOAD_OPERATIONS.sort
-      errors << "workload differential must execute the production ControllerManagerService" unless document["execution_component"] == "Rubernetes::Bootstrap::ControllerManagerService"
-      errors << "workload differential must execute 20 independent cases" unless document["independent_case_count"] == REQUIRED_WORKLOAD_TYPES.length * REQUIRED_WORKLOAD_OPERATIONS.length
+      unless types == REQUIRED_WORKLOAD_TYPES.sort
+        errors << "workload differential must cover deployment, statefulset, daemonset, job, and cronjob"
+      end
+      unless operations == REQUIRED_WORKLOAD_OPERATIONS.sort
+        errors << "workload differential must cover rollout, rollback, scale, and delete"
+      end
+      unless document["execution_component"] == "Rubernetes::Bootstrap::ControllerManagerService"
+        errors << "workload differential must execute the production ControllerManagerService"
+      end
+      unless document["independent_case_count"] == REQUIRED_WORKLOAD_TYPES.length * REQUIRED_WORKLOAD_OPERATIONS.length
+        errors << "workload differential must execute 20 independent cases"
+      end
       errors << "workload differential stream version must be 1" unless document["stream_version"] == 1
-      errors << "workload differential deadline must be positive" unless document["deadline_seconds"].is_a?(Numeric) && document["deadline_seconds"] > 0
+      unless document["deadline_seconds"].is_a?(Numeric) && document["deadline_seconds"] > 0
+        errors << "workload differential deadline must be positive"
+      end
       errors << "workload differential deadline failure count must be zero" unless document["deadline_failure_count"] == 0
       errors << "workload differential stream mismatch count must be zero" unless document["stream_mismatch_count"] == 0
       cases = document["cases"]
@@ -1402,38 +1576,49 @@ module M3Gate
       end
       errors << "workload differential stream bundle digest is required" unless valid_digest?(document["stream_bundle_sha256"])
       ids = Array(cases).filter_map { |entry| entry.is_a?(Hash) ? entry["id"] : nil }
-      errors << "workload differential case inventory is incomplete" unless ids.sort == expected_ids && ids.uniq.length == expected_ids.length
+      unless ids.sort == expected_ids && ids.uniq.length == expected_ids.length
+        errors << "workload differential case inventory is incomplete"
+      end
       Array(cases).each_with_index do |entry, index|
-        errors << "workload differential case #{index} must pass once from production module" unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1 && entry["measurement_source"] == "production_module"
-        errors << "workload differential case #{index} must include structured local and oracle observables" unless entry.is_a?(Hash) && structured_observable?(entry["actual_observable"]) && structured_observable?(entry["expected_observable"])
-        if entry.is_a?(Hash)
-          errors << "workload differential case #{index} must be independent" unless entry["independent"] == true
-          errors << "workload differential case #{index} must execute through ControllerManagerService" unless entry["execution_component"] == "Rubernetes::Bootstrap::ControllerManagerService"
-          errors << "workload differential case #{index} deadline must match the report" unless entry["deadline_seconds"] == document["deadline_seconds"]
-          errors << "workload differential case #{index} stream digest is required" unless valid_digest?(entry["stream_sha256"])
-          if case_streams.is_a?(Hash) && case_streams[entry["id"].to_s] != entry["stream_sha256"]
-            errors << "workload differential case #{index} stream digest is not bound to its input inventory"
-          end
-          validate_workload_observable(entry["actual_observable"], errors, "workload differential case #{index} actual")
-          validate_workload_observable(entry["expected_observable"], errors, "workload differential case #{index} expected")
-          validate_observable_comparison(entry.merge("expected_sha256" => entry["expected_sha256"], "actual_sha256" => entry["actual_sha256"]), errors, "workload differential case #{index}")
+        unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1 && entry["measurement_source"] == "production_module"
+          errors << "workload differential case #{index} must pass once from production module"
         end
+        unless entry.is_a?(Hash) && structured_observable?(entry["actual_observable"]) && structured_observable?(entry["expected_observable"])
+          errors << "workload differential case #{index} must include structured local and oracle observables"
+        end
+        next unless entry.is_a?(Hash)
+
+        errors << "workload differential case #{index} must be independent" unless entry["independent"] == true
+        unless entry["execution_component"] == "Rubernetes::Bootstrap::ControllerManagerService"
+          errors << "workload differential case #{index} must execute through ControllerManagerService"
+        end
+        unless entry["deadline_seconds"] == document["deadline_seconds"]
+          errors << "workload differential case #{index} deadline must match the report"
+        end
+        errors << "workload differential case #{index} stream digest is required" unless valid_digest?(entry["stream_sha256"])
+        if case_streams.is_a?(Hash) && case_streams[entry["id"].to_s] != entry["stream_sha256"]
+          errors << "workload differential case #{index} stream digest is not bound to its input inventory"
+        end
+        validate_workload_observable(entry["actual_observable"], errors, "workload differential case #{index} actual")
+        validate_workload_observable(entry["expected_observable"], errors, "workload differential case #{index} expected")
+        validate_observable_comparison(
+          entry.merge("expected_sha256" => entry["expected_sha256"],
+                      "actual_sha256" => entry["actual_sha256"]), errors, "workload differential case #{index}"
+        )
       end
       oracle = document["oracle"]
-      unless oracle.is_a?(Hash)
-        errors << "workload differential oracle evidence is incomplete"
-      else
+      if oracle.is_a?(Hash)
         validate_external_runner(oracle, document, errors, "workload oracle")
         errors << "workload oracle comparison count must be 20" unless oracle["comparison_count"] == expected_ids.length
         validate_workload_oracle_provenance(oracle, errors)
         errors << "workload oracle stream bundle digest does not match local input" unless
           oracle.dig("input", "stream_sha256") == document["stream_bundle_sha256"]
         raw_comparisons = oracle["raw_comparisons"]
-        unless raw_comparisons.is_a?(Array) && raw_comparisons.length == expected_ids.length
-          errors << "workload oracle raw comparisons must cover all 20 workload operations"
-        else
+        if raw_comparisons.is_a?(Array) && raw_comparisons.length == expected_ids.length
           raw_ids = raw_comparisons.filter_map { |entry| entry.is_a?(Hash) ? entry["id"] : nil }
-          errors << "workload oracle raw comparison identifiers are incomplete" unless raw_ids.sort == expected_ids && raw_ids.uniq.length == expected_ids.length
+          unless raw_ids.sort == expected_ids && raw_ids.uniq.length == expected_ids.length
+            errors << "workload oracle raw comparison identifiers are incomplete"
+          end
           raw_comparisons.each_with_index do |comparison, index|
             unless comparison.is_a?(Hash) && structured_observable?(comparison["expected_observable"]) &&
                    valid_digest?(comparison["expected_sha256"]) && comparison["passed"] == true &&
@@ -1445,13 +1630,15 @@ module M3Gate
               errors << "workload oracle raw comparison #{index} stream digest is not bound to the local input"
             end
           end
+        else
+          errors << "workload oracle raw comparisons must cover all 20 workload operations"
         end
         comparisons = oracle["comparisons"]
-        unless comparisons.is_a?(Array) && comparisons.length == expected_ids.length
-          errors << "workload oracle comparisons must cover all 20 workload operations"
-        else
+        if comparisons.is_a?(Array) && comparisons.length == expected_ids.length
           comparison_ids = comparisons.filter_map { |entry| entry.is_a?(Hash) ? entry["id"] : nil }
-          errors << "workload oracle comparison identifiers are incomplete" unless comparison_ids.sort == expected_ids && comparison_ids.uniq.length == expected_ids.length
+          unless comparison_ids.sort == expected_ids && comparison_ids.uniq.length == expected_ids.length
+            errors << "workload oracle comparison identifiers are incomplete"
+          end
           comparisons.each_with_index do |comparison, index|
             validate_observable_comparison(comparison, errors, "workload oracle comparison #{index}")
             if comparison.is_a?(Hash) && case_streams.is_a?(Hash) &&
@@ -1459,9 +1646,15 @@ module M3Gate
               errors << "workload oracle comparison #{index} stream digest is not bound to the local input"
             end
           end
+        else
+          errors << "workload oracle comparisons must cover all 20 workload operations"
         end
+      else
+        errors << "workload differential oracle evidence is incomplete"
       end
-      errors << "workload differential mismatch count must be zero" unless document["difference_count"] == 0 && document["workload_mismatch_count"] == 0
+      return if document["difference_count"] == 0 && document["workload_mismatch_count"] == 0
+
+      errors << "workload differential mismatch count must be zero"
     end
 
     def validate_workload_observable(observable, errors, label)
@@ -1473,7 +1666,9 @@ module M3Gate
         errors << "#{label} must include #{key}" unless observable.key?(key)
       end
       deadline = observable["deadline"]
-      errors << "#{label} deadline must be met" unless deadline.is_a?(Hash) && deadline["met"] == true && deadline["seconds"].is_a?(Numeric) && deadline["seconds"] > 0
+      unless deadline.is_a?(Hash) && deadline["met"] == true && deadline["seconds"].is_a?(Numeric) && deadline["seconds"] > 0
+        errors << "#{label} deadline must be met"
+      end
       errors << "#{label} request trace must be structured" unless observable["request_trace"].is_a?(Array)
     end
 
@@ -1484,7 +1679,9 @@ module M3Gate
         errors << "workload oracle input raw and canonical digests are required"
       end
       case_streams = input.is_a?(Hash) ? input["case_stream_sha256"] : nil
-      unless case_streams.is_a?(Hash) && case_streams.keys.map(&:to_s).sort == REQUIRED_WORKLOAD_TYPES.product(REQUIRED_WORKLOAD_OPERATIONS).map { |type, operation| "#{type}:#{operation}" }.sort &&
+      unless case_streams.is_a?(Hash) && case_streams.keys.map(&:to_s).sort == REQUIRED_WORKLOAD_TYPES.product(REQUIRED_WORKLOAD_OPERATIONS).map { |type, operation|
+        "#{type}:#{operation}"
+      }.sort &&
              case_streams.values.all? { |digest| valid_digest?(digest) }
         errors << "workload oracle input case stream digest binding is incomplete"
       end
@@ -1494,7 +1691,9 @@ module M3Gate
       raw_comparisons = oracle["raw_comparisons"] || oracle["comparisons"]
       if output.is_a?(Hash) && valid_digest?(output["comparisons_sha256"])
         comparisons_digest = canonical_document_digest(raw_comparisons)
-        errors << "workload oracle output comparisons digest does not match comparisons" unless comparisons_digest == output["comparisons_sha256"]
+        unless comparisons_digest == output["comparisons_sha256"]
+          errors << "workload oracle output comparisons digest does not match comparisons"
+        end
       else
         errors << "workload oracle output comparisons digest is required"
       end
@@ -1508,7 +1707,9 @@ module M3Gate
       unless build.is_a?(Hash) && build["source_build"] == true && valid_digest?(build["binary_sha256"])
         errors << "workload oracle controller-manager source build provenance is incomplete"
       end
-      unless image.is_a?(Hash) && non_empty_string?(image["kube_apiserver"]) && non_empty_string?(image["etcd"]) && image["network_isolated"] == true && image.dig("controller_manager", "used") == false
+      unless image.is_a?(Hash) && non_empty_string?(image["kube_apiserver"]) && non_empty_string?(image["etcd"]) && image["network_isolated"] == true && image.dig(
+        "controller_manager", "used"
+      ) == false
         errors << "workload oracle image provenance is incomplete"
       end
       controller_process = runner.is_a?(Hash) ? runner.dig("cluster", "controller_manager") : nil
@@ -1527,16 +1728,25 @@ module M3Gate
       errors << "queue/informer property identifiers must be unique" unless ids.length == ids.uniq.length
       errors << "queue/informer property inventory is incomplete" unless ids.sort == REQUIRED_QUEUE_PROPERTIES.sort
       properties.each_with_index do |entry, index|
-        errors << "queue/informer property #{index} must pass once" unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1
-        errors << "queue/informer property #{index} must record production module" unless entry.is_a?(Hash) && entry["measurement_source"] == "production_module"
+        unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1
+          errors << "queue/informer property #{index} must pass once"
+        end
+        unless entry.is_a?(Hash) && entry["measurement_source"] == "production_module"
+          errors << "queue/informer property #{index} must record production module"
+        end
       end
-      validate_process_chaos(document, errors, "queue/informer process chaos", %w[process_kill duplicate_suppression out_of_order_delivery watch_reconnect resync])
-      %w[failure_count duplicate_loss_count out_of_order_count reconnect_loss_count resync_loss_count unexpected_skip_count unclassified_count].each { |key| errors << "queue/informer #{key} must be zero" unless document[key] == 0 }
+      validate_process_chaos(document, errors, "queue/informer process chaos",
+                             %w[process_kill duplicate_suppression out_of_order_delivery watch_reconnect resync])
+      %w[failure_count duplicate_loss_count out_of_order_count reconnect_loss_count resync_loss_count unexpected_skip_count
+         unclassified_count].each do |key|
+        errors << "queue/informer #{key} must be zero" unless document[key] == 0
+      end
     end
 
     def validate_result_counts(manifest, artifacts, subjects, errors)
       counts = manifest["result_counts"]
       return unless counts.is_a?(Hash)
+
       expected = {
         "commands" => manifest.fetch("commands", []).length,
         "command_failures" => manifest.fetch("commands", []).count { |command| command["exit_status"] != 0 },

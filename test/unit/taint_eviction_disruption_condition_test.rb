@@ -27,13 +27,16 @@ class TaintEvictionDisruptionConditionTest < Minitest::Test
   def test_node_taint_adds_condition_then_deletes
     result = Controller::TaintEvictionController.new.plan(node("example.com/evict"), pods: [pod], now: NOW)
     status, delete = result.operations
+
     assert_equal %i[status_update delete], result.operations.map(&:action)
     condition = status.patch["conditions"].find { |entry| entry["type"] == "DisruptionTarget" }
+
     assert_equal({"type" => "DisruptionTarget", "status" => "True", "reason" => "DeletionByTaintManager",
                   "message" => "Taint manager: deleting due to NoExecute taint", "observedGeneration" => 3,
                   "lastProbeTime" => nil, "lastTransitionTime" => "2026-09-23T12:00:00Z"}, condition)
     assert_nil delete.patch
     event = result.events.first
+
     assert_equal "Normal", event["type"]
     assert_equal "TaintManagerEviction", event["reason"]
     assert_equal "Marking for deletion Pod ns/p", event["message"]
@@ -46,7 +49,8 @@ class TaintEvictionDisruptionConditionTest < Minitest::Test
                 "message" => "Taint manager: deleting due to NoExecute taint", "observedGeneration" => 3,
                 "lastTransitionTime" => "2026-09-23T11:59:00Z"}
     result = Controller::TaintEvictionController.new.plan(node("example.com/evict"), pods: [pod(conditions: [existing])],
-                                                          now: NOW)
+                                                                                     now: NOW)
+
     assert_equal %i[delete], result.operations.map(&:action)
   end
 
@@ -54,8 +58,9 @@ class TaintEvictionDisruptionConditionTest < Minitest::Test
     existing = {"type" => "DisruptionTarget", "status" => "True", "reason" => "EvictionByEvictionAPI",
                 "lastTransitionTime" => "2026-09-23T11:59:00Z"}
     result = Controller::TaintEvictionController.new.plan(node("example.com/evict"), pods: [pod(conditions: [existing])],
-                                                          now: NOW)
+                                                                                     now: NOW)
     condition = result.operations.first.patch["conditions"].first
+
     assert_equal "DeletionByTaintManager", condition["reason"]
     assert_equal "2026-09-23T11:59:00Z", condition["lastTransitionTime"]
   end
@@ -63,8 +68,9 @@ class TaintEvictionDisruptionConditionTest < Minitest::Test
   def test_device_taint_uses_device_reason_and_uid_precondition
     taint = {"key" => "resource.kubernetes.io/broken", "effect" => "NoExecute", "timeAdded" => "2026-09-23T11:00:00Z"}
     result = Controller::DeviceTaintEvictionController.new.plan(node("unrelated"), pods: [pod], device_taints: [taint],
-                                                                now: NOW)
+                                                                                   now: NOW)
     status, delete = result.operations
+
     assert_equal "DeletionByDeviceTaintManager", status.patch["conditions"].first["reason"]
     assert_equal "Device Taint manager: deleting due to NoExecute taint", status.patch["conditions"].first["message"]
     assert_equal({"preconditions" => {"uid" => "u-1"}}, delete.patch)

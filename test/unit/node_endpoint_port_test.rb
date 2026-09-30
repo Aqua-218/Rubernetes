@@ -53,7 +53,8 @@ class NodeEndpointPortTest < Minitest::Test
 
   # The agent must publish the field the API server actually stores.
   def test_the_agent_publishes_the_capitalised_field
-    source = File.read(File.expand_path("../../../lib/rubernetes/node/agent.rb", __FILE__))
+    source = File.read(File.expand_path("../../lib/rubernetes/node/agent.rb", __dir__))
+
     assert_includes source, '"kubeletEndpoint" => {"Port" =>',
                     "the node agent must publish daemonEndpoints.kubeletEndpoint.Port"
   end

@@ -24,12 +24,12 @@ class CSRApprovalSubresourceTest < Minitest::Test
     @store = Rubernetes::Storage::MemoryStore.new(history_revisions: nil, history_seconds: nil)
     @registry = API::Registry.new(resources: [], defaults: false)
     @registry.register(API::Resource.new(
-                         group: "certificates.k8s.io", version: "v1",
-                         resource: "certificatesigningrequests", kind: "CertificateSigningRequest",
-                         scope: :cluster,
-                         subresources: [{resource: "status", verbs: %w[get patch update]},
-                                        {resource: "approval", verbs: %w[get patch update]}]
-                       ))
+      group: "certificates.k8s.io", version: "v1",
+      resource: "certificatesigningrequests", kind: "CertificateSigningRequest",
+      scope: :cluster,
+      subresources: [{resource: "status", verbs: %w[get patch update]},
+                     {resource: "approval", verbs: %w[get patch update]}]
+    ))
     @server = API::Server.new(registry: @registry, store: @store)
     create_csr
   end
@@ -55,6 +55,7 @@ class CSRApprovalSubresourceTest < Minitest::Test
                            "metadata" => {"name" => "probe"},
                            "spec" => {"request" => csr_request, "signerName" => "kubernetes.io/kube-apiserver-client",
                                       "usages" => ["client auth"]}})
+
     assert_equal(201, response.status, response.body.inspect)
   end
 
@@ -66,6 +67,7 @@ class CSRApprovalSubresourceTest < Minitest::Test
   def patch_approval(body = approval_patch)
     response = call("PATCH", "/apis/certificates.k8s.io/v1/certificatesigningrequests/probe/approval",
                     body: body, content_type: "application/merge-patch+json")
+
     assert_equal(200, response.status, response.body.inspect)
     response.body
   end
@@ -104,8 +106,8 @@ class CSRApprovalSubresourceTest < Minitest::Test
 
   def test_an_update_to_approval_applies_the_conditions
     current = JSON.parse(JSON.generate(
-                           call("GET", "/apis/certificates.k8s.io/v1/certificatesigningrequests/probe/approval").body
-                         ))
+      call("GET", "/apis/certificates.k8s.io/v1/certificatesigningrequests/probe/approval").body
+    ))
     current["status"] = {"conditions" => [{"type" => "Approved", "status" => "True", "reason" => "e2e"}]}
 
     response = call("PUT", "/apis/certificates.k8s.io/v1/certificatesigningrequests/probe/approval", body: current)

@@ -68,10 +68,10 @@ module M3WatchControl
       @queue.shutdown
     end
 
-    def method_missing(name, *arguments, **keywords, &block)
+    def method_missing(name, *, **keywords, &)
       return super unless @queue.respond_to?(name)
 
-      @queue.public_send(name, *arguments, **keywords, &block)
+      @queue.public_send(name, *, **keywords, &)
     end
 
     def respond_to_missing?(name, include_private = false)
@@ -117,6 +117,7 @@ module M3WatchControl
   end
 
   module_function :exercise_queue
+
   module_function
 
   class RealHTTPFaultSource
@@ -138,7 +139,7 @@ module M3WatchControl
       query = {}
       query["resourceVersion"] = resource_version.to_s unless resource_version.nil?
       @client.get(descriptor.resource, namespace: namespace, api_version: descriptor.api_version,
-                  query: query.empty? ? nil : query)
+                                       query: query.empty? ? nil : query)
     end
 
     def watch(resource:, namespace: @namespace, resource_version: nil, **_options)
@@ -165,18 +166,16 @@ module M3WatchControl
         end
       else
         producer = Thread.new do
-          begin
-            sleep 0.03
-            if fault == "out_of_order"
-              patch_target("#{fault}-first-#{SecureRandom.hex(4)}")
-              sleep 0.01
-              patch_target("#{fault}-second-#{SecureRandom.hex(4)}")
-            else
-              patch_target("#{fault}-#{SecureRandom.hex(4)}")
-            end
-          rescue StandardError => error
-            @producer_error = error
+          sleep 0.03
+          if fault == "out_of_order"
+            patch_target("#{fault}-first-#{SecureRandom.hex(4)}")
+            sleep 0.01
+            patch_target("#{fault}-second-#{SecureRandom.hex(4)}")
+          else
+            patch_target("#{fault}-#{SecureRandom.hex(4)}")
           end
+        rescue StandardError => error
+          @producer_error = error
         end
         events = @client.watch_events(
           descriptor.resource,
@@ -190,11 +189,14 @@ module M3WatchControl
         )
         producer.join
         raise @producer_error if @producer_error
+
         transformed = transform(events, fault)
         @observations[fault] = {
           "delivered_event_count" => transformed.length,
           "delivered_resource_versions" => transformed.filter_map { |event| event.dig("object", "metadata", "resourceVersion") },
-          "unique_delivered_resource_versions" => transformed.filter_map { |event| event.dig("object", "metadata", "resourceVersion") }.uniq,
+          "unique_delivered_resource_versions" => transformed.filter_map do |event|
+            event.dig("object", "metadata", "resourceVersion")
+          end.uniq,
           "delivered_bookmark_count" => transformed.count { |event| event["type"].to_s == "BOOKMARK" },
           "real_http_event_count" => events.length
         }
@@ -251,6 +253,7 @@ module M3WatchControl
     client = Rubernetes::Client::KubernetesClient.new(server: endpoint)
     namespace = request.dig("target", "namespace").to_s
     raise ArgumentError, "watch target namespace is required" if namespace.empty?
+
     target = create_target(client, namespace, request.dig("component").to_s)
     faults = Array(request["watch_faults"]).map(&:to_s)
     source = RealHTTPFaultSource.new(client: client, namespace: namespace, target: target, faults: faults)
@@ -319,15 +322,16 @@ module M3WatchControl
       "raw_trace_sha256" => Digest::SHA256.hexdigest(JSON.generate(events: events, properties: properties)),
       "observation" => {
         "endpoint" => endpoint,
-        "production_classes" => %w[Rubernetes::Watch::Reflector Rubernetes::Watch::Informer Rubernetes::Watch::DeltaFIFO Rubernetes::Watch::Indexer Rubernetes::Watch::WorkQueue],
+        "production_classes" => %w[Rubernetes::Watch::Reflector Rubernetes::Watch::Informer Rubernetes::Watch::DeltaFIFO
+                                   Rubernetes::Watch::Indexer Rubernetes::Watch::WorkQueue],
         "indexer_size" => informer.indexer.size,
         "handler_counters" => counters,
         "queue" => {"class" => Rubernetes::Watch::WorkQueue.name,
-                     "operations" => queue.operations,
-                     "retry_delays" => queue.retry_delays,
-                     "get_count" => queue.operations.count { |entry| entry["operation"] == "get" },
-                     "done_count" => queue.operations.count { |entry| entry["operation"] == "done" },
-                     "retry_count" => queue.operations.count { |entry| entry["operation"] == "retry" }}
+                    "operations" => queue.operations,
+                    "retry_delays" => queue.retry_delays,
+                    "get_count" => queue.operations.count { |entry| entry["operation"] == "get" },
+                    "done_count" => queue.operations.count { |entry| entry["operation"] == "done" },
+                    "retry_count" => queue.operations.count { |entry| entry["operation"] == "retry" }}
       }
     }
     JSON.pretty_generate(result)
@@ -394,7 +398,7 @@ module M3WatchControl
     Array(events).count { |event| event["id"] == fault && event["passed"] != true }
   end
 
-  def property_results(events, source, counters)
+  def property_results(events, source, _counters)
     event_by_id = events.to_h { |event| [event.fetch("id"), event] }
     queue = events.filter_map { |event| event.dig("observation", "queue_observation") }.first || {}
     queue_operations = Array(queue["operations"])
@@ -402,7 +406,9 @@ module M3WatchControl
     queue_dones = queue_operations.count { |entry| entry["operation"] == "done" }
     queue_retries = queue_operations.count { |entry| entry["operation"] == "retry" }
     queue_contract = queue["failure_injected"] == true && queue_gets.positive? && queue_dones.positive? &&
-                     queue_retries.positive? && queue_operations.any? { |entry| entry["operation"] == "get" && entry["inflight"].to_i.positive? } &&
+                     queue_retries.positive? && queue_operations.any? do |entry|
+                                                  entry["operation"] == "get" && entry["inflight"].to_i.positive?
+                                                end &&
                      Array(queue["retry_delays"]).all? { |delay| delay.is_a?(Numeric) && delay.positive? }
     [
       property(

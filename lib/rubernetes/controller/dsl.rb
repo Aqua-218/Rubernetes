@@ -42,9 +42,7 @@ module Rubernetes
         unless %i[owner_reference label selector all].include?(relationship)
           raise InvalidWatchError, "unsupported watch relationship #{relationship.inspect}"
         end
-        if index && !index.is_a?(String) && !index.is_a?(Symbol)
-          raise InvalidWatchError, "watch index must be a static name"
-        end
+        raise InvalidWatchError, "watch index must be a static name" if index && !index.is_a?(String) && !index.is_a?(Symbol)
 
         # `index` is the public shorthand used by the DSL specification.  It
         # used to be accepted and then discarded, leaving generated wiring
@@ -98,6 +96,7 @@ module Rubernetes
 
       def build(implementation: nil)
         raise MissingReconcileError, "controller #{@name} must declare reconcile" unless @reconcile
+
         definition = ControllerDefinition.new(
           name: @name,
           kind: @kind,
@@ -122,6 +121,7 @@ module Rubernetes
         if scope && scope.to_sym != descriptor.scope
           raise ScopeMismatchError, "scope #{scope.inspect} conflicts with #{descriptor.identifier} (#{descriptor.scope})"
         end
+
         @registry.validate_descriptor!(descriptor)
         descriptor
       end
@@ -188,8 +188,8 @@ module Rubernetes
     end
 
     class << self
-      def controller(name, registry: default_registry, kind: nil, implementation: nil, &block)
-        DSL.controller(name, registry: registry, kind: kind, implementation: implementation, &block)
+      def controller(name, registry: default_registry, kind: nil, implementation: nil, &)
+        DSL.controller(name, registry: registry, kind: kind, implementation: implementation, &)
       end
 
       alias define controller

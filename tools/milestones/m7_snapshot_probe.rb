@@ -41,7 +41,10 @@ module M7SnapshotProbe
       ["vmstate_bit_flip", -> { flip_byte(base.vmstate_path, 64) }],
       ["vmstate_truncated", -> { File.truncate(base.vmstate_path, File.size(base.vmstate_path) / 2) }],
       ["mem_truncated", -> { File.truncate(base.mem_path, File.size(base.mem_path) - 4096) }],
-      ["vmstate_garbage_resigned", -> { File.binwrite(base.vmstate_path, "\x00" * File.size(base.vmstate_path)); resign_manifest(base) }],
+      ["vmstate_garbage_resigned", lambda {
+        File.binwrite(base.vmstate_path, "\x00" * File.size(base.vmstate_path))
+        resign_manifest(base)
+      }],
       ["manifest_artifact_mismatch", lambda {
         manifest = JSON.parse(File.read(File.join(base.directory, "manifest.json")))
         manifest["artifact_digest"] = "0" * 64
@@ -77,7 +80,8 @@ module M7SnapshotProbe
       FileUtils.cp_r(pristine.directory, backup)
       outcome, pod = restore_attempt(runtime, network, "snapshot-pristine")
       session = pod && pod["session"]
-      cases << {"id" => "pristine_restore", "outcome" => outcome, "restored_from" => session&.base&.id, "passed" => outcome == "started" && session&.base&.id == base_id}
+      cases << {"id" => "pristine_restore", "outcome" => outcome, "restored_from" => session&.base&.id,
+                "passed" => outcome == "started" && session&.base&.id == base_id}
       S.stop_pod(runtime, network, pod) if pod
       corpus(pristine).each do |name, damage|
         FileUtils.rm_rf(pristine.directory)
@@ -88,9 +92,7 @@ module M7SnapshotProbe
         vmms = `pgrep -x firecracker`.split.length
         live_identities = runtime.identity_ledger.live.length
         resources = runtime.adapter.list_resources
-        if pod
-          S.stop_pod(runtime, network, pod)
-        end
+        S.stop_pod(runtime, network, pod) if pod
         cases << {"id" => name, "outcome" => outcome, "vmm_processes_after" => vmms, "live_identities_after" => live_identities, "resources_after" => resources,
                   "ledger_records_added" => runtime.identity_ledger.all.length - sandbox_ids_before,
                   "passed" => outcome != "started" && vmms.zero? && live_identities.zero? && resources.empty?}

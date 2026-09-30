@@ -18,8 +18,8 @@ class RuntimeResourceLedgerPropertyTest < Minitest::Test
 
     1_000.times do |index|
       operation = ledger.begin_operation(request_id: "cycle-#{index}", operation_id: "cycle-#{index}",
-                                          action: "cycle", target_id: "sandbox-#{index}", owner: "owner-#{index}",
-                                          config_digest: Rubernetes::Runtime::Canonical.digest(index: index))
+                                         action: "cycle", target_id: "sandbox-#{index}", owner: "owner-#{index}",
+                                         config_digest: Rubernetes::Runtime::Canonical.digest(index: index))
       ledger.transition(operation_id: operation.id, to: "Validated")
       ledger.transition(operation_id: operation.id, to: "ImagePinned")
       ledger.transition(operation_id: operation.id, to: "WorkspaceAllocated")

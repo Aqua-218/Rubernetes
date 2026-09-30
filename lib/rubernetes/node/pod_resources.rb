@@ -101,9 +101,21 @@ module Rubernetes
         end
         return self unless pid
 
-        @stdin&.close rescue nil
-        Process.kill(:TERM, pid) rescue nil
-        Process.wait(pid) rescue nil
+        begin
+          @stdin&.close
+        rescue StandardError
+          nil
+        end
+        begin
+          Process.kill(:TERM, pid)
+        rescue StandardError
+          nil
+        end
+        begin
+          Process.wait(pid)
+        rescue StandardError
+          nil
+        end
         self
       end
 
@@ -143,7 +155,7 @@ module Rubernetes
         memory = @container_manager.respond_to?(:memory_manager) ? @container_manager.memory_manager : nil
         if memory.respond_to?(:allocatable_memory)
           result["memory"] = Array(memory.allocatable_memory).map do |block|
-            block = block.respond_to?(:to_h) ? block.to_h : block
+            block = block.to_h if block.respond_to?(:to_h)
             {"memory_type" => block["type"], "size" => block["size"],
              "topology" => {"nodes" => Array(block["numaAffinity"]).map { |id| {"ID" => id} }}}
           end
@@ -212,12 +224,12 @@ module Rubernetes
         memory = @container_manager.respond_to?(:memory_manager) ? @container_manager.memory_manager : nil
         if memory.respond_to?(:memory)
           result["memory"] = Array(memory.memory(uid, name)).map do |block|
-            {"memory_type" => block.type, "size" => block.size, "topology" => {"nodes" => Array(block.numa_affinity).map { |id| {"ID" => id} }}}
+            {"memory_type" => block.type, "size" => block.size, "topology" => {"nodes" => Array(block.numa_affinity).map do |id|
+              {"ID" => id}
+            end}}
           end
         end
-        if @dra_manager.respond_to?(:container_claims)
-          result["dynamic_resources"] = Array(@dra_manager.container_claims(pod, container))
-        end
+        result["dynamic_resources"] = Array(@dra_manager.container_claims(pod, container)) if @dra_manager.respond_to?(:container_claims)
         result
       end
     end

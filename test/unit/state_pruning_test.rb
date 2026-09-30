@@ -42,6 +42,7 @@ class StatePruningTest < Minitest::Test
     state = interface.instance_variable_get(:@state)
 
     removed = state["operations"].values.count { |o| o["state"] == "removed" }
+
     assert_equal Rubernetes::Network::Interface::RETAINED_REMOVED_OPERATIONS, removed
     assert state["operations"].key?("live"), "a live operation is never pruned"
     assert_equal "live", state["requests"]["req-live"]
@@ -81,7 +82,7 @@ class StatePruningTest < Minitest::Test
     lifecycle.send(:forget_terminated_probe_and_restart_state, record)
 
     assert_equal ["cid-other"], probes.registered, "only the dead Pod's probes are dropped"
-    assert_equal ["alive/app"], restarts.all.map { |entry| entry["key"] || entry[:key] }
+    assert_equal(["alive/app"], restarts.all.map { |entry| entry["key"] || entry[:key] })
   end
 
   # A Pod whose cleanup failed still owns resources the next sync must retry,

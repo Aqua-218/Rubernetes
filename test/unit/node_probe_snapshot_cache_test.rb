@@ -20,15 +20,18 @@ class NodeProbeSnapshotCacheTest < Minitest::Test
     first = probes.snapshot
 
     second = probes.snapshot
+
     assert_same first.dig("states", "c1"), second.dig("states", "c1")
 
     probes.send(:apply_result, "c1", "liveness", false, "Failure", "boom", Time.at(1).utc, action: "exec", deferred: false)
     third = probes.snapshot
+
     refute_same second.dig("states", "c1"), third.dig("states", "c1")
     assert_equal 1, third.dig("states", "c1", "liveness", "failure_count")
     assert_same second.dig("states", "c2"), third.dig("states", "c2")
 
     probes.unregister("c2")
+
     refute probes.snapshot.fetch("states").key?("c2")
   end
 end

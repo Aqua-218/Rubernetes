@@ -55,6 +55,7 @@ class EventStorageAliasTest < Minitest::Test
     assert_equal(201, call("POST", "/apis/events.k8s.io/v1/namespaces/default/events", new_event("event-test")).status)
 
     fetched = call("GET", "/api/v1/namespaces/default/events/event-test")
+
     assert_equal(200, fetched.status)
     assert_equal("v1", fetched.body.fetch("apiVersion"))
     assert_equal("This is event-test", fetched.body.fetch("message"))
@@ -68,6 +69,7 @@ class EventStorageAliasTest < Minitest::Test
     assert_equal(201, call("POST", "/api/v1/namespaces/default/events", core_event("core-event")).status)
 
     fetched = call("GET", "/apis/events.k8s.io/v1/namespaces/default/events/core-event")
+
     assert_equal(200, fetched.status)
     assert_equal("events.k8s.io/v1", fetched.body.fetch("apiVersion"))
     assert_equal("core note", fetched.body.fetch("note"))
@@ -84,6 +86,7 @@ class EventStorageAliasTest < Minitest::Test
     call("POST", "/apis/events.k8s.io/v1/namespaces/default/events", new_event("other-event", controller: "elsewhere"))
 
     listed = call("GET", "/api/v1/namespaces/default/events?fieldSelector=source%3Dtest-controller")
+
     assert_equal(200, listed.status)
     assert_equal(["event-test"], listed.body.fetch("items").map { |item| item.dig("metadata", "name") })
     # List items carry the core shape, not the one they were written in.
@@ -94,6 +97,7 @@ class EventStorageAliasTest < Minitest::Test
     call("POST", "/api/v1/namespaces/default/events", core_event("core-event"))
 
     listed = call("GET", "/apis/events.k8s.io/v1/namespaces/default/events?fieldSelector=reportingController%3Dcore-controller")
+
     assert_equal(200, listed.status)
     assert_equal(["core-event"], listed.body.fetch("items").map { |item| item.dig("metadata", "name") })
   end
@@ -103,9 +107,9 @@ class EventStorageAliasTest < Minitest::Test
     call("POST", "/api/v1/namespaces/default/events", core_event("core-event"))
 
     core_names = call("GET", "/api/v1/namespaces/default/events").body.fetch("items")
-                                                                  .map { |item| item.dig("metadata", "name") }
+      .map { |item| item.dig("metadata", "name") }
     new_names = call("GET", "/apis/events.k8s.io/v1/namespaces/default/events").body.fetch("items")
-                                                                              .map { |item| item.dig("metadata", "name") }
+      .map { |item| item.dig("metadata", "name") }
 
     assert_equal(%w[core-event event-test], core_names.sort)
     assert_equal(core_names.sort, new_names.sort)
@@ -122,11 +126,12 @@ class EventStorageAliasTest < Minitest::Test
     call("POST", "/apis/events.k8s.io/v1/namespaces/default/events", new_event("event-test"))
 
     patched = @server.call(API::Request.new(
-                             method: "PATCH",
-                             path: "/apis/events.k8s.io/v1/namespaces/default/events/event-test",
-                             headers: {"content-type" => "application/merge-patch+json"},
-                             body: {"note" => "updated note"}
-                           ))
+      method: "PATCH",
+      path: "/apis/events.k8s.io/v1/namespaces/default/events/event-test",
+      headers: {"content-type" => "application/merge-patch+json"},
+      body: {"note" => "updated note"}
+    ))
+
     assert_equal(200, patched.status)
     assert_equal("updated note", patched.body.fetch("note"))
     assert_equal("updated note", call("GET", "/api/v1/namespaces/default/events/event-test").body.fetch("message"))

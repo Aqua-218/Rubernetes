@@ -37,8 +37,8 @@ class ConsensusWALTest < Minitest::Test
     def close = @inner.close
   end
 
-  def with_dir
-    Dir.mktmpdir("wal-test") { |dir| yield dir }
+  def with_dir(&)
+    Dir.mktmpdir("wal-test", &)
   end
 
   def test_records_survive_reopen_and_are_checksummed
@@ -51,6 +51,7 @@ class ConsensusWALTest < Minitest::Test
       wal.close
 
       reopened = C::WAL.new(path)
+
       assert_equal 3, reopened.records.length
       assert_equal({"term" => 3, "voted_for" => "n2"}, reopened.records.first.payload)
       assert_equal 2, reopened.records.last.payload["index"]
@@ -69,6 +70,7 @@ class ConsensusWALTest < Minitest::Test
       wal.close
 
       reopened = C::WAL.new(path)
+
       assert_equal command, reopened.records.last.payload["command"]
       refute reopened.recovery_report.truncated
     end
@@ -104,6 +106,7 @@ class ConsensusWALTest < Minitest::Test
 
       assert_raises(C::TornWAL) { C::WAL.new(path) }
       recovered = C::WAL.new(path, recover_torn_tail: true)
+
       assert_equal 1, recovered.records.length
       assert recovered.recovery_report.truncated
       assert_equal 4 - 4 + (C::WAL::RECORD_HEADER_BYTES + C::WAL.encode_record(C::WAL::TYPE_ENTRY, {"index" => 2, "term" => 1, "command" => {"a" => 2}}).bytesize - C::WAL::RECORD_HEADER_BYTES) - 4,
@@ -111,6 +114,7 @@ class ConsensusWALTest < Minitest::Test
       # The file is now clean and appendable.
       recovered.append([C::WAL::TYPE_ENTRY, {"index" => 2, "term" => 1, "command" => {"a" => 3}}])
       recovered.close
+
       assert_equal 2, C::WAL.new(path).records.length
     end
   end
@@ -133,7 +137,7 @@ class ConsensusWALTest < Minitest::Test
         wal.append([C::WAL::TYPE_HARD_STATE, {"term" => 1, "voted_for" => nil}])
         device.public_send("#{fault}=", true)
         assert_raises(klass) { wal.append([C::WAL::TYPE_ENTRY, {"index" => 1, "term" => 1, "command" => {}}]) }
-        assert wal.failed?
+        assert_predicate wal, :failed?
         device.public_send("#{fault}=", false)
         assert_raises(C::StorageFailed) { wal.append([C::WAL::TYPE_ENTRY, {"index" => 1, "term" => 1, "command" => {}}]) }
         # A short write leaves a torn tail that recovery removes; a failed
@@ -145,6 +149,7 @@ class ConsensusWALTest < Minitest::Test
         else
           assert_equal 1, reopened.records.length
         end
+
         assert_equal fault == :short_write, reopened.recovery_report.truncated
       end
     end

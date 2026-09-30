@@ -38,9 +38,9 @@ module Rubernetes
         O_CREAT = Openat2::O_CREAT
         O_EXCL = Openat2::O_EXCL
         RESOLVE = Openat2::RESOLVE_BENEATH |
-          Openat2::RESOLVE_NO_SYMLINKS |
-          Openat2::RESOLVE_NO_MAGICLINKS |
-          Openat2::RESOLVE_NO_XDEV
+                  Openat2::RESOLVE_NO_SYMLINKS |
+                  Openat2::RESOLVE_NO_MAGICLINKS |
+                  Openat2::RESOLVE_NO_XDEV
 
         LIBC = Fiddle::Handle::DEFAULT
         OPENAT = Fiddle::Function.new(
@@ -82,7 +82,8 @@ module Rubernetes
           Fiddle::Handle::DEFAULT["fchown"], [Fiddle::TYPE_INT, Fiddle::TYPE_INT, Fiddle::TYPE_INT], Fiddle::TYPE_INT
         )
         FCHOWNAT = Fiddle::Function.new(
-          Fiddle::Handle::DEFAULT["fchownat"], [Fiddle::TYPE_INT, Fiddle::TYPE_VOIDP, Fiddle::TYPE_INT, Fiddle::TYPE_INT, Fiddle::TYPE_INT], Fiddle::TYPE_INT
+          Fiddle::Handle::DEFAULT["fchownat"], [Fiddle::TYPE_INT, Fiddle::TYPE_VOIDP, Fiddle::TYPE_INT, Fiddle::TYPE_INT,
+                                                Fiddle::TYPE_INT], Fiddle::TYPE_INT
         )
         AT_SYMLINK_NOFOLLOW = 0x100
 
@@ -95,7 +96,6 @@ module Rubernetes
           rescue IOError, SystemCallError
             false
           end
-
         end
 
         attr_reader :root
@@ -254,6 +254,7 @@ module Rubernetes
             if expected_identity && identity_at(parent.fd, name, relative) != expected_identity
               raise UnsafePath, "rootfs entry identity changed before removal"
             end
+
             remove_at(parent.fd, name, relative)
           end
         rescue Linux::Error => error
@@ -331,7 +332,7 @@ module Rubernetes
 
         def probe_openat2!
           handle = @resolver.open(".", flags: O_PATH | O_DIRECTORY | O_CLOEXEC, resolve: RESOLVE,
-                                  resource_id: "rootfs:openat2-probe")
+                                       resource_id: "rootfs:openat2-probe")
           handle.close
         rescue Openat2::Unsupported, Openat2::UnsafePath, Linux::Error => error
           raise Unsupported.new("openat2 rootfs resolution is unavailable: #{error.message}", cause: error), cause: error
@@ -346,7 +347,7 @@ module Rubernetes
           return Directory.new(fd: @root_io.fileno, relative: "", owned: false) if value.empty?
 
           handle = @resolver.open(value, flags: O_RDONLY | O_DIRECTORY | O_CLOEXEC, resolve: RESOLVE,
-                                  resource_id: "rootfs:directory:#{value}")
+                                         resource_id: "rootfs:directory:#{value}")
           Directory.new(fd: handle.fd, relative: value.freeze, owned: true)
         rescue Openat2::UnsafePath => error
           raise UnsafePath.new(error.message, cause: error), cause: error
@@ -401,7 +402,7 @@ module Rubernetes
           raise UnsafePath, "rootfs target must not be the root" if value.empty?
 
           @resolver.open(value, flags: O_PATH | O_CLOEXEC, resolve: RESOLVE,
-                         resource_id: "rootfs:target:#{value}")
+                                resource_id: "rootfs:target:#{value}")
         rescue Openat2::UnsafePath => error
           raise UnsafePath.new(error.message, cause: error), cause: error
         end
@@ -430,9 +431,8 @@ module Rubernetes
             target_identity = [target_stat.dev, target_stat.ino, target_stat.mode].freeze
             unless target_stat.directory?
               @race_hook&.call(operation: :remove_before_unlink, relative: relative.to_s, fd: target)
-              if identity_at(parent_fd, name, relative) != target_identity
-                raise UnsafePath, "rootfs entry identity changed before unlink"
-              end
+              raise UnsafePath, "rootfs entry identity changed before unlink" if identity_at(parent_fd, name, relative) != target_identity
+
               call_unlinkat(parent_fd, name, 0, "rootfs:unlink:#{relative}")
               return true
             end
@@ -442,6 +442,7 @@ module Rubernetes
                                     operation: "openat", resource_id: "rootfs:remove:#{relative}")
             directory_identity = stat_identity(Directory.new(fd: directory, relative: relative, owned: false))
             raise UnsafePath, "rootfs directory identity changed while opening" unless directory_identity == target_identity
+
             # Re-resolve the complete path from the fixed root fd. This rejects
             # a mount replacement before descriptor-relative recursion begins.
             verified = @resolver.open(validate_relative(relative),
@@ -449,9 +450,7 @@ module Rubernetes
                                       resolve: RESOLVE,
                                       resource_id: "rootfs:remove-verify:#{relative}")
             begin
-              unless stat_identity(verified) == directory_identity
-                raise UnsafePath, "rootfs directory identity changed before removal"
-              end
+              raise UnsafePath, "rootfs directory identity changed before removal" unless stat_identity(verified) == directory_identity
             ensure
               verified.close
             end
@@ -463,6 +462,7 @@ module Rubernetes
             if identity_at(parent_fd, name, relative) != directory_identity
               raise UnsafePath, "rootfs directory identity changed before rmdir"
             end
+
             call_unlinkat(parent_fd, name, AT_REMOVEDIR, "rootfs:rmdir:#{relative}")
           rescue Linux::Error => error
             raise unless error.errno == Errno::ENOENT::Errno
@@ -528,9 +528,10 @@ module Rubernetes
           raise UnsafePath, "rootfs path must not be empty" if value.empty? && relative.to_s != ""
 
           return "" if value.empty?
+
           components = value.split("/")
           raise UnsafePath, "rootfs path contains an empty component" if components.any?(&:empty?)
-          raise UnsafePath, "rootfs path contains traversal" if components.any? { |component| component == "." || component == ".." }
+          raise UnsafePath, "rootfs path contains traversal" if components.any? { |component| [".", ".."].include?(component) }
 
           value
         rescue TypeError => error

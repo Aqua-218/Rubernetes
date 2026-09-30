@@ -23,15 +23,15 @@ module Rubernetes
     class NativeDeviceAdapter
       class Unsupported < UnsupportedError; end
 
-      LOOP_CONTROL_PATH = "/dev/loop-control".freeze
-      MAPPER_CONTROL_PATH = "/dev/mapper/control".freeze
-      DEVICE_DIRECTORY = "/dev".freeze
-      MAPPER_DIRECTORY = "/dev/mapper".freeze
+      LOOP_CONTROL_PATH = "/dev/loop-control"
+      MAPPER_CONTROL_PATH = "/dev/mapper/control"
+      DEVICE_DIRECTORY = "/dev"
+      MAPPER_DIRECTORY = "/dev/mapper"
 
       SECTOR_SIZE = 512
       LOOP_NAME_SIZE = 64
       LOOP_KEY_SIZE = 32
-      LOOP_INFO64_FORMAT = "Q<Q<Q<Q<Q<L<L<L<L<a64a64a32Q<Q<".freeze
+      LOOP_INFO64_FORMAT = "Q<Q<Q<Q<Q<L<L<L<L<a64a64a32Q<Q<"
       LOOP_INFO64_SIZE = [0, 0, 0, 0, 0, 0, 0, 0, 0, "", "", "", 0, 0].pack(LOOP_INFO64_FORMAT).bytesize
       LOOP_CONFIGURE_SIZE = 4 + 4 + LOOP_INFO64_SIZE + (8 * 8)
 
@@ -47,7 +47,7 @@ module Rubernetes
       DM_NAME_LEN = 128
       DM_UUID_LEN = 129
       DM_MAX_TYPE_NAME = 16
-      DM_IOCTL_FORMAT = "L<L<L<L<L<L<l<L<L<L<Q<a128a129a7".freeze
+      DM_IOCTL_FORMAT = "L<L<L<L<L<L<l<L<L<L<Q<a128a129a7"
       DM_IOCTL_SIZE = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "", "", ""].pack(DM_IOCTL_FORMAT).bytesize
       DM_IOCTL = 0xFD
       DM_VERSION = 0
@@ -75,9 +75,9 @@ module Rubernetes
       MAX_UUID_BYTES = DM_UUID_LEN - 1
       MAX_SIZE_BYTES = (1 << 63) - 1
       MAX_TARGET_BYTES = 4_096
-      LOOP_NUMBER_PATTERN = %r{\A/dev/loop(\d+)\z}.freeze
-      MAPPER_PATH_PATTERN = %r{\A/dev/mapper/([^/]+)\z}.freeze
-      SAFE_DM_NAME = /\A[A-Za-z0-9_.:+-]+\z/.freeze
+      LOOP_NUMBER_PATTERN = %r{\A/dev/loop(\d+)\z}
+      MAPPER_PATH_PATTERN = %r{\A/dev/mapper/([^/]+)\z}
+      SAFE_DM_NAME = /\A[A-Za-z0-9_.:+-]+\z/
 
       # Ruby's Fiddle call has a fixed third argument, which is sufficient for
       # the integer loop-control argument and pointers to ioctl structures.
@@ -235,10 +235,10 @@ module Rubernetes
           bytes.b
         end
 
-        def open_source(path)
+        def open_source(path, &)
           flags = File::RDONLY
           flags |= File::CLOEXEC if File.const_defined?(:CLOEXEC)
-          File.open(path, flags) { |io| yield io }
+          File.open(path, flags, &)
         end
       end
 
@@ -336,6 +336,7 @@ module Rubernetes
             unless existing["source"] == source_path && existing["sizeBytes"] == size
               raise MountIdentityError, "volume #{volume} already owns a different device-mapper device"
             end
+
             return deep_copy(existing)
           end
 
@@ -368,7 +369,7 @@ module Rubernetes
                 with_mapper_control { |control| remove_dm(control, dm_name, dm_uuid) }
               rescue StandardError => cleanup_error
                 raise MountIdentityError, "device-mapper cleanup failed after #{dm_name}: #{cleanup_error.message}",
-                                           cause: error
+                      cause: error
               end
             end
             raise error
@@ -420,6 +421,7 @@ module Rubernetes
       def absolute_path(value, field)
         raw = String(value)
         raise ArgumentError, "#{field} must be absolute" unless raw.start_with?(File::SEPARATOR)
+
         path = File.expand_path(raw)
         raise ArgumentError, "#{field} contains NUL" if path.include?("\0")
         raise ArgumentError, "#{field} is too long" if path.bytesize > MAX_PATH_BYTES
@@ -472,9 +474,9 @@ module Rubernetes
       end
 
       def validate_block_device!(stat, path)
-        unless stat.respond_to?(:blockdev?) && stat.blockdev?
-          raise ValidationError, "device-mapper source #{path.inspect} is not a block device"
-        end
+        return if stat.respond_to?(:blockdev?) && stat.blockdev?
+
+        raise ValidationError, "device-mapper source #{path.inspect} is not a block device"
       end
 
       def read_write_flags
@@ -520,6 +522,7 @@ module Rubernetes
           number = issue_ioctl(control, LOOP_CTL_GET_FREE, 0)
           number = Integer(number)
           raise MountIdentityError, "loop-control returned an invalid loop number" if number.negative?
+
           path = File.join(@device_directory, "loop#{number}")
           raise MountIdentityError, "loop-control returned an unsafe device path" unless path.match?(%r{\A/dev/loop\d+\z})
 
@@ -547,7 +550,7 @@ module Rubernetes
         [Integer(backing_fd), 0].pack("L<L<") + pack_loop_info(stat, path, size) + ("\0" * (8 * 8))
       end
 
-      def pack_loop_info(stat, path, size)
+      def pack_loop_info(_stat, path, size)
         filename = path.b.byteslice(0, LOOP_NAME_SIZE - 1).to_s
         filename = filename.ljust(LOOP_NAME_SIZE, "\0")
         [0, 0, 0, 0, Integer(size), 0, 0, 0, 0, filename, "\0" * LOOP_NAME_SIZE,
@@ -691,13 +694,16 @@ module Rubernetes
         rescue Unsupported => error
           cause = error.cause
           return true if cause && not_present_error?(cause)
+
           raise
         rescue SystemCallError => error
           return true if not_present_error?(error)
+
           raise
         rescue MountIdentityError => error
           cause = error.cause
           return true if cause && not_present_error?(cause)
+
           raise
         ensure
           close(io)
@@ -716,6 +722,7 @@ module Rubernetes
         if identity["backingDevice"] && identity["backingDevice"].to_i != status["device"].to_i
           raise MountIdentityError, "loop backing device changed at #{path.inspect}"
         end
+
         true
       end
 
@@ -746,6 +753,7 @@ module Rubernetes
         unless version[0] == DM_IOCTL_VERSION[0] && version[1] >= 1
           raise Unsupported, "device-mapper ioctl version #{version.join(".")} is unsupported"
         end
+
         true
       end
 
@@ -771,7 +779,7 @@ module Rubernetes
         issue_ioctl(control, DM_IOCTLS.fetch(:dev_suspend), dm_buffer(name: name, uuid: uuid))
       end
 
-      def remove_dm(control, name, uuid)
+      def remove_dm(control, name, _uuid)
         # DM_DEV_REMOVE synchronously tears down the inactive/active table
         # and refuses an in-use device.  Issuing DM_DEV_SUSPEND here first is
         # incorrect for a device whose table load failed: the kernel returns
@@ -784,11 +792,13 @@ module Rubernetes
           dm_status(control, name, "")
         rescue Rubernetes::Platform::Linux::Error => error
           return true if dm_absent_error?(error)
+
           raise
         end
         raise MountIdentityError, "device-mapper remove for #{name.inspect} reported success but status remains"
       rescue Rubernetes::Platform::Linux::Error => error
         return true if not_present_error?(error)
+
         raise
       end
 
@@ -813,6 +823,7 @@ module Rubernetes
         unless status[:name] == name && status[:uuid] == uuid && status[:dev].to_i.positive?
           raise MountIdentityError, "device-mapper readback does not match the requested identity"
         end
+
         path = File.join(@mapper_directory, name)
         ensure_device_node!(path, status[:dev], "device-mapper")
         {
@@ -838,6 +849,7 @@ module Rubernetes
             unless node_stat.respond_to?(:rdev) && Integer(node_stat.rdev) == Integer(dev)
               raise MountIdentityError, "#{label} node #{path.inspect} does not match kernel readback"
             end
+
             return true
           end
           break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
@@ -851,6 +863,7 @@ module Rubernetes
         unless node_stat.respond_to?(:rdev) && Integer(node_stat.rdev) == Integer(dev)
           raise MountIdentityError, "#{label} node #{path.inspect} does not match kernel readback"
         end
+
         true
       end
 
@@ -868,7 +881,7 @@ module Rubernetes
 
       def destroy_dm(identity, identifier)
         name = identity["name"] || mapper_name(identifier)
-        requested_uuid = identity["uuid"] || ""
+        identity["uuid"] || ""
         with_mapper_control do |control|
           status = begin
             verify_dm_version!(control)
@@ -877,6 +890,7 @@ module Rubernetes
             dm_status(control, name, "")
           rescue Rubernetes::Platform::Linux::Error => error
             return true if dm_absent_error?(error)
+
             raise
           end
           unless status[:name] == name &&
@@ -884,12 +898,14 @@ module Rubernetes
                  (identity["uuid"].nil? || identity["uuid"].to_s == status[:uuid].to_s)
             raise MountIdentityError, "device-mapper identity changed for #{name.inspect}"
           end
+
           remove_dm(control, name, status[:uuid])
         end
         true
       rescue Unsupported => error
         cause = error.cause
         return true if cause && not_present_error?(cause)
+
         raise
       end
 
@@ -904,6 +920,7 @@ module Rubernetes
       def mapper_name(path)
         match = path.to_s.match(MAPPER_PATH_PATTERN)
         raise ValidationError, "device-mapper identity must use /dev/mapper/<name>" unless match
+
         name = match[1]
         validate_dm_name(name)
       end
@@ -922,7 +939,8 @@ module Rubernetes
         uuid = String(uuid)
         raise ValidationError, "device-mapper UUID contains NUL" if uuid.include?("\0")
         raise ValidationError, "device-mapper UUID exceeds #{MAX_UUID_BYTES} bytes" if uuid.bytesize > MAX_UUID_BYTES
-        raise CapacityError, "device-mapper ioctl data size is out of bounds" unless Integer(data_size).between?(DM_IOCTL_SIZE, DM_IOCTL_SIZE + MAX_TARGET_BYTES)
+        raise CapacityError, "device-mapper ioctl data size is out of bounds" unless Integer(data_size).between?(DM_IOCTL_SIZE,
+                                                                                                                 DM_IOCTL_SIZE + MAX_TARGET_BYTES)
 
         packed_name = name.to_s.b.ljust(DM_NAME_LEN, "\0")
         packed_uuid = uuid.b.ljust(DM_UUID_LEN, "\0")
@@ -957,6 +975,7 @@ module Rubernetes
         unless allow_non_block || (stat.respond_to?(:blockdev?) && stat.blockdev?)
           raise ValidationError, "device stat is not a block device"
         end
+
         major = stat.respond_to?(:rdev_major) ? stat.rdev_major : decode_device_number(stat.rdev).split(":").first
         minor = stat.respond_to?(:rdev_minor) ? stat.rdev_minor : decode_device_number(stat.rdev).split(":").last
         "#{Integer(major)}:#{Integer(minor)}"
@@ -980,6 +999,7 @@ module Rubernetes
 
       def close(io)
         return unless io && (!io.respond_to?(:closed?) || !io.closed?)
+
         io.close
       rescue IOError, SystemCallError
         nil

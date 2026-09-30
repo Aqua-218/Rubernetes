@@ -47,7 +47,10 @@ module Rubernetes
         cpu_request = cgroup && cpu_request_from(cgroup["cpu.weight"])
         allocated_cpu = ResourceHelpers.resource_list(requests)["cpu"]
         if cpu_request
-          requests["cpu"] = milli_quantity(cpu_request) if cpu_request > MIN_SHARES || (allocated_cpu && allocated_cpu.milli_value > MIN_SHARES)
+          if cpu_request > MIN_SHARES || (allocated_cpu && allocated_cpu.milli_value > MIN_SHARES)
+            requests["cpu"] =
+              milli_quantity(cpu_request)
+          end
         else
           keep.call("requests", "cpu")
         end
@@ -59,7 +62,10 @@ module Rubernetes
         cpu_limit = cgroup && cpu_limit_from(cgroup["cpu.max"])
         allocated_cpu_limit = ResourceHelpers.resource_list(limits)["cpu"]
         if cpu_limit
-          limits["cpu"] = milli_quantity(cpu_limit) if cpu_limit > MIN_MILLI_CPU_LIMIT || (allocated_cpu_limit && allocated_cpu_limit.milli_value > MIN_MILLI_CPU_LIMIT)
+          if cpu_limit > MIN_MILLI_CPU_LIMIT || (allocated_cpu_limit && allocated_cpu_limit.milli_value > MIN_MILLI_CPU_LIMIT)
+            limits["cpu"] =
+              milli_quantity(cpu_limit)
+          end
         else
           keep.call("limits", "cpu")
         end
@@ -151,7 +157,9 @@ module Rubernetes
       # being on) whose request for +resource+ differs from its allocation.
       def container_request_changed?(allocated, desired, resource)
         allocated_spec = ResourceHelpers.spec(allocated)
-        current = %w[containers initContainers].flat_map { |field| Array(allocated_spec[field]) }.to_h { |container| [container["name"], container] }
+        current = %w[containers initContainers].flat_map do |field|
+          Array(allocated_spec[field])
+        end.to_h { |container| [container["name"], container] }
         desired_spec = ResourceHelpers.spec(desired)
         %w[containers initContainers].flat_map { |field| Array(desired_spec[field]) }.any? do |container|
           wanted = ResourceHelpers.resource_list(container.dig("resources", "requests"))[resource]&.value
@@ -169,11 +177,14 @@ module Rubernetes
         return nil unless ResourceHelpers.pod_qos(desired) == "Guaranteed"
 
         if cpu_policy.to_s == "static" && container_request_changed?(allocated, desired, "cpu")
-          return ["guaranteed_pod_cpu_manager_static_policy", %(Resize is infeasible for Guaranteed Pods alongside CPU Manager policy "static")]
+          return ["guaranteed_pod_cpu_manager_static_policy",
+                  %(Resize is infeasible for Guaranteed Pods alongside CPU Manager policy "static")]
         end
         if memory_policy.to_s == "Static" && container_request_changed?(allocated, desired, "memory")
-          return ["guaranteed_pod_memory_manager_static_policy", %(Resize is infeasible for Guaranteed Pods alongside Memory Manager policy "Static")]
+          return ["guaranteed_pod_memory_manager_static_policy",
+                  %(Resize is infeasible for Guaranteed Pods alongside Memory Manager policy "Static")]
         end
+
         nil
       end
 

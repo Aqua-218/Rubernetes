@@ -5,7 +5,7 @@ require "open3"
 require "rbconfig"
 
 class NetworkPolicyNftablesReadbackKernelTest < Minitest::Test
-  KERNEL_SCRIPT = <<~'RUBY'.freeze
+  KERNEL_SCRIPT = <<~'RUBY'
     require "rubernetes/network"
 
     class FaultInjectingPolicyAdapter < Rubernetes::Network::NftablesPolicyAdapter
@@ -90,11 +90,9 @@ class NetworkPolicyNftablesReadbackKernelTest < Minitest::Test
     )
     unless status.success?
       blocker = "#{output}\n#{error}"
-      if blocker.match?(/Operation not permitted|not supported|Permission denied/)
-        skip "isolated nftables kernel blocker: #{blocker.strip}"
-      end
+      skip "isolated nftables kernel blocker: #{blocker.strip}" if blocker.match?(/Operation not permitted|not supported|Permission denied/)
     end
 
-    assert status.success?, "isolated nftables readback failed: #{output}\n#{error}"
+    assert_predicate status, :success?, "isolated nftables readback failed: #{output}\n#{error}"
   end
 end

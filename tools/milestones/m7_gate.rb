@@ -37,8 +37,10 @@ module M7Gate
 
   KVM_REQUIRED = %w[artifact_verification cold_boot_lifecycle base_snapshot restored_lifecycle node_lifecycle_contract fault_jailer_kill fault_vmm_hang
                     fault_uds_disconnect fault_vsock_disconnect fault_pause_ack_loss identity_reuse_after_faults host_inventory_after_cleanup].freeze
-  ATTACK_REQUIRED = %w[guest_attack_matrix host_confinement identity_ack_forgery broker_fail_closed restricted_no_network_device cleanup].freeze
-  ATTACK_DENIED = %w[rootfs_write raw_block_write jailer_root other_vm_vsock host_vsock_unlisted_port other_tenant_network host_filesystem shared_host_mounts].freeze
+  ATTACK_REQUIRED = %w[guest_attack_matrix host_confinement identity_ack_forgery broker_fail_closed restricted_no_network_device
+                       cleanup].freeze
+  ATTACK_DENIED = %w[rootfs_write raw_block_write jailer_root other_vm_vsock host_vsock_unlisted_port other_tenant_network host_filesystem
+                     shared_host_mounts].freeze
   IDENTITY_REQUIRED = %w[clone_identities ledger_history_reuse stale_ack_and_revocation].freeze
   IDENTITY_FIELDS = %w[vm_id subject_id capability_id request_id vsock_session_key vsock_nonce entropy hostname machine_id mac_address workspace_id
                        credential_id policy_digest policy_generation jail_uid guest_cid ip].freeze
@@ -92,10 +94,15 @@ module M7Gate
       errors << "schema_version must be #{MANIFEST_SCHEMA_VERSION}" unless manifest["schema_version"] == MANIFEST_SCHEMA_VERSION
       errors << "milestone must be M7" unless manifest["milestone"] == "M7"
       errors << "input_sha256 must be a SHA-256 digest" unless valid_digest?(manifest["input_sha256"])
-      errors << "input_file_count must be positive" unless manifest["input_file_count"].is_a?(Integer) && manifest["input_file_count"].positive?
+      unless manifest["input_file_count"].is_a?(Integer) && manifest["input_file_count"].positive?
+        errors << "input_file_count must be positive"
+      end
       errors << "source input must remain stable during evidence capture" unless manifest["input_stable"] == true
       host = manifest["host"]
-      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel ruby].all? { |key| non_empty_string?(host[key]) }
+      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel
+                                                                                                             ruby].all? do |key|
+        non_empty_string?(host[key])
+      end
       errors << "M7 evidence must be captured on x86_64" unless host.is_a?(Hash) && host["architecture"] == "x86_64"
       %w[started_at finished_at].each { |key| errors << "#{key} must be an ISO-8601 timestamp" unless iso8601?(manifest[key]) }
       M4Gate.send(:validate_input_capture, manifest, errors)
@@ -133,7 +140,9 @@ module M7Gate
       valid.each do |entry|
         path = File.expand_path(entry.fetch("path"), PROJECT_ROOT)
         errors << "source inventory entry #{entry.fetch("path")} is missing" unless File.file?(path)
-        errors << "source inventory digest mismatch #{entry.fetch("path")}" if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+        if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+          errors << "source inventory digest mismatch #{entry.fetch("path")}"
+        end
       end
       errors << "source inventory must include #{ARTIFACT_LOCK}" unless paths.include?(ARTIFACT_LOCK)
     end
@@ -202,7 +211,9 @@ module M7Gate
         end
         path = File.join(PROJECT_ROOT, entry["path"])
         errors << "#{name} source #{entry["path"]} is missing" unless File.file?(path)
-        errors << "#{name} source #{entry["path"]} digest does not match the source tree" if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+        if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+          errors << "#{name} source #{entry["path"]} digest does not match the source tree"
+        end
       end
     end
 
@@ -216,18 +227,25 @@ module M7Gate
       errors << "#{name} report must be measured on a KVM host" unless host["kvm"] == true && host["vhost_vsock"] == true
       errors << "#{name} report must record CPU virtualization support" unless %w[vmx svm].include?(host["cpu_virtualization"])
       artifacts = host["artifacts"]
-      errors << "#{name} report must bind Firecracker #{FIRECRACKER_VERSION}" unless artifacts.is_a?(Hash) && artifacts["firecracker_version"] == FIRECRACKER_VERSION
-      errors << "#{name} report must bind the artifact digest" unless artifacts.is_a?(Hash) && valid_digest?(artifacts["digest"]) && valid_digest?(artifacts["verity_root_hash"])
-      lock = File.join(PROJECT_ROOT, ARTIFACT_LOCK)
-      if File.file?(lock) && artifacts.is_a?(Hash)
-        document = JSON.parse(File.read(lock))
-        errors << "#{name} report verity root hash does not match the artifact lock" unless document.dig("verity", "root_hash") == artifacts["verity_root_hash"]
+      unless artifacts.is_a?(Hash) && artifacts["firecracker_version"] == FIRECRACKER_VERSION
+        errors << "#{name} report must bind Firecracker #{FIRECRACKER_VERSION}"
       end
+      unless artifacts.is_a?(Hash) && valid_digest?(artifacts["digest"]) && valid_digest?(artifacts["verity_root_hash"])
+        errors << "#{name} report must bind the artifact digest"
+      end
+      lock = File.join(PROJECT_ROOT, ARTIFACT_LOCK)
+      return unless File.file?(lock) && artifacts.is_a?(Hash)
+
+      document = JSON.parse(File.read(lock))
+      errors << "#{name} report verity root hash does not match the artifact lock" unless document.dig("verity",
+                                                                                                       "root_hash") == artifacts["verity_root_hash"]
     end
 
     def validate_kvm(document, cases, errors)
       errors << "KVM report must be at measurement level L5" unless document["measurement_level"] == "L5"
-      errors << "KVM report must come from the real Firecracker/jailer/KVM stack" unless document["measurement_source"] == "real_firecracker_jailer_kvm"
+      unless document["measurement_source"] == "real_firecracker_jailer_kvm"
+        errors << "KVM report must come from the real Firecracker/jailer/KVM stack"
+      end
       ids = cases.map { |entry| entry["id"] }
       KVM_REQUIRED.each { |id| errors << "KVM report is missing case #{id}" unless ids.include?(id) }
       %w[cold_boot_lifecycle restored_lifecycle].each do |id|
@@ -242,7 +260,9 @@ module M7Gate
         errors << "#{id} must verify the private PID namespace" unless Array(confinement["nspid"]).last == "1"
         errors << "#{id} must reach the L3 isolation profile inside the guest" unless entry.dig("guest", "isolation_profile") == "l3"
         errors << "#{id} must reach the Pod IP from the host" unless entry["pod_ip_reachable_from_host"] == true
-        errors << "#{id} must leave no residue" unless entry["residue"].is_a?(Hash) && entry["residue"].reject { |key, _| key == "resources_listed" }.values.none? && Array(entry["residue"]["resources_listed"]).empty?
+        errors << "#{id} must leave no residue" unless entry["residue"].is_a?(Hash) && entry["residue"].reject do |key, _|
+          key == "resources_listed"
+        end.values.none? && Array(entry["residue"]["resources_listed"]).empty?
         errors << "#{id} must end in Removed" unless entry["sandbox_state"] == "Removed" && entry["container_final_state"] == "Removed"
       end
       restored = cases.find { |entry| entry["id"] == "restored_lifecycle" }
@@ -252,19 +272,30 @@ module M7Gate
         next if entry.nil?
 
         residue = entry["residue"]
-        errors << "#{id} must leave no residue" unless residue.is_a?(Hash) && residue.reject { |key, _| key == "resources_listed" }.values.none? && Array(residue["resources_listed"]).empty?
+        errors << "#{id} must leave no residue" unless residue.is_a?(Hash) && residue.reject do |key, _|
+          key == "resources_listed"
+        end.values.none? && Array(residue["resources_listed"]).empty?
       end
       hang = cases.find { |entry| entry["id"] == "fault_vmm_hang" }
-      errors << "fault_vmm_hang must refuse start while the VM state is unresolved" unless hang && hang["start_refused_while_unknown"] == true
-      errors << "fault_vmm_hang must leave the container in a non-running unresolved state" unless hang && %w[StateUnknown Stopping Stopped].include?(hang["container_state_after_hang"])
+      unless hang && hang["start_refused_while_unknown"] == true
+        errors << "fault_vmm_hang must refuse start while the VM state is unresolved"
+      end
+      errors << "fault_vmm_hang must leave the container in a non-running unresolved state" unless hang && %w[StateUnknown Stopping
+                                                                                                              Stopped].include?(hang["container_state_after_hang"])
       pause = cases.find { |entry| entry["id"] == "fault_pause_ack_loss" }
-      errors << "fault_pause_ack_loss must classify the VM SnapshotPauseUnknown" unless pause && pause["outcome"].to_s.start_with?("SnapshotPauseUnknown") && pause["phase"] == "pause_unknown"
+      unless pause && pause["outcome"].to_s.start_with?("SnapshotPauseUnknown") && pause["phase"] == "pause_unknown"
+        errors << "fault_pause_ack_loss must classify the VM SnapshotPauseUnknown"
+      end
       reuse = cases.find { |entry| entry["id"] == "identity_reuse_after_faults" }
-      errors << "identity reuse after faults must be zero" unless reuse && reuse["report"].is_a?(Hash) && reuse["report"].values.sum { |entry| entry["reused"].to_i }.zero?
+      errors << "identity reuse after faults must be zero" unless reuse && reuse["report"].is_a?(Hash) && reuse["report"].values.sum do |entry|
+        entry["reused"].to_i
+      end.zero?
       inventory = cases.find { |entry| entry["id"] == "host_inventory_after_cleanup" }
       errors << "host inventory must be empty after cleanup" unless inventory && Array(inventory["resources"]).empty?
       node = cases.find { |entry| entry["id"] == "node_lifecycle_contract" }
-      errors << "node lifecycle contract must reach Running and Removed through Node::Lifecycle" unless node && node["start_phase"] == "Running" && node["finish_state"] == "Removed" && node["lifecycle_class"] == "Rubernetes::Node::Lifecycle"
+      unless node && node["start_phase"] == "Running" && node["finish_state"] == "Removed" && node["lifecycle_class"] == "Rubernetes::Node::Lifecycle"
+        errors << "node lifecycle contract must reach Running and Removed through Node::Lifecycle"
+      end
     end
 
     def validate_attacks(document, cases, errors)
@@ -278,19 +309,25 @@ module M7Gate
         end
       end
       confinement = cases.find { |entry| entry["id"] == "host_confinement" }
-      errors << "host confinement must verify uid, capabilities, seccomp, no_new_privs, chroot and namespaces" unless confinement && confinement["passed"] == true && Array(confinement["forbidden_in_jail"]).empty?
+      unless confinement && confinement["passed"] == true && Array(confinement["forbidden_in_jail"]).empty?
+        errors << "host confinement must verify uid, capabilities, seccomp, no_new_privs, chroot and namespaces"
+      end
       forgery = cases.find { |entry| entry["id"] == "identity_ack_forgery" }
-      errors << "every forged or stale ACK must be rejected" unless forgery && forgery["rejections"].is_a?(Hash) && forgery["rejections"].length >= 4 && forgery["rejections"].values.all? { |value| value.to_s.start_with?("rejected") }
+      errors << "every forged or stale ACK must be rejected" unless forgery && forgery["rejections"].is_a?(Hash) && forgery["rejections"].length >= 4 && forgery["rejections"].values.all? do |value|
+        value.to_s.start_with?("rejected")
+      end
       restricted = cases.find { |entry| entry["id"] == "restricted_no_network_device" }
       errors << "the restricted class must expose only the loopback interface" unless restricted && restricted["interfaces"] == ["lo"]
     end
 
-    def validate_identity(document, cases, errors)
+    def validate_identity(_document, cases, errors)
       ids = cases.map { |entry| entry["id"] }
       IDENTITY_REQUIRED.each { |id| errors << "identity ledger is missing case #{id}" unless ids.include?(id) }
       clones = cases.find { |entry| entry["id"] == "clone_identities" }
       if clones
-        errors << "identity ledger must restore at least #{MIN_CLONES} clones" unless clones["clones"].to_i >= MIN_CLONES && Array(clones["records"]).length >= MIN_CLONES
+        unless clones["clones"].to_i >= MIN_CLONES && Array(clones["records"]).length >= MIN_CLONES
+          errors << "identity ledger must restore at least #{MIN_CLONES} clones"
+        end
         errors << "every clone must restore from the base snapshot" unless clones["all_restored_from_base"] == true
         reused = clones["reused_values"] || {}
         IDENTITY_FIELDS.each do |field|
@@ -304,12 +341,16 @@ module M7Gate
         end
       end
       history = cases.find { |entry| entry["id"] == "ledger_history_reuse" }
-      errors << "ledger history must show zero reuse" unless history && history["report"].is_a?(Hash) && history["report"].values.sum { |entry| entry["reused"].to_i }.zero?
+      errors << "ledger history must show zero reuse" unless history && history["report"].is_a?(Hash) && history["report"].values.sum do |entry|
+        entry["reused"].to_i
+      end.zero?
       stale = cases.find { |entry| entry["id"] == "stale_ack_and_revocation" }
-      errors << "stale ACKs must be rejected and revocation must take effect" unless stale && stale["stale_ack_rejected"] == true && stale["after_revoke"].to_s.start_with?("denied")
+      return if stale && stale["stale_ack_rejected"] == true && stale["after_revoke"].to_s.start_with?("denied")
+
+      errors << "stale ACKs must be rejected and revocation must take effect"
     end
 
-    def validate_snapshots(document, cases, errors)
+    def validate_snapshots(_document, cases, errors)
       ids = cases.map { |entry| entry["id"] }
       SNAPSHOT_REQUIRED.each { |id| errors << "snapshot corpus is missing case #{id}" unless ids.include?(id) }
       cases.each do |entry|
@@ -324,20 +365,24 @@ module M7Gate
       errors << "the pristine base must restore" unless pristine && pristine["outcome"] == "started"
     end
 
-    def validate_latency(document, cases, errors)
+    def validate_latency(_document, cases, errors)
       entry = cases.find { |candidate| candidate["id"] == "pod_start_from_base_snapshot" }
       unless entry
         errors << "latency report must contain pod_start_from_base_snapshot"
         return
       end
       samples = Array(entry["raw_samples"])
-      errors << "latency report needs at least #{MIN_LATENCY_SAMPLES} raw samples" unless samples.length >= MIN_LATENCY_SAMPLES && entry["samples"] == samples.length
+      unless samples.length >= MIN_LATENCY_SAMPLES && entry["samples"] == samples.length
+        errors << "latency report needs at least #{MIN_LATENCY_SAMPLES} raw samples"
+      end
       totals = samples.map { |sample| sample["total"] }
       errors << "latency samples must carry numeric totals" unless totals.all? { |value| value.is_a?(Numeric) }
       if totals.all? { |value| value.is_a?(Numeric) } && !totals.empty?
         sorted = totals.sort
         p95 = sorted[((sorted.length - 1) * 0.95).round]
-        errors << "reported p95 must match the raw samples" unless entry["p95_seconds"].is_a?(Numeric) && (entry["p95_seconds"] - p95).abs < 1e-6
+        unless entry["p95_seconds"].is_a?(Numeric) && (entry["p95_seconds"] - p95).abs < 1e-6
+          errors << "reported p95 must match the raw samples"
+        end
         errors << "p95 start latency #{p95}s exceeds #{LATENCY_BOUND_SECONDS}s" unless p95 <= LATENCY_BOUND_SECONDS
       end
       errors << "latency samples must restore from a base snapshot" unless samples.all? { |sample| non_empty_string?(sample["base"]) }

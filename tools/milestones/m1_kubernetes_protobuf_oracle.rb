@@ -100,14 +100,13 @@ module M1KubernetesProtobufOracle
     unless ::File.directory?(::File.join(source_root, ".git"))
       raise OracleError, "Kubernetes oracle source is not a Git checkout: #{source_root}"
     end
+
     commit = capture!("git", "-C", source_root, "rev-parse", "HEAD").strip
-    unless commit == SOURCE_COMMIT
-      raise OracleError, "Kubernetes oracle source commit must be #{SOURCE_COMMIT}, got #{commit}"
-    end
+    raise OracleError, "Kubernetes oracle source commit must be #{SOURCE_COMMIT}, got #{commit}" unless commit == SOURCE_COMMIT
+
     tag = capture!("git", "-C", source_root, "describe", "--tags", "--exact-match", "HEAD").strip
-    unless tag == KUBERNETES_VERSION
-      raise OracleError, "Kubernetes oracle source tag must be #{KUBERNETES_VERSION}, got #{tag.inspect}"
-    end
+    raise OracleError, "Kubernetes oracle source tag must be #{KUBERNETES_VERSION}, got #{tag.inspect}" unless tag == KUBERNETES_VERSION
+
     dirty = capture!("git", "-C", source_root, "status", "--porcelain", "--untracked-files=no").strip
     raise OracleError, "Kubernetes oracle source checkout has tracked modifications" unless dirty.empty?
 
@@ -160,6 +159,7 @@ module M1KubernetesProtobufOracle
       unless descriptor.name.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
         raise OracleError, "protobuf message name is not a Go identifier: #{descriptor.name.inspect}"
       end
+
       result[request.fetch("id")] = [go_package, descriptor.name]
     end
 

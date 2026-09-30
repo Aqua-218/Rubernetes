@@ -82,6 +82,7 @@ class M3WatchTest < Minitest::Test
 
     source["metadata"]["name"] = "changed"
     returned = indexer.get("pod")
+
     assert_equal("pod", returned.dig("metadata", "name"))
     assert_predicate(returned, :frozen?)
     assert_predicate(returned.fetch("metadata"), :frozen?)
@@ -89,6 +90,7 @@ class M3WatchTest < Minitest::Test
     assert_raises(FrozenError) { returned.fetch("metadata")["name"] = "mutated" }
 
     indexer.update(object("pod", namespace: "prod"))
+
     assert_empty(indexer.by_index("namespace", "dev"))
     assert_equal(["pod"], indexer.by_index("namespace", "prod").map { |value| value.dig("metadata", "name") })
   end
@@ -105,13 +107,17 @@ class M3WatchTest < Minitest::Test
 
     indexer = Watch::Indexer.new(key_func: ->(value) { value ? "true" : "false" })
     indexer.add(false)
+
     assert_equal(false, indexer.delete("false"))
-    refute(indexer.include?("false"))
+    refute_includes(indexer, "false")
   end
 
   def test_indexer_does_not_call_custom_key_functions_while_holding_its_mutex
     indexer = nil
-    indexer = Watch::Indexer.new(key_func: ->(value) { indexer.size; value.dig("metadata", "name") })
+    indexer = Watch::Indexer.new(key_func: lambda { |value|
+      indexer.size
+      value.dig("metadata", "name")
+    })
     indexer.add(object("pod"))
 
     assert_equal(["pod"], indexer.list.map { |value| value.dig("metadata", "name") })
@@ -127,8 +133,10 @@ class M3WatchTest < Minitest::Test
     fifo.requeue(key, popped)
 
     _, deltas = fifo.pop(timeout: 0)
+
     assert_equal(%i[add update], deltas.map(&:type))
     fifo.done(key)
+
     assert_nil(fifo.pop(timeout: 0))
   end
 
@@ -139,13 +147,15 @@ class M3WatchTest < Minitest::Test
 
     first_key, first_deltas = fifo.pop(timeout: 0)
     second_key, second_deltas = fifo.pop(timeout: 0)
+
     assert_equal("stale", first_key)
     assert_equal(:add, first_deltas.first.type)
     fifo.done(first_key)
+
     assert_equal("current", second_key)
     assert_equal(:sync, second_deltas.first.type)
     assert_equal("8", second_deltas.first.resource_version)
-    assert fifo.has_synced?
+    assert_predicate fifo, :has_synced?
   end
 
   def test_work_queue_deduplicates_dirty_key_and_requeues_once_after_done
@@ -153,16 +163,20 @@ class M3WatchTest < Minitest::Test
     queue.add("key")
     queue.add("key")
     key, shutdown = queue.get(timeout: 0)
+
     refute(shutdown)
     assert_equal("key", key)
     queue.add("key")
     queue.add("key")
+
     assert queue.dirty?("key")
     queue.done("key")
     key, shutdown = queue.get(timeout: 0)
+
     refute(shutdown)
     assert_equal("key", key)
     queue.done("key")
+
     assert_equal([nil, false], queue.get(timeout: 0))
   end
 
@@ -173,6 +187,7 @@ class M3WatchTest < Minitest::Test
     first = queue.add_rate_limited("a")
     second = queue.add_rate_limited("a")
     third = queue.add_rate_limited("a")
+
     assert_in_delta(0.005, first, 0.000001)
     assert_operator(second, :>=, 1.01)
     assert_operator(third, :>=, 2.02)
@@ -185,10 +200,12 @@ class M3WatchTest < Minitest::Test
                                  bucket_capacity: 1, bucket_rate: 1)
     queue.add("a")
     queue.get(timeout: 0)
+
     assert_in_delta(0.005, queue.add_rate_limited("a"), 0.000001)
     assert_operator(queue.add_rate_limited("a"), :>=, 1.01)
 
     clock.advance(1.5)
+
     assert_operator(queue.add_rate_limited("a"), :>=, 0.519999)
   end
 
@@ -204,6 +221,7 @@ class M3WatchTest < Minitest::Test
 
     assert_equal([nil, false], queue.get(timeout: 0))
     clock.advance(0.005)
+
     assert_equal(["a", false], queue.get(timeout: 0))
   end
 
@@ -211,6 +229,7 @@ class M3WatchTest < Minitest::Test
     queue = Watch::WorkQueue.new
     queue.add("a")
     key, shutdown = queue.get(timeout: 0)
+
     refute(shutdown)
     queue.add("a")
     queue.shutdown
@@ -257,6 +276,7 @@ class M3WatchTest < Minitest::Test
     reflector = Watch::Reflector.new(client: client, fifo: fifo, resource: "pods", clock: clock.method(:call),
                                      sleeper: ->(_seconds) {})
     reflector.list!
+
     refute(reflector.watch_once)
     assert_equal(["1"], client.watch_versions)
     assert_equal("2", reflector.resource_version)
@@ -278,6 +298,7 @@ class M3WatchTest < Minitest::Test
     reflector = Watch::Reflector.new(client: client, fifo: fifo, resource: "pods", clock: clock.method(:call),
                                      sleeper: ->(seconds) { sleeps << seconds }, max_backoff: 1)
     reflector.run(iterations: 3)
+
     assert_equal([0.005, 0.01, 0.02], sleeps)
     assert_equal(3, calls)
   end
@@ -301,8 +322,9 @@ class M3WatchTest < Minitest::Test
     reflector = Watch::Reflector.new(client: client, fifo: fifo, resource: "pods", clock: clock.method(:call),
                                      sleeper: ->(seconds) { sleeps << seconds }, max_backoff: 1)
     reflector.run(iterations: 5)
+
     assert_equal([0.005, 0.01, 0.02], sleeps.first(3))
-    assert_equal(0.005, sleeps[3], "healthy watch must reset the delay to the minimum: #{sleeps.inspect}")
+    assert_in_delta(0.005, sleeps[3], 0.001, "healthy watch must reset the delay to the minimum: #{sleeps.inspect}")
   end
 
   # I2 shutdown contract: stopping a reflector during a reconnect backoff
@@ -324,7 +346,11 @@ class M3WatchTest < Minitest::Test
     reflector = Watch::Reflector.new(
       client: client, fifo: fifo, resource: "pods", clock: clock.method(:call),
       min_backoff: 30, max_backoff: 30,
-      sleeper: ->(seconds) { sleeps << seconds; backoff_started << true; sleep(seconds) }
+      sleeper: lambda { |seconds|
+        sleeps << seconds
+        backoff_started << true
+        sleep(seconds)
+      }
     )
 
     reflector.start(thread: true)
@@ -334,6 +360,7 @@ class M3WatchTest < Minitest::Test
     reflector.stop
 
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
+
     assert_operator elapsed, :<, 0.5
     assert_equal [30.0], sleeps
     refute_predicate reflector, :running?
@@ -360,21 +387,24 @@ class M3WatchTest < Minitest::Test
     client = ListWatchClient.new(
       lists: [{"items" => [object("a", version: 1)], "metadata" => {"resourceVersion" => "1"}}],
       streams: [Stream.new([
-        {"type" => "MODIFIED", "object" => object("a", version: 2)},
-        {"type" => "DELETED", "object" => object("a", version: 3)}
-      ])]
+                             {"type" => "MODIFIED", "object" => object("a", version: 2)},
+                             {"type" => "DELETED", "object" => object("a", version: 3)}
+                           ])]
     )
     informer = Watch::Informer.new(client: client, resource: "pods", resync_period: 0)
     events = []
     informer.on(:sync) { |value| events << [:sync, value.dig("metadata", "name")] }
     informer.on(:add) { |value| events << [:add, value.dig("metadata", "name")] }
-    informer.on(:update) { |value, old| events << [:update, old.dig("metadata", "resourceVersion"), value.dig("metadata", "resourceVersion")] }
+    informer.on(:update) do |value, old|
+      events << [:update, old.dig("metadata", "resourceVersion"), value.dig("metadata", "resourceVersion")]
+    end
     informer.on(:delete) { |value| events << [:delete, value.dig("metadata", "resourceVersion")] }
     informer.run_once
 
     assert_equal([[:sync, "a"], [:update, "1", "2"], [:delete, "2"]], events)
     assert_empty(informer.indexer.list)
     key, shutdown = informer.queue.get(timeout: 0)
+
     refute(shutdown)
     assert_equal("a", key)
   end
@@ -386,12 +416,13 @@ class M3WatchTest < Minitest::Test
       streams: [Stream.new([])]
     )
     informer = Watch::Informer.new(client: client, resource: "pods", resync_period: 10,
-                                    clock: clock.method(:call), sleeper: ->(_seconds) {})
+                                   clock: clock.method(:call), sleeper: ->(_seconds) {})
     syncs = 0
     informer.on(:sync) { |_value| syncs += 1 }
     informer.run_once
     clock.advance(10)
     informer.resync!
+
     assert_equal(2, syncs)
   end
 end

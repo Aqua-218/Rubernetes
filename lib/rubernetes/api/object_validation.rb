@@ -124,7 +124,9 @@ module Rubernetes
           name_errors(kind, name.to_s, prefix: false).each { |message| causes << invalid("metadata.name", name, message) }
         end
         if !generate_name.nil? && !generate_name.to_s.empty?
-          name_errors(kind, generate_name.to_s, prefix: true).each { |message| causes << invalid("metadata.generateName", generate_name, message) }
+          name_errors(kind, generate_name.to_s, prefix: true).each do |message|
+            causes << invalid("metadata.generateName", generate_name, message)
+          end
         end
         namespace = metadata["namespace"]
         if namespaced
@@ -151,12 +153,12 @@ module Rubernetes
             causes << required("metadata.ownerReferences[#{index}].#{key}") if reference[key].to_s.empty?
           end
         end
-        if old_metadata.is_a?(Hash)
-          %w[name namespace uid creationTimestamp].each do |key|
-            next if old_metadata[key].nil? || metadata[key].nil? || old_metadata[key].to_s == metadata[key].to_s
+        return unless old_metadata.is_a?(Hash)
 
-            causes << invalid("metadata.#{key}", metadata[key], "field is immutable")
-          end
+        %w[name namespace uid creationTimestamp].each do |key|
+          next if old_metadata[key].nil? || metadata[key].nil? || old_metadata[key].to_s == metadata[key].to_s
+
+          causes << invalid("metadata.#{key}", metadata[key], "field is immutable")
         end
       end
 
@@ -182,9 +184,7 @@ module Rubernetes
         if LABEL_LENGTH_NAME_KINDS.include?(kind) && name.length > DNS1123_LABEL_MAX
           errors << "must be no more than #{DNS1123_LABEL_MAX} characters"
         end
-        if kind == "CronJob" && name.length > CRONJOB_NAME_MAX
-          errors << "must be no more than #{CRONJOB_NAME_MAX} characters"
-        end
+        errors << "must be no more than #{CRONJOB_NAME_MAX} characters" if kind == "CronJob" && name.length > CRONJOB_NAME_MAX
         errors.uniq
       end
 
@@ -241,6 +241,7 @@ module Rubernetes
 
       def validate_labels(labels, path, causes)
         return if labels.nil?
+
         unless labels.is_a?(Hash)
           causes << invalid(path, labels, "must be a map of string to string")
           return
@@ -256,6 +257,7 @@ module Rubernetes
 
       def validate_annotations(annotations, path, causes)
         return if annotations.nil?
+
         unless annotations.is_a?(Hash)
           causes << invalid(path, annotations, "must be a map of string to string")
           return
@@ -335,9 +337,7 @@ module Rubernetes
         end
 
         containers = spec["containers"]
-        if !containers.is_a?(Array) || containers.empty?
-          causes << required("#{path}.containers")
-        end
+        causes << required("#{path}.containers") if !containers.is_a?(Array) || containers.empty?
         names = {}
         all_ports = {}
         Array(containers).each_with_index do |container, index|
@@ -354,7 +354,8 @@ module Rubernetes
         end
         if spec.key?("terminationGracePeriodSeconds") && !spec["terminationGracePeriodSeconds"].nil? &&
            (!spec["terminationGracePeriodSeconds"].is_a?(Integer) || spec["terminationGracePeriodSeconds"].negative?)
-          causes << invalid("#{path}.terminationGracePeriodSeconds", spec["terminationGracePeriodSeconds"], "must be greater than or equal to 0")
+          causes << invalid("#{path}.terminationGracePeriodSeconds", spec["terminationGracePeriodSeconds"],
+                            "must be greater than or equal to 0")
         end
         if spec.key?("activeDeadlineSeconds") && !spec["activeDeadlineSeconds"].nil? &&
            (!spec["activeDeadlineSeconds"].is_a?(Integer) || spec["activeDeadlineSeconds"] < 1)
@@ -399,7 +400,9 @@ module Rubernetes
           causes << unsupported("#{port_path}.protocol", protocol, PROTOCOLS) unless PROTOCOLS.include?(protocol)
           port_name = port["name"].to_s
           unless port_name.empty?
-            label_errors(port_name, DNS1123_LABEL, DNS1123_LABEL_MESSAGE, 15).each { |message| causes << invalid("#{port_path}.name", port_name, message) }
+            label_errors(port_name, DNS1123_LABEL, DNS1123_LABEL_MESSAGE, 15).each do |message|
+              causes << invalid("#{port_path}.name", port_name, message)
+            end
             # A container port NAME is unique across the whole Pod
             # (validation.go:2727): a named targetPort resolves through it, so
             # two ports sharing a name make the Service's target ambiguous.
@@ -409,11 +412,11 @@ module Rubernetes
               all_ports["name/#{port_name}"] = true
             end
           end
-          if port["hostPort"].is_a?(Integer)
-            key = "#{protocol}/#{port["hostIP"]}/#{port["hostPort"]}"
-            causes << duplicate("#{port_path}.hostPort", key) if all_ports.key?(key)
-            all_ports[key] = true
-          end
+          next unless port["hostPort"].is_a?(Integer)
+
+          key = "#{protocol}/#{port["hostIP"]}/#{port["hostPort"]}"
+          causes << duplicate("#{port_path}.hostPort", key) if all_ports.key?(key)
+          all_ports[key] = true
         end
         Array(container["volumeMounts"]).each_with_index do |mount, index|
           next unless mount.is_a?(Hash)
@@ -431,10 +434,10 @@ module Rubernetes
         validate_probe(container["livenessProbe"], "#{path}.livenessProbe", causes)
         validate_probe(container["readinessProbe"], "#{path}.readinessProbe", causes)
         validate_probe(container["startupProbe"], "#{path}.startupProbe", causes)
-        if init && container["lifecycle"].is_a?(Hash) && container["restartPolicy"] != "Always"
-          causes << Cause.new(reason: "FieldValueForbidden", field: "#{path}.lifecycle",
-                              message: "Forbidden: may not be set for init containers without restartPolicy=Always")
-        end
+        return unless init && container["lifecycle"].is_a?(Hash) && container["restartPolicy"] != "Always"
+
+        causes << Cause.new(reason: "FieldValueForbidden", field: "#{path}.lifecycle",
+                            message: "Forbidden: may not be set for init containers without restartPolicy=Always")
       end
 
       def validate_probe(probe, path, causes)
@@ -442,7 +445,10 @@ module Rubernetes
 
         handlers = %w[exec httpGet tcpSocket grpc].count { |key| probe[key].is_a?(Hash) }
         causes << required(path, "must specify a handler type") if handlers.zero?
-        causes << Cause.new(reason: "FieldValueForbidden", field: path, message: "Forbidden: may not specify more than 1 handler type") if handlers > 1
+        if handlers > 1
+          causes << Cause.new(reason: "FieldValueForbidden", field: path,
+                              message: "Forbidden: may not specify more than 1 handler type")
+        end
         %w[initialDelaySeconds timeoutSeconds periodSeconds successThreshold failureThreshold].each do |key|
           value = probe[key]
           next if value.nil?

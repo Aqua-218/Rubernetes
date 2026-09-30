@@ -28,7 +28,7 @@ module M2ProbeSupport
   ROOT = File.expand_path("../..", __dir__).freeze
   # Generator runs use a root-level mktemp directory. The anchored suffix
   # avoids excluding arbitrary source directories with a shared prefix.
-  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}.freeze
+  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}
   REQUIRED_ARCHITECTURES = M2Gate::REQUIRED_ARCHITECTURES
   RESOURCE_KINDS = M2Gate::REQUIRED_RESOURCE_KINDS
 
@@ -130,7 +130,7 @@ module M2ProbeSupport
         digest = busybox.fetch("platforms").fetch("linux/amd64")
         raise "Kubernetes lock busybox digest is invalid" unless digest.match?(/\Asha256:[0-9a-f]{64}\z/)
 
-        "#{busybox.fetch("reference").sub(/:[^:\/]+\z/, "")}@#{digest}"
+        "#{busybox.fetch("reference").sub(%r{:[^:/]+\z}, "")}@#{digest}"
       end
     end
 
@@ -221,6 +221,7 @@ module M2ProbeSupport
       @resolver = Rubernetes::Image::Resolver.new(puller: puller, staging_root: staging_root)
       image = @resolver.resolve(reference)
       raise "pulled image digest #{image.digest} is not the locked digest" unless image.digest.to_s == digest
+
       Rubernetes::Image::PinnedImageVerifier.new.verify(image: {"resolved_images" => [image.to_h]}, digest: aggregate_digest)
       @pulled_in = Process.pid
       image
@@ -308,7 +309,11 @@ module M2ProbeSupport
       begin
         cgroup = File.read("/proc/#{pid}/cgroup")
         if cgroup.include?("/rubernetes/") && prefixes.any? { |prefix| cgroup.include?("/#{prefix}") }
-          processes << {"pid" => Integer(pid), "cgroup" => cgroup.strip, "comm" => (File.read("/proc/#{pid}/comm").strip rescue nil)}
+          processes << {"pid" => Integer(pid), "cgroup" => cgroup.strip, "comm" => begin
+            File.read("/proc/#{pid}/comm").strip
+          rescue StandardError
+            nil
+          end}
         end
       rescue SystemCallError
         next
@@ -357,8 +362,8 @@ module M2ProbeSupport
   end
 
   def input_context(current)
-    expected_sha = ENV["RUBERNETES_M2_INPUT_SHA256"]
-    expected_count = ENV["RUBERNETES_M2_INPUT_FILE_COUNT"]
+    expected_sha = ENV.fetch("RUBERNETES_M2_INPUT_SHA256", nil)
+    expected_count = ENV.fetch("RUBERNETES_M2_INPUT_FILE_COUNT", nil)
     errors = []
     if expected_sha && !M2Gate::SHA256_PATTERN.match?(expected_sha)
       errors << "RUBERNETES_M2_INPUT_SHA256 must be a lowercase SHA-256 digest"
@@ -368,9 +373,7 @@ module M2ProbeSupport
     rescue ArgumentError, TypeError
       nil
     end
-    if expected_count && (!parsed_count || parsed_count <= 0)
-      errors << "RUBERNETES_M2_INPUT_FILE_COUNT must be a positive integer"
-    end
+    errors << "RUBERNETES_M2_INPUT_FILE_COUNT must be a positive integer" if expected_count && (!parsed_count || parsed_count <= 0)
     input_sha = expected_sha && M2Gate::SHA256_PATTERN.match?(expected_sha) ? expected_sha : current.fetch("sha256")
     input_file_count = parsed_count && parsed_count.positive? ? parsed_count : current.fetch("file_count")
     stable = current.fetch("sha256") == input_sha && current.fetch("file_count") == input_file_count
@@ -546,225 +549,222 @@ module M2ProbeSupport
     guard_runtime = nil
     guard_sandbox = nil
     Dir.mktmpdir("rubernetes-m2-sigkill-") do |directory|
-      begin
-        image = pinned_image
-        image.image
-        observer = NativeKernelObserver.new(directory: directory)
-        guard_runtime, guard_sandbox, _guard_container = start_guard_workload(
-          directory: directory, observer: observer
+      image = pinned_image
+      image.image
+      observer = NativeKernelObserver.new(directory: directory)
+      guard_runtime, guard_sandbox, _guard_container = start_guard_workload(
+        directory: directory, observer: observer
+      )
+      request_id = "sigkill-#{effect_point}-sandbox"
+      native_wal_path = File.join(directory, "native-agent.wal")
+      worker_pid = fork do
+        worker_observer = NativeKernelObserver.new(directory: directory)
+        session = nil
+        effect_hook = lambda do |effect_point:, sandbox:, operation:, transition:|
+          next unless effect_point == point
+
+          manifest = worker_observer.capture_effect(
+            runtime: session.runtime, sandbox: sandbox, role: "victim",
+            agent_pid: Process.pid, effect_point: effect_point
+          )
+          observed_inventory = worker_observer.list_resources.select do |resource|
+            resource.dig("metadata", "observer_role") == "victim"
+          end
+          checkpoint = native_effect_checkpoint(
+            effect_point, operation: operation, transition: transition,
+                          inventory: observed_inventory, request_id: request_id
+          )
+          metadata = session.metadata.merge(
+            "request_id" => request_id,
+            "effect_point" => effect_point,
+            "sandbox_id" => sandbox.id,
+            "native_wal_path" => native_wal_path,
+            "checkpoint" => checkpoint,
+            "liveness_pid" => manifest.fetch("liveness_pid"),
+            "liveness_start_time" => manifest.fetch("liveness_start_time")
+          )
+          # The hook is the durable effect barrier, not the kill itself.
+          # Let the Native state machine finish its remaining setup, then
+          # start one real workload and publish a second, independent
+          # readiness record.  The parent never kills an Agent before
+          # this workload identity has been observed from /proc/cgroup.
+          write_json_fsync(File.join(directory, "ready-#{point}.json"), checkpoint)
+          Thread.current[:m2_sigkill_checkpoint] = metadata
+        end
+        session = start_native_agent(
+          directory: directory, observer: worker_observer, effect_hook: effect_hook
         )
-        request_id = "sigkill-#{effect_point}-sandbox"
-        native_wal_path = File.join(directory, "native-agent.wal")
-        worker_pid = fork do
-          begin
-            worker_observer = NativeKernelObserver.new(directory: directory)
-            session = nil
-            effect_hook = lambda do |effect_point:, sandbox:, operation:, transition:|
-              next unless effect_point == point
+        runtime = session.runtime
+        sandbox_id = "m2-agent-crash-#{safe_probe_component(effect_point)}"
+        runtime.run_sandbox(image.runtime_input(id: sandbox_id), request_id: request_id)
+        sandbox = runtime.sandbox(sandbox_id)
+        container = runtime.create_container(sandbox, image.container_spec(id: "victim", command: ["/bin/busybox", "sleep", "3600"]))
+        container = runtime.start_container(container, request_id: "#{request_id}:workload")
+        # Replace the pre-workload observer manifest with a fresh kernel
+        # readback.  The checkpoint retains the exact pre-effect digest;
+        # this manifest proves the live workload that must not be deleted
+        # accidentally when the Agent is killed.
+        worker_observer.capture(
+          runtime: runtime, sandbox: sandbox, container: container,
+          role: "victim", agent_pid: Process.pid
+        )
+        actual_inventory = worker_observer.list_resources.select do |resource|
+          resource.dig("metadata", "observer_role") == "victim"
+        end
+        assert_unique_inventory_identities!(actual_inventory, "Native SIGKILL workload inventory")
+        actual_process = actual_inventory.find { |resource| resource["kind"] == "process" }
+        raise "Native SIGKILL workload process was not observed" unless actual_process
 
-              manifest = worker_observer.capture_effect(
-                runtime: session.runtime, sandbox: sandbox, role: "victim",
-                agent_pid: Process.pid, effect_point: effect_point
-              )
-              observed_inventory = worker_observer.list_resources.select do |resource|
-                resource.dig("metadata", "observer_role") == "victim"
-              end
-              checkpoint = native_effect_checkpoint(
-                effect_point, operation: operation, transition: transition,
-                inventory: observed_inventory, request_id: request_id
-              )
-              metadata = session.metadata.merge(
-                "request_id" => request_id,
-                "effect_point" => effect_point,
-                "sandbox_id" => sandbox.id,
-                "native_wal_path" => native_wal_path,
-                "checkpoint" => checkpoint,
-                "liveness_pid" => manifest.fetch("liveness_pid"),
-                "liveness_start_time" => manifest.fetch("liveness_start_time")
-              )
-              # The hook is the durable effect barrier, not the kill itself.
-              # Let the Native state machine finish its remaining setup, then
-              # start one real workload and publish a second, independent
-              # readiness record.  The parent never kills an Agent before
-              # this workload identity has been observed from /proc/cgroup.
-              write_json_fsync(File.join(directory, "ready-#{point}.json"), checkpoint)
-              Thread.current[:m2_sigkill_checkpoint] = metadata
-            end
-            session = start_native_agent(
-              directory: directory, observer: worker_observer, effect_hook: effect_hook
-            )
-            runtime = session.runtime
-            sandbox_id = "m2-agent-crash-#{safe_probe_component(effect_point)}"
-            runtime.run_sandbox(image.runtime_input(id: sandbox_id), request_id: request_id)
-            sandbox = runtime.sandbox(sandbox_id)
-            container = runtime.create_container(sandbox, image.container_spec(id: "victim", command: ["/bin/busybox", "sleep", "3600"]))
-            container = runtime.start_container(container, request_id: "#{request_id}:workload")
-            # Replace the pre-workload observer manifest with a fresh kernel
-            # readback.  The checkpoint retains the exact pre-effect digest;
-            # this manifest proves the live workload that must not be deleted
-            # accidentally when the Agent is killed.
-            worker_observer.capture(
-              runtime: runtime, sandbox: sandbox, container: container,
-              role: "victim", agent_pid: Process.pid
-            )
-            actual_inventory = worker_observer.list_resources.select do |resource|
-              resource.dig("metadata", "observer_role") == "victim"
-            end
-            assert_unique_inventory_identities!(actual_inventory, "Native SIGKILL workload inventory")
-            actual_process = actual_inventory.find { |resource| resource["kind"] == "process" }
-            raise "Native SIGKILL workload process was not observed" unless actual_process
-            process_metadata = actual_process.fetch("metadata")
-            actual_workload = {
-              "pid" => process_metadata.fetch("pid"),
-              "start_time" => process_metadata.fetch("start_time").to_s,
-              "command" => process_metadata.fetch("command"),
-              "executable_digest" => process_metadata.fetch("executable_digest"),
-              "cgroup_path" => process_metadata.fetch("cgroup_path"),
-              "cgroup_membership" => process_metadata.fetch("cgroup_membership"),
-              "pid_namespace" => process_metadata.fetch("pid_namespace"),
-              "mount_namespace" => process_metadata.fetch("mount_namespace"),
-              "workload_pidfd" => process_metadata.fetch("workload_pidfd"),
-              "workload_pidfd_link" => process_metadata.fetch("workload_pidfd_link"),
-              "creation_method" => process_metadata.fetch("creation_method"),
-              "clone_flags" => process_metadata.fetch("clone_flags")
-            }
-            checkpoint_metadata = Thread.current[:m2_sigkill_checkpoint] || {}
-            metadata = checkpoint_metadata.merge(
-              "actual_workload" => actual_workload,
-              "workload_pid" => actual_workload.fetch("pid"),
-              "workload_start_time" => actual_workload.fetch("start_time"),
-              "workload_command" => actual_workload.fetch("command"),
-              "workload_executable_digest" => actual_workload.fetch("executable_digest"),
-              "workload_creation_method" => actual_workload.fetch("creation_method"),
-              "workload_clone_flags" => actual_workload.fetch("clone_flags")
-            )
-            write_json_fsync(File.join(directory, "worker.json"), metadata)
-            write_json_fsync(File.join(directory, "workload-ready.json"), actual_workload)
-            loop { sleep 1 }
-          rescue Exception => error # rubocop:disable Lint/RescueException -- crash child must persist diagnostics
-            write_json_fsync(File.join(directory, "worker-error.json"), {
-              "class" => error.class.name,
-              "message" => error.message
-            })
-            exit!(70)
-          end
-        end
-
-        worker_metadata_path = File.join(directory, "worker.json")
-        ready_path = File.join(directory, "ready-#{effect_point}.json")
-        wait_for_file(worker_metadata_path, worker_pid, error_path: File.join(directory, "worker-error.json"))
-        wait_for_file(ready_path, worker_pid, error_path: File.join(directory, "worker-error.json"))
-        worker_metadata = parse_json_file(worker_metadata_path)
-        checkpoint = parse_json_file(ready_path)
-        inventory_at_kill = observer.list_resources
-        assert_unique_inventory_identities!(inventory_at_kill, "Native SIGKILL inventory at kill")
-        wal_before_sha256 = file_digest(native_wal_path)
-        Process.kill("KILL", worker_pid)
-        _waited_pid, status = Process.wait2(worker_pid)
-        worker_pid = nil
-        victim_namespace = inventory_at_kill.find do |resource|
-          resource["kind"] == "namespace" && resource.dig("metadata", "observer_role") == "victim"
-        end
-        if victim_namespace
-          wait_for_process_identity_exit(
-            victim_namespace.dig("metadata", "pid"),
-            victim_namespace.dig("metadata", "start_time")
-          )
-        end
-        actual_workload = worker_metadata["actual_workload"]
-        if actual_workload.is_a?(Hash)
-          wait_for_process_identity_exit(
-            actual_workload.fetch("pid"),
-            actual_workload.fetch("start_time")
-          )
-        end
-        inventory_before = observer.list_resources
-        assert_unique_inventory_identities!(inventory_before, "Native SIGKILL inventory before recovery")
-
-        restart_result_path = File.join(directory, "restart-result.json")
-        restart_pid = fork do
-          restart_observer = NativeKernelObserver.new(directory: directory)
-          begin
-            session = start_native_agent(directory: directory, observer: restart_observer)
-            operation = session.runtime.ledger.operation_for_request(request_id)
-            write_json_fsync(restart_result_path, {
-              "wal_replayed" => !operation.nil?,
-              "replayed_operation_state" => operation&.state,
-              "replayed_request_ids" => {request_id => !operation.nil?},
-              "inventory_before" => inventory_before,
-              "inventory_after" => restart_observer.list_resources,
-              "recovery" => session.agent.recovery_report,
-              "native_agent" => session.metadata
-            })
-            exit!(0)
-          rescue Exception => error # rubocop:disable Lint/RescueException
-            write_json_fsync(restart_result_path, {
-              "wal_replayed" => false,
-              "inventory_before" => inventory_before,
-              "inventory_after" => restart_observer.list_resources,
-              "recovery" => {"errors" => ["#{error.class}: #{error.message}"]},
-              "error" => "#{error.class}: #{error.message}"
-            })
-            exit!(71)
-          end
-        end
-        restart_process_pid = restart_pid
-        _restarted_pid, restart_status = Process.wait2(restart_pid)
-        restart_pid = nil
-        restart_result = parse_json_file(restart_result_path)
-        inventory_after = observer.list_resources
-        assert_unique_inventory_identities!(inventory_after, "Native SIGKILL inventory after recovery")
-        wal_after_sha256 = file_digest(native_wal_path)
-        result = {
-          "effect_point" => effect_point,
-          "crash_checkpoint" => checkpoint,
-          "signal" => "SIGKILL",
-          "measurement_id" => request_id,
-          "wal_path" => native_wal_path,
-          "native_wal_path" => native_wal_path,
-          "wal_kind" => "rubernetes_native_ownership_ledger",
-          "target_pid" => worker_metadata.fetch("agent_pid"),
-          "target_start_time" => worker_metadata.fetch("agent_start_time").to_s,
-          "actual_workload" => worker_metadata.fetch("actual_workload"),
-          "kernel_observer" => {
-            "external" => true, "observer_pid" => Process.pid,
-            "inventory_at_kill" => inventory_at_kill,
-            "inventory_at_kill_sha256" => digest_json(inventory_at_kill)
-          },
-          "restart_pid" => restart_process_pid,
-          "restart_process" => "fork",
-          "kill_observed" => status.signaled? && status.termsig == Signal.list.fetch("KILL"),
-          "restart_observed" => restart_status.success? && restart_result["error"].nil?,
-          "wal_replayed" => restart_result["wal_replayed"] == true,
-          "replayed_operation_state" => restart_result["replayed_operation_state"],
-          "replayed_request_ids" => restart_result.fetch("replayed_request_ids", {}),
-          "wait_status" => {
-            "signaled" => status.signaled?,
-            "signal" => status.signaled? ? "SIG#{Signal.signame(status.termsig)}" : nil,
-            "exit_status" => status.exited? ? status.exitstatus : nil
-          },
-          "wal_before_sha256" => wal_before_sha256,
-          "wal_after_sha256" => wal_after_sha256,
-          "wal_changed" => wal_before_sha256 != wal_after_sha256,
-          "inventory_before" => inventory_before,
-          "inventory_after" => inventory_after,
-          "inventory_before_sha256" => digest_json(inventory_before),
-          "inventory_after_sha256" => digest_json(inventory_after),
-          "live_wrong_deletion_count" => observer.live_guard_present? ? 0 : 1,
-          "dead_residual_count" => observer.dead_residual_count,
-          "recovery" => restart_result.fetch("recovery", {}),
-          "native_agent" => restart_result.fetch("native_agent", {}),
-          "measurement_source" => "production_native_agent_sigkill"
+        process_metadata = actual_process.fetch("metadata")
+        actual_workload = {
+          "pid" => process_metadata.fetch("pid"),
+          "start_time" => process_metadata.fetch("start_time").to_s,
+          "command" => process_metadata.fetch("command"),
+          "executable_digest" => process_metadata.fetch("executable_digest"),
+          "cgroup_path" => process_metadata.fetch("cgroup_path"),
+          "cgroup_membership" => process_metadata.fetch("cgroup_membership"),
+          "pid_namespace" => process_metadata.fetch("pid_namespace"),
+          "mount_namespace" => process_metadata.fetch("mount_namespace"),
+          "workload_pidfd" => process_metadata.fetch("workload_pidfd"),
+          "workload_pidfd_link" => process_metadata.fetch("workload_pidfd_link"),
+          "creation_method" => process_metadata.fetch("creation_method"),
+          "clone_flags" => process_metadata.fetch("clone_flags")
         }
-        result["restart_exit_status"] = restart_status.exitstatus if restart_status.exited?
-        result["restart_error"] = restart_result["error"] if restart_result["error"]
-        result["evidence_sha256"] = M2Gate.canonical_document_digest(result, excluded_keys: ["evidence_sha256"])
-        result
-      ensure
-        terminate_child(worker_pid)
-        terminate_child(restart_pid)
-        cleanup_guard_workload(guard_runtime, guard_sandbox)
+        checkpoint_metadata = Thread.current[:m2_sigkill_checkpoint] || {}
+        metadata = checkpoint_metadata.merge(
+          "actual_workload" => actual_workload,
+          "workload_pid" => actual_workload.fetch("pid"),
+          "workload_start_time" => actual_workload.fetch("start_time"),
+          "workload_command" => actual_workload.fetch("command"),
+          "workload_executable_digest" => actual_workload.fetch("executable_digest"),
+          "workload_creation_method" => actual_workload.fetch("creation_method"),
+          "workload_clone_flags" => actual_workload.fetch("clone_flags")
+        )
+        write_json_fsync(File.join(directory, "worker.json"), metadata)
+        write_json_fsync(File.join(directory, "workload-ready.json"), actual_workload)
+        loop { sleep 1 }
+      rescue Exception => error # rubocop:disable Lint/RescueException -- crash child must persist diagnostics
+        write_json_fsync(File.join(directory, "worker-error.json"), {
+                           "class" => error.class.name,
+                           "message" => error.message
+                         })
+        exit!(70)
       end
+
+      worker_metadata_path = File.join(directory, "worker.json")
+      ready_path = File.join(directory, "ready-#{effect_point}.json")
+      wait_for_file(worker_metadata_path, worker_pid, error_path: File.join(directory, "worker-error.json"))
+      wait_for_file(ready_path, worker_pid, error_path: File.join(directory, "worker-error.json"))
+      worker_metadata = parse_json_file(worker_metadata_path)
+      checkpoint = parse_json_file(ready_path)
+      inventory_at_kill = observer.list_resources
+      assert_unique_inventory_identities!(inventory_at_kill, "Native SIGKILL inventory at kill")
+      wal_before_sha256 = file_digest(native_wal_path)
+      Process.kill("KILL", worker_pid)
+      _waited_pid, status = Process.wait2(worker_pid)
+      worker_pid = nil
+      victim_namespace = inventory_at_kill.find do |resource|
+        resource["kind"] == "namespace" && resource.dig("metadata", "observer_role") == "victim"
+      end
+      if victim_namespace
+        wait_for_process_identity_exit(
+          victim_namespace.dig("metadata", "pid"),
+          victim_namespace.dig("metadata", "start_time")
+        )
+      end
+      actual_workload = worker_metadata["actual_workload"]
+      if actual_workload.is_a?(Hash)
+        wait_for_process_identity_exit(
+          actual_workload.fetch("pid"),
+          actual_workload.fetch("start_time")
+        )
+      end
+      inventory_before = observer.list_resources
+      assert_unique_inventory_identities!(inventory_before, "Native SIGKILL inventory before recovery")
+
+      restart_result_path = File.join(directory, "restart-result.json")
+      restart_pid = fork do
+        restart_observer = NativeKernelObserver.new(directory: directory)
+        begin
+          session = start_native_agent(directory: directory, observer: restart_observer)
+          operation = session.runtime.ledger.operation_for_request(request_id)
+          write_json_fsync(restart_result_path, {
+                             "wal_replayed" => !operation.nil?,
+                             "replayed_operation_state" => operation&.state,
+                             "replayed_request_ids" => {request_id => !operation.nil?},
+                             "inventory_before" => inventory_before,
+                             "inventory_after" => restart_observer.list_resources,
+                             "recovery" => session.agent.recovery_report,
+                             "native_agent" => session.metadata
+                           })
+          exit!(0)
+        rescue Exception => error # rubocop:disable Lint/RescueException
+          write_json_fsync(restart_result_path, {
+                             "wal_replayed" => false,
+                             "inventory_before" => inventory_before,
+                             "inventory_after" => restart_observer.list_resources,
+                             "recovery" => {"errors" => ["#{error.class}: #{error.message}"]},
+                             "error" => "#{error.class}: #{error.message}"
+                           })
+          exit!(71)
+        end
+      end
+      restart_process_pid = restart_pid
+      _restarted_pid, restart_status = Process.wait2(restart_pid)
+      restart_pid = nil
+      restart_result = parse_json_file(restart_result_path)
+      inventory_after = observer.list_resources
+      assert_unique_inventory_identities!(inventory_after, "Native SIGKILL inventory after recovery")
+      wal_after_sha256 = file_digest(native_wal_path)
+      result = {
+        "effect_point" => effect_point,
+        "crash_checkpoint" => checkpoint,
+        "signal" => "SIGKILL",
+        "measurement_id" => request_id,
+        "wal_path" => native_wal_path,
+        "native_wal_path" => native_wal_path,
+        "wal_kind" => "rubernetes_native_ownership_ledger",
+        "target_pid" => worker_metadata.fetch("agent_pid"),
+        "target_start_time" => worker_metadata.fetch("agent_start_time").to_s,
+        "actual_workload" => worker_metadata.fetch("actual_workload"),
+        "kernel_observer" => {
+          "external" => true, "observer_pid" => Process.pid,
+          "inventory_at_kill" => inventory_at_kill,
+          "inventory_at_kill_sha256" => digest_json(inventory_at_kill)
+        },
+        "restart_pid" => restart_process_pid,
+        "restart_process" => "fork",
+        "kill_observed" => status.signaled? && status.termsig == Signal.list.fetch("KILL"),
+        "restart_observed" => restart_status.success? && restart_result["error"].nil?,
+        "wal_replayed" => restart_result["wal_replayed"] == true,
+        "replayed_operation_state" => restart_result["replayed_operation_state"],
+        "replayed_request_ids" => restart_result.fetch("replayed_request_ids", {}),
+        "wait_status" => {
+          "signaled" => status.signaled?,
+          "signal" => status.signaled? ? "SIG#{Signal.signame(status.termsig)}" : nil,
+          "exit_status" => status.exited? ? status.exitstatus : nil
+        },
+        "wal_before_sha256" => wal_before_sha256,
+        "wal_after_sha256" => wal_after_sha256,
+        "wal_changed" => wal_before_sha256 != wal_after_sha256,
+        "inventory_before" => inventory_before,
+        "inventory_after" => inventory_after,
+        "inventory_before_sha256" => digest_json(inventory_before),
+        "inventory_after_sha256" => digest_json(inventory_after),
+        "live_wrong_deletion_count" => observer.live_guard_present? ? 0 : 1,
+        "dead_residual_count" => observer.dead_residual_count,
+        "recovery" => restart_result.fetch("recovery", {}),
+        "native_agent" => restart_result.fetch("native_agent", {}),
+        "measurement_source" => "production_native_agent_sigkill"
+      }
+      result["restart_exit_status"] = restart_status.exitstatus if restart_status.exited?
+      result["restart_error"] = restart_result["error"] if restart_result["error"]
+      result["evidence_sha256"] = M2Gate.canonical_document_digest(result, excluded_keys: ["evidence_sha256"])
+      result
+    ensure
+      terminate_child(worker_pid)
+      terminate_child(restart_pid)
+      cleanup_guard_workload(guard_runtime, guard_sandbox)
     end
   rescue StandardError => error
     {
@@ -952,7 +952,10 @@ module M2ProbeSupport
       next unless entry.is_a?(Hash)
 
       entry["inventory_measurement_id"] = measurement.fetch("measurement_id")
-      entry["evidence_sha256"] = M2Gate.canonical_document_digest(entry, excluded_keys: ["evidence_sha256"]) if entry.key?("evidence_sha256")
+      if entry.key?("evidence_sha256")
+        entry["evidence_sha256"] =
+          M2Gate.canonical_document_digest(entry, excluded_keys: ["evidence_sha256"])
+      end
     end
     measurement
   end
@@ -989,6 +992,7 @@ module M2ProbeSupport
 
     total = Integer(count)
     raise "Native L3 cycle count must be positive" unless total.positive?
+
     planned_faults = Array(fault_points).map(&:to_s)
     unknown_faults = planned_faults - M2Gate::REQUIRED_EFFECT_POINTS
     raise "unknown Native fault points: #{unknown_faults.join(", ")}" unless unknown_faults.empty?
@@ -1029,7 +1033,7 @@ module M2ProbeSupport
         assert_unique_inventory_identities!(active, "Native effect fault active inventory")
         checkpoint = native_effect_checkpoint(
           effect_point, operation: operation, transition: transition,
-          inventory: active, request_id: armed_fault.fetch("request_id")
+                        inventory: active, request_id: armed_fault.fetch("request_id")
         )
         token = Digest::SHA256.hexdigest([
           armed_fault.fetch("cycle"), effect_point,
@@ -1125,6 +1129,7 @@ module M2ProbeSupport
 
           operation = runtime.ledger.operation(sandbox_id)
           raise "fault rollback did not retain the durable operation" unless operation
+
           recovery = runtime.recover(observer: observer, cleaner: ->(resource) { observer.cleanup_resource(resource) })
           recovery_hash = recovery.respond_to?(:to_h) ? recovery.to_h : recovery
           residual = observer.list_resources.select do |resource|
@@ -1286,6 +1291,7 @@ module M2ProbeSupport
       line.split(" ").fetch(4, "") == workspace.root.gsub(" ", "\\040")
     end
     raise "OverlayFS mount was not observed in namespace #{namespace.pid}" unless mount_line&.include?(" - overlay ")
+
     mount_fields = mount_line.split(" ")
     entries << measured_resource("mount", "#{sandbox.id}:#{mount_fields.fetch(0)}",
                                  "mount:#{sandbox.id}:#{mount_fields.fetch(0)}:#{workspace.root}", owner,
@@ -1325,6 +1331,7 @@ module M2ProbeSupport
     workload_pid = Integer(process.workload_pid)
     workload_start = process.workload_start_time.to_s
     raise "actual workload identity is not live" unless process_start_time(workload_pid) == workload_start
+
     membership = File.readlines("/proc/#{workload_pid}/cgroup", chomp: true)
     expected_cgroup = container.cgroup.path.delete_prefix("/sys/fs/cgroup")
     raise "actual workload is outside its container cgroup" unless membership.any? { |line| line.end_with?(expected_cgroup) }
@@ -1336,11 +1343,13 @@ module M2ProbeSupport
     executable = File.readlink("/proc/#{workload_pid}/exe")
     executable_digest = "sha256:#{Digest::SHA256.file("/proc/#{workload_pid}/exe").hexdigest}"
     raise "actual workload executable digest changed" unless executable_digest == process.workload_executable_digest
+
     workload_status = File.binread("/proc/#{workload_pid}/status")
     security_fields = proc_status_security_fields(workload_status)
     workload_mountinfo = File.binread("/proc/#{workload_pid}/mountinfo")
     root_line = workload_mountinfo.each_line.select { |line| line.split(" ").fetch(4, nil) == "/" }.last
     raise "workload root is not the pivoted OverlayFS" unless root_line && root_line.include?(" - overlay ")
+
     entries << measured_resource(
       "process", process.id,
       "process:#{sandbox.id}:#{workload_pid}:#{workload_start}", owner,
@@ -1370,6 +1379,7 @@ module M2ProbeSupport
 
       link = File.readlink("/proc/self/fd/#{fd}")
       raise "#{role} descriptor #{fd} is not a pidfd" unless link.include?("pidfd")
+
       fdinfo = File.binread("/proc/self/fdinfo/#{fd}")
       entries << measured_resource("pidfd", "#{sandbox.id}:#{role}", "pidfd:#{sandbox.id}:#{role}:#{fdinfo.lines.grep(/\APid:/).join.strip}", owner,
                                    "fd" => fd, "fd_link" => link, "fdinfo_sha256" => Digest::SHA256.hexdigest(fdinfo))
@@ -1404,7 +1414,8 @@ module M2ProbeSupport
     end
     process = container.process
     if File.exist?("/proc/#{process.pid}")
-      residual << measured_resource("process", "#{process.id}:wrapper:residual", "process:residual:#{process.pid}", owner, "pid" => process.pid)
+      residual << measured_resource("process", "#{process.id}:wrapper:residual", "process:residual:#{process.pid}", owner,
+                                    "pid" => process.pid)
     end
     if process.workload_pid && process_start_time(process.workload_pid) == process.workload_start_time.to_s
       residual << measured_resource("process", "#{process.id}:workload:residual",
@@ -1481,11 +1492,9 @@ module M2ProbeSupport
           begin
             close
           rescue StandardError => cleanup_error
-            if primary_error
-              Rubernetes::Cleanup.attach(primary_error, [cleanup_error])
-            else
-              raise
-            end
+            raise unless primary_error
+
+            Rubernetes::Cleanup.attach(primary_error, [cleanup_error])
           end
         end
         self
@@ -1499,6 +1508,7 @@ module M2ProbeSupport
         owner = false
         @mutex.synchronize do
           return self if @close_succeeded
+
           if @close_in_progress
             @condition.wait(@mutex) while @close_in_progress
             return self if @close_succeeded
@@ -1619,11 +1629,11 @@ module M2ProbeSupport
       Rubernetes::API::Response.new(status: response.status, headers: response.headers, body: body_value)
     end
 
-    def stream(method, path, body: nil, headers: {}, query: nil)
+    def stream(method, path, body: nil, headers: {}, query: nil, &)
       response = request(method, path, body: body, headers: headers, query: query)
       return response unless block_given?
 
-      response.body.each { |chunk| yield chunk }
+      response.body.each(&)
       response
     end
 
@@ -1649,13 +1659,11 @@ module M2ProbeSupport
       end
       errors = []
       bodies.each do |body|
-        begin
-          body.close
-        rescue StandardError => error
-          # Close every registered watch even when one stream is already
-          # broken; report cleanup failure after all ownership hooks ran.
-          errors.concat(Array(error.respond_to?(:cleanup_errors) ? error.cleanup_errors : error))
-        end
+        body.close
+      rescue StandardError => error
+        # Close every registered watch even when one stream is already
+        # broken; report cleanup failure after all ownership hooks ran.
+        errors.concat(Array(error.respond_to?(:cleanup_errors) ? error.cleanup_errors : error))
       end
       aggregate = Rubernetes::Cleanup.aggregate(errors, operation: "NativeAPITransport close")
       raise aggregate if aggregate
@@ -1726,6 +1734,7 @@ module M2ProbeSupport
     end
     phase_mark.call("bootstrap")
     raise "production Native L3 subresource probe requires root" unless Process.uid.zero?
+
     image = pinned_image
     image.image
 
@@ -1779,7 +1788,7 @@ module M2ProbeSupport
         node_name: "m2-node",
         resync_period: 60,
         watch_timeout: 5,
-        error_handler: ->(error, event = nil) {
+        error_handler: lambda { |error, event = nil|
           worker_errors << {"uid" => "sync-loop", "error" => error.message, "backtrace" => error.backtrace&.first(8), "event" => event}
         }
       )
@@ -1816,9 +1825,9 @@ module M2ProbeSupport
       begin
         bootstrap_objects = [
           ["/api/v1/nodes", {"apiVersion" => "v1", "kind" => "Node",
-                              "metadata" => {"name" => "m2-node"}}],
+                             "metadata" => {"name" => "m2-node"}}],
           ["/api/v1/namespaces", {"apiVersion" => "v1", "kind" => "Namespace",
-                                   "metadata" => {"name" => "kube-node-lease"}}],
+                                  "metadata" => {"name" => "kube-node-lease"}}],
           ["/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases",
            {"apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease",
             "metadata" => {"name" => "m2-node", "namespace" => "kube-node-lease"},
@@ -1827,7 +1836,7 @@ module M2ProbeSupport
         bootstrap_objects.each_with_index do |(path, object), index|
           response = probe_http_request(
             server, "POST", path, request_id: "m2-bootstrap-#{index}",
-            body: JSON.generate(object), content_type: "application/json", identity: nil
+                                  body: JSON.generate(object), content_type: "application/json", identity: nil
           )
           # System namespaces exist from API server start; re-creating one is
           # the only expected conflict here.
@@ -1846,7 +1855,7 @@ module M2ProbeSupport
           raise "#{error.message}: agent_started=#{agent.started?} agent_ready=#{agent.ready?} " \
                 "node_registered=#{node_agent.registered?} node_ready=#{node_agent.ready?} " \
                 "sync_started=#{sync_loop.started?} sync_running=#{sync_loop.running?} " \
-                "resolver=#{node_resolver.resolve(node_name: 'm2-node').class} " \
+                "resolver=#{node_resolver.resolve(node_name: "m2-node").class} " \
                 "startup_error=#{node_agent.startup_error&.message} sync_errors=#{sync_loop.errors.inspect}"
         end
         phase_mark.call("agent_start", "passed", "registered" => node_agent.registered?, "sync_running" => sync_loop.running?)
@@ -1861,8 +1870,8 @@ module M2ProbeSupport
               "command" => [
                 "/bin/busybox", "sh", "-c",
                 "echo logs-ok; " \
-                  "(while :; do echo port-ok | /bin/busybox nc -l -p 18080; done) & " \
-                  "while :; do echo attach-ok; /bin/busybox sleep 1; done"
+                "(while :; do echo port-ok | /bin/busybox nc -l -p 18080; done) & " \
+                "while :; do echo attach-ok; /bin/busybox sleep 1; done"
               ]
             }]
           }
@@ -1920,7 +1929,9 @@ module M2ProbeSupport
                 "sync_errors=#{sync_loop.errors.inspect}; requests=#{api_transport.request_events.inspect}; " \
                 "watch_events=#{api_transport.watch_events.inspect}; " \
                 "lifecycle_state=#{lifecycle_record&.slice(:state, :phase, :error, :sandbox_id).inspect}; " \
-                "lifecycle_records=#{lifecycle.records.transform_values { |record| record.slice(:state, :phase, :error, :sandbox_id) }.inspect}; " \
+                "lifecycle_records=#{lifecycle.records.transform_values do |record|
+                  record.slice(:state, :phase, :error, :sandbox_id)
+                end.inspect}; " \
                 "watched_uid=#{watched_pod.dig("metadata", "uid").inspect}; " \
                 "phase_events=#{phase_events.inspect}"
         end
@@ -1929,13 +1940,12 @@ module M2ProbeSupport
 
         started = lifecycle.record(watched_pod)
         raise "Node Lifecycle did not retain the applied Pod" unless started
-        unless started.fetch(:phase) == "Running"
-          raise "Node Lifecycle did not start the applied Pod: #{started[:error]}"
-        end
+        raise "Node Lifecycle did not start the applied Pod: #{started[:error]}" unless started.fetch(:phase) == "Running"
 
         record = lifecycle.record(watched_pod)
         container = Array(record&.fetch(:containers)).find { |entry| entry.fetch(:name) == "app" }
         raise "Node Lifecycle did not publish the app container" unless container
+
         runtime_container = runtime.container_status(container.fetch(:id))
         runtime_sandbox = runtime.sandbox(record.fetch(:sandbox_id))
         runtime_container_object = runtime_sandbox.container(container.fetch(:id))
@@ -1947,6 +1957,7 @@ module M2ProbeSupport
           resource["kind"] == "process" && resource.dig("metadata", "observer_role") == "subresource"
         end
         raise "subresource workload kernel process was not observed" unless kernel_process
+
         flow.merge!(
           "lifecycle_started_at" => Time.now.utc.iso8601(6),
           "apply_preceded_lifecycle" => true,
@@ -1985,8 +1996,9 @@ module M2ProbeSupport
           "logs" => "/api/v1/namespaces/default/pods/m2-subresource-probe/log",
           "attach" => "/api/v1/namespaces/default/pods/m2-subresource-probe/attach",
           "exec" => "/api/v1/namespaces/default/pods/m2-subresource-probe/exec?#{URI.encode_www_form([
-            ["command", "/bin/busybox"], ["command", "echo"], ["command", "exec-ok"]
-          ])}",
+                                                                                                       ["command",
+                                                                                                        "/bin/busybox"], ["command", "echo"], ["command", "exec-ok"]
+                                                                                                     ])}",
           "port_forward" => "/api/v1/namespaces/default/pods/m2-subresource-probe/portforward?ports=18080&timeout=5"
         }
         expected = {
@@ -2049,7 +2061,9 @@ module M2ProbeSupport
           rescue StandardError => error
             {"unavailable" => "#{error.class}: #{error.message}"}
           end
-          raise "Pod subresource responses failed: #{failed_subresources.transform_values { |result| result.slice("http_status", "response_preview") }.inspect}; " \
+          raise "Pod subresource responses failed: #{failed_subresources.transform_values do |result|
+            result.slice("http_status", "response_preview")
+          end.inspect}; " \
                 "container_stderr=#{container_stderr}; container_status=#{container_status.inspect}"
         end
         phase_mark.call("delete")
@@ -2058,6 +2072,7 @@ module M2ProbeSupport
           request_id: "m2-delete"
         )
         raise "Pod delete failed with HTTP #{deleted.code}" unless deleted.code == "200"
+
         phase_mark.call("delete", "passed", "http_status" => Integer(deleted.code))
         flow["delete_http_status"] = Integer(deleted.code)
         phase_mark.call("delete_watch_reconciliation")
@@ -2107,15 +2122,13 @@ module M2ProbeSupport
           ["NativeAPITransport#close", -> { api_transport&.close }],
           ["AgentService#stop", -> { agent&.stop(reason: "m2 subresource probe") if agent&.started? }],
           ["HTTPServer#stop", -> { server&.stop }],
-          ["Node::Lifecycle#terminate", -> {
+          ["Node::Lifecycle#terminate", lambda {
             lifecycle&.terminate(watched_pod || applied_pod || manifest, request_id: "m2-node-cleanup")
           }]
         ].each do |label, operation|
-          begin
-            Timeout.timeout(3) { operation.call }
-          rescue StandardError => error
-            cleanup_errors << "#{label}: #{error.message}"
-          end
+          Timeout.timeout(3) { operation.call }
+        rescue StandardError => error
+          cleanup_errors << "#{label}: #{error.message}"
         end
         remaining_watch_bodies = api_transport&.active_watch_count.to_i
         remaining_stream_monitors = server&.active_stream_monitors.to_i
@@ -2128,7 +2141,9 @@ module M2ProbeSupport
         cleanup_errors << "SyncLoop watcher thread remains alive" if remaining_sync_thread
         cleanup_errors << "AgentService or Node Agent remains running" if remaining_agent
         lifecycle_after_cleanup = lifecycle&.record(watched_pod || applied_pod || manifest)
-        cleanup_errors << "Node Lifecycle remains in #{lifecycle_after_cleanup[:state]}" if lifecycle_after_cleanup && lifecycle_after_cleanup[:state] != "Removed"
+        if lifecycle_after_cleanup && lifecycle_after_cleanup[:state] != "Removed"
+          cleanup_errors << "Node Lifecycle remains in #{lifecycle_after_cleanup[:state]}"
+        end
         phase_mark.call("stop", cleanup_errors.empty? ? "passed" : "failed", "errors" => cleanup_errors)
         raise "subresource probe cleanup failed: #{cleanup_errors.join("; ")}" if cleanup_errors.any? && $!.nil?
       end
@@ -2142,10 +2157,12 @@ module M2ProbeSupport
     deadline = now + Float(timeout)
     stall_limit = Float(stall_timeout || timeout)
     raise ArgumentError, "stall_timeout must be positive" unless stall_limit.positive?
+
     last_progress = progress&.call
     stall_deadline = now + stall_limit
     loop do
       return true if yield
+
       now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       if progress
         current_progress = progress.call
@@ -2168,6 +2185,7 @@ module M2ProbeSupport
     require "rubernetes/runtime/native"
 
     raise "production Native L3 probe requires root" unless Process.uid.zero?
+
     image = pinned_image
     image.image
 
@@ -2202,9 +2220,7 @@ module M2ProbeSupport
       end
       if sandbox_id
         leftover = Dir.glob(File.join("/sys/fs/cgroup/rubernetes", "*", sandbox_id))
-        if leftover.any? && !active_error
-          raise "Native L3 cleanup left cgroup #{leftover.join(", ")}"
-        end
+        raise "Native L3 cleanup left cgroup #{leftover.join(", ")}" if leftover.any? && !active_error
       end
     end
     result
@@ -2222,7 +2238,8 @@ module M2ProbeSupport
     image_digest = File.file?(image_passwd) ? Digest::SHA256.file(image_passwd).hexdigest : nil
     host_digest = File.file?("/etc/passwd") ? Digest::SHA256.file("/etc/passwd").hexdigest : nil
     with_native_l3_runtime(
-      command: ["/bin/busybox", "sh", "-c", "if [ -e /etc/passwd ]; then sha256sum /etc/passwd | cut -d' ' -f1; else echo missing; fi; echo l3-ok"],
+      command: ["/bin/busybox", "sh", "-c",
+                "if [ -e /etc/passwd ]; then sha256sum /etc/passwd | cut -d' ' -f1; else echo missing; fi; echo l3-ok"],
       prefix: "runtime"
     ) do |runtime, _sandbox, container|
       waited = runtime.wait_container(container, timeout: 5)
@@ -2230,7 +2247,7 @@ module M2ProbeSupport
       lines = output.lines.map(&:strip)
       observed_digest = lines[0]
       rootfs_isolated = lines[1] == "l3-ok" &&
-                        (image_digest ? observed_digest == image_digest : observed_digest == "missing") &&
+                        (observed_digest == (image_digest || "missing")) &&
                         (host_digest.nil? || observed_digest != host_digest)
       inventory = runtime.resource_inventory.select { |resource| !resource.fetch("owner", "").empty? }
       measurement = {
@@ -2259,6 +2276,7 @@ module M2ProbeSupport
 
     raise "architecture #{architecture} is not the current execution architecture" unless architecture == architecture_name
     raise "production Native L3 kernel inventory requires root" unless Process.uid.zero?
+
     image = pinned_image
     image.image
 
@@ -2297,7 +2315,7 @@ module M2ProbeSupport
           command: [
             "/bin/busybox", "sh", "-c",
             "if /bin/busybox cat /blocked >/dev/null 2>&1; then exit 41; fi; " \
-              "echo security-ready; exec /bin/busybox sleep 3600"
+            "echo security-ready; exec /bin/busybox sleep 3600"
           ]
         ))
         container = runtime.start_container(container)
@@ -2306,7 +2324,8 @@ module M2ProbeSupport
           loop do
             output = runtime.logs(container)
             break if output.include?("security-ready\n")
-            raise "Landlock denial workload exited before readiness" unless runtime.wait_container(container, timeout: 0).fetch("state") == "running"
+            raise "Landlock denial workload exited before readiness" unless runtime.wait_container(container,
+                                                                                                   timeout: 0).fetch("state") == "running"
 
             sleep 0.01
           end
@@ -2316,6 +2335,7 @@ module M2ProbeSupport
         cgroup_pids = File.readlines(File.join(container.cgroup.path, "cgroup.procs"), chomp: true).map { |pid| Integer(pid) }
         child_pid = Integer(container.process.workload_pid)
         raise "actual clone3 workload PID was not observed in its cgroup" unless cgroup_pids.include?(child_pid)
+
         child_status = File.binread("/proc/#{child_pid}/status")
         # Captured while the workload is alive; the sandbox is stopped before
         # the result document is assembled.
@@ -2324,6 +2344,7 @@ module M2ProbeSupport
         unless child_fields["NoNewPrivs"] == "1" && child_fields["Seccomp"] == "2"
           raise "actual clone3 workload did not retain the required security state: #{child_fields.inspect}"
         end
+
         child_identity = kernel_identity_for(runtime, container.id, name: "main")
         parent_namespaces = %w[mnt pid net uts ipc cgroup user].to_h { |ns| [ns, File.readlink("/proc/self/ns/#{ns}")] }
         active_snapshot = RESOURCE_KINDS.to_h do |kind|
@@ -2397,7 +2418,7 @@ module M2ProbeSupport
 
   def managed_kernel_snapshot(sandbox_id:, sandbox_root:, pids: [], pidfds: [])
     cgroups = Dir.glob(File.join("/sys/fs/cgroup/rubernetes", "**", sandbox_id, "**", "*"))
-                  .select { |path| File.directory?(path) }.sort
+      .select { |path| File.directory?(path) }.sort
     processes = Array(pids).compact.select { |pid| File.exist?("/proc/#{pid}") }.map do |pid|
       {"pid" => pid, "start_time" => process_start_time(pid)}
     end
@@ -2458,7 +2479,7 @@ module M2ProbeSupport
         loop do
           header_end = bytes.index("\r\n\r\n".b)
           if header_end
-            status = bytes[/\AHTTP\/1\.1\s+(\d{3})/, 1]
+            status = bytes[%r{\AHTTP/1\.1\s+(\d{3})}, 1]
             payload = bytes.byteslice(header_end + 4, bytes.bytesize) || "".b
             header_lines = bytes.byteslice(0, header_end).to_s.split("\r\n").drop(1)
             headers = header_lines.each_with_object({}) do |line, result|
@@ -2484,7 +2505,7 @@ module M2ProbeSupport
       # its JSON body. Parse it below and let the caller record the real HTTP
       # status/body rather than turning a useful 503 into an opaque EOF.
     end
-    status = bytes[/\AHTTP\/1\.1\s+(\d{3})/, 1]
+    status = bytes[%r{\AHTTP/1\.1\s+(\d{3})}, 1]
     raise "stream response did not contain an HTTP status" unless status
 
     header_end = bytes.index("\r\n\r\n".b)
@@ -2561,7 +2582,10 @@ module M2ProbeSupport
       rescue Errno::ECHILD
         raise "SIGKILL worker #{pid} disappeared before measurement barrier #{File.basename(path)}"
       end
-      raise "SIGKILL worker #{pid} did not reach measurement barrier #{File.basename(path)}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+      if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+        raise "SIGKILL worker #{pid} did not reach measurement barrier #{File.basename(path)}"
+      end
+
       sleep 0.01
     end
     true
@@ -2681,12 +2705,11 @@ module M2ProbeSupport
     NativeAgentSession.new(agent: agent, runtime: runtime, lifecycle: lifecycle)
   end
 
-
   # Independent crash observer.  Capture persists immutable identities while
   # the Agent is alive; every subsequent list re-reads the kernel.  It never
   # accepts a caller-supplied liveness value and cannot manufacture a guard.
   class NativeKernelObserver
-    MANIFEST_GLOB = "*-kernel-manifest.json".freeze
+    MANIFEST_GLOB = "*-kernel-manifest.json"
 
     def initialize(directory:)
       @directory = File.expand_path(directory)
@@ -2703,8 +2726,8 @@ module M2ProbeSupport
       owner = sandbox.identity
       resources = runtime.ledger.resources(owner: owner, include_released: false).map do |resource|
         enrich_ledger_resource(resource, sandbox: sandbox, container: container,
-                               process: process, namespace: namespace, role: role,
-                               agent_pid: agent_pid)
+                                         process: process, namespace: namespace, role: role,
+                                         agent_pid: agent_pid)
       end
       resources.concat(derived_kernel_resources(sandbox, container, role: role, agent_pid: agent_pid))
       manifest = {
@@ -2773,6 +2796,7 @@ module M2ProbeSupport
       unless expected.fetch("identity") == value.fetch("identity") && expected.fetch("owner") == value.fetch("owner")
         raise "kernel resource identity changed before cleanup"
       end
+
       observed = observe_entry(expected, manifest)
       return true if observed.nil? && exact_resource_absent?(expected)
       raise "kernel resource identity changed or became unverifiable before cleanup" unless observed
@@ -2780,7 +2804,8 @@ module M2ProbeSupport
 
       case value.fetch("kind")
       when "process", "namespace"
-        raise "refusing to signal a stable live process" if stable_process?(expected.dig("metadata", "pid"), expected.dig("metadata", "start_time"))
+        raise "refusing to signal a stable live process" if stable_process?(expected.dig("metadata", "pid"),
+                                                                            expected.dig("metadata", "start_time"))
       when "cgroup"
         cleanup_cgroup(expected)
       when "workspace"
@@ -2977,6 +3002,7 @@ module M2ProbeSupport
       workspace = sandbox.workspace
       mount_line = mountinfo_line(namespace.pid, workspace.root)
       raise "OverlayFS readback is missing for #{workspace.root}" unless mount_line&.include?(" - overlay ")
+
       mount_fields = mount_line.split(" ")
       entries = [measured(
         "mount", "#{sandbox.id}:#{mount_fields.fetch(0)}",
@@ -3000,6 +3026,7 @@ module M2ProbeSupport
       end
       {"namespace" => namespace.pidfd, "workload" => process.workload_pidfd}.each do |name, fd|
         raise "#{name} pidfd is missing" unless fd
+
         entries << measured(
           "pidfd", "#{sandbox.id}:#{name}", "pidfd:#{sandbox.id}:#{name}:#{fdinfo_digest(agent_pid, fd)}", owner,
           observer_metadata(role).merge(
@@ -3042,14 +3069,14 @@ module M2ProbeSupport
                   stable_process?(metadata["pid"], metadata["start_time"])
                 when "namespace_link"
                   stable_process?(metadata["pid"], metadata["start_time"]) &&
-                    namespace_link(metadata["pid"], metadata["namespace"]) == metadata["kernel_link"]
+                  namespace_link(metadata["pid"], metadata["namespace"]) == metadata["kernel_link"]
                 when "pidfd"
                   fd_link(metadata["source_pid"], metadata["fd"]) == metadata["fd_link"] &&
-                    fdinfo_digest(metadata["source_pid"], metadata["fd"]) == metadata["fdinfo_sha256"]
+                  fdinfo_digest(metadata["source_pid"], metadata["fd"]) == metadata["fdinfo_sha256"]
                 when "mount"
                   current = mountinfo_line(metadata["holder_pid"], metadata["mountpoint"])
                   stable_process?(metadata["holder_pid"], metadata["holder_start_time"]) &&
-                    current == metadata["mountinfo"] && current.include?(" - overlay ")
+                  current == metadata["mountinfo"] && current.include?(" - overlay ")
                 when "cgroup"
                   stable_path?(metadata["path"], metadata["device"], metadata["inode"])
                 when "workspace"

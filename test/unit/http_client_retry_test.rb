@@ -38,11 +38,13 @@ class HTTPClientRetryTest < Minitest::Test
     sleeps = []
     before = retries("429", "POST")
     response = client([answer(429, "2"), answer(429, "1"), answer(201)], sleeps).request(:post, "/api/v1/namespaces", body: {})
+
     assert_equal 201, response.status
     assert_equal [2, 1], sleeps
     assert_equal before + 1, retries("429", "POST"), "the attempt after each Retry-After counts with its own code"
 
     sleeps.clear
+
     assert_equal 503, client([answer(503)], sleeps).request(:get, "/healthz").status
     assert_empty sleeps, "no Retry-After, no retry"
     assert_equal 404, client([answer(404, "1")], sleeps).request(:get, "/x").status
@@ -52,6 +54,7 @@ class HTTPClientRetryTest < Minitest::Test
   def test_at_most_ten_retries
     sleeps = []
     answers = Array.new(12) { answer(500, "0") }
+
     assert_equal 500, client(answers, sleeps).request(:get, "/api").status
     assert_equal 10, sleeps.length
     assert_equal 1, answers.length
@@ -59,12 +62,14 @@ class HTTPClientRetryTest < Minitest::Test
 
   def test_a_reset_get_is_retried_but_not_a_write
     sleeps = []
+
     assert_equal 200, client([Errno::ECONNRESET.new, answer(200)], sleeps).request(:get, "/api").status
     assert_equal [1], sleeps
     sleeps.clear
     assert_raises(Rubernetes::Client::TransportError) { client([Errno::ECONNRESET.new, answer(200)], sleeps).request(:put, "/api", body: {}) }
     assert_empty sleeps
   end
+
   # tlsTransportCache.get: one entry per TLS configuration, whatever the
   # server; an injected transport never reaches the cache.
   def test_transport_cache_metrics
@@ -76,6 +81,7 @@ class HTTPClientRetryTest < Minitest::Test
     Rubernetes::Client::HTTPClient.new(server: "https://127.0.0.1:1", insecure_skip_tls_verify: true, client_key_data: token)
     Rubernetes::Client::HTTPClient.new(server: "https://127.0.0.2:2", insecure_skip_tls_verify: true, client_key_data: token)
     client([], [])
+
     assert_equal misses + 1, value.call(%(rest_client_transport_create_calls_total{result="miss"}))
     assert_equal hits + 1, value.call(%(rest_client_transport_create_calls_total{result="hit"}))
   end

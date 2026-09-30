@@ -26,8 +26,8 @@ module M3ControlPlaneChaosRunner
   ROOT = File.expand_path("../../../..", __dir__).freeze
   RUNNER_PATH = File.expand_path(__FILE__).freeze
   require File.join(ROOT, "lib", "rubernetes", "controller", "effect_journal")
-  SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
-  BLOCKER = "M3 external-process evidence is blocked: no worker-restart shared API/store with replayable watch history, compare-and-swap leases, and effect IDs is configured; M3 requires the shared API/store process to survive worker SIGKILL, but does not require M5 disk-durable Raft or API-server HA. Provide a project-owned shared API/store or set RUBERNETES_M3_DURABLE_API_COMMAND, RUBERNETES_M3_DURABLE_API_ENDPOINT, and RUBERNETES_M3_DURABLE_API_CAPABILITIES before running the controller/scheduler chaos harness".freeze
+  SHA256_PATTERN = /\A[0-9a-f]{64}\z/
+  BLOCKER = "M3 external-process evidence is blocked: no worker-restart shared API/store with replayable watch history, compare-and-swap leases, and effect IDs is configured; M3 requires the shared API/store process to survive worker SIGKILL, but does not require M5 disk-durable Raft or API-server HA. Provide a project-owned shared API/store or set RUBERNETES_M3_DURABLE_API_COMMAND, RUBERNETES_M3_DURABLE_API_ENDPOINT, and RUBERNETES_M3_DURABLE_API_CAPABILITIES before running the controller/scheduler chaos harness"
 
   BUILT_IN_CAPABILITIES = {
     "backend" => "project_owned_apiserver_memorystore",
@@ -120,6 +120,7 @@ module M3ControlPlaneChaosRunner
     raise ArgumentError, "M3 chaos request is missing #{missing.join(", ")}" unless missing.empty?
     raise ArgumentError, "M3 chaos request schema_version must be 1" unless request["schema_version"] == 1
     raise ArgumentError, "M3 chaos request components are incomplete" unless Array(request["components"]).sort == REQUIRED_COMPONENTS.sort
+
     request
   end
 
@@ -146,9 +147,7 @@ module M3ControlPlaneChaosRunner
     ].map { |key| ENV[key].to_s.strip }
     external_requested = external_values.any? { |value| !value.empty? }
     return [BLOCKER] if FORBIDDEN_EVIDENCE_OVERRIDES.any? { |key| !ENV[key].to_s.strip.empty? }
-    if external_requested && external_values.any?(&:empty?)
-      return [BLOCKER]
-    end
+    return [BLOCKER] if external_requested && external_values.any?(&:empty?)
 
     missing = REQUIRED_CAPABILITIES.reject { |key| document[key] == true }
     watch_required = request.is_a?(Hash) && request["scenario"] == "watch-queue-chaos"
@@ -167,7 +166,7 @@ module M3ControlPlaneChaosRunner
       "runner_sha256" => Digest::SHA256.file(RUNNER_PATH).hexdigest,
       "command" => [RbConfig.ruby, RUNNER_PATH],
       "source" => {"root" => ROOT, "runner_source" => RUNNER_PATH,
-                    "runner_sha256" => Digest::SHA256.file(RUNNER_PATH).hexdigest},
+                   "runner_sha256" => Digest::SHA256.file(RUNNER_PATH).hexdigest},
       "process_id" => Process.pid,
       "request_sha256" => digest(request),
       "started_at" => iso8601_now
@@ -239,9 +238,8 @@ module M3ControlPlaneChaosRunner
     def kill(record, signal: "KILL", timeout: 10.0)
       pid = Integer(record.fetch("pid"))
       current_start_time = proc_start_time(pid)
-      unless current_start_time == record.fetch("start_time")
-        raise "pid #{pid} start time changed before #{signal}"
-      end
+      raise "pid #{pid} start time changed before #{signal}" unless current_start_time == record.fetch("start_time")
+
       Process.kill(signal, pid)
       wait(record, timeout: timeout)
     rescue Errno::ESRCH
@@ -446,7 +444,7 @@ module M3ControlPlaneChaosRunner
           "log_tail" => log.byteslice([log.bytesize - 4_000, 0].max, 4_000).to_s
         }
       end
-      raise RuntimeError, "#{error.class}: #{error.message}; process_diagnostics=#{JSON.generate(diagnostics)}"
+      raise "#{error.class}: #{error.message}; process_diagnostics=#{JSON.generate(diagnostics)}"
     ensure
       @supervisor.stop_all
       FileUtils.remove_entry(@directory) if @directory && File.directory?(@directory)
@@ -476,8 +474,11 @@ module M3ControlPlaneChaosRunner
         "worker_restart_durable" => @capabilities.fetch("worker_restart_durable", true),
         "m5_disk_durable" => @capabilities.fetch("m5_disk_durable", false),
         "m5_api_ha" => @capabilities.fetch("m5_api_ha", false),
-        "shared_api_process_survives_worker_kill" => @api_survival_observations.empty? ? nil :
-                                                      @api_survival_observations.all? { |observation| observation["alive"] == true },
+        "shared_api_process_survives_worker_kill" => if @api_survival_observations.empty?
+                                                       nil
+                                                     else
+                                                       @api_survival_observations.all? { |observation| observation["alive"] == true }
+                                                     end,
         "worker_process_count_per_component" => 2
       }
     end
@@ -492,12 +493,14 @@ module M3ControlPlaneChaosRunner
       command, endpoint, capability_path = if external_requested
                                              raise ArgumentError, BLOCKER if external_values.any?(&:empty?)
 
-                                             [Shellwords.split(external_values.fetch(0)), external_values.fetch(1), external_values.fetch(2)]
+                                             [Shellwords.split(external_values.fetch(0)), external_values.fetch(1),
+                                              external_values.fetch(2)]
                                            else
                                              [built_in_api_command, @api_endpoint, nil]
                                            end
       raise ArgumentError, "shared API command is empty" if command.empty?
       raise ArgumentError, "shared API endpoint must be an absolute HTTP(S) URL" unless endpoint.match?(%r{\Ahttps?://[^\s]+\z})
+
       @api_endpoint = endpoint
 
       environment = {
@@ -515,6 +518,7 @@ module M3ControlPlaneChaosRunner
         false
       end
       raise "shared API did not become ready" unless @api_record && process_alive?(@api_record)
+
       @runner_provenance["storage_contract"] = storage_contract
     end
 
@@ -575,8 +579,10 @@ module M3ControlPlaneChaosRunner
 
       leader = wait_for_leader(initial, lease_name: names.fetch("lease"))
       raise "#{component} did not elect a leader" unless leader
+
       old_lease = latest_lease_object(names.fetch("lease"))
       raise "#{component} leader lease observation is missing before kill" unless old_lease.is_a?(Hash)
+
       before = control_effect(component, phase: "before_effect", leader: leader, names: names)
       # Measure convergence from the actual kill boundary, not from the
       # preceding effect-controller RPC.
@@ -594,7 +600,7 @@ module M3ControlPlaneChaosRunner
       @raw_traces << after
 
       leader_lost = wait_for_leader_loss(initial, old_identity: leader.fetch("identity"),
-                                         lease_name: names.fetch("lease"))
+                                                  lease_name: names.fetch("lease"))
       loss_event = observation_event("loss", component, [leader], names,
                                      passed: leader_lost,
                                      extra: {"old_leader" => leader.fetch("identity"), "lease_resource_version" => latest_lease_rv(names.fetch("lease"))})
@@ -606,7 +612,7 @@ module M3ControlPlaneChaosRunner
       @raw_traces << fence
       restarted = spawn_one(component, leader.fetch("identity"), names)
       recovered_at = wait_for_recovery(initial, restarted, lease_name: names.fetch("lease"), started_at: kill_started,
-                                       old_identity: leader.fetch("identity"), old_lease: old_lease)
+                                                           old_identity: leader.fetch("identity"), old_lease: old_lease)
       # The recovery observation identifies the process generation that
       # actually holds the Lease. It may be the surviving peer (the restarted
       # process is allowed to remain a follower), so the post-recovery effect
@@ -615,6 +621,7 @@ module M3ControlPlaneChaosRunner
       recovery_identity = recovered_at["holder_identity"].to_s
       recovery_leader = (initial + [restarted]).find { |record| record.fetch("identity") == recovery_identity }
       raise "recovery Lease holder has no live process record" unless recovery_leader
+
       recovery = control_effect(component, phase: "after_recovery", leader: recovery_leader, names: names)
       @raw_traces << recovery
       fence_event = observation_event("fence", component, [leader], names,
@@ -732,7 +739,7 @@ module M3ControlPlaneChaosRunner
     end
 
     def spawn_pair(component, names)
-      ["a", "b"].map { |suffix| spawn_one(component, "m3-#{component}-#{suffix}", names) }
+      %w[a b].map { |suffix| spawn_one(component, "m3-#{component}-#{suffix}", names) }
     end
 
     def spawn_one(component, identity, names)
@@ -745,10 +752,10 @@ module M3ControlPlaneChaosRunner
         identity: identity,
         command: command,
         environment: {"RUBERNETES_M3_PROCESS_ROLE" => component, "RUBERNETES_M3_PROCESS_IDENTITY" => identity,
-                       "RUBERNETES_M3_CONFIG" => config_path,
-                       "RUBERNETES_M3_API_ENDPOINT" => @api_endpoint,
-                       "RUBERNETES_M3_RUN_DIRECTORY" => @directory,
-                       "RUBERNETES_M3_EFFECT_JOURNAL" => @effect_journal_path}
+                      "RUBERNETES_M3_CONFIG" => config_path,
+                      "RUBERNETES_M3_API_ENDPOINT" => @api_endpoint,
+                      "RUBERNETES_M3_RUN_DIRECTORY" => @directory,
+                      "RUBERNETES_M3_EFFECT_JOURNAL" => @effect_journal_path}
       )
     end
 
@@ -767,7 +774,7 @@ module M3ControlPlaneChaosRunner
       default
     end
 
-    def write_config(component, identity, names)
+    def write_config(component, identity, _names)
       require "yaml"
       path = File.join(@directory, "#{component}-#{identity}.yml")
       process = {
@@ -931,14 +938,18 @@ module M3ControlPlaneChaosRunner
       lease = latest_lease_object(names.fetch("lease"))
       observation = {
         "component" => component,
-        "processes" => records.map { |record| {"pid" => record.fetch("pid"), "start_time" => record.fetch("start_time"), "identity" => record.fetch("identity"), "alive" => process_alive?(record)} },
+        "processes" => records.map do |record|
+          {"pid" => record.fetch("pid"), "start_time" => record.fetch("start_time"), "identity" => record.fetch("identity"),
+           "alive" => process_alive?(record)}
+        end,
         "namespace" => names.fetch("namespace"),
         "lease_name" => names.fetch("lease"),
         "lease_resource_version" => lease&.dig("metadata", "resourceVersion"),
         "lease_holder" => lease&.dig("spec", "holderIdentity"),
         "observed_at" => M3ControlPlaneChaosRunner.iso8601_now
       }.merge(extra)
-      {"id" => id, "event" => id, "passed" => passed == true, "attempt_count" => 1, "observed_at" => observation.fetch("observed_at"), "observation" => observation}
+      {"id" => id, "event" => id, "passed" => passed == true, "attempt_count" => 1, "observed_at" => observation.fetch("observed_at"),
+       "observation" => observation}
     end
 
     def control_effect(component, phase:, leader:, names:)
@@ -950,23 +961,24 @@ module M3ControlPlaneChaosRunner
                     else phase
                     end
       result = invoke_control(command, {
-        "schema_version" => 1,
-        "scenario" => @request.fetch("scenario"),
-        "component" => component,
-        "phase" => phase,
-        "leader" => leader,
-        "lease" => {"name" => names.fetch("lease"), "namespace" => "kube-system", "resource_version" => latest_lease_rv(names.fetch("lease"))},
-        "target" => effect_target(component, names),
-        "required_effect_ids" => true,
-        "reconcile_key" => effect_reconcile_key(component, names),
-        "effect_type" => effect_type
-      })
+                                "schema_version" => 1,
+                                "scenario" => @request.fetch("scenario"),
+                                "component" => component,
+                                "phase" => phase,
+                                "leader" => leader,
+                                "lease" => {"name" => names.fetch("lease"), "namespace" => "kube-system",
+                                            "resource_version" => latest_lease_rv(names.fetch("lease"))},
+                                "target" => effect_target(component, names),
+                                "required_effect_ids" => true,
+                                "reconcile_key" => effect_reconcile_key(component, names),
+                                "effect_type" => effect_type
+                              })
       validate_effect_result!(result, phase, payload: {
-        "component" => component,
-        "leader" => leader,
-        "reconcile_key" => effect_reconcile_key(component, names),
-        "effect_type" => effect_type
-      })
+                                "component" => component,
+                                "leader" => leader,
+                                "reconcile_key" => effect_reconcile_key(component, names),
+                                "effect_type" => effect_type
+                              })
       result
     end
 
@@ -974,13 +986,13 @@ module M3ControlPlaneChaosRunner
       command = [RbConfig.ruby, File.join(ROOT, "test", "conformance", "kubernetes", "m3_control_plane_chaos", "watch_control.rb")]
 
       result = invoke_control(command, {
-        "schema_version" => 1,
-        "scenario" => @request.fetch("scenario"),
-        "component" => component,
-        "watch_faults" => @request.fetch("watch_faults"),
-        "lease" => {"name" => names.fetch("lease"), "namespace" => "kube-system"},
-        "target" => effect_target(component, names)
-      })
+                                "schema_version" => 1,
+                                "scenario" => @request.fetch("scenario"),
+                                "component" => component,
+                                "watch_faults" => @request.fetch("watch_faults"),
+                                "lease" => {"name" => names.fetch("lease"), "namespace" => "kube-system"},
+                                "target" => effect_target(component, names)
+                              })
       validate_watch_result!(result)
       result
     end
@@ -995,6 +1007,7 @@ module M3ControlPlaneChaosRunner
 
     def invoke_control(command, payload)
       raise ArgumentError, "external chaos control command is empty" if command.empty?
+
       started_at = M3ControlPlaneChaosRunner.iso8601_now
       environment = {
         "RUBERNETES_M3_API_ENDPOINT" => @api_endpoint,
@@ -1006,10 +1019,13 @@ module M3ControlPlaneChaosRunner
       }
       stdout, stderr, status = Open3.capture3(environment, *command, stdin_data: JSON.generate(payload), chdir: ROOT)
       raw_sha256 = Digest::SHA256.hexdigest(stdout.to_s)
-      raise "external chaos control failed: #{stderr.to_s.strip.empty? ? "exit status #{status.exitstatus || 1}" : stderr.to_s.strip}" unless status.success?
+      unless status.success?
+        raise "external chaos control failed: #{stderr.to_s.strip.empty? ? "exit status #{status.exitstatus || 1}" : stderr.to_s.strip}"
+      end
 
       result = JSON.parse(stdout, max_nesting: 512)
       raise "external chaos control must return an object" unless result.is_a?(Hash)
+
       result["raw_trace_sha256"] ||= raw_sha256
       result["control_command"] ||= command
       result["started_at"] ||= started_at
@@ -1018,6 +1034,7 @@ module M3ControlPlaneChaosRunner
       if payload["required_effect_ids"] == true && result["effect_ids"].empty?
         raise "external chaos control returned no effect IDs for #{payload.fetch("phase")}"
       end
+
       @raw_traces << {"payload" => payload, "result" => result, "raw_sha256" => raw_sha256}
       result
     rescue JSON::ParserError => error
@@ -1027,9 +1044,7 @@ module M3ControlPlaneChaosRunner
     def validate_effect_result!(result, phase, payload: {})
       REQUIRED_EFFECT_COUNTERS.each do |key|
         value = result[key]
-        unless value.is_a?(Integer) && value >= 0
-          raise "external effect control #{phase} must return non-negative integer #{key}"
-        end
+        raise "external effect control #{phase} must return non-negative integer #{key}" unless value.is_a?(Integer) && value >= 0
       end
       raise "external effect control #{phase} did not pass" unless result["passed"] == true
       raise "external effect control #{phase} must return deterministic effect identity" unless
@@ -1038,9 +1053,11 @@ module M3ControlPlaneChaosRunner
         result["effect_type"].to_s == payload.fetch("effect_type") &&
         result["generation"].to_s == payload.dig("leader", "generation").to_s &&
         result["effect_ids"].all? { |effect_id| effect_id.to_s.include?(payload.dig("leader", "generation").to_s) }
-      if phase == "after_effect"
-        raise "external effect control after_effect must reject the stale leader" unless result["stale_rejected"] == true && result["mutation_count"] == 0
-      end
+
+      return unless phase == "after_effect"
+      return if result["stale_rejected"] == true && result["mutation_count"] == 0
+
+      raise "external effect control after_effect must reject the stale leader"
     end
 
     def validate_watch_result!(result)
@@ -1051,9 +1068,7 @@ module M3ControlPlaneChaosRunner
 
       REQUIRED_WATCH_COUNTERS.each do |key|
         value = result[key]
-        unless value.is_a?(Integer) && value >= 0
-          raise "external watch control must return non-negative integer #{key}"
-        end
+        raise "external watch control must return non-negative integer #{key}" unless value.is_a?(Integer) && value >= 0
       end
       properties = Array(result["properties"])
       property_ids = properties.filter_map do |property|
@@ -1063,6 +1078,7 @@ module M3ControlPlaneChaosRunner
              property_ids.uniq.length == REQUIRED_QUEUE_PROPERTIES.length
         raise "external watch control must return the four required queue properties"
       end
+
       properties.each_with_index do |property, index|
         unless property.is_a?(Hash) && property["passed"] == true && property["attempt_count"] == 1 &&
                property["measurement_source"] == "production_module"
@@ -1077,6 +1093,7 @@ module M3ControlPlaneChaosRunner
              end
         raise "external watch control must return structured events for every requested fault"
       end
+
       events.each_with_index do |event, index|
         unless event.is_a?(Hash) && event["passed"] == true && event["attempt_count"] == 1 &&
                event["observed_at"].is_a?(String) && event["observation"].is_a?(Hash)
@@ -1229,7 +1246,7 @@ module M3ControlPlaneChaosRunner
       "trace" => [],
       "component_runs" => [],
       "lease_observations" => [],
-        "effect_ids" => [],
+      "effect_ids" => [],
       "raw_trace_sha256" => nil,
       "canonical_trace_sha256" => nil,
       "errors" => [error]

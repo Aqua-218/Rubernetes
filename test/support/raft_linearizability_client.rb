@@ -91,7 +91,7 @@ module RaftLinearizabilityClient
         node = target.node
         if node.leader?
           begin
-            node.read_index do |index, error|
+            node.read_index do |_index, error|
               if error
                 @history.fail(client, op, input, {"status" => "not_leader"})
               else
@@ -100,7 +100,12 @@ module RaftLinearizabilityClient
                 rescue Rubernetes::Storage::NotFound
                   nil
                 end
-                output = object ? {"status" => "ok", "value" => object["spec"]["value"], "version" => Integer(object["metadata"]["resourceVersion"])} : {"status" => "not_found"}
+                output = if object
+                           {"status" => "ok", "value" => object["spec"]["value"],
+                            "version" => Integer(object["metadata"]["resourceVersion"])}
+                         else
+                           {"status" => "not_found"}
+                         end
                 @history.ok(client, op, input, output)
               end
               @pending.delete(client)

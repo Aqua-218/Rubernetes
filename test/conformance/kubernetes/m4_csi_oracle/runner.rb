@@ -125,7 +125,7 @@ module M4CSIOracleRunner
       ready = M4ObserverSupport.wait_for(timeout: 15) do
         IO.select([stdout_read], nil, nil, 0.05) ? stdout_read.gets : nil
       end
-      raise "CSI oracle plugin did not report readiness: #{File.file?(@plugin_stderr) ? File.read(@plugin_stderr) : ""}" unless ready
+      raise "CSI oracle plugin did not report readiness: #{File.read(@plugin_stderr) if File.file?(@plugin_stderr)}" unless ready
 
       @plugin_ready = JSON.parse(ready)
       M4ObserverSupport.wait_for(timeout: 10) { File.socket?(socket) } || raise("CSI oracle plugin socket did not appear")
@@ -178,18 +178,22 @@ module M4CSIOracleRunner
       @volume_id = created["volumeId"] || created["volume_id"] || created.dig("volume", "volumeId")
       raise "CreateVolume returned no volume id: #{created.inspect}" unless @volume_id.is_a?(String) && !@volume_id.empty?
 
-      call("ControllerPublishVolume") { bridge.publish(@volume_id, NODE, token: "m4-csi-oracle-attach", context: {"accessModes" => ["ReadWriteOnce"]}) }
+      call("ControllerPublishVolume") do
+        bridge.publish(@volume_id, NODE, token: "m4-csi-oracle-attach", context: {"accessModes" => ["ReadWriteOnce"]})
+      end
       call("NodeStageVolume", kernel_target: stage_path) do
         bridge.stage(@volume_id, stage_path, token: "m4-csi-oracle-stage", readonly: false, context: {"accessModes" => ["ReadWriteOnce"]})
       end
       call("NodePublishVolume", kernel_target: target_path) do
         bridge.publish_node(@volume_id, stage_path, target_path, token: "m4-csi-oracle-publish", readonly: false,
-                            context: {"accessModes" => ["ReadWriteOnce"]})
+                                                                 context: {"accessModes" => ["ReadWriteOnce"]})
       end
       File.binwrite(File.join(target_path, "payload"), "m4-csi-oracle-payload\n" * 64)
       @payload_visible_in_volume = Dir.glob(File.join(directory, "state", "volumes", "*", "payload")).any?
       call("NodeGetVolumeStats", kernel_target: target_path) { bridge.stats(@volume_id, path: target_path) }
-      call("NodeUnpublishVolume", kernel_target: target_path) { bridge.unpublish_node(@volume_id, target_path, token: "m4-csi-oracle-unpublish") }
+      call("NodeUnpublishVolume", kernel_target: target_path) do
+        bridge.unpublish_node(@volume_id, target_path, token: "m4-csi-oracle-unpublish")
+      end
       call("NodeUnstageVolume", kernel_target: stage_path) { bridge.unstage(@volume_id, stage_path, token: "m4-csi-oracle-unstage") }
       call("ControllerUnpublishVolume") { bridge.unpublish(@volume_id, NODE, token: "m4-csi-oracle-detach") }
       call("DeleteVolume") { bridge.delete_volume(@volume_id, token: "m4-csi-oracle-delete") }
@@ -291,7 +295,8 @@ module M4CSIOracleRunner
 
     def document(request, started_at, plugin_binary:, plugin_source_sha:, plugin_record:)
       finished_at = M4ObserverSupport.iso8601_now
-      provenance = M4ObserverSupport.runner_provenance(RUNNER_PATH, implementation: IMPLEMENTATION, started_at: started_at, finished_at: finished_at)
+      provenance = M4ObserverSupport.runner_provenance(RUNNER_PATH, implementation: IMPLEMENTATION, started_at: started_at,
+                                                                    finished_at: finished_at)
       {
         "schema_version" => 1, "suite" => "m4-csi-oracle", "executed" => true,
         "runner" => provenance, "runner_sha256" => provenance.fetch("runner_sha256"),
@@ -317,7 +322,8 @@ module M4CSIOracleRunner
     unless ENV["RUBERNETES_M4_CSI_ORACLE_PRIVATE_MOUNTS"] == "1"
       # Re-exec inside a private mount namespace so plugin bind mounts stay
       # invisible to the host; the child inherits stdin content via argv.
-      environment = ENV.to_h.merge("RUBERNETES_M4_CSI_ORACLE_PRIVATE_MOUNTS" => "1", "RUBERNETES_M4_CSI_ORACLE_REQUEST" => JSON.generate(request))
+      environment = ENV.to_h.merge("RUBERNETES_M4_CSI_ORACLE_PRIVATE_MOUNTS" => "1",
+                                   "RUBERNETES_M4_CSI_ORACLE_REQUEST" => JSON.generate(request))
       exec(environment, "unshare", "--mount", "--propagation", "private", "--", RbConfig.ruby, RUNNER_PATH, *ARGV)
     end
     request = JSON.parse(ENV.fetch("RUBERNETES_M4_CSI_ORACLE_REQUEST", "{}")) if request.empty?

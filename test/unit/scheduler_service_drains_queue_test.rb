@@ -47,11 +47,12 @@ class SchedulerServiceDrainsQueueTest < Minitest::Test
 
   def test_the_loop_only_sleeps_when_the_queue_is_empty
     sleeps = []
-    results = 3.times.map { |index| Result.new(:scheduled, nil, nil) }
+    results = 3.times.map { |_index| Result.new(:scheduled, nil, nil) }
     service = build_service(results: results, sleeps: sleeps)
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     service.send(:run_loop)
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
     assert_equal [Service::IDLE_POLL_SECONDS], sleeps, "one short sleep, on the empty pass"
     assert_operator elapsed, :<, 0.4, "three Pods were placed without pacing"
   end
@@ -65,6 +66,7 @@ class SchedulerServiceDrainsQueueTest < Minitest::Test
     service = build_service(results: [], sleeps: sleeps)
     service.instance_variable_set(:@interval, 0.5)
     service.send(:run_loop)
+
     assert_equal [0.02], sleeps
     assert_operator sleeps.first, :<, 0.5
   end
@@ -74,6 +76,7 @@ class SchedulerServiceDrainsQueueTest < Minitest::Test
     service = build_service(results: [], sleeps: sleeps)
     service.instance_variable_set(:@interval, 0.005)
     service.send(:run_loop)
+
     assert_equal [0.005], sleeps
   end
 end

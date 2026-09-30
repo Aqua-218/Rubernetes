@@ -22,6 +22,7 @@ module Rubernetes
       # api.Version: v1.<minor>, or latest (newer than any number).
       class Version
         include Comparable
+
         attr_reader :major, :minor
 
         def self.latest = LATEST
@@ -109,7 +110,7 @@ module Rubernetes
       def policy_to_evaluate(labels, defaults)
         policy = Policy.new(defaults.enforce.dup, defaults.audit.dup, defaults.warn.dup)
         errors = []
-        labels = labels.is_a?(Hash) ? labels : {}
+        labels = {} unless labels.is_a?(Hash)
         return [policy, errors] if labels.empty?
 
         record = lambda do |error, label, value|
@@ -204,6 +205,7 @@ module Rubernetes
 
       def windows?(spec) = value(spec, "os", "name") == "windows"
       def relax_for_user_namespace?(spec) = spec.is_a?(Hash) && spec["hostUsers"] == false
+
       # fmt's %q.
       def go_quote(text)
         escaped = text.to_s.each_char.map do |char|
@@ -319,7 +321,8 @@ module Rubernetes
         end
         details = []
         if missing_drop.any?
-          details << %(#{pluralize("container", "containers", missing_drop.length)} #{join_quote(missing_drop)} must set securityContext.capabilities.drop=["ALL"])
+          details << %(#{pluralize("container", "containers",
+                                   missing_drop.length)} #{join_quote(missing_drop)} must set securityContext.capabilities.drop=["ALL"])
         end
         if adding.any?
           details << "#{pluralize("container", "containers", adding.length)} #{join_quote(adding)} must not include " \
@@ -345,7 +348,9 @@ module Rubernetes
       end
 
       def host_path_volumes_1_0(_meta, spec)
-        volumes = Array(spec["volumes"]).select { |volume| volume.is_a?(Hash) && !volume["hostPath"].nil? }.map { |volume| volume["name"].to_s }
+        volumes = Array(spec["volumes"]).select do |volume|
+          volume.is_a?(Hash) && !volume["hostPath"].nil?
+        end.map { |volume| volume["name"].to_s }
         return ALLOWED if volumes.empty?
 
         CheckResult.new(false, "hostPath volumes", "#{pluralize("volume", "volumes", volumes.length)} #{join_quote(volumes)}")
@@ -628,14 +633,18 @@ module Rubernetes
       SYSCTLS_1_32 = (SYSCTLS_1_29 + %w[net.ipv4.tcp_rmem net.ipv4.tcp_wmem]).freeze
 
       def sysctls(spec, allowed)
-        forbidden = Array(value(spec, "securityContext", "sysctls")).map { |sysctl| sysctl["name"].to_s }.reject { |name| allowed.include?(name) }
+        forbidden = Array(value(spec, "securityContext", "sysctls")).map do |sysctl|
+          sysctl["name"].to_s
+        end.reject { |name| allowed.include?(name) }
         return ALLOWED if forbidden.empty?
 
         CheckResult.new(false, "forbidden sysctls", forbidden.join(", "))
       end
 
       def windows_host_process_1_0(_meta, spec)
-        bad = containers(spec).select { |c| value(c, "securityContext", "windowsOptions", "hostProcess") == true }.map { |c| c["name"].to_s }
+        bad = containers(spec).select do |c|
+          value(c, "securityContext", "windowsOptions", "hostProcess") == true
+        end.map { |c| c["name"].to_s }
         setters = value(spec, "securityContext", "windowsOptions", "hostProcess") == true ? ["pod"] : []
         return ALLOWED if bad.empty? && setters.empty?
 
@@ -648,45 +657,46 @@ module Rubernetes
       # DefaultChecks.
       CHECKS = [
         Check.new("allowPrivilegeEscalation", "restricted",
-                  [VersionedCheck.new(V.(1, 8), M.(:allow_privilege_escalation_1_8), []),
-                   VersionedCheck.new(V.(1, 25), M.(:allow_privilege_escalation_1_25), [])]),
-        Check.new("appArmorProfile", "baseline", [VersionedCheck.new(V.(1, 0), M.(:app_armor_profile_1_0), [])]),
-        Check.new("capabilities_baseline", "baseline", [VersionedCheck.new(V.(1, 0), M.(:capabilities_baseline_1_0), [])]),
+                  [VersionedCheck.new(V.call(1, 8), M.call(:allow_privilege_escalation_1_8), []),
+                   VersionedCheck.new(V.call(1, 25), M.call(:allow_privilege_escalation_1_25), [])]),
+        Check.new("appArmorProfile", "baseline", [VersionedCheck.new(V.call(1, 0), M.call(:app_armor_profile_1_0), [])]),
+        Check.new("capabilities_baseline", "baseline", [VersionedCheck.new(V.call(1, 0), M.call(:capabilities_baseline_1_0), [])]),
         Check.new("capabilities_restricted", "restricted",
-                  [VersionedCheck.new(V.(1, 22), M.(:capabilities_restricted_1_22), ["capabilities_baseline"]),
-                   VersionedCheck.new(V.(1, 25), M.(:capabilities_restricted_1_25), ["capabilities_baseline"])]),
-        Check.new("hostNamespaces", "baseline", [VersionedCheck.new(V.(1, 0), M.(:host_namespaces_1_0), [])]),
-        Check.new("hostPathVolumes", "baseline", [VersionedCheck.new(V.(1, 0), M.(:host_path_volumes_1_0), [])]),
-        Check.new("hostPorts", "baseline", [VersionedCheck.new(V.(1, 0), M.(:host_ports_1_0), [])]),
+                  [VersionedCheck.new(V.call(1, 22), M.call(:capabilities_restricted_1_22), ["capabilities_baseline"]),
+                   VersionedCheck.new(V.call(1, 25), M.call(:capabilities_restricted_1_25), ["capabilities_baseline"])]),
+        Check.new("hostNamespaces", "baseline", [VersionedCheck.new(V.call(1, 0), M.call(:host_namespaces_1_0), [])]),
+        Check.new("hostPathVolumes", "baseline", [VersionedCheck.new(V.call(1, 0), M.call(:host_path_volumes_1_0), [])]),
+        Check.new("hostPorts", "baseline", [VersionedCheck.new(V.call(1, 0), M.call(:host_ports_1_0), [])]),
         Check.new("hostProbesAndHostLifecycle", "baseline",
-                  [VersionedCheck.new(V.(1, 34), M.(:host_probes_and_host_lifecycle_1_34), [])]),
-        Check.new("privileged", "baseline", [VersionedCheck.new(V.(1, 0), M.(:privileged_1_0), [])]),
+                  [VersionedCheck.new(V.call(1, 34), M.call(:host_probes_and_host_lifecycle_1_34), [])]),
+        Check.new("privileged", "baseline", [VersionedCheck.new(V.call(1, 0), M.call(:privileged_1_0), [])]),
         Check.new("procMount", "baseline",
-                  [VersionedCheck.new(V.(1, 0), M.(:proc_mount_1_0), []),
-                   VersionedCheck.new(V.(1, 35), M.(:proc_mount_1_35_baseline), [])]),
-        Check.new("procMount_restricted", "restricted", [VersionedCheck.new(V.(1, 35), M.(:proc_mount_1_0), ["procMount"])]),
-        Check.new("restrictedVolumes", "restricted", [VersionedCheck.new(V.(1, 0), M.(:restricted_volumes_1_0), ["hostPathVolumes"])]),
+                  [VersionedCheck.new(V.call(1, 0), M.call(:proc_mount_1_0), []),
+                   VersionedCheck.new(V.call(1, 35), M.call(:proc_mount_1_35_baseline), [])]),
+        Check.new("procMount_restricted", "restricted", [VersionedCheck.new(V.call(1, 35), M.call(:proc_mount_1_0), ["procMount"])]),
+        Check.new("restrictedVolumes", "restricted",
+                  [VersionedCheck.new(V.call(1, 0), M.call(:restricted_volumes_1_0), ["hostPathVolumes"])]),
         Check.new("runAsNonRoot", "restricted",
-                  [VersionedCheck.new(V.(1, 0), M.(:run_as_non_root_1_0), []),
-                   VersionedCheck.new(V.(1, 35), M.(:run_as_non_root_1_35), [])]),
+                  [VersionedCheck.new(V.call(1, 0), M.call(:run_as_non_root_1_0), []),
+                   VersionedCheck.new(V.call(1, 35), M.call(:run_as_non_root_1_35), [])]),
         Check.new("runAsUser", "restricted",
-                  [VersionedCheck.new(V.(1, 23), M.(:run_as_user_1_23), []),
-                   VersionedCheck.new(V.(1, 35), M.(:run_as_user_1_35), [])]),
+                  [VersionedCheck.new(V.call(1, 23), M.call(:run_as_user_1_23), []),
+                   VersionedCheck.new(V.call(1, 35), M.call(:run_as_user_1_35), [])]),
         Check.new("seLinuxOptions", "baseline",
-                  [VersionedCheck.new(V.(1, 0), M.(:se_linux_options_1_0), []),
-                   VersionedCheck.new(V.(1, 31), M.(:se_linux_options_1_31), [])]),
+                  [VersionedCheck.new(V.call(1, 0), M.call(:se_linux_options_1_0), []),
+                   VersionedCheck.new(V.call(1, 31), M.call(:se_linux_options_1_31), [])]),
         Check.new("seccompProfile_baseline", "baseline",
-                  [VersionedCheck.new(V.(1, 0), M.(:seccomp_profile_baseline_1_0), []),
-                   VersionedCheck.new(V.(1, 19), M.(:seccomp_profile_baseline_1_19), [])]),
+                  [VersionedCheck.new(V.call(1, 0), M.call(:seccomp_profile_baseline_1_0), []),
+                   VersionedCheck.new(V.call(1, 19), M.call(:seccomp_profile_baseline_1_19), [])]),
         Check.new("seccompProfile_restricted", "restricted",
-                  [VersionedCheck.new(V.(1, 19), M.(:seccomp_profile_restricted_1_19), ["seccompProfile_baseline"]),
-                   VersionedCheck.new(V.(1, 25), M.(:seccomp_profile_restricted_1_25), ["seccompProfile_baseline"])]),
+                  [VersionedCheck.new(V.call(1, 19), M.call(:seccomp_profile_restricted_1_19), ["seccompProfile_baseline"]),
+                   VersionedCheck.new(V.call(1, 25), M.call(:seccomp_profile_restricted_1_25), ["seccompProfile_baseline"])]),
         Check.new("sysctls", "baseline",
-                  [VersionedCheck.new(V.(1, 0), ->(_m, s) { PodSecurity.sysctls(s, SYSCTLS_1_0) }, []),
-                   VersionedCheck.new(V.(1, 27), ->(_m, s) { PodSecurity.sysctls(s, SYSCTLS_1_27) }, []),
-                   VersionedCheck.new(V.(1, 29), ->(_m, s) { PodSecurity.sysctls(s, SYSCTLS_1_29) }, []),
-                   VersionedCheck.new(V.(1, 32), ->(_m, s) { PodSecurity.sysctls(s, SYSCTLS_1_32) }, [])]),
-        Check.new("windowsHostProcess", "baseline", [VersionedCheck.new(V.(1, 0), M.(:windows_host_process_1_0), [])])
+                  [VersionedCheck.new(V.call(1, 0), ->(_m, s) { PodSecurity.sysctls(s, SYSCTLS_1_0) }, []),
+                   VersionedCheck.new(V.call(1, 27), ->(_m, s) { PodSecurity.sysctls(s, SYSCTLS_1_27) }, []),
+                   VersionedCheck.new(V.call(1, 29), ->(_m, s) { PodSecurity.sysctls(s, SYSCTLS_1_29) }, []),
+                   VersionedCheck.new(V.call(1, 32), ->(_m, s) { PodSecurity.sysctls(s, SYSCTLS_1_32) }, [])]),
+        Check.new("windowsHostProcess", "baseline", [VersionedCheck.new(V.call(1, 0), M.call(:windows_host_process_1_0), [])])
       ].freeze
 
       # policy/registry.go checkRegistry: every version from v1.0 to the

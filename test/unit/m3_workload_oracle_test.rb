@@ -45,7 +45,7 @@ class M3WorkloadOracleTest < Minitest::Test
     assert_equal "<timestamp>", canonical.dig("metadata", "creationTimestamp")
     assert_equal "<timestamp>", canonical.dig("status", "conditions", 0, "lastTransitionTime")
     assert_equal "workload-<generated>", M3KubernetesWorkloadOracle.canonical_generated_name("Pod", "workload-7c8qh")
-    assert_equal %w[Available Ready], canonical.dig("status", "conditions").map { |condition| condition["type"] }
+    assert_equal(%w[Available Ready], canonical.dig("status", "conditions").map { |condition| condition["type"] })
   end
 
   def test_canonical_workload_observations_retain_meaningful_pod_semantics
@@ -72,6 +72,7 @@ class M3WorkloadOracleTest < Minitest::Test
 
     changed = Marshal.load(Marshal.dump(base))
     changed["spec"]["priority"] = 11
+
     refute_equal M3KubernetesWorkloadOracle.canonical_digest(base), M3KubernetesWorkloadOracle.canonical_digest(changed)
   end
 
@@ -83,8 +84,8 @@ class M3WorkloadOracleTest < Minitest::Test
     base = {
       "apiVersion" => "v1", "kind" => "Pod",
       "metadata" => {"name" => "web-0", "namespace" => "default",
-                      "labels" => {"apps.kubernetes.io/pod-index" => "0", "statefulset.kubernetes.io/pod-name" => "web-0"},
-                      "ownerReferences" => [{"kind" => "StatefulSet", "controller" => true}]},
+                     "labels" => {"apps.kubernetes.io/pod-index" => "0", "statefulset.kubernetes.io/pod-name" => "web-0"},
+                     "ownerReferences" => [{"kind" => "StatefulSet", "controller" => true}]},
       "spec" => {"priority" => 10, "preemptionPolicy" => "Never", "serviceAccountName" => "reader",
                  "enableServiceLinks" => false,
                  "tolerations" => [{"key" => "workload", "operator" => "Exists"}],
@@ -93,6 +94,7 @@ class M3WorkloadOracleTest < Minitest::Test
                                    "volumeMounts" => [{"name" => "data", "mountPath" => "/data"}]}]}
     }
     canonical = M3KubernetesWorkloadOracle.canonical_resource(base)
+
     assert_equal 10, canonical.dig("spec", "priority")
     assert_equal "Never", canonical.dig("spec", "preemptionPolicy")
     assert_equal "reader", canonical.dig("spec", "serviceAccountName")
@@ -103,12 +105,14 @@ class M3WorkloadOracleTest < Minitest::Test
 
     changed = Marshal.load(Marshal.dump(base))
     changed["spec"]["serviceAccountName"] = "writer"
+
     refute_equal M3KubernetesWorkloadOracle.canonical_digest(base), M3KubernetesWorkloadOracle.canonical_digest(changed)
 
     ordinal = Marshal.load(Marshal.dump(base))
     ordinal["metadata"]["name"] = "web-1"
     ordinal["metadata"]["labels"]["apps.kubernetes.io/pod-index"] = "1"
     ordinal["metadata"]["labels"]["statefulset.kubernetes.io/pod-name"] = "web-1"
+
     refute_equal M3KubernetesWorkloadOracle.canonical_digest(base), M3KubernetesWorkloadOracle.canonical_digest(ordinal)
   end
 

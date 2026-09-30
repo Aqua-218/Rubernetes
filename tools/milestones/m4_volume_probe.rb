@@ -13,9 +13,9 @@ require "tmpdir"
 require_relative "m4_probe_support"
 
 module M4VolumeProbe
-  NON_KERNEL_ADAPTER_SOURCE = "production_module_unprivileged_adapter".freeze
-  OBJECT_CONSTRUCTION_SOURCE = "production_module_object_construction".freeze
-  INJECTED_CLIENT_SOURCE = "production_module_injected_client".freeze
+  NON_KERNEL_ADAPTER_SOURCE = "production_module_unprivileged_adapter"
+  OBJECT_CONSTRUCTION_SOURCE = "production_module_object_construction"
+  INJECTED_CLIENT_SOURCE = "production_module_injected_client"
   REQUIRED_ACCESS_MODES = %w[ReadWriteOnce ReadOnlyMany ReadWriteMany ReadWriteOncePod].freeze
   REQUIRED_CSI_OPERATIONS = %w[
     GetPluginInfo CreateVolume DeleteVolume ControllerPublishVolume ControllerUnpublishVolume
@@ -61,7 +61,7 @@ module M4VolumeProbe
       when "GetPluginInfo"
         {"name" => "m4-injected.csi", "vendorVersion" => "m4", "pluginVersion" => "v1"}
       when "GetPluginCapabilities"
-        {"capabilities" => ["STAGE_UNSTAGE", "SNAPSHOT"]}
+        {"capabilities" => %w[STAGE_UNSTAGE SNAPSHOT]}
       when "CreateVolume"
         {"volumeId" => "m4-csi-volume", "capacityBytes" => 1}
       when "CreateSnapshot"
@@ -117,12 +117,14 @@ module M4VolumeProbe
   end
 
   def run_snapshot_lifecycle(manager, volume_root)
-    source_id = manager.create_volume({"id" => "m4-snapshot-source", "name" => "m4-snapshot-source", "backend" => "emptyDir"}, token: "m4-snapshot-create-volume")
+    source_id = manager.create_volume({"id" => "m4-snapshot-source", "name" => "m4-snapshot-source", "backend" => "emptyDir"},
+                                      token: "m4-snapshot-create-volume")
     source_path = File.join(volume_root, source_id, "payload")
     File.write(source_path, "m4-snapshot-content")
     content_sha256 = Digest::SHA256.hexdigest("m4-snapshot-content")
     snapshot_id = manager.create_snapshot(source_id, token: "m4-snapshot-create")
-    restored_id = manager.restore(snapshot_id, spec: {"id" => "m4-snapshot-restored", "name" => "m4-snapshot-restored", "backend" => "emptyDir"}, token: "m4-snapshot-restore")
+    restored_id = manager.restore(snapshot_id,
+                                  spec: {"id" => "m4-snapshot-restored", "name" => "m4-snapshot-restored", "backend" => "emptyDir"}, token: "m4-snapshot-restore")
     restored_content = File.read(File.join(volume_root, restored_id, "payload"))
 
     operations = [
@@ -161,7 +163,8 @@ module M4VolumeProbe
   end
 
   def run_crash_recovery(manager_class, manager, adapter, data_dir, volume_root)
-    volume_id = manager.create_volume({"id" => "m4-crash-volume", "name" => "m4-crash-volume", "backend" => "emptyDir"}, token: "m4-crash-create")
+    volume_id = manager.create_volume({"id" => "m4-crash-volume", "name" => "m4-crash-volume", "backend" => "emptyDir"},
+                                      token: "m4-crash-create")
     manager.publish(volume_id, "m4-crash-node", token: "m4-crash-attach")
     stage_path = File.join(data_dir, "m4-crash-stage")
     manager.stage(volume_id, stage_path, token: "m4-crash-stage", node: "m4-crash-node")
@@ -217,7 +220,7 @@ M4ProbeSupport.run_report(kind: "m4_volume_lifecycle_trace", adapter_name: "volu
     access_modes = []
     duplicate_attach_count = 0
 
-    add_kind = lambda do |id, klass, source, detail, passed|
+    add_kind = lambda do |id, _klass, source, detail, passed|
       kind_results << {"id" => id, "kind" => id, "passed" => passed == true, "attempt_count" => 1,
                        "measurement_source" => source, "detail" => M4ProbeSupport.normalize(detail)}
       errors << "volume kind #{id} measurement failed" unless passed == true
@@ -261,7 +264,8 @@ M4ProbeSupport.run_report(kind: "m4_volume_lifecycle_trace", adapter_name: "volu
                                         adapter: adapter, mount_adapter: adapter, path_security: security, fsync: false)
       local_source = File.join(volume_root, "local-source")
       FileUtils.mkdir_p(local_source)
-      id = local_manager.create_volume({"id" => "m4-local", "name" => "m4-local", "backend" => "local", "path" => "local-source"}, token: "m4-local-create")
+      id = local_manager.create_volume({"id" => "m4-local", "name" => "m4-local", "backend" => "local", "path" => "local-source"},
+                                       token: "m4-local-create")
       local_manager.delete_volume(id, token: "m4-local-delete")
       add_kind.call("local", M4ProbeSupport.constant("Rubernetes::Volume::LocalBackend"),
                     M4VolumeProbe::NON_KERNEL_ADAPTER_SOURCE,
@@ -357,9 +361,9 @@ M4ProbeSupport.run_report(kind: "m4_volume_lifecycle_trace", adapter_name: "volu
         manager.stage(id, stage_a, token: "#{id}-stage-a", node: "m4-node-a")
         manager.stage(id, stage_b, token: "#{id}-stage-b", node: "m4-node-b")
         manager.node_publish(id, {"metadata" => {"uid" => "#{id}-pod-a"}}, target_a, readonly: false,
-                            token: "#{id}-publish-a", node: "m4-node-a")
+                                                                                     token: "#{id}-publish-a", node: "m4-node-a")
         manager.node_publish(id, {"metadata" => {"uid" => "#{id}-pod-b"}}, target_b, readonly: false,
-                            token: "#{id}-publish-b", node: "m4-node-b")
+                                                                                     token: "#{id}-publish-b", node: "m4-node-b")
         record_stage.call("mount", "NodePublishVolume", "Published", manager.fetch_record(id).state, id, "mode" => mode)
         manager.node_unpublish(id, {"metadata" => {"uid" => "#{id}-pod-b"}}, target_b, token: "#{id}-unpublish-b")
         manager.node_unpublish(id, {"metadata" => {"uid" => "#{id}-pod-a"}}, target_a, token: "#{id}-unpublish-a")
@@ -375,7 +379,7 @@ M4ProbeSupport.run_report(kind: "m4_volume_lifecycle_trace", adapter_name: "volu
         target = File.join(mount_root, "#{id}-target")
         manager.stage(id, stage, token: "#{id}-stage", node: "m4-node-a", readonly: readonly)
         manager.node_publish(id, {"metadata" => {"uid" => "#{id}-pod"}}, target, readonly: readonly,
-                            token: "#{id}-publish", node: "m4-node-a")
+                                                                                 token: "#{id}-publish", node: "m4-node-a")
         record_stage.call("mount", "NodePublishVolume", "Published", manager.fetch_record(id).state, id,
                           "mode" => mode, "readonly" => readonly)
         if mode == "ReadOnlyMany"
@@ -448,16 +452,18 @@ M4ProbeSupport.run_report(kind: "m4_volume_lifecycle_trace", adapter_name: "volu
     )
     snapshot_recovery = M4ProbeSupport.run_external_json(
       env_keys: %w[RUBERNETES_M4_SNAPSHOT_RECOVERY_COMMAND RUBERNETES_M4_VOLUME_CRASH_COMMAND],
-      input: {"scenario" => "snapshot-restore-crash-recovery", "required_observations" => %w[snapshot_create snapshot_restore crash_recovery]},
+      input: {"scenario" => "snapshot-restore-crash-recovery",
+              "required_observations" => %w[snapshot_create snapshot_restore crash_recovery]},
       errors: errors,
       label: "snapshot/restore crash-recovery runner"
     )
 
     {
       "measurement_source" => M4VolumeProbe::NON_KERNEL_ADAPTER_SOURCE,
-      "adapter_classes" => [M4VolumeProbe.class_name(manager_class), M4VolumeProbe.class_name(adapter_class), M4VolumeProbe.class_name(writer_class), M4VolumeProbe.class_name(bridge_class)],
+      "adapter_classes" => [M4VolumeProbe.class_name(manager_class), M4VolumeProbe.class_name(adapter_class),
+                            M4VolumeProbe.class_name(writer_class), M4VolumeProbe.class_name(bridge_class)],
       "adapter_provenance" => {"class" => M4VolumeProbe.class_name(adapter_class), "kernel_backed" => false,
-                                "measurement_source" => M4VolumeProbe::NON_KERNEL_ADAPTER_SOURCE},
+                               "measurement_source" => M4VolumeProbe::NON_KERNEL_ADAPTER_SOURCE},
       "volume_kinds" => kind_results,
       "access_modes" => access_modes.uniq,
       "stages" => stages,
@@ -466,8 +472,8 @@ M4ProbeSupport.run_report(kind: "m4_volume_lifecycle_trace", adapter_name: "volu
       "mount_leak_count" => mount_leak_count,
       "difference_count" => 0,
       "trace_digest" => M4ProbeSupport.digest({"kinds" => kind_results, "access_modes" => access_modes.uniq,
-                                                "stages" => stages, "projection" => projected_atomicity,
-                                                "snapshot" => snapshot_lifecycle, "crash_recovery" => crash_recovery}),
+                                               "stages" => stages, "projection" => projected_atomicity,
+                                               "snapshot" => snapshot_lifecycle, "crash_recovery" => crash_recovery}),
       "csi_lifecycle" => csi_lifecycle,
       "snapshot_operations" => snapshot_lifecycle["operations"],
       "crash_recovery_operations" => crash_recovery["operations"],

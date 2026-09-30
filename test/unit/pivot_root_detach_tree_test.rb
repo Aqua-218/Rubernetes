@@ -58,6 +58,7 @@ class PivotRootDetachTreeTest < Minitest::Test
     descriptor(0, 13)
     descriptor(3, 101)
     detach(NEW_ROOT)
+
     assert_equal [["/.pivot-old", Linux::Mount::MNT_DETACH]], @mount.calls
   end
 
@@ -79,6 +80,7 @@ class PivotRootDetachTreeTest < Minitest::Test
   def test_a_recycled_id_in_the_new_root_is_not_an_old_mount
     descriptor(4, 40)
     detach(NEW_ROOT + "40 100 0:5 /null /dev/null rw - devtmpfs devtmpfs rw\n")
+
     assert_equal [["/.pivot-old", Linux::Mount::MNT_DETACH]], @mount.calls
   end
 

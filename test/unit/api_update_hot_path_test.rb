@@ -20,7 +20,8 @@ class APIUpdateHotPathTest < Minitest::Test
      "metadata" => {"name" => "p", "creationTimestamp" => "2026-09-18T03:45:58.843311Z"},
      "spec" => {"containers" => [{"name" => "c", "image" => "i", "env" => [{"name" => "T", "value" => "2026-09-18T03:45:58.5Z"}]}],
                 "volumes" => [{"name" => "e", "ephemeral" => {"volumeClaimTemplate" => {
-                  "metadata" => {"creationTimestamp" => "2026-09-18T03:45:59.25Z"}, "spec" => {}}}}]},
+                  "metadata" => {"creationTimestamp" => "2026-09-18T03:45:59.25Z"}, "spec" => {}
+                }}}]},
      "status" => {"conditions" => [{"type" => "Ready", "lastTransitionTime" => "2026-09-18T03:46:01.123456Z"}]}}
   end
 
@@ -67,11 +68,11 @@ class APIUpdateHotPathTest < Minitest::Test
     value["b"]["self"] = value
     Schema::DeepFreeze.call(value)
 
-    assert value.frozen?
-    assert value["a"].frozen?
-    assert shared.frozen?
-    assert shared["k"].frozen?
-    assert value["a"][2].frozen?
+    assert_predicate value, :frozen?
+    assert_predicate value["a"], :frozen?
+    assert_predicate shared, :frozen?
+    assert_predicate shared["k"], :frozen?
+    assert_predicate value["a"][2], :frozen?
     assert_equal 1, Schema::DeepFreeze.call(1)
     assert_nil Schema::DeepFreeze.call(nil)
   end
@@ -126,6 +127,7 @@ class APIUpdateHotPathTest < Minitest::Test
     assert server.send(:noop_update?, submitted, stored)
     assert_equal snapshot, submitted
     changed = submitted.merge("spec" => submitted["spec"].merge("activeDeadlineSeconds" => 5))
+
     refute server.send(:noop_update?, changed, stored)
   end
 end

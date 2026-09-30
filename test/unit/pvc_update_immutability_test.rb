@@ -57,6 +57,7 @@ class PVCUpdateImmutabilityTest < Minitest::Test
 
   def test_an_unbound_claim_may_not_resize_through_this_rule
     unbound = claim({}, "Pending")
+
     refute_empty errors(claim({"resources" => {"requests" => {"storage" => "2Gi"}}}, "Pending"), unbound)
   end
 

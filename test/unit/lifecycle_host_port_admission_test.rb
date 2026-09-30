@@ -7,7 +7,7 @@ require "rubernetes/node"
 # or one admission refused, holds no port.  Counting them let a StatefulSet's
 # recreated Pod collide with its own previous incarnation for ever.
 class LifecycleHostPortAdmissionTest < Minitest::Test
-  def pod(uid, name: "ss-0", port: 21017)
+  def pod(uid, name: "ss-0", port: 21_017)
     {"metadata" => {"uid" => uid, "name" => name, "namespace" => "ns"},
      "spec" => {"containers" => [{"name" => "c", "ports" => [{"containerPort" => 80, "hostPort" => port, "protocol" => "TCP"}]}]}}
   end
@@ -37,6 +37,7 @@ class LifecycleHostPortAdmissionTest < Minitest::Test
     lifecycle = lifecycle_with({"old" => other})
 
     conflict = lifecycle.send(:host_port_conflict, pod("new"))
+
     assert_equal "test-pod", conflict.last
   end
 end

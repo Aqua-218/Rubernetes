@@ -42,13 +42,15 @@ module AdmissionPolicyHarness
     @context.put("namespaces", nil, "team", {"metadata" => {"name" => "team", "labels" => {"env" => "prod"}}})
   end
 
-  def attributes(operation, object:, old: nil, resource: "deployments", group: "apps", kind: "Deployment", namespace: "team", dry_run: false)
+  def attributes(operation, object:, old: nil, resource: "deployments", group: "apps", kind: "Deployment", namespace: "team",
+                 dry_run: false)
     A::Attributes.new(operation: operation, user: S::UserInfo.new(name: "alice"), group: group, version: "v1", resource: resource, kind: kind,
                       namespace: namespace, name: object.dig("metadata", "name"), object: object, old_object: old, dry_run: dry_run)
   end
 
   def deployment(replicas:, labels: {})
-    {"apiVersion" => "apps/v1", "kind" => "Deployment", "metadata" => {"name" => "web", "namespace" => "team", "labels" => labels}, "spec" => {"replicas" => replicas}}
+    {"apiVersion" => "apps/v1", "kind" => "Deployment", "metadata" => {"name" => "web", "namespace" => "team", "labels" => labels},
+     "spec" => {"replicas" => replicas}}
   end
 
   def put_policy(name, validations:, failure_policy: "Fail", audit_annotations: nil, param_kind: nil)
@@ -57,12 +59,14 @@ module AdmissionPolicyHarness
                                                         "resources" => ["deployments"]}]}}
     spec["auditAnnotations"] = audit_annotations if audit_annotations
     spec["paramKind"] = param_kind if param_kind
-    @context.put("validatingadmissionpolicies", nil, name, {"metadata" => {"name" => name}, "spec" => spec}, group: "admissionregistration.k8s.io")
+    @context.put("validatingadmissionpolicies", nil, name, {"metadata" => {"name" => name}, "spec" => spec},
+                 group: "admissionregistration.k8s.io")
   end
 
   def put_binding(name, policy, actions, param_ref: nil)
     spec = {"policyName" => policy, "validationActions" => actions}
     spec["paramRef"] = param_ref if param_ref
-    @context.put("validatingadmissionpolicybindings", nil, name, {"metadata" => {"name" => name}, "spec" => spec}, group: "admissionregistration.k8s.io")
+    @context.put("validatingadmissionpolicybindings", nil, name, {"metadata" => {"name" => name}, "spec" => spec},
+                 group: "admissionregistration.k8s.io")
   end
 end

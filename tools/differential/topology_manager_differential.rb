@@ -36,7 +36,13 @@ module TopologyManagerDifferential
                     nil
                   else
                     Array.new(random.rand(0..4)) do
-                      affinity = random.rand < 0.1 ? nil : nodes.select { random.rand < 0.4 }.then { |bits| bits.empty? ? [nodes.sample(random: random)] : bits }
+                      affinity = if random.rand < 0.1
+                                   nil
+                                 else
+                                   nodes.select do
+                                     random.rand < 0.4
+                                   end.then { |bits| bits.empty? ? [nodes.sample(random: random)] : bits }
+                                 end
                       {"affinity" => affinity, "preferred" => random.rand < 0.5}
                     end
                   end
@@ -63,7 +69,8 @@ module TopologyManagerDifferential
       end
     end
     hint, admit = policy.merge(providers)
-    {"name" => test_case["name"], "affinity" => hint.affinity&.bits, "any" => hint.affinity.nil?, "preferred" => hint.preferred, "admit" => admit}
+    {"name" => test_case["name"], "affinity" => hint.affinity&.bits, "any" => hint.affinity.nil?, "preferred" => hint.preferred,
+     "admit" => admit}
   rescue TM::Error => error
     {"name" => test_case["name"], "error" => error.message}
   end

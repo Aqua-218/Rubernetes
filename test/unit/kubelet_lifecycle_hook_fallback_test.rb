@@ -43,11 +43,13 @@ class KubeletLifecycleHookFallbackTest < Minitest::Test
     hook = {"httpGet" => {"scheme" => "HTTPS", "host" => "10.0.0.5", "port" => 8443, "path" => "/stop",
                           "httpHeaders" => [{"name" => "Authorization", "value" => "Bearer x"}, {"name" => "X", "value" => "y"}]}}
     subject.send(:execute_hook, "c1", hook, record: record)
-    assert_equal %w[HTTPS HTTP], runtime.requests.map { |request| request["scheme"] }
+
+    assert_equal(%w[HTTPS HTTP], runtime.requests.map { |request| request["scheme"] })
     assert_equal [{"name" => "X", "value" => "y"}], runtime.requests.last["httpHeaders"]
     fallback = @entries.find { |entry| entry["type"] == "hook.http_fallback" }
     reasons = Rubernetes::Node::KubeletEventPublisher::REASONS.fetch("hook.http_fallback")
-    assert_equal ["Warning", "LifecycleHTTPFallback"], reasons.first(2)
+
+    assert_equal %w[Warning LifecycleHTTPFallback], reasons.first(2)
     assert_equal "request to HTTPS lifecycle hook 10.0.0.5:8443 got HTTP response, retry with HTTP succeeded", reasons[2].call(fallback, {})
     assert_includes @metrics.registry.render, "kubelet_lifecycle_handler_http_fallbacks_total 1"
   end

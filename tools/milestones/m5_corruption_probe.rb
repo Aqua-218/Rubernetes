@@ -48,7 +48,10 @@ module M5CorruptionProbe
   def populate(dir, entries: 20)
     storage = C::Storage.new(dir)
     storage.log.save_hard_state(term: 2, voted_for: "n1")
-    storage.log.append((1..entries).map { |index| C::Log::Entry.new(index: index, term: 2, command: {"type" => "create", "key" => "k/#{index}", "object" => {"metadata" => {"name" => "o#{index}"}}, "request_uid" => "r#{index}"}) })
+    storage.log.append((1..entries).map do |index|
+      C::Log::Entry.new(index: index, term: 2,
+                        command: {"type" => "create", "key" => "k/#{index}", "object" => {"metadata" => {"name" => "o#{index}"}}, "request_uid" => "r#{index}"})
+    end)
     storage.close
   end
 
@@ -110,7 +113,11 @@ module M5CorruptionProbe
     Dir.mktmpdir("m5-snap") do |dir|
       store = C::SnapshotStore.new(dir)
       machine = C::KVStateMachine.new
-      10.times { |index| machine.apply(index + 1, {"type" => "create", "key" => "k/#{index}", "object" => {"metadata" => {"name" => "o#{index}"}}, "leader_time" => 1.0}) }
+      10.times do |index|
+        machine.apply(index + 1,
+                      {"type" => "create", "key" => "k/#{index}", "object" => {"metadata" => {"name" => "o#{index}"}},
+                       "leader_time" => 1.0})
+      end
       metadata = store.write(state: machine.snapshot, index: 10, term: 1, membership: {"voters" => %w[a b c], "learners" => []})
       original = File.binread(metadata.path)
       variants = {
@@ -127,7 +134,7 @@ module M5CorruptionProbe
         result = outcome(name) { store.latest(strict: true) }
         # A restore into the state machine must not happen either.
         applied = outcome("#{name}_restore") do
-          snapshot, _ = store.latest(strict: true)
+          snapshot, = store.latest(strict: true)
           C::KVStateMachine.new.restore(snapshot.state) if snapshot
         end
         cases << result.merge("expected" => "fail_closed", "restore_blocked" => applied["fail_closed"],
@@ -137,7 +144,7 @@ module M5CorruptionProbe
       # Corrupted compressed state inside a structurally valid file.
       bad_state = store.write(state: "not-zlib".b, index: 11, term: 1, membership: {"voters" => %w[a], "learners" => []})
       result = outcome("snapshot_state_not_decodable") do
-        snapshot, _ = store.latest(strict: true)
+        snapshot, = store.latest(strict: true)
         C::KVStateMachine.new.restore(snapshot.state)
       end
       cases << result.merge("expected" => "fail_closed", "passed" => result["fail_closed"], "measurement_level" => "L2")
@@ -182,7 +189,10 @@ module M5CorruptionProbe
   def disk_full_case
     mount_point = Dir.mktmpdir("m5-enospc")
     mounted = system("mount", "-t", "tmpfs", "-o", "size=256k", "m5-enospc", mount_point, err: File::NULL)
-    return {"id" => "wal_disk_full_tmpfs", "passed" => false, "error" => "tmpfs mount unavailable", "measurement_level" => "L2"} unless mounted
+    unless mounted
+      return {"id" => "wal_disk_full_tmpfs", "passed" => false, "error" => "tmpfs mount unavailable",
+              "measurement_level" => "L2"}
+    end
 
     begin
       storage = C::Storage.new(File.join(mount_point, "node"))
@@ -191,7 +201,8 @@ module M5CorruptionProbe
       error = nil
       begin
         200.times do |index|
-          storage.log.append([C::Log::Entry.new(index: index + 1, term: 1, command: {"type" => "create", "key" => "k/#{index}", "object" => {"data" => big}})])
+          storage.log.append([C::Log::Entry.new(index: index + 1, term: 1,
+                                                command: {"type" => "create", "key" => "k/#{index}", "object" => {"data" => big}})])
           appended += 1
         end
       rescue C::DurabilityError => raised

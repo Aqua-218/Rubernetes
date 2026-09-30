@@ -67,6 +67,7 @@ class StoreAdapterConditionalStatusTest < Minitest::Test
     end
 
     body, options = adapter.client.updates.first
+
     assert_equal "41", body.dig("metadata", "resourceVersion")
     assert_equal({"pods" => "1"}, body.dig("status", "used"))
     assert_equal "status", options[:subresource]
@@ -84,6 +85,7 @@ class StoreAdapterConditionalStatusTest < Minitest::Test
       adapter.apply(Operation.new(action: :status_update, resource: descriptor, object: pod, patch: {"phase" => "Failed"}))
     end
     args, options = adapter.client.patches.first
+
     assert_equal({"status" => {"phase" => "Failed"}, "metadata" => {"uid" => "u2"}}, args[1])
     assert_equal :strategic, options[:type]
     assert_equal "status", options[:subresource]
@@ -95,6 +97,7 @@ class StoreAdapterConditionalStatusTest < Minitest::Test
       adapter.apply(Operation.new(action: :status_update, resource: descriptor, object: pod, patch: {"resourceClaimStatuses" => []}))
     end
     _body, options = adapter.client.applies.first
+
     assert_equal "ResourceClaimController", options[:field_manager]
     assert_equal true, options[:force]
   end
@@ -128,6 +131,7 @@ class StoreAdapterWriteSuccessorTest < Minitest::Test
       adapter.apply(Operation.new(action: :status_update, resource: descriptor, object: deployment, patch: {"replicas" => 1}))
     end
     versions = adapter.client.updates.map { |body, _| body.dig("metadata", "resourceVersion") }
+
     assert_equal %w[5 6], versions
     assert_equal "status", adapter.client.updates.last.last[:subresource]
   end

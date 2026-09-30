@@ -62,7 +62,8 @@ class BootstrapTest < Minitest::Test
       file.flush
 
       csi = Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-agent", path: file.path)
-                                      .process.fetch("volume").fetch("csi")
+        .process.fetch("volume").fetch("csi")
+
       assert_equal "/run/rubernetes/csi/plugin.sock", csi.fetch("socket")
       assert_equal "example.csi", csi.fetch("identity").fetch("name")
       assert_equal true, csi.fetch("probe")
@@ -124,11 +125,12 @@ class BootstrapTest < Minitest::Test
       end
     end
     Tempfile.create(["rubernetes-eviction", ".yml"]) do |file|
-      file.write("processes:\n  rubernetes-agent:\n    node_name: n\n    eviction:\n      hard:\n        memory.available: 200Mi\n" \
-                 "      soft:\n        nodefs.available: 15%\n      soft_grace_period:\n        nodefs.available: 1m\n" \
-                 "      pressure_transition_period: 30s\n")
+      file.write("processes:\n  rubernetes-agent:\n    node_name: n\n    eviction:\n      hard:\n        memory.available: 200Mi\n      " \
+                 "soft:\n        nodefs.available: 15%\n      soft_grace_period:\n        nodefs.available: 1m\n      " \
+                 "pressure_transition_period: 30s\n")
       file.flush
       config = Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-agent", path: file.path)
+
       assert_equal "200Mi", config.process.dig("eviction", "hard", "memory.available")
     end
   end
@@ -175,6 +177,7 @@ class BootstrapTest < Minitest::Test
 
     assert(logger.info("probe.ready", count: 2))
     payload = JSON.parse(io.string)
+
     assert_equal("2026-08-22T01:02:03.456789Z", payload.fetch("timestamp"))
     assert_equal("info", payload.fetch("level"))
     assert_equal("probe.ready", payload.fetch("event"))
@@ -197,8 +200,9 @@ class BootstrapTest < Minitest::Test
     shutdown.request!
 
     request = shutdown.wait(timeout: 0.1)
+
     assert_equal("REQUESTED", request.signal)
-    assert_equal(1.0, request.requested_at)
+    assert_in_delta(1.0, request.requested_at)
   ensure
     shutdown&.close
   end
@@ -217,7 +221,7 @@ class BootstrapTest < Minitest::Test
     Process.waitpid(child)
 
     assert_nil(shutdown.wait(timeout: 0.2))
-    refute(shutdown.requested?)
+    refute_predicate(shutdown, :requested?)
   ensure
     shutdown&.close
   end

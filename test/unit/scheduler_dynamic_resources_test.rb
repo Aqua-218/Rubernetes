@@ -13,10 +13,12 @@ class SchedulerDynamicResourcesTest < Minitest::Test
   DRIVER = "gpu.example.com"
 
   class API
-    attr_reader :claims, :calls
+    attr_reader :claims, :calls, :pod_statuses
 
     def initialize(claims)
-      @claims = claims.to_h { |claim| [[claim.dig("metadata", "namespace"), claim.dig("metadata", "name")], Marshal.load(Marshal.dump(claim))] }
+      @claims = claims.to_h do |claim|
+        [[claim.dig("metadata", "namespace"), claim.dig("metadata", "name")], Marshal.load(Marshal.dump(claim))]
+      end
       @calls = []
       @rv = 100
     end
@@ -55,8 +57,6 @@ class SchedulerDynamicResourcesTest < Minitest::Test
       @claims.delete([namespace, name])
     end
 
-    attr_reader :pod_statuses
-
     def patch_pod_status(namespace, name, status)
       (@pod_statuses ||= []) << [namespace, name, status]
       @calls << [:patch_pod_status, name]
@@ -72,9 +72,11 @@ class SchedulerDynamicResourcesTest < Minitest::Test
     end
   end
 
-  def node(name) = {"metadata" => {"name" => name, "labels" => {"kubernetes.io/hostname" => name}},
-                    "status" => {"allocatable" => {"cpu" => "4", "memory" => "8Gi", "pods" => "110"},
-                                 "conditions" => [{"type" => "Ready", "status" => "True"}]}}
+  def node(name)
+    {"metadata" => {"name" => name, "labels" => {"kubernetes.io/hostname" => name}},
+     "status" => {"allocatable" => {"cpu" => "4", "memory" => "8Gi", "pods" => "110"},
+                  "conditions" => [{"type" => "Ready", "status" => "True"}]}}
+  end
 
   def slice(node_name, devices)
     {"metadata" => {"name" => "#{node_name}-gpus"},
@@ -82,13 +84,15 @@ class SchedulerDynamicResourcesTest < Minitest::Test
                 "devices" => devices.map { |name| {"name" => name} }}}
   end
 
-  def device_class = {"metadata" => {"name" => "gpu"}, "spec" => {"selectors" => [{"cel" => {"expression" => "device.driver == \"#{DRIVER}\""}}]}}
+  def device_class
+    {"metadata" => {"name" => "gpu"}, "spec" => {"selectors" => [{"cel" => {"expression" => "device.driver == \"#{DRIVER}\""}}]}}
+  end
 
   def claim(name, count: 1, uid: "claim-#{name}")
     {"apiVersion" => "resource.k8s.io/v1", "kind" => "ResourceClaim",
      "metadata" => {"name" => name, "namespace" => "ns", "uid" => uid, "resourceVersion" => "1"},
      "spec" => {"devices" => {"requests" => [{"name" => "gpu", "exactly" => {"deviceClassName" => "gpu", "allocationMode" => "ExactCount",
-                                                                               "count" => count}}]}},
+                                                                             "count" => count}}]}},
      "status" => {}}
   end
 
@@ -113,9 +117,11 @@ class SchedulerDynamicResourcesTest < Minitest::Test
     subject = framework(api)
     result = subject.schedule(pod("p1", claims: ["c1"]), [node("n1"), node("n2")],
                               volume_data: volume_data(api, [slice("n2", %w[gpu-0])]))
-    assert result.scheduled?, result.reason
+
+    assert_predicate result, :scheduled?, result.reason
     assert_equal "n2", result.node.name
     stored = api.claims.fetch(%w[ns c1])
+
     assert_includes stored.dig("metadata", "finalizers"), "resource.kubernetes.io/delete-protection"
     assert_equal [{"request" => "gpu", "driver" => DRIVER, "pool" => "n2", "device" => "gpu-0"}],
                  stored.dig("status", "allocation", "devices", "results")
@@ -129,11 +135,13 @@ class SchedulerDynamicResourcesTest < Minitest::Test
     api = API.new([claim("c1"), claim("c2")])
     subject = framework(api)
     slices = [slice("n1", %w[gpu-0])]
-    assert subject.schedule(pod("p1", claims: ["c1"]), [node("n1")], volume_data: volume_data(api, slices)).scheduled?
+
+    assert_predicate subject.schedule(pod("p1", claims: ["c1"]), [node("n1")], volume_data: volume_data(api, slices)), :scheduled?
     # The informer has not seen the update yet: the assume cache has.
     stale = {"resourceClaims" => [claim("c1"), claim("c2")], "resourceSlices" => slices, "deviceClasses" => [device_class]}
     second = subject.schedule(pod("p2", claims: ["c2"]), [node("n1")], volume_data: stale)
-    refute second.scheduled?
+
+    refute_predicate second, :scheduled?
     assert_equal "cannot allocate all claims", second.filtered.dig("n1", "reason")
   end
 
@@ -144,8 +152,10 @@ class SchedulerDynamicResourcesTest < Minitest::Test
                                                                                                            "values" => ["n1"]}]}]}},
                            "reservedFor" => [{"resource" => "pods", "name" => "other", "uid" => "uid-other"}]}
     api = API.new([allocated])
-    result = framework(api).schedule(pod("p2", claims: ["shared"]), [node("n1"), node("n2")], volume_data: volume_data(api, [slice("n1", %w[gpu-0])]))
-    assert result.scheduled?
+    result = framework(api).schedule(pod("p2", claims: ["shared"]), [node("n1"), node("n2")],
+                                     volume_data: volume_data(api, [slice("n1", %w[gpu-0])]))
+
+    assert_predicate result, :scheduled?
     assert_equal "n1", result.node.name
     assert_equal "resourceclaim not available on the node", result.filtered.dig("n2", "reason")
     assert_equal [{"resource" => "pods", "name" => "other", "uid" => "uid-other"}, {"resource" => "pods", "name" => "p2", "uid" => "uid-p2"}],
@@ -157,14 +167,17 @@ class SchedulerDynamicResourcesTest < Minitest::Test
     api = API.new([])
     subject = framework(api)
     waiting = subject.schedule(pod("p1", template: "tmpl"), [node("n1")], volume_data: volume_data(api, []))
-    refute waiting.scheduled?
+
+    refute_predicate waiting, :scheduled?
     assert_equal "pod \"ns/p1\": ResourceClaim not created yet", waiting.reason
 
     foreign = claim("p1-t-abcde")
-    foreign["metadata"]["ownerReferences"] = [{"apiVersion" => "v1", "kind" => "Pod", "name" => "someone", "uid" => "uid-someone", "controller" => true}]
+    foreign["metadata"]["ownerReferences"] =
+      [{"apiVersion" => "v1", "kind" => "Pod", "name" => "someone", "uid" => "uid-someone", "controller" => true}]
     api = API.new([foreign])
     result = framework(api).schedule(pod("p1", template: "tmpl", status: {"resourceClaimStatuses" => [{"name" => "t", "resourceClaimName" => "p1-t-abcde"}]}),
                                      [node("n1")], volume_data: volume_data(api, [slice("n1", %w[gpu-0])]))
+
     assert_equal "ResourceClaim ns/p1-t-abcde was not created for Pod ns/p1 (Pod is not owner)", result.reason
   end
 
@@ -172,27 +185,32 @@ class SchedulerDynamicResourcesTest < Minitest::Test
     api = API.new([claim("c1")])
     result = framework(api).schedule(pod("p1", claims: ["c1"]), [node("n1")],
                                      volume_data: {"resourceClaims" => api.claims.values, "resourceSlices" => [], "deviceClasses" => []})
+
     assert_equal "request gpu: device class gpu does not exist", result.reason
     missing = framework(API.new([])).schedule(pod("p1", claims: ["nope"]), [node("n1")], volume_data: {})
+
     assert_equal "resourceclaim.resource.k8s.io \"nope\" not found", missing.reason
   end
 
   def test_pods_without_claims_are_untouched
     api = API.new([])
     result = framework(api).schedule(pod("plain"), [node("n1")], volume_data: {})
-    assert result.scheduled?
+
+    assert_predicate result, :scheduled?
     assert_empty api.calls
     assert_equal 0, result.scores.first.plugins.find { |entry| entry["plugin"] == "DynamicResources" }&.fetch("score").to_i
   end
 
-  def extended_class = {"metadata" => {"name" => "gpu", "creationTimestamp" => "2026-01-01T00:00:00Z"},
-                         "spec" => {"extendedResourceName" => "example.com/gpu",
-                                    "selectors" => [{"cel" => {"expression" => "device.driver == \"#{DRIVER}\""}}]}}
+  def extended_class
+    {"metadata" => {"name" => "gpu", "creationTimestamp" => "2026-01-01T00:00:00Z"},
+     "spec" => {"extendedResourceName" => "example.com/gpu",
+                "selectors" => [{"cel" => {"expression" => "device.driver == \"#{DRIVER}\""}}]}}
+  end
 
   def gpu_pod(name, amount: "1")
     {"metadata" => {"name" => name, "namespace" => "ns", "uid" => "uid-#{name}", "creationTimestamp" => "2026-01-01T00:00:00Z"},
      "spec" => {"containers" => [{"name" => "c", "image" => "x", "resources" => {"requests" => {"example.com/gpu" => amount},
-                                                                              "limits" => {"example.com/gpu" => amount}}}]},
+                                                                                 "limits" => {"example.com/gpu" => amount}}}]},
      "status" => {}}
   end
 
@@ -203,11 +221,13 @@ class SchedulerDynamicResourcesTest < Minitest::Test
     result = framework(api).schedule(gpu_pod("p1"), [node("n1"), node("n2")],
                                      volume_data: {"resourceClaims" => [], "resourceSlices" => [slice("n2", %w[gpu-0])],
                                                    "deviceClasses" => [extended_class]})
-    assert result.scheduled?, result.reason
+
+    assert_predicate result, :scheduled?, result.reason
     assert_equal "n2", result.node.name
     assert_equal [[:create, "p1-extended-resources-"], [:update, "p1-extended-resources-abcde"],
                   [:update_status, "p1-extended-resources-abcde"], [:patch_pod_status, "p1"]], api.calls
     created = api.claims.fetch(%w[ns p1-extended-resources-abcde])
+
     assert_equal "true", created.dig("metadata", "annotations", "resource.kubernetes.io/extended-resource-claim")
     assert_equal [{"name" => "container-0-request-0", "exactly" => {"deviceClassName" => "gpu", "allocationMode" => "ExactCount", "count" => 1}}],
                  created.dig("spec", "devices", "requests")
@@ -215,6 +235,7 @@ class SchedulerDynamicResourcesTest < Minitest::Test
                  created.dig("status", "allocation", "devices", "results")
     assert_equal [{"resource" => "pods", "name" => "p1", "uid" => "uid-p1"}], created.dig("status", "reservedFor")
     _, _, status = api.pod_statuses.fetch(0)
+
     assert_equal({"extendedResourceClaimStatus" => {"resourceClaimName" => "p1-extended-resources-abcde",
                                                     "requestMappings" => [{"containerName" => "c", "resourceName" => "example.com/gpu",
                                                                            "requestName" => "container-0-request-0"}]}}, status)
@@ -226,14 +247,17 @@ class SchedulerDynamicResourcesTest < Minitest::Test
     advertising["status"]["allocatable"]["example.com/gpu"] = "2"
     result = framework(api).schedule(gpu_pod("p1"), [advertising],
                                      volume_data: {"resourceClaims" => [], "resourceSlices" => [], "deviceClasses" => [extended_class]})
-    assert result.scheduled?, result.reason
+
+    assert_predicate result, :scheduled?, result.reason
     assert_empty api.calls
   end
 
   def test_an_extended_resource_nobody_provides_does_not_fit
     api = API.new([])
-    result = framework(api).schedule(gpu_pod("p1"), [node("n1")], volume_data: {"resourceClaims" => [], "resourceSlices" => [], "deviceClasses" => []})
-    refute result.scheduled?
+    result = framework(api).schedule(gpu_pod("p1"), [node("n1")],
+                                     volume_data: {"resourceClaims" => [], "resourceSlices" => [], "deviceClasses" => []})
+
+    refute_predicate result, :scheduled?
     assert_equal "node has insufficient resources", result.filtered.dig("n1", "reason")
   end
 
@@ -245,8 +269,14 @@ class SchedulerDynamicResourcesTest < Minitest::Test
                     ]}]}}, "status" => {}}])
     result = framework(api).schedule(pod("p", claims: ["pref"]), [node("n1"), node("n2")],
                                      volume_data: volume_data(api, [slice("n1", %w[a]), slice("n2", %w[a b])]))
+
     assert_equal "n2", result.node.name, "the node that can satisfy the first choice wins"
-    scores = result.scores.to_h { |breakdown| [breakdown.node.name, breakdown.plugins.find { |entry| entry["plugin"] == "DynamicResources" }["score"]] }
+    scores = result.scores.to_h do |breakdown|
+      [breakdown.node.name, breakdown.plugins.find do |entry|
+        entry["plugin"] == "DynamicResources"
+      end["score"]]
+    end
+
     assert_equal({"n1" => 87, "n2" => 100}, scores, "raw 7 and 8, DefaultNormalizeScore: 100*7/8 truncated")
   end
 end

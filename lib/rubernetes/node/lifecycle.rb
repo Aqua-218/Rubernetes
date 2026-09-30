@@ -3,7 +3,6 @@
 require "digest"
 require "fileutils"
 require "json"
-require "thread"
 require "time"
 
 require_relative "../network/host_port"
@@ -184,13 +183,17 @@ module Rubernetes
         # are only built when the node knows where Pod files live; the pure
         # lifecycle tests hand the Pod straight to a fake runtime.
         @pod_volumes = pod_volumes
-        @pod_volumes ||= PodVolumes.new(volume: volume, reader: resource_reader, node_name: @node_name,
-                                        root: File.join(@pod_root, "volumes"), clock: clock,
-                                        node_allocatable: node_allocatable) if volume && @pod_root
+        if volume && @pod_root
+          @pod_volumes ||= PodVolumes.new(volume: volume, reader: resource_reader, node_name: @node_name,
+                                          root: File.join(@pod_root, "volumes"), clock: clock,
+                                          node_allocatable: node_allocatable)
+        end
         @pod_files = pod_files
         @container_spec = container_spec
-        @container_spec ||= ContainerSpec.new(reader: resource_reader, node_name: @node_name, node_allocatable: node_allocatable,
-                                              cluster_domain: cluster_domain, pod_volumes: @pod_volumes) if @pod_root
+        if @pod_root
+          @container_spec ||= ContainerSpec.new(reader: resource_reader, node_name: @node_name, node_allocatable: node_allocatable,
+                                                cluster_domain: cluster_domain, pod_volumes: @pod_volumes)
+        end
         @admission = admission
         @clock = clock
         @sleeper = sleeper
@@ -243,12 +246,14 @@ module Rubernetes
         if action.to_s.upcase == "DELETED" || deletion_requested?(object)
           return terminate(object, request_id: request_id, gone: action.to_s.upcase == "DELETED")
         end
+
         existing = record(uid)
         acknowledge_generation(object, existing) if existing
         if (eviction = @mutex.synchronize { @eviction_requests.delete(uid.to_s) }) &&
            existing && !%w[Stopped Removed].include?(existing[:state].to_s) && !existing[:forced_terminal]
           return evict(object, **eviction)
         end
+
         # kubelet never re-creates a Pod that has already reached a terminal
         # phase: its containers ran, stopped, and the restart policy does not
         # ask for another attempt.  Starting one again allocates a fresh
@@ -377,9 +382,7 @@ module Rubernetes
           # kubelet re-syncs the Pod on the update event, so a change reaches
           # the files at once instead of on the next periodic volume sync.
           metadata_changed = projected_metadata(object) != previous_projected
-          if existing[:state] == "Running" && (metadata_changed || volume_sync_due?(existing))
-            sync_volumes(existing, object)
-          end
+          sync_volumes(existing, object) if existing[:state] == "Running" && (metadata_changed || volume_sync_due?(existing))
           persist_state!
           result_for(existing)
         end
@@ -466,7 +469,10 @@ module Rubernetes
         exit_code = nil
         signal = nil
         candidates.each do |candidate|
-          exit_code = Helpers.key(candidate, "exit_status", Helpers.key(candidate, "exitCode", Helpers.key(candidate, "exit_code", nil))) if exit_code.nil?
+          if exit_code.nil?
+            exit_code = Helpers.key(candidate, "exit_status",
+                                    Helpers.key(candidate, "exitCode", Helpers.key(candidate, "exit_code", nil)))
+          end
           signal = Helpers.key(candidate, "term_signal", Helpers.key(candidate, "signal", nil)) if signal.nil?
         end
         [exit_code.nil? ? nil : Integer(exit_code), signal.nil? ? nil : Integer(signal)]
@@ -574,6 +580,7 @@ module Rubernetes
           prepare_dynamic_resources(object, record)
           record[:sandbox_id] = timed(record, "sandbox.ready") { create_sandbox(object, record) }
           raise LifecycleError, "runtime returned an empty sandbox identity" if record[:sandbox_id].to_s.empty?
+
           record[:sandbox_context] = network_sandbox_context(record)
           record[:resources] << {"kind" => "sandbox", "id" => record[:sandbox_id].to_s}
           set_state(record, "IsolationCreated")
@@ -637,7 +644,7 @@ module Rubernetes
         end
         begin
           terminate_once(object, uid, record, request_id: request_id, reason: reason, terminal_phase: terminal_phase,
-                                             message: message, gone: gone)
+                                              message: message, gone: gone)
         ensure
           @mutex.synchronize do
             @terminating.delete(uid.to_s)
@@ -884,15 +891,16 @@ module Rubernetes
         uid = pod_uid(object)
         record ||= self.record(uid)
         raise LifecycleError, "Pod #{uid} is not running" unless record
+
         entry ||= record[:containers].first
         policy = container_policy(object, entry[:spec])
         restart_key = restart_identity(record, entry)
         attempt ||= @restarts.record_exit(
           restart_key, exit_code: 1, reason: reason, policy: policy,
-          at: now, liveness_failure: reason.to_s == "LivenessProbe"
+                       at: now, liveness_failure: reason.to_s == "LivenessProbe"
         )
         return attempt unless @restarts.should_restart?(policy: policy, exit_code: 1, reason: reason,
-                                                          liveness_failure: reason.to_s == "LivenessProbe")
+                                                        liveness_failure: reason.to_s == "LivenessProbe")
 
         if reason.to_s == "LivenessProbe"
           # kubelet: events.Killing "Container <name> failed liveness probe, will be restarted"
@@ -930,7 +938,9 @@ module Rubernetes
             "state" => "waiting", "ready" => false, "started" => false,
             "restartCount" => entry[:restart_count_before_exit] || attempt.restart_count,
             "waiting" => {"reason" => "CrashLoopBackOff",
-                          "message" => "back-off #{attempt.delay_seconds}s restarting failed container=#{entry[:name]} pod=#{backoff_pod_identity(object, uid)}"},
+                          "message" => "back-off #{attempt.delay_seconds}s restarting failed container=#{entry[:name]} pod=#{backoff_pod_identity(
+                            object, uid
+                          )}"},
             "lastState" => entry[:last_state]
           }
           entry[:restart_pending] = restart_key
@@ -1036,7 +1046,9 @@ module Rubernetes
         report_volume_reconstruction(observer)
         return unless @pod_volumes.respond_to?(:metrics_observer=) && observer.respond_to?(:storage_operation)
 
-        @pod_volumes.metrics_observer = ->(plugin, operation, status, seconds) { observer.storage_operation(plugin, operation, status, seconds) }
+        @pod_volumes.metrics_observer = lambda { |plugin, operation, status, seconds|
+          observer.storage_operation(plugin, operation, status, seconds)
+        }
       end
 
       # reconstruct_volume_operations_total: what the volume manager rebuilt
@@ -1126,7 +1138,9 @@ module Rubernetes
         }
         entry[:status]["lastState"] = entry[:last_state] if entry[:last_state]
         event(record, "container.exited", name: entry[:name], container_id: entry[:id], exit_code: Integer(exit_code), reason: reason.to_s)
-        remove_endpoints(object, uid) if entry[:category] == "app" && record[:containers].select { |candidate| candidate[:category] == "app" }.none? { |candidate| candidate[:started] }
+        remove_endpoints(object, uid) if entry[:category] == "app" && record[:containers].select do |candidate|
+          candidate[:category] == "app"
+        end.none? { |candidate| candidate[:started] }
         if restart_all_rule?(entry, exit_code)
           restart_all_containers(object, record, [entry])
           persist_state!
@@ -1205,7 +1219,11 @@ module Rubernetes
         return "" unless @runtime.respond_to?(:logs)
 
         output = invoke(@runtime, :logs, container_id, follow: false, tail: TERMINATION_LOG_LINES)
-        text = output.respond_to?(:read) ? output.read.to_s : (output.respond_to?(:each) && !output.is_a?(String) ? output.to_a.join : output.to_s)
+        text = if output.respond_to?(:read)
+                 output.read.to_s
+               else
+                 (output.respond_to?(:each) && !output.is_a?(String) ? output.to_a.join : output.to_s)
+               end
         text = text.dup.force_encoding(Encoding::UTF_8).scrub
         text = text.lines.last(TERMINATION_LOG_LINES).join
         text.byteslice(-TERMINATION_LOG_LIMIT, TERMINATION_LOG_LIMIT) || text
@@ -1407,10 +1425,12 @@ module Rubernetes
                   end
         payload = Helpers.string_keys(payload || {})
         raise LifecycleError, "lifecycle state snapshot must be a JSON object" unless payload.is_a?(Hash)
+
         schema = Helpers.key(payload, "schema", nil)
         if schema && schema.to_s != "rubernetes.node.lifecycle.v1"
           raise LifecycleError, "unsupported lifecycle state schema #{schema.inspect}"
         end
+
         Array(Helpers.key(payload, "records", [])).each do |value|
           record = restore_record(value)
           @records[record.fetch(:uid)] = record
@@ -1966,6 +1986,7 @@ module Rubernetes
       def remember_finished(record)
         policy = Helpers.key(Helpers.key(record[:pod] || {}, "spec", {}), "restartPolicy", "Always").to_s
         return if record[:phase].to_s == "Pending"
+
         phase = record[:phase].to_s
         forced = record[:forced_terminal] && %w[Failed Succeeded].include?(phase)
         return if policy == "Always" && !forced
@@ -1993,7 +2014,11 @@ module Rubernetes
         deadline = Helpers.key(Helpers.key(pod, "spec", {}), "activeDeadlineSeconds", nil)
         return false if deadline.nil?
 
-        seconds = Integer(deadline) rescue nil
+        seconds = begin
+          Integer(deadline)
+        rescue StandardError
+          nil
+        end
         return false unless seconds && seconds.positive?
 
         started = record[:started_at]
@@ -2056,6 +2081,7 @@ module Rubernetes
         unless RUNTIME_STATES.include?(state) || %w[Failed Unknown].include?(state)
           raise LifecycleError, "unknown lifecycle state #{state.inspect}"
         end
+
         previous = record[:state]
         record[:state] = state
         event(record, "state", from: previous, to: state)
@@ -2198,7 +2224,8 @@ module Rubernetes
         return allocate_devices!(pod, record) if allowed
 
         reason, message = if result.is_a?(Hash)
-                            [Helpers.key(result, "reason", "Rejected"), Helpers.key(result, "message", "Pod was rejected by node admission")]
+                            [Helpers.key(result, "reason", "Rejected"),
+                             Helpers.key(result, "message", "Pod was rejected by node admission")]
                           elsif result.respond_to?(:reason) && result.respond_to?(:message)
                             [result.reason || "Rejected", result.message || "Pod was rejected by node admission"]
                           else
@@ -2242,7 +2269,8 @@ module Rubernetes
       rescue DevicePlugins::Manager::Error => error
         record[:reason] = "PodAdmissionFailed"
         record[:admission_reason] = "UnexpectedAdmissionError"
-        raise LifecycleError, "admission rejected Pod #{pod_name(pod)}: UnexpectedAdmissionError: Allocate failed due to #{error.message}, which is unexpected"
+        raise LifecycleError,
+              "admission rejected Pod #{pod_name(pod)}: UnexpectedAdmissionError: Allocate failed due to #{error.message}, which is unexpected"
       end
 
       # The container's device plugin allocation: environment, device nodes
@@ -2280,7 +2308,8 @@ module Rubernetes
         spec
       rescue CDI::Error => error
         record[:reason] = "CreateContainerError"
-        raise LifecycleError, "container #{Helpers.key(definition, "name", "").inspect}: device plugin CDI injection failed: #{error.message}"
+        raise LifecycleError,
+              "container #{Helpers.key(definition, "name", "").inspect}: device plugin CDI injection failed: #{error.message}"
       end
 
       def release_stale_volumes(existing)
@@ -2349,7 +2378,8 @@ module Rubernetes
             remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
             if remaining <= 0
               record[:reason] = "FailedMount"
-              raise LifecycleError, "Unable to attach or mount volumes: unmounted volumes=#{volume_names}, "                                     "unattached volumes=#{volume_names}, failed to process volumes=[]: timed out waiting for the condition"
+              raise LifecycleError,
+                    "Unable to attach or mount volumes: unmounted volumes=#{volume_names}, " + "unattached volumes=#{volume_names}, failed to process volumes=[]: timed out waiting for the condition"
             end
             @volumes_in_use_observer&.call
             @reported_in_use_changed.wait(@mutex, [remaining, 1.0].min)
@@ -2362,7 +2392,7 @@ module Rubernetes
         if @pod_volumes
           begin
             handle = @pod_volumes.prepare(pod, token: "prepare-#{record[:uid]}", host_ip: @host_ip,
-                                          images: record[:volume_images] || {})
+                                               images: record[:volume_images] || {})
           rescue PodVolumes::MissingDependency, PodVolumes::Unsupported, PodVolumes::SELinuxConflict => error
             record[:reason] = "FailedMount"
             raise LifecycleError, "MountVolume.SetUp failed: #{error.message}"
@@ -2422,7 +2452,13 @@ module Rubernetes
       def resolver_accepts?(keyword)
         @resolver_keywords ||= begin
           parameters = @image_resolver.method(:resolve).parameters
-          parameters.any? { |kind, _| kind == :keyrest } ? :any : parameters.filter_map { |kind, name| name if %i[key keyreq].include?(kind) }
+          if parameters.any? { |kind, _| kind == :keyrest }
+            :any
+          else
+            parameters.filter_map do |kind, name|
+              name if %i[key keyreq].include?(kind)
+            end
+          end
         rescue StandardError
           []
         end
@@ -2445,6 +2481,7 @@ module Rubernetes
           if native_runtime? && references.any? { |reference| !reference.to_s.empty? }
             raise LifecycleError, "image resolver is required before starting a Native Pod"
           end
+
           return
         end
 
@@ -2463,7 +2500,7 @@ module Rubernetes
         # imagePullPolicy per image: Always when any container of it asks,
         # Never only when all of them do.
         policies = definitions.group_by { |_category, _index, definition| Helpers.key(definition, "image", nil).to_s }
-                              .transform_values do |entries|
+          .transform_values do |entries|
           values = entries.map { |_category, _index, definition| Helpers.key(definition, "imagePullPolicy", nil).to_s }
           if values.include?("Always") then "Always"
           elsif !values.empty? && values.all?("Never") then "Never"
@@ -2598,7 +2635,8 @@ module Rubernetes
           if reference == failed && never
             # policy Never: not here, or not usable by this Pod.
             required = report[:required] ? "true" : "unknown"
-            event(record, "image.never_pull", reference: reference, name: name, policy: policy, present: report[:present], required: required)
+            event(record, "image.never_pull", reference: reference, name: name, policy: policy, present: report[:present],
+                                              required: required)
             break
           elsif reference == failed
             # Only a pull that ran reports Failed; credentials that could not
@@ -2684,7 +2722,10 @@ module Rubernetes
                  else
                    raise LifecycleError, "network dependency does not implement add, connect, or setup"
                  end
-        record[:network] = Helpers.string_keys(result.respond_to?(:to_h) ? result.to_h : result) if result.is_a?(Hash) || result.respond_to?(:to_h)
+        if result.is_a?(Hash) || result.respond_to?(:to_h)
+          record[:network] =
+            Helpers.string_keys(result.respond_to?(:to_h) ? result.to_h : result)
+        end
         publish_host_ports(pod, record)
         result
       end
@@ -2756,7 +2797,7 @@ module Rubernetes
           # kubelet reports a completed init container as Ready and no longer
           # started (kubelet/status: initialized init containers are ready).
           entry[:status] = status_hash(exit_status, fallback: {"state" => "terminated", "exitCode" => 0})
-                             .merge("ready" => true, "started" => false, "restartCount" => entry[:status]["restartCount"].to_i)
+            .merge("ready" => true, "started" => false, "restartCount" => entry[:status]["restartCount"].to_i)
           entry[:status]["lastState"] = entry[:last_state] if entry[:last_state]
           entry[:started] = false
           event(record, "init.completed", name: name)
@@ -2869,7 +2910,7 @@ module Rubernetes
                       "finishedAt" => Helpers.now(@clock).iso8601(6), "containerID" => entry[:id]}
         terminated["startedAt"] = entry[:started_at] if entry[:started_at]
         attempt = @restarts.record_exit(restart_identity(record, entry), exit_code: exit_code, reason: "Error",
-                                        policy: container_policy(record[:pod], entry[:spec]))
+                                                                         policy: container_policy(record[:pod], entry[:spec]))
         entry[:started] = false
         entry[:status] = status.merge("state" => "terminated", "exitCode" => exit_code, "reason" => "Error",
                                       "terminated" => terminated, "ready" => false, "started" => false,
@@ -2906,7 +2947,10 @@ module Rubernetes
         end
         definition = build_container_spec(record, definition, category: category, index: index)
         container_id = create_container(record[:sandbox_id], definition)
-        raise LifecycleError, "runtime returned an empty container identity for #{Helpers.key(definition, "name", "")}" if container_id.to_s.empty?
+        if container_id.to_s.empty?
+          raise LifecycleError,
+                "runtime returned an empty container identity for #{Helpers.key(definition, "name", "")}"
+        end
 
         name = Helpers.key(definition, "name", "").to_s
         # A Pod whose start failed is started again from a fresh record, so the
@@ -3061,7 +3105,7 @@ module Rubernetes
         ips = host_network ? [@host_ip].compact : pod_ips(record)
         begin
           record[:pod_files] = writer.write(pod, directory: directory, pod_ips: ips, host_network: host_network,
-                                            hostname: @container_spec ? @container_spec.pod_hostname(pod) : nil)
+                                                 hostname: @container_spec ? @container_spec.pod_hostname(pod) : nil)
         rescue PodFiles::Error => error
           record[:reason] = "CreateContainerConfigError"
           raise LifecycleError, error.message
@@ -3142,7 +3186,7 @@ module Rubernetes
         event(record, "container.started", name: entry[:name], container_id: entry[:id])
       end
 
-      def wait_for_init(entry, record)
+      def wait_for_init(entry, _record)
         if @runtime.respond_to?(:wait_container)
           invoke(@runtime, :wait_container, entry[:id])
         elsif @runtime.respond_to?(:wait)
@@ -3160,12 +3204,14 @@ module Rubernetes
         # recovery indistinguishable from a successful completion.
         return false if value.nil?
         return true if value == true
+
         if value.respond_to?(:exit_status)
           exit_status = value.exit_status
           term_signal = value.respond_to?(:term_signal) ? value.term_signal : nil
           return false if exit_status.nil? && term_signal.nil?
 
           return Integer(exit_status).zero? unless exit_status.nil?
+
           return false
         end
         if value.is_a?(Hash)
@@ -3177,10 +3223,14 @@ module Rubernetes
           end
           return false if Helpers.key(value, "state", nil).to_s.match?(/\A(?:created|running|waiting|pending)\z/i)
 
-          return Helpers.success_result?(value) if value.key?("success") || value.key?("allowed") || value.key?(:success) || value.key?(:allowed)
+          if value.key?("success") || value.key?("allowed") || value.key?(:success) || value.key?(:allowed)
+            return Helpers.success_result?(value)
+          end
           return false if value.key?("state") || value.key?(:state)
+
           status = Helpers.key(value, "status", nil)
           return Helpers.success_result?(value) if status.is_a?(Numeric)
+
           return false
         end
         return value.to_i.zero? if value.is_a?(Numeric)
@@ -3229,10 +3279,10 @@ module Rubernetes
 
       # executePreStopHook runs within the grace period: a hook still running
       # when it ends is abandoned and the container killed.
-      def run_pre_stop_hooks(pod, record, budget: nil)
+      def run_pre_stop_hooks(_pod, record, budget: nil)
         return if budget && !budget.positive?
 
-        deadline = budget && Process.clock_gettime(Process::CLOCK_MONOTONIC) + budget
+        deadline = budget && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + budget)
         record[:containers].reverse_each do |entry|
           handler = Helpers.key(Helpers.key(entry[:spec], "lifecycle", {}), "preStop", nil)
           next if handler.nil? || !entry[:started]
@@ -3241,7 +3291,8 @@ module Rubernetes
           break unless remaining.positive?
 
           event(record, "preStop", name: entry[:name])
-          execute_hook(entry[:id], handler, timeout: deadline ? remaining : HOOK_TIMEOUT_SECONDS, record: record, grace_bounded: !deadline.nil?)
+          execute_hook(entry[:id], handler, timeout: deadline ? remaining : HOOK_TIMEOUT_SECONDS, record: record,
+                                            grace_bounded: !deadline.nil?)
         end
       end
 
@@ -3268,14 +3319,12 @@ module Rubernetes
         if status.respond_to?(:pop)
           deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + Float(timeout)
           loop do
-            begin
-              value = status.pop(true)
-              return value
-            rescue ThreadError
-              break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+            value = status.pop(true)
+            return value
+          rescue ThreadError
+            break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
 
-              sleep 0.05
-            end
+            sleep 0.05
           end
         else
           drain.join(timeout)
@@ -3290,12 +3339,14 @@ module Rubernetes
         if (exec = Helpers.key(definition, "exec", nil))
           command = Array(Helpers.key(exec, "command", []))
           raise LifecycleError, "lifecycle exec command must not be empty" if command.empty?
+
           # kubelet runs the hook synchronously and only then stops the
           # container; returning with the stream open let the container be
           # killed while the hook's command was still running.
           wait_for_exec(invoke(@runtime, :exec, container_id, command, tty: false), timeout: timeout)
         elsif (http = Helpers.key(definition, "httpGet", nil))
           raise LifecycleError, "runtime does not implement lifecycle HTTP hook" unless @runtime.respond_to?(:http_get)
+
           # A lifecycle hook is not a probe: it gets the hook timeout, not the
           # one-second default a readiness check is happy with.  A postStart or
           # preStop hook calls another Pod over the network, and under load one
@@ -3304,6 +3355,7 @@ module Rubernetes
           http_hook(container_id, Helpers.string_keys(http), [timeout, HOOK_TIMEOUT_SECONDS].min, record)
         elsif (tcp = Helpers.key(definition, "tcpSocket", nil))
           raise LifecycleError, "runtime does not implement lifecycle TCP hook" unless @runtime.respond_to?(:tcp_socket)
+
           invoke(@runtime, :tcp_socket, container_id, tcp, timeout: [timeout, HOOK_TIMEOUT_SECONDS].min)
         elsif (sleep_action = Helpers.key(definition, "sleep", nil))
           wanted = Integer(Helpers.key(sleep_action, "seconds", 0) || 0)
@@ -3330,7 +3382,9 @@ module Rubernetes
         raise unless Helpers.key(http, "scheme", "").to_s.casecmp("HTTPS").zero? && error.message.match?(HTTP_RESPONSE_TO_HTTPS)
 
         plain = http.merge("scheme" => "HTTP")
-        plain["httpHeaders"] = Array(http["httpHeaders"]).reject { |header| header.is_a?(Hash) && header["name"].to_s.casecmp("Authorization").zero? }
+        plain["httpHeaders"] = Array(http["httpHeaders"]).reject do |header|
+          header.is_a?(Hash) && header["name"].to_s.casecmp("Authorization").zero?
+        end
         result = invoke(@runtime, :http_get, container_id, plain, timeout: timeout)
         host = Helpers.join_host_port(Helpers.key(http, "host", nil) || record_pod_ip(record) || "127.0.0.1", Helpers.key(http, "port", 80))
         event(record, "hook.http_fallback", host: host) if record
@@ -3426,8 +3480,6 @@ module Rubernetes
                     Helpers.key(result, "running", false)
                   elsif result == false
                     true
-                  else
-                    nil
                   end
         if running
           @sleeper.call(grace) if grace.positive?
@@ -3455,14 +3507,16 @@ module Rubernetes
         if result.is_a?(Hash)
           running = Helpers.key(result, "running", nil)
           return false if running == true
+
           state = Helpers.key(result, "state", nil)
           return false if %w[running created].include?(state.to_s)
+
           exit_code = Helpers.key(result, "exitCode", Helpers.key(result, "exit_code", :unknown))
           return false if exit_code.nil?
         end
         if @runtime.respond_to?(:container_status)
           status = invoke(@runtime, :container_status, container_id)
-          status = status.respond_to?(:to_h) ? status.to_h : status
+          status = status.to_h if status.respond_to?(:to_h)
           return false if status.is_a?(Hash) && %w[running created].include?(Helpers.key(status, "state", "").to_s)
         end
         true
@@ -3482,13 +3536,11 @@ module Rubernetes
       end
 
       def send_signal(container_id, signal)
-        begin
-          @runtime.public_send(:signal, container_id, signal)
-        rescue ArgumentError => error
-          raise unless error.message.include?("wrong number") || error.message.include?("unknown keyword")
+        @runtime.public_send(:signal, container_id, signal)
+      rescue ArgumentError => error
+        raise unless error.message.include?("wrong number") || error.message.include?("unknown keyword")
 
-          @runtime.public_send(:signal, container_id, signal: signal)
-        end
+        @runtime.public_send(:signal, container_id, signal: signal)
       end
 
       # The runtime's own word that a sandbox's removal completed.
@@ -3505,6 +3557,7 @@ module Rubernetes
         stage_failed = false
         record[:containers].reverse_each do |entry|
           next unless @runtime.respond_to?(:remove_container)
+
           key = "container:#{entry[:id]}"
           next if record[:cleanup_completed][key]
 
@@ -3606,6 +3659,7 @@ module Rubernetes
         return persist_state! if volume_failed
 
         return persist_state! if release_images(record)
+
         persist_state!
       end
 
@@ -3630,7 +3684,7 @@ module Rubernetes
       def fail_record(record, error, preserve_phase: false)
         record[:error] = error.message
         retryable = !preserve_phase && !TERMINAL_START_REASONS.include?(record[:reason].to_s) &&
-            !(record[:reason].to_s.start_with?("Init:") && restart_policy_never?(record))
+                    !(record[:reason].to_s.start_with?("Init:") && restart_policy_never?(record))
         failure_type = case record[:reason].to_s
                        when "FailedMount" then "volume.failed"
                        when "PodAdmissionFailed" then "pod.admission_failed"
@@ -3781,10 +3835,10 @@ module Rubernetes
           # The newest generation this node has seen for the Pod: a status
           # published by the old record's termination must not roll
           # observedGeneration back below the one the restarted record saw.
-          observed_generation: [pod, record[:pod]].compact.filter_map { |candidate|
+          observed_generation: [pod, record[:pod]].compact.filter_map do |candidate|
             value = Helpers.key(Helpers.key(candidate, "metadata", {}), "generation", nil)
             value.nil? ? nil : Integer(value)
-          }.max,
+          end.max,
           pod_ip: ips.first,
           pod_ips: ips,
           host_ip: @host_ip,
@@ -3889,9 +3943,8 @@ module Rubernetes
         raise LifecycleError, "image resolver must return a hash-like image" unless hash.is_a?(Hash)
 
         digest = Helpers.key(hash, "digest", nil)
-        unless digest.to_s.match?(/\Asha256:[0-9a-fA-F]{64}\z/)
-          raise LifecycleError, "image resolver returned an invalid pinned digest"
-        end
+        raise LifecycleError, "image resolver returned an invalid pinned digest" unless digest.to_s.match?(/\Asha256:[0-9a-fA-F]{64}\z/)
+
         hash["digest"] = digest.to_s.downcase
         unless fallback_reference.nil?
           hash["reference"] ||= fallback_reference.to_s
@@ -3924,7 +3977,10 @@ module Rubernetes
         # A stored descriptor remains valid recovery input only when the
         # runtime cannot expose a live descriptor. If a live lookup exists
         # and fails, do not silently target the host namespace.
-        raise LifecycleError, "sandbox network namespace lookup failed: #{Helpers.failure_message(error)}" if @runtime.respond_to?(:network_sandbox_context)
+        if @runtime.respond_to?(:network_sandbox_context)
+          raise LifecycleError,
+                "sandbox network namespace lookup failed: #{Helpers.failure_message(error)}"
+        end
 
         record[:sandbox_context] || sandbox_id
       end
@@ -3968,7 +4024,7 @@ module Rubernetes
       # digest -- are what the desired spec must be compared against.
       def pending_ephemeral_containers?(pod, record)
         started = Array(record[:containers]).select { |entry| entry[:category] == "ephemeral" }
-                                            .map { |entry| entry[:name].to_s }
+          .map { |entry| entry[:name].to_s }
         ephemeral_definitions(pod).any? do |definition|
           name = Helpers.key(definition, "name", "").to_s
           !name.empty? && !started.include?(name)
@@ -4129,12 +4185,13 @@ module Rubernetes
 
         metrics_call(:pod_resize_duration, Process.clock_gettime(Process::CLOCK_MONOTONIC) - actuation, false) if actuation
         record[:resize_in_progress] = record[:resize_in_progress].merge("reason" => "Error", "message" => Helpers.failure_message(error))
-        event(record, "pod.resize_error", message: PodResize.message("Pod resize error", object, generation, Helpers.failure_message(error)))
+        event(record, "pod.resize_error",
+              message: PodResize.message("Pod resize error", object, generation, Helpers.failure_message(error)))
         update_status(object, record)
       end
 
-      def metrics_call(name, *arguments)
-        @metrics_observer.public_send(name, *arguments) if @metrics_observer.respond_to?(name)
+      def metrics_call(name, *)
+        @metrics_observer.public_send(name, *) if @metrics_observer.respond_to?(name)
       rescue StandardError
         nil
       end
@@ -4270,9 +4327,9 @@ module Rubernetes
       def metadata_digest(pod)
         metadata = Helpers.key(Helpers.string_keys(pod), "metadata", {})
         Digest::SHA256.hexdigest(JSON.generate(canonical_config_value(
-                                                 "labels" => Helpers.key(metadata, "labels", {}),
-                                                 "annotations" => Helpers.key(metadata, "annotations", {})
-                                               )))
+          "labels" => Helpers.key(metadata, "labels", {}),
+          "annotations" => Helpers.key(metadata, "annotations", {})
+        )))
       end
 
       def config_digest(pod)
@@ -4304,7 +4361,9 @@ module Rubernetes
         # which would block for ever) restarts nothing; only restartable init
         # containers (sidecars) are live containers whose hash matters.
         if spec.is_a?(Hash) && spec.key?("initContainers")
-          spec = spec.merge("initContainers" => Array(spec["initContainers"]).select { |container| restartable_init?(Helpers.string_keys(container)) })
+          spec = spec.merge("initContainers" => Array(spec["initContainers"]).select do |container|
+            restartable_init?(Helpers.string_keys(container))
+          end)
         end
         desired = {
           "metadata" => desired_metadata,
@@ -4352,6 +4411,7 @@ module Rubernetes
 
         value = invoke(@runtime, :create_container, sandbox_id, definition)
         return value.id.to_s if value.respond_to?(:id) && !value.id.to_s.empty?
+
         if value.is_a?(Hash)
           identifier = Helpers.key(value, "id", Helpers.key(value, "containerID", nil))
           return identifier.to_s unless identifier.nil? || identifier.to_s.empty?
@@ -4395,14 +4455,14 @@ module Rubernetes
                             update_container_resources: "update_container_resources",
                             update_pod_resources: "update_podsandbox_resources"}.freeze
 
-      def invoke(target, method_name, *args, **keywords)
+      def invoke(target, method_name, *, **keywords)
         operation = @metrics_observer && target.equal?(@runtime) ? RUNTIME_OPERATIONS[method_name.to_sym] : nil
-        return invoke_uninstrumented(target, method_name, *args, **keywords) unless operation
+        return invoke_uninstrumented(target, method_name, *, **keywords) unless operation
 
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         failed = false
         begin
-          invoke_uninstrumented(target, method_name, *args, **keywords)
+          invoke_uninstrumented(target, method_name, *, **keywords)
         rescue StandardError
           failed = true
           raise
@@ -4420,15 +4480,15 @@ module Rubernetes
         end
       end
 
-      def invoke_uninstrumented(target, method_name, *args, **keywords)
-        return target.public_send(method_name, *args) if keywords.empty?
+      def invoke_uninstrumented(target, method_name, *, **keywords)
+        return target.public_send(method_name, *) if keywords.empty?
 
         begin
-          target.public_send(method_name, *args, **keywords)
+          target.public_send(method_name, *, **keywords)
         rescue ArgumentError => error
           raise unless error.message.include?("wrong number") || error.message.include?("unknown keyword")
 
-          target.public_send(method_name, *args)
+          target.public_send(method_name, *)
         end
       end
     end

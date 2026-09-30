@@ -91,7 +91,7 @@ module Rubernetes
         key = [:scale, converter.object_id]
         @mutex.synchronize do
           @managers[key] ||= MF::FieldManager.new(type_converter: converter, group: "autoscaling", version: "v1",
-                                                   kind: "Scale", subresource: "scale", clock: @clock)
+                                                  kind: "Scale", subresource: "scale", clock: @clock)
         end
       end
 

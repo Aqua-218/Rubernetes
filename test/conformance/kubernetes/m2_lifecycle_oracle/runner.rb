@@ -88,15 +88,28 @@ module M2KubernetesLifecycleOracleRunner
     unless M2KubernetesLifecycleOracle.valid_digest?(request["request_seed_sha256"])
       raise M2KubernetesLifecycleOracle::OracleError, "lifecycle oracle request_seed_sha256 is required"
     end
+
     expected_seed = M2KubernetesLifecycleOracle.canonical_digest(request.reject { |key, _| key == "request_seed_sha256" })
-    raise M2KubernetesLifecycleOracle::OracleError, "lifecycle oracle request seed digest does not match" unless expected_seed == request["request_seed_sha256"]
+    unless expected_seed == request["request_seed_sha256"]
+      raise M2KubernetesLifecycleOracle::OracleError,
+            "lifecycle oracle request seed digest does not match"
+    end
+
     fixture = M2KubernetesLifecycleOracle.fixture_document
-    raise M2KubernetesLifecycleOracle::OracleError, "lifecycle oracle fixture digest does not match" unless request["fixture_sha256"] == M2KubernetesLifecycleOracle.canonical_digest(fixture.fetch("cases"))
-    raise M2KubernetesLifecycleOracle::OracleError, "lifecycle oracle timeline digest does not match" unless request["timeline_sha256"] == M2KubernetesLifecycleOracle.canonical_digest(fixture.fetch("timeline"))
+    unless request["fixture_sha256"] == M2KubernetesLifecycleOracle.canonical_digest(fixture.fetch("cases"))
+      raise M2KubernetesLifecycleOracle::OracleError,
+            "lifecycle oracle fixture digest does not match"
+    end
+    unless request["timeline_sha256"] == M2KubernetesLifecycleOracle.canonical_digest(fixture.fetch("timeline"))
+      raise M2KubernetesLifecycleOracle::OracleError,
+            "lifecycle oracle timeline digest does not match"
+    end
+
     request_cases = request["cases"]
     unless request_cases.is_a?(Hash) && request_cases.keys.map(&:to_s).sort == REQUIRED_CASES.sort
       raise M2KubernetesLifecycleOracle::OracleError, "lifecycle oracle request case inventory is incomplete"
     end
+
     request
   end
 
@@ -128,19 +141,29 @@ module M2KubernetesLifecycleOracleRunner
     unless source.is_a?(Hash) && source["tag"] == M2KubernetesLifecycleOracle::KUBERNETES_VERSION && source["commit"] == M2KubernetesLifecycleOracle::KUBERNETES_SOURCE_COMMIT
       raise M2KubernetesLifecycleOracle::OracleError, "Kubernetes lock does not identify v1.36.2 at #{M2KubernetesLifecycleOracle::KUBERNETES_SOURCE_COMMIT}"
     end
+
     source_env = CONTRACT.fetch("kubernetes").fetch("source_checkout_env")
     source_root = ENV.fetch(source_env, "").strip
-    raise M2KubernetesLifecycleOracle::OracleError, "#{source_env} must point to the pinned Kubernetes source checkout" if source_root.empty? || !File.directory?(source_root)
+    if source_root.empty? || !File.directory?(source_root)
+      raise M2KubernetesLifecycleOracle::OracleError,
+            "#{source_env} must point to the pinned Kubernetes source checkout"
+    end
+
     stdout, _stderr, status = Open3.capture3("git", "-C", source_root, "rev-parse", "HEAD")
     unless status.success? && stdout.strip == M2KubernetesLifecycleOracle::KUBERNETES_SOURCE_COMMIT
       raise M2KubernetesLifecycleOracle::OracleError, "Kubernetes source checkout is not #{M2KubernetesLifecycleOracle::KUBERNETES_SOURCE_COMMIT}"
     end
+
     tag_stdout, _tag_stderr, tag_status = Open3.capture3("git", "-C", source_root, "describe", "--tags", "--exact-match", "HEAD")
     unless tag_status.success? && tag_stdout.strip == M2KubernetesLifecycleOracle::KUBERNETES_VERSION
       raise M2KubernetesLifecycleOracle::OracleError, "Kubernetes source checkout is not tagged #{M2KubernetesLifecycleOracle::KUBERNETES_VERSION}"
     end
+
     dirty_stdout, _dirty_stderr, dirty_status = Open3.capture3("git", "-C", source_root, "status", "--porcelain", "--untracked-files=no")
-    raise M2KubernetesLifecycleOracle::OracleError, "Kubernetes source checkout has tracked modifications" unless dirty_status.success? && dirty_stdout.strip.empty?
+    return if dirty_status.success? && dirty_stdout.strip.empty?
+
+    raise M2KubernetesLifecycleOracle::OracleError,
+          "Kubernetes source checkout has tracked modifications"
   end
 
   # Host runtime reuse is only attempted when both binary paths are set
@@ -150,16 +173,22 @@ module M2KubernetesLifecycleOracleRunner
     runtime_contract = CONTRACT.fetch("runtime")
     paths = %w[containerd runc].to_h { |name| [name, ENV.fetch(runtime_contract.fetch("#{name}_path_env"), "").strip] }
     if paths.values.any?(&:empty?)
-      return {"available" => false, "error" => "host runtime reuse not requested (#{paths.keys.map { |name| runtime_contract.fetch("#{name}_path_env") }.join(" and ")} are not both set)"}
+      return {"available" => false, "error" => "host runtime reuse not requested (#{paths.keys.map do |name|
+        runtime_contract.fetch("#{name}_path_env")
+      end.join(" and ")} are not both set)"}
     end
+
     runtime = {}
     paths.each do |name, path|
       command = Shellwords.split(ENV.fetch(runtime_contract.fetch("#{name}_command_env"), path))
       raise M2KubernetesLifecycleOracle::OracleError, "#{name} command is empty" if command.empty?
+
       stdout, stderr, status = Open3.capture3(*command, "--version", chdir: ROOT)
       raise M2KubernetesLifecycleOracle::OracleError, "#{name} version command failed: #{stderr.to_s.strip}" unless status.success?
+
       real_path = File.realpath(path)
       raise M2KubernetesLifecycleOracle::OracleError, "#{name} binary is not a regular file" unless File.file?(real_path)
+
       runtime[name] = {
         "path" => real_path,
         "version" => stdout.to_s.lines.first.to_s.strip,
@@ -177,6 +206,7 @@ module M2KubernetesLifecycleOracleRunner
     configured = ENV.fetch(env_name, "").strip
     command = configured.empty? ? [RbConfig.ruby, NODE_IMAGE_PATH] : Shellwords.split(configured)
     raise M2KubernetesLifecycleOracle::OracleError, "#{env_name} is empty" if command.empty?
+
     command
   end
 
@@ -190,8 +220,10 @@ module M2KubernetesLifecycleOracleRunner
       chdir: ROOT
     )
     unless status.success?
-      raise M2KubernetesLifecycleOracle::OracleError, "self-contained lifecycle image build failed: #{stderr.to_s.strip.empty? ? "exit status #{status.exitstatus || 1}" : stderr.to_s.strip}"
+      raise M2KubernetesLifecycleOracle::OracleError,
+            "self-contained lifecycle image build failed: #{stderr.to_s.strip.empty? ? "exit status #{status.exitstatus || 1}" : stderr.to_s.strip}"
     end
+
     document = JSON.parse(stdout, max_nesting: 128)
     image = document.is_a?(Hash) ? document["image"] : nil
     runtime = document.is_a?(Hash) ? document["runtime"] : nil
@@ -204,17 +236,22 @@ module M2KubernetesLifecycleOracleRunner
     unless runtime.is_a?(Hash) && %w[containerd runc].all? do |name|
              identity = runtime[name]
              identity.is_a?(Hash) && identity["path"].is_a?(String) && !identity["path"].empty? &&
-               identity["version"].is_a?(String) && !identity["version"].empty? &&
-               M2KubernetesLifecycleOracle.valid_digest?(identity["binary_sha256"]) &&
-               identity["identity_method"].is_a?(String) && !identity["identity_method"].empty?
+             identity["version"].is_a?(String) && !identity["version"].empty? &&
+             M2KubernetesLifecycleOracle.valid_digest?(identity["binary_sha256"]) &&
+             identity["identity_method"].is_a?(String) && !identity["identity_method"].empty?
            end
       raise M2KubernetesLifecycleOracle::OracleError, "self-contained lifecycle image must report immutable containerd and runc identities"
     end
+
     %w[containerd runc].each do |name|
       identity = runtime.fetch(name)
       real_path = File.realpath(identity.fetch("path"))
       actual = Digest::SHA256.file(real_path).hexdigest
-      raise M2KubernetesLifecycleOracle::OracleError, "self-contained #{name} binary at #{real_path} hashes to #{actual}, not #{identity["binary_sha256"]}" unless actual == identity["binary_sha256"]
+      unless actual == identity["binary_sha256"]
+        raise M2KubernetesLifecycleOracle::OracleError,
+              "self-contained #{name} binary at #{real_path} hashes to #{actual}, not #{identity["binary_sha256"]}"
+      end
+
       runtime[name] = identity.merge("path" => real_path)
     end
     document.merge("image" => image, "runtime" => runtime, "command" => command)
@@ -226,11 +263,17 @@ module M2KubernetesLifecycleOracleRunner
 
   def verify_privileged_isolated_backend!
     raise M2KubernetesLifecycleOracle::OracleError, "privileged lifecycle oracle requires uid 0" unless Process.uid.zero?
+
     backend = ENV.fetch(CONTRACT.fetch("isolation").fetch("backend_env"), "docker")
     command = Shellwords.split(backend)
     raise M2KubernetesLifecycleOracle::OracleError, "lifecycle isolation backend is empty" if command.empty?
+
     _stdout, stderr, status = Open3.capture3(*command, "info", chdir: ROOT)
-    raise M2KubernetesLifecycleOracle::OracleError, "lifecycle isolation backend is unavailable: #{stderr.to_s.strip}" unless status.success?
+    unless status.success?
+      raise M2KubernetesLifecycleOracle::OracleError,
+            "lifecycle isolation backend is unavailable: #{stderr.to_s.strip}"
+    end
+
     true
   end
 
@@ -240,6 +283,7 @@ module M2KubernetesLifecycleOracleRunner
     configured = ENV.fetch(HARNESS_COMMAND_ENV, "").strip
     command = configured.empty? ? [RbConfig.ruby, HARNESS_PATH] : Shellwords.split(configured)
     raise M2KubernetesLifecycleOracle::OracleError, "#{HARNESS_COMMAND_ENV} is empty" if command.empty?
+
     script = command.find { |word| word.end_with?(".rb") && File.file?(File.expand_path(word, ROOT)) } || command.first
     path = File.expand_path(script, ROOT)
     identity = {
@@ -252,15 +296,19 @@ module M2KubernetesLifecycleOracleRunner
   end
 
   def run_harness(command, request, image, runtime)
-    input = {"request" => request, "node_image" => image.fetch("image"), "runtime" => runtime, "node_image_document" => image.reject { |key, _| key == "request" }}
+    input = {"request" => request, "node_image" => image.fetch("image"), "runtime" => runtime, "node_image_document" => image.reject do |key, _|
+      key == "request"
+    end}
     Open3.capture3(*command, stdin_data: JSON.generate(input), chdir: ROOT)
   end
 
   def normalize_harness(harness, request, runtime, cni, image, harness_identity)
     raise M2KubernetesLifecycleOracle::OracleError, "privileged lifecycle harness output must be an object" unless harness.is_a?(Hash)
+
     unless harness["status"] == "PASS" && harness["passed"] == true && harness["errors"].is_a?(Array) && harness["errors"].empty?
       detail = Array(harness["errors"]).join("; ")
-      raise M2KubernetesLifecycleOracle::OracleError, "privileged lifecycle harness status, passed, and empty errors are required#{detail.empty? ? "" : ": #{detail}"}"
+      raise M2KubernetesLifecycleOracle::OracleError,
+            "privileged lifecycle harness status, passed, and empty errors are required#{": #{detail}" unless detail.empty?}"
     end
     trace = harness["trace"]
     observations = harness["observations"] || harness["cases"]
@@ -268,7 +316,11 @@ module M2KubernetesLifecycleOracleRunner
     unless trace.is_a?(Array) && !trace.empty? && observations.is_a?(Hash) && source.is_a?(Hash)
       raise M2KubernetesLifecycleOracle::OracleError, "privileged lifecycle harness must return source, observations, and a non-empty trace"
     end
-    raise M2KubernetesLifecycleOracle::OracleError, "privileged lifecycle harness must echo request_seed_sha256" unless harness["request_seed_sha256"] == request["request_seed_sha256"]
+    unless harness["request_seed_sha256"] == request["request_seed_sha256"]
+      raise M2KubernetesLifecycleOracle::OracleError,
+            "privileged lifecycle harness must echo request_seed_sha256"
+    end
+
     REQUIRED_CASES.each do |name|
       observable = M2KubernetesLifecycleOracle.observable_from_entry(observations[name] || observations[name.to_sym])
       M2KubernetesLifecycleOracle::REQUIRED_OBSERVABLE_FIELDS.fetch(name).each do |field|
@@ -279,20 +331,40 @@ module M2KubernetesLifecycleOracleRunner
     end
     %w[kubelet_image apiserver_image etcd_image].each do |key|
       value = source[key]
-      raise M2KubernetesLifecycleOracle::OracleError, "privileged lifecycle harness source #{key} is required" unless value.is_a?(String) && value.match?(/\A[^@]+@sha256:[0-9a-f]{64}\z/)
+      unless value.is_a?(String) && value.match?(/\A[^@]+@sha256:[0-9a-f]{64}\z/)
+        raise M2KubernetesLifecycleOracle::OracleError,
+              "privileged lifecycle harness source #{key} is required"
+      end
     end
-    raise M2KubernetesLifecycleOracle::OracleError, "privileged lifecycle harness kubelet image #{source["kubelet_image"]} is not the built node image #{image.fetch("image")}" unless source["kubelet_image"] == image.fetch("image")
-    raise M2KubernetesLifecycleOracle::OracleError, "privileged lifecycle harness must prove network isolation" unless source["network_isolated"] == true
+    unless source["kubelet_image"] == image.fetch("image")
+      raise M2KubernetesLifecycleOracle::OracleError,
+            "privileged lifecycle harness kubelet image #{source["kubelet_image"]} is not the built node image #{image.fetch("image")}"
+    end
+    unless source["network_isolated"] == true
+      raise M2KubernetesLifecycleOracle::OracleError,
+            "privileged lifecycle harness must prove network isolation"
+    end
+
     expected_cni = cni.slice("plugin", "version", "source_commit", "image_reference", "image_digest", "config_sha256")
     actual_cni = harness["cni"] || source["cni"]
-    raise M2KubernetesLifecycleOracle::OracleError, "privileged lifecycle harness CNI identity is required" unless actual_cni == expected_cni
+    unless actual_cni == expected_cni
+      raise M2KubernetesLifecycleOracle::OracleError,
+            "privileged lifecycle harness CNI identity is required"
+    end
+
     harness_runtime = harness["runtime"] || source["runtime"]
-    raise M2KubernetesLifecycleOracle::OracleError, "privileged lifecycle harness runtime identity is required" unless harness_runtime.is_a?(Hash)
+    unless harness_runtime.is_a?(Hash)
+      raise M2KubernetesLifecycleOracle::OracleError,
+            "privileged lifecycle harness runtime identity is required"
+    end
+
     %w[containerd runc].each do |name|
       reported = harness_runtime[name]
       unless reported.is_a?(Hash) && reported["in_node_sha256"] == runtime.fetch(name).fetch("binary_sha256") && reported["binary_sha256"] == runtime.fetch(name).fetch("binary_sha256")
-        raise M2KubernetesLifecycleOracle::OracleError, "privileged lifecycle harness #{name} identity does not match the runner's #{name} identity"
+        raise M2KubernetesLifecycleOracle::OracleError,
+              "privileged lifecycle harness #{name} identity does not match the runner's #{name} identity"
       end
+
       runtime[name] = runtime.fetch(name).merge(reported.slice("in_node_path", "in_node_sha256", "in_node_version"))
     end
     runner = {
@@ -304,7 +376,8 @@ module M2KubernetesLifecycleOracleRunner
       "self_comparison" => false,
       "implementation" => "privileged Kubernetes kubelet lifecycle harness",
       "harness" => harness_identity,
-      "node_image_builder" => {"command" => image["command"], "builder_sha256" => image["builder_sha256"], "node_image_lock_sha256" => image["node_image_lock_sha256"]},
+      "node_image_builder" => {"command" => image["command"], "builder_sha256" => image["builder_sha256"],
+                               "node_image_lock_sha256" => image["node_image_lock_sha256"]},
       "process_id" => Process.pid
     }
     {
@@ -320,7 +393,8 @@ module M2KubernetesLifecycleOracleRunner
       "fixture_sha256" => request["fixture_sha256"],
       "timeline_sha256" => request["timeline_sha256"],
       "request_seed_sha256" => request["request_seed_sha256"],
-      "source" => source.merge("runtime" => runtime, "cni" => actual_cni, "harness" => harness_identity, "node_image" => image.slice("image", "image_id", "images", "kind", "base_image", "node_image_lock_sha256")),
+      "source" => source.merge("runtime" => runtime, "cni" => actual_cni, "harness" => harness_identity,
+                               "node_image" => image.slice("image", "image_id", "images", "kind", "base_image", "node_image_lock_sha256")),
       "runtime" => runtime,
       "cni" => actual_cni,
       "trace" => trace,

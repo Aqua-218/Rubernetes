@@ -14,12 +14,14 @@ class M1ProbesTest < Minitest::Test
 
   def test_corpus_and_generation_probes_report_real_pinned_inputs
     corpus, _stderr, corpus_status = run_probe("corpus")
+
     assert_predicate corpus_status, :success?, corpus.fetch("errors").join("\n")
     assert_equal true, corpus.fetch("passed")
     assert_equal [321, 321], [corpus.dig("gvk", "expected_count"), corpus.dig("gvk", "registered_count")]
     assert_equal [153, 153], [corpus.dig("gvr", "expected_count"), corpus.dig("gvr", "registered_count")]
 
     generation, _stderr, generation_status = run_probe("generation")
+
     assert_equal generation.fetch("passed"), generation_status.success?
     assert_equal 2, generation.fetch("runs").length
     assert_equal 0, generation.fetch("byte_diff_count")
@@ -40,8 +42,8 @@ class M1ProbesTest < Minitest::Test
     assert_equal 311, report.fetch("gvk_count")
     assert_equal 770, report.fetch("case_count")
     assert_equal 770, report.fetch("protobuf_supported_count")
-    assert_equal ["io.k8s.apimachinery.pkg.version.Info"],
-                 report.fetch("protobuf_unsupported_types").map { |entry| entry.fetch("id") }
+    assert_equal(["io.k8s.apimachinery.pkg.version.Info"],
+                 report.fetch("protobuf_unsupported_types").map { |entry| entry.fetch("id") })
     %w[json_roundtrip_failures protobuf_roundtrip_failures unknown_field_failures defaulting_failures validation_failures].each do |key|
       assert_equal 0, report.fetch(key), key
     end
@@ -56,18 +58,22 @@ class M1ProbesTest < Minitest::Test
     assert_equal 0, report.fetch("semantic_difference_count")
 
     validation = report.fetch("validation_oracle")
+
     assert_equal true, validation.fetch("executed")
     assert_equal 770, validation.fetch("comparison_count")
     assert_equal 0, validation.fetch("missing_comparison_count")
     comparisons = validation.fetch("comparisons")
+
     assert_equal 770, comparisons.length
-    assert_equal 770, comparisons.count { |entry| entry.fetch("applicable") }
-    assert_equal 770, comparisons.count { |entry| entry.fetch("passed") }
+    assert_equal(770, comparisons.count { |entry| entry.fetch("applicable") })
+    assert_equal(770, comparisons.count { |entry| entry.fetch("passed") })
     # Every executable path is one of the source-backed validation modes.
     modes = comparisons.map { |entry| entry.fetch("mode") }.tally
+
     assert_equal %w[constructor handler list response rest_endpoint strategy], modes.keys.sort
 
     criterion = report.dig("semantic_oracle", "validation_criterion")
+
     assert_equal "COMPLETE", criterion.fetch("status")
     assert_equal 770, criterion.fetch("applicable_count")
     assert_equal 0, criterion.fetch("not_applicable_count")
@@ -89,15 +95,18 @@ class M1ProbesTest < Minitest::Test
     assert_equal 0, report.dig("oracle", "missing_comparison_count")
     assert_equal report.fetch("operation_count"), report.dig("oracle", "comparisons").length
     failed_count = report.fetch("operations").count { |operation| !operation.fetch("passed") }
+
     assert_equal 0, failed_count
     surface = report.fetch("api_surface")
+
     assert_equal 321, surface.fetch("registry_gvk_count")
     assert_equal 153, surface.fetch("registry_gvr_count")
     assert_equal 60, surface.fetch("discovery_endpoint_count")
     assert_equal 321, surface.fetch("gvk_matrix").length
     assert_equal 153, surface.fetch("gvr_matrix").length
     assert_equal 60, surface.fetch("discovery_endpoints").length
-    %w[oracle_missing_count rubernetes_missing_count duplicate_count unexpected_count difference_count schema_contract_missing_count].each do |key|
+    %w[oracle_missing_count rubernetes_missing_count duplicate_count unexpected_count difference_count
+       schema_contract_missing_count].each do |key|
       assert_equal 0, surface.fetch(key), key
     end
     assert_equal true, surface.fetch("passed")
@@ -116,9 +125,10 @@ class M1ProbesTest < Minitest::Test
     assert_equal true, report.fetch("passed")
     assert_equal M1Gate::REQUIRED_OPERATIONS.sort,
                  report.fetch("operations").map { |operation| operation.fetch("operation") }.sort
-    assert report.fetch("operations").all? { |operation| operation.fetch("attempt_count") == 1 }
-    assert report.fetch("operations").all? { |operation| operation.fetch("exit_status") == operation.fetch("expected_exit_status", 0) }
+    assert(report.fetch("operations").all? { |operation| operation.fetch("attempt_count") == 1 })
+    assert(report.fetch("operations").all? { |operation| operation.fetch("exit_status") == operation.fetch("expected_exit_status", 0) })
     apply = report.fetch("operations").find { |operation| operation.fetch("operation") == "apply" }
+
     refute_includes apply.fetch("command"), "--validate=false"
     assert_equal report.fetch("expected_kubectl_sha256"), report.fetch("kubectl_sha256")
   end

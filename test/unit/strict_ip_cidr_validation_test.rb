@@ -47,12 +47,14 @@ class StrictIPCIDRValidationTest < Minitest::Test
   def test_service_fields_and_the_old_object_allowance
     bad = service({"clusterIPs" => ["010.0.0.10"], "externalIPs" => ["::ffff:1.2.3.4"], "type" => "LoadBalancer",
                    "loadBalancerSourceRanges" => [" 10.0.0.1/8 "]})
+
     assert_equal ["spec.clusterIPs.0: must not have leading 0s", "spec.externalIPs.0: must not be an IPv4-mapped IPv6 address",
                   "spec.loadBalancerSourceRanges.0: must not have bits set beyond the prefix length"],
                  messages(V.ip_field_errors(bad, "Service", nil))
     assert_empty V.ip_field_errors(bad, "Service", bad)
     assert_empty V.ip_field_errors(service({"clusterIPs" => ["None"]}), "Service", nil)
     annotated = service({"type" => "ClusterIP"}, annotations: {V::LB_SOURCE_RANGES => "10.0.0.0/8, 10.0.0.1/8"})
+
     assert_equal ["metadata.annotations.#{V::LB_SOURCE_RANGES}: may only be used when `type` is 'LoadBalancer'",
                   "metadata.annotations.#{V::LB_SOURCE_RANGES}: must not have bits set beyond the prefix length"],
                  messages(V.ip_field_errors(annotated, "Service", nil))
@@ -65,16 +67,20 @@ class StrictIPCIDRValidationTest < Minitest::Test
   def test_pod_template_node_and_endpoint_slice_fields
     pod = {"spec" => {"dnsConfig" => {"nameservers" => ["8.8.8.8", "08.8.8.8"]}},
            "status" => {"podIPs" => [{"ip" => "010.244.0.5"}], "hostIPs" => [{"ip" => "10.0.0.1"}]}}
+
     assert_equal ["spec.dnsConfig.nameservers.1: must not have leading 0s"], messages(V.ip_field_errors(pod, "Pod", nil))
     assert_equal ["spec.dnsConfig.nameservers.1: must not have leading 0s", "status.podIPs.0.ip: must not have leading 0s"],
                  messages(V.ip_field_errors(pod, "Pod", {"spec" => {}}))
     assert_equal ["spec.dnsConfig.nameservers.1: must not have leading 0s"], messages(V.ip_field_errors(pod, "Pod", pod))
     deployment = {"spec" => {"template" => {"spec" => {"dnsConfig" => {"nameservers" => ["::ffff:8.8.8.8"]}}}}}
+
     assert_equal ["spec.template.spec.dnsConfig.nameservers.0: must not be an IPv4-mapped IPv6 address"],
                  messages(V.ip_field_errors(deployment, "Deployment", nil))
     node = {"spec" => {"podCIDRs" => ["10.244.1.0/24", "10.244.2.1/24"]}}
+
     assert_equal ["spec.podCIDRs.1: must not have bits set beyond the prefix length"], messages(V.ip_field_errors(node, "Node", nil))
     slice = {"addressType" => "IPv4", "endpoints" => [{"addresses" => ["10.0.0.1", "010.0.0.2", "2001:db8::1"]}]}
+
     assert_equal ["endpoints.0.addresses.1: must not have leading 0s", "endpoints.0.addresses: must be an IPv4 address"],
                  messages(V.ip_field_errors(slice, "EndpointSlice", nil))
   end
@@ -87,11 +93,13 @@ class StrictIPCIDRValidationTest < Minitest::Test
     assert_empty V.network_policy_errors(policy({"cidr" => "10.0.0.0/8", "except" => ["10.1.0.0/16"]}))
     errors = messages(V.network_policy_errors(policy({"cidr" => "10.0.0.1/8", "except" => ["10.0.0.0/8", "11.0.0.0/16", "10.2.0.1/16"]})))
     path = "spec.ingress.0.from.0.ipBlock"
+
     assert_includes errors, "#{path}.cidr: must not have bits set beyond the prefix length"
     assert_includes errors, "#{path}.except.0: must be a strict subset of `cidr`"
     assert_includes errors, "#{path}.except.1: must be a strict subset of `cidr`"
     assert_includes errors, "#{path}.except.2: must not have bits set beyond the prefix length"
     old = policy({"cidr" => "10.0.0.1/8"})
+
     assert_empty V.network_policy_errors(old, :update, old)
     assert_equal ["#{path}.cidr: "], messages(V.network_policy_errors(policy({"cidr" => ""})))
   end
@@ -105,8 +113,11 @@ class StrictIPCIDRValidationTest < Minitest::Test
               "spec" => {"ports" => [{"port" => 80}], "externalIPs" => ["010.1.2.3"]}}
     issues = definition.validator.errors(object, operation: :create)
     issue = issues.find { |candidate| candidate.kubernetes_field == "spec.externalIPs[0]" }
+
     refute_nil issue, issues.map(&:kubernetes_field).inspect
     assert_equal "must not have leading 0s", issue.message
-    assert_empty definition.validator.errors(object, operation: :update, old: object).select { |candidate| candidate.kubernetes_field.start_with?("spec.externalIPs") }
+    assert_empty(definition.validator.errors(object, operation: :update, old: object).select do |candidate|
+      candidate.kubernetes_field.start_with?("spec.externalIPs")
+    end)
   end
 end

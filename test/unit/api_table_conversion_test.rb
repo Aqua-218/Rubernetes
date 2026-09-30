@@ -15,7 +15,8 @@ class APITableConversionTest < Minitest::Test
   TABLE = "application/json;as=Table;v=v1;g=meta.k8s.io"
 
   def setup
-    registry = API::Registry.new(resources: API::Registry.new.resources + [API::Resource.new(version: "v1", resource: "limitranges", kind: "LimitRange", namespaced: true)])
+    registry = API::Registry.new(resources: API::Registry.new.resources + [API::Resource.new(version: "v1", resource: "limitranges",
+                                                                                             kind: "LimitRange", namespaced: true)])
     @server = API::Server.new(registry: registry, store: API::MemoryStore.new, namespace_lifecycle: true)
     call("POST", "/api/v1/namespaces", body: {"metadata" => {"name" => "dev"}})
     call("POST", "/api/v1/namespaces/dev/configmaps", body: {"metadata" => {"name" => "one"}, "data" => {"a" => "1", "b" => "2"}})
@@ -31,16 +32,19 @@ class APITableConversionTest < Minitest::Test
 
     assert_equal 200, response.status
     table = response.body
+
     assert_equal %w[Table meta.k8s.io/v1], table.values_at("kind", "apiVersion")
-    assert_equal %w[Name Data Age], table["columnDefinitions"].map { |column| column["name"] }
+    assert_equal(%w[Name Data Age], table["columnDefinitions"].map { |column| column["name"] })
     assert_equal ["one", 2], table["rows"].first["cells"].first(2)
     assert_equal "PartialObjectMetadata", table["rows"].first.dig("object", "kind")
   end
 
   def test_include_object_none_and_object
     none = call("GET", "/api/v1/namespaces/dev/configmaps/one?includeObject=None", accept: TABLE).body
+
     refute none["rows"].first.key?("object")
     object = call("GET", "/api/v1/namespaces/dev/configmaps/one?includeObject=Object", accept: TABLE).body
+
     assert_equal "ConfigMap", object["rows"].first.dig("object", "kind")
   end
 
@@ -62,7 +66,7 @@ class APITableConversionTest < Minitest::Test
     call("POST", "/api/v1/namespaces/dev/limitranges", body: {"metadata" => {"name" => "r"}, "spec" => {"limits" => []}})
     table = call("GET", "/api/v1/namespaces/dev/limitranges", accept: TABLE).body
 
-    assert_equal ["Name", "Created At"], table["columnDefinitions"].map { |column| column["name"] }
+    assert_equal(["Name", "Created At"], table["columnDefinitions"].map { |column| column["name"] })
     assert_match(/\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\z/, table["rows"].first["cells"][1])
   end
 
@@ -73,6 +77,7 @@ class APITableConversionTest < Minitest::Test
 
     assert_operator events.length, :>=, 2
     tables = events.map { |event| event["object"] }
+
     assert(tables.all? { |table| table["kind"] == "Table" })
     refute_nil tables.first["columnDefinitions"]
     assert(tables.drop(1).all? { |table| table["columnDefinitions"].nil? })
@@ -88,11 +93,16 @@ class APITableConversionTest < Minitest::Test
   end
 
   def test_partial_object_metadata_kind_must_match_list_or_object
-    list_as_object = call("GET", "/api/v1/namespaces/dev/configmaps", accept: "application/json;as=PartialObjectMetadata;v=v1;g=meta.k8s.io")
+    list_as_object = call("GET", "/api/v1/namespaces/dev/configmaps",
+                          accept: "application/json;as=PartialObjectMetadata;v=v1;g=meta.k8s.io")
+
     assert_equal 406, list_as_object.status
-    object_as_list = call("GET", "/api/v1/namespaces/dev/configmaps/one", accept: "application/json;as=PartialObjectMetadataList;v=v1;g=meta.k8s.io")
+    object_as_list = call("GET", "/api/v1/namespaces/dev/configmaps/one",
+                          accept: "application/json;as=PartialObjectMetadataList;v=v1;g=meta.k8s.io")
+
     assert_equal 406, object_as_list.status
     list = call("GET", "/api/v1/namespaces/dev/configmaps", accept: "application/json;as=PartialObjectMetadataList;v=v1;g=meta.k8s.io").body
+
     assert_equal "PartialObjectMetadataList", list["kind"]
     assert_equal ["resourceVersion"], list["metadata"].keys
   end

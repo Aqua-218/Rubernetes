@@ -72,7 +72,7 @@ module Rubernetes
            * compiler's headers lack is omitted rather than invented.
            */
       C
-      TAIL = <<~'C'
+      TAIL = <<~C
           LAYOUT("clone_args", struct clone_args);
           LAYOUT("nlmsghdr", struct nlmsghdr);
           LAYOUT("sockaddr_nl", struct sockaddr_nl);
@@ -106,7 +106,9 @@ module Rubernetes
           parser.on("--syscall-header PATH", "UAPI unistd header naming the syscalls") { |value| @options[:header] = value }
           parser.on("--output PATH", "write the generated manifest") { |value| @options[:output] = value }
           parser.on("--check PATH", "compare generated ABI values with PATH") { |value| @options[:check] = value }
-          parser.on("--update PATH", "refresh only the syscall tables of the manifest at PATH (cross-compiler mode)") { |value| @options[:update] = value }
+          parser.on("--update PATH", "refresh only the syscall tables of the manifest at PATH (cross-compiler mode)") do |value|
+            @options[:update] = value
+          end
         end.parse!(arguments)
         modes = %i[output check update].count { |key| @options[key] }
         raise OptionParser::InvalidOption, "--output, --check and --update are mutually exclusive" if modes > 1
@@ -194,7 +196,9 @@ module Rubernetes
           [key, Integer(value)]
         end
         host = ARCHITECTURES.fetch(RbConfig::CONFIG.fetch("host_cpu")) { raise "unsupported host architecture" }
-        raise "the probe binary can only be executed for the host architecture (#{host}); use --update for #{architecture}" unless host == architecture
+        unless host == architecture
+          raise "the probe binary can only be executed for the host architecture (#{host}); use --update for #{architecture}"
+        end
 
         # Both routes must agree on every syscall number the header defines.
         preprocessed = preprocessed_syscalls
@@ -223,7 +227,9 @@ module Rubernetes
       # Cross-compiler mode: replace the syscall tables of an existing
       # manifest with the target architecture's preprocessor results.
       def update(manifest)
-        raise "manifest architecture #{manifest["architecture"].inspect} does not match --architecture #{architecture}" unless manifest["architecture"] == architecture
+        unless manifest["architecture"] == architecture
+          raise "manifest architecture #{manifest["architecture"].inspect} does not match --architecture #{architecture}"
+        end
 
         table = preprocessed_syscalls
         core = %w[clone3 pidfd_open pidfd_send_signal mount umount2 bpf].to_h do |name|
@@ -256,10 +262,10 @@ module Rubernetes
       # Header values are integer literals or parenthesised sums of them.
       def evaluate(expression)
         text = expression.strip
-        return nil unless text.match?(/\A[\s()0-9xXa-fA-F+\-]+\z/)
+        return nil unless text.match?(/\A[\s()0-9xXa-fA-F+-]+\z/)
         return nil if text.empty?
 
-        Integer(eval(text.gsub(/\b0[xX]([0-9a-fA-F]+)\b/) { $1.to_i(16).to_s }), exception: false) # rubocop:disable Security/Eval
+        Integer(eval(text.gsub(/\b0[xX]([0-9a-fA-F]+)\b/) { ::Regexp.last_match(1).to_i(16).to_s }), exception: false) # rubocop:disable Security/Eval
       rescue StandardError
         nil
       end

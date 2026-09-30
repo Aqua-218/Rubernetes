@@ -56,6 +56,7 @@ class KubeletVolumeMetricsTest < Minitest::Test
         handle = volumes.prepare(pod)
         volumes.release(pod, handle)
       end
+
       assert_equal [["kubernetes.io/empty-dir", "volume_mount", "success", Float], ["kubernetes.io/configmap", "volume_mount", "success", Float],
                     ["kubernetes.io/configmap", "volume_unmount", "success", Float], ["kubernetes.io/empty-dir", "volume_unmount", "success", Float]],
                    observed
@@ -69,6 +70,7 @@ class KubeletVolumeMetricsTest < Minitest::Test
         def get(*) = {"data" => {"k" => "v"}}
       end.new)
       volumes.metrics_observer = ->(plugin, operation, status, _seconds) { observed << [plugin, operation, status] }
+
       volumes.stub(:mount, nil) do
         assert_raises(StandardError) { volumes.prepare(pod) }
       end
@@ -81,7 +83,8 @@ class KubeletVolumeMetricsTest < Minitest::Test
   def test_storage_operation_histogram_and_total_volumes_gauge
     metrics = Metrics.new(node_name: "n")
     metrics.storage_operation("kubernetes.io/csi", "volume_mount", "success", 0.3)
-    csi_mount = {"name" => "data", "id" => "v1", "source" => "persistentVolumeClaim", "backend" => "csi", "uniqueName" => "kubernetes.io/csi/d^h"}
+    csi_mount = {"name" => "data", "id" => "v1", "source" => "persistentVolumeClaim", "backend" => "csi",
+                 "uniqueName" => "kubernetes.io/csi/d^h"}
     records = [
       # Mounted: in both states.
       {pod: pod.merge("spec" => {"volumes" => [{"name" => "tmp", "emptyDir" => {}}, {"name" => "data", "persistentVolumeClaim" => {"claimName" => "c"}}]}),
@@ -91,14 +94,18 @@ class KubeletVolumeMetricsTest < Minitest::Test
       {pod: pod.merge("metadata" => {"uid" => "u2"}, "spec" => {"volumes" => [{"name" => "data", "persistentVolumeClaim" => {"claimName" => "c"}}]}),
        state: "Validated", volume: nil, attachable_volumes: ["kubernetes.io/csi/d^h"], cleanup_completed: {}},
       # Terminated and unmounted: in neither.
-      {pod: pod, state: "Removed", volume: {"mounts" => {"tmp" => {"name" => "tmp", "source" => "emptyDir"}}}, cleanup_completed: {"volume" => true}}
+      {pod: pod, state: "Removed", volume: {"mounts" => {"tmp" => {"name" => "tmp", "source" => "emptyDir"}}},
+       cleanup_completed: {"volume" => true}}
     ]
     text = metrics.render(records)
-    assert_match(/storage_operation_duration_seconds_bucket\{[^}]*operation_name="volume_mount"[^}]*status="success"[^}]*volume_plugin="kubernetes.io\/csi"[^}]*le="0.5"\} 1/, text)
-    assert_match(/volume_manager_total_volumes\{plugin_name="kubernetes.io\/csi",state="desired_state_of_world"\} 2/, text)
-    assert_match(/volume_manager_total_volumes\{plugin_name="kubernetes.io\/empty-dir",state="desired_state_of_world"\} 1/, text)
-    assert_match(/volume_manager_total_volumes\{plugin_name="kubernetes.io\/csi",state="actual_state_of_world"\} 1/, text)
-    assert_match(/volume_manager_total_volumes\{plugin_name="kubernetes.io\/empty-dir",state="actual_state_of_world"\} 1/, text)
+
+    assert_match(
+      /storage_operation_duration_seconds_bucket\{[^}]*operation_name="volume_mount"[^}]*status="success"[^}]*volume_plugin="kubernetes.io\/csi"[^}]*le="0.5"\} 1/, text
+    )
+    assert_match(%r{volume_manager_total_volumes\{plugin_name="kubernetes.io/csi",state="desired_state_of_world"\} 2}, text)
+    assert_match(%r{volume_manager_total_volumes\{plugin_name="kubernetes.io/empty-dir",state="desired_state_of_world"\} 1}, text)
+    assert_match(%r{volume_manager_total_volumes\{plugin_name="kubernetes.io/csi",state="actual_state_of_world"\} 1}, text)
+    assert_match(%r{volume_manager_total_volumes\{plugin_name="kubernetes.io/empty-dir",state="actual_state_of_world"\} 1}, text)
     refute_match(/actual_state_of_world"\} 2/, text)
   end
 end

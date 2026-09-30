@@ -15,8 +15,10 @@ class NativeRuntimeLifecycleTest < Minitest::Test
     container = @runtime.create_container(sandbox_id, {"id" => "container-1", "command" => ["/bin/true"]})
 
     @runtime.start_container(container)
+
     assert_equal("running", @runtime.container_status(container)["state"])
     @runtime.stop_container(container)
+
     assert_equal("stopped", @runtime.container_status(container)["state"])
     @runtime.stop_sandbox(sandbox_id)
     @runtime.remove_sandbox(sandbox_id)
@@ -63,14 +65,14 @@ class NativeRuntimeLifecycleTest < Minitest::Test
     sandbox = Native::Sandbox.new(id: "sandbox-netns", identity: "sandbox:sandbox-netns", config: {})
     network_link = File.readlink("/proc/self/ns/net")
     sandbox.set_resources(namespace: {
-      "identity" => "namespace:sandbox-netns",
-      "kernel_identity" => {
-        "pid" => Process.pid,
-        "pidfd" => 91,
-        "start_time" => 123,
-        "namespace_links" => {"network" => network_link}
-      }
-    })
+                            "identity" => "namespace:sandbox-netns",
+                            "kernel_identity" => {
+                              "pid" => Process.pid,
+                              "pidfd" => 91,
+                              "start_time" => 123,
+                              "namespace_links" => {"network" => network_link}
+                            }
+                          })
 
     context = sandbox.network_sandbox_context
 
@@ -84,12 +86,12 @@ class NativeRuntimeLifecycleTest < Minitest::Test
   def test_sandbox_fails_closed_when_network_namespace_inode_changed
     sandbox = Native::Sandbox.new(id: "sandbox-stale", identity: "sandbox:sandbox-stale", config: {})
     sandbox.set_resources(namespace: {
-      "identity" => "namespace:sandbox-stale",
-      "kernel_identity" => {
-        "pid" => Process.pid,
-        "namespace_links" => {"network" => "net:[1]"}
-      }
-    })
+                            "identity" => "namespace:sandbox-stale",
+                            "kernel_identity" => {
+                              "pid" => Process.pid,
+                              "namespace_links" => {"network" => "net:[1]"}
+                            }
+                          })
 
     error = assert_raises(Native::Sandbox::Error) { sandbox.network_sandbox_context }
     assert_match(/identity changed/, error.message)

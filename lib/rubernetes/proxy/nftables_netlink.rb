@@ -273,6 +273,7 @@ module Rubernetes
         @production_capability_error_detail = nil
         @semantic_probe = semantic_probe
         raise ArgumentError, "semantic_probe must respond to call" if @semantic_probe && !@semantic_probe.respond_to?(:call)
+
         @semantic_verified = false
         @semantic_evidence_attested = false
       end
@@ -314,10 +315,12 @@ module Rubernetes
 
         reasons = missing_service_contract.dup
         reasons << "transport-backed readback is not a live NETLINK_NETFILTER probe" if @transport
-        reasons << "an external packet semantic probe and verified ruleset readback are required" unless @semantic_verified && @semantic_evidence_attested && @last_readback&.fetch("verified", false)
+        reasons << "an external packet semantic probe and verified ruleset readback are required" unless @semantic_verified && @semantic_evidence_attested && @last_readback&.fetch(
+          "verified", false
+        )
         reasons << production_capability_error_detail if production_capability_error_detail
         reasons << "live NETLINK_NETFILTER owned-table readback probe is required" if reasons.empty?
-        "nftables adapter is not production-capable: #{reasons.join('; ')}"
+        "nftables adapter is not production-capable: #{reasons.join("; ")}"
       end
 
       # Apply the complete desired object graph for a backend's current rules.
@@ -329,7 +332,7 @@ module Rubernetes
 
       alias apply send_messages
 
-      def attach(messages: [], backend:, **_options)
+      def attach(backend:, messages: [], **_options)
         result = apply_backend(backend)
         run_semantic_probe if @semantic_probe
         result.merge("attached" => true, "inputMessageCount" => Array(messages).length).freeze
@@ -364,11 +367,18 @@ module Rubernetes
         required = %w[executed packetTraceSha256 packetCount caseInventorySha256]
         missing = required.reject do |key|
           value = evidence.is_a?(Hash) && evidence[key]
-          key == "executed" ? value == true : (key == "packetCount" ? value.to_i.positive? : value.to_s.match?(/\A[0-9a-f]{64}\z/i))
+          if key == "executed"
+            value == true
+          else
+            (key == "packetCount" ? value.to_i.positive? : value.to_s.match?(/\A[0-9a-f]{64}\z/i))
+          end
         end
-        raise ArgumentError, "nftables packet semantics evidence is incomplete: #{missing.join(', ')}" unless missing.empty?
-        raise RuntimeError, "nftables ruleset readback must pass before packet proof" unless @last_readback&.fetch("verified", false)
-        raise ArgumentError, "nftables packet semantics evidence must include external runner and packet capture provenance" unless semantic_evidence_attested?(evidence)
+        raise ArgumentError, "nftables packet semantics evidence is incomplete: #{missing.join(", ")}" unless missing.empty?
+        raise "nftables ruleset readback must pass before packet proof" unless @last_readback&.fetch("verified", false)
+        unless semantic_evidence_attested?(evidence)
+          raise ArgumentError,
+                "nftables packet semantics evidence must include external runner and packet capture provenance"
+        end
 
         @semantic_verified = true
         @semantic_evidence_attested = true
@@ -617,7 +627,7 @@ module Rubernetes
                            "marker" => marker("chain", "snat:#{rule_identity(rule)}"),
                            "base" => false,
                            "message" => new_chain_message(name: snat_name,
-                                                            marker: marker("chain", "snat:#{rule_identity(rule)}"))
+                                                          marker: marker("chain", "snat:#{rule_identity(rule)}"))
                          }
                          snat_name
                        end
@@ -641,7 +651,7 @@ module Rubernetes
               "data_len" => nil,
               "timeout" => nil,
               "message" => new_set_message(name: set_name, marker: set_marker, endpoints: family_endpoints,
-                                             set_id: set_id, family: family)
+                                           set_id: set_id, family: family)
             }
             # The set is keyed by address alone, so several backends of one
             # Service that share an address (three API servers on one host,
@@ -657,7 +667,7 @@ module Rubernetes
                 "marker" => endpoint_marker,
                 "key" => endpoint.fetch("packed_address"),
                 "message" => new_set_element_message(set_name: set_name, set_id: set_id, marker: endpoint_marker,
-                                                       key: endpoint.fetch("packed_address"))
+                                                     key: endpoint.fetch("packed_address"))
               }
             end
 
@@ -677,8 +687,8 @@ module Rubernetes
                               "timeout" => Integer(rule.session_affinity_timeout_seconds) * 1000}
               sets << affinity_set.merge(
                 "message" => new_set_message(name: affinity_set_name_value, marker: affinity_marker,
-                                               endpoints: [], set_id: affinity_set_id, family: family,
-                                               map: true, timeout_seconds: rule.session_affinity_timeout_seconds)
+                                             endpoints: [], set_id: affinity_set_id, family: family,
+                                             map: true, timeout_seconds: rule.session_affinity_timeout_seconds)
               )
             end
 
@@ -687,14 +697,14 @@ module Rubernetes
               service_rules.concat(service_rule_objects(rule, chain_name, family, family_endpoints,
                                                         affinity_set: affinity_set,
                                                         destination_address: destination_address))
-              if snat_chain
-                family_snat_endpoints = snat_endpoints.select do |endpoint|
-                  family_for_address(endpoint.fetch("address")) == family
-                end
-                snat_rule_objects(rule, snat_chain, family, family_snat_endpoints,
-                                  destination_address: destination_address).each do |object|
-                  service_rules << object unless service_rules.any? { |existing| existing["marker"] == object["marker"] }
-                end
+              next unless snat_chain
+
+              family_snat_endpoints = snat_endpoints.select do |endpoint|
+                family_for_address(endpoint.fetch("address")) == family
+              end
+              snat_rule_objects(rule, snat_chain, family, family_snat_endpoints,
+                                destination_address: destination_address).each do |object|
+                service_rules << object unless service_rules.any? { |existing| existing["marker"] == object["marker"] }
               end
             end
           end
@@ -706,14 +716,14 @@ module Rubernetes
               "message" => new_jump_rule_message(base_name, chain_name, jump_marker)
             }
           end
-          if snat_chain
-            jump_marker = marker("rule", "jump:postrouting:#{snat_chain}")
-            jump_rules << {
-              "chain" => "postrouting",
-              "marker" => jump_marker,
-              "message" => new_jump_rule_message("postrouting", snat_chain, jump_marker)
-            }
-          end
+          next unless snat_chain
+
+          jump_marker = marker("rule", "jump:postrouting:#{snat_chain}")
+          jump_rules << {
+            "chain" => "postrouting",
+            "marker" => jump_marker,
+            "message" => new_jump_rule_message("postrouting", snat_chain, jump_marker)
+          }
         end
 
         fragment_rules = fragment_guard_rule_objects
@@ -745,6 +755,7 @@ module Rubernetes
           # no adapter userdata marker and must survive an ordinary rule or
           # endpoint refresh until their kernel timeout expires.
           next if affinity_set_names.include?(item["set"]) && !marker_owned?(item["marker"])
+
           messages << delete_set_element_message(item) unless desired_element_markers.include?(item.fetch("marker"))
         end
 
@@ -796,8 +807,8 @@ module Rubernetes
         {type: NFT_MSG_NEWTABLE, flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL,
          family: NFPROTO_INET,
          attributes: attributes(attribute(NFTA_TABLE_NAME, cstring(@table_name)),
-                                 attribute(NFTA_TABLE_FLAGS, u32(0)),
-                                 attribute(NFTA_TABLE_USERDATA, marker("table", @table_name)))}
+                                attribute(NFTA_TABLE_FLAGS, u32(0)),
+                                attribute(NFTA_TABLE_USERDATA, marker("table", @table_name)))}
       end
 
       def new_chain_message(name:, marker:, hook: nil)
@@ -841,10 +852,10 @@ module Rubernetes
         {type: NFT_MSG_NEWSETELEM, flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL,
          family: NFPROTO_INET,
          attributes: attributes(attribute(NFTA_SET_ELEM_LIST_TABLE, cstring(@table_name)),
-                                 attribute(NFTA_SET_ELEM_LIST_SET, cstring(set_name)),
-                                 attribute(NFTA_SET_ELEM_LIST_SET_ID, u32(set_id)),
-                                 attribute(NFTA_SET_ELEM_LIST_ELEMENTS,
-                                           attribute(NFTA_LIST_ELEM, element, nested: true), nested: true))}
+                                attribute(NFTA_SET_ELEM_LIST_SET, cstring(set_name)),
+                                attribute(NFTA_SET_ELEM_LIST_SET_ID, u32(set_id)),
+                                attribute(NFTA_SET_ELEM_LIST_ELEMENTS,
+                                          attribute(NFTA_LIST_ELEM, element, nested: true), nested: true))}
       end
 
       def new_jump_rule_message(chain_name, target_chain, marker)
@@ -852,7 +863,7 @@ module Rubernetes
                              attribute(NFTA_VERDICT_CHAIN, cstring(target_chain)))
         immediate_data = attribute(NFTA_DATA_VERDICT, verdict, nested: true)
         immediate = expression("immediate", attributes(attribute(NFTA_IMMEDIATE_DREG, u32(0)),
-                                                         attribute(NFTA_IMMEDIATE_DATA, immediate_data, nested: true)))
+                                                       attribute(NFTA_IMMEDIATE_DATA, immediate_data, nested: true)))
         new_rule_message(chain_name: chain_name, marker: marker, expressions: [immediate])
       end
 
@@ -864,23 +875,25 @@ module Rubernetes
         source_ranges_for(rule, family).each do |source_range|
           endpoints.each_with_index do |backend, index|
             source_range_id = source_range ? source_range_identity(source_range) : nil
-            endpoint_marker = marker("rule", "service:#{rule_identity(rule)}:#{family}:#{destination_address}:#{source_range_id}:#{backend.fetch("address")}:#{backend.fetch("port")}", rule_digest(rule))
+            endpoint_marker = marker("rule",
+                                     "service:#{rule_identity(rule)}:#{family}:#{destination_address}:#{source_range_id}:#{backend.fetch("address")}:#{backend.fetch("port")}", rule_digest(rule))
             if hairpin_for?(rule, backend)
-              hairpin_marker = marker("rule", "hairpin:#{rule_identity(rule)}:#{family}:#{destination_address}:#{source_range_id}:#{backend.fetch("address")}", rule_digest(rule))
+              hairpin_marker = marker("rule",
+                                      "hairpin:#{rule_identity(rule)}:#{family}:#{destination_address}:#{source_range_id}:#{backend.fetch("address")}", rule_digest(rule))
               hairpin_expressions = service_match_expressions(rule, family: family, destination_address: destination_address,
-                                                               source_range: source_range) +
+                                                                    source_range: source_range) +
                                     source_address_expression(family, address: backend.fetch("address")) +
                                     nat_expressions(rule, backend)
               objects << {
                 "chain" => chain_name,
                 "marker" => hairpin_marker,
                 "message" => new_rule_message(chain_name: chain_name, marker: hairpin_marker,
-                                                expressions: hairpin_expressions)
+                                              expressions: hairpin_expressions)
               }
             end
             if affinity_set
               hit_expressions = service_match_expressions(rule, family: family, destination_address: destination_address,
-                                                          source_range: source_range) +
+                                                                source_range: source_range) +
                                 source_address_expression(family) +
                                 lookup_expressions(affinity_set.fetch("name"), affinity_set.fetch("id")) +
                                 [compare_expression(1, index)] + nat_expressions(rule, backend)
@@ -889,10 +902,10 @@ module Rubernetes
                 "chain" => chain_name,
                 "marker" => hit_marker,
                 "message" => new_rule_message(chain_name: chain_name, marker: hit_marker,
-                                                expressions: hit_expressions)
+                                              expressions: hit_expressions)
               }
               miss_expressions = service_match_expressions(rule, family: family, destination_address: destination_address,
-                                                           source_range: source_range) +
+                                                                 source_range: source_range) +
                                  source_address_expression(family) +
                                  source_hash_expression(family, endpoints.length, rule) +
                                  [compare_expression(1, index)] +
@@ -904,11 +917,11 @@ module Rubernetes
                 "chain" => chain_name,
                 "marker" => miss_marker,
                 "message" => new_rule_message(chain_name: chain_name, marker: miss_marker,
-                                                expressions: miss_expressions)
+                                              expressions: miss_expressions)
               }
             else
               expressions = service_match_expressions(rule, family: family, destination_address: destination_address,
-                                                       source_range: source_range) +
+                                                            source_range: source_range) +
                             source_address_expression(family) + source_port_expression(family) +
                             source_hash_expression(family, endpoints.length, rule, include_port: true) +
                             [compare_expression(1, index)] +
@@ -924,7 +937,7 @@ module Rubernetes
         objects
       end
 
-      def health_check_rule_object(rule, chain_name, family, endpoints, destination_address)
+      def health_check_rule_object(rule, chain_name, family, _endpoints, destination_address)
         marker_value = marker("rule", "health:#{rule_identity(rule)}:#{family}:#{destination_address}", rule_digest(rule))
         # The healthCheckNodePort belongs to the node-local responder.  Keep
         # the packet local; a health rule must never DNAT it to a Pod.
@@ -937,10 +950,10 @@ module Rubernetes
         [
           {"chain" => "fragment_guard", "marker" => marker("rule", "fragment:ipv4:drop"), "action" => "drop_fragment",
            "message" => new_rule_message(chain_name: "fragment_guard", marker: marker("rule", "fragment:ipv4:drop"),
-                                           expressions: ipv4_fragment_expressions + [reject_expression])},
+                                         expressions: ipv4_fragment_expressions + [reject_expression])},
           {"chain" => "fragment_guard", "marker" => marker("rule", "fragment:ipv6:drop"), "action" => "drop_fragment",
            "message" => new_rule_message(chain_name: "fragment_guard", marker: marker("rule", "fragment:ipv6:drop"),
-                                           expressions: ipv6_fragment_expressions + [reject_expression])}
+                                         expressions: ipv6_fragment_expressions + [reject_expression])}
         ]
       end
 
@@ -949,20 +962,20 @@ module Rubernetes
       # IPv6 header (payload length + next header bytes) rejected all IPv6.
       def nfproto_expressions(family)
         [expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
-                                         attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO)))),
+                                       attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO)))),
          compare_expression(1, family)]
       end
 
       def ipv4_fragment_expressions
         payload = expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(1)),
-                                                       attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_NETWORK_HEADER)),
-                                                       attribute(NFTA_PAYLOAD_OFFSET, u32(6)),
-                                                       attribute(NFTA_PAYLOAD_LEN, u32(2))))
+                                                   attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_NETWORK_HEADER)),
+                                                   attribute(NFTA_PAYLOAD_OFFSET, u32(6)),
+                                                   attribute(NFTA_PAYLOAD_LEN, u32(2))))
         bitwise = expression("bitwise", attributes(attribute(NFTA_BITWISE_SREG, u32(1)),
-                                                       attribute(NFTA_BITWISE_DREG, u32(1)),
-                                                       attribute(NFTA_BITWISE_LEN, u32(2)),
-                                                       attribute(NFTA_BITWISE_MASK, attribute(NFTA_DATA_VALUE, "\x3f\xff".b, nested: true)),
-                                                       attribute(NFTA_BITWISE_XOR, attribute(NFTA_DATA_VALUE, "\0\0".b), nested: true)))
+                                                   attribute(NFTA_BITWISE_DREG, u32(1)),
+                                                   attribute(NFTA_BITWISE_LEN, u32(2)),
+                                                   attribute(NFTA_BITWISE_MASK, attribute(NFTA_DATA_VALUE, "\x3f\xff".b, nested: true)),
+                                                   attribute(NFTA_BITWISE_XOR, attribute(NFTA_DATA_VALUE, "\0\0".b), nested: true)))
         nfproto_expressions(NFPROTO_IPV4) + [payload, bitwise, compare_not_equal_expression(1, "\0\0".b)]
       end
 
@@ -982,11 +995,11 @@ module Rubernetes
       def ipv6_fragment_expressions
         nfproto_expressions(NFPROTO_IPV6) +
           [expression("exthdr", attributes(attribute(NFTA_EXTHDR_DREG, u32(1)),
-                                             attribute(NFTA_EXTHDR_TYPE, [IPPROTO_FRAGMENT].pack("C")),
-                                             attribute(NFTA_EXTHDR_OFFSET, u32(0)),
-                                             attribute(NFTA_EXTHDR_LEN, u32(1)),
-                                             attribute(NFTA_EXTHDR_FLAGS, u32(NFT_EXTHDR_F_PRESENT)),
-                                             attribute(NFTA_EXTHDR_OP, u32(NFT_EXTHDR_OP_IPV6)))),
+                                           attribute(NFTA_EXTHDR_TYPE, [IPPROTO_FRAGMENT].pack("C")),
+                                           attribute(NFTA_EXTHDR_OFFSET, u32(0)),
+                                           attribute(NFTA_EXTHDR_LEN, u32(1)),
+                                           attribute(NFTA_EXTHDR_FLAGS, u32(NFT_EXTHDR_F_PRESENT)),
+                                           attribute(NFTA_EXTHDR_OP, u32(NFT_EXTHDR_OP_IPV6)))),
            compare_expression(1, "\x01".b)]
       end
 
@@ -994,7 +1007,7 @@ module Rubernetes
         verdict = attributes(attribute(NFTA_VERDICT_CODE, u32(NFT_ACCEPT)))
         immediate_data = attribute(NFTA_DATA_VERDICT, verdict, nested: true)
         expression("immediate", attributes(attribute(NFTA_IMMEDIATE_DREG, u32(0)),
-                                               attribute(NFTA_IMMEDIATE_DATA, immediate_data, nested: true)))
+                                           attribute(NFTA_IMMEDIATE_DATA, immediate_data, nested: true)))
       end
 
       def snat_rule_objects(rule, chain_name, family, endpoints, destination_address:)
@@ -1007,7 +1020,8 @@ module Rubernetes
                    "message" => new_rule_message(chain_name: chain_name, marker: marker_value, expressions: expressions)}]
         end
         endpoints.each_with_index.map do |backend, index|
-          marker_value = marker("rule", "snat:#{rule_identity(rule)}:#{family}:#{destination_address}:#{backend.fetch("address")}:#{index}", rule_digest(rule))
+          marker_value = marker("rule",
+                                "snat:#{rule_identity(rule)}:#{family}:#{destination_address}:#{backend.fetch("address")}:#{index}", rule_digest(rule))
           # Without an external masquerade policy the SNAT chain exists only
           # for hairpin traffic: a Pod reaching itself through the Service.
           # Every other client keeps its source address (kube-proxy parity).
@@ -1019,22 +1033,23 @@ module Rubernetes
 
       def snat_match_expressions(rule, family, backend, hairpin_only: false)
         expressions = [expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
-                                                       attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO)))),
+                                                     attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO)))),
                        compare_expression(1, family)]
         expressions.concat(source_address_expression(family, address: backend.fetch("address"))) if hairpin_only
         expressions += [
-                       expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(1)),
-                                                          attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_NETWORK_HEADER)),
-                                                          attribute(NFTA_PAYLOAD_OFFSET, u32(family == NFPROTO_IPV6 ? 24 : 16)),
-                                                          attribute(NFTA_PAYLOAD_LEN, u32(family == NFPROTO_IPV6 ? 16 : 4)))),
-                       compare_expression(1, IPAddr.new(backend.fetch("address")).hton),
-                       expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
-                                                       attribute(NFTA_META_KEY, u32(NFT_META_L4PROTO)))),
-                       compare_expression(1, protocol_number(rule.protocol)),
-                       expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(1)),
-                                                          attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_TRANSPORT_HEADER)),
-                                                          attribute(NFTA_PAYLOAD_OFFSET, u32(2)),
-                                                          attribute(NFTA_PAYLOAD_LEN, u32(2))))]
+          expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(1)),
+                                           attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_NETWORK_HEADER)),
+                                           attribute(NFTA_PAYLOAD_OFFSET, u32(family == NFPROTO_IPV6 ? 24 : 16)),
+                                           attribute(NFTA_PAYLOAD_LEN, u32(family == NFPROTO_IPV6 ? 16 : 4)))),
+          compare_expression(1, IPAddr.new(backend.fetch("address")).hton),
+          expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
+                                        attribute(NFTA_META_KEY, u32(NFT_META_L4PROTO)))),
+          compare_expression(1, protocol_number(rule.protocol)),
+          expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(1)),
+                                           attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_TRANSPORT_HEADER)),
+                                           attribute(NFTA_PAYLOAD_OFFSET, u32(2)),
+                                           attribute(NFTA_PAYLOAD_LEN, u32(2))))
+        ]
         expressions << compare_expression(1, [backend.fetch("port")].pack("n"))
         expressions
       end
@@ -1044,18 +1059,18 @@ module Rubernetes
         {type: NFT_MSG_NEWRULE, flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_APPEND,
          family: NFPROTO_INET,
          attributes: attributes(attribute(NFTA_RULE_TABLE, cstring(@table_name)),
-                                 attribute(NFTA_RULE_CHAIN, cstring(chain_name)),
-                                 attribute(NFTA_RULE_EXPRESSIONS, expression_list, nested: true),
-                                 attribute(NFTA_RULE_USERDATA, marker))}
+                                attribute(NFTA_RULE_CHAIN, cstring(chain_name)),
+                                attribute(NFTA_RULE_EXPRESSIONS, expression_list, nested: true),
+                                attribute(NFTA_RULE_USERDATA, marker))}
       end
 
       def source_address_expression(family, address: nil)
         payload_offset = family == NFPROTO_IPV6 ? 8 : 12
         payload_length = family == NFPROTO_IPV6 ? 16 : 4
         expressions = [expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(2)),
-                                                           attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_NETWORK_HEADER)),
-                                                           attribute(NFTA_PAYLOAD_OFFSET, u32(payload_offset)),
-                                                           attribute(NFTA_PAYLOAD_LEN, u32(payload_length))))]
+                                                        attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_NETWORK_HEADER)),
+                                                        attribute(NFTA_PAYLOAD_OFFSET, u32(payload_offset)),
+                                                        attribute(NFTA_PAYLOAD_LEN, u32(payload_length))))]
         expressions << compare_expression(2, IPAddr.new(address).hton) if address
         expressions
       end
@@ -1083,9 +1098,9 @@ module Rubernetes
         length += 4 if include_port
         seed = 0
         [expression("hash", attributes(attribute(NFTA_HASH_SREG, u32(2)), attribute(NFTA_HASH_DREG, u32(1)),
-                                           attribute(NFTA_HASH_LEN, u32(length)), attribute(NFTA_HASH_MODULUS, u32(modulus)),
-                                           attribute(NFTA_HASH_SEED, u32(seed)), attribute(NFTA_HASH_OFFSET, u32(0)),
-                                           attribute(NFTA_HASH_TYPE, u32(NFT_HASH_JENKINS))))]
+                                       attribute(NFTA_HASH_LEN, u32(length)), attribute(NFTA_HASH_MODULUS, u32(modulus)),
+                                       attribute(NFTA_HASH_SEED, u32(seed)), attribute(NFTA_HASH_OFFSET, u32(0)),
+                                       attribute(NFTA_HASH_TYPE, u32(NFT_HASH_JENKINS))))]
       end
 
       # NFT_REG32_05 (IPv4) / NFT_REG32_08 (IPv6) is the 4-byte word right after
@@ -1098,9 +1113,9 @@ module Rubernetes
       def source_port_expression(family)
         register = family == NFPROTO_IPV6 ? NFT_REG32_08 : NFT_REG32_05
         [expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(register)),
-                                           attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_TRANSPORT_HEADER)),
-                                           attribute(NFTA_PAYLOAD_OFFSET, u32(0)),
-                                           attribute(NFTA_PAYLOAD_LEN, u32(2))))]
+                                          attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_TRANSPORT_HEADER)),
+                                          attribute(NFTA_PAYLOAD_OFFSET, u32(0)),
+                                          attribute(NFTA_PAYLOAD_LEN, u32(2))))]
       end
 
       def lookup_expressions(set_name, set_id = nil)
@@ -1111,7 +1126,7 @@ module Rubernetes
         [expression("lookup", attributes(*values))]
       end
 
-      def dynset_expression(set_name, timeout_seconds, set_id = nil)
+      def dynset_expression(set_name, _timeout_seconds, set_id = nil)
         values = [attribute(NFTA_DYNSET_SET_NAME, cstring(set_name)),
                   attribute(NFTA_DYNSET_OP, u32(NFT_DYNSET_OP_ADD)),
                   attribute(NFTA_DYNSET_SREG_KEY, u32(2)),
@@ -1133,8 +1148,8 @@ module Rubernetes
       def delete_rule_message(item)
         {type: NFT_MSG_DELRULE, flags: NLM_F_REQUEST | NLM_F_ACK, family: NFPROTO_INET,
          attributes: attributes(attribute(NFTA_RULE_TABLE, cstring(@table_name)),
-                                 attribute(NFTA_RULE_CHAIN, cstring(item.fetch("chain"))),
-                                 attribute(NFTA_RULE_HANDLE, u64(item.fetch("handle"))))}
+                                attribute(NFTA_RULE_CHAIN, cstring(item.fetch("chain"))),
+                                attribute(NFTA_RULE_HANDLE, u64(item.fetch("handle"))))}
       end
 
       def delete_set_element_message(item)
@@ -1145,52 +1160,52 @@ module Rubernetes
         list_attributes << attribute(NFTA_SET_ELEM_LIST_SET_ID, u32(item.fetch("set_id"))) if item["set_id"]
         {type: NFT_MSG_DELSETELEM, flags: NLM_F_REQUEST | NLM_F_ACK, family: NFPROTO_INET,
          attributes: attributes(*list_attributes,
-                                 attribute(NFTA_SET_ELEM_LIST_ELEMENTS,
-                                           attribute(NFTA_LIST_ELEM, element, nested: true), nested: true))}
+                                attribute(NFTA_SET_ELEM_LIST_ELEMENTS,
+                                          attribute(NFTA_LIST_ELEM, element, nested: true), nested: true))}
       end
 
       def delete_set_message(item)
         {type: NFT_MSG_DELSET, flags: NLM_F_REQUEST | NLM_F_ACK, family: NFPROTO_INET,
          attributes: attributes(attribute(NFTA_SET_TABLE, cstring(@table_name)),
-                                 attribute(NFTA_SET_NAME, cstring(item.fetch("name"))))}
+                                attribute(NFTA_SET_NAME, cstring(item.fetch("name"))))}
       end
 
       def delete_chain_message(item)
         {type: NFT_MSG_DELCHAIN, flags: NLM_F_REQUEST | NLM_F_ACK, family: NFPROTO_INET,
          attributes: attributes(attribute(NFTA_CHAIN_TABLE, cstring(@table_name)),
-                                 attribute(NFTA_CHAIN_NAME, cstring(item.fetch("name"))))}
+                                attribute(NFTA_CHAIN_NAME, cstring(item.fetch("name"))))}
       end
 
       def service_match_expressions(rule, family:, destination_address:, source_range: nil)
         expressions = []
         if destination_address
           expressions << expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
-                                                          attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO))))
+                                                       attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO))))
           expressions << compare_expression(1, family)
           payload_offset = family == NFPROTO_IPV6 ? 24 : 16
           payload_length = family == NFPROTO_IPV6 ? 16 : 4
           expressions << expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(1)),
-                                                             attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_NETWORK_HEADER)),
-                                                             attribute(NFTA_PAYLOAD_OFFSET, u32(payload_offset)),
-                                                             attribute(NFTA_PAYLOAD_LEN, u32(payload_length))))
+                                                          attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_NETWORK_HEADER)),
+                                                          attribute(NFTA_PAYLOAD_OFFSET, u32(payload_offset)),
+                                                          attribute(NFTA_PAYLOAD_LEN, u32(payload_length))))
           expressions << compare_expression(1, IPAddr.new(destination_address).hton)
         else
           expressions << expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
-                                                          attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO))))
+                                                       attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO))))
           expressions << compare_expression(1, family)
         end
         expressions.concat(source_range_expression(family, source_range)) if source_range
         protocol = protocol_number(rule.protocol)
         expressions << expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
-                                                        attribute(NFTA_META_KEY, u32(NFT_META_L4PROTO))))
+                                                     attribute(NFTA_META_KEY, u32(NFT_META_L4PROTO))))
         # nft_data scalar values are host-order register bytes. Passing the
         # integer (rather than the NLA_U32 encoding) keeps l4proto as TCP /
         # UDP / SCTP in the kernel expression.
         expressions << compare_expression(1, protocol)
         expressions << expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(1)),
-                                                           attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_TRANSPORT_HEADER)),
-                                                           attribute(NFTA_PAYLOAD_OFFSET, u32(2)),
-                                                           attribute(NFTA_PAYLOAD_LEN, u32(2))))
+                                                        attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_TRANSPORT_HEADER)),
+                                                        attribute(NFTA_PAYLOAD_OFFSET, u32(2)),
+                                                        attribute(NFTA_PAYLOAD_LEN, u32(2))))
         expressions << compare_expression(1, [service_port(rule)].pack("n"))
         expressions
       end
@@ -1226,7 +1241,7 @@ module Rubernetes
       end
 
       def source_range_identity(range)
-        "#{range.to_s}/#{range.prefix}"
+        "#{range}/#{range.prefix}"
       end
 
       def nat_expressions(rule, backend)
@@ -1235,18 +1250,19 @@ module Rubernetes
 
       def ct_mark_set_expressions
         [expression("immediate", attributes(attribute(NFTA_IMMEDIATE_DREG, u32(1)),
-                                               attribute(NFTA_IMMEDIATE_DATA,
-                                                         attribute(NFTA_DATA_VALUE, [MASQUERADE_CT_MARK].pack("L")), nested: true))),
+                                            attribute(NFTA_IMMEDIATE_DATA,
+                                                      attribute(NFTA_DATA_VALUE, [MASQUERADE_CT_MARK].pack("L")), nested: true))),
          expression("ct", attributes(attribute(NFTA_CT_KEY, u32(NFT_CT_MARK)), attribute(NFTA_CT_SREG, u32(1))))]
       end
 
       def ct_mark_match_expressions
         [expression("ct", attributes(attribute(NFTA_CT_KEY, u32(NFT_CT_MARK)), attribute(NFTA_CT_DREG, u32(1)))),
          expression("bitwise", attributes(attribute(NFTA_BITWISE_SREG, u32(1)),
-                                            attribute(NFTA_BITWISE_DREG, u32(1)),
-                                            attribute(NFTA_BITWISE_LEN, u32(4)),
-                                            attribute(NFTA_BITWISE_MASK, attribute(NFTA_DATA_VALUE, [MASQUERADE_CT_MARK].pack("L")), nested: true),
-                                            attribute(NFTA_BITWISE_XOR, attribute(NFTA_DATA_VALUE, "\0\0\0\0".b), nested: true))),
+                                          attribute(NFTA_BITWISE_DREG, u32(1)),
+                                          attribute(NFTA_BITWISE_LEN, u32(4)),
+                                          attribute(NFTA_BITWISE_MASK, attribute(NFTA_DATA_VALUE, [MASQUERADE_CT_MARK].pack("L")),
+                                                    nested: true),
+                                          attribute(NFTA_BITWISE_XOR, attribute(NFTA_DATA_VALUE, "\0\0\0\0".b), nested: true))),
          compare_expression(1, [MASQUERADE_CT_MARK].pack("L"))]
       end
 
@@ -1261,29 +1277,29 @@ module Rubernetes
         # accepted by the kernel but misreported by nft(8) as a 32-bit port.
         port_reg = [Integer(backend.fetch("port"))].pack("n")
         [expression("immediate", attributes(attribute(NFTA_IMMEDIATE_DREG, u32(1)),
-                                               attribute(NFTA_IMMEDIATE_DATA,
-                                                         attribute(NFTA_DATA_VALUE, address_reg), nested: true))),
+                                            attribute(NFTA_IMMEDIATE_DATA,
+                                                      attribute(NFTA_DATA_VALUE, address_reg), nested: true))),
          expression("immediate", attributes(attribute(NFTA_IMMEDIATE_DREG, u32(2)),
-                                               attribute(NFTA_IMMEDIATE_DATA,
-                                                         attribute(NFTA_DATA_VALUE, port_reg), nested: true))),
+                                            attribute(NFTA_IMMEDIATE_DATA,
+                                                      attribute(NFTA_DATA_VALUE, port_reg), nested: true))),
          expression("nat", attributes(attribute(NFTA_NAT_TYPE, u32(NFT_NAT_DNAT)),
-                                       attribute(NFTA_NAT_FAMILY, u32(family)),
-                                       attribute(NFTA_NAT_REG_ADDR_MIN, u32(1)),
-                                       attribute(NFTA_NAT_REG_PROTO_MIN, u32(2)),
-                                       attribute(NFTA_NAT_FLAGS, u32(NF_NAT_RANGE_PROTO_SPECIFIED))))]
+                                      attribute(NFTA_NAT_FAMILY, u32(family)),
+                                      attribute(NFTA_NAT_REG_ADDR_MIN, u32(1)),
+                                      attribute(NFTA_NAT_REG_PROTO_MIN, u32(2)),
+                                      attribute(NFTA_NAT_FLAGS, u32(NF_NAT_RANGE_PROTO_SPECIFIED))))]
       end
 
       def compare_expression(register, value)
         value = data_u32(value) if value.is_a?(Integer)
         data = attribute(NFTA_DATA_VALUE, value)
         expression("cmp", attributes(attribute(NFTA_CMP_SREG, u32(register)), attribute(NFTA_CMP_OP, u32(NFT_CMP_EQ)),
-                                      attribute(NFTA_CMP_DATA, data, nested: true)))
+                                     attribute(NFTA_CMP_DATA, data, nested: true)))
       end
 
       def compare_not_equal_expression(register, value)
         data = attribute(NFTA_DATA_VALUE, value)
         expression("cmp", attributes(attribute(NFTA_CMP_SREG, u32(register)), attribute(NFTA_CMP_OP, u32(NFT_CMP_NEQ)),
-                                      attribute(NFTA_CMP_DATA, data, nested: true)))
+                                     attribute(NFTA_CMP_DATA, data, nested: true)))
       end
 
       def expression(name, data)
@@ -1349,9 +1365,7 @@ module Rubernetes
       def apply_policy_and_health(rule, endpoints)
         policy = external_rule?(rule) ? rule.external_traffic_policy : rule.internal_traffic_policy
         local_node = rule.metadata.is_a?(Hash) ? (rule.metadata["node"] || rule.metadata[:node]) : nil
-        if policy.to_s == "Local" && !local_node.to_s.empty?
-          endpoints = endpoints.select { |endpoint| endpoint.fetch("local") }
-        end
+        endpoints = endpoints.select { |endpoint| endpoint.fetch("local") } if policy.to_s == "Local" && !local_node.to_s.empty?
         metadata = rule.metadata.is_a?(Hash) ? rule.metadata : {}
         if metadata["publishNotReadyAddresses"]
           non_terminating = endpoints.reject { |endpoint| endpoint.fetch("terminating") }
@@ -1403,6 +1417,7 @@ module Rubernetes
 
       def endpoint_families(rule, endpoints)
         return [family_for_address(rule.virtual_ip)] if rule.virtual_ip
+
         families = endpoints.map { |endpoint| family_for_address(endpoint.fetch("address")) }.uniq
         families.empty? ? [NFPROTO_IPV4] : families.sort
       end
@@ -1412,14 +1427,12 @@ module Rubernetes
 
         metadata = rule.metadata.is_a?(Hash) ? rule.metadata : {}
         addresses = Array(metadata["nodeAddresses"] || metadata[:nodeAddresses] || metadata["node_addresses"] || metadata[:node_addresses])
-                       .filter_map do |address|
-                         begin
-                           canonical = IPAddr.new(address.to_s).to_s
-                           family_for_address(canonical) == family ? canonical : nil
-                         rescue ArgumentError
-                           nil
-                         end
-                       end.uniq
+          .filter_map do |address|
+            canonical = IPAddr.new(address.to_s).to_s
+            family_for_address(canonical) == family ? canonical : nil
+        rescue ArgumentError
+          nil
+          end.uniq
         addresses.empty? ? [nil] : addresses
       end
 
@@ -1474,6 +1487,7 @@ module Rubernetes
       def marker_kind(value)
         bytes = String(value).b
         return nil unless bytes.start_with?(MAGIC)
+
         rest = bytes.byteslice(MAGIC.bytesize..)
         rest&.split("\0", 2)&.first
       end
@@ -1551,17 +1565,17 @@ module Rubernetes
 
         chain_entries = dump(NFT_MSG_GETCHAIN,
                              attributes: attribute(NFTA_CHAIN_TABLE, cstring(@table_name)))
-                         .select { |entry| entry.fetch("table") == @table_name }
+          .select { |entry| entry.fetch("table") == @table_name }
         set_entries = dump(NFT_MSG_GETSET,
                            attributes: attribute(NFTA_SET_TABLE, cstring(@table_name)))
-                       .select { |entry| entry.fetch("table") == @table_name }
+          .select { |entry| entry.fetch("table") == @table_name }
         rule_entries = dump(NFT_MSG_GETRULE,
                             attributes: attribute(NFTA_RULE_TABLE, cstring(@table_name)))
-                        .select { |entry| entry.fetch("table") == @table_name }
+          .select { |entry| entry.fetch("table") == @table_name }
         element_entries = set_entries.flat_map do |set|
           dump(NFT_MSG_GETSETELEM,
                attributes: attributes(attribute(NFTA_SET_ELEM_LIST_TABLE, cstring(@table_name)),
-                                       attribute(NFTA_SET_ELEM_LIST_SET, cstring(set.fetch("name")))))
+                                      attribute(NFTA_SET_ELEM_LIST_SET, cstring(set.fetch("name")))))
         end.select { |entry| entry.fetch("table") == @table_name && entry["key"] }
         {
           "table" => table,
@@ -1572,6 +1586,7 @@ module Rubernetes
         }
       rescue NftablesNetlinkError => error
         return empty_readback if error.errno == Errno::ENOENT::Errno
+
         raise
       end
 
@@ -1603,6 +1618,7 @@ module Rubernetes
 
       def normalize_readback_entry(entry, type)
         return entry if entry.is_a?(Hash) && entry.key?("marker")
+
         if entry.is_a?(Hash)
           hash = entry.transform_keys(&:to_s)
           hash["marker"] ||= hash["userdata"]
@@ -1620,9 +1636,8 @@ module Rubernetes
           messages = parse_messages(buffer)
           messages.each do |message|
             next unless message.sequence == sequence
-            if message.type == NLMSG_ERROR
-              raise_kernel_error!(message, operation: "nftables dump")
-            end
+
+            raise_kernel_error!(message, operation: "nftables dump") if message.type == NLMSG_ERROR
             next if message.type == NLMSG_DONE
             next unless message.type == nft_message_type(dump_reply_type(type))
 
@@ -1650,7 +1665,7 @@ module Rubernetes
         when NFT_MSG_GETSET
           {"table" => string_value(attrs, NFTA_SET_TABLE),
            "name" => string_value(attrs, NFTA_SET_NAME), "marker" => value(attrs, NFTA_SET_USERDATA),
-          "handle" => uint64_value(attrs, NFTA_SET_HANDLE),
+           "handle" => uint64_value(attrs, NFTA_SET_HANDLE),
            "flags" => uint32_value(attrs, NFTA_SET_FLAGS) || 0,
            "key_type" => uint32_value(attrs, NFTA_SET_KEY_TYPE),
            "key_len" => uint32_value(attrs, NFTA_SET_KEY_LEN),
@@ -1702,9 +1717,11 @@ module Rubernetes
 
       def send_transaction(messages)
         return {"messageCount" => 0, "acknowledgedSequences" => [], "bytes" => 0} if messages.empty?
+
         if @transport&.respond_to?(:send_transaction)
           result = @transport.send_transaction(messages: messages, family: NFPROTO_INET)
           raise NftablesNetlinkError, "transport did not return a transaction acknowledgment" unless result
+
           return result
         end
 
@@ -1735,6 +1752,7 @@ module Rubernetes
           buffer = receive_bytes(socket, deadline: deadline, operation: "nftables ACK")
           parse_messages(buffer).each do |message|
             next unless pending.key?(message.sequence)
+
             if message.type == NLMSG_ERROR
               raise_kernel_error!(message, operation: "nftables transaction")
               pending[message.sequence] = true
@@ -1751,6 +1769,7 @@ module Rubernetes
                                          operation: operation, sequence: message.sequence)
         end
         return if code.zero?
+
         errno = code.abs
         detail = errno_message(message)
         raise NftablesNetlinkError.new("kernel rejected #{operation}: errno #{errno}#{detail && ": #{detail}"}",
@@ -1759,6 +1778,7 @@ module Rubernetes
 
       def errno_message(message)
         return nil if message.payload.bytesize <= 20
+
         attrs = decode_attributes(message.payload.byteslice(20..).to_s)
         value(attrs, 1)&.delete_suffix("\0")
       rescue NftablesNetlinkError
@@ -1774,7 +1794,7 @@ module Rubernetes
         raise
       rescue SystemCallError => error
         raise NftablesNetlinkError.new("nftables netlink I/O failed: #{error.message}", errno: error.errno,
-                                       operation: "netlink")
+                                                                                        operation: "netlink")
       ensure
         socket&.close if socket.respond_to?(:close)
       end
@@ -1819,6 +1839,7 @@ module Rubernetes
         ensure_send_buffer(socket, bytes.bytesize) if socket.respond_to?(:setsockopt)
         written = socket.send(bytes, 0)
         return if written == bytes.bytesize
+
         raise NftablesNetlinkError, "#{operation} was short-written (#{written}/#{bytes.bytesize} bytes)"
       rescue SystemCallError => error
         raise NftablesNetlinkError.new("#{operation} failed: #{error.message}", errno: error.errno, operation: operation)
@@ -1846,6 +1867,7 @@ module Rubernetes
       def receive_bytes(socket, deadline:, operation:)
         remaining = deadline - monotonic_now
         raise NftablesNetlinkError.new("#{operation} timed out", errno: Errno::ETIMEDOUT::Errno, operation: operation) if remaining <= 0
+
         ready = IO.select([socket], nil, nil, remaining)
         raise NftablesNetlinkError.new("#{operation} timed out", errno: Errno::ETIMEDOUT::Errno, operation: operation) unless ready
 
@@ -1860,12 +1882,17 @@ module Rubernetes
         messages = []
         while offset + NETLINK_HEADER_SIZE <= buffer.bytesize
           length, type, flags, sequence, pid = buffer.byteslice(offset, NETLINK_HEADER_SIZE).unpack("L<S<S<L<L<")
-          raise NftablesNetlinkError, "nftables netlink message has invalid length #{length}" if length < NETLINK_HEADER_SIZE || offset + length > buffer.bytesize
+          if length < NETLINK_HEADER_SIZE || offset + length > buffer.bytesize
+            raise NftablesNetlinkError,
+                  "nftables netlink message has invalid length #{length}"
+          end
+
           payload = buffer.byteslice(offset + NETLINK_HEADER_SIZE, length - NETLINK_HEADER_SIZE).to_s.freeze
           messages << Message.new(type: type, flags: flags, sequence: sequence, pid: pid, payload: payload)
           offset += align(length)
         end
         raise NftablesNetlinkError, "nftables netlink message stream is truncated" unless offset == buffer.bytesize
+
         messages
       end
 
@@ -1888,6 +1915,7 @@ module Rubernetes
         attribute_type = Integer(type) | (nested ? NLA_F_NESTED : 0)
         length = 4 + value.bytesize
         raise NftablesNetlinkError, "nftables attribute is too large" if length > 0xffff
+
         [length, attribute_type].pack("S<S<") + value + ("\0" * (align(length) - length))
       end
 
@@ -1930,11 +1958,13 @@ module Rubernetes
         while offset + 4 <= buffer.bytesize
           length, type = buffer.byteslice(offset, 4).unpack("S<S<")
           raise NftablesNetlinkError, "nftables attribute has invalid length #{length}" if length < 4 || offset + length > buffer.bytesize
+
           values << {"type" => type & NLA_TYPE_MASK, "nested" => (type & NLA_F_NESTED).positive?,
                      "value" => buffer.byteslice(offset + 4, length - 4).to_s}
           offset += align(length)
         end
         raise NftablesNetlinkError, "nftables attribute stream is truncated" unless offset == buffer.bytesize
+
         values
       end
 
@@ -1972,6 +2002,7 @@ module Rubernetes
         raise ArgumentError, "#{label} must not be empty" if name.empty?
         raise ArgumentError, "#{label} must not contain NUL" if name.include?("\0")
         raise ArgumentError, "#{label} exceeds nftables name limit" if name.bytesize >= 256
+
         name.freeze
       end
 

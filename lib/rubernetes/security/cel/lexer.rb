@@ -43,7 +43,7 @@ module Rubernetes
 
         def skip_whitespace_and_comments
           loop do
-            if @source[@position] =~ /\s/
+            if /\s/.match?(@source[@position])
               @position += 1
             elsif @source[@position, 2] == "//"
               newline = @source.index("\n", @position) || @source.length
@@ -57,19 +57,20 @@ module Rubernetes
         def next_token
           start = @position
           char = @source[@position]
-          if char =~ /[A-Za-z_]/
+          if /[A-Za-z_]/.match?(char)
             return lex_identifier(start)
           elsif char =~ /[0-9]/ || (char == "." && @source[@position + 1] =~ /[0-9]/)
             return lex_number(start)
-          elsif char == '"' || char == "'"
+          elsif ['"', "'"].include?(char)
             return Token.new(:string, lex_string(char), start)
-          elsif (char == "r" || char == "R") && (@source[@position + 1] == '"' || @source[@position + 1] == "'")
+          elsif %w[r R].include?(char) && ['"', "'"].include?(@source[@position + 1])
             @position += 1
             return Token.new(:string, lex_string(@source[@position], raw: true), start)
-          elsif (char == "b" || char == "B") && (@source[@position + 1] == '"' || @source[@position + 1] == "'")
+          elsif %w[b B].include?(char) && ['"', "'"].include?(@source[@position + 1])
             @position += 1
             return Token.new(:bytes, lex_string(@source[@position]).b, start)
           end
+
           OPERATORS.each do |operator|
             next unless @source[@position, operator.length] == operator
 
@@ -83,7 +84,7 @@ module Rubernetes
           match = @source[@position..].match(/\A[A-Za-z_][A-Za-z0-9_]*/)
           word = match[0]
           @position += word.length
-          if (word == "r" || word == "b" || word == "R" || word == "B") && (@source[@position] == '"' || @source[@position] == "'")
+          if %w[r b R B].include?(word) && ['"', "'"].include?(@source[@position])
             raw = word.casecmp("r").zero?
             value = lex_string(@source[@position], raw: raw)
             return Token.new(raw ? :string : :bytes, raw ? value : value.b, start)

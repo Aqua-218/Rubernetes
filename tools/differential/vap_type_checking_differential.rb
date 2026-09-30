@@ -39,7 +39,8 @@ module VAPTypeCheckingDifferential
   ].freeze
   UNMAPPED = ["unmapped.example.com", "v1", "things"].freeze
   KINDS = (TARGETS.map(&:last) + %w[ConfigMap]).uniq.freeze
-  LITERALS = ["1", "'a'", "true", "1.5", "2u", "null", "b'x'", "[1, 2]", "['a']", "{'a': 1}", "duration('1s')", "timestamp('2020-01-01T00:00:00Z')"].freeze
+  LITERALS = ["1", "'a'", "true", "1.5", "2u", "null", "b'x'", "[1, 2]", "['a']", "{'a': 1}", "duration('1s')",
+              "timestamp('2020-01-01T00:00:00Z')"].freeze
   REGEXES = ["a+", "[", "(?i)x", "a{2}", "^a.*$", "(", "\\\\d+"].freeze
   DURATIONS = ["1s", "1x", "-1h30m", "", "1.5h", "0", "10000000000000h"].freeze
   TIMESTAMPS = ["2020-01-01T00:00:00Z", "2020-13-01T00:00:00Z", "not-a-time", "2020-01-01T00:00:00.5+01:00", "0000-01-01T00:00:00Z"].freeze
@@ -74,7 +75,9 @@ module VAPTypeCheckingDifferential
   end
 
   def mapping
-    @mapping ||= TARGETS.to_h { |group, version, resource, kind| ["#{group}/#{version}/#{resource}", [{"group" => group, "version" => version, "kind" => kind}]] }
+    @mapping ||= TARGETS.to_h do |group, version, resource, kind|
+      ["#{group}/#{version}/#{resource}", [{"group" => group, "version" => version, "kind" => kind}]]
+    end
   end
 
   def map_resource(group, version, resource)
@@ -95,9 +98,7 @@ module VAPTypeCheckingDifferential
     when :object
       return [text, decl] if decl.fields.empty?
 
-      if maybe(random, 0.08)
-        return ["#{text}.#{pick(random, %w[nonExisting bogus spec2 item])}", nil]
-      end
+      return ["#{text}.#{pick(random, %w[nonExisting bogus spec2 item])}", nil] if maybe(random, 0.08)
 
       name, field = decl.fields.to_a.sample(random: random)
       name = name.delete_prefix("__").delete_suffix("__") if name.start_with?("__") && name.end_with?("__") && maybe(random, 0.7)
@@ -121,7 +122,8 @@ module VAPTypeCheckingDifferential
     case kind
     when :string then options += ["#{path}.startsWith('a')", "#{path}.matches('#{pick(random, REGEXES)}')", "#{path}.size() > 1",
                                   "#{path} + 1 == 'a'", "#{path} in ['a', 'b']", "#{path}.lowerAscii() == 'a'", "'%s'.format([#{path}]) == ''"]
-    when :int then options += ["#{path} > 1", "#{path} + 1 > 0", "#{path} > '1'", "#{path} * 2.0 > 1", "#{path} / 0 == 1", "'%d'.format([#{path}]) == ''"]
+    when :int then options += ["#{path} > 1", "#{path} + 1 > 0", "#{path} > '1'", "#{path} * 2.0 > 1", "#{path} / 0 == 1",
+                               "'%d'.format([#{path}]) == ''"]
     when :bool then options += ["#{path} && true", "#{path} || 1", "!#{path}"]
     when :list
       element = "x"
@@ -144,7 +146,9 @@ module VAPTypeCheckingDifferential
     case random.rand(5)
     when 0 then "duration('#{pick(random, DURATIONS)}') > duration('0s')"
     when 1 then "timestamp('#{pick(random, TIMESTAMPS)}') > timestamp('2000-01-01T00:00:00Z')"
-    when 2 then "#{pick(random, FORMATS)}.format([#{Array.new(random.rand(0..2)) { pick(random, ["1", "'a'", "1.5", "true", "[1]", "{'a': 1}", "duration('1s')", "null", "b'x'", "2u", "object"]) }.join(", ")}]) == ''"
+    when 2 then "#{pick(random, FORMATS)}.format([#{Array.new(random.rand(0..2)) do
+      pick(random, ["1", "'a'", "1.5", "true", "[1]", "{'a': 1}", "duration('1s')", "null", "b'x'", "2u", "object"])
+    end.join(", ")}]) == ''"
     else pick(random, EXTRAS)
     end
   end
@@ -210,7 +214,12 @@ module VAPTypeCheckingDifferential
       case random.rand(10)
       when 0..3 then object_expression(random, target)
       when 4 then object_expression(random, target, "oldObject")
-      when 5 then variables.any? && maybe(random, 0.7) ? "variables.#{pick(random, variables)} == 1" : "variables.#{pick(random, %w[v0 nope])} == 1"
+      when 5 then if variables.any? && maybe(random,
+                                             0.7)
+                    "variables.#{pick(random, variables)} == 1"
+                  else
+                    "variables.#{pick(random, %w[v0 nope])} == 1"
+                  end
       when 6 then params ? object_expression(random, params, "params") : "params.data['x'] == 'y'"
       else extra_expression(random)
       end
@@ -261,7 +270,8 @@ module VAPTypeCheckingDifferential
       end
       validation
     end
-    {"apiVersion" => "admissionregistration.k8s.io/v1", "kind" => "ValidatingAdmissionPolicy", "metadata" => {"name" => "p#{index}"}, "spec" => spec}
+    {"apiVersion" => "admissionregistration.k8s.io/v1", "kind" => "ValidatingAdmissionPolicy", "metadata" => {"name" => "p#{index}"},
+     "spec" => spec}
   end
 
   def normalize(warnings)

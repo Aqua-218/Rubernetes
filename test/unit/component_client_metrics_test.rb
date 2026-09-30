@@ -19,6 +19,7 @@ class ComponentClientMetricsTest < Minitest::Test
     key, = queue.get(timeout: 0)
     registry = Rubernetes::Observability::Metrics.new(apiserver: false)
     text = registry.render
+
     assert_includes text, "workqueue_adds_total{name=\"#{name}\"} 2", "a duplicate add is not counted"
     assert_includes text, "workqueue_depth{name=\"#{name}\"} 1"
     assert_includes text, "workqueue_queue_duration_seconds_count{name=\"#{name}\"} 1"
@@ -26,6 +27,7 @@ class ComponentClientMetricsTest < Minitest::Test
     queue.done(key)
     queue.add_rate_limited("c")
     text = registry.render
+
     assert_includes text, "workqueue_work_duration_seconds_count{name=\"#{name}\"} 1"
     assert_includes text, "workqueue_retries_total{name=\"#{name}\"} 1"
     assert_equal 1, text.scan(/^# TYPE workqueue_depth /).length
@@ -37,6 +39,7 @@ class ComponentClientMetricsTest < Minitest::Test
     Rubernetes::Client::RestClientMetrics.record("GET", uri, 200, 0.02, 0, 512)
     Rubernetes::Client::RestClientMetrics.record("POST", uri, "<error>", 0.5, 100, nil)
     text = Rubernetes::Observability::Metrics.new(apiserver: false).render
+
     assert_match(/rest_client_requests_total\{code="200",host="10.0.0.1:6443",method="GET"\} \d+/, text)
     assert_match(/rest_client_requests_total\{code="<error>",host="10.0.0.1:6443",method="POST"\} \d+/, text)
     assert_match(/rest_client_request_duration_seconds_count\{host="10.0.0.1:6443",verb="GET"\} \d+/, text)
@@ -47,6 +50,7 @@ class ComponentClientMetricsTest < Minitest::Test
     uri = URI("https://api.example.test:6443/api")
     Rubernetes::Client::RestClientMetrics.dns_resolution(uri, 0.003)
     text = Rubernetes::Observability::Metrics.new(apiserver: false).render
+
     assert_match(/rest_client_dns_resolution_duration_seconds_count\{host="api.example.test:6443"\} \d+/, text)
     assert_match(/rest_client_dns_resolution_duration_seconds_bucket\{host="api.example.test:6443",le="0.005"\} \d+/, text)
   end

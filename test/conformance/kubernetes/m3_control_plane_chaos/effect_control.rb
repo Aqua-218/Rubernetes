@@ -31,6 +31,7 @@ module M3EffectControl
     effect_type = request.fetch("effect_type", "reconcile").to_s
     generation = request.dig("leader", "generation").to_s
     raise ArgumentError, "effect control leader generation is required" if generation.empty?
+
     journal = Rubernetes::Controller::EffectJournal.from_env(component: component, identity: request.dig("leader", "identity"))
     effect_key = journal&.effect_key(reconcile_key: reconcile_key, effect_type: effect_type) ||
                  [component, reconcile_key, effect_type].join("|")
@@ -101,7 +102,8 @@ module M3EffectControl
       ))
     end
 
-    before = client.get(target.fetch("kind"), target.fetch("name"), namespace: target["namespace"], api_version: target.fetch("api_version"))
+    before = client.get(target.fetch("kind"), target.fetch("name"), namespace: target["namespace"],
+                                                                    api_version: target.fetch("api_version"))
     annotations = (before.dig("metadata", "annotations") || {}).dup
     marker_key = "rubernetes.io/m3-effect-key"
     marker_id_key = "rubernetes.io/m3-effect-id"
@@ -117,8 +119,8 @@ module M3EffectControl
         name: target.fetch("name")
       )
       journal&.record(effect_type: effect_type, reconcile_key: reconcile_key, action: :patch,
-                     object: patch_body, response: after_patch, generation: generation,
-                     effect_id: effect_id, extra: {"phase" => phase, "target" => target})
+                      object: patch_body, response: after_patch, generation: generation,
+                      effect_id: effect_id, extra: {"phase" => phase, "target" => target})
       applied = true
     end
 
@@ -160,6 +162,7 @@ module M3EffectControl
       "name" => value.fetch("name").to_s
     }
     raise ArgumentError, "effect target name must not be empty" if target["name"].empty?
+
     target
   end
 
@@ -177,7 +180,8 @@ module M3EffectControl
     }
   end
 
-  def result(request:, effect_id:, effect_key:, reconcile_key:, effect_type:, generation:, passed:, stale:, stale_rejected:, effect_attempt_ids:, mutation_count:, observation:)
+  def result(request:, effect_id:, effect_key:, reconcile_key:, effect_type:, generation:, passed:, stale:, stale_rejected:,
+             effect_attempt_ids:, mutation_count:, observation:)
     attempts = Array(effect_attempt_ids).map(&:to_s).reject(&:empty?)
     mutations = Integer(mutation_count)
     {

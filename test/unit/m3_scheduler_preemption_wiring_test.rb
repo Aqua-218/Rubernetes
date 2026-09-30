@@ -84,7 +84,7 @@ class M3SchedulerPreemptionWiringTest < Minitest::Test
     service = scheduler(api)
 
     assert_equal true, service.send(:delete_victim_pod, victim)
-    assert_equal [["pods", "ns", "victim", "v1"]], api.deleted
+    assert_equal [%w[pods ns victim v1]], api.deleted
   end
 
   def test_a_victim_that_is_already_gone_is_not_a_failure

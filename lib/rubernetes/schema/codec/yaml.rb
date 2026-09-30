@@ -13,9 +13,8 @@ module Rubernetes
           Codec.validate_body!(input, max_bytes)
           stream = Psych.parse_stream(input)
           documents = stream.children
-          if strict && documents.length > 1
-            raise Codec::ParseError, "YAML input must contain exactly one document"
-          end
+          raise Codec::ParseError, "YAML input must contain exactly one document" if strict && documents.length > 1
+
           check_nodes!(stream, max_depth: max_depth, strict: strict)
           value = Psych.safe_load(
             input,
@@ -57,9 +56,8 @@ module Rubernetes
             keys = {}
             node.children.each_slice(2) do |key_node, value_node|
               key = key_token(key_node)
-              if strict && key && keys.key?(key)
-                raise Codec::DuplicateKeyError, "duplicate YAML mapping key #{key.inspect}"
-              end
+              raise Codec::DuplicateKeyError, "duplicate YAML mapping key #{key.inspect}" if strict && key && keys.key?(key)
+
               keys[key] = true if key
               check_nodes!(key_node, max_depth: max_depth, strict: strict, depth: depth + 1)
               check_nodes!(value_node, max_depth: max_depth, strict: strict, depth: depth + 1)

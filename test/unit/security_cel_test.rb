@@ -18,7 +18,7 @@ class SecurityCELTest < Minitest::Test
     assert_equal 7, ev("1 + 2 * 3")
     assert_equal(-2, ev("-7 / 3"))
     assert_equal(-1, ev("-7 % 3"))
-    assert_equal 2.5, ev("5.0 / 2.0")
+    assert_in_delta(2.5, ev("5.0 / 2.0"))
     assert_equal true, ev("1 < 2 && 2 <= 2 && 3 > 2 && 'a' < 'b'")
     assert_equal true, ev("1 == 1.0")
     assert_equal false, ev("1u == 2u")
@@ -35,7 +35,7 @@ class SecurityCELTest < Minitest::Test
     assert_equal 5, ev("size('hello')")
     assert_equal true, ev("'hello'.contains('ell') && 'hello'.startsWith('he') && 'hello'.endsWith('lo')")
     assert_equal true, ev("'abc-123'.matches('^[a-z]+-[0-9]+$')")
-    assert_equal ["a", "b"], ev("'a,b'.split(',')")
+    assert_equal %w[a b], ev("'a,b'.split(',')")
     assert_equal "a-b", ev("['a','b'].join('-')")
     assert_equal "HELLO", ev("'hello'.upperAscii()")
     assert_equal "ell", ev("'hello'.substring(1, 4)")
@@ -56,7 +56,7 @@ class SecurityCELTest < Minitest::Test
   def test_conversions_types_time_and_duration
     assert_equal 42, ev("int('42')")
     assert_equal "42", ev("string(42)")
-    assert_equal 3.0, ev("double(3)")
+    assert_in_delta(3.0, ev("double(3)"))
     assert_equal "int", ev("type(1)").to_s
     assert_equal true, ev("duration('1h') > duration('30m')")
     assert_equal 90, ev("duration('1m30s').getSeconds()")
@@ -69,7 +69,7 @@ class SecurityCELTest < Minitest::Test
 
   def test_kubernetes_extension_libraries
     assert_equal true, ev("quantity('1Gi') > quantity('500Mi') && isQuantity('2') && !isQuantity('x')")
-    assert_equal 1073741824, ev("quantity('1Gi').asInteger()")
+    assert_equal 1_073_741_824, ev("quantity('1Gi').asInteger()")
     assert_equal true, ev("quantity('1.5Gi').sub(quantity('0.5Gi')) == quantity('1Gi')")
     assert_equal true, ev("ip('10.0.0.1').family() == 4 && isIP('::1') && !isIP('nope')")
     assert_equal true, ev("cidr('10.0.0.0/8').containsIP('10.1.2.3') && !cidr('10.0.0.0/8').containsIP('192.168.1.1')")
@@ -77,7 +77,7 @@ class SecurityCELTest < Minitest::Test
     assert_equal "example.com", ev("url('https://example.com:8443/path?a=1').getHostname()")
     assert_equal "8443", ev("url('https://example.com:8443/path?a=1').getPort()")
     assert_equal true, ev("isURL('https://x') && semver('1.2.3').isGreaterThan(semver('1.2.0'))")
-    assert_equal ["a1", "b2"], ev("'a1 b2 c'.findAll('[a-z][0-9]')")
+    assert_equal %w[a1 b2], ev("'a1 b2 c'.findAll('[a-z][0-9]')")
     assert_equal "b2", ev("'a1 b2'.find('b[0-9]')")
     assert_equal [1, 2, 3], ev("[[1], [2, 3]].flatten()")
     assert_equal [1, 2], ev("[1, 1, 2].distinct()")
@@ -91,6 +91,7 @@ class SecurityCELTest < Minitest::Test
     cel = CEL::Evaluator.new(library: library)
     user = Rubernetes::Security::UserInfo.new(name: "alice")
     authz = CEL::Library::Authorizer.new(allow, user, nil)
+
     assert_equal true, cel.evaluate("authorizer.group('').resource('pods').namespace('ns').check('get').allowed()", {"authorizer" => authz})
     assert_equal false, cel.evaluate("authorizer.group('').resource('pods').check('delete').allowed()", {"authorizer" => authz})
     assert_equal "no", cel.evaluate("authorizer.path('/x').check('delete').reason()", {"authorizer" => authz})

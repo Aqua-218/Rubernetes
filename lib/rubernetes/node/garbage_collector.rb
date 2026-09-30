@@ -4,9 +4,7 @@
 # separate from deletion so policy can be tested with plain hashes and a
 # runtime/image store can be injected only for the effectful reconciliation.
 
-require "thread"
 require "time"
-require "set"
 
 require_relative "registration"
 
@@ -76,6 +74,7 @@ module Rubernetes
 
       def reconcile(report, dry_run: false)
         return report if dry_run
+
         removed_containers = []
         removed_images = []
         report.containers.each do |container|
@@ -137,12 +136,11 @@ module Rubernetes
         target_count = max_images && !over_high ? Integer(max_images) : nil
         selected = []
         current_bytes = usage && usage[:used_bytes]
-        low_bytes = if usage
-                      usage[:capacity_bytes] * Float(@image_policy.fetch("low_threshold_percent")) / 100.0
-                    end
+        low_bytes = (usage[:capacity_bytes] * Float(@image_policy.fetch("low_threshold_percent")) / 100.0 if usage)
         ordered.each do |image|
           break if target_count && candidates.length - selected.length <= target_count
           break if over_high && current_bytes && current_bytes <= low_bytes
+
           selected << image
           current_bytes -= image_size(image) if current_bytes
         end
@@ -159,7 +157,11 @@ module Rubernetes
       end
 
       def validate_policies!
-        raise ArgumentError, "container max_per_pod must be non-negative" if @container_policy["max_per_pod"] && Integer(@container_policy["max_per_pod"]).negative?
+        if @container_policy["max_per_pod"] && Integer(@container_policy["max_per_pod"]).negative?
+          raise ArgumentError,
+                "container max_per_pod must be non-negative"
+        end
+
         high = Float(@image_policy.fetch("high_threshold_percent"))
         low = Float(@image_policy.fetch("low_threshold_percent"))
         raise ArgumentError, "image thresholds must be between 0 and 100" unless low >= 0 && high <= 100 && low <= high
@@ -168,6 +170,7 @@ module Rubernetes
       def source_items(explicit, source, method_name)
         return explicit.is_a?(Hash) ? [explicit] : Array(explicit) unless explicit.nil?
         return [] unless source
+
         value = source.respond_to?(method_name) ? source.public_send(method_name) : []
         value.respond_to?(:items) ? value.items : Array(value)
       end
@@ -203,13 +206,17 @@ module Rubernetes
       def pod_key(item)
         pod_uid = Support.value(item, "podUID") || Support.value(item, "podUid") || Support.value(item, "pod_uid")
         return "uid:#{pod_uid}" unless pod_uid.to_s.empty?
+
         namespace = Support.value(item, "podNamespace") || Support.value(item, "namespace") || "default"
         name = Support.value(item, "podName") || Support.value(item, "pod") || "unknown"
         "#{namespace}/#{name}"
       end
 
       def container_id(item)
-        Support.value(item, "id") || Support.value(item, "containerID") || Support.value(item, "containerId") || Support.value(item, "name") || "unknown"
+        Support.value(item,
+                      "id") || Support.value(item,
+                                             "containerID") || Support.value(item,
+                                                                             "containerId") || Support.value(item, "name") || "unknown"
       end
 
       def image_id(image)
@@ -223,8 +230,8 @@ module Rubernetes
 
       def timestamp_value(item)
         value = Support.value(item, "finishedAt") || Support.value(item, "finished_at") ||
-          Support.value(item, "lastUsed") || Support.value(item, "lastUsedAt") || Support.value(item, "createdAt") ||
-          Support.value(item, "created_at")
+                Support.value(item, "lastUsed") || Support.value(item, "lastUsedAt") || Support.value(item, "createdAt") ||
+                Support.value(item, "created_at")
         value ? normalize_time(value).to_f : 0.0
       rescue ArgumentError
         0.0
@@ -242,6 +249,7 @@ module Rubernetes
 
       def image_in_use?(image, running_images)
         return true if Support.value(image, "inUse") == true || Support.value(image, "pinned") == true
+
         identity = image_id(image)
         name = image_name(image)
         running_images.include?(identity) || running_images.include?(name)
@@ -249,6 +257,7 @@ module Rubernetes
 
       def normalize_disk_usage(value)
         return nil if value.nil?
+
         hash = Support.object_hash(value)
         used = Support.value(hash, "usedBytes") || Support.value(hash, "used_bytes") || Support.value(hash, "used")
         capacity = Support.value(hash, "capacityBytes") || Support.value(hash, "capacity_bytes") || Support.value(hash, "capacity")
@@ -256,6 +265,7 @@ module Rubernetes
           used = Integer(used)
           capacity = Integer(capacity)
           return nil if capacity <= 0
+
           return {used_bytes: used, capacity_bytes: capacity, percent: used.to_f / capacity * 100.0}
         end
         percent = Support.value(hash, "percent") || Support.value(hash, "usagePercent")
@@ -270,17 +280,21 @@ module Rubernetes
 
       def remove_container(container)
         return true unless @runtime || @container_store
+
         target = @runtime || @container_store
         id = container_id(container)
         method_name = %i[remove_container delete_container remove delete].find { |name| target.respond_to?(name) }
         return false unless method_name
+
         call_store(target, method_name, id, container)
       end
 
       def remove_image(image)
         return true unless @image_store
+
         method_name = %i[remove_image delete_image remove delete].find { |name| @image_store.respond_to?(name) }
         return false unless method_name
+
         call_store(@image_store, method_name, image_id(image), image)
       end
 
@@ -306,7 +320,10 @@ module Rubernetes
 
       def record_event(reason, message)
         return unless @event_recorder
-        return @event_recorder.record(involved_object: {"kind" => "Node", "name" => "node"}, reason: reason, message: message) if @event_recorder.respond_to?(:record)
+        if @event_recorder.respond_to?(:record)
+          return @event_recorder.record(involved_object: {"kind" => "Node", "name" => "node"}, reason: reason,
+                                        message: message)
+        end
 
         @event_recorder.call(reason, message) if @event_recorder.respond_to?(:call)
       end

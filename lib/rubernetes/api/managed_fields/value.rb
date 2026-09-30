@@ -44,7 +44,11 @@ module Rubernetes
           case left
           when 0 then lhs <=> rhs
           when 1 then lhs <=> rhs
-          when 2 then lhs == rhs ? 0 : (lhs ? 1 : -1)
+          when 2 then if lhs == rhs
+                        0
+                      else
+                        (lhs ? 1 : -1)
+                      end
           when 3 then compare_lists(lhs, rhs)
           when 4 then compare_maps(lhs, rhs)
           else 0
@@ -80,14 +84,12 @@ module Rubernetes
 
         # value.Equals.
         def equal?(lhs, rhs)
-          if lhs.is_a?(Float) || rhs.is_a?(Float)
-            return numeric?(lhs) && numeric?(rhs) && lhs.to_f == rhs.to_f
-          end
+          return numeric?(lhs) && numeric?(rhs) && lhs.to_f == rhs.to_f if lhs.is_a?(Float) || rhs.is_a?(Float)
 
           case lhs
           when Integer then rhs.is_a?(Integer) && lhs == rhs
           when String then rhs.is_a?(String) && lhs == rhs
-          when true, false then (rhs == true || rhs == false) && lhs == rhs
+          when true, false then [true, false].include?(rhs) && lhs == rhs
           when Array
             rhs.is_a?(Array) && lhs.length == rhs.length && lhs.each_index.all? { |index| equal?(lhs[index], rhs[index]) }
           when Hash
@@ -168,7 +170,7 @@ module Rubernetes
         def exponential(digits, exponent, negative)
           mantissa = digits.first + (digits.length > 1 ? ".#{digits.drop(1).join}" : "")
           sign = exponent.negative? ? "-" : "+"
-          "#{negative ? "-" : ""}#{mantissa}e#{sign}#{exponent.abs.to_s.rjust(2, "0")}"
+          "#{"-" if negative}#{mantissa}e#{sign}#{exponent.abs.to_s.rjust(2, "0")}"
         end
 
         def fixed(digits, exponent, negative)
@@ -179,7 +181,7 @@ module Rubernetes
                  else
                    digits.join + ("0" * (exponent + 1 - digits.length))
                  end
-          "#{negative ? "-" : ""}#{text}"
+          "#{"-" if negative}#{text}"
         end
 
         # encoding/json (and jsoniter ConfigCompatibleWithStandardLibrary)

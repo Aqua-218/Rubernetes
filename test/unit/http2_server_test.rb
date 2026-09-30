@@ -115,7 +115,12 @@ class HTTP2ServerTest < Minitest::Test
                         T::Response.new(body: "slow")
       when "/watch" then T::Response.new(stream: true, body: ClosableStream.new.tap { |body| @streams << body }, unbounded: true)
       when "/big" then T::Response.new(body: "z" * 100_000)
-      when "/events" then T::Response.new(stream: true, body: Enumerator.new { |out| loop { out << @events.pop; @sent << true } }, unbounded: true)
+      when "/events" then T::Response.new(stream: true, body: Enumerator.new do |out|
+        loop do
+          out << @events.pop
+          @sent << true
+        end
+      end, unbounded: true)
       # Like API::Server#await_watch_delivery: answered right after the
       # watch has sent the event.
       when "/write" then @events << "event\n"
@@ -138,6 +143,7 @@ class HTTP2ServerTest < Minitest::Test
   def test_alpn_selects_h2_and_requests_carry_the_authority_as_host
     assert_equal "h2", @client.socket.alpn_protocol
     @client.get(1, "/")
+
     assert_equal ["200", "HTTP/2.0 localhost"], @client.response(1, T::HPACK::Decoder.new)
   end
 
@@ -146,9 +152,10 @@ class HTTP2ServerTest < Minitest::Test
     @client.get(1, "/slow")
     @client.get(3, "/")
     frames = []
+
     assert_equal ["200", "HTTP/2.0 localhost"], @client.response(3, decoder, frames)
     refute_includes frames.map(&:last), 1, "the fast stream is answered while the slow one runs"
-    assert_equal ["200", "slow"], @client.response(1, decoder)
+    assert_equal %w[200 slow], @client.response(1, decoder)
   end
 
   def test_a_body_larger_than_the_window_waits_for_window_updates
@@ -170,6 +177,7 @@ class HTTP2ServerTest < Minitest::Test
       end
       break if flags & H2::FLAG_END_STREAM != 0
     end
+
     assert_equal "200", status
     assert_equal 100_000, received
   end
@@ -177,8 +185,10 @@ class HTTP2ServerTest < Minitest::Test
   def test_reset_stream_closes_the_response_body
     @client.get(1, "/watch")
     body = @streams.pop(timeout: 5)
+
     refute_nil body
     @client.write(H2.frame(H2::RST_STREAM, 0, 1, [H2::CANCEL].pack("N")))
+
     assert_equal true, body.closed.pop(timeout: 5), "the watch body is closed when the client cancels"
   end
 
@@ -189,6 +199,7 @@ class HTTP2ServerTest < Minitest::Test
                                       [":authority", "localhost"], ["impersonate-group", "a,b"],
                                       ["impersonate-group", "c"]])
     @client.write(H2.frame(H2::HEADERS, H2::FLAG_END_HEADERS | H2::FLAG_END_STREAM, 1, block))
+
     assert_equal ["200", ["a,b", "c"].inspect], @client.response(1, T::HPACK::Decoder.new)
   end
 
@@ -218,6 +229,7 @@ class HTTP2ServerTest < Minitest::Test
     @client.write(H2.frame(H2::PING, 0, 0, "12345678"))
     frame = nil
     frame = @client.read_frame until frame && frame[0] == H2::PING
+
     assert_equal [H2::PING, H2::FLAG_ACK, 0, "12345678"], frame
   end
 
@@ -225,6 +237,7 @@ class HTTP2ServerTest < Minitest::Test
     @client.get(2, "/")
     frame = nil
     frame = @client.read_frame until frame && frame[0] == H2::GOAWAY
+
     assert_equal H2::PROTOCOL_ERROR, frame[3].unpack1("@4N")
   end
 
@@ -232,6 +245,7 @@ class HTTP2ServerTest < Minitest::Test
     http = Net::HTTP.new("127.0.0.1", @server.port)
     http.use_ssl = true
     http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
     assert_equal "HTTP/1.1 127.0.0.1:#{@server.port}", http.get("/").body
   end
 end

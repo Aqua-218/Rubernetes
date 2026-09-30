@@ -58,7 +58,7 @@ module Rubernetes
 
       # names.SimpleNameGenerator: five lowercase alphanumerics without vowels
       # (upstream's alphabet "bcdfghjklmnpqrstvwxz2456789").
-      GENERATE_NAME_ALPHABET = "bcdfghjklmnpqrstvwxz2456789".freeze
+      GENERATE_NAME_ALPHABET = "bcdfghjklmnpqrstvwxz2456789"
 
       def random_suffix(length = 5)
         Array.new(length) { GENERATE_NAME_ALPHABET[SecureRandom.random_number(GENERATE_NAME_ALPHABET.length)] }.join
@@ -156,7 +156,10 @@ module Rubernetes
         (seen ||= {}.compare_by_identity)[value] = true
         case value
         when Hash
-          value.each { |key, child| deep_freeze(key, seen); deep_freeze(child, seen) }
+          value.each do |key, child|
+            deep_freeze(key, seen)
+            deep_freeze(child, seen)
+          end
         when Array
           value.each { |child| deep_freeze(child, seen) }
         end
@@ -220,11 +223,11 @@ module Rubernetes
       def merge_hash(base, patch)
         result = deep_copy(base || {})
         (patch || {}).each do |key, value|
-          if value.is_a?(Hash) && result[key].is_a?(Hash)
-            result[key] = merge_hash(result[key], value)
-          else
-            result[key] = deep_copy(value)
-          end
+          result[key] = if value.is_a?(Hash) && result[key].is_a?(Hash)
+                          merge_hash(result[key], value)
+                        else
+                          deep_copy(value)
+                        end
         end
         result
       end
@@ -274,6 +277,7 @@ module Rubernetes
           if match_labels.is_a?(Hash) || !match_expressions.nil? ||
              selector.key?("matchLabels") || selector.key?(:matchLabels)
             return false if match_labels.is_a?(Hash) && !match_labels.empty? && !selector_matches?(match_labels, object)
+
             expressions = Array(match_expressions)
             return expressions.all? do |expression|
               key = value(expression, "key", "").to_s
@@ -335,9 +339,13 @@ module Rubernetes
       end
 
       def default_api_version(kind)
-        group = %w[Deployment ReplicaSet StatefulSet DaemonSet ControllerRevision].include?(kind) ? "apps" :
-                %w[Job CronJob].include?(kind) ? "batch" :
-                kind == "Lease" ? "coordination.k8s.io" : ""
+        group = if %w[Deployment ReplicaSet StatefulSet DaemonSet ControllerRevision].include?(kind)
+                  "apps"
+                elsif %w[Job CronJob].include?(kind)
+                  "batch"
+                else
+                  kind == "Lease" ? "coordination.k8s.io" : ""
+                end
         version = "v1"
         group.empty? ? version : "#{group}/#{version}"
       end
@@ -359,7 +367,8 @@ module Rubernetes
           ref_uid = ref_value(ref, "uid", nil)&.to_s
           ref_controller = ref_value(ref, "controller", nil)
           next false unless ref_kind == owner_kind && ref_name == owner_name
-          if controller != nil
+
+          unless controller.nil?
             controller_flag = ref_controller == true || ref_controller.to_s.casecmp("true").zero?
             next false unless controller_flag == controller
           end
@@ -395,7 +404,7 @@ module Rubernetes
       end
 
       # rand.SafeEncodeString alphabet (staging/src/k8s.io/apimachinery/pkg/util/rand/rand.go:83).
-      SAFE_ENCODE_ALPHANUMS = "bcdfghjklmnpqrstvwxz2456789".freeze
+      SAFE_ENCODE_ALPHANUMS = "bcdfghjklmnpqrstvwxz2456789"
       FNV_32_OFFSET = 2_166_136_261
       FNV_32_PRIME = 16_777_619
 

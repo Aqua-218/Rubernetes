@@ -57,7 +57,7 @@ module Rubernetes
 
         private
 
-        def cached(token, audiences)
+        def cached(token, audiences, &)
           key = [Digest::SHA256.digest(token.to_s), audiences.nil? ? nil : Array(audiences).map(&:to_s).sort].freeze
           now = @clock.call
           hit = @mutex.synchronize { @entries[key] }
@@ -67,7 +67,7 @@ module Rubernetes
           end
 
           started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          result = fetch { yield }
+          result = fetch(&)
           if result
             @mutex.synchronize do
               @entries.delete(key)

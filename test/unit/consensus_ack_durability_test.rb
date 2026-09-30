@@ -19,6 +19,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
   def build(seed:, timing: nil, ids: IDS)
     cluster = RaftSimulation::Cluster.new(ids, seed: seed, timing: timing)
     cluster.run(1.0)
+
     assert_equal 1, cluster.leader.length, "no leader after 1 s"
     client = RaftSimulation::WriteClient.new(cluster)
     [cluster, client]
@@ -29,10 +30,12 @@ class ConsensusAckDurabilityTest < Minitest::Test
     cluster.processes.keys - [leader]
   end
 
-  def assert_invariants(cluster, client, deleted_keys: [])
+  def assert_invariants(_cluster, client, deleted_keys: [])
     missing = client.missing_acked_creates(deleted_keys: deleted_keys)
+
     assert_empty missing, missing.join("\n")
     divergent = client.divergent_replicas
+
     assert_empty divergent, divergent.join("\n")
   end
 
@@ -46,6 +49,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
         cluster.leader.length == 1
     end
     applied = cluster.processes.values.select(&:alive).map { |process| process.node.last_applied }.uniq
+
     assert_equal 1, applied.length, "replicas did not converge: #{applied.inspect}"
     assert_invariants(cluster, client)
   end
@@ -57,9 +61,13 @@ class ConsensusAckDurabilityTest < Minitest::Test
     # Proposals sit in the leader's batch (no lone-proposer flush); before
     # the tick loop flushes them the leader is isolated.
     requests = 40.times.map { |i| client.create(leader.id, "k/#{i}", flush_now: false) }
-    others.each { |other| cluster.network.cut(leader.id, other); cluster.network.cut(other, leader.id) }
+    others.each do |other|
+      cluster.network.cut(leader.id, other)
+      cluster.network.cut(other, leader.id)
+    end
     cluster.run(1.5)
     new_leader = cluster.leader.find { |node| node.id != leader.id }
+
     refute_nil new_leader, "the majority side must elect a leader"
     20.times { |i| client.create(new_leader.id, "k/new-#{i}") }
     cluster.run(0.3)
@@ -67,13 +75,15 @@ class ConsensusAckDurabilityTest < Minitest::Test
     client.settle
     converge(cluster, client)
     acked = client.acked.map(&:key)
-    assert requests.none? { |request| request.acked? && !acked.include?(request.key) }
+
+    assert(requests.none? { |request| request.acked? && !acked.include?(request.key) })
     # Whatever the old leader acknowledged before losing the majority must
     # be everywhere; what it could not commit must never have been acked.
     requests.select(&:acked?).each do |request|
       cluster.processes.each_value { |process| process.state_machine.store.get(request.key) }
     end
-    assert_equal 20, client.acked.count { |request| request.key.start_with?("k/new-") }
+
+    assert_equal(20, client.acked.count { |request| request.key.start_with?("k/new-") })
   ensure
     cluster&.cleanup
   end
@@ -84,6 +94,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
     other = followers(cluster).first
     # Left in the batch (no lone-proposer flush) ...
     request = client.create(leader.id, "k/raced", flush_now: false)
+
     assert_equal :awaiting_flush, request.state
     # ... flushed by the node (the tick loop in production) and replicated,
     # and the leader steps down before the proposer looks again: a vote
@@ -93,15 +104,18 @@ class ConsensusAckDurabilityTest < Minitest::Test
     vote = C::Messages::RequestVote.new(cluster_id: cluster.cluster_id, from: other, to: leader.id, term: leader.current_term + 1,
                                         request_id: "vote", last_log_index: leader.last_index, last_log_term: leader.log.last_term)
     cluster.route(leader.handle(vote, cluster.now))
-    refute leader.leader?
+
+    refute_predicate leader, :leader?
     assert_equal :awaiting_flush, request.state
     client.settle
     converge(cluster, client)
-    assert request.acked?, request.trace.inspect
+
+    assert_predicate request, :acked?, request.trace.inspect
     assert request.trace.any? { |event| event.first == :appended_before_step_down }, request.trace.inspect
     assert_equal 1, request.trace.count { |event| event.first == :proposed }, "proposed once: #{request.trace.inspect}"
     cluster.processes.each_value do |process|
       keys = process.node.log.entries.map { |entry| entry.command["key"] }
+
       assert_equal 1, keys.count("k/raced"), "#{process.id} holds the entry once: #{keys.inspect}"
     end
     assert_empty client.rejected
@@ -129,6 +143,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
     logs = cluster.processes.values.map { |process| process.node.log.entries.map { |entry| entry.command["key"] }.compact }
     logs.each do |keys|
       duplicates = keys.tally.select { |_key, count| count > 1 }
+
       assert_empty duplicates, "the same create was appended more than once: #{duplicates.inspect}"
     end
     assert_equal 100, client.acked.length + client.failed.length
@@ -138,7 +153,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
   end
 
   def test_a_retried_forward_that_reaches_the_leader_while_its_first_copy_is_still_batched_is_appended_once
-    cluster, client = build(seed: 203)
+    cluster, = build(seed: 203)
     leader = cluster.leader.first
     origin = followers(cluster).first
     command = {"type" => "create", "key" => "k/dup", "object" => {"metadata" => {"name" => "dup"}}, "request_uid" => nil,
@@ -151,11 +166,14 @@ class ConsensusAckDurabilityTest < Minitest::Test
     leader.handle(forward, cluster.now)
     leader.flush(cluster.now)
     responses = leader.drain.select { |message| message.is_a?(C::Messages::ForwardProposalResponse) }
+
     assert_equal 2, responses.length, "both copies are answered"
     assert_equal 1, responses.map { |message| [message.index, message.entry_term] }.uniq.length, "with one position"
     keys = leader.log.entries.map { |entry| entry.command["key"] }
+
     assert_equal 1, keys.count("k/dup"), "the command must be appended once: #{keys.inspect}"
     cluster.run(0.5)
+
     assert_equal 1, cluster.processes[origin].state_machine.store.list("k/").items.length
   ensure
     cluster&.cleanup
@@ -165,26 +183,33 @@ class ConsensusAckDurabilityTest < Minitest::Test
     cluster, client = build(seed: 303)
     leader = cluster.leader.first
     others = followers(cluster)
-    others.each { |other| cluster.network.cut(leader.id, other); cluster.network.cut(other, leader.id) }
+    others.each do |other|
+      cluster.network.cut(leader.id, other)
+      cluster.network.cut(other, leader.id)
+    end
     # Flushed at once: appended to the isolated leader's own log, never
     # replicated.
     isolated = 30.times.map { |i| client.create(leader.id, "k/isolated-#{i}", flush_now: true) }
     cluster.run(1.5)
     new_leader = cluster.leader.find { |node| node.id != leader.id }
+
     refute_nil new_leader
     50.times { |i| client.create(new_leader.id, "k/majority-#{i}") }
     cluster.run(0.5)
+
     assert_operator leader.last_index, :>, leader.commit_index, "the isolated leader holds uncommitted entries"
     cluster.network.heal
     client.settle
     converge(cluster, client)
+
     assert isolated.none?(&:acked?), "an uncommitted create was acknowledged: #{isolated.select(&:acked?).map(&:key)}"
     isolated.each do |request|
       cluster.processes.each_value do |process|
         assert_raises(Rubernetes::Storage::NotFound) { process.state_machine.store.get(request.key) }
       end
     end
-    assert_equal 50, client.acked.count { |request| request.key.start_with?("k/majority-") }
+
+    assert_equal(50, client.acked.count { |request| request.key.start_with?("k/majority-") })
   ensure
     cluster&.cleanup
   end
@@ -198,6 +223,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
     client.settle(timeout: 20.0)
     cluster.network.drop_rate = 0.0
     converge(cluster, client, timeout: 5.0)
+
     assert_equal 200, client.acked.length + client.rejected.length, client.failed.map { |request| [request.key, request.error] }.inspect
     assert_unknown_outcome_rejections_only(client)
     assert_operator client.acked.length, :>=, 170
@@ -216,6 +242,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
     cluster.restart(leader.id)
     client.settle(timeout: 12.0)
     converge(cluster, client, timeout: 5.0)
+
     assert_operator client.acked.length, :>=, 1
   ensure
     cluster&.cleanup
@@ -233,19 +260,22 @@ class ConsensusAckDurabilityTest < Minitest::Test
     end
     request = client.create(lagging, "k/forwarded")
     cluster.run(0.05)
+
     assert_equal :waiting_apply, request.state, request.trace.inspect
     60.times { |i| client.create(leader.id, "k/fill-#{i}") }
     cluster.run(0.5)
+
     assert_operator leader.log.snapshot_index, :>=, request.index, "the leader compacted past the forwarded entry"
     cluster.network.filter = nil
     installed_at = cluster.now
     cluster.run_until(timeout: 3.0) { cluster.node(lagging).status["snapshot_installs"].positive? }
+
     assert_equal 1, cluster.node(lagging).status["snapshot_installs"]
     client.settle
     converge(cluster, client)
     # The write committed (it is in the snapshot) but the forwarder holds no
     # apply result for it: the outcome is unknown and reported at once.
-    refute request.acked?
+    refute_predicate request, :acked?
     assert_equal :failed, request.state, request.trace.inspect
     assert_equal :applied_through_snapshot, request.error, request.trace.inspect
     assert_operator request.acked_at - installed_at, :<, 1.0, "the unknown outcome must not wait for the 10 s deadline"
@@ -264,6 +294,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
     cluster.crash(victim)
     rewrite_wal_as_format_1(cluster.processes[victim].storage.wal_path)
     cluster.restart(victim)
+
     assert_equal 1, C::WAL.header_version(cluster.processes[victim].storage.wal_path)
     60.times { |i| client.create(IDS[i % 3], "k/after-#{i}") }
     client.settle
@@ -276,6 +307,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
     cluster.restart(victim)
     cluster.run(0.5)
     converge(cluster, client)
+
     assert_equal 70, cluster.processes[victim].state_machine.store.list("k/").items.length
   ensure
     cluster&.cleanup
@@ -295,10 +327,12 @@ class ConsensusAckDurabilityTest < Minitest::Test
     File.open(path, "r+b") { |file| file.truncate(File.size(path) - 7) }
     cluster.run(1.5)
     cluster.restart(leader.id, recover_torn_tail: true)
+
     assert cluster.processes[leader.id].storage.recovery.any? { |report| report["truncated"] }, "the torn tail was recovered"
     30.times { |i| client.create(IDS[i % 3], "k/later-#{i}") }
     client.settle
     converge(cluster, client)
+
     assert_equal 60, client.acked.length
   ensure
     cluster&.cleanup
@@ -319,6 +353,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
       client.settle
       converge(cluster, client)
     end
+
     assert_equal 70, cluster.processes[victim].state_machine.store.list("k/").items.length
   ensure
     cluster&.cleanup

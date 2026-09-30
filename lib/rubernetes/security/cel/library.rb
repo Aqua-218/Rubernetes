@@ -74,6 +74,7 @@ module Rubernetes
           if left.is_a?(Hash) && right.is_a?(Hash) && left.length == right.length
             return left.all? { |key, value| right.key?(key) && equal?(value, right[key]) }
           end
+
           false
         end
 
@@ -85,17 +86,21 @@ module Rubernetes
         end
 
         def compare(left, right)
-          if numeric?(left) && numeric?(right)
-            return numeric_value(left) <=> numeric_value(right)
-          end
-          if left.respond_to?(:compareTo) && right.class == left.class
-            return left.compareTo(right)
-          end
+          return numeric_value(left) <=> numeric_value(right) if numeric?(left) && numeric?(right)
+          return left.compareTo(right) if left.respond_to?(:compareTo) && right.class == left.class
+
           case left
           when String then raise TypeMismatch, "cannot compare string with #{type_of(right)}" unless right.is_a?(String)
-          when Bytes then raise TypeMismatch, "cannot compare bytes" unless right.is_a?(Bytes); return left.value <=> right.value
-          when TrueClass, FalseClass then raise TypeMismatch, "cannot compare bool" unless right == true || right == false; return (left ? 1 : 0) <=> (right ? 1 : 0)
-          when Duration, Timestamp then raise TypeMismatch, "cannot compare #{type_of(left)} with #{type_of(right)}" unless right.class == left.class
+          when Bytes then raise TypeMismatch, "cannot compare bytes" unless right.is_a?(Bytes)
+
+                          return left.value <=> right.value
+          when TrueClass, FalseClass then raise TypeMismatch, "cannot compare bool" unless [true, false].include?(right)
+
+                                          return (left ? 1 : 0) <=> (right ? 1 : 0)
+          when Duration, Timestamp then unless right.class == left.class
+                                          raise TypeMismatch,
+                                                "cannot compare #{type_of(left)} with #{type_of(right)}"
+                                        end
           else raise TypeMismatch, "cannot compare #{type_of(left)}"
           end
           left <=> right
@@ -103,13 +108,24 @@ module Rubernetes
 
         def add(left, right, context)
           case left
-          when Integer then raise TypeMismatch, "int + #{type_of(right)}" unless right.is_a?(Integer); check_int!(left + right)
-          when UInt then raise TypeMismatch, "uint + #{type_of(right)}" unless right.is_a?(UInt); UInt.new(left.value + right.value)
-          when Float then raise TypeMismatch, "double + #{type_of(right)}" unless right.is_a?(Float); left + right
-          when String then raise TypeMismatch, "string + #{type_of(right)}" unless right.is_a?(String); left + right
-          when Bytes then raise TypeMismatch, "bytes + #{type_of(right)}" unless right.is_a?(Bytes); Bytes.new(left.value + right.value)
+          when Integer then raise TypeMismatch, "int + #{type_of(right)}" unless right.is_a?(Integer)
+
+                            check_int!(left + right)
+          when UInt then raise TypeMismatch, "uint + #{type_of(right)}" unless right.is_a?(UInt)
+
+                         UInt.new(left.value + right.value)
+          when Float then raise TypeMismatch, "double + #{type_of(right)}" unless right.is_a?(Float)
+
+                          left + right
+          when String then raise TypeMismatch, "string + #{type_of(right)}" unless right.is_a?(String)
+
+                           left + right
+          when Bytes then raise TypeMismatch, "bytes + #{type_of(right)}" unless right.is_a?(Bytes)
+
+                          Bytes.new(left.value + right.value)
           when Array
             raise TypeMismatch, "list + #{type_of(right)}" unless right.is_a?(Array)
+
             context.charge(left.length + right.length)
             left + right
           when Duration
@@ -120,6 +136,7 @@ module Rubernetes
             end
           when Timestamp
             raise TypeMismatch, "timestamp + #{type_of(right)}" unless right.is_a?(Duration)
+
             Timestamp.new(left.time + right.seconds)
           else raise TypeMismatch, "no + overload for #{type_of(left)}"
           end
@@ -127,10 +144,18 @@ module Rubernetes
 
         def subtract(left, right)
           case left
-          when Integer then raise TypeMismatch, "int - #{type_of(right)}" unless right.is_a?(Integer); check_int!(left - right)
-          when UInt then raise TypeMismatch, "uint - #{type_of(right)}" unless right.is_a?(UInt); UInt.new(left.value - right.value)
-          when Float then raise TypeMismatch, "double - #{type_of(right)}" unless right.is_a?(Float); left - right
-          when Duration then raise TypeMismatch, "duration - #{type_of(right)}" unless right.is_a?(Duration); Duration.new(left.seconds - right.seconds)
+          when Integer then raise TypeMismatch, "int - #{type_of(right)}" unless right.is_a?(Integer)
+
+                            check_int!(left - right)
+          when UInt then raise TypeMismatch, "uint - #{type_of(right)}" unless right.is_a?(UInt)
+
+                         UInt.new(left.value - right.value)
+          when Float then raise TypeMismatch, "double - #{type_of(right)}" unless right.is_a?(Float)
+
+                          left - right
+          when Duration then raise TypeMismatch, "duration - #{type_of(right)}" unless right.is_a?(Duration)
+
+                             Duration.new(left.seconds - right.seconds)
           when Timestamp
             case right
             when Timestamp then Duration.new(left.time.to_r - right.time.to_r)
@@ -143,9 +168,15 @@ module Rubernetes
 
         def multiply(left, right)
           case left
-          when Integer then raise TypeMismatch, "int * #{type_of(right)}" unless right.is_a?(Integer); check_int!(left * right)
-          when UInt then raise TypeMismatch, "uint * #{type_of(right)}" unless right.is_a?(UInt); UInt.new(left.value * right.value)
-          when Float then raise TypeMismatch, "double * #{type_of(right)}" unless right.is_a?(Float); left * right
+          when Integer then raise TypeMismatch, "int * #{type_of(right)}" unless right.is_a?(Integer)
+
+                            check_int!(left * right)
+          when UInt then raise TypeMismatch, "uint * #{type_of(right)}" unless right.is_a?(UInt)
+
+                         UInt.new(left.value * right.value)
+          when Float then raise TypeMismatch, "double * #{type_of(right)}" unless right.is_a?(Float)
+
+                          left * right
           else raise TypeMismatch, "no * overload for #{type_of(left)}"
           end
         end
@@ -155,12 +186,16 @@ module Rubernetes
           when Integer
             raise TypeMismatch, "int / #{type_of(right)}" unless right.is_a?(Integer)
             raise EvaluationError, "division by zero" if right.zero?
+
             check_int!(left.abs / right.abs * (left.negative? ^ right.negative? ? -1 : 1))
           when UInt
             raise TypeMismatch, "uint / #{type_of(right)}" unless right.is_a?(UInt)
             raise EvaluationError, "division by zero" if right.value.zero?
+
             UInt.new(left.value / right.value)
-          when Float then raise TypeMismatch, "double / #{type_of(right)}" unless right.is_a?(Float); left / right
+          when Float then raise TypeMismatch, "double / #{type_of(right)}" unless right.is_a?(Float)
+
+                          left / right
           else raise TypeMismatch, "no / overload for #{type_of(left)}"
           end
         end
@@ -170,10 +205,12 @@ module Rubernetes
           when Integer
             raise TypeMismatch, "int % #{type_of(right)}" unless right.is_a?(Integer)
             raise EvaluationError, "modulus by zero" if right.zero?
+
             left.remainder(right)
           when UInt
             raise TypeMismatch, "uint % #{type_of(right)}" unless right.is_a?(UInt)
             raise EvaluationError, "modulus by zero" if right.value.zero?
+
             UInt.new(left.value % right.value)
           else raise TypeMismatch, "no % overload for #{type_of(left)}"
           end
@@ -189,7 +226,7 @@ module Rubernetes
           end
         end
 
-        def global_call(function, arguments, context)
+        def global_call(function, arguments, _context)
           case function
           when "size" then size(arguments.fetch(0))
           when "int" then to_int(arguments.fetch(0))
@@ -216,7 +253,8 @@ module Rubernetes
           when "optional.of" then Optional.of(arguments.fetch(0))
           when "optional.none" then Optional.none
           when "sets.contains" then sets_contains(arguments.fetch(0), arguments.fetch(1))
-          when "sets.equivalent" then sets_contains(arguments.fetch(0), arguments.fetch(1)) && sets_contains(arguments.fetch(1), arguments.fetch(0))
+          when "sets.equivalent" then sets_contains(arguments.fetch(0),
+                                                    arguments.fetch(1)) && sets_contains(arguments.fetch(1), arguments.fetch(0))
           when "sets.intersects" then arguments.fetch(0).any? { |item| arguments.fetch(1).any? { |other| equal?(item, other) } }
           when "authorizer" then Authorizer.new(@authorizer, nil, nil)
           else
@@ -232,6 +270,7 @@ module Rubernetes
             when "hasValue" then return target.present?
             when "value"
               raise EvaluationError, "optional.none() dereference" unless target.present?
+
               return target.value
             when "orValue" then return target.present? ? target.value : arguments.fetch(0)
             when "or" then return target.present? ? target : arguments.fetch(0)
@@ -254,20 +293,29 @@ module Rubernetes
           when "replace"
             text = string_target(target)
             limit = arguments[2]
-            limit.nil? || limit.to_i.negative? ? text.gsub(string_argument(arguments, 0), string_argument(arguments, 1)) : replace_limited(text, string_argument(arguments, 0), string_argument(arguments, 1), limit.to_i)
+            if limit.nil? || limit.to_i.negative?
+              text.gsub(string_argument(arguments, 0),
+                        string_argument(arguments,
+                                        1))
+            else
+              replace_limited(text, string_argument(arguments, 0),
+                              string_argument(arguments, 1), limit.to_i)
+            end
           when "split"
             text = string_target(target)
             limit = arguments[1]
-            parts = limit.nil? ? text.split(string_argument(arguments, 0), -1) : text.split(string_argument(arguments, 0), limit.to_i)
-            parts
+            limit.nil? ? text.split(string_argument(arguments, 0), -1) : text.split(string_argument(arguments, 0), limit.to_i)
+
           when "join"
             raise TypeMismatch, "join on non-list" unless target.is_a?(Array)
+
             target.join(arguments.empty? ? "" : string_argument(arguments, 0))
           when "substring"
             text = string_target(target)
             start = arguments.fetch(0).to_i
             finish = arguments[1].nil? ? text.length : arguments[1].to_i
             raise EvaluationError, "substring range out of bounds" if start.negative? || finish > text.length || start > finish
+
             text[start...finish]
           when "indexOf" then index_of(string_target(target), string_argument(arguments, 0), arguments[1]&.to_i || 0)
           when "lastIndexOf" then last_index_of(string_target(target), string_argument(arguments, 0), arguments[1]&.to_i)
@@ -275,6 +323,7 @@ module Rubernetes
             text = string_target(target)
             index = arguments.fetch(0).to_i
             raise EvaluationError, "charAt index out of range" unless index.between?(0, text.length)
+
             index == text.length ? "" : text[index]
           when "reverse"
             case target
@@ -302,6 +351,7 @@ module Rubernetes
             start = arguments.fetch(0).to_i
             finish = arguments.fetch(1).to_i
             raise EvaluationError, "slice range out of bounds" if start.negative? || finish > list.length || start > finish
+
             list[start...finish]
           when "flatten"
             depth = arguments.empty? ? 1 : arguments.fetch(0).to_i
@@ -334,6 +384,7 @@ module Rubernetes
           when UInt then check_int!(value.value)
           when Float
             raise EvaluationError, "double out of int range" if value.nan? || value.infinite? || value >= 2**63 || value < -(2**63)
+
             value.truncate
           when String
             # strconv.ParseInt; any failure is cel-go's conversion error.
@@ -353,9 +404,11 @@ module Rubernetes
           when Integer then UInt.new(value)
           when Float
             raise EvaluationError, "double out of uint range" if value.nan? || value.negative? || value >= 2**64
+
             UInt.new(value.truncate)
           when String
-            raise EvaluationError, "type conversion error from 'string' to 'uint'" unless value.match?(/\A\d+\z/) && Integer(value, 10) < 2**64
+            raise EvaluationError, "type conversion error from 'string' to 'uint'" unless value.match?(/\A\d+\z/) && Integer(value,
+                                                                                                                             10) < 2**64
 
             UInt.new(Integer(value, 10))
           else raise TypeMismatch, "cannot convert #{type_of(value)} to uint"
@@ -381,7 +434,9 @@ module Rubernetes
           when Integer, UInt then value.to_s
           when Float then value.to_s
           when TrueClass, FalseClass then value.to_s
-          when Bytes then value.value.dup.force_encoding(Encoding::UTF_8).tap { |s| raise EvaluationError, "invalid UTF-8 in bytes" unless s.valid_encoding? }
+          when Bytes then value.value.dup.force_encoding(Encoding::UTF_8).tap do |s|
+            raise EvaluationError, "invalid UTF-8 in bytes" unless s.valid_encoding?
+          end
           when Duration, Timestamp, Quantity, IP, CIDR, URL, SemVer then value.to_s
           else raise TypeMismatch, "cannot convert #{type_of(value)} to string"
           end
@@ -393,6 +448,7 @@ module Rubernetes
           when String
             return true if %w[true True TRUE t T 1].include?(value)
             return false if %w[false False FALSE f F 0].include?(value)
+
             raise EvaluationError, "type conversion error from 'string' to 'bool'"
           else raise TypeMismatch, "cannot convert #{type_of(value)} to bool"
           end
@@ -468,7 +524,7 @@ module Rubernetes
           end
           time = target.time
           zone = arguments.first
-          time = zone ? shift_zone(time, zone) : time
+          time = shift_zone(time, zone) if zone
           case function
           when "getDate", "getDayOfMonth" then function == "getDate" ? time.day : time.day - 1
           when "getDayOfWeek" then time.wday
@@ -483,13 +539,11 @@ module Rubernetes
         end
 
         def shift_zone(time, zone)
-          if zone.match?(/\A[+-]\d{2}:\d{2}\z/)
-            sign = zone.start_with?("-") ? -1 : 1
-            hours, minutes = zone[1..].split(":").map(&:to_i)
-            time.getlocal(sign * (hours * 3600 + minutes * 60))
-          else
-            raise EvaluationError, "unsupported time zone #{zone.inspect}"
-          end
+          raise EvaluationError, "unsupported time zone #{zone.inspect}" unless zone.match?(/\A[+-]\d{2}:\d{2}\z/)
+
+          sign = zone.start_with?("-") ? -1 : 1
+          hours, minutes = zone[1..].split(":").map(&:to_i)
+          time.getlocal(sign * ((hours * 3600) + (minutes * 60)))
         end
 
         # ---------------------------------------------------------------- extension types
@@ -509,7 +563,7 @@ module Rubernetes
         end
 
         class Quantity
-          SUFFIXES = {"" => 1r, "n" => 1r / 10**9, "u" => 1r / 10**6, "m" => 1r / 1000, "k" => 1000r, "M" => 10**6r, "G" => 10**9r, "T" => 10**12r,
+          SUFFIXES = {"" => 1r, "n" => 1r / (10**9), "u" => 1r / (10**6), "m" => 1r / 1000, "k" => 1000r, "M" => 10**6r, "G" => 10**9r, "T" => 10**12r,
                       "P" => 10**15r, "E" => 10**18r, "Ki" => 1024r, "Mi" => 1024r**2, "Gi" => 1024r**3, "Ti" => 1024r**4, "Pi" => 1024r**5, "Ei" => 1024r**6}.freeze
           attr_reader :value, :text
 
@@ -562,7 +616,12 @@ module Rubernetes
         class IP
           attr_reader :address
 
-          def self.valid?(text) = text.is_a?(String) && !text.include?("/") && (IPAddr.new(text) && true) rescue false
+          def self.valid?(text)
+            text.is_a?(String) && !text.include?("/") && IPAddr.new(text) && true
+          rescue StandardError
+            false
+          end
+
           def self.parse(text)
             raise EvaluationError, "invalid IP address #{text.inspect}" unless valid?(text)
 
@@ -575,9 +634,17 @@ module Rubernetes
           def isCanonical = @address.to_s == @address.to_s
           def isUnspecified = @address.to_i.zero?
           def isLoopback = @address.loopback?
-          def isLinkLocalMulticast = @address.ipv4? ? IPAddr.new("224.0.0.0/24").include?(@address) : IPAddr.new("ff02::/16").include?(@address)
+
+          def isLinkLocalMulticast
+            @address.ipv4? ? IPAddr.new("224.0.0.0/24").include?(@address) : IPAddr.new("ff02::/16").include?(@address)
+          end
+
           def isLinkLocalUnicast = @address.link_local?
-          def isGlobalUnicast = !(isLoopback || isUnspecified || @address.link_local? || (@address.ipv4? ? IPAddr.new("224.0.0.0/4").include?(@address) : IPAddr.new("ff00::/8").include?(@address)))
+
+          def isGlobalUnicast
+            !(isLoopback || isUnspecified || @address.link_local? || (@address.ipv4? ? IPAddr.new("224.0.0.0/4").include?(@address) : IPAddr.new("ff00::/8").include?(@address)))
+          end
+
           def to_s = @address.to_s
           def ==(other) = other.is_a?(IP) && other.address == @address
         end
@@ -585,7 +652,12 @@ module Rubernetes
         class CIDR
           attr_reader :range, :text
 
-          def self.valid?(text) = text.is_a?(String) && text.include?("/") && (IPAddr.new(text) && true) rescue false
+          def self.valid?(text)
+            text.is_a?(String) && text.include?("/") && IPAddr.new(text) && true
+          rescue StandardError
+            false
+          end
+
           def self.parse(text)
             raise EvaluationError, "invalid CIDR #{text.inspect}" unless valid?(text)
 
@@ -641,10 +713,9 @@ module Rubernetes
         # fill missing minor/patch, drop leading zeroes) on request.
         class SemVer
           include Comparable
-          attr_reader :major, :minor, :patch, :prerelease, :build
 
-          NUMBERS = /\A[0-9]*\z/.freeze
-          ALPHANUM = /\A[0-9A-Za-z-]*\z/.freeze
+          NUMBERS = /\A[0-9]*\z/
+          ALPHANUM = /\A[0-9A-Za-z-]*\z/
 
           def self.valid?(text, normalize = false)
             parse(text, normalize)
@@ -670,9 +741,7 @@ module Rubernetes
               trimmed.empty? || !trimmed[0].match?(/[0-9]/) ? "0#{trimmed}" : trimmed
             end
             if parts.length < 3
-              if parts.last.to_s.match?(/[+-]/)
-                raise EvaluationError, "short version cannot contain PreRelease/Build meta data"
-              end
+              raise EvaluationError, "short version cannot contain PreRelease/Build meta data" if parts.last.to_s.match?(/[+-]/)
 
               parts << "0" while parts.length < 3
             end
@@ -702,7 +771,10 @@ module Rubernetes
             @prerelease_ids = Array(prerelease).map { |identifier| prerelease_id(identifier) }
             Array(build).each do |identifier|
               raise EvaluationError, "Build meta data is empty" if identifier.empty?
-              raise EvaluationError, "Invalid character(s) found in build meta data #{identifier.inspect}" unless ALPHANUM.match?(identifier)
+              unless ALPHANUM.match?(identifier)
+                raise EvaluationError,
+                      "Invalid character(s) found in build meta data #{identifier.inspect}"
+              end
             end
             @prerelease = prerelease&.join(".")
             @build = build&.join(".")
@@ -713,7 +785,7 @@ module Rubernetes
           def isGreaterThan(other) = (self <=> other).positive?
           def isLessThan(other) = (self <=> other).negative?
           def compareTo(other) = self <=> other
-          def prerelease_ids = @prerelease_ids
+          attr_reader :major, :minor, :patch, :prerelease, :build, :prerelease_ids
 
           def <=>(other)
             return nil unless other.is_a?(SemVer)
@@ -745,7 +817,10 @@ module Rubernetes
 
           def number(text, label)
             raise EvaluationError, "Invalid character(s) found in #{label} number #{text.inspect}" unless NUMBERS.match?(text)
-            raise EvaluationError, "#{label.capitalize} number must not contain leading zeroes #{text.inspect}" if text.length > 1 && text.start_with?("0")
+            if text.length > 1 && text.start_with?("0")
+              raise EvaluationError,
+                    "#{label.capitalize} number must not contain leading zeroes #{text.inspect}"
+            end
             raise EvaluationError, "strconv.ParseUint: parsing #{text.inspect}: invalid syntax" if text.empty?
 
             Integer(text, 10)
@@ -753,6 +828,7 @@ module Rubernetes
 
           def prerelease_id(text)
             raise EvaluationError, "Prerelease is empty" if text.empty?
+
             if NUMBERS.match?(text)
               if text.length > 1 && text.start_with?("0")
                 raise EvaluationError, "Numeric PreRelease version must not contain leading zeroes #{text.inspect}"
@@ -840,9 +916,11 @@ module Rubernetes
           def namespace(name) = dup.tap { |a| a.instance_variable_set(:@namespace, name) }
           def name(value) = dup.tap { |a| a.instance_variable_set(:@name, value) }
           def path(value) = dup.tap { |a| a.instance_variable_set(:@path, value) }
+
           def serviceAccount(namespace, name)
             dup.tap { |a| a.instance_variable_set(:@user, UserInfo.service_account(namespace: namespace, name: name)) }
           end
+
           def fieldSelector(value) = dup.tap { |a| a.instance_variable_set(:@field_selector, value) }
           def labelSelector(value) = dup.tap { |a| a.instance_variable_set(:@label_selector, value) }
 

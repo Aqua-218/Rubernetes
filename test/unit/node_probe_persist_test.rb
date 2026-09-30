@@ -63,14 +63,17 @@ class NodeProbePersistTest < Minitest::Test
       saves = store.saves
 
       3.times { lifecycle.probe(pod) }
+
       assert_equal saves, store.saves, "an unchanged probe pass is not persisted"
 
       probes.ready = false
       lifecycle.probe(pod)
+
       assert_operator store.saves, :>, saves
       refute lifecycle.record(pod).fetch(:status).fetch("containerStatuses").first.fetch("ready")
       # prober: a failed probe is a Warning "Unhealthy" event carrying the output.
       unhealthy = lifecycle.record(pod).fetch(:events).select { |entry| entry["type"] == "probe.unhealthy" }
+
       assert_equal 1, unhealthy.length
       assert_equal "Readiness probe failed: exec exited with 1", unhealthy.first["message"]
       assert_equal "Unhealthy", unhealthy.first["reason"]

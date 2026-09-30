@@ -33,21 +33,22 @@ module Rubernetes
 
       # [status, headers, body]
       def call(method, path, query, accept: nil)
-        return error(405, "MethodNotAllowed", "the server does not allow this method on the requested resource") unless %w[GET HEAD].include?(method)
+        return error(405, "MethodNotAllowed", "the server does not allow this method on the requested resource") unless %w[GET
+                                                                                                                           HEAD].include?(method)
 
         case path
         when "/apis" then json(200, group_list)
         when "/apis/#{GROUP}", "/apis/#{GROUP}/" then json(200, group)
         when "/apis/#{GROUP_VERSION}", "/apis/#{GROUP_VERSION}/" then json(200, resource_list)
-        when %r{\A/apis/#{Regexp.escape(GROUP_VERSION)}/nodes/?\z}
+        when %r{\A/apis/#{Regexp.escape(GROUP_VERSION)}/nodes/?\z}o
           respond(node_list(query), accept, :node)
-        when %r{\A/apis/#{Regexp.escape(GROUP_VERSION)}/nodes/([^/]+)\z}
+        when %r{\A/apis/#{Regexp.escape(GROUP_VERSION)}/nodes/([^/]+)\z}o
           node_get(Regexp.last_match(1), accept)
-        when %r{\A/apis/#{Regexp.escape(GROUP_VERSION)}/pods/?\z}
+        when %r{\A/apis/#{Regexp.escape(GROUP_VERSION)}/pods/?\z}o
           respond(pod_list(nil, query), accept, :pod)
-        when %r{\A/apis/#{Regexp.escape(GROUP_VERSION)}/namespaces/([^/]+)/pods/?\z}
+        when %r{\A/apis/#{Regexp.escape(GROUP_VERSION)}/namespaces/([^/]+)/pods/?\z}o
           respond(pod_list(Regexp.last_match(1), query), accept, :pod)
-        when %r{\A/apis/#{Regexp.escape(GROUP_VERSION)}/namespaces/([^/]+)/pods/([^/]+)\z}
+        when %r{\A/apis/#{Regexp.escape(GROUP_VERSION)}/namespaces/([^/]+)/pods/([^/]+)\z}o
           pod_get(Regexp.last_match(1), Regexp.last_match(2), accept)
         else
           error(404, "NotFound", "the server could not find the requested resource")
@@ -105,13 +106,16 @@ module Rubernetes
         pods = @lister.pods(namespace: namespace, label_selector: query["labelSelector"])
         pods = field_filter(pods, query["fieldSelector"], namespaced: true)
         items = pods.filter_map { |pod| pod_metrics(pod) }
-                    .sort_by { |item| [item.dig("metadata", "namespace"), item.dig("metadata", "name")] }
+          .sort_by { |item| [item.dig("metadata", "namespace"), item.dig("metadata", "name")] }
         {"kind" => "PodMetricsList", "apiVersion" => GROUP_VERSION, "metadata" => {}, "items" => items}
       end
 
       def pod_get(namespace, name, accept)
         pod = @lister.pod(namespace, name)
-        return error(404, "NotFound", %(pods "#{namespace}/#{name}" not found), details: {"name" => "#{namespace}/#{name}", "kind" => "pods"}) if pod.nil?
+        if pod.nil?
+          return error(404, "NotFound", %(pods "#{namespace}/#{name}" not found),
+                       details: {"name" => "#{namespace}/#{name}", "kind" => "pods"})
+        end
 
         metrics = pod_metrics(pod)
         return not_found("pods", "#{namespace}/#{name}") if metrics.nil?
@@ -129,7 +133,9 @@ module Rubernetes
         {"kind" => "PodMetrics", "apiVersion" => GROUP_VERSION,
          "metadata" => metadata(name, namespace, pod.dig("metadata", "labels")),
          "timestamp" => earliest ? rfc3339(earliest.timestamp) : nil, "window" => API.go_duration(earliest ? earliest.window : 0),
-         "containers" => containers.map { |container, value| {"name" => container, "usage" => {"cpu" => value.cpu, "memory" => value.memory}} }}
+         "containers" => containers.map do |container, value|
+           {"name" => container, "usage" => {"cpu" => value.cpu, "memory" => value.memory}}
+         end}
       end
 
       # --------------------------------------------------------------- shape

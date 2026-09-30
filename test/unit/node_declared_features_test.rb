@@ -29,13 +29,15 @@ class NodeDeclaredFeaturesTest < Minitest::Test
 
   def test_bitmap_operations
     set = NDF::FeatureSet.new(130).set(0).set(64).set(129)
+
     assert set.get(64)
     refute set.get(1)
     other = NDF::FeatureSet.new(130).set(0)
+
     assert other.subset?(set)
     refute set.subset?(other)
     assert_equal NDF::FeatureSet.new(130).set(64).set(129), set.difference(other)
-    assert NDF::FeatureSet.new(3).empty?
+    assert_empty NDF::FeatureSet.new(3)
     assert_equal "101", NDF::FeatureSet.new(3).set(0).set(2).to_s
     assert_raises(IndexError) { set.get(130) }
     assert_raises(NDF::Error) { set.subset?(NDF::FeatureSet.new(3)) }
@@ -55,6 +57,7 @@ class NodeDeclaredFeaturesTest < Minitest::Test
       [%w[d e], true, [3]]
     ].each do |input, error, expected|
       set = mapper.try_map(input)
+
       4.times { |index| assert_equal expected.include?(index), set.get(index), "#{input.inspect} index #{index}" }
       if error
         assert_raises(NDF::Error) { mapper.map_sorted(input) }
@@ -62,6 +65,7 @@ class NodeDeclaredFeaturesTest < Minitest::Test
         assert_equal set, mapper.map_sorted(input)
         assert_equal Array(input), mapper.unmap(set)
       end
+
       assert_equal expected.length, mapper.unmap(set).length
     end
     assert_raises(NDF::Error) { mapper.unmap(NDF::FeatureSet.new(2)) }
@@ -71,6 +75,7 @@ class NodeDeclaredFeaturesTest < Minitest::Test
   def test_discover_node_features
     framework = NDF::Framework.new([MockFeature.new("feature-b"), MockFeature.new("feature-a", max_version: "1.38.0")])
     config = ->(gates, version = "1.36.0") { NDF::NodeConfiguration.new(feature_gates: gates, version: version) }
+
     assert_equal %w[feature-a], framework.discover_node_features(config.call({"feature-a" => true}))
     assert_equal %w[feature-a feature-b], framework.discover_node_features(config.call({"feature-a" => true, "feature-b" => true}))
     assert_empty framework.discover_node_features(config.call({}))
@@ -100,6 +105,7 @@ class NodeDeclaredFeaturesTest < Minitest::Test
     framework = NDF::Framework.new([MockFeature.new("InPlacePodResize", update: changed)])
     old_pod = {"spec" => {"containers" => [{"resources" => {"requests" => {"cpu" => "1"}}}]}}
     new_pod = {"spec" => {"containers" => [{"resources" => {"requests" => {"cpu" => "2"}}}]}}
+
     assert_equal %w[InPlacePodResize], framework.unmap(framework.infer_for_pod_update(old_pod, new_pod, "1.36.0"))
     assert_equal %w[InPlacePodResize], framework.unmap(framework.infer_for_pod_update(old_pod, new_pod, "1.36.0-alpha.1"))
     assert_empty framework.unmap(framework.infer_for_pod_update(old_pod, old_pod, "1.36.0"))
@@ -118,10 +124,11 @@ class NodeDeclaredFeaturesTest < Minitest::Test
       [nil, false, %w[feature-a feature-b]]
     ].each do |declared, match, missing|
       result = framework.match_node(required, node.call(declared))
+
       assert_equal match, result.match?, declared.inspect
       assert_equal missing, result.unsatisfied_requirements
     end
-    assert framework.match_node(framework.new_feature_set, node.call(nil)).match?
+    assert_predicate framework.match_node(framework.new_feature_set, node.call(nil)), :match?
     assert_raises(NDF::Error) { framework.match_node(required, nil) }
   end
 
@@ -146,6 +153,7 @@ class NodeDeclaredFeaturesTest < Minitest::Test
     one = {"requests" => {"cpu" => "1"}, "limits" => {"cpu" => "1"}}
     two = {"requests" => {"cpu" => "2"}, "limits" => {"cpu" => "1"}}
     pod = ->(resources) { {"spec" => resources ? {"resources" => resources} : {}} }
+
     refute feature.infer_for_scheduling(pod.call(one))
     refute feature.infer_for_update(pod.call(one), pod.call(one))
     assert feature.infer_for_update(pod.call(nil), pod.call(one))
@@ -159,17 +167,19 @@ class NodeDeclaredFeaturesTest < Minitest::Test
   # nonsidecar_initcontainers_resize_test.go.
   def test_non_sidecar_init_container_resize
     feature = NDF::Features::NonSidecarInitContainerResize.new
-    init = ->(cpu, sidecar: false) do
+    init = lambda do |cpu, sidecar: false|
       container = {"name" => "init-1", "resources" => {"requests" => {"cpu" => cpu}}}
       container["restartPolicy"] = "Always" if sidecar
       container
     end
     pod = ->(inits, containers = []) { {"spec" => {"initContainers" => inits, "containers" => containers}} }
+
     refute feature.infer_for_scheduling(pod.call([init.call("100m")]))
     refute feature.infer_for_update(pod.call([init.call("100m")]), pod.call([init.call("100m")]))
     assert feature.infer_for_update(pod.call([init.call("100m")]), pod.call([init.call("200m")]))
     refute feature.infer_for_update(pod.call([init.call("100m", sidecar: true)]), pod.call([init.call("200m", sidecar: true)]))
     app = ->(cpu) { {"name" => "app", "resources" => {"requests" => {"cpu" => cpu}}} }
+
     assert feature.infer_for_update(pod.call([init.call("100m")], [app.call("1")]), pod.call([init.call("200m")], [app.call("1")]))
     refute feature.infer_for_update(pod.call([init.call("100m")], [app.call("1")]), pod.call([init.call("100m")], [app.call("2")]))
     refute feature.infer_for_update(pod.call([]), pod.call([]))
@@ -179,8 +189,11 @@ class NodeDeclaredFeaturesTest < Minitest::Test
   def test_restart_all_containers
     feature = NDF::Features::RestartAllContainers.new
     rule = ->(action) { [{"action" => action, "exitCodes" => {"operator" => "In", "values" => [42]}}] }
-    assert feature.infer_for_scheduling({"spec" => {"containers" => [{"name" => "c", "restartPolicyRules" => rule.call("RestartAllContainers")}]}})
-    assert feature.infer_for_scheduling({"spec" => {"initContainers" => [{"name" => "i", "restartPolicyRules" => rule.call("RestartAllContainers")}]}})
+
+    assert feature.infer_for_scheduling({"spec" => {"containers" => [{"name" => "c",
+                                                                      "restartPolicyRules" => rule.call("RestartAllContainers")}]}})
+    assert feature.infer_for_scheduling({"spec" => {"initContainers" => [{"name" => "i",
+                                                                          "restartPolicyRules" => rule.call("RestartAllContainers")}]}})
     refute feature.infer_for_scheduling({"spec" => {"containers" => [{"name" => "c", "restartPolicyRules" => rule.call("Restart")}]}})
     refute feature.infer_for_scheduling({"spec" => {"containers" => [{"name" => "c"}]}})
     refute feature.infer_for_update({"spec" => {}}, {"spec" => {}})
@@ -191,6 +204,7 @@ class NodeDeclaredFeaturesTest < Minitest::Test
     feature = NDF::Features::UserNamespacesHostNetwork.new
     gate = {"UserNamespacesHostNetworkSupport" => true}
     runtime = {"userNamespacesHostNetwork" => true}
+
     assert feature.discover(NDF::NodeConfiguration.new(feature_gates: gate, runtime_features: runtime))
     refute feature.discover(NDF::NodeConfiguration.new(feature_gates: gate))
     refute feature.discover(NDF::NodeConfiguration.new(feature_gates: {}, runtime_features: runtime))

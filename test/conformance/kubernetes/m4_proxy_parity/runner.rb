@@ -71,8 +71,16 @@ module M4ProxyParityRunner
         STDOUT.puts(JSON.generate(response.merge("cmd" => request["cmd"], "seq" => request["seq"])))
       end
     ensure
-      @servers.each { |socket| socket.close rescue nil }
-      @connections.each_value { |socket| socket.close rescue nil }
+      @servers.each do |socket|
+        socket.close
+      rescue StandardError
+        nil
+      end
+      @connections.each_value do |socket|
+        socket.close
+      rescue StandardError
+        nil
+      end
     end
 
     def handle(request)
@@ -136,7 +144,11 @@ module M4ProxyParityRunner
     rescue IOError, SystemCallError
       nil
     ensure
-      connection.close rescue nil
+      begin
+        connection.close
+      rescue StandardError
+        nil
+      end
     end
 
     def start_datagram_server(af, address, port)
@@ -184,7 +196,11 @@ module M4ProxyParityRunner
       rescue Timeout::Error, SystemCallError, JSON::ParserError, IOError => error
         {"ok" => true, "connected" => false, "error" => "#{error.class}: #{error.message}"}
       ensure
-        socket.close rescue nil
+        begin
+          socket.close
+        rescue StandardError
+          nil
+        end
       end
     end
 
@@ -206,7 +222,11 @@ module M4ProxyParityRunner
       rescue SystemCallError, JSON::ParserError, IOError => error
         {"ok" => true, "replied" => false, "error" => "#{error.class}: #{error.message}"}
       ensure
-        socket.close rescue nil
+        begin
+          socket.close
+        rescue StandardError
+          nil
+        end
       end
     end
 
@@ -224,7 +244,11 @@ module M4ProxyParityRunner
       rescue Timeout::Error, SystemCallError, IOError => error
         {"ok" => true, "connected" => false, "error" => "#{error.class}: #{error.message}"}
       ensure
-        socket.close rescue nil
+        begin
+          socket.close
+        rescue StandardError
+          nil
+        end
       end
     end
 
@@ -252,7 +276,11 @@ module M4ProxyParityRunner
       {"ok" => true, "id" => id, "peer" => [peer.ip_address, peer.ip_port], "local" => [local.ip_address, local.ip_port],
        "reply" => reply && JSON.parse(reply)}
     rescue Timeout::Error, SystemCallError, IOError, JSON::ParserError => error
-      socket&.close rescue nil
+      begin
+        socket&.close
+      rescue StandardError
+        nil
+      end
       {"ok" => true, "id" => id, "opened" => false, "error" => "#{error.class}: #{error.message}"}
     end
 
@@ -270,7 +298,11 @@ module M4ProxyParityRunner
     end
 
     def close_all
-      @connections.each_value { |socket| socket.close rescue nil }
+      @connections.each_value do |socket|
+        socket.close
+      rescue StandardError
+        nil
+      end
       count = @connections.length
       @connections.clear
       {"ok" => true, "closed" => count}
@@ -281,7 +313,7 @@ module M4ProxyParityRunner
   # Runner: protocol with the probe, agents, capture, kernel readback.
   # ---------------------------------------------------------------------
   class AgentHandle
-    attr_reader :pid
+    attr_reader :pid, :netns_inode
 
     def initialize(netns_path, role)
       @stdin, @stdout, @stderr, @thread = Open3.popen3(
@@ -291,10 +323,9 @@ module M4ProxyParityRunner
       @seq = 0
       ready = call("ping")
       raise "#{role} agent did not start in #{netns_path}: #{ready.inspect}" unless ready["ok"]
+
       @netns_inode = ready["netns"]
     end
-
-    attr_reader :netns_inode
 
     def call(command, **arguments)
       @seq += 1
@@ -310,13 +341,33 @@ module M4ProxyParityRunner
     end
 
     def close
-      @stdin.close rescue nil
-      if @thread.alive?
-        Process.kill("TERM", @pid) rescue nil
-        @thread.join(3) || (Process.kill("KILL", @pid) rescue nil)
+      begin
+        @stdin.close
+      rescue StandardError
+        nil
       end
-      @stdout.close rescue nil
-      @stderr.close rescue nil
+      if @thread.alive?
+        begin
+          Process.kill("TERM", @pid)
+        rescue StandardError
+          nil
+        end
+        @thread.join(3) || begin
+          Process.kill("KILL", @pid)
+        rescue StandardError
+          nil
+        end
+      end
+      begin
+        @stdout.close
+      rescue StandardError
+        nil
+      end
+      begin
+        @stderr.close
+      rescue StandardError
+        nil
+      end
     end
   end
 
@@ -535,7 +586,9 @@ module M4ProxyParityRunner
     def candidate_endpoints(kase, family)
       service = find_service(kase.fetch("service"))
       endpoints = endpoints_for(kase.fetch("service"), family, kase.fetch("protocol"))
-      ready = endpoints.select { |endpoint| condition(endpoint, "ready") && condition(endpoint, "serving") && !condition(endpoint, "terminating") }
+      ready = endpoints.select do |endpoint|
+        condition(endpoint, "ready") && condition(endpoint, "serving") && !condition(endpoint, "terminating")
+      end
       selected = ready.any? ? ready : endpoints.select { |endpoint| condition(endpoint, "terminating") && condition(endpoint, "serving") }
       internal_local = service.dig("spec", "internalTrafficPolicy") == "Local"
       external_local = service.dig("spec", "externalTrafficPolicy") == "Local"
@@ -624,7 +677,7 @@ module M4ProxyParityRunner
       end
     end
 
-    def observe(kase, backend, expected)
+    def observe(kase, backend, _expected)
       family = kase.fetch("family")
       case kase.fetch("kind")
       when "vip", "node_port", "external_ip", "load_balancer"
@@ -752,7 +805,9 @@ module M4ProxyParityRunner
         %w[ingress egress].flat_map do |direction|
           # tc prints a chain header entry without options before each
           # filter; only entries that carry the attached program are filters.
-          JSON.parse(node_command("tc", "-j", "filter", "show", "dev", interface, direction)).select { |entry| entry["options"].is_a?(Hash) }.map do |entry|
+          JSON.parse(node_command("tc", "-j", "filter", "show", "dev", interface, direction)).select do |entry|
+            entry["options"].is_a?(Hash)
+          end.map do |entry|
             entry.merge("interface" => interface, "direction" => direction)
           end
         end
@@ -774,13 +829,17 @@ module M4ProxyParityRunner
         "program" => {"id" => program["id"], "tag" => program["tag"], "type" => program["type"], "name" => program["name"],
                       "bytes_xlated" => program["bytes_xlated"], "bytes_jited" => program["bytes_jited"],
                       "map_ids" => program["map_ids"], "verified_insns" => program["verified_insns"]},
-        "maps" => maps.map { |name, info| {"name" => name, "id" => info["id"], "kernel_name" => info["name"], "type" => info["type"],
-                                            "key_size" => info["bytes_key"], "value_size" => info["bytes_value"],
-                                            "max_entries" => info["max_entries"]} },
-        "filters" => filters.map { |entry| {"ifindex" => ifindex_of(entry.fetch("interface")), "interface" => entry.fetch("interface"),
-                                             "direction" => entry.fetch("direction"), "handle" => entry["options"] && entry["options"]["handle"],
-                                             "programId" => filter_program_id.call(entry), "program_id" => filter_program_id.call(entry),
-                                             "pref" => entry["pref"], "kind" => entry["kind"]} },
+        "maps" => maps.map do |name, info|
+          {"name" => name, "id" => info["id"], "kernel_name" => info["name"], "type" => info["type"],
+           "key_size" => info["bytes_key"], "value_size" => info["bytes_value"],
+           "max_entries" => info["max_entries"]}
+        end,
+        "filters" => filters.map do |entry|
+          {"ifindex" => ifindex_of(entry.fetch("interface")), "interface" => entry.fetch("interface"),
+           "direction" => entry.fetch("direction"), "handle" => entry["options"] && entry["options"]["handle"],
+           "programId" => filter_program_id.call(entry), "program_id" => filter_program_id.call(entry),
+           "pref" => entry["pref"], "kind" => entry["kind"]}
+        end,
         "filter_program_ids" => filter_program_ids,
         "service_rule_bindings" => bindings,
         "service_rule_entry_count" => service_dump.length,

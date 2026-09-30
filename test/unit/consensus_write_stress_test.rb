@@ -84,20 +84,31 @@ class ConsensusWriteStressTest < Minitest::Test
       cluster.network.drop_rate = 0.0
       cluster.network.duplicate_rate = 0.0
       cluster.network.reorder_rate = 0.0
-      crashed.dup.each { |id| cluster.restart(id); crashed.delete(id) }
+      crashed.dup.each do |id|
+        cluster.restart(id)
+        crashed.delete(id)
+      end
       client.settle(timeout: 12.0)
       converged = cluster.run_until(timeout: 6.0) do
         cluster.leader.length == 1 &&
           cluster.processes.values.map { |process| process.node.last_applied }.uniq.length == 1 &&
           cluster.processes.values.all? { |process| process.node.last_applied == process.node.commit_index }
       end
-      assert converged, "round #{round}: replicas did not converge: #{cluster.processes.values.map { |process| [process.id, process.node.role, process.node.last_applied, process.node.commit_index] }}"
+
+      assert converged, "round #{round}: replicas did not converge: #{cluster.processes.values.map do |process|
+        [process.id, process.node.role, process.node.last_applied, process.node.commit_index]
+      end}"
       missing = client.missing_acked_creates(deleted_keys: deleted_keys)
+
       assert_empty missing, "round #{round}: #{missing.join("\n")}"
       divergent = client.divergent_replicas
+
       assert_empty divergent, "round #{round}: #{divergent.join("\n")}"
       stuck = client.outstanding
-      assert_empty stuck, "round #{round}: requests never settled: #{stuck.map { |request| [request.key, request.state, request.trace] }.inspect}"
+
+      assert_empty stuck, "round #{round}: requests never settled: #{stuck.map do |request|
+        [request.key, request.state, request.trace]
+      end.inspect}"
       stats[:acked] = client.acked.length
       stats[:rejected] = client.rejected.length
       stats[:failed] = client.failed.length
@@ -106,17 +117,20 @@ class ConsensusWriteStressTest < Minitest::Test
     stats[:terms] = cluster.leader.first.current_term
     stats[:snapshot_installs] = cluster.processes.values.sum { |process| process.node.status["snapshot_installs"] }
     warn "raft write stress seed=#{SEED} rounds=#{ROUNDS}: #{stats.inspect}" if ENV["RAFT_STRESS_VERBOSE"]
+
     assert_operator client.acked.length, :>, ROUNDS * CREATES_PER_ROUND / 2, "most creates must be acknowledged"
     # Every acknowledged create was created exactly once: no key was
     # acknowledged twice, and a rejected create of a key is only ever an
     # unknown-outcome retry of one that committed.
     acked_creates = client.acked.select { |request| request.command["type"] == "create" }.map(&:key)
+
     assert_equal acked_creates.uniq.length, acked_creates.length
     client.rejected.each do |request|
       next unless request.command["type"] == "create"
       next if request.trace.any? { |event| %i[forward_timeout forward_refused].include?(event.first) }
 
-      flunk "#{request.key} rejected without an unknown-outcome retry: #{request.trace.inspect}\n#{describe_key(cluster, client, request.key)}"
+      flunk "#{request.key} rejected without an unknown-outcome retry: #{request.trace.inspect}\n#{describe_key(cluster, client,
+                                                                                                                request.key)}"
     end
   ensure
     cluster&.cleanup
@@ -132,9 +146,11 @@ class ConsensusWriteStressTest < Minitest::Test
     end
     cluster.processes.each_value do |process|
       node = process.node
-      entries = node.log.entries.select { |entry| entry.command.is_a?(Hash) && entry.command["key"] == key }.map { |entry| [entry.index, entry.term] }
+      entries = node.log.entries.select do |entry|
+        entry.command.is_a?(Hash) && entry.command["key"] == key
+      end.map { |entry| [entry.index, entry.term] }
       applied = process.applied.select { |item| item.command.is_a?(Hash) && item.command["key"] == key }
-                       .map { |item| [item.index, item.term, item.result && item.result["ok"], item.result&.dig("error", "class")] }
+        .map { |item| [item.index, item.term, item.result && item.result["ok"], item.result&.dig("error", "class")] }
       stored = begin
         process.state_machine.store.get(key)["metadata"]["resourceVersion"]
       rescue Rubernetes::Storage::Error => error
@@ -155,7 +171,7 @@ class ConsensusWriteStressTest < Minitest::Test
     end
   end
 
-  def apply_event(cluster, client, event, random, crashed)
+  def apply_event(cluster, _client, event, random, crashed)
     leader = cluster.leader.first
     live = IDS - crashed
     case event

@@ -35,8 +35,10 @@ class CSRRequesterIdentityTest < Minitest::Test
 
   def test_create_records_the_requester_and_clears_the_status
     created = call("POST", PATH, csr)
+
     assert_equal 201, created.status, created.body.inspect
     spec = created.body["spec"]
+
     assert_equal "tester-csr", spec["username"]
     assert_equal "u-7", spec["uid"]
     assert_equal %w[e2e system:authenticated], spec["groups"]
@@ -52,6 +54,7 @@ class CSRRequesterIdentityTest < Minitest::Test
     changed["spec"]["usages"] = ["server auth"]
     changed["metadata"]["labels"] = {"touched" => "yes"}
     updated = call("PUT", "#{PATH}/c1", changed)
+
     assert_equal 200, updated.status, updated.body.inspect
     assert_equal "tester-csr", updated.body.dig("spec", "username")
     assert_equal ["client auth"], updated.body.dig("spec", "usages")
@@ -60,6 +63,7 @@ class CSRRequesterIdentityTest < Minitest::Test
 
   def test_server_side_apply_create_also_records_the_requester
     applied = call("PATCH", "#{PATH}/c2?fieldManager=t", csr("c2"), content_type: "application/apply-patch+yaml")
+
     assert_equal 201, applied.status, applied.body.inspect
     assert_equal "tester-csr", applied.body.dig("spec", "username")
   end

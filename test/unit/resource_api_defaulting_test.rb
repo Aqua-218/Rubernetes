@@ -21,6 +21,7 @@ class ResourceAPIDefaultingTest < Minitest::Test
                         {"name" => "c", "firstAvailable" => [{"name" => "s", "deviceClassName" => "gpu"}]}
                       ]}})
     requests = claim.dig("spec", "devices", "requests")
+
     assert_equal({"deviceClassName" => "gpu", "allocationMode" => "ExactCount", "count" => 1}, requests[0]["exactly"])
     assert_equal({"deviceClassName" => "gpu", "allocationMode" => "All"}, requests[1]["exactly"])
     assert_equal "ExactCount", requests[2].dig("firstAvailable", 0, "allocationMode")
@@ -30,7 +31,9 @@ class ResourceAPIDefaultingTest < Minitest::Test
   def test_the_template_spec_is_defaulted_too
     template = defaulted("io.k8s.api.resource.v1.ResourceClaimTemplate",
                          "metadata" => {"name" => "t", "namespace" => "ns"},
-                         "spec" => {"spec" => {"devices" => {"requests" => [{"name" => "a", "exactly" => {"deviceClassName" => "gpu", "count" => 3}}]}}})
+                         "spec" => {"spec" => {"devices" => {"requests" => [{"name" => "a",
+                                                                             "exactly" => {"deviceClassName" => "gpu", "count" => 3}}]}}})
+
     assert_equal({"deviceClassName" => "gpu", "allocationMode" => "ExactCount", "count" => 3},
                  template.dig("spec", "spec", "devices", "requests", 0, "exactly"))
   end
@@ -43,6 +46,7 @@ class ResourceAPIDefaultingTest < Minitest::Test
                         {"name" => "b", "firstAvailable" => [{"name" => "s", "deviceClassName" => "gpu"}]}
                       ]}})
     requests = claim.dig("spec", "devices", "requests")
+
     assert_equal "ExactCount", requests[0]["allocationMode"]
     assert_equal 1, requests[0]["count"]
     refute requests[1].key?("allocationMode")
@@ -54,8 +58,10 @@ class ResourceAPIDefaultingTest < Minitest::Test
                       "metadata" => {"name" => "s"},
                       "spec" => {"driver" => "d", "pool" => {"name" => "p", "generation" => 1, "resourceSliceCount" => 1}, "nodeName" => "n",
                                  "devices" => [{"name" => "d0", "taints" => [{"key" => "k", "effect" => "NoSchedule"},
-                                                                            {"key" => "k2", "effect" => "NoSchedule", "timeAdded" => "2026-01-01T00:00:00Z"}]}]})
+                                                                             {"key" => "k2", "effect" => "NoSchedule",
+                                                                              "timeAdded" => "2026-01-01T00:00:00Z"}]}]})
     taints = slice.dig("spec", "devices", 0, "taints")
+
     assert_match(/\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\z/, taints[0]["timeAdded"])
     assert_equal "2026-01-01T00:00:00Z", taints[1]["timeAdded"]
   end

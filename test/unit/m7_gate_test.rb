@@ -23,6 +23,7 @@ class M7GateTest < Minitest::Test
 
   def test_missing_manifest_fails_closed
     result = M7Gate.evaluate(File.join(Dir.tmpdir, "rubernetes-m7-missing-#{Process.pid}.json"))
+
     refute result.fetch("passed")
     assert_operator result.fetch("error_count"), :>, 0
   end
@@ -32,9 +33,11 @@ class M7GateTest < Minitest::Test
       path = File.join(directory, "manifest.json")
       File.write(path, JSON.generate(base_manifest))
       result = M7Gate.evaluate(path)
+
       refute result.fetch("passed")
       errors = result.fetch("errors")
-      assert errors.any? { |error| error.include?("M6") }
+
+      assert(errors.any? { |error| error.include?("M6") })
       M7Gate::REPORTS.each_value do |specification|
         assert errors.any? { |error| error.include?(specification.fetch(:names).first) }, specification.inspect
       end
@@ -55,7 +58,8 @@ class M7GateTest < Minitest::Test
   end
 
   def sources
-    [{"path" => "lib/rubernetes/runtime/microvm/session.rb", "sha256" => Digest::SHA256.file(File.expand_path("../../lib/rubernetes/runtime/microvm/session.rb", __dir__)).hexdigest}]
+    [{"path" => "lib/rubernetes/runtime/microvm/session.rb",
+      "sha256" => Digest::SHA256.file(File.expand_path("../../lib/rubernetes/runtime/microvm/session.rb", __dir__)).hexdigest}]
   end
 
   def identity
@@ -80,8 +84,10 @@ class M7GateTest < Minitest::Test
       case id
       when "cold_boot_lifecycle" then base.merge(lifecycle)
       when "restored_lifecycle" then base.merge(lifecycle).merge("restored_from_base" => true)
-      when "fault_vmm_hang" then base.merge("container_state_after_hang" => "StateUnknown", "start_refused_while_unknown" => true, "residue" => clean_residue)
-      when "fault_pause_ack_loss" then base.merge("outcome" => "SnapshotPauseUnknown: no ack", "phase" => "pause_unknown", "residue" => clean_residue)
+      when "fault_vmm_hang" then base.merge("container_state_after_hang" => "StateUnknown", "start_refused_while_unknown" => true,
+                                            "residue" => clean_residue)
+      when "fault_pause_ack_loss" then base.merge("outcome" => "SnapshotPauseUnknown: no ack", "phase" => "pause_unknown",
+                                                  "residue" => clean_residue)
       when /\Afault_/ then base.merge("residue" => clean_residue)
       when "identity_reuse_after_faults" then base.merge("report" => {"vm_id" => {"reused" => 0}})
       when "host_inventory_after_cleanup" then base.merge("resources" => [])
@@ -95,6 +101,7 @@ class M7GateTest < Minitest::Test
     errors = []
     M7Gate.send(:validate_report, "kvm", report("m7_kvm_l4_l5_report", kvm_cases, "measurement_level" => "L5", "measurement_source" => "real_firecracker_jailer_kvm"),
                 "m7_kvm_l4_l5_report", identity, errors)
+
     assert_empty errors
 
     cases = kvm_cases
@@ -103,12 +110,14 @@ class M7GateTest < Minitest::Test
     errors = []
     M7Gate.send(:validate_report, "kvm", report("m7_kvm_l4_l5_report", cases, "measurement_level" => "L5", "measurement_source" => "real_firecracker_jailer_kvm"),
                 "m7_kvm_l4_l5_report", identity, errors)
+
     assert errors.any? { |error| error.include?("fault_jailer_kill must leave no residue") }, errors.inspect
     assert errors.any? { |error| error.include?("seccomp") }, errors.inspect
 
     errors = []
     M7Gate.send(:validate_report, "kvm", report("m7_kvm_l4_l5_report", kvm_cases, "measurement_level" => "L3", "measurement_source" => "simulated"),
                 "m7_kvm_l4_l5_report", identity, errors)
+
     assert errors.any? { |error| error.include?("L5") } && errors.any? { |error| error.include?("real Firecracker") }, errors.inspect
   end
 
@@ -117,17 +126,22 @@ class M7GateTest < Minitest::Test
     cases = [
       {"id" => "guest_attack_matrix", "passed" => true, "matrix" => matrix},
       {"id" => "host_confinement", "passed" => true, "forbidden_in_jail" => []},
-      {"id" => "identity_ack_forgery", "passed" => true, "rejections" => {"a" => "rejected", "b" => "rejected", "c" => "rejected", "d" => "rejected"}},
+      {"id" => "identity_ack_forgery", "passed" => true,
+       "rejections" => {"a" => "rejected", "b" => "rejected", "c" => "rejected", "d" => "rejected"}},
       {"id" => "broker_fail_closed", "passed" => true},
       {"id" => "restricted_no_network_device", "passed" => true, "interfaces" => ["lo"]},
       {"id" => "cleanup", "passed" => true}
     ]
     errors = []
-    M7Gate.send(:validate_report, "attacks", report("m7_guest_host_attack_matrix", cases, "measurement_level" => "L5"), "m7_guest_host_attack_matrix", identity, errors)
+    M7Gate.send(:validate_report, "attacks", report("m7_guest_host_attack_matrix", cases, "measurement_level" => "L5"),
+                "m7_guest_host_attack_matrix", identity, errors)
+
     assert_empty errors
     matrix["other_vm_vsock"] = {"outcome" => "allowed"}
     errors = []
-    M7Gate.send(:validate_report, "attacks", report("m7_guest_host_attack_matrix", cases, "measurement_level" => "L5"), "m7_guest_host_attack_matrix", identity, errors)
+    M7Gate.send(:validate_report, "attacks", report("m7_guest_host_attack_matrix", cases, "measurement_level" => "L5"),
+                "m7_guest_host_attack_matrix", identity, errors)
+
     assert errors.any? { |error| error.include?("other_vm_vsock must be denied") }, errors.inspect
   end
 
@@ -135,16 +149,21 @@ class M7GateTest < Minitest::Test
     records = Array.new(8) { |index| {"fields" => M7Gate::IDENTITY_FIELDS.to_h { |field| [field, "#{field}-#{index}"] }} }
     reused = M7Gate::IDENTITY_FIELDS.to_h { |field| [field, []] }
     cases = [
-      {"id" => "clone_identities", "passed" => true, "clones" => 8, "records" => records, "reused_values" => reused, "all_restored_from_base" => true},
+      {"id" => "clone_identities", "passed" => true, "clones" => 8, "records" => records, "reused_values" => reused,
+       "all_restored_from_base" => true},
       {"id" => "ledger_history_reuse", "passed" => true, "report" => {"vm_id" => {"reused" => 0}}},
       {"id" => "stale_ack_and_revocation", "passed" => true, "stale_ack_rejected" => true, "after_revoke" => "denied: revoked"}
     ]
     errors = []
-    M7Gate.send(:validate_report, "identity", report("m7_identity_ledger", cases, "measurement_level" => "L4"), "m7_identity_ledger", identity, errors)
+    M7Gate.send(:validate_report, "identity", report("m7_identity_ledger", cases, "measurement_level" => "L4"), "m7_identity_ledger",
+                identity, errors)
+
     assert_empty errors
     records[1]["fields"]["guest_cid"] = records[0]["fields"]["guest_cid"]
     errors = []
-    M7Gate.send(:validate_report, "identity", report("m7_identity_ledger", cases, "measurement_level" => "L4"), "m7_identity_ledger", identity, errors)
+    M7Gate.send(:validate_report, "identity", report("m7_identity_ledger", cases, "measurement_level" => "L4"), "m7_identity_ledger",
+                identity, errors)
+
     assert errors.any? { |error| error.include?("guest_cid") }, errors.inspect
   end
 
@@ -153,35 +172,47 @@ class M7GateTest < Minitest::Test
       if %w[pristine_restore restore_after_corpus].include?(id)
         {"id" => id, "passed" => true, "outcome" => "started"}
       else
-        {"id" => id, "passed" => true, "outcome" => "SnapshotCorruption: digest", "vmm_processes_after" => 0, "live_identities_after" => 0, "resources_after" => []}
+        {"id" => id, "passed" => true, "outcome" => "SnapshotCorruption: digest", "vmm_processes_after" => 0, "live_identities_after" => 0,
+         "resources_after" => []}
       end
     end
     errors = []
-    M7Gate.send(:validate_report, "snapshots", report("m7_snapshot_corruption_corpus", cases, "measurement_level" => "L4"), "m7_snapshot_corruption_corpus", identity, errors)
+    M7Gate.send(:validate_report, "snapshots", report("m7_snapshot_corruption_corpus", cases, "measurement_level" => "L4"),
+                "m7_snapshot_corruption_corpus", identity, errors)
+
     assert_empty errors
     cases.find { |entry| entry["id"] == "mem_bit_flip_middle" }["outcome"] = "started"
     errors = []
-    M7Gate.send(:validate_report, "snapshots", report("m7_snapshot_corruption_corpus", cases, "measurement_level" => "L4"), "m7_snapshot_corruption_corpus", identity, errors)
+    M7Gate.send(:validate_report, "snapshots", report("m7_snapshot_corruption_corpus", cases, "measurement_level" => "L4"),
+                "m7_snapshot_corruption_corpus", identity, errors)
+
     assert errors.any? { |error| error.include?("mem_bit_flip_middle started a VM") }, errors.inspect
   end
 
   def test_latency_bound_is_enforced_against_raw_samples
-    samples = Array.new(20) { |index| {"index" => index, "total" => 0.9 + index * 0.01, "base" => "base-1"} }
+    samples = Array.new(20) { |index| {"index" => index, "total" => 0.9 + (index * 0.01), "base" => "base-1"} }
     totals = samples.map { |sample| sample["total"] }.sort
     p95 = totals[((totals.length - 1) * 0.95).round]
-    entry = {"id" => "pod_start_from_base_snapshot", "passed" => true, "samples" => 20, "raw_samples" => samples, "p95_seconds" => p95, "bound_seconds" => 1.5}
+    entry = {"id" => "pod_start_from_base_snapshot", "passed" => true, "samples" => 20, "raw_samples" => samples, "p95_seconds" => p95,
+             "bound_seconds" => 1.5}
     errors = []
-    M7Gate.send(:validate_report, "latency", report("m7_startup_latency_samples", [entry], "measurement_level" => "L4"), "m7_startup_latency_samples", identity, errors)
+    M7Gate.send(:validate_report, "latency", report("m7_startup_latency_samples", [entry], "measurement_level" => "L4"),
+                "m7_startup_latency_samples", identity, errors)
+
     assert_empty errors
     slow = samples.map { |sample| sample.merge("total" => sample["total"] + 1.0) }
     slow_totals = slow.map { |sample| sample["total"] }.sort
     entry = entry.merge("raw_samples" => slow, "p95_seconds" => slow_totals[((slow_totals.length - 1) * 0.95).round])
     errors = []
-    M7Gate.send(:validate_report, "latency", report("m7_startup_latency_samples", [entry], "measurement_level" => "L4"), "m7_startup_latency_samples", identity, errors)
+    M7Gate.send(:validate_report, "latency", report("m7_startup_latency_samples", [entry], "measurement_level" => "L4"),
+                "m7_startup_latency_samples", identity, errors)
+
     assert errors.any? { |error| error.include?("exceeds 1.5s") }, errors.inspect
     entry = entry.merge("p95_seconds" => 0.1)
     errors = []
-    M7Gate.send(:validate_report, "latency", report("m7_startup_latency_samples", [entry], "measurement_level" => "L4"), "m7_startup_latency_samples", identity, errors)
+    M7Gate.send(:validate_report, "latency", report("m7_startup_latency_samples", [entry], "measurement_level" => "L4"),
+                "m7_startup_latency_samples", identity, errors)
+
     assert errors.any? { |error| error.include?("must match the raw samples") }, errors.inspect
   end
 
@@ -191,6 +222,7 @@ class M7GateTest < Minitest::Test
     document["host"]["artifacts"]["verity_root_hash"] = "b" * 64
     errors = []
     M7Gate.send(:validate_host, "identity", document, errors)
+
     assert errors.any? { |error| error.include?("KVM host") }, errors.inspect
     assert errors.any? { |error| error.include?("verity root hash") }, errors.inspect
   end

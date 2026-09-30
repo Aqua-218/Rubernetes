@@ -183,7 +183,7 @@ module Prom
     def apiserver_port(config_path)
       return nil unless config_path && File.file?(config_path)
 
-      document = YAML.safe_load(File.read(config_path), aliases: true, permitted_classes: [Symbol]) || {}
+      document = YAML.safe_load_file(config_path, aliases: true, permitted_classes: [Symbol]) || {}
       process = document.dig("processes", "rubernetes-apiserver") || {}
       port = process["port"] || process.dig("listen", "port")
       port&.to_i
@@ -194,7 +194,7 @@ module Prom
     def serving_address(config_path, executable)
       return nil unless config_path && File.file?(config_path)
 
-      document = YAML.safe_load(File.read(config_path), aliases: true, permitted_classes: [Symbol]) || {}
+      document = YAML.safe_load_file(config_path, aliases: true, permitted_classes: [Symbol]) || {}
       serving = document.dig("processes", executable, "serving") || {}
       return nil unless serving["enabled"] == true && serving["port"]
 
@@ -213,7 +213,7 @@ module Prom
       context = if base.is_a?(Hash)
                   base.merge(server: server)
                 else
-                  base.class.new(**base.to_h.merge(server: server))
+                  base.class.new(**base.to_h, server: server)
                 end
       Rubernetes::Client::HTTPClient.new(context: context)
     rescue StandardError => e

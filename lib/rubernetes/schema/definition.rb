@@ -28,7 +28,10 @@ module Rubernetes
           return value if seen.key?(value)
 
           seen[value] = true
-          value.each { |key, item| call(key, seen); call(item, seen) }
+          value.each do |key, item|
+            call(key, seen)
+            call(item, seen)
+          end
           value.freeze
           DEEP_FROZEN[value] = true
           value
@@ -75,9 +78,7 @@ module Rubernetes
       def self.parse(value)
         return value if value.is_a?(self)
 
-        unless value.is_a?(String)
-          raise ArgumentError, "GVK must be a String such as 'apps/v1/Deployment'"
-        end
+        raise ArgumentError, "GVK must be a String such as 'apps/v1/Deployment'" unless value.is_a?(String)
 
         if value.include?(", Kind=")
           api_version, kind = value.split(", Kind=", 2)
@@ -106,7 +107,7 @@ module Rubernetes
       end
 
       def to_h
-        { group: group, version: version, kind: kind }.freeze
+        {group: group, version: version, kind: kind}.freeze
       end
 
       alias identifier to_s
@@ -145,9 +146,7 @@ module Rubernetes
       def self.parse(value)
         return value if value.is_a?(self)
 
-        unless value.is_a?(String)
-          raise ArgumentError, "GVR must be a String such as 'apps/v1/deployments'"
-        end
+        raise ArgumentError, "GVR must be a String such as 'apps/v1/deployments'" unless value.is_a?(String)
 
         parts = value.split("/")
         if parts.length == 2
@@ -170,7 +169,7 @@ module Rubernetes
       end
 
       def to_h
-        { group: group, version: version, resource: resource }.freeze
+        {group: group, version: version, resource: resource}.freeze
       end
 
       alias identifier to_s
@@ -200,15 +199,13 @@ module Rubernetes
 
       def resolve
         definition = @resolver.call
-        unless definition.is_a?(Definition)
-          raise ArgumentError, "schema reference #{name.inspect} did not resolve to a Schema::Definition"
-        end
+        raise ArgumentError, "schema reference #{name.inspect} did not resolve to a Schema::Definition" unless definition.is_a?(Definition)
 
         definition
       end
 
       def to_h
-        { reference: name }.freeze
+        {reference: name}.freeze
       end
 
       def ==(other)
@@ -239,11 +236,8 @@ module Rubernetes
         null: :null
       }.freeze
 
-      attr_reader :lookup_keys, :lookup_symbols
-      attr_reader :name, :json_name, :ruby_name, :type, :items, :properties,
-                  :required, :nullable, :default_value, :enum, :minimum,
-                  :maximum, :exclusive_minimum, :exclusive_maximum, :pattern,
-                  :preserve_unknown_fields, :additional_properties, :metadata
+      attr_reader :lookup_keys, :lookup_symbols, :name, :json_name, :ruby_name, :type, :items, :properties, :required, :nullable,
+                  :default_value, :enum, :minimum, :maximum, :exclusive_minimum, :exclusive_maximum, :pattern, :preserve_unknown_fields, :additional_properties, :metadata
 
       def initialize(name = nil, type = nil, **keywords)
         if type.is_a?(Hash) && keywords.empty?
@@ -266,6 +260,7 @@ module Rubernetes
         @name = name.to_s.freeze
         @json_name = json_name.to_s.freeze
         raise ArgumentError, "field JSON name must be a non-empty String" if @json_name.empty?
+
         @ruby_name = keywords.fetch(:ruby_name, safe_ruby_name(@json_name)).to_s.freeze
         # The spellings a value may carry this field under, in the order a
         # reader prefers them, with their Symbol forms (Validator#read_field).
@@ -279,11 +274,7 @@ module Rubernetes
         @required = required_option == true
         @nullable = !!keywords.fetch(:nullable, false)
         @has_default = keywords.key?(:default)
-        @default_value = if @has_default
-                           DeepFreeze.call(copy_value(keywords[:default]))
-                         else
-                           nil
-                         end
+        @default_value = (DeepFreeze.call(copy_value(keywords[:default])) if @has_default)
         @enum = normalize_enum(keywords.fetch(:enum, keywords[:one_of]))
         @minimum = keywords.fetch(:minimum, keywords[:min])
         @maximum = keywords.fetch(:maximum, keywords[:max])
@@ -381,6 +372,7 @@ module Rubernetes
       def normalize_type(value, keywords)
         value = keywords[:schema] if value.nil? && keywords.key?(:schema)
         return :array if value.nil? && (keywords.key?(:items) || keywords.key?(:of))
+
         case value
         when Symbol
           TYPE_ALIASES.fetch(value) { value }
@@ -389,8 +381,8 @@ module Rubernetes
         when Class
           return :string if value == String
           return :integer if value == Integer
-          return :number if value == Float || value == Numeric
-          return :boolean if value == TrueClass || value == FalseClass
+          return :number if [Float, Numeric].include?(value)
+          return :boolean if [TrueClass, FalseClass].include?(value)
           return :array if value == Array
           return :object if value == Hash
 
@@ -449,43 +441,40 @@ module Rubernetes
 
       def normalize_properties(keywords, required_names = [])
         source = keywords.fetch(:properties, {})
-        unless source.respond_to?(:each_pair)
-          raise ArgumentError, "field properties must be a Hash"
-        end
+        raise ArgumentError, "field properties must be a Hash" unless source.respond_to?(:each_pair)
 
         source.each_with_object({}) do |(key, value), result|
           result[key.to_s] = if value.is_a?(Field)
-                              value
-                            elsif value.is_a?(Hash)
-                              options = value.transform_keys(&:to_sym)
-                              option_keys = %i[type items of properties required nullable default enum one_of minimum maximum
+                               value
+                             elsif value.is_a?(Hash)
+                               options = value.transform_keys(&:to_sym)
+                               option_keys = %i[type items of properties required nullable default enum one_of minimum maximum
                                                 min max exclusive_minimum exclusive_maximum pattern preserve_unknown_fields
                                                 preserve_unknown ruby_name json_name]
-                              if options.keys.any? { |option| option_keys.include?(option) }
-                                options[:required] = true if required_names.include?(key.to_s)
-                                Field.new(options.merge(name: key.to_s))
-                              elsif required_names.include?(key.to_s)
-                                Field.new(key.to_s, :object, properties: value, required: true)
-                              else
-                                Field.new(key.to_s, :object, properties: value)
-                              end
-                            else
-                              Field.new(key.to_s, value, required: required_names.include?(key.to_s))
-                            end
+                               if options.keys.any? { |option| option_keys.include?(option) }
+                                 options[:required] = true if required_names.include?(key.to_s)
+                                 Field.new(options.merge(name: key.to_s))
+                               elsif required_names.include?(key.to_s)
+                                 Field.new(key.to_s, :object, properties: value, required: true)
+                               else
+                                 Field.new(key.to_s, :object, properties: value)
+                               end
+                             else
+                               Field.new(key.to_s, value, required: required_names.include?(key.to_s))
+                             end
         end
       end
 
       def normalize_enum(value)
         return nil if value.nil?
-        unless value.respond_to?(:to_a)
-          raise ArgumentError, "field enum must be enumerable"
-        end
+        raise ArgumentError, "field enum must be enumerable" unless value.respond_to?(:to_a)
 
         DeepFreeze.call(value.to_a.map { |item| copy_value(item) })
       end
 
       def normalize_pattern(value)
         return nil if value.nil? || value.is_a?(Regexp)
+
         Regexp.new(value.to_s)
       end
 
@@ -551,7 +540,11 @@ module Rubernetes
         resource = keywords.delete(:resource) || gvr_option&.resource || pluralize(@name)
         @gvr = GVR.new(@gvk.group, @gvk.version, resource.to_s)
         namespaced = keywords.delete(:namespaced)
-        @scope = normalize_scope(keywords.delete(:scope) || (namespaced.nil? ? :namespaced : (namespaced ? :namespaced : :cluster)))
+        @scope = normalize_scope(keywords.delete(:scope) || (if namespaced.nil?
+                                                               :namespaced
+                                                             else
+                                                               (namespaced ? :namespaced : :cluster)
+                                                             end))
         @description = keywords.delete(:description)&.to_s&.freeze
         @preserve_unknown_fields = !!(keywords.delete(:preserve_unknown_fields) ||
                                       keywords.delete(:preserve_unknown) ||
@@ -562,20 +555,19 @@ module Rubernetes
         raw_spec = keywords.delete(:spec)
         raw_status = keywords.delete(:status)
         raw_fields = {} if raw_fields.nil?
-        unless raw_fields.respond_to?(:each_pair)
-          raise ArgumentError, "schema fields must be a Hash"
-        end
+        raise ArgumentError, "schema fields must be a Hash" unless raw_fields.respond_to?(:each_pair)
 
         field_map = normalize_fields(raw_fields, required_names)
         field_map["spec"] = build_section_field("spec", raw_spec) if raw_spec && !field_map.key?("spec")
         field_map["status"] = build_section_field("status", raw_status) if raw_status && !field_map.key?("status")
         duplicate_json_names = field_map.values.group_by(&:json_name).select { |_json_name, values| values.length > 1 }
         unless duplicate_json_names.empty?
-          raise ArgumentError, "schema contains duplicate JSON field names: #{duplicate_json_names.keys.sort.join(', ')}"
+          raise ArgumentError, "schema contains duplicate JSON field names: #{duplicate_json_names.keys.sort.join(", ")}"
         end
+
         @fields = DeepFreeze.call(field_map)
         @known_keys = field_map.values.flat_map { |field| [field.name, field.json_name, field.ruby_name] }
-                               .to_h { |key| [key, true] }.freeze
+          .to_h { |key| [key, true] }.freeze
         @metadata = DeepFreeze.call(copy_value(keywords))
         freeze
       end
@@ -648,9 +640,8 @@ module Rubernetes
       end
 
       def value_class
-        unless defined?(ValueObject)
-          raise LoadError, "Rubernetes::Schema::ValueObject must be loaded before generating value classes"
-        end
+        raise LoadError, "Rubernetes::Schema::ValueObject must be loaded before generating value classes" unless defined?(ValueObject)
+
         ValueObject.for(self)
       end
 
@@ -719,23 +710,23 @@ module Rubernetes
       def normalize_fields_with_required(source, required_names)
         source.each_with_object({}) do |(key, value), result|
           result[key.to_s] = if value.is_a?(Field)
-                              value
-                            elsif value.is_a?(Hash)
-                              options = value.transform_keys(&:to_sym)
-                              option_keys = %i[type items of properties required nullable default enum one_of minimum maximum
+                               value
+                             elsif value.is_a?(Hash)
+                               options = value.transform_keys(&:to_sym)
+                               option_keys = %i[type items of properties required nullable default enum one_of minimum maximum
                                                 min max exclusive_minimum exclusive_maximum pattern preserve_unknown_fields
                                                 preserve_unknown ruby_name json_name]
-                              if options.keys.any? { |option| option_keys.include?(option) }
-                                options[:required] = true if required_names.include?(key.to_s)
-                                Field.new(options.merge(name: key.to_s))
-                              elsif required_names.include?(key.to_s)
-                                Field.new(key.to_s, :object, properties: value, required: true)
-                              else
-                                Field.new(key.to_s, :object, properties: value)
-                              end
-                            else
-                              Field.new(key.to_s, value, required: required_names.include?(key.to_s))
-                            end
+                               if options.keys.any? { |option| option_keys.include?(option) }
+                                 options[:required] = true if required_names.include?(key.to_s)
+                                 Field.new(options.merge(name: key.to_s))
+                               elsif required_names.include?(key.to_s)
+                                 Field.new(key.to_s, :object, properties: value, required: true)
+                               else
+                                 Field.new(key.to_s, :object, properties: value)
+                               end
+                             else
+                               Field.new(key.to_s, value, required: required_names.include?(key.to_s))
+                             end
         end
       end
 

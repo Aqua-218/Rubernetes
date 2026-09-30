@@ -648,7 +648,8 @@ module Rubernetes
             end
           end
           unless wanted.uid.empty?
-            Impersonation.check!(@authorizer, Impersonation.attributes_for(requestor, AUTHENTICATION_GROUP, LEGACY_VERB, "uids", wanted.uid))
+            Impersonation.check!(@authorizer,
+                                 Impersonation.attributes_for(requestor, AUTHENTICATION_GROUP, LEGACY_VERB, "uids", wanted.uid))
           end
           user = UserInfo.new(name: wanted.name, uid: wanted.uid.empty? ? nil : wanted.uid,
                               groups: Impersonation.with_implicit_group(groups, wanted.name), extra: wanted.extra)

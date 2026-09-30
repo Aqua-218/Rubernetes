@@ -62,7 +62,8 @@ module Rubernetes
         @write_timeout = Integer(write_timeout)
         @ca_file = ca_file
         @ca_data = ca_data
-        raise RegistryError, "registry transport timeout must be non-negative" if [@open_timeout, @read_timeout, @write_timeout].any?(&:negative?)
+        raise RegistryError, "registry transport timeout must be non-negative" if [@open_timeout, @read_timeout, 
+@write_timeout].any?(&:negative?)
       rescue ArgumentError, TypeError => error
         raise RegistryError.new("invalid registry transport configuration: #{error.message}", cause: error), cause: error
       end
@@ -85,6 +86,7 @@ module Rubernetes
               chunk = chunk.to_s.b
               streamed_bytes += chunk.bytesize
               raise LimitError, "registry response exceeds the configured byte limit" if streamed_bytes > Integer(max_bytes)
+
               if sink.respond_to?(:call)
                 sink.call(chunk)
               elsif sink.respond_to?(:write)
@@ -107,8 +109,8 @@ module Rubernetes
         raise RegistryError.new("unsupported registry HTTP method: #{method.inspect}", cause: error), cause: error
       end
 
-      def stream(method:, uri:, headers: {}, body: nil, max_bytes: DEFAULT_MAX_RESPONSE_BYTES)
-        request(method: method, uri: uri, headers: headers, body: body, sink: ->(chunk) { yield chunk }, max_bytes: max_bytes)
+      def stream(method:, uri:, headers: {}, body: nil, max_bytes: DEFAULT_MAX_RESPONSE_BYTES, &block)
+        request(method: method, uri: uri, headers: headers, body: body, sink: block, max_bytes: max_bytes)
       end
 
       private
@@ -183,8 +185,9 @@ module Rubernetes
       )
         reference ||= extra_options.delete(:image) || extra_options.delete(:reference)
         unless extra_options.empty?
-          raise RegistryError, "unknown registry client options: #{extra_options.keys.join(', ')}"
+          raise RegistryError, "unknown registry client options: #{extra_options.keys.join(", ")}"
         end
+
         @reference = reference && Reference.parse(reference)
         registry_value = registry || (@reference && @reference.registry)
         # Docker Hub references normalise to "docker.io", whose host serves a web
@@ -192,11 +195,12 @@ module Rubernetes
         # (the same mapping containerd and the docker CLI apply).
         registry_value = DOCKER_HUB_ENDPOINT if DOCKER_HUB_ALIASES.include?(registry_value.to_s.downcase)
         endpoint_value = endpoint || if registry_value.to_s.match?(%r{\Ahttps?://})
-                                     registry_value
-                                   elsif registry_value
+                                       registry_value
+                                     elsif registry_value
                                      "https://#{registry_value}"
-                                   end
+                                     end
         raise RegistryError, "registry endpoint is required" if endpoint_value.to_s.empty?
+
         @endpoint = parse_endpoint(endpoint_value, allow_insecure: allow_insecure)
         @allow_insecure = !!allow_insecure
         @transport = transport || NetHTTPTransport.new(
@@ -214,11 +218,13 @@ module Rubernetes
         if token_realm_allowlist && allowed_token_realms
           raise RegistryError, "token_realm_allowlist and allowed_token_realms are mutually exclusive"
         end
+
         @token_realm_allowlist = normalize_token_realm_allowlist(token_realm_allowlist || allowed_token_realms)
         validate_credentials!
         @max_manifest_bytes = Integer(max_manifest_bytes)
         @max_blob_bytes = Integer(max_blob_bytes)
         raise RegistryError, "registry response limits must be positive" unless @max_manifest_bytes.positive? && @max_blob_bytes.positive?
+
         @token_cache = {}
       rescue ArgumentError, TypeError => error
         raise RegistryError.new("invalid registry client configuration: #{error.message}", cause: error), cause: error
@@ -227,12 +233,13 @@ module Rubernetes
       def manifest(ref = nil, platform: nil, os: nil, architecture: nil, arch: nil, variant: nil)
         image_reference = normalize_reference(ref)
         document = fetch_document(image_reference, image_reference.locator)
-        index_digest = nil
+        nil
         while document.is_a?(Index)
           index_digest = document.digest
           descriptor = document.select(platform, os: os, architecture: architecture, arch: arch, variant: variant)
           image_reference = image_reference.with_digest(descriptor.digest)
-          document = fetch_document(image_reference, descriptor.digest.to_s, expected_digest: descriptor.digest, expected_size: descriptor.size, index_digest: index_digest)
+          document = fetch_document(image_reference, descriptor.digest.to_s, expected_digest: descriptor.digest, 
+expected_size: descriptor.size, index_digest: index_digest)
         end
         document
       end
@@ -267,6 +274,7 @@ module Rubernetes
         if io && !io.respond_to?(:write)
           raise RegistryError, "registry blob destination must implement write"
         end
+
         path = "/v2/#{image_reference.repository}/blobs/#{blob_digest}"
         if io
           raise RegistryError, "registry blob transport must implement streaming" unless @transport.respond_to?(:stream)
@@ -292,6 +300,7 @@ module Rubernetes
               chunk = chunk.to_s.b
               bytes += chunk.bytesize
               raise LimitError, "registry blob exceeds the configured byte limit" if bytes > @max_blob_bytes
+
               digest_state.update(chunk)
               temporary.write(chunk)
             end
@@ -299,6 +308,7 @@ module Rubernetes
             if expected_size && bytes != Integer(expected_size)
               raise RegistryError, "registry blob size does not match the descriptor"
             end
+
             verify_stream_digest!(digest_state, blob_digest, response["docker-content-digest"])
             validate_response_media_type!(media_type, response["content-type"])
             temporary.flush
@@ -309,12 +319,14 @@ module Rubernetes
             temporary.close!
           end
         end
-        response = request("GET", path, accept: media_type || "application/octet-stream", scope: "repository:#{image_reference.repository}:pull", max_bytes: @max_blob_bytes)
+        response = request("GET", path, accept: media_type || "application/octet-stream", 
+scope: "repository:#{image_reference.repository}:pull", max_bytes: @max_blob_bytes)
         ensure_success!(response, "GET #{path}")
         body = response.body
         if expected_size && body.bytesize != Integer(expected_size)
           raise RegistryError, "registry blob size does not match the descriptor"
         end
+
         verify_response_digest!(body, blob_digest, response["docker-content-digest"])
         validate_response_media_type!(media_type, response["content-type"])
         if io
@@ -372,10 +384,14 @@ module Rubernetes
         unless response.success?
           raise AuthenticationError, "registry token endpoint returned HTTP #{response.status}"
         end
+
         payload = parse_json_response(response, "registry token response")
         raise AuthenticationError, "registry token response must be a JSON object" unless payload.is_a?(Hash)
+
         token = payload["token"] || payload["access_token"]
-        raise AuthenticationError, "registry token response did not contain a token" unless token.is_a?(String) && !token.empty? && !token.match?(/[\x00-\x20\x7f]/)
+        raise AuthenticationError, 
+"registry token response did not contain a token" unless token.is_a?(String) && !token.empty? && !token.match?(/[\x00-\x20\x7f]/)
+
         expires_in = payload["expires_in"]
         expires_at = expires_in.is_a?(Numeric) && expires_in.positive? ? monotonic_time + expires_in.to_f : Float::INFINITY
         @token_cache[key] = {token: token, expires_at: expires_at}.freeze
@@ -419,6 +435,7 @@ module Rubernetes
           temporary.rewind
           config = temporary.read(DEFAULT_MAX_CONFIG_BYTES + 1).to_s.b
           raise LimitError, "image config exceeds the configured byte limit" if config.bytesize > DEFAULT_MAX_CONFIG_BYTES
+
           [config, config_path]
         ensure
           temporary.close!
@@ -445,6 +462,7 @@ module Rubernetes
 
       def validate_blob_media_type!(media_type)
         return if media_type.nil? || media_type.to_s.empty? || media_type.to_s.split(";", 2).first.strip == "application/octet-stream"
+
         normalized = media_type.to_s.split(";", 2).first.strip
         return if MediaTypes.layer?(normalized) || MediaTypes.config?(normalized) || MediaTypes.manifest?(normalized) || MediaTypes.index?(normalized)
 
@@ -453,6 +471,7 @@ module Rubernetes
 
       def validate_response_media_type!(expected, actual)
         return if expected.nil? || actual.nil? || actual.to_s.empty?
+
         expected_type = expected.to_s.split(";", 2).first.strip
         actual_type = actual.to_s.split(";", 2).first.strip
         return if actual_type == "application/octet-stream" || actual_type == expected_type
@@ -464,10 +483,13 @@ module Rubernetes
       def fetch_document(image_reference, locator, expected_digest: nil, expected_size: nil, index_digest: nil)
         path = "/v2/#{image_reference.repository}/manifests/#{locator}"
         accept = (MediaTypes::MANIFEST_TYPES + MediaTypes::INDEX_TYPES).join(", ")
-        response = request("GET", path, accept: accept, scope: "repository:#{image_reference.repository}:pull", max_bytes: @max_manifest_bytes)
+        response = request("GET", path, accept: accept, scope: "repository:#{image_reference.repository}:pull", 
+max_bytes: @max_manifest_bytes)
         ensure_success!(response, "GET #{path}")
-        verify_response_digest!(response.body, expected_digest || (image_reference.digest if image_reference.digest), response["docker-content-digest"])
-        ManifestDocument.parse(response.body, expected_digest: expected_digest || (image_reference.digest if image_reference.digest), expected_size: expected_size, max_bytes: @max_manifest_bytes, index_digest: index_digest)
+        verify_response_digest!(response.body, expected_digest || (image_reference.digest if image_reference.digest), 
+response["docker-content-digest"])
+        ManifestDocument.parse(response.body, expected_digest: expected_digest || (image_reference.digest if image_reference.digest), 
+expected_size: expected_size, max_bytes: @max_manifest_bytes, index_digest: index_digest)
       rescue JSON::ParserError, ManifestError, DigestError, DigestMismatch, LimitError
         raise
       rescue Error
@@ -494,6 +516,7 @@ module Rubernetes
         if response.status == 401
           raise AuthenticationError, "registry authentication failed"
         end
+
         response
       end
 
@@ -501,10 +524,11 @@ module Rubernetes
         unless @transport.respond_to?(:stream)
           raise RegistryError, "registry blob transport must implement streaming"
         end
+
         headers = {"Accept" => accept}
         headers["Authorization"] = "Bearer #{@bearer_token}" if @bearer_token
         response = follow_redirects(method, build_uri(path), headers: headers, body: body, max_bytes: max_bytes,
-                                    stream: true, on_redirect: on_retry, &sink)
+                                                             stream: true, on_redirect: on_retry, &sink)
         return response unless response.status == 401
 
         challenge = parse_authenticate(response["www-authenticate"])
@@ -513,12 +537,12 @@ module Rubernetes
           on_retry&.call
           headers["Authorization"] = "Bearer #{token}"
           response = follow_redirects(method, build_uri(path), headers: headers, body: body, max_bytes: max_bytes,
-                                      stream: true, on_redirect: on_retry, &sink)
+                                                               stream: true, on_redirect: on_retry, &sink)
         elsif challenge && challenge[:scheme] == "basic" && basic_configured?
           on_retry&.call
           headers["Authorization"] = basic_authorization
           response = follow_redirects(method, build_uri(path), headers: headers, body: body, max_bytes: max_bytes,
-                                      stream: true, on_redirect: on_retry, &sink)
+                                                               stream: true, on_redirect: on_retry, &sink)
         end
         raise AuthenticationError, "registry authentication failed" if response.status == 401
 
@@ -550,12 +574,17 @@ module Rubernetes
           on_redirect&.call
           hops += 1
           raise RegistryError, "registry redirect limit exceeded" if hops > MAX_REDIRECTS
+
           location = response["location"].to_s
           raise RegistryError, "registry redirect without Location" if location.empty?
+
           target = URI.join(current.to_s, location)
-          raise RegistryError, "registry redirect to a non-HTTPS location" unless target.scheme == "https" || (@allow_insecure && target.scheme == "http")
+          raise RegistryError, 
+"registry redirect to a non-HTTPS location" unless target.scheme == "https" || (@allow_insecure && target.scheme == "http")
           raise RegistryError, "registry redirect with userinfo" if target.userinfo
-          current_headers = same_origin?(target) && same_origin?(current) ? current_headers : current_headers.reject { |name, _| name.to_s.casecmp?("authorization") }
+
+          current_headers = same_origin?(target) && same_origin?(current) ? current_headers : current_headers.reject { |name, _|
+ name.to_s.casecmp?("authorization") }
           current = target
         end
       end
@@ -575,9 +604,9 @@ module Rubernetes
         raise RegistryError.new("registry transport failed: #{error.message}", cause: error), cause: error
       end
 
-      def call_transport_stream(method, uri, headers:, body:, max_bytes:, &block)
+      def call_transport_stream(method, uri, headers:, body:, max_bytes:, &)
         response = if @transport.respond_to?(:stream)
-                     invoke_stream(method, uri, headers: headers.dup, body: body, max_bytes: max_bytes, &block)
+                     invoke_stream(method, uri, headers: headers.dup, body: body, max_bytes: max_bytes, &)
                    else
                      call_transport(method, uri, headers: headers, body: body, max_bytes: max_bytes)
                    end
@@ -588,20 +617,20 @@ module Rubernetes
         raise RegistryError.new("registry stream transport failed: #{error.message}", cause: error), cause: error
       end
 
-      def invoke_stream(method, uri, headers:, body:, max_bytes:)
+      def invoke_stream(method, uri, headers:, body:, max_bytes:, &block)
         parameters = @transport.method(:stream).parameters
-        keyword = parameters.any? { |kind, name| [:key, :keyreq, :keyrest].include?(kind) && name == :method }
+        keyword = parameters.any? { |kind, name| %i[key keyreq keyrest].include?(kind) && name == :method }
         if keyword
           arguments = transport_keyword_arguments(parameters, method: method, uri: uri, headers: headers, body: body, max_bytes: max_bytes)
-          @transport.stream(**arguments) { |chunk| yield chunk }
+          @transport.stream(**arguments, &block)
         else
-          @transport.stream(method, uri, headers: headers, body: body) { |chunk| yield chunk }
+          @transport.stream(method, uri, headers: headers, body: body, &block)
         end
       end
 
       def invoke_request(method, uri, headers:, body:, max_bytes:)
         parameters = @transport.method(:request).parameters
-        keyword = parameters.any? { |kind, name| [:key, :keyreq, :keyrest].include?(kind) && name == :method }
+        keyword = parameters.any? { |kind, name| %i[key keyreq keyrest].include?(kind) && name == :method }
         if keyword
           arguments = transport_keyword_arguments(parameters, method: method, uri: uri, headers: headers, body: body, max_bytes: max_bytes)
           @transport.request(**arguments)
@@ -612,7 +641,7 @@ module Rubernetes
 
       def transport_keyword_arguments(parameters, method:, uri:, headers:, body:, max_bytes:)
         keyrest = parameters.any? { |kind, _name| kind == :keyrest }
-        allowed = parameters.filter_map { |kind, name| name if [:key, :keyreq].include?(kind) }
+        allowed = parameters.filter_map { |kind, name| name if %i[key keyreq].include?(kind) }
         arguments = {}
         arguments[:method] = method if keyrest || allowed.include?(:method)
         if keyrest || allowed.include?(:uri)
@@ -629,8 +658,10 @@ module Rubernetes
       def normalize_response(response)
         return response if response.is_a?(RegistryResponse)
         if response.is_a?(Hash)
-          return RegistryResponse.new(status: response[:status] || response["status"], headers: response[:headers] || response["headers"] || {}, body: response[:body] || response["body"] || "")
+          return RegistryResponse.new(status: response[:status] || response["status"], 
+headers: response[:headers] || response["headers"] || {}, body: response[:body] || response["body"] || "")
         end
+
         status = response.respond_to?(:status) ? response.status : response.status_code
         headers = response.respond_to?(:headers) ? response.headers : {}
         body = response.respond_to?(:body) ? response.body : ""
@@ -641,6 +672,7 @@ module Rubernetes
 
       def ensure_success!(response, operation)
         return response if response.success?
+
         detail = response.body.to_s.byteslice(0, 1024).to_s.gsub(/[\r\n]/, " ")
         detail = ": #{detail}" unless detail.empty?
         raise RegistryError, "registry request #{operation} failed with HTTP #{response.status}#{detail}"
@@ -661,6 +693,7 @@ module Rubernetes
         if header && Digest.from_bytes(body) != header
           raise DigestMismatch, "registry response digest does not match Docker-Content-Digest"
         end
+
         true
       rescue DigestMismatch
         raise
@@ -678,6 +711,7 @@ module Rubernetes
         if header && !secure_compare(actual, header.hex)
           raise DigestMismatch, "registry response digest does not match Docker-Content-Digest"
         end
+
         true
       rescue DigestMismatch
         raise
@@ -707,6 +741,7 @@ module Rubernetes
           name_start = cursor
           cursor += 1 while cursor < length && token_byte?(remainder.getbyte(cursor))
           return nil if cursor == name_start
+
           name = remainder.byteslice(name_start, cursor - name_start).downcase
           cursor += 1 while cursor < length && whitespace_byte?(remainder.getbyte(cursor))
           return nil unless remainder.getbyte(cursor) == 61 # "="
@@ -729,6 +764,7 @@ module Rubernetes
               elsif byte == 92
                 cursor += 1
                 return nil if cursor >= length || ![34, 92].include?(remainder.getbyte(cursor))
+
                 parsed << remainder.byteslice(cursor, 1)
               elsif byte < 0x20 || byte == 0x7f
                 return nil
@@ -738,14 +774,17 @@ module Rubernetes
               cursor += 1
             end
             return nil unless closed
+
             parsed_value = parsed
           else
             cursor += 1 while cursor < length && token_byte?(remainder.getbyte(cursor))
             return nil if cursor == value_start
+
             parsed_value = remainder.byteslice(value_start, cursor - value_start)
           end
 
           return nil if attributes.key?(name.to_sym)
+
           attributes[name.to_sym] = parsed_value
           cursor += 1 while cursor < length && whitespace_byte?(remainder.getbyte(cursor))
           if cursor < length
@@ -763,12 +802,13 @@ module Rubernetes
 
       def parse_endpoint(value, allow_insecure:)
         uri = URI.parse(value.to_s)
-        unless ["https", "http"].include?(uri.scheme) && uri.host && uri.userinfo.nil? && uri.query.nil? && uri.fragment.nil?
+        unless %w[https http].include?(uri.scheme) && uri.host && uri.userinfo.nil? && uri.query.nil? && uri.fragment.nil?
           raise RegistryError, "registry endpoint must be an HTTPS URL without userinfo, query, or fragment"
         end
         if uri.scheme != "https" && !allow_insecure
           raise RegistryError, "registry endpoint must use HTTPS"
         end
+
         uri.path = "" if uri.path == "/"
         uri
       rescue URI::InvalidURIError => error
@@ -778,6 +818,7 @@ module Rubernetes
       def build_uri(path)
         value = path.is_a?(URI) ? path.dup : URI.parse(path.to_s)
         return value if value.scheme
+
         value.path = "/#{value.path}" unless value.path.start_with?("/")
         prefix = endpoint.path.to_s
         prefix = "" if prefix == "/"
@@ -810,11 +851,14 @@ module Rubernetes
         if @username.nil? ^ @password.nil?
           raise RegistryError, "registry basic authentication requires username and password"
         end
+
         [@username, @password, @bearer_token].compact.each do |value|
-          raise RegistryError, "registry credentials must be strings without control characters" unless value.is_a?(String) && !value.match?(/[\x00-\x1f\x7f]/)
+          raise RegistryError, 
+"registry credentials must be strings without control characters" unless value.is_a?(String) && !value.match?(/[\x00-\x1f\x7f]/)
         end
         return if @username.nil? && @password.nil? && @bearer_token.nil?
         return if endpoint.scheme == "https"
+
         raise RegistryError, "registry credentials require HTTPS"
       end
 
@@ -849,12 +893,13 @@ module Rubernetes
       def normalize_token_realm_allowlist(value)
         Array(value).filter_map do |entry|
           uri = URI.parse(entry.to_s)
-          unless ["https", "http"].include?(uri.scheme) && uri.host && uri.userinfo.nil? && uri.query.nil? && uri.fragment.nil?
+          unless %w[https http].include?(uri.scheme) && uri.host && uri.userinfo.nil? && uri.query.nil? && uri.fragment.nil?
             raise RegistryError, "token realm allowlist entries must be absolute HTTP(S) URLs without userinfo, query, or fragment"
           end
           if uri.scheme != "https" && !@allow_insecure
             raise RegistryError, "token realm allowlist entries must use HTTPS"
           end
+
           origin_key(uri)
         rescue URI::InvalidURIError => error
           raise RegistryError.new("token realm allowlist entry is invalid: #{error.message}", cause: error), cause: error
@@ -880,7 +925,7 @@ module Rubernetes
       end
 
       def whitespace_byte?(byte)
-        byte == 0x20 || byte == 0x09
+        [0x20, 0x09].include?(byte)
       end
 
       def monotonic_time

@@ -36,7 +36,8 @@ module Rubernetes
         raise ArgumentError, "identity must be a Hash" unless value.is_a?(Hash)
 
         name = value["username"] || value[:username] || value["name"] || value[:name]
-        new(name: name, uid: value["uid"] || value[:uid], groups: value["groups"] || value[:groups] || [], extra: value["extra"] || value[:extra] || {})
+        new(name: name, uid: value["uid"] || value[:uid], groups: value["groups"] || value[:groups] || [],
+            extra: value["extra"] || value[:extra] || {})
       end
 
       def anonymous?

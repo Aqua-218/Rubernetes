@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
-
 module Rubernetes
   module Watch
     # Deduplicating, dirty-key aware work queue.  A key is represented at most
@@ -15,8 +13,6 @@ module Rubernetes
       DEFAULT_BUCKET_CAPACITY = 100.0
       DEFAULT_BUCKET_RATE = 10.0
 
-      attr_reader :base_delay, :max_delay, :bucket_capacity, :bucket_rate
-
       def initialize(clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
                      sleeper: ->(seconds) { sleep(seconds) }, base_delay: DEFAULT_BASE_DELAY,
                      max_delay: DEFAULT_MAX_DELAY, bucket_capacity: DEFAULT_BUCKET_CAPACITY,
@@ -28,10 +24,12 @@ module Rubernetes
         @sleeper = sleeper
         @base_delay = positive_float(base_delay, "base_delay")
         raise ArgumentError, "base_delay must be at least #{MIN_BASE_DELAY} seconds" if @base_delay < MIN_BASE_DELAY
+
         @max_delay = Float(max_delay)
         raise ArgumentError, "max_delay must be at least base_delay" if @max_delay < @base_delay
         raise ArgumentError, "max_delay must not exceed #{MAX_RETRY_DELAY} seconds" if @max_delay > MAX_RETRY_DELAY
         raise ArgumentError, "max_delay must be finite" unless @max_delay.finite?
+
         @bucket_capacity = positive_float(bucket_capacity, "bucket_capacity")
         @bucket_rate = positive_float(bucket_rate, "bucket_rate")
         @mutex = Mutex.new
@@ -64,7 +62,7 @@ module Rubernetes
         register_metrics if @name
       end
 
-      attr_reader :name
+      attr_reader :base_delay, :max_delay, :bucket_capacity, :bucket_rate, :name
 
       # ExponentialBuckets(10e-9, 10, 12).
       # component-base/metrics/prometheus/workqueue: ExponentialBuckets(10e-9,
@@ -105,14 +103,13 @@ module Rubernetes
           @timed.delete(normalized)
           metric(:increment, "workqueue_retries_total", {"name" => @name}) if @name
           count = @requeues[normalized] += 1
-          exponential = [@base_delay * (2**([count - 1, 30].min)), @max_delay].min
+          exponential = [@base_delay * (2**[count - 1, 30].min), @max_delay].min
           token_delay = reserve_token_locked(now)
           enqueue_locked(normalized, ready_at: now + exponential + token_delay)
           @condition.broadcast
           [exponential + token_delay, exponential, token_delay]
         end
-        total_delay = delay.first
-        total_delay
+        delay.first
       end
 
       def get(timeout: nil)
@@ -314,7 +311,12 @@ module Rubernetes
         registry = self.registry
         return unless registry
 
-        action == :observe ? registry.observe(name, value, labels) : registry.public_send(action, name, labels, **(value ? {by: value} : {}))
+        if action == :observe
+          registry.observe(name, value,
+                           labels)
+        else
+          registry.public_send(action, name, labels, **(value ? {by: value} : {}))
+        end
       rescue StandardError
         nil
       end
@@ -326,8 +328,10 @@ module Rubernetes
         {"workqueue_adds_total" => [:counter, "Total number of adds handled by workqueue"],
          "workqueue_depth" => [:gauge, "Current depth of workqueue"],
          "workqueue_retries_total" => [:counter, "Total number of retries handled by workqueue"],
-         "workqueue_unfinished_work_seconds" => [:gauge, "How many seconds of work has done that is in progress and hasn't been observed by work_duration. Large values indicate stuck threads. One can deduce the number of stuck threads by observing the rate at which this increases."],
-         "workqueue_longest_running_processor_seconds" => [:gauge, "How many seconds has the longest running processor for workqueue been running."]}.each do |metric_name, (type, help)|
+         "workqueue_unfinished_work_seconds" => [:gauge,
+                                                 "How many seconds of work has done that is in progress and hasn't been observed by work_duration. Large values indicate stuck threads. One can deduce the number of stuck threads by observing the rate at which this increases."],
+         "workqueue_longest_running_processor_seconds" => [:gauge,
+                                                           "How many seconds has the longest running processor for workqueue been running."]}.each do |metric_name, (type, help)|
           registry.register(metric_name, type: type, help: help)
         end
         registry.register("workqueue_queue_duration_seconds", type: :histogram, buckets: DURATION_BUCKETS,
@@ -362,7 +366,10 @@ module Rubernetes
         return unless @name
 
         started = @started_at.delete(key)
-        metric(:observe, "workqueue_work_duration_seconds", {"name" => @name}, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) if started
+        return unless started
+
+        metric(:observe, "workqueue_work_duration_seconds", {"name" => @name},
+               Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
       end
 
       # updateUnfinishedWork: the in-flight processing, at scrape time.
@@ -390,7 +397,7 @@ module Rubernetes
         wait_for = next_ready && [next_ready - now, 0].max
         wait_for = deadline - now if deadline && wait_for.nil?
         wait_for = [wait_for, deadline - now].min if deadline && wait_for
-        wall_wait = wall_deadline && wall_deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        wall_wait = wall_deadline && (wall_deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC))
         wait_for = wall_wait if wait_for.nil? && wall_wait
         wait_for = [wait_for, wall_wait].min if wall_wait && wait_for
         return if wait_for && wait_for <= 0
@@ -401,7 +408,7 @@ module Rubernetes
       def reserve_token_locked(now)
         elapsed = now - @last_refill
         if elapsed.positive?
-          @tokens = [@bucket_capacity, @tokens + elapsed * @bucket_rate].min
+          @tokens = [@bucket_capacity, @tokens + (elapsed * @bucket_rate)].min
           @last_refill = now
         end
         if @tokens >= 1.0 && @next_token_at <= now

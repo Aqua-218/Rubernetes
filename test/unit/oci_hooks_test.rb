@@ -42,7 +42,9 @@ class OCIHooksTest < Minitest::Test
     assert_raises(Hooks::Error) { Hooks.normalize([{"hookName" => "prestart", "path" => "bin/true"}]) }
     assert_raises(Hooks::Error) { Hooks.normalize([{"hookName" => "prestart", "path" => "/bin/true", "env" => ["NOVALUE"]}]) }
     assert_raises(Hooks::Error) { Hooks.normalize([{"hookName" => "prestart", "path" => "/bin/true", "timeout" => 0}]) }
-    grouped = Hooks.normalize([{"hookName" => "poststart", "path" => "/b"}, {"hookName" => "createRuntime", "path" => "/a", "timeout" => 3}])
+    grouped = Hooks.normalize([{"hookName" => "poststart", "path" => "/b"},
+                               {"hookName" => "createRuntime", "path" => "/a", "timeout" => 3}])
+
     assert_equal %w[createRuntime poststart], grouped.keys
     assert_equal({"path" => "/a", "args" => [], "env" => [], "timeout" => 3}, grouped["createRuntime"].first)
   end
@@ -58,6 +60,7 @@ class OCIHooksTest < Minitest::Test
     out = File.join(@dir, "out")
     hook = {"path" => "/bin/sh", "args" => ["custom-argv0", "-c", "cat > #{out}; echo \"$0 $FOO ${HOME:-nohome}\" >> #{out}"],
             "env" => ["FOO=bar"], "timeout" => nil}
+
     assert Hooks.run(hook, {"status" => "creating"}, stage: "prestart", index: 0)
     assert_equal [%({"status":"creating"}custom-argv0 bar nohome)], File.readlines(out, chomp: true)
   end
@@ -92,18 +95,22 @@ class OCIHooksTest < Minitest::Test
     stages = %w[poststop poststart startContainer createContainer createRuntime prestart]
     sandbox, container = start(rt, stages.map { |stage| hook(stage) })
     rt.start_container(container)
+
     assert_equal ["prestart creating pid /", "createRuntime creating pid /", "createContainer creating pid /",
                   "startContainer created pid /", "poststart running pid /"], log_lines
     bundle = File.join(@dir, "state", "oci-bundles", "#{sandbox}.#{container.id}")
     config = JSON.parse(File.read(File.join(bundle, "config.json")))
+
     assert_equal ["/bin/true"], config.dig("process", "args")
     assert_equal %w[prestart createRuntime createContainer startContainer poststart poststop], config["hooks"].keys
 
     rt.stop_container(container)
     rt.remove_container(container)
+
     assert_equal "poststop stopped nopid /", log_lines.last
-    refute File.exist?(bundle), "the bundle goes with the container"
+    refute_path_exists bundle, "the bundle goes with the container"
     rt.remove_sandbox(sandbox)
+
     assert_equal 6, log_lines.length, "poststop ran once"
   end
 
@@ -119,11 +126,13 @@ class OCIHooksTest < Minitest::Test
     rt = runtime
     sandbox, container = start(rt, [hook("poststart", exit_code: 2), hook("poststop", exit_code: 2)])
     rt.start_container(container)
+
     assert_equal "running", rt.container_status(container)["state"]
     rt.stop_sandbox(sandbox)
     rt.remove_sandbox(sandbox)
     warnings = rt.trace.select { |event| event["event"] == "container_hook_warning" }
-    assert_equal %w[poststart poststop], warnings.map { |event| event["stage"] }
+
+    assert_equal(%w[poststart poststop], warnings.map { |event| event["stage"] })
   end
 
   Adapters = Rubernetes::Platform::Linux::NativeAdapters
@@ -142,13 +151,15 @@ class OCIHooksTest < Minitest::Test
         File.write("#{out}.error", error.message)
       end
       begin
-        runner.run({"path" => "/bin/sh", "args" => ["sh", "-c", "sleep 30"], "env" => [], "timeout" => 1}, "{}", stage: "startContainer", index: 0)
+        runner.run({"path" => "/bin/sh", "args" => ["sh", "-c", "sleep 30"], "env" => [], "timeout" => 1}, "{}", stage: "startContainer",
+                                                                                                                 index: 0)
       rescue StandardError => error
         File.write("#{out}.timeout", error.message)
       end
       exit!(0)
     end
     Process.wait(pid)
+
     assert_equal %({"status":"created"}), File.read(out)
     assert_equal "error running createContainer hook #2: /bin/sh: exit status 4, output: bad", File.read("#{out}.error")
     assert_includes File.read("#{out}.timeout"), "did not finish in 1s"
@@ -170,7 +181,10 @@ class OCIHooksTest < Minitest::Test
     failing = false
     gate = Adapters::ProcessGateAdapter::Gate.new(writer: gate_writer, status_reader: status_reader, identity_reader: identity_reader,
                                                   hook_reply: reply_writer,
-                                                  hook_handler: ->(pid) { seen << pid; raise "createRuntime broke" if failing })
+                                                  hook_handler: lambda { |pid|
+                                                    seen << pid
+                                                    raise "createRuntime broke" if failing
+                                                  })
     child = Thread.new do
       gate_reader.read(1)
       bootstrap.send(:request_runtime_hooks)
@@ -184,6 +198,7 @@ class OCIHooksTest < Minitest::Test
     end
     error = assert_raises(Rubernetes::Platform::Linux::NativeAdapters::EffectError) { gate.release }
     child.join
+
     assert_equal [4242, 4242], seen
     assert_includes error.message, "createRuntime broke"
   ensure

@@ -68,6 +68,7 @@ class NodeAPIClientAdapterTest < Minitest::Test
 
     list_call = @client.calls.fetch(0)
     watch_call = @client.calls.fetch(1)
+
     assert_equal([:get, "pods", "v1", {"fieldSelector" => "spec.nodeName=node-a", "resourceVersion" => "6"}, :all],
                  list_call)
     # Every namespace, explicitly: a nil namespace makes the client fall back to
@@ -87,6 +88,7 @@ class NodeAPIClientAdapterTest < Minitest::Test
   def test_the_node_is_created_once_then_its_status_is_patched
     @adapter.register_node(NODE)
     @adapter.register_node(NODE)
+
     assert_equal :create, @client.calls.fetch(0).fetch(0)
     assert_equal [:patch, "/api/v1/nodes/node-a/status",
                   {"metadata" => {"labels" => {"kubernetes.io/os" => "linux"}}, "status" => NODE["status"]}, :merge],
@@ -96,19 +98,25 @@ class NodeAPIClientAdapterTest < Minitest::Test
     client.create_status = 409
     adapter = Rubernetes::Node::APIClientAdapter.new(client: client, node_name: "node-a")
     adapter.register_node(NODE)
+
     assert_equal %i[create patch], client.calls.map(&:first)
   end
 
   # The node lease controller: created when missing, renewed with an Update
   # of the latest Lease written (no read in between).
   def test_the_lease_is_created_then_renewed_with_updates
-    lease = ->(time) { {"apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease", "metadata" => {"name" => "node-a", "namespace" => "kube-node-lease"}, "spec" => {"holderIdentity" => "node-a", "renewTime" => time}} }
+    lease = lambda { |time|
+      {"apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease", "metadata" => {"name" => "node-a", "namespace" => "kube-node-lease"},
+       "spec" => {"holderIdentity" => "node-a", "renewTime" => time}}
+    }
     @adapter.renew_lease(lease.call("t1"))
     @adapter.renew_lease(lease.call("t2"))
     path = "/apis/coordination.k8s.io/v1/namespaces/kube-node-lease/leases/node-a"
-    assert_equal [:get, :create, :update], @client.calls.map(&:first)
+
+    assert_equal %i[get create update], @client.calls.map(&:first)
     assert_equal path, @client.calls.fetch(0).fetch(1)
     update = @client.calls.fetch(2)
+
     assert_equal "t2", update.fetch(1).dig("spec", "renewTime")
     assert_equal "1", update.fetch(1).dig("metadata", "resourceVersion")
     assert_equal path, update.fetch(3)
@@ -119,6 +127,7 @@ class NodeAPIClientAdapterTest < Minitest::Test
       {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "web", "namespace" => "apps"}},
       "phase" => "Running"
     )
+
     assert_equal("/api/v1/namespaces/apps/pods/web/status", @client.calls.fetch(0).fetch(1))
     assert_equal({"status" => {"phase" => "Running"}}, @client.calls.fetch(0).fetch(2))
   end

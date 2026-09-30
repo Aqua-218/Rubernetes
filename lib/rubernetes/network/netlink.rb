@@ -33,7 +33,7 @@ module Rubernetes
 
         def open!
           missing = REQUIRED_FIELDS.select { |field| Support.fetch(@context, field, default: nil).nil? }
-          raise OwnershipError, "network namespace holder is missing #{missing.join(', ')}" unless missing.empty?
+          raise OwnershipError, "network namespace holder is missing #{missing.join(", ")}" unless missing.empty?
 
           @handle = Support.identifier(Support.fetch(@context, "handle"), "network namespace handle")
           @pid = Support.integer(Support.fetch(@context, "pid"), "network namespace holder PID", min: 1)
@@ -306,11 +306,10 @@ module Rubernetes
           when IPAddr then value.hton
           when Array then encode_many(value)
           else
-            if value.respond_to?(:to_str)
-              value.to_str.b
-            else
-              raise TypeError, "unsupported attribute value #{value.class}"
-            end
+            raise TypeError, "unsupported attribute value #{value.class}" unless value.respond_to?(:to_str)
+
+            value.to_str.b
+
           end
         end
         private_class_method :encode_value
@@ -332,10 +331,11 @@ module Rubernetes
           message = [HEADER_SIZE + body.bytesize, Integer(type), Integer(flags), Integer(sequence), 0].pack("L<S<S<L<L<") + body
           sent = socket.send(message, 0)
           raise NetlinkError, "netlink request was short-written" unless sent == message.bytesize
+
           receive(socket, sequence: Integer(sequence))
         rescue SystemCallError => error
           raise NetlinkError.new("netlink request failed: #{error.message}", errno: error.respond_to?(:errno) ? error.errno : nil,
-                                 operation: "netlink")
+                                                                             operation: "netlink")
         ensure
           socket&.close
         end
@@ -353,7 +353,7 @@ module Rubernetes
             remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
             if remaining <= 0 || IO.select([socket], nil, nil, remaining).nil?
               raise NetlinkError.new("netlink ACK timed out", errno: Errno::ETIMEDOUT::Errno,
-                                     operation: "netlink_ack", sequence: sequence)
+                                                              operation: "netlink_ack", sequence: sequence)
             end
             parse_messages(socket.recv(MAX_MESSAGE_BYTES)).each do |message|
               next unless message.sequence == sequence
@@ -363,7 +363,7 @@ module Rubernetes
                 unless code.zero?
                   errno = code.abs
                   raise NetlinkError.new("kernel rejected netlink request with errno #{errno}", errno: errno,
-                                         operation: "netlink_ack", sequence: sequence)
+                                                                                                operation: "netlink_ack", sequence: sequence)
                 end
                 messages << message
                 return Ack.new(sequence: sequence, messages: messages.freeze, request: nil).freeze
@@ -417,6 +417,7 @@ module Rubernetes
                    "operation" => operation && String(operation)}
         encoded_size = HEADER_SIZE + request.fetch("payload").bytesize + TLV.encode_many(request.fetch("attributes")).bytesize
         raise ValidationError, "netlink message exceeds #{MAX_MESSAGE_BYTES} bytes" if encoded_size > MAX_MESSAGE_BYTES
+
         response = dispatch(request)
         validate_response!(response, request)
         normalize_ack(response, request)
@@ -441,13 +442,16 @@ module Rubernetes
                    "operation" => operation && String(operation)}
         encoded_size = HEADER_SIZE + request.fetch("payload").bytesize + TLV.encode_many(request.fetch("attributes")).bytesize
         raise ValidationError, "netlink dump message exceeds #{MAX_MESSAGE_BYTES} bytes" if encoded_size > MAX_MESSAGE_BYTES
+
         response = dispatch(request)
         messages = response.is_a?(Ack) ? response.messages : Array(response).map { |entry| normalize_message(entry, request) }
         raise NetlinkError.new("netlink dump returned no response", operation: operation, sequence: sequence) if messages.empty?
+
         messages.each { |message| validate_message!(message.to_h, request) if message.type == NLMSG_ERROR }
         unless messages.any? { |message| message.type == NLMSG_DONE }
           raise NetlinkError.new("netlink dump did not terminate with NLMSG_DONE", operation: operation, sequence: sequence)
         end
+
         messages.reject { |message| [NLMSG_DONE, NLMSG_NOOP, NLMSG_ERROR].include?(message.type) }.freeze
       end
 
@@ -477,7 +481,7 @@ module Rubernetes
 
       def route_dump(namespace: nil, namespace_fd: nil, operation: "route_dump")
         dump(type: RTM_GETROUTE, payload: rtmsg(family: AF_UNSPEC, prefix: 0, table: 0, protocol: 0,
-                                                 scope: 0, type: 0), namespace: namespace,
+                                                scope: 0, type: 0), namespace: namespace,
              namespace_fd: namespace_fd, operation: operation)
       end
 
@@ -493,9 +497,11 @@ module Rubernetes
       def link_add(name:, kind:, mtu: nil, index: nil, master: nil, up: true, peer: nil, namespace: nil,
                    namespace_fd: nil, operation: nil, **attributes)
         validate_namespace_target!(namespace_fd || namespace)
-        return legacy_link_add(name: name, kind: kind, mtu: mtu, index: index, master: master, up: up,
-                               peer: peer, namespace: namespace, namespace_fd: namespace_fd,
-                               operation: operation, attributes: attributes) unless kernel_adapter?
+        unless kernel_adapter?
+          return legacy_link_add(name: name, kind: kind, mtu: mtu, index: index, master: master, up: up,
+                                 peer: peer, namespace: namespace, namespace_fd: namespace_fd,
+                                 operation: operation, attributes: attributes)
+        end
 
         namespace_target = namespace_fd || namespace
         name = interface_name(name)
@@ -506,9 +512,13 @@ module Rubernetes
         link_attributes << attribute(IFLA_MTU, uint32(mtu, "MTU")) if mtu
         link_attributes << attribute(IFLA_MASTER, link_index(master, "master")) if master
         link_attributes << attribute(IFLA_NEW_IFINDEX, uint32(index, "link index")) if index
-        link_attributes << attribute(IFLA_NET_NS_FD, uint32(namespace_fd_value(namespace_target), "network namespace FD")) if namespace_target && !(kind == "veth" && peer)
+        if namespace_target && !(kind == "veth" && peer)
+          link_attributes << attribute(IFLA_NET_NS_FD,
+                                       uint32(namespace_fd_value(namespace_target),
+                                              "network namespace FD"))
+        end
         link_attributes << link_info_attributes(kind, peer: peer, namespace: namespace, namespace_fd: namespace_fd,
-                                                 attributes: attributes)
+                                                      attributes: attributes)
         request(type: RTM_NEWLINK, payload: payload,
                 flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL,
                 attributes: link_attributes, operation: operation)
@@ -551,9 +561,7 @@ module Rubernetes
 
         selected_name = name && interface_name(name)
         selected_index = index && Support.integer(index, "link index", min: 1)
-        if selected_name.nil?
-          selected_name = Socket.getifaddrs.find { |entry| entry.ifindex == selected_index }&.name
-        end
+        selected_name = Socket.getifaddrs.find { |entry| entry.ifindex == selected_index }&.name if selected_name.nil?
         selected_name = interface_name(selected_name)
         selected_index ||= link_index(selected_name, "link")
         sysfs = File.join("/sys/class/net", selected_name)
@@ -585,8 +593,10 @@ module Rubernetes
                    operation: nil, move_namespace: nil, **attributes)
         validate_namespace_target!(namespace_fd || namespace)
         validate_namespace_target!(move_namespace)
-        return legacy_link_set(name: name, index: index, mtu: mtu, up: up, master: master, namespace: namespace,
-                               namespace_fd: namespace_fd, operation: operation, attributes: attributes) unless kernel_adapter?
+        unless kernel_adapter?
+          return legacy_link_set(name: name, index: index, mtu: mtu, up: up, master: master, namespace: namespace,
+                                 namespace_fd: namespace_fd, operation: operation, attributes: attributes)
+        end
 
         namespace_target = namespace_fd || namespace
         if namespace_target && move_namespace.nil?
@@ -607,13 +617,20 @@ module Rubernetes
         end
 
         link_index = link_index(name || index, "link")
-        flags = up.nil? ? 0 : (Support.bool(up) ? IFF_UP : 0)
+        flags = if up.nil?
+                  0
+                else
+                  (Support.bool(up) ? IFF_UP : 0)
+                end
         change = up.nil? ? 0 : IFF_CHANGE_UP
         payload = ifinfomsg(index: link_index, flags: flags, change: change)
         link_attributes = []
         link_attributes << attribute(IFLA_MTU, uint32(mtu, "MTU")) if mtu
         clear_master = Support.bool(Support.fetch(attributes, "clear_master", default: false))
-        link_attributes << attribute(IFLA_MASTER, master ? link_index(master, "master") : uint32(0, "master index")) if master || clear_master
+        if master || clear_master
+          link_attributes << attribute(IFLA_MASTER,
+                                       master ? link_index(master, "master") : uint32(0, "master index"))
+        end
         namespace_value = move_namespace || namespace_fd || namespace
         link_attributes << attribute(IFLA_NET_NS_FD, uint32(namespace_fd_value(namespace_value), "network namespace FD")) if namespace_value
         link_attributes.concat(encode_link_extra_attributes(attributes))
@@ -622,9 +639,11 @@ module Rubernetes
 
       def address_add(address:, prefix: nil, index: nil, name: nil, namespace: nil, namespace_fd: nil, operation: nil, **attributes)
         validate_namespace_target!(namespace_fd || namespace)
-        return legacy_address_request(RTM_NEWADDR, address: address, prefix: prefix, index: index, name: name,
-                                      operation: operation, attributes: attributes,
-                                      flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL) unless kernel_adapter?
+        unless kernel_adapter?
+          return legacy_address_request(RTM_NEWADDR, address: address, prefix: prefix, index: index, name: name,
+                                                     operation: operation, attributes: attributes,
+                                                     flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL)
+        end
 
         namespace_target = namespace_fd || namespace
         if namespace_target
@@ -634,14 +653,16 @@ module Rubernetes
         end
 
         address_request(RTM_NEWADDR, address: address, prefix: prefix, index: index, name: name,
-                        operation: operation, attributes: attributes,
-                        flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL)
+                                     operation: operation, attributes: attributes,
+                                     flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL)
       end
 
       def address_delete(address:, prefix: nil, index: nil, name: nil, namespace: nil, namespace_fd: nil, operation: nil, **attributes)
         validate_namespace_target!(namespace_fd || namespace)
-        return legacy_address_request(RTM_DELADDR, address: address, prefix: prefix, index: index, name: name,
-                                      operation: operation, attributes: attributes, flags: NLM_F_REQUEST | NLM_F_ACK) unless kernel_adapter?
+        unless kernel_adapter?
+          return legacy_address_request(RTM_DELADDR, address: address, prefix: prefix, index: index, name: name,
+                                                     operation: operation, attributes: attributes, flags: NLM_F_REQUEST | NLM_F_ACK)
+        end
 
         namespace_target = namespace_fd || namespace
         if namespace_target
@@ -651,10 +672,11 @@ module Rubernetes
         end
 
         address_request(RTM_DELADDR, address: address, prefix: prefix, index: index, name: name,
-                        operation: operation, attributes: attributes, flags: NLM_F_REQUEST | NLM_F_ACK)
+                                     operation: operation, attributes: attributes, flags: NLM_F_REQUEST | NLM_F_ACK)
       end
 
-      def route_add(destination:, via: nil, dev: nil, table: 254, metric: nil, family: nil, namespace: nil, namespace_fd: nil, operation: nil, **attributes)
+      def route_add(destination:, via: nil, dev: nil, table: 254, metric: nil, family: nil, namespace: nil, namespace_fd: nil,
+                    operation: nil, **attributes)
         namespace_target = namespace_fd || namespace
         validate_namespace_target!(namespace_target)
         if kernel_adapter? && namespace_target
@@ -664,11 +686,12 @@ module Rubernetes
           end
         end
         route_request(RTM_NEWROUTE, destination: destination, via: via, dev: dev, table: table, metric: metric,
-                      family: family, flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL,
-                      operation: operation, attributes: attributes)
+                                    family: family, flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL,
+                                    operation: operation, attributes: attributes)
       end
 
-      def route_delete(destination:, via: nil, dev: nil, table: 254, metric: nil, family: nil, namespace: nil, namespace_fd: nil, operation: nil, **attributes)
+      def route_delete(destination:, via: nil, dev: nil, table: 254, metric: nil, family: nil, namespace: nil, namespace_fd: nil,
+                       operation: nil, **attributes)
         namespace_target = namespace_fd || namespace
         validate_namespace_target!(namespace_target)
         if kernel_adapter? && namespace_target
@@ -678,14 +701,16 @@ module Rubernetes
           end
         end
         route_request(RTM_DELROUTE, destination: destination, via: via, dev: dev, table: table, metric: metric,
-                      family: family, flags: NLM_F_REQUEST | NLM_F_ACK, operation: operation, attributes: attributes)
+                                    family: family, flags: NLM_F_REQUEST | NLM_F_ACK, operation: operation, attributes: attributes)
       end
 
       def fdb_add(mac:, destination:, dev:, namespace: nil, namespace_fd: nil, operation: nil, **attributes)
         validate_namespace_target!(namespace_fd || namespace)
-        return legacy_fdb_request(RTM_NEWNEIGH, mac: mac, destination: destination, dev: dev,
-                                  operation: operation, attributes: attributes,
-                                  flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL) unless kernel_adapter?
+        unless kernel_adapter?
+          return legacy_fdb_request(RTM_NEWNEIGH, mac: mac, destination: destination, dev: dev,
+                                                  operation: operation, attributes: attributes,
+                                                  flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL)
+        end
 
         namespace_target = namespace_fd || namespace
         if namespace_target
@@ -695,15 +720,17 @@ module Rubernetes
         end
 
         neighbor_request(RTM_NEWNEIGH, destination: destination, lladdr: mac, dev: dev, family: AF_BRIDGE,
-                         state: NUD_PERMANENT, ndm_flags: NTF_SELF, operation: operation,
-                         flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL, attributes: attributes)
+                                       state: NUD_PERMANENT, ndm_flags: NTF_SELF, operation: operation,
+                                       flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL, attributes: attributes)
       end
 
       def fdb_delete(mac:, destination:, dev:, namespace: nil, namespace_fd: nil, operation: nil, **attributes)
         validate_namespace_target!(namespace_fd || namespace)
-        return legacy_fdb_request(RTM_DELNEIGH, mac: mac, destination: destination, dev: dev,
-                                  operation: operation, attributes: attributes,
-                                  flags: NLM_F_REQUEST | NLM_F_ACK) unless kernel_adapter?
+        unless kernel_adapter?
+          return legacy_fdb_request(RTM_DELNEIGH, mac: mac, destination: destination, dev: dev,
+                                                  operation: operation, attributes: attributes,
+                                                  flags: NLM_F_REQUEST | NLM_F_ACK)
+        end
 
         namespace_target = namespace_fd || namespace
         if namespace_target
@@ -713,8 +740,8 @@ module Rubernetes
         end
 
         neighbor_request(RTM_DELNEIGH, destination: destination, lladdr: mac, dev: dev, family: AF_BRIDGE,
-                         state: 0, ndm_flags: NTF_SELF, operation: operation, flags: NLM_F_REQUEST | NLM_F_ACK,
-                         attributes: attributes)
+                                       state: 0, ndm_flags: NTF_SELF, operation: operation, flags: NLM_F_REQUEST | NLM_F_ACK,
+                                       attributes: attributes)
       end
 
       # Native neighbour terminology is useful to callers that are not
@@ -735,8 +762,8 @@ module Rubernetes
         end
 
         neighbor_request(RTM_NEWNEIGH, destination: destination, lladdr: lladdr, dev: dev, family: family,
-                         state: state, ndm_flags: flags, operation: operation,
-                         flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL, attributes: attributes)
+                                       state: state, ndm_flags: flags, operation: operation,
+                                       flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL, attributes: attributes)
       end
 
       def neighbor_delete(destination:, dev:, lladdr: nil, mac: nil, family: nil, namespace: nil, namespace_fd: nil,
@@ -752,8 +779,8 @@ module Rubernetes
         end
 
         neighbor_request(RTM_DELNEIGH, destination: destination, lladdr: lladdr, dev: dev, family: family,
-                         state: 0, ndm_flags: 0, operation: operation, flags: NLM_F_REQUEST | NLM_F_ACK,
-                         attributes: attributes)
+                                       state: 0, ndm_flags: 0, operation: operation, flags: NLM_F_REQUEST | NLM_F_ACK,
+                                       attributes: attributes)
       end
 
       # Public read-only namespace boundary used by NativeObserver.  Mutating
@@ -783,9 +810,9 @@ module Rubernetes
       NAMESPACE_TAINT_KEY = :rubernetes_netns_tainted
       THREAD_NAMESPACE_PATH = "/proc/thread-self/ns/net"
 
-      def with_network_namespace(target, operation: nil, &block)
+      def with_network_namespace(target, operation: nil, &)
         return yield unless kernel_adapter?
-        return with_network_namespace_forked(target, operation: operation, &block) if self.class.fork_for_namespaces?
+        return with_network_namespace_forked(target, operation: operation, &) if self.class.fork_for_namespaces?
 
         if Thread.current[NAMESPACE_TAINT_KEY]
           raise NetlinkError.new("thread did not return to the host network namespace earlier; refusing #{operation || "netlink"} on it",
@@ -820,8 +847,8 @@ module Rubernetes
         @fork_for_namespaces = ENV["RUBY_MN_THREADS"] == "1"
       end
 
-      def self.fork_for_namespaces=(value)
-        @fork_for_namespaces = value
+      class << self
+        attr_writer :fork_for_namespaces
       end
 
       def enter_namespace(namespace_fd, operation)
@@ -830,7 +857,7 @@ module Rubernetes
 
         errno = Fiddle.last_error.to_i
         raise NetlinkError.new("setns(CLONE_NEWNET) failed", errno: errno.zero? ? Errno::EPERM::Errno : errno,
-                               operation: operation)
+                                                             operation: operation)
       end
 
       # Fork-based variant: the child enters the namespace, runs the block,
@@ -880,14 +907,12 @@ module Rubernetes
         )
       rescue Fiddle::DLError => error
         raise NetlinkError.new("setns(2) is unavailable: #{error.message}", errno: Errno::ENOSYS::Errno,
-                               operation: "setns")
+                                                                            operation: "setns")
       end
 
       def open_namespace_target(target)
         return [Support.integer(target, "network namespace FD", min: 0), nil] if target.is_a?(Integer)
-        if target.respond_to?(:fileno)
-          return [Support.integer(target.fileno, "network namespace FD", min: 0), nil]
-        end
+        return [Support.integer(target.fileno, "network namespace FD", min: 0), nil] if target.respond_to?(:fileno)
 
         raise ValidationError, "network namespace must be a verified open FD lease"
       end
@@ -919,29 +944,54 @@ module Rubernetes
       rescue NetlinkError
         raise
       rescue StandardError => error
-        raise NetlinkError.new("netlink adapter failed: #{error.message}", operation: request.fetch("operation"), sequence: request.fetch("sequence"))
+        raise NetlinkError.new("netlink adapter failed: #{error.message}", operation: request.fetch("operation"),
+                                                                           sequence: request.fetch("sequence"))
       end
 
       def validate_response!(response, request)
-        raise NetlinkError.new("netlink adapter returned no response", operation: request.fetch("operation"), sequence: request.fetch("sequence")) if response.nil?
+        if response.nil?
+          raise NetlinkError.new("netlink adapter returned no response", operation: request.fetch("operation"),
+                                                                         sequence: request.fetch("sequence"))
+        end
+
         if response.is_a?(Ack)
-          raise NetlinkError.new("netlink ACK sequence mismatch", operation: request.fetch("operation"), sequence: request.fetch("sequence")) unless response.sequence == request.fetch("sequence")
+          unless response.sequence == request.fetch("sequence")
+            raise NetlinkError.new("netlink ACK sequence mismatch", operation: request.fetch("operation"),
+                                                                    sequence: request.fetch("sequence"))
+          end
+
           messages = Array(response.messages)
-          raise NetlinkError.new("netlink adapter returned no ACK message", operation: request.fetch("operation"), sequence: request.fetch("sequence")) if messages.empty?
+          if messages.empty?
+            raise NetlinkError.new("netlink adapter returned no ACK message", operation: request.fetch("operation"),
+                                                                              sequence: request.fetch("sequence"))
+          end
+
           acknowledged = false
           messages.each do |message|
             acknowledged ||= [NLMSG_ERROR, NLMSG_DONE].include?(message.type)
             validate_message!(message.to_h, request)
           end
-          raise NetlinkError.new("netlink response did not contain an ACK", operation: request.fetch("operation"), sequence: request.fetch("sequence")) unless acknowledged
+          unless acknowledged
+            raise NetlinkError.new("netlink response did not contain an ACK", operation: request.fetch("operation"),
+                                                                              sequence: request.fetch("sequence"))
+          end
+
           return
         end
         values = response.is_a?(Array) ? response : [response]
-        raise NetlinkError.new("netlink adapter returned an empty response", operation: request.fetch("operation"), sequence: request.fetch("sequence")) if values.empty?
+        if values.empty?
+          raise NetlinkError.new("netlink adapter returned an empty response", operation: request.fetch("operation"),
+                                                                               sequence: request.fetch("sequence"))
+        end
+
         acknowledged = false
         values.each do |entry|
           hash = entry.respond_to?(:to_h) ? entry.to_h : entry
-          raise NetlinkError.new("netlink adapter returned a non-object response", operation: request.fetch("operation"), sequence: request.fetch("sequence")) unless hash.is_a?(Hash)
+          unless hash.is_a?(Hash)
+            raise NetlinkError.new("netlink adapter returned a non-object response", operation: request.fetch("operation"),
+                                                                                     sequence: request.fetch("sequence"))
+          end
+
           type_value = Support.fetch(hash, "type", default: nil)
           type_number = begin
             Integer(type_value)
@@ -952,7 +1002,10 @@ module Rubernetes
           acknowledged ||= hash.key?("error") || hash.key?(:error) || hash.key?("errno") || hash.key?(:errno)
           validate_message!(hash, request)
         end
-        raise NetlinkError.new("netlink response did not contain an ACK", operation: request.fetch("operation"), sequence: request.fetch("sequence")) unless acknowledged
+        return if acknowledged
+
+        raise NetlinkError.new("netlink response did not contain an ACK", operation: request.fetch("operation"),
+                                                                          sequence: request.fetch("sequence"))
       end
 
       def validate_message!(hash, request)
@@ -960,11 +1013,14 @@ module Rubernetes
         type = type_value.nil? ? nil : Integer(type_value)
         response_sequence = Support.fetch(hash, "sequence", default: nil)
         if response_sequence.nil?
-          raise NetlinkError.new("netlink response has no sequence", operation: request.fetch("operation"), sequence: request.fetch("sequence"))
+          raise NetlinkError.new("netlink response has no sequence", operation: request.fetch("operation"),
+                                                                     sequence: request.fetch("sequence"))
         end
         if Integer(response_sequence) != request.fetch("sequence")
-          raise NetlinkError.new("netlink response sequence mismatch", operation: request.fetch("operation"), sequence: request.fetch("sequence"))
+          raise NetlinkError.new("netlink response sequence mismatch", operation: request.fetch("operation"),
+                                                                       sequence: request.fetch("sequence"))
         end
+
         error_code = Support.fetch(hash, "error", "errno", default: nil)
         if error_code.nil? && type == NLMSG_ERROR
           payload = Support.fetch(hash, "payload", default: "")
@@ -978,7 +1034,8 @@ module Rubernetes
         raise NetlinkError.new("kernel rejected #{request.fetch("operation", "netlink")} with errno #{code.abs}",
                                errno: code.abs, operation: request.fetch("operation"), sequence: request.fetch("sequence"))
       rescue ArgumentError, TypeError => error
-        raise NetlinkError.new("invalid netlink response: #{error.message}", operation: request.fetch("operation"), sequence: request.fetch("sequence"))
+        raise NetlinkError.new("invalid netlink response: #{error.message}", operation: request.fetch("operation"),
+                                                                             sequence: request.fetch("sequence"))
       end
 
       def normalize_ack(response, request)
@@ -1056,7 +1113,7 @@ module Rubernetes
          Support.integer(change, "link change mask", min: 0, max: 0xffff_ffff)].pack("CCS<l<L<L<")
       end
 
-      def ifaddrmsg(family:, prefix:, flags: 0, scope: 0, index:)
+      def ifaddrmsg(family:, prefix:, index:, flags: 0, scope: 0)
         [family, Support.integer(prefix, "address prefix", min: 0, max: 128),
          Support.integer(flags, "address flags", min: 0, max: 0xff),
          Support.integer(scope, "address scope", min: 0, max: 0xff),
@@ -1089,9 +1146,7 @@ module Rubernetes
 
           peer_attrs = [attribute(IFLA_IFNAME, c_string(peer_name))]
           peer_namespace = namespace_fd || namespace
-          if peer_namespace
-            peer_attrs << attribute(IFLA_NET_NS_FD, uint32(namespace_fd_value(peer_namespace), "network namespace FD"))
-          end
+          peer_attrs << attribute(IFLA_NET_NS_FD, uint32(namespace_fd_value(peer_namespace), "network namespace FD")) if peer_namespace
           data << attribute(VETH_INFO_PEER, ifinfomsg(index: 0) + TLV.encode_many(peer_attrs), nested: true)
         elsif kind == "bridge"
           stp = Support.fetch(attributes, "stp", "stp_state", default: nil)
@@ -1126,11 +1181,20 @@ module Rubernetes
           udp_csum = Support.fetch(attributes, "udp_csum", default: nil)
           data << attribute(IFLA_VXLAN_UDP_CSUM, uint8(Support.bool(udp_csum) ? 1 : 0, "VXLAN UDP checksum")) unless udp_csum.nil?
           udp_zero_tx = Support.fetch(attributes, "udp_zero_csum6_tx", default: nil)
-          data << attribute(IFLA_VXLAN_UDP_ZERO_CSUM6_TX, uint8(Support.bool(udp_zero_tx) ? 1 : 0, "VXLAN IPv6 TX checksum")) unless udp_zero_tx.nil?
+          unless udp_zero_tx.nil?
+            data << attribute(IFLA_VXLAN_UDP_ZERO_CSUM6_TX,
+                              uint8(Support.bool(udp_zero_tx) ? 1 : 0, "VXLAN IPv6 TX checksum"))
+          end
           udp_zero_rx = Support.fetch(attributes, "udp_zero_csum6_rx", default: nil)
-          data << attribute(IFLA_VXLAN_UDP_ZERO_CSUM6_RX, uint8(Support.bool(udp_zero_rx) ? 1 : 0, "VXLAN IPv6 RX checksum")) unless udp_zero_rx.nil?
+          unless udp_zero_rx.nil?
+            data << attribute(IFLA_VXLAN_UDP_ZERO_CSUM6_RX,
+                              uint8(Support.bool(udp_zero_rx) ? 1 : 0, "VXLAN IPv6 RX checksum"))
+          end
           collect_metadata = Support.fetch(attributes, "collect_metadata", default: nil)
-          data << attribute(IFLA_VXLAN_COLLECT_METADATA, uint8(Support.bool(collect_metadata) ? 1 : 0, "VXLAN collect metadata")) unless collect_metadata.nil?
+          unless collect_metadata.nil?
+            data << attribute(IFLA_VXLAN_COLLECT_METADATA,
+                              uint8(Support.bool(collect_metadata) ? 1 : 0, "VXLAN collect metadata"))
+          end
         end
         info << attribute(IFLA_INFO_DATA, TLV.encode_many(data), nested: true) unless data.empty?
         attribute(IFLA_LINKINFO, TLV.encode_many(info), nested: true)
@@ -1138,9 +1202,11 @@ module Rubernetes
 
       def encode_link_extra_attributes(attributes)
         values = []
-        values << attribute(IFLA_ADDRESS, mac_binary(Support.fetch(attributes, "address", "mac"))) if Support.fetch(attributes, "address", "mac", default: nil)
+        values << attribute(IFLA_ADDRESS, mac_binary(Support.fetch(attributes, "address", "mac"))) if Support.fetch(attributes, "address",
+                                                                                                                    "mac", default: nil)
         values << attribute(2, mac_binary(Support.fetch(attributes, "broadcast"))) if Support.fetch(attributes, "broadcast", default: nil)
-        values << attribute(13, uint32(Support.fetch(attributes, "txqlen"), "TX queue length")) if Support.fetch(attributes, "txqlen", default: nil)
+        values << attribute(13, uint32(Support.fetch(attributes, "txqlen"), "TX queue length")) if Support.fetch(attributes, "txqlen",
+                                                                                                                 default: nil)
         values
       end
 
@@ -1155,6 +1221,7 @@ module Rubernetes
           attributes = TLV.decode(payload.byteslice(16..))
           entry_name = attributes_string(attributes, IFLA_IFNAME)
           next if entry_name.nil? || entry_name.empty?
+
           link_info_value = attributes.find { |entry| entry.fetch("type") == IFLA_LINKINFO }&.fetch("value")
           link_info = link_info_value ? TLV.decode(link_info_value) : []
           kind = attributes_string(link_info, IFLA_INFO_KIND)
@@ -1174,8 +1241,10 @@ module Rubernetes
           (selected_name && entry["name"] == selected_name) ||
             (selected_index && entry["index"] == selected_index)
         end
-        raise NetlinkError.new("interface #{selected_name || selected_index.inspect} was not found while observing link state",
-                               errno: Errno::ENODEV::Errno, operation: "link_state") unless selected
+        unless selected
+          raise NetlinkError.new("interface #{selected_name || selected_index.inspect} was not found while observing link state",
+                                 errno: Errno::ENODEV::Errno, operation: "link_state")
+        end
 
         masters = entries.to_h { |entry| [entry.fetch("index"), entry.fetch("name")] }
         {
@@ -1252,8 +1321,15 @@ module Rubernetes
         encoded = [attribute(IFA_ADDRESS, ip.hton), attribute(IFA_LOCAL, ip.hton)]
         label = Support.fetch(attributes, "label", default: nil)
         encoded << attribute(IFA_LABEL, c_string(interface_name(label))) if label
-        encoded << attribute(IFA_BROADCAST, Support.ip(Support.fetch(attributes, "broadcast"), name: "address broadcast").hton) if Support.fetch(attributes, "broadcast", default: nil)
-        encoded << attribute(IFA_ANYCAST, Support.ip(Support.fetch(attributes, "anycast"), name: "address anycast").hton) if Support.fetch(attributes, "anycast", default: nil)
+        if Support.fetch(
+          attributes, "broadcast", default: nil
+        )
+          encoded << attribute(IFA_BROADCAST,
+                               Support.ip(Support.fetch(attributes, "broadcast"), name: "address broadcast").hton)
+        end
+        encoded << attribute(IFA_ANYCAST, Support.ip(Support.fetch(attributes, "anycast"), name: "address anycast").hton) if Support.fetch(
+          attributes, "anycast", default: nil
+        )
         encoded << attribute(IFA_FLAGS, uint32(ifa_flags, "address flags")) if Support.fetch(attributes, "ifa_flags", default: nil)
         priority = Support.fetch(attributes, "priority", "ifa_rt_priority", default: nil)
         encoded << attribute(IFA_RT_PRIORITY, uint32(priority, "address priority")) if priority
@@ -1265,10 +1341,9 @@ module Rubernetes
         family ||= network.ipv4? ? "ipv4" : "ipv6"
         normalized_family = Support.family(family)
         raise ValidationError, "route family does not match destination" if (normalized_family == "ipv4") != network.ipv4?
+
         gateway = via && Support.ip(via, name: "route gateway")
-        if gateway && gateway.ipv4? != network.ipv4?
-          raise ValidationError, "route gateway family does not match destination"
-        end
+        raise ValidationError, "route gateway family does not match destination" if gateway && gateway.ipv4? != network.ipv4?
 
         unless kernel_adapter?
           interface_name(dev) if dev
@@ -1301,10 +1376,10 @@ module Rubernetes
         request(type: type, payload: payload, flags: flags, attributes: encoded, operation: operation)
       end
 
-      def neighbor_request(type, destination:, lladdr:, dev:, family:, state:, ndm_flags: 0, operation:, flags:, attributes:)
+      def neighbor_request(type, destination:, lladdr:, dev:, family:, state:, operation:, flags:, attributes:, ndm_flags: 0)
         unless kernel_adapter?
           return legacy_fdb_request(type, mac: lladdr, destination: destination, dev: dev,
-                                     operation: operation, attributes: attributes, flags: flags)
+                                          operation: operation, attributes: attributes, flags: flags)
         end
 
         ip = Support.ip(destination, name: "neighbour destination")
@@ -1363,14 +1438,18 @@ module Rubernetes
       def legacy_link_delete(name:, index:, operation:, attributes:)
         validate_link_reference!(name, index)
         payload = {"ifname" => name, "index" => index}.merge(attributes).compact
-        request(type: RTM_DELLINK, attributes: payload.map { |key, value| {"type" => attribute_id(key), "value" => attribute_value(value)} }, operation: operation)
+        request(type: RTM_DELLINK, attributes: payload.map do |key, value|
+          {"type" => attribute_id(key), "value" => attribute_value(value)}
+        end, operation: operation)
       end
 
       def legacy_link_set(name:, index:, mtu:, up:, master:, namespace:, namespace_fd:, operation:, attributes:)
         validate_link_reference!(name, index)
         payload = {"ifname" => name, "index" => index, "mtu" => mtu, "up" => up, "master" => master,
                    "namespace" => namespace, "namespace_fd" => namespace_fd}.merge(attributes).compact
-        request(type: RTM_SETLINK, attributes: payload.map { |key, value| {"type" => attribute_id(key), "value" => attribute_value(value)} }, operation: operation)
+        request(type: RTM_SETLINK, attributes: payload.map do |key, value|
+          {"type" => attribute_id(key), "value" => attribute_value(value)}
+        end, operation: operation)
       end
 
       def legacy_address_request(type, address:, prefix:, index:, name:, operation:, attributes:, flags:)
@@ -1378,7 +1457,9 @@ module Rubernetes
         ip, inferred_prefix = parse_address(address, prefix)
         payload = {"address" => ip.to_s, "prefix" => inferred_prefix, "index" => index, "name" => name}.merge(attributes).compact
         request(type: type, flags: flags,
-                attributes: payload.map { |key, value| {"type" => attribute_id(key), "value" => attribute_value(value)} }, operation: operation)
+                attributes: payload.map do |key, value|
+                  {"type" => attribute_id(key), "value" => attribute_value(value)}
+                end, operation: operation)
       end
 
       def legacy_fdb_request(type, mac:, destination:, dev:, operation:, attributes:, flags:)
@@ -1397,7 +1478,11 @@ module Rubernetes
           address_text, inferred_text = value.split("/", 2)
           ip = Support.ip(address_text, name: "address")
           inferred = Support.integer(inferred_text, "address prefix", min: 0, max: ip.ipv4? ? 32 : 128)
-          [ip, prefix.nil? ? inferred : Support.integer(prefix, "prefix", min: 0, max: ip.ipv4? ? 32 : 128)]
+          [ip, if prefix.nil?
+                 inferred
+               else
+                 Support.integer(prefix, "prefix", min: 0, max: ip.ipv4? ? 32 : 128)
+               end]
         else
           ip = Support.ip(value, name: "address")
           raise ValidationError, "address prefix is required" if prefix.nil?
@@ -1438,7 +1523,7 @@ module Rubernetes
           "address" => 1, "prefix" => 2, "name" => 3, "namespace" => 7,
           "destination" => 1, "via" => 5, "dev" => 4, "table" => 15,
           "metric" => 6, "family" => 7, "kind" => 18, "mac" => 1
-        }.fetch(key.to_s, 0x4000 + Digest::SHA256.hexdigest(key.to_s)[0, 4].to_i(16) % 0x3fff)
+        }.fetch(key.to_s, 0x4000 + (Digest::SHA256.hexdigest(key.to_s)[0, 4].to_i(16) % 0x3fff))
       end
 
       def attribute_value(value)

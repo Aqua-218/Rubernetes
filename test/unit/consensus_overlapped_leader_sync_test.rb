@@ -42,10 +42,12 @@ class ConsensusOverlappedLeaderSyncTest < Minitest::Test
       assert_equal base, device.fsyncs
       wal.sync
       wal.sync
+
       assert_equal base + 1, device.fsyncs, "one fsync covers the deferred append; a second sync is free"
       in_process = wal.records.map { |record| [record.type, record.payload, record.offset, record.bytes] }
       wal.close
       reopened = C::WAL.new(path).records.map { |record| [record.type, record.payload, record.offset, record.bytes] }
+
       assert_equal reopened, in_process
     end
   end
@@ -59,10 +61,10 @@ class ConsensusOverlappedLeaderSyncTest < Minitest::Test
                     "request_uid" => "r1", "leader_time" => cluster.now})
     leader.flush(cluster.now, defer_sync: true)
 
-    assert leader.local_sync_pending?
+    assert_predicate leader, :local_sync_pending?
     assert_equal committed, leader.commit_index, "a lone leader must not commit what it has not synced"
     assert leader.sync_local!
-    refute leader.local_sync_pending?
+    refute_predicate leader, :local_sync_pending?
     assert_equal committed + 1, leader.commit_index
     refute leader.sync_local!, "nothing left to sync"
   ensure
@@ -78,12 +80,14 @@ class ConsensusOverlappedLeaderSyncTest < Minitest::Test
                     "request_uid" => "r1", "leader_time" => cluster.now})
     leader.flush(cluster.now, defer_sync: true)
     cluster.route(leader.drain)
-    assert leader.local_sync_pending?
+
+    assert_predicate leader, :local_sync_pending?
 
     # The followers' acknowledgements are a quorum without the leader; the
     # first of them to arrive also makes the leader sync before handling it.
     cluster.run(0.2)
-    refute leader.local_sync_pending?
+
+    refute_predicate leader, :local_sync_pending?
     assert_equal committed + 1, leader.commit_index
     cluster.processes.each_value { |process| assert_equal committed + 1, process.node.commit_index }
   ensure

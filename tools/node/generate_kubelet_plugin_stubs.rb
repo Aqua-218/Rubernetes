@@ -66,9 +66,7 @@ module KubeletPluginStubGenerator
         api_root = proto.fetch(:root, API_ROOT)
         source = File.join(source_root, api_root, proto.fetch(:path))
         digest = Digest::SHA256.file(source).hexdigest
-        unless digest == proto.fetch(:sha256)
-          raise "#{proto.fetch(:path)} digest mismatch: expected #{proto.fetch(:sha256)}, got #{digest}"
-        end
+        raise "#{proto.fetch(:path)} digest mismatch: expected #{proto.fetch(:sha256)}, got #{digest}" unless digest == proto.fetch(:sha256)
 
         input_dir = File.join(temporary, proto.fetch(:name))
         FileUtils.mkdir_p(input_dir)
@@ -88,7 +86,7 @@ module KubeletPluginStubGenerator
         service_file = "#{proto.fetch(:name)}_services_pb.rb"
         File.binwrite(File.join(target_dir, message_file), header + File.binread(File.join(generated_dir, message_file)))
         service = File.binread(File.join(generated_dir, service_file))
-                      .sub("require '#{proto.fetch(:name)}_pb'", "require_relative \"#{proto.fetch(:name)}_pb\"")
+          .sub("require '#{proto.fetch(:name)}_pb'", "require_relative \"#{proto.fetch(:name)}_pb\"")
         File.binwrite(File.join(target_dir, service_file), header + service)
       end
     end

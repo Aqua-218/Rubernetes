@@ -30,44 +30,54 @@ class CRDScaleFieldManagerTest < Minitest::Test
 
   def setup_pool
     call("POST", "/api/v1/namespaces", body: {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "team"}})
+
     assert_equal 201, call("POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", body: scaled_crd).status
-    assert wait_until { call("GET", POOLS).status == 200 }
+    assert(wait_until { call("GET", POOLS).status == 200 })
   end
 
   def test_scale_reads_and_writes_the_crd_paths
     setup_pool
     pool = {"apiVersion" => "example.com/v1", "kind" => "Pool", "metadata" => {"name" => "p"}, "spec" => {"count" => 2, "size" => 1}}
+
     assert_equal 201, call("POST", "#{POOLS}?fieldManager=creator", body: pool).status
     call("PATCH", "#{POOLS}/p/status", body: {"status" => {"count" => 1, "selector" => "app=p"}},
                                        headers: {"content-type" => "application/merge-patch+json"})
 
     scale = call("GET", "#{POOLS}/p/scale").body
+
     assert_equal({"replicas" => 2}, scale["spec"])
     assert_equal({"replicas" => 1, "selector" => "app=p"}, scale["status"])
 
     scale["spec"]["replicas"] = 5
     response = call("PUT", "#{POOLS}/p/scale?fieldManager=scaler", body: scale)
+
     assert_equal 200, response.status, response.body.inspect
     stored = call("GET", "#{POOLS}/p").body
+
     assert_equal 5, stored.dig("spec", "count")
     refute stored["spec"].key?("replicas")
     entry = stored.dig("metadata", "managedFields").find { |item| item["manager"] == "scaler" }
+
     assert_equal({"f:spec" => {"f:count" => {}}}, entry["fieldsV1"])
     assert_equal ["example.com/v1", "scale"], entry.values_at("apiVersion", "subresource")
     creator = stored.dig("metadata", "managedFields").find { |item| item["manager"] == "creator" }
+
     refute creator["fieldsV1"]["f:spec"].key?("f:count"), "the scaler took .spec.count from the creator"
   end
 
   def test_a_resource_without_replicas
     setup_pool
     pool = {"apiVersion" => "example.com/v1", "kind" => "Pool", "metadata" => {"name" => "empty"}, "spec" => {"size" => 1}}
+
     assert_equal 201, call("POST", POOLS, body: pool).status
     response = call("GET", "#{POOLS}/empty/scale")
+
     assert_equal 500, response.status
     assert_equal "Internal error occurred: the spec replicas field \".spec.count\" does not exist", response.body["message"]
 
     patched = call("PATCH", "#{POOLS}/empty/scale", body: {"metadata" => {"labels" => {"a" => "b"}}},
                                                     headers: {"content-type" => "application/merge-patch+json"})
+
     assert_equal 400, patched.status
     assert_equal "the spec replicas field \".spec.count\" cannot be empty", patched.body["message"]
   end

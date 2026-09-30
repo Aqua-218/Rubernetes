@@ -21,9 +21,7 @@ module Rubernetes
             @factories[name] = factory
           end
 
-          def factories
-            @factories
-          end
+          attr_reader :factories
 
           def corpus
             @corpus ||= JSON.parse(File.read(CORPUS))

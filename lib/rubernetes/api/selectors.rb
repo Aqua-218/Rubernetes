@@ -6,9 +6,7 @@ module Rubernetes
     class Selector
       class Error < Status::BadRequest
         def initialize(message, field: nil)
-          causes = if field
-                     [{"reason" => "FieldValueInvalid", "message" => message.to_s, "field" => field.to_s}]
-                   end
+          causes = ([{"reason" => "FieldValueInvalid", "message" => message.to_s, "field" => field.to_s}] if field)
           super(message, details: causes && {"causes" => causes})
         end
       end
@@ -55,6 +53,7 @@ module Rubernetes
         # string produced a requirement nothing could ever match.
         return selector if selector.is_a?(self)
         return new if selector.nil? || selector.to_s.strip.empty?
+
         parts = split_requirements(selector.to_s)
         parts = parts.reject(&:empty?) if skip_empty_terms
         new(parts.map { |part| parse_requirement(part) })
@@ -101,8 +100,8 @@ module Rubernetes
         "Event" => {
           "source" => ["source.component", "deprecatedSource.component", "reportingComponent",
                        "reportingController"],
-          "reportingComponent" => ["reportingComponent", "reportingController"],
-          "reportingController" => ["reportingController", "reportingComponent"]
+          "reportingComponent" => %w[reportingComponent reportingController],
+          "reportingController" => %w[reportingController reportingComponent]
         }.merge(
           EVENT_REGARDING_FIELDS.to_h do |field|
             ["regarding.#{field}", ["regarding.#{field}", "involvedObject.#{field}"]]
@@ -159,6 +158,7 @@ module Rubernetes
         value = object
         path.to_s.split(".").each do |part|
           return [zero_value(path), zero_value?(path)] unless value.is_a?(Hash)
+
           key = value.key?(part) ? part : part.to_sym
           return [zero_value(path), zero_value?(path)] unless value.key?(key)
 
@@ -200,6 +200,7 @@ module Rubernetes
             depth += 1 if character == "("
             depth -= 1 if character == ")"
             raise Error, "selector has an unmatched closing parenthesis" if depth.negative?
+
             if character == "," && depth.zero?
               parts << current.strip
               current = +""
@@ -208,16 +209,19 @@ module Rubernetes
             end
           end
           raise Error, "selector has an unmatched opening parenthesis" unless depth.zero?
+
           parts << current.strip unless current.strip.empty?
           parts
         end
 
         def parse_requirement(part)
           raise Error, "selector requirement cannot be empty" if part.empty?
+
           if (match = part.match(/\A(.+?)\s+(notin|in)\s*\(([^)]*)\)\z/i))
             key = validate_key(match[1].strip, part)
             values = match[3].split(",").map(&:strip).reject(&:empty?)
             raise Error, "set selector #{part.inspect} must contain a value" if values.empty?
+
             operator = match[2].downcase == "in" ? :in : :not_in
             return Requirement.new(key: key, operator: operator, values: values)
           end
@@ -240,13 +244,10 @@ module Rubernetes
 
         def validate_key(key, expression)
           raise Error, "selector key cannot be empty" if key.empty?
-          if key.match?(/[=!,()\s]/)
-            raise Error, "selector key #{key.inspect} is invalid in #{expression.inspect}"
-          end
+          raise Error, "selector key #{key.inspect} is invalid in #{expression.inspect}" if key.match?(/[=!,()\s]/)
 
           key
         end
-
       end
     end
 
@@ -275,7 +276,7 @@ module Rubernetes
       end
 
       def self.from_query(query)
-        query = query || {}
+        query ||= {}
         new(label_selector: query["labelSelector"], field_selector: query["fieldSelector"])
       end
 

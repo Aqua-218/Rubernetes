@@ -28,7 +28,7 @@ end
 def kubectl_operation(name, command, expected_exit: 0, &semantic_check)
   result = M1ProbeSupport.run_command(*command)
   exit_matched = result.fetch("exit_status") == expected_exit
-  semantic_passed = exit_matched && semantic_check.call(result.fetch("stdout"), result.fetch("stderr"))
+  semantic_passed = exit_matched && yield(result.fetch("stdout"), result.fetch("stderr"))
   {
     "operation" => name,
     "command" => result.fetch("command"),

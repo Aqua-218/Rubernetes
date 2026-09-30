@@ -48,7 +48,9 @@ module Rubernetes
         members = @authenticator.respond_to?(:authenticators) ? Array(@authenticator.authenticators) : [@authenticator]
         # A cached token authenticator (Authentication::TokenCache) is judged by the one it wraps.
         members = members.map { |member| member.is_a?(Authentication::TokenCache) ? member.inner : member }
-        members.each { |member| member.metrics = registry if member.respond_to?(:metrics=) && !member.class.name.to_s.end_with?("JWTAuthenticator") }
+        members.each do |member|
+          member.metrics = registry if member.respond_to?(:metrics=) && !member.class.name.to_s.end_with?("JWTAuthenticator")
+        end
       end
 
       # Review contract for SubjectAccessReview / SelfSubjectRulesReview and
@@ -90,11 +92,15 @@ module Rubernetes
           # kube-apiserver's WithFailedAuthenticationAudit: a rejected
           # credential is still audited, with no user information.
           attributes = build_attributes(UserInfo.new(name: ""), request, route)
-          failed = @audit_policy ? Audit::Context.new(policy: @audit_policy, backend: @audit_backend, attributes: attributes,
-                                                      request: request.with(request_id: audit_id, attributes: attributes), audit_id: audit_id, clock: @clock) : nil
+          failed = if @audit_policy
+                     Audit::Context.new(policy: @audit_policy, backend: @audit_backend, attributes: attributes,
+                                        request: request.with(request_id: audit_id, attributes: attributes), audit_id: audit_id, clock: @clock)
+                   end
           failed&.annotate("authentication.k8s.io/failed", "true")
           failed&.request_received
-          failed&.response_complete(FailedResponse.new(401, {"kind" => "Status", "status" => "Failure", "reason" => "Unauthorized", "message" => "Unauthorized"}))
+          failed&.response_complete(FailedResponse.new(401,
+                                                       {"kind" => "Status", "status" => "Failure", "reason" => "Unauthorized",
+                                                        "message" => "Unauthorized"}))
           raise error
         end
         record_filter("authentication", authentication_started)
@@ -102,8 +108,10 @@ module Rubernetes
         authorized = request.with(identity: user.to_h, request_id: audit_id, attributes: attributes)
         audit = filtered("audit") do
           traced("security.audit") do
-            context = @audit_policy ? Audit::Context.new(policy: @audit_policy, backend: @audit_backend, attributes: attributes, request: authorized,
-                                                         audit_id: audit_id, clock: @clock) : nil
+            context = if @audit_policy
+                        Audit::Context.new(policy: @audit_policy, backend: @audit_backend, attributes: attributes, request: authorized,
+                                           audit_id: audit_id, clock: @clock)
+                      end
             begin
               context&.request_received
             rescue Audit::RejectedError => error
@@ -121,15 +129,25 @@ module Rubernetes
         begin
           filtered("authorization") { traced("security.authorize") { authorize!(attributes) } }
           audit&.annotate("authorization.k8s.io/decision", "allow")
-          ticket = @flow_control ? filtered("priorityandfairness") { traced("security.flow_control") { flow_control_enter(attributes, request) } } : nil
+          ticket = if @flow_control
+                     filtered("priorityandfairness") do
+                       traced("security.flow_control") do
+                         flow_control_enter(attributes, request)
+                       end
+                     end
+                   end
         rescue Forbidden => error
           audit&.annotate("authorization.k8s.io/decision", "forbid")
           audit&.annotate("authorization.k8s.io/reason", error.message)
-          audit&.response_complete(FailedResponse.new(403, {"kind" => "Status", "status" => "Failure", "reason" => "Forbidden", "message" => error.message}))
+          audit&.response_complete(FailedResponse.new(403,
+                                                      {"kind" => "Status", "status" => "Failure", "reason" => "Forbidden",
+                                                       "message" => error.message}))
           raise
         rescue FlowControl::RejectedError => error
           audit&.annotate("apf.kubernetes.io/rejected", "true")
-          audit&.response_complete(FailedResponse.new(429, {"kind" => "Status", "status" => "Failure", "reason" => "TooManyRequests", "message" => error.message}))
+          audit&.response_complete(FailedResponse.new(429,
+                                                      {"kind" => "Status", "status" => "Failure", "reason" => "TooManyRequests",
+                                                       "message" => error.message}))
           raise
         end
         Entry.new(request: authorized, attributes: attributes, audit: audit, ticket: ticket, started_at: @clock.call)
@@ -137,7 +155,13 @@ module Rubernetes
 
       # The work estimator reads the list options off the request.
       def flow_control_enter(attributes, request)
-        @flow_control.method(:enter).parameters.any? { |kind, name| kind == :key && name == :request } ? @flow_control.enter(attributes, request: request) : @flow_control.enter(attributes)
+        if @flow_control.method(:enter).parameters.any? do |kind, name|
+          kind == :key && name == :request
+        end
+          @flow_control.enter(attributes, request: request)
+        else
+          @flow_control.enter(attributes)
+        end
       end
 
       def exit(entry, response, response_object: nil, request_object: nil, error: nil)
@@ -190,6 +214,7 @@ module Rubernetes
       class Unauthorized < Security::Error; end
       class BadRequest < Security::Error; end
       class AuditRejected < Security::Error; end
+
       class Forbidden < Security::Error
         attr_reader :decision, :user, :attributes, :status_error
 
@@ -220,10 +245,14 @@ module Rubernetes
         impersonated = attributes.with(user: result.user)
         [impersonated, Impersonation.strip_headers(request).with(identity: result.user.to_h, attributes: impersonated)]
       rescue Impersonation::BadRequest => error
-        audit&.response_complete(FailedResponse.new(400, {"kind" => "Status", "status" => "Failure", "reason" => "BadRequest", "message" => error.message}))
+        audit&.response_complete(FailedResponse.new(400,
+                                                    {"kind" => "Status", "status" => "Failure", "reason" => "BadRequest",
+                                                     "message" => error.message}))
         raise BadRequest, error.message
       rescue Impersonation::Forbidden => error
-        audit&.response_complete(FailedResponse.new(403, {"kind" => "Status", "status" => "Failure", "reason" => "Forbidden", "message" => error.message}))
+        audit&.response_complete(FailedResponse.new(403,
+                                                    {"kind" => "Status", "status" => "Failure", "reason" => "Forbidden",
+                                                     "message" => error.message}))
         raise Forbidden.new(error.message, user: attributes.user, attributes: error.attributes, status_error: error)
       end
 
@@ -312,7 +341,10 @@ module Rubernetes
           record_auth("authorization", result, started)
           record_authorization_decision(decision)
         end
-        raise Forbidden.new(decision.reason || "forbidden", decision: decision, user: attributes.user, attributes: attributes) unless decision.allowed?
+        unless decision.allowed?
+          raise Forbidden.new(decision.reason || "forbidden", decision: decision, user: attributes.user,
+                                                              attributes: attributes)
+        end
 
         # AuthorizePodWebsocketUpgradeCreatePermission (Beta, on): exec,
         # attach and port-forward over a WebSocket arrive as GET, and still
@@ -334,7 +366,8 @@ module Rubernetes
         if route.respond_to?(:resource_route?) && route.resource_route? && route.resource
           resource = route.resource
           watch = %w[true 1].include?(request.query_value("watch").to_s) if request.respond_to?(:query_value)
-          verb = Authorization::Attributes.verb_for(method: request.method, collection: route.collection, watch: watch == true, name_present: !route.name.to_s.empty?)
+          verb = Authorization::Attributes.verb_for(method: request.method, collection: route.collection, watch: watch == true,
+                                                    name_present: !route.name.to_s.empty?)
           Authorization::Attributes.new(user: user, verb: verb, path: request.path,
                                         namespace: route.namespace, api_group: resource.respond_to?(:group) ? resource.group : route.group,
                                         api_version: resource.respond_to?(:version) ? resource.version : route.version,
@@ -357,7 +390,8 @@ module Rubernetes
                                         field_selector: request.respond_to?(:query_value) ? request.query_value("fieldSelector") : nil,
                                         label_selector: request.respond_to?(:query_value) ? request.query_value("labelSelector") : nil)
         else
-          Authorization::Attributes.new(user: user, verb: Authorization::Attributes.non_resource_verb(request.method), path: request.path, resource_request: false)
+          Authorization::Attributes.new(user: user, verb: Authorization::Attributes.non_resource_verb(request.method), path: request.path,
+                                        resource_request: false)
         end
       end
 
@@ -416,11 +450,13 @@ module Rubernetes
         segments = path.split("/").reject(&:empty?)
         if segments.first == "api"
           return nil if segments.length < 3
+
           group = ""
           version = segments[1]
           rest = segments[2..]
         elsif segments.first == "apis"
           return nil if segments.length < 4
+
           group = segments[1]
           version = segments[2]
           rest = segments[3..]
@@ -430,10 +466,13 @@ module Rubernetes
         namespace = nil
         if rest.first == "namespaces"
           return nil if rest.length < 3
+
           namespace = rest[1]
           rest = rest[2..]
         end
-        resource, name, subresource = rest[0], rest[1], rest[2]
+        resource = rest[0]
+        name = rest[1]
+        subresource = rest[2]
         return nil if resource.nil?
 
         watch = request.respond_to?(:query_value) && %w[true 1].include?(request.query_value("watch").to_s)

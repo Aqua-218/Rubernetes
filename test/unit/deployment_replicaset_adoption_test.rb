@@ -53,6 +53,7 @@ class DeploymentReplicaSetAdoptionTest < Minitest::Test
 
     refute_nil adoption, "the orphan must be claimed"
     reference = Support.owner_references(adoption.object).last
+
     assert_equal "Deployment", Support.ref_value(reference, "kind", nil)
     assert_equal "uid-deployment", Support.ref_value(reference, "uid", nil)
     assert_equal true, Support.ref_value(reference, "controller", false)
@@ -80,7 +81,7 @@ class DeploymentReplicaSetAdoptionTest < Minitest::Test
       operation.action == :update && Support.name(operation.object) == "web-controller"
     end)
     assert_equal "1", result.creates.first.object.dig("metadata", "annotations",
-                                                     "deployment.kubernetes.io/revision")
+                                                      "deployment.kubernetes.io/revision")
   end
 
   def test_a_deployment_being_deleted_adopts_nothing

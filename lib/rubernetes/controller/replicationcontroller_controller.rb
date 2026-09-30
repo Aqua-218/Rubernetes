@@ -22,7 +22,6 @@ module Rubernetes
 
       include SecondarySupport
 
-
       # PodControllerRefManager canAdoptFunc / RecheckDeletionTimestamp: a
       # controller adopts only after a fresh read shows the same object, not
       # being deleted.  Adopting from the informer cache re-owned the Pods an
@@ -64,7 +63,9 @@ module Rubernetes
         released.each do |pod|
           candidate = Support.deep_copy(pod)
           candidate["metadata"] ||= {}
-          candidate["metadata"]["ownerReferences"] = Support.owner_references(pod).map { |reference| Support.deep_copy(reference) }.reject do |reference|
+          candidate["metadata"]["ownerReferences"] = Support.owner_references(pod).map do |reference|
+            Support.deep_copy(reference)
+          end.reject do |reference|
             Support.value(reference, "uid", nil).to_s == Support.uid(replication_controller).to_s
           end
           update = operation_update(pod, candidate, descriptor: POD, reason: "replicationcontroller pod release")
@@ -126,10 +127,14 @@ module Rubernetes
         generation.zero? ? status.delete("observedGeneration") : status["observedGeneration"] = generation
         apply_replica_failure_condition(status, replication_controller, alive.length - desired)
         events = []
-        events << {"type" => "Normal", "reason" => "SuccessfulCreate",
-                   "message" => "ReplicationController #{Support.name(replication_controller)} created Pods"} if operations.any?(&:create?)
-        events << {"type" => "Normal", "reason" => "SuccessfulDelete",
-                   "message" => "ReplicationController #{Support.name(replication_controller)} deleted excess Pods"} if operations.any?(&:delete?)
+        if operations.any?(&:create?)
+          events << {"type" => "Normal", "reason" => "SuccessfulCreate",
+                     "message" => "ReplicationController #{Support.name(replication_controller)} created Pods"}
+        end
+        if operations.any?(&:delete?)
+          events << {"type" => "Normal", "reason" => "SuccessfulDelete",
+                     "message" => "ReplicationController #{Support.name(replication_controller)} deleted excess Pods"}
+        end
         observed = result_for(replication_controller, operations, status: status, events: events, status_first: true)
         settle_status_after_changes(replication_controller, observed, operations, status, alive, selector)
       end
@@ -155,7 +160,7 @@ module Rubernetes
         fully_labeled.zero? ? settled.delete("fullyLabeledReplicas") : settled["fullyLabeledReplicas"] = fully_labeled
         apply_replica_failure_condition(settled, replication_controller, settled["replicas"] - replica_count(replication_controller))
         final = operation_status(replication_controller, settled, descriptor: REPLICATION_CONTROLLER,
-                                                                 reason: "controller status after replica changes", force: true)
+                                                                  reason: "controller status after replica changes", force: true)
         batches = Array(observed.batches) + [[final]]
         ReconcileResult.new(operations: observed.operations + [final], batches: batches, status: settled,
                             events: observed.events, controller: observed.controller, key: observed.key)
@@ -175,10 +180,10 @@ module Rubernetes
                        []
                      else
                        Array(pods).select { |pod| owner_matches?(replication_controller, pod, controller: true) }
-                                .map { |pod| operation_delete(pod, descriptor: POD, reason: "replicationcontroller deletion") }
+                         .map { |pod| operation_delete(pod, descriptor: POD, reason: "replicationcontroller deletion") }
                      end
         operations << operation_delete(replication_controller, descriptor: REPLICATION_CONTROLLER,
-                                       reason: "replicationcontroller deletion")
+                                                               reason: "replicationcontroller deletion")
         ReconcileResult.new(operations: operations, controller: name,
                             key: object_key_for(replication_controller))
       end
@@ -295,7 +300,7 @@ module Rubernetes
           spec = {} unless spec.is_a?(Hash)
           pod = {"apiVersion" => "v1", "kind" => "Pod", "metadata" => metadata, "spec" => spec}
           operations << operation_create(pod, owner: owner, descriptor: POD,
-                                          reason: "replicationcontroller scale up")
+                                              reason: "replicationcontroller scale up")
           names << name
         end
         operations

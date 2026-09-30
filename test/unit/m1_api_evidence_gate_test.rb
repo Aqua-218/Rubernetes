@@ -55,6 +55,7 @@ class M1ApiEvidenceGateTest < Minitest::Test
     stream = M1Gate.send(:expected_api_request_stream, operations)
 
     expected_length = (M1Gate::API_SURFACE_ENDPOINT_COUNT + 1 + 2 + M1Gate::REQUIRED_API_OPERATION_INVENTORY.length) * 2
+
     assert_equal(172, expected_length)
     assert_equal(expected_length, stream.length)
     assert_equal((0...expected_length).to_a, stream.map { |entry| entry.fetch("sequence") })
@@ -64,6 +65,7 @@ class M1ApiEvidenceGateTest < Minitest::Test
         entry.dig("request", "query", "sendInitialEvents").nil? &&
         entry.dig("request", "query").key?("resourceVersion")
     end
+
     assert_equal(%w[17 29], watch.map { |entry| entry.dig("request", "query", "resourceVersion") })
     assert(watch.all? { |entry| entry.fetch("request_sha256") == M1Gate.canonical_document_digest(entry.fetch("request")) })
   end
@@ -71,6 +73,7 @@ class M1ApiEvidenceGateTest < Minitest::Test
   def test_surface_expected_fields_are_recomputed_from_pinned_discovery
     errors = []
     pinned = M1Gate.send(:pinned_surface_expectations, errors)
+
     assert_empty(errors)
     assert_equal(153, pinned.fetch("gvr").length)
     assert_equal(194, pinned.fetch("gvk").length)
@@ -96,6 +99,7 @@ class M1ApiEvidenceGateTest < Minitest::Test
       :validate_surface_matrix, [entry], [id], valid_errors, "GVR",
       require_applicability: false, pinned_expected_by_id: {id => expected}
     )
+
     assert_empty(valid_errors)
 
     forged = JSON.parse(JSON.generate(entry))
@@ -109,6 +113,7 @@ class M1ApiEvidenceGateTest < Minitest::Test
       :validate_surface_matrix, [forged], [id], hostile_errors, "GVR",
       require_applicability: false, pinned_expected_by_id: {id => expected}
     )
+
     assert(hostile_errors.any? { |error| error.include?("expected fields differ from pinned discovery") })
   end
 
@@ -118,11 +123,13 @@ class M1ApiEvidenceGateTest < Minitest::Test
     known_group_version = server.call(
       method: "GET", path: "/apis/admissionregistration.k8s.io/v1alpha1"
     )
+
     assert_equal(404, known_group_version.status)
     assert_equal("application/json", known_group_version.headers.fetch("content-type"))
     assert_equal(M1Gate::DISCOVERY_STATUS_NOT_FOUND_BODY, known_group_version.body)
 
     absent_group = server.call(method: "GET", path: "/apis/internal.apiserver.k8s.io/v1alpha1")
+
     assert_equal(404, absent_group.status)
     assert_equal("text/plain; charset=utf-8", absent_group.headers.fetch("content-type"))
     assert_equal("nosniff", absent_group.headers.fetch("x-content-type-options"))
@@ -158,6 +165,7 @@ class M1ApiEvidenceGateTest < Minitest::Test
       report = M1ProbeSupport.probe_report("m1_test_probe", root: directory) do
         File.binwrite(path, "bravo")
         File.utime(before.atime, before.mtime, path)
+
         assert_equal(original_bytes, File.size(path))
         assert_equal(before.mtime, File.stat(path).mtime)
         {"passed" => true}
@@ -168,6 +176,7 @@ class M1ApiEvidenceGateTest < Minitest::Test
       assert(report.fetch("errors").any? { |error| error.include?("source input changed during probe execution") })
       start_entry = report.dig("input_capture", "start", "entries").first
       finish_entry = report.dig("input_capture", "finish", "entries").first
+
       assert_equal(start_entry.fetch("bytes"), finish_entry.fetch("bytes"))
       refute_equal(start_entry.fetch("sha256"), finish_entry.fetch("sha256"))
     end

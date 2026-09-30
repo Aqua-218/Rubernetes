@@ -86,8 +86,10 @@ module Rubernetes
           @intents[key] = @clock.call
           @intents.shift while @intents.length > MEMORY_INTENTS_CAPACITY
         end
+        return unless @directory
+
         write_json(File.join(@directory, "pulling", "#{digest_name(key)}.json"),
-                   {"kind" => "ImagePullIntent", "apiVersion" => "kubelet.config.k8s.io/v1alpha1", "image" => key}) if @directory
+                   {"kind" => "ImagePullIntent", "apiVersion" => "kubelet.config.k8s.io/v1alpha1", "image" => key})
       end
 
       def clear_intent(image)
@@ -282,7 +284,11 @@ module Rubernetes
           image_ref = document["imageRef"].to_s
           next if image_ref.empty?
 
-          updated = Time.parse(document["lastUpdatedTime"].to_s) rescue @clock.call
+          updated = begin
+            Time.parse(document["lastUpdatedTime"].to_s)
+          rescue StandardError
+            @clock.call
+          end
           mapping = (document["credentialMapping"] || {}).to_h do |repository, entry|
             [repository, Credentials.new(node_accessible: entry["nodePodsAccessible"] == true,
                                          secrets: Array(entry["kubernetesSecrets"]).map { |secret| secret.transform_keys(&:to_sym) },
@@ -311,7 +317,14 @@ module Rubernetes
         return [existing, false] if incoming.empty? || existing.node_accessible
         return [Credentials.node, true] if incoming.node_accessible
 
-        if !incoming.secrets.empty?
+        if incoming.secrets.empty?
+          accounts = (existing.service_accounts | incoming.service_accounts).sort_by do |account|
+            account.values_at(:namespace, :name, :uid)
+          end
+          return [existing, false] if accounts == existing.service_accounts
+
+          [Credentials.new(node_accessible: false, secrets: existing.secrets, service_accounts: accounts), true]
+        else
           secrets = existing.secrets.to_h { |secret| [secret.values_at(:uid, :namespace, :name), secret[:hash]] }
           changed = false
           incoming.secrets.each do |secret|
@@ -324,13 +337,8 @@ module Rubernetes
           return [existing, false] unless changed
 
           list = secrets.map { |(uid, namespace, name), hash| {uid: uid, namespace: namespace, name: name, hash: hash} }
-                        .sort_by { |secret| secret.values_at(:namespace, :name, :uid) }
+            .sort_by { |secret| secret.values_at(:namespace, :name, :uid) }
           [Credentials.new(node_accessible: false, secrets: list, service_accounts: existing.service_accounts), true]
-        else
-          accounts = (existing.service_accounts | incoming.service_accounts).sort_by { |account| account.values_at(:namespace, :name, :uid) }
-          return [existing, false] if accounts == existing.service_accounts
-
-          [Credentials.new(node_accessible: false, secrets: existing.secrets, service_accounts: accounts), true]
         end
       end
     end

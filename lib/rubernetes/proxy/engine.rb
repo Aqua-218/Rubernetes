@@ -3,7 +3,6 @@
 require "ipaddr"
 require "json"
 require "socket"
-require "thread"
 require "time"
 require_relative "metrics"
 require "timeout"
@@ -84,8 +83,8 @@ module Rubernetes
     end
 
     class ExternalNameRoute < Route
-      def initialize(service:, packet:, **options)
-        super(service: service, rule: nil, packet: packet, kind: "ExternalName", **options)
+      def initialize(service:, packet:, **)
+        super(service: service, rule: nil, packet: packet, kind: "ExternalName", **)
       end
 
       def hostname
@@ -96,7 +95,7 @@ module Rubernetes
     HealthCheckResult = Struct.new(:service_key, :node_name, :node_port, :healthy,
                                    :status, :endpoints, :checked_at, keyword_init: true) do
       def initialize(**attributes)
-        super(**attributes)
+        super
         freeze
       end
 
@@ -225,7 +224,11 @@ module Rubernetes
         rescue SystemCallError
           break if @mutex.synchronize { @closed }
         ensure
-          client&.close rescue nil
+          begin
+            client&.close
+          rescue StandardError
+            nil
+          end
         end
       end
 
@@ -240,7 +243,7 @@ module Rubernetes
 
             bytes += line.bytesize
             raise IOError, "health request headers exceed limit" if bytes > MAX_HEADER_BYTES
-            break if line == "\r\n" || line == "\n"
+            break if ["\r\n", "\n"].include?(line)
           end
         end
         method, path, = request_line.to_s.split(" ", 3)
@@ -270,7 +273,9 @@ module Rubernetes
 
       def close_listeners(listeners)
         listeners.each do |listener|
-          listener.fetch(:server).close rescue nil
+          listener.fetch(:server).close
+        rescue StandardError
+          nil
         end
         listeners.each do |listener|
           thread = listener[:thread]
@@ -285,13 +290,15 @@ module Rubernetes
     class WatchSubscription
       DEFAULT_BACKOFF = 0.005
       MAX_BACKOFF = 30.0
-      CallbackError = Class.new(StandardError)
+      class CallbackError < StandardError
+      end
 
       attr_reader :thread
 
       def initialize(source:, callback:, resync: nil, key_extractor: nil, options: {},
                      min_backoff: DEFAULT_BACKOFF, max_backoff: MAX_BACKOFF, error_handler: nil)
         raise ArgumentError, "watch source is required" unless source
+
         # Every watch failure is reported here as it happens (kube-proxy logs
         # them); last_error alone leaves a dead subscription invisible.
         @error_handler = error_handler
@@ -308,6 +315,7 @@ module Rubernetes
         @max_backoff = Float(max_backoff)
         raise ArgumentError, "max_backoff must be at least min_backoff" if @max_backoff < @min_backoff
         raise ArgumentError, "max_backoff must be finite" unless @max_backoff.finite?
+
         @mutex = Mutex.new
         @condition = ConditionVariable.new
         @closed = false
@@ -340,9 +348,7 @@ module Rubernetes
         end
         closed_stream = close_resource(handle)
         closed_stream ||= close_resource(stream) unless stream.equal?(handle)
-        unless closed_stream || @source.equal?(stream) || @source.equal?(handle)
-          close_resource(@source)
-        end
+        close_resource(@source) unless closed_stream || @source.equal?(stream) || @source.equal?(handle)
         thread.join if thread && thread != Thread.current
         self
       end
@@ -441,6 +447,7 @@ module Rubernetes
         elsif stream.respond_to?(:next)
           loop do
             break if closed?
+
             event = stream.next
             break if event.nil?
 
@@ -595,10 +602,8 @@ module Rubernetes
     # updates, compiles only changed rules, publishes a backend-neutral diff,
     # and routes packets with deterministic conntrack selection.
     class Proxy
-      attr_reader :endpoint_store, :compiler, :rule_set, :conntrack,
-                  :node_port_allocator, :local_node, :backend, :clock,
-                  :last_compilation, :node_zone, :health_check_responder,
-                  :connection_probe, :connection_tracker, :node_addresses
+      attr_reader :endpoint_store, :compiler, :rule_set, :conntrack, :node_port_allocator, :local_node, :backend, :clock,
+                  :last_compilation, :node_zone, :health_check_responder, :connection_probe, :connection_tracker, :node_addresses, :publish_coalescing_seconds, :last_publish_error
 
       # Optional callable told about every watch event the proxy applied:
       # kind, type, key and what the Service compiles to afterwards.  A
@@ -617,7 +622,11 @@ module Rubernetes
         return unless @backend.respond_to?(:metrics=)
 
         @backend.metrics = observer
-        observer.nfacct_counters = -> { @backend.nfacct_counters } if observer.respond_to?(:nfacct_counters=) && @backend.respond_to?(:nfacct_counters)
+        return unless observer.respond_to?(:nfacct_counters=) && @backend.respond_to?(:nfacct_counters)
+
+        observer.nfacct_counters = lambda {
+          @backend.nfacct_counters
+        }
       end
 
       def initialize(local_node: nil, node_name: nil, node: nil, node_addresses: [], node_ips: nil,
@@ -636,7 +645,7 @@ module Rubernetes
         @endpoint_store = endpoint_store || EndpointStore.new(clock: clock)
         @service_store = service_store
         @compiler = compiler || RuleCompiler.new(local_node: @local_node, node_addresses: @node_addresses,
-                                                  node_zone: @node_zone)
+                                                 node_zone: @node_zone)
         @conntrack = conntrack || ConntrackTable.new(clock: -> { monotonic_now })
         @node_port_allocator = node_port_allocator || allocator || NodePortAllocator.new
         @rule_set = RuleSet.new
@@ -653,9 +662,9 @@ module Rubernetes
         @connection_probe = connection_probe
         @connection_tracker = connection_tracker
         @backend = build_backend(backend, ebpf: ebpf, nftables: nftables,
-                                  capability_probe: capability_probe, node_status: node_status,
-                                  connection_probe: @connection_probe,
-                                  connection_tracker: @connection_tracker || @conntrack)
+                                          capability_probe: capability_probe, node_status: node_status,
+                                          connection_probe: @connection_probe,
+                                          connection_tracker: @connection_tracker || @conntrack)
         subscribe_store(@endpoint_store)
         subscribe_store(@service_store) if @service_store && !@service_store.equal?(@endpoint_store)
         attach_backend if attach
@@ -797,14 +806,18 @@ module Rubernetes
                 source_ip: nil, source_port: nil, destination_ip: nil,
                 destination_port: nil, protocol: nil, node_name: nil, zone: nil,
                 external: nil, connection_id: nil, **metadata)
-        packet = value.is_a?(Packet) ? value : Packet.new(value || {}, source_ip: source_ip,
-                                                           source_port: source_port,
-                                                           destination_ip: destination_ip,
-                                                           destination_port: destination_port,
-                                                           protocol: protocol, node_name: node_name,
-                                                           zone: zone, external: external,
-                                                           connection_id: connection_id,
-                                                           metadata: metadata)
+        packet = if value.is_a?(Packet)
+                   value
+                 else
+                   Packet.new(value || {}, source_ip: source_ip,
+                                           source_port: source_port,
+                                           destination_ip: destination_ip,
+                                           destination_port: destination_port,
+                                           protocol: protocol, node_name: node_name,
+                                           zone: zone, external: external,
+                                           connection_id: connection_id,
+                                           metadata: metadata)
+                 end
         normalized_service = service && (service.is_a?(Service) ? service : self.service(service, namespace: namespace))
         if normalized_service&.external_name?
           return ExternalNameRoute.new(service: normalized_service, packet: packet, external: true,
@@ -827,17 +840,19 @@ module Rubernetes
 
         candidate_endpoints = eligible_endpoints(rule, service_object, packet)
         return nil if candidate_endpoints.empty?
+
         healthy_endpoints = candidate_endpoints.select(&:healthy?)
         selectable_endpoints = if healthy_endpoints.empty?
-                                if service_object.publish_not_ready_addresses
-                                  candidate_endpoints
-                                else
-                                  candidate_endpoints.select { |endpoint| endpoint.eligible?(allow_terminating: true) }
-                                end
-                              else
-                                candidate_endpoints
-                              end
+                                 if service_object.publish_not_ready_addresses
+                                   candidate_endpoints
+                                 else
+                                   candidate_endpoints.select { |endpoint| endpoint.eligible?(allow_terminating: true) }
+                                 end
+                               else
+                                 candidate_endpoints
+                               end
         return nil if selectable_endpoints.empty?
+
         selector = lambda do |all_candidates|
           preferred = healthy_endpoints & all_candidates
           hasher.select(packet_hash_key(packet), preferred.empty? ? all_candidates : preferred)
@@ -875,13 +890,14 @@ module Rubernetes
       alias dispatch route
       alias route_packet route
 
-      def route!(value = nil, **options)
-        route(value, **options) || raise(NoRoute, "no healthy endpoint matched packet")
+      def route!(value = nil, **)
+        route(value, **) || raise(NoRoute, "no healthy endpoint matched packet")
       end
 
       def health_check(service: nil, namespace: nil, node: @local_node, port: nil, now: @clock.call)
         service_object = service.is_a?(Service) ? service : self.service(service, namespace: namespace)
         raise NoRoute, "service is required for health check" unless service_object
+
         endpoint_set = @endpoint_store.endpoints_for(service_object.key).select { |endpoint| endpoint.local_to?(node) }
         endpoint_set = endpoint_set.select(&:healthy?)
         selected_port = service_object.health_check_node_port || port
@@ -909,30 +925,34 @@ module Rubernetes
       end
 
       def backend_status
-        @backend.respond_to?(:status) ? @backend.status : BackendStatus.new(backend: backend_name, state: "ready", reason: "selected", checked_at: @clock.call)
+        if @backend.respond_to?(:status)
+          @backend.status
+        else
+          BackendStatus.new(backend: backend_name, state: "ready", reason: "selected",
+                            checked_at: @clock.call)
+        end
       end
 
       def backend_rules
         @backend.respond_to?(:rules) ? @backend.rules : rules
       end
 
-      def attach_backend(**options)
-        @backend.attach(**options)
+      def attach_backend(**)
+        @backend.attach(**)
       end
 
       # Detach, counting a failure as a cleanup failure
       # (kubeproxy_sync_proxy_rules_nftables_cleanup_failures_total).
-      def detach_backend(**options)
-        @backend.detach(**options)
+      def detach_backend(**)
+        @backend.detach(**)
       rescue StandardError
         @metrics&.cleanup_failed
         raise
       end
 
       def switch_backend(target = nil, reason: "manual switch")
-        unless @backend.respond_to?(:switch!)
-          raise BackendError, "backend does not support automatic switching"
-        end
+        raise BackendError, "backend does not support automatic switching" unless @backend.respond_to?(:switch!)
+
         measurement = @backend.switch!(target: target, reason: reason)
         @connection_measurements_mutex.synchronize { @connection_measurements << measurement }
         measurement
@@ -944,14 +964,10 @@ module Rubernetes
 
       alias failover switch_backend
 
-      def start_watch(service_source: nil, endpoint_slice_source: nil, **options)
+      def start_watch(service_source: nil, endpoint_slice_source: nil, **)
         subscriptions = []
-        if service_source&.respond_to?(:watch)
-          subscriptions << watch_source(service_source, kind: :service, **options)
-        end
-        if endpoint_slice_source&.respond_to?(:watch)
-          subscriptions << watch_source(endpoint_slice_source, kind: :endpoint_slice, **options)
-        end
+        subscriptions << watch_source(service_source, kind: :service, **) if service_source&.respond_to?(:watch)
+        subscriptions << watch_source(endpoint_slice_source, kind: :endpoint_slice, **) if endpoint_slice_source&.respond_to?(:watch)
         @subscriptions.concat(subscriptions.compact)
         subscriptions
       end
@@ -1007,7 +1023,8 @@ module Rubernetes
         @endpoint_store_subscribed = true if store.equal?(@endpoint_store)
         @service_store_subscribed = true if store.equal?(@service_store)
         @subscriptions << store.subscribe do |event|
-          next if event.kind == :service_deleted || event.kind == :endpoint_slice_deleted
+          next if %i[service_deleted endpoint_slice_deleted].include?(event.kind)
+
           case event.kind
           when :service
             compile_service(event.object)
@@ -1023,7 +1040,7 @@ module Rubernetes
         return unless service
 
         compiled = @compiler.compile(service, endpoints: @endpoint_store.endpoints_for(service.key),
-                                     revision: @endpoint_store.revision, compiled_at: @clock.call)
+                                              revision: @endpoint_store.revision, compiled_at: @clock.call)
         @mutex.synchronize { @compiled[service.key] = compiled }
         schedule_publish
         @last_compilation = compiled
@@ -1040,8 +1057,6 @@ module Rubernetes
       # burst, by a publisher thread; nil (the default, and what the unit
       # tests use) publishes synchronously.
       public
-
-      attr_reader :publish_coalescing_seconds, :last_publish_error
 
       def publish_coalescing_seconds=(seconds)
         @publish_coalescing_seconds = seconds.nil? ? nil : Float(seconds)
@@ -1065,7 +1080,11 @@ module Rubernetes
 
       # Publish anything still pending, now.  Tests and shutdown use it.
       def flush_publish!
-        pending = @coalesce_mutex&.synchronize { was = @publish_pending; @publish_pending = false; was }
+        pending = @coalesce_mutex&.synchronize do
+          was = @publish_pending
+          @publish_pending = false
+          was
+        end
         publish_rules if pending
         @publisher&.join(1) unless Thread.current.equal?(@publisher)
         nil
@@ -1211,18 +1230,18 @@ module Rubernetes
       end
 
       def matching_rules(packet, service: nil)
-        candidates = @rule_set.snapshot.select do |rule|
+        @rule_set.snapshot.select do |rule|
           next false unless rule.protocol == packet.protocol
           next false if rule.health_check && packet.destination_port != rule.node_port
           next false unless rule.health_check || packet.destination_port == rule.port || packet.destination_port == rule.node_port
           next false if service && rule.service_key != service.key
+
           if rule.virtual_ip
             rule.virtual_ip == packet.destination_ip
           else
             node_port_destination?(packet)
           end
         end
-        candidates
       end
 
       def choose_rule(candidates, packet)
@@ -1246,9 +1265,7 @@ module Rubernetes
         end
         external = external_flow?(packet, rule)
         policy = external ? service.external_traffic_policy : service.internal_traffic_policy
-        if policy == "Local"
-          endpoints = endpoints.select { |endpoint| endpoint.local_to?(@local_node || packet.node_name) }
-        end
+        endpoints = endpoints.select { |endpoint| endpoint.local_to?(@local_node || packet.node_name) } if policy == "Local"
         endpoints = if service.publish_not_ready_addresses
                       non_terminating = endpoints.reject(&:terminating?)
                       non_terminating.empty? ? endpoints.select { |endpoint| endpoint.terminating? && endpoint.serving? } : non_terminating
@@ -1367,7 +1384,7 @@ module Rubernetes
           source: source,
           callback: callback,
           key_extractor: ->(event) { watch_key_for(event, kind) },
-          resync: ->(resource_version, known_keys) {
+          resync: lambda { |resource_version, known_keys|
             resync_watch_source(source, kind: kind, resource_version: resource_version, known_keys: known_keys)
           },
           options: watch_options,
@@ -1383,7 +1400,8 @@ module Rubernetes
         service_key = if kind == :service
                         key
                       else
-                        labels = ModelSupport.key(ModelSupport.key(ModelSupport.string_keys(object || {}), "metadata", {}), "labels", {}) || {}
+                        labels = ModelSupport.key(ModelSupport.key(ModelSupport.string_keys(object || {}), "metadata", {}), "labels",
+                                                  {}) || {}
                         owner = ModelSupport.key(labels, "kubernetes.io/service-name", "").to_s
                         owner.empty? ? nil : "#{key.to_s.split("/").first}/#{owner}"
                       end
@@ -1465,6 +1483,7 @@ module Rubernetes
         if kind == :endpoint_slice && snapshot.respond_to?(:endpoint_slices)
           return [Array(snapshot.endpoint_slices), snapshot.respond_to?(:revision) ? snapshot.revision : nil]
         end
+
         if snapshot.respond_to?(:items)
           version = snapshot.respond_to?(:resource_version) ? snapshot.resource_version : nil
           return [Array(snapshot.items), version]
@@ -1518,12 +1537,12 @@ module Rubernetes
         # watch resync never removed the slices that had gone while the watch
         # was down, and the error repeated on every resync.
         delete_endpoint_slice({
-          "metadata" => {
-            "name" => name,
-            "namespace" => namespace,
-            "labels" => {"kubernetes.io/service-name" => service_name}
-          }
-        })
+                                "metadata" => {
+                                  "name" => name,
+                                  "namespace" => namespace,
+                                  "labels" => {"kubernetes.io/service-name" => service_name}
+                                }
+                              })
       end
 
       def monotonic_now

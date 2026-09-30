@@ -123,7 +123,7 @@ module Rubernetes
         a.jump(Assembler::BPF_JNE, destination: 0, immediate: 0, label: :pass)
 
         @rules.each_with_index do |rule, index|
-          next_label = "policy_rule_next_#{index}".to_sym
+          next_label = :"policy_rule_next_#{index}"
           emit_rule_match(a, rule, next_label)
           a.ja(:new_flow_allowed)
           a.label(next_label)
@@ -134,7 +134,7 @@ module Rubernetes
           {"direction" => rule["direction"], "target" => rule["target"], "family" => rule["family"]}
         end).uniq { |entry| entry.values_at("direction", "target", "family") }
         targets.each_with_index do |target, index|
-          next_label = "policy_target_next_#{index}".to_sym
+          next_label = :"policy_target_next_#{index}"
           emit_target_match(a, target, next_label)
           a.ja(:drop)
           a.label(next_label)
@@ -269,7 +269,7 @@ module Rubernetes
       POLICY_FEATURE_MATRIX = NftablesPolicyAdapter::POLICY_FEATURE_MATRIX
       FLOW_LAYOUT = {
         "flows" => {"type" => "lru_hash", "key_size" => EBPFPolicyProgram::FLOW_KEY_SIZE,
-                     "value_size" => EBPFPolicyProgram::FLOW_VALUE_SIZE, "max_entries" => 1_000_000},
+                    "value_size" => EBPFPolicyProgram::FLOW_VALUE_SIZE, "max_entries" => 1_000_000},
         # LinuxEBPFAdapter validates every concrete layout against the shared
         # proxy ABI. The policy program does not use this map, but retaining
         # its declaration lets the policy adapter share the same verifier
@@ -336,7 +336,7 @@ module Rubernetes
           begin
             new_maps["flows"] = send(:create_map, "flows", map_layout.fetch("flows"), ifindex: interfaces.first)
             instructions = EBPFPolicyProgram.new(map_fds: {"flows" => new_maps.fetch("flows").fd},
-                                                  rules: rules, targets: targets).build
+                                                 rules: rules, targets: targets).build
             new_program = @bpf.load(instructions: instructions, program_type: BPF::BPF_PROG_TYPE_SCHED_CLS, log_size: BPF::MAX_LOG_SIZE,
                                     expected_attach_type: 0, ifindex: 0, name: @policy_program_name,
                                     map_fds: [new_maps.fetch("flows").fd], resource_id: "network:policy:ebpf:program")
@@ -354,7 +354,11 @@ module Rubernetes
             readback = readbacks.fetch(interfaces.first).merge("interfaces" => readbacks).freeze
             @attached = true
             old_program&.close
-            old_maps.each_value { |map| map.close rescue nil }
+            old_maps.each_value do |map|
+              map.close
+            rescue StandardError
+              nil
+            end
             @last_snapshot = normalized.freeze
             @last_readback = readback.merge("verified" => true, "revision" => normalized.fetch("revision")).freeze
             true
@@ -365,14 +369,22 @@ module Rubernetes
               attached: old_attached, interfaces: rollback_interfaces
             )
             if restored
-              new_program&.close rescue nil
-              new_maps.each_value { |map| map.close rescue nil }
+              begin
+                new_program&.close
+              rescue StandardError
+                nil
+              end
+              new_maps.each_value do |map|
+                map.close
+              rescue StandardError
+                nil
+              end
               raise primary_error
             end
 
             begin
               install_fail_closed_policy!(rollback_interfaces, stale_programs: [old_program, new_program],
-                                          stale_maps: [old_maps, new_maps])
+                                                               stale_maps: [old_maps, new_maps])
             rescue StandardError => fail_closed_error
               raise PolicyError,
                     "eBPF NetworkPolicy swap readback failed and neither the prior filter nor fail-closed filter could be verified: " \
@@ -409,8 +421,8 @@ module Rubernetes
         {"verified" => false, "reason" => error.message}.freeze
       end
 
-      def detach(**options)
-        result = super(**options)
+      def detach(**)
+        result = super
         @last_snapshot = nil
         @last_readback = nil
         result
@@ -427,6 +439,7 @@ module Rubernetes
         kernel = entries["kernel"] || entries[:kernel]
         raise PolicyError, "native NetworkPolicy snapshot has no kernel compilation" unless kernel.is_a?(Hash)
         raise PolicyError, "native NetworkPolicy snapshot has no concrete pod index" unless kernel["pod_index_present"] == true
+
         kernel = stringify_hash(kernel)
         validate_kernel_entries!(kernel)
         {"revision" => revision, "kernel" => kernel}.freeze
@@ -439,6 +452,7 @@ module Rubernetes
         rules = kernel["rules"]
         raise PolicyError, "native NetworkPolicy kernel targets must be an array" unless targets.is_a?(Array)
         raise PolicyError, "native NetworkPolicy kernel rules must be an array" unless rules.is_a?(Array)
+
         targets.each { |target| validate_kernel_target!(target) }
         rules.each { |rule| validate_kernel_rule!(rule) }
         true
@@ -450,6 +464,7 @@ module Rubernetes
         family = hash.fetch("family").to_s
         direction = hash.fetch("direction").to_s
         raise PolicyError, "native NetworkPolicy target direction is invalid" unless PolicyEngine::DIRECTIONS.include?(direction)
+
         validate_kernel_family!(family, address, "target")
       rescue KeyError, IPAddr::InvalidAddressError => error
         raise PolicyError, "invalid native NetworkPolicy target: #{error.message}"
@@ -461,9 +476,10 @@ module Rubernetes
         family = hash.fetch("family").to_s
         direction = hash.fetch("direction").to_s
         raise PolicyError, "native NetworkPolicy rule direction is invalid" unless PolicyEngine::DIRECTIONS.include?(direction)
+
         validate_kernel_family!(family, address, "rule target")
         peer = hash.fetch("peer")
-        peer = peer.is_a?(Hash) ? peer : {}
+        peer = {} unless peer.is_a?(Hash)
         case peer.fetch("kind")
         when "all"
           nil
@@ -478,11 +494,15 @@ module Rubernetes
           raise PolicyError, "native NetworkPolicy peer kind is unsupported"
         end
         protocol = hash["protocol"]
-        raise PolicyError, "native NetworkPolicy protocol is invalid" unless protocol.nil? || PolicyEngine::PROTOCOLS.include?(protocol.to_s)
+        unless protocol.nil? || PolicyEngine::PROTOCOLS.include?(protocol.to_s)
+          raise PolicyError, "native NetworkPolicy protocol is invalid"
+        end
+
         port = hash["port"]
         end_port = hash["end_port"]
         if port || end_port
           raise PolicyError, "native NetworkPolicy port requires a protocol" if protocol.nil?
+
           port = Support.integer(port, "compiled NetworkPolicy port", min: 1, max: 65_535)
           end_port = Support.integer(end_port, "compiled NetworkPolicy endPort", min: 1, max: 65_535) if end_port
           raise PolicyError, "native NetworkPolicy endPort must be >= port" if end_port && end_port < port
@@ -493,6 +513,7 @@ module Rubernetes
 
       def validate_kernel_family!(family, address, name)
         raise PolicyError, "native NetworkPolicy #{name} family is invalid" unless %w[ipv4 ipv6].include?(family)
+
         expected = address.ipv4? ? "ipv4" : "ipv6"
         raise PolicyError, "native NetworkPolicy #{name} family does not match address" unless family == expected
       end
@@ -507,9 +528,7 @@ module Rubernetes
 
       def resolve_policy_ifindices(kernel: nil)
         candidates = @interfaces
-        if candidates.empty? && kernel
-          candidates = Array(kernel["pods"]).filter_map { |pod| pod["interface"] }
-        end
+        candidates = Array(kernel["pods"]).filter_map { |pod| pod["interface"] } if candidates.empty? && kernel
         raise PolicyError, "eBPF NetworkPolicy requires at least one pod veth interface" if candidates.empty?
 
         candidates.map do |entry|
@@ -574,7 +593,7 @@ module Rubernetes
         begin
           emergency_maps["flows"] = send(:create_map, "flows", map_layout.fetch("flows"), ifindex: interfaces.first)
           instructions = EBPFPolicyProgram.new(map_fds: {"flows" => emergency_maps.fetch("flows").fd},
-                                                rules: [], targets: [], fail_closed: true).build
+                                               rules: [], targets: [], fail_closed: true).build
           emergency_program = @bpf.load(
             instructions: instructions,
             program_type: BPF::BPF_PROG_TYPE_SCHED_CLS,
@@ -597,14 +616,30 @@ module Rubernetes
           readbacks = interfaces.to_h { |ifindex| [ifindex, verify_policy_kernel_state(ifindex)] }
           @last_snapshot = nil
           @last_readback = {"verified" => true, "fail_closed" => true, "interfaces" => readbacks}.freeze
-          Array(stale_programs).compact.uniq.each { |program| program.close rescue nil }
+          Array(stale_programs).compact.uniq.each do |program|
+            program.close
+          rescue StandardError
+            nil
+          end
           Array(stale_maps).compact.each do |collection|
-            collection.each_value { |map| map.close rescue nil }
+            collection.each_value do |map|
+              map.close
+            rescue StandardError
+              nil
+            end
           end
           true
         rescue StandardError
-          emergency_program&.close rescue nil
-          emergency_maps.each_value { |map| map.close rescue nil }
+          begin
+            emergency_program&.close
+          rescue StandardError
+            nil
+          end
+          emergency_maps.each_value do |map|
+            map.close
+          rescue StandardError
+            nil
+          end
           raise
         end
       end
@@ -618,7 +653,7 @@ module Rubernetes
       end
 
       def verify_policy_kernel_state(ifindex)
-        raise RuntimeError, "program is not loaded" unless @program
+        raise "program is not loaded" unless @program
 
         program_info = @bpf.program_info(@program, resource_id: "network:policy:ebpf:program:readback")
         map_info = @maps.each_with_object({}) do |(name, map), result|
@@ -626,15 +661,14 @@ module Rubernetes
         end
         filter_info = send(:read_filters, ifindex)
         expected_ids = @links.select { |link| link.fetch(:ifindex) == ifindex }
-                           .map { |link| [link.fetch(:direction), link.fetch(:handle)] }
+          .map { |link| [link.fetch(:direction), link.fetch(:handle)] }
         actual_ids = filter_info.filter_map do |entry|
           next unless entry[:program_id] == @program.id
 
           [entry[:direction], entry[:handle]]
         end
-        unless actual_ids.uniq.sort == expected_ids.uniq.sort
-          raise RuntimeError, "TC policy filter readback did not contain the loaded program identity"
-        end
+        raise "TC policy filter readback did not contain the loaded program identity" unless actual_ids.uniq.sort == expected_ids.uniq.sort
+
         {program: program_info, maps: map_info.freeze, filters: filter_info.freeze}.freeze
       end
     end

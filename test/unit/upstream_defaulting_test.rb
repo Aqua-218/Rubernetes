@@ -10,8 +10,8 @@ require File.expand_path("../../generated/ruby/kubernetes_types", __dir__)
 class UpstreamDefaultingTest < Minitest::Test
   def defaulted(name, object)
     Rubernetes::Generated.definition_for(name)
-                         .defaulting
-                         .apply_hash(object, kubernetes_admission_defaults: true)
+      .defaulting
+      .apply_hash(object, kubernetes_admission_defaults: true)
   end
 
   def pod(spec)
@@ -24,7 +24,7 @@ class UpstreamDefaultingTest < Minitest::Test
     volumes = pod("containers" => [{"name" => "c", "image" => "busybox"}],
                   "volumes" => [{"name" => "scratch"},
                                 {"name" => "host", "hostPath" => {"path" => "/tmp"}}])
-             .dig("spec", "volumes")
+      .dig("spec", "volumes")
 
     assert_equal({}, volumes.fetch(0).fetch("emptyDir"))
     refute(volumes.fetch(1).key?("emptyDir"))
@@ -34,7 +34,7 @@ class UpstreamDefaultingTest < Minitest::Test
   def test_host_path_type_defaults_to_the_unset_marker
     volume = pod("containers" => [{"name" => "c", "image" => "busybox"}],
                  "volumes" => [{"name" => "host", "hostPath" => {"path" => "/tmp"}}])
-             .dig("spec", "volumes", 0)
+      .dig("spec", "volumes", 0)
 
     assert_equal("", volume.dig("hostPath", "type"))
   end
@@ -46,7 +46,7 @@ class UpstreamDefaultingTest < Minitest::Test
                                 {"name" => "c", "configMap" => {"name" => "c"}},
                                 {"name" => "d", "downwardAPI" => {}},
                                 {"name" => "p", "projected" => {"sources" => []}}])
-             .dig("spec", "volumes")
+      .dig("spec", "volumes")
 
     assert_equal(420, volumes.dig(0, "secret", "defaultMode"))
     assert_equal(420, volumes.dig(1, "configMap", "defaultMode"))
@@ -59,7 +59,7 @@ class UpstreamDefaultingTest < Minitest::Test
   def test_probe_timings_default_even_when_supplied_as_zero
     probe = pod("containers" => [{"name" => "c", "image" => "busybox",
                                   "livenessProbe" => {"httpGet" => {"port" => 80}, "periodSeconds" => 0}}])
-            .dig("spec", "containers", 0, "livenessProbe")
+      .dig("spec", "containers", 0, "livenessProbe")
 
     assert_equal(1, probe.fetch("timeoutSeconds"))
     assert_equal(10, probe.fetch("periodSeconds"))
@@ -75,7 +75,7 @@ class UpstreamDefaultingTest < Minitest::Test
     env = pod("containers" => [{"name" => "c", "image" => "busybox",
                                 "env" => [{"name" => "NS",
                                            "valueFrom" => {"fieldRef" => {"fieldPath" => "metadata.namespace"}}}]}])
-          .dig("spec", "containers", 0, "env", 0)
+      .dig("spec", "containers", 0, "env", 0)
 
     assert_equal("v1", env.dig("valueFrom", "fieldRef", "apiVersion"))
   end
@@ -84,7 +84,7 @@ class UpstreamDefaultingTest < Minitest::Test
   def test_container_port_protocol_defaults_to_tcp
     port = pod("containers" => [{"name" => "c", "image" => "busybox",
                                  "ports" => [{"containerPort" => 8080}]}])
-           .dig("spec", "containers", 0, "ports", 0)
+      .dig("spec", "containers", 0, "ports", 0)
 
     assert_equal("TCP", port.fetch("protocol"))
   end
@@ -98,7 +98,7 @@ class UpstreamDefaultingTest < Minitest::Test
                "containers" => [{"name" => "c", "image" => "busybox",
                                  "ports" => [{"containerPort" => 8080},
                                              {"containerPort" => 9090, "hostPort" => 1234}]}])
-           .fetch("spec")
+      .fetch("spec")
 
     assert_equal(8080, spec.dig("containers", 0, "ports", 0, "hostPort"))
     assert_equal(1234, spec.dig("containers", 0, "ports", 1, "hostPort"))
@@ -108,7 +108,7 @@ class UpstreamDefaultingTest < Minitest::Test
   def test_pod_without_host_network_keeps_container_ports_off_the_host
     port = pod("containers" => [{"name" => "c", "image" => "busybox",
                                  "ports" => [{"containerPort" => 8080}]}])
-           .dig("spec", "containers", 0, "ports", 0)
+      .dig("spec", "containers", 0, "ports", 0)
 
     refute(port.key?("hostPort"))
   end
@@ -121,7 +121,7 @@ class UpstreamDefaultingTest < Minitest::Test
                "containers" => [{"name" => "c", "image" => "busybox",
                                  "resources" => {"limits" => {"cpu" => "1", "memory" => "1Gi"},
                                                  "requests" => {"cpu" => "500m"}}}])
-           .fetch("spec")
+      .fetch("spec")
 
     assert_equal({"cpu" => "500m", "memory" => "1Gi"},
                  spec.dig("containers", 0, "resources", "requests"))
@@ -162,6 +162,7 @@ class UpstreamDefaultingTest < Minitest::Test
   # SetDefaults_Secret / SetDefaults_PersistentVolume / _PersistentVolumeClaimSpec.
   def test_secret_and_volume_defaults
     secret = defaulted("io.k8s.api.core.v1.Secret", "metadata" => {"name" => "s"})
+
     assert_equal("Opaque", secret.fetch("type"))
 
     volume = defaulted("io.k8s.api.core.v1.PersistentVolume",
@@ -169,6 +170,7 @@ class UpstreamDefaultingTest < Minitest::Test
                        "spec" => {"capacity" => {"storage" => "1Gi"},
                                   "accessModes" => ["ReadWriteOnce"],
                                   "hostPath" => {"path" => "/tmp/v"}})
+
     assert_equal("Retain", volume.dig("spec", "persistentVolumeReclaimPolicy"))
     assert_equal("Filesystem", volume.dig("spec", "volumeMode"))
 
@@ -176,6 +178,7 @@ class UpstreamDefaultingTest < Minitest::Test
                       "metadata" => {"name" => "c"},
                       "spec" => {"accessModes" => ["ReadWriteOnce"],
                                  "resources" => {"requests" => {"storage" => "1Gi"}}})
+
     assert_equal("Filesystem", claim.dig("spec", "volumeMode"))
   end
 
@@ -185,11 +188,13 @@ class UpstreamDefaultingTest < Minitest::Test
     endpoints = defaulted("io.k8s.api.core.v1.Endpoints",
                           "metadata" => {"name" => "e"},
                           "subsets" => [{"addresses" => [{"ip" => "10.0.0.1"}], "ports" => [{"port" => 80}]}])
+
     assert_equal("TCP", endpoints.dig("subsets", 0, "ports", 0, "protocol"))
 
     slice = defaulted("io.k8s.api.discovery.v1.EndpointSlice",
                       "metadata" => {"name" => "e"}, "addressType" => "IPv4",
                       "endpoints" => [{"addresses" => ["10.0.0.1"]}], "ports" => [{"port" => 80}])
+
     assert_equal("TCP", slice.dig("ports", 0, "protocol"))
     assert_equal("", slice.dig("ports", 0, "name"))
   end
@@ -202,7 +207,7 @@ class UpstreamDefaultingTest < Minitest::Test
                      "spec" => {"limits" => [{"type" => "Container",
                                               "max" => {"cpu" => "2"},
                                               "min" => {"memory" => "64Mi"}}]})
-           .dig("spec", "limits", 0)
+      .dig("spec", "limits", 0)
 
     assert_equal({"cpu" => "2"}, item.fetch("default"))
     assert_equal({"cpu" => "2", "memory" => "64Mi"}, item.fetch("defaultRequest"))
@@ -212,7 +217,7 @@ class UpstreamDefaultingTest < Minitest::Test
     item = defaulted("io.k8s.api.core.v1.LimitRange",
                      "metadata" => {"name" => "l"},
                      "spec" => {"limits" => [{"type" => "Pod", "max" => {"cpu" => "2"}}]})
-           .dig("spec", "limits", 0)
+      .dig("spec", "limits", 0)
 
     refute(item.key?("default"))
     refute(item.key?("defaultRequest"))
@@ -241,6 +246,7 @@ class UpstreamDefaultingTest < Minitest::Test
 
     deployment = defaulted("io.k8s.api.apps.v1.Deployment", "metadata" => {"name" => "d"},
                                                             "spec" => {"selector" => selector, "template" => template})
+
     assert_equal(1, deployment.dig("spec", "replicas"))
     assert_equal(10, deployment.dig("spec", "revisionHistoryLimit"))
     assert_equal(600, deployment.dig("spec", "progressDeadlineSeconds"))
@@ -250,16 +256,19 @@ class UpstreamDefaultingTest < Minitest::Test
 
     daemon_set = defaulted("io.k8s.api.apps.v1.DaemonSet", "metadata" => {"name" => "d"},
                                                            "spec" => {"selector" => selector, "template" => template})
+
     assert_equal({"type" => "RollingUpdate", "rollingUpdate" => {"maxUnavailable" => 1, "maxSurge" => 0}},
                  daemon_set.dig("spec", "updateStrategy"))
 
     replica_set = defaulted("io.k8s.api.apps.v1.ReplicaSet", "metadata" => {"name" => "r"},
                                                              "spec" => {"selector" => selector, "template" => template})
+
     assert_equal(1, replica_set.dig("spec", "replicas"))
 
     stateful_set = defaulted("io.k8s.api.apps.v1.StatefulSet", "metadata" => {"name" => "s"},
                                                                "spec" => {"serviceName" => "s", "selector" => selector,
                                                                           "template" => template})
+
     assert_equal(1, stateful_set.dig("spec", "replicas"))
     assert_equal("OrderedReady", stateful_set.dig("spec", "podManagementPolicy"))
     assert_equal({"type" => "RollingUpdate", "rollingUpdate" => {"partition" => 0}},
@@ -354,11 +363,13 @@ class UpstreamDefaultingTest < Minitest::Test
   def test_cluster_scoped_defaults
     storage_class = defaulted("io.k8s.api.storage.v1.StorageClass",
                               "metadata" => {"name" => "s"}, "provisioner" => "example.com/x")
+
     assert_equal("Delete", storage_class.fetch("reclaimPolicy"))
     assert_equal("Immediate", storage_class.fetch("volumeBindingMode"))
 
     priority_class = defaulted("io.k8s.api.scheduling.v1.PriorityClass",
                                "metadata" => {"name" => "p"}, "value" => 100)
+
     assert_equal("PreemptLowerPriority", priority_class.fetch("preemptionPolicy"))
   end
 
@@ -379,7 +390,7 @@ class UpstreamDefaultingTest < Minitest::Test
   def test_csi_driver_spec_defaults
     spec = defaulted("io.k8s.api.storage.v1.CSIDriver",
                      "metadata" => {"name" => "d"}, "spec" => {})
-           .fetch("spec")
+      .fetch("spec")
 
     assert(spec.fetch("attachRequired"))
     refute(spec.fetch("podInfoOnMount"))
@@ -397,7 +408,7 @@ class UpstreamDefaultingTest < Minitest::Test
                                       {"name" => "b", "image" => "busybox:latest"},
                                       {"name" => "c", "image" => "busybox:1.36"},
                                       {"name" => "d", "image" => "registry:5000/busybox:1.36"}])
-                 .dig("spec", "containers")
+      .dig("spec", "containers")
 
     assert_equal(%w[Always Always IfNotPresent IfNotPresent],
                  containers.map { |container| container.fetch("imagePullPolicy") })

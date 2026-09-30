@@ -69,16 +69,16 @@ module Rubernetes
         events.map(&:to_h)
       end
 
-      def to_json(*args)
-        JSON.generate(to_a, *args)
+      def to_json(*)
+        JSON.generate(to_a, *)
       end
 
       def self.from_a(list)
         history = new
         list.each do |event|
           history.instance_variable_get(:@events) << Event.new(sequence: event.fetch("sequence"), type: event.fetch("type"),
-                                                                process: event.fetch("process"), operation: event.fetch("operation"),
-                                                                input: event["input"], output: event["output"], time: event.fetch("time"))
+                                                               process: event.fetch("process"), operation: event.fetch("operation"),
+                                                               input: event["input"], output: event["output"], time: event.fetch("time"))
         end
         history
       end

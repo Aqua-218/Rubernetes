@@ -176,9 +176,7 @@ module Prom
       extra.each do |key, value|
         next if value.nil? || value.to_s.empty?
 
-        if labels.key?(key) && labels[key] != value
-          labels["exported_#{key}"] = labels[key]
-        end
+        labels["exported_#{key}"] = labels[key] if labels.key?(key) && labels[key] != value
         labels[key] = value.to_s
       end
       labels

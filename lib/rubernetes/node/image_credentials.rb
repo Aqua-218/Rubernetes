@@ -48,11 +48,15 @@ module Rubernetes
           metadata = pod["metadata"] || pod[:metadata] || {}
           spec = pod["spec"] || pod[:spec] || {}
           namespace = (metadata["namespace"] || metadata[:namespace] || "default").to_s
-          names = Array(spec["imagePullSecrets"] || spec[:imagePullSecrets]).filter_map { |ref| ref.is_a?(Hash) ? (ref["name"] || ref[:name]) : ref }
+          names = Array(spec["imagePullSecrets"] || spec[:imagePullSecrets]).filter_map do |ref|
+            ref.is_a?(Hash) ? (ref["name"] || ref[:name]) : ref
+          end
           account = (spec["serviceAccountName"] || spec[:serviceAccountName] || spec["serviceAccount"] || "default").to_s
           if reader && !account.empty?
             sa = safe_get(reader, "serviceaccounts", account, namespace)
-            names += Array(sa && (sa["imagePullSecrets"] || sa[:imagePullSecrets])).filter_map { |ref| ref.is_a?(Hash) ? (ref["name"] || ref[:name]) : ref }
+            names += Array(sa && (sa["imagePullSecrets"] || sa[:imagePullSecrets])).filter_map do |ref|
+              ref.is_a?(Hash) ? (ref["name"] || ref[:name]) : ref
+            end
           end
           keyring = new(providers: providers, pod: pod)
           names.map(&:to_s).reject(&:empty?).uniq.each do |name|

@@ -67,7 +67,11 @@ module Rubernetes
 
       def query_values(name)
         value = @query[name.to_s]
-        value.is_a?(Array) ? value.dup : (value.nil? ? [] : [value])
+        if value.is_a?(Array)
+          value.dup
+        else
+          (value.nil? ? [] : [value])
+        end
       end
 
       def [](key)
@@ -92,15 +96,14 @@ module Rubernetes
           remote_address
         when :initial_data
           initial_data
-        else
-          nil
         end
       end
 
       def fetch(key, default = MISSING, &block)
-        known_key = %i[method verb target path query params query_string headers body http_version remote_address initial_data].include?(key.to_sym)
+        known_key = %i[method verb target path query params query_string headers body http_version remote_address
+                       initial_data].include?(key.to_sym)
         return self[key] if known_key
-        return block.call(key) if block
+        return yield(key) if block
         return default unless default.equal?(MISSING)
 
         raise KeyError, "key not found: #{key.inspect}"
@@ -149,11 +152,11 @@ module Rubernetes
 
       def parse_query(value)
         URI.decode_www_form(value).each_with_object({}) do |(key, item), query|
-          if query.key?(key)
-            query[key] = Array(query[key]) << item
-          else
-            query[key] = [item]
-          end
+          query[key] = if query.key?(key)
+                         Array(query[key]) << item
+                       else
+                         [item]
+                       end
         end.freeze
       rescue ArgumentError => error
         raise BadRequest, "query string is malformed: #{error.message}"

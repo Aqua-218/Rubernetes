@@ -39,7 +39,8 @@ module Rubernetes
             index = Integer(input.fetch("index"))
             raise ProfileError, "seccomp argument index must be 0..5" unless index.between?(0, 5)
 
-            new(index: index, value: Integer(input.fetch("value", 0)), value_two: Integer(input.fetch("valueTwo", input.fetch("value_two", 0))), op: op)
+            new(index: index, value: Integer(input.fetch("value", 0)),
+                value_two: Integer(input.fetch("valueTwo", input.fetch("value_two", 0))), op: op)
           end
 
           def to_h
@@ -305,7 +306,12 @@ module Rubernetes
               raise Error, "seccomp program did not terminate" if steps > MAX_STEPS
 
               instruction = instructions[pc]
-              code, jt, jf, k = instruction.respond_to?(:code) ? [instruction.code, instruction.jt, instruction.jf, instruction.k] : instruction.values_at("code", "jt", "jf", "k")
+              code, jt, jf, k = if instruction.respond_to?(:code)
+                                  [instruction.code, instruction.jt, instruction.jf,
+                                   instruction.k]
+                                else
+                                  instruction.values_at("code", "jt", "jf", "k")
+                                end
               case code
               when BPF_LD_W_ABS
                 raise Error, "seccomp load offset #{k} is not word aligned" unless (k % 4).zero? && k.between?(0, 60)
@@ -324,7 +330,7 @@ module Rubernetes
               when BPF_JMP_JGE_K
                 pc += 1 + (accumulator >= k ? jt : jf)
               when BPF_JMP_JSET_K
-                pc += 1 + ((accumulator & k) != 0 ? jt : jf)
+                pc += 1 + ((accumulator & k) == 0 ? jf : jt)
               when BPF_RET_K
                 return k
               else

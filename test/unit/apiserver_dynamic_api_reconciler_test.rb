@@ -36,6 +36,7 @@ class APIServerDynamicAPIReconcilerTest < Minitest::Test
   def eventually(timeout = 5)
     deadline = Time.now + timeout
     sleep 0.05 until yield || Time.now > deadline
+
     assert yield
   end
 
@@ -55,10 +56,11 @@ class APIServerDynamicAPIReconcilerTest < Minitest::Test
       server_a.call(API::Request.new(method: method, path: path, headers: {"content-type" => "application/json"},
                                      body: JSON.generate(body), identity: {"username" => "admin", "groups" => ["system:masters"]}))
     end
-    assert_equal 201, call.("POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", crd).status
+
+    assert_equal 201, call.call("POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", crd).status
     eventually { registry_b.find_gvr(group: "example.com", version: "v1", resource: "gadgets") }
 
-    assert_equal 200, call.("DELETE", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/gadgets.example.com", {}).status
+    assert_equal 200, call.call("DELETE", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/gadgets.example.com", {}).status
     eventually { registry_b.find_gvr(group: "example.com", version: "v1", resource: "gadgets").nil? }
   ensure
     service&.instance_variable_set(:@stopping, true)
@@ -71,6 +73,7 @@ class APIServerDynamicAPIReconcilerTest < Minitest::Test
     manager.sync(crd)
     resource = registry.find_gvr(group: "example.com", version: "v1", resource: "gadgets")
     manager.sync(crd.merge("status" => {"conditions" => []}))
+
     assert_same resource, registry.find_gvr(group: "example.com", version: "v1", resource: "gadgets")
   end
 end

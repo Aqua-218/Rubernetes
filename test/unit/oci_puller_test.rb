@@ -82,6 +82,7 @@ class OCIPullerTest < Minitest::Test
 
     assert_equal layer, image.layers.fetch(0).fetch(:bytes)
     layer_call = registry.blob_calls.find { |call| call.fetch(:digest) == digest_for(layer) }
+
     refute layer_call.fetch(:streamed), "legacy no-store layer path should preserve its String API"
   end
 

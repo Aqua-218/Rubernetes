@@ -60,7 +60,9 @@ module Rubernetes
             id: identity.fetch("capability_id"), subject_id: identity.fetch("subject_id"), vm_id: vm_id,
             policy_digest: identity.fetch("policy_digest"), revocation_epoch: identity.fetch("revocation_epoch"),
             expires_at: policy["expires_at"], operations: Array(policy["operations"]).map(&:to_s),
-            allowed_hosts: Array(policy["allowed_hosts"]).map(&:to_s), allowed_cidrs: Array(policy["allowed_cidrs"]).map { |cidr| IPAddr.new(cidr) },
+            allowed_hosts: Array(policy["allowed_hosts"]).map(&:to_s), allowed_cidrs: Array(policy["allowed_cidrs"]).map do |cidr|
+                                                                         IPAddr.new(cidr)
+                                                                       end,
             allowed_ports: Array(policy["allowed_ports"]).map(&:to_i)
           )
           @mutex.synchronize { @capabilities[vm_id] = capability }
@@ -81,13 +83,11 @@ module Rubernetes
           loop do
             connection = listener.accept
             Thread.new(connection) do |io|
-              begin
-                Server.new(io, ->(name, params) { handle(vm_id, name, params) }).serve
-              rescue StandardError
-                nil
-              ensure
-                io.close unless io.closed?
-              end
+              Server.new(io, ->(name, params) { handle(vm_id, name, params) }).serve
+            rescue StandardError
+              nil
+            ensure
+              io.close unless io.closed?
             end
           end
         rescue IOError, SystemCallError
@@ -130,8 +130,14 @@ module Rubernetes
           missing = schema["required"] - params.keys
           raise PolicyError, "missing fields #{missing.join(", ")} for #{operation}" unless missing.empty?
           raise PolicyError, "capability #{capability.id} does not permit #{operation}" unless capability.operations.include?(operation)
-          raise PolicyError, "capability #{capability.id} expired" if capability.expires_at && Time.iso8601(capability.expires_at) <= @clock.call
-          raise PolicyError, "capability #{capability.id} revoked (epoch #{capability.revocation_epoch} < #{@revocation_epoch.call})" if capability.revocation_epoch < @revocation_epoch.call
+          if capability.expires_at && Time.iso8601(capability.expires_at) <= @clock.call
+            raise PolicyError,
+                  "capability #{capability.id} expired"
+          end
+          if capability.revocation_epoch < @revocation_epoch.call
+            raise PolicyError,
+                  "capability #{capability.id} revoked (epoch #{capability.revocation_epoch} < #{@revocation_epoch.call})"
+          end
 
           # Claims in the payload are compared, never trusted.
           %w[subject_id capability_id policy_digest].each do |field|
@@ -140,7 +146,10 @@ module Rubernetes
             expected = field == "capability_id" ? capability.id : capability.public_send(field)
             raise PolicyError, "claimed #{field} does not match the connection identity" unless claimed[field] == expected
           end
-          raise PolicyError, "claimed revocation epoch does not match" if claimed.key?("revocation_epoch") && claimed["revocation_epoch"] != capability.revocation_epoch
+          return unless claimed.key?("revocation_epoch") && claimed["revocation_epoch"] != capability.revocation_epoch
+
+          raise PolicyError,
+                "claimed revocation epoch does not match"
         end
 
         def resolve(capability, name)
@@ -160,7 +169,10 @@ module Rubernetes
           current = URI.parse(url)
           loop do
             raise PolicyError, "scheme #{current.scheme} is not allowed" unless %w[http https].include?(current.scheme)
-            raise PolicyError, "port #{current.port} is not allowed" unless capability.allowed_ports.empty? || capability.allowed_ports.include?(current.port)
+            unless capability.allowed_ports.empty? || capability.allowed_ports.include?(current.port)
+              raise PolicyError,
+                    "port #{current.port} is not allowed"
+            end
 
             resolved = resolve(capability, current.host)
             address = resolved["addresses"].first
@@ -183,9 +195,7 @@ module Rubernetes
         private
 
         def perform_get(uri, address, headers)
-          if @http_factory
-            return @http_factory.call(uri, address, headers)
-          end
+          return @http_factory.call(uri, address, headers) if @http_factory
 
           http = Net::HTTP.new(address, uri.port, nil)
           http.use_ssl = uri.scheme == "https"
@@ -215,7 +225,8 @@ module Rubernetes
         end
 
         def audit(vm_id, operation, params, outcome, reason)
-          @audit&.call({"at" => @clock.call.iso8601(6), "vm_id" => vm_id, "operation" => operation, "params" => params, "outcome" => outcome, "reason" => reason})
+          @audit&.call({"at" => @clock.call.iso8601(6), "vm_id" => vm_id, "operation" => operation, "params" => params,
+                        "outcome" => outcome, "reason" => reason})
         end
       end
     end

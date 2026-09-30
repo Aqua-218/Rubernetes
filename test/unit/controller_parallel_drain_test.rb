@@ -32,6 +32,7 @@ class ControllerParallelDrainTest < Minitest::Test
 
     drained = []
     drained << seen.pop until seen.empty?
+
     assert_equal(100, drained.length)
     assert_equal(100, drained.uniq.length, "a key must not be processed twice")
   end
@@ -46,6 +47,7 @@ class ControllerParallelDrainTest < Minitest::Test
 
     assert_nil(queue.get(timeout: 0).first, "the key is still being processed")
     queue.done(first)
+
     assert_equal("a", queue.get(timeout: 0).first)
   end
 

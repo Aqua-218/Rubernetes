@@ -30,7 +30,7 @@ module Rubernetes
         BOOT_ARGS = "console=ttyS0 reboot=k panic=1 pci=off init=/sbin/rubernetes-init root=/dev/vda ro"
 
         Stream = Struct.new(:socket, :kind, :container_id, keyword_init: true) do
-          def read(length = nil, _outbuf = nil)
+          def read(_length = nil, _outbuf = nil)
             frame = next_frame
             return nil if frame.nil?
 
@@ -57,9 +57,7 @@ module Rubernetes
             socket.close unless socket.closed?
           end
 
-          def exit_code
-            @exit_code
-          end
+          attr_reader :exit_code
 
           def next_frame
             header = socket.read(4)
@@ -88,8 +86,8 @@ module Rubernetes
         attr_reader :sandbox_id, :identity, :instance, :resources, :phase, :base, :machine, :drive_layout, :netns_handle, :tap_name,
                     :verity_mapping, :guest_hello, :log_path, :acks, :timings
 
-        def initialize(sandbox_id:, identity:, artifacts:, jailer:, verity:, netns:, disks:, pool:, broker:, clock:, logger: nil, machine: DEFAULT_MACHINE,
-                       network_device: true, run_root:)
+        def initialize(sandbox_id:, identity:, artifacts:, jailer:, verity:, netns:, disks:, pool:, broker:, clock:, run_root:, logger: nil, machine: DEFAULT_MACHINE,
+                       network_device: true)
           @sandbox_id = sandbox_id
           @identity = identity
           @artifacts = artifacts
@@ -134,14 +132,23 @@ module Rubernetes
 
         def allocate_workspace(images:, workspace_mib: nil)
           measure(:workspace) do
-            @workspace_path = @disks.workspace_disk(identity.fields.fetch("workspace_id"), **(workspace_mib ? {size_mib: workspace_mib} : {}))
+            @workspace_path = @disks.workspace_disk(identity.fields.fetch("workspace_id"),
+                                                    **(workspace_mib ? {size_mib: workspace_mib} : {}))
             claim("workspace", identity.fields.fetch("workspace_id"), "workspace:#{identity.fields.fetch("workspace_id")}:#{File.stat(@workspace_path).ino}",
                   {"path" => @workspace_path})
-            raise Error, "at most #{ImageDisks::MAX_IMAGE_DRIVES} distinct images per microVM" if images.length > ImageDisks::MAX_IMAGE_DRIVES
+            if images.length > ImageDisks::MAX_IMAGE_DRIVES
+              raise Error, "at most #{ImageDisks::MAX_IMAGE_DRIVES} distinct images per microVM"
+            end
 
-            @image_disks = images.map { |image| {"digest" => image.fetch("digest"), "path" => @disks.image_disk(image.fetch("digest"), image.fetch("rootfs"))} }
+            @image_disks = images.map do |image|
+              {"digest" => image.fetch("digest"), "path" => @disks.image_disk(image.fetch("digest"), image.fetch("rootfs"))}
+            end
             @image_disks.each { |disk| @disks.grant_read(disk["path"], uid) }
-            claim("image_grants", vm_id, "image_grants:#{vm_id}", {"paths" => @image_disks.map { |disk| disk["path"] }}) unless @image_disks.empty?
+            unless @image_disks.empty?
+              claim("image_grants", vm_id, "image_grants:#{vm_id}", {"paths" => @image_disks.map do |disk|
+                disk["path"]
+              end})
+            end
             claim("identity", vm_id, "identity:#{vm_id}", {"jail_uid" => uid, "guest_cid" => identity.fields["guest_cid"]})
             @phase = "workspace"
           end
@@ -167,7 +174,9 @@ module Rubernetes
               end
               claim("tap", "#{netns_name}/#{@tap_name}", "tap:#{handle.inode}:#{@tap_name}", {"netns" => netns_name})
             end
-            mapping = measure(:verity) { @verity.open(verity_name, @artifacts.path(:rootfs), @artifacts.path(:verity_hash), @artifacts.verity_root_hash) }
+            mapping = measure(:verity) do
+              @verity.open(verity_name, @artifacts.path(:rootfs), @artifacts.path(:verity_hash), @artifacts.verity_root_hash)
+            end
             @verity_mapping = mapping
             claim("verity", verity_name, "verity:#{mapping.uuid}", mapping.to_h)
             @drive_layout = build_drive_layout
@@ -182,12 +191,17 @@ module Rubernetes
               inputs["/snapshot/vmstate"] = base.vmstate_path
             end
             candidate = File.join(@jailer.chroot_for(jail_id), "run", "v.sock_#{BROKER_PORT}")
-            raise JailerError, "jail path #{candidate} exceeds the Unix socket path limit; use a shorter chroot base" if candidate.bytesize > MAX_UNIX_PATH_BYTES
+            if candidate.bytesize > MAX_UNIX_PATH_BYTES
+              raise JailerError,
+                    "jail path #{candidate} exceeds the Unix socket path limit; use a shorter chroot base"
+            end
 
             measure(:jail_prepare) { @jailer.prepare(id: jail_id, uid: uid, gid: gid, inputs: inputs) }
             claim("jail", jail_id, "jail:#{File.stat(@jailer.chroot_for(jail_id)).ino}", {"chroot" => @jailer.chroot_for(jail_id)})
             @log_path = File.join(@run_root, "#{vm_id}.log")
-            @instance = measure(:jailer_launch) { @jailer.launch(id: jail_id, uid: uid, gid: gid, netns_path: handle.path, cgroup_limits: cgroup_limits, log_path: @log_path) }
+            @instance = measure(:jailer_launch) do
+              @jailer.launch(id: jail_id, uid: uid, gid: gid, netns_path: handle.path, cgroup_limits: cgroup_limits, log_path: @log_path)
+            end
             claim("vmm", vm_id, @instance.identity, @instance.to_h.slice("vmm_pid", "vmm_start_time", "cgroup_path"))
             api = APIClient.new(@instance.api_socket)
             if base
@@ -205,7 +219,10 @@ module Rubernetes
               @guest_hello = base.manifest.fetch("guest_hello")
             else
               @guest_hello = measure(:hello) { control.call("hello") }
-              raise ProtocolError, "guest supervisor answered from phase #{@guest_hello["phase"]}, expected base" unless @guest_hello["phase"] == "base"
+              unless @guest_hello["phase"] == "base"
+                raise ProtocolError,
+                      "guest supervisor answered from phase #{@guest_hello["phase"]}, expected base"
+              end
             end
 
             @phase = "hello"
@@ -226,13 +243,17 @@ module Rubernetes
               "nonce" => nonce,
               "host_time" => (host_time || @clock.call).to_f,
               "workspace" => {"device" => "/dev/vdb"},
-              "images" => @image_disks.each_with_index.map { |disk, index| {"digest" => disk["digest"], "device" => "/dev/vd#{(99 + index).chr}"} },
+              "images" => @image_disks.each_with_index.map do |disk, index|
+                {"digest" => disk["digest"], "device" => "/dev/vd#{(99 + index).chr}"}
+              end,
               "files" => files
             }
             response = measure(:identity_call) { control.call("identity.apply", payload) }
             @timings["identity_guest"] = response["timings"] if response.is_a?(Hash) && response["timings"]
             verify_ack!(response, "identity.apply", nonce)
-            raise ProtocolError, "guest applied the identity from phase #{response.dig("ack", "phase")}" unless response.dig("ack", "phase") == "identified"
+            raise ProtocolError, "guest applied the identity from phase #{response.dig("ack", "phase")}" unless response.dig("ack",
+                                                                                                                             "phase") == "identified"
+
             @acks["identity.apply"] = response
             @phase = "identified"
             response["ack"]
@@ -277,7 +298,8 @@ module Rubernetes
         # ------------------------------------------------------- workloads
 
         def sandbox_run(input)
-          control.call("sandbox.run", {"sandbox_id" => sandbox_id, "input" => input, "request_id" => "sandbox:#{sandbox_id}", "profile" => profile?})
+          control.call("sandbox.run",
+                       {"sandbox_id" => sandbox_id, "input" => input, "request_id" => "sandbox:#{sandbox_id}", "profile" => profile?})
         end
 
         def profile?
@@ -322,7 +344,9 @@ module Rubernetes
         end
 
         def open_stream(kind, id, cmd: nil, tty: false, stdin: false, since: nil, tail: nil)
-          response = control.call("stream.open", {"kind" => kind, "id" => id, "cmd" => cmd, "tty" => tty, "stdin" => stdin, "since" => since, "tail" => tail})
+          response = control.call("stream.open",
+                                  {"kind" => kind, "id" => id, "cmd" => cmd, "tty" => tty, "stdin" => stdin, "since" => since,
+                                   "tail" => tail})
           socket = VsockClient.connect(vsock_host_path, STREAM_PORT)
           Framing.write_frame(socket, {"token" => response.fetch("token")})
           Stream.new(socket: socket, kind: kind, container_id: id)
@@ -360,7 +384,9 @@ module Rubernetes
           api.snapshot_create!(snapshot_path: "/snapshot/vmstate", mem_file_path: "/snapshot/mem")
           @phase = "snapshotted"
           @pool.store(id: id, runtime_class: runtime_class, mem_path: @instance.host_path("/snapshot/mem"), vmstate_path: @instance.host_path("/snapshot/vmstate"),
-                      artifact_digest: @artifacts.digest, drive_layout: @drive_layout.map { |drive| drive.slice("id", "jail_path", "read_only", "root") },
+                      artifact_digest: @artifacts.digest, drive_layout: @drive_layout.map do |drive|
+                                                            drive.slice("id", "jail_path", "read_only", "root")
+                                                          end,
                       machine: @machine, guest_hello: @guest_hello, pause_ack: ack["ack"])
         end
 
@@ -391,11 +417,9 @@ module Rubernetes
           end
           stop_broker_listener
           @resources.reverse_each do |resource|
-            begin
-              release_resource(resource)
-            rescue StandardError => error
-              errors << {"resource" => resource.slice("kind", "id"), "error" => "#{error.class}: #{error.message}"}
-            end
+            release_resource(resource)
+          rescue StandardError => error
+            errors << {"resource" => resource.slice("kind", "id"), "error" => "#{error.class}: #{error.message}"}
           end
           @broker&.unbind(vm_id)
           identity_ledger&.release(vm_id)
@@ -426,7 +450,8 @@ module Rubernetes
         def network_context
           return {"sandbox_id" => sandbox_id} unless @netns_handle
 
-          {"sandbox_id" => sandbox_id, "netns" => {"handle" => @netns_handle.name, "path" => @netns_handle.path, "inode" => @netns_handle.inode}}
+          {"sandbox_id" => sandbox_id,
+           "netns" => {"handle" => @netns_handle.name, "path" => @netns_handle.path, "inode" => @netns_handle.inode}}
         end
 
         def confinement_report
@@ -445,7 +470,8 @@ module Rubernetes
 
         def build_drive_layout
           layout = [{"id" => "rootfs", "jail_path" => "/drives/rootfs", "host_path" => nil, "read_only" => true, "root" => true}]
-          layout << {"id" => "workspace", "jail_path" => "/drives/workspace.ext4", "host_path" => @workspace_path, "read_only" => false, "root" => false, "writable" => true}
+          layout << {"id" => "workspace", "jail_path" => "/drives/workspace.ext4", "host_path" => @workspace_path, "read_only" => false,
+                     "root" => false, "writable" => true}
           ImageDisks::MAX_IMAGE_DRIVES.times do |index|
             disk = @image_disks[index]
             layout << {"id" => "image#{index}", "jail_path" => "/drives/image#{index}.ext4", "host_path" => disk ? disk["path"] : @disks.placeholder(index),
@@ -458,17 +484,22 @@ module Rubernetes
           api.machine_config(vcpu_count: @machine["vcpu_count"], mem_size_mib: @machine["mem_size_mib"])
           api.boot_source(kernel_image_path: "/vmlinux", boot_args: BOOT_ARGS)
           @drive_layout.each do |drive|
-            api.drive(drive_id: drive["id"], path_on_host: drive["jail_path"], is_root_device: drive["root"], is_read_only: drive["read_only"])
+            api.drive(drive_id: drive["id"], path_on_host: drive["jail_path"], is_root_device: drive["root"],
+                      is_read_only: drive["read_only"])
           end
           api.vsock(guest_cid: identity.fields.fetch("guest_cid"), uds_path: vsock_jail_path)
-          api.network_interface(iface_id: "eth0", host_dev_name: @tap_name, guest_mac: identity.fields.fetch("mac_address")) if @network_device
+          if @network_device
+            api.network_interface(iface_id: "eth0", host_dev_name: @tap_name,
+                                  guest_mac: identity.fields.fetch("mac_address"))
+          end
           measure(:vmm_start) { api.start! }
         end
 
-        def restore_from_base!(api, base)
+        def restore_from_base!(api, _base)
           overrides = @network_device ? [{"iface_id" => "eth0", "host_dev_name" => @tap_name}] : []
           measure(:snapshot_load) do
-            api.snapshot_load!(snapshot_path: "/snapshot/vmstate", mem_file_path: "/snapshot/mem", resume_vm: false, network_overrides: overrides, vsock_uds_path: vsock_jail_path)
+            api.snapshot_load!(snapshot_path: "/snapshot/vmstate", mem_file_path: "/snapshot/mem", resume_vm: false,
+                               network_overrides: overrides, vsock_uds_path: vsock_jail_path)
           end
           # The drive files behind the snapshot's slots were replaced with
           # this VM's workspace and images; refresh their capacity.  Slots
@@ -519,7 +550,10 @@ module Rubernetes
           raise IdentityError, "#{kind}: ACK signature invalid" unless Signature.valid?(key, fields, response["signature"])
           raise IdentityError, "#{kind}: ACK nonce mismatch" unless fields["nonce"] == nonce
           raise IdentityError, "#{kind}: ACK VM identity mismatch (#{fields["vm_id"]})" unless fields["vm_id"] == vm_id
-          raise IdentityError, "#{kind}: ACK policy digest mismatch" unless fields["policy_digest"] == identity.fields.fetch("policy_digest")
+          unless fields["policy_digest"] == identity.fields.fetch("policy_digest")
+            raise IdentityError,
+                  "#{kind}: ACK policy digest mismatch"
+          end
           raise IdentityError, "#{kind}: ACK kind mismatch" unless fields["kind"] == kind
 
           true

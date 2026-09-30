@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
 require "time"
 
 require_relative "../node_declared_features"
@@ -72,7 +71,10 @@ module Rubernetes
 
         case value
         when Hash
-          value.each { |name, child| deep_freeze(name); deep_freeze(child) }
+          value.each do |name, child|
+            deep_freeze(name)
+            deep_freeze(child)
+          end
           value.freeze
           DEEP_FROZEN[value] = true
         when Array
@@ -138,21 +140,22 @@ module Rubernetes
         (value.is_a?(Hash) || value.is_a?(Array)) && IMMUTABLE.key?(value)
       end
 
-      def call_if(target, method_name, *args, **keywords, &block)
+      def call_if(target, method_name, *, **keywords, &)
         return :__missing__ unless target && target.respond_to?(method_name)
 
         if keywords.empty?
-          target.public_send(method_name, *args, &block)
+          target.public_send(method_name, *, &)
         else
-          target.public_send(method_name, *args, **keywords, &block)
+          target.public_send(method_name, *, **keywords, &)
         end
       end
 
-      def first_call(target, methods, *args, **keywords, &block)
+      def first_call(target, methods, *, **keywords, &)
         Array(methods).each do |method_name|
           next unless target && target.respond_to?(method_name)
 
-          return keywords.empty? ? target.public_send(method_name, *args, &block) : target.public_send(method_name, *args, **keywords, &block)
+          return keywords.empty? ? target.public_send(method_name, *,
+                                                      &) : target.public_send(method_name, *, **keywords, &)
         end
         :__missing__
       end
@@ -179,22 +182,22 @@ module Rubernetes
       end
 
       def success_result?(result)
-        return result if result == true || result == false
+        return result if [true, false].include?(result)
         return false if result.nil?
 
-        if result.respond_to?(:success?)
-          return !!result.success?
-        end
-        if result.respond_to?(:successful?)
-          return !!result.successful?
-        end
+        return !!result.success? if result.respond_to?(:success?)
+        return !!result.successful? if result.respond_to?(:successful?)
+
         if result.is_a?(Hash)
           explicit = key(result, :success, nil)
           return !!explicit unless explicit.nil?
+
           allowed = key(result, :allowed, nil)
           return !!allowed unless allowed.nil?
+
           status = key(result, :status, key(result, :status_code, nil))
           return status.to_i.between?(200, 399) unless status.nil?
+
           exit_code = key(result, :exit_code, key(result, :exitCode, nil))
           return exit_code.to_i.zero? unless exit_code.nil?
         end
@@ -217,7 +220,7 @@ module Rubernetes
         # observedGeneration (PodObservedGenerationTracking) is optional so
         # every existing constructor keeps working.
         def initialize(observed_generation: nil, **rest)
-          super(observed_generation: observed_generation, **rest)
+          super
         end
 
         def to_h
@@ -310,7 +313,7 @@ module Rubernetes
         # taken now orders snapshots by when their inputs were read.
         sequence = @mutex.synchronize { @sequence += 1 }
         computed_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        pod = pod.nil? ? pod_value : pod
+        pod = pod_value if pod.nil?
         object = Helpers.string_keys(pod || {})
         uid = Helpers.key(Helpers.key(object, "metadata", {}), "uid", nil).to_s
         uid = pod_key(object) if uid.empty?
@@ -327,11 +330,11 @@ module Rubernetes
         # all.
         default_waiting = Array(Helpers.key(spec, "initContainers", [])).empty? ? "ContainerCreating" : "PodInitializing"
         regular_statuses = build_container_statuses(desired_containers, observations, regular: true,
-                                                    default_waiting_reason: default_waiting)
+                                                                                      default_waiting_reason: default_waiting)
         init_statuses = build_container_statuses(desired_init, observations, regular: false,
-                                                 default_waiting_reason: default_waiting)
+                                                                             default_waiting_reason: default_waiting)
         ephemeral_statuses = build_container_statuses(desired_ephemeral, observations, regular: :ephemeral,
-                                                     default_waiting_reason: default_waiting)
+                                                                                       default_waiting_reason: default_waiting)
         # A start that failed before any container was created leaves every
         # container unobserved; kubelet still reports the failure reason on
         # each waiting container (CreateContainerConfigError, ErrImagePull...),
@@ -358,7 +361,7 @@ module Rubernetes
         )
         # PodResizePending / PodResizeInProgress carry the generation of the
         # resize they describe, not the Pod's current one.
-        conditions = conditions + Array(resize_conditions).map do |entry|
+        conditions += Array(resize_conditions).map do |entry|
           Condition.new(type: entry.fetch("type"), status: "True", reason: entry["reason"].to_s, message: entry["message"].to_s,
                         last_transition_time: entry["lastTransitionTime"] || Helpers.now(@clock).iso8601(6),
                         last_heartbeat_time: Helpers.now(@clock).iso8601(6), observed_generation: entry["observedGeneration"])
@@ -681,6 +684,7 @@ module Rubernetes
         unknown = [expected - regular_statuses.length, 0].max
         return "Pending" if waiting.positive?
         return "Running" if running.positive? && unknown.zero?
+
         if running.zero? && stopped.positive? && unknown.zero?
           return "Failed" if explicit_reason.to_s == "Failed" && restart_policy == "Never"
           return "Running" if restartable_stopped.positive?
@@ -776,7 +780,7 @@ module Rubernetes
         initialized_condition = condition("Initialized", initialized, timestamp)
         unless initialized
           incomplete = init_statuses.reject(&init_done)
-                                    .map { |status| status["name"] }
+            .map { |status| status["name"] }
           initialized_condition = condition(
             "Initialized", false, timestamp,
             reason: "ContainersNotInitialized",

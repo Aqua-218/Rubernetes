@@ -15,40 +15,40 @@ module Rubernetes
         DESCRIPTOR = ResourceDescriptor.parse("Deployment")
         REPLICA_SET = ResourceDescriptor.parse("ReplicaSet")
         POD = WorkloadController::POD
-        HASH_LABEL = "pod-template-hash".freeze
-        REVISION_ANNOTATION = "deployment.kubernetes.io/revision".freeze
-        REVISION_HISTORY_ANNOTATION = "deployment.kubernetes.io/revision-history".freeze
-        DESIRED_REPLICAS_ANNOTATION = "deployment.kubernetes.io/desired-replicas".freeze
-        MAX_REPLICAS_ANNOTATION = "deployment.kubernetes.io/max-replicas".freeze
-        ROLLBACK_TO_ANNOTATION = "deprecated.deployment.rollback.to".freeze
-        LAST_APPLIED_ANNOTATION = "kubectl.kubernetes.io/last-applied-configuration".freeze
+        HASH_LABEL = "pod-template-hash"
+        REVISION_ANNOTATION = "deployment.kubernetes.io/revision"
+        REVISION_HISTORY_ANNOTATION = "deployment.kubernetes.io/revision-history"
+        DESIRED_REPLICAS_ANNOTATION = "deployment.kubernetes.io/desired-replicas"
+        MAX_REPLICAS_ANNOTATION = "deployment.kubernetes.io/max-replicas"
+        ROLLBACK_TO_ANNOTATION = "deprecated.deployment.rollback.to"
+        LAST_APPLIED_ANNOTATION = "kubectl.kubernetes.io/last-applied-configuration"
         # pkg/controller/deployment/util/deployment_util.go:295
         ANNOTATIONS_TO_SKIP = [LAST_APPLIED_ANNOTATION, REVISION_ANNOTATION, REVISION_HISTORY_ANNOTATION,
                                DESIRED_REPLICAS_ANNOTATION, MAX_REPLICAS_ANNOTATION, ROLLBACK_TO_ANNOTATION].freeze
         MAX_REV_HISTORY_LENGTH_IN_CHARS = 2000
-        MAX_INT32 = 2**31 - 1
+        MAX_INT32 = (2**31) - 1
         # apps/v1 API defaults (pkg/apis/apps/v1/defaults.go).
         DEFAULT_PROGRESS_DEADLINE_SECONDS = 600
         DEFAULT_REVISION_HISTORY_LIMIT = 10
-        DEFAULT_ROLLING_PERCENT = "25%".freeze
+        DEFAULT_ROLLING_PERCENT = "25%"
         # Condition reasons (deployment_util.go:71-92).
-        REASON_REPLICA_SET_UPDATED = "ReplicaSetUpdated".freeze
-        REASON_FAILED_RS_CREATE = "ReplicaSetCreateError".freeze
-        REASON_NEW_REPLICA_SET = "NewReplicaSetCreated".freeze
-        REASON_FOUND_NEW_RS = "FoundNewReplicaSet".freeze
-        REASON_NEW_RS_AVAILABLE = "NewReplicaSetAvailable".freeze
-        REASON_TIMED_OUT = "ProgressDeadlineExceeded".freeze
-        REASON_PAUSED = "DeploymentPaused".freeze
-        REASON_RESUMED = "DeploymentResumed".freeze
-        REASON_MIN_AVAILABLE = "MinimumReplicasAvailable".freeze
-        REASON_MIN_UNAVAILABLE = "MinimumReplicasUnavailable".freeze
-        REASON_ROLLBACK_REVISION_NOT_FOUND = "DeploymentRollbackRevisionNotFound".freeze
-        REASON_ROLLBACK_TEMPLATE_UNCHANGED = "DeploymentRollbackTemplateUnchanged".freeze
-        REASON_ROLLBACK_DONE = "DeploymentRollback".freeze
+        REASON_REPLICA_SET_UPDATED = "ReplicaSetUpdated"
+        REASON_FAILED_RS_CREATE = "ReplicaSetCreateError"
+        REASON_NEW_REPLICA_SET = "NewReplicaSetCreated"
+        REASON_FOUND_NEW_RS = "FoundNewReplicaSet"
+        REASON_NEW_RS_AVAILABLE = "NewReplicaSetAvailable"
+        REASON_TIMED_OUT = "ProgressDeadlineExceeded"
+        REASON_PAUSED = "DeploymentPaused"
+        REASON_RESUMED = "DeploymentResumed"
+        REASON_MIN_AVAILABLE = "MinimumReplicasAvailable"
+        REASON_MIN_UNAVAILABLE = "MinimumReplicasUnavailable"
+        REASON_ROLLBACK_REVISION_NOT_FOUND = "DeploymentRollbackRevisionNotFound"
+        REASON_ROLLBACK_TEMPLATE_UNCHANGED = "DeploymentRollbackTemplateUnchanged"
+        REASON_ROLLBACK_DONE = "DeploymentRollback"
 
         def initialize(**options)
           @clock = options.delete(:clock) || -> { Time.now.utc }
-          super(**options)
+          super
         end
 
         def plan(deployment, store: nil, replicasets: nil, pods: nil, now: nil, **_options)
@@ -126,25 +126,25 @@ module Rubernetes
           false
         end
 
-        def rollout(deployment, replicasets: nil, store: nil, **options)
-          plan(deployment, replicasets: replicasets, store: store, **options)
+        def rollout(deployment, replicasets: nil, store: nil, **)
+          plan(deployment, replicasets: replicasets, store: store, **)
         end
 
-        def scale(deployment, replicas, replicasets: nil, store: nil, **options)
+        def scale(deployment, replicas, replicasets: nil, store: nil, **)
           candidate = Support.deep_copy(deployment)
           candidate["spec"] ||= {}
           candidate["spec"]["replicas"] = Integer(replicas)
-          plan(candidate, replicasets: replicasets, store: store, **options)
+          plan(candidate, replicasets: replicasets, store: store, **)
         end
 
         # A controller-side rollback request is the deprecated rollback
         # annotation; kubectl rollout undo patches the template directly and
         # is served by the ordinary rollout path.
-        def rollback(deployment, revision: nil, replicasets: nil, store: nil, **options)
+        def rollback(deployment, revision: nil, replicasets: nil, store: nil, **)
           candidate = Support.deep_copy(deployment)
           candidate["metadata"] ||= {}
           candidate["metadata"]["annotations"] = Support.annotations(candidate).merge(ROLLBACK_TO_ANNOTATION => (revision || 0).to_s)
-          plan(candidate, replicasets: replicasets, store: store, **options)
+          plan(candidate, replicasets: replicasets, store: store, **)
         end
 
         def delete(deployment, replicasets: nil, store: nil, propagation_policy: :background)
@@ -192,7 +192,8 @@ module Rubernetes
           desired = replicas(deployment)
           rolling = rolling_update_params(deployment)
           surge = Support.quantity(Support.value(rolling, "maxSurge", DEFAULT_ROLLING_PERCENT), desired, mode: :ceil, default: 0)
-          unavailable = Support.quantity(Support.value(rolling, "maxUnavailable", DEFAULT_ROLLING_PERCENT), desired, mode: :floor, default: 0)
+          unavailable = Support.quantity(Support.value(rolling, "maxUnavailable", DEFAULT_ROLLING_PERCENT), desired, mode: :floor,
+                                                                                                                     default: 0)
           unavailable = 1 if surge.zero? && unavailable.zero?
           [surge, unavailable]
         end
@@ -310,7 +311,8 @@ module Rubernetes
           end
 
           condition = condition.merge("lastTransitionTime" => current.fetch("lastTransitionTime")) if current &&
-            Support.value(current, "status", "") == condition.fetch("status") && current.key?("lastTransitionTime")
+                                                                                                      Support.value(current, "status",
+                                                                                                                    "") == condition.fetch("status") && current.key?("lastTransitionTime")
           status["conditions"] = filter_out_condition(status["conditions"], condition.fetch("type")) + [condition]
           status
         end
@@ -322,7 +324,9 @@ module Rubernetes
         end
 
         def filter_out_condition(conditions, type)
-          Array(conditions).reject { |condition| Support.value(condition, "type", "").to_s == type }.map { |condition| Support.deep_copy(condition) }
+          Array(conditions).reject do |condition|
+            Support.value(condition, "type", "").to_s == type
+          end.map { |condition| Support.deep_copy(condition) }
         end
 
         public :operation_create, :operation_delete, :operation_update, :operation_status
@@ -433,7 +437,9 @@ module Rubernetes
               min_ready_needs_update = Support.integer(rs_copy["spec"]["minReadySeconds"], 0) != @c.min_ready_seconds(d)
               if annotations_updated || min_ready_needs_update
                 rs_copy["spec"]["minReadySeconds"] = @c.min_ready_seconds(d)
-                rs_copy["spec"].delete("minReadySeconds") if @c.min_ready_seconds(d).zero? && !Support.spec(existing).key?("minReadySeconds")
+                if @c.min_ready_seconds(d).zero? && !Support.spec(existing).key?("minReadySeconds")
+                  rs_copy["spec"].delete("minReadySeconds")
+                end
                 @operations << @c.operation_update(existing, rs_copy, descriptor: REPLICA_SET, reason: "deployment replica set annotations")
                 replace_replica_set!(rs_copy)
                 return rs_copy
@@ -442,7 +448,7 @@ module Rubernetes
               needs_update = set_deployment_revision!(Support.annotations(rs_copy)[REVISION_ANNOTATION].to_s)
               if @c.progress_deadline?(d) && @c.find_condition(@status, "Progressing").nil?
                 @c.set_condition!(@status, @c.new_condition("Progressing", "True", REASON_FOUND_NEW_RS,
-                                                             "Found new replica set \"#{Support.name(rs_copy)}\"", @now))
+                                                            "Found new replica set \"#{Support.name(rs_copy)}\"", @now))
                 needs_update = true
               end
               @deployment_metadata_dirty ||= needs_update
@@ -473,7 +479,8 @@ module Rubernetes
             colliding = @all_replica_sets.find { |rs| Support.name(rs) == Support.name(new_rs) }
             if colliding
               controlled = Support.owner_reference_matches?(d, colliding, controller: true)
-              if controlled && @c.equal_ignore_hash?(Support.value(Support.spec(d), "template", {}), Support.value(Support.spec(colliding), "template", {}))
+              if controlled && @c.equal_ignore_hash?(Support.value(Support.spec(d), "template", {}),
+                                                     Support.value(Support.spec(colliding), "template", {}))
                 created = Support.deep_copy(colliding)
               else
                 # A different template already owns this name: bump the
@@ -487,12 +494,15 @@ module Rubernetes
               @operations << @c.operation_create(new_rs, owner: d, descriptor: REPLICA_SET, reason: "new deployment revision")
               @rs_list << new_rs
               count = @c.rs_replicas(new_rs)
-              @events << @c.event("Normal", "ScalingReplicaSet", "Scaled up replica set #{Support.name(new_rs)} from 0 to #{count}") if count.positive?
+              if count.positive?
+                @events << @c.event("Normal", "ScalingReplicaSet",
+                                    "Scaled up replica set #{Support.name(new_rs)} from 0 to #{count}")
+              end
             end
             needs_update = set_deployment_revision!(new_revision)
             if colliding.nil? && @c.progress_deadline?(d)
               @c.set_condition!(@status, @c.new_condition("Progressing", "True", REASON_NEW_REPLICA_SET,
-                                                           "Created new replica set \"#{Support.name(created)}\"", @now))
+                                                          "Created new replica set \"#{Support.name(created)}\"", @now))
               needs_update = true
             end
             @deployment_metadata_dirty ||= needs_update
@@ -536,7 +546,10 @@ module Rubernetes
                   total -= old_revisions[start].length + 1
                   start += 1
                 end
-                annotations[REVISION_HISTORY_ANNOTATION] = (old_revisions[start..] + [old_revision.to_s]).join(",") if total <= MAX_REV_HISTORY_LENGTH_IN_CHARS
+                if total <= MAX_REV_HISTORY_LENGTH_IN_CHARS
+                  annotations[REVISION_HISTORY_ANNOTATION] =
+                    (old_revisions[start..] + [old_revision.to_s]).join(",")
+                end
               end
             end
             changed = true if !exists && set_replicas_annotations!(rs, @c.replicas(@d), @c.replicas(@d) + @c.max_surge(@d))
@@ -625,7 +638,8 @@ module Rubernetes
             replace_replica_set!(rs_copy)
             if size_needs_update
               direction = current < new_scale ? "up" : "down"
-              @events << @c.event("Normal", "ScalingReplicaSet", "Scaled #{direction} replica set #{Support.name(rs)} from #{current} to #{new_scale}")
+              @events << @c.event("Normal", "ScalingReplicaSet",
+                                  "Scaled #{direction} replica set #{Support.name(rs)} from #{current} to #{new_scale}")
             end
             [size_needs_update, rs_copy]
           end
@@ -986,9 +1000,12 @@ module Rubernetes
             status["terminatingReplicas"] = terminating unless terminating.nil?
             status["conditions"] = Array(@status["conditions"]).map { |condition| Support.deep_copy(condition) }
             if available >= @c.replicas(@d) - @c.max_unavailable(@d)
-              @c.set_condition!(status, @c.new_condition("Available", "True", REASON_MIN_AVAILABLE, "Deployment has minimum availability.", @now))
+              @c.set_condition!(status,
+                                @c.new_condition("Available", "True", REASON_MIN_AVAILABLE, "Deployment has minimum availability.", @now))
             else
-              @c.set_condition!(status, @c.new_condition("Available", "False", REASON_MIN_UNAVAILABLE, "Deployment does not have minimum availability.", @now))
+              @c.set_condition!(status,
+                                @c.new_condition("Available", "False", REASON_MIN_UNAVAILABLE,
+                                                 "Deployment does not have minimum availability.", @now))
             end
             status
           end
@@ -1027,7 +1044,8 @@ module Rubernetes
                 message = new_rs ? "ReplicaSet \"#{Support.name(new_rs)}\" is progressing." : "Deployment \"#{Support.name(d)}\" is progressing."
                 condition = @c.new_condition("Progressing", "True", REASON_REPLICA_SET_UPDATED, message, @now)
                 if current
-                  condition["lastTransitionTime"] = current["lastTransitionTime"] if Support.value(current, "status", "") == "True" && current.key?("lastTransitionTime")
+                  condition["lastTransitionTime"] = current["lastTransitionTime"] if Support.value(current, "status",
+                                                                                                   "") == "True" && current.key?("lastTransitionTime")
                   @c.remove_condition!(new_status, "Progressing")
                 end
                 @c.set_condition!(new_status, condition)
@@ -1045,7 +1063,9 @@ module Rubernetes
             end
             new_status.delete("conditions") if Array(new_status["conditions"]).empty?
 
-            requeue_stuck_deployment(new_status) if Support.canonical(compact_status(@status)) == Support.canonical(compact_status(new_status))
+            if Support.canonical(compact_status(@status)) == Support.canonical(compact_status(new_status))
+              requeue_stuck_deployment(new_status)
+            end
             @status = new_status
             finish
           end
@@ -1140,7 +1160,7 @@ module Rubernetes
               candidate = Support.deep_copy(@d)
               candidate["status"] = Support.deep_copy(Support.status(deployment))
               update = @c.operation_update(deployment, candidate, descriptor: DESCRIPTOR,
-                                           reason: @spec_dirty ? "deployment rollback" : "deployment revision")
+                                                                  reason: @spec_dirty ? "deployment rollback" : "deployment revision")
               @operations << update if update
             end
             status_operation = @c.operation_status(deployment, final_status, descriptor: DESCRIPTOR)

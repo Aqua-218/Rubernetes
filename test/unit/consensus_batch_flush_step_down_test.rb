@@ -42,15 +42,18 @@ class ConsensusBatchFlushStepDownTest < Minitest::Test
         appended = node.proposal_position("r1")
         # Step down before the proposer's await_batch_flush runs.
         node.__send__(:become_follower, node.current_term + 1, leader: nil, now: Process.clock_gettime(Process::CLOCK_MONOTONIC))
-        refute node.leader?
+
+        refute_predicate node, :leader?
         [appended, leader.send(:await_batch_flush, "r1", 1.0)]
       end
       appended, awaited = position
+
       refute_nil appended
       assert_equal appended, awaited, "the proposer gets the position its entry was appended at, not nil"
       # The entry commits under the next leader and every replica holds it once.
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
-      until servers.values.all? { |server| server.node.last_applied >= appended[:index] } || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      all_applied = -> { servers.values.all? { |server| server.node.last_applied >= appended[:index] } }
+      until all_applied.call || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
         sleep 0.02
       end
       servers.each_value do |server|
@@ -73,6 +76,7 @@ class ConsensusBatchFlushStepDownTest < Minitest::Test
         node.__send__(:become_follower, node.current_term + 1, leader: nil, now: Process.clock_gettime(Process::CLOCK_MONOTONIC))
         leader.send(:await_batch_flush, "r2", 1.0)
       end
+
       assert_nil awaited, "nothing was appended, so the proposal is retried"
       servers.each_value(&:stop)
     end

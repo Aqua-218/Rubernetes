@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 require "ipaddr"
-require "set"
-require "thread"
 
 require_relative "durable_state"
 require_relative "errors"
@@ -37,7 +35,7 @@ module Rubernetes
           }
         end
 
-        alias address ip
+        alias_method :address, :ip
 
         def committed?
           state == "committed"
@@ -124,7 +122,7 @@ module Rubernetes
           }
         end
 
-        alias released reclaimed
+        alias_method :released, :reclaimed
       end
 
       DEFAULT_NODE_PREFIX = {"ipv4" => 24, "ipv6" => 64}.freeze
@@ -141,7 +139,10 @@ module Rubernetes
         @mutex = Mutex.new
         @observer = kernel_observer || observer
         @journal = journal
-        @store = state_store || store || (state_path || path ? DurableState.new(state_path || path, default: default_state, fsync: fsync) : nil)
+        @store = state_store || store || (if state_path || path
+                                            DurableState.new(state_path || path, default: default_state,
+                                                                                 fsync: fsync)
+                                          end)
         @state = @store ? normalize_state(@store.read) : default_state
         @durable_state = Support.copy(@state)
         @node_cidrs = parse_cluster_cidrs(cluster_cidr: cluster_cidr, ipv4_cidr: ipv4_cidr, ipv6_cidr: ipv6_cidr)
@@ -156,8 +157,8 @@ module Rubernetes
 
       attr_reader :node_cidrs, :node_prefixes
 
-      def allocate_node(node:, families: nil, **options)
-        allocate_node_subnet(node: node, families: families, **options)
+      def allocate_node(node:, families: nil, **)
+        allocate_node_subnet(node: node, families: families, **)
       end
 
       def allocate_node_subnet(node:, families: nil, **_options)
@@ -194,6 +195,7 @@ module Rubernetes
           if active.any? { |lease| requested.nil? || requested.include?(lease["family"]) }
             raise LeaseStateError, "cannot release node subnet #{node_id.inspect} while leases are active"
           end
+
           released = requested ? current.slice(*requested) : current.dup
           released_families = released.keys.freeze
           released_families.each { |family| current.delete(family) }
@@ -210,10 +212,10 @@ module Rubernetes
         sandbox = Support.identifier(sandbox_id, "sandbox_id")
         operation = Support.identifier(operation_id || "network-#{sandbox}", "operation_id")
         requested = normalize_families(families || (dual_stack == false ? ["ipv4"] : @node_cidrs.keys))
-        requested = ["ipv4", "ipv6"] if dual_stack == true && families.nil?
+        requested = %w[ipv4 ipv6] if dual_stack == true && families.nil?
         requested.each { |family| raise ValidationError, "#{family} CIDR is not configured" unless @node_cidrs.key?(family) }
         digest = config_digest || Support.digest({"node" => node_id, "pod_uid" => pod, "sandbox_id" => sandbox,
-                                                   "families" => requested, "metadata" => metadata})
+                                                  "families" => requested, "metadata" => metadata})
 
         @mutex.synchronize do
           existing = find_operation(operation_id: operation, sandbox_id: sandbox)
@@ -222,8 +224,9 @@ module Rubernetes
             return lease_set_for(existing.fetch("lease_keys"), operation_id: operation, sandbox_id: sandbox, pod_uid: pod)
           end
           sandbox_operation = find_operation(operation_id: nil, sandbox_id: sandbox)
-          if sandbox_operation && ACTIVE_STATES.include?(sandbox_operation.fetch("state"))
-            raise OperationConflict, "sandbox #{sandbox.inspect} already owns IPAM operation #{sandbox_operation.fetch("operation_id")}" unless sandbox_operation.fetch("operation_id") == operation
+          if sandbox_operation && ACTIVE_STATES.include?(sandbox_operation.fetch("state")) && !(sandbox_operation.fetch("operation_id") == operation)
+            raise OperationConflict,
+                  "sandbox #{sandbox.inspect} already owns IPAM operation #{sandbox_operation.fetch("operation_id")}"
           end
 
           # Every change is persisted, so the state before this transaction
@@ -295,19 +298,25 @@ module Rubernetes
           begin
             record = @state.fetch("operations", {})[operation]
             raise LeaseStateError, "unknown IPAM operation #{operation.inspect}" unless record
-            return lease_set_for(record.fetch("lease_keys"), operation_id: operation,
-                                 sandbox_id: record.fetch("sandbox_id"), pod_uid: record.fetch("pod_uid")) if record["state"] == "committed"
-            raise LeaseStateError, "cannot commit IPAM operation #{operation.inspect} in #{record.fetch("state")}" unless record["state"] == "reserved"
+            if record["state"] == "committed"
+              return lease_set_for(record.fetch("lease_keys"), operation_id: operation,
+                                                               sandbox_id: record.fetch("sandbox_id"), pod_uid: record.fetch("pod_uid"))
+            end
+            unless record["state"] == "reserved"
+              raise LeaseStateError,
+                    "cannot commit IPAM operation #{operation.inspect} in #{record.fetch("state")}"
+            end
 
             record.fetch("lease_keys").each do |key|
               lease = @state.fetch("leases").fetch(key)
               raise LeaseStateError, "lease #{key} is no longer reserved" unless lease["state"] == "reserved"
+
               @state["leases"][key] = lease.merge("state" => "committed", "committed_at" => Support.now(@clock).iso8601(6))
             end
             record = @state["operations"][operation] = record.merge("state" => "committed")
             persist!("lease_committed", "operation_id" => operation, "lease_keys" => record.fetch("lease_keys"))
             lease_set_for(record.fetch("lease_keys"), operation_id: operation,
-                          sandbox_id: record.fetch("sandbox_id"), pod_uid: record.fetch("pod_uid"))
+                                                      sandbox_id: record.fetch("sandbox_id"), pod_uid: record.fetch("pod_uid"))
           rescue StandardError
             @state = Support.working_copy(state_before) if @durable_state.equal?(state_before)
             raise
@@ -343,8 +352,10 @@ module Rubernetes
             # refusing it left the Pod in CleanupPending: the node never issued
             # its final delete and the Pod stayed Terminating in the API.
             return LeaseSet.new([], operation_id: operation, sandbox_id: sandbox_id, pod_uid: nil) unless record
-            return lease_set_for(record.fetch("lease_keys"), operation_id: operation,
-                                 sandbox_id: record.fetch("sandbox_id"), pod_uid: record.fetch("pod_uid")) if record["state"] == "released"
+            if record["state"] == "released"
+              return lease_set_for(record.fetch("lease_keys"), operation_id: operation,
+                                                               sandbox_id: record.fetch("sandbox_id"), pod_uid: record.fetch("pod_uid"))
+            end
 
             record.fetch("lease_keys").each do |key|
               lease = @state.fetch("leases").fetch(key)
@@ -353,9 +364,9 @@ module Rubernetes
             record = @state["operations"][operation] = record.merge("state" => "released")
             prune_released_operations_locked!
             persist!("lease_released", "operation_id" => operation, "lease_keys" => record.fetch("lease_keys"),
-                     "stop_confirmed" => true)
+                                       "stop_confirmed" => true)
             lease_set_for(record.fetch("lease_keys"), operation_id: operation,
-                          sandbox_id: record.fetch("sandbox_id"), pod_uid: record.fetch("pod_uid"))
+                                                      sandbox_id: record.fetch("sandbox_id"), pod_uid: record.fetch("pod_uid"))
           rescue StandardError
             @state = Support.working_copy(state_before) if @durable_state.equal?(state_before)
             raise
@@ -436,6 +447,7 @@ module Rubernetes
             end
             if address.nil?
               raise LeaseStateError, "kernel address identity is missing for #{key}" if require_complete
+
               next
             end
 
@@ -443,11 +455,13 @@ module Rubernetes
             required = %w[netns_inode ifindex ifname prefix]
             missing = required.select { |field| Support.fetch(metadata, field, default: nil).nil? }
             unless missing.empty?
-              raise LeaseStateError, "kernel address identity for #{key} is missing #{missing.join(', ')}" if require_complete
+              raise LeaseStateError, "kernel address identity for #{key} is missing #{missing.join(", ")}" if require_complete
+
               next
             end
             routes = observed.filter_map do |entry|
               next unless entry.fetch("kind", nil).to_s == "route"
+
               route = Support.canonical(entry.fetch("metadata", {}))
               next unless route["netns_inode"].to_i == metadata.fetch("netns_inode").to_i
               next unless route["ifindex"].to_i == metadata.fetch("ifindex").to_i
@@ -473,12 +487,13 @@ module Rubernetes
               "prefix" => Integer(metadata.fetch("prefix")),
               "routes" => routes
             }
-            @state["leases"][key] = lease.merge("metadata" => Support.copy(lease.fetch("metadata", {})).merge("kernel_identity" => identity))
+            @state["leases"][key] =
+              lease.merge("metadata" => Support.copy(lease.fetch("metadata", {})).merge("kernel_identity" => identity))
           end
           persist!("lease_kernel_identity_bound", "operation_id" => operation,
-                   "lease_keys" => record.fetch("lease_keys"))
+                                                  "lease_keys" => record.fetch("lease_keys"))
           lease_set_for(record.fetch("lease_keys"), operation_id: operation,
-                        sandbox_id: record.fetch("sandbox_id"), pod_uid: record.fetch("pod_uid"))
+                                                    sandbox_id: record.fetch("sandbox_id"), pod_uid: record.fetch("pod_uid"))
         end
       rescue KeyError, ArgumentError, TypeError => error
         raise LeaseStateError, "kernel IPAM identity is incomplete: #{error.message}"
@@ -517,7 +532,7 @@ module Rubernetes
           expected_keys = expected.map { |lease| lease_key(lease.fetch("family"), lease.fetch("ip")) }
           orphans = observed.reject { |key, _value| expected_keys.include?(key) }.keys.sort
           persist!("ipam_recovered", "reclaimed" => reclaimed, "unknown" => unknown,
-                   "identity_mismatch" => identity_mismatch, "orphans" => orphans)
+                                     "identity_mismatch" => identity_mismatch, "orphans" => orphans)
           RecoveryReport.new(reclaimed: reclaimed.freeze, unknown: unknown.freeze,
                              identity_mismatch: Support.immutable(identity_mismatch), orphans: orphans.freeze,
                              errors: errors.freeze, audit: Support.immutable(audit)).freeze
@@ -556,8 +571,16 @@ module Rubernetes
             ipv6_cidr ||= cluster_cidr
           end
         end
-        values["ipv4"] = Support.cidr(ipv4_cidr, name: "ipv4_cidr").then { |network, prefix| {"network" => network.to_s, "prefix" => prefix} } if ipv4_cidr
-        values["ipv6"] = Support.cidr(ipv6_cidr, name: "ipv6_cidr").then { |network, prefix| {"network" => network.to_s, "prefix" => prefix} } if ipv6_cidr
+        if ipv4_cidr
+          values["ipv4"] = Support.cidr(ipv4_cidr, name: "ipv4_cidr").then do |network, prefix|
+            {"network" => network.to_s, "prefix" => prefix}
+          end
+        end
+        if ipv6_cidr
+          values["ipv6"] = Support.cidr(ipv6_cidr, name: "ipv6_cidr").then do |network, prefix|
+            {"network" => network.to_s, "prefix" => prefix}
+          end
+        end
         values
       end
 
@@ -602,6 +625,7 @@ module Rubernetes
         node_prefix = @node_prefixes.fetch(family)
         count = 1 << (node_prefix - cluster_prefix)
         raise LeaseUnavailable, "#{family} cluster CIDR has too many node subnets to scan safely" if count > MAX_NODE_SUBNET_SCAN
+
         used = @state.fetch("nodes", {}).values.filter_map { |entry| entry[family] }.to_set
         count.times do |index|
           candidate = subnet_at(network, node_prefix, index)
@@ -613,7 +637,7 @@ module Rubernetes
       def subnet_at(network, prefix, index)
         bits = network.ipv4? ? 32 : 128
         increment = 1 << (bits - prefix)
-        "#{IPAddr.new(network.to_i + (index * increment), network.family).to_s}/#{prefix}"
+        "#{IPAddr.new(network.to_i + (index * increment), network.family)}/#{prefix}"
       end
 
       def allocate_node_locked(node_id, families)
@@ -659,7 +683,7 @@ module Rubernetes
       def lease_set_for(keys, operation_id:, sandbox_id:, pod_uid:)
         values = Array(keys).map { |key| @state.fetch("leases").fetch(key) }
         LeaseSet.new(values.map { |entry| lease_from(entry) }, operation_id: operation_id,
-                     sandbox_id: sandbox_id, pod_uid: pod_uid)
+                                                               sandbox_id: sandbox_id, pod_uid: pod_uid)
       end
 
       # Released operations were kept for ever: one per Pod ever started on
@@ -690,6 +714,7 @@ module Rubernetes
       def operation_from_argument(value)
         return nil unless value
         return @state.fetch("operations", {})[value.operation_id] if value.respond_to?(:operation_id) && value.operation_id
+
         if value.is_a?(Hash)
           operation = Support.fetch(value, "operation_id", default: nil)
           return @state.fetch("operations", {})[String(operation)] if operation
@@ -707,7 +732,7 @@ module Rubernetes
 
       def ensure_intent!(existing, node_id:, pod_uid:, sandbox_id:, families:, config_digest:)
         expected = existing["node"] == node_id && existing["pod_uid"] == pod_uid && existing["sandbox_id"] == sandbox_id &&
-          Array(existing["families"]).sort == families.sort && existing["config_digest"] == config_digest
+                   Array(existing["families"]).sort == families.sort && existing["config_digest"] == config_digest
         raise OperationConflict, "IPAM operation was replayed with different intent" unless expected
       end
 
@@ -717,7 +742,7 @@ module Rubernetes
         # that label is not a pod identity and must not turn every successful
         # kernel readback into an identity mismatch.
         owner_matches = owner.nil? || %w[kernel-observer network-observer observer].include?(owner.to_s) ||
-          [lease["pod_uid"], lease["sandbox_id"], lease["operation_id"]].include?(owner.to_s)
+                        [lease["pod_uid"], lease["sandbox_id"], lease["operation_id"]].include?(owner.to_s)
         return false unless owner_matches
 
         expected = Support.fetch(lease.fetch("metadata", {}), "kernel_identity", default: nil)
@@ -726,6 +751,7 @@ module Rubernetes
         expected = Support.canonical(expected)
         actual = Support.canonical(Support.fetch(observed, "metadata", default: {}))
         return false unless observed["identity"].to_s == expected.fetch("address_identity").to_s
+
         %w[netns_inode ifindex ifname prefix].each do |field|
           return false unless actual[field].to_s == expected.fetch(field).to_s
         end
@@ -763,6 +789,7 @@ module Rubernetes
           ip = Support.fetch(hash, "ip", "address", default: nil) ||
                Support.fetch(metadata, "ip", "address", default: nil)
           next if ip.nil?
+
           normalized_ip = String(ip).split("/", 2).first
           family = Support.fetch(hash, "family", default: nil) ||
                    Support.fetch(metadata, "family", default: nil) ||
@@ -802,7 +829,7 @@ module Rubernetes
         return unless @journal
 
         parameters = @journal.method(:append).parameters
-        requires_operation = parameters.any? { |kind, name| [:key, :keyreq].include?(kind) && name == :operation_id }
+        requires_operation = parameters.any? { |kind, name| %i[key keyreq].include?(kind) && name == :operation_id }
         if requires_operation
           @journal.append(operation_id: "network:ipam", event: event, payload: payload)
         else

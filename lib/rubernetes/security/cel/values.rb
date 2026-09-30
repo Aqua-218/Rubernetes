@@ -8,8 +8,8 @@ module Rubernetes
       # CEL value types that Ruby does not distinguish natively.
       module Values
         INT64_MIN = -(2**63)
-        INT64_MAX = 2**63 - 1
-        UINT64_MAX = 2**64 - 1
+        INT64_MAX = (2**63) - 1
+        UINT64_MAX = (2**64) - 1
 
         # A constructed message (`Object{...}`, `Object.spec{...}`): a field
         # map that remembers the type name it was built as, which the
@@ -93,12 +93,16 @@ module Rubernetes
           end
 
           def self.parse(text)
-            raise EvaluationError, "invalid duration #{text.inspect}" unless text.is_a?(String) && text.match?(/\A-?(?:\d+(?:\.\d+)?(?:ns|us|µs|ms|s|m|h))+\z/)
+            unless text.is_a?(String) && text.match?(/\A-?(?:\d+(?:\.\d+)?(?:ns|us|µs|ms|s|m|h))+\z/)
+              raise EvaluationError,
+                    "invalid duration #{text.inspect}"
+            end
 
             sign = text.start_with?("-") ? -1 : 1
             total = 0r
             text.delete_prefix("-").scan(/(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/) do |number, unit|
-              factor = {"ns" => 1r / 1_000_000_000, "us" => 1r / 1_000_000, "µs" => 1r / 1_000_000, "ms" => 1r / 1000, "s" => 1r, "m" => 60r, "h" => 3600r}.fetch(unit)
+              factor = {"ns" => 1r / 1_000_000_000, "us" => 1r / 1_000_000, "µs" => 1r / 1_000_000, "ms" => 1r / 1000, "s" => 1r,
+                        "m" => 60r, "h" => 3600r}.fetch(unit)
               total += number.to_r * factor
             end
             new(sign * total)
@@ -125,6 +129,7 @@ module Rubernetes
           def hash = [:timestamp, @time].hash
           def <=>(other) = @time <=> other.time
           include Comparable
+
           def to_s = @time.iso8601(9).sub(/\.?0+Z\z/, "Z")
 
           def self.parse(text)

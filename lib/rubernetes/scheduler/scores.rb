@@ -77,7 +77,8 @@ module Rubernetes
 
         def score_nodes(pod, nodes, _context = nil)
           tolerations = pod.tolerations.select do |toleration|
-            %w[PreferNoSchedule].include?(Support.value(toleration, "effect", "").to_s) || Support.value(toleration, "effect", "").to_s.empty?
+            %w[PreferNoSchedule].include?(Support.value(toleration, "effect",
+                                                        "").to_s) || Support.value(toleration, "effect", "").to_s.empty?
           end
           raw = nodes.to_h do |node|
             [node.name, node.taints.count do |taint|
@@ -108,7 +109,9 @@ module Rubernetes
           terms = Array(Support.value(affinity, "preferredDuringSchedulingIgnoredDuringExecution", []))
           terms.sum do |term|
             term = Support.object_hash(term)
-            selector = {"matchExpressions" => Support.value(term, "preference", {}).then { |value| Support.value(value, "matchExpressions", []) },
+            selector = {"matchExpressions" => Support.value(term, "preference", {}).then do |value|
+              Support.value(value, "matchExpressions", [])
+            end,
                         "matchFields" => Support.value(term, "preference", {}).then { |value| Support.value(value, "matchFields", []) }}
             matches = Array(selector.fetch("matchExpressions")).all? do |expression|
               requirement_matches?(expression, node.labels)
@@ -149,6 +152,7 @@ module Rubernetes
       # Skip when no node contributes anything.
       class InterPodAffinity
         include NodeSetScorer
+
         HARD_POD_AFFINITY_WEIGHT = 1
 
         def score_nodes(pod, nodes, context = nil)
@@ -339,6 +343,7 @@ module Rubernetes
       # scores are reversed over the feasible nodes.  Skip without constraints.
       class TopologySpread
         include NodeSetScorer
+
         HOSTNAME = "kubernetes.io/hostname"
         # config.DefaultPodTopologySpreadConstraints (systemDefaulted).
         SYSTEM_DEFAULT_CONSTRAINTS = [
@@ -357,7 +362,8 @@ module Rubernetes
 
                             {"topologyKey" => Support.value(constraint, "topologyKey", "").to_s,
                              "maxSkew" => Integer(Support.value(constraint, "maxSkew", 1) || 1),
-                             "selector" => merge_match_label_keys(Support.object_hash(Support.value(constraint, "labelSelector", {})), constraint, pod)}
+                             "selector" => merge_match_label_keys(Support.object_hash(Support.value(constraint, "labelSelector", {})),
+                                                                  constraint, pod)}
                           end
                         end
           return SKIP if constraints.empty?
@@ -403,8 +409,13 @@ module Rubernetes
               key = constraint["topologyKey"]
               next 0.0 unless node.labels.key?(key)
 
-              count = key == HOSTNAME ? matching(by_node[node.name], constraint["selector"], pod) : counts[index].fetch(node.labels[key].to_s, 0)
-              count * weights[index] + (constraint["maxSkew"] - 1)
+              count = if key == HOSTNAME
+                        matching(by_node[node.name], constraint["selector"],
+                                 pod)
+                      else
+                        counts[index].fetch(node.labels[key].to_s, 0)
+                      end
+              (count * weights[index]) + (constraint["maxSkew"] - 1)
             end
             [node.name, score.round]
           end
@@ -462,7 +473,9 @@ module Rubernetes
 
             match_labels.merge!(selector.to_h { |key, value| [key.to_s, value.to_s] })
           end
-          owner = Array(Support.value(pod.metadata, "ownerReferences", [])).find { |reference| Support.value(reference, "controller", false) == true }
+          owner = Array(Support.value(pod.metadata, "ownerReferences", [])).find do |reference|
+            Support.value(reference, "controller", false) == true
+          end
           if owner
             kind = Support.value(owner, "kind", "").to_s
             api_version = Support.value(owner, "apiVersion", "").to_s

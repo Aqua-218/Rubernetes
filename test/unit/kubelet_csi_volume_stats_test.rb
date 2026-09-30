@@ -44,8 +44,10 @@ class KubeletCSIVolumeStatsTest < Minitest::Test
     calls = []
     subject = csi_provider(calls)
     volumes = subject.summary.fetch("pods").first.fetch("volume").to_h { |volume| [volume["name"], volume] }
+
     assert_equal %w[data scratch], volumes.keys.sort
     data = volumes.fetch("data")
+
     assert_equal [1000, 600, 400, 50, 40, 10],
                  data.values_at("capacityBytes", "availableBytes", "usedBytes", "inodes", "inodesFree", "inodesUsed")
     assert_equal({"name" => "claim", "namespace" => "ns"}, data["pvcRef"])
@@ -53,9 +55,11 @@ class KubeletCSIVolumeStatsTest < Minitest::Test
 
     # Cached for fs_ttl, as the kubelet's volume stats aggregation period.
     subject.summary
+
     assert_equal 3, calls.length
     @mono += 120
     subject.summary
+
     assert_equal 6, calls.length
   end
 
@@ -63,9 +67,11 @@ class KubeletCSIVolumeStatsTest < Minitest::Test
     server = Rubernetes::Node::StreamingServer.new(log_service: Object.new, lifecycle: Lifecycle.new(csi_records),
                                                    stats_provider: csi_provider([]))
     status, _headers, body = server.call(Request.new("/metrics", "GET", {}))
+
     assert_equal 200, status
     text = body.join
     labels = '{namespace="ns",persistentvolumeclaim="claim"}'
+
     assert_includes text, "kubelet_volume_stats_capacity_bytes#{labels} 1000"
     assert_includes text, "kubelet_volume_stats_available_bytes#{labels} 600"
     assert_includes text, "kubelet_volume_stats_used_bytes#{labels} 400"

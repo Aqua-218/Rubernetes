@@ -13,8 +13,10 @@ ROOT = File.expand_path("../..", __dir__).freeze unless defined?(ROOT)
 # Generator runs use a root-level mktemp directory. Keep the exclusion anchored
 # to that exact name shape so an arbitrary similarly named source directory is
 # still part of the content-addressed input.
-SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}.freeze unless defined?(SOURCE_EXCLUSIONS)
-SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze unless defined?(SHA256_PATTERN)
+unless defined?(SOURCE_EXCLUSIONS)
+  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}
+end
+SHA256_PATTERN = /\A[0-9a-f]{64}\z/ unless defined?(SHA256_PATTERN)
 
 module M1ProbeSupport
   module_function
@@ -57,9 +59,7 @@ module M1ProbeSupport
     before = source_file_metadata(path)
     digest = Digest::SHA256.file(path).hexdigest
     after = source_file_metadata(path)
-    unless before == after
-      raise ProbeError, "source file changed while capturing #{path.delete_prefix("#{root}/")}"
-    end
+    raise ProbeError, "source file changed while capturing #{path.delete_prefix("#{root}/")}" unless before == after
 
     relative = path.delete_prefix("#{root}/")
     {
@@ -74,9 +74,7 @@ module M1ProbeSupport
     root = File.expand_path(root)
     paths = source_paths(root)
     captures = paths.map { |path| source_file_capture(root, path) }
-    unless source_paths(root) == paths
-      raise ProbeError, "source input paths changed while capturing the inventory"
-    end
+    raise ProbeError, "source input paths changed while capturing the inventory" unless source_paths(root) == paths
 
     {
       "sha256" => canonical_inventory_digest(captures.map { |capture| capture.fetch("entry") }),
@@ -122,21 +120,17 @@ module M1ProbeSupport
   end
 
   def input_context(current)
-    expected_sha = ENV["RUBERNETES_M1_INPUT_SHA256"]
-    expected_count = ENV["RUBERNETES_M1_INPUT_FILE_COUNT"]
+    expected_sha = ENV.fetch("RUBERNETES_M1_INPUT_SHA256", nil)
+    expected_count = ENV.fetch("RUBERNETES_M1_INPUT_FILE_COUNT", nil)
     errors = []
 
-    if expected_sha && !SHA256_PATTERN.match?(expected_sha)
-      errors << "RUBERNETES_M1_INPUT_SHA256 must be a lowercase SHA-256 digest"
-    end
+    errors << "RUBERNETES_M1_INPUT_SHA256 must be a lowercase SHA-256 digest" if expected_sha && !SHA256_PATTERN.match?(expected_sha)
     parsed_count = begin
       Integer(expected_count, 10) if expected_count
     rescue ArgumentError, TypeError
       nil
     end
-    if expected_count && (!parsed_count || parsed_count <= 0)
-      errors << "RUBERNETES_M1_INPUT_FILE_COUNT must be a positive integer"
-    end
+    errors << "RUBERNETES_M1_INPUT_FILE_COUNT must be a positive integer" if expected_count && (!parsed_count || parsed_count <= 0)
 
     input_sha = expected_sha && SHA256_PATTERN.match?(expected_sha) ? expected_sha : current.fetch("sha256")
     input_file_count = parsed_count && parsed_count.positive? ? parsed_count : current.fetch("file_count")
@@ -220,8 +214,8 @@ module M1ProbeSupport
     report
   end
 
-  def run_probe(kind, pretty: true)
-    report = probe_report(kind) { |current, input| yield(current, input) }
+  def run_probe(kind, pretty: true, &)
+    report = probe_report(kind, &)
     puts(pretty ? JSON.pretty_generate(report) : JSON.generate(report))
     exit(report.fetch("passed") ? 0 : 1)
   end
@@ -350,7 +344,7 @@ module M1ProbeSupport
   # TokenReview endpoint recognizes the deterministic review token.
   class DifferentialIdentityResolver
     REQUESTER = {"username" => "m1-oracle", "uid" => "1", "groups" => %w[system:masters system:authenticated]}.freeze
-    REVIEW_TOKEN = "m1-review-token-6f1c0d2a".freeze
+    REVIEW_TOKEN = "m1-review-token-6f1c0d2a"
     REVIEW = {"username" => "m1-review", "uid" => "2", "groups" => %w[system:reviewers system:authenticated]}.freeze
 
     def call(_request = nil)
@@ -371,17 +365,17 @@ module M1ProbeSupport
     Dir.glob(File.join(discovery_root, "*.json")).sort.filter_map do |path|
       basename = File.basename(path, ".json")
       endpoint = case basename
-      when "api"
-        "/api"
-      when "api__v1"
-        "/api/v1"
-      when "apis"
-        "/apis"
-      when /\Aapis__(.+)__(.+)\z/
-        "/apis/#{Regexp.last_match(1)}/#{Regexp.last_match(2)}"
-      when /\Aapis__(.+)\z/
-        "/apis/#{Regexp.last_match(1)}"
-      end
+                 when "api"
+                   "/api"
+                 when "api__v1"
+                   "/api/v1"
+                 when "apis"
+                   "/apis"
+                 when /\Aapis__(.+)__(.+)\z/
+                   "/apis/#{Regexp.last_match(1)}/#{Regexp.last_match(2)}"
+                 when /\Aapis__(.+)\z/
+                   "/apis/#{Regexp.last_match(1)}"
+                 end
       next unless endpoint
 
       {
@@ -461,15 +455,15 @@ module M1ProbeSupport
         # policy Eviction annotation is descriptive, not a second GVR).
         override_group = entry["group"]
         override_version = entry["version"] || version
-        if override_group
-          override_fields = discovery_surface_fields(
-            entry,
-            group: override_group,
-            version: override_version,
-            subresources: subresources
-          ).merge("source_path" => document.fetch("source_path"))
-          rows << override_fields if expected_ids.key?(surface_identifier(override_fields))
-        end
+        next unless override_group
+
+        override_fields = discovery_surface_fields(
+          entry,
+          group: override_group,
+          version: override_version,
+          subresources: subresources
+        ).merge("source_path" => document.fetch("source_path"))
+        rows << override_fields if expected_ids.key?(surface_identifier(override_fields))
       end
     end
 
@@ -556,6 +550,7 @@ module M1ProbeSupport
 
     constant_name = type["ruby_constant"]
     return false unless constant_name.is_a?(String) && !constant_name.empty?
+
     generated = Rubernetes::Generated.const_get(constant_name, false)
     definition = generated.const_get(:DEFINITION, false)
     definition.respond_to?(:validator) && definition.respond_to?(:defaulting)
@@ -587,7 +582,11 @@ module M1ProbeSupport
         "listKind" => begin
           verbs = Array(entry.fetch("verbs", [])).map(&:to_s)
           configured = entry["list_kind"]
-          configured.nil? ? (verbs.include?("list") ? "#{entry.fetch("kind")}List" : "") : configured.to_s
+          if configured.nil?
+            verbs.include?("list") ? "#{entry.fetch("kind")}List" : ""
+          else
+            configured.to_s
+          end
         end,
         "schema_contract_present" => schema_contract_present?(entry["schema"], type_index: type_index),
         "schema" => entry["schema"]

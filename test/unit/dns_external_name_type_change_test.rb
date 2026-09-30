@@ -18,6 +18,7 @@ class DnsExternalNameTypeChangeTest < Minitest::Test
   def test_a_service_changed_to_cluster_ip_answers_its_cluster_ip
     resolver = Rubernetes::Network::DNS::Resolver.new
     resolver.add_service(service("type" => "ExternalName", "externalName" => "foo.example.com"))
+
     assert_equal "foo.example.com", resolver.resolve(NAME, type: "CNAME").first.data
 
     resolver.update_service(service("type" => "ClusterIP", "externalName" => "foo.example.com",
@@ -25,6 +26,7 @@ class DnsExternalNameTypeChangeTest < Minitest::Test
                                     "ports" => [{"port" => 80, "name" => "http", "protocol" => "TCP"}]))
 
     records = resolver.resolve(NAME, type: "A").records
-    assert_equal [["A", "10.96.12.34"]], records.map { |record| [record.type, record.data] }
+
+    assert_equal([["A", "10.96.12.34"]], records.map { |record| [record.type, record.data] })
   end
 end

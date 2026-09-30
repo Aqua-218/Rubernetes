@@ -41,7 +41,8 @@ class AdmissionReinvocationTest < Minitest::Test
   end
 
   def config_map(labels = {})
-    {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm", "namespace" => "team", "labels" => labels}, "data" => {"k" => "v"}}
+    {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm", "namespace" => "team", "labels" => labels},
+     "data" => {"k" => "v"}}
   end
 
   def put_policy(name, expression, reinvocation: "IfNeeded", match_conditions: nil)
@@ -50,7 +51,8 @@ class AdmissionReinvocationTest < Minitest::Test
             "mutations" => [{"patchType" => "ApplyConfiguration", "applyConfiguration" => {"expression" => expression}}]}
     spec["matchConditions"] = match_conditions if match_conditions
     @context.put("mutatingadmissionpolicies", nil, name, {"metadata" => {"name" => name}, "spec" => spec}, group: GROUP)
-    @context.put("mutatingadmissionpolicybindings", nil, name, {"metadata" => {"name" => name}, "spec" => {"policyName" => name}}, group: GROUP)
+    @context.put("mutatingadmissionpolicybindings", nil, name, {"metadata" => {"name" => name}, "spec" => {"policyName" => name}},
+                 group: GROUP)
   end
 
   def label(key, value) = %(Object{metadata: Object.metadata{labels: {"#{key}": #{value}}}})
@@ -66,6 +68,7 @@ class AdmissionReinvocationTest < Minitest::Test
     put_policy("b", label("b", %("x")), reinvocation: "Never")
     attrs = attributes(config_map)
     policy_chain.admit(attrs)
+
     assert_equal %w[MutatingAdmissionPolicy:0 MutatingAdmissionPolicy:1], @trace
     assert_equal({"a" => "x", "b" => "x"}, attrs.object.dig("metadata", "labels"))
   end
@@ -73,10 +76,12 @@ class AdmissionReinvocationTest < Minitest::Test
   def test_no_policy_is_called_for_the_first_time_on_reinvocation
     # "a" is gated on a label only "b" sets: skipped on the first pass, so it
     # is not called on the second either, although it matches by then.
-    put_policy("a", label("a", %("ran")), match_conditions: [{"name" => "gate", "expression" => %(object.?metadata.labels["gate"].orValue("") == "open")}])
+    put_policy("a", label("a", %("ran")),
+               match_conditions: [{"name" => "gate", "expression" => %(object.?metadata.labels["gate"].orValue("") == "open")}])
     put_policy("b", label("gate", %("open")))
     attrs = attributes(config_map)
     policy_chain.admit(attrs)
+
     assert_equal %w[MutatingAdmissionPolicy:0 MutatingAdmissionPolicy:1], @trace
     assert_equal({"gate" => "open"}, attrs.object.dig("metadata", "labels"))
   end
@@ -86,7 +91,8 @@ class AdmissionReinvocationTest < Minitest::Test
     put_policy("a", "Object{}", reinvocation: "Never")
     attrs = attributes(config_map)
     policy_chain.admit(attrs)
-    assert attrs.reinvoke_requested?
+
+    assert_predicate attrs, :reinvoke_requested?
     assert_equal %w[MutatingAdmissionPolicy:0 MutatingAdmissionPolicy:1], @trace
   end
 
@@ -94,7 +100,9 @@ class AdmissionReinvocationTest < Minitest::Test
     put_policy("a", label("a", %(object.?metadata.labels["tree"].orValue("none"))))
     tree = Class.new(A::Plugin) { define_method(:admit) { |attrs| attrs.object["metadata"]["labels"]["tree"] = "t" } }.new("Tree")
     attrs = attributes(config_map)
-    A::Chain.new(plugins: [Recorder.new(A::Registry.factories.fetch("MutatingAdmissionPolicy").call(@context, {}), @trace), tree]).admit(attrs)
+    A::Chain.new(plugins: [Recorder.new(A::Registry.factories.fetch("MutatingAdmissionPolicy").call(@context, {}), @trace),
+                           tree]).admit(attrs)
+
     assert_equal({"a" => "t", "tree" => "t"}, attrs.object.dig("metadata", "labels"))
   end
 
@@ -108,6 +116,7 @@ class AdmissionReinvocationTest < Minitest::Test
     put_policy("b", label("seen", %(object.data["defaulted"])), reinvocation: "Never")
     attrs = attributes(config_map)
     policy_chain.admit(attrs)
+
     assert_equal "yes", attrs.object.dig("metadata", "labels", "seen")
   end
 
@@ -131,24 +140,29 @@ class AdmissionReinvocationTest < Minitest::Test
   end
 
   def test_webhooks_are_reinvoked_by_uid_after_a_later_change
-    client, calls = webhook_client("https://mark/" => ->(object) { object.dig("metadata", "labels", "mark") ? nil : [{"op" => "add", "path" => "/metadata/labels/mark", "value" => "m"}] })
+    client, calls = webhook_client("https://mark/" => lambda { |object|
+      object.dig("metadata", "labels", "mark") ? nil : [{"op" => "add", "path" => "/metadata/labels/mark", "value" => "m"}]
+    })
     # Two hooks share a name: their UIDs differ by the duplicate index.
     @context.put("mutatingwebhookconfigurations", nil, "w",
                  {"metadata" => {"name" => "w"}, "webhooks" => [hook("same", "https://observe/", "IfNeeded"), hook("same", "https://observe-2/", "Never"),
                                                                 hook("mark", "https://mark/", "Never")]}, group: GROUP)
     attrs = attributes(config_map)
     A::Chain.new(plugins: [A::Registry.factories.fetch("MutatingAdmissionWebhook").call(@context, {"client" => client})]).admit(attrs)
+
     assert_equal %w[https://observe/ https://observe-2/ https://mark/ https://observe/], calls
-    assert attrs.reinvocation?
+    assert_predicate attrs, :reinvocation?
   end
 
   def test_a_webhook_that_changes_nothing_does_not_reinvoke
     client, calls = webhook_client({})
-    @context.put("mutatingwebhookconfigurations", nil, "w", {"metadata" => {"name" => "w"}, "webhooks" => [hook("h", "https://observe/", "IfNeeded")]}, group: GROUP)
+    @context.put("mutatingwebhookconfigurations", nil, "w",
+                 {"metadata" => {"name" => "w"}, "webhooks" => [hook("h", "https://observe/", "IfNeeded")]}, group: GROUP)
     attrs = attributes(config_map)
     A::Chain.new(plugins: [A::Registry.factories.fetch("MutatingAdmissionWebhook").call(@context, {"client" => client})]).admit(attrs)
+
     assert_equal %w[https://observe/], calls
-    refute attrs.reinvocation?
+    refute_predicate attrs, :reinvocation?
   end
 
   # The reinvocation pass runs every in-tree mutating plugin again, so each
@@ -162,20 +176,25 @@ class AdmissionReinvocationTest < Minitest::Test
                  {"metadata" => {"name" => "standard", "annotations" => {"storageclass.kubernetes.io/is-default-class" => "true"}}}, group: "storage.k8s.io")
     chain = A::Registry.default_chain(context: @context)
     mutators = chain.plugins.select { |plugin| plugin.mutating? && !plugin.reinvokable? }
+
     refute_empty mutators
     objects = {
-      ["", "v1", "pods", "Pod"] => {"metadata" => {"name" => "p", "namespace" => "team"}, "spec" => {"containers" => [{"name" => "c", "image" => "i"}]}},
-      ["", "v1", "persistentvolumeclaims", "PersistentVolumeClaim"] => {"metadata" => {"name" => "c", "namespace" => "team"}, "spec" => {"accessModes" => ["ReadWriteOnce"]}}
+      ["", "v1", "pods",
+       "Pod"] => {"metadata" => {"name" => "p", "namespace" => "team"}, "spec" => {"containers" => [{"name" => "c", "image" => "i"}]}},
+      ["", "v1", "persistentvolumeclaims",
+       "PersistentVolumeClaim"] => {"metadata" => {"name" => "c", "namespace" => "team"}, "spec" => {"accessModes" => ["ReadWriteOnce"]}}
     }
     objects.each do |(group, version, resource, kind), object|
       attrs = A::Attributes.new(operation: "CREATE", user: S::UserInfo.new(name: "alice"), group: group, version: version, resource: resource,
                                 kind: kind, namespace: "team", name: object.dig("metadata", "name"), object: Marshal.load(Marshal.dump(object)))
-      run = lambda { mutators.each { |plugin| plugin.admit(attrs) if plugin.handles?(attrs) } }
+      run = -> { mutators.each { |plugin| plugin.admit(attrs) if plugin.handles?(attrs) } }
       run.call
       first = Marshal.load(Marshal.dump(attrs.object))
+
       refute_equal object, first, "the #{kind} fixture exercises at least one mutator"
       attrs.mark_reinvocation!
       run.call
+
       assert_equal first, attrs.object, "#{kind}: a second pass of the in-tree mutators changed the object"
     end
   end

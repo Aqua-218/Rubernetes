@@ -24,6 +24,7 @@ class M3WorkloadStrategyTest < Minitest::Test
     result = Controller::StatefulSetController.new(clock: -> { NOW }).plan(set, pods: pods, revisions: [old_revision], now: NOW)
 
     deletes = result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+
     assert_equal ["db-2"], deletes, "the default strategy terminates the highest ordinal only"
     assert_equal 2, result.status.fetch("currentReplicas")
     assert_equal 2, result.creates.find { |operation| operation.resource.kind == "ControllerRevision" }.object.fetch("revision")
@@ -37,16 +38,21 @@ class M3WorkloadStrategyTest < Minitest::Test
     pods = (0..3).map { |ordinal| stateful_pod(set, ordinal, revision: old_revision.dig("metadata", "name"), ready: true) }
     # MaxUnavailableStatefulSet is Beta and off: one Pod at a time.
     gate_off = Controller::StatefulSetController.new(clock: -> { NOW }).plan(set, pods: pods, revisions: [old_revision], now: NOW)
+
     assert_equal 1, gate_off.deletes.length
     result = Controller::StatefulSetController.new(clock: -> { NOW }, max_unavailable_stateful_set: true)
-                                              .plan(set, pods: pods, revisions: [old_revision], now: NOW)
+      .plan(set, pods: pods, revisions: [old_revision], now: NOW)
 
     deletes = result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+
     assert_equal %w[db-3 db-2], deletes
 
     unavailable = pods.dup
     unavailable[3] = stateful_pod(set, 3, revision: old_revision.dig("metadata", "name"), ready: false)
-    throttled = Controller::StatefulSetController.new(clock: -> { NOW }, max_unavailable_stateful_set: true).plan(set, pods: unavailable, revisions: [old_revision], now: NOW)
+    throttled = Controller::StatefulSetController.new(clock: lambda {
+      NOW
+    }, max_unavailable_stateful_set: true).plan(set, pods: unavailable, revisions: [old_revision], now: NOW)
+
     assert_equal ["db-3"], throttled.deletes.map { |operation| operation.object.dig("metadata", "name") },
                  "an already unavailable pod consumes the maxUnavailable budget"
   end
@@ -56,12 +62,16 @@ class M3WorkloadStrategyTest < Minitest::Test
     revision = revision_name(set)
     first = stateful_pod(set, 0, revision: revision, ready: true, ready_since: NOW - 10)
     waiting = Controller::StatefulSetController.new(clock: -> { NOW }).plan(set, pods: [first], revisions: [], now: NOW)
+
     assert_empty waiting.creates.select { |operation| operation.resource.kind == "Pod" }, "db-0 is ready but not yet available"
     assert_equal 1, waiting.status.fetch("readyReplicas")
     assert_equal 0, waiting.status.fetch("availableReplicas")
 
     ready = Controller::StatefulSetController.new(clock: -> { NOW + 31 }).plan(set, pods: [first], revisions: [], now: NOW + 31)
-    assert_equal ["db-1"], ready.creates.select { |operation| operation.resource.kind == "Pod" }.map { |operation| operation.object.dig("metadata", "name") }
+
+    assert_equal(["db-1"], ready.creates.select do |operation|
+      operation.resource.kind == "Pod"
+    end.map { |operation| operation.object.dig("metadata", "name") })
     assert_equal 1, ready.status.fetch("availableReplicas")
   end
 
@@ -70,6 +80,7 @@ class M3WorkloadStrategyTest < Minitest::Test
     result = Controller::StatefulSetController.new(clock: -> { NOW }).plan(set, pods: [], revisions: [], now: NOW)
     revision = result.creates.find { |operation| operation.resource.kind == "ControllerRevision" }.object
     pod = result.creates.find { |operation| operation.resource.kind == "Pod" }.object
+
     assert_equal revision.dig("metadata", "name"), pod.dig("metadata", "labels", REVISION_LABEL)
     assert_match(/\Adb-[bcdfghjklmnpqrstvwxz2456789]{1,10}\z/, revision.dig("metadata", "name"))
     assert_equal revision.dig("metadata", "name").delete_prefix("db-"), revision.dig("metadata", "labels", "controller.kubernetes.io/hash")
@@ -85,37 +96,45 @@ class M3WorkloadStrategyTest < Minitest::Test
     result = Controller::DaemonSetController.new(clock: -> { NOW }).plan(daemon, pods: pods, nodes: nodes, revisions: [], now: NOW)
 
     assert_empty result.deletes
-    assert_empty result.creates.select { |operation| operation.resource.kind == "Pod" }
+    assert_empty(result.creates.select { |operation| operation.resource.kind == "Pod" })
     assert_equal 2, result.status.fetch("currentNumberScheduled")
     assert_equal 0, result.status.fetch("updatedNumberScheduled")
   end
 
   def test_daemonset_rolling_update_respects_max_unavailable
-    daemon = daemon_set(image: "example/agent:2", strategy: {"type" => "RollingUpdate", "rollingUpdate" => {"maxUnavailable" => 2}}, generation: 2)
+    daemon = daemon_set(image: "example/agent:2", strategy: {"type" => "RollingUpdate", "rollingUpdate" => {"maxUnavailable" => 2}},
+                        generation: 2)
     nodes = %w[node-a node-b node-c node-d].map { |name| node(name) }
     pods = nodes.map { |candidate| daemon_pod(daemon, candidate, hash: "stale", ready: true) }
     result = Controller::DaemonSetController.new(clock: -> { NOW }).plan(daemon, pods: pods, nodes: nodes, revisions: [], now: NOW)
 
     assert_equal 2, result.deletes.length
-    assert_equal %w[node-a node-b], result.deletes.map { |operation| operation.object.dig("spec", "nodeName") }
+    assert_equal(%w[node-a node-b], result.deletes.map { |operation| operation.object.dig("spec", "nodeName") })
   end
 
   def test_daemonset_rolling_update_with_max_surge_creates_before_deleting
-    daemon = daemon_set(image: "example/agent:2", strategy: {"type" => "RollingUpdate", "rollingUpdate" => {"maxSurge" => 1, "maxUnavailable" => 0}}, generation: 2)
+    daemon = daemon_set(image: "example/agent:2",
+                        strategy: {"type" => "RollingUpdate", "rollingUpdate" => {"maxSurge" => 1, "maxUnavailable" => 0}}, generation: 2)
     nodes = [node("node-a"), node("node-b")]
     pods = nodes.map { |candidate| daemon_pod(daemon, candidate, hash: "stale", ready: true) }
     controller = Controller::DaemonSetController.new(clock: -> { NOW })
     surge = controller.plan(daemon, pods: pods, nodes: nodes, revisions: [], now: NOW)
+
     assert_empty surge.deletes
     creates = surge.creates.select { |operation| operation.resource.kind == "Pod" }
+
     assert_equal 1, creates.length
     target = creates.first.object.dig("spec", "affinity", "nodeAffinity", "requiredDuringSchedulingIgnoredDuringExecution",
                                       "nodeSelectorTerms", 0, "matchFields", 0, "values", 0)
+
     assert_equal "node-a", target
 
-    hash = surge.creates.find { |operation| operation.resource.kind == "ControllerRevision" }.object.dig("metadata", "labels", REVISION_LABEL)
+    hash = surge.creates.find do |operation|
+      operation.resource.kind == "ControllerRevision"
+    end.object.dig("metadata", "labels", REVISION_LABEL)
     replacement = daemon_pod(daemon, nodes.first, hash: hash, ready: true, name: "agent-new", generation: 2)
     settled = controller.plan(daemon, pods: pods + [replacement], nodes: nodes, revisions: [], now: NOW)
+
     assert_equal ["agent-node-a"], settled.deletes.map { |operation| operation.object.dig("metadata", "name") },
                  "the old pod is removed once the surged replacement is available"
   end
@@ -133,8 +152,9 @@ class M3WorkloadStrategyTest < Minitest::Test
     result = Controller::DaemonSetController.new(clock: -> { NOW }).plan(daemon, pods: [], nodes: [], revisions: old, now: NOW)
 
     created = result.creates.find { |operation| operation.resource.kind == "ControllerRevision" }.object
+
     assert_equal 4, created.fetch("revision")
-    assert_equal %w[agent-old1 agent-old2], result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+    assert_equal(%w[agent-old1 agent-old2], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
   end
 
   def test_daemonset_pod_carries_upstream_tolerations_and_generation_label
@@ -142,6 +162,7 @@ class M3WorkloadStrategyTest < Minitest::Test
     result = Controller::DaemonSetController.new(clock: -> { NOW }).plan(daemon, pods: [], nodes: [node("node-a")], revisions: [], now: NOW)
     pod = result.creates.find { |operation| operation.resource.kind == "Pod" }.object
     keys = pod.dig("spec", "tolerations").map { |toleration| [toleration["key"], toleration["effect"]] }
+
     assert_includes keys, ["node.kubernetes.io/not-ready", "NoExecute"]
     assert_includes keys, ["node.kubernetes.io/unschedulable", "NoSchedule"]
     assert_equal "1", pod.dig("metadata", "labels", "pod-template-generation")
@@ -162,6 +183,7 @@ class M3WorkloadStrategyTest < Minitest::Test
     result = Controller::CronJobController.new(clock: -> { NOW }).plan(cron, jobs: jobs, now: NOW)
 
     deletes = result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+
     assert_equal %w[cron-1 cron-3], deletes
     assert_equal (NOW - 100).iso8601(6), result.status.fetch("lastSuccessfulTime")
     refute result.status.key?("active")
@@ -175,7 +197,8 @@ class M3WorkloadStrategyTest < Minitest::Test
     cron = cron_job(policy: "Forbid")
     first = Controller::CronJobController.new(clock: -> { NOW }).plan(cron, jobs: [], now: NOW)
     created = first.creates.fetch(0).object
-    assert_equal [Controller::Support.name(created)], Array(first.status["active"]).map { |ref| ref.fetch("name") }
+
+    assert_equal([Controller::Support.name(created)], Array(first.status["active"]).map { |ref| ref.fetch("name") })
 
     # The API server assigned a uid the planner never saw.
     running = finished_job(cron, Controller::Support.name(created), nil, start: NOW - 5, completion: nil)
@@ -184,7 +207,7 @@ class M3WorkloadStrategyTest < Minitest::Test
 
     assert_equal [Controller::Support.name(created)], Array(second.status["active"]).map { |ref| ref.fetch("name") },
                  "the running Job must stay in status.active once it is observed"
-    assert_equal ["uid-#{Controller::Support.name(created)}"], Array(second.status["active"]).map { |ref| ref.fetch("uid") }
+    assert_equal(["uid-#{Controller::Support.name(created)}"], Array(second.status["active"]).map { |ref| ref.fetch("uid") })
     refute(second.events.any? { |event| event.fetch("reason") == "UnexpectedJob" },
            "a Job this CronJob created is not unexpected")
     assert_empty second.creates, "Forbid must not start a second Job while one is active"
@@ -192,20 +215,27 @@ class M3WorkloadStrategyTest < Minitest::Test
 
   def test_cronjob_forbid_policy_skips_when_a_job_is_active_and_replace_deletes_it
     cron = cron_job(policy: "Forbid")
-    cron["status"] = {"active" => [{"apiVersion" => "batch/v1", "kind" => "Job", "name" => "cron-running", "namespace" => "default", "uid" => "uid-cron-running"}]}
+    cron["status"] =
+      {"active" => [{"apiVersion" => "batch/v1", "kind" => "Job", "name" => "cron-running", "namespace" => "default",
+                     "uid" => "uid-cron-running"}]}
     running = finished_job(cron, "cron-running", nil, start: NOW - 60, completion: nil)
     forbid = Controller::CronJobController.new(clock: -> { NOW }).plan(cron, jobs: [running], now: NOW)
+
     assert_empty forbid.creates
     assert_includes forbid.events.map { |event| event.fetch("reason") }, "JobAlreadyActive"
 
-    replace = Controller::CronJobController.new(clock: -> { NOW }).plan(cron.merge("spec" => cron["spec"].merge("concurrencyPolicy" => "Replace")),
-                                                                        jobs: [running], now: NOW)
-    assert_equal ["cron-running"], replace.deletes.map { |operation| operation.object.dig("metadata", "name") }
+    replace = Controller::CronJobController.new(clock: lambda {
+      NOW
+    }).plan(cron.merge("spec" => cron["spec"].merge("concurrencyPolicy" => "Replace")),
+            jobs: [running], now: NOW)
+
+    assert_equal(["cron-running"], replace.deletes.map { |operation| operation.object.dig("metadata", "name") })
     created = replace.creates.first.object
+
     assert_equal "cron-#{NOW.to_i / 60}", created.dig("metadata", "name")
     assert_equal NOW.iso8601, created.dig("metadata", "annotations", "batch.kubernetes.io/cronjob-scheduled-timestamp")
-    assert_equal [{"apiVersion" => "batch/v1", "kind" => "Job", "name" => created.dig("metadata", "name"), "namespace" => "default"}],
-                 replace.status.fetch("active").map { |reference| reference.reject { |key, _| key == "uid" } }
+    assert_equal([{"apiVersion" => "batch/v1", "kind" => "Job", "name" => created.dig("metadata", "name"), "namespace" => "default"}],
+                 replace.status.fetch("active").map { |reference| reference.reject { |key, _| key == "uid" } })
     assert_in_delta 300.1, replace.requeue_after, 0.001, "next schedule in five minutes plus the upstream jitter"
   end
 

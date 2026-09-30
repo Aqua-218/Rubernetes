@@ -47,8 +47,8 @@ class SchedulerAsyncBindTest < Minitest::Test
 
   def pod
     Rubernetes::Scheduler::Pod.new({"apiVersion" => "v1", "kind" => "Pod",
-                                   "metadata" => {"name" => "p", "namespace" => "ns", "uid" => "u1"},
-                                   "spec" => {"containers" => []}})
+                                    "metadata" => {"name" => "p", "namespace" => "ns", "uid" => "u1"},
+                                    "spec" => {"containers" => []}})
   end
 
   def node
@@ -63,7 +63,7 @@ class SchedulerAsyncBindTest < Minitest::Test
     service
   end
 
-  def key = ["ns", "p", "u1"]
+  def key = %w[ns p u1]
 
   def test_bind_returns_at_once_with_the_pod_assumed_and_the_binding_follows
     gate = Queue.new
@@ -71,12 +71,14 @@ class SchedulerAsyncBindTest < Minitest::Test
     subject = service(api)
 
     bound = subject.send(:bind_pod, pod, node)
+
     assert_equal "n1", bound.dig("spec", "nodeName")
     assert_equal "n1", subject.instance_variable_get(:@pods).fetch(key).node_name, "the cache sees the assumed placement"
-    assert api.created.empty?, "the Binding has not been posted yet"
+    assert_empty api.created, "the Binding has not been posted yet"
 
     gate << :go
     path, binding = api.created.pop
+
     assert_equal "/api/v1/namespaces/ns/pods/p/binding", path
     assert_equal "n1", binding.dig("target", "name")
   ensure

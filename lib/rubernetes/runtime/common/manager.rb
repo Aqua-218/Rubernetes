@@ -25,26 +25,24 @@ module Rubernetes
       RUNTIME_CLASSES = %w[
         rubernetes-native rubernetes-firecracker rubernetes-firecracker-restricted
       ].freeze
-      DIGEST_PATTERN = /\Asha256:[0-9a-f]{64}\z/i.freeze
+      DIGEST_PATTERN = /\Asha256:[0-9a-f]{64}\z/i
 
       module_function
 
       def validate(config, runtime_class: nil)
-        unless config.respond_to?(:to_h)
-          raise ValidationError, "runtime config must be a hash-like object"
-        end
+        raise ValidationError, "runtime config must be a hash-like object" unless config.respond_to?(:to_h)
 
         normalized = Canonical.copy(config.to_h)
         selected = runtime_class || normalized["runtime_class"] || normalized["runtimeClassName"] || "rubernetes-native"
         selected = String(selected)
-        unless RUNTIME_CLASSES.include?(selected)
-          raise ValidationError, "unsupported runtime class #{selected.inspect}"
-        end
+        raise ValidationError, "unsupported runtime class #{selected.inspect}" unless RUNTIME_CLASSES.include?(selected)
+
         normalized["runtime_class"] = selected
         image_digest = normalized["image_digest"] || normalized["imageDigest"]
         if image_digest && !String(image_digest).match?(DIGEST_PATTERN)
           raise ValidationError, "image digest must be sha256:<64 lowercase hexadecimal characters>"
         end
+
         [Canonical.immutable(normalized), selected, Canonical.digest(normalized)]
       end
     end
@@ -88,8 +86,10 @@ module Rubernetes
         request_id = request_id_for(request_id)
         sandbox_id = stable_id("sandbox", request_id)
         existing = @ledger.operation_for_request(request_id)
-        return replay_result(existing, "sandbox_id", action: "run_sandbox", config_digest: config_digest,
-                            target_id: sandbox_id) if existing
+        if existing
+          return replay_result(existing, "sandbox_id", action: "run_sandbox", config_digest: config_digest,
+                                                       target_id: sandbox_id)
+        end
 
         operation = @ledger.begin_operation(
           request_id: request_id, operation_id: request_id, action: "run_sandbox",
@@ -102,13 +102,13 @@ module Rubernetes
           verify_image(normalized, selected_class)
           @ledger.transition(operation_id: operation.id, to: "ImagePinned")
           effect_step(operation, "WorkspaceAllocated", :workspace, normalized, sandbox_id: sandbox_id,
-                      runtime_class: selected_class)
+                                                                               runtime_class: selected_class)
           effect_step(operation, "IsolationCreated", :isolation, normalized, sandbox_id: sandbox_id,
-                      runtime_class: selected_class)
+                                                                             runtime_class: selected_class)
           effect_step(operation, "ResourcesAttached", :attached, normalized, sandbox_id: sandbox_id,
-                      runtime_class: selected_class)
+                                                                             runtime_class: selected_class)
           effect_step(operation, "WorkloadStopped", :stopped, normalized, sandbox_id: sandbox_id,
-                      runtime_class: selected_class)
+                                                                          runtime_class: selected_class)
           sandbox_id
         rescue AmbiguousResult, Timeout::Error => error
           raise mark_unknown(operation.id, error)
@@ -121,8 +121,10 @@ module Rubernetes
         operation = sandbox_operation!(id)
         request_id = request_id_for(request_id)
         existing = @ledger.operation_for_request(request_id)
-        return replay_result(existing, "sandbox_id", action: "stop_sandbox", config_digest: operation.config_digest,
-                            target_id: operation.target_id) if existing
+        if existing
+          return replay_result(existing, "sandbox_id", action: "stop_sandbox", config_digest: operation.config_digest,
+                                                       target_id: operation.target_id)
+        end
         reject_unknown!(operation)
         raise InvalidTransition, "sandbox #{id} is already Removed" if operation.state == "Removed"
 
@@ -142,6 +144,7 @@ module Rubernetes
             @ledger.transition(operation_id: stop_operation.id, to: "ResourcesAttached")
             @ledger.transition(operation_id: stop_operation.id, to: "WorkloadStopped")
             raise Error, "stop_sandbox backend effect returned false" if invoke_optional(:stop_sandbox, {id: id, timeout: timeout}) == false
+
             @ledger.transition(operation_id: stop_operation.id, to: "RollingBack")
           else
             @ledger.transition(operation_id: stop_operation.id, to: "Validated")
@@ -177,12 +180,13 @@ module Rubernetes
         operation = sandbox_operation!(id)
         request_id = request_id_for(request_id)
         existing = @ledger.operation_for_request(request_id)
-        return replay_result(existing, "sandbox_id", action: "remove_sandbox", config_digest: operation.config_digest,
-                            target_id: operation.target_id) if existing
-        reject_unknown!(operation)
-        unless operation.state == "Stopped"
-          raise InvalidTransition, "sandbox #{id} must be Stopped before removal"
+        if existing
+          return replay_result(existing, "sandbox_id", action: "remove_sandbox", config_digest: operation.config_digest,
+                                                       target_id: operation.target_id)
         end
+        reject_unknown!(operation)
+        raise InvalidTransition, "sandbox #{id} must be Stopped before removal" unless operation.state == "Stopped"
+
         removal = nil
         removal = @ledger.begin_operation(
           request_id: request_id, operation_id: request_id, action: "remove_sandbox",
@@ -198,6 +202,7 @@ module Rubernetes
         @ledger.transition(operation_id: removal.id, to: "RollingBack")
         remove_child_containers(operation.target_id)
         raise Error, "remove_sandbox backend effect returned false" if invoke_optional(:remove_sandbox, {id: id}) == false
+
         @ledger.transition(operation_id: removal.id, to: "Stopped")
         @ledger.transition(operation_id: removal.id, to: "Removed")
         @ledger.transition(operation_id: operation.id, to: "RollingBack")
@@ -218,12 +223,15 @@ module Rubernetes
         sandbox_operation = sandbox_operation!(sandbox)
         reject_unknown!(sandbox_operation)
         raise InvalidTransition, "sandbox #{sandbox} is not accepting containers" if %w[Stopped Removed].include?(sandbox_operation.state)
+
         normalized, _runtime_class, config_digest = ConfigValidator.validate(spec, runtime_class: spec_runtime_class(spec))
         request_id = request_id_for(request_id)
         container_id = stable_id("container", request_id)
         existing = @ledger.operation_for_request(request_id)
-        return replay_result(existing, "container_id", action: "create_container", config_digest: config_digest,
-                            target_id: container_id) if existing
+        if existing
+          return replay_result(existing, "container_id", action: "create_container", config_digest: config_digest,
+                                                         target_id: container_id)
+        end
 
         operation = @ledger.begin_operation(
           request_id: request_id, operation_id: request_id, action: "create_container",
@@ -237,10 +245,11 @@ module Rubernetes
           @ledger.transition(operation_id: operation.id, to: "ImagePinned")
           @ledger.transition(operation_id: operation.id, to: "WorkspaceAllocated")
           result = invoke_optional(:create_container, {id: container_id, sandbox_id: sandbox_operation.target_id,
-                                                        spec: normalized, gate: :closed})
+                                                       spec: normalized, gate: :closed})
           raise Error, "create_container backend effect returned false" if result == false
+
           claim_backend_resources(operation, :container, result, parent: sandbox_operation.target_id,
-                                  fallback_id: container_id)
+                                                                 fallback_id: container_id)
           @ledger.transition(operation_id: operation.id, to: "IsolationCreated")
           @ledger.transition(operation_id: operation.id, to: "ResourcesAttached")
           @ledger.transition(operation_id: operation.id, to: "WorkloadStopped")
@@ -255,18 +264,17 @@ module Rubernetes
       def start_container(id, request_id: nil)
         operation = container_operation!(id)
         reject_unknown!(operation)
-        if operation.state == "Running"
-          return true
-        end
-        unless operation.state == "WorkloadStopped"
-          raise InvalidTransition, "container #{id} must be WorkloadStopped before start"
-        end
+        return true if operation.state == "Running"
+        raise InvalidTransition, "container #{id} must be WorkloadStopped before start" unless operation.state == "WorkloadStopped"
+
         parent = sandbox_operation!(operation.metadata.fetch("sandbox_id"))
         reject_unknown!(parent)
         request_id = request_id_for(request_id)
         existing = @ledger.operation_for_request(request_id)
-        return replay_result(existing, "container_id", action: "start_container",
-                            config_digest: operation.config_digest, target_id: operation.target_id) if existing
+        if existing
+          return replay_result(existing, "container_id", action: "start_container",
+                                                         config_digest: operation.config_digest, target_id: operation.target_id)
+        end
         start_operation = @ledger.begin_operation(
           request_id: request_id, operation_id: request_id, action: "start_container",
           target_id: operation.target_id, owner: operation.owner, config_digest: operation.config_digest
@@ -279,7 +287,9 @@ module Rubernetes
           @ledger.transition(operation_id: start_operation.id, to: "IsolationCreated")
           @ledger.transition(operation_id: start_operation.id, to: "ResourcesAttached")
           @ledger.transition(operation_id: start_operation.id, to: "WorkloadStopped")
-          raise Error, "start_container backend effect returned false" if invoke_optional(:start_container, {id: id, gate: :closed}) == false
+          raise Error, "start_container backend effect returned false" if invoke_optional(:start_container,
+                                                                                          {id: id, gate: :closed}) == false
+
           @ledger.transition(operation_id: parent.id, to: "Running") if parent.state == "WorkloadStopped"
           @ledger.transition(operation_id: operation.id, to: "Running")
           @ledger.transition(operation_id: start_operation.id, to: "Running")
@@ -297,15 +307,16 @@ module Rubernetes
         reject_unknown!(operation)
         request_id = request_id_for(request_id)
         existing = @ledger.operation_for_request(request_id)
-        return replay_result(existing, "container_id", action: "stop_container",
-                            config_digest: operation.config_digest, target_id: operation.target_id) if existing
-        if operation.state == "Stopped"
-          return id
+        if existing
+          return replay_result(existing, "container_id", action: "stop_container",
+                                                         config_digest: operation.config_digest, target_id: operation.target_id)
         end
+        return id if operation.state == "Stopped"
         raise InvalidTransition, "container #{id} is already Removed" if operation.state == "Removed"
         unless %w[Running WorkloadStopped].include?(operation.state)
           raise InvalidTransition, "container #{id} cannot be stopped from #{operation.state}"
         end
+
         stop_operation = @ledger.begin_operation(
           request_id: request_id, operation_id: request_id, action: "stop_container",
           target_id: operation.target_id, owner: operation.owner, config_digest: operation.config_digest
@@ -321,7 +332,9 @@ module Rubernetes
             @ledger.transition(operation_id: stop_operation.id, to: state)
           end
           @ledger.transition(operation_id: operation.id, to: "Stopping") if operation.state == "Running"
-          raise Error, "stop_container backend effect returned false" if invoke_optional(:stop_container, {id: id, timeout: timeout}) == false
+          raise Error, "stop_container backend effect returned false" if invoke_optional(:stop_container,
+                                                                                         {id: id, timeout: timeout}) == false
+
           @ledger.transition(operation_id: stop_operation.id, to: "Stopped")
           @ledger.transition(operation_id: operation.id, to: "Stopped") if @ledger.operation(operation.id).state == "Stopping"
           if operation.state == "WorkloadStopped"
@@ -340,22 +353,25 @@ module Rubernetes
         operation = container_operation!(id)
         request_id = request_id_for(request_id)
         existing = @ledger.operation_for_request(request_id)
-        return replay_result(existing, "container_id", action: "remove_container",
-                            config_digest: operation.config_digest, target_id: operation.target_id) if existing
-        reject_unknown!(operation)
-        unless operation.state == "Stopped"
-          raise InvalidTransition, "container #{id} must be Stopped before removal"
+        if existing
+          return replay_result(existing, "container_id", action: "remove_container",
+                                                         config_digest: operation.config_digest, target_id: operation.target_id)
         end
+        reject_unknown!(operation)
+        raise InvalidTransition, "container #{id} must be Stopped before removal" unless operation.state == "Stopped"
+
         removal = @ledger.begin_operation(
           request_id: request_id, operation_id: request_id, action: "remove_container",
           target_id: id, owner: operation.owner, config_digest: operation.config_digest
         )
         @ledger.set_result(removal.id, {"container_id" => id})
         begin
-          %w[Validated ImagePinned WorkspaceAllocated IsolationCreated ResourcesAttached WorkloadStopped RollingBack Stopped Removed].each do |state|
+          %w[Validated ImagePinned WorkspaceAllocated IsolationCreated ResourcesAttached WorkloadStopped RollingBack Stopped
+             Removed].each do |state|
             @ledger.transition(operation_id: removal.id, to: state)
           end
           raise Error, "remove_container backend effect returned false" if invoke_optional(:remove_container, {id: id}) == false
+
           @ledger.transition(operation_id: operation.id, to: "RollingBack")
           RollbackExecutor.new(ledger: @ledger, adapter: @adapter, observer: @observer).execute(
             operation_id: operation.id,
@@ -392,6 +408,7 @@ module Rubernetes
       def logs(id, follow:, since:, tail:, request_id: nil)
         operation = container_operation!(id)
         raise StateUnknownError, "container #{id} is StateUnknown; logs are observe-only" if operation.state == "StateUnknown" && follow
+
         invoke_optional(:logs, {id: id, follow: follow, since: since, tail: tail, request_id: request_id}) || StringIO.new
       end
 
@@ -404,10 +421,12 @@ module Rubernetes
       def checkpoint_base(runtime_class:, request_id: nil)
         selected = String(runtime_class)
         raise ValidationError, "unsupported runtime class #{selected.inspect}" unless ConfigValidator::RUNTIME_CLASSES.include?(selected)
+
         request_id = request_id_for(request_id)
         digest = Canonical.digest("runtime_class" => selected, "request_id" => request_id)
         existing = @ledger.operation_for_request(request_id)
         return replay_result(existing, "snapshot_id", action: "checkpoint_base", config_digest: digest) if existing
+
         operation = @ledger.begin_operation(
           request_id: request_id, operation_id: request_id, action: "checkpoint_base",
           target_id: nil, owner: "snapshot:#{request_id}", config_digest: digest,
@@ -423,7 +442,9 @@ module Rubernetes
           @ledger.transition(operation_id: operation.id, to: "ResourcesAttached")
           payload = invoke_optional(:checkpoint_base, {runtime_class: selected, state: "WorkloadStopped"}) || {}
           raise Error, "checkpoint_base backend effect returned false" if payload == false
-          @snapshot_store.write(snapshot_id: snapshot_id, state: "WorkloadStopped", identity: "base:#{selected}:#{snapshot_id}", payload: payload)
+
+          @snapshot_store.write(snapshot_id: snapshot_id, state: "WorkloadStopped", identity: "base:#{selected}:#{snapshot_id}",
+                                payload: payload)
           @ledger.transition(operation_id: operation.id, to: "WorkloadStopped")
           snapshot_id
         rescue AmbiguousResult, Timeout::Error => error
@@ -471,10 +492,11 @@ module Rubernetes
           stopped: :hold_workload
         }.fetch(kind)
         result = invoke_optional(method_name, {sandbox_id: sandbox_id, config: config,
-                                                runtime_class: runtime_class, gate: :closed})
+                                               runtime_class: runtime_class, gate: :closed})
         raise Error, "#{method_name} backend effect returned false" if result == false
+
         claim_backend_resources(operation, kind, result, parent: sandbox_id,
-                                fallback_id: "#{kind}-#{sandbox_id}")
+                                                         fallback_id: "#{kind}-#{sandbox_id}")
         @ledger.transition(operation_id: operation.id, to: state)
       end
 
@@ -495,6 +517,7 @@ module Rubernetes
 
       def extract_resources(result)
         return [] if result.nil?
+
         if result.is_a?(Hash)
           nested = result["resources"] || result[:resources]
           return Array(nested) if nested
@@ -564,8 +587,8 @@ module Rubernetes
       def replay_result(operation, key, action: nil, config_digest: nil, target_id: nil)
         raise OwnershipConflict, "request #{operation.request_id} was replayed with incompatible operation" unless operation
         if (action && operation.action != action) ||
-            (config_digest && operation.config_digest != config_digest) ||
-            (!target_id.nil? && operation.target_id != target_id)
+           (config_digest && operation.config_digest != config_digest) ||
+           (!target_id.nil? && operation.target_id != target_id)
           raise OwnershipConflict, "request #{operation.request_id} was replayed with different intent"
         end
         if operation.state == "StateUnknown"
@@ -577,8 +600,10 @@ module Rubernetes
                                      cleanup_errors: operation.cleanup_errors)
         end
         unless %w[WorkloadStopped Running Stopping Stopped Removed].include?(operation.state)
-          raise RecoveryRequired.new("request #{operation.request_id} is incomplete at #{operation.state}; recover before retry", operation_id: operation.id)
+          raise RecoveryRequired.new("request #{operation.request_id} is incomplete at #{operation.state}; recover before retry",
+                                     operation_id: operation.id)
         end
+
         result = operation.result || {}
         result.fetch(key) { operation.target_id || true }
       end
@@ -590,7 +615,7 @@ module Rubernetes
       def sandbox_operation(id)
         id = String(id)
         @ledger.operations.reverse_each do |operation|
-          next unless operation.action == "run_sandbox" || operation.action == "remove_sandbox"
+          next unless %w[run_sandbox remove_sandbox].include?(operation.action)
           next unless operation.target_id == id || operation.result&.fetch("sandbox_id", nil) == id
 
           return operation
@@ -605,7 +630,7 @@ module Rubernetes
       def container_operation(id)
         id = String(id)
         @ledger.operations.reverse_each do |operation|
-          next unless operation.action == "create_container" || operation.action == "remove_container"
+          next unless %w[create_container remove_container].include?(operation.action)
           next unless operation.target_id == id || operation.result&.fetch("container_id", nil) == id
 
           return operation
@@ -641,7 +666,9 @@ module Rubernetes
           unless container.state == "Stopped"
             raise InvalidTransition, "container #{container.target_id} must be Stopped before sandbox removal"
           end
-          raise Error, "remove_container backend effect returned false" if invoke_optional(:remove_container, {id: container.target_id}) == false
+          raise Error, "remove_container backend effect returned false" if invoke_optional(:remove_container,
+                                                                                           {id: container.target_id}) == false
+
           @ledger.transition(operation_id: container.id, to: "RollingBack")
           RollbackExecutor.new(ledger: @ledger, adapter: @adapter, observer: @observer).execute(
             operation_id: container.id,
@@ -654,7 +681,9 @@ module Rubernetes
 
       def _stop_container_without_request(operation, timeout:)
         @ledger.transition(operation_id: operation.id, to: "Stopping") if operation.state == "Running"
-        raise Error, "stop_container backend effect returned false" if invoke_optional(:stop_container, {id: operation.target_id, timeout: timeout}) == false
+        raise Error, "stop_container backend effect returned false" if invoke_optional(:stop_container,
+                                                                                       {id: operation.target_id, timeout: timeout}) == false
+
         @ledger.transition(operation_id: operation.id, to: "Stopped") if @ledger.operation(operation.id).state == "Stopping"
         @ledger.transition(operation_id: operation.id, to: "Stopped") if @ledger.operation(operation.id).state == "WorkloadStopped"
       end
@@ -757,7 +786,7 @@ module Rubernetes
       ].freeze
 
       PUBLIC_METHODS.each do |method_name|
-        unlocked_name = "__unlocked_#{method_name}".to_sym
+        unlocked_name = :"__unlocked_#{method_name}"
         alias_method unlocked_name, method_name
         define_method(method_name) do |*arguments, **keywords, &block|
           @mutex.synchronize do
@@ -771,8 +800,8 @@ module Rubernetes
     Native = Runtime unless const_defined?(:Native, false)
 
     class MicroVM < Runtime
-      def initialize(**options)
-        super(**options)
+      def initialize(**)
+        super
       end
     end
 

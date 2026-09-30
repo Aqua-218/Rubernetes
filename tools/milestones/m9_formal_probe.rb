@@ -33,7 +33,7 @@ module M9FormalProbe
 
     offenders = files.flat_map do |path|
       File.readlines(path, chomp: true).each_with_index.filter_map do |line, index|
-        stripped = line.sub(%r{--.*\z}, "")
+        stripped = line.sub(/--.*\z/, "")
         next unless stripped.match?(TERM)
 
         {"file" => path.delete_prefix("#{S::ROOT}/"), "line" => index + 1, "text" => line.strip[0, 100]}
@@ -59,7 +59,7 @@ module M9FormalProbe
     end
 
     claims_path = File.join(S::ROOT, "verification/claims.yml")
-    claims = File.file?(claims_path) ? YAML.safe_load(File.read(claims_path)).fetch("claims", []) : []
+    claims = File.file?(claims_path) ? YAML.safe_load_file(claims_path).fetch("claims", []) : []
     model_checked = claims.select { |claim| claim["level"] == "model_checked" }
     cases << {"id" => "model_checked_claims_have_a_run",
               "passed" => model_checked.all? { |claim| claim["counterexample"] == "none" && !claim["method"].to_s.empty? },

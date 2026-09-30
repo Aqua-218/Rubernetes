@@ -11,6 +11,7 @@ class ConsensusTransportTest < Minitest::Test
   def test_frame_round_trip
     frame = Framing.encode(1, "payload")
     io = StringIO.new(frame + Framing.encode(1, ""))
+
     assert_equal [1, "payload"], Framing.read(io)
     assert_equal [1, ""], Framing.read(io)
     assert_nil Framing.read(io)
@@ -22,9 +23,11 @@ class ConsensusTransportTest < Minitest::Test
   def test_non_ascii_payload_is_framed_as_bytes
     payload = "{\"description\":\"brackets — e.g [2001:db8::1] — 日本語\"}"
     frame = Framing.encode(1, payload)
+
     assert_equal Encoding::BINARY, frame.encoding
     assert_equal 5 + payload.bytesize, frame.bytesize
     type, read_back = Framing.read(StringIO.new(frame))
+
     assert_equal 1, type
     assert_equal payload.b, read_back
     assert_equal payload, read_back.force_encoding(Encoding::UTF_8)
@@ -52,8 +55,10 @@ class ConsensusTransportTest < Minitest::Test
       client = C::Transport::Endpoint.new(node_id: "a", cluster_id: "c1", bundle: a, peers: {"b" => server.address}).start
       client.send(C::Messages::TimeoutNow.new(cluster_id: "c1", from: "a", to: "b", term: 1, request_id: "boom"))
       client.send(C::Messages::TimeoutNow.new(cluster_id: "c1", from: "a", to: "b", term: 1, request_id: "after"))
+
       assert_equal "after", received.pop.request_id
       event, fields = logged.pop
+
       assert_equal "consensus.transport.handler_error", event
       assert_match(/Encoding::CompatibilityError: injected handler defect/, fields.fetch(:error))
       assert_equal 1, server.stats.fetch(:handler_errors)
@@ -74,6 +79,7 @@ class ConsensusTransportTest < Minitest::Test
   def test_peer_identity_is_taken_from_the_verified_certificate
     ca, ca_key = C::Identity.generate_ca("cluster-a")
     bundle = C::Identity.issue_node(ca, ca_key, cluster_id: "cluster-a", node_id: "node-1")
+
     assert_equal({cluster_id: "cluster-a", node_id: "node-1"}, C::Identity.peer_identity(bundle.certificate))
     assert_raises(C::PeerIdentityMismatch) { C::Identity.peer_identity(ca) }
     assert_raises(ArgumentError) { C::Identity.issue_node(ca, ca_key, cluster_id: "bad id", node_id: "n") }
@@ -93,6 +99,7 @@ class ConsensusTransportTest < Minitest::Test
       client = C::Transport::Endpoint.new(node_id: "a", cluster_id: "c1", bundle: a, peers: {"b" => server.address}).start
       client.send(C::Messages::TimeoutNow.new(cluster_id: "c1", from: "a", to: "b", term: 1, request_id: "r1"))
       message, identity = received.pop
+
       assert_equal "a", message.from
       assert_equal({cluster_id: "c1", node_id: "a"}, identity)
       # A message whose payload claims a different sender than the certificate is rejected.
@@ -102,7 +109,8 @@ class ConsensusTransportTest < Minitest::Test
       intruder = C::Transport::Endpoint.new(node_id: "a", cluster_id: "c2", bundle: foreign, peers: {"b" => server.address}).start
       intruder.send(C::Messages::TimeoutNow.new(cluster_id: "c2", from: "a", to: "b", term: 1, request_id: "r3"))
       sleep 0.3
-      assert received.empty?, "foreign cluster message must not be delivered"
+
+      assert_empty received, "foreign cluster message must not be delivered"
       intruder.stop
     ensure
       server.stop

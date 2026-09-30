@@ -29,6 +29,7 @@ class NativeNonRootStdioTest < Minitest::Test
                                                                             "allow_privilege_escalation" => false}})
       runtime.start_container(container)
       lines = output_lines(runtime, container, 5)
+
       assert_equal "101", lines.first, lines.inspect
       assert_match(/\A[p-].*\s101\s+101\s/, lines[1], "the stdio pipe is owned by the container user: #{lines[1]}")
       assert_includes lines, "REOPEN_STDERR_OK", lines.inspect
@@ -50,6 +51,7 @@ class NativeNonRootStdioTest < Minitest::Test
                                                                             "allow_privilege_escalation" => false}})
       runtime.start_container(container)
       lines = output_lines(runtime, container, 1)
+
       assert_match(/\ASCRIPT_RAN .*hello\.sh arg1\z/, lines.first, lines.inspect)
     end
   end

@@ -112,14 +112,13 @@ module M1KubernetesSemanticOracle
     unless ::File.directory?(::File.join(source_root, ".git"))
       raise OracleError, "Kubernetes oracle source is not a Git checkout: #{source_root}"
     end
+
     commit = capture!("git", "-C", source_root, "rev-parse", "HEAD").strip
-    unless commit == SOURCE_COMMIT
-      raise OracleError, "Kubernetes oracle source commit must be #{SOURCE_COMMIT}, got #{commit}"
-    end
+    raise OracleError, "Kubernetes oracle source commit must be #{SOURCE_COMMIT}, got #{commit}" unless commit == SOURCE_COMMIT
+
     tag = capture!("git", "-C", source_root, "describe", "--tags", "--exact-match", "HEAD").strip
-    unless tag == KUBERNETES_VERSION
-      raise OracleError, "Kubernetes oracle source tag must be #{KUBERNETES_VERSION}, got #{tag.inspect}"
-    end
+    raise OracleError, "Kubernetes oracle source tag must be #{KUBERNETES_VERSION}, got #{tag.inspect}" unless tag == KUBERNETES_VERSION
+
     dirty = capture!("git", "-C", source_root, "status", "--porcelain", "--untracked-files=no").strip
     raise OracleError, "Kubernetes oracle source checkout has tracked modifications" unless dirty.empty?
 
@@ -145,25 +144,25 @@ module M1KubernetesSemanticOracle
       seen[id] = true
       %w[raw_json unknown_json missing_json].each do |key|
         value = entry.fetch(key)
-        unless value.is_a?(String)
-          raise OracleError, "oracle request #{id.inspect} #{key} must be a JSON string"
-        end
+        raise OracleError, "oracle request #{id.inspect} #{key} must be a JSON string" unless value.is_a?(String)
+
         JSON.parse(value, max_nesting: 128)
       rescue JSON::ParserError => error
         raise OracleError, "oracle request #{id.inspect} #{key} is invalid JSON: #{error.message}"
       end
       validation_applicable = entry.fetch("validation_applicable", false)
-      unless validation_applicable == true || validation_applicable == false
+      unless [true, false].include?(validation_applicable)
         raise OracleError, "oracle request #{id.inspect} validation_applicable must be boolean"
       end
+
       validation_reason = entry.fetch("validation_reason", "")
-      unless validation_reason.is_a?(String)
-        raise OracleError, "oracle request #{id.inspect} validation_reason must be a string"
-      end
+      raise OracleError, "oracle request #{id.inspect} validation_reason must be a string" unless validation_reason.is_a?(String)
+
       validation_source_paths = entry.fetch("validation_source_paths", [])
       unless validation_source_paths.is_a?(Array) && validation_source_paths.all? { |path| path.is_a?(String) && !path.empty? }
         raise OracleError, "oracle request #{id.inspect} validation_source_paths must be an array of paths"
       end
+
       {
         "id" => id,
         "go_package" => go_package,

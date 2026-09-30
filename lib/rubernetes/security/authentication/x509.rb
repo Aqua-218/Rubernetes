@@ -124,7 +124,7 @@ module Rubernetes
           extension = certificate.extensions.find { |ext| ext.oid == "extendedKeyUsage" }
           return true if extension.nil?
 
-          extension.value.split(",").map(&:strip).any? { |usage| usage == "TLS Web Client Authentication" || usage == "clientAuth" }
+          extension.value.split(",").map(&:strip).any? { |usage| ["TLS Web Client Authentication", "clientAuth"].include?(usage) }
         end
 
         def subject_value(certificate, key)

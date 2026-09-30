@@ -15,6 +15,7 @@ class APIPodProxyPortTest < Minitest::Test
 
   def test_defaults_to_the_first_declared_port
     value = pod({"name" => "a"}, {"name" => "b", "ports" => [{"containerPort" => 8080}, {"containerPort" => 9090}]})
+
     assert_equal 8080, server.send(:resolve_pod_port, value, nil)
     assert_equal 8080, server.send(:resolve_pod_port, value, "")
   end
@@ -22,6 +23,7 @@ class APIPodProxyPortTest < Minitest::Test
   def test_falls_back_to_80_and_honours_explicit_ports
     assert_equal 80, server.send(:resolve_pod_port, pod({"name" => "a"}), nil)
     value = pod({"name" => "a", "ports" => [{"name" => "http", "containerPort" => 8080}]})
+
     assert_equal 9000, server.send(:resolve_pod_port, value, "9000")
     assert_equal 8080, server.send(:resolve_pod_port, value, "http")
   end

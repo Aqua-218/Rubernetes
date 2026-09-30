@@ -26,12 +26,15 @@ class APIDeprecationWarningTest < Minitest::Test
     @server = API::Server.new(registry: @registry, store: @store, crd_manager: @crd_manager, aggregator: @aggregator,
                               openapi_repository: @openapi, runtime_config: {"storage.k8s.io/v1beta1" => "true"})
     response = call("GET", "/apis/storage.k8s.io/v1beta1/volumeattributesclasses")
+
     assert_equal 200, response.status
     assert_equal '299 - "storage.k8s.io/v1beta1 VolumeAttributesClass is deprecated in v1.34+, unavailable in v1.37+; use storage.k8s.io/v1 VolumeAttributesClass"',
                  response.header("warning")
     assert_nil call("GET", "/apis/storage.k8s.io/v1/volumeattributesclasses").header("warning")
     text = @server.instance_variable_get(:@metrics).render
-    assert_includes text, 'apiserver_requested_deprecated_apis{group="storage.k8s.io",removed_release="1.37",resource="volumeattributesclasses",subresource="",version="v1beta1"} 1'
+
+    assert_includes text,
+                    'apiserver_requested_deprecated_apis{group="storage.k8s.io",removed_release="1.37",resource="volumeattributesclasses",subresource="",version="v1beta1"} 1'
   end
 
   def test_deprecated_crd_versions_carry_their_warning
@@ -43,9 +46,11 @@ class APIDeprecationWarningTest < Minitest::Test
                                        "schema" => {"openAPIV3Schema" => {"type" => "object", "x-kubernetes-preserve-unknown-fields" => true}}}
     definition["spec"]["versions"] << {"name" => "v3", "served" => true, "storage" => false,
                                        "schema" => {"openAPIV3Schema" => {"type" => "object", "x-kubernetes-preserve-unknown-fields" => true}}}
+
     assert_equal 201, call("POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", body: definition).status
-    assert wait_until { call("GET", "/apis/example.com/v3/namespaces/team/widgets").status == 200 }
-    assert_equal '299 - "example.com/v1 Widget is deprecated"', call("GET", "/apis/example.com/v1/namespaces/team/widgets").header("warning")
+    assert(wait_until { call("GET", "/apis/example.com/v3/namespaces/team/widgets").status == 200 })
+    assert_equal '299 - "example.com/v1 Widget is deprecated"',
+                 call("GET", "/apis/example.com/v1/namespaces/team/widgets").header("warning")
     assert_equal '299 - "v2 is going away"', call("GET", "/apis/example.com/v2/namespaces/team/widgets").header("warning")
     assert_nil call("GET", "/apis/example.com/v3/namespaces/team/widgets").header("warning")
   end

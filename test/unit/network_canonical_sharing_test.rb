@@ -12,15 +12,18 @@ class NetworkCanonicalSharingTest < Minitest::Test
 
   def test_sealed_subtrees_are_shared_and_new_parts_canonicalised
     sealed = Support.freeze_canonical(Support.canonical({"b" => 1, "a" => {"z" => 2, "y" => [3]}}))
-    assert sealed.frozen?
+
+    assert_predicate sealed, :frozen?
     assert_equal %w[a b], sealed.keys
     again = Support.canonical({b: sealed, c: Time.utc(2026, 9, 23)})
+
     assert_same sealed, again["b"], "a sealed subtree is not rebuilt"
     assert_equal "2026-09-23T00:00:00.000000Z", again["c"]
   end
 
   def test_unknown_objects_become_what_json_makes_of_them
     point = Struct.new(:x).new(1)
+
     assert_equal JSON.parse(JSON.generate([point])).first, Support.canonical(point)
   end
 
@@ -29,6 +32,7 @@ class NetworkCanonicalSharingTest < Minitest::Test
     working = Support.working_copy(sealed)
     working["operations"]["o2"] = {"state" => "b"}
     working["requests"]["r"] = "o2"
+
     assert_same sealed["operations"]["o1"], working["operations"]["o1"]
     assert_raises(FrozenError) { working["operations"]["o1"]["state"] = "x" }
     refute sealed["operations"].key?("o2")
@@ -38,12 +42,15 @@ class NetworkCanonicalSharingTest < Minitest::Test
     Dir.mktmpdir do |dir|
       store = Rubernetes::Network::DurableState.new(File.join(dir, "state.json"), default: {"operations" => {}}, fsync: false)
       written = store.replace({"operations" => {"o1" => {"state" => "a"}}})
-      assert written.frozen?
+
+      assert_predicate written, :frozen?
       next_state = Support.working_copy(written)
       next_state["operations"]["o2"] = {"state" => "b"}
       second = store.replace(next_state)
+
       assert_same written["operations"]["o1"], second["operations"]["o1"]
-      assert_equal({"operations" => {"o1" => {"state" => "a"}, "o2" => {"state" => "b"}}}, JSON.parse(File.read(File.join(dir, "state.json"))))
+      assert_equal({"operations" => {"o1" => {"state" => "a"}, "o2" => {"state" => "b"}}},
+                   JSON.parse(File.read(File.join(dir, "state.json"))))
     end
   end
 end
@@ -63,13 +70,15 @@ class IPAMRecordSharingTest < Minitest::Test
       subject.commit(first)
       state = subject.instance_variable_get(:@durable_state)
       lease_a = state["leases"].values.first
-      assert lease_a.frozen?
+
+      assert_predicate lease_a, :frozen?
 
       second = subject.reserve(node: "n", pod_uid: "b", sandbox_id: "sb")
       subject.commit(second)
       after = subject.instance_variable_get(:@durable_state)
+
       assert_same lease_a, after["leases"].values.find { |lease| lease["pod_uid"] == "a" }, "pod a's lease was not rebuilt"
-      assert_equal %w[committed committed], after["leases"].values.map { |lease| lease["state"] }
+      assert_equal(%w[committed committed], after["leases"].values.map { |lease| lease["state"] })
     end
   end
 
@@ -98,6 +107,7 @@ class IPAMReleasedOperationPruningTest < Minitest::Test
         ipam.release(ipam.commit(leases), stopped: true)
       end
       operations = ipam.instance_variable_get(:@state)["operations"]
+
       assert_equal window, operations.length
       refute operations.key?("network-s0") || operations.values.any? { |record| record["sandbox_id"] == "s0" }
       # A retried release of a pruned operation is a completed release.

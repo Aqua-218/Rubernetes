@@ -309,6 +309,7 @@ module Rubernetes
 
           def read_file(path)
             return String(@adapter.read(path)).b if @adapter
+
             File.binread(path)
           rescue Errno::ENOENT
             "".b
@@ -334,7 +335,10 @@ module Rubernetes
               File.delete(destination) if File.exist?(destination)
               File.rename(source, destination) if File.exist?(source)
             end
-            File.open(@path, File::WRONLY | File::CREAT | File::TRUNC, 0o600) { |file| file.flush; file.fsync }
+            File.open(@path, File::WRONLY | File::CREAT | File::TRUNC, 0o600) do |file|
+              file.flush
+              file.fsync
+            end
           end
         end
 
@@ -357,11 +361,9 @@ module Rubernetes
               # Ruby signal handlers.  A workload stopped while it waits on the
               # gate must die, not run the agent's shutdown path.
               %w[INT TERM HUP QUIT].each do |name|
-                begin
-                  Signal.trap(name, "DEFAULT")
-                rescue ArgumentError
-                  nil
-                end
+                Signal.trap(name, "DEFAULT")
+              rescue ArgumentError
+                nil
               end
               gate_writer.close
               stdin_writer&.close
@@ -405,13 +407,12 @@ module Rubernetes
           end
 
           def wait(pid:, timeout: nil)
-            deadline = timeout && Process.clock_gettime(Process::CLOCK_MONOTONIC) + Float(timeout)
+            deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + Float(timeout))
             loop do
               result = Process.waitpid2(pid, Process::WNOHANG)
               return result && result.last if result
-              if deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
-                return nil
-              end
+              return nil if deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
               sleep 0.01
             end
           rescue Errno::ECHILD
@@ -537,9 +538,9 @@ module Rubernetes
             )
           end
           update(current, state: :running, workload_pid: workload_pid || current.workload_pid,
-                 workload_pidfd: workload_pidfd, workload_start_time: workload_start_time || current.workload_start_time,
-                 workload_executable_digest: workload_executable_digest || current.workload_executable_digest,
-                 workload_security: workload_security || current.workload_security)
+                          workload_pidfd: workload_pidfd, workload_start_time: workload_start_time || current.workload_start_time,
+                          workload_executable_digest: workload_executable_digest || current.workload_executable_digest,
+                          workload_security: workload_security || current.workload_security)
         end
 
         # Re-adopt a live process discovered during startup reconciliation.
@@ -553,19 +554,22 @@ module Rubernetes
           workload_pid = Integer(value.fetch("workload_pid", pid))
           expected_start = value["workload_start_time"] || value["start_time"]
           raise Error, "process #{id} adoption requires a start time" if expected_start.nil?
+
           actual_start = process_start_time(workload_pid)
           raise Error, "process #{id} start time changed during adoption" unless actual_start == Integer(expected_start)
+
           expected_digest = value["workload_executable_digest"] || value["executable_digest"]
           raise Error, "process #{id} adoption requires an executable digest" if expected_digest.nil?
+
           actual_digest = executable_digest(workload_pid)
           raise Error, "process #{id} executable identity changed during adoption" unless actual_digest == String(expected_digest).downcase
 
           pidfd = @pidfd_adapter ? open_pidfd(pid, "process:adopt:#{id}") : value["pidfd"]
           workload_pidfd = if @pidfd_adapter && workload_pid != pid
-            open_pidfd(workload_pid, "process:adopt:#{id}:workload")
-          else
-            pidfd
-          end
+                             open_pidfd(workload_pid, "process:adopt:#{id}:workload")
+                           else
+                             pidfd
+                           end
           log_root = File.join(@log_directory, id)
           handle = Handle.new(
             id: id.freeze,
@@ -615,18 +619,19 @@ module Rubernetes
           current = lookup(handle)
           drain_logs(current)
           result = if current.pidfd && @pidfd_adapter
-            @pidfd_adapter.wait(pidfd: current.pidfd, timeout: timeout, resource_id: resource_id || "process:#{current.id}")
-          elsif @process_adapter.respond_to?(:wait)
-            @process_adapter.wait(pid: current.pid, timeout: timeout)
-          else
-            raise Unsupported, "process adapter cannot wait for #{current.id}"
-          end
+                     @pidfd_adapter.wait(pidfd: current.pidfd, timeout: timeout, resource_id: resource_id || "process:#{current.id}")
+                   elsif @process_adapter.respond_to?(:wait)
+                     @process_adapter.wait(pid: current.pid, timeout: timeout)
+                   else
+                     raise Unsupported, "process adapter cannot wait for #{current.id}"
+                   end
           return nil unless result
 
           normalized = normalize_wait_result(result)
           if normalized.exit_status.nil? && normalized.term_signal.nil?
             raise Error, "process wait returned no exit confirmation for #{current.id}"
           end
+
           update(current, state: :stopped, exit_status: normalized.exit_status, term_signal: normalized.term_signal)
           normalized
         end
@@ -698,7 +703,7 @@ module Rubernetes
 
             return log.read(follow: follow, since: since, tail: tail, timestamps: timestamps,
                             tick: -> { drain_logs(@mutex.synchronize { @handles[id] } || current) },
-                            stop: -> { !(@mutex.synchronize { @handles[id] })&.running? })
+                            stop: -> { !@mutex.synchronize { @handles[id] }&.running? })
           end
           retained = @mutex.synchronize { @closed_logs.fetch(id) { raise Error, "unknown process handle #{id}" } }
           log = case stream.to_sym
@@ -725,7 +730,8 @@ module Rubernetes
           process_stats = @stats_reader.call(current.pid)
           cgroup_stats = @cgroup ? @cgroup.stats(current.cgroup) : {}
           events = @cgroup ? @cgroup.events(current.cgroup) : {}
-          Stats.new(process: normalize_hash(process_stats), cgroup: normalize_stats(cgroup_stats), memory_events: events, timestamp: @clock.call.utc)
+          Stats.new(process: normalize_hash(process_stats), cgroup: normalize_stats(cgroup_stats), memory_events: events,
+                    timestamp: @clock.call.utc)
         rescue SystemCallError => error
           raise Error, "failed to collect process stats #{resource_id || current.id}: #{error.message}"
         end
@@ -733,6 +739,7 @@ module Rubernetes
         def alive?(handle)
           current = lookup(handle)
           return false if current.stopped?
+
           if current.pidfd && @pidfd_adapter
             if @pidfd_adapter.respond_to?(:alive?)
               alive = @pidfd_adapter.alive?(pidfd: current.pidfd)
@@ -789,6 +796,7 @@ module Rubernetes
           environment.to_h.each_with_object({}) do |(key, value), output|
             name = String(key)
             raise InvalidSpec, "environment variable name is invalid" unless name.match?(/\A[^=\0]+\z/)
+
             output[name] = String(value)
           end
         end
@@ -902,11 +910,14 @@ module Rubernetes
         def normalize_wait_result(value)
           return value if value.is_a?(WaitResult)
           if value.respond_to?(:exit_status)
-            return WaitResult.new(exit_status: value.exit_status, term_signal: value.term_signal, code: value.respond_to?(:code) ? value.code : nil)
+            return WaitResult.new(exit_status: value.exit_status, term_signal: value.term_signal,
+                                  code: value.respond_to?(:code) ? value.code : nil)
           end
           if value.is_a?(Process::Status)
-            return WaitResult.new(exit_status: value.exited? ? value.exitstatus : nil, term_signal: value.signaled? ? value.termsig : nil, code: value.to_i)
+            return WaitResult.new(exit_status: value.exited? ? value.exitstatus : nil, term_signal: value.signaled? ? value.termsig : nil,
+                                  code: value.to_i)
           end
+
           hash = value.respond_to?(:to_h) ? value.to_h : {}
           WaitResult.new(
             exit_status: hash[:exit_status] || hash["exit_status"],
@@ -939,7 +950,8 @@ module Rubernetes
         def default_stats(pid)
           path = "/proc/#{Integer(pid)}/stat"
           fields = File.read(path).split
-          {"pid" => Integer(fields.fetch(0)), "state" => fields.fetch(2), "utime" => Integer(fields.fetch(13)), "stime" => Integer(fields.fetch(14))}
+          {"pid" => Integer(fields.fetch(0)), "state" => fields.fetch(2), "utime" => Integer(fields.fetch(13)),
+           "stime" => Integer(fields.fetch(14))}
         end
 
         def process_start_time(pid)
@@ -961,10 +973,10 @@ module Rubernetes
 
         def normalize_stats(value)
           return value.to_h if value.respond_to?(:to_h)
+
           {}
         end
       end
-
     end
   end
 end

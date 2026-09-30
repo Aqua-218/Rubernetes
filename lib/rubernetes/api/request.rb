@@ -77,11 +77,16 @@ module Rubernetes
 
       def query_values(name)
         value = @query[name.to_s]
-        value.is_a?(Array) ? value : (value.nil? ? [] : [value])
+        if value.is_a?(Array)
+          value
+        else
+          (value.nil? ? [] : [value])
+        end
       end
 
       def json_body
         return body unless body.is_a?(String)
+
         require "json"
         JSON.parse(body)
       rescue JSON::ParserError => error
@@ -109,7 +114,7 @@ module Rubernetes
       def normalize_path(path)
         value = path.to_s
         value = "/#{value}" unless value.start_with?("/")
-        value = value.gsub(%r{/+}, "/")
+        value = value.squeeze("/")
         value = "/" if value.empty?
         value.length > 1 ? value.sub(%r{/$}, "") : value
       end
@@ -128,12 +133,13 @@ module Rubernetes
 
       def parse_query(raw_query)
         return {} if raw_query.nil? || raw_query.empty?
+
         URI.decode_www_form(raw_query).each_with_object({}) do |(key, value), query|
-          if query.key?(key)
-            query[key] = Array(query[key]) << value
-          else
-            query[key] = value
-          end
+          query[key] = if query.key?(key)
+                         Array(query[key]) << value
+                       else
+                         value
+                       end
         end
       rescue ArgumentError => error
         raise Status::BadRequest, "query string is malformed: #{error.message}"
@@ -141,6 +147,7 @@ module Rubernetes
 
       def normalize_query(query)
         return {} if query.nil?
+
         query.each_with_object({}) do |(key, value), normalized|
           normalized[key.to_s] = value.is_a?(Array) ? value.map(&:to_s) : value.to_s
         end

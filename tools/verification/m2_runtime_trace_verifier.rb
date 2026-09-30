@@ -108,8 +108,8 @@ module Rubernetes
           end
         end
 
-        def verify_file(path, **options)
-          new(load_file(path), source: path, **options).verify
+        def verify_file(path, **)
+          new(load_file(path), source: path, **).verify
         rescue Errno::ENOENT, Errno::EACCES, JSON::ParserError => error
           failure_report(source: path, error: error)
         end
@@ -220,14 +220,14 @@ module Rubernetes
           if from || to
             report["transition_count"] += 1
             check_transition(from, to, index, report, before: before, after: after,
-                             observation_seen: unknown_observation_seen, event: event)
+                                                      observation_seen: unknown_observation_seen, event: event)
             previous_state = to if to
           elsif after && after.key?(:state)
             state = after[:state]
             if previous_state && state != previous_state
               report["transition_count"] += 1
               check_transition(previous_state, state, index, report, before: before, after: after,
-                               observation_seen: unknown_observation_seen, event: event)
+                                                                     observation_seen: unknown_observation_seen, event: event)
             end
             previous_state = state
           end
@@ -270,9 +270,8 @@ module Rubernetes
 
       def extract_events(report)
         value = @trace
-        if value.is_a?(Array)
-          return value
-        end
+        return value if value.is_a?(Array)
+
         unless value.is_a?(Hash)
           violation(report, "trace_shape", nil, "trace must be an object or event array")
           return nil
@@ -344,8 +343,8 @@ module Rubernetes
 
       def transition_for(event, before, after, previous_state, report)
         explicit_transition = event.key?("from") || event.key?("to") ||
-          event.key?("previous_state") || event.key?("next_state") ||
-          event["event"] == "state_transition"
+                              event.key?("previous_state") || event.key?("next_state") ||
+                              event["event"] == "state_transition"
         return [nil, nil] unless explicit_transition
 
         from_value = event["from"] || event["previous_state"]
@@ -390,9 +389,9 @@ module Rubernetes
         check_rollback_transition(from, to, before, after, index, report)
       end
 
-      def check_stopping_transition(from, to, before, after, index, report,
+      def check_stopping_transition(from, to, _before, after, index, report,
                                     observation_seen:, event:)
-        return unless from == "StateUnknown" && to == "Stopping" || from == "Running" && to == "Stopping"
+        return unless (from == "StateUnknown" && to == "Stopping") || (from == "Running" && to == "Stopping")
 
         unless after
           violation(report, "stopping_missing_snapshot", index,
@@ -429,66 +428,87 @@ module Rubernetes
       def check_failure_transition(from, to, _before, after, index, report)
         return unless to == "RollingBack"
 
-        unless %w[WorkspaceAllocated IsolationCreated ResourcesAttached WorkloadStopped].include?(from)
-          return
-        end
+        return unless %w[WorkspaceAllocated IsolationCreated ResourcesAttached WorkloadStopped].include?(from)
+
         unless after
           violation(report, "rollback_missing_snapshot", index,
                     "failure transition to RollingBack must expose the resulting safety snapshot")
           return
         end
         action = normalize_next_action(after[:next_action]) if after.key?(:next_action)
-        violation(report, "rollback_missing_action", index,
-                  "failure transition to RollingBack requires next_action=CleanupOrObserve") unless action == "CleanupOrObserve"
+        unless action == "CleanupOrObserve"
+          violation(report, "rollback_missing_action", index,
+                    "failure transition to RollingBack requires next_action=CleanupOrObserve")
+        end
         no_effect = normalized_boolean(after[:no_workload_effect], :no_workload_effect, index, report) if after.key?(:no_workload_effect)
-        violation(report, "rollback_with_workload_effect", index,
-                  "failure transition to RollingBack requires no_workload_effect=true") unless no_effect == true
+        unless no_effect == true
+          violation(report, "rollback_with_workload_effect", index,
+                    "failure transition to RollingBack requires no_workload_effect=true")
+        end
         live_process = live_process_value(after, index, report)
+        return if live_process == false
+
         violation(report, "rollback_with_live_process", index,
-                  "failure transition to RollingBack requires live_process=false") unless live_process == false
+                  "failure transition to RollingBack requires live_process=false")
       end
 
       def check_rollback_transition(from, to, _before, after, index, report)
-        return unless from == "RollingBack" || from == "CleanupPending" || from == "Stopped"
+        return unless %w[RollingBack CleanupPending Stopped].include?(from)
         return unless after
 
         case [from, to]
-        when ["RollingBack", "CleanupPending"]
+        when %w[RollingBack CleanupPending]
           required_snapshot_field(after, :owned_resources, index, report)
           owned = normalize_resource_collection(after[:owned_resources], :owned_resources, index, report) if after.key?(:owned_resources)
-          violation(report, "cleanup_pending_without_resources", index,
-                    "RollingBack -> CleanupPending requires owned resources") if owned && owned.empty?
-          violation(report, "cleanup_pending_with_live_process", index,
-                    "RollingBack -> CleanupPending requires live_process=false") unless live_process_value(after, index, report) == false
+          if owned && owned.empty?
+            violation(report, "cleanup_pending_without_resources", index,
+                      "RollingBack -> CleanupPending requires owned resources")
+          end
+          unless live_process_value(after, index, report) == false
+            violation(report, "cleanup_pending_with_live_process", index,
+                      "RollingBack -> CleanupPending requires live_process=false")
+          end
           require_cleanup_action(after, index, report)
-        when ["CleanupPending", "RollingBack"]
+        when %w[CleanupPending RollingBack]
           required_snapshot_field(after, :owned_resources, index, report)
-          violation(report, "cleanup_retry_with_live_process", index,
-                    "CleanupPending -> RollingBack requires live_process=false") unless live_process_value(after, index, report) == false
+          unless live_process_value(after, index, report) == false
+            violation(report, "cleanup_retry_with_live_process", index,
+                      "CleanupPending -> RollingBack requires live_process=false")
+          end
           require_cleanup_action(after, index, report)
-        when ["RollingBack", "Stopped"]
+        when %w[RollingBack Stopped]
           required_snapshot_field(after, :owned_resources, index, report)
           owned = normalize_resource_collection(after[:owned_resources], :owned_resources, index, report) if after.key?(:owned_resources)
-          violation(report, "rollback_stopped_with_resources", index,
-                    "RollingBack -> Stopped requires owned_resources to be empty") unless owned && owned.empty?
+          unless owned && owned.empty?
+            violation(report, "rollback_stopped_with_resources", index,
+                      "RollingBack -> Stopped requires owned_resources to be empty")
+          end
           live_process = live_process_value(after, index, report)
-          violation(report, "rollback_stopped_with_live_process", index,
-                    "RollingBack -> Stopped requires live_process=false") unless live_process == false
-        when ["Stopped", "Removed"]
+          unless live_process == false
+            violation(report, "rollback_stopped_with_live_process", index,
+                      "RollingBack -> Stopped requires live_process=false")
+          end
+        when %w[Stopped Removed]
           required_snapshot_field(after, :owned_resources, index, report)
           owned = normalize_resource_collection(after[:owned_resources], :owned_resources, index, report) if after.key?(:owned_resources)
-          violation(report, "removed_with_resources", index,
-                    "Stopped -> Removed requires owned_resources to be empty") unless owned && owned.empty?
+          unless owned && owned.empty?
+            violation(report, "removed_with_resources", index,
+                      "Stopped -> Removed requires owned_resources to be empty")
+          end
           live_process = live_process_value(after, index, report)
-          violation(report, "removed_with_live_process", index,
-                    "Stopped -> Removed requires live_process=false") unless live_process == false
+          unless live_process == false
+            violation(report, "removed_with_live_process", index,
+                      "Stopped -> Removed requires live_process=false")
+          end
         end
       end
 
       def require_cleanup_action(snapshot, index, report)
         action = normalize_next_action(snapshot[:next_action]) if snapshot.key?(:next_action)
+        return if action == "CleanupOrObserve"
+
         violation(report, "cleanup_action_missing", index,
-                  "cleanup transition requires next_action=CleanupOrObserve") unless action == "CleanupOrObserve"
+                  "cleanup transition requires next_action=CleanupOrObserve")
       end
 
       def event_value(event, snapshot, field)
@@ -508,11 +528,11 @@ module Rubernetes
         return unless from == "WorkloadStopped" && to == "Running"
 
         [before, after].compact.each do |snapshot|
-          if snapshot.key?(:digest_mismatch) &&
-             normalized_boolean(snapshot[:digest_mismatch], :digest_mismatch, index, report) == true
-            violation(report, "running_after_digest_mismatch", index,
-                      "WorkloadStopped -> Running is impossible after digest mismatch")
-          end
+          next unless snapshot.key?(:digest_mismatch) &&
+                      normalized_boolean(snapshot[:digest_mismatch], :digest_mismatch, index, report) == true
+
+          violation(report, "running_after_digest_mismatch", index,
+                    "WorkloadStopped -> Running is impossible after digest mismatch")
         end
 
         unless after
@@ -535,10 +555,10 @@ module Rubernetes
                     "WorkloadStopped -> Running requires no_workload_effect=false")
         end
         live_process = live_process_value(after, index, report)
-        if live_process != true
-          violation(report, "running_without_live_process", index,
-                    "WorkloadStopped -> Running requires live_process=true")
-        end
+        return unless live_process != true
+
+        violation(report, "running_without_live_process", index,
+                  "WorkloadStopped -> Running requires live_process=true")
       end
 
       def check_snapshot(snapshot, index, report)
@@ -567,14 +587,20 @@ module Rubernetes
                       "Running requires sandbox_ready=true")
           end
           mismatch = digest_mismatch(snapshot, index, report)
-          violation(report, "running_after_digest_mismatch", index,
-                    "Running requires digest_mismatch=false") if mismatch == true
+          if mismatch == true
+            violation(report, "running_after_digest_mismatch", index,
+                      "Running requires digest_mismatch=false")
+          end
           no_effect = normalized_boolean(snapshot[:no_workload_effect], :no_workload_effect, index, report)
-          violation(report, "running_without_workload_effect", index,
-                    "Running requires no_workload_effect=false") unless no_effect == false
+          unless no_effect == false
+            violation(report, "running_without_workload_effect", index,
+                      "Running requires no_workload_effect=false")
+          end
           live_process = live_process_value(snapshot, index, report)
-          violation(report, "running_without_live_process", index,
-                    "Running requires live_process=true") unless live_process == true
+          unless live_process == true
+            violation(report, "running_without_live_process", index,
+                      "Running requires live_process=true")
+          end
           check_required_resource_kinds(snapshot, index, report)
         end
 
@@ -582,11 +608,15 @@ module Rubernetes
           required_snapshot_field(snapshot, :no_workload_effect, index, report)
           required_snapshot_field(snapshot, :live_process, index, report)
           no_effect = normalized_boolean(snapshot[:no_workload_effect], :no_workload_effect, index, report)
-          violation(report, "workload_stopped_with_effect", index,
-                    "WorkloadStopped requires no_workload_effect=true") unless no_effect == true
+          unless no_effect == true
+            violation(report, "workload_stopped_with_effect", index,
+                      "WorkloadStopped requires no_workload_effect=true")
+          end
           live_process = live_process_value(snapshot, index, report)
-          violation(report, "workload_stopped_with_live_process", index,
-                    "WorkloadStopped requires live_process=false") unless live_process == false
+          unless live_process == false
+            violation(report, "workload_stopped_with_live_process", index,
+                      "WorkloadStopped requires live_process=false")
+          end
         end
 
         mismatch = digest_mismatch(snapshot, index, report)
@@ -669,7 +699,7 @@ module Rubernetes
         end
 
         active = resource_values(current, :live_owner, index, report).to_a |
-          resource_values(current, :owned_resources, index, report).to_a
+                 resource_values(current, :owned_resources, index, report).to_a
         reused = active & released_history
         unless reused.empty?
           violation(report, "resource_identity_reused", index,
@@ -730,10 +760,10 @@ module Rubernetes
         new_identity = snapshot[:identity] || snapshot[:restored_identity]
         return if old_identity.nil? || new_identity.nil?
 
-        if old_identity == new_identity
-          violation(report, "identity_reused", index,
-                    "restored identity must differ from the source identity")
-        end
+        return unless old_identity == new_identity
+
+        violation(report, "identity_reused", index,
+                  "restored identity must differ from the source identity")
       end
 
       def digest_mismatch(snapshot, index, report)

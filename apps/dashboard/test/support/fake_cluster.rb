@@ -20,7 +20,8 @@ class FakeCluster
     {
       "nodes" => [node("worker-0"), node("worker-1", ready: false)],
       "namespaces" => [{"metadata" => {"name" => "default", "creationTimestamp" => "2026-09-29T08:00:00Z"}, "status" => {"phase" => "Active"}},
-                       {"metadata" => {"name" => "gitlab", "creationTimestamp" => "2026-09-29T08:00:00Z"}, "status" => {"phase" => "Active"}}],
+                       {"metadata" => {"name" => "gitlab", "creationTimestamp" => "2026-09-29T08:00:00Z"},
+                        "status" => {"phase" => "Active"}}],
       "pods" => [pod("web-1", "gitlab", "worker-0", phase: "Running", ready: true),
                  pod("crash-1", "gitlab", "worker-1", phase: "Running", ready: false, waiting: "CrashLoopBackOff", restarts: 7),
                  pod("job-1", "default", "worker-0", phase: "Succeeded", ready: false)],
@@ -31,7 +32,8 @@ class FakeCluster
                                       "conditions" => [{"type" => "Available", "status" => "False", "reason" => "MinimumReplicasUnavailable"}]}}],
       "statefulsets" => [], "daemonsets" => [], "jobs" => [], "cronjobs" => [], "replicasets" => [],
       "services" => [{"metadata" => {"name" => "web", "namespace" => "gitlab", "creationTimestamp" => "2026-09-29T08:00:00Z"},
-                      "spec" => {"type" => "ClusterIP", "clusterIP" => "10.96.0.10", "ports" => [{"port" => 80, "protocol" => "TCP"}], "selector" => {"app" => "web"}}}],
+                      "spec" => {"type" => "ClusterIP", "clusterIP" => "10.96.0.10", "ports" => [{"port" => 80, "protocol" => "TCP"}],
+                                 "selector" => {"app" => "web"}}}],
       "ingresses" => [], "endpointslices" => [], "configmaps" => [{"metadata" => {"name" => "cfg", "namespace" => "gitlab"}, "data" => {"a" => "1"}}],
       "secrets" => [{"metadata" => {"name" => "sec", "namespace" => "gitlab"}, "type" => "Opaque", "data" => {"password" => "c2VjcmV0"}}],
       "persistentvolumeclaims" => [], "serviceaccounts" => [], "horizontalpodautoscalers" => [], "resourcequotas" => [],
@@ -53,7 +55,16 @@ class FakeCluster
   end
 
   def self.pod(name, namespace, node, phase:, ready:, waiting: nil, restarts: 0)
-    state = waiting ? {"waiting" => {"reason" => waiting}} : (phase == "Succeeded" ? {"terminated" => {"reason" => "Completed", "exitCode" => 0}} : {"running" => {"startedAt" => "2026-09-29T09:00:00Z"}})
+    state = if waiting
+              {"waiting" => {"reason" => waiting}}
+            else
+              (if phase == "Succeeded"
+                 {"terminated" => {"reason" => "Completed",
+                                   "exitCode" => 0}}
+               else
+                 {"running" => {"startedAt" => "2026-09-29T09:00:00Z"}}
+               end)
+            end
     {"metadata" => {"name" => name, "namespace" => namespace, "uid" => "uid-#{name}", "creationTimestamp" => "2026-09-29T09:00:00Z", "labels" => {"app" => "web"}},
      "spec" => {"nodeName" => node, "containers" => [{"name" => "c", "image" => "img:1", "ports" => [{"containerPort" => 8080}]}],
                 "volumes" => [{"name" => "data", "emptyDir" => {}}]},
@@ -91,7 +102,7 @@ class FakeCluster
     {"kind" => "List", "items" => items}
   end
 
-  def raw(method, path, query: nil, raise_for_status: true, **)
+  def raw(_method, path, query: nil, raise_for_status: true, **)
     if path.end_with?("/log")
       Response.new(status: 200, body: "line 1\nline 2\ncontainer=#{query && query["container"]}\n", headers: {})
     else
@@ -145,7 +156,7 @@ module DashboardTestRuntime
     scraper.scrape(node)
     # A little history for range queries.
     5.times do |i|
-      store.append({"__name__" => "history", "k" => "v"}, now_ms - (5 - i) * 15_000, i.to_f)
+      store.append({"__name__" => "history", "k" => "v"}, now_ms - ((5 - i) * 15_000), i.to_f)
     end
   end
 end

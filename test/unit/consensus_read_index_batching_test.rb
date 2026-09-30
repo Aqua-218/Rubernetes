@@ -14,9 +14,7 @@ class ConsensusReadIndexBatchingTest < Minitest::Test
     attr_accessor :heartbeats
 
     def send(message, now)
-      if message.is_a?(C::Messages::AppendEntries) && message.entries.empty?
-        self.heartbeats = (heartbeats || 0) + 1
-      end
+      self.heartbeats = (heartbeats || 0) + 1 if message.is_a?(C::Messages::AppendEntries) && message.entries.empty?
       super
     end
   end
@@ -37,9 +35,10 @@ class ConsensusReadIndexBatchingTest < Minitest::Test
     results = []
     8.times { leader.read_index(now: cluster.now) { |index, error| results << [index, error] } }
     cluster.run(0.02)
+
     assert_equal 8, results.length, "every read settles"
-    assert results.all? { |_, error| error.nil? }
-    assert results.all? { |index, _| index == leader.commit_index }
+    assert(results.all? { |_, error| error.nil? })
+    assert(results.all? { |index, _| index == leader.commit_index })
     # Two rounds of two peers each, plus at most one periodic heartbeat pair;
     # a round per read would have been sixteen.
     assert_operator cluster.network.heartbeats, :<=, 6, "heartbeats: #{cluster.network.heartbeats}"
@@ -51,8 +50,10 @@ class ConsensusReadIndexBatchingTest < Minitest::Test
     result = nil
     leader.read_index(now: cluster.now) { |index, error| result = [index, error] }
     cluster.run(0.002)
+
     assert_includes [2, 4], cluster.network.heartbeats, "one round for the lone read (plus at most a periodic pair)"
     cluster.run(0.02)
+
     assert_equal [leader.commit_index, nil], result
   end
 
@@ -62,7 +63,8 @@ class ConsensusReadIndexBatchingTest < Minitest::Test
     leader.read_index(now: cluster.now) { |_index, error| errors << error }
     leader.read_index(now: cluster.now) { |_index, error| errors << error }
     leader.__send__(:become_follower, leader.current_term + 1, leader: nil, now: cluster.now)
+
     assert_equal 2, errors.length
-    assert errors.all? { |error| error.is_a?(C::NotLeader) }
+    assert(errors.all? { |error| error.is_a?(C::NotLeader) })
   end
 end

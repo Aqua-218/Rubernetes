@@ -5,7 +5,7 @@ require "open3"
 require "rbconfig"
 
 class NetlinkKernelTest < Minitest::Test
-  KERNEL_SCRIPT = <<~'RUBY'.freeze
+  KERNEL_SCRIPT = <<~'RUBY'
     require "open3"
     require "rubernetes/network"
 
@@ -73,13 +73,12 @@ class NetlinkKernelTest < Minitest::Test
 
   def test_mutating_rtnetlink_works_inside_an_isolated_network_namespace
     output, error, status = Open3.capture3("unshare", "-n", "--", RbConfig.ruby, "-Ilib", "-e", KERNEL_SCRIPT)
-    if status.exitstatus == 77 && error.start_with?("SKIP:")
-      skip error.strip
-    end
+    skip error.strip if status.exitstatus == 77 && error.start_with?("SKIP:")
     if !status.success? && error.match?(/Operation not permitted|Permission denied/i)
       skip "missing CAP_SYS_ADMIN for isolated network namespace: #{error.strip}"
     end
-    assert status.success?, "isolated kernel script failed: #{error.empty? ? output : error}"
+
+    assert_predicate status, :success?, "isolated kernel script failed: #{error.empty? ? output : error}"
   rescue Errno::ENOENT => exception
     flunk "unshare is required for the isolated rtnetlink integration test: #{exception.message}"
   end

@@ -42,7 +42,7 @@ module Rubernetes
             @metrics.watch_event(@watch) if @watch && !piece.nil?
             initial_events_end = @watch_list && initial_events_end?(piece)
             begin
-              block.call(piece)
+              yield(piece)
             ensure
               # Once the bookmark is written -- a consumer may stop right
               # after it; a failed write ($!) is not recorded.

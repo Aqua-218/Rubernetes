@@ -45,11 +45,11 @@ class NetworkPolicyNativeTest < Minitest::Test
 
     assert_equal true, kernel.fetch("pod_index_present")
     assert_equal 4, kernel.fetch("targets").length
-    assert rules.any? { |rule| rule.values_at("direction", "family", "protocol", "port") == ["ingress", "ipv4", "TCP", 8080] }
-    assert rules.any? { |rule| rule.values_at("direction", "family", "protocol", "port", "end_port") == ["egress", "ipv4", "UDP", 80, 90] }
-    assert rules.any? { |rule| rule.fetch("family") == "ipv6" && rule.dig("peer", "cidr") == "2001:db8::10/124" }
-    refute rules.any? { |rule| rule.fetch("family") == "ipv4" && rule.dig("peer", "cidr").to_s.include?("2001:") }
-    refute rules.any? { |rule| rule.dig("peer", "cidr") == "10.0.0.0/26" }
+    assert(rules.any? { |rule| rule.values_at("direction", "family", "protocol", "port") == ["ingress", "ipv4", "TCP", 8080] })
+    assert(rules.any? { |rule| rule.values_at("direction", "family", "protocol", "port", "end_port") == ["egress", "ipv4", "UDP", 80, 90] })
+    assert(rules.any? { |rule| rule.fetch("family") == "ipv6" && rule.dig("peer", "cidr") == "2001:db8::10/124" })
+    refute(rules.any? { |rule| rule.fetch("family") == "ipv4" && rule.dig("peer", "cidr").to_s.include?("2001:") })
+    refute(rules.any? { |rule| rule.dig("peer", "cidr") == "10.0.0.0/26" })
   end
 
   def test_egress_named_port_without_to_resolves_every_destination_pod
@@ -74,9 +74,10 @@ class NetworkPolicyNativeTest < Minitest::Test
     }
 
     rules = engine.apply([policy], revision: 1).entries.dig("kernel", "rules")
+
     assert_equal [8080, 8081], rules.map { |rule| rule.fetch("port") }.uniq.sort
-    assert rules.all? { |rule| rule.dig("peer", "kind") == "all" }
-    assert rules.all? { |rule| rule.fetch("direction") == "egress" }
+    assert(rules.all? { |rule| rule.dig("peer", "kind") == "all" })
+    assert(rules.all? { |rule| rule.fetch("direction") == "egress" })
   end
 
   def test_cross_family_peers_are_not_compiled_and_omitted_peers_cover_both_families
@@ -93,8 +94,9 @@ class NetworkPolicyNativeTest < Minitest::Test
       }
     }
     cross_family_rules = engine.apply([cross_family], revision: 1).entries.dig("kernel", "rules")
-    assert cross_family_rules.all? { |rule| rule.fetch("family") == "ipv6" }
-    assert cross_family_rules.all? { |rule| rule.dig("peer", "cidr") == "2001:db8::/64" }
+
+    assert(cross_family_rules.all? { |rule| rule.fetch("family") == "ipv6" })
+    assert(cross_family_rules.all? { |rule| rule.dig("peer", "cidr") == "2001:db8::/64" })
 
     omitted_peer = {
       "metadata" => {"name" => "all-families", "namespace" => "apps"},
@@ -105,13 +107,14 @@ class NetworkPolicyNativeTest < Minitest::Test
       }
     }
     omitted_rules = engine.apply([omitted_peer], revision: 2).entries.dig("kernel", "rules")
+
     assert_equal %w[ipv4 ipv6], omitted_rules.map { |rule| rule.fetch("family") }.uniq.sort
-    assert omitted_rules.all? { |rule| rule.dig("peer", "kind") == "all" }
+    assert(omitted_rules.all? { |rule| rule.dig("peer", "kind") == "all" })
   end
 
   def test_nft_target_peer_and_partial_cidr_rules_start_with_nfproto_guard
     adapter = Rubernetes::Network::NftablesPolicyAdapter.new(table_name: "rkpol_guard_unit")
-    names = ->(expressions) do
+    names = lambda do |expressions|
       expressions.map do |item|
         length = item.byteslice(0, 2).unpack1("v")
         item.byteslice(4, length - 4).delete_suffix("\0")
@@ -119,19 +122,22 @@ class NetworkPolicyNativeTest < Minitest::Test
     end
 
     target = {"direction" => "ingress", "ip" => "10.0.0.10", "family" => "ipv4"}
+
     assert_equal %w[meta cmp payload cmp], names.call(adapter.send(:target_match_expressions, target))
 
     rule = {"direction" => "ingress", "target" => "10.0.0.10", "family" => "ipv4",
             "peer" => {"kind" => "cidr", "cidr" => "10.0.0.0/24"},
             "protocol" => nil, "port" => nil, "end_port" => nil}
     policy_names = names.call(adapter.send(:policy_match_expressions, rule))
+
     assert_equal 2, policy_names.count("meta"), policy_names.inspect
-    assert_equal 2, policy_names.each_index.count { |index| policy_names[index, 2] == %w[meta cmp] }
+    assert_equal(2, policy_names.each_index.count { |index| policy_names[index, 2] == %w[meta cmp] })
 
     cidr_names = names.call(adapter.send(:cidr_expressions, adapter.class::NFPROTO_IPV6,
                                          IPAddr.new("2001:db8::"), 64, :source))
+
     assert_equal %w[meta cmp], cidr_names.first(2)
-    refute cidr_names.any? { |name| name.is_a?(Array) }
+    refute(cidr_names.any? { |name| name.is_a?(Array) })
   end
 
   def test_nft_policy_markers_are_scoped_to_one_adapter_instance
@@ -159,8 +165,8 @@ class NetworkPolicyNativeTest < Minitest::Test
     message = adapter.send(:new_rule_message, chain_name: "forward", marker: marker, expressions: expressions)
     decoded = adapter.send(:decoded_rule_expressions_from_attributes, message.fetch(:attributes))
 
-    assert_equal %w[meta cmp payload cmp immediate], decoded.map { |entry| entry.fetch("name") }
-    refute decoded.any? { |entry| entry.fetch("data").nil? }
+    assert_equal(%w[meta cmp payload cmp immediate], decoded.map { |entry| entry.fetch("name") })
+    refute(decoded.any? { |entry| entry.fetch("data").nil? })
   end
 
   def test_pod_selector_peer_defaults_to_policy_namespace
@@ -173,11 +179,12 @@ class NetworkPolicyNativeTest < Minitest::Test
     )
     policy = {"metadata" => {"name" => "front", "namespace" => "apps"},
               "spec" => {"podSelector" => {"matchLabels" => {"app" => "front"}},
-                          "policyTypes" => ["Ingress"],
-                          "ingress" => [{"from" => [{"podSelector" => {"matchLabels" => {"app" => "back"}}}]}]}}
+                         "policyTypes" => ["Ingress"],
+                         "ingress" => [{"from" => [{"podSelector" => {"matchLabels" => {"app" => "back"}}}]}]}}
     engine.apply([policy], revision: 1)
 
     destination = {"namespace" => "apps", "labels" => {"app" => "front"}, "ip" => "10.0.0.10"}
+
     assert engine.allowed?(source: {"namespace" => "apps", "labels" => {"app" => "back"}, "ip" => "10.0.0.20"},
                            destination: destination, direction: "Ingress")
     refute engine.allowed?(source: {"namespace" => "other", "labels" => {"app" => "back"}, "ip" => "10.0.0.30"},
@@ -193,9 +200,10 @@ class NetworkPolicyNativeTest < Minitest::Test
     )
     policy = {"metadata" => {"name" => "front", "namespace" => "apps"},
               "spec" => {"podSelector" => {"matchLabels" => {"app" => "front"}},
-                          "policyTypes" => ["Ingress"],
-                          "ingress" => [{"from" => [{"namespaceSelector" => {}}]}]}}
+                         "policyTypes" => ["Ingress"],
+                         "ingress" => [{"from" => [{"namespaceSelector" => {}}]}]}}
     kernel = engine.apply([policy], revision: 1).entries.fetch("kernel")
+
     assert_includes kernel.fetch("rules").map { |rule| rule.dig("peer", "ip") }, "10.0.0.30"
   end
 
@@ -206,20 +214,20 @@ class NetworkPolicyNativeTest < Minitest::Test
 
     assert_raises(Rubernetes::Network::PolicyError) { nft.atomic_swap(snapshot) }
     assert_raises(Rubernetes::Network::PolicyError) { ebpf.atomic_swap(snapshot) }
-    refute nft.production_capable?
-    refute ebpf.production_capable?
+    refute_predicate nft, :production_capable?
+    refute_predicate ebpf, :production_capable?
   end
 
   def test_packet_matrix_is_the_only_production_capability_gate
     nft = Rubernetes::Network::NftablesPolicyAdapter.new(table_name: "rkpol_unit_matrix")
     ebpf = Rubernetes::Network::EBPFPolicyAdapter.new
 
-    refute nft.production_capable?
-    refute ebpf.production_capable?
+    refute_predicate nft, :production_capable?
+    refute_predicate ebpf, :production_capable?
     assert nft.verify_packet_matrix!(matrix: PACKET_MATRIX)
     assert ebpf.verify_packet_matrix!(matrix: PACKET_MATRIX)
-    assert nft.production_capable?
-    assert ebpf.production_capable?
+    assert_predicate nft, :production_capable?
+    assert_predicate ebpf, :production_capable?
   end
 
   def test_ebpf_target_drop_is_emitted_even_when_allow_rule_set_is_empty
@@ -253,7 +261,7 @@ class NetworkPolicyNativeTest < Minitest::Test
       [load.offset, store.offset]
     end
 
-    assert_equal expected, observed.select { |source, destination| expected.include?([source, destination]) }
+    assert_equal(expected, observed.select { |source, destination| expected.include?([source, destination]) })
   end
 
   def test_ebpf_failed_swap_reattaches_the_complete_previous_filter_set
@@ -284,8 +292,8 @@ class NetworkPolicyNativeTest < Minitest::Test
     assert_equal [:verify, 7], calls.last
     assert_same old_program, adapter.instance_variable_get(:@program)
     assert_same old_maps, adapter.instance_variable_get(:@maps)
-    assert_equal old_links.map { |link| link.values_at(:ifindex, :direction) },
-                 adapter.instance_variable_get(:@links).map { |link| link.values_at(:ifindex, :direction) }
+    assert_equal(old_links.map { |link| link.values_at(:ifindex, :direction) },
+                 adapter.instance_variable_get(:@links).map { |link| link.values_at(:ifindex, :direction) })
   end
 
   def test_ebpf_failed_swap_refuses_partial_previous_filter_inventory

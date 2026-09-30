@@ -11,13 +11,11 @@ require "rubernetes/bootstrap"
 # victims are still terminating.
 class SchedulerNominationWiringTest < Minitest::Test
   class API
-    attr_reader :patches
+    attr_reader :patches, :types
 
     def initialize
       @patches = []
     end
-
-    attr_reader :types
 
     def patch(resource, body, type: nil, namespace: nil, api_version: nil, name: nil, subresource: nil, **_options)
       (@types ||= []) << type
@@ -60,14 +58,17 @@ class SchedulerNominationWiringTest < Minitest::Test
     scheduler.send(:report_unschedulable, result("a"), 1)
 
     status = status_patches(api).last.fetch("status")
+
     assert_equal "a", status["nominatedNodeName"]
     assert_equal "Unschedulable", status["conditions"].first["reason"]
 
     # Same message, nomination unchanged: nothing is written again.
     scheduler.send(:report_unschedulable, result("a"), 1)
+
     assert_equal 1, status_patches(api).length
     # A cleared nomination is written even with the same message.
     scheduler.send(:report_unschedulable, result(""), 1)
+
     assert_equal 2, status_patches(api).length
     assert status_patches(api).last["status"].key?("nominatedNodeName")
     assert_nil status_patches(api).last["status"]["nominatedNodeName"]
@@ -81,12 +82,14 @@ class SchedulerNominationWiringTest < Minitest::Test
     scheduler.send(:report_unschedulable, result("a"), 1)
     victim = pod("victim")
     scheduler.send(:mark_victim_disrupted, victim)
+
     assert_equal %i[strategic strategic], api.types
   end
 
   def test_no_nomination_leaves_the_field_alone
     api = API.new
     service(api).send(:report_unschedulable, result(nil), 1)
+
     refute status_patches(api).last["status"].key?("nominatedNodeName")
   end
 
@@ -103,6 +106,7 @@ class SchedulerNominationWiringTest < Minitest::Test
   def test_the_production_framework_is_wired_for_nominations
     scheduler = service(API.new)
     framework = scheduler.instance_variable_get(:@framework)
+
     refute_nil framework
     assert_equal :nominate_pod, framework.instance_variable_get(:@nominate_handler).name
     assert_equal :clear_pod_nomination, framework.instance_variable_get(:@clear_nomination_handler).name

@@ -2,7 +2,6 @@
 
 require "openssl"
 require "socket"
-require "thread"
 
 require_relative "errors"
 require_relative "canonical"
@@ -167,8 +166,8 @@ module Rubernetes
             return nil unless address && @running
 
             @connections[peer_id] ||= PeerConnection.new(peer_id: peer_id, address: address, context: build_client_context,
-                                                          reconnect_interval: @reconnect_interval, max_queue: @max_queue,
-                                                          logger: @logger, expected_cluster: @cluster_id)
+                                                         reconnect_interval: @reconnect_interval, max_queue: @max_queue,
+                                                         logger: @logger, expected_cluster: @cluster_id)
           end
         end
 
@@ -225,7 +224,10 @@ module Rubernetes
             raise ProtocolError, "unknown frame type #{type}" unless type == TYPE_MESSAGE
 
             message = Messages.decode(payload, max_bytes: MAX_FRAME_BYTES)
-            raise PeerIdentityMismatch, "message claims node #{message.from} but the connection is #{identity[:node_id]}" unless message.from == identity[:node_id]
+            unless message.from == identity[:node_id]
+              raise PeerIdentityMismatch,
+                    "message claims node #{message.from} but the connection is #{identity[:node_id]}"
+            end
             raise PeerIdentityMismatch, "message claims cluster #{message.cluster_id}" unless message.cluster_id == @cluster_id
             raise ProtocolError, "message addressed to #{message.to}" unless message.to == @node_id
 
@@ -241,7 +243,7 @@ module Rubernetes
               # are the handler's own decision (Server#fail_closed!).
               @mutex.synchronize { @stats[:handler_errors] += 1 }
               @logger&.error("consensus.transport.handler_error", error: "#{error.class}: #{error.message}",
-                                                                   backtrace: Array(error.backtrace).first(6))
+                                                                  backtrace: Array(error.backtrace).first(6))
             end
           end
         rescue OpenSSL::SSL::SSLError, TransportError, IOError, SystemCallError => error
@@ -347,7 +349,8 @@ module Rubernetes
           identity = Identity.peer_identity(tls.peer_cert)
           unless identity[:cluster_id] == @expected_cluster && identity[:node_id] == @peer_id
             tls.close
-            raise PeerIdentityMismatch, "peer at #{@host}:#{@port} is #{identity[:cluster_id]}/#{identity[:node_id]}, expected #{@expected_cluster}/#{@peer_id}"
+            raise PeerIdentityMismatch,
+                  "peer at #{@host}:#{@port} is #{identity[:cluster_id]}/#{identity[:node_id]}, expected #{@expected_cluster}/#{@peer_id}"
           end
           @socket = tls
         rescue PeerIdentityMismatch => error

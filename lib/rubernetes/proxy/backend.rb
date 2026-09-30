@@ -2,7 +2,6 @@
 
 require "json"
 require "digest"
-require "thread"
 require "time"
 
 require_relative "ebpf_program"
@@ -11,7 +10,7 @@ module Rubernetes
   module Proxy
     BackendStatus = Struct.new(:backend, :state, :reason, :checked_at, :error, keyword_init: true) do
       def initialize(**attributes)
-        super(**attributes)
+        super
         freeze
       end
 
@@ -30,7 +29,7 @@ module Rubernetes
                                        :reason, :measurement_source, :runner_identity,
                                        :runner_digest, :raw_observation_digest, keyword_init: true) do
       def initialize(**attributes)
-        super(**attributes)
+        super
         freeze
       end
 
@@ -184,6 +183,7 @@ module Rubernetes
           if compiled_revision < @revision
             raise StaleRevisionError, "compiled rule revision #{compiled_revision} is older than #{@revision}"
           end
+
           old_rules = @rules
           added = incoming.keys.reject { |key| old_rules.key?(key) }.map { |key| incoming.fetch(key) }
           deleted = old_rules.keys.reject { |key| incoming.key?(key) }.map { |key| old_rules.fetch(key) }
@@ -207,13 +207,13 @@ module Rubernetes
         normalized
       end
 
-      def attach(hook: :tc, **options)
+      def attach(hook: :tc, **)
         @apply_mutex.synchronize do
           set_attach_state(:attaching)
           ensure_adapter_contract!(phase: :attach)
-          operation_result = perform_attach(hook: hook, **options)
+          operation_result = perform_attach(hook: hook, **)
           verify_adapter_effect!(phase: :attach, operation_result: operation_result,
-                                 expected: expected_attach(hook: hook, **options), hook: hook, **options)
+                                 expected: expected_attach(hook: hook, **), hook: hook, **)
           @mutex.synchronize do
             @attach_state = :attached
             @last_error = nil
@@ -229,9 +229,9 @@ module Rubernetes
         raise wrapped
       end
 
-      def detach(**options)
+      def detach(**)
         @apply_mutex.synchronize do
-          @syscall_adapter.detach(backend: self, **options) if @syscall_adapter&.respond_to?(:detach)
+          @syscall_adapter.detach(backend: self, **) if @syscall_adapter&.respond_to?(:detach)
           @mutex.synchronize do
             @attach_state = :detached
             @last_error = nil
@@ -312,9 +312,7 @@ module Rubernetes
         return true if adapter_contract_available?(phase: :attach)
 
         adapter = @syscall_adapter
-        if adapter.nil?
-          raise BackendError, "#{name} #{phase} requires a production-capable kernel adapter"
-        end
+        raise BackendError, "#{name} #{phase} requires a production-capable kernel adapter" if adapter.nil?
         unless adapter_authorized?(phase: :attach)
           raise BackendError, "#{name} #{phase} requires an adapter that declares production_capable?; " \
                               "use an explicit test_adapter: true only with a test_adapter? adapter"
@@ -332,8 +330,8 @@ module Rubernetes
         raise BackendError, "#{name} #{phase} adapter must expose verified attach/transaction readback"
       end
 
-      def perform_attach(hook:, **options)
-        @syscall_adapter.attach(hook: hook, backend: self, **options)
+      def perform_attach(hook:, **)
+        @syscall_adapter.attach(hook: hook, backend: self, **)
       end
 
       def expected_attach(hook:, **_options)
@@ -342,9 +340,7 @@ module Rubernetes
 
       def verify_adapter_effect!(phase:, operation_result:, expected:, hook:, **context)
         method_name = adapter_verification_methods(phase).find { |candidate| @syscall_adapter.respond_to?(candidate) }
-        unless method_name
-          raise BackendError, "#{name} #{phase} adapter must expose verification or readback"
-        end
+        raise BackendError, "#{name} #{phase} adapter must expose verification or readback" unless method_name
 
         verification = @syscall_adapter.public_send(
           method_name,
@@ -361,7 +357,7 @@ module Rubernetes
       end
 
       def verified_result?(value)
-        return value if value == true || value == false
+        return value if [true, false].include?(value)
         return false if value.nil?
         return !!value.verified? if value.respond_to?(:verified?)
         return !!value.success? if value.respond_to?(:success?)
@@ -369,6 +365,7 @@ module Rubernetes
         if value.is_a?(Hash)
           %i[verified attached committed applied success].each do |key|
             return !!value[key] if value.key?(key)
+
             string_key = key.to_s
             return !!value[string_key] if value.key?(string_key)
           end
@@ -391,6 +388,7 @@ module Rubernetes
         if diff.from_revision != @revision
           raise StaleRevisionError, "rule diff starts at revision #{diff.from_revision}, expected #{@revision}"
         end
+
         next_rules = @rules.dup
         diff.added.each { |rule| next_rules[rule.key] = rule }
         diff.updated.each { |_old_rule, new_rule| next_rules[new_rule.key] = new_rule }
@@ -430,8 +428,8 @@ module Rubernetes
     end
 
     class MemoryBackend < Backend
-      def initialize(**options)
-        super(name: "memory", **options)
+      def initialize(**)
+        super(name: "memory", **)
         @attach_state = :ready
       end
 
@@ -455,7 +453,7 @@ module Rubernetes
       DEFAULT_HOOK = :tc
       MAP_LAYOUT = {
         "service_rules" => {"type" => "hash", "key_size" => 40,
-                             "value_size" => EBPFProgram::WireFormat::SERVICE_VALUE_SIZE, "max_entries" => 65_536},
+                            "value_size" => EBPFProgram::WireFormat::SERVICE_VALUE_SIZE, "max_entries" => 65_536},
         "backends" => {"type" => "array_of_structs", "key_size" => EBPFProgram::WireFormat::BACKEND_KEY_SIZE,
                        "value_size" => EBPFProgram::WireFormat::BACKEND_VALUE_SIZE, "max_entries" => 1_000_000},
         "conntrack" => {"type" => "lru_hash", "key_size" => EBPFProgram::WireFormat::CONNTRACK_KEY_SIZE,
@@ -463,15 +461,15 @@ module Rubernetes
         "client_ip_affinity" => {"type" => "lru_hash", "key_size" => EBPFProgram::WireFormat::AFFINITY_KEY_SIZE,
                                  "value_size" => EBPFProgram::WireFormat::AFFINITY_VALUE_SIZE, "max_entries" => 1_000_000},
         "source_ranges" => {"type" => "lpm_trie", "key_size" => EBPFProgram::WireFormat::SOURCE_RANGE_KEY_SIZE,
-                             "value_size" => EBPFProgram::WireFormat::SOURCE_RANGE_VALUE_SIZE, "max_entries" => 65_536},
+                            "value_size" => EBPFProgram::WireFormat::SOURCE_RANGE_VALUE_SIZE, "max_entries" => 65_536},
         "sctp_crc32c" => {"type" => "array", "key_size" => 4,
-                           "value_size" => 4, "max_entries" => 256},
+                          "value_size" => 4, "max_entries" => 256},
         "snat" => {"type" => "lru_hash", "key_size" => EBPFProgram::WireFormat::SNAT_KEY_SIZE,
                    "value_size" => EBPFProgram::WireFormat::SNAT_VALUE_SIZE, "max_entries" => 1_000_000}
       }.freeze
 
-      def initialize(capability: false, verifier_probe: nil, capability_probe: nil, **options)
-        super(name: "ebpf", **options)
+      def initialize(capability: false, verifier_probe: nil, capability_probe: nil, **)
+        super(name: "ebpf", **)
         @capability = capability
         @verifier_probe = verifier_probe || capability_probe
         @program = nil
@@ -484,9 +482,7 @@ module Rubernetes
       # The most recent real verifier probe result (nil until available? or
       # attach asked the adapter to load the program).  Node status records it
       # so the selected datapath is traceable to a kernel decision.
-      def last_verifier_probe
-        @last_verifier_probe
-      end
+      attr_reader :last_verifier_probe
 
       class InstructionEncoder
         def encode(instructions)
@@ -623,10 +619,10 @@ module Rubernetes
         false
       end
 
-      def perform_attach(hook:, **options)
+      def perform_attach(hook:, **)
         attach_program = program || generate_program(hook: hook)
         @syscall_adapter.attach(hook: hook, backend: self, program: attach_program,
-                                map_layout: map_layout, **options)
+                                map_layout: map_layout, **)
       end
 
       def expected_attach(hook:, **_options)
@@ -689,8 +685,8 @@ module Rubernetes
     # are used as eBPF input, and messages are deterministic for reproducible
     # differential tests.
     class NftablesBackend < Backend
-      def initialize(netlink_adapter: nil, **options)
-        super(name: "nftables", syscall_adapter: netlink_adapter || default_netlink_adapter, **options)
+      def initialize(netlink_adapter: nil, **)
+        super(name: "nftables", syscall_adapter: netlink_adapter || default_netlink_adapter, **)
         @messages = [].freeze
       end
 
@@ -731,7 +727,10 @@ module Rubernetes
           rescue StandardError => error
             rollback_error = rollback_message_update(previous, result)
             restore_backend_state(previous)
-            raise BackendError, "nftables rule update failed: #{error.message}; rollback failed: #{rollback_error.message}" if rollback_error
+            if rollback_error
+              raise BackendError,
+                    "nftables rule update failed: #{error.message}; rollback failed: #{rollback_error.message}"
+            end
 
             raise
           end
@@ -750,7 +749,10 @@ module Rubernetes
           rescue StandardError => error
             rollback_error = rollback_message_update(previous, result)
             restore_backend_state(previous)
-            raise BackendError, "nftables rule update failed: #{error.message}; rollback failed: #{rollback_error.message}" if rollback_error
+            if rollback_error
+              raise BackendError,
+                    "nftables rule update failed: #{error.message}; rollback failed: #{rollback_error.message}"
+            end
 
             raise
           end
@@ -767,13 +769,13 @@ module Rubernetes
         [%i[attach send_messages apply]]
       end
 
-      def perform_attach(hook:, **options)
+      def perform_attach(hook:, **)
         if @syscall_adapter.respond_to?(:attach)
-          @syscall_adapter.attach(messages: messages, hook: hook, backend: self, **options)
+          @syscall_adapter.attach(messages: messages, hook: hook, backend: self, **)
         elsif @syscall_adapter.respond_to?(:send_messages)
-          @syscall_adapter.send_messages(messages, hook: hook, backend: self, **options)
+          @syscall_adapter.send_messages(messages, hook: hook, backend: self, **)
         elsif @syscall_adapter.respond_to?(:apply)
-          @syscall_adapter.apply(messages, hook: hook, backend: self, **options)
+          @syscall_adapter.apply(messages, hook: hook, backend: self, **)
         end
       end
 
@@ -819,7 +821,7 @@ module Rubernetes
         (additions + updates + deletions).sort_by { |message| [message["operation"], message["key"].to_s] }.freeze
       end
 
-      def rollback_message_update(previous, diff)
+      def rollback_message_update(_previous, diff)
         return nil unless diff && attached? && @syscall_adapter
 
         transmit_messages(messages_for(inverse_diff(diff)))
@@ -831,7 +833,11 @@ module Rubernetes
       def encode_rule(operation, rule)
         {
           "operation" => operation,
-          "family" => rule.virtual_ip.nil? ? "inet" : (rule.virtual_ip.include?(":") ? "ip6" : "ip"),
+          "family" => if rule.virtual_ip.nil?
+                        "inet"
+                      else
+                        (rule.virtual_ip.include?(":") ? "ip6" : "ip")
+                      end,
           "table" => "rubernetes",
           "chain" => "service_#{Digest::SHA256.hexdigest(rule.service_key)[0, 12]}",
           "key" => rule.key,
@@ -899,22 +905,18 @@ module Rubernetes
       def self.production_compare(left, right, packet_corpus:, kernel_readback:)
         model = compare(left, right)
         evidence_errors = []
-        unless production_backend?(left)
-          evidence_errors << "left backend is not a production-capable external adapter"
+        evidence_errors << "left backend is not a production-capable external adapter" unless production_backend?(left)
+        evidence_errors << "right backend is not a production-capable external adapter" unless production_backend?(right)
+        if !external_packet_corpus?(packet_corpus, left_digest: model.fetch("leftDigest"),
+                                                   right_digest: model.fetch("rightDigest"), errors: evidence_errors) && evidence_errors.empty?
+          evidence_errors << "packet corpus provenance is incomplete"
         end
-        unless production_backend?(right)
-          evidence_errors << "right backend is not a production-capable external adapter"
-        end
-        unless external_packet_corpus?(packet_corpus, left_digest: model.fetch("leftDigest"),
-                                       right_digest: model.fetch("rightDigest"), errors: evidence_errors)
-          evidence_errors << "packet corpus provenance is incomplete" if evidence_errors.empty?
-        end
-        unless external_kernel_readback?(kernel_readback, left_digest: model.fetch("leftDigest"),
-                                         right_digest: model.fetch("rightDigest"),
-                                         expected_rules: {"ebpf" => model.fetch("leftRules"),
-                                                          "nftables" => model.fetch("rightRules")},
-                                         errors: evidence_errors)
-          evidence_errors << "kernel readback provenance is incomplete" if evidence_errors.empty?
+        if !external_kernel_readback?(kernel_readback, left_digest: model.fetch("leftDigest"),
+                                                       right_digest: model.fetch("rightDigest"),
+                                                       expected_rules: {"ebpf" => model.fetch("leftRules"),
+                                                                        "nftables" => model.fetch("rightRules")},
+                                                       errors: evidence_errors) && evidence_errors.empty?
+          evidence_errors << "kernel readback provenance is incomplete"
         end
         unless evidence_errors.empty?
           return model.merge(
@@ -924,11 +926,11 @@ module Rubernetes
             "evidenceErrors" => evidence_errors.uniq.freeze
           ).freeze
         end
-        unless shared_execution_provenance?(packet_corpus, kernel_readback, errors: evidence_errors)
-          evidence_errors << "packet and kernel evidence do not share one immutable runner execution" if evidence_errors.empty?
+        if !shared_execution_provenance?(packet_corpus, kernel_readback, errors: evidence_errors) && evidence_errors.empty?
+          evidence_errors << "packet and kernel evidence do not share one immutable runner execution"
         end
-        unless shared_case_binding?(packet_corpus, kernel_readback, errors: evidence_errors)
-          evidence_errors << "packet and kernel evidence do not share the required case inventory" if evidence_errors.empty?
+        if !shared_case_binding?(packet_corpus, kernel_readback, errors: evidence_errors) && evidence_errors.empty?
+          evidence_errors << "packet and kernel evidence do not share the required case inventory"
         end
         unless evidence_errors.empty?
           return model.merge(
@@ -956,6 +958,7 @@ module Rubernetes
 
         adapter = backend.instance_variable_get(:@syscall_adapter)
         return false unless adapter
+
         concrete = if defined?(LinuxEBPFAdapter) && backend.is_a?(EBPFBackend)
                      adapter.class == LinuxEBPFAdapter
                    elsif defined?(NftablesNetlinkAdapter) && backend.is_a?(NftablesBackend)
@@ -978,7 +981,9 @@ module Rubernetes
           return false
         end
         measurement_source = evidence_value(value, "measurementSource", "measurement_source")
-        failures << "packet corpus measurement source is not external" if measurement_source.to_s.empty? || measurement_source.to_s == "model_only"
+        if measurement_source.to_s.empty? || measurement_source.to_s == "model_only"
+          failures << "packet corpus measurement source is not external"
+        end
         failures << "packet corpus must report executed=true" unless evidence_value(value, "executed") == true
         validate_runner_provenance(value, "packet corpus", failures)
         validate_input_binding(value, "packet corpus", left_digest, right_digest, failures)
@@ -1007,11 +1012,15 @@ module Rubernetes
           return false
         end
         measurement_source = evidence_value(value, "measurementSource", "measurement_source")
-        failures << "kernel readback measurement source is not external" if measurement_source.to_s.empty? || measurement_source.to_s == "model_only"
+        if measurement_source.to_s.empty? || measurement_source.to_s == "model_only"
+          failures << "kernel readback measurement source is not external"
+        end
         validate_runner_provenance(value, "kernel readback", failures)
         validate_input_binding(value, "kernel readback", left_digest, right_digest, failures)
-        failures << "kernel readback packet trace is required" unless valid_digest?(evidence_value(value, "packetTraceSha256", "packet_trace_sha256"))
-        failures << "kernel readback case inventory digest is required" unless valid_digest?(evidence_value(value, "caseInventorySha256", "case_inventory_sha256"))
+        failures << "kernel readback packet trace is required" unless valid_digest?(evidence_value(value, "packetTraceSha256",
+                                                                                                   "packet_trace_sha256"))
+        failures << "kernel readback case inventory digest is required" unless valid_digest?(evidence_value(value, "caseInventorySha256",
+                                                                                                            "case_inventory_sha256"))
         backends = %w[ebpf nftables].each_with_object({}) do |name, result|
           result[name] = value[name] || value[name.to_sym]
         end
@@ -1025,6 +1034,7 @@ module Rubernetes
       def self.evidence_value(value, *keys)
         keys.each do |key|
           return value[key] if value.key?(key)
+
           symbol = key.to_sym
           return value[symbol] if value.key?(symbol)
         end
@@ -1057,11 +1067,11 @@ module Rubernetes
         mode = evidence_value(value, "mode", "runnerMode", "runner_mode")
         failures << "#{label} runner identity is required" unless identity.is_a?(String) && !identity.empty?
         failures << "#{label} runner digest is invalid" unless valid_digest?(digest)
-        failures << "#{label} execution mode must identify an isolated external runner" unless mode.is_a?(String) && !mode.empty? && mode.to_s != "model"
+        unless mode.is_a?(String) && !mode.empty? && mode.to_s != "model"
+          failures << "#{label} execution mode must identify an isolated external runner"
+        end
         runner = evidence_value(value, "runner", "runnerProvenance", "runner_provenance")
-        unless runner.is_a?(Hash)
-          failures << "#{label} runner PID/start-time/source/argv/stdout provenance is required"
-        else
+        if runner.is_a?(Hash)
           pid = evidence_value(runner, "pid", "processId", "process_id")
           started_at = evidence_value(runner, "startedAt", "started_at", "startTime", "start_time")
           source = evidence_value(runner, "source", "sourcePath", "source_path")
@@ -1071,26 +1081,32 @@ module Rubernetes
           failures << "#{label} runner PID is invalid" unless pid.is_a?(Integer) && pid.positive?
           failures << "#{label} runner start-time is invalid" unless iso8601_value?(started_at)
           failures << "#{label} runner source is required" unless source.is_a?(String) && !source.empty? && source != "model"
-          failures << "#{label} runner argv is required" unless argv.is_a?(Array) && !argv.empty? && argv.all? { |arg| arg.is_a?(String) && !arg.empty? }
+          failures << "#{label} runner argv is required" unless argv.is_a?(Array) && !argv.empty? && argv.all? do |arg|
+            arg.is_a?(String) && !arg.empty?
+          end
           failures << "#{label} runner stdout is required" unless stdout.is_a?(String)
           failures << "#{label} runner stdout digest is invalid" unless valid_digest?(stdout_digest)
           if stdout
             stdout_bytes = stdout.is_a?(String) ? stdout.b : JSON.generate(ModelSupport.canonicalize(stdout))
             failures << "#{label} runner stdout digest does not match" unless stdout_digest == Digest::SHA256.hexdigest(stdout_bytes)
           end
+        else
+          failures << "#{label} runner PID/start-time/source/argv/stdout provenance is required"
         end
         execution = evidence_value(value, "executionIdentity", "execution_identity")
         execution_digest = evidence_value(value, "executionIdentitySha256", "execution_identity_sha256")
-        unless execution.is_a?(Hash) && !execution.empty?
-          failures << "#{label} immutable execution identity is required"
-        else
+        if execution.is_a?(Hash) && !execution.empty?
           execution_identity = evidence_value(execution, "runnerIdentity", "runner_identity")
           execution_runner_digest = evidence_value(execution, "runnerDigest", "runner_digest")
           execution_mode = evidence_value(execution, "mode", "runnerMode", "runner_mode")
           failures << "#{label} execution identity runner does not match" unless execution_identity == identity
           failures << "#{label} execution identity digest does not match" unless execution_runner_digest == digest
           failures << "#{label} execution identity mode does not match" unless execution_mode == mode
-          failures << "#{label} execution identity digest is invalid" unless valid_digest?(execution_digest) && execution_digest == canonical_trace_digest(execution)
+          unless valid_digest?(execution_digest) && execution_digest == canonical_trace_digest(execution)
+            failures << "#{label} execution identity digest is invalid"
+          end
+        else
+          failures << "#{label} immutable execution identity is required"
         end
       end
 
@@ -1137,7 +1153,9 @@ module Rubernetes
         failures << "#{label} input binding left digest does not match" unless bound_left == left_digest
         failures << "#{label} input binding right digest does not match" unless bound_right == right_digest
         binding_digest = evidence_value(value, "inputBindingSha256", "input_binding_sha256")
-        failures << "#{label} immutable input binding digest is invalid" unless valid_digest?(binding_digest) && binding_digest == canonical_trace_digest(binding)
+        return if valid_digest?(binding_digest) && binding_digest == canonical_trace_digest(binding)
+
+        failures << "#{label} immutable input binding digest is invalid"
       end
 
       def self.validate_case_binding(cases, inventory, trace, failures)
@@ -1154,7 +1172,9 @@ module Rubernetes
         end
         case_ids = cases.map(&case_id).map(&:to_s)
         inventory_ids = inventory.map(&case_id).map(&:to_s)
-        failures << "packet corpus case inventory does not bind cases" unless case_ids.sort == inventory_ids.sort && case_ids.uniq.length == case_ids.length
+        unless case_ids.sort == inventory_ids.sort && case_ids.uniq.length == case_ids.length
+          failures << "packet corpus case inventory does not bind cases"
+        end
         failures << "packet corpus required case inventory is incomplete" unless case_ids.sort == REQUIRED_CASE_IDS.sort
         failures << "packet corpus case count is not #{REQUIRED_CASE_IDS.length}" unless case_ids.length == REQUIRED_CASE_IDS.length
         cases.each do |entry|
@@ -1165,11 +1185,15 @@ module Rubernetes
           expected = evidence_value(entry, "expected")
           actual = evidence_value(entry, "actual")
           failures << "packet corpus case expected/actual mismatch" unless !expected.nil? && !actual.nil? &&
-            ModelSupport.canonicalize(expected) == ModelSupport.canonicalize(actual)
+                                                                           ModelSupport.canonicalize(expected) == ModelSupport.canonicalize(actual)
           expected_digest = evidence_value(entry, "expectedSha256", "expected_sha256")
           actual_digest = evidence_value(entry, "actualSha256", "actual_sha256")
-          failures << "packet corpus case expected digest is invalid" unless valid_digest?(expected_digest) && expected_digest == canonical_trace_digest(expected)
-          failures << "packet corpus case actual digest is invalid" unless valid_digest?(actual_digest) && actual_digest == canonical_trace_digest(actual)
+          unless valid_digest?(expected_digest) && expected_digest == canonical_trace_digest(expected)
+            failures << "packet corpus case expected digest is invalid"
+          end
+          unless valid_digest?(actual_digest) && actual_digest == canonical_trace_digest(actual)
+            failures << "packet corpus case actual digest is invalid"
+          end
           case_trace = evidence_value(entry, "packetTraceSha256", "packet_trace_sha256")
           failures << "packet corpus case trace is not bound to raw trace" unless case_trace == trace
         end
@@ -1177,7 +1201,9 @@ module Rubernetes
 
       def self.validate_case_inventory_digest(value, inventory, failures)
         digest = evidence_value(value, "caseInventorySha256", "case_inventory_sha256")
-        failures << "packet corpus case inventory digest is invalid" unless inventory.is_a?(Array) && valid_digest?(digest) && digest == canonical_trace_digest(inventory)
+        return if inventory.is_a?(Array) && valid_digest?(digest) && digest == canonical_trace_digest(inventory)
+
+        failures << "packet corpus case inventory digest is invalid"
       end
 
       def self.shared_execution_provenance?(packet_corpus, kernel_readback, errors: nil)
@@ -1190,15 +1216,16 @@ module Rubernetes
         failures << "packet/kernel runner digest differs" unless valid_digest?(packet_runner) && packet_runner == kernel_runner
         packet_provenance = evidence_value(packet_corpus, "runner", "runnerProvenance", "runner_provenance")
         kernel_provenance = evidence_value(kernel_readback, "runner", "runnerProvenance", "runner_provenance")
-        unless packet_provenance.is_a?(Hash) && kernel_provenance.is_a?(Hash)
-          failures << "packet/kernel runner PID/start/source/argv/stdout provenance differs"
-        else
-          provenance_keys = %w[pid processId process_id startedAt started_at startTime start_time source sourcePath source_path argv command stdout stdoutSha256 stdout_sha256]
+        if packet_provenance.is_a?(Hash) && kernel_provenance.is_a?(Hash)
+          provenance_keys = %w[pid processId process_id startedAt started_at startTime start_time source sourcePath source_path argv
+                               command stdout stdoutSha256 stdout_sha256]
           provenance_keys.each do |key|
             packet_value = evidence_value(packet_provenance, key)
             kernel_value = evidence_value(kernel_provenance, key)
             failures << "packet/kernel runner #{key} differs" unless packet_value == kernel_value
           end
+        else
+          failures << "packet/kernel runner PID/start/source/argv/stdout provenance differs"
         end
         failures.empty?
       end
@@ -1210,11 +1237,13 @@ module Rubernetes
         packet_inventory = evidence_value(packet_corpus, "caseInventorySha256", "case_inventory_sha256")
         kernel_inventory = evidence_value(kernel_readback, "caseInventorySha256", "case_inventory_sha256")
         failures << "packet/kernel raw packet trace digest differs" unless valid_digest?(packet_trace) && packet_trace == kernel_trace
-        failures << "packet/kernel case inventory digest differs" unless valid_digest?(packet_inventory) && packet_inventory == kernel_inventory
+        unless valid_digest?(packet_inventory) && packet_inventory == kernel_inventory
+          failures << "packet/kernel case inventory digest differs"
+        end
         failures.empty?
       end
 
-      def self.validate_kernel_backend_readback(entry, name, expected_digest, expected_rules: nil, failures:)
+      def self.validate_kernel_backend_readback(entry, name, expected_digest, failures:, expected_rules: nil)
         unless entry.is_a?(Hash)
           failures << "#{name} kernel readback entry is required"
           return
@@ -1227,26 +1256,43 @@ module Rubernetes
         identity = evidence_value(entry, "identity", "kernelIdentity", "kernel_identity")
         identity_digest = evidence_value(entry, "identityDigest", "identity_digest")
         failures << "#{name} kernel identity is required" unless identity.is_a?(Hash) && !identity.empty?
-        failures << "#{name} kernel identity digest is invalid" unless valid_digest?(identity_digest) && identity_digest == canonical_trace_digest(identity)
+        unless valid_digest?(identity_digest) && identity_digest == canonical_trace_digest(identity)
+          failures << "#{name} kernel identity digest is invalid"
+        end
         rules_digest = evidence_value(entry, "rulesDigest", "rules_digest", "ruleDigest", "rule_digest")
-        failures << "#{name} kernel rules digest does not match readback" unless valid_digest?(rules_digest) && rules_digest == canonical_trace_digest(rules)
+        unless valid_digest?(rules_digest) && rules_digest == canonical_trace_digest(rules)
+          failures << "#{name} kernel rules digest does not match readback"
+        end
         if expected_rules
-          failures << "#{name} kernel rules do not match the canonical model snapshot" unless ModelSupport.canonicalize(rules) == ModelSupport.canonicalize(expected_rules)
-          failures << "#{name} kernel rules digest does not match the canonical model snapshot" unless canonical_trace_digest(expected_rules) == canonical_trace_digest(rules)
+          unless ModelSupport.canonicalize(rules) == ModelSupport.canonicalize(expected_rules)
+            failures << "#{name} kernel rules do not match the canonical model snapshot"
+          end
+          unless canonical_trace_digest(expected_rules) == canonical_trace_digest(rules)
+            failures << "#{name} kernel rules digest does not match the canonical model snapshot"
+          end
         end
         input_digest = evidence_value(entry, "inputDigest", "input_digest", "ruleInputDigest", "rule_input_digest")
         failures << "#{name} kernel readback is not bound to backend input" unless input_digest == expected_digest
         model_digest = evidence_value(entry, "rulesModelDigest", "rules_model_digest", "modelDigest", "model_digest")
         expected_model_digest = expected_rules ? canonical_trace_digest(expected_rules) : expected_digest
-        failures << "#{name} kernel rules are not bound to the model digest" unless model_digest == expected_model_digest && expected_model_digest == expected_digest
+        unless model_digest == expected_model_digest && expected_model_digest == expected_digest
+          failures << "#{name} kernel rules are not bound to the model digest"
+        end
         case name
         when "ebpf"
           program = evidence_value(entry, "program", "programIdentity", "program_identity")
           maps = evidence_value(entry, "maps", "mapIdentity", "map_identity")
           filters = evidence_value(entry, "filters", "tcFilters", "tc_filters")
-          failures << "ebpf program verifier identity is required" unless program.is_a?(Hash) && positive_integer?(evidence_value(program, "id")) && valid_bpf_tag?(evidence_value(program, "tag"))
-          failures << "ebpf map readback identity is required" unless maps.is_a?(Array) && !maps.empty? && maps.all? { |map| map.is_a?(Hash) && positive_integer?(evidence_value(map, "id")) }
-          failures << "ebpf TC filter readback identity is required" unless filters.is_a?(Array) && !filters.empty? && filters.all? { |filter| positive_integer?(evidence_value(filter, "ifindex")) && positive_integer?(evidence_value(filter, "programId", "program_id")) }
+          failures << "ebpf program verifier identity is required" unless program.is_a?(Hash) && positive_integer?(evidence_value(program,
+                                                                                                                                  "id")) && valid_bpf_tag?(evidence_value(
+                                                                                                                                    program, "tag"
+                                                                                                                                  ))
+          failures << "ebpf map readback identity is required" unless maps.is_a?(Array) && !maps.empty? && maps.all? do |map|
+            map.is_a?(Hash) && positive_integer?(evidence_value(map, "id"))
+          end
+          failures << "ebpf TC filter readback identity is required" unless filters.is_a?(Array) && !filters.empty? && filters.all? do |filter|
+            positive_integer?(evidence_value(filter, "ifindex")) && positive_integer?(evidence_value(filter, "programId", "program_id"))
+          end
         when "nftables"
           table = evidence_value(entry, "table", "tableIdentity", "table_identity")
           chains = evidence_value(entry, "chains")
@@ -1408,9 +1454,9 @@ module Rubernetes
         apply(diff)
       end
 
-      def attach(**options)
+      def attach(**)
         backend = current
-        backend.attach(**options)
+        backend.attach(**)
         ensure_backend_ready!(backend)
         publish_status("ready", "#{backend.name} attach verified")
         true
@@ -1430,13 +1476,18 @@ module Rubernetes
         raise error
       end
 
-      def detach(**options)
-        current.detach(**options)
+      def detach(**)
+        current.detach(**)
       end
 
       def switch!(target: nil, reason: "manual switch")
-        target_backend = target.nil? ? (current.equal?(@ebpf) ? @nftables : @ebpf) : resolve_backend(target)
+        target_backend = if target.nil?
+                           current.equal?(@ebpf) ? @nftables : @ebpf
+                         else
+                           resolve_backend(target)
+                         end
         raise BackendError, "target backend #{target_backend.name} is unavailable" unless backend_attachable?(target_backend)
+
         started_at = @clock.call
         from_backend = current
         raise BackendError, "cannot switch to the currently selected backend" if target_backend.equal?(from_backend)
@@ -1471,7 +1522,7 @@ module Rubernetes
           unless switch_committed
             begin
               rollback_switch!(from_backend, target_backend, target_attached: target_attached,
-                               old_detached: old_detached, old_detach_attempted: old_detach_attempted)
+                                                             old_detached: old_detached, old_detach_attempted: old_detach_attempted)
             rescue StandardError => rollback_error
               error = BackendError.new("#{error.message}; backend switch rollback failed: #{rollback_error.message}")
             end
@@ -1653,8 +1704,12 @@ module Rubernetes
 
       def capture_connection_context(from_backend, target_backend, started_at)
         return {started_at: started_at, source: :test_adapter}.freeze if test_adapter_mode?
+
         observer = external_connection_observer
-        raise BackendError, "connection-loss measurement requires an external connection tracker or probe" unless connection_probe_available?
+        unless connection_probe_available?
+          raise BackendError,
+                "connection-loss measurement requires an external connection tracker or probe"
+        end
 
         snapshot = if observer.respond_to?(:before_switch)
                      observer.before_switch(from_backend: from_backend, to_backend: target_backend)
@@ -1680,9 +1735,7 @@ module Rubernetes
       end
 
       def measure_connection_switch(context, from_backend, target_backend)
-        if context.fetch(:source) == :test_adapter
-          return model_connection_observation(target_backend)
-        end
+        return model_connection_observation(target_backend) if context.fetch(:source) == :test_adapter
 
         probe = external_connection_observer
         after = if probe.respond_to?(:after_switch)
@@ -1694,6 +1747,7 @@ module Rubernetes
         before_ids = context.fetch(:before).fetch(:connection_ids)
         after_ids = after.fetch(:connection_ids)
         raise BackendError, "external connection probe changed connection IDs during backend switch" unless before_ids == after_ids
+
         arguments = {
           from_backend: from_backend.name,
           to_backend: target_backend.name,
@@ -1717,15 +1771,21 @@ module Rubernetes
       def normalize_external_snapshot(value, label:)
         hash = value.respond_to?(:to_h) ? value.to_h : value
         raise BackendError, "external #{label} observation is missing" unless hash.is_a?(Hash)
+
         ids = hash[:connection_ids] || hash["connection_ids"] || hash[:connectionIDs] || hash["connectionIDs"]
         ids = Array(ids).map(&:to_s).reject(&:empty?).uniq.sort
         raise BackendError, "external #{label} observation must report connection IDs" if ids.empty?
+
         raw_digest = hash[:raw_observation_digest] || hash["raw_observation_digest"] ||
-          hash[:rawObservationDigest] || hash["rawObservationDigest"]
+                     hash[:rawObservationDigest] || hash["rawObservationDigest"]
         canonical = hash.reject do |key, _value|
           %w[rawObservationDigest raw_observation_digest].include?(key.to_s)
         end
-        raise BackendError, "external #{label} observation raw digest is invalid" unless valid_probe_digest?(raw_digest) && raw_digest == BackendParity.canonical_trace_digest(canonical)
+        unless valid_probe_digest?(raw_digest) && raw_digest == BackendParity.canonical_trace_digest(canonical)
+          raise BackendError,
+                "external #{label} observation raw digest is invalid"
+        end
+
         {raw: canonical.freeze, connection_ids: ids.freeze, raw_observation_digest: raw_digest}.freeze
       end
 
@@ -1736,6 +1796,7 @@ module Rubernetes
         active = hash[:active_connections] || hash["active_connections"] || hash["activeConnections"]
         lost = hash[:lost_connections] || hash["lost_connections"] || hash["lostConnections"]
         raise BackendError, "external connection probe must report active_connections and lost_connections" if active.nil? || lost.nil?
+
         active = Integer(active)
         lost = Integer(lost)
         raise BackendError, "external connection probe returned negative counts" if active.negative? || lost.negative?
@@ -1743,16 +1804,29 @@ module Rubernetes
 
         runner_identity = hash[:runner_identity] || hash["runner_identity"] || hash[:runnerIdentity] || hash["runnerIdentity"]
         runner_digest = hash[:runner_digest] || hash["runner_digest"] || hash[:runnerDigest] || hash["runnerDigest"]
-        raise BackendError, "external connection probe runner identity is required" unless runner_identity == context.fetch(:runner_identity)
+        unless runner_identity == context.fetch(:runner_identity)
+          raise BackendError,
+                "external connection probe runner identity is required"
+        end
         raise BackendError, "external connection probe runner digest is invalid" unless runner_digest == context.fetch(:runner_digest)
+
         raw = hash[:raw_observation] || hash["raw_observation"] || hash[:rawObservation] || hash["rawObservation"]
         raw_digest = hash[:raw_observation_digest] || hash["raw_observation_digest"] || hash[:rawObservationDigest] || hash["rawObservationDigest"]
-        raw = {"before" => context.fetch(:before).fetch(:raw), "after" => after.fetch(:raw),
-               "activeConnections" => active, "lostConnections" => lost} if raw.nil?
-        raise BackendError, "external connection probe raw observation digest is invalid" unless valid_probe_digest?(raw_digest) && raw_digest == BackendParity.canonical_trace_digest(raw)
+        if raw.nil?
+          raw = {"before" => context.fetch(:before).fetch(:raw), "after" => after.fetch(:raw),
+                 "activeConnections" => active, "lostConnections" => lost}
+        end
+        unless valid_probe_digest?(raw_digest) && raw_digest == BackendParity.canonical_trace_digest(raw)
+          raise BackendError,
+                "external connection probe raw observation digest is invalid"
+        end
+
         observed_ids = hash[:connection_ids] || hash["connection_ids"] || hash[:connectionIDs] || hash["connectionIDs"]
         observed_ids = Array(observed_ids).map(&:to_s).reject(&:empty?).uniq.sort
-        raise BackendError, "external connection probe must bind connection IDs" unless observed_ids == context.fetch(:before).fetch(:connection_ids)
+        unless observed_ids == context.fetch(:before).fetch(:connection_ids)
+          raise BackendError,
+                "external connection probe must bind connection IDs"
+        end
 
         {active_connections: active, lost_connections: lost, measurement_source: "external_probe",
          runner_identity: runner_identity, runner_digest: runner_digest,
@@ -1761,6 +1835,7 @@ module Rubernetes
 
       def external_connection_observer
         return @connection_probe if @connection_probe && external_probe_authorized?(@connection_probe)
+
         tracker = @connection_tracker
         return nil unless tracker
 
@@ -1856,6 +1931,7 @@ module Rubernetes
           end
         end
         raise BackendError, rollback_errors.join("; ") unless rollback_errors.empty?
+
         true
       end
     end

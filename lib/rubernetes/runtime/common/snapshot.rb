@@ -57,7 +57,7 @@ module Rubernetes
       def read(snapshot_id)
         path = path_for(snapshot_id)
         envelope = StrictJSON.parse(File.binread(path), max_bytes: MAX_DOCUMENT_BYTES, max_depth: MAX_DOCUMENT_DEPTH,
-                                    require_newline: true)
+                                                        require_newline: true)
         validate_envelope!(envelope, snapshot_id)
         Canonical.immutable(envelope)
       rescue Errno::ENOENT
@@ -87,10 +87,11 @@ module Rubernetes
         raise SnapshotCorruption, "snapshot schema is unsupported" unless envelope.fetch("schema") == SCHEMA
         raise SnapshotCorruption, "snapshot id does not match its path" unless envelope.fetch("snapshot_id") == String(requested_id)
         raise SnapshotCorruption, "snapshot state is not WorkloadStopped" unless envelope.fetch("state") == "WorkloadStopped"
+
         expected = envelope.slice("schema", "snapshot_id", "state", "identity", "payload")
-        unless envelope.fetch("checksum") == Canonical.digest(expected)
-          raise SnapshotCorruption, "snapshot checksum mismatch"
-        end
+        return if envelope.fetch("checksum") == Canonical.digest(expected)
+
+        raise SnapshotCorruption, "snapshot checksum mismatch"
       end
 
       def write_all(file, content)

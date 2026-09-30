@@ -38,6 +38,7 @@ class StatefulSetHelmPatchNullsTest < Minitest::Test
                                       "spec" => {"containers" => [{"name" => "db", "image" => "db:1"}]}},
                        "volumeClaimTemplates" => [claim]}}
     status, created = call("POST", PATH, body)
+
     assert_equal 201, status, created.inspect
     assert_equal "Filesystem", created.dig("spec", "volumeClaimTemplates", 0, "spec", "volumeMode"), "defaulted on create"
 
@@ -46,9 +47,11 @@ class StatefulSetHelmPatchNullsTest < Minitest::Test
     patch = {"spec" => {"volumeClaimTemplates" => [rendered],
                         "template" => {"spec" => {"containers" => [{"name" => "db", "image" => "db:2"}]}}}}
     status, patched = call("PATCH", "#{PATH}/db", patch, content_type: "application/strategic-merge-patch+json")
+
     assert_equal 200, status, patched.inspect
     assert_equal "db:2", patched.dig("spec", "template", "spec", "containers", 0, "image")
     template = patched.dig("spec", "volumeClaimTemplates", 0)
+
     refute template["metadata"].key?("annotations"), template.inspect
     refute template["spec"].key?("selector"), template.inspect
     assert_equal "Filesystem", template.dig("spec", "volumeMode")
@@ -56,6 +59,7 @@ class StatefulSetHelmPatchNullsTest < Minitest::Test
     # A real change to the template is still refused.
     changed = {"spec" => {"volumeClaimTemplates" => [rendered.merge("spec" => rendered["spec"].merge("resources" => {"requests" => {"storage" => "2Gi"}}))]}}
     status, refused = call("PATCH", "#{PATH}/db", changed, content_type: "application/strategic-merge-patch+json")
+
     assert_equal 422, status, refused.inspect
     assert_match(/fields other than/, refused["message"].to_s)
   end

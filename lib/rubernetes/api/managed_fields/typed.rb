@@ -89,7 +89,7 @@ module Rubernetes
           end
         end
 
-        def entries(map, typed = @typed, &block) = TypedValue.each_entry(map, typed, &block)
+        def entries(map, typed = @typed, &) = TypedValue.each_entry(map, typed, &)
 
         def fetch(map, key, typed = @typed)
           return ABSENT unless map.is_a?(Hash)
@@ -122,11 +122,11 @@ module Rubernetes
             pairs = []
             list.keys.each do |name|
               item = child.fetch(name, ABSENT)
-              if !Value.absent?(item)
-                pairs << [name, item]
-              else
+              if Value.absent?(item)
                 default = key_default(list, name)
                 pairs << [name, default] unless default.nil?
+              else
+                pairs << [name, item]
               end
             end
             if pairs.empty?
@@ -152,7 +152,7 @@ module Rubernetes
           when Schema_::STRING
             "#{prefix}expected string, got #{value.inspect}" unless value.is_a?(String)
           when Schema_::BOOLEAN
-            "#{prefix}expected boolean, got #{value.inspect}" unless value == true || value == false
+            "#{prefix}expected boolean, got #{value.inspect}" unless [true, false].include?(value)
           when Schema_::UNTYPED
             "#{prefix}expected any scalar, got #{value.inspect}" unless Value.scalar?(value)
           else
@@ -257,9 +257,7 @@ module Rubernetes
               child = FSet.new
               field_set_walk(field ? field.type : atom.map.element_type, item, node, child_element, child)
               node.children[child_element] = child unless child.empty_structure?
-              if item.nil? || (item.is_a?(Hash) && item.empty?) || field.nil?
-                node.members[child_element] = true
-              end
+              node.members[child_element] = true if item.nil? || (item.is_a?(Hash) && item.empty?) || field.nil?
             end
           elsif atom.scalar
             parent.members[element] = true if parent
@@ -576,7 +574,7 @@ module Rubernetes
           next_shared = shared.shift
           merged_right = {}
           out = []
-          merge_item = lambda do |element, left, right|
+          merge_item = lambda do |_element, left, right|
             child = merge_walk(list.element_type, left, right, [], rhs_typed)
             out << child unless Value.absent?(child)
           rescue Error
@@ -721,9 +719,7 @@ module Rubernetes
             return if untyped_deduced?(map.element_type) && map.fields.empty?
 
             if !atomic_member && map.atomic?
-              if field_set && field_set.size.positive?
-                mark_atomic(path, state)
-              end
+              mark_atomic(path, state) if field_set && field_set.size.positive?
               return
             end
             return if field_set.nil?

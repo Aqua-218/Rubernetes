@@ -14,176 +14,185 @@ module Rubernetes
     # Small, transport-neutral helpers shared by the node operational classes.
     # Keeping the helpers here lets every node component be required on its own
     # while avoiding a dependency on generated API classes in pure tests.
-    module Support
-      module_function
+    unless const_defined?(:Support, false)
+      module Support
+        module_function
 
-      def value(object, key, default = nil)
-        return default if object.nil?
+        def value(object, key, default = nil)
+          return default if object.nil?
 
-        if object.is_a?(Hash)
-          string_key = key.to_s
-          return object[string_key] if object.key?(string_key)
-          symbol_key = key.to_sym
-          return object[symbol_key] if object.key?(symbol_key)
-        end
+          if object.is_a?(Hash)
+            string_key = key.to_s
+            return object[string_key] if object.key?(string_key)
 
-        candidates = [key.to_s, camel_to_snake(key.to_s)]
-        candidates.each do |candidate|
-          return object.public_send(candidate) if object.respond_to?(candidate)
-        end
-        return object.field(key.to_s) if object.respond_to?(:field)
-
-        default
-      end
-
-      def present?(object, key)
-        !value(object, key, :__missing__).equal?(:__missing__)
-      end
-
-      def object_hash(object)
-        source = if object.is_a?(Array)
-                   {}
-                 elsif object.respond_to?(:to_h)
-                   object.to_h
-                 elsif object.respond_to?(:to_hash)
-                   object.to_hash
-                 else
-                   object
-                 end
-        stringify_keys(source || {})
-      end
-
-      def stringify_keys(value)
-        case value
-        when Hash
-          value.each_with_object({}) do |(key, child), output|
-            output[key.to_s] = stringify_keys(child)
+            symbol_key = key.to_sym
+            return object[symbol_key] if object.key?(symbol_key)
           end
-        when Array
-          value.map { |child| stringify_keys(child) }
-        else
-          value
-        end
-      end
 
-      def deep_copy(value)
-        case value
-        when Hash
-          value.each_with_object({}) { |(key, child), output| output[key] = deep_copy(child) }
-        when Array
-          value.map { |child| deep_copy(child) }
-        else
-          value
-        end
-      end
+          candidates = [key.to_s, camel_to_snake(key.to_s)]
+          candidates.each do |candidate|
+            return object.public_send(candidate) if object.respond_to?(candidate)
+          end
+          return object.field(key.to_s) if object.respond_to?(:field)
 
-      def deep_freeze(value)
-        case value
-        when Hash
-          value.each { |key, child| deep_freeze(key); deep_freeze(child) }
-        when Array
-          value.each { |child| deep_freeze(child) }
+          default
         end
-        value.freeze
-      end
 
-      def merge_hashes(left, right)
-        left = object_hash(left)
-        right = object_hash(right)
-        left.merge(right) do |_key, old_value, new_value|
-          if old_value.is_a?(Hash) && new_value.is_a?(Hash)
-            merge_hashes(old_value, new_value)
+        def present?(object, key)
+          !value(object, key, :__missing__).equal?(:__missing__)
+        end
+
+        def object_hash(object)
+          source = if object.is_a?(Array)
+                     {}
+                   elsif object.respond_to?(:to_h)
+                     object.to_h
+                   elsif object.respond_to?(:to_hash)
+                     object.to_hash
+                   else
+                     object
+                   end
+          stringify_keys(source || {})
+        end
+
+        def stringify_keys(value)
+          case value
+          when Hash
+            value.each_with_object({}) do |(key, child), output|
+              output[key.to_s] = stringify_keys(child)
+            end
+          when Array
+            value.map { |child| stringify_keys(child) }
           else
-            deep_copy(new_value)
+            value
           end
         end
-      end
 
-      def camel_to_snake(name)
-        name.to_s.gsub(/([a-z\d])([A-Z])/, "\\1_\\2").tr("-", "_").downcase
-      end
-
-      def iso8601(time)
-        value = time.respond_to?(:call) ? time.call : time
-        value = Time.parse(value.to_s) unless value.respond_to?(:utc)
-        value.utc.iso8601(6)
-      end
-
-      def metadata(object)
-        object_hash(value(object, "metadata", {}))
-      end
-
-      def name(object)
-        value(metadata(object), "name") || value(object, "name")
-      end
-
-      def uid(object)
-        value(metadata(object), "uid") || value(object, "uid")
-      end
-
-      def namespace(object, default = nil)
-        value(metadata(object), "namespace") || value(object, "namespace") || default
-      end
-
-      def not_found?(error)
-        error.class.name.to_s.end_with?("::NotFound") ||
-          error.class.name.to_s == "NotFound" ||
-          error.is_a?(KeyError) ||
-          error.respond_to?(:reason) && error.reason.to_s.casecmp?("NotFound")
-      end
-
-      def conflict?(error)
-        error.class.name.to_s.end_with?("::Conflict") ||
-          error.class.name.to_s == "Conflict" ||
-          error.respond_to?(:reason) && %w[AlreadyExists Conflict].include?(error.reason.to_s)
-      end
-
-      # Invoke a client with either keyword or positional contracts.  This is
-      # deliberately based on the method signature rather than rescue/retry:
-      # an ArgumentError raised by the client itself must reach the caller.
-      def invoke(client, method_name, resource:, namespace:, name:, object: nil, subresource: nil)
-        raise ArgumentError, "client does not implement ##{method_name}" unless client.respond_to?(method_name)
-
-        method = client.method(method_name)
-        parameters = method.parameters
-        keywords = {
-          resource: resource,
-          gvr: resource,
-          namespace: namespace,
-          name: name,
-          object: object,
-          body: object,
-          resource_version: value(metadata(object), "resourceVersion"),
-          subresource: subresource
-        }
-        accepts_keywords = parameters.any? { |kind, _| %i[key keyreq keyrest].include?(kind) }
-        selected_keywords = if parameters.any? { |kind, _| kind == :keyrest }
-                              keywords
-                            else
-                              names = parameters.filter_map { |kind, parameter| parameter if %i[key keyreq].include?(kind) }
-                              keywords.select { |key, _value| names.include?(key) }
-                            end
-        positional_parameters = parameters.select { |kind, _| %i[req opt].include?(kind) }
-        positional = positional_parameters.map.with_index do |(_kind, parameter), index|
-          case parameter
-          when :key, :resource, :gvr then resource
-          when :object, :body, :pod then object
-          when :namespace then namespace
-          when :name then name
+        def deep_copy(value)
+          case value
+          when Hash
+            value.each_with_object({}) { |(key, child), output| output[key] = deep_copy(child) }
+          when Array
+            value.map { |child| deep_copy(child) }
           else
-            method_name.to_sym == :get || method_name.to_sym == :read || method_name.to_sym == :fetch ?
-              [resource, namespace, name][index] : [resource, namespace, object][index]
+            value
           end
         end
-        positional = [resource, namespace, object] if parameters.any? { |kind, _| kind == :rest }
-        positional_count = parameters.any? { |kind, _| kind == :rest } ? positional.length : positional_parameters.length
-        if accepts_keywords
-          method.call(*positional.first(positional_count), **selected_keywords)
-        else
-          method.call(*positional.first(positional_count))
+
+        def deep_freeze(value)
+          case value
+          when Hash
+            value.each do |key, child|
+              deep_freeze(key)
+              deep_freeze(child)
+            end
+          when Array
+            value.each { |child| deep_freeze(child) }
+          end
+          value.freeze
+        end
+
+        def merge_hashes(left, right)
+          left = object_hash(left)
+          right = object_hash(right)
+          left.merge(right) do |_key, old_value, new_value|
+            if old_value.is_a?(Hash) && new_value.is_a?(Hash)
+              merge_hashes(old_value, new_value)
+            else
+              deep_copy(new_value)
+            end
+          end
+        end
+
+        def camel_to_snake(name)
+          name.to_s.gsub(/([a-z\d])([A-Z])/, "\\1_\\2").tr("-", "_").downcase
+        end
+
+        def iso8601(time)
+          value = time.respond_to?(:call) ? time.call : time
+          value = Time.parse(value.to_s) unless value.respond_to?(:utc)
+          value.utc.iso8601(6)
+        end
+
+        def metadata(object)
+          object_hash(value(object, "metadata", {}))
+        end
+
+        def name(object)
+          value(metadata(object), "name") || value(object, "name")
+        end
+
+        def uid(object)
+          value(metadata(object), "uid") || value(object, "uid")
+        end
+
+        def namespace(object, default = nil)
+          value(metadata(object), "namespace") || value(object, "namespace") || default
+        end
+
+        def not_found?(error)
+          error.class.name.to_s.end_with?("::NotFound") ||
+            error.class.name.to_s == "NotFound" ||
+            error.is_a?(KeyError) ||
+            (error.respond_to?(:reason) && error.reason.to_s.casecmp?("NotFound"))
+        end
+
+        def conflict?(error)
+          error.class.name.to_s.end_with?("::Conflict") ||
+            error.class.name.to_s == "Conflict" ||
+            (error.respond_to?(:reason) && %w[AlreadyExists Conflict].include?(error.reason.to_s))
+        end
+
+        # Invoke a client with either keyword or positional contracts.  This is
+        # deliberately based on the method signature rather than rescue/retry:
+        # an ArgumentError raised by the client itself must reach the caller.
+        def invoke(client, method_name, resource:, namespace:, name:, object: nil, subresource: nil)
+          raise ArgumentError, "client does not implement ##{method_name}" unless client.respond_to?(method_name)
+
+          method = client.method(method_name)
+          parameters = method.parameters
+          keywords = {
+            resource: resource,
+            gvr: resource,
+            namespace: namespace,
+            name: name,
+            object: object,
+            body: object,
+            resource_version: value(metadata(object), "resourceVersion"),
+            subresource: subresource
+          }
+          accepts_keywords = parameters.any? { |kind, _| %i[key keyreq keyrest].include?(kind) }
+          selected_keywords = if parameters.any? { |kind, _| kind == :keyrest }
+                                keywords
+                              else
+                                names = parameters.filter_map { |kind, parameter| parameter if %i[key keyreq].include?(kind) }
+                                keywords.select { |key, _value| names.include?(key) }
+                              end
+          positional_parameters = parameters.select { |kind, _| %i[req opt].include?(kind) }
+          positional = positional_parameters.map.with_index do |(_kind, parameter), index|
+            case parameter
+            when :key, :resource, :gvr then resource
+            when :object, :body, :pod then object
+            when :namespace then namespace
+            when :name then name
+            else
+              if %i[get read fetch].include?(method_name.to_sym)
+                [resource, namespace, name][index]
+              else
+                [resource, namespace, object][index]
+              end
+            end
+          end
+          positional = [resource, namespace, object] if parameters.any? { |kind, _| kind == :rest }
+          positional_count = parameters.any? { |kind, _| kind == :rest } ? positional.length : positional_parameters.length
+          if accepts_keywords
+            method.call(*positional.first(positional_count), **selected_keywords)
+          else
+            method.call(*positional.first(positional_count))
+          end
         end
       end
-    end unless const_defined?(:Support, false)
+    end
 
     class Registration
       Result = Data.define(:node, :lease, :node_action, :lease_action) do
@@ -192,9 +201,9 @@ module Rubernetes
         end
       end
 
-      NODE_RESOURCE = "v1/nodes".freeze
-      LEASE_RESOURCE = "coordination.k8s.io/v1/leases".freeze
-      LEASE_NAMESPACE = "kube-node-lease".freeze
+      NODE_RESOURCE = "v1/nodes"
+      LEASE_RESOURCE = "coordination.k8s.io/v1/leases"
+      LEASE_NAMESPACE = "kube-node-lease"
       DEFAULT_LEASE_DURATION_SECONDS = 40
 
       def initialize(node_name:, client: nil, api: nil, store: nil, capacity: {}, allocatable: nil, labels: {}, annotations: {},
@@ -342,7 +351,7 @@ module Rubernetes
         existing_node = read(NODE_RESOURCE, namespace: nil, name: @node_name)
         node, node_action = if existing_node
                               [update_resource(NODE_RESOURCE, namespace: nil, name: @node_name,
-                                               object: preserve_server_metadata(desired_node, existing_node)), "updated"]
+                                                              object: preserve_server_metadata(desired_node, existing_node)), "updated"]
                             else
                               [create_resource(NODE_RESOURCE, namespace: nil, name: @node_name, object: desired_node), "created"]
                             end
@@ -351,9 +360,10 @@ module Rubernetes
         desired_lease = lease_object(existing: existing_lease)
         lease, lease_action = if existing_lease
                                 [update_resource(LEASE_RESOURCE, namespace: LEASE_NAMESPACE, name: @node_name,
-                                                 object: preserve_server_metadata(desired_lease, existing_lease)), "updated"]
+                                                                 object: preserve_server_metadata(desired_lease, existing_lease)), "updated"]
                               else
-                                [create_resource(LEASE_RESOURCE, namespace: LEASE_NAMESPACE, name: @node_name, object: desired_lease), "created"]
+                                [create_resource(LEASE_RESOURCE, namespace: LEASE_NAMESPACE, name: @node_name, object: desired_lease),
+                                 "created"]
                               end
         Result.new(node: node || desired_node, lease: lease || desired_lease,
                    node_action: node_action, lease_action: lease_action)
@@ -368,7 +378,7 @@ module Rubernetes
         desired = lease_object(existing: existing_lease)
         result = if existing_lease
                    update_resource(LEASE_RESOURCE, namespace: LEASE_NAMESPACE, name: @node_name,
-                                   object: preserve_server_metadata(desired, existing_lease))
+                                                   object: preserve_server_metadata(desired, existing_lease))
                  else
                    create_resource(LEASE_RESOURCE, namespace: LEASE_NAMESPACE, name: @node_name, object: desired)
                  end
@@ -386,7 +396,7 @@ module Rubernetes
                         Support.object_hash(status)
                       else
                         Support.merge_hashes(current_status, node_status(conditions: conditions, capacity: capacity,
-                                                                          allocatable: allocatable))
+                                                                         allocatable: allocatable))
                       end
         desired = if existing
                     Support.merge_hashes(Support.object_hash(existing), {"status" => next_status})
@@ -395,7 +405,7 @@ module Rubernetes
                   end
         result = if existing
                    update_resource(NODE_RESOURCE, namespace: nil, name: @node_name,
-                                   object: preserve_server_metadata(desired, existing), subresource: "status")
+                                                  object: preserve_server_metadata(desired, existing), subresource: "status")
                  else
                    create_resource(NODE_RESOURCE, namespace: nil, name: @node_name, object: desired)
                  end
@@ -410,7 +420,11 @@ module Rubernetes
         return nil unless @client
         return nil unless @client.respond_to?(:get) || @client.respond_to?(:read) || @client.respond_to?(:fetch)
 
-        Support.invoke(@client, @client.respond_to?(:get) ? :get : (@client.respond_to?(:read) ? :read : :fetch),
+        Support.invoke(@client, if @client.respond_to?(:get)
+                                  :get
+                                else
+                                  (@client.respond_to?(:read) ? :read : :fetch)
+                                end,
                        resource: resource, namespace: namespace, name: name)
       rescue StandardError => error
         raise unless Support.not_found?(error)
@@ -434,6 +448,7 @@ module Rubernetes
 
       def update_resource(resource, namespace:, name:, object:, subresource: nil)
         return object unless @client
+
         method_name = if subresource == "status" && @client.respond_to?(:update_status)
                         :update_status
                       elsif @client.respond_to?(:update)
@@ -444,7 +459,7 @@ module Rubernetes
         return object unless method_name
 
         result = Support.invoke(@client, method_name, resource: resource, namespace: namespace, name: name,
-                                object: object, subresource: subresource)
+                                                      object: object, subresource: subresource)
         result || object
       end
 

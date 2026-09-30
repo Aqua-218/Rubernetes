@@ -10,7 +10,9 @@ module Rubernetes
 
       def initialize(value = nil, **kwargs)
         hash = (value.respond_to?(:to_h) ? value.to_h : {}).merge(kwargs)
-        @name = Types.identifier(Types.key(hash, "name", Types.key(hash, "metadata", {}).then { |metadata| Types.key(metadata, "name") }), "storage class name")
+        @name = Types.identifier(Types.key(hash, "name", Types.key(hash, "metadata", {}).then do |metadata|
+          Types.key(metadata, "name")
+        end), "storage class name")
         @provisioner = Types.identifier(Types.key(hash, "provisioner", "kubernetes.io/no-provisioner"), "storage class provisioner")
         @parameters = Types.deep_copy(Types.key(hash, "parameters", {})).freeze
         @reclaim_policy = normalize_reclaim(Types.key(hash, "reclaimPolicy", "Delete"))
@@ -31,12 +33,14 @@ module Rubernetes
       def normalize_reclaim(value)
         text = value.to_s
         raise ValidationError, "unsupported reclaimPolicy #{value.inspect}" unless %w[Delete Retain].include?(text)
+
         text.freeze
       end
 
       def normalize_binding_mode(value)
         text = value.to_s
         raise ValidationError, "unsupported volumeBindingMode #{value.inspect}" unless %w[Immediate WaitForFirstConsumer].include?(text)
+
         text.freeze
       end
     end
@@ -54,9 +58,11 @@ module Rubernetes
         @access_modes = Types.normalize_access_modes(Types.key(hash, "accessModes", ["ReadWriteOnce"]))
         @reclaim_policy = Types.key(hash, "reclaimPolicy", Types.key(hash, "persistentVolumeReclaimPolicy", "Retain")).to_s
         raise ValidationError, "unsupported PV reclaimPolicy #{@reclaim_policy.inspect}" unless %w[Delete Retain].include?(@reclaim_policy)
+
         @storage_class = Types.key(hash, "storageClassName", Types.key(hash, "storageClass", "")).to_s
         @volume_mode = Types.key(hash, "volumeMode", "Filesystem").to_s
         raise ValidationError, "unsupported PV volumeMode #{@volume_mode.inspect}" unless %w[Filesystem Block].include?(@volume_mode)
+
         @node_affinity = Types.deep_copy(Types.key(hash, "nodeAffinity"))
         @source = Types.deep_copy(Types.key(hash, "source", hash))
         @phase = Types.key(hash, "phase", "Available").to_s
@@ -64,6 +70,7 @@ module Rubernetes
         @annotations = Types.deep_copy(Types.key(metadata, "annotations", {})).freeze
         @labels = Types.deep_copy(Types.key(hash, "labels", Types.key(metadata, "labels", {}))).freeze
         raise ValidationError, "unsupported PV phase #{@phase.inspect}" unless %w[Available Bound Released Failed].include?(@phase)
+
         freeze
       end
 
@@ -107,6 +114,7 @@ module Rubernetes
         @storage_class = Types.key(hash, "storageClassName", Types.key(spec, "storageClassName", Types.key(hash, "storageClass", ""))).to_s
         @volume_mode = Types.key(hash, "volumeMode", Types.key(spec, "volumeMode", "Filesystem")).to_s
         raise ValidationError, "unsupported PVC volumeMode #{@volume_mode.inspect}" unless %w[Filesystem Block].include?(@volume_mode)
+
         @selector = Types.deep_copy(Types.key(hash, "selector", Types.key(spec, "selector")))
         @volume_name = Types.key(hash, "volumeName", Types.key(spec, "volumeName"))&.to_s
         @phase = Types.key(hash, "phase", Types.key(status, "phase", "Pending")).to_s
@@ -130,8 +138,8 @@ module Rubernetes
       def to_h
         {"metadata" => {"name" => name, "namespace" => namespace, "annotations" => Types.deep_copy(annotations)},
          "spec" => {"resources" => {"requests" => {"storage" => requested_bytes}}, "accessModes" => access_modes,
-                     "storageClassName" => storage_class, "volumeMode" => volume_mode,
-                     "selector" => Types.deep_copy(selector), "volumeName" => volume_name},
+                    "storageClassName" => storage_class, "volumeMode" => volume_mode,
+                    "selector" => Types.deep_copy(selector), "volumeName" => volume_name},
          "status" => {"phase" => phase, "boundVolume" => bound_volume}}
       end
 
@@ -220,8 +228,9 @@ module Rubernetes
         @mutex.synchronize do
           existing = @bindings[claim.key]
           return existing if existing && existing.bound?
+
           candidate = @pvs.values.select { |pv| match?(claim, pv, storage_class: storage_class, node: node, node_labels: node_labels) }
-                          .sort_by { |pv| [pv.capacity_bytes, pv.name] }.first
+            .sort_by { |pv| [pv.capacity_bytes, pv.name] }.first
           if candidate.nil? && @provisioner
             candidate = dynamic_provision(claim, storage_class, node: node, token: token)
             @pvs[candidate.name] = candidate if candidate
@@ -231,7 +240,10 @@ module Rubernetes
                                      message: "no available PV satisfies capacity, access mode, class, and topology")
           end
 
-          bound_pv = PersistentVolume.new(candidate.to_h.merge("phase" => "Bound", "claimRef" => {"name" => claim.name, "namespace" => claim.namespace}))
+          bound_pv = PersistentVolume.new(candidate.to_h.merge("phase" => "Bound",
+                                                               "claimRef" => {
+                                                                 "name" => claim.name, "namespace" => claim.namespace
+                                                               }))
           bound_pvc = PersistentVolumeClaim.new(claim.to_h.merge("phase" => "Bound", "boundVolume" => bound_pv.name))
           @pvs[bound_pv.name] = bound_pv
           @claims[bound_pvc.key] = bound_pvc
@@ -246,12 +258,17 @@ module Rubernetes
         result = @bindings.fetch(claim.key) { raise BindingError, "PVC #{claim.key} is not bound" }
         pv = result.pv
         klass = storage_class || find_storage_class(claim.storage_class)
-        raise UnsupportedError, "online expansion is not enabled for storage class #{claim.storage_class.inspect}" unless klass&.allow_volume_expansion
+        unless klass&.allow_volume_expansion
+          raise UnsupportedError,
+                "online expansion is not enabled for storage class #{claim.storage_class.inspect}"
+        end
+
         bytes = Types.parse_capacity(capacity)
         raise CapacityError, "requested capacity must be greater than current claim request" unless bytes > claim.requested_bytes
 
         expanded = PersistentVolume.new(pv.to_h.merge("capacityBytes" => [pv.capacity_bytes, bytes].max))
-        expanded_claim = PersistentVolumeClaim.new(claim.to_h.merge("requestedBytes" => bytes, "phase" => "Bound", "boundVolume" => pv.name))
+        expanded_claim = PersistentVolumeClaim.new(claim.to_h.merge("requestedBytes" => bytes, "phase" => "Bound",
+                                                                    "boundVolume" => pv.name))
         @mutex.synchronize do
           @pvs[expanded.name] = expanded
           @claims[expanded_claim.key] = expanded_claim
@@ -265,8 +282,12 @@ module Rubernetes
         pv = result.pv
         policy = pv.reclaim_policy
         released = PersistentVolume.new(pv.to_h.merge("phase" => "Released", "claimRef" => pv.claim_ref))
-        @mutex.synchronize { @pvs[pv.name] = released; @bindings.delete(claim.key) }
+        @mutex.synchronize do
+          @pvs[pv.name] = released
+          @bindings.delete(claim.key)
+        end
         return released if policy == "Retain"
+
         if policy == "Delete"
           if @reclaimer
             if @reclaimer.respond_to?(:call)
@@ -303,9 +324,11 @@ module Rubernetes
 
       def selector_matches?(pv, selector)
         return true unless selector
+
         labels = pv.labels
         match_labels = Types.key(selector, "matchLabels", {})
         return false unless match_labels.all? { |key, value| labels[key.to_s].to_s == value.to_s }
+
         Array(Types.key(selector, "matchExpressions", [])).all? do |expression|
           key = Types.key(expression, "key").to_s
           operator = Types.key(expression, "operator", "In").to_s
@@ -322,13 +345,17 @@ module Rubernetes
 
       def node_affinity_matches?(affinity, node, labels)
         return true unless affinity
+
         required = Types.key(affinity, "required", affinity)
         terms = Array(Types.key(required, "nodeSelectorTerms", []))
         return true if terms.empty?
+
         terms.any? do |term|
           expressions = Array(Types.key(term, "matchExpressions", []))
           fields = Array(Types.key(term, "matchFields", []))
-          expressions.all? { |expr| requirement_matches?(expr, node, labels) } && fields.all? { |expr| requirement_matches?(expr, node, labels, fields: true) }
+          expressions.all? { |expr| requirement_matches?(expr, node, labels) } && fields.all? do |expr|
+            requirement_matches?(expr, node, labels, fields: true)
+          end
         end
       end
 
@@ -339,7 +366,7 @@ module Rubernetes
         actual = if fields
                    key == "metadata.name" ? node.to_s : nil
                  else
-                   labels[key] || (key == "kubernetes.io/hostname" || key == "hostname" ? node.to_s : nil)
+                   labels[key] || (["kubernetes.io/hostname", "hostname"].include?(key) ? node.to_s : nil)
                  end
         case operator
         when "In" then values.include?(actual.to_s)
@@ -357,24 +384,28 @@ module Rubernetes
         unless @provisioner.respond_to?(:call) || @provisioner.respond_to?(:provision)
           raise UnsupportedError, "dynamic provisioner must implement call or provision"
         end
+
         value = if @provisioner.respond_to?(:provision)
                   @provisioner.provision(claim: claim, storage_class: storage_class, node: node, token: token)
                 else
                   @provisioner.call(claim: claim, storage_class: storage_class, node: node, token: token)
                 end
         return nil if value.nil?
+
         candidate = if value.is_a?(PersistentVolume)
                       value
                     else
                       hash = value.respond_to?(:to_h) ? value.to_h : nil
                       raise BindingError, "dynamic provisioner returned a non-volume result" unless hash
+
                       PersistentVolume.new(hash.merge("capacityBytes" => claim.requested_bytes,
-                                                       "accessModes" => claim.access_modes,
-                                                       "storageClassName" => storage_class.name,
-                                                       "reclaimPolicy" => storage_class.reclaim_policy,
-                                                       "phase" => "Available"))
+                                                      "accessModes" => claim.access_modes,
+                                                      "storageClassName" => storage_class.name,
+                                                      "reclaimPolicy" => storage_class.reclaim_policy,
+                                                      "phase" => "Available"))
                     end
         raise BindingError, "dynamic provisioner returned an unavailable PV" unless candidate.available?
+
         candidate
       end
     end

@@ -37,6 +37,7 @@ module Rubernetes
           if %i[character_device block_device fifo socket].include?(type.to_sym)
             raise UnsafeEntry, "device and special file entries are not allowed in a native rootfs"
           end
+
           if link_target
             target = String(link_target)
             raise UnsafeEntry, "symlink target contains NUL" if target.include?("\0")
@@ -84,12 +85,12 @@ module Rubernetes
 
         def cleanup(workspace)
           result = if @adapter
-            invoke(:cleanup, workspace: workspace)
-          elsif workspace.root && File.exist?(workspace.root)
-            raise Error, "filesystem cleanup requires an injected adapter for host paths"
-          else
-            true
-          end
+                     invoke(:cleanup, workspace: workspace)
+                   elsif workspace.root && File.exist?(workspace.root)
+                     raise Error, "filesystem cleanup requires an injected adapter for host paths"
+                   else
+                     true
+                   end
           return false if result == false
 
           @mutex.synchronize { @workspaces.delete_if { |_id, value| value.identity == workspace.identity } }

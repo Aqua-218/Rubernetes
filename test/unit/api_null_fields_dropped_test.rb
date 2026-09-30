@@ -15,8 +15,10 @@ class APINullFieldsDroppedTest < Minitest::Test
     body = {"apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => "nulls", "namespace" => "default", "annotations" => nil, "labels" => nil},
             "spec" => {"selector" => nil, "ports" => [{"port" => 80}]}}
     response = call("POST", "/api/v1/namespaces/default/services", body: body)
+
     assert_equal 201, response.status, response.body.inspect
     stored = call("GET", "/api/v1/namespaces/default/services/nulls").body
+
     refute stored["metadata"].key?("annotations"), stored["metadata"].inspect
     refute stored["metadata"].key?("labels"), stored["metadata"].inspect
     refute stored["spec"].key?("selector"), stored["spec"].inspect
@@ -25,11 +27,13 @@ class APINullFieldsDroppedTest < Minitest::Test
 
   def test_a_custom_resource_keeps_its_own_null_handling
     crd_body = crd(name: "widgets.example.com")
+
     assert_equal 201, call("POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", body: crd_body).status
-    assert wait_until { call("GET", "/apis/example.com/v1/namespaces/default/widgets").status == 200 }
+    assert(wait_until { call("GET", "/apis/example.com/v1/namespaces/default/widgets").status == 200 })
     widget = {"apiVersion" => "example.com/v1", "kind" => "Widget", "metadata" => {"name" => "w", "namespace" => "default", "annotations" => nil},
               "spec" => {"size" => 3}}
     response = call("POST", "/apis/example.com/v1/namespaces/default/widgets", body: widget)
+
     assert_equal 201, response.status, response.body.inspect
     refute response.body["metadata"].key?("annotations"), "metadata is typed for every kind"
   end

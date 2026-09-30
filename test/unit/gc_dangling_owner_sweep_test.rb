@@ -19,6 +19,7 @@ class GCDanglingOwnerSweepTest < Minitest::Test
     def get(resource, name = nil, namespace: nil, api_version: nil, **_options)
       if resource.to_s == "pods"
         return @pods.find { |pod| pod.dig("metadata", "name") == name } if name
+
         return {"items" => @pods, "metadata" => {"resourceVersion" => "1"}}
       end
       return {"items" => [], "metadata" => {"resourceVersion" => "1"}} if name.nil?
@@ -41,12 +42,15 @@ class GCDanglingOwnerSweepTest < Minitest::Test
     client = API.new([pod])
     descriptors = %w[Pod ReplicationController GarbageCollector].map { |kind| Rubernetes::Controller::ResourceDescriptor.parse(kind) }
     adapter = Rubernetes::Bootstrap::KubernetesStoreAdapter.new(client: client, resource_descriptors: descriptors)
-    controller = Rubernetes::Controller::GarbageCollectorController.new(store: adapter, definition: nil) rescue
-                 Rubernetes::Controller::GarbageCollectorController.new(store: adapter)
+    controller = begin
+      Rubernetes::Controller::GarbageCollectorController.new(store: adapter, definition: nil)
+    rescue StandardError
+      Rubernetes::Controller::GarbageCollectorController.new(store: adapter)
+    end
 
     result = controller.plan_orphans("default/orphan", store: adapter)
 
     refute_nil result, "the sweep must run"
-    assert_equal [["pods", "orphan"]], result.operations.map { |op| [op.resource.resource, Rubernetes::Controller::Support.name(op.object)] }
+    assert_equal([%w[pods orphan]], result.operations.map { |op| [op.resource.resource, Rubernetes::Controller::Support.name(op.object)] })
   end
 end

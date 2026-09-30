@@ -77,7 +77,8 @@ module Rubernetes
         @monitor.synchronize do
           by_request = {}
           @records.each do |record|
-            entry = by_request[record.request_id] ||= {"request_id" => record.request_id, "request" => nil, "outcome" => nil, "resolved" => nil}
+            entry = by_request[record.request_id] ||= {"request_id" => record.request_id, "request" => nil, "outcome" => nil,
+                                                       "resolved" => nil}
             entry[record.kind] = record.payload
           end
           by_request.values.filter_map do |entry|
@@ -128,16 +129,20 @@ module Rubernetes
           stripped = line.chomp
           next if stripped.empty?
 
-          if !line.end_with?("\n")
+          unless line.end_with?("\n")
             # Torn final line: the record was never durable (fsync happens
             # after the newline); it is dropped and reported through pending.
             break
           end
+
           value = JSON.parse(stripped)
           body = value.reject { |key, _| key == "digest" }
           expected = Digest::SHA256.hexdigest(JSON.generate(body))
           raise CorruptionError.new("operation journal record #{number} digest mismatch", path: @path) unless expected == value["digest"]
-          raise CorruptionError.new("operation journal chain broken at record #{number}", path: @path) unless value["previous_digest"] == previous
+          unless value["previous_digest"] == previous
+            raise CorruptionError.new("operation journal chain broken at record #{number}",
+                                      path: @path)
+          end
 
           previous = value["digest"]
           records << Record.new(sequence: value["sequence"], kind: value["kind"], request_id: value["request_id"], payload: value["payload"],

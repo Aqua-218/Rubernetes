@@ -38,9 +38,9 @@ module Rubernetes
         containers = Array(spec["containers"] || spec[:containers]) +
                      Array(spec["initContainers"] || spec[:initContainers])
         containers.flat_map do |container|
-          container = container.is_a?(Hash) ? container : {}
+          container = {} unless container.is_a?(Hash)
           Array(container["ports"] || container[:ports]).filter_map do |port|
-            port = port.is_a?(Hash) ? port : {}
+            port = {} unless port.is_a?(Hash)
             host_port = port["hostPort"] || port[:hostPort]
             next nil if host_port.nil? || Integer(host_port).zero?
 
@@ -157,19 +157,19 @@ module Rubernetes
         value.scan(/"[^"]*"|\S+/).map { |token| token.start_with?('"') ? token[1..-2] : token }
       end
 
-      def invoke(binary, *arguments)
-        @runner.call(binary, *arguments)
+      def invoke(binary, *)
+        @runner.call(binary, *)
       end
 
-      def capture(binary, *arguments)
-        out, _err, status = Open3.capture3(binary, *arguments)
+      def capture(binary, *)
+        out, _err, status = Open3.capture3(binary, *)
         status.success? ? out : nil
       rescue Errno::ENOENT, Errno::EACCES
         nil
       end
 
-      def run_command(binary, *arguments)
-        _out, _err, status = Open3.capture3(binary, *arguments)
+      def run_command(binary, *)
+        _out, _err, status = Open3.capture3(binary, *)
         status.success?
       rescue Errno::ENOENT, Errno::EACCES
         false

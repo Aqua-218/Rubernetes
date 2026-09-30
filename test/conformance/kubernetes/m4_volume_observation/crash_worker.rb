@@ -88,19 +88,21 @@ module M4CrashWorker
   # kernel effect (mount visible in mountinfo) and the manager's durable
   # commit.  The identity it returns is the unmodified production readback.
   class BoundaryMountAdapter < Rubernetes::Volume::NativeMountAdapter
-    def initialize(control_dir:, **kwargs)
-      super(**kwargs)
+    def initialize(control_dir:, **)
+      super(**)
       @control_dir = control_dir
       @armed = true
     end
 
     def mount(**kwargs)
-      result = super(**kwargs)
+      result = super
       if @armed && kwargs[:stage] == true
         @armed = false
         M4CrashWorker.checkpoint(@control_dir, "after_effect_before_commit",
                                  "operation" => "NodeStageVolume", "target" => kwargs.fetch(:target),
-                                 "identity" => result.to_h.select { |key, _| %w[mountId deviceId root target filesystem kernelSource options readonly bind mountApi].include?(key) },
+                                 "identity" => result.to_h.select do |key, _|
+                                   %w[mountId deviceId root target filesystem kernelSource options readonly bind mountApi].include?(key)
+                                 end,
                                  "effect_boundary" => {"phase" => "after_effect_before_durable_commit", "syscall" => result["mountApi"] == "open_tree" ? "open_tree/move_mount" : "mount(2)"})
       end
       result
@@ -150,19 +152,23 @@ begin
     manager.publish(volume_id, options[:node], token: "#{volume_id}-attach")
     result["steps"] << "attached"
     record = manager.volume(volume_id)
-    M4CrashWorker.checkpoint(control_dir, "before_effect",
-                             "operation" => "NodeStageVolume", "state" => record.state,
-                             "backend_result" => record.spec["backendResult"]) if options[:kill_point] == "before_effect"
+    if options[:kill_point] == "before_effect"
+      M4CrashWorker.checkpoint(control_dir, "before_effect",
+                               "operation" => "NodeStageVolume", "state" => record.state,
+                               "backend_result" => record.spec["backendResult"])
+    end
     manager.stage(volume_id, stage_path, token: "#{volume_id}-stage", node: options[:node])
     result["steps"] << "staged"
     manager.node_publish(volume_id, pod, target_path, readonly: false, token: "#{volume_id}-publish", node: options[:node])
     result["steps"] << "published"
     File.write(File.join(target_path, "payload"), "m4-crash-payload")
     record = manager.volume(volume_id)
-    M4CrashWorker.checkpoint(control_dir, "after_commit",
-                             "operation" => "NodePublishVolume", "state" => record.state,
-                             "stage" => record.stages.fetch(stage_path), "publish" => record.publishes.values.first,
-                             "mounts_under_root" => M4CrashWorker.mount_lines_under(data_dir)) if options[:kill_point] == "after_commit"
+    if options[:kill_point] == "after_commit"
+      M4CrashWorker.checkpoint(control_dir, "after_commit",
+                               "operation" => "NodePublishVolume", "state" => record.state,
+                               "stage" => record.stages.fetch(stage_path), "publish" => record.publishes.values.first,
+                               "mounts_under_root" => M4CrashWorker.mount_lines_under(data_dir))
+    end
     manager.node_unpublish(volume_id, pod, target_path, token: "#{volume_id}-unpublish")
     manager.unstage(volume_id, stage_path, token: "#{volume_id}-unstage", node: options[:node])
     manager.unpublish(volume_id, options[:node], token: "#{volume_id}-detach")
@@ -177,25 +183,27 @@ begin
     result["recovery"] = {
       "state_before" => before["state"], "state_after_recovery" => after.state,
       "unknown_count" => recovery.unknown.length, "unknown" => recovery.unknown,
-      "owned" => recovery.owned, "missing" => recovery.missing, "orphans_under_root" => recovery.orphans.select { |entry| entry["target"].to_s.start_with?(data_dir) },
+      "owned" => recovery.owned, "missing" => recovery.missing, "orphans_under_root" => recovery.orphans.select do |entry|
+                                                                  entry["target"].to_s.start_with?(data_dir)
+                                                                end,
       "identity_mismatches" => recovery.identity_mismatches, "actions" => recovery.actions, "errors" => recovery.errors,
       "operations" => manager.operations.entries.map(&:to_h)
     }
     M4CrashWorker.checkpoint(control_dir, "recovered", "recovery" => result["recovery"],
-                             "mounts_under_root" => M4CrashWorker.mount_lines_under(data_dir))
+                                                       "mounts_under_root" => M4CrashWorker.mount_lines_under(data_dir))
     # Finish the lifecycle from whatever durable state recovery left.
     record = manager.volume(volume_id)
-    unless record.stages.key?(stage_path)
-      manager.stage(volume_id, stage_path, token: "#{volume_id}-restart-stage", node: options[:node])
-    end
+    manager.stage(volume_id, stage_path, token: "#{volume_id}-restart-stage", node: options[:node]) unless record.stages.key?(stage_path)
     record = manager.volume(volume_id)
     unless record.publishes.values.any? { |entry| entry["target"] == target_path }
       manager.node_publish(volume_id, pod, target_path, readonly: false, token: "#{volume_id}-restart-publish", node: options[:node])
     end
     record = manager.volume(volume_id)
-    result["restart_identities"] = {"stage" => record.stages.fetch(stage_path), "publish" => record.publishes.values.find { |entry| entry["target"] == target_path }}
+    result["restart_identities"] = {"stage" => record.stages.fetch(stage_path), "publish" => record.publishes.values.find do |entry|
+      entry["target"] == target_path
+    end}
     M4CrashWorker.checkpoint(control_dir, "restart_published", "identities" => result["restart_identities"],
-                             "mounts_under_root" => M4CrashWorker.mount_lines_under(data_dir))
+                                                               "mounts_under_root" => M4CrashWorker.mount_lines_under(data_dir))
     manager.node_unpublish(volume_id, pod, target_path, token: "#{volume_id}-restart-unpublish")
     manager.unstage(volume_id, stage_path, token: "#{volume_id}-restart-unstage", node: options[:node])
     manager.unpublish(volume_id, options[:node], token: "#{volume_id}-restart-detach")

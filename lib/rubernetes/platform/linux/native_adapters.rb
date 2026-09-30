@@ -80,8 +80,7 @@ module Rubernetes
           # correlate with a pidfd and with cgroup.procs.
           def host_pid_from_status(status)
             line = String(status).lines.find { |entry| entry.start_with?("NSpid:") }
-            value = line ? line.split.drop(1).first.to_i : 0
-            value
+            line ? line.split.drop(1).first.to_i : 0
           end
 
           def kernel_process_id
@@ -190,7 +189,7 @@ module Rubernetes
             create_direct(plan: plan, id: id, identity: identity)
           end
 
-          NAMESPACE_EXEC_SUPERVISOR_SOURCE = <<~'RUBY'.freeze
+          NAMESPACE_EXEC_SUPERVISOR_SOURCE = <<~'RUBY'
             require "json"
             require "rubernetes/platform/linux/native_adapters"
 
@@ -307,9 +306,8 @@ module Rubernetes
               )
               writer.close
             end
-            unless IO.select([reader], nil, nil, 10)
-              raise EffectError, "namespace exec supervisor did not report readiness"
-            end
+            raise EffectError, "namespace exec supervisor did not report readiness" unless IO.select([reader], nil, nil, 10)
+
             response = JSON.parse(reader.gets.to_s)
             unless response["ok"] == true
               raise EffectError, response["error"].to_s.empty? ? "namespace exec supervisor failed" : response["error"]
@@ -356,8 +354,12 @@ module Rubernetes
             validate_plan_namespaces!(namespaces)
             validate_native_capabilities!
             user_mapping = normalize_user_mapping(plan)
-            raise EffectError, "user namespace mapping requires the :user namespace in the plan" if user_mapping && !namespaces.include?(:user)
+            if user_mapping && !namespaces.include?(:user)
+              raise EffectError,
+                    "user namespace mapping requires the :user namespace in the plan"
+            end
             raise EffectError, "the :user namespace requires a uid/gid mapping" if namespaces.include?(:user) && user_mapping.nil?
+
             reader, writer = IO.pipe
             map_reader, map_writer = IO.pipe
             agent_pid = Process.pid
@@ -421,6 +423,7 @@ module Rubernetes
             pid = supervisor_pid
             pidfd = clone_result.pidfd
             raise EffectError, "clone3 did not return a namespace pidfd" unless pidfd
+
             start_time, namespace_links = kernel_identity(pid, namespaces)
             handle = Handle.new(
               id: String(id).freeze,
@@ -461,9 +464,8 @@ module Rubernetes
                     end
             # Already destroyed by an earlier attempt: nothing left to release.
             return true if value.nil?
-            unless value.identity == String(identity)
-              raise EffectError, "namespace identity mismatch for #{id}"
-            end
+            raise EffectError, "namespace identity mismatch for #{id}" unless value.identity == String(identity)
+
             # Ownership of the pidfd is taken exactly once.  Teardown is
             # retried until it succeeds, and a retry holding the same Handle
             # used to close value.pidfd AGAIN -- by then the kernel had handed
@@ -520,10 +522,12 @@ module Rubernetes
             expected_start = Integer(value.fetch("start_time"))
             actual_start, links = kernel_identity(pid, Array(plan.namespaces))
             raise EffectError, "namespace holder start time changed during adoption" unless actual_start == expected_start
+
             expected_links = value["namespace_links"] || {}
             unless expected_links.empty? || expected_links == links
               raise EffectError, "namespace holder namespace identity changed during adoption"
             end
+
             pidfd = @pidfd.open(pid: pid, resource_id: String(identity))
             handle = Handle.new(id: String(id).freeze, identity: String(identity).freeze, pid: pid,
                                 pidfd: pidfd, supervisor_pid: value["supervisor_pid"],
@@ -602,7 +606,7 @@ module Rubernetes
                   @pidfd.wait(pidfd: clone_result.pidfd, timeout: 5.0, resource_id: "#{value.identity}:helper")
                   exit!(124)
                 end
-                exit!(wait.exit_status || 128 + wait.term_signal.to_i)
+                exit!(wait.exit_status || (128 + wait.term_signal.to_i))
               rescue StandardError
                 exit!(125)
               end
@@ -614,7 +618,10 @@ module Rubernetes
             _pid, status = Process.waitpid2(helper_pid)
             document = payload.to_s.empty? ? nil : JSON.parse(payload)
             raise EffectError, "namespace helper timed out" if status.exitstatus == 124
-            raise EffectError, "namespace helper failed: #{document ? document["error"] : "exit #{status.exitstatus || 128 + status.termsig.to_i}"}" unless status.success? && document && document["ok"] == true
+            unless status.success? && document && document["ok"] == true
+              raise EffectError,
+                    "namespace helper failed: #{document ? document["error"] : "exit #{status.exitstatus || (128 + status.termsig.to_i)}"}"
+            end
 
             document["value"]
           rescue JSON::ParserError, Errno::ECHILD => error
@@ -626,8 +633,8 @@ module Rubernetes
           end
 
           # Run a mount-only operation in the holder mount namespace.
-          def with_mount_namespace(handle, &block)
-            within_namespaces(handle, only: [:mount], &block)
+          def with_mount_namespace(handle, &)
+            within_namespaces(handle, only: [:mount], &)
             true
           end
 
@@ -683,11 +690,11 @@ module Rubernetes
             raise Linux::Error.new(errno: errno, operation: "prctl(PR_SET_PDEATHSIG)", resource_id: "namespace") if result == -1
 
             parent_changed = if pid_namespace_pid1
-              expected_parent_pid && expected_parent_start_time &&
-                process_start_time(expected_parent_pid) != Integer(expected_parent_start_time)
-            else
-              expected_parent_pid && Process.ppid != Integer(expected_parent_pid)
-            end
+                               expected_parent_pid && expected_parent_start_time &&
+                                 process_start_time(expected_parent_pid) != Integer(expected_parent_start_time)
+                             else
+                               expected_parent_pid && Process.ppid != Integer(expected_parent_pid)
+                             end
             parent_changed ||= expected_parent_start_time && process_start_time(expected_parent_pid) != Integer(expected_parent_start_time)
             if parent_changed
               raise Linux::Error.new(errno: Errno::ESRCH::Errno, operation: "prctl(PR_SET_PDEATHSIG)", resource_id: "namespace")
@@ -738,6 +745,7 @@ module Rubernetes
             result = SETHOSTNAME.call(pointer, value.bytesize)
             errno = Fiddle.last_error
             raise Linux::Error.new(errno: errno, operation: "sethostname", resource_id: "namespace:hostname") if result == -1
+
             true
           end
 
@@ -961,7 +969,8 @@ module Rubernetes
             expected_mounted = metadata["mounted"]
             expected_mounted = metadata[:mounted] if expected_mounted.nil? && metadata.respond_to?(:key?) && metadata.key?(:mounted)
             if expected_mounted == false
-              raise EffectError, "unexpected mount at #{workspace.root} during workspace adoption" if mount_present?(namespace_handle, workspace.root)
+              raise EffectError, "unexpected mount at #{workspace.root} during workspace adoption" if mount_present?(namespace_handle,
+                                                                                                                     workspace.root)
 
               mount_identity = nil
             else
@@ -1023,6 +1032,7 @@ module Rubernetes
             unless recorded == "/" || recorded == directory || recorded.start_with?("#{directory}/")
               raise EffectError, "unknown workspace #{workspace.identity}"
             end
+
             mounted = File.readlines("/proc/self/mountinfo", chomp: true).any? do |line|
               point = unescape_mountinfo(line.split(" ").fetch(4, ""))
               point == directory || point.start_with?("#{directory}/")
@@ -1076,6 +1086,7 @@ module Rubernetes
             unless same_mount_identity?(current_identity, metadata.fetch("mount_identity"))
               raise EffectError, "overlay mount identity changed before cleanup for #{workspace.identity}"
             end
+
             mount = @mount
             root = workspace.root
             identity = workspace.identity
@@ -1091,7 +1102,8 @@ module Rubernetes
               # runtime restart that hit this died with RecoveryRequired.
               raise unless error.message.match?(/umount2/) && error.message.match?(/No such file or directory|Invalid argument/)
             end
-            raise EffectError, "overlay mount remained after cleanup for #{workspace.identity}" if mount_present?(namespace_handle, workspace.root)
+            raise EffectError, "overlay mount remained after cleanup for #{workspace.identity}" if mount_present?(namespace_handle,
+                                                                                                                  workspace.root)
           end
 
           def namespace_holder_gone?(namespace_handle)
@@ -1155,6 +1167,7 @@ module Rubernetes
 
             line = mountinfo_for(pid, target)
             raise EffectError, "overlay mount was not observed at #{target}" unless line
+
             separator = line.split(" - ", 2)
             filesystem = separator.fetch(1, "").split.first
             raise EffectError, "mount at #{target} is not OverlayFS" unless filesystem == "overlay"
@@ -1217,6 +1230,7 @@ module Rubernetes
 
             real = File.realpath(path)
             raise EffectError, "overlay lowerdir changed during validation" unless real == path
+
             real
           rescue Errno::ENOENT => error
             raise EffectError, "overlay lowerdir is unavailable: #{error.message}"
@@ -1250,8 +1264,8 @@ module Rubernetes
           def create(**arguments) = @delegate.create(**arguments)
           def configure(handle, limits) = @delegate.configure(handle, limits)
           def configure_pod(handle, limits) = @delegate.configure_pod(handle, limits)
-          def limits_readback(handle, **options) = @delegate.limits_readback(handle, **options)
-          def pod_limits_readback(handle, **options) = @delegate.pod_limits_readback(handle, **options)
+          def limits_readback(handle, **) = @delegate.limits_readback(handle, **)
+          def pod_limits_readback(handle, **) = @delegate.pod_limits_readback(handle, **)
           def oom_kill_count(handle) = @delegate.oom_kill_count(handle)
           def attach(handle, pid:) = @delegate.attach(handle, pid: pid)
           def open_procs(handle) = @delegate.open_procs(handle)
@@ -1332,7 +1346,7 @@ module Rubernetes
             "fd" => "/proc/self/fd", "stdin" => "/proc/self/fd/0", "stdout" => "/proc/self/fd/1",
             "stderr" => "/proc/self/fd/2", "ptmx" => "pts/ptmx"
           }.freeze
-          PIVOT_OLD = "dev/.pivot-old".freeze
+          PIVOT_OLD = "dev/.pivot-old"
 
           CLOSE = Fiddle::Function.new(
             Fiddle::Handle::DEFAULT["close"], [Fiddle::TYPE_INT], Fiddle::TYPE_INT
@@ -1359,7 +1373,8 @@ module Rubernetes
             Fiddle::Handle::DEFAULT["getresgid"], [Fiddle::TYPE_VOIDP] * 3, Fiddle::TYPE_INT
           )
 
-          Rootfs = Data.define(:root_mount_id, :mount_count, :old_root_mount_ids, :old_root_unreachable, :mountinfo_sha256, :rootfs_read_only) do
+          Rootfs = Data.define(:root_mount_id, :mount_count, :old_root_mount_ids, :old_root_unreachable, :mountinfo_sha256,
+                               :rootfs_read_only) do
             def to_h
               {
                 "root_mount_id" => root_mount_id, "mount_count" => mount_count,
@@ -1369,7 +1384,8 @@ module Rubernetes
             end
           end
 
-          def initialize(landlock: Landlock.new, landlock_roots: [], mount: Mount.new, pivot: PivotRoot.new, setns: Setns.new, capabilities: Capabilities.new)
+          def initialize(landlock: Landlock.new, landlock_roots: [], mount: Mount.new, pivot: PivotRoot.new, setns: Setns.new,
+                         capabilities: Capabilities.new)
             @landlock = landlock
             @landlock_roots = Array(landlock_roots).map { |path| File.expand_path(String(path)) }.freeze
             @mount = mount
@@ -1479,6 +1495,7 @@ module Rubernetes
             target_cwd = cwd.nil? || String(cwd).empty? ? "/" : String(cwd)
             raise EffectError, "workload cwd must be absolute" unless target_cwd.start_with?("/")
             raise EffectError, "workload cwd contains NUL" if target_cwd.include?("\0")
+
             Dir.chdir(target_cwd)
             @rootfs_report
           rescue SystemCallError => error
@@ -1525,6 +1542,7 @@ module Rubernetes
             unless value.start_with?("/") && File.file?(value) && File.executable?(value)
               raise EffectError, "workload executable is unavailable: #{value.inspect}"
             end
+
             true
           rescue SystemCallError => error
             raise EffectError, "workload executable validation failed: #{error.message}"
@@ -1716,7 +1734,10 @@ module Rubernetes
             @mount.mount_setattr(dirfd: Mount::AT_FDCWD, path: target, flags: Mount::AT_RECURSIVE,
                                  attr_set: Mount::MOUNT_ATTR_RDONLY, resource_id: "workload:bind-rro:#{destination}")
           rescue Linux::Error => error
-            raise EffectError, "volume at #{destination} requested recursive read-only mode, but it is not supported: #{error.message}" if mode.to_s == "Enabled"
+            if mode.to_s == "Enabled"
+              raise EffectError,
+                    "volume at #{destination} requested recursive read-only mode, but it is not supported: #{error.message}"
+            end
           end
 
           # Resolve `destination` beneath `root`, following symlinks that the
@@ -1749,7 +1770,10 @@ module Rubernetes
               resolved << component
             end
             path = File.join(root, *resolved)
-            raise EffectError, "bind mount destination escapes the rootfs: #{destination}" unless path == root || path.start_with?("#{root}/")
+            unless path == root || path.start_with?("#{root}/")
+              raise EffectError,
+                    "bind mount destination escapes the rootfs: #{destination}"
+            end
 
             path
           end
@@ -1817,8 +1841,12 @@ module Rubernetes
             after_raw = File.binread("/proc/self/mountinfo")
             after = PivotRoot.parse_mountinfo(after_raw)
             root_entry = after.select { |entry| entry.mountpoint == "/" }.max_by(&:index)
-            raise EffectError, "pivot_root did not install the workload root" unless root_entry && root_entry.filesystem == overlay.filesystem
+            unless root_entry && root_entry.filesystem == overlay.filesystem
+              raise EffectError,
+                    "pivot_root did not install the workload root"
+            end
             raise EffectError, "root mount identity changed across pivot_root" unless root_entry.id == overlay.id
+
             # detach_tree proved the old root unreachable (nothing left under
             # the put-old directory, no descriptor on a detached mount).
             # Intersecting ids with the pre-pivot list is not a proof: ids are
@@ -1826,6 +1854,7 @@ module Rubernetes
             # a recycled id failed ~10 container starts a round.
             remaining = after.select { |entry| entry.mountpoint == "/#{PIVOT_OLD}" || entry.mountpoint.start_with?("/#{PIVOT_OLD}/") }
             raise EffectError, "old root mounts remain reachable: #{remaining.map(&:mountpoint).join(", ")}" unless remaining.empty?
+
             leaked = after.reject { |entry| entry.mountpoint.start_with?("/") }
             raise EffectError, "mount table contains entries outside the new root" unless leaked.empty?
 
@@ -1875,8 +1904,11 @@ module Rubernetes
             change_ids(SETRESUID, uid, "setresuid") if uid
             observed_uid = read_ids(GETRESUID, "getresuid")
             observed_gid = read_ids(GETRESGID, "getresgid")
-            raise EffectError, "uid readback mismatch: expected #{uid} got #{observed_uid.inspect}" if uid && observed_uid != [uid, uid, uid]
-            raise EffectError, "gid readback mismatch: expected #{gid} got #{observed_gid.inspect}" if gid && observed_gid != [gid, gid, gid]
+            raise EffectError, "uid readback mismatch: expected #{uid} got #{observed_uid.inspect}" if uid && observed_uid != [uid, uid,
+                                                                                                                               uid]
+            raise EffectError, "gid readback mismatch: expected #{gid} got #{observed_gid.inspect}" if gid && observed_gid != [gid, gid,
+                                                                                                                               gid]
+
             true
           end
 
@@ -1950,8 +1982,12 @@ module Rubernetes
             apply_prctl(PR_SET_NO_NEW_PRIVS, 1, resource_id: "security:no_new_privs")
             result = PRCTL.call(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0)
             errno = Fiddle.last_error
-            raise Linux::Error.new(errno: errno, operation: "prctl(PR_GET_NO_NEW_PRIVS)", resource_id: "security:no_new_privs") if result == -1
+            if result == -1
+              raise Linux::Error.new(errno: errno, operation: "prctl(PR_GET_NO_NEW_PRIVS)",
+                                     resource_id: "security:no_new_privs")
+            end
             raise EffectError, "no_new_privs was not enabled" unless result == 1
+
             true
           end
 
@@ -1993,18 +2029,23 @@ module Rubernetes
 
           def apply_seccomp(program)
             return true unless program
+
             expected = case RbConfig::CONFIG.fetch("host_cpu").downcase
                        when "x86_64", "amd64" then "x86_64"
                        when "aarch64", "arm64" then "aarch64"
                        else raise Unsupported, "unsupported seccomp host architecture"
                        end
             raise Unsupported, "seccomp architecture mismatch" unless program.architecture == expected
-            instructions = program.instructions.map { |instruction| [instruction.code, instruction.jt, instruction.jf, instruction.k].pack("S<CCL<") }.join
+
+            instructions = program.instructions.map do |instruction|
+              [instruction.code, instruction.jt, instruction.jf, instruction.k].pack("S<CCL<")
+            end.join
             filter = Fiddle::Pointer[instructions]
             fprog = Fiddle::Pointer[[program.instructions.length].pack("S<") + ("\0" * 6) + [filter.to_i].pack("Q<")]
             result = PRCTL.call(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, fprog.to_i, 0, 0)
             errno = Fiddle.last_error
             raise Linux::Error.new(errno: errno, operation: "prctl(PR_SET_SECCOMP)", resource_id: "security:seccomp") if result == -1
+
             true
           end
 
@@ -2053,6 +2094,7 @@ module Rubernetes
             result = PRCTL.call(option, argument, 0, 0, 0)
             errno = Fiddle.last_error
             raise Linux::Error.new(errno: errno, operation: "prctl(#{option})", resource_id: resource_id) if result == -1
+
             true
           end
 
@@ -2204,22 +2246,25 @@ module Rubernetes
                        executable_identity.match?(/\A[0-9a-f]{64}\z/)
                   raise EffectError, "workload readiness omitted its process identity"
                 end
+
                 metadata_length = length_field.unpack1("L<")
                 raise EffectError, "workload readiness metadata is too large" if metadata_length > 1024 * 1024
+
                 metadata_raw = @status_reader.read(metadata_length).to_s
                 raise EffectError, "workload readiness metadata was truncated" unless metadata_raw.bytesize == metadata_length
+
                 exec_failure = @status_reader.read.to_s
-                unless exec_failure.empty?
-                  raise EffectError, "workload exec failed after security readiness: #{exec_failure}"
-                end
+                raise EffectError, "workload exec failed after security readiness: #{exec_failure}" unless exec_failure.empty?
 
                 host_pid, host_start_time = host_identity.unpack("Q<2")
                 clone_pid = clone_identity.unpack1("Q<")
                 unless host_pid.positive? && host_start_time.positive? && clone_pid == host_pid
                   raise EffectError, "workload readiness identities do not agree"
                 end
+
                 metadata = JSON.parse(metadata_raw)
                 raise EffectError, "workload readiness metadata must be an object" unless metadata.is_a?(Hash)
+
                 # A short-lived command can exit between the bootstrap write
                 # and this read. When it is still live, verify the procfs
                 # start time; when it has already exited, retain the
@@ -2235,7 +2280,7 @@ module Rubernetes
 
               detail = @status_reader.read.to_s
               detail = "#{marker}#{detail}" unless marker == "E"
-              raise EffectError, "workload security setup failed before exec#{detail.empty? ? "" : ": #{detail}"}"
+              raise EffectError, "workload security setup failed before exec#{": #{detail}" unless detail.empty?}"
             rescue JSON::ParserError => error
               raise EffectError, "workload readiness metadata is invalid: #{error.message}"
             ensure
@@ -2336,6 +2381,7 @@ module Rubernetes
             raise EffectError, "bind mounts require a rootfs" if !bind_mounts.empty? && rootfs.nil?
             raise EffectError, "production process adapter requires a security plan" unless security_plan
             raise EffectError, "production process adapter has no security applier" unless @security
+
             bootstrap_security = bootstrap_security_adapter
             raise EffectError, "production process adapter has no rootfs/security transition helper" unless bootstrap_security
 
@@ -2488,7 +2534,7 @@ module Rubernetes
                 reaped = cgroup_procs ? join_cgroup_at_exec_stop(workload_pid, cgroup_procs) : nil
                 if reaped
                   IO.for_fd(workload_clone.pidfd).close if workload_clone.pidfd
-                  exit_code = reaped.exitstatus || 128 + reaped.termsig.to_i
+                  exit_code = reaped.exitstatus || (128 + reaped.termsig.to_i)
                 else
                   status = @pidfd.wait(
                     pidfd: workload_clone.pidfd,
@@ -2499,7 +2545,7 @@ module Rubernetes
                   # The workload's exit code is the wrapper's exit code; nothing
                   # is written to the container's stderr (a kubelet never adds
                   # its own lines to a container's log or an exec's output).
-                  exit_code = status&.exit_status || 128 + status&.term_signal.to_i
+                  exit_code = status&.exit_status || (128 + status&.term_signal.to_i)
                 end
                 stderr_writer.close
                 exit!(exit_code)
@@ -2602,14 +2648,14 @@ module Rubernetes
           # (see #spawn): GC.disable finishes a GC already in progress, and
           # any page that touches must be charged before the caller moves the
           # child into a container's cgroup, not after.
-          def fork_without_gc(&block)
+          def fork_without_gc(&)
             reader, writer = IO.pipe
             pid = Process.fork do
               GC.disable
               reader.close
               writer.write("g")
               writer.close
-              block.call
+              yield
             end
             writer.close
             reader.read(1)
@@ -2620,7 +2666,7 @@ module Rubernetes
           end
 
           def wait(pid:, timeout: nil)
-            deadline = timeout && Process.clock_gettime(Process::CLOCK_MONOTONIC) + Float(timeout)
+            deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + Float(timeout))
             loop do
               result = Process.waitpid2(Integer(pid), Process::WNOHANG)
               return result && result.last if result
@@ -2821,7 +2867,7 @@ module Rubernetes
 
           def wait(pid, reader, hook, stage:, index:, path:)
             timeout = hook["timeout"]
-            deadline = timeout && Process.clock_gettime(Process::CLOCK_MONOTONIC) + Integer(timeout)
+            deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + Integer(timeout))
             output = +""
             loop do
               unless reader.closed?
@@ -2836,7 +2882,10 @@ module Rubernetes
               end
               status = reap(pid, WNOHANG)
               if status
-                raise EffectError, "error running #{stage} hook ##{index}: #{path}: #{describe(status)}#{detail(output)}" unless status.success?
+                unless status.success?
+                  raise EffectError,
+                        "error running #{stage} hook ##{index}: #{path}: #{describe(status)}#{detail(output)}"
+                end
 
                 return true
               end
@@ -2854,7 +2903,9 @@ module Rubernetes
             loop do
               result = WAITPID.call(pid, storage, options)
               return nil if result.zero?
-              raise EffectError, "waitpid on hook #{pid} failed: #{Fiddle.last_error}" if result == -1 && Fiddle.last_error != Errno::EINTR::Errno
+              if result == -1 && Fiddle.last_error != Errno::EINTR::Errno
+                raise EffectError, "waitpid on hook #{pid} failed: #{Fiddle.last_error}"
+              end
               next if result == -1
 
               raw = storage[0, 4].unpack1("l")
@@ -2949,7 +3000,8 @@ module Rubernetes
             # Traced by the wrapper, which moves this process into the
             # container's cgroup at the stop after execve (before any seccomp
             # profile could refuse ptrace).
-            IMMEDIATE_EXIT.call(127) if @trace_exec && ProcessGateAdapter::PTRACE.call(ProcessGateAdapter::PTRACE_TRACEME, 0, nil, nil) == -1
+            IMMEDIATE_EXIT.call(127) if @trace_exec && ProcessGateAdapter::PTRACE.call(ProcessGateAdapter::PTRACE_TRACEME, 0, nil,
+                                                                                       nil) == -1
             parent_pid = GETPPID.call
             # A PID-namespace init cannot see its parent in the outer
             # namespace and getppid(2) therefore returns zero. PR_SET_PDEATHSIG
@@ -3011,7 +3063,8 @@ module Rubernetes
                   open_readiness_sources
                   @security.apply(step: step.name, context: context, program: program)
                 else
-                  @security.apply(step: step.name, context: context.with(fd_allowlist: context.fd_allowlist + [executable&.fileno].compact), program: program)
+                  @security.apply(step: step.name,
+                                  context: context.with(fd_allowlist: context.fd_allowlist + [executable&.fileno].compact), program: program)
                 end
               end
               # A plan that neither builds a root nor mounts still runs its
@@ -3026,7 +3079,9 @@ module Rubernetes
               # fails, the rescue path can still append an error marker.
               @status.close_on_exec = true
               argv = pointer_vector(@command.map { |value| c_string(value) })
-              envp = pointer_vector(@env.reject { |_key, value| value.nil? }.sort_by { |key, _| key }.map { |key, value| c_string("#{key}=#{value}") })
+              envp = pointer_vector(@env.reject do |_key, value|
+                value.nil?
+              end.sort_by { |key, _| key }.map { |key, value| c_string("#{key}=#{value}") })
               error = if @executable_info&.fetch(:script)
                         @pivot.execveat_path(path: @executable_info.fetch(:path), argv: argv, envp: envp, resource_id: "workload:execveat")
                       else
@@ -3167,7 +3222,6 @@ module Rubernetes
             Integer(stat[stat.rindex(")") + 1..].split.fetch(19))
           end
 
-
           def c_string(value)
             text = String(value)
             raise EffectError, "exec argument contains NUL" if text.include?("\0")
@@ -3251,6 +3305,7 @@ module Rubernetes
 
             timeout_seconds = Float(timeout)
             raise EffectError, "port-forward timeout must be positive" unless timeout_seconds.positive?
+
             streams = values.map do |port|
               spawn_stream(
                 sandbox: sandbox,
@@ -3260,7 +3315,7 @@ module Rubernetes
                   "sh",
                   "-c",
                   "i=0; while [ $i -lt 50 ]; do #{busybox_path} nc -w 1 127.0.0.1 #{port} && exit $?; " \
-                    "i=$((i+1)); #{busybox_path} sleep 0.02; done; exit 111"
+                  "i=$((i+1)); #{busybox_path} sleep 0.02; done; exit 111"
                 ],
                 cwd: nil,
                 rootfs: nil,
@@ -3276,6 +3331,7 @@ module Rubernetes
           # no Timeout thread is created in the namespace helper child.
           def http_get(sandbox:, container:, definition:, timeout: 1.0, **_options)
             raise EffectError, "HTTP probe requires a namespace adapter" unless @namespace_adapter
+
             handle = sandbox.namespace.adapter_handle
             host = String(definition["host"] || "127.0.0.1")
             port = Integer(definition["port"] || 80)
@@ -3304,6 +3360,7 @@ module Rubernetes
           # reflects the writer's own namespaces.
           def grpc_check(sandbox:, container:, definition:, timeout: 1.0, **_options)
             raise EffectError, "gRPC probe requires a namespace adapter" unless @namespace_adapter
+
             handle = sandbox.namespace.adapter_handle
             host = String(definition["host"] || "127.0.0.1")
             port = Integer(definition["port"] || 0)
@@ -3346,10 +3403,11 @@ module Rubernetes
 
           def apply_sysctls(sandbox:, sysctls:, **_options)
             raise EffectError, "sysctls require a namespace adapter" unless @namespace_adapter
+
             handle = sandbox.namespace.adapter_handle
             entries = Array(sysctls).map do |entry|
               name = String(entry["name"] || entry[:name]).tr("/", ".")
-              raise EffectError, "invalid sysctl name #{name.inspect}" unless name.match?(/\A[a-z0-9_.\-]+\z/i) && !name.include?("..")
+              raise EffectError, "invalid sysctl name #{name.inspect}" unless name.match?(/\A[a-z0-9_.-]+\z/i) && !name.include?("..")
 
               family = name.split(".").first
               namespace = SYSCTL_NAMESPACES[family]
@@ -3371,6 +3429,7 @@ module Rubernetes
 
           def tcp_socket(sandbox:, container:, definition:, timeout: 1.0, **_options)
             raise EffectError, "TCP probe requires a namespace adapter" unless @namespace_adapter
+
             handle = sandbox.namespace.adapter_handle
             host = String(definition["host"] || "127.0.0.1")
             port = Integer(definition["port"])
@@ -3433,7 +3492,7 @@ module Rubernetes
                 break if buffer.bytesize > 1024 * 1024
                 break if buffer.include?("\r\n\r\n".b) && buffer.start_with?("HTTP/".b) && buffer.bytesize >= 12
               end
-              status = buffer[/\AHTTP\/1\.[01] (\d{3})/, 1]
+              status = buffer[%r{\AHTTP/1\.[01] (\d{3})}, 1]
               raise EffectError, "HTTP probe received no status line" unless status
 
               {"status" => Integer(status), "body_bytes" => buffer.bytesize}
@@ -3464,7 +3523,7 @@ module Rubernetes
             def initialize(streams)
               @streams = Array(streams).freeze
               @readers = @streams.flat_map.with_index do |stream, index|
-                [[stream.fetch(:stdout), index * 2], [stream.fetch(:stderr), index * 2 + 1]]
+                [[stream.fetch(:stdout), index * 2], [stream.fetch(:stderr), (index * 2) + 1]]
               end.reject { |reader, _channel| reader.nil? }
               @buffer = "".b
               @closed = false
@@ -3562,8 +3621,10 @@ module Rubernetes
             # milliseconds.  Here the workload is moved into the cgroup at the
             # stop that follows its execve (see ProcessGateAdapter#spawn,
             # +cgroup_procs+), through a cgroup.procs descriptor opened now.
-            procs = container.cgroup && @cgroup.respond_to?(:open_procs) && @process.respond_to?(:join_cgroup_at_exec?) &&
-                    @process.join_cgroup_at_exec? ? @cgroup.open_procs(container.cgroup) : nil
+            procs = if container.cgroup && @cgroup.respond_to?(:open_procs) && @process.respond_to?(:join_cgroup_at_exec?) &&
+                       @process.join_cgroup_at_exec?
+                      @cgroup.open_procs(container.cgroup)
+                    end
             process = @process.spawn(
               command: command,
               env: env,

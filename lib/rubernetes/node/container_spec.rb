@@ -137,10 +137,12 @@ module Rubernetes
           entry = Helpers.string_keys(source)
           prefix = Helpers.key(entry, "prefix", "").to_s
           values = if (reference = Helpers.key(entry, "configMapRef", nil))
-                     object = read_optional(context, "configmaps", Helpers.key(reference, "name"), namespace, optional: Helpers.key(reference, "optional", false))
+                     object = read_optional(context, "configmaps", Helpers.key(reference, "name"), namespace,
+                                            optional: Helpers.key(reference, "optional", false))
                      object.nil? ? {} : Helpers.key(object, "data", {}).to_h.transform_values(&:to_s)
                    elsif (reference = Helpers.key(entry, "secretRef", nil))
-                     object = read_optional(context, "secrets", Helpers.key(reference, "name"), namespace, optional: Helpers.key(reference, "optional", false))
+                     object = read_optional(context, "secrets", Helpers.key(reference, "name"), namespace,
+                                            optional: Helpers.key(reference, "optional", false))
                      object.nil? ? {} : decode_secret(object)
                    else
                      {}
@@ -188,14 +190,20 @@ module Rubernetes
         source = Helpers.string_keys(value_from)
         if (field = Helpers.key(source, "fieldRef", nil))
           FieldRef.resolve_field(Helpers.key(field, "fieldPath").to_s, context.pod, pod_ip: context.pod_ips.empty? ? context.pod_ip : context.pod_ips,
-                                                                        host_ip: context.host_ip, env: true)
+                                                                                    host_ip: context.host_ip, env: true)
         elsif (resource = Helpers.key(source, "resourceFieldRef", nil))
           container_name = Helpers.key(resource, "containerName", nil)
-          target = container_name.nil? || container_name.to_s == Helpers.key(definition, "name", "").to_s ? definition : FieldRef.find_container(context.pod, container_name)
+          target = if container_name.nil? || container_name.to_s == Helpers.key(definition, "name",
+                                                                                "").to_s
+                     definition
+                   else
+                     FieldRef.find_container(context.pod,
+                                             container_name)
+                   end
           raise ConfigError, "resourceFieldRef container #{container_name.inspect} not found" if target.nil?
 
           FieldRef.resolve_resource(Helpers.key(resource, "resource").to_s, target, divisor: Helpers.key(resource, "divisor", "1"),
-                                    node_allocatable: context.node_allocatable)
+                                                                                    node_allocatable: context.node_allocatable)
         elsif (reference = Helpers.key(source, "configMapKeyRef", nil))
           optional = Helpers.key(reference, "optional", false) == true
           object = read_optional(context, "configmaps", Helpers.key(reference, "name"), namespace, optional: optional)
@@ -329,11 +337,11 @@ module Rubernetes
               close = text.index(")", index + 2)
               if close
                 name = text[(index + 2)...close]
-                if mapping.key?(name)
-                  output << mapping.fetch(name).to_s
-                else
-                  output << text[index..close]
-                end
+                output << if mapping.key?(name)
+                            mapping.fetch(name).to_s
+                          else
+                            text[index..close]
+                          end
                 index = close + 1
                 next
               end
@@ -390,7 +398,8 @@ module Rubernetes
         merged["privileged"] = false unless merged.key?("privileged")
         merged["allowPrivilegeEscalation"] = merged["privileged"] == true unless merged.key?("allowPrivilegeEscalation")
         merged["capabilities"] ||= {}
-        merged["capabilities"] = {"add" => Array(Helpers.key(merged["capabilities"], "add", [])), "drop" => Array(Helpers.key(merged["capabilities"], "drop", []))}
+        merged["capabilities"] =
+          {"add" => Array(Helpers.key(merged["capabilities"], "add", [])), "drop" => Array(Helpers.key(merged["capabilities"], "drop", []))}
         merged["seccompProfile"] ||= {"type" => "RuntimeDefault"}
 
         image_user = Helpers.key(Helpers.key(image, "config", {}) || {}, "config", {}) || {}
@@ -405,10 +414,18 @@ module Rubernetes
         merge_image_groups!(merged, image_user, Helpers.key(image, "rootfs", nil))
         if merged["runAsNonRoot"] == true
           if merged["runAsUser"].nil?
-            raise ConfigError, "container has runAsNonRoot and image has non-numeric user (#{image_user.inspect}), cannot verify user is non-root" if image_user && !image_user.to_s.match?(/\A\d+/)
+            if image_user && !image_user.to_s.match?(/\A\d+/)
+              raise ConfigError,
+                    "container has runAsNonRoot and image has non-numeric user (#{image_user.inspect}), cannot verify user is non-root"
+            end
+
             raise ConfigError, "container has runAsNonRoot and image will run as root"
           end
-          raise ConfigError, "container's runAsUser breaks non-root policy (pod: #{pod_identity(pod)}, container: #{Helpers.key(definition, "name")})" if Integer(merged["runAsUser"]).zero?
+          if Integer(merged["runAsUser"]).zero?
+            raise ConfigError,
+                  "container's runAsUser breaks non-root policy (pod: #{pod_identity(pod)}, container: #{Helpers.key(definition,
+                                                                                                                     "name")})"
+          end
         end
         merged
       end
@@ -468,9 +485,7 @@ module Rubernetes
         user, group = value.split(":", 2)
         uid = numeric_or_lookup(user, rootfs, "passwd")
         gid = group.nil? ? nil : numeric_or_lookup(group, rootfs, "group")
-        if gid.nil? && !user.to_s.empty? && rootfs && !user.match?(/\A\d+\z/)
-          gid = passwd_primary_group(user, rootfs)
-        end
+        gid = passwd_primary_group(user, rootfs) if gid.nil? && !user.to_s.empty? && rootfs && !user.match?(/\A\d+\z/)
         [uid, gid]
       end
 
@@ -527,7 +542,7 @@ module Rubernetes
                      raise ConfigError, "subPath requires the pod volume manager" if @pod_volumes.nil?
 
                      @pod_volumes.sub_path(context.pod, context.volumes, volume_name: name, sub_path: sub_path,
-                                           container_name: container_name, index: position, readonly: readonly)
+                                                                         container_name: container_name, index: position, readonly: readonly)
                    else
                      Helpers.key(volume, "path")
                    end

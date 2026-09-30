@@ -103,16 +103,19 @@ class M4VolumeTest < Minitest::Test
 
   def test_attach_stage_publish_and_reverse_lifecycle_is_idempotent
     id = @manager.create_volume({"name" => "work", "emptyDir" => {}}, token: "create")
+
     assert_equal id, @manager.create_volume({"name" => "work", "emptyDir" => {}}, token: "create")
     @manager.controller.publish(id, "node-a", token: "attach")
     stage = File.join(@directory, "stage")
     target = File.join(@directory, "target")
     @manager.node.stage(id, stage, token: "stage", node: "node-a")
     @manager.node.publish(id, {"metadata" => {"uid" => "pod-a"}}, target, readonly: false, token: "publish", node: "node-a")
+
     assert_equal "Published", @manager.fetch_record(id).state
     @manager.node.unpublish(id, {"metadata" => {"uid" => "pod-a"}}, target, token: "unpublish")
     @manager.node.unstage(id, stage, token: "unstage")
     @manager.controller.unpublish(id, "node-a", token: "detach")
+
     assert_equal "Detached", @manager.fetch_record(id).state
     assert @manager.delete_volume(id, token: "delete")
   end
@@ -126,10 +129,10 @@ class M4VolumeTest < Minitest::Test
     @manager.controller.publish(rwop, "node-a", token: "rwop-a")
     @manager.node.stage(rwop, File.join(@directory, "rwop-stage"), token: "rwop-stage", node: "node-a")
     @manager.node.publish(rwop, {"metadata" => {"uid" => "pod-a"}}, File.join(@directory, "rwop-a"), readonly: false,
-                          token: "rwop-pod-a", node: "node-a")
+                                                                                                     token: "rwop-pod-a", node: "node-a")
     assert_raises(Rubernetes::Volume::MultiAttachError) do
       @manager.node.publish(rwop, {"metadata" => {"uid" => "pod-b"}}, File.join(@directory, "rwop-b"), readonly: false,
-                            token: "rwop-pod-b", node: "node-a")
+                                                                                                       token: "rwop-pod-b", node: "node-a")
     end
   end
 
@@ -140,9 +143,11 @@ class M4VolumeTest < Minitest::Test
                           "storageClassName" => "fast", "nodeAffinity" => {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone", "operator" => "In", "values" => ["a"]}]}]}}})
     pvc = @manager.register_pvc({"metadata" => {"name" => "claim", "namespace" => "default"}, "resources" => {"requests" => {"storage" => "1Gi"}},
                                  "accessModes" => ["RWO"], "storageClassName" => "fast"})
-    assert @manager.bind(pvc).pending?
+
+    assert_predicate @manager.bind(pvc), :pending?
     bound = @manager.bind(pvc, node: "node-a", node_labels: {"zone" => "a"})
-    assert bound.bound?
+
+    assert_predicate bound, :bound?
     assert_equal "Bound", @manager.binder.expand(pvc, capacity: "2Gi").status
   end
 
@@ -151,6 +156,7 @@ class M4VolumeTest < Minitest::Test
     snapshot = @manager.create_snapshot(id, token: "snapshot")
     restored = @manager.restore(snapshot, spec: {"name" => "restored", "emptyDir" => {}}, token: "restore")
     cloned = @manager.clone(id, spec: {"name" => "clone", "emptyDir" => {}}, token: "clone")
+
     refute_equal id, restored
     refute_equal id, cloned
     refute_equal restored, cloned
@@ -159,9 +165,10 @@ class M4VolumeTest < Minitest::Test
   def test_secret_projection_is_atomic_and_tmpfs_backed
     id = @manager.create_volume({"name" => "secret", "secret" => {"data" => {"token" => "c2VjcmV0"}}}, token: "secret")
     root = File.join(@directory, "volumes", id)
+
     assert_equal "secret", File.read(File.join(root, "token"))
     assert File.symlink?(File.join(root, "..data"))
-    assert @manager.mount_adapter.list_mounts.any? { |mount| mount["filesystem"] == "tmpfs" }
+    assert(@manager.mount_adapter.list_mounts.any? { |mount| mount["filesystem"] == "tmpfs" })
   end
 
   def test_csi_source_is_detected_and_missing_adapter_fails_closed
@@ -215,7 +222,8 @@ class M4VolumeTest < Minitest::Test
     # Cleanup passes the full durable identity so the adapter can verify the
     # device before releasing it; the ordering (dm before loop) is what matters.
     destroy_ids = devices.calls.select { |call| call.first == :destroy_device }
-                         .map { |call| call[1].is_a?(Hash) ? call[1].fetch("id") : call[1] }
+      .map { |call| call[1].is_a?(Hash) ? call[1].fetch("id") : call[1] }
+
     assert_equal ["/dev/mapper/rubernetes-test", "/dev/loop-test"], destroy_ids
   end
 
@@ -229,7 +237,8 @@ class M4VolumeTest < Minitest::Test
 
     assert_raises(Rubernetes::Volume::MountIdentityError) { backend.provision }
     destroy_calls = devices.calls.select { |call| call.first == :destroy_device }
-                           .map { |call| [call[0], call[1].is_a?(Hash) ? call[1].fetch("id") : call[1], call[2]] }
+      .map { |call| [call[0], call[1].is_a?(Hash) ? call[1].fetch("id") : call[1], call[2]] }
+
     assert_equal [[:destroy_device, "/dev/loop-test", "loop-volume"]], destroy_calls
   end
 end

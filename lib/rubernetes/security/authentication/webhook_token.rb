@@ -55,7 +55,10 @@ module Rubernetes
 
                      returned = Array(status["audiences"]).map(&:to_s)
                      matched = returned.empty? ? Array(audiences) : (returned & Array(audiences).map(&:to_s))
-                     raise AuthenticationError, "webhook token authenticator returned audiences outside the request" if !returned.empty? && matched.empty?
+                     if !returned.empty? && matched.empty?
+                       raise AuthenticationError,
+                             "webhook token authenticator returned audiences outside the request"
+                     end
 
                      AuthenticationResult.new(user: UserInfo.new(name: user["username"], uid: user["uid"],
                                                                  groups: Array(user["groups"]) + [UserInfo::ALL_AUTHENTICATED], extra: user["extra"] || {}),

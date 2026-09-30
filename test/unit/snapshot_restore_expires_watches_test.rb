@@ -48,6 +48,7 @@ class SnapshotRestoreExpiresWatchesTest < Minitest::Test
     assert_raises(Storage::WatchOverflow) { first.next(timeout: 1) }
     assert_equal 0, store.watcher_count
     store.watch(resource: "configmaps", namespace: "default")
+
     assert_equal 1, store.watcher_count
   end
 end

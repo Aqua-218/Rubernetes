@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
 require_relative "../test_helper"
 require "rubernetes/node"
 require "rubernetes/runtime/cri"
@@ -36,6 +35,7 @@ class CRIImageGCTest < Minitest::Test
     client = Client.new(images)
     in_use = -> { Set["docker.io/library/busybox:1.36"] }
     source = Rubernetes::Runtime::CRI::ImageGCSource.new(client: client, in_use: in_use)
+
     assert_equal ["docker.io/library/old:1|sha256:old", "docker.io/library/busybox:1.36|sha256:used", "docker.io/library/new:1|sha256:new"],
                  source.cached_images.map(&:first), "pinned never offered; a used tag keys a shared image"
 
@@ -43,8 +43,8 @@ class CRIImageGCTest < Minitest::Test
     pods = [{"spec" => {"containers" => [{"image" => "busybox:1.36"}]}}]
     now = 0.0
     manager = Rubernetes::Node::ImageGCManager.new(resolver: source, fs_stats: -> { fs }, pods: -> { pods },
-                                                    high_threshold_percent: 85, low_threshold_percent: 60, min_age: 0,
-                                                    monotonic: -> { now })
+                                                   high_threshold_percent: 85, low_threshold_percent: 60, min_age: 0,
+                                                   monotonic: -> { now })
     manager.send(:images_in_eviction_order, now)
     now = 10.0
     fs = {"capacityBytes" => 100, "availableBytes" => 10}
@@ -54,6 +54,7 @@ class CRIImageGCTest < Minitest::Test
       result
     end
     manager.garbage_collect
+
     assert_equal ["sha256:new", "sha256:old"], client.removed.sort, "freed until under 60% used; the busybox image stays in use"
   end
 end

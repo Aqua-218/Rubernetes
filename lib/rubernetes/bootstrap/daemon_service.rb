@@ -11,7 +11,7 @@ module Rubernetes
       end
 
       def start
-        raise RuntimeError, "#{@process_name} is already started" if @started
+        raise "#{@process_name} is already started" if @started
 
         @started = true
         @logger.info("process.ready", configuration: @config)

@@ -45,11 +45,17 @@ class JWTAuthenticatorMetricsTest < Minitest::Test
     text = @metrics.render
     issuer = hash("https://issuer.example")
     server = hash("apiserver-abc")
+
     assert_match(/apiserver_authentication_jwt_authenticator_latency_seconds_count\{jwt_issuer_hash="#{issuer}",result="success"\} 1/, text)
     assert_match(/apiserver_authentication_jwt_authenticator_latency_seconds_count\{jwt_issuer_hash="#{issuer}",result="failure"\} 1/, text)
-    assert_match(/apiserver_authentication_jwt_authenticator_jwks_fetch_last_timestamp_seconds\{apiserver_id_hash="#{server}",jwt_issuer_hash="#{issuer}",result="success"\} \d/, text)
+    assert_match(
+      /apiserver_authentication_jwt_authenticator_jwks_fetch_last_timestamp_seconds\{apiserver_id_hash="#{server}",jwt_issuer_hash="#{issuer}",result="success"\} \d/, text
+    )
     key_set = hash(JSON.generate(@jwks))
-    assert_match(/apiserver_authentication_jwt_authenticator_jwks_fetch_last_key_set_info\{apiserver_id_hash="#{server}",hash="#{key_set}",jwt_issuer_hash="#{issuer}"\} 1/, text)
+
+    assert_match(
+      /apiserver_authentication_jwt_authenticator_jwks_fetch_last_key_set_info\{apiserver_id_hash="#{server}",hash="#{key_set}",jwt_issuer_hash="#{issuer}"\} 1/, text
+    )
   end
 
   def test_a_failed_fetch_is_recorded_and_a_new_key_set_replaces_the_old_hash
@@ -67,6 +73,7 @@ class JWTAuthenticatorMetricsTest < Minitest::Test
     auth.authenticate_token(token)
     auth.authenticate_token(token)
     lines = @metrics.render.lines.grep(/jwks_fetch_last_key_set_info\{/)
+
     assert_equal 1, lines.length, lines.inspect
     assert_includes lines.first, hash(JSON.generate(rotated))
   end

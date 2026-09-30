@@ -22,7 +22,7 @@ module M9Gate
   PROJECT_ROOT = File.expand_path("../..", __dir__).freeze
   PRIOR_GATES = M7Gate::PRIOR_GATES.merge("M9" => File.join(__dir__, "m7_gate.rb")).freeze
   ARTIFACT_LOCK = "third_party/locks/kubernetes-v1.36.2.json"
-  
+
   REPORTS = {
     "release" => {kind: "m9_release_artifacts", names: %w[release-artifacts.json]},
     "formal" => {kind: "m9_formal_verification", names: %w[formal-verification.json]},
@@ -87,10 +87,15 @@ module M9Gate
       errors << "schema_version must be #{MANIFEST_SCHEMA_VERSION}" unless manifest["schema_version"] == MANIFEST_SCHEMA_VERSION
       errors << "milestone must be M9" unless manifest["milestone"] == "M9"
       errors << "input_sha256 must be a SHA-256 digest" unless valid_digest?(manifest["input_sha256"])
-      errors << "input_file_count must be positive" unless manifest["input_file_count"].is_a?(Integer) && manifest["input_file_count"].positive?
+      unless manifest["input_file_count"].is_a?(Integer) && manifest["input_file_count"].positive?
+        errors << "input_file_count must be positive"
+      end
       errors << "source input must remain stable during evidence capture" unless manifest["input_stable"] == true
       host = manifest["host"]
-      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel ruby].all? { |key| non_empty_string?(host[key]) }
+      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel
+                                                                                                             ruby].all? do |key|
+        non_empty_string?(host[key])
+      end
       errors << "M9 evidence must be captured on x86_64" unless host.is_a?(Hash) && host["architecture"] == "x86_64"
       %w[started_at finished_at].each { |key| errors << "#{key} must be an ISO-8601 timestamp" unless iso8601?(manifest[key]) }
       M4Gate.send(:validate_input_capture, manifest, errors)
@@ -128,7 +133,9 @@ module M9Gate
       valid.each do |entry|
         path = File.expand_path(entry.fetch("path"), PROJECT_ROOT)
         errors << "source inventory entry #{entry.fetch("path")} is missing" unless File.file?(path)
-        errors << "source inventory digest mismatch #{entry.fetch("path")}" if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+        if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+          errors << "source inventory digest mismatch #{entry.fetch("path")}"
+        end
       end
       errors << "source inventory must include #{ARTIFACT_LOCK}" unless paths.include?(ARTIFACT_LOCK)
     end
@@ -197,7 +204,9 @@ module M9Gate
         end
         path = File.join(PROJECT_ROOT, entry["path"])
         errors << "#{name} source #{entry["path"]} is missing" unless File.file?(path)
-        errors << "#{name} source #{entry["path"]} digest does not match the source tree" if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+        if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+          errors << "#{name} source #{entry["path"]} digest does not match the source tree"
+        end
       end
     end
 
@@ -211,18 +220,23 @@ module M9Gate
       errors << "#{name} report must be measured on a KVM host" unless host["kvm"] == true && host["vhost_vsock"] == true
       errors << "#{name} report must record CPU virtualization support" unless %w[vmx svm].include?(host["cpu_virtualization"])
       artifacts = host["artifacts"]
-      errors << "#{name} report must bind Firecracker #{FIRECRACKER_VERSION}" unless artifacts.is_a?(Hash) && artifacts["firecracker_version"] == FIRECRACKER_VERSION
-      errors << "#{name} report must bind the artifact digest" unless artifacts.is_a?(Hash) && valid_digest?(artifacts["digest"]) && valid_digest?(artifacts["verity_root_hash"])
-      lock = File.join(PROJECT_ROOT, ARTIFACT_LOCK)
-      if File.file?(lock) && artifacts.is_a?(Hash)
-        document = JSON.parse(File.read(lock))
-        errors << "#{name} report verity root hash does not match the artifact lock" unless document.dig("verity", "root_hash") == artifacts["verity_root_hash"]
+      unless artifacts.is_a?(Hash) && artifacts["firecracker_version"] == FIRECRACKER_VERSION
+        errors << "#{name} report must bind Firecracker #{FIRECRACKER_VERSION}"
       end
+      unless artifacts.is_a?(Hash) && valid_digest?(artifacts["digest"]) && valid_digest?(artifacts["verity_root_hash"])
+        errors << "#{name} report must bind the artifact digest"
+      end
+      lock = File.join(PROJECT_ROOT, ARTIFACT_LOCK)
+      return unless File.file?(lock) && artifacts.is_a?(Hash)
+
+      document = JSON.parse(File.read(lock))
+      errors << "#{name} report verity root hash does not match the artifact lock" unless document.dig("verity",
+                                                                                                       "root_hash") == artifacts["verity_root_hash"]
     end
 
     # Release artifacts: the manifest binds the source, the SBOM pins every
     # component, the rebuild is byte-identical, and the Ruby ratio holds.
-    def validate_release(document, cases, errors)
+    def validate_release(_document, cases, errors)
       by_id = cases.to_h { |entry| [entry["id"], entry] }
       RELEASE_REQUIRED.each { |id| errors << "release report must contain the #{id} case" unless by_id.key?(id) }
       errors << "release manifest must bind a source input digest" unless by_id.dig("release_manifest_binds_source", "passed") == true
@@ -236,22 +250,25 @@ module M9Gate
 
     # Formal verification: no Lean escape hatch, every proof compiles, and no
     # claim asserts a level it cannot support.
-    def validate_formal(document, cases, errors)
+    def validate_formal(_document, cases, errors)
       by_id = cases.to_h { |entry| [entry["id"], entry] }
       FORMAL_REQUIRED.each { |id| errors << "formal report must contain the #{id} case" unless by_id.key?(id) }
       occurrences = Array(by_id.dig("lean_has_no_escape_hatch", "occurrences"))
       errors << "Lean sources must contain no sorry/admit/native_decide: #{occurrences.first(3).inspect}" unless occurrences.empty?
       errors << "every Lean proof must compile" unless by_id.dig("lean_proofs_compile", "passed") == true
-      errors << "every model_checked claim must name its run and report no counterexample" unless by_id.dig("model_checked_claims_have_a_run", "passed") == true
+      errors << "every model_checked claim must name its run and report no counterexample" unless by_id.dig(
+        "model_checked_claims_have_a_run", "passed"
+      ) == true
       errors << "every claim must state its assurance level" unless by_id.dig("every_claim_states_its_level", "passed") == true
     end
 
     # Operations: the benchmark is a comparison, the soak actually ran for 72
     # hours, and the clean-host reproduction happened.
-    def validate_operations(document, cases, errors)
+    def validate_operations(_document, cases, errors)
       by_id = cases.to_h { |entry| [entry["id"], entry] }
       OPERATIONS_REQUIRED.each { |id| errors << "operations report must contain the #{id} case" unless by_id.key?(id) }
-      errors << "the benchmark must compare against a Kubernetes v1.36.2 oracle" unless by_id.dig("benchmark_against_oracle", "passed") == true
+      errors << "the benchmark must compare against a Kubernetes v1.36.2 oracle" unless by_id.dig("benchmark_against_oracle",
+                                                                                                  "passed") == true
       elapsed = by_id.dig("soak_ran_for_the_required_duration", "elapsed_hours").to_f
       errors << "soak ran #{elapsed} h, the criterion is #{REQUIRED_SOAK_HOURS} h" unless elapsed >= REQUIRED_SOAK_HOURS
       findings = by_id.dig("soak_found_no_defect", "findings") || {}
@@ -263,15 +280,15 @@ module M9Gate
 
     # Supply chain: no critical/high finding, nothing unpinned, no claim
     # without a level, no undated work note.
-    def validate_supply_chain(document, cases, errors)
+    def validate_supply_chain(_document, cases, errors)
       by_id = cases.to_h { |entry| [entry["id"], entry] }
       SUPPLY_CHAIN_REQUIRED.each { |id| errors << "supply chain report must contain the #{id} case" unless by_id.key?(id) }
-      errors << "release must have zero critical or high security findings" unless by_id.dig("no_critical_or_high_findings", "critical_or_high").to_i.zero?
+      errors << "release must have zero critical or high security findings" unless by_id.dig("no_critical_or_high_findings",
+                                                                                             "critical_or_high").to_i.zero?
       cases.select { |entry| entry["id"].to_s.start_with?("security-") }.each do |entry|
         errors << "#{entry.fetch("id")} did not pass: #{entry["detail"]}" unless entry.fetch("passed") == true
       end
     end
-
 
     def validate_result_counts(manifest, artifacts, subjects, errors)
       counts = manifest["result_counts"]

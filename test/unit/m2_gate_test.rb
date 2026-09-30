@@ -23,6 +23,7 @@ class M2GateTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       errors = JSON.parse(stdout).fetch("errors")
+
       assert_includes errors, "COMPLETE M0 evidence is required for cumulative M2 completion"
       assert_includes errors, "COMPLETE M1 evidence is required for cumulative M2 completion"
     end
@@ -33,7 +34,9 @@ class M2GateTest < Minitest::Test
       manifest_path = write_bundle(directory)
       report_path = File.join(directory, "runtime-report.json")
       report = JSON.parse(File.read(report_path))
-      report.fetch("profiles").find { |profile| profile.fetch("architecture") == "x86_64" }.merge!("available" => false, "status" => "INCOMPLETE", "passed" => false)
+      report.fetch("profiles").find do |profile|
+        profile.fetch("architecture") == "x86_64"
+      end.merge!("available" => false, "status" => "INCOMPLETE", "passed" => false)
       report["passed"] = false
       report["status"] = "INCOMPLETE"
       report["failure_count"] = 1
@@ -45,6 +48,7 @@ class M2GateTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       errors = JSON.parse(stdout).fetch("errors")
+
       assert(errors.any? { |error| error.include?("runtime profile 0 must be available") })
       assert(errors.any? { |error| error.include?("runtime report status must be PASS") })
     end
@@ -59,6 +63,7 @@ class M2GateTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       errors = JSON.parse(stdout).fetch("errors")
+
       refute(errors.any? { |error| error.match?(/aarch64|arm64/i) })
       refute(errors.any? { |error| error.include?("architecture profiles") })
       refute(errors.any? { |error| error.include?("required_architectures") })
@@ -84,6 +89,7 @@ class M2GateTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       errors = JSON.parse(stdout).fetch("errors")
+
       assert_includes errors, "attacks report retry_count must be zero"
       assert_includes errors, "attacks report unexpected_skip_count must be zero"
       assert_includes errors, "attacks report unclassified_count must be zero"
@@ -148,6 +154,7 @@ class M2GateTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       errors = JSON.parse(stdout).fetch("errors")
+
       assert_includes errors, "source input must remain stable during evidence capture"
       assert_includes errors, "artifact digest mismatch runtime-report.json"
     end
@@ -186,6 +193,7 @@ class M2GateTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       errors = JSON.parse(stdout).fetch("errors")
+
       assert_includes errors, "Pod lifecycle sigkill_matrix is required"
       assert_includes errors, "Pod lifecycle subresource_e2e is required"
     end
@@ -209,6 +217,7 @@ class M2GateTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       errors = JSON.parse(stdout).fetch("errors")
+
       assert(errors.any? { |error| error.include?("measurement must come from production Native L3 Node Agent SIGKILL") })
       assert(errors.any? { |error| error.include?("Native Node Agent restart evidence is required") })
     end
@@ -232,6 +241,7 @@ class M2GateTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       errors = JSON.parse(stdout).fetch("errors")
+
       assert(errors.any? { |error| error.include?("must replay the exact Native ownership WAL") })
       assert(errors.any? { |error| error.include?("actual Native workload evidence is required") })
       assert(errors.any? { |error| error.include?("independent kernel observer evidence is required") })
@@ -255,6 +265,7 @@ class M2GateTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       errors = JSON.parse(stdout).fetch("errors")
+
       assert_includes errors, "Pod lifecycle flow must use Node::Agent"
       assert_includes errors, "Pod lifecycle must be started from the Agent watch path"
     end
@@ -352,7 +363,8 @@ class M2GateTest < Minitest::Test
 
       refute_predicate status, :success?
       assert_empty stderr
-      assert_includes JSON.parse(stdout).fetch("errors"), "Pod lifecycle Kubernetes semantic oracle provenance must not be a self-comparison"
+      assert_includes JSON.parse(stdout).fetch("errors"),
+                      "Pod lifecycle Kubernetes semantic oracle provenance must not be a self-comparison"
     end
   end
 
@@ -372,6 +384,7 @@ class M2GateTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       errors = JSON.parse(stdout).fetch("errors")
+
       assert_includes errors, "Pod lifecycle Kubernetes semantic oracle comparison 0 actual source must be #{M2Gate::LIFECYCLE_SEMANTICS_ACTUAL_SOURCE}"
       assert_includes errors, "Pod lifecycle Kubernetes semantic oracle comparison case init_sidecar_app_order actual source must be #{M2Gate::LIFECYCLE_SEMANTICS_ACTUAL_SOURCE}"
     end
@@ -391,6 +404,7 @@ class M2GateTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       errors = JSON.parse(stdout).fetch("errors")
+
       assert_includes errors, "resource ledger cycle 1 resource reuse count must be zero"
       assert_includes errors, "resource ledger aggregate resource reuse count must equal cycle counts"
     end
@@ -429,6 +443,7 @@ class M2GateTest < Minitest::Test
       refute_predicate status, :success?
       assert_empty stderr
       errors = JSON.parse(stdout).fetch("errors")
+
       assert(errors.any? { |error| error.include?("duplicate raw inventory identities") })
     end
   end
@@ -456,14 +471,14 @@ class M2GateTest < Minitest::Test
     input_sha256 = Digest::SHA256.hexdigest("source/example.rb\0#{Digest::SHA256.hexdigest("example")}\n")
     input_file_count = 1
     write_json(directory, "source-inventory.json", {
-      "schema_version" => 1,
-      "milestone" => "M2",
-      "kind" => "m2_source_inventory",
-      "input_sha256" => input_sha256,
-      "input_file_count" => input_file_count,
-      "input_stable" => true,
-      "entries" => [{"path" => "source/example.rb", "sha256" => Digest::SHA256.hexdigest("example"), "bytes" => 7}]
-    })
+                 "schema_version" => 1,
+                 "milestone" => "M2",
+                 "kind" => "m2_source_inventory",
+                 "input_sha256" => input_sha256,
+                 "input_file_count" => input_file_count,
+                 "input_stable" => true,
+                 "entries" => [{"path" => "source/example.rb", "sha256" => Digest::SHA256.hexdigest("example"), "bytes" => 7}]
+               })
     write_json(directory, "runtime-report.json", runtime_report(input_sha256, input_file_count))
     write_json(directory, "oci-attack-corpus.json", attack_report(input_sha256, input_file_count))
     write_json(directory, "pod-lifecycle-trace.json", lifecycle_report(input_sha256, input_file_count))
@@ -483,13 +498,16 @@ class M2GateTest < Minitest::Test
       "input_sha256" => input_sha256,
       "input_file_count" => input_file_count,
       "input_stable" => true,
-      "input_capture" => {"stable" => true, "start" => {"sha256" => input_sha256, "file_count" => 1}, "finish" => {"sha256" => input_sha256, "file_count" => 1}},
+      "input_capture" => {"stable" => true, "start" => {"sha256" => input_sha256, "file_count" => 1},
+                          "finish" => {"sha256" => input_sha256, "file_count" => 1}},
       "git_metadata_capture" => {"stable" => true, "start_paths" => [], "finish_paths" => [], "count" => 0},
       "started_at" => timestamp,
       "finished_at" => timestamp,
-      "commands" => [{"name" => "m2_fixture", "command" => ["fixture"], "started_at" => timestamp, "finished_at" => timestamp, "exit_status" => 0}],
+      "commands" => [{"name" => "m2_fixture", "command" => ["fixture"], "started_at" => timestamp, "finished_at" => timestamp,
+                      "exit_status" => 0}],
       "prior_milestones" => {},
-      "result_counts" => {"commands" => 1, "command_failures" => 0, "artifacts" => artifacts.length, "subjects" => 0, "reports" => 5, "source_files" => 1},
+      "result_counts" => {"commands" => 1, "command_failures" => 0, "artifacts" => artifacts.length, "subjects" => 0, "reports" => 5,
+                          "source_files" => 1},
       "artifacts" => artifacts,
       "subjects" => []
     }
@@ -556,9 +574,11 @@ class M2GateTest < Minitest::Test
   def runtime_report(sha, count)
     levels = M2Gate::REQUIRED_LEVELS.map do |level|
       evidence = if level == "L3"
-                   {"details" => {"native_workload" => {"passed" => true, "measurement_source" => "production_native_l3", "runtime_class" => "Rubernetes::Runtime::Native", "adapter_class" => "Rubernetes::Platform::Linux::NativeAdapters"}}}
+                   {"details" => {"native_workload" => {"passed" => true, "measurement_source" => "production_native_l3",
+                                                        "runtime_class" => "Rubernetes::Runtime::Native", "adapter_class" => "Rubernetes::Platform::Linux::NativeAdapters"}}}
                  end
-      {"level" => level, "status" => "PASS", "passed" => true, "attempt_count" => 1, "failure_count" => 0, "unexpected_skip_count" => 0, "unclassified_count" => 0, "evidence_sha256" => Digest::SHA256.hexdigest("#{level}"), "evidence" => evidence}.compact
+      {"level" => level, "status" => "PASS", "passed" => true, "attempt_count" => 1, "failure_count" => 0, "unexpected_skip_count" => 0,
+       "unclassified_count" => 0, "evidence_sha256" => Digest::SHA256.hexdigest("#{level}"), "evidence" => evidence}.compact
     end
     profiles = M2Gate::REQUIRED_ARCHITECTURES.map do |architecture|
       {"architecture" => architecture, "available" => true, "status" => "PASS", "passed" => true, "profile_sha256" => Digest::SHA256.hexdigest(architecture), "levels" => levels}
@@ -571,16 +591,19 @@ class M2GateTest < Minitest::Test
 
   def attack_report(sha, count)
     cases = M2Gate::REQUIRED_ATTACKS.map do |attack|
-      {"id" => attack, "category" => attack, "status" => "PASS", "passed" => true, "attempt_count" => 1, "fail_closed" => true, "measurement_source" => "production_image_layer_extractor", "adapter_class" => "Rubernetes::Image::LayerExtractor", "observable_sha256" => Digest::SHA256.hexdigest(attack)}
+      {"id" => attack, "category" => attack, "status" => "PASS", "passed" => true, "attempt_count" => 1, "fail_closed" => true,
+       "measurement_source" => "production_image_layer_extractor", "adapter_class" => "Rubernetes::Image::LayerExtractor", "observable_sha256" => Digest::SHA256.hexdigest(attack)}
     end
     finalize_report(report_base(sha, count, "m2_oci_attack_corpus").merge("cases" => cases, "coverage_count" => 4, "case_count" => 4))
   end
 
   def lifecycle_report(sha, count)
     digest = Digest::SHA256.hexdigest("config")
-    states = %w[New Validated ImagePinned WorkspaceAllocated IsolationCreated ResourcesAttached WorkloadStopped Running Stopping Stopped Removed]
+    states = %w[New Validated ImagePinned WorkspaceAllocated IsolationCreated ResourcesAttached WorkloadStopped Running Stopping Stopped
+                Removed]
     trace = states.each_cons(2).map.with_index do |(from, to), index|
-      {"operation_id" => "operation-1", "from" => from, "to" => to, "timestamp" => Time.at(index).utc.iso8601(6), "config_digest" => digest, "owned_resources" => [], "fsynced" => true}
+      {"operation_id" => "operation-1", "from" => from, "to" => to, "timestamp" => Time.at(index).utc.iso8601(6),
+       "config_digest" => digest, "owned_resources" => [], "fsynced" => true}
     end
     document = report_base(sha, count, "m2_pod_lifecycle_trace").merge(
       "trace" => trace,
@@ -675,10 +698,13 @@ class M2GateTest < Minitest::Test
         "clone_flags" => M2Gate::CLONE_PIDFD | M2Gate::CLONE_NEWPID
       )
       objects = [
-        {"kind" => "namespace", "identity" => "#{architecture}-ns", "before" => "present", "active" => "present", "after" => "present", "measurement_source" => "production_native_adapter", "active_sha256" => Digest::SHA256.hexdigest("present")},
-        {"kind" => "child_security", "identity" => "#{architecture}:native-workload", "before" => "parent", "active" => child, "after" => "parent", "measurement_source" => "production_native_adapter", "active_sha256" => Digest::SHA256.hexdigest(child)}
+        {"kind" => "namespace", "identity" => "#{architecture}-ns", "before" => "present", "active" => "present", "after" => "present",
+         "measurement_source" => "production_native_adapter", "active_sha256" => Digest::SHA256.hexdigest("present")},
+        {"kind" => "child_security", "identity" => "#{architecture}:native-workload", "before" => "parent", "active" => child,
+         "after" => "parent", "measurement_source" => "production_native_adapter", "active_sha256" => Digest::SHA256.hexdigest(child)}
       ]
-      {"architecture" => architecture, "available" => true, "status" => "PASS", "passed" => true, "profile_sha256" => Digest::SHA256.hexdigest(architecture), "objects" => objects, "inventory_sha256" => M2Gate.canonical_kernel_inventory_digest(objects), "baseline_sha256" => Digest::SHA256.hexdigest("baseline-#{architecture}"), "final_sha256" => Digest::SHA256.hexdigest("final-#{architecture}"), "difference_count" => 0, "live_leak_count" => 0, "orphan_count" => 0}
+      {"architecture" => architecture, "available" => true, "status" => "PASS", "passed" => true,
+       "profile_sha256" => Digest::SHA256.hexdigest(architecture), "objects" => objects, "inventory_sha256" => M2Gate.canonical_kernel_inventory_digest(objects), "baseline_sha256" => Digest::SHA256.hexdigest("baseline-#{architecture}"), "final_sha256" => Digest::SHA256.hexdigest("final-#{architecture}"), "difference_count" => 0, "live_leak_count" => 0, "orphan_count" => 0}
     end
     finalize_report(report_base(sha, count, "m2_kernel_inventory").merge(
       "required_architectures" => M2Gate::REQUIRED_ARCHITECTURES,
@@ -715,11 +741,13 @@ class M2GateTest < Minitest::Test
   end
 
   def fixture_cycle_inventory(cycles = nil)
-    return fixture_inventory(measurement_source: "production_native_l3_cycles").merge(
-      "measurement_id" => "fixture-cycle-inventory-#{Process.pid}",
-      "cycle_count" => 1000,
-      "adapter_class" => "Rubernetes::Platform::Linux::NativeAdapters"
-    ) unless cycles
+    unless cycles
+      return fixture_inventory(measurement_source: "production_native_l3_cycles").merge(
+        "measurement_id" => "fixture-cycle-inventory-#{Process.pid}",
+        "cycle_count" => 1000,
+        "adapter_class" => "Rubernetes::Platform::Linux::NativeAdapters"
+      )
+    end
 
     before = cycles.flat_map { |cycle| cycle.fetch("active_inventory") }
     after = cycles.flat_map { |cycle| cycle.fetch("residual_inventory") }
@@ -836,11 +864,15 @@ class M2GateTest < Minitest::Test
         "observer_role" => "victim",
         "live" => victim_live
       }
-      metadata.merge!("filesystem" => "overlay", "mountinfo" => "1 0 0:1 / /fixture rw - overlay overlay rw",
-                      "mountinfo_sha256" => digest) if kind == "mount"
-      metadata.merge!("pid" => workload_pid, "start_time" => 11_000,
-                      "command" => ["/bin/busybox", "sleep", "3600"],
-                      "executable_digest" => "sha256:#{"a" * 64}") if kind == "process"
+      if kind == "mount"
+        metadata.merge!("filesystem" => "overlay", "mountinfo" => "1 0 0:1 / /fixture rw - overlay overlay rw",
+                        "mountinfo_sha256" => digest)
+      end
+      if kind == "process"
+        metadata.merge!("pid" => workload_pid, "start_time" => 11_000,
+                        "command" => ["/bin/busybox", "sleep", "3600"],
+                        "executable_digest" => "sha256:#{"a" * 64}")
+      end
       {
         "kind" => kind,
         "id" => "fixture-victim-#{kind}",

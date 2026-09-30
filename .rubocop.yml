@@ -1,0 +1,89 @@
+inherit_from: .rubocop_todo.yml
+
+# RuboCop: strict layout and style for readability; size metrics stay off
+# (they measure design, not formatting) and remaining historical offenses
+# live in .rubocop_todo.yml, to be burned down.
+plugins:
+  - rubocop-minitest
+  - rubocop-performance
+  - rubocop-rake
+
+
+AllCops:
+  TargetRubyVersion: 3.4
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "build/**/*"
+    - "tmp/**/*"
+    - "artifacts/**/*"
+    - "pkg/**/*"
+    - "vendor/**/*"
+    - ".bundle/**/*"
+    - "a11-generated.*/**/*"
+    - "apps/*/node_modules/**/*"
+    - "apps/*/tmp/**/*"
+    - "apps/*/log/**/*"
+    - "apps/*/storage/**/*"
+    - "apps/*/db/schema.rb"
+    - "apps/*/bin/*"
+    - "lib/**/generated/*_pb.rb"
+    - "lib/**/*_pb.rb"
+    - "lib/**/*_services_pb.rb"
+    - "generated/**/*"
+
+Layout/LineLength:
+  Max: 140
+  AllowURI: true
+  AllowedPatterns:
+    - '\A\s*#'
+Layout/SpaceInsideHashLiteralBraces:
+  EnforcedStyle: no_space
+Layout/MultilineMethodCallIndentation:
+  EnforcedStyle: indented
+Layout/FirstArgumentIndentation:
+  EnforcedStyle: consistent
+Layout/HashAlignment:
+  EnforcedColonStyle: key
+  EnforcedHashRocketStyle: key
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: double_quotes
+Style/Documentation:
+  Enabled: false
+Style/FrozenStringLiteralComment:
+  EnforcedStyle: always
+Style/TrailingCommaInArrayLiteral:
+  EnforcedStyleForMultiline: no_comma
+Style/TrailingCommaInHashLiteral:
+  EnforcedStyleForMultiline: no_comma
+Style/NumericPredicate:
+  EnforcedStyle: predicate
+
+Metrics:
+  Enabled: false
+
+Naming/MethodParameterName:
+  MinNameLength: 2
+# v6, ipv4, sha256, rol32 are domain names, not numbered variables.
+Naming/VariableNumber:
+  EnforcedStyle: normalcase
+# Nested rescues name their exception distinctly on purpose (cleanup_error
+# next to the original error); renaming them all to `error` shadowed the
+# outer variable in 35 methods.
+Naming/RescuedExceptionsVariableName:
+  Enabled: false
+# Heuristic on return values; `close` returning true is not a predicate.
+Naming/PredicateMethod:
+  Enabled: false
+
+Minitest/MultipleAssertions:
+  Enabled: false
+# Helpers that assert (create_x, setup_pool) are not tests; the autocorrect
+# renamed six of them to test_* and broke their callers.
+Minitest/TestMethodName:
+  Enabled: false
+Minitest/AssertTruthy:
+  Enabled: true

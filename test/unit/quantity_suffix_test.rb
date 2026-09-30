@@ -16,15 +16,16 @@ class QuantitySuffixTest < Minitest::Test
     ["1k", "example.com/fakecpu"] => 1000,
     ["200", "example.com/fakecpu"] => 200,
     ["1M", "example.com/fakecpu"] => 1_000_000,
-    ["500m", "cpu"] => Rational(1, 2),
-    ["2k", "cpu"] => 2000,
-    ["1Gi", "memory"] => 1024**3,
-    ["1G", "memory"] => 1000**3,
-    ["1Ki", "memory"] => 1024
+    %w[500m cpu] => Rational(1, 2),
+    %w[2k cpu] => 2000,
+    %w[1Gi memory] => 1024**3,
+    %w[1G memory] => 1000**3,
+    %w[1Ki memory] => 1024
   }.freeze
 
   def test_the_node_parser_reads_every_kubernetes_suffix
     manager = Rubernetes::Node::ResourceManager.new
+
     CASES.each do |(value, resource), expected|
       assert_equal Rational(expected), manager.parse_quantity(value, resource), "#{value} #{resource}"
     end

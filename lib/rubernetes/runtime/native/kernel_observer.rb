@@ -93,12 +93,12 @@ module Rubernetes
           end
 
           entry(claim, metadata.merge(
-                         "live" => true,
-                         "observed_start_time" => observed_start,
-                         "cgroup_membership" => read_link_or_file("#{proc_root}/#{pid}/cgroup"),
-                         "pid_namespace" => namespace_link(pid, "pid"),
-                         "mount_namespace" => namespace_link(pid, "mnt")
-                       ))
+            "live" => true,
+            "observed_start_time" => observed_start,
+            "cgroup_membership" => read_link_or_file("#{proc_root}/#{pid}/cgroup"),
+            "pid_namespace" => namespace_link(pid, "pid"),
+            "mount_namespace" => namespace_link(pid, "mnt")
+          ))
         end
 
         def process_start_time(pid)

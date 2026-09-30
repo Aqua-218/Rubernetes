@@ -18,6 +18,7 @@ class NodeWakeupTimerTest < Minitest::Test
     sleep 0.45
 
     events = Array.new(fired.size) { fired.pop }
+
     assert_equal %w[pod-a pod-b], events.map(&:first)
     assert_in_delta 0.1, events.first.last - started, 0.08
     assert_empty timer.pending
@@ -60,7 +61,12 @@ class NodeWakeupTimerTest < Minitest::Test
 
     assert_equal ["u1", 5.0], wakeups.first
     record = lifecycle.record("u1")
-    lifecycle.send(:probe_running_containers, record, pod) rescue nil
+    begin
+      lifecycle.send(:probe_running_containers, record, pod)
+    rescue StandardError
+      nil
+    end
+
     assert_includes wakeups, ["u1", 7.0]
   end
 end

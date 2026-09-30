@@ -144,14 +144,18 @@ module Rubernetes
           expected_learning = Support.fetch(params, "learning", default: nil)
           expected_underlay = Support.fetch(params, "dev", "underlay", "underlay_dev", default: nil)
           underlay = if expected_underlay
-                        expected_underlay_index = Integer(expected_underlay) rescue nil
-                        snapshot.find do |entry|
-                          next false unless entry.fetch("kind") == "link"
+                       expected_underlay_index = begin
+                         Integer(expected_underlay)
+                       rescue StandardError
+                         nil
+                       end
+                       snapshot.find do |entry|
+                         next false unless entry.fetch("kind") == "link"
 
-                          entry.dig("metadata", "name") == expected_underlay ||
-                            (expected_underlay_index && entry.dig("metadata", "ifindex") == expected_underlay_index)
-                        end
-                      end
+                         entry.dig("metadata", "name") == expected_underlay ||
+                           (expected_underlay_index && entry.dig("metadata", "ifindex") == expected_underlay_index)
+                       end
+                     end
           resource = snapshot.find do |entry|
             next false unless entry.fetch("kind") == "link"
             next false unless (name && entry.dig("metadata", "name") == name) ||
@@ -324,6 +328,7 @@ module Rubernetes
           # ownership resources; only AF_BRIDGE records can prove a VXLAN or
           # bridge FDB claim and receive the FDB identity namespace.
           next unless family == Netlink::AF_BRIDGE
+
           attrs = attributes_for(payload.byteslice(12..))
           destination_raw = attributes_value(attrs, Netlink::NDA_DST)
           mac_raw = attributes_value(attrs, Netlink::NDA_LLADDR)
@@ -356,7 +361,7 @@ module Rubernetes
           "metadata" => {"netns_inode" => namespace_inode, "ifindex" => entry.fetch("index"),
                          "name" => entry.fetch("name"), "ifname" => entry.fetch("name"), "mac" => entry["mac"],
                          "mtu" => entry["mtu"], "master_index" => entry["master"], "up" => entry.fetch("up")}
-                         .merge(entry.slice("kind", "vni", "underlay_ifindex", "local", "group", "learning", "dstport"))
+              .merge(entry.slice("kind", "vni", "underlay_ifindex", "local", "group", "learning", "dstport"))
         }
       end
 
@@ -410,7 +415,12 @@ module Rubernetes
 
       def decode_ip(raw, family)
         return nil unless raw
-        expected = family == Netlink::AF_INET ? 4 : family == Netlink::AF_INET6 ? 16 : nil
+
+        expected = if family == Netlink::AF_INET
+                     4
+                   else
+                     family == Netlink::AF_INET6 ? 16 : nil
+                   end
         return nil unless expected && raw.bytesize >= expected
 
         IPAddr.new_ntoh(raw.byteslice(0, expected)).to_s
@@ -452,9 +462,7 @@ module Rubernetes
         return format_mac(raw) if family == Netlink::AF_BRIDGE && raw.bytesize == 6
         # VXLAN FDB entries use AF_BRIDGE for ndmsg while NDA_DST contains
         # the remote VTEP address (4 or 16 bytes), not a six-byte MAC.
-        if family == Netlink::AF_BRIDGE && [4, 16].include?(raw.bytesize)
-          return IPAddr.new_ntoh(raw).to_s
-        end
+        return IPAddr.new_ntoh(raw).to_s if family == Netlink::AF_BRIDGE && [4, 16].include?(raw.bytesize)
 
         decode_ip(raw, family) || raw.unpack1("H*")
       end

@@ -87,7 +87,9 @@ module Rubernetes
       tracked = %w[cpu memory requests.cpu requests.memory limits.cpu limits.memory] & Array(required).map(&:to_s)
       return {} if tracked.empty?
 
-      (ResourceHelpers.containers(pod, "containers") + ResourceHelpers.containers(pod, "initContainers")).each_with_object({}) do |container, missing|
+      (ResourceHelpers.containers(pod,
+                                  "containers") + ResourceHelpers.containers(pod,
+                                                                             "initContainers")).each_with_object({}) do |container, missing|
         requests = ResourceHelpers.resource_list(container.dig("resources", "requests"))
         limits = ResourceHelpers.resource_list(container.dig("resources", "limits"))
         tracked.each do |name|

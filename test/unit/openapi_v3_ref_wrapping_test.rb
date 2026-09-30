@@ -17,21 +17,21 @@ class OpenAPIV3RefWrappingTest < Minitest::Test
   def setup
     @openapi = Rubernetes::API::OpenAPIRepository.new
     @openapi.publish(group: "example.com", version: "v1", document: {
-      "openapi" => "3.0.0",
-      "paths" => {"/apis/example.com/v1/foos" => {"get" => {"parameters" => [{"$ref" => "#/components/parameters/pretty"}]}}},
-      "components" => {"schemas" => {
-        "com.example.v1.Foo" => {
-          "type" => "object",
-          "properties" => {
-            "metadata" => {"$ref" => META_REF, "description" => "Standard object's metadata. More info: x"},
-            "spec" => {"type" => "object", "properties" => {
-              "bars" => {"type" => "array", "items" => {"$ref" => "#/components/schemas/com.example.v1.Bar"}}
-            }}
-          }
-        },
-        "com.example.v1.Bar" => {"type" => "object"}
-      }}
-    })
+                       "openapi" => "3.0.0",
+                       "paths" => {"/apis/example.com/v1/foos" => {"get" => {"parameters" => [{"$ref" => "#/components/parameters/pretty"}]}}},
+                       "components" => {"schemas" => {
+                         "com.example.v1.Foo" => {
+                           "type" => "object",
+                           "properties" => {
+                             "metadata" => {"$ref" => META_REF, "description" => "Standard object's metadata. More info: x"},
+                             "spec" => {"type" => "object", "properties" => {
+                               "bars" => {"type" => "array", "items" => {"$ref" => "#/components/schemas/com.example.v1.Bar"}}
+                             }}
+                           }
+                         },
+                         "com.example.v1.Bar" => {"type" => "object"}
+                       }}
+                     })
   end
 
   def v3_schema
@@ -50,6 +50,7 @@ class OpenAPIV3RefWrappingTest < Minitest::Test
     assert_equal({"$ref" => "#/components/schemas/com.example.v1.Bar"},
                  v3_schema.dig("properties", "spec", "properties", "bars", "items"))
     document = @openapi.document_for("/openapi/v3/apis/example.com/v1")
+
     assert_equal([{"$ref" => "#/components/parameters/pretty"}],
                  document.dig("paths", "/apis/example.com/v1/foos", "get", "parameters"))
   end

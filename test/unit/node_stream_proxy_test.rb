@@ -47,21 +47,26 @@ class NodeStreamProxyTest < Minitest::Test
   def test_the_upgrade_is_relayed_and_spliced
     server, thread, seen = upstream
     response = Proxy.response("http://127.0.0.1:#{server.addr[1]}/exec/TOKEN", request)
+
     assert_equal 101, response.status
     assert_equal "v4.channel.k8s.io", response.headers["x-stream-protocol-version"]
     head = seen.pop
+
     assert head.start_with?("POST /exec/TOKEN HTTP/1.1\r\n")
     assert_includes head, "x-stream-protocol-version: v4.channel.k8s.io\r\nx-stream-protocol-version: v3.channel.k8s.io\r\n"
     refute_includes head.downcase, "authorization", "credentials are not forwarded to the runtime"
 
     client, peer = UNIXSocket.pair
     splicer = Thread.new { response.upgrade.call(peer, nil) }
+
     assert_equal "hello", client.readpartial(5)
     client.write("ping")
+
     assert_equal "PING", client.readpartial(4)
     client.close
     splicer.join(5)
-    refute splicer.alive?
+
+    refute_predicate splicer, :alive?
   ensure
     server&.close
     thread&.kill
@@ -70,6 +75,7 @@ class NodeStreamProxyTest < Minitest::Test
   def test_a_refusal_is_returned
     server, thread, = upstream(status: 403)
     status, headers, body = Proxy.response("http://127.0.0.1:#{server.addr[1]}/exec/TOKEN", request)
+
     assert_equal [403, "text/plain", "denied"], [status, headers["content-type"], body.join]
   ensure
     server&.close

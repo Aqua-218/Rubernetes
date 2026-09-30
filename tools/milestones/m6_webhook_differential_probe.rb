@@ -25,7 +25,7 @@ module M6WebhookDifferentialProbe
       @calls = Hash.new(0)
       @ca_certificate, key, certificate = issue_certificates(bind)
       @server = Rubernetes::Transport::HTTPServer.new(method(:handle), host: "0.0.0.0", port: 0, cert: certificate, key: key,
-                                                       read_timeout: 60, shutdown_timeout: 2)
+                                                                       read_timeout: 60, shutdown_timeout: 2)
       @server.start
       @port = @server.port
       @bind = bind
@@ -43,11 +43,18 @@ module M6WebhookDifferentialProbe
       version = review["apiVersion"]
       response = case path
                  when "/allow" then {"uid" => uid, "allowed" => true}
-                 when "/deny" then {"uid" => uid, "allowed" => false, "status" => {"code" => 403, "message" => "denied by probe webhook", "reason" => "Forbidden"}}
+                 when "/deny" then {"uid" => uid, "allowed" => false,
+                                    "status" => {"code" => 403, "message" => "denied by probe webhook", "reason" => "Forbidden"}}
                  when "/label-a", "/label-b"
                    label = path.delete_prefix("/label-")
                    existing = review.dig("request", "object", "metadata", "labels") || {}
-                   patch = existing.empty? ? [{"op" => "add", "path" => "/metadata/labels", "value" => {label => "1"}}] : [{"op" => "add", "path" => "/metadata/labels/#{label}", "value" => "1"}]
+                   patch = if existing.empty?
+                             [{"op" => "add", "path" => "/metadata/labels",
+                               "value" => {label => "1"}}]
+                           else
+                             [{"op" => "add", "path" => "/metadata/labels/#{label}",
+                               "value" => "1"}]
+                           end
                    {"uid" => uid, "allowed" => true, "patchType" => "JSONPatch", "patch" => [JSON.generate(patch)].pack("m0")}
                  when "/count"
                    # Records how often it was invoked (reinvocation policy) in the object.
@@ -80,7 +87,7 @@ module M6WebhookDifferentialProbe
       ca = OpenSSL::X509::Certificate.new
       ca.version = 2
       ca.serial = 1
-      ca.subject = OpenSSL::X509::Name.new([["CN", "m6-webhook-ca"]])
+      ca.subject = OpenSSL::X509::Name.new([%w[CN m6-webhook-ca]])
       ca.issuer = ca.subject
       ca.public_key = ca_key
       ca.not_before = Time.now - 60
@@ -93,7 +100,7 @@ module M6WebhookDifferentialProbe
       certificate = OpenSSL::X509::Certificate.new
       certificate.version = 2
       certificate.serial = 2
-      certificate.subject = OpenSSL::X509::Name.new([["CN", "m6-webhook"]])
+      certificate.subject = OpenSSL::X509::Name.new([%w[CN m6-webhook]])
       certificate.issuer = ca.subject
       certificate.public_key = key
       certificate.not_before = Time.now - 60
@@ -127,7 +134,8 @@ module M6WebhookDifferentialProbe
 
   module_function
 
-  RULE = {"apiGroups" => [""], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["configmaps"], "scope" => "Namespaced"}.freeze
+  RULE = {"apiGroups" => [""], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["configmaps"],
+          "scope" => "Namespaced"}.freeze
 
   def webhook(name, path, backend, host, extra = {})
     {"name" => name, "clientConfig" => {"url" => backend.url(path, host: host), "caBundle" => backend.ca_bundle}, "rules" => [RULE],
@@ -137,11 +145,16 @@ module M6WebhookDifferentialProbe
 
   def scenarios(backend, host)
     [
-      {"id" => "validating_allow", "kind" => "ValidatingWebhookConfiguration", "webhooks" => [webhook("allow.probe.example.com", "/allow", backend, host)]},
-      {"id" => "validating_deny", "kind" => "ValidatingWebhookConfiguration", "webhooks" => [webhook("deny.probe.example.com", "/deny", backend, host)]},
-      {"id" => "timeout_fail_policy", "kind" => "ValidatingWebhookConfiguration", "webhooks" => [webhook("slow.probe.example.com", "/sleep", backend, host, "timeoutSeconds" => 2, "failurePolicy" => "Fail")]},
-      {"id" => "timeout_ignore_policy", "kind" => "ValidatingWebhookConfiguration", "webhooks" => [webhook("slow.probe.example.com", "/sleep", backend, host, "timeoutSeconds" => 2, "failurePolicy" => "Ignore")]},
-      {"id" => "mutating_patch_and_warning", "kind" => "MutatingWebhookConfiguration", "webhooks" => [webhook("a.probe.example.com", "/label-a", backend, host), webhook("w.probe.example.com", "/warn", backend, host)]},
+      {"id" => "validating_allow", "kind" => "ValidatingWebhookConfiguration",
+       "webhooks" => [webhook("allow.probe.example.com", "/allow", backend, host)]},
+      {"id" => "validating_deny", "kind" => "ValidatingWebhookConfiguration",
+       "webhooks" => [webhook("deny.probe.example.com", "/deny", backend, host)]},
+      {"id" => "timeout_fail_policy", "kind" => "ValidatingWebhookConfiguration",
+       "webhooks" => [webhook("slow.probe.example.com", "/sleep", backend, host, "timeoutSeconds" => 2, "failurePolicy" => "Fail")]},
+      {"id" => "timeout_ignore_policy", "kind" => "ValidatingWebhookConfiguration",
+       "webhooks" => [webhook("slow.probe.example.com", "/sleep", backend, host, "timeoutSeconds" => 2, "failurePolicy" => "Ignore")]},
+      {"id" => "mutating_patch_and_warning", "kind" => "MutatingWebhookConfiguration",
+       "webhooks" => [webhook("a.probe.example.com", "/label-a", backend, host), webhook("w.probe.example.com", "/warn", backend, host)]},
       {"id" => "reinvocation_if_needed", "kind" => "MutatingWebhookConfiguration",
        "webhooks" => [webhook("count.probe.example.com", "/count", backend, host, "reinvocationPolicy" => "IfNeeded"), webhook("b.probe.example.com", "/label-b", backend, host)]},
       {"id" => "reinvocation_never", "kind" => "MutatingWebhookConfiguration",
@@ -166,7 +179,8 @@ module M6WebhookDifferentialProbe
   def run_scenario(client, scenario, backend, index)
     name = "m6-probe-#{scenario["id"].tr("_", "-")}"
     resource = resource_for(scenario["kind"])
-    configuration = {"apiVersion" => "admissionregistration.k8s.io/v1", "kind" => scenario["kind"], "metadata" => {"name" => name}, "webhooks" => scenario["webhooks"]}
+    configuration = {"apiVersion" => "admissionregistration.k8s.io/v1", "kind" => scenario["kind"], "metadata" => {"name" => name},
+                     "webhooks" => scenario["webhooks"]}
     status, body, = client.call("POST", "/apis/admissionregistration.k8s.io/v1/#{resource}", body: configuration)
     result = {"configuration_status" => status}
     unless status == 201
@@ -175,27 +189,33 @@ module M6WebhookDifferentialProbe
     end
     sleep 1.5 # the oracle's webhook informer must observe the configuration
     query = scenario["dry_run"] ? "?dryRun=All" : ""
-    configmap = {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "target-#{index}", "namespace" => "m6-webhook"}, "data" => {"k" => "v"}}
+    configmap = {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "target-#{index}", "namespace" => "m6-webhook"},
+                 "data" => {"k" => "v"}}
     backend.calls.delete("/count") # the reinvocation counter is per scenario
     before = backend.calls.dup
     status, body, headers = client.call("POST", "/api/v1/namespaces/m6-webhook/configmaps#{query}", body: configmap)
     result["status"] = status
     if body.is_a?(Hash) && body["kind"] == "Status"
       result["reason"] = body["reason"]
-      result["message_fragments"] = %w[denied\ by\ probe\ webhook failed\ calling\ webhook context\ deadline\ exceeded timeout].select { |fragment| body["message"].to_s.include?(fragment) }.sort
+      result["message_fragments"] = ["denied by probe webhook", "failed calling webhook", "context deadline exceeded", "timeout"].select do |fragment|
+        body["message"].to_s.include?(fragment)
+      end.sort
     elsif body.is_a?(Hash)
       result["labels"] = body.dig("metadata", "labels")
       result["data"] = body["data"]
     end
     warning = headers.respond_to?(:[]) ? (headers["warning"] || headers["Warning"]) : nil
     result["warning"] = warning.to_s.include?("probe warning")
-    result["calls"] = backend.calls.each_with_object({}) { |(path, count), delta| delta[path] = count - before.fetch(path, 0) if count - before.fetch(path, 0) != 0 }
+    result["calls"] = backend.calls.each_with_object({}) do |(path, count), delta|
+      delta[path] = count - before.fetch(path, 0) if count - before.fetch(path, 0) != 0
+    end
     client.call("DELETE", "/apis/admissionregistration.k8s.io/v1/#{resource}/#{name}")
     result
   end
 
   def prepare(client)
-    client.call("POST", "/api/v1/namespaces", body: {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "m6-webhook", "labels" => {"m6-webhook" => "yes"}}})
+    client.call("POST", "/api/v1/namespaces",
+                body: {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "m6-webhook", "labels" => {"m6-webhook" => "yes"}}})
   end
 
   def docker_gateway(network)
@@ -220,10 +240,14 @@ module M6WebhookDifferentialProbe
         backend = Backend.new(bind: ["127.0.0.1", gateway])
         oracle_client = OracleClient.new(client)
         prepare(oracle_client)
-        scenarios(backend, gateway).each_with_index { |scenario, index| oracle_results[scenario["id"]] = run_scenario(oracle_client, scenario, backend, index) }
+        scenarios(backend, gateway).each_with_index do |scenario, index|
+          oracle_results[scenario["id"]] = run_scenario(oracle_client, scenario, backend, index)
+        end
         local_client = LocalClient.new(local_service)
         prepare(local_client)
-        scenarios(backend, "127.0.0.1").each_with_index { |scenario, index| local_results[scenario["id"]] = run_scenario(local_client, scenario, backend, index) }
+        scenarios(backend, "127.0.0.1").each_with_index do |scenario, index|
+          local_results[scenario["id"]] = run_scenario(local_client, scenario, backend, index)
+        end
       end
     ensure
       backend&.stop

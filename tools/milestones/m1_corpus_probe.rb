@@ -41,7 +41,10 @@ M1ProbeSupport.run_probe("m1_corpus_coverage") do |_current, input|
   expected_gvrs = Array(coverage.fetch("covered_gvrs")).map(&:to_s).sort
   raise M1ProbeSupport::ProbeError, "canonical corpus GVK coverage is empty" if expected_gvks.empty?
   raise M1ProbeSupport::ProbeError, "canonical corpus GVR coverage is empty" if expected_gvrs.empty?
-  raise M1ProbeSupport::ProbeError, "canonical corpus GVR coverage contains duplicates" unless expected_gvrs.uniq.length == expected_gvrs.length
+  unless expected_gvrs.uniq.length == expected_gvrs.length
+    raise M1ProbeSupport::ProbeError,
+          "canonical corpus GVR coverage contains duplicates"
+  end
 
   _server, _store, runtime_registry = M1ProbeSupport.build_api_server
   registered_gvrs = Array(runtime_registry.fetch("gvrs")).map { |entry| entry.fetch("identifier") }.sort
@@ -53,15 +56,9 @@ M1ProbeSupport.run_probe("m1_corpus_coverage") do |_current, input|
   errors << "canonical OpenAPI GVK count must equal 311 (got #{openapi_gvks.length})" unless openapi_gvks.length == 311
   errors << "canonical GVK union count must equal 321 (got #{expected_gvks.length})" unless expected_gvks.length == 321
   errors << "canonical GVR count must equal 153 (got #{expected_gvrs.length})" unless expected_gvrs.length == 153
-  if discovery_gvks.uniq.length != discovery_gvks.length
-    errors << "canonical discovery GVK coverage contains duplicates"
-  end
-  if registered_gvks.empty?
-    errors << "generated registry has no top-level GVK inventory"
-  end
-  if registered_gvrs.empty?
-    errors << "generated registry has no GVR inventory"
-  end
+  errors << "canonical discovery GVK coverage contains duplicates" if discovery_gvks.uniq.length != discovery_gvks.length
+  errors << "generated registry has no top-level GVK inventory" if registered_gvks.empty?
+  errors << "generated registry has no GVR inventory" if registered_gvrs.empty?
 
   type_backed_gvks = runtime_registry.fetch("types").flat_map do |type|
     Array(type.fetch("gvks")).map do |gvk|

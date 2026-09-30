@@ -47,7 +47,9 @@ module Rubernetes
               non_resource_rules << {"verbs" => Array(rule["verbs"]), "nonResourceURLs" => Array(rule["nonResourceURLs"])}
             else
               resource_rules << {"verbs" => Array(rule["verbs"]), "apiGroups" => Array(rule["apiGroups"]), "resources" => Array(rule["resources"]),
-                                 "resourceNames" => Array(rule["resourceNames"])}.reject { |_key, value| value.empty? }
+                                 "resourceNames" => Array(rule["resourceNames"])}.reject do |_key, value|
+                value.empty?
+              end
             end
           end
           [resource_rules, non_resource_rules]
@@ -84,7 +86,7 @@ module Rubernetes
 
         def describe(attributes)
           if attributes.resource_request?
-            "#{attributes.verb} #{attributes.resource_with_subresource} in #{attributes.api_group.empty? ? "core" : attributes.api_group}#{attributes.namespace.empty? ? "" : " namespace #{attributes.namespace}"}"
+            "#{attributes.verb} #{attributes.resource_with_subresource} in #{attributes.api_group.empty? ? "core" : attributes.api_group}#{" namespace #{attributes.namespace}" unless attributes.namespace.empty?}"
           else
             "#{attributes.verb} #{attributes.path}"
           end

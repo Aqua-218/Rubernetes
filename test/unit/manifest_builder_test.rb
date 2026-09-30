@@ -15,6 +15,7 @@ class ManifestBuilderTest < Minitest::Test
     end
 
     object = builder.result.fetch(0)
+
     assert_equal("v1", object.fetch("apiVersion"))
     assert_equal("ConfigMap", object.fetch("kind"))
     assert_equal("settings", object.dig("metadata", "name"))

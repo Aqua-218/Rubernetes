@@ -33,12 +33,16 @@ module Rubernetes
             "metadata" => {"name" => "default", "namespace" => Support.name(namespace)}
           }
           operations << operation_create(candidate, descriptor: SERVICE_ACCOUNT,
-                                          reason: "default service account creation")
+                                                    reason: "default service account creation")
           default = candidate
         end
         status = {"secrets" => Array(Support.value(default, "secrets", [])).map { |reference| Support.deep_copy(reference) }}
-        events = operations.empty? ? [] : [{"type" => "Normal", "reason" => "ServiceAccountCreated",
-                                             "message" => "default ServiceAccount created in #{Support.name(namespace)}"}]
+        events = if operations.empty?
+                   []
+                 else
+                   [{"type" => "Normal", "reason" => "ServiceAccountCreated",
+                     "message" => "default ServiceAccount created in #{Support.name(namespace)}"}]
+                 end
         ReconcileResult.new(operations: operations, status: status, events: events,
                             controller: name, key: object_key_for(namespace))
       end
@@ -53,6 +57,7 @@ module Rubernetes
 
         adapter = adapter_for(store)
         return nil if adapter.nil?
+
         # Only a namespace that still exists gets its ServiceAccount back; the
         # same key names a namespace that was just torn down.
         known = list_for(adapter, NAMESPACE, namespace: :all).find { |value| Support.name(value) == namespace }

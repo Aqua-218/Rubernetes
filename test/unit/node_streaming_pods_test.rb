@@ -14,10 +14,12 @@ class NodeStreamingPodsTest < Minitest::Test
     server = Rubernetes::Node::StreamingServer.allocate
     server.instance_variable_set(:@lifecycle, Lifecycle.new({"u1" => {pod: {"metadata" => {"name" => "p"}}}, "u2" => {}}))
     status, headers, body = server.call(Request.new("/pods", "GET"))
+
     assert_equal 200, status
     assert_equal "application/json", headers["content-type"]
     list = JSON.parse(body.join)
+
     assert_equal "PodList", list["kind"]
-    assert_equal ["p"], list["items"].map { |pod| pod.dig("metadata", "name") }
+    assert_equal(["p"], list["items"].map { |pod| pod.dig("metadata", "name") })
   end
 end

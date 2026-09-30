@@ -140,7 +140,8 @@ module Rubernetes
 
       # scheduler_queueing_hint_execution_duration_seconds{event,hint,plugin}.
       def queueing_hint(plugin, event, hint, seconds)
-        observe("scheduler_queueing_hint_execution_duration_seconds", seconds, {"event" => event.to_s, "hint" => hint.to_s, "plugin" => plugin.to_s})
+        observe("scheduler_queueing_hint_execution_duration_seconds", seconds,
+                {"event" => event.to_s, "hint" => hint.to_s, "plugin" => plugin.to_s})
       end
 
       # scheduler_inflight_events{event}: the events the queue still holds
@@ -285,7 +286,7 @@ module Rubernetes
       def render(**) = ""
       def registry = nil
 
-      def method_missing(name, *_arguments, **_keywords, &_block)
+      def method_missing(name, *_arguments, **_keywords, &)
         return nil if Metrics.method_defined?(name)
 
         super

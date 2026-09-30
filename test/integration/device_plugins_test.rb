@@ -68,9 +68,25 @@ class DevicePluginsIntegrationTest < Minitest::Test
   end
 
   def teardown
-    @plugin_in&.close rescue nil
-    Process.kill(:KILL, @plugin) rescue nil if @plugin
-    Process.wait(@plugin) rescue nil if @plugin
+    begin
+      @plugin_in&.close
+    rescue StandardError
+      nil
+    end
+    if @plugin
+      begin
+        Process.kill(:KILL, @plugin)
+      rescue StandardError
+        nil
+      end
+    end
+    if @plugin
+      begin
+        Process.wait(@plugin)
+      rescue StandardError
+        nil
+      end
+    end
     @manager&.stop
     FileUtils.rm_rf(@dir) if @dir
   end
@@ -91,9 +107,12 @@ class DevicePluginsIntegrationTest < Minitest::Test
   def test_a_plugin_registers_advertises_and_allocates
     assert_equal "registered", start_plugin("v1beta1")
     wait_for { @manager.capacity.first["example.com/fake"] == 2 }
+
     assert_equal [{"example.com/fake" => 2}, {"example.com/fake" => 2}], @manager.capacity
-    pod = {"metadata" => {"uid" => "u1"}, "spec" => {"containers" => [{"name" => "c", "resources" => {"limits" => {"example.com/fake" => "1"}}}]}}
+    pod = {"metadata" => {"uid" => "u1"},
+           "spec" => {"containers" => [{"name" => "c", "resources" => {"limits" => {"example.com/fake" => "1"}}}]}}
     @manager.allocate_pod(pod)
+
     assert_equal({"FAKE_DEVICES" => "dev0"}, @manager.container_allocation("u1", "c")["envs"])
     @plugin_in.puts("unhealthy")
     wait_for { @manager.capacity.last["example.com/fake"] == 1 }
@@ -101,11 +120,13 @@ class DevicePluginsIntegrationTest < Minitest::Test
     Process.wait(@plugin)
     @plugin = nil
     wait_for { @manager.capacity.last["example.com/fake"].zero? }
+
     assert_equal "Unhealthy", @manager.allocated_resources_status("u1", "c").first["resources"].first["health"]
   end
 
   def test_an_unsupported_api_version_is_refused
-    assert_equal %(refused: requested API version "v1alpha" is not supported by kubelet. Supported version is ["v1beta1"]), start_plugin("v1alpha")
+    assert_equal %(refused: requested API version "v1alpha" is not supported by kubelet. Supported version is ["v1beta1"]),
+                 start_plugin("v1alpha")
     assert_equal [{}, {}], @manager.capacity
   end
 end

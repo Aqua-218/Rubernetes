@@ -30,9 +30,10 @@ module Rubernetes
       projected = volumes.flat_map { |volume| Array(volume.dig("projected", "sources")) }
       # VisitPodSecretNames / VisitPodConfigmapNames see projected sources too.
       secrets ||= projected.any? { |source| source.key?("secret") } || volumes.any? do |volume|
-        volume.key?("secret") || volume.dig("azureFile", "secretName") || %w[cephfs cinder flexVolume iscsi rbd scaleIO storageos csi].any? do |kind|
-          volume.dig(kind, "secretRef") || volume.dig(kind, "nodePublishSecretRef")
-        end
+        volume.key?("secret") || volume.dig("azureFile",
+                                            "secretName") || %w[cephfs cinder flexVolume iscsi rbd scaleIO storageos csi].any? do |kind|
+                                                               volume.dig(kind, "secretRef") || volume.dig(kind, "nodePublishSecretRef")
+                                                             end
       end
       return "secrets" if secrets
 

@@ -57,7 +57,9 @@ module M4ProxyKernelProbe
 
       response = JSON.parse(line, max_nesting: 512)
       @stdout_lines << line.chomp unless phase == "finish"
-      raise "runner #{phase} failed: #{response["error"]} #{Array(response["backtrace"]).first(3).join(" | ")}" unless response["ok"] == true
+      unless response["ok"] == true
+        raise "runner #{phase} failed: #{response["error"]} #{Array(response["backtrace"]).first(3).join(" | ")}"
+      end
 
       @init_response = response if phase == "init"
       response
@@ -85,13 +87,33 @@ module M4ProxyKernelProbe
     end
 
     def close
-      @stdin.close rescue nil
-      if @thread.alive?
-        Process.kill("TERM", @pid) rescue nil
-        @thread.join(5) || (Process.kill("KILL", @pid) rescue nil)
+      begin
+        @stdin.close
+      rescue StandardError
+        nil
       end
-      @stdout.close rescue nil
-      @stderr.close rescue nil
+      if @thread.alive?
+        begin
+          Process.kill("TERM", @pid)
+        rescue StandardError
+          nil
+        end
+        @thread.join(5) || begin
+          Process.kill("KILL", @pid)
+        rescue StandardError
+          nil
+        end
+      end
+      begin
+        @stdout.close
+      rescue StandardError
+        nil
+      end
+      begin
+        @stderr.close
+      rescue StandardError
+        nil
+      end
     end
   end
 
@@ -119,7 +141,7 @@ module M4ProxyKernelProbe
 
     def before_switch(from_backend:, to_backend:)
       response = @session.call("connections_open", count: SWITCH_CONNECTIONS, service: "clusterip-tcp",
-                                                    backend: from_backend.name, target: to_backend.name)
+                                                   backend: from_backend.name, target: to_backend.name)
       observation = {"connection_ids" => response.fetch("connection_ids"), "connections" => response.fetch("connections"),
                      "backend" => response["backend"], "observed_at" => response["observed_at"]}
       observation.merge("raw_observation_digest" => Rubernetes::Proxy::BackendParity.canonical_trace_digest(observation))
@@ -186,7 +208,7 @@ module M4ProxyKernelProbe
       objects = Corpus.objects
       dns_server = start_dns_server(objects)
 
-      kernel_waiver = ENV["RUBERNETES_M4_KERNEL_WAIVER_REASON"]
+      kernel_waiver = ENV.fetch("RUBERNETES_M4_KERNEL_WAIVER_REASON", nil)
       ebpf_adapter = Rubernetes::Proxy::LinuxEBPFAdapter.new(
         interface: [TOPOLOGY.dig("node_interfaces", "client"), TOPOLOGY.dig("node_interfaces", "backend")],
         complete_semantics: true, kernel_waiver: kernel_waiver
@@ -209,7 +231,10 @@ module M4ProxyKernelProbe
       auto = Rubernetes::Proxy::AutoBackend.new(ebpf: ebpf_backend, nftables: nft_backend, node_status: node_status,
                                                 connection_probe: connection_probe)
       verifier_probe = ebpf_backend.last_verifier_probe
-      errors << "eBPF verifier probe did not accept the Service datapath: #{verifier_probe.inspect[0, 400]}" unless verifier_probe.is_a?(Hash) && verifier_probe["accepted"] == true
+      unless verifier_probe.is_a?(Hash) && verifier_probe["accepted"] == true
+        errors << "eBPF verifier probe did not accept the Service datapath: #{verifier_probe.inspect[0,
+                                                                                                     400]}"
+      end
       errors << "AutoBackend did not select eBPF after a successful verifier probe" unless auto.selected_backend == "ebpf"
 
       proxy = Rubernetes::Proxy::Proxy.new(backend: auto, local_node: Corpus::NODE_NAME,
@@ -257,12 +282,16 @@ module M4ProxyKernelProbe
         errors << "adapter cleanup failed: #{error.class}: #{error.message}"
       end
       dns_server&.stop
-      leases.each_value { |lease| lease.close rescue nil }
+      leases.each_value do |lease|
+        lease.close
+      rescue StandardError
+        nil
+      end
       keepers.each_value { |pid| terminate(pid) }
     end
     report
   rescue StandardError => error
-    errors << "proxy kernel parity probe failed: #{error.class}: #{error.message} @ #{Array(error.backtrace).first(4).join(' | ')}"
+    errors << "proxy kernel parity probe failed: #{error.class}: #{error.message} @ #{Array(error.backtrace).first(4).join(" | ")}"
     {"measurement_source" => "kernel_blocked", "backends" => [], "parity" => {}, "backend_readback" => {},
      "connection_loss_count" => 0, "connection_loss_measured" => false, "difference_count" => 1}
   end
@@ -313,18 +342,22 @@ module M4ProxyKernelProbe
     netlink.link_set(name: node_client, up: true)
     netlink.link_set(name: node_backend, up: true)
     netlink.address_add(address: "#{client.fetch("gateway_ipv4")}/#{client.fetch("ipv4_prefix")}", name: node_client)
-    netlink.address_add(address: "#{client.fetch("gateway_ipv6")}/#{client.fetch("ipv6_prefix")}", name: node_client, ifa_flags: IFA_F_NODAD)
+    netlink.address_add(address: "#{client.fetch("gateway_ipv6")}/#{client.fetch("ipv6_prefix")}", name: node_client,
+                        ifa_flags: IFA_F_NODAD)
     netlink.address_add(address: "#{backend.fetch("gateway_ipv4")}/#{backend.fetch("ipv4_prefix")}", name: node_backend)
-    netlink.address_add(address: "#{backend.fetch("gateway_ipv6")}/#{backend.fetch("ipv6_prefix")}", name: node_backend, ifa_flags: IFA_F_NODAD)
+    netlink.address_add(address: "#{backend.fetch("gateway_ipv6")}/#{backend.fetch("ipv6_prefix")}", name: node_backend,
+                        ifa_flags: IFA_F_NODAD)
 
     client_fd = leases.fetch("client")
     netlink.link_set(name: "lo", up: true, namespace_fd: client_fd)
     netlink.link_set(name: pod, up: true, namespace_fd: client_fd)
     netlink.address_add(address: "#{client.fetch("ipv4")}/#{client.fetch("ipv4_prefix")}", name: pod, namespace_fd: client_fd)
-    netlink.address_add(address: "#{client.fetch("ipv6")}/#{client.fetch("ipv6_prefix")}", name: pod, namespace_fd: client_fd, ifa_flags: IFA_F_NODAD)
+    netlink.address_add(address: "#{client.fetch("ipv6")}/#{client.fetch("ipv6_prefix")}", name: pod, namespace_fd: client_fd,
+                        ifa_flags: IFA_F_NODAD)
     TOPOLOGY.dig("routes", "client").each do |destination|
       via = destination.include?(":") ? client.fetch("gateway_ipv6") : client.fetch("gateway_ipv4")
-      netlink.route_add(destination: destination, via: via, dev: pod, family: destination.include?(":") ? "ipv6" : "ipv4", namespace_fd: client_fd)
+      netlink.route_add(destination: destination, via: via, dev: pod, family: destination.include?(":") ? "ipv6" : "ipv4",
+                        namespace_fd: client_fd)
     end
 
     backend_fd = leases.fetch("backend")
@@ -338,7 +371,8 @@ module M4ProxyKernelProbe
     end
     TOPOLOGY.dig("routes", "backend").each do |destination|
       via = destination.include?(":") ? backend.fetch("gateway_ipv6") : backend.fetch("gateway_ipv4")
-      netlink.route_add(destination: destination, via: via, dev: pod, family: destination.include?(":") ? "ipv6" : "ipv4", namespace_fd: backend_fd)
+      netlink.route_add(destination: destination, via: via, dev: pod, family: destination.include?(":") ? "ipv6" : "ipv4",
+                        namespace_fd: backend_fd)
     end
 
     {"net/ipv4/ip_forward" => "1", "net/ipv6/conf/all/forwarding" => "1", "net/ipv4/conf/all/rp_filter" => "0",
@@ -380,7 +414,7 @@ module M4ProxyKernelProbe
                nftables_kernel_input(nft_adapter, nft_backend)
              end
     response = session.call("corpus", backend: backend_name, kernel: kernel)
-    if (debug_dir = ENV["RUBERNETES_M4_PROXY_DEBUG_DIR"]) && !debug_dir.empty?
+    if (debug_dir = ENV.fetch("RUBERNETES_M4_PROXY_DEBUG_DIR", nil)) && !debug_dir.empty?
       FileUtils.mkdir_p(debug_dir)
       File.binwrite(File.join(debug_dir, "corpus-#{backend_name}-#{Time.now.utc.strftime("%H%M%S%6N")}.json"), JSON.generate(response))
     end
@@ -444,29 +478,35 @@ module M4ProxyKernelProbe
     ebpf_readback = ebpf_phase.fetch("response").fetch("readback")
     nft_readback = nft_phase.fetch("response").fetch("readback")
     case_ids = Corpus.case_ids
-    matrix = case_ids.to_h { |id| [id, [ebpf_cases, nft_cases].all? { |cases| cases.find { |entry| entry["id"] == id }&.fetch("passed") == true }] }
+    matrix = case_ids.to_h do |id|
+      [id, [ebpf_cases, nft_cases].all? do |cases|
+        cases.find do |entry|
+          entry["id"] == id
+        end&.fetch("passed") == true
+      end]
+    end
 
     # Packet-semantics proof for each production adapter, bound to the
     # runner's provenance and the adapter's own kernel readback.
     nft_rules = nft_adapter.last_readback.fetch("rules")
     nft_adapter.verify_packet_semantics!(evidence: {
-      "executed" => true, "measurementSource" => final.fetch("measurementSource"),
-      "packetTraceSha256" => final.fetch("packetTraceSha256"), "packetCount" => packet_capture.fetch("packetCount"),
-      "caseInventorySha256" => Corpus.digest(Corpus.cases),
-      "runner" => runner, "packetCapture" => packet_capture,
-      "kernel" => {"table" => {"name" => nft_adapter.table_name}, "rules" => nft_rules,
-                   "rulesDigest" => nft_adapter.send(:canonical_digest, nft_rules)}
-    })
+                                           "executed" => true, "measurementSource" => final.fetch("measurementSource"),
+                                           "packetTraceSha256" => final.fetch("packetTraceSha256"), "packetCount" => packet_capture.fetch("packetCount"),
+                                           "caseInventorySha256" => Corpus.digest(Corpus.cases),
+                                           "runner" => runner, "packetCapture" => packet_capture,
+                                           "kernel" => {"table" => {"name" => nft_adapter.table_name}, "rules" => nft_rules,
+                                                        "rulesDigest" => nft_adapter.send(:canonical_digest, nft_rules)}
+                                         })
     ebpf_adapter.verify_packet_semantics!(evidence: {
-      readback: true, forward_dnat: true, reverse_snat: true, checksum_recompute: true, matrix: matrix,
-      measurement_source: final.fetch("measurementSource"), packet_trace_sha256: final.fetch("packetTraceSha256"),
-      packet_count: packet_capture.fetch("packetCount"),
-      kernel: {"release" => ebpf_adapter.actual_kernel_release, "program_id" => ebpf_readback.dig("program", "id"),
-               "filter_program_ids" => ebpf_readback.fetch("filter_program_ids"),
-               "helper_ids" => ebpf_adapter.program.helper_ids,
-               "requested_helper_ids" => ebpf_adapter.program.requested_helper_ids},
-      runner: runner
-    })
+                                            readback: true, forward_dnat: true, reverse_snat: true, checksum_recompute: true, matrix: matrix,
+                                            measurement_source: final.fetch("measurementSource"), packet_trace_sha256: final.fetch("packetTraceSha256"),
+                                            packet_count: packet_capture.fetch("packetCount"),
+                                            kernel: {"release" => ebpf_adapter.actual_kernel_release, "program_id" => ebpf_readback.dig("program", "id"),
+                                                     "filter_program_ids" => ebpf_readback.fetch("filter_program_ids"),
+                                                     "helper_ids" => ebpf_adapter.program.helper_ids,
+                                                     "requested_helper_ids" => ebpf_adapter.program.requested_helper_ids},
+                                            runner: runner
+                                          })
 
     left_digest = ebpf_backend.digest
     right_digest = nft_backend.digest
@@ -500,8 +540,12 @@ module M4ProxyKernelProbe
     }
     ebpf_identity = ebpf_adapter.kernel_identity
     nft_identity = nft_adapter.kernel_identity
-    errors << "eBPF adapter did not expose a kernel identity after packet proof: #{ebpf_adapter.production_capability_error}" unless ebpf_identity.is_a?(Hash)
-    errors << "nftables adapter did not expose a kernel identity after packet proof: #{nft_adapter.production_capability_error}" unless nft_identity.is_a?(Hash)
+    unless ebpf_identity.is_a?(Hash)
+      errors << "eBPF adapter did not expose a kernel identity after packet proof: #{ebpf_adapter.production_capability_error}"
+    end
+    unless nft_identity.is_a?(Hash)
+      errors << "nftables adapter did not expose a kernel identity after packet proof: #{nft_adapter.production_capability_error}"
+    end
     ebpf_entry = {
       "readback" => ebpf_readback.fetch("readback"), "rules" => left_rules, "rulesDigest" => M4ProbeSupport.digest(left_rules),
       "identity" => ebpf_identity || {}, "identityDigest" => M4ProbeSupport.digest(ebpf_identity || {}),
@@ -531,7 +575,9 @@ module M4ProxyKernelProbe
     }
     parity_result = Rubernetes::Proxy::BackendParity.production_compare(ebpf_backend, nft_backend,
                                                                         packet_corpus: packet_corpus, kernel_readback: kernel_readback)
-    errors << "production parity comparison failed: #{Array(parity_result["evidenceErrors"]).join("; ")}" unless parity_result["productionVerified"] == true
+    unless parity_result["productionVerified"] == true
+      errors << "production parity comparison failed: #{Array(parity_result["evidenceErrors"]).join("; ")}"
+    end
 
     switch_documents = switches.each_with_index.map do |measurement, index|
       raw = connection_probe.measurements.fetch(index)
@@ -590,7 +636,9 @@ module M4ProxyKernelProbe
       {"id" => id, "backend" => id, "passed" => phase_cases.all? { |entry| entry["passed"] == true }, "attempt_count" => 1,
        "measurement_source" => "production_module",
        "packet_trace_sha256" => final.fetch("packetTraceSha256"), "packet_capture_sha256" => packet_capture.fetch("sha256"),
-       "case_results" => phase_cases.map { |entry| entry.slice("id", "passed", "kind", "service", "family", "protocol", "expected", "actual") },
+       "case_results" => phase_cases.map do |entry|
+         entry.slice("id", "passed", "kind", "service", "family", "protocol", "expected", "actual")
+       end,
        "kernel_readback" => id == "ebpf" ? ebpf_entry : nft_entry,
        "rule_digest" => id == "ebpf" ? left_digest : right_digest}
     end

@@ -71,6 +71,7 @@ class StaticPodsTest < Minitest::Test
     File.write(File.join(@dir, ".hidden.json"), JSON.generate(manifest("hidden")))
     @subject.sync
     pod = @lifecycle.reconciled.last
+
     assert_equal "etcd-worker-0", pod.dig("metadata", "name")
     assert_equal "default", pod.dig("metadata", "namespace")
     assert_equal "Worker-0", pod.dig("spec", "nodeName")
@@ -79,12 +80,14 @@ class StaticPodsTest < Minitest::Test
     assert_includes pod.dig("spec", "tolerations"), {"operator" => "Exists", "effect" => "NoExecute"}
     assert_equal 1, @lifecycle.reconciled.length, "a hidden file is not a manifest"
     mirror = @api.created.first
+
     assert_equal pod.dig("metadata", "uid"), mirror.dig("metadata", "annotations", "kubernetes.io/config.mirror")
     assert_equal [{"apiVersion" => "v1", "kind" => "Node", "name" => "Worker-0", "uid" => "node-uid", "controller" => true}],
                  mirror.dig("metadata", "ownerReferences")
     assert_equal "mirror-0", @subject.mirror_uid(pod.dig("metadata", "uid"))
 
     @subject.sync
+
     assert_equal 1, @api.created.length, "an up-to-date mirror is kept"
   end
 
@@ -95,27 +98,34 @@ class StaticPodsTest < Minitest::Test
     delegate.define_singleton_method(:report) { |pod, status| reports << [pod.dig("metadata", "uid"), status] }
     reporter = Node::StaticPods::Reporter.new(delegate, @subject)
     @subject.send(:read_manifests).each_value { |pod| reporter.report(pod, {"phase" => "Running"}) }
+
     assert_empty reports, "no mirror yet"
     @subject.sync
     pod = @lifecycle.reconciled.last
     reporter.report(pod, {"phase" => "Running"})
+
     assert_equal [["mirror-0", {"phase" => "Running"}]], reports
     reporter.report({"metadata" => {"uid" => "api-pod"}}, {"phase" => "Pending"})
+
     assert_equal "api-pod", reports.last.first, "an API Pod reports as itself"
   end
 
   def test_api_references_are_refused_and_a_removed_manifest_stops_its_pod
     write("etcd.json", manifest)
     write("bad.json", manifest("bad", {"serviceAccountName" => "x", "containers" => [{"name" => "c", "image" => "i"}]}))
-    write("cm.json", manifest("cm", {"containers" => [{"name" => "c", "image" => "i"}], "volumes" => [{"name" => "v", "configMap" => {"name" => "x"}}]}))
+    write("cm.json",
+          manifest("cm",
+                   {"containers" => [{"name" => "c", "image" => "i"}], "volumes" => [{"name" => "v", "configMap" => {"name" => "x"}}]}))
     @subject.sync
-    assert_equal %w[etcd-worker-0], @lifecycle.reconciled.map { |pod| pod.dig("metadata", "name") }
+
+    assert_equal(%w[etcd-worker-0], @lifecycle.reconciled.map { |pod| pod.dig("metadata", "name") })
     assert_equal "static pods may not reference serviceaccounts", @subject.errors[File.join(@dir, "bad.json")]
     assert_equal "static pods may not reference configmaps", @subject.errors[File.join(@dir, "cm.json")]
 
     File.delete(File.join(@dir, "etcd.json"))
     @subject.sync
-    assert_equal %w[etcd-worker-0], @lifecycle.terminated.map { |pod| pod.dig("metadata", "name") }
-    assert_equal [["default", "etcd-worker-0", "mirror-0"]], @api.deleted, "the orphaned mirror is deleted"
+
+    assert_equal(%w[etcd-worker-0], @lifecycle.terminated.map { |pod| pod.dig("metadata", "name") })
+    assert_equal [%w[default etcd-worker-0 mirror-0]], @api.deleted, "the orphaned mirror is deleted"
   end
 end

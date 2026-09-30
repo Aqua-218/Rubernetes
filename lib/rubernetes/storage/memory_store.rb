@@ -75,9 +75,7 @@ module Rubernetes
 
     class InvalidSelector < Error
       def initialize(message, field: nil)
-        cause = if field
-                  [{"reason" => "FieldValueInvalid", "message" => message.to_s, "field" => field.to_s}]
-                end
+        cause = ([{"reason" => "FieldValueInvalid", "message" => message.to_s, "field" => field.to_s}] if field)
         super(message, status: 400, reason: "BadRequest", details: cause && {"causes" => cause}, causes: cause)
       end
     end
@@ -85,24 +83,24 @@ module Rubernetes
     class InvalidContinueToken < Error
       def initialize(message = "invalid continue token")
         super(message, status: 400, reason: "BadRequest",
-              details: {"causes" => [{"reason" => "FieldValueInvalid", "message" => message.to_s,
-                                       "field" => "continue"}]})
+                       details: {"causes" => [{"reason" => "FieldValueInvalid", "message" => message.to_s,
+                                               "field" => "continue"}]})
       end
     end
 
     class InvalidResourceVersion < Error
       def initialize(message)
         super(message, status: 400, reason: "BadRequest",
-              details: {"causes" => [{"reason" => "FieldValueInvalid", "message" => message.to_s,
-                                       "field" => "resourceVersion"}]})
+                       details: {"causes" => [{"reason" => "FieldValueInvalid", "message" => message.to_s,
+                                               "field" => "resourceVersion"}]})
       end
     end
 
     class InvalidLimit < Error
       def initialize(message = "limit must be a positive integer")
         super(message, status: 400, reason: "BadRequest",
-              details: {"causes" => [{"reason" => "FieldValueInvalid", "message" => message.to_s,
-                                       "field" => "limit"}]})
+                       details: {"causes" => [{"reason" => "FieldValueInvalid", "message" => message.to_s,
+                                               "field" => "limit"}]})
       end
     end
 
@@ -115,7 +113,7 @@ module Rubernetes
           reason: "Expired",
           resource_version: resource_version,
           details: {"resourceVersion" => resource_version.to_s,
-                     "compactedRevision" => compacted_revision.to_s}
+                    "compactedRevision" => compacted_revision.to_s}
         )
         @compacted_revision = compacted_revision
       end
@@ -140,8 +138,8 @@ module Rubernetes
           reason: "Expired",
           details: {
             "causes" => [{"reason" => "WatchOverflow",
-                           "message" => "watch buffer exceeded its configured bound; relist before reconnecting",
-                           "field" => "resourceVersion"}]
+                          "message" => "watch buffer exceeded its configured bound; relist before reconnecting",
+                          "field" => "resourceVersion"}]
           }
         )
       end
@@ -288,12 +286,11 @@ module Rubernetes
 
       def base64_url_decode(value)
         encoded = String(value).tr("-_", "+/")
-        encoded += "=" * ((4 - encoded.length % 4) % 4)
+        encoded += "=" * ((4 - (encoded.length % 4)) % 4)
         encoded.unpack1("m0")
       rescue ArgumentError, TypeError
         raise InvalidContinueToken
       end
-
     end
 
     # A tuple-compatible list response. It supports `objects, rv = list(...)`
@@ -318,14 +315,14 @@ module Rubernetes
       alias continue continue_token
       alias remainingItemCount remaining_item_count
 
-      def [](index, *args)
-        return @items if index == :items || index == "items"
-        return @resource_version if index == :resource_version || index == "resourceVersion" || index == "resource_version"
-        return @continue_token if index == :continue || index == "continue" || index == "continue_token"
-        return @remaining_item_count if index == :remaining_item_count || index == "remainingItemCount"
+      def [](index, *)
+        return @items if [:items, "items"].include?(index)
+        return @resource_version if [:resource_version, "resourceVersion", "resource_version"].include?(index)
+        return @continue_token if [:continue, "continue", "continue_token"].include?(index)
+        return @remaining_item_count if [:remaining_item_count, "remainingItemCount"].include?(index)
 
         tuple = [@items, @resource_version]
-        tuple[index, *args]
+        tuple[index, *]
       end
 
       def fetch(index, *args)
@@ -431,8 +428,8 @@ module Rubernetes
         {"type" => @type, "object" => @object}
       end
 
-      def to_json(*args)
-        JSON.generate(to_h, *args)
+      def to_json(*)
+        JSON.generate(to_h, *)
       end
 
       def ==(other)
@@ -651,9 +648,7 @@ module Rubernetes
       end
 
       def match_clause(clause, value, object)
-        if clause.operator == :callable
-          return clause.values.first.call(object)
-        end
+        return clause.values.first.call(object) if clause.operator == :callable
 
         present = !value.nil?
         string_value = value.nil? ? nil : String(value)
@@ -858,6 +853,7 @@ module Rubernetes
         resource_version = options.delete(:at_revision) if options.key?(:at_revision)
         discard_options(options, :gvr, :resource, :namespace, :name)
         raise ArgumentError, "unknown get options: #{options.keys.join(", ")}" unless options.empty?
+
         normalized_key = normalize_key(key)
         @monitor.synchronize do
           snapshot_revision = resolve_read_revision(resource_version)
@@ -878,6 +874,7 @@ module Rubernetes
         object ||= body || object_keyword || resource_keyword
         discard_options(options, :gvr, :namespace, :name)
         raise ArgumentError, "unknown create options: #{options.keys.join(", ")}" unless options.empty?
+
         normalized_key = normalize_key(key)
         candidate = normalize_object(object)
 
@@ -916,7 +913,11 @@ module Rubernetes
         raise ArgumentError, "guaranteed_update requires a block" unless block
 
         expected = normalize_precondition(
-          prec.nil? ? (precondition.nil? ? resource_version : precondition) : prec
+          if prec.nil?
+            precondition.nil? ? resource_version : precondition
+          else
+            prec
+          end
         )
         normalized_key = normalize_key(key)
         retries = validate_positive_limit(max_retries, "max_retries", allow_zero: true)
@@ -959,7 +960,11 @@ module Rubernetes
         raise ArgumentError, "update requires an API object Hash" unless object.is_a?(Hash)
 
         expected = normalize_precondition(
-          prec.nil? ? (precondition.nil? ? resource_version : precondition) : prec
+          if prec.nil?
+            precondition.nil? ? resource_version : precondition
+          else
+            prec
+          end
         )
         candidate = normalize_object(object)
         guaranteed_update(key, prec: expected, request_uid: request_uid) { |_current| candidate }
@@ -971,8 +976,13 @@ module Rubernetes
         request_uid ||= request_id || options.delete(:uid)
         discard_options(options, :gvr, :resource, :namespace, :name)
         raise ArgumentError, "unknown delete options: #{options.keys.join(", ")}" unless options.empty?
+
         expected = normalize_precondition(
-          prec.nil? ? (precondition.nil? ? resource_version : precondition) : prec
+          if prec.nil?
+            precondition.nil? ? resource_version : precondition
+          else
+            prec
+          end
         )
         normalized_key = normalize_key(key)
 
@@ -983,6 +993,7 @@ module Rubernetes
 
           current = @objects[normalized_key]
           raise NotFound, normalized_key if current.nil?
+
           check_precondition!(normalized_key, current, expected)
 
           committed = commit_locked(:deleted, normalized_key, current)
@@ -1024,6 +1035,7 @@ module Rubernetes
         continue ||= continue_token || options.delete(:token)
         discard_options(options, :gvr, :resource, :namespace, :name)
         raise ArgumentError, "unknown list options: #{options.keys.join(", ")}" unless options.empty?
+
         normalized_prefix = String(prefix || "")
         normalized_limit = normalize_limit(limit)
         normalized_resource_version_match = normalize_resource_version_match(resource_version_match)
@@ -1114,9 +1126,8 @@ module Rubernetes
                 bookmark_interval: @bookmark_interval, send_initial_events: false,
                 resource_version_match: nil, timeout_seconds: nil, **options)
         raise ArgumentError, "watch accepts at most one positional since revision" if positional.length > 1
-        if !positional.empty? && !since.nil?
-          raise ArgumentError, "watch since revision was supplied twice"
-        end
+        raise ArgumentError, "watch since revision was supplied twice" if !positional.empty? && !since.nil?
+
         since = positional.first if since.nil? && !positional.empty?
         since = resource_version if since.nil? && !resource_version.nil?
         since = options.delete(:start_revision) if since.nil? && options.key?(:start_revision)
@@ -1140,6 +1151,7 @@ module Rubernetes
                     end
         discard_options(options, :gvr, :namespace, :name)
         raise ArgumentError, "unknown watch options: #{options.keys.join(", ")}" unless options.empty?
+
         if selector.is_a?(Hash) && (selector.key?("labels") || selector.key?(:labels) || selector.key?("fields") || selector.key?(:fields))
           label_selector ||= selector["labels"] || selector[:labels]
           field_selector ||= selector["fields"] || selector[:fields]
@@ -1170,7 +1182,10 @@ module Rubernetes
         @monitor.synchronize do
           if normalized_resource_version_match == "NotOlderThan"
             requested_revision = normalized_since.nil? ? @revision : normalized_since
-            raise InvalidResourceVersion, "watch revision #{requested_revision} is ahead of current revision #{@revision}" if requested_revision > @revision
+            if requested_revision > @revision
+              raise InvalidResourceVersion,
+                    "watch revision #{requested_revision} is ahead of current revision #{@revision}"
+            end
 
             # A watch-list's initial state is served from the current
             # snapshot even when the lower-bound RV has already compacted.
@@ -1181,7 +1196,10 @@ module Rubernetes
             start_revision = normalized_since
           end
           ensure_snapshot_available!(start_revision)
-          raise InvalidResourceVersion, "watch revision #{start_revision} is ahead of current revision #{@revision}" if start_revision > @revision
+          if start_revision > @revision
+            raise InvalidResourceVersion,
+                  "watch revision #{start_revision} is ahead of current revision #{@revision}"
+          end
 
           @next_watcher_id += 1
           watcher = Watcher.new(
@@ -1224,12 +1242,11 @@ module Rubernetes
             end
             # The "initial events end" bookmark belongs to sendInitialEvents
             # alone; a plain unset-resourceVersion watch never carries one.
-            if send_initial_events && allow_bookmarks && !watcher.closed?
-              watcher.enqueue_bookmark(@revision, initial_events_end: true)
-            end
+            watcher.enqueue_bookmark(@revision, initial_events_end: true) if send_initial_events && allow_bookmarks && !watcher.closed?
           else
             @history.each do |mutation|
               next unless mutation.revision > start_revision
+
               init_events += 1 if watcher.enqueue(mutation)
               break if watcher.closed?
             end
@@ -1394,10 +1411,8 @@ module Rubernetes
       end
 
       class Watcher
-        attr_reader :prefix, :selector, :error
-
         def initialize(prefix:, selector:, allow_bookmarks:, bookmark_interval:, max_events:, max_bytes:, clock:,
-                       bookmark_provider:, bookmark_callback: nil, bookmark_identity: nil, on_close:,
+                       bookmark_provider:, on_close:, bookmark_callback: nil, bookmark_identity: nil,
                        timeout_seconds: nil)
           @prefix = prefix.freeze
           @selector = selector
@@ -1408,6 +1423,7 @@ module Rubernetes
           @clock = clock
           @timeout_seconds = timeout_seconds.nil? ? nil : Float(timeout_seconds)
           raise ArgumentError, "timeout_seconds must be non-negative" if @timeout_seconds&.negative?
+
           @bookmark_provider = bookmark_provider
           @bookmark_callback = bookmark_callback
           @bookmark_identity = MemoryStoreSupport.immutable_copy(bookmark_identity || {})
@@ -1457,6 +1473,7 @@ module Rubernetes
           size = bytesize || JSON.generate(event.to_h).bytesize
           @mutex.synchronize do
             return false if @closed
+
             if @queue.length >= @max_events || @queue_bytes + size > @max_bytes
               @error = WatchOverflow.new
               @closed = true
@@ -1487,6 +1504,7 @@ module Rubernetes
             action = nil
             @mutex.synchronize do
               raise @error if @error
+
               if @returned_revision && (@delivered_revision.nil? || @delivered_revision < @returned_revision)
                 @delivered_revision = @returned_revision
                 @condition.broadcast
@@ -1503,6 +1521,7 @@ module Rubernetes
               else
                 wait_for = wait_duration(deadline)
                 return nil if wait_for&.negative? || wait_for == 0.0
+
                 @condition.wait(@mutex, wait_for)
               end
             end
@@ -1573,6 +1592,7 @@ module Rubernetes
           size = JSON.generate(event.to_h).bytesize
           @mutex.synchronize do
             return nil if @closed
+
             if @queue.length >= @max_events || @queue_bytes + size > @max_bytes
               @error = WatchOverflow.new
               @closed = true
@@ -1638,7 +1658,7 @@ module Rubernetes
           !closed?
         end
 
-        attr_reader :last_revision
+        attr_reader :prefix, :selector, :error, :last_revision
 
         def last_resource_version
           @last_revision&.to_s
@@ -1783,6 +1803,7 @@ module Rubernetes
                         parse_revision(resource_version)
                       end
           raise InvalidResourceVersion, "resourceVersion #{requested} is ahead of current revision #{@revision}" if requested > @revision
+
           # NotOlderThan may safely serve the current revision even when the
           # requested lower bound has already been compacted.  Exact reads,
           # by contrast, must retain the requested snapshot and are rejected
@@ -1946,6 +1967,7 @@ module Rubernetes
       def normalize_precondition(value)
         return nil if value.nil?
         return {resource_version: value} if value.is_a?(String) || value.is_a?(Numeric)
+
         if value.is_a?(Hash) && value["metadata"].is_a?(Hash)
           metadata = value.fetch("metadata")
           return {
@@ -1964,17 +1986,20 @@ module Rubernetes
         expected_resource_version = precondition[:resource_version] || precondition[:resourceVersion] ||
                                     precondition["resourceVersion"] || precondition["resource_version"]
         expected_uid = precondition[:uid] || precondition["uid"]
-        if expected_resource_version.nil? && expected_uid.nil?
-          raise ArgumentError, "precondition must include resourceVersion or uid"
-        end
+        raise ArgumentError, "precondition must include resourceVersion or uid" if expected_resource_version.nil? && expected_uid.nil?
+
         current_resource_version = object_revision(object)
-        if !expected_resource_version.nil? && precondition_revision(expected_resource_version, current_resource_version, key) != current_resource_version
-          raise Conflict.new(key, "expected resourceVersion #{expected_resource_version}, current is #{current_resource_version}", resource_version: current_resource_version)
+        if !expected_resource_version.nil? && precondition_revision(expected_resource_version, current_resource_version,
+                                                                    key) != current_resource_version
+          raise Conflict.new(key, "expected resourceVersion #{expected_resource_version}, current is #{current_resource_version}",
+                             resource_version: current_resource_version)
         end
+
         current_uid = object.dig("metadata", "uid")
-        if !expected_uid.nil? && String(expected_uid) != current_uid.to_s
-          raise Conflict.new(key, "expected uid #{expected_uid.inspect}, current is #{current_uid.inspect}", resource_version: current_resource_version)
-        end
+        return unless !expected_uid.nil? && String(expected_uid) != current_uid.to_s
+
+        raise Conflict.new(key, "expected uid #{expected_uid.inspect}, current is #{current_uid.inspect}",
+                           resource_version: current_resource_version)
       end
 
       def precondition_revision(value, current_resource_version, key)
@@ -1991,15 +2016,15 @@ module Rubernetes
         MemoryStoreSupport.digest(operation: operation.to_s, key: key, object: object, precondition: precondition)
       end
 
-      def with_request_lock(request_uid)
+      def with_request_lock(request_uid, &)
         return yield if request_uid.nil?
 
         lock = @monitor.synchronize { @request_locks[request_uid] ||= Monitor.new }
-        lock.synchronize { yield }
+        lock.synchronize(&)
       end
 
       def guaranteed_update_with_retry(key, expected, request_uid, retries, allow_nil_result,
-                                       replay_expected = expected, &block)
+                                       replay_expected = expected, &)
         fingerprint = request_fingerprint(:guaranteed_update, key, nil, replay_expected)
         @monitor.synchronize do
           replay = replay_request(request_uid, fingerprint, :guaranteed_update, key)
@@ -2016,9 +2041,10 @@ module Rubernetes
             [MemoryStoreSupport.deep_dup(current_object), object_revision(current_object)]
           end
 
-          candidate = block.call(current)
+          candidate = yield(current)
           candidate = current if candidate.nil? && allow_nil_result
           raise ArgumentError, "guaranteed_update block must return an API object Hash" unless candidate.is_a?(Hash)
+
           candidate = normalize_object(candidate)
 
           committed = @monitor.synchronize do
@@ -2039,9 +2065,7 @@ module Rubernetes
             end
           end
 
-          if attempt >= retries
-            raise Conflict.new(key, "guaranteed update conflicted after #{attempt + 1} attempts")
-          end
+          raise Conflict.new(key, "guaranteed update conflicted after #{attempt + 1} attempts") if attempt >= retries
 
           sleep_for_retry(attempt)
           attempt += 1
@@ -2054,7 +2078,10 @@ module Rubernetes
         uid = normalize_request_uid(request_uid)
         stored = @requests[uid]
         return NO_REPLAY if stored.nil?
-        raise RequestUIDConflict.new(uid, key) unless stored.fingerprint == fingerprint && stored.operation == operation.to_sym && stored.key == key
+        unless stored.fingerprint == fingerprint && stored.operation == operation.to_sym && stored.key == key
+          raise RequestUIDConflict.new(uid,
+                                       key)
+        end
 
         immutable_response(stored.result)
       end
@@ -2170,7 +2197,11 @@ module Rubernetes
       def compaction_target_locked(now: nil)
         return 0 if @revision.zero?
 
-        timestamp = now.nil? ? clock_value : (now.respond_to?(:to_f) ? now.to_f : Float(now))
+        timestamp = if now.nil?
+                      clock_value
+                    else
+                      (now.respond_to?(:to_f) ? now.to_f : Float(now))
+                    end
         revision_target = @history_revisions.nil? ? nil : @revision - @history_revisions
         time_target = if @history_seconds.nil?
                         nil
@@ -2267,6 +2298,7 @@ module Rubernetes
         decoded = MemoryStoreSupport.base64_url_decode(encoded)
         payload = JSON.parse(decoded)
         raise InvalidContinueToken unless payload.is_a?(Hash)
+
         signature = payload.delete("signature")
         expected = MemoryStoreSupport.digest(payload.merge("secret" => @token_secret))
         raise InvalidContinueToken unless signature == expected && payload["version"] == 1

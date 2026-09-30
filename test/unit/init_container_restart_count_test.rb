@@ -51,7 +51,11 @@ class InitContainerRestartCountTest < Minitest::Test
   def attempt_starts(subject, times)
     times.times do
       subject.send(:clear_start_retry, "pod-1")
-      subject.start(pod) rescue nil
+      begin
+        subject.start(pod)
+      rescue StandardError
+        nil
+      end
     end
   end
 
@@ -68,13 +72,18 @@ class InitContainerRestartCountTest < Minitest::Test
     attempt_starts(subject, 2)
 
     last = init_status(subject)[:status]["lastState"]
+
     refute_nil last, "the retried container must carry its previous termination"
     assert_equal 1, last.dig("terminated", "exitCode")
   end
 
   def test_a_pod_waiting_to_be_started_again_keeps_its_restart_history
     subject = lifecycle
-    subject.start(pod) rescue nil
+    begin
+      subject.start(pod)
+    rescue StandardError
+      nil
+    end
 
     assert subject.send(:start_retry_scheduled?, "pod-1"),
            "a failed start schedules a retry"
@@ -88,7 +97,11 @@ class InitContainerRestartCountTest < Minitest::Test
 
   def test_a_pod_that_is_really_gone_still_releases_its_restart_history
     subject = lifecycle
-    subject.start(pod) rescue nil
+    begin
+      subject.start(pod)
+    rescue StandardError
+      nil
+    end
     record = subject.send(:record, "pod-1")
     subject.send(:clear_start_retry, "pod-1")
 

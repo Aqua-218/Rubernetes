@@ -23,10 +23,9 @@ module Rubernetes
         raise ManifestError, "descriptor mediaType is required" unless media_type.is_a?(String) && !media_type.empty?
         raise ManifestError, "descriptor digest is required" unless digest
         raise ManifestError, "descriptor size must be a non-negative integer" unless size.is_a?(Integer) && size >= 0
+
         platform = value["platform"] || value[:platform]
-        if platform && (!allow_platform || !platform.is_a?(Hash))
-          raise ManifestError, "descriptor platform is invalid"
-        end
+        raise ManifestError, "descriptor platform is invalid" if platform && (!allow_platform || !platform.is_a?(Hash))
 
         new(
           media_type: media_type,
@@ -43,8 +42,9 @@ module Rubernetes
       def self.normalize_urls(urls)
         return [].freeze if urls.nil?
         raise ManifestError, "descriptor urls must be an array" unless urls.is_a?(Array)
+
         normalized = urls.map do |url|
-          raise ManifestError, "descriptor URL must be a string" unless url.is_a?(String) && !url.empty? && !url.match?(%r{[\r\n]})
+          raise ManifestError, "descriptor URL must be a string" unless url.is_a?(String) && !url.empty? && !url.match?(/[\r\n]/)
 
           url.freeze
         end
@@ -69,6 +69,7 @@ module Rubernetes
         @digest = Digest.parse(digest)
         @size = Integer(size)
         raise ManifestError, "descriptor size must be non-negative" if @size.negative?
+
         @urls = urls.map(&:to_s).map(&:freeze).freeze
         @annotations = annotations.dup.freeze
         @platform = platform&.dup&.freeze
@@ -129,13 +130,13 @@ module Rubernetes
       def self.coerce(value = nil, os: nil, architecture: nil, arch: nil, variant: nil)
         if value
           return value if value.is_a?(self)
-          if value.is_a?(Hash)
-            os ||= value["os"] || value[:os]
-            architecture ||= value["architecture"] || value[:architecture] || value["arch"] || value[:arch]
-            variant ||= value["variant"] || value[:variant]
-          else
-            raise ManifestError, "platform must be a mapping"
-          end
+
+          raise ManifestError, "platform must be a mapping" unless value.is_a?(Hash)
+
+          os ||= value["os"] || value[:os]
+          architecture ||= value["architecture"] || value[:architecture] || value["arch"] || value[:arch]
+          variant ||= value["variant"] || value[:variant]
+
         end
         new(os: os || "linux", architecture: architecture || arch || "amd64", variant: variant)
       end
@@ -172,7 +173,10 @@ module Rubernetes
 
       def normalize_component(value, name)
         text = value.to_s
-        raise ManifestError, "#{name} must be a non-empty string" unless !text.empty? && text.bytesize <= 128 && !text.match?(/[\x00\r\n]/) && !text.match?(/\s/)
+        unless !text.empty? && text.bytesize <= 128 && !text.match?(/[\x00\r\n]/) && !text.match?(/\s/)
+          raise ManifestError,
+                "#{name} must be a non-empty string"
+        end
 
         text.freeze
       end
@@ -185,25 +189,26 @@ module Rubernetes
       def self.parse(value, expected_digest: nil, expected_size: nil, max_bytes: 8 * 1024 * 1024, index_digest: nil)
         raw = value.is_a?(String) ? value.b : JSON.generate(value).b
         raise LimitError, "manifest exceeds the configured byte limit" if raw.bytesize > Integer(max_bytes)
+
         parsed = value.is_a?(String) ? StrictJSON.parse(raw, max_bytes: max_bytes) : value
-        unless parsed.is_a?(Hash)
-          raise ManifestError, "image manifest must be a JSON object"
-        end
+        raise ManifestError, "image manifest must be a JSON object" unless parsed.is_a?(Hash)
+
         actual_digest = Digest.from_bytes(raw)
         if expected_digest && actual_digest != Digest.parse(expected_digest)
           raise DigestMismatch, "image manifest digest does not match the descriptor"
         end
-        if expected_size && raw.bytesize != Integer(expected_size)
-          raise ManifestError, "image manifest size does not match the descriptor"
-        end
+        raise ManifestError, "image manifest size does not match the descriptor" if expected_size && raw.bytesize != Integer(expected_size)
 
         media_type = parsed["mediaType"]
         raise ManifestError, "image manifest mediaType is unsupported" unless MediaTypes.manifest?(media_type)
         raise ManifestError, "image manifest schemaVersion must be 2" unless parsed["schemaVersion"] == 2
+
         config = Descriptor.from_h(parsed["config"], allow_platform: false)
         raise ManifestError, "image config mediaType is unsupported" unless MediaTypes.config?(config.media_type)
+
         layers = parsed["layers"]
         raise ManifestError, "image manifest layers must be an array" unless layers.is_a?(Array)
+
         normalized_layers = layers.map do |layer|
           descriptor = Descriptor.from_h(layer, allow_platform: false)
           raise ManifestError, "image layer mediaType is unsupported" unless MediaTypes.layer?(descriptor.media_type)
@@ -248,23 +253,29 @@ module Rubernetes
       def self.parse(value, expected_digest: nil, expected_size: nil, max_bytes: 8 * 1024 * 1024)
         raw = value.is_a?(String) ? value.b : JSON.generate(value).b
         raise LimitError, "image index exceeds the configured byte limit" if raw.bytesize > Integer(max_bytes)
+
         parsed = value.is_a?(String) ? StrictJSON.parse(raw, max_bytes: max_bytes) : value
         raise ManifestError, "image index must be a JSON object" unless parsed.is_a?(Hash)
+
         actual_digest = Digest.from_bytes(raw)
         if expected_digest && actual_digest != Digest.parse(expected_digest)
           raise DigestMismatch, "image index digest does not match the descriptor"
         end
-        if expected_size && raw.bytesize != Integer(expected_size)
-          raise ManifestError, "image index size does not match the descriptor"
-        end
+        raise ManifestError, "image index size does not match the descriptor" if expected_size && raw.bytesize != Integer(expected_size)
+
         media_type = parsed["mediaType"]
         raise ManifestError, "image index mediaType is unsupported" unless MediaTypes.index?(media_type)
         raise ManifestError, "image index schemaVersion must be 2" unless parsed["schemaVersion"] == 2
+
         entries = parsed["manifests"]
         raise ManifestError, "image index manifests must be an array" unless entries.is_a?(Array) && !entries.empty?
+
         descriptors = entries.map do |entry|
           descriptor = Descriptor.from_h(entry)
-          raise ManifestError, "index descriptor mediaType is unsupported" unless MediaTypes.manifest?(descriptor.media_type) || MediaTypes.index?(descriptor.media_type)
+          unless MediaTypes.manifest?(descriptor.media_type) || MediaTypes.index?(descriptor.media_type)
+            raise ManifestError,
+                  "index descriptor mediaType is unsupported"
+          end
           raise ManifestError, "index descriptor platform is required" unless descriptor.platform
 
           descriptor
@@ -298,10 +309,11 @@ module Rubernetes
       def select(platform = nil, os: nil, architecture: nil, arch: nil, variant: nil)
         target = Platform.coerce(platform, os: os, architecture: architecture, arch: arch, variant: variant)
         matches = manifests.select { |descriptor| target.matches?(descriptor.platform) }
-        raise ManifestError, "image index has no manifest for #{target.os}/#{target.architecture}#{target.variant ? "/#{target.variant}" : ""}" if matches.empty?
-        if matches.length > 1
-          raise ManifestError, "image index has multiple manifests for the requested platform"
+        if matches.empty?
+          raise ManifestError,
+                "image index has no manifest for #{target.os}/#{target.architecture}#{"/#{target.variant}" if target.variant}"
         end
+        raise ManifestError, "image index has multiple manifests for the requested platform" if matches.length > 1
 
         matches.first
       end
@@ -318,7 +330,8 @@ module Rubernetes
         if MediaTypes.index?(media_type)
           Index.parse(raw, expected_digest: expected_digest, expected_size: expected_size, max_bytes: max_bytes)
         elsif MediaTypes.manifest?(media_type)
-          Manifest.parse(raw, expected_digest: expected_digest, expected_size: expected_size, max_bytes: max_bytes, index_digest: index_digest)
+          Manifest.parse(raw, expected_digest: expected_digest, expected_size: expected_size, max_bytes: max_bytes,
+                              index_digest: index_digest)
         else
           raise ManifestError, "image document mediaType is unsupported"
         end

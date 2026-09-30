@@ -48,7 +48,8 @@ class ProxyConntrackReconcilerTest < Minitest::Test
     def recv(_max) = @queue.shift(3).join
   end
 
-  def flow(orig_dst:, orig_dport:, reply_src:, reply_sport:, protocol: 17, family: "IPv4", orig_src: "10.244.1.9", orig_sport: 40_000, id: 7)
+  def flow(orig_dst:, orig_dport:, reply_src:, reply_sport:, protocol: 17, family: "IPv4", orig_src: "10.244.1.9", orig_sport: 40_000,
+           id: 7)
     Proxy::ConntrackFlow.new(family: family, protocol: protocol, orig_src: orig_src, orig_sport: orig_sport,
                              orig_dst: orig_dst, orig_dport: orig_dport, reply_src: reply_src, reply_sport: reply_sport,
                              reply_dst: orig_src, reply_dport: orig_sport, id: id, zone: 0)
@@ -82,20 +83,23 @@ class ProxyConntrackReconcilerTest < Minitest::Test
      flow(orig_dst: "172.16.0.5", orig_dport: 30_053, reply_src: "10.244.0.11", reply_sport: 53, id: 6), # node port serving: kept
      flow(orig_dst: "10.96.0.20", orig_dport: 9, reply_src: "10.244.0.1", reply_sport: 9, protocol: 6, id: 7), # TCP: ignored
      flow(orig_dst: "10.96.0.30", orig_dport: 5353, reply_src: "10.244.0.1", reply_sport: 5353, id: 8), # no serving endpoints: kept
-     flow(orig_dst: "10.96.0.10", orig_dport: 5300, reply_src: "10.244.0.1", reply_sport: 53, id: 9)]  # other port: kept
+     flow(orig_dst: "10.96.0.10", orig_dport: 5300, reply_src: "10.244.0.1", reply_sport: 53, id: 9)] # other port: kept
   end
 
   def test_stale_filter_matches_upstream_rules
     stale = Proxy::ConntrackReconciler.stale_flows("IPv4", rules, flows)
+
     assert_equal [2, 3, 4, 5], stale.map(&:id)
     assert_empty Proxy::ConntrackReconciler.stale_flows("IPv6", rules, flows), "IPv4 front ends do not filter the IPv6 table"
   end
 
   def test_wire_format_round_trip
     codec = Proxy::ConntrackNetlink.new
-    original = flow(orig_dst: "fd00::10", orig_dport: 53, reply_src: "fd00:1::5", reply_sport: 5353, family: "IPv6", orig_src: "fd00:2::9", id: 42)
+    original = flow(orig_dst: "fd00::10", orig_dport: 53, reply_src: "fd00:1::5", reply_sport: 5353, family: "IPv6", orig_src: "fd00:2::9",
+                    id: 42)
     message = codec.encode_flow_message(original, sequence: 9)
     decoded = codec.decode_flow(message.byteslice(16..), "IPv6")
+
     assert_equal original.to_h, decoded.to_h
   end
 
@@ -106,17 +110,19 @@ class ProxyConntrackReconcilerTest < Minitest::Test
     ticks = [10.0, 10.25, 20.0, 20.5]
     reconciler = Proxy::ConntrackReconciler.new(families: %w[IPv4 IPv6], netlink: netlink, metrics: metrics, clock: -> { ticks.shift })
     result = reconciler.reconcile(rules)
+
     assert_nil reconciler.last_error
     assert_equal({"IPv4" => 3, "IPv6" => 0}, result, "four stale flows, one already gone (ENOENT is not a deletion)")
     assert_equal [2, 3, 4, 5].length, socket.deletes.length
     assert_equal %w[10.244.0.99 10.244.0.12 10.244.0.98 10.244.0.97], socket.deletes.map(&:reply_src)
     text = metrics.registry.render_own
+
     assert_match(/kubeproxy_conntrack_reconciler_deleted_entries_total\{ip_family="IPv4"\} 3/, text)
     refute_match(/kubeproxy_conntrack_reconciler_deleted_entries_total\{ip_family="IPv6"\}/, text)
     assert_match(/kubeproxy_conntrack_reconciler_sync_duration_seconds_count\{ip_family="IPv4"\} 1/, text)
     assert_match(/kubeproxy_conntrack_reconciler_sync_duration_seconds_sum\{ip_family="IPv4"\} 0.25/, text)
     assert_match(/kubeproxy_conntrack_reconciler_sync_duration_seconds_count\{ip_family="IPv6"\} 1/, text)
-    refute reconciler.disabled?
+    refute_predicate reconciler, :disabled?
   end
 
   def test_permission_failure_disables_the_reconciler_once
@@ -125,8 +131,9 @@ class ProxyConntrackReconcilerTest < Minitest::Test
     logger = Object.new
     logger.define_singleton_method(:warn) { |event, **fields| warnings << [event, fields] }
     reconciler = Proxy::ConntrackReconciler.new(families: ["IPv4"], netlink: netlink, logger: logger)
+
     assert_equal({"IPv4" => 0}, reconciler.reconcile(rules))
-    assert reconciler.disabled?
+    assert_predicate reconciler, :disabled?
     assert_equal "proxy.conntrack_reconcile_failed", warnings.first.first
     assert_equal({}, reconciler.reconcile(rules), "switched off after EPERM")
     assert_equal 1, warnings.length
@@ -136,7 +143,10 @@ class ProxyConntrackReconcilerTest < Minitest::Test
     calls = []
     fake = Object.new
     fake.define_singleton_method(:disabled?) { false }
-    fake.define_singleton_method(:reconcile) { |rules| calls << rules; {} }
+    fake.define_singleton_method(:reconcile) do |rules|
+      calls << rules
+      {}
+    end
     engine = Proxy::Proxy.new(local_node: "node-a", backend: Proxy::MemoryBackend.new)
     engine.conntrack_reconciler = fake
     engine.apply_service({"apiVersion" => "v1", "kind" => "Service",
@@ -144,18 +154,21 @@ class ProxyConntrackReconcilerTest < Minitest::Test
                           "spec" => {"clusterIP" => "10.96.0.10", "clusterIPs" => ["10.96.0.10"], "type" => "ClusterIP",
                                      "ports" => [{"name" => "dns", "port" => 53, "targetPort" => 53, "protocol" => "UDP"}]}})
     engine.sync
+
     refute_empty calls
-    assert calls.last.any? { |r| r.kind == "ClusterIP" && r.protocol == "UDP" && r.virtual_ip == "10.96.0.10" }
+    assert(calls.last.any? { |r| r.kind == "ClusterIP" && r.protocol == "UDP" && r.virtual_ip == "10.96.0.10" })
   end
 
   def test_live_dump_when_the_kernel_allows_it
     skip "requires root" unless Process.uid.zero?
     netlink = Proxy::ConntrackNetlink.new(timeout: 5.0)
     entries = netlink.list("IPv4")
+
     assert_kind_of Array, entries
     entries.first(3).each { |entry| assert entry.orig_dst && entry.reply_src, "flow tuples decode: #{entry.inspect}" }
   rescue Proxy::ConntrackNetlinkError => error
-    skip "conntrack netlink unavailable: #{error.message}" if [Errno::EPERM::Errno, Errno::EPROTONOSUPPORT::Errno, Errno::EAFNOSUPPORT::Errno, Errno::ENOENT::Errno].include?(error.errno)
+    skip "conntrack netlink unavailable: #{error.message}" if [Errno::EPERM::Errno, Errno::EPROTONOSUPPORT::Errno,
+                                                               Errno::EAFNOSUPPORT::Errno, Errno::ENOENT::Errno].include?(error.errno)
     raise
   end
 end

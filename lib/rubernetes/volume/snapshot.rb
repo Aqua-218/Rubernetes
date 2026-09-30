@@ -56,8 +56,8 @@ module Rubernetes
         end
       end
 
-      def fetch(id, &fallback)
-        @mutex.synchronize { @values.fetch(id.to_s, &fallback) }
+      def fetch(id, &)
+        @mutex.synchronize { @values.fetch(id.to_s, &) }
       end
 
       def values
@@ -130,13 +130,13 @@ module Rubernetes
       def create(volume_id, token:, name: nil, allow_published: false, effect_boundary: nil)
         volume = @backend_lookup.call(volume_id)
         raise NotFoundError, "volume #{volume_id} does not exist" unless volume
-        if volume.respond_to?(:secret?) && volume.secret?
-          raise UnsupportedError, "Secret-backed volumes cannot be snapshotted"
-        end
+        raise UnsupportedError, "Secret-backed volumes cannot be snapshotted" if volume.respond_to?(:secret?) && volume.secret?
+
         record = @record_lookup&.call(volume_id)
         if !allow_published && record && !record.publishes.empty?
           raise ConflictError, "volume #{volume_id} is published; stop consumers before snapshot"
         end
+
         remote = volume.respond_to?(:remote?) && volume.remote?
         source = if remote
                    volume.snapshot(token: token, name: name, effect_boundary: effect_boundary)
@@ -191,10 +191,11 @@ module Rubernetes
         raise sanitized, cause: nil
       end
 
-      def restore(snapshot_id, spec: {}, token:)
+      def restore(snapshot_id, token:, spec: {})
         snapshot = fetch(snapshot_id)
         raise StateUnknownError, "snapshot #{snapshot_id} is Unknown; reconcile before restore" if unknown?(snapshot)
         raise ConflictError, "snapshot #{snapshot_id} is not ready" unless snapshot.ready_to_use
+
         spec = Types.deep_copy(spec).merge("snapshot" => snapshot.to_h, "sourceSnapshotId" => snapshot.id)
         if @restore_volume
           @restore_volume.call(spec, snapshot: snapshot, token: token)
@@ -205,14 +206,14 @@ module Rubernetes
         end
       end
 
-      def clone(volume_id, spec: {}, token:)
+      def clone(volume_id, token:, spec: {})
         source = @backend_lookup.call(volume_id)
         raise NotFoundError, "volume #{volume_id} does not exist" unless source
-        if source.respond_to?(:secret?) && source.secret?
-          raise UnsupportedError, "Secret-backed volumes cannot be cloned"
-        end
+        raise UnsupportedError, "Secret-backed volumes cannot be cloned" if source.respond_to?(:secret?) && source.secret?
+
         record = @record_lookup&.call(volume_id)
         raise ConflictError, "volume #{volume_id} is published; stop consumers before clone" if record && !record.publishes.empty?
+
         spec = Types.deep_copy(spec).merge("cloneSourceId" => volume_id)
         if @clone_volume
           @clone_volume.call(source_id: volume_id, spec: spec, token: token)
@@ -322,6 +323,7 @@ module Rubernetes
           @store.values.each do |record|
             next unless remote_snapshot?(record)
             next if unknown?(record)
+
             replacement = SnapshotRecord.new(
               id: record.id, source_id: record.source_id, name: record.name,
               size_bytes: record.size_bytes, ready_to_use: false, content: record.content,
@@ -356,6 +358,7 @@ module Rubernetes
 
       def sanitize_content(content, secret:)
         return nil if secret
+
         Types.deep_copy(content)
       end
     end

@@ -89,22 +89,25 @@ class OCIResolverTest < Minitest::Test
       stages = -> { Dir.children(staging_root).map { |entry| File.join(staging_root, entry) } }
       node_copy = resolver.resolve("registry.example/app:stable", pull_policy: "Always")
       kept = stages.call
+
       assert resolver.release(node_copy)
       assert_equal kept, stages.call
       resolved = resolver.resolve("registry.example/app:stable", pull_policy: "Always")
       stage = (stages.call - kept).fetch(0)
 
       forged_path = Struct.new(:stage_root).new(staging_root)
+
       assert resolver.release(forged_path)
       assert File.directory?(staging_root)
       assert File.directory?(stage)
 
       forged_token = Struct.new(:stage_token).new(Object.new.freeze)
+
       refute resolver.release(forged_token)
       assert File.directory?(stage)
 
       assert resolver.release(resolved)
-      refute File.exist?(stage)
+      refute_path_exists stage
       assert File.directory?(staging_root)
 
       swapped = resolver.resolve("registry.example/app:stable", pull_policy: "Always")
@@ -275,6 +278,7 @@ class LifecycleImagePinningTest < Minitest::Test
       assert_equal(["/bin/app", "--serve"], process.calls.fetch(0).fetch(1))
       assert_equal({"IMAGE_FLAG" => "on"}, process.calls.fetch(0).fetch(2))
       terminated = lifecycle.terminate(pod)
+
       assert_equal("Succeeded", terminated.phase)
       assert_equal(1, resolver.released.length)
     end
@@ -294,7 +298,7 @@ class LifecycleImagePinningTest < Minitest::Test
       FileUtils.mkdir_p(unrelated)
 
       assert_equal(1, Rubernetes::Image::Resolver.reclaim_abandoned_stages(staging_root: root))
-      refute(File.exist?(abandoned), "a stage whose creating process is gone must be reclaimed")
+      refute_path_exists(abandoned, "a stage whose creating process is gone must be reclaimed")
       assert(File.directory?(owned), "a stage owned by a live process must be left alone")
       assert(File.directory?(unrelated), "only this resolver's own staging names may be removed")
       assert_equal(0, Rubernetes::Image::Resolver.reclaim_abandoned_stages(staging_root: root))

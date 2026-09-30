@@ -19,8 +19,8 @@ class NodePodLevelResizeTest < Minitest::Test
       @pod_updates = []
       @container_updates = []
       @created = []
-      @memory_current = 10 * 1024**2
-      @cgroup = {"cpu.weight" => "39", "cpu.max" => "100000 100000", "memory.max" => (512 * 1024**2).to_s}
+      @memory_current = 10 * (1024**2)
+      @cgroup = {"cpu.weight" => "39", "cpu.max" => "100000 100000", "memory.max" => (512 * (1024**2)).to_s}
     end
 
     def run_sandbox(_pod, runtime_class: nil) = "sandbox-1"
@@ -45,7 +45,7 @@ class NodePodLevelResizeTest < Minitest::Test
       @pod_updates << [sandbox_id, pod_spec["resources"]]
       limits = pod_spec.dig("resources", "limits") || {}
       @cgroup["memory.max"] = Rubernetes::Runtime::Native::Resources.bytes(limits["memory"]).to_s if limits["memory"]
-      @cgroup["cpu.max"] = "#{(Rubernetes::Runtime::Native::Resources.milli_cpu(limits["cpu"]) * 100)} 100000" if limits["cpu"]
+      @cgroup["cpu.max"] = "#{Rubernetes::Runtime::Native::Resources.milli_cpu(limits["cpu"]) * 100} 100000" if limits["cpu"]
       {}
     end
 
@@ -80,14 +80,21 @@ class NodePodLevelResizeTest < Minitest::Test
   end
 
   def test_pod_level_resize_is_actuated_in_place
-    @lifecycle.start(pod(generation: 1, pod_resources: {"requests" => {"cpu" => "1", "memory" => "256Mi"}, "limits" => {"cpu" => "1", "memory" => "512Mi"}}))
+    @lifecycle.start(pod(generation: 1,
+                         pod_resources: {"requests" => {"cpu" => "1", "memory" => "256Mi"},
+                                         "limits" => {"cpu" => "1", "memory" => "512Mi"}}))
     status = @reporter.statuses.last
+
     assert_equal({"cpu" => "1", "memory" => "256Mi"}, status["allocatedResources"])
-    @lifecycle.reconcile(pod(generation: 2, pod_resources: {"requests" => {"cpu" => "2", "memory" => "256Mi"}, "limits" => {"cpu" => "2", "memory" => "512Mi"}}))
+    @lifecycle.reconcile(pod(generation: 2,
+                             pod_resources: {"requests" => {"cpu" => "2", "memory" => "256Mi"},
+                                             "limits" => {"cpu" => "2", "memory" => "512Mi"}}))
 
     assert_equal ["c1"], @runtime.created, "the Pod was not recreated"
-    assert_equal({"requests" => {"cpu" => "2", "memory" => "256Mi"}, "limits" => {"cpu" => "2", "memory" => "512Mi"}}, @runtime.pod_updates.last[1])
+    assert_equal({"requests" => {"cpu" => "2", "memory" => "256Mi"}, "limits" => {"cpu" => "2", "memory" => "512Mi"}},
+                 @runtime.pod_updates.last[1])
     status = @reporter.statuses.last
+
     assert_equal({"cpu" => "2", "memory" => "256Mi"}, status["allocatedResources"])
     assert_equal "2", status.dig("resources", "limits", "cpu")
     assert_empty conditions("PodResizePending")
@@ -102,6 +109,7 @@ class NodePodLevelResizeTest < Minitest::Test
 
     assert_empty @runtime.pod_updates
     pending = conditions("PodResizePending").fetch(0)
+
     assert_equal "Deferred", pending["reason"]
     assert_equal 2, pending["observedGeneration"]
     assert_equal "Node didn't have enough resource: cpu, requested: 8000, used: 0, capacity: 4000", pending["message"]
@@ -110,21 +118,25 @@ class NodePodLevelResizeTest < Minitest::Test
 
     # Reverting the request clears the pending resize.
     @lifecycle.reconcile(pod(generation: 3, pod_resources: {"requests" => {"cpu" => "1"}, "limits" => {"cpu" => "1"}}))
+
     assert_empty conditions("PodResizePending")
   end
 
   def test_memory_limit_below_usage_is_refused
     @lifecycle.start(pod(generation: 1, pod_resources: {"requests" => {"memory" => "256Mi"}, "limits" => {"memory" => "256Mi"}}))
-    @runtime.memory_current = 200 * 1024**2
+    @runtime.memory_current = 200 * (1024**2)
     @lifecycle.reconcile(pod(generation: 2, pod_resources: {"requests" => {"memory" => "100Mi"}, "limits" => {"memory" => "100Mi"}}))
 
     assert_empty @runtime.pod_updates
     progress = conditions("PodResizeInProgress").fetch(0)
-    assert_equal "Error", progress["reason"]
-    assert_equal "cannot decrease memory limits: attempting to set pod memory limit (#{100 * 1024**2}) below current usage (#{200 * 1024**2})", progress["message"]
 
-    @runtime.memory_current = 50 * 1024**2
+    assert_equal "Error", progress["reason"]
+    assert_equal "cannot decrease memory limits: attempting to set pod memory limit (#{100 * (1024**2)}) below current usage (#{200 * (1024**2)})",
+                 progress["message"]
+
+    @runtime.memory_current = 50 * (1024**2)
     @lifecycle.reconcile(pod(generation: 3, pod_resources: {"requests" => {"memory" => "100Mi"}, "limits" => {"memory" => "100Mi"}}))
+
     assert_equal 1, @runtime.pod_updates.length
     assert_empty conditions("PodResizeInProgress")
   end
@@ -132,7 +144,9 @@ class NodePodLevelResizeTest < Minitest::Test
   def test_allocated_resources_without_pod_level_resources
     @lifecycle.start({"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "p", "namespace" => "ns", "uid" => "pod-2", "generation" => 1},
                       "spec" => {"nodeName" => "node-1", "containers" => [{"name" => "a", "image" => "i", "resources" => {"requests" => {"cpu" => "100m"}}},
-                                                                            {"name" => "b", "image" => "i", "resources" => {"requests" => {"cpu" => "200m"}}}]}})
+                                                                          {"name" => "b", "image" => "i",
+                                                                           "resources" => {"requests" => {"cpu" => "200m"}}}]}})
+
     assert_equal({"cpu" => "300m"}, @reporter.statuses.last["allocatedResources"])
   end
 end

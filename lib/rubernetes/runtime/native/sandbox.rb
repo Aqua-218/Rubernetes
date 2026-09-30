@@ -6,7 +6,8 @@ module Rubernetes
       class Sandbox
         class Error < Native::Error; end
 
-        STATES = %i[new validated image_pinned workspace_allocated isolation_created resources_attached workload_stopped running stopping stopped removed rolling_back cleanup_pending state_unknown].freeze
+        STATES = %i[new validated image_pinned workspace_allocated isolation_created resources_attached workload_stopped running stopping
+                    stopped removed rolling_back cleanup_pending state_unknown].freeze
         TRANSITIONS = {
           new: %i[validated rolling_back state_unknown],
           validated: %i[image_pinned rolling_back state_unknown],
@@ -85,9 +86,8 @@ module Rubernetes
           target = String(to).downcase.to_sym
           @mutex.synchronize do
             return @state if target == @state
-            unless TRANSITIONS.fetch(@state).include?(target)
-              raise Error, "invalid sandbox transition #{@state} -> #{target}"
-            end
+            raise Error, "invalid sandbox transition #{@state} -> #{target}" unless TRANSITIONS.fetch(@state).include?(target)
+
             @events << {"from" => @state.to_s, "to" => target.to_s, "timestamp" => @clock.call.utc.iso8601(6)}.freeze
             @state = target
           end
@@ -121,6 +121,7 @@ module Rubernetes
           # removed container -- every restart failed with "unknown container".
           container_id = String(id || input[:id] || input["id"] || next_container_id)
           raise Error, "container id is invalid" unless container_id.match?(/\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\z/)
+
           container = Container.new(id: container_id.freeze, spec: immutable(input), state: :created, process: nil,
                                     security_plan: nil, cgroup: nil, created_at: @clock.call.utc, workspace: nil)
           @mutex.synchronize do
@@ -223,9 +224,7 @@ module Rubernetes
 
           path = "/proc/#{Integer(pid)}/ns/net"
           actual_inode = File.stat(path).ino
-          unless actual_inode == Integer(inode)
-            raise Error, "network namespace holder identity changed"
-          end
+          raise Error, "network namespace holder identity changed" unless actual_inode == Integer(inode)
 
           result["netns"] = {
             "handle" => descriptor["identity"] || descriptor[:identity],
@@ -244,10 +243,10 @@ module Rubernetes
 
         def immutable(value)
           copied = case value
-          when Hash then value.to_h { |key, child| [String(key), immutable(child)] }
-          when Array then value.map { |child| immutable(child) }
-          else value
-          end
+                   when Hash then value.to_h { |key, child| [String(key), immutable(child)] }
+                   when Array then value.map { |child| immutable(child) }
+                   else value
+                   end
           copied.freeze
         end
       end

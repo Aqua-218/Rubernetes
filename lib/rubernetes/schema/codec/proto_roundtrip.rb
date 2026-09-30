@@ -59,12 +59,12 @@ module Rubernetes
                       :expected_supported_schema_count, :unsupported_schemas,
                       :max_bytes, :max_depth, :max_sample_depth
 
-          def self.run(**options)
-            new(**options).run
+          def self.run(**)
+            new(**).run
           end
 
-          def self.run!(**options)
-            new(**options).run!
+          def self.run!(**)
+            new(**).run!
           end
 
           def initialize(openapi_path:, protobuf_root:,
@@ -85,9 +85,7 @@ module Rubernetes
             @max_depth = Integer(max_depth)
             @max_sample_depth = Integer(max_sample_depth)
             raise ArgumentError, "expected_schema_count must be non-negative" if @expected_schema_count&.negative?
-            if @expected_supported_schema_count&.negative?
-              raise ArgumentError, "expected_supported_schema_count must be non-negative"
-            end
+            raise ArgumentError, "expected_supported_schema_count must be non-negative" if @expected_supported_schema_count&.negative?
             raise ArgumentError, "max_bytes must be positive" unless @max_bytes.positive?
             raise ArgumentError, "max_depth must be non-negative" if @max_depth.negative?
             raise ArgumentError, "max_sample_depth must be non-negative" if @max_sample_depth.negative?
@@ -101,9 +99,7 @@ module Rubernetes
             definitions = openapi.fetch("definitions") do
               raise CoverageError, failure_report("OpenAPI document has no definitions")
             end
-            unless definitions.is_a?(Hash)
-              raise CoverageError, failure_report("OpenAPI definitions must be an object")
-            end
+            raise CoverageError, failure_report("OpenAPI definitions must be an object") unless definitions.is_a?(Hash)
 
             registry = Registry.load(protobuf_root, max_bytes: max_bytes, max_depth: max_depth)
             schema_names = definitions.keys.sort
@@ -142,16 +138,14 @@ module Rubernetes
             coverage = empty_coverage
             cases = []
             resolved.each do |schema_name, descriptor|
-              begin
-                result = run_case(registry, schema_name, descriptor)
-                cases << result
-                merge_coverage!(coverage, result.fetch("field_kinds"))
-                coverage["empty_cases"] += 1
-                coverage["sample_cases"] += 1
-                coverage["unknown_wire_cases"] += 1
-              rescue StandardError => error
-                failures << failure(schema_name, "roundtrip", error.message, error.class.name)
-              end
+              result = run_case(registry, schema_name, descriptor)
+              cases << result
+              merge_coverage!(coverage, result.fetch("field_kinds"))
+              coverage["empty_cases"] += 1
+              coverage["sample_cases"] += 1
+              coverage["unknown_wire_cases"] += 1
+            rescue StandardError => error
+              failures << failure(schema_name, "roundtrip", error.message, error.class.name)
             end
 
             report = {
@@ -230,15 +224,16 @@ module Rubernetes
             unless registry.encode(descriptor, decoded_unknown, max_bytes: max_bytes, max_depth: max_depth) == raw_with_unknown
               raise Codec::EncodeError, "unknown concrete field bytes changed during re-encode"
             end
-            unless registry.encode_envelope(descriptor, decoded_unknown, max_bytes: max_bytes, max_depth: max_depth) == envelope_with_unknown
+            unless registry.encode_envelope(descriptor, decoded_unknown, max_bytes: max_bytes,
+                                                                         max_depth: max_depth) == envelope_with_unknown
               raise Codec::EncodeError, "runtime.Unknown envelope bytes changed during re-encode"
             end
 
-            wire_numbers = Codec::Protobuf.parse_fields(concrete, max_bytes: max_bytes, max_depth: max_depth).map { |field| field.fetch(:number) }.uniq
+            wire_numbers = Codec::Protobuf.parse_fields(concrete, max_bytes: max_bytes, max_depth: max_depth).map do |field|
+              field.fetch(:number)
+            end.uniq
             omitted = descriptor.fields.reject { |field| wire_numbers.include?(field.number) }
-            unless omitted.empty?
-              raise Codec::EncodeError, "deterministic sample omitted fields: #{omitted.map(&:name).join(", ")}"
-            end
+            raise Codec::EncodeError, "deterministic sample omitted fields: #{omitted.map(&:name).join(", ")}" unless omitted.empty?
 
             {
               "schema" => schema_name,
@@ -265,9 +260,7 @@ module Rubernetes
             envelope = registry.encode_envelope(descriptor, json_value, max_bytes: max_bytes, max_depth: max_depth)
             decoded = registry.decode_envelope(descriptor, envelope, max_bytes: max_bytes, max_depth: max_depth)
             decoded_json = Codec::JSONCodec.dump(decoded, canonical: true, max_bytes: max_bytes, max_depth: max_depth)
-            unless decoded_json == source_json
-              raise Codec::ParseError, "JSON/concrete protobuf round-trip mismatch"
-            end
+            raise Codec::ParseError, "JSON/concrete protobuf round-trip mismatch" unless decoded_json == source_json
             unless registry.encode_envelope(descriptor, decoded, max_bytes: max_bytes, max_depth: max_depth) == envelope
               raise Codec::EncodeError, "runtime.Unknown envelope encoding is not deterministic"
             end
@@ -424,7 +417,10 @@ module Rubernetes
           def deep_freeze(value)
             case value
             when Hash
-              value.each { |key, child| key.freeze; deep_freeze(child) }
+              value.each do |key, child|
+                key.freeze
+                deep_freeze(child)
+              end
             when Array
               value.each { |child| deep_freeze(child) }
             end
@@ -436,8 +432,8 @@ module Rubernetes
         ExhaustiveRoundtrip = RoundtripCoverage
 
         class << self
-          def roundtrip_report(**options)
-            RoundtripCoverage.run!(**options)
+          def roundtrip_report(**)
+            RoundtripCoverage.run!(**)
           end
         end
       end

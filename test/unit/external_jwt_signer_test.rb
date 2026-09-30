@@ -7,6 +7,7 @@ require "openssl"
 require_relative "../test_helper"
 require_relative "../support/grpc_fake_server"
 require "rubernetes/security"
+require "rubernetes/bootstrap/config"
 require "rubernetes/observability/metrics"
 
 # --service-account-signing-endpoint: tokens signed by an external signer
@@ -73,28 +74,32 @@ class ExternalJWTSignerTest < Minitest::Test
         assert_equal 7200, signer.max_token_expiration_seconds
         token = signer.sign({"iss" => "https://issuer.example", "sub" => "x"})
         header, payload, signature = token.split(".")
+
         assert_equal({"alg" => "RS256", "kid" => "external-1", "typ" => "JWT"}, JSON.parse(Base64.urlsafe_decode64(header)))
         assert key.public_key.verify("SHA256", Base64.urlsafe_decode64(signature), "#{header}.#{payload}")
 
         lookup = A::ServiceAccount::Lookup.new(service_account: ->(_ns, _name) { {"metadata" => {"name" => "default", "uid" => "sa-1"}} },
-                                               pod: ->(*) { nil }, secret: ->(*) { nil }, node: ->(*) { nil })
+                                               pod: ->(*) {}, secret: ->(*) {}, node: ->(*) {})
         issuer = A::ServiceAccount.new(issuer: "https://issuer.example", api_audiences: ["https://issuer.example"], lookup: lookup,
                                        external_signer: signer, max_expiration_seconds: 7200)
         token, expiration = issuer.issue(namespace: "default", service_account_name: "default", service_account_uid: "sa-1")
+
         assert_operator expiration, :>, Time.now
         result = issuer.authenticate_token(token)
+
         assert_equal "system:serviceaccount:default:default", result.user.name
         assert_equal ["external-1"], issuer.jwks["keys"].map { |jwk| jwk["kid"] }, "excluded keys stay out of discovery"
         assert_equal "RS256", issuer.algorithm
 
         text = @metrics.render_own
+
         assert_match(/apiserver_externaljwt_fetch_keys_request_total\{code="OK"\} 1/, text)
         assert_match(/apiserver_externaljwt_fetch_keys_data_timestamp 1.7e\+09/, text)
         assert_match(/apiserver_externaljwt_fetch_keys_success_timestamp \d/, text)
         assert_match(/apiserver_externaljwt_sign_request_total\{code="OK"\} 2/, text)
-        assert_match(/apiserver_externaljwt_request_duration_seconds_count\{code="OK",method="\/v1.ExternalJWTSigner\/Sign"\} 2/, text)
-        assert_match(/apiserver_externaljwt_request_duration_seconds_count\{code="OK",method="\/v1.ExternalJWTSigner\/FetchKeys"\} 1/, text)
-        assert_match(/apiserver_externaljwt_request_duration_seconds_count\{code="OK",method="\/v1.ExternalJWTSigner\/Metadata"\} 1/, text)
+        assert_match(%r{apiserver_externaljwt_request_duration_seconds_count\{code="OK",method="/v1.ExternalJWTSigner/Sign"\} 2}, text)
+        assert_match(%r{apiserver_externaljwt_request_duration_seconds_count\{code="OK",method="/v1.ExternalJWTSigner/FetchKeys"\} 1}, text)
+        assert_match(%r{apiserver_externaljwt_request_duration_seconds_count\{code="OK",method="/v1.ExternalJWTSigner/Metadata"\} 1}, text)
       ensure
         signer.stop
       end
@@ -108,6 +113,7 @@ class ExternalJWTSignerTest < Minitest::Test
       assert_match(/excluded from OIDC discovery/, error.message)
       strict.stop
       lenient = A::ExternalJWTSigner.new(socket: socket, issuer: "https://issuer.example", allow_signing_with_non_oidc_keys: true).start!
+
       assert_equal "hidden", JSON.parse(Base64.urlsafe_decode64(lenient.sign({"sub" => "x"}).split(".").first))["kid"]
       lenient.stop
     end
@@ -119,6 +125,7 @@ class ExternalJWTSignerTest < Minitest::Test
       error = assert_raises(A::ExternalJWTSigner::Error) { signer.sync_keys! }
       assert_match(/while fetching token verification keys/, error.message)
       text = @metrics.render_own
+
       assert_match(/apiserver_externaljwt_fetch_keys_request_total\{code="(Unavailable|DeadlineExceeded)"\} 1/, text)
       assert_raises(A::ExternalJWTSigner::Error) { signer.sign({"sub" => "x"}) }
       assert_match(/apiserver_externaljwt_sign_request_total\{code="(Unavailable|DeadlineExceeded)"\} 1/, @metrics.render_own)
@@ -128,9 +135,13 @@ class ExternalJWTSignerTest < Minitest::Test
   def test_process_config_rejects_key_files_with_a_signing_endpoint
     config = Rubernetes::Bootstrap::Config.allocate.tap { |c| c.instance_variable_set(:@process_name, "rubernetes-apiserver") }
     error = assert_raises(Rubernetes::Bootstrap::Config::Error) do
-      config.send(:validate_security!, {"authentication" => {"service_account" => {"issuer" => "https://i", "signing_endpoint" => "/run/signer.sock", "signing_key_file" => "/k.pem"}}})
+      config.send(:validate_security!,
+                  {"authentication" => {"service_account" => {"issuer" => "https://i", "signing_endpoint" => "/run/signer.sock",
+                                                              "signing_key_file" => "/k.pem"}}})
     end
     assert_match(/signing_key_file cannot be combined with signing_endpoint/, error.message)
-    config.send(:validate_security!, {"authentication" => {"service_account" => {"issuer" => "https://i", "signing_endpoint" => "/run/signer.sock", "allow_signing_with_non_oidc_keys" => true}}})
+    config.send(:validate_security!,
+                {"authentication" => {"service_account" => {"issuer" => "https://i", "signing_endpoint" => "/run/signer.sock",
+                                                            "allow_signing_with_non_oidc_keys" => true}}})
   end
 end

@@ -16,7 +16,8 @@ class APIServerProxyClientTest < Minitest::Test
   end
 
   def test_proxy_client_is_validated
-    Config.new(process_name: "rubernetes-apiserver", data: data({"cert_file" => "/pki/front-proxy-client.crt", "key_file" => "/pki/fp.key"}))
+    Config.new(process_name: "rubernetes-apiserver",
+               data: data({"cert_file" => "/pki/front-proxy-client.crt", "key_file" => "/pki/fp.key"}))
     error = assert_raises(Config::Error) do
       Config.new(process_name: "rubernetes-apiserver", data: data({"cert_file" => "relative.crt", "key_file" => "/pki/fp.key"}))
     end
@@ -34,11 +35,13 @@ class APIServerProxyClientTest < Minitest::Test
       cert.public_key = key.public_key
       cert.not_before = Time.now - 60
       cert.not_after = Time.now + 3600
-      cert.sign(key, OpenSSL::Digest::SHA256.new)
+      cert.sign(key, OpenSSL::Digest.new("SHA256"))
       File.write(File.join(dir, "c.crt"), cert.to_pem)
       File.write(File.join(dir, "c.key"), key.to_pem)
       service = Rubernetes::Bootstrap::APIServerService.allocate
-      loaded_cert, loaded_key = service.send(:load_proxy_client, {"cert_file" => File.join(dir, "c.crt"), "key_file" => File.join(dir, "c.key")})
+      loaded_cert, loaded_key = service.send(:load_proxy_client,
+                                             {"cert_file" => File.join(dir, "c.crt"), "key_file" => File.join(dir, "c.key")})
+
       assert_equal "/CN=front-proxy-client", loaded_cert.subject.to_s
       assert_equal key.public_key.to_pem, loaded_key.public_key.to_pem
       assert_equal [nil, nil], service.send(:load_proxy_client, nil)

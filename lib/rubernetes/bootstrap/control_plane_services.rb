@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "socket"
-require "thread"
 require "openssl"
 
 require_relative "../controller"
@@ -69,7 +68,7 @@ module Rubernetes
                 timeout_seconds: nil, **options)
         descriptor = normalize_descriptor(resource || @descriptor)
         query = build_query(selector || selectors, resource_version: resource_version,
-                            options: options)
+                                                   options: options)
         timeout_value = timeout_seconds || timeout
         query["timeoutSeconds"] = timeout_value.to_f.to_i.to_s if timeout_value
         # The store compacts five minutes of history.  An informer of a kind
@@ -82,10 +81,10 @@ module Rubernetes
         namespace_value = effective_namespace(descriptor, namespace)
         if @client.respond_to?(:watch_each)
           return @client.watch_each(descriptor.resource, namespace: namespace_value,
-                                    api_version: descriptor.api_version, query: query)
+                                                         api_version: descriptor.api_version, query: query)
         end
-        return @client.watch(descriptor.resource, namespace: namespace_value,
-                             api_version: descriptor.api_version, query: query)
+        @client.watch(descriptor.resource, namespace: namespace_value,
+                                           api_version: descriptor.api_version, query: query)
       rescue NoMethodError => error
         raise ArgumentError, "Kubernetes client must implement watch_each or watch: #{error.message}"
       end
@@ -184,10 +183,10 @@ module Rubernetes
 
         items = response.respond_to?(:items) ? response.items : Array(response)
         version = if response.respond_to?(:resource_version)
-                     response.resource_version
-                   elsif response.respond_to?(:resourceVersion)
-                     response.resourceVersion
-                   end
+                    response.resource_version
+                  elsif response.respond_to?(:resourceVersion)
+                    response.resourceVersion
+                  end
         version ||= Array(items).filter_map { |item| resource_version_for(item) }.max_by { |value| version_number(value) }
         raise IOError, "Kubernetes list response is missing resourceVersion" if version.nil?
 
@@ -267,8 +266,6 @@ module Rubernetes
     end
 
     class KubernetesStoreAdapter < Controller::StoreAdapter
-      attr_reader :client, :resource_descriptors
-
       # Reads served from the informer caches.  A controller reconcile that
       # reads through to the API server pays a raft read barrier per lookup,
       # and with dozens of controllers consulted per queue key the control
@@ -295,7 +292,7 @@ module Rubernetes
         raise ArgumentError, "at least one resource descriptor is required" if @resource_descriptors.empty?
       end
 
-      attr_reader :resource_descriptors, :field_manager
+      attr_reader :client, :resource_descriptors, :field_manager
 
       # The same store read through another identity: the informer caches
       # are shared, reads that miss them and every write go through +client+.
@@ -327,7 +324,7 @@ module Rubernetes
         return [] if descriptor.kind == "GarbageCollector"
 
         response = KubernetesResourceSource.new(client: client, descriptor: descriptor,
-                                                 namespace: namespace, selector: selector).list
+                                                namespace: namespace, selector: selector).list
         objects = Array(response["items"] || response[:items])
         objects.select! { |object| Controller::Support.selector_matches?(selector, object) } if selector
         objects.sort_by { |object| [Controller::Support.namespace(object).to_s, Controller::Support.name(object)] }
@@ -366,7 +363,10 @@ module Rubernetes
 
       def all(selector: nil)
         @resource_descriptors.flat_map { |descriptor| list(descriptor, namespace: :all, selector: selector) }
-          .uniq { |object| [Controller::Support.api_version(object), Controller::Support.kind(object), Controller::Support.namespace(object), Controller::Support.name(object)] }
+          .uniq do |object|
+          [Controller::Support.api_version(object), Controller::Support.kind(object),
+           Controller::Support.namespace(object), Controller::Support.name(object)]
+        end
       end
 
       # A single object is fetched by name.  Listing every object of the kind
@@ -407,13 +407,13 @@ module Rubernetes
         unless cached.nil?
           return cached.find do |object|
             Controller::Support.name(object).to_s == name.to_s &&
-              (descriptor.cluster_scoped? || namespace.nil? ||
-               Controller::Support.namespace(object).to_s == namespace.to_s)
+            (descriptor.cluster_scoped? || namespace.nil? ||
+             Controller::Support.namespace(object).to_s == namespace.to_s)
           end
         end
 
         object = client.get(descriptor.resource, name.to_s, namespace: namespace&.to_s,
-                            api_version: descriptor.api_version)
+                                                            api_version: descriptor.api_version)
         object.is_a?(Hash) && !object.empty? ? object : nil
       rescue StandardError => error
         # A missing object is an ordinary answer; anything else is reported.
@@ -664,7 +664,7 @@ module Rubernetes
 
         fence&.call
         result = client.patch(descriptor.resource, {"status" => patch}, type: :merge, namespace: namespace_for(descriptor, existing),
-                              api_version: descriptor.api_version, name: name, subresource: "status")
+                                                                        api_version: descriptor.api_version, name: name, subresource: "status")
         record_effect!(descriptor: descriptor, object: existing, action: :status_update, response: result)
         write_through(descriptor, result, :update) if result.is_a?(Hash)
         result
@@ -721,13 +721,13 @@ module Rubernetes
           body = {"status" => desired_status}
           body["metadata"] = {"uid" => candidate["metadata"]["uid"]} if candidate["metadata"]["uid"]
           result = client.patch(descriptor.resource, body, type: :strategic, namespace: namespace_for(descriptor, existing),
-                                api_version: descriptor.api_version, name: name, subresource: "status")
+                                                           api_version: descriptor.api_version, name: name, subresource: "status")
           record_effect!(descriptor: descriptor, object: candidate, action: :status_update, response: result)
           write_through(descriptor, result, :update) if result.is_a?(Hash)
           result
         when Array
           result = client.apply(candidate, namespace: namespace_for(descriptor, existing),
-                                field_manager: write.last, force: true, subresource: "status")
+                                           field_manager: write.last, force: true, subresource: "status")
           record_effect!(descriptor: descriptor, object: candidate, action: :status_update, response: result)
           result
         else
@@ -924,16 +924,23 @@ module Rubernetes
         @registry = registry || runtime_adapters[:controller_registry] || runtime_adapters["controller_registry"]
         @runtime_adapters = runtime_adapters.to_h
         configured_options = @runtime_adapters[:controller_options] || @runtime_adapters["controller_options"] || {}
-        @controller_options = configured_options.is_a?(Hash) ? configured_options.each_with_object({}) do |(key, value), result|
-          result[key.is_a?(String) ? key.to_sym : key] = value
-        end : {}
+        @controller_options = if configured_options.is_a?(Hash)
+                                configured_options.each_with_object({}) do |(key, value), result|
+                                  result[key.is_a?(String) ? key.to_sym : key] = value
+                                end
+                              else
+                                {}
+                              end
         # kube-controller-manager --root-ca-file: the CA the root-ca
         # publisher and the token controller hand to every namespace.  It
         # defaults to the CA this process itself trusts for the API server.
         @controller_options[:root_ca] ||= root_ca_from_config
         # --feature-gates the controllers read (their defaults otherwise).
         gates = @config["feature_gates"].is_a?(Hash) ? @config["feature_gates"] : {}
-        @controller_options[:max_unavailable_stateful_set] = gates["MaxUnavailableStatefulSet"] == true if gates.key?("MaxUnavailableStatefulSet")
+        if gates.key?("MaxUnavailableStatefulSet")
+          @controller_options[:max_unavailable_stateful_set] =
+            gates["MaxUnavailableStatefulSet"] == true
+        end
         apply_cluster_signing!(@config["cluster_signing"]) if @config["cluster_signing"]
         apply_service_account_key!(@config["service_account_private_key_file"]) if @config["service_account_private_key_file"]
         injected_provider = @runtime_adapters[:cloud_provider] || @runtime_adapters["cloud_provider"] ||
@@ -952,6 +959,7 @@ module Rubernetes
         sync = @config.fetch("sync", {})
         @interval = Float(sync.fetch("interval_seconds", sync.fetch("period_seconds", 0.05)))
         raise ArgumentError, "controller-manager sync interval must be positive" unless @interval.positive?
+
         @mutex = Mutex.new
         @running = false
         @thread = nil
@@ -959,7 +967,7 @@ module Rubernetes
       end
 
       def start
-        @mutex.synchronize { raise RuntimeError, "rubernetes-controller-manager is already started" if @running }
+        @mutex.synchronize { raise "rubernetes-controller-manager is already started" if @running }
         begin
           # The controllers record from their first reconcile.
           metrics = controller_manager_metrics
@@ -988,7 +996,9 @@ module Rubernetes
 
       def stop(reason: "shutdown")
         should_stop = @mutex.synchronize do
-          active = @running || (@thread && @thread.alive?) || @informers.any? { |informer| informer.respond_to?(:running?) && informer.running? }
+          active = @running || (@thread && @thread.alive?) || @informers.any? do |informer|
+            informer.respond_to?(:running?) && informer.running?
+          end
           @running = false
           active
         end
@@ -1100,16 +1110,16 @@ module Rubernetes
                                            controller_options: manager_options, store_for: store_for,
                                            error_handler: lambda do |key, error|
                                              log(:warn, "reconcile.failed", key: key.to_s, error: error.class.name,
-                                                        message: error.message.to_s[0, 500])
+                                                                            message: error.message.to_s[0, 500])
                                            end,
                                            slow_handler: lambda do |key, controller_name, seconds|
                                              log(:warn, "reconcile.slow", key: key.to_s,
-                                                        controller: controller_name.to_s,
-                                                        seconds: seconds.round(2))
+                                                                          controller: controller_name.to_s,
+                                                                          seconds: seconds.round(2))
                                            end,
                                            orphan_handler: lambda do |key, controller_name, count|
                                              log(:info, "reconcile.orphans", key: key.to_s,
-                                                        controller: controller_name.to_s, operations: count)
+                                                                             controller: controller_name.to_s, operations: count)
                                            end,
                                            # --concurrent-*-syncs, as one shared
                                            # pool rather than one per controller.
@@ -1239,7 +1249,7 @@ module Rubernetes
                                          resync_period: @config.fetch("sync", {}).fetch("resync_period", Watch::Informer::DEFAULT_RESYNC_PERIOD),
                                          error_handler: lambda { |error|
                                            log(:error, "informer.failed", resource: descriptor.to_s,
-                                                       error: error.class.name, message: error.message)
+                                                                          error: error.class.name, message: error.message)
                                          })
           names.uniq.each { |name| @manager.register_informer(name, informer) }
           # Reconcile reads for this kind now come from the informer's own
@@ -1251,8 +1261,8 @@ module Rubernetes
         # reports ready, which is indistinguishable from a healthy idle cluster.
         # Say how much was wired so that case is visible in the log.
         log(:info, "informers.built", informers: @informers.length,
-                   controllers: @manager.registry.definitions.length,
-                   resources: grouped.keys.map(&:to_s).sort)
+                                      controllers: @manager.registry.definitions.length,
+                                      resources: grouped.keys.map(&:to_s).sort)
       end
 
       def resource_source_for(descriptor)
@@ -1303,7 +1313,7 @@ module Rubernetes
               busiest = @manager.respond_to?(:take_controller_time) ? @manager.take_controller_time : nil
               deliveries = @informers.filter_map { |informer| informer.take_delivery_stats if informer.respond_to?(:take_delivery_stats) }
               slow_informers = deliveries.select { |stats| stats[:backlog].positive? || stats[:handler_seconds] > 1.0 }
-                                         .sort_by { |stats| -[stats[:backlog], stats[:handler_seconds]].max }.first(5)
+                .sort_by { |stats| -[stats[:backlog], stats[:handler_seconds]].max }.first(5)
               log(:info, "controller_manager.status",
                   leader: @manager.respond_to?(:leader?) ? @manager.leader? : nil,
                   queue_length: queue.respond_to?(:length) ? queue.length : nil,
@@ -1369,7 +1379,6 @@ module Rubernetes
       # leave a cluster without a scheduler or controller manager.
       include TransientLoopErrors
 
-
       # The optional metrics.k8s.io component (sigs.k8s.io/metrics-server's
       # role), hosted here so a cluster needs no extra process.
       def start_metrics_server!
@@ -1394,16 +1403,24 @@ module Rubernetes
       def controller_manager_metrics
         metrics = Observability::Metrics.new(apiserver: false, component: "kube-controller-manager")
         metrics.register("leader_election_master_status", type: :gauge,
-                         help: "Gauge of if the reporting system is master of the relevant lease, 0 indicates backup, 1 indicates master. " \
-                               "'name' is the string used to identify the lease. Please make sure to group by name.")
+                                                          help: "Gauge of if the reporting system is master of the relevant lease, 0 indicates backup, 1 indicates master. " \
+                                                                "'name' is the string used to identify the lease. Please make sure to group by name.")
         metrics.register("running_managed_controllers", type: :gauge,
-                         help: "Indicates where instances of a controller are currently running")
+                                                        help: "Indicates where instances of a controller are currently running")
         metrics.add_collector do |registry|
           leader = @manager.respond_to?(:leader?) ? @manager.leader? : false
           registry.set("leader_election_master_status", leader ? 1 : 0, {"name" => "kube-controller-manager"})
           controllers = @manager.respond_to?(:controllers) ? @manager.controllers : {}
-          names = controllers.respond_to?(:keys) ? controllers.keys : Array(controllers).map { |controller| controller.respond_to?(:name) ? controller.name : controller }
-          names.each { |name| registry.set("running_managed_controllers", 1, {"manager" => "kube-controller-manager", "name" => name.to_s}) }
+          names = if controllers.respond_to?(:keys)
+                    controllers.keys
+                  else
+                    Array(controllers).map do |controller|
+                      controller.respond_to?(:name) ? controller.name : controller
+                    end
+                  end
+          names.each do |name|
+            registry.set("running_managed_controllers", 1, {"manager" => "kube-controller-manager", "name" => name.to_s})
+          end
         end
         metrics.add_collector { |registry| collect_persistent_volumes(registry) }
         metrics.add_collector { |registry| collect_resource_claims(registry) }
@@ -1428,15 +1445,22 @@ module Rubernetes
         end
         volumes = Array(@store.list("PersistentVolume", namespace: :all))
         claims = Array(@store.list("PersistentVolumeClaim", namespace: :all))
-        volumes.group_by { |pv| [pv.dig("status", "phase") == "Bound", pv.dig("spec", "storageClassName").to_s] }.each do |(bound, klass), members|
+        volumes.group_by do |pv|
+          [pv.dig("status", "phase") == "Bound", pv.dig("spec", "storageClassName").to_s]
+        end.each do |(bound, klass), members|
           registry.set(bound ? "pv_collector_bound_pv_count" : "pv_collector_unbound_pv_count", members.length, {"storage_class" => klass})
         end
-        volumes.group_by { |pv| [self.class.pv_plugin_name(pv), (pv.dig("spec", "volumeMode") || "Filesystem").to_s] }.each do |(plugin, mode), members|
+        volumes.group_by do |pv|
+          [self.class.pv_plugin_name(pv), (pv.dig("spec", "volumeMode") || "Filesystem").to_s]
+        end.each do |(plugin, mode), members|
           registry.set("pv_collector_total_pv_count", members.length, {"plugin_name" => plugin, "volume_mode" => mode})
         end
         claims.group_by do |pvc|
-          klass = (pvc.dig("metadata", "annotations") || {}).fetch("volume.beta.kubernetes.io/storage-class") { pvc.dig("spec", "storageClassName") }
-          [pvc.dig("status", "phase") == "Bound", pvc.dig("metadata", "namespace").to_s, klass.to_s, pvc.dig("spec", "volumeAttributesClassName").to_s]
+          klass = (pvc.dig("metadata", "annotations") || {}).fetch("volume.beta.kubernetes.io/storage-class") do
+            pvc.dig("spec", "storageClassName")
+          end
+          [pvc.dig("status", "phase") == "Bound", pvc.dig("metadata", "namespace").to_s, klass.to_s,
+           pvc.dig("spec", "volumeAttributesClassName").to_s]
         end.each do |(bound, namespace, klass, attributes), members|
           registry.set(bound ? "pv_collector_bound_pvc_count" : "pv_collector_unbound_pvc_count", members.length,
                        {"namespace" => namespace, "storage_class" => klass, "volume_attributes_class" => attributes})
@@ -1482,7 +1506,7 @@ module Rubernetes
         registry.register(name, type: :gauge) unless registry.registered?(name)
         registry.reset(name)
         Array(@store.list("ResourceClaim", namespace: :all)).map { |claim| Controller::ResourceClaimController.claim_metric_labels(claim) }
-                                                            .tally.each { |labels, count| registry.set(name, count, labels) }
+          .tally.each { |labels, count| registry.set(name, count, labels) }
       rescue StandardError
         nil
       end
@@ -1505,9 +1529,7 @@ module Rubernetes
         @metrics_server&.stop
         @metrics_server = nil
         @informers.each { |informer| informer.stop(join: true) if informer.respond_to?(:stop) }
-        if @manager&.respond_to?(:elector) && @manager.elector.respond_to?(:release) && @manager.elector.leader?
-          @manager.elector.release
-        end
+        @manager.elector.release if @manager&.respond_to?(:elector) && @manager.elector.respond_to?(:release) && @manager.elector.leader?
         @manager&.stop if @manager&.respond_to?(:stop)
         @thread&.join if @thread && @thread != Thread.current
         @thread = nil
@@ -1527,10 +1549,8 @@ module Rubernetes
 
     class SchedulerService
       include TransientLoopErrors
-      DEFAULT_LEASE_NAME = "rubernetes-scheduler".freeze
 
-      attr_reader :config, :logger, :framework, :client, :node_informer, :pod_informer,
-                  :elector, :last_result, :last_error
+      DEFAULT_LEASE_NAME = "rubernetes-scheduler"
 
       def initialize(config:, logger:, client: nil, client_factory: nil, store: nil, framework: nil,
                      node_informer: nil, pod_informer: nil, resource_sources: {}, runtime_adapters: {},
@@ -1551,6 +1571,7 @@ module Rubernetes
         sync = @config.fetch("sync", {})
         @interval = Float(sync.fetch("interval_seconds", sync.fetch("period_seconds", 0.01)))
         raise ArgumentError, "scheduler sync interval must be positive" unless @interval.positive?
+
         @mutex = Mutex.new
         @nodes = {}
         @pods = {}
@@ -1566,7 +1587,7 @@ module Rubernetes
         @metrics = @scheduler_metrics.registry
       end
 
-      attr_reader :metrics
+      attr_reader :config, :logger, :framework, :client, :node_informer, :pod_informer, :elector, :last_result, :last_error, :metrics
 
       # pkg/scheduler/metrics: the STABLE series kube-scheduler serves.
       ATTEMPT_BUCKETS = Array.new(15) { |index| 0.001 * (2**index) }.freeze
@@ -1637,7 +1658,7 @@ module Rubernetes
                          CSIStorageCapacity PodGroup].freeze
 
       def start
-        @mutex.synchronize { raise RuntimeError, "rubernetes-scheduler is already started" if @running }
+        @mutex.synchronize { raise "rubernetes-scheduler is already started" if @running }
         begin
           build_runtime!
           @elector.step
@@ -1731,6 +1752,7 @@ module Rubernetes
 
         @client ||= @client_factory&.call
         raise Config::Error, "rubernetes-scheduler requires an API client to build informers" unless @client
+
         @node_informer ||= build_informer(Controller::ResourceDescriptor.parse("Node"))
         @pod_informer ||= build_informer(Controller::ResourceDescriptor.parse("Pod"))
       end
@@ -1769,10 +1791,15 @@ module Rubernetes
         end
         return unless changed
 
-        event = "#{kind}#{deleted ? "Delete" : (added ? "Add" : "Update")}"
+        event = "#{kind}#{if deleted
+                            "Delete"
+                          else
+                            (added ? "Add" : "Update")
+                          end}"
         timed_event(event) do
           if REQUEUE_KINDS.include?(kind)
-            retry_unschedulable("#{kind.downcase}_changed", event: event, old_object: deleted ? object : previous_object, new_object: deleted ? nil : object)
+            retry_unschedulable("#{kind.downcase}_changed", event: event, old_object: deleted ? object : previous_object,
+                                                            new_object: deleted ? nil : object)
           end
         end
       end
@@ -1807,16 +1834,18 @@ module Rubernetes
           @cluster_view = {
             generation: @cluster_generation,
             namespace_labels: track && @cluster_informers.key?("Namespace") ? namespaces : nil,
-            volume_data: track ? {"persistentVolumes" => objects["PersistentVolume"].values,
-                                  "persistentVolumeClaims" => objects["PersistentVolumeClaim"].values,
-                                  "storageClasses" => objects["StorageClass"].values,
-                                  "resourceClaims" => objects["ResourceClaim"].values,
-                                  "resourceSlices" => objects["ResourceSlice"].values,
-                                  "deviceClasses" => objects["DeviceClass"].values,
-                                  "csiNodes" => objects["CSINode"].values,
-                                  "csiDrivers" => objects["CSIDriver"].values,
-                                  "volumeAttachments" => objects["VolumeAttachment"].values,
-                                  "csiStorageCapacities" => objects["CSIStorageCapacity"].values} : nil,
+            volume_data: if track
+                           {"persistentVolumes" => objects["PersistentVolume"].values,
+                            "persistentVolumeClaims" => objects["PersistentVolumeClaim"].values,
+                            "storageClasses" => objects["StorageClass"].values,
+                            "resourceClaims" => objects["ResourceClaim"].values,
+                            "resourceSlices" => objects["ResourceSlice"].values,
+                            "deviceClasses" => objects["DeviceClass"].values,
+                            "csiNodes" => objects["CSINode"].values,
+                            "csiDrivers" => objects["CSIDriver"].values,
+                            "volumeAttachments" => objects["VolumeAttachment"].values,
+                            "csiStorageCapacities" => objects["CSIStorageCapacity"].values}
+                         end,
             workload_selectors: track ? {"services" => services, "controllers" => controllers} : nil,
             pod_groups: track && @cluster_informers.key?("PodGroup") ? objects["PodGroup"].dup : nil
           }
@@ -1837,7 +1866,7 @@ module Rubernetes
       def informer_error_handler(descriptor)
         lambda do |error|
           log(:error, "informer.failed", resource: descriptor.to_s,
-                      error: error.class.name, message: error.message)
+                                         error: error.class.name, message: error.message)
         end
       end
 
@@ -1876,7 +1905,9 @@ module Rubernetes
         events << "NodeUpdateNodeLabel" if before[1] != after[1]
         events << "NodeUpdateNodeAllocatable" if before[2] != after[2] || before[3] != after[3]
         events << "NodeUpdateNodeCondition" if before[4] != after[4]
-        events << "NodeUpdateNodeTaint" if before[0] != after[0] && Controller::Support.value(before[0], "taints", nil) != Controller::Support.value(after[0], "taints", nil)
+        events << "NodeUpdateNodeTaint" if before[0] != after[0] && Controller::Support.value(before[0], "taints",
+                                                                                              nil) != Controller::Support.value(after[0],
+                                                                                                                                "taints", nil)
         events << "NodeUpdateNodeDeclaredFeature" if before[5] != after[5]
         events << "NodeUpdate" if events.empty?
         events
@@ -1891,7 +1922,9 @@ module Rubernetes
         events << "#{prefix}UpdatePodLabel" if previous.labels != pod.labels
         events << "#{prefix}UpdatePodToleration" if previous.tolerations != pod.tolerations
         events << "#{prefix}UpdatePodSchedulingGatesEliminated" if !previous.scheduling_gates.empty? && pod.scheduling_gates.empty?
-        events << "#{prefix}UpdatePodGeneratedResourceClaim" if previous.status["resourceClaimStatuses"] != pod.status["resourceClaimStatuses"]
+        if previous.status["resourceClaimStatuses"] != pod.status["resourceClaimStatuses"]
+          events << "#{prefix}UpdatePodGeneratedResourceClaim"
+        end
         before = previous.requests
         after = pod.requests
         events << "#{prefix}UpdatePodScaleDown" if before.any? { |name, amount| after.fetch(name, 0).to_f < amount.to_f }
@@ -1950,7 +1983,11 @@ module Rubernetes
                   queue_size: queue.respond_to?(:size) ? queue.size : nil,
                   queue_backoff: queue.respond_to?(:backoff_size) ? queue.backoff_size : nil,
                   last_error: @last_error && "#{@last_error.class}: #{@last_error.message.to_s[0, 200]}",
-                  last_result: @last_result.respond_to?(:status) ? {status: @last_result.status.to_s, pod: (@last_result.respond_to?(:pod) && @last_result.pod ? @last_result.pod.name : nil), error: (@last_result.respond_to?(:error) && @last_result.error ? @last_result.error.message.to_s[0, 200] : nil)} : @last_result.inspect[0, 120],
+                  last_result: if @last_result.respond_to?(:status)
+                                 {status: @last_result.status.to_s, pod: (@last_result.respond_to?(:pod) && @last_result.pod ? @last_result.pod.name : nil), error: (@last_result.respond_to?(:error) && @last_result.error ? @last_result.error.message.to_s[0, 200] : nil)}
+                               else
+                                 @last_result.inspect[0, 120]
+                               end,
                   queue_items: (@framework.respond_to?(:queue) && @framework.queue.respond_to?(:snapshot) ? @framework.queue.snapshot.inspect[0, 300] : nil),
                   informers: informers.transform_values do |informer|
                     next nil unless informer
@@ -1959,7 +1996,10 @@ module Rubernetes
                     {running: informer.respond_to?(:running?) ? informer.running? : nil,
                      error: informer.respond_to?(:last_error) && informer.last_error ? informer.last_error.message.to_s[0, 160] : nil,
                      reflector_running: reflector.respond_to?(:running?) ? reflector.running? : nil,
-                     reflector_error: reflector.respond_to?(:last_error) && reflector.last_error ? reflector.last_error.message.to_s[0, 160] : nil,
+                     reflector_error: if reflector.respond_to?(:last_error) && reflector.last_error
+                                        reflector.last_error.message.to_s[0,
+                                                                          160]
+                                      end,
                      resource_version: reflector.respond_to?(:resource_version) ? reflector.resource_version : nil}
                   end)
             rescue StandardError => error
@@ -1987,7 +2027,9 @@ module Rubernetes
         return unless changed
 
         node_events(previous, typed).each do |event|
-          timed_event(event) { retry_unschedulable("node_changed", node: typed.name, event: event, old_object: previous, new_object: typed) }
+          timed_event(event) do
+            retry_unschedulable("node_changed", node: typed.name, event: event, old_object: previous, new_object: typed)
+          end
         end
       end
 
@@ -2047,7 +2089,10 @@ module Rubernetes
             # An assigned Pod's add/update (and an unassigned Pod's changed
             # tolerations, labels, gates or claims) may unblock other Pods.
             hinted = assigned || event.include?("UpdatePod")
-            retry_unschedulable("pod_changed", pod: "#{typed.namespace}/#{typed.name}", event: event, old_object: previous, new_object: typed) if hinted && event != "assignedPodUpdate"
+            if hinted && event != "assignedPodUpdate"
+              retry_unschedulable("pod_changed", pod: "#{typed.namespace}/#{typed.name}", event: event, old_object: previous,
+                                                 new_object: typed)
+            end
           end
         end
       end
@@ -2087,6 +2132,7 @@ module Rubernetes
         return unless pod.node_name.empty?
         return unless pod.scheduler_name == "default-scheduler"
         return if pod.metadata["deletionTimestamp"] || pod.metadata[:deletionTimestamp]
+
         phase = pod.status["phase"] || pod.status[:phase]
         return if phase && !phase.to_s.empty? && phase.to_s != "Pending"
 
@@ -2197,7 +2243,7 @@ module Rubernetes
         status["nominatedNodeName"] = nominated.empty? ? nil : nominated unless nominated.nil?
         timed_status_patch do
           @client.patch("pods", {"status" => status}, type: :strategic, namespace: pod.namespace,
-                        api_version: "v1", name: pod.name, subresource: "status")
+                                                      api_version: "v1", name: pod.name, subresource: "status")
         end
         (@unschedulable_reports ||= {})[key] = report
         log(:info, "scheduler.unschedulable", pod: key, message: message)
@@ -2223,7 +2269,7 @@ module Rubernetes
         # Strategic merge: conditions merge by type.  A JSON merge patch
         # replaced the whole list and took Ready away from a running victim.
         @client.patch("pods", {"status" => {"conditions" => [condition]}}, type: :strategic,
-                      namespace: victim.namespace, api_version: "v1", name: victim.name, subresource: "status")
+                                                                           namespace: victim.namespace, api_version: "v1", name: victim.name, subresource: "status")
       rescue Client::APIError => error
         # A victim that vanished, or whose status we may not write, must not
         # stop the preemption it was chosen for.
@@ -2252,7 +2298,7 @@ module Rubernetes
       def patch_nomination(pod, node_name)
         timed_status_patch do
           @client.patch("pods", {"status" => {"nominatedNodeName" => node_name}}, type: :merge, namespace: pod.namespace,
-                        api_version: "v1", name: pod.name, subresource: "status")
+                                                                                  api_version: "v1", name: pod.name, subresource: "status")
         end
         true
       rescue Client::APIError => error
@@ -2271,10 +2317,12 @@ module Rubernetes
         @scheduler_metrics&.async_call_queued(Scheduler::Metrics::CALL_POD_STATUS_PATCH)
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         result = yield
-        @scheduler_metrics&.async_call(Scheduler::Metrics::CALL_POD_STATUS_PATCH, "success", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+        @scheduler_metrics&.async_call(Scheduler::Metrics::CALL_POD_STATUS_PATCH, "success",
+                                       Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
         result
       rescue StandardError
-        @scheduler_metrics&.async_call(Scheduler::Metrics::CALL_POD_STATUS_PATCH, "error", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+        @scheduler_metrics&.async_call(Scheduler::Metrics::CALL_POD_STATUS_PATCH, "error",
+                                       Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
         raise
       end
 
@@ -2287,9 +2335,7 @@ module Rubernetes
 
       def delete_victim_pod(victim)
         @elector.step
-        unless @elector.leader?
-          raise Controller::LeadershipLostError, "scheduler leadership was lost before preempting #{victim.name}"
-        end
+        raise Controller::LeadershipLostError, "scheduler leadership was lost before preempting #{victim.name}" unless @elector.leader?
         return true unless @client
 
         mark_victim_disrupted(victim)
@@ -2318,16 +2364,14 @@ module Rubernetes
                                   "lastTransitionTime" => (existing && existing["status"] == condition["status"] ? existing["lastTransitionTime"] : Time.now.utc.iso8601))
         merged = conditions.reject { |entry| entry["type"] == condition["type"] } + [stamped]
         @client.patch({"status" => {"conditions" => merged}}, type: :merge, namespace: namespace, name: name,
-                      api_version: "scheduling.k8s.io/v1alpha2", path: "/apis/scheduling.k8s.io/v1alpha2/namespaces/#{namespace}/podgroups/#{name}/status")
+                                                              api_version: "scheduling.k8s.io/v1alpha2", path: "/apis/scheduling.k8s.io/v1alpha2/namespaces/#{namespace}/podgroups/#{name}/status")
       rescue StandardError => error
         log(:warn, "scheduler.podgroup_status_failed", podgroup: "#{namespace}/#{name}", error: error.message.to_s[0, 200])
       end
 
       def bind_pod(pod, node)
         @elector.step
-        unless @elector.leader?
-          raise Controller::LeadershipLostError, "scheduler leadership was lost before binding #{pod.name}"
-        end
+        raise Controller::LeadershipLostError, "scheduler leadership was lost before binding #{pod.name}" unless @elector.leader?
         return assume_and_bind(pod, node) if @client && async_binding?
 
         live_pod = if @client
@@ -2345,9 +2389,8 @@ module Rubernetes
         candidate["spec"]["nodeName"] = node.name
         if @client
           @elector.step
-          unless @elector.leader?
-            raise Controller::LeadershipLostError, "scheduler leadership was lost before binding #{pod.name}"
-          end
+          raise Controller::LeadershipLostError, "scheduler leadership was lost before binding #{pod.name}" unless @elector.leader?
+
           # kube-scheduler binds through pods/binding; the API server sets
           # nodeName and PodScheduled=True atomically and refuses a second
           # binding, which is what makes concurrent schedulers safe.
@@ -2452,10 +2495,12 @@ module Rubernetes
         begin
           response = bind_through_api(binding, pod, node)
         rescue StandardError
-          @scheduler_metrics&.async_call(Scheduler::Metrics::CALL_POD_BINDING, "error", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+          @scheduler_metrics&.async_call(Scheduler::Metrics::CALL_POD_BINDING, "error",
+                                         Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
           raise
         end
-        @scheduler_metrics&.async_call(Scheduler::Metrics::CALL_POD_BINDING, "success", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+        @scheduler_metrics&.async_call(Scheduler::Metrics::CALL_POD_BINDING, "success",
+                                       Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
         forget_assumed(key)
         @effect_journal&.record(effect_type: "bind", reconcile_key: "v1/pods/#{pod.namespace}/#{pod.name}",
                                 action: :bind, object: assumed.to_h, response: response,
@@ -2513,12 +2558,18 @@ module Rubernetes
       rescue StandardError => error
         # A client without the binding path (tests, older adapters) falls
         # back to writing nodeName directly.
-        raise Scheduler::BindError, "binding #{pod.namespace}/#{pod.name} to #{node.name} failed: #{error.message}" if error.message.include?("409") || error.message.include?("already assigned")
+        if error.message.include?("409") || error.message.include?("already assigned")
+          raise Scheduler::BindError,
+                "binding #{pod.namespace}/#{pod.name} to #{node.name} failed: #{error.message}"
+        end
         # The Pod is gone: patching it cannot succeed either.
-        raise Scheduler::BindError, "binding #{pod.namespace}/#{pod.name} to #{node.name} failed: #{error.message}" if error.message.include?("HTTP 404")
+        if error.message.include?("HTTP 404")
+          raise Scheduler::BindError,
+                "binding #{pod.namespace}/#{pod.name} to #{node.name} failed: #{error.message}"
+        end
 
         response = @client.patch("pods", {"spec" => {"nodeName" => node.name}}, type: :merge,
-                                 namespace: pod.namespace, api_version: "v1", name: pod.name)
+                                                                                namespace: pod.namespace, api_version: "v1", name: pod.name)
         if response.is_a?(Hash)
           observed = response.dig("spec", "nodeName") || response.dig(:spec, :nodeName)
           if observed && observed.to_s != node.name
@@ -2557,9 +2608,7 @@ module Rubernetes
         @node_informer&.stop(join: true) if @node_informer&.respond_to?(:stop)
         @pod_informer&.stop(join: true) if @pod_informer&.respond_to?(:stop)
         @cluster_informers.each_value { |informer| informer.stop(join: true) if informer.respond_to?(:stop) }
-        if @elector&.leader?
-          @elector.release
-        end
+        @elector.release if @elector&.leader?
         @thread&.join if @thread && @thread != Thread.current
         @thread = nil
       rescue StandardError => error
@@ -2577,8 +2626,6 @@ module Rubernetes
     end
 
     class ProxyService
-      attr_reader :config, :logger, :proxy, :client, :subscriptions, :last_error
-
       def initialize(config:, logger:, client: nil, client_factory: nil, proxy: nil,
                      resource_sources: {}, runtime_adapters: {}, clock: -> { Time.now.utc })
         @config = config || {}
@@ -2598,10 +2645,10 @@ module Rubernetes
         @started_at = nil
       end
 
-      attr_reader :metrics
+      attr_reader :config, :logger, :proxy, :client, :subscriptions, :last_error, :metrics
 
       def start
-        @mutex.synchronize { raise RuntimeError, "rubernetes-proxy is already started" if @running }
+        @mutex.synchronize { raise "rubernetes-proxy is already started" if @running }
         begin
           build_runtime!
           @proxy.metrics = @proxy_metrics if @proxy.respond_to?(:metrics=)
@@ -2620,15 +2667,16 @@ module Rubernetes
           # no longer runs into the client's 60 s read timeout, which had been
           # counted as a failure, forced a resync, and backed the watch off.
           @subscriptions = @proxy.start_watch(service_source: service_source,
-                                               endpoint_slice_source: endpoint_source,
-                                               timeout_seconds: PROXY_WATCH_TIMEOUT_SECONDS,
-                                               error_handler: lambda do |error|
-                                                 log(:warn, "proxy.watch_error", error: error.class.name,
-                                                            message: error.message.to_s[0, 500],
-                                                            cause: error.respond_to?(:cause) && error.cause ? error.cause.message.to_s[0, 300] : nil,
-                                                            backtrace: Array(error.backtrace).first(4))
-                                               end)
+                                              endpoint_slice_source: endpoint_source,
+                                              timeout_seconds: PROXY_WATCH_TIMEOUT_SECONDS,
+                                              error_handler: lambda do |error|
+                                                log(:warn, "proxy.watch_error", error: error.class.name,
+                                                                                message: error.message.to_s[0, 500],
+                                                                                cause: error.respond_to?(:cause) && error.cause ? error.cause.message.to_s[0, 300] : nil,
+                                                                                backtrace: Array(error.backtrace).first(4))
+                                              end)
           raise Config::Error, "rubernetes-proxy could not start Service/EndpointSlice watch loops" if @subscriptions.empty?
+
           @mutex.synchronize { @running = true }
           @started_at = @clock.call
           start_status_monitor
@@ -2688,8 +2736,12 @@ module Rubernetes
                   publish_max: publishes[:max]&.round(3),
                   backend: @proxy.respond_to?(:backend) ? @proxy.backend.class.name.to_s.split("::").last : nil,
                   publish_error: @proxy.respond_to?(:last_publish_error) && @proxy.last_publish_error ? @proxy.last_publish_error.message.to_s[0, 200] : nil,
-                  watches_running: Array(@subscriptions).map { |subscription| subscription.respond_to?(:running?) ? subscription.running? : nil },
-                  watch_errors: Array(@subscriptions).map { |subscription| subscription.respond_to?(:last_error) && subscription.last_error ? subscription.last_error.message.to_s[0, 200] : nil })
+                  watches_running: Array(@subscriptions).map do |subscription|
+                    subscription.respond_to?(:running?) ? subscription.running? : nil
+                  end,
+                  watch_errors: Array(@subscriptions).map do |subscription|
+                    subscription.respond_to?(:last_error) && subscription.last_error ? subscription.last_error.message.to_s[0, 200] : nil
+                  end)
             rescue StandardError => error
               log(:warn, "proxy.status_failed", error: error.message)
             end
@@ -2703,13 +2755,12 @@ module Rubernetes
         return if @proxy
 
         raise Config::Error, "rubernetes-proxy requires an API client or injected proxy" unless @client
+
         node_name = @config["node_name"]
         raise Config::Error, "rubernetes-proxy.node_name is required to start the proxy" if node_name.to_s.empty?
 
         backend = @runtime_adapters[:proxy_backend] || @runtime_adapters["proxy_backend"] || backend_name
-        if backend.to_s.downcase == "memory"
-          backend = Proxy::MemoryBackend.new(clock: @clock)
-        end
+        backend = Proxy::MemoryBackend.new(clock: @clock) if backend.to_s.downcase == "memory"
         @proxy = Proxy::Proxy.new(
           local_node: node_name,
           backend: backend,
@@ -2726,13 +2777,14 @@ module Rubernetes
         # kernel conntrack entries of its making to reconcile.
         if @proxy.respond_to?(:conntrack_reconciler=) && !backend.is_a?(Proxy::MemoryBackend)
           @proxy.conntrack_reconciler = @runtime_adapters[:conntrack_reconciler] || @runtime_adapters["conntrack_reconciler"] ||
-                                        Proxy::ConntrackReconciler.new(families: proxy_ip_families, metrics: @proxy_metrics, logger: @logger)
+                                        Proxy::ConntrackReconciler.new(families: proxy_ip_families, metrics: @proxy_metrics,
+                                                                       logger: @logger)
         end
         trace_keys = defined?(Controller::Manager::TRACE_KEYS) ? Controller::Manager::TRACE_KEYS : nil
-        if trace_keys && @proxy.respond_to?(:trace=)
-          @proxy.trace = lambda do |fields|
-            log(:info, "proxy.trace", **fields) if trace_keys.match?(fields[:key].to_s) || trace_keys.match?(fields[:service_key].to_s)
-          end
+        return unless trace_keys && @proxy.respond_to?(:trace=)
+
+        @proxy.trace = lambda do |fields|
+          log(:info, "proxy.trace", **fields) if trace_keys.match?(fields[:key].to_s) || trace_keys.match?(fields[:service_key].to_s)
         end
       end
 

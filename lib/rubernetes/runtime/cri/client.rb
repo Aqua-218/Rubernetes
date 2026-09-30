@@ -149,8 +149,8 @@ module Rubernetes
           @mutex.synchronize { @pending.delete(id) } if id
         end
 
-        def runtime(method, request = {}, **options) = call("RuntimeService", method, request, **options)
-        def image(method, request = {}, **options) = call("ImageService", method, request, **options)
+        def runtime(method, request = {}, **) = call("RuntimeService", method, request, **)
+        def image(method, request = {}, **) = call("ImageService", method, request, **)
 
         def close
           @mutex.synchronize { stop_helper_locked }

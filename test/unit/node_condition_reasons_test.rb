@@ -23,12 +23,12 @@ class NodeConditionReasonsTest < Minitest::Test
      "metadata" => {"name" => "p", "namespace" => "ns", "uid" => "u"}, "spec" => spec}
   end
 
-  def conditions(pod_object, state, **options)
-    @aggregator.aggregate(pod: pod_object, state: state, **options)
-               .conditions.to_h { |entry| [entry.type, entry] }
+  def conditions(pod_object, state, **)
+    @aggregator.aggregate(pod: pod_object, state: state, **)
+      .conditions.to_h { |entry| [entry.type, entry] }
   end
 
-  def running(name)
+  def running(_name)
     {"state" => "running", "ready" => true, "started" => true}
   end
 

@@ -31,7 +31,7 @@ class ControllerStoreAdapterUsesCachesTest < Minitest::Test
     adapter = Adapter.new(client: NoClient.new, resource_descriptors: [descriptor], caches: caches)
     caches[descriptor.identifier] = Cache.new([pod("a", "ns"), pod("b", "other")])
 
-    assert_equal ["a"], adapter.list(descriptor, namespace: "ns").map { |object| object.dig("metadata", "name") }
+    assert_equal(["a"], adapter.list(descriptor, namespace: "ns").map { |object| object.dig("metadata", "name") })
     assert_equal "b", adapter.find(descriptor, name: "b", namespace: "other").dig("metadata", "name")
   end
 end

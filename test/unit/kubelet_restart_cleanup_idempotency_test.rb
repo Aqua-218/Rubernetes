@@ -43,9 +43,7 @@ class KubeletRestartCleanupIdempotencyTest < Minitest::Test
     def remove_sandbox(id)
       @calls << [:remove_sandbox, id]
       raise "workspace: umount2 No such file or directory" if @fail_remove
-      if @unknown_after_first && @removed[id]
-        raise Rubernetes::Runtime::Native::Error, "unknown sandbox #{id}"
-      end
+      raise Rubernetes::Runtime::Native::Error, "unknown sandbox #{id}" if @unknown_after_first && @removed[id]
 
       @hold&.pop
       @removed[id] = true
@@ -68,6 +66,7 @@ class KubeletRestartCleanupIdempotencyTest < Minitest::Test
     lifecycle.start(pod)
     runtime.removed["sandbox-1"] = true # an earlier attempt finished the removal
     result = lifecycle.terminate(pod)
+
     assert_equal "Removed", result.state
     assert_empty result.cleanup_errors
     assert_includes lifecycle.record("51c3d6d8")[:events].map { |entry| entry["type"] }, "sandbox.already_removed"
@@ -86,6 +85,7 @@ class KubeletRestartCleanupIdempotencyTest < Minitest::Test
     sleep 0.05
     runtime.hold << :go
     results = [first.value, second.value]
+
     assert_equal %w[Removed Removed], results.map(&:state)
     assert_equal 1, runtime.calls.count { |call| call == [:remove_sandbox, "sandbox-1"] }, "the second waited for the first"
   end
@@ -110,6 +110,7 @@ class KubeletRestartCleanupIdempotencyTest < Minitest::Test
       runtime.fail_remove = true
       first = Rubernetes::Node::Lifecycle.new(runtime: runtime, state_store: state, sleeper: ->(_) {})
       first.start(pod)
+
       assert_equal "CleanupPending", first.terminate(pod).state
 
       # Restart: the runtime still cannot clean this one Pod.
@@ -121,9 +122,11 @@ class KubeletRestartCleanupIdempotencyTest < Minitest::Test
       agent = Rubernetes::Node::Agent.new(node_name: "worker-1", api: api, lifecycle: second, sync_loop: Loop.new, sleeper: ->(_) {},
                                           error_handler: ->(error, *context) { notices << [error.message, context] })
       agent.start
-      assert agent.registered?, "the node came up"
+
+      assert_predicate agent, :registered?, "the node came up"
       assert_equal 1, api.nodes.length
       report = second.recover
+
       assert_equal true, report["ready"]
       assert_equal ["51c3d6d8"], report["blocked"]
       assert_match(/umount2 No such file or directory/, report.dig("pod_errors", "51c3d6d8").join)
@@ -135,9 +138,14 @@ class KubeletRestartCleanupIdempotencyTest < Minitest::Test
       runtime.removed["sandbox-1"] = true
       runtime.unknown_after_first = true
       second.retry_pending_cleanups(now: 10_000.0)
+
       assert_equal "Removed", second.state(pod)
     ensure
-      agent&.stop rescue nil
+      begin
+        agent&.stop
+      rescue StandardError
+        nil
+      end
     end
   end
 
@@ -181,10 +189,14 @@ class KubeletWorkspaceUmountIdempotencyTest < Minitest::Test
     adapter
   end
 
-  def workspace = Rubernetes::Runtime::Native::Filesystem::Workspace.new(id: "w", root: "/tmp/w/root", upper: nil, work: nil, identity: "workspace:w", image_digest: nil)
+  def workspace
+    Rubernetes::Runtime::Native::Filesystem::Workspace.new(id: "w", root: "/tmp/w/root", upper: nil, work: nil, identity: "workspace:w",
+                                                           image_digest: nil)
+  end
 
   def test_enoent_and_einval_are_success_other_errors_are_not
     require "rubernetes/runtime/native"
+
     assert_nil adapter(Errno::ENOENT::Errno).send(:cleanup_mounted_workspace, workspace, {"mount_identity" => "identity"}, "ns")
     assert_nil adapter(Errno::EINVAL::Errno).send(:cleanup_mounted_workspace, workspace, {"mount_identity" => "identity"}, "ns")
     assert_nil adapter(nil).send(:cleanup_mounted_workspace, workspace, {"mount_identity" => "identity"}, "ns")

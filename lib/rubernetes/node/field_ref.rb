@@ -16,7 +16,8 @@ module Rubernetes
         status.hostIP status.hostIPs status.podIP status.podIPs
       ].freeze
       SUPPORTED_VOLUME_FIELDS = %w[metadata.name metadata.namespace metadata.uid metadata.labels metadata.annotations].freeze
-      SUPPORTED_RESOURCES = %w[limits.cpu limits.memory limits.ephemeral-storage requests.cpu requests.memory requests.ephemeral-storage].freeze
+      SUPPORTED_RESOURCES = %w[limits.cpu limits.memory limits.ephemeral-storage requests.cpu requests.memory
+                               requests.ephemeral-storage].freeze
 
       module_function
 
@@ -31,7 +32,7 @@ module Rubernetes
           raise Error, "resourceFieldRef requires a containerName" if target.nil?
 
           resolve_resource(Helpers.key(resource, "resource").to_s, target, divisor: Helpers.key(resource, "divisor", "1"),
-                           node_allocatable: node_allocatable)
+                                                                           node_allocatable: node_allocatable)
         else
           raise Error, "item must carry fieldRef or resourceFieldRef"
         end
@@ -56,17 +57,31 @@ module Rubernetes
         when "metadata.uid" then Helpers.key(metadata, "uid", "").to_s
         when "metadata.labels"
           raise Error, "metadata.labels is not a valid env field" if env
+
           format_map(Helpers.key(metadata, "labels", {}) || {})
         when "metadata.annotations"
           raise Error, "metadata.annotations is not a valid env field" if env
+
           format_map(Helpers.key(metadata, "annotations", {}) || {})
         when "spec.nodeName" then Helpers.key(spec, "nodeName", "").to_s
         when "spec.serviceAccountName" then Helpers.key(spec, "serviceAccountName", Helpers.key(spec, "serviceAccount", "default")).to_s
         when "status.hostIP" then (host_ip || Helpers.key(status, "hostIP", "")).to_s
-        when "status.hostIPs" then Array(host_ip ? [host_ip] : Helpers.key(status, "hostIPs", []).map { |entry| Helpers.key(entry, "ip", entry) }).join(",")
+        when "status.hostIPs" then Array(host_ip ? [host_ip] : Helpers.key(status, "hostIPs", []).map do |entry|
+          Helpers.key(entry, "ip", entry)
+        end).join(",")
         when "status.podIP" then (pod_ip.is_a?(Array) ? pod_ip.first : pod_ip || Helpers.key(status, "podIP", "")).to_s
         when "status.podIPs"
-          ips = pod_ip.is_a?(Array) ? pod_ip : (pod_ip ? [pod_ip] : Helpers.key(status, "podIPs", []).map { |entry| Helpers.key(entry, "ip", entry) })
+          ips = if pod_ip.is_a?(Array)
+                  pod_ip
+                else
+                  (if pod_ip
+                     [pod_ip]
+                   else
+                     Helpers.key(status, "podIPs", []).map do |entry|
+                       Helpers.key(entry, "ip", entry)
+                     end
+                   end)
+                end
           ips.map(&:to_s).join(",")
         else
           raise Error, "unsupported fieldPath #{field_path.inspect}"

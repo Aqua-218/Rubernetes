@@ -70,6 +70,7 @@ class DisruptionTargetConditionTest < Minitest::Test
 
     assert_equal 1, store.updated.length
     condition = condition_of(store.updated.first)
+
     refute_nil condition, "the evicted Pod must carry DisruptionTarget"
     assert_equal "True", condition["status"]
     assert_equal "EvictionByEvictionAPI", condition["reason"]
@@ -82,6 +83,7 @@ class DisruptionTargetConditionTest < Minitest::Test
     evict(store)
 
     types = Array(store.updated.first.dig("status", "conditions")).map { |c| c["type"] }
+
     assert_includes types, "Ready"
     assert_equal 1, types.count("DisruptionTarget"), "the condition is set, never duplicated"
   end
@@ -94,6 +96,7 @@ class DisruptionTargetConditionTest < Minitest::Test
     evict(store)
 
     conditions = Array(store.updated.first.dig("status", "conditions")).select { |c| c["type"] == "DisruptionTarget" }
+
     assert_equal 1, conditions.length
     assert_equal "EvictionByEvictionAPI", conditions.first["reason"]
   end

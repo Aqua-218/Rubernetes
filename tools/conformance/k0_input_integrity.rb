@@ -52,7 +52,7 @@ module Conformance
       {
         "id" => "source_identity",
         "passed" => observed_commit == expected_commit &&
-                    (observed_tag.nil? || observed_tag == expected_tag),
+          (observed_tag.nil? || observed_tag == expected_tag),
         "expected_commit" => expected_commit,
         "observed_commit" => observed_commit,
         "expected_tag_object" => expected_tag,
@@ -80,13 +80,11 @@ module Conformance
     def conformance_definition(source_root)
       spec = L.conformance_definition
       path = File.join(source_root, spec.fetch("path"))
-      unless File.file?(path)
-        return {"id" => "conformance_definition", "passed" => false, "error" => "missing #{spec.fetch("path")}"}
-      end
+      return {"id" => "conformance_definition", "passed" => false, "error" => "missing #{spec.fetch("path")}"} unless File.file?(path)
 
       digest = L.digest_file(path)
       require "yaml"
-      document = YAML.safe_load(File.read(path))
+      document = YAML.safe_load_file(path)
       entries = (document.is_a?(Hash) ? document.values.flatten : Array(document)).select { |entry| entry.is_a?(Hash) }
       codenames = entries.filter_map { |entry| entry["codename"] }
       testnames = entries.filter_map { |entry| entry["testname"] }
@@ -98,9 +96,9 @@ module Conformance
       {
         "id" => "conformance_definition",
         "passed" => digest == spec.fetch("sha256") &&
-                    entries.length == spec.fetch("test_count") &&
-                    codenames.length == spec.fetch("test_count") &&
-                    codenames.uniq.length == codenames.length,
+          entries.length == spec.fetch("test_count") &&
+          codenames.length == spec.fetch("test_count") &&
+          codenames.uniq.length == codenames.length,
         "expected_sha256" => spec.fetch("sha256"),
         "observed_sha256" => digest,
         "expected_test_count" => spec.fetch("test_count"),
@@ -158,20 +156,18 @@ module Conformance
     # 6. The test KUBECONFIG must name only the Rubernetes cluster and must not
     #    share credentials with the Kubernetes oracle cluster.
     def kubeconfig_isolation(kubeconfig, oracle_kubeconfig)
-      unless kubeconfig
-        return {"id" => "kubeconfig_isolation", "passed" => false, "error" => "no kubeconfig given"}
-      end
+      return {"id" => "kubeconfig_isolation", "passed" => false, "error" => "no kubeconfig given"} unless kubeconfig
       unless File.file?(kubeconfig)
         return {"id" => "kubeconfig_isolation", "passed" => false, "error" => "kubeconfig #{kubeconfig} is missing"}
       end
 
       require "yaml"
-      document = YAML.safe_load(File.read(kubeconfig), aliases: true) || {}
+      document = YAML.safe_load_file(kubeconfig, aliases: true) || {}
       clusters = Array(document["clusters"]).map { |entry| entry["name"] }
       servers = Array(document["clusters"]).map { |entry| entry.dig("cluster", "server") }
       secrets = credential_material(document)
       oracle_secrets = if oracle_kubeconfig && File.file?(oracle_kubeconfig)
-                         credential_material(YAML.safe_load(File.read(oracle_kubeconfig), aliases: true) || {})
+                         credential_material(YAML.safe_load_file(oracle_kubeconfig, aliases: true) || {})
                        else
                          []
                        end
@@ -195,10 +191,10 @@ module Conformance
       end
     end
 
-    def git(root, *args)
+    def git(root, *)
       return nil unless File.directory?(File.join(root, ".git"))
 
-      out, _err, status = Open3.capture3("git", "-C", root, *args)
+      out, _err, status = Open3.capture3("git", "-C", root, *)
       status.success? ? out.strip : nil
     rescue Errno::ENOENT
       nil
@@ -210,8 +206,8 @@ if $PROGRAM_NAME == __FILE__
   source_root = ENV.fetch("RUBERNETES_K8S_SOURCE", "/tmp/kubernetes-v1.36.2")
   result = Conformance::K0.run(
     source_root: source_root,
-    kubeconfig: ENV["KUBECONFIG"],
-    oracle_kubeconfig: ENV["RUBERNETES_ORACLE_KUBECONFIG"]
+    kubeconfig: ENV.fetch("KUBECONFIG", nil),
+    oracle_kubeconfig: ENV.fetch("RUBERNETES_ORACLE_KUBECONFIG", nil)
   )
   puts JSON.pretty_generate(result)
   exit(result.fetch("passed") ? 0 : 1)

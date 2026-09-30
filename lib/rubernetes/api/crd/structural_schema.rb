@@ -102,27 +102,47 @@ module Rubernetes
           end
           raise NotStructural, "#{join(path)}: type #{type.inspect} is not allowed" if type && !TYPES.include?(type)
           raise NotStructural, "root schema must be an object" if path.empty? && type != "object"
+
           %w[allOf anyOf oneOf].each do |combinator|
             Array(schema[combinator]).each_with_index do |branch, index|
-              raise NotStructural, "#{join(path + ["#{combinator}[#{index}]"])}: must not set type" if branch.is_a?(Hash) && branch.key?("type")
-              raise NotStructural, "#{join(path + ["#{combinator}[#{index}]"])}: must not set default" if branch.is_a?(Hash) && branch.key?("default")
+              if branch.is_a?(Hash) && branch.key?("type")
+                raise NotStructural,
+                      "#{join(path + ["#{combinator}[#{index}]"])}: must not set type"
+              end
+              if branch.is_a?(Hash) && branch.key?("default")
+                raise NotStructural,
+                      "#{join(path + ["#{combinator}[#{index}]"])}: must not set default"
+              end
             end
           end
-          raise NotStructural, "#{join(path)}: metadata may only specify name and generateName" if path == ["metadata"] && schema["properties"] && (schema["properties"].keys - %w[name generateName]).any?
+          if path == ["metadata"] && schema["properties"] && (schema["properties"].keys - %w[
+            name generateName
+          ]).any?
+            raise NotStructural,
+                  "#{join(path)}: metadata may only specify name and generateName"
+          end
+
           (schema["properties"] || {}).each { |name, child| validate_structural!(child, path + [name]) }
           validate_structural!(schema["items"], path + ["items"]) if schema["items"].is_a?(Hash)
           if schema["additionalProperties"].is_a?(Hash)
             raise NotStructural, "#{join(path)}: additionalProperties and properties are mutually exclusive" if schema["properties"]
+
             validate_structural!(schema["additionalProperties"], path + ["additionalProperties"])
           end
           if schema["x-kubernetes-list-type"] == "map"
             keys = Array(schema["x-kubernetes-list-map-keys"])
             raise NotStructural, "#{join(path)}: list-type map requires x-kubernetes-list-map-keys" if keys.empty?
+
             item_properties = schema.dig("items", "properties") || {}
-            keys.each { |key| raise NotStructural, "#{join(path)}: map key #{key} must be a defined item property" unless item_properties.key?(key) }
+            keys.each do |key|
+              raise NotStructural, "#{join(path)}: map key #{key} must be a defined item property" unless item_properties.key?(key)
+            end
           end
           Array(schema["x-kubernetes-validations"]).each_with_index do |rule, index|
-            raise NotStructural, "#{join(path)}: x-kubernetes-validations[#{index}] needs a rule" unless rule.is_a?(Hash) && rule["rule"].is_a?(String)
+            unless rule.is_a?(Hash) && rule["rule"].is_a?(String)
+              raise NotStructural,
+                    "#{join(path)}: x-kubernetes-validations[#{index}] needs a rule"
+            end
           end
         end
 
@@ -135,9 +155,7 @@ module Rubernetes
         def default_value(value, schema)
           return value if schema.nil? || !schema.is_a?(Hash)
 
-          if value.nil? && schema.key?("default")
-            value = deep_copy(schema["default"])
-          end
+          value = deep_copy(schema["default"]) if value.nil? && schema.key?("default")
           case value
           when Hash
             (schema["properties"] || {}).each do |name, child|
@@ -152,9 +170,7 @@ module Rubernetes
               value.each_key { |key| value[key] = default_value(value[key], schema["additionalProperties"]) }
             end
           when Array
-            if schema["items"].is_a?(Hash)
-              value.map! { |item| default_value(item, schema["items"]) }
-            end
+            value.map! { |item| default_value(item, schema["items"]) } if schema["items"].is_a?(Hash)
           end
           value
         end
@@ -168,6 +184,7 @@ module Rubernetes
 
         def prune_value(value, schema, root: false)
           return value if schema.nil? || !schema.is_a?(Hash)
+
           # An embedded resource still has its ObjectMeta pruned, even when the
           # schema preserves everything else about it: metadata is a known
           # Kubernetes type, not part of the free-form content.
@@ -223,6 +240,7 @@ module Rubernetes
 
         def collect_unknown(value, schema, path, paths, root: false)
           return unless schema.is_a?(Hash)
+
           if schema["x-kubernetes-preserve-unknown-fields"] == true && !schema["properties"] &&
              !schema["items"] && !schema["additionalProperties"] && !root
             if schema["x-kubernetes-embedded-resource"] == true && value.is_a?(Hash)
@@ -248,7 +266,7 @@ module Rubernetes
               elsif schema["additionalProperties"] == true || preserve
                 next
               else
-                paths << path + [key]
+                paths << (path + [key])
               end
             end
           when Array
@@ -339,7 +357,9 @@ module Rubernetes
           when Array
             return unless old.is_a?(Array)
 
-            value.each_with_index { |child, index| collect_unchanged(child, old[index], path + ["[#{index}]"], unchanged) if index < old.length }
+            value.each_with_index do |child, index|
+              collect_unchanged(child, old[index], path + ["[#{index}]"], unchanged) if index < old.length
+            end
           end
         end
 
@@ -372,6 +392,7 @@ module Rubernetes
           elsif value.nil?
             return if schema["nullable"] == true
             return type_invalid(causes, path, value, schema["type"]) if schema["type"] && !schema.key?("default")
+
             return
           end
           type = schema["type"]
@@ -379,12 +400,19 @@ module Rubernetes
 
           if schema["enum"] && !schema["enum"].any? { |allowed| allowed == value }
             supported = schema["enum"].map { |allowed| allowed.is_a?(String) ? go_quote(allowed) : go_quote(JSON.generate(allowed)) }
-            add(causes, path, "Unsupported value: #{render_value(value)}: supported values: #{supported.join(", ")}", "FieldValueNotSupported")
+            add(causes, path, "Unsupported value: #{render_value(value)}: supported values: #{supported.join(", ")}",
+                "FieldValueNotSupported")
           end
           case value
           when String
-            invalid(causes, path, value, "should be at least #{schema["minLength"]} chars long") if schema["minLength"] && value.length < schema["minLength"]
-            add(causes, path, "Too long: may not be more than #{schema["maxLength"]} #{schema["maxLength"] == 1 ? "byte" : "bytes"}", "FieldValueTooLong") if schema["maxLength"] && value.length > schema["maxLength"]
+            if schema["minLength"] && value.length < schema["minLength"]
+              invalid(causes, path, value,
+                      "should be at least #{schema["minLength"]} chars long")
+            end
+            if schema["maxLength"] && value.length > schema["maxLength"]
+              add(causes, path, "Too long: may not be more than #{schema["maxLength"]} #{schema["maxLength"] == 1 ? "byte" : "bytes"}",
+                  "FieldValueTooLong")
+            end
             if schema["pattern"]
               begin
                 invalid(causes, path, value, "should match '#{schema["pattern"]}'") unless Regexp.new(schema["pattern"]).match?(value)
@@ -395,25 +423,43 @@ module Rubernetes
             validate_format(value, schema["format"], path, causes) if schema["format"]
           when Integer, Float
             if schema["minimum"] && (schema["exclusiveMinimum"] ? value <= schema["minimum"] : value < schema["minimum"])
-              invalid(causes, path, value, "should be greater than #{schema["exclusiveMinimum"] ? "" : "or equal to "}#{go_number(schema["minimum"])}")
+              invalid(causes, path, value,
+                      "should be greater than #{"or equal to " unless schema["exclusiveMinimum"]}#{go_number(schema["minimum"])}")
             end
             if schema["maximum"] && (schema["exclusiveMaximum"] ? value >= schema["maximum"] : value > schema["maximum"])
-              invalid(causes, path, value, "should be less than #{schema["exclusiveMaximum"] ? "" : "or equal to "}#{go_number(schema["maximum"])}")
+              invalid(causes, path, value,
+                      "should be less than #{"or equal to " unless schema["exclusiveMaximum"]}#{go_number(schema["maximum"])}")
             end
-            invalid(causes, path, value, "should be a multiple of #{go_number(schema["multipleOf"])}") if schema["multipleOf"] && (value % schema["multipleOf"]) != 0
+            if schema["multipleOf"] && (value % schema["multipleOf"]) != 0
+              invalid(causes, path, value,
+                      "should be a multiple of #{go_number(schema["multipleOf"])}")
+            end
           when Array
-            invalid(causes, path, value, "should have at least #{schema["minItems"]} items") if schema["minItems"] && value.length < schema["minItems"]
+            if schema["minItems"] && value.length < schema["minItems"]
+              invalid(causes, path, value,
+                      "should have at least #{schema["minItems"]} items")
+            end
             too_many(causes, path, value.length, schema["maxItems"]) if schema["maxItems"] && value.length > schema["maxItems"]
             invalid(causes, path, value, "shouldn't contain duplicates") if schema["uniqueItems"] && value.uniq.length != value.length
             validate_list_type(value, schema, path, causes)
-            value.each_with_index { |item, index| validate_value(item, schema["items"], path + ["[#{index}]"], causes) } if schema["items"].is_a?(Hash)
+            if schema["items"].is_a?(Hash)
+              value.each_with_index do |item, index|
+                validate_value(item, schema["items"], path + ["[#{index}]"], causes)
+              end
+            end
           when Hash
             properties = schema["properties"] || {}
             Array(schema["required"]).each do |name|
               add(causes, path + [name], "Required value", "FieldValueRequired") unless value.key?(name) && !value[name].nil?
             end
-            invalid(causes, path, value, "should have at least #{schema["minProperties"]} properties") if schema["minProperties"] && value.length < schema["minProperties"]
-            too_many(causes, path, value.length, schema["maxProperties"]) if schema["maxProperties"] && value.length > schema["maxProperties"]
+            if schema["minProperties"] && value.length < schema["minProperties"]
+              invalid(causes, path, value,
+                      "should have at least #{schema["minProperties"]} properties")
+            end
+            if schema["maxProperties"] && value.length > schema["maxProperties"]
+              too_many(causes, path, value.length,
+                       schema["maxProperties"])
+            end
             value.each do |key, child|
               next if root && %w[apiVersion kind metadata].include?(key)
               next if schema["x-kubernetes-embedded-resource"] == true && %w[apiVersion kind metadata].include?(key)
@@ -430,18 +476,22 @@ module Rubernetes
             branches = Array(schema[combinator])
             next if branches.empty?
 
-            results = branches.map { |branch| branch_causes = []; validate_value(value, branch.merge("type" => type), path, branch_causes); branch_causes.empty? }
+            results = branches.map do |branch|
+              branch_causes = []
+              validate_value(value, branch.merge("type" => type), path, branch_causes)
+              branch_causes.empty?
+            end
             case combinator
             when "allOf" then invalid(causes, path, value, "must validate all the schemas (allOf)") unless results.all?
             when "anyOf" then invalid(causes, path, value, "must validate at least one schema (anyOf)") unless results.any?
             when "oneOf" then invalid(causes, path, value, "must validate one and only one schema (oneOf)") unless results.count(true) == 1
             end
           end
-          if schema["not"]
-            not_causes = []
-            validate_value(value, schema["not"].merge("type" => type), path, not_causes)
-            invalid(causes, path, value, "must not validate the schema (not)") if not_causes.empty?
-          end
+          return unless schema["not"]
+
+          not_causes = []
+          validate_value(value, schema["not"].merge("type" => type), path, not_causes)
+          invalid(causes, path, value, "must not validate the schema (not)") if not_causes.empty?
         end
 
         def type_matches?(type, value)
@@ -452,19 +502,23 @@ module Rubernetes
           when "string" then value.is_a?(String)
           when "integer" then value.is_a?(Integer)
           when "number" then value.is_a?(Integer) || value.is_a?(Float)
-          when "boolean" then value == true || value == false
+          when "boolean" then [true, false].include?(value)
           else false
           end
         end
 
         def validate_format(value, format, path, causes)
           ok = case format
-               when "date-time" then (Time.iso8601(value) && true rescue false)
+               when "date-time" then begin
+                 Time.iso8601(value) && true
+               rescue StandardError
+                 false
+               end
                when "date" then value.match?(/\A\d{4}-\d{2}-\d{2}\z/)
                when "email" then value.match?(/\A[^@\s]+@[^@\s]+\z/)
                when "ipv4" then value.match?(/\A(?:\d{1,3}\.){3}\d{1,3}\z/)
                when "ipv6" then value.include?(":")
-               when "uri" then value.match?(%r{\A[a-zA-Z][a-zA-Z0-9+.-]*:})
+               when "uri" then value.match?(/\A[a-zA-Z][a-zA-Z0-9+.-]*:/)
                when "uuid" then value.match?(/\A[0-9a-fA-F-]{36}\z/)
                else true
                end
@@ -497,7 +551,10 @@ module Rubernetes
         end
 
         def validate_embedded_resource(value, path, causes)
-          add(causes, path + ["apiVersion"], "Required value", "FieldValueRequired") unless value["apiVersion"].is_a?(String) && !value["apiVersion"].empty?
+          unless value["apiVersion"].is_a?(String) && !value["apiVersion"].empty?
+            add(causes, path + ["apiVersion"], "Required value",
+                "FieldValueRequired")
+          end
           add(causes, path + ["kind"], "Required value", "FieldValueRequired") unless value["kind"].is_a?(String) && !value["kind"].empty?
         end
 
@@ -530,7 +587,8 @@ module Rubernetes
             result = begin
               @cel.evaluate(rule["rule"], variables)
             rescue StandardError => error
-              add(causes, path, "Invalid value: #{go_quote(schema["type"].to_s)}: #{error.message} evaluating rule: #{rule["rule"]}", "FieldValueInvalid")
+              add(causes, path, "Invalid value: #{go_quote(schema["type"].to_s)}: #{error.message} evaluating rule: #{rule["rule"]}",
+                  "FieldValueInvalid")
               next
             end
             next if result == true
@@ -556,10 +614,17 @@ module Rubernetes
               validate_cel(value[name], child, path + [name], causes, old_value: old_value.is_a?(Hash) ? old_value[name] : nil)
             end
             if schema["additionalProperties"].is_a?(Hash)
-              value.each { |key, child| validate_cel(child, schema["additionalProperties"], path + [key], causes, old_value: old_value.is_a?(Hash) ? old_value[key] : nil) }
+              value.each do |key, child|
+                validate_cel(child, schema["additionalProperties"], path + [key], causes,
+                             old_value: old_value.is_a?(Hash) ? old_value[key] : nil)
+              end
             end
           when Array
-            value.each_with_index { |item, index| validate_cel(item, schema["items"], path + ["[#{index}]"], causes) } if schema["items"].is_a?(Hash)
+            if schema["items"].is_a?(Hash)
+              value.each_with_index do |item, index|
+                validate_cel(item, schema["items"], path + ["[#{index}]"], causes)
+              end
+            end
           end
         end
 
@@ -579,7 +644,8 @@ module Rubernetes
 
         # field.TypeInvalid(path, value, "<path> in body must be of type <type>: <go type>")
         def type_invalid(causes, path, value, type)
-          add(causes, path, "Invalid value: #{render_value(value)}: #{join(path)} in body must be of type #{type}: #{go_quote(json_type_name(value))}", "FieldValueTypeInvalid")
+          add(causes, path,
+              "Invalid value: #{render_value(value)}: #{join(path)} in body must be of type #{type}: #{go_quote(json_type_name(value))}", "FieldValueTypeInvalid")
         end
 
         def too_many(causes, path, actual, maximum)

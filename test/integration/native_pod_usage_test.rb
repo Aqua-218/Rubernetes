@@ -44,10 +44,11 @@ class NativePodUsageTest < Minitest::Test
         sleep 1.0
 
         usage = runtime.pod_usage(sandbox_id)
+
         refute_nil usage, "pod_usage returned nil"
         assert_operator usage.dig("pod", "cpu", "usage_usec").to_i, :>, 0, usage.inspect
         assert_operator usage.dig("pod", "memory.current").to_i, :>, 0
-        assert_equal ["app"], usage["containers"].map { |c| c["name"] }
+        assert_equal(["app"], usage["containers"].map { |c| c["name"] })
         assert_operator usage["containers"][0].dig("usage", "cpu", "usage_usec").to_i, :>, 0
 
         lifecycle = Object.new
@@ -57,12 +58,14 @@ class NativePodUsageTest < Minitest::Test
         provider = Rubernetes::Node::StatsProvider.new(node_name: "n", lifecycle: lifecycle, runtime: runtime, pod_root: directory)
         summary = provider.summary
         pod = summary["pods"].first
+
         assert_operator pod.dig("cpu", "usageCoreNanoSeconds").to_i, :>, 0, pod.inspect
         assert_operator pod.dig("memory", "workingSetBytes").to_i, :>, 0
         assert_equal "app", pod.dig("containers", 0, "name")
         assert_operator pod.dig("containers", 0, "memory", "usageBytes").to_i, :>, 0
 
         text = Rubernetes::Node::ResourceMetrics.render(summary)
+
         assert_match(/^container_cpu_usage_seconds_total\{container="app",namespace="ns",pod="p"\} \d/, text)
         assert_match(/^pod_memory_working_set_bytes\{namespace="ns",pod="p"\} \d/, text)
       ensure

@@ -132,7 +132,10 @@ module Rubernetes
       end
 
       def cluster_dns_config(namespace)
-        raise Error, "dnsPolicy ClusterFirst requires the node's cluster DNS address (rubernetes-agent.dns.cluster_dns)" if @cluster_dns.empty?
+        if @cluster_dns.empty?
+          raise Error,
+                "dnsPolicy ClusterFirst requires the node's cluster DNS address (rubernetes-agent.dns.cluster_dns)"
+        end
 
         host_nameservers, host_searches, host_options = host_dns
         searches = ["#{namespace}.svc.#{@cluster_domain}", "svc.#{@cluster_domain}", @cluster_domain]
@@ -149,8 +152,13 @@ module Rubernetes
       def host_dns
         source = @resolv_conf
         if File.file?(source)
-          servers = File.foreach(source).filter_map { |line| f = line.sub(/[#;].*/, "").split; f[1] if f.first == "nameserver" }
-          source = RESOLVED_UPSTREAM_FILE if !servers.empty? && servers.all? { |server| server.start_with?("127.") || server == "::1" } && File.file?(RESOLVED_UPSTREAM_FILE)
+          servers = File.foreach(source).filter_map do |line|
+            f = line.sub(/[#;].*/, "").split
+            f[1] if f.first == "nameserver"
+          end
+          source = RESOLVED_UPSTREAM_FILE if !servers.empty? && servers.all? do |server|
+            server.start_with?("127.") || server == "::1"
+          end && File.file?(RESOLVED_UPSTREAM_FILE)
         end
         return [[], [], []] unless File.file?(source)
 

@@ -8,7 +8,7 @@ require_relative "../../tools/milestones/m3_gate"
 
 class M3GateTest < Minitest::Test
   def test_source_exclusions_match_the_m0_to_m2_rule
-    excluded = ->(path) do
+    excluded = lambda do |path|
       M3Gate::SOURCE_EXCLUDED_ROOTS.include?(path.split("/", 2).first) ||
         M3Gate::SOURCE_EXCLUDED_PATTERNS.any? { |pattern| pattern.match?(path) }
     end
@@ -37,7 +37,7 @@ class M3GateTest < Minitest::Test
       result = M3Gate.evaluate(path)
 
       refute result.fetch("passed")
-      assert result.fetch("errors").any? { |error| error.include?("valid JSON") }
+      assert(result.fetch("errors").any? { |error| error.include?("valid JSON") })
     end
   end
 
@@ -49,7 +49,7 @@ class M3GateTest < Minitest::Test
       result = M3Gate.evaluate(path)
 
       refute result.fetch("passed")
-      assert result.fetch("errors").any? { |error| error.include?("input_sha256") || error.include?("prior") }
+      assert(result.fetch("errors").any? { |error| error.include?("input_sha256") || error.include?("prior") })
     end
   end
 
@@ -78,7 +78,7 @@ class M3GateTest < Minitest::Test
 
     M3Gate.send(:validate_scheduler, document, errors)
 
-    assert errors.any? { |error| error.include?("structured") || error.include?("independent") || error.include?("digest") }
+    assert(errors.any? { |error| error.include?("structured") || error.include?("independent") || error.include?("digest") })
   end
 
   def test_controller_registry_rejects_corpus_controller_fallback
@@ -97,7 +97,7 @@ class M3GateTest < Minitest::Test
 
     M3Gate.send(:validate_controller_registry, document, errors)
 
-    assert errors.any? { |error| error.include?("CorpusController") }
+    assert(errors.any? { |error| error.include?("CorpusController") })
   end
 
   # Requirement: duplicate registration must be rejected by the production
@@ -120,8 +120,8 @@ class M3GateTest < Minitest::Test
 
     M3Gate.send(:validate_controller_registry, document, errors)
 
-    assert errors.any? { |error| error.include?("DuplicateControllerError") }
-    assert errors.any? { |error| error.include?("duplicate registration check") }
+    assert(errors.any? { |error| error.include?("DuplicateControllerError") })
+    assert(errors.any? { |error| error.include?("duplicate registration check") })
   end
 
   def test_leader_loss_rejects_boolean_only_process_chaos
@@ -138,7 +138,7 @@ class M3GateTest < Minitest::Test
 
     M3Gate.send(:validate_leader, document, errors)
 
-    assert errors.any? { |error| error.include?("process observation") || error.include?("event inventory") }
+    assert(errors.any? { |error| error.include?("process observation") || error.include?("event inventory") })
   end
 
   def test_workload_differential_requires_the_full_matrix_and_structured_observables
@@ -152,8 +152,8 @@ class M3GateTest < Minitest::Test
 
     M3Gate.send(:validate_workload, document, errors)
 
-    assert errors.any? { |error| error.include?("case inventory") }
-    assert errors.any? { |error| error.include?("structured") || error.include?("oracle") }
+    assert(errors.any? { |error| error.include?("case inventory") })
+    assert(errors.any? { |error| error.include?("structured") || error.include?("oracle") })
   end
 
   # Requirement: idempotency evidence must bind API mutations, events,
@@ -166,8 +166,8 @@ class M3GateTest < Minitest::Test
 
     M3Gate.send(:validate_idempotency_effect_inventory, first, second, errors, 0)
 
-    assert errors.any? { |error| error.include?("api_mutations") }
-    assert errors.any? { |error| error.include?("durable") }
+    assert(errors.any? { |error| error.include?("api_mutations") })
+    assert(errors.any? { |error| error.include?("durable") })
   end
 
   # Requirement: replay safety is semantic, not an effect-id/generation
@@ -182,7 +182,7 @@ class M3GateTest < Minitest::Test
 
     M3Gate.send(:validate_idempotency_effect_inventory, first, second, errors, 0)
 
-    assert errors.any? { |error| error.include?("duplicate semantic API effect keys") }
+    assert(errors.any? { |error| error.include?("duplicate semantic API effect keys") })
   end
 
   # Requirement: each replay journal slice must independently prove zero
@@ -198,22 +198,22 @@ class M3GateTest < Minitest::Test
 
     M3Gate.send(:validate_idempotency_effect_inventory, first, second, errors, 0)
 
-    assert errors.any? { |error| error.include?("replay must not append controller events") }
-    assert errors.any? { |error| error.include?("replay must not append provider calls") }
+    assert(errors.any? { |error| error.include?("replay must not append controller events") })
+    assert(errors.any? { |error| error.include?("replay must not append provider calls") })
   end
 
   def test_idempotency_step_gate_requires_leader_success_and_no_pending_retry
     observable = {"step" => {"leader_execution" => false, "follower" => true,
-                              "reconciled" => 0, "reconcile_success" => false,
-                              "step_error_class" => "RuntimeError", "pending_retry" => true,
-                              "follower_noop" => true}}
+                             "reconciled" => 0, "reconcile_success" => false,
+                             "step_error_class" => "RuntimeError", "pending_retry" => true,
+                             "follower_noop" => true}}
     errors = []
 
     M3Gate.send(:validate_idempotency_step_observable, observable, errors, 0, "first")
 
-    assert errors.any? { |error| error.include?("leader execution") }
-    assert errors.any? { |error| error.include?("reconcile exactly once") }
-    assert errors.any? { |error| error.include?("pending retry") }
+    assert(errors.any? { |error| error.include?("leader execution") })
+    assert(errors.any? { |error| error.include?("reconcile exactly once") })
+    assert(errors.any? { |error| error.include?("pending retry") })
   end
 
   def test_controller_registry_rejects_wrong_authoritative_gvk_binding
@@ -234,7 +234,7 @@ class M3GateTest < Minitest::Test
     document = {"required_controller_names" => M3Gate::REQUIRED_CONTROLLER_NAMES,
                 "registered_controller_names" => M3Gate::REQUIRED_CONTROLLER_NAMES,
                 "controllers" => entries, "startup_validation" => {"attempt_count" => 1, "passed" => true,
-                "exception_class" => nil, "error" => nil}, "duplicate_count" => 0,
+                                                                   "exception_class" => nil, "error" => nil}, "duplicate_count" => 0,
                 "missing_count" => 0, "unexpected_count" => 0, "unregistered_count" => 0,
                 "failure_count" => 0, "binding_failure_count" => 0,
                 "duplicate_exception_class" => "Rubernetes::Controller::DuplicateControllerError",
@@ -243,17 +243,18 @@ class M3GateTest < Minitest::Test
 
     M3Gate.send(:validate_controller_registry, document, errors)
 
-    assert errors.any? { |error| error.include?("authoritative descriptor/GVK") }
+    assert(errors.any? { |error| error.include?("authoritative descriptor/GVK") })
   end
 
   def test_external_execution_requires_built_in_transcript_and_pinned_source
     errors = []
     document = {"executed" => true, "runner_sha256" => "a" * 64, "input_payload" => {}, "external_document_sha256" => "b" * 64}
 
-    M3Gate.send(:validate_external_execution, document, {}, {"runner_source" => "/tmp/fake.rb", "runner_sha256" => "a" * 64}, errors, "scheduler oracle")
+    M3Gate.send(:validate_external_execution, document, {}, {"runner_source" => "/tmp/fake.rb", "runner_sha256" => "a" * 64}, errors,
+                "scheduler oracle")
 
-    assert errors.any? { |error| error.include?("transcript") || error.include?("argv") }
-    assert errors.any? { |error| error.include?("runner source") }
+    assert(errors.any? { |error| error.include?("transcript") || error.include?("argv") })
+    assert(errors.any? { |error| error.include?("runner source") })
   end
 
   private
@@ -272,8 +273,8 @@ class M3GateTest < Minitest::Test
     snapshot["raw_entry_count"] = raw_entries.length
     snapshot["raw_sha256"] = M3Gate.canonical_document_digest(raw_entries)
     %w[effect_ids effect_id_counts effect_signature_counts api_effect_key_counts api_mutation_count event_count provider_call_count
-        event_effect_key_counts provider_effect_key_counts event_signatures event_signature_counts
-        provider_call_signatures provider_call_signature_counts].each { |key| snapshot[key] = inventory.fetch(key) }
+       event_effect_key_counts provider_effect_key_counts event_signatures event_signature_counts
+       provider_call_signatures provider_call_signature_counts].each { |key| snapshot[key] = inventory.fetch(key) }
     snapshot["inventory"] = inventory
     {"store" => [], "api_mutations" => inventory.fetch("api_mutations"),
      "events" => inventory.fetch("events"), "provider_calls" => inventory.fetch("provider_calls"),

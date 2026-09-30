@@ -158,9 +158,9 @@ module Conformance
 
     def scrub_message(text)
       text.to_s.gsub(/\h{8}-\h{4}-\h{4}-\h{4}-\h{12}/, "<uuid>")
-          .gsub(/\d{4}-\d{2}-\d{2}T[\d:.]+Z?/, "<rfc3339>")
-          .gsub(/\bresourceVersion:?\s*"?\d+"?/, "resourceVersion <n>")
-          .lines.map(&:strip).reject(&:empty?).sort
+        .gsub(/\d{4}-\d{2}-\d{2}T[\d:.]+Z?/, "<rfc3339>")
+        .gsub(/\bresourceVersion:?\s*"?\d+"?/, "resourceVersion <n>")
+        .lines.map(&:strip).reject(&:empty?).sort
     end
   end
 end

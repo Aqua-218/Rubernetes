@@ -96,11 +96,12 @@ class CRDOpenAPITypeMetaTest < Minitest::Test
   def test_the_dynamic_document_carries_the_meta_components_it_references
     repository = Rubernetes::API::OpenAPIRepository.new
     repository.publish(group: "example.com", version: "v1", document: {
-      "components" => {"schemas" => {"com.example.v1.Gadget" => {
-        "properties" => {"metadata" => {"$ref" => "#/components/schemas/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"}}
-      }}}
-    })
+                         "components" => {"schemas" => {"com.example.v1.Gadget" => {
+                           "properties" => {"metadata" => {"$ref" => "#/components/schemas/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"}}
+                         }}}
+                       })
     schemas = repository.document_for("/openapi/v3/apis/example.com/v1").dig("components", "schemas")
+
     assert schemas.key?("io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta")
     assert schemas.key?("io.k8s.apimachinery.pkg.apis.meta.v1.ManagedFieldsEntry"), "references are followed transitively"
     assert schemas.dig("io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta", "properties", "creationTimestamp")

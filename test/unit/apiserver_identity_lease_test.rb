@@ -45,6 +45,7 @@ class APIServerIdentityLeaseTest < Minitest::Test
   def test_the_identity_lease_matches_kube_apiserver
     @reconciler.send(:renew_lease)
     lease = leases.find { |item| item["metadata"]["name"].start_with?("apiserver-") }
+
     assert_equal "apiserver-k3e5qbho2wnaagwsgzixikgt5q", lease["metadata"]["name"]
     assert_equal "kube-apiserver", lease["metadata"]["labels"]["apiserver.kubernetes.io/identity"]
     refute_empty lease["metadata"]["labels"]["kubernetes.io/hostname"].to_s
@@ -60,8 +61,10 @@ class APIServerIdentityLeaseTest < Minitest::Test
     @now += 10
     @reconciler.send(:renew_lease)
     lease = leases.find { |item| item["metadata"]["name"].start_with?("apiserver-") }
-    assert_equal (@now).iso8601(6), lease["spec"]["renewTime"]
+
+    assert_equal @now.iso8601(6), lease["spec"]["renewTime"]
     managers = lease["metadata"]["managedFields"].map { |entry| entry.values_at("manager", "operation") }
+
     assert_equal [%w[kube-apiserver Update]], managers
   end
 
@@ -72,8 +75,10 @@ class APIServerIdentityLeaseTest < Minitest::Test
     put_lease("apiserver-gone", renew: @now - 7200, endpoint: "10.0.0.4:6443")
     put_lease("apiserver-legacy", renew: @now - 5, label: "rubernetes-apiserver", endpoint: "10.0.0.5:6443", duration: 30)
     addresses = @reconciler.send(:live_addresses).map { |entry| entry["ip"] }
+
     assert_equal %w[10.0.0.1 10.0.0.2 10.0.0.5], addresses
     names = leases.map { |item| item["metadata"]["name"] }
+
     refute_includes names, "apiserver-gone"
     assert_includes names, "apiserver-quiet", "a quiet but unexpired Lease stays"
   end

@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
 require_relative "delta_fifo"
 require_relative "indexer"
 require_relative "work_queue"
@@ -34,12 +33,14 @@ module Rubernetes
         @handler_stats = {seconds: 0.0, events: 0, max: 0.0}
         @resync_period = Float(resync_period)
         raise ArgumentError, "resync_period must be non-negative" if @resync_period.negative? || !@resync_period.finite?
+
         @indexer = indexer || Indexer.new(key_func: key_func)
         @queue = queue || WorkQueue.new(clock: clock, sleeper: sleeper)
         raise ArgumentError, "indexer must implement upsert, get, delete, and each" unless
           %i[upsert get delete each].all? { |method| @indexer.respond_to?(method) }
         raise ArgumentError, "queue must implement add, get, done, and shutdown" unless
           %i[add get done shutdown].all? { |method| @queue.respond_to?(method) }
+
         @fifo = DeltaFIFO.new(key_func: key_func, clock: clock)
         @handlers = EVENT_TYPES.to_h { |event| [event, []] }
         # The reflector is where a watch actually breaks, so the caller's
@@ -64,6 +65,7 @@ module Rubernetes
         events = event.nil? ? EVENT_TYPES : Array(event).map { |value| value.to_sym }
         unknown = events.reject { |name| EVENT_TYPES.include?(name) }
         raise ArgumentError, "unknown informer event #{unknown.first.inspect}" unless unknown.empty?
+
         @mutex.synchronize { events.each { |name| @handlers.fetch(name) << handler } }
         self
       end
@@ -92,7 +94,7 @@ module Rubernetes
         unless thread
           @mutex.synchronize do
             return self if @running
-            raise RuntimeError, "Informer is stopped" if @stopping
+            raise "Informer is stopped" if @stopping
 
             @running = true
           end
@@ -101,7 +103,7 @@ module Rubernetes
 
         @mutex.synchronize do
           return self if @running
-          raise RuntimeError, "Informer is stopped" if @stopping
+          raise "Informer is stopped" if @stopping
 
           @running = true
           begin
@@ -172,6 +174,7 @@ module Rubernetes
 
         begin
           return unless running?
+
           @reflector.list! if @reflector.resource_version.nil?
           drain_fifo
         rescue StandardError => error
@@ -269,7 +272,10 @@ module Rubernetes
         waited = @fifo.respond_to?(:queued_seconds) ? @fifo.queued_seconds(key) : nil
         return if waited.nil?
 
-        registry.register("informer_processing_latency_seconds", type: :histogram) unless registry.registered?("informer_processing_latency_seconds")
+        unless registry.registered?("informer_processing_latency_seconds")
+          registry.register("informer_processing_latency_seconds",
+                            type: :histogram)
+        end
         registry.observe("informer_processing_latency_seconds", waited, @metric_labels)
       rescue StandardError
         nil
@@ -325,9 +331,7 @@ module Rubernetes
 
         @mutex.synchronize do
           previous = @last_versions[delta.key]
-          if previous.nil? || Support.version_newer?(candidate.to_s, previous.to_s)
-            @last_versions[delta.key] = candidate.to_s.freeze
-          end
+          @last_versions[delta.key] = candidate.to_s.freeze if previous.nil? || Support.version_newer?(candidate.to_s, previous.to_s)
         end
       end
 

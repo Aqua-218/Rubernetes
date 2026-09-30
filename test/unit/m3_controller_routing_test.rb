@@ -35,6 +35,7 @@ class M3ControllerRoutingTest < Minitest::Test
 
     required.each do |name|
       definition = Controller.default_registry.fetch(name)
+
       assert(definition.watches.any? do |watch|
         watch.via == :all && watch.resource.gvk == definition.kind.gvk
       end, "#{name} must self-watch #{definition.kind.identifier}")
@@ -50,20 +51,24 @@ class M3ControllerRoutingTest < Minitest::Test
     adapter.create(deployment, descriptor: descriptor)
 
     informer.emit(deployment)
+
     assert_equal 1, manager.step.fetch(:reconciled)
-    assert_equal ["demo"], calls.map { |resource| Controller::Support.name(resource) }
+    assert_equal(["demo"], calls.map { |resource| Controller::Support.name(resource) })
 
     deployment_update = Marshal.load(Marshal.dump(deployment))
     deployment_update["metadata"]["resourceVersion"] = "2"
     adapter.update(deployment_update, descriptor: descriptor)
     informer.emit(deployment_update, deployment)
+
     assert_equal 1, manager.step.fetch(:reconciled)
     assert_equal 2, calls.length
 
     adapter.delete(deployment_update, descriptor: descriptor)
     informer.emit(deployment_update)
+
     assert manager.queue.queued?("default/demo"), "delete must enqueue the owner key before lookup observes removal"
     manager.step
+
     assert_equal 2, calls.length, "a deleted owner has no object to reconcile, but its event must still be queued"
   ensure
     manager&.stop
@@ -100,7 +105,7 @@ class M3ControllerRoutingTest < Minitest::Test
     informer.emit(object("Node", "node-a", uid: "node-uid"))
 
     assert_equal 1, manager.step.fetch(:reconciled)
-    assert_equal ["demo"], calls.map { |resource| Controller::Support.name(resource) }
+    assert_equal(["demo"], calls.map { |resource| Controller::Support.name(resource) })
   ensure
     manager&.stop
   end
@@ -109,7 +114,8 @@ class M3ControllerRoutingTest < Minitest::Test
     deployment_descriptor = Controller::ResourceDescriptor.parse("Deployment")
     pod_descriptor = Controller::ResourceDescriptor.parse("Pod")
     calls = []
-    definition = definition_for(deployment_descriptor, [watch_for(pod_descriptor, :owner_reference, owner: deployment_descriptor)]) do |resource|
+    definition = definition_for(deployment_descriptor,
+                                [watch_for(pod_descriptor, :owner_reference, owner: deployment_descriptor)]) do |resource|
       calls << resource
     end
     _store, adapter, manager, informer = runtime(definition)
@@ -119,6 +125,7 @@ class M3ControllerRoutingTest < Minitest::Test
     stale_pod = object("Pod", "pod", uid: "pod-uid")
     stale_pod["metadata"]["ownerReferences"] = [owner_reference(deployment, uid: "stale-owner-uid")]
     informer.emit(stale_pod)
+
     assert_equal 0, manager.step.fetch(:reconciled)
     assert_empty calls
 
@@ -126,8 +133,9 @@ class M3ControllerRoutingTest < Minitest::Test
     valid_pod["metadata"]["ownerReferences"] = [owner_reference(deployment)]
     adapter.create(valid_pod, descriptor: pod_descriptor)
     informer.emit(valid_pod)
+
     assert_equal 1, manager.step.fetch(:reconciled)
-    assert_equal ["demo"], calls.map { |resource| Controller::Support.name(resource) }
+    assert_equal(["demo"], calls.map { |resource| Controller::Support.name(resource) })
   ensure
     manager&.stop
   end

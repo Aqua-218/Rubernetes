@@ -55,9 +55,10 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
       kubeconfig = write_kubeconfig(dir)
       good = Z::Configuration.from_h(authz_document([{"type" => "Node", "name" => "node"}, {"type" => "RBAC", "name" => "rbac"},
                                                      webhook_entry("audit.example.com", kubeconfig, conditions: ['request.resourceAttributes.namespace == "kube-system"'])]), cel: cel)
+
       assert_equal %w[Node RBAC Webhook], good.authorizers.map(&:type)
       assert_equal %w[Node RBAC], good.non_webhook_types
-      assert_equal 3.0, good.authorizers.last.webhook.timeout
+      assert_in_delta(3.0, good.authorizers.last.webhook.timeout)
       assert_equal ['request.resourceAttributes.namespace == "kube-system"'], good.authorizers.last.webhook.match_conditions
 
       invalid = lambda do |authorizers, pattern|
@@ -98,10 +99,10 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
   end
 
   def test_go_durations
-    assert_equal 30.0, Z::Configuration.parse_duration("30s", "f")
-    assert_equal 90.0, Z::Configuration.parse_duration("1m30s", "f")
-    assert_equal 0.5, Z::Configuration.parse_duration("500ms", "f")
-    assert_equal 7200.0, Z::Configuration.parse_duration("2h", "f")
+    assert_in_delta(30.0, Z::Configuration.parse_duration("30s", "f"))
+    assert_in_delta(90.0, Z::Configuration.parse_duration("1m30s", "f"))
+    assert_in_delta(0.5, Z::Configuration.parse_duration("500ms", "f"))
+    assert_in_delta(7200.0, Z::Configuration.parse_duration("2h", "f"))
     assert_raises(Z::Configuration::InvalidError) { Z::Configuration.parse_duration("30", "f") }
     assert_raises(Z::Configuration::InvalidError) { Z::Configuration.parse_duration("soon", "f") }
   end
@@ -111,7 +112,11 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
   def global = Rubernetes::Observability::Metrics.global
 
   def counter(name, labels)
-    line = global.render_own.lines.find { |candidate| candidate.start_with?("#{name}{") && labels.all? { |label| candidate.include?(label) } }
+    line = global.render_own.lines.find do |candidate|
+      candidate.start_with?("#{name}{") && labels.all? do |label|
+        candidate.include?(label)
+      end
+    end
     line ? line.split.last.to_f : 0.0
   end
 
@@ -125,13 +130,16 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
                                         cel: cel, authorizer_name: "gate.example.com")
     webhook = Z::Webhook.new(transport: transport, name: "gate.example.com", match_conditions: conditions)
     exclusions_before = counter("apiserver_authorization_match_condition_exclusions_total", ['name="gate.example.com"', 'type="Webhook"'])
-    assert webhook.authorize(attributes(user("alice"), verb: "get", resource: "pods", namespace: "kube-system")).allowed?
+
+    assert_predicate webhook.authorize(attributes(user("alice"), verb: "get", resource: "pods", namespace: "kube-system")), :allowed?
     assert_equal 1, calls.length
     assert_equal "gate.example.com", webhook.name
     skipped = webhook.authorize(attributes(user("alice"), verb: "get", resource: "pods", namespace: "default"))
-    assert skipped.no_opinion?, "a false match condition skips the webhook"
+
+    assert_predicate skipped, :no_opinion?, "a false match condition skips the webhook"
     assert_equal 1, calls.length
-    assert_equal exclusions_before + 1, counter("apiserver_authorization_match_condition_exclusions_total", ['name="gate.example.com"', 'type="Webhook"'])
+    assert_equal exclusions_before + 1,
+                 counter("apiserver_authorization_match_condition_exclusions_total", ['name="gate.example.com"', 'type="Webhook"'])
     assert_operator counter("apiserver_authorization_match_condition_evaluation_seconds_count", ['name="gate.example.com"']), :>=, 2
 
     # An expression that does not yield a bool is an evaluation error: the
@@ -139,12 +147,16 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
     bogus = Z::MatchConditions.new(expressions: ["request.user"], cel: cel, authorizer_name: "broken.example.com")
     errors_before = counter("apiserver_authorization_match_condition_evaluation_errors_total", ['name="broken.example.com"'])
     lenient = Z::Webhook.new(transport: transport, name: "broken.example.com", match_conditions: bogus)
-    assert lenient.authorize(attributes(user("alice"), verb: "get", resource: "pods")).no_opinion?
+
+    assert_predicate lenient.authorize(attributes(user("alice"), verb: "get", resource: "pods")), :no_opinion?
     strict = Z::Webhook.new(transport: transport, name: "broken.example.com", match_conditions: bogus, failure_policy: "Deny")
-    assert strict.authorize(attributes(user("alice"), verb: "get", resource: "pods")).denied?
+
+    assert_predicate strict.authorize(attributes(user("alice"), verb: "get", resource: "pods")), :denied?
     assert_equal 1, calls.length, "the webhook is never called on a match error"
-    assert_equal errors_before + 2, counter("apiserver_authorization_match_condition_evaluation_errors_total", ['name="broken.example.com"'])
-    assert Z::Webhook.new(transport: transport).authorize(attributes(user("alice"), verb: "get", resource: "pods")).allowed?, "no conditions: always called"
+    assert_equal errors_before + 2,
+                 counter("apiserver_authorization_match_condition_evaluation_errors_total", ['name="broken.example.com"'])
+    assert_predicate Z::Webhook.new(transport: transport).authorize(attributes(user("alice"), verb: "get", resource: "pods")), :allowed?,
+                     "no conditions: always called"
   end
 
   # -- the reload controller ---------------------------------------------------
@@ -156,7 +168,9 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
       applied = []
       loads = []
       metrics = Rubernetes::Observability::Metrics.new
-      controller = S::ConfigReloadController.new(kind: "authorization", path: path, apiserver_id: "apiserver-a", metrics: metrics, clock: -> { 1234.0 },
+      controller = S::ConfigReloadController.new(kind: "authorization", path: path, apiserver_id: "apiserver-a", metrics: metrics, clock: lambda {
+        1234.0
+      },
                                                  initial_bytes: "v1", initial_config: {"v" => 1},
                                                  load: lambda { |bytes|
                                                    loads << bytes
@@ -170,20 +184,26 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
                                                    applied << config
                                                  })
       controller.note_loaded
-      assert_match(/apiserver_authorization_config_controller_last_config_info\{apiserver_id_hash="sha256:[0-9a-f]{64}",hash="#{S::ConfigReloadController.data_hash("v1")}"\} 1/, metrics.render_own)
+
+      assert_match(
+        /apiserver_authorization_config_controller_last_config_info\{apiserver_id_hash="sha256:[0-9a-f]{64}",hash="#{S::ConfigReloadController.data_hash("v1")}"\} 1/, metrics.render_own
+      )
       refute controller.check!, "unchanged bytes are not a reload"
       assert_empty loads
 
       File.write(path, "v2")
+
       assert controller.check!
       assert_equal [{"v" => "v2"}], applied
       text = metrics.render_own
+
       assert_match(/apiserver_authorization_config_controller_automatic_reloads_total\{[^}]*status="success"\} 1/, text)
       assert_match(/apiserver_authorization_config_controller_automatic_reload_last_timestamp_seconds\{[^}]*status="success"\} 1234/, text)
-      assert_equal 1, text.scan(/apiserver_authorization_config_controller_last_config_info\{/).length, "only the current hash is exposed"
+      assert_equal 1, text.scan("apiserver_authorization_config_controller_last_config_info{").length, "only the current hash is exposed"
       assert_match(/last_config_info\{[^}]*hash="#{S::ConfigReloadController.data_hash("v2")}"\} 1/, text)
 
       File.write(path, "bad")
+
       refute controller.check!
       assert_match(/automatic_reloads_total\{[^}]*status="failure"\} 1/, metrics.render_own)
       refute controller.check!, "an invalid file is not retried until it changes"
@@ -191,15 +211,18 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
       assert_match(/automatic_reloads_total\{[^}]*status="failure"\} 1/, metrics.render_own)
 
       File.write(path, "v3")
+
       refute controller.check!
       assert_match(/automatic_reloads_total\{[^}]*status="failure"\} 2/, metrics.render_own)
       assert_kind_of IOError, controller.last_error
 
       File.write(path, "v2\n")
+
       refute controller.check!, "different bytes, same parsed configuration: nothing to apply"
       assert_equal 1, applied.length
 
       File.delete(path)
+
       refute controller.check!
       assert_match(/automatic_reloads_total\{[^}]*status="failure"\} 3/, metrics.render_own)
     end
@@ -212,11 +235,13 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
   end
 
   def authn_document(jwt, anonymous: nil)
-    {"apiVersion" => "apiserver.config.k8s.io/v1", "kind" => "AuthenticationConfiguration", "jwt" => jwt}.merge(anonymous ? {"anonymous" => anonymous} : {})
+    {"apiVersion" => "apiserver.config.k8s.io/v1", "kind" => "AuthenticationConfiguration",
+     "jwt" => jwt}.merge(anonymous ? {"anonymous" => anonymous} : {})
   end
 
   def test_authentication_configuration_validation
     good = A::Configuration.from_h(authn_document([jwt_entry], anonymous: {"enabled" => true, "conditions" => [{"path" => "/healthz"}]}))
+
     assert_equal 1, good.jwt.length
     assert_equal({"enabled" => true, "conditions" => [{"path" => "/healthz"}]}, good.anonymous)
     invalid = lambda do |document, pattern|
@@ -229,7 +254,8 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
     invalid.call(authn_document([jwt_entry(audiences: %w[a b])]), /audienceMatchPolicy must be MatchAny/)
     no_username = jwt_entry.merge("claimMappings" => {"username" => {"claim" => "sub"}})
     invalid.call(authn_document([no_username]), /prefix is required when claim is set/)
-    invalid.call(authn_document([], anonymous: {"enabled" => false, "conditions" => [{"path" => "/x"}]}), /enabled should be set to true when conditions are defined/)
+    invalid.call(authn_document([], anonymous: {"enabled" => false, "conditions" => [{"path" => "/x"}]}),
+                 /enabled should be set to true when conditions are defined/)
     invalid.call(authn_document([]).merge("kind" => "Other"), /kind must be AuthenticationConfiguration/)
     error = assert_raises(A::Configuration::InvalidError) { A::Configuration.from_h(authn_document([jwt_entry]), disallowed_issuers: ["https://issuer.example"]) }
     assert_match(/must not overlap with disallowed issuers/, error.message)
@@ -242,10 +268,13 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
     d = Object.new
     union = A::Union.new(authenticators: [a, b, c])
     union.replace([b], [d])
+
     assert_equal [a, d, c], union.authenticators
     union.replace([d], [])
+
     assert_equal [a, c], union.authenticators
     union.replace([], [b])
+
     assert_equal [a, c, b], union.authenticators
   end
 
@@ -258,20 +287,26 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
       File.write(authz_path, authz_document([{"type" => "Node", "name" => "node"}, {"type" => "RBAC", "name" => "rbac"}]).to_yaml)
       authn_path = File.join(dir, "authn.yaml")
       File.write(authn_path, authn_document([jwt_entry], anonymous: {"enabled" => false}).to_yaml)
-      config = {"authorization" => {"config_file" => authz_path}, "authentication" => {"config_file" => authn_path}, "flow_control" => {"enabled" => false}}
-      assembly = Rubernetes::Bootstrap::SecurityAssembly.new(config: config, store: Rubernetes::Storage::MemoryStore.new, key_for: ->(*) { "" }, apiserver_id: "apiserver-a")
+      config = {"authorization" => {"config_file" => authz_path}, "authentication" => {"config_file" => authn_path},
+                "flow_control" => {"enabled" => false}}
+      assembly = Rubernetes::Bootstrap::SecurityAssembly.new(config: config, store: Rubernetes::Storage::MemoryStore.new, key_for: lambda { |*|
+        ""
+      }, apiserver_id: "apiserver-a")
       pipeline = assembly.pipeline
+
       assert_equal %w[Node RBAC], pipeline.authorizer.modes
       refute pipeline.authenticator.anonymous.enabled
-      assert pipeline.authenticator.authenticators.any? { |authenticator| authenticator.respond_to?(:authenticate_token) }
+      assert(pipeline.authenticator.authenticators.any? { |authenticator| authenticator.respond_to?(:authenticate_token) })
       assert_equal %w[authentication authorization], assembly.reload_controllers.map(&:kind).sort
 
       authz_controller = assembly.reload_controllers.find { |controller| controller.kind == "authorization" }
       File.write(authz_path, authz_document([{"type" => "Node", "name" => "node"}, {"type" => "RBAC", "name" => "rbac"},
                                              webhook_entry("audit.example.com", kubeconfig, conditions: ['request.resourceAttributes.namespace == "kube-system"'])]).to_yaml)
+
       assert authz_controller.check!
       assert_equal %w[Node RBAC audit.example.com], pipeline.authorizer.modes, "the pipeline's union sees the new chain"
       File.write(authz_path, authz_document([{"type" => "RBAC", "name" => "rbac"}]).to_yaml)
+
       refute authz_controller.check!, "dropping a non-webhook authorizer is refused"
       assert_match(/non-webhook authorizer types must not change/, authz_controller.last_error.message)
       assert_equal %w[Node RBAC audit.example.com], pipeline.authorizer.modes
@@ -279,10 +314,13 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
       authn_controller = assembly.reload_controllers.find { |controller| controller.kind == "authentication" }
       before = pipeline.authenticator.authenticators.dup
       File.write(authn_path, authn_document([jwt_entry, jwt_entry("https://other.example")], anonymous: {"enabled" => false}).to_yaml)
+
       assert authn_controller.check!
       after = pipeline.authenticator.authenticators
+
       assert_equal before.length + 1, after.length
       File.write(authn_path, authn_document([jwt_entry], anonymous: {"enabled" => true}).to_yaml)
+
       refute authn_controller.check!
       assert_match(/anonymous: Forbidden: changed from initial configuration file/, authn_controller.last_error.message)
       assert_equal after, pipeline.authenticator.authenticators
@@ -290,7 +328,9 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
   end
 
   def validate_security(security)
-    Rubernetes::Bootstrap::Config.allocate.tap { |config| config.instance_variable_set(:@process_name, "rubernetes-apiserver") }.send(:validate_security!, security)
+    Rubernetes::Bootstrap::Config.allocate.tap do |config|
+      config.instance_variable_set(:@process_name, "rubernetes-apiserver")
+    end.send(:validate_security!, security)
   end
 
   def test_process_config_rejects_mixing_file_and_flags

@@ -17,8 +17,8 @@ module Rubernetes
            "priority" => priority, "weight" => weight, "port" => port}.compact
         end
 
-        alias value data
-        alias target data
+        alias_method :value, :data
+        alias_method :target, :data
       end
 
       class RecordSet < Array
@@ -111,7 +111,7 @@ module Rubernetes
           @mutex = Mutex.new
         end
 
-        attr_reader :domain, :cluster_ip, :upstreams
+        attr_reader :domain, :cluster_ip, :upstreams, :positive_ttl, :negative_ttl
 
         def revision
           @mutex.synchronize { @revision }
@@ -147,14 +147,15 @@ module Rubernetes
           metadata = Support.fetch(hash, "metadata", default: {})
           labels = Support.fetch(metadata, "labels", default: {})
           service_name = Support.fetch(labels, "kubernetes.io/service-name", "service-name", default: nil) ||
-            Support.fetch(hash, "service_name", "serviceName", default: nil)
+                         Support.fetch(hash, "service_name", "serviceName", default: nil)
           raise DNSQueryError, "EndpointSlice service name is required" if service_name.nil?
+
           namespace = Support.string(Support.fetch(metadata, "namespace", default: "default"), "EndpointSlice namespace")
           slice_name = Support.string(Support.fetch(metadata, "name", default: nil), "EndpointSlice name")
           key = [namespace, String(service_name)]
           endpoints = Array(Support.fetch(hash, "endpoints", default: [])).flat_map do |entry|
             normalize_endpoint(entry, service_name: service_name, namespace: namespace,
-                               ports: Support.fetch(hash, "ports", default: []))
+                                      ports: Support.fetch(hash, "ports", default: []))
           end
           @mutex.synchronize do
             @endpoint_slices[[namespace, slice_name]] = {"service" => key, "endpoints" => endpoints.freeze}.freeze
@@ -222,12 +223,14 @@ module Rubernetes
           query_name = normalize_name(name)
           query_type = String(type).upcase
           raise DNSQueryError, "unsupported DNS record type #{type.inspect}" unless SUPPORTED_TYPES.include?(query_type)
+
           timestamp = monotonic_now(now)
           cache_key = [query_name, query_type]
           @mutex.synchronize do
             if (cached = @cache[cache_key]) && cached.fetch("expires_at") > timestamp
               return record_set_from_cache(cached)
             end
+
             records = resolve_uncached(query_name, query_type)
             # RFC 2308: an existing name with no records of the requested type
             # is NODATA (NOERROR, empty answer), not NXDOMAIN.  Resolvers cache
@@ -239,7 +242,7 @@ module Rubernetes
                       name_exists_locked?(query_name) ? "NOERROR" : "NXDOMAIN"
                     end
             result = RecordSet.new(records, name: query_name, type: query_type, rcode: rcode,
-                                   ttl: records.empty? ? @negative_ttl : @positive_ttl)
+                                            ttl: records.empty? ? @negative_ttl : @positive_ttl)
             ttl = result.empty? ? @negative_ttl : @positive_ttl
             @cache[cache_key] = {"expires_at" => timestamp + ttl, "result" => result.to_h}
             result
@@ -249,14 +252,12 @@ module Rubernetes
         alias query resolve
         alias lookup resolve
 
-        attr_reader :positive_ttl, :negative_ttl
-
         # The server answers authoritatively for the cluster zone and for the
         # reverse names of addresses it knows; everything else is forwarded.
         def authoritative?(name)
           query_name = normalize_name(name)
           return true if query_name == @domain || query_name.end_with?(".#{@domain}")
-          return false unless query_name.end_with?(".in-addr.arpa") || query_name.end_with?(".ip6.arpa")
+          return false unless query_name.end_with?(".in-addr.arpa", ".ip6.arpa")
 
           ip = begin
             reverse_name_to_ip(query_name)
@@ -300,6 +301,7 @@ module Rubernetes
           loop do
             raise DNSQueryError, "DNS CNAME loop detected" if seen.include?(current)
             raise DNSQueryError, "DNS CNAME chain exceeds #{max_depth}" if depth >= max_depth
+
             seen << current
             result = resolve(current, type: type)
             return result unless result.any? { |record| record.type == "CNAME" }
@@ -312,22 +314,22 @@ module Rubernetes
         # Forward an external query through an injected upstream.  The client
         # transaction ID is never sent upstream; response source and size are
         # checked before the original ID is restored.
-        def forward(packet, server: nil, client_address: nil, **options)
+        def forward(packet, server: nil, client_address: nil, **)
           bytes = String(packet).b
           raise DNSUpstreamError, "DNS packet exceeds #{@max_packet_bytes} bytes" if bytes.bytesize > @max_packet_bytes
           raise DNSUpstreamError, "DNS packet must contain a transaction ID" if bytes.bytesize < 2
           raise DNSUpstreamError, "DNS upstream is not configured" if @upstreams.empty? && @upstream_adapter.nil?
+
           incoming_id = bytes.byteslice(0, 2)
           generated_id = generated_transaction_id(incoming_id)
           outbound = generated_id + bytes.byteslice(2, bytes.bytesize - 2)
           target = server ? validate_upstream(server) : @upstreams.first
-          if target && target.to_s == @cluster_ip.to_s
-            raise DNSUpstreamError, "DNS upstream would loop back to the cluster resolver"
-          end
+          raise DNSUpstreamError, "DNS upstream would loop back to the cluster resolver" if target && target.to_s == @cluster_ip.to_s
           if server && !@upstreams.empty? && !@upstreams.include?(target)
             raise DNSUpstreamError, "DNS server is not in the configured upstream allowlist"
           end
-          response = invoke_upstream(outbound, target, client_address: client_address, **options)
+
+          response = invoke_upstream(outbound, target, client_address: client_address, **)
           normalize_upstream_response(response, generated_id: generated_id, client_id: incoming_id, target: target)
         end
 
@@ -343,7 +345,7 @@ module Rubernetes
           policy = String(dns_policy || "ClusterFirst")
           policy = "ClusterFirstWithHostNet" if host_network && policy == "ClusterFirst"
           nameservers, search, options = resolv_components(policy, namespace: namespace, dns_config: dns_config,
-                                                           host_resolv_conf: host_resolv_conf, cluster_ip: cluster_ip)
+                                                                   host_resolv_conf: host_resolv_conf, cluster_ip: cluster_ip)
           content = (nameservers.map { |server| "nameserver #{server}" } +
                      (search.empty? ? [] : ["search #{search.join(" ")}"]) +
                      (options.empty? ? [] : ["options #{options.join(" ")}"])).join("\n") << "\n"
@@ -371,8 +373,10 @@ module Rubernetes
           cluster_ips = Array(Support.fetch(spec, "clusterIPs", "cluster_ips", default: nil))
           cluster_ip = Support.fetch(spec, "clusterIP", "cluster_ip", default: nil)
           cluster_ips = [cluster_ip] if cluster_ips.empty? && cluster_ip && cluster_ip != "None"
-          cluster_ips = cluster_ips.reject { |value| value.to_s == "None" }.map { |value| Support.ip(value, name: "service clusterIP").to_s }.uniq
-          headless = cluster_ip.to_s == "None" || cluster_ips.empty? && String(Support.fetch(spec, "clusterIP", default: "")) == "None"
+          cluster_ips = cluster_ips.reject do |value|
+            value.to_s == "None"
+          end.map { |value| Support.ip(value, name: "service clusterIP").to_s }.uniq
+          headless = cluster_ip.to_s == "None" || (cluster_ips.empty? && String(Support.fetch(spec, "clusterIP", default: "")) == "None")
           ports = Array(Support.fetch(spec, "ports", default: [])).map { |port| normalize_service_port(port) }
           Service.new(name: name, namespace: namespace, domain: @domain, cluster_ips: cluster_ips.freeze,
                       headless: headless, publish_not_ready: Support.bool(Support.fetch(spec, "publishNotReadyAddresses", "publish_not_ready", default: false)),
@@ -416,6 +420,7 @@ module Rubernetes
           conditions = Support.fetch(hash, "conditions", default: {})
           addresses = Array(Support.fetch(hash, "addresses", default: Support.fetch(hash, "ip", default: nil)))
           raise DNSQueryError, "EndpointSlice endpoint has no address" if addresses.empty?
+
           addresses.map do |ip|
             Endpoint.new(ip: Support.ip(ip, name: "endpoint IP").to_s,
                          ready: Support.fetch(conditions, "ready", default: Support.fetch(hash, "ready", default: nil)),
@@ -435,6 +440,7 @@ module Rubernetes
             hash = port.respond_to?(:to_h) ? port.to_h : port
             number = Support.fetch(hash, "port", default: nil)
             next if number.nil?
+
             {"name" => Support.fetch(hash, "name", default: nil),
              "protocol" => String(Support.fetch(hash, "protocol", default: "TCP")).downcase,
              "port" => Support.integer(number, "endpoint port", min: 1, max: 65_535)}.compact.freeze
@@ -448,7 +454,9 @@ module Rubernetes
           status = Support.fetch(hash, "status", default: {})
           addresses = Array(Support.fetch(status, "podIPs", "pod_ips", default: []))
           addresses = Array(Support.fetch(status, "podIP", "pod_ip", default: nil)) if addresses.empty?
-          ips = addresses.map { |entry| entry.is_a?(Hash) ? Support.fetch(entry, "ip") : entry }.map { |ip| Support.ip(ip, name: "pod IP").to_s }
+          ips = addresses.map do |entry|
+            entry.is_a?(Hash) ? Support.fetch(entry, "ip") : entry
+          end.map { |ip| Support.ip(ip, name: "pod IP").to_s }
           {"name" => Support.string(Support.fetch(metadata, "name"), "pod name"),
            "namespace" => String(Support.fetch(metadata, "namespace", default: "default")),
            "hostname" => Support.fetch(spec, "hostname", default: nil),
@@ -471,15 +479,21 @@ module Rubernetes
           if (srv = parse_srv(name))
             return resolve_srv(srv)
           end
+
           service = service_for_name(name)
           if service
-            return [Record.new(name: name, type: "CNAME", data: service.external_name, ttl: @positive_ttl)].freeze if service.external_name && %w[A AAAA CNAME].include?(type)
-            return [] if service.external_name
-            if service.headless
-              return resolve_headless(service, type)
+            if service.external_name && %w[
+              A AAAA CNAME
+            ].include?(type)
+              return [Record.new(name: name, type: "CNAME", data: service.external_name,
+                                 ttl: @positive_ttl)].freeze
             end
+            return [] if service.external_name
+            return resolve_headless(service, type) if service.headless
+
             return service.cluster_ips.filter_map do |ip|
               next unless (type == "A" && IPAddr.new(ip).ipv4?) || (type == "AAAA" && IPAddr.new(ip).ipv6?)
+
               Record.new(name: name, type: type, data: ip, ttl: @positive_ttl).freeze
             end.freeze
           end
@@ -497,6 +511,7 @@ module Rubernetes
 
           suffix = ".svc.#{@domain}"
           return [].freeze unless name.end_with?(suffix)
+
           labels = name.delete_suffix(suffix).split(".")
           return [].freeze unless labels.length == 3
 
@@ -504,7 +519,9 @@ module Rubernetes
           service = @services[[namespace, service_name]]
           return [].freeze unless service
 
-          endpoints_for(service).select { |endpoint| endpoint.available?(publish_not_ready: service.publish_not_ready) }.filter_map do |endpoint|
+          endpoints_for(service).select do |endpoint|
+            endpoint.available?(publish_not_ready: service.publish_not_ready)
+          end.filter_map do |endpoint|
             next unless endpoint_host_label(endpoint) == host_label
             next unless (type == "A" && IPAddr.new(endpoint.ip).ipv4?) || (type == "AAAA" && IPAddr.new(endpoint.ip).ipv6?)
 
@@ -526,7 +543,8 @@ module Rubernetes
         end
 
         def name_exists_locked?(name)
-          return true if name == @domain || name == "svc.#{@domain}" || name == "pod.#{@domain}"
+          return true if [@domain, "svc.#{@domain}", "pod.#{@domain}"].include?(name)
+
           suffix = ".svc.#{@domain}"
           if name.end_with?(suffix)
             labels = name.delete_suffix(suffix).split(".")
@@ -555,7 +573,7 @@ module Rubernetes
 
             return false
           end
-          if name.end_with?(".in-addr.arpa") || name.end_with?(".ip6.arpa")
+          if name.end_with?(".in-addr.arpa", ".ip6.arpa")
             begin
               return known_address_locked?(reverse_name_to_ip(name))
             rescue DNSQueryError
@@ -581,15 +599,19 @@ module Rubernetes
 
         def resolve_headless(service, type)
           return [] unless %w[A AAAA].include?(type)
-          endpoints_for(service).select { |endpoint| endpoint.available?(publish_not_ready: service.publish_not_ready) }.filter_map do |endpoint|
+
+          endpoints_for(service).select do |endpoint|
+            endpoint.available?(publish_not_ready: service.publish_not_ready)
+          end.filter_map do |endpoint|
             next unless (type == "A" && IPAddr.new(endpoint.ip).ipv4?) || (type == "AAAA" && IPAddr.new(endpoint.ip).ipv6?)
+
             Record.new(name: service.fqdn, type: type, data: endpoint.ip, ttl: @positive_ttl).freeze
           end.freeze
         end
 
         def endpoints_for(service)
           key = [service.namespace, service.name]
-          @endpoint_slices.each_with_object([]) do |(slice_key, slice), result|
+          @endpoint_slices.each_with_object([]) do |(_slice_key, slice), result|
             next unless slice.fetch("service") == key
 
             result.concat(slice.fetch("endpoints"))
@@ -599,8 +621,10 @@ module Rubernetes
         def resolve_srv(srv)
           service = @services[[srv.fetch("namespace"), srv.fetch("service")]]
           return [] unless service
+
           port = service.ports.find { |entry| entry["name"] == srv.fetch("port_name") && entry["protocol"] == srv.fetch("protocol") }
           return [] unless port
+
           endpoints = endpoints_for(service).select { |endpoint| endpoint.available?(publish_not_ready: service.publish_not_ready) }
           if service.headless
             # Kubernetes DNS spec §2.4.1: a headless SRV target is the
@@ -631,10 +655,9 @@ module Rubernetes
           end
           @pods.each_value do |pod|
             next unless pod.fetch("ips").include?(ip)
+
             target = pod.fetch("hostname") || pod.fetch("name")
-            if pod.fetch("subdomain")
-              target = "#{target}.#{pod.fetch("subdomain")}.#{pod.fetch("namespace")}.svc.#{@domain}"
-            end
+            target = "#{target}.#{pod.fetch("subdomain")}.#{pod.fetch("namespace")}.svc.#{@domain}" if pod.fetch("subdomain")
             matches << Record.new(name: name, type: "PTR", data: target, ttl: @positive_ttl).freeze
           end
           matches.uniq { |record| record.data }.freeze
@@ -644,6 +667,7 @@ module Rubernetes
 
         def resolve_pod_name(name, type)
           return [].freeze unless %w[A AAAA].include?(type)
+
           @pods.each_value.filter_map do |pod|
             names = []
             if pod.fetch("hostname") && pod.fetch("subdomain")
@@ -651,8 +675,10 @@ module Rubernetes
             end
             names << "#{pod.fetch("name")}.#{pod.fetch("namespace")}.pod.#{@domain}"
             next unless names.include?(name)
+
             pod.fetch("ips").filter_map do |ip|
               next unless (type == "A" && IPAddr.new(ip).ipv4?) || (type == "AAAA" && IPAddr.new(ip).ipv6?)
+
               Record.new(name: name, type: type, data: ip, ttl: @positive_ttl).freeze
             end
           end.flatten.freeze
@@ -661,16 +687,20 @@ module Rubernetes
         def service_for_name(name)
           suffix = ".svc.#{@domain}"
           return nil unless name.end_with?(suffix)
+
           labels = name.delete_suffix(suffix).split(".")
           return nil unless labels.length == 2
+
           @services[[labels[1], labels[0]]]
         end
 
         def parse_srv(name)
           suffix = ".svc.#{@domain}"
           return nil unless name.end_with?(suffix)
+
           labels = name.delete_suffix(suffix).split(".")
           return nil unless labels.length == 4 && labels[0].start_with?("_") && labels[1].start_with?("_")
+
           {"name" => name, "port_name" => labels[0].delete_prefix("_"), "protocol" => labels[1].delete_prefix("_").downcase,
            "service" => labels[2], "namespace" => labels[3]}
         end
@@ -680,10 +710,12 @@ module Rubernetes
           if normalized.end_with?(".in-addr.arpa")
             octets = normalized.delete_suffix(".in-addr.arpa").split(".").reverse
             raise DNSQueryError, "invalid PTR name" unless octets.length == 4
+
             Support.ip(octets.join("."), name: "PTR name").to_s
           elsif normalized.end_with?(".ip6.arpa")
             nibbles = normalized.delete_suffix(".ip6.arpa").split(".").reverse.join
             raise DNSQueryError, "invalid IPv6 PTR name" unless nibbles.length == 32 && nibbles.match?(/\A[0-9a-f]+\z/i)
+
             Support.ip(nibbles.scan(/.{4}/).join(":"), name: "PTR name").to_s
           else
             raise DNSQueryError, "unsupported PTR zone"
@@ -693,8 +725,10 @@ module Rubernetes
         def normalize_name(value)
           name = Support.string(value, "DNS name").downcase.delete_suffix(".")
           raise DNSQueryError, "DNS name exceeds 253 bytes" if name.bytesize > 253
+
           labels = name.split(".", -1)
           raise DNSQueryError, "DNS name contains an empty label" if labels.any?(&:empty?)
+
           labels.each do |label|
             raise DNSQueryError, "DNS label exceeds 63 bytes" if label.bytesize > 63
             raise DNSQueryError, "DNS name contains invalid characters" unless label.match?(/\A[a-z0-9_](?:[a-z0-9_-]*[a-z0-9_])?\z/)
@@ -705,6 +739,7 @@ module Rubernetes
         def normalize_domain(value)
           domain = normalize_name(value)
           raise DNSQueryError, "cluster domain must not be empty" if domain.empty?
+
           domain
         end
 
@@ -715,10 +750,18 @@ module Rubernetes
               address = IPAddr.new(text)
               unspecified = address.to_i.zero?
               multicast = address.ipv4? ? address.to_i.between?(0xe000_0000, 0xefff_ffff) : ((address.to_i >> 120) & 0xff) == 0xff
-              raise DNSUpstreamError, "DNS upstream must not be loopback, multicast, or unspecified" if address.loopback? || multicast || unspecified || address.link_local?
+              if address.loopback? || multicast || unspecified || address.link_local?
+                raise DNSUpstreamError,
+                      "DNS upstream must not be loopback, multicast, or unspecified"
+              end
+
               address.to_s
             rescue IPAddr::InvalidAddressError
-              raise DNSUpstreamError, "invalid DNS upstream #{text.inspect}" unless text.match?(/\A[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?\z/) && text.downcase != "localhost"
+              unless text.match?(/\A[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?\z/) && text.downcase != "localhost"
+                raise DNSUpstreamError,
+                      "invalid DNS upstream #{text.inspect}"
+              end
+
               text.downcase
             end
           end.uniq.freeze
@@ -736,13 +779,14 @@ module Rubernetes
           raise DNSUpstreamError, "unable to generate a distinct DNS transaction ID"
         end
 
-        def invoke_upstream(packet, target, client_address:, **options)
+        def invoke_upstream(packet, target, client_address:, **)
           adapter = @upstream_adapter
           raise DNSUpstreamError, "DNS upstream adapter is unavailable" unless adapter
+
           if adapter.respond_to?(:query)
-            adapter.query(packet: packet, server: target, client_address: client_address, **options)
+            adapter.query(packet: packet, server: target, client_address: client_address, **)
           elsif adapter.respond_to?(:call)
-            adapter.call(packet: packet, server: target, client_address: client_address, **options)
+            adapter.call(packet: packet, server: target, client_address: client_address, **)
           else
             raise DNSUpstreamError, "DNS upstream adapter must respond to query or call"
           end
@@ -756,9 +800,11 @@ module Rubernetes
           if response.is_a?(Hash)
             source = Support.fetch(response, "source", "server", default: target)
             raise DNSUpstreamError, "DNS upstream response source mismatch" if source && source.to_s != target.to_s
+
             size = Support.fetch(response, "size", default: nil)
             payload = Support.fetch(response, "packet", "data", "response", default: nil)
             raise DNSUpstreamError, "DNS upstream response has no packet" if payload.nil?
+
             bytes = String(payload).b
             size = bytes.bytesize if size.nil?
           else
@@ -774,17 +820,20 @@ module Rubernetes
           raise DNSUpstreamError, "DNS upstream response exceeds #{@max_packet_bytes} bytes" if bytes.bytesize > @max_packet_bytes
           raise DNSUpstreamError, "DNS upstream response is missing transaction ID" if bytes.bytesize < 2
           raise DNSUpstreamError, "DNS upstream response transaction ID mismatch" unless bytes.byteslice(0, 2) == generated_id
+
           client_id + bytes.byteslice(2, bytes.bytesize - 2)
         end
 
         def record_set_from_cache(value)
           hash = value.fetch("result")
           records = Array(hash.fetch("records", [])).map { |entry| Record.new(**entry.transform_keys(&:to_sym)).freeze }
-          RecordSet.new(records, name: hash.fetch("name"), type: hash.fetch("type"), rcode: hash.fetch("rcode", "NOERROR"), ttl: hash["ttl"])
+          RecordSet.new(records, name: hash.fetch("name"), type: hash.fetch("type"), rcode: hash.fetch("rcode", "NOERROR"),
+                                 ttl: hash["ttl"])
         end
 
         def monotonic_now(value)
           return Float(value) if value
+
           Process.clock_gettime(Process::CLOCK_MONOTONIC)
         end
 
@@ -800,6 +849,7 @@ module Rubernetes
           target = File.expand_path(String(path))
           raise DNSProjectionError, "resolv.conf target is a directory" if File.directory?(target)
           raise DNSProjectionError, "resolv.conf target must not be a symlink" if File.symlink?(target)
+
           relative = target.delete_prefix("/").split("/")
           current = "/"
           relative[0...-1].each do |component|
@@ -836,12 +886,14 @@ module Rubernetes
           raise DNSProjectionError, "resolv.conf supports at most three nameservers" if nameservers.length > 3
           raise DNSProjectionError, "resolv.conf supports at most six search domains" if search.uniq.length > 6
           raise DNSProjectionError, "resolv.conf search list is too large" if search.join(" ").bytesize > 2048
+
           [nameservers, search.uniq, options.uniq]
         end
 
         def parse_host_resolv(path)
           source = File.expand_path(String(path))
           raise DNSProjectionError, "host resolv.conf must not be a symlink" if File.symlink?(source)
+
           validate_parent_path!(File.dirname(source))
           nameservers = []
           search = []
@@ -849,6 +901,7 @@ module Rubernetes
           File.foreach(source) do |line|
             fields = line.strip.split
             next if fields.empty? || fields.first.start_with?("#", ";")
+
             nameservers.concat(fields.drop(1).filter_map { |value| validate_upstream(value) }) if fields.first == "nameserver"
             search.concat(fields.drop(1)) if fields.first == "search"
             options.concat(fields.drop(1)) if fields.first == "options"
@@ -863,6 +916,7 @@ module Rubernetes
           FileUtils.mkdir_p(directory)
           validate_parent_path!(directory)
           raise DNSProjectionError, "resolv.conf target must not be a symlink" if File.symlink?(path)
+
           temporary = "#{path}.tmp-#{Process.pid}-#{SecureRandom.hex(8)}"
           File.open(temporary, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
             file.write(content)

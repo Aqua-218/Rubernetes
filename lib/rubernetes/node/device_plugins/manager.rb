@@ -3,7 +3,6 @@
 require "base64"
 require "fileutils"
 require "json"
-require "set"
 require "zlib"
 require_relative "broker"
 
@@ -142,13 +141,17 @@ module Rubernetes
             next if container["restartPolicy"] == "Always"
 
             device_requests(container).each_key do |resource|
-              reusable[resource].merge(Array(@mutex.synchronize { @allocations[[uid, container["name"], resource]] }&.fetch("devices", nil)))
+              reusable[resource].merge(Array(@mutex.synchronize do
+                @allocations[[uid, container["name"], resource]]
+              end&.fetch("devices", nil)))
             end
           end
           Array(pod.dig("spec", "containers")).each do |container|
             allocate_container(uid, container, reusable)
             device_requests(container).each_key do |resource|
-              reusable[resource].subtract(Array(@mutex.synchronize { @allocations[[uid, container["name"], resource]] }&.fetch("devices", nil)))
+              reusable[resource].subtract(Array(@mutex.synchronize do
+                @allocations[[uid, container["name"], resource]]
+              end&.fetch("devices", nil)))
             end
           end
           persist
@@ -160,11 +163,14 @@ module Rubernetes
         # when it holds no device plugin resource.
         def container_allocation(pod_uid, container_name)
           responses = @mutex.synchronize do
-            @allocations.select { |(uid, name, _), _| uid == pod_uid.to_s && name == container_name.to_s }.values.map { |entry| entry["response"] }
+            @allocations.select do |(uid, name, _), _|
+              uid == pod_uid.to_s && name == container_name.to_s
+            end.values.map { |entry| entry["response"] }
           end
           return nil if responses.empty?
 
-          responses.each_with_object({"envs" => {}, "mounts" => [], "devices" => [], "annotations" => {}, "cdi_devices" => []}) do |response, merged|
+          responses.each_with_object({"envs" => {}, "mounts" => [], "devices" => [], "annotations" => {},
+                                      "cdi_devices" => []}) do |response, merged|
             merged["envs"].merge!(response["envs"] || {})
             merged["mounts"].concat(Array(response["mounts"]))
             merged["devices"].concat(Array(response["devices"]))
@@ -177,7 +183,7 @@ module Rubernetes
         def allocated_resources_status(pod_uid, container_name)
           entries = @mutex.synchronize do
             @allocations.select { |(uid, name, _), _| uid == pod_uid.to_s && name == container_name.to_s }
-                        .map { |(_, _, resource), entry| [resource, entry["devices"], @devices[resource].dup] }
+              .map { |(_, _, resource), entry| [resource, entry["devices"], @devices[resource].dup] }
           end
           entries.sort.map do |resource, ids, devices|
             {"name" => resource, "resources" => ids.sort.map do |id|
@@ -191,7 +197,7 @@ module Rubernetes
         def container_devices(pod_uid, container_name)
           @mutex.synchronize do
             @allocations.select { |(uid, name, _), _| uid == pod_uid.to_s && name == container_name.to_s }
-                        .to_h { |(_, _, resource), entry| [resource, entry["devices"].sort] }
+              .to_h { |(_, _, resource), entry| [resource, entry["devices"].sort] }
           end
         end
 
@@ -235,9 +241,7 @@ module Rubernetes
 
             options = @mutex.synchronize { @endpoints[resource]&.options } || {}
             begin
-              if options["pre_start_required"]
-                @broker.call(endpoint, "PreStartContainer", {"devices_ids" => devices})
-              end
+              @broker.call(endpoint, "PreStartContainer", {"devices_ids" => devices}) if options["pre_start_required"]
               started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
               begin
                 reply = @broker.call(endpoint, "Allocate", {"container_requests" => [{"devices_ids" => devices}]})
@@ -261,10 +265,14 @@ module Rubernetes
             existing = @allocations[[uid, container.to_s, resource]]
             if existing
               count = existing["devices"].length
-              raise Error, %(pod "#{uid}" container "#{container}" changed request for resource "#{resource}" from #{count} to #{required}) if count != required
+              if count != required
+                raise Error,
+                      %(pod "#{uid}" container "#{container}" changed request for resource "#{resource}" from #{count} to #{required})
+              end
             end
             healthy = @devices.key?(resource) ? @devices[resource].select { |_, device| device["health"] == HEALTHY }.keys.to_set : nil
             raise Error, "cannot allocate unregistered device #{resource}" if healthy.nil? && !@endpoints.key?(resource)
+
             healthy ||= Set.new
             raise Error, "no healthy devices present; cannot allocate unhealthy devices #{resource}" if healthy.empty?
             if existing && !existing["devices"].to_set.subset?(healthy)
@@ -279,6 +287,7 @@ module Rubernetes
             if available.length < needed
               raise Error, "requested number of devices unavailable for #{resource}. Requested: #{needed}, Available: #{available.length}"
             end
+
             [chosen, available, needed]
           end.then do |chosen, available, needed|
             return chosen if needed.zero?
@@ -334,8 +343,13 @@ module Rubernetes
 
           Array(data["PodDeviceEntries"]).each do |entry|
             devices = (entry["DeviceIDs"] || {}).values.flatten
-            response = JSON.parse(Base64.decode64(entry["AllocResp"].to_s)) rescue {}
-            @allocations[[entry["PodUID"].to_s, entry["ContainerName"].to_s, entry["ResourceName"].to_s]] = {"devices" => devices, "response" => response}
+            response = begin
+              JSON.parse(Base64.decode64(entry["AllocResp"].to_s))
+            rescue StandardError
+              {}
+            end
+            @allocations[[entry["PodUID"].to_s, entry["ContainerName"].to_s, entry["ResourceName"].to_s]] =
+              {"devices" => devices, "response" => response}
           end
           (data["RegisteredDevices"] || {}).each do |resource, ids|
             @devices[resource] = Array(ids).to_h { |id| [id, {"health" => "Unhealthy", "topology" => nil}] }

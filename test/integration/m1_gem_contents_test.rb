@@ -37,6 +37,7 @@ class M1GemContentsTest < Minitest::Test
       archive_files = package_contents(gem_path)
 
       expected_files = source_package_files
+
       assert_equal(expected_files, archive_files, "gem archive must match the explicit production allowlist")
       REQUIRED_FILES.each { |path| assert_includes(archive_files, path) }
 
@@ -50,6 +51,7 @@ class M1GemContentsTest < Minitest::Test
       refute_includes(archive_files, "generated/README.md")
 
       generated_files = source_generated_files
+
       assert_equal(generated_files, archive_files.select { |path| generated_path?(path) })
     end
   end
@@ -78,6 +80,7 @@ class M1GemContentsTest < Minitest::Test
       assert_predicate(status, :success?, stderr)
       assert_empty(stderr)
       result = JSON.parse(stdout)
+
       assert_equal("rubernetes", result.fetch("name"))
       assert_equal(false, result.fetch("source_tree_used"))
 
@@ -110,6 +113,7 @@ class M1GemContentsTest < Minitest::Test
       gem_path,
       chdir: ROOT
     )
+
     assert_predicate(status, :success?, "gem build failed: #{stdout}\n#{stderr}")
     assert_path_exists(gem_path)
     gem_path
@@ -128,13 +132,16 @@ class M1GemContentsTest < Minitest::Test
       "--no-document",
       chdir: ROOT
     )
+
     assert_predicate(status, :success?, "gem install failed: #{stdout}\n#{stderr}")
   end
 
   def runtime_dependencies
     specification = Gem::Specification.load(GEMSPEC)
+
     refute_nil(specification, "rubernetes.gemspec must load")
     dependencies = specification.runtime_dependencies
+
     refute_empty(dependencies, "the gemspec must declare its runtime dependencies")
     dependencies
   end
@@ -144,7 +151,8 @@ class M1GemContentsTest < Minitest::Test
     specification = Gem::Specification.find_all_by_name(name).find do |candidate|
       requirement.satisfied_by?(candidate.version) && File.file?(candidate.cache_file)
     end
-    refute_nil(specification, "a cached #{name} gem satisfying #{requirements.join(', ')} is required")
+
+    refute_nil(specification, "a cached #{name} gem satisfying #{requirements.join(", ")} is required")
     stdout, stderr, status = Open3.capture3(
       clean_gem_environment(gem_home),
       "gem",
@@ -157,6 +165,7 @@ class M1GemContentsTest < Minitest::Test
       "--no-document",
       chdir: ROOT
     )
+
     assert_predicate(status, :success?, "#{name} install failed: #{stdout}\n#{stderr}")
   end
 

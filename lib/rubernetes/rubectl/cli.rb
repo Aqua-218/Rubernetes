@@ -40,15 +40,16 @@ module Rubernetes
         }.freeze
       end
 
-      def self.default_manifest_sandbox(root: PROJECT_ROOT, registry_path: nil, openapi_path: nil, **options)
+      def self.default_manifest_sandbox(root: PROJECT_ROOT, registry_path: nil, openapi_path: nil, **)
         unless defined?(Rubernetes::Manifest::Sandbox)
           raise Client::RubyManifestIsolationError, "isolated Ruby manifest sandbox is unavailable"
         end
 
         paths = default_manifest_paths(root: root, registry_path: registry_path, openapi_path: openapi_path)
-        Rubernetes::Manifest::Sandbox.new(**paths, **options)
+        Rubernetes::Manifest::Sandbox.new(**paths, **)
       rescue ArgumentError, IOError, SystemCallError => error
-        raise Client::RubyManifestIsolationError.new("cannot initialize Ruby manifest sandbox: #{error.message}", cause: error), cause: error
+        raise Client::RubyManifestIsolationError.new("cannot initialize Ruby manifest sandbox: #{error.message}", cause: error),
+              cause: error
       end
 
       def self.run(argv = ARGV, stdout: $stdout, stderr: $stderr, stdin: $stdin, env: ENV, client: nil, client_factory: nil,
@@ -94,6 +95,7 @@ module Rubernetes
         command = arguments.shift
         raise Client::UsageError, "a command is required; choose #{COMMANDS.join(", ")}" if command.nil?
         raise Client::UsageError, "unknown command #{command.inspect}; choose #{COMMANDS.join(", ")}" unless COMMANDS.include?(command)
+
         remember_option_secrets(options)
         validate_invocation!(command, arguments, options)
 
@@ -269,12 +271,14 @@ module Rubernetes
 
       def run_create(client, arguments, options)
         raise Client::UsageError, "create accepts only -f/--filename" unless arguments.empty?
+
         resources = read_resources(options[:filenames], options)
         resources.map { |resource| client.create(resource, namespace: options[:namespace]) }
       end
 
       def run_apply(client, arguments, options)
         raise Client::UsageError, "apply accepts only -f/--filename" unless arguments.empty?
+
         resources = read_resources(options[:filenames], options)
         resources.map do |resource|
           client.apply(
@@ -290,8 +294,10 @@ module Rubernetes
         target = arguments.shift
         raise Client::UsageError, "patch requires RESOURCE/NAME or PATH" if target.nil?
         raise Client::UsageError, "patch accepts one target" unless arguments.empty?
+
         patch_body = raw_body(options[:patch]) || raw_body(options[:data]) || file_body(options[:filenames].first)
         raise Client::UsageError, "patch requires --patch, --filename, or --data" if patch_body.nil?
+
         patch_body = parse_patch_argument(patch_body)
 
         if target.start_with?("/")
@@ -382,9 +388,7 @@ module Rubernetes
           openapi_path: options[:manifest_openapi]
         )
         remember_sensitive_values(paths.values)
-        if @sandbox_factory
-          return invoke_sandbox_factory(options, paths)
-        end
+        return invoke_sandbox_factory(options, paths) if @sandbox_factory
 
         self.class.default_manifest_sandbox(**paths)
       end
@@ -412,7 +416,8 @@ module Rubernetes
           @sandbox_factory.call(paths, options)
         end
       rescue ArgumentError, IOError, SystemCallError => error
-        raise Client::RubyManifestIsolationError.new("cannot initialize Ruby manifest sandbox: #{error.message}", cause: error), cause: error
+        raise Client::RubyManifestIsolationError.new("cannot initialize Ruby manifest sandbox: #{error.message}", cause: error),
+              cause: error
       end
 
       def parse_patch_argument(value)
@@ -447,6 +452,7 @@ module Rubernetes
         values = result.is_a?(Array) ? result : [result]
         values.each do |value|
           next if value.nil?
+
           write_output(value, format)
         end
       end
@@ -463,6 +469,7 @@ module Rubernetes
           body = response.body
           return "" if body.nil?
           return body if body.is_a?(String)
+
           return JSON.generate(body)
         end
         return response.to_s unless response.is_a?(Hash)
@@ -473,6 +480,7 @@ module Rubernetes
       def response_value(response)
         return response unless response.respond_to?(:body)
         return response.body unless response.body.is_a?(String)
+
         body = response_body(response)
         return nil if body.empty?
 
@@ -520,9 +528,7 @@ module Rubernetes
       def remember_client_secrets(client)
         contexts = []
         contexts << client.context if client.respond_to?(:context)
-        if client.respond_to?(:rest_client) && client.rest_client.respond_to?(:context)
-          contexts << client.rest_client.context
-        end
+        contexts << client.rest_client.context if client.respond_to?(:rest_client) && client.rest_client.respond_to?(:context)
         contexts.compact.each do |context|
           token = if context.respond_to?(:bearer_token)
                     context.bearer_token
@@ -532,9 +538,7 @@ module Rubernetes
                     context[:bearer_token] || context["bearer_token"] || context[:token] || context["token"]
                   end
           remember_sensitive_values(token)
-          if context.respond_to?(:client_key_data)
-            remember_sensitive_values(context.client_key_data)
-          end
+          remember_sensitive_values(context.client_key_data) if context.respond_to?(:client_key_data)
           %i[ca_file client_certificate_file client_key_file].each do |field|
             remember_sensitive_values(context.public_send(field)) if context.respond_to?(field)
           end

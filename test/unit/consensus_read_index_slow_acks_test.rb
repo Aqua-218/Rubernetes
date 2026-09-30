@@ -38,6 +38,7 @@ class ConsensusReadIndexSlowAcksTest < Minitest::Test
 
   def test_a_read_settles_when_every_acknowledgement_is_slower_than_the_inflight_expiry
     cluster, leader = slow_cluster(0.1) # 200 ms round trip, past the 150 ms expiry
+
     refute_nil leader, "precondition: the cluster keeps a leader on a slow network"
     settled = nil
 

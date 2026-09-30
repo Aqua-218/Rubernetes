@@ -2,7 +2,6 @@
 
 require "digest"
 require "ipaddr"
-require "thread"
 
 module Rubernetes
   module Proxy
@@ -15,13 +14,18 @@ module Rubernetes
                      destination_ip: nil, destination_port: nil, **_options)
         packet = value.is_a?(Packet) ? value : nil
         @protocol = ModelSupport.normalize_protocol(protocol || packet&.protocol || ModelSupport.key(value || {}, "protocol", "TCP"))
-        @source_ip = ModelSupport.canonical_ip(source_ip || packet&.source_ip || ModelSupport.key(value || {}, "sourceIP", ModelSupport.key(value || {}, "srcIP", nil)))
-        @source_port = ModelSupport.integer(source_port || packet&.source_port || ModelSupport.key(value || {}, "sourcePort", ModelSupport.key(value || {}, "srcPort", nil)))
-        @destination_ip = ModelSupport.canonical_ip(destination_ip || packet&.destination_ip || ModelSupport.key(value || {}, "destinationIP", ModelSupport.key(value || {}, "dstIP", nil)))
-        @destination_port = ModelSupport.integer(destination_port || packet&.destination_port || ModelSupport.key(value || {}, "destinationPort", ModelSupport.key(value || {}, "dstPort", nil)))
+        @source_ip = ModelSupport.canonical_ip(source_ip || packet&.source_ip || ModelSupport.key(value || {}, "sourceIP",
+                                                                                                  ModelSupport.key(value || {}, "srcIP", nil)))
+        @source_port = ModelSupport.integer(source_port || packet&.source_port || ModelSupport.key(value || {}, "sourcePort",
+                                                                                                   ModelSupport.key(value || {}, "srcPort", nil)))
+        @destination_ip = ModelSupport.canonical_ip(destination_ip || packet&.destination_ip || ModelSupport.key(value || {},
+                                                                                                                 "destinationIP", ModelSupport.key(value || {}, "dstIP", nil)))
+        @destination_port = ModelSupport.integer(destination_port || packet&.destination_port || ModelSupport.key(value || {},
+                                                                                                                  "destinationPort", ModelSupport.key(value || {}, "dstPort", nil)))
         raise ValidationError, "connection destination IP is required" if @destination_ip.nil?
         raise ValidationError, "connection destination port must be between 1 and 65535" unless @destination_port&.between?(1, 65_535)
         raise ValidationError, "connection source port must be between 0 and 65535" if @source_port && !@source_port.between?(0, 65_535)
+
         freeze
       end
 
@@ -48,7 +52,7 @@ module Rubernetes
     Connection = Struct.new(:key, :service_key, :backend, :created_at, :last_seen,
                             :expires_at, :affinity, :generation, keyword_init: true) do
       def initialize(**attributes)
-        super(**attributes)
+        super
         freeze
       end
 
@@ -74,6 +78,7 @@ module Rubernetes
         @clock = clock
         @max_entries = Integer(max_entries)
         raise ArgumentError, "max_entries must be positive" unless @max_entries.positive?
+
         @mutex = Mutex.new
         @connections = {}
         @affinity = {}
@@ -99,6 +104,7 @@ module Rubernetes
         normalized = normalize_key(key)
         candidates = Array(backends).sort_by { |backend| backend_identity(backend) }
         raise NoRoute, "service #{service_key} has no eligible endpoints" if candidates.empty?
+
         timeout = Integer(timeout_seconds)
         raise ValidationError, "session affinity timeout must be positive" unless timeout.positive?
 
@@ -113,15 +119,14 @@ module Rubernetes
           backend = affinity_backend_locked(service_key, source_ip, candidates, session_affinity, timeout_seconds, now)
           backend ||= selector.call(candidates)
           raise NoRoute, "selector returned no backend for #{service_key}" if backend.nil?
+
           ensure_capacity_locked
           expiration = session_affinity.to_s == "ClientIP" ? now.to_f + timeout.to_f : nil
           connection = Connection.new(key: normalized, service_key: service_key.to_s, backend: backend,
                                       created_at: now, last_seen: now, expires_at: expiration,
                                       affinity: session_affinity.to_s == "ClientIP", generation: generation)
           @connections[normalized] = connection
-          if connection.affinity && source_ip
-            @affinity[[service_key.to_s, source_ip.to_s]] = connection
-          end
+          @affinity[[service_key.to_s, source_ip.to_s]] = connection if connection.affinity && source_ip
           connection
         end
       end
@@ -218,11 +223,12 @@ module Rubernetes
         backend.to_s
       end
 
-      def affinity_backend_locked(service_key, source_ip, candidates, affinity, timeout_seconds, now)
+      def affinity_backend_locked(service_key, source_ip, candidates, affinity, _timeout_seconds, now)
         return nil unless affinity.to_s == "ClientIP" && source_ip
 
         current = @affinity[[service_key.to_s, source_ip.to_s]]
         return nil unless current
+
         if current.expired?(now)
           @affinity.delete([service_key.to_s, source_ip.to_s])
           return nil
@@ -333,24 +339,42 @@ module Rubernetes
       end
 
       def self.jhash_mix(a, b, c)
-        a = (a - c) & MASK32; a ^= rol32(c, 4); c = (c + b) & MASK32
-        b = (b - a) & MASK32; b ^= rol32(a, 6); a = (a + c) & MASK32
-        c = (c - b) & MASK32; c ^= rol32(b, 8); b = (b + a) & MASK32
-        a = (a - c) & MASK32; a ^= rol32(c, 16); c = (c + b) & MASK32
-        b = (b - a) & MASK32; b ^= rol32(a, 19); a = (a + c) & MASK32
-        c = (c - b) & MASK32; c ^= rol32(b, 4); b = (b + a) & MASK32
+        a = (a - c) & MASK32
+        a ^= rol32(c, 4)
+        c = (c + b) & MASK32
+        b = (b - a) & MASK32
+        b ^= rol32(a, 6)
+        a = (a + c) & MASK32
+        c = (c - b) & MASK32
+        c ^= rol32(b, 8)
+        b = (b + a) & MASK32
+        a = (a - c) & MASK32
+        a ^= rol32(c, 16)
+        c = (c + b) & MASK32
+        b = (b - a) & MASK32
+        b ^= rol32(a, 19)
+        a = (a + c) & MASK32
+        c = (c - b) & MASK32
+        c ^= rol32(b, 4)
+        b = (b + a) & MASK32
         [a, b, c]
       end
 
       def self.jhash_final(a, b, c)
-        c ^= b; c = (c - rol32(b, 14)) & MASK32
-        a ^= c; a = (a - rol32(c, 11)) & MASK32
-        b ^= a; b = (b - rol32(a, 25)) & MASK32
-        c ^= b; c = (c - rol32(b, 16)) & MASK32
-        a ^= c; a = (a - rol32(c, 4)) & MASK32
-        b ^= a; b = (b - rol32(a, 14)) & MASK32
-        c ^= b; c = (c - rol32(b, 24)) & MASK32
-        c
+        c ^= b
+        c = (c - rol32(b, 14)) & MASK32
+        a ^= c
+        a = (a - rol32(c, 11)) & MASK32
+        b ^= a
+        b = (b - rol32(a, 25)) & MASK32
+        c ^= b
+        c = (c - rol32(b, 16)) & MASK32
+        a ^= c
+        a = (a - rol32(c, 4)) & MASK32
+        b ^= a
+        b = (b - rol32(a, 14)) & MASK32
+        c ^= b
+        (c - rol32(b, 24)) & MASK32
       end
 
       private

@@ -19,7 +19,7 @@ module Rubernetes
       LOOPBACK = %w[127.0.0.1 ::1 localhost].freeze
       PATHS = %w[/configz /flagz /healthz /livez /metrics /metrics/slis /readyz].freeze
 
-      attr_reader :metrics
+      attr_reader :metrics, :slis
 
       # nil unless serving.enabled.
       # +extra_paths+: path => callable returning the body, served as text
@@ -37,7 +37,8 @@ module Rubernetes
 
       def initialize(component:, config:, metrics:, host:, port:, ready: -> { true }, logger: nil, extra_paths: {}, health: nil)
         unless LOOPBACK.include?(host)
-          raise Config::Error, "#{component} serving.bind_address #{host.inspect} is not loopback: the component endpoints have no authorizer"
+          raise Config::Error,
+                "#{component} serving.bind_address #{host.inspect} is not loopback: the component endpoints have no authorizer"
         end
 
         @component = component
@@ -97,8 +98,6 @@ module Rubernetes
         else text(404, "404 page not found")
         end
       end
-
-      attr_reader :slis
 
       private
 

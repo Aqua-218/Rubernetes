@@ -57,6 +57,7 @@ module Rubernetes
 
         def validate_jwt(list, disallowed_issuers, errors)
           return [] if list.nil?
+
           unless list.is_a?(Array)
             errors << "jwt: must be a list"
             return []
@@ -75,7 +76,9 @@ module Rubernetes
               errors << "#{path}.issuer.url: Required value"
             else
               errors << "#{path}.issuer.url: Duplicate value: #{url.inspect}" unless urls.add?(url)
-              errors << "#{path}.issuer.url: Invalid value: URL must not overlap with disallowed issuers: #{disallowed_issuers.join(", ")}" if disallowed_issuers.include?(url)
+              if disallowed_issuers.include?(url)
+                errors << "#{path}.issuer.url: Invalid value: URL must not overlap with disallowed issuers: #{disallowed_issuers.join(", ")}"
+              end
               begin
                 parsed = URI.parse(url)
                 errors << "#{path}.issuer.url: Invalid value: URL scheme must be https" unless parsed.scheme == "https"
@@ -116,6 +119,7 @@ module Rubernetes
 
         def validate_anonymous(raw, errors)
           return nil if raw.nil?
+
           unless raw.is_a?(Hash)
             errors << "anonymous: must be an object"
             return nil
@@ -123,11 +127,15 @@ module Rubernetes
           enabled = raw["enabled"]
           errors << "anonymous.enabled: Required value" unless [true, false].include?(enabled)
           conditions = Array(raw["conditions"])
-          errors << "anonymous.conditions: Invalid value: enabled should be set to true when conditions are defined" if !conditions.empty? && enabled != true
+          if !conditions.empty? && enabled != true
+            errors << "anonymous.conditions: Invalid value: enabled should be set to true when conditions are defined"
+          end
           conditions.each_with_index do |condition, index|
             errors << "anonymous.conditions[#{index}].path: Required value" unless condition.is_a?(Hash) && !condition["path"].to_s.empty?
           end
-          {"enabled" => enabled == true, "conditions" => conditions.map { |condition| {"path" => condition.is_a?(Hash) ? condition["path"].to_s : ""} }}
+          {"enabled" => enabled == true, "conditions" => conditions.map do |condition|
+            {"path" => condition.is_a?(Hash) ? condition["path"].to_s : ""}
+          end}
         end
       end
     end

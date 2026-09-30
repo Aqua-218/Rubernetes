@@ -26,7 +26,7 @@ module Rubernetes
       MAX_TAIL_LINES = 100_000
       MAX_SERVICE_LENGTH = 256
       MAX_SERVICES = 4
-      SERVICE_UNSAFE = /[^a-zA-Z\-_.:0-9@]+/.freeze
+      SERVICE_UNSAFE = /[^a-zA-Z\-_.:0-9@]+/
       QUERY_TIMEOUT = 30
       CHUNK = 64 * 1024
       MIME = {".log" => "text/plain; charset=utf-8", ".txt" => "text/plain; charset=utf-8", ".json" => "application/json",
@@ -101,7 +101,9 @@ module Rubernetes
             %(query: Invalid value: "#{service}": input contains unsupported characters)
           end
         end
-        errors << "query: Too many: #{query.services.length}: must have at most #{MAX_SERVICES} items" if query.services.length > MAX_SERVICES
+        if query.services.length > MAX_SERVICES
+          errors << "query: Too many: #{query.services.length}: must have at most #{MAX_SERVICES} items"
+        end
         if query.files.empty? && query.services.empty?
           errors << "query: Required value: cannot be empty with options"
         elsif !query.files.empty? && !query.services.empty?
@@ -112,7 +114,9 @@ module Rubernetes
           errors << "query: Invalid value: #{go_list(query.files)}: cannot specify file with options"
         elsif query.files.length == 1
           target = inside(query.files.first)
-          errors << "query: Invalid value: #{go_list(query.files)}: statat #{query.files.first}: no such file or directory" unless target && File.exist?(target)
+          unless target && File.exist?(target)
+            errors << "query: Invalid value: #{go_list(query.files)}: statat #{query.files.first}: no such file or directory"
+          end
         end
         if query.since_time && query.until_time && query.since_time > query.until_time
           errors << "untilTime: Invalid value: \"#{query.until_time.utc.iso8601}\": must be after `sinceTime`"
@@ -240,7 +244,9 @@ module Rubernetes
         return known if known
 
         sample = File.binread(target, 512).to_s
-        return "text/plain; charset=utf-8" if sample.empty? || (sample.force_encoding(Encoding::UTF_8).valid_encoding? && !sample.match?(/[\x00-\x08\x0e-\x1a\x1c-\x1f]/))
+        if sample.empty? || (sample.force_encoding(Encoding::UTF_8).valid_encoding? && !sample.match?(/[\x00-\x08\x0e-\x1a\x1c-\x1f]/))
+          return "text/plain; charset=utf-8"
+        end
 
         "application/octet-stream"
       end
@@ -264,7 +270,8 @@ module Rubernetes
       def html_escape(text) = text.gsub(/[&<>"']/, HTML)
 
       def redirect(location)
-        [301, {"location" => location, "content-type" => "text/html; charset=utf-8"}, ["<a href=\"#{html_escape(location)}\">Moved Permanently</a>.\n\n"]]
+        [301, {"location" => location, "content-type" => "text/html; charset=utf-8"},
+         ["<a href=\"#{html_escape(location)}\">Moved Permanently</a>.\n\n"]]
       end
 
       def error(status, message)
@@ -313,7 +320,11 @@ module Rubernetes
           begin
             Timeout.timeout(QUERY_TIMEOUT) { output << stream.read.to_s }
           rescue Timeout::Error
-            Process.kill(:KILL, waiter.pid) rescue nil
+            begin
+              Process.kill(:KILL, waiter.pid)
+            rescue StandardError
+              nil
+            end
           end
           status = waiter.value
         end

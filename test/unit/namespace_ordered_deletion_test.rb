@@ -33,7 +33,7 @@ class NamespaceOrderedDeletionTest < Minitest::Test
 
   def deleted_kinds(result)
     result.operations.select { |operation| operation.action == :delete }
-          .map { |operation| operation.object.fetch("kind") }
+      .map { |operation| operation.object.fetch("kind") }
   end
 
   def conditions(result)

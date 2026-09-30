@@ -21,14 +21,20 @@ module Rubernetes
           begin
             socket = UNIXSocket.new(uds_path)
           rescue Errno::ENOENT, Errno::ECONNREFUSED => error
-            raise VsockError, "vsock backend #{uds_path} is unavailable: #{error.message}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+            if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+              raise VsockError,
+                    "vsock backend #{uds_path} is unavailable: #{error.message}"
+            end
 
             sleep 0.005
             retry
           end
           socket.write("CONNECT #{Integer(port)}\n")
           remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          raise VsockError, "guest did not accept vsock port #{port} within #{timeout}s" unless remaining.positive? && socket.wait_readable(remaining)
+          unless remaining.positive? && socket.wait_readable(remaining)
+            raise VsockError,
+                  "guest did not accept vsock port #{port} within #{timeout}s"
+          end
 
           line = socket.gets
           raise VsockError, "vsock connect to port #{port} rejected: #{line.inspect}" unless line.to_s.start_with?("OK ")
@@ -70,7 +76,8 @@ module Rubernetes
         def channel(uds_path, port, timeout: 10.0, request_timeout: Framing::RESPONSE_TIMEOUT)
           deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
           begin
-            Channel.new(connect(uds_path, port, timeout: [deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC), 0.1].max), timeout: request_timeout)
+            Channel.new(connect(uds_path, port, timeout: [deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC), 0.1].max),
+                        timeout: request_timeout)
           rescue VsockError
             raise if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
 

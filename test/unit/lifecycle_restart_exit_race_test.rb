@@ -11,13 +11,15 @@ class LifecycleRestartExitRaceTest < Minitest::Test
   def lifecycle = Rubernetes::Node::Lifecycle.allocate
 
   def test_a_terminated_status_for_the_same_container_id_counts_as_exited
-    entry = {id: "pod1.container-2", status: {"state" => "terminated", "terminated" => {"containerID" => "pod1.container-2", "exitCode" => 0}}}
+    entry = {id: "pod1.container-2",
+             status: {"state" => "terminated", "terminated" => {"containerID" => "pod1.container-2", "exitCode" => 0}}}
 
     assert lifecycle.send(:exited_already?, entry)
   end
 
   def test_a_terminated_status_of_the_previous_container_does_not_block_the_restart
-    entry = {id: "pod1.container-2", status: {"state" => "terminated", "terminated" => {"containerID" => "pod1.container-1", "exitCode" => 1}}}
+    entry = {id: "pod1.container-2",
+             status: {"state" => "terminated", "terminated" => {"containerID" => "pod1.container-1", "exitCode" => 1}}}
 
     refute lifecycle.send(:exited_already?, entry)
   end
@@ -32,6 +34,7 @@ class LifecycleRestartExitRaceTest < Minitest::Test
     refute subject.send(:claim_exit!, entry)
     entry[:id] = "pod1.container-2"
     entry[:status] = {"state" => "running"}
+
     assert subject.send(:claim_exit!, entry)
   end
 

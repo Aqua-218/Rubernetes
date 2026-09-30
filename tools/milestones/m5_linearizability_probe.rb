@@ -70,7 +70,8 @@ module M5LinearizabilityProbe
     cluster&.cleanup
   end
 
-  def run(seeds: ENV.fetch("RUBERNETES_M5_LINEARIZABILITY_SEEDS", "12").to_i, rounds: ENV.fetch("RUBERNETES_M5_LINEARIZABILITY_ROUNDS", "60").to_i)
+  def run(seeds: ENV.fetch("RUBERNETES_M5_LINEARIZABILITY_SEEDS", "12").to_i,
+          rounds: ENV.fetch("RUBERNETES_M5_LINEARIZABILITY_ROUNDS", "60").to_i)
     started_at = M5ProbeSupport.now
     oracle = KVSequentialOracle.run
     cases = (1..seeds).map do |seed|

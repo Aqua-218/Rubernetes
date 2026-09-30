@@ -47,7 +47,8 @@ class NodeOpsEventsGcTest < Minitest::Test
       {"id" => "sha:live", "sizeBytes" => 100, "lastUsed" => "2025-01-01T00:00:00Z"}
     ]
 
-    report = gc.run(containers: containers, images: images, disk_usage: {"usedBytes" => 900, "capacityBytes" => 1000}, now: Time.utc(2026, 1, 1))
+    report = gc.run(containers: containers, images: images, disk_usage: {"usedBytes" => 900, "capacityBytes" => 1000},
+                    now: Time.utc(2026, 1, 1))
 
     assert_equal(["old"], removed_containers)
     assert_equal(["sha:old", "sha:new"], removed_images)

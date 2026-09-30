@@ -26,9 +26,11 @@ class ProcessGateWrapperDescriptorsTest < Minitest::Test
     unrelated_writer.close
 
     ready = IO.select([unrelated_reader], nil, nil, 2.0)
+
     refute_nil ready, "the child must have closed its copy of the unrelated pipe"
     assert_nil unrelated_reader.read(1), "EOF: nobody else holds the write end"
     kept_writer.close
+
     assert_equal "ok", kept_reader.read, "kept descriptors and regular files stay open"
   ensure
     Process.wait(pid) if pid
@@ -51,6 +53,7 @@ class ProcessGateForkWithoutGCTest < Minitest::Test
       exit!(0)
     end
     writer.close
+
     assert_equal "disabled", reader.read
     refute GC.disable.tap { GC.enable }, "the parent's GC is untouched"
   ensure

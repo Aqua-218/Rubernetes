@@ -44,6 +44,7 @@ module Rubernetes
         if rootfs && !(File.directory?(rootfs) && !File.symlink?(rootfs))
           raise DigestMismatch, "resolved image #{pinned} rootfs is not a directory: #{rootfs}"
         end
+
         pinned.to_s
       end
 

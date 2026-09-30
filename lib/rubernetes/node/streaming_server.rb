@@ -5,7 +5,6 @@ require "etc"
 require "fileutils"
 require "tmpdir"
 require "json"
-require "set"
 require_relative "../observability/metrics"
 require_relative "../observability/zpages"
 require_relative "system_logs"
@@ -80,8 +79,8 @@ module Rubernetes
         self
       end
 
-      def stop(**options)
-        @server.stop(**options)
+      def stop(**)
+        @server.stop(**)
         self
       end
 
@@ -207,7 +206,11 @@ module Rubernetes
         return text_error(404, "pod does not exist") if pod.nil?
 
         spec = pod["spec"] || pod[:spec] || {}
-        names = %w[containers initContainers ephemeralContainers].flat_map { |field| Array(spec[field]).map { |container| container["name"].to_s } }
+        names = %w[containers initContainers ephemeralContainers].flat_map do |field|
+          Array(spec[field]).map do |container|
+            container["name"].to_s
+          end
+        end
         return text_error(404, "container #{container_name} does not exist") unless names.include?(container_name)
 
         timeouts = request.respond_to?(:query_values) ? Array(request.query_values("timeout")) : []
@@ -227,7 +230,10 @@ module Rubernetes
           directory = @checkpoint_dir || File.join(Dir.tmpdir, "rubernetes-checkpoints")
           FileUtils.mkdir_p(directory)
           # kubecontainer.GetPodFullName is name_namespace.
-          location = File.join(directory, "checkpoint-#{pod_name}_#{namespace}-#{container_name}-#{Time.now.strftime("%Y-%m-%dT%H:%M:%S%:z").sub("+00:00", "Z")}.tar")
+          location = File.join(directory,
+                               "checkpoint-#{pod_name}_#{namespace}-#{container_name}-#{Time.now.strftime("%Y-%m-%dT%H:%M:%S%:z").sub(
+                                 "+00:00", "Z"
+                               )}.tar")
           runtime.checkpoint_container(container_id, location: location, timeout: timeout)
         rescue StandardError => error
           return text_error(500, "checkpointing of #{namespace}/#{pod_name}/#{container_name} failed (#{error.message})")
@@ -253,7 +259,7 @@ module Rubernetes
       # kubelet/apiserver behaviour for a container that exists but has not
       # started: a 400 whose message names the state.  Clients (hydrophone
       # included) branch on this instead of on a generic 5xx.
-      NOT_STARTED = /unknown container|not running|no such container/i.freeze
+      NOT_STARTED = /unknown container|not running|no such container/i
 
       # kubelet waits for a container that is still being created when the
       # request is a follow; only a non-follow request is answered with the
@@ -369,7 +375,7 @@ module Rubernetes
       def serve_websocket_command(socket, protocol, duplex, options)
         connection = Transport::WebSocket::Connection.new(socket, protocol: protocol)
         channels = Streaming::WebSocketChannels.new(connection, protocol: protocol, stdin: options[:stdin],
-                                                    stdout: options[:stdout], stderr: options[:stderr], logger: method(:log))
+                                                                stdout: options[:stdout], stderr: options[:stderr], logger: method(:log))
         channels.announce
         json = [Streaming::WS_V4_BINARY, Streaming::WS_V4_BASE64, Streaming::WS_V5_BINARY].include?(protocol)
         Streaming::RemoteCommand.new(duplex: duplex, channels: channels, tty: options[:tty], stdin: options[:stdin],
@@ -379,8 +385,8 @@ module Rubernetes
 
       def serve_spdy_command(socket, protocol, duplex, options)
         session = Streaming::SPDYRemoteCommandSession.new(socket, protocol: protocol, stdin: options[:stdin],
-                                                          stdout: options[:stdout], stderr: options[:stderr],
-                                                          tty: options[:tty], logger: method(:log)) do |channels, json_status:|
+                                                                  stdout: options[:stdout], stderr: options[:stderr],
+                                                                  tty: options[:tty], logger: method(:log)) do |channels, json_status:|
           Streaming::RemoteCommand.new(duplex: duplex, channels: channels, tty: options[:tty], stdin: options[:stdin],
                                        stdout: options[:stdout], stderr: options[:stderr], json_status: json_status,
                                        logger: method(:log)).run
@@ -403,7 +409,7 @@ module Rubernetes
 
         container = await_container(namespace, pod, container_name, follow: false)
         result = @exec_service.exec(container, command: command, tty: false, stdin: false,
-                                    stdout: true, stderr: true, identity: "node-streaming")
+                                               stdout: true, stderr: true, identity: "node-streaming")
         {status: 200, headers: {"content-type" => "application/octet-stream"},
          body: exec_body(result), stream: true}
       rescue StandardError => error
@@ -413,7 +419,11 @@ module Rubernetes
       def exec_body(result)
         return [result.b] if result.is_a?(String)
 
-        stdout = result.respond_to?(:stdout) ? result.stdout : (result.is_a?(Hash) ? (result["stdout"] || result[:stdout]) : nil)
+        stdout = if result.respond_to?(:stdout)
+                   result.stdout
+                 else
+                   (result.is_a?(Hash) ? (result["stdout"] || result[:stdout]) : nil)
+                 end
         return body_for(stdout) if stdout
 
         body_for(result)
@@ -442,7 +452,8 @@ module Rubernetes
           if tunnel
             spdy_protocol = tunnel.delete_prefix(Streaming::TUNNEL_PREFIX)
             unless Streaming::PORT_FORWARD_SPDY_PROTOCOLS.include?(spdy_protocol)
-              return [403, {"content-type" => "text/plain"}, ["unable to upgrade: unable to negotiate protocol: client supports #{[spdy_protocol].inspect}, server accepts #{Streaming::PORT_FORWARD_SPDY_PROTOCOLS.inspect}\n"]]
+              return [403, {"content-type" => "text/plain"},
+                      ["unable to upgrade: unable to negotiate protocol: client supports #{[spdy_protocol].inspect}, server accepts #{Streaming::PORT_FORWARD_SPDY_PROTOCOLS.inspect}\n"]]
             end
 
             headers = Transport::WebSocket.handshake_headers(request, protocol: tunnel)
@@ -459,7 +470,7 @@ module Rubernetes
           return upgrade(headers) do |socket|
             connection = Transport::WebSocket::Connection.new(socket, protocol: protocol)
             Streaming::WebSocketPortForwardSession.new(connection, protocol: protocol, ports: ports, pod: pod, uid: uid,
-                                                       logger: method(:log), &connector).run
+                                                                   logger: method(:log), &connector).run
           end
         end
         if spdy_upgrade_request?(request)
@@ -524,7 +535,10 @@ module Rubernetes
         return "" if offered.empty?
 
         selected = Transport::WebSocket.select_protocol(offered, supported)
-        raise Transport::WebSocket::ProtocolError, "requested protocol(s) are not supported: #{offered.inspect}; supports #{supported.inspect}" unless selected
+        unless selected
+          raise Transport::WebSocket::ProtocolError,
+                "requested protocol(s) are not supported: #{offered.inspect}; supports #{supported.inspect}"
+        end
 
         selected
       end
@@ -546,9 +560,9 @@ module Rubernetes
          ["unable to upgrade: unable to negotiate protocol: client supports #{offered.inspect}, server accepts #{supported.inspect}\n"]]
       end
 
-      def upgrade(headers, &handler)
+      def upgrade(headers, &)
         callback = lambda do |socket, _request|
-          handler.call(socket)
+          yield(socket)
         rescue StandardError => error
           log(:warn, "streaming.session_failed", error: error.class.name, message: error.message)
         end
@@ -677,11 +691,13 @@ module Rubernetes
         registry.register("kubelet_running_containers", type: :gauge,
                                                         help: "Number of containers currently running")
         registry.register("kubelet_runtime_operations_duration_seconds", type: :histogram,
-                                                                          help: "Duration in seconds of runtime operations. Broken down by operation type.",
-                                                                          buckets: Observability::Metrics::REQUEST_DURATION_BUCKETS)
+                                                                         help: "Duration in seconds of runtime operations. Broken down by operation type.",
+                                                                         buckets: Observability::Metrics::REQUEST_DURATION_BUCKETS)
         records = @lifecycle.respond_to?(:records) ? @lifecycle.records.values : []
         registry.set("kubelet_running_pods", records.count { |record| record.is_a?(Hash) && (record[:pod] || record["pod"]).is_a?(Hash) })
-        registry.set("kubelet_running_containers", records.sum { |record| record_containers(record).length }, {"container_state" => "running"})
+        registry.set("kubelet_running_containers", records.sum do |record|
+          record_containers(record).length
+        end, {"container_state" => "running"})
         volume_stats_metrics(registry)
         [200, {"content-type" => Observability::Metrics::CONTENT_TYPE}, [registry.render]]
       rescue StandardError => error
@@ -721,7 +737,10 @@ module Rubernetes
             # volume condition (0 for a volume with stats and no condition).
             condition = volume["volumeCondition"]
             abnormal = condition.is_a?(Hash) && (condition["abnormal"] || condition[:abnormal]) ? 1 : 0
-            registry.register("kubelet_volume_stats_health_status_abnormal", type: :gauge) unless registry.registered?("kubelet_volume_stats_health_status_abnormal")
+            unless registry.registered?("kubelet_volume_stats_health_status_abnormal")
+              registry.register("kubelet_volume_stats_health_status_abnormal",
+                                type: :gauge)
+            end
             registry.set("kubelet_volume_stats_health_status_abnormal", abnormal, labels)
           end
           container_log_metrics(registry, pod)
@@ -741,7 +760,10 @@ module Rubernetes
           logs = container["logs"]
           next unless logs.is_a?(Hash) && logs["usedBytes"]
 
-          registry.register("kubelet_container_log_filesystem_used_bytes", type: :gauge) unless registry.registered?("kubelet_container_log_filesystem_used_bytes")
+          unless registry.registered?("kubelet_container_log_filesystem_used_bytes")
+            registry.register("kubelet_container_log_filesystem_used_bytes",
+                              type: :gauge)
+          end
           registry.set("kubelet_container_log_filesystem_used_bytes", logs["usedBytes"].to_i,
                        {"uid" => ref["uid"].to_s, "namespace" => ref["namespace"].to_s, "pod" => ref["name"].to_s, "container" => container["name"].to_s})
         end
@@ -758,7 +780,9 @@ module Rubernetes
           state = (record[:state] || record["state"]).to_s
           next if %w[Removed Stopped Failed Succeeded].include?(state)
 
-          running = record_containers(record).select { |entry| (entry[:started] || entry["started"]) && !(entry[:exited] || entry["exited"]) }
+          running = record_containers(record).select do |entry|
+            (entry[:started] || entry["started"]) && !(entry[:exited] || entry["exited"])
+          end
           next if running.empty?
 
           metadata = pod["metadata"] || {}
@@ -807,7 +831,7 @@ module Rubernetes
         cmd = request.respond_to?(:query_value) ? request.query_value("cmd").to_s : ""
         container = await_container(namespace, pod, CGI.unescape(match[:container]), follow: false)
         result = @exec_service.exec(container, command: cmd.split(" "), tty: false, stdin: false,
-                                    stdout: true, stderr: true, identity: "node-streaming")
+                                               stdout: true, stderr: true, identity: "node-streaming")
         output = exec_body(result).map(&:to_s).join
         [200, {"content-type" => "application/json"}, [output]]
       rescue StandardError => error
@@ -835,7 +859,7 @@ module Rubernetes
         # kubelet does from its own pod manager.
         matching = @lifecycle.records.values.select do |candidate|
           pod = candidate.is_a?(Hash) ? (candidate[:pod] || candidate["pod"]) : nil
-          metadata = pod && (pod["metadata"] || pod[:metadata]) || {}
+          metadata = (pod && (pod["metadata"] || pod[:metadata])) || {}
           (metadata["namespace"] || metadata[:namespace]).to_s == namespace &&
             (metadata["name"] || metadata[:name]).to_s == pod_name
         end
@@ -885,7 +909,7 @@ module Rubernetes
       def pod_uid(namespace, pod_name)
         record = pod_record(namespace, pod_name)
         pod = record.is_a?(Hash) ? (record[:pod] || record["pod"]) : nil
-        metadata = pod && (pod["metadata"] || pod[:metadata]) || {}
+        metadata = (pod && (pod["metadata"] || pod[:metadata])) || {}
         (metadata["uid"] || metadata[:uid]).to_s
       end
 
@@ -900,8 +924,14 @@ module Rubernetes
           containers = record_containers(record)
           entry = containers.find { |candidate| (candidate[:state] || candidate["state"]).to_s == "running" } || containers.first
           return (entry[:id] || entry["id"]).to_s if entry
-          raise Streaming::Error, "pod #{namespace}/#{pod_name} has no running container on this node" unless @lifecycle.respond_to?(:records)
-          raise Streaming::Error, "pod #{namespace}/#{pod_name} is not running on this node" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+          unless @lifecycle.respond_to?(:records)
+            raise Streaming::Error,
+                  "pod #{namespace}/#{pod_name} has no running container on this node"
+          end
+          if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+            raise Streaming::Error,
+                  "pod #{namespace}/#{pod_name} is not running on this node"
+          end
 
           sleep(FOLLOW_POLL_INTERVAL)
         end

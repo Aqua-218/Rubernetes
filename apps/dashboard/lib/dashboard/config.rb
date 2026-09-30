@@ -94,8 +94,16 @@ module Dashboard
 
     def default_hosts
       hosts = ["localhost", "127.0.0.1", "[::1]", ENV.fetch("DASHBOARD_BIND", "")]
-      hosts << Socket.gethostname rescue nil
-      hosts << ".#{Socket.gethostname}" rescue nil
+      begin
+        hosts << Socket.gethostname
+      rescue StandardError
+        nil
+      end
+      begin
+        hosts << ".#{Socket.gethostname}"
+      rescue StandardError
+        nil
+      end
       unless external_url.empty?
         begin
           host = URI.parse(external_url).host

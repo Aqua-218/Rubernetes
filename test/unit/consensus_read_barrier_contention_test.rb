@@ -24,7 +24,7 @@ class ConsensusReadBarrierContentionTest < Minitest::Test
       @entries = 0
     end
 
-    def synchronize(&block)
+    def synchronize(&)
       @entries += 1
       super
     end
@@ -78,7 +78,10 @@ class ConsensusReadBarrierContentionTest < Minitest::Test
     subject.instance_variable_set(:@pending, {})
     subject.instance_variable_set(:@applied_listeners, [])
 
-    waiter = Thread.new { subject.send(:wait_applied, 3, 10.0); :released }
+    waiter = Thread.new do
+      subject.send(:wait_applied, 3, 10.0)
+      :released
+    end
     sleep 0.05
     applied = 3
     subject.send(:applied_hook, Struct.new(:index, :term, :result).new(3, 1, nil))
@@ -111,6 +114,7 @@ class ConsensusReadBarrierContentionTest < Minitest::Test
       subject.send(:applied_hook, Struct.new(:index, :term, :result).new(1, 1, nil))
       done << :done
     end
+
     assert_equal :done, done.pop(timeout: 2), "the notification blocked on the raft monitor"
     notified.join
     release << :go

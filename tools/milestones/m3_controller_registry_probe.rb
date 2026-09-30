@@ -11,7 +11,8 @@ M3ProbeSupport.run_report(kind: "m3_controller_registry", adapter_name: "control
   registry = controller_module.respond_to?(:default_registry) ? controller_module.default_registry : nil
   unless registry || registry_class.is_a?(Class)
     errors << "production controller registry is unavailable"
-    next {"measurement_source" => "missing_production_module", "required_controller_names" => [], "registered_controller_names" => [], "controllers" => []}
+    next {"measurement_source" => "missing_production_module", "required_controller_names" => [], "registered_controller_names" => [],
+          "controllers" => []}
   end
 
   registry ||= registry_class.new

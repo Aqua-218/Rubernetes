@@ -191,9 +191,7 @@ module Rubernetes
           def make_ref(spec, name, preserve)
             ref = spec["$ref"].to_s
             all_of = spec["allOf"]
-            if ref.empty? && all_of.is_a?(Array) && all_of.length == 1 && all_of.first.is_a?(Hash)
-              ref = all_of.first["$ref"].to_s
-            end
+            ref = all_of.first["$ref"].to_s if ref.empty? && all_of.is_a?(Array) && all_of.length == 1 && all_of.first.is_a?(Hash)
             target = ref.split("/").last.to_s
             unless target.empty?
               relationship = map_relationship(spec, name)

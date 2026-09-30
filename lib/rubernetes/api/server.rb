@@ -13,7 +13,6 @@ require "net/http"
 require "net/https"
 require "securerandom"
 require "time"
-require "set"
 require "yaml"
 
 require_relative "../security"
@@ -122,8 +121,6 @@ module Rubernetes
         ["storagemigration.k8s.io", "v1beta1", "storageversionmigrations"] => "StorageVersionMigrator"
       }.freeze
 
-      attr_reader :service_allocator
-
       def initialize(registry: Registry.new, store: MemoryStore.new, version_info: {}, clock: -> { Time.now.utc },
                      ready: true, feature_gates: {}, openapi_root: OpenAPIRepository::DEFAULT_ROOT,
                      openapi_repository: nil, uid_generator: -> { SecureRandom.uuid },
@@ -224,8 +221,6 @@ module Rubernetes
         ensure_system_namespaces! if @namespace_lifecycle && !defer_system_namespaces
       end
 
-      attr_reader :registry, :store, :service_allocator, :router, :feature_gates, :subresource_bridge, :metrics
-
       # kube-apiserver's system namespaces controller creates these at start.
       # Idempotent: concurrent API servers on the same store race safely.
       def ensure_system_namespaces!
@@ -254,7 +249,6 @@ module Rubernetes
         true
       end
 
-
       def ready?
         @ready.respond_to?(:call) ? @ready.call == true : @ready
       end
@@ -277,7 +271,7 @@ module Rubernetes
       APPLY_PATCH_TYPE = "application/apply-patch+yaml"
 
       attr_accessor :trace_requests
-      attr_reader :field_managers
+      attr_reader :service_allocator, :registry, :store, :router, :feature_gates, :subresource_bridge, :metrics, :field_managers
       # /flagz: the process's command-line flags and flattened configuration
       # (the service that runs this server sets them).
       attr_writer :component_flags
@@ -347,7 +341,8 @@ module Rubernetes
         if result.nil?
           timed_out = true
           labels = begin
-            Observability::Metrics.request_labels(**request_metric_labels(request, route)).slice("group", "resource", "scope", "subresource", "verb", "version")
+            Observability::Metrics.request_labels(**request_metric_labels(request, route)).slice("group", "resource", "scope",
+                                                                                                 "subresource", "verb", "version")
           rescue StandardError
             {}
           end
@@ -383,17 +378,22 @@ module Rubernetes
 
         total = 0.0
         text.scan(/(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/) do |number, unit|
-          total += Float(number) * {"ns" => 1e-9, "us" => 1e-6, "µs" => 1e-6, "ms" => 1e-3, "s" => 1.0, "m" => 60.0, "h" => 3600.0}.fetch(unit)
+          total += Float(number) * {"ns" => 1e-9, "us" => 1e-6, "µs" => 1e-6, "ms" => 1e-3, "s" => 1.0, "m" => 60.0,
+                                    "h" => 3600.0}.fetch(unit)
         end
         total.positive? ? total : nil
       end
 
       # The ClusterIP / NodePort allocator (its periodic repair sweep runs
       # from the process service).
-      def service_allocator = @service_allocator
+      attr_reader :service_allocator
 
       def mutating_input?(input)
-        method = input.respond_to?(:method) && !input.is_a?(Hash) ? input.method : (input["REQUEST_METHOD"] || input[:method] if input.respond_to?(:[]))
+        method = if input.respond_to?(:method) && !input.is_a?(Hash)
+                   input.method
+                 else
+                   (input["REQUEST_METHOD"] || input[:method] if input.respond_to?(:[]))
+                 end
         !%w[GET HEAD OPTIONS].include?(method.to_s.upcase)
       rescue StandardError
         false
@@ -430,17 +430,18 @@ module Rubernetes
       rescue MemoryStore::Conflict => error
         finalize_response(request, error_response(Status::Conflict.new(error.message)))
       rescue MemoryStore::Gone => error
-        finalize_response(request, error_response(Status::Expired.new(error.message, details: error.respond_to?(:details) ? error.details : nil)))
+        finalize_response(request,
+                          error_response(Status::Expired.new(error.message, details: error.respond_to?(:details) ? error.details : nil)))
       rescue MemoryStore::InvalidSelector, MemoryStore::InvalidContinueToken,
              MemoryStore::InvalidResourceVersion, MemoryStore::InvalidLimit => error
         details = error.respond_to?(:details) ? error.details : nil
         details ||= {"causes" => [{"reason" => "FieldValueInvalid",
-                                    "message" => error.message,
-                                    "field" => error.class.name.split("::").last}]}
+                                   "message" => error.message,
+                                   "field" => error.class.name.split("::").last}]}
         finalize_response(request, error_response(Status::BadRequest.new(error.message, details: details)))
       rescue MemoryStore::Error => error
         finalize_response(request, error_response(Status::Error.new(message: error.message, code: error.code,
-                                         reason: error.reason, details: error.details)))
+                                                                    reason: error.reason, details: error.details)))
       rescue JSON::ParserError => error
         finalize_response(request, error_response(Status::BadRequest.new("request body is not valid JSON: #{error.message}")))
       rescue Psych::Exception => error
@@ -490,18 +491,18 @@ module Rubernetes
       end
 
       # RaftStore#cached_read, or the block as is for a store without it.
-      def cached_store_read(&block)
+      def cached_store_read(&)
         backing = @store.respond_to?(:store) ? @store.store : @store
-        return backing.cached_read(&block) if backing.respond_to?(:cached_read)
+        return backing.cached_read(&) if backing.respond_to?(:cached_read)
 
         yield
       end
 
       # A request's reads share one linearizable barrier (RaftStore
       # #with_read_barrier); a store without the notion runs the block as is.
-      def with_request_read_barrier(&block)
+      def with_request_read_barrier(&)
         backing = @store.respond_to?(:store) ? @store.store : @store
-        return backing.with_read_barrier(&block) if backing.respond_to?(:with_read_barrier)
+        return backing.with_read_barrier(&) if backing.respond_to?(:with_read_barrier)
 
         yield
       end
@@ -522,14 +523,17 @@ module Rubernetes
 
         group = segments[1]
         return route unless %i[unknown api_group resource_list].include?(route.kind)
-        return route if route.kind != :unknown && enabled_resources.any? { |resource| resource.group == group && (route.version.nil? || resource.version == route.version.to_s) }
+        return route if route.kind != :unknown && enabled_resources.any? do |resource|
+          resource.group == group && (route.version.nil? || resource.version == route.version.to_s)
+        end
 
         crd_resource = @registry.find_gvr(group: CRD_GVR[0], version: CRD_GVR[1], resource: CRD_GVR[2])
         return route if crd_resource.nil?
 
         served = @crd_manager.served_names
         pending = @store.list(resource: crd_resource, namespace: :all, selectors: nil).items.select do |crd|
-          crd.dig("spec", "group") == group && !served.include?(crd.dig("metadata", "name")) && crd.dig("metadata", "deletionTimestamp").nil?
+          crd.dig("spec",
+                  "group") == group && !served.include?(crd.dig("metadata", "name")) && crd.dig("metadata", "deletionTimestamp").nil?
         end
         return route if pending.empty?
 
@@ -558,14 +562,14 @@ module Rubernetes
         error = nil
         begin
           entry = phase("security") { @security.enter(request, route) }
-        rescue Security::Pipeline::Unauthorized => unauthorized
+        rescue Security::Pipeline::Unauthorized
           return finalize_response(request, error_response(Status::Unauthorized.new("Unauthorized")))
         rescue Security::Pipeline::BadRequest => bad_request
           return finalize_response(request, error_response(Status::BadRequest.new(bad_request.message)))
         rescue Security::Pipeline::AuditRejected => audit_rejected
           # A blocking-strict audit webhook refused the RequestReceived event.
           return finalize_response(request, error_response(Status::Error.new(message: "audit logging failed: #{audit_rejected.message}",
-                                                                              code: 500, reason: "InternalError")))
+                                                                             code: 500, reason: "InternalError")))
         rescue Security::Pipeline::Forbidden => forbidden
           if (status_error = forbidden.status_error)
             return finalize_response(request, error_response(Status::Forbidden.new(status_error.message, details: status_error.details)))
@@ -575,7 +579,9 @@ module Rubernetes
           return finalize_response(request, error_response(Status::Forbidden.new(message, details: forbidden_details(route))))
         rescue Security::FlowControl::RejectedError => rejected
           record_request_termination(request, route, 429)
-          return finalize_response(request, error_response(Status::TooManyRequests.new("too many requests, please try again later", retry_after_seconds: rejected.retry_after)))
+          return finalize_response(request,
+                                   error_response(Status::TooManyRequests.new("too many requests, please try again later",
+                                                                              retry_after_seconds: rejected.retry_after)))
         end
         secured = entry.request
         note_deprecated_api(secured, route, entry)
@@ -590,9 +596,13 @@ module Rubernetes
           rescue MemoryStore::Error, JSON::ParserError, Psych::Exception => store_error
             finalize_response(secured, translate_store_error(store_error))
           rescue JSON::GeneratorError, EncodingError, ArgumentError => encoding_error
-            finalize_response(secured, error_response(Status::BadRequest.new("request could not be processed: #{safe_error_message(encoding_error)}")))
+            finalize_response(secured,
+                              error_response(Status::BadRequest.new("request could not be processed: #{safe_error_message(encoding_error)}")))
           end
-          response = response.with_header("audit-id", entry.request.request_id) if response.respond_to?(:with_header) && entry.request.request_id
+          if response.respond_to?(:with_header) && entry.request.request_id
+            response = response.with_header("audit-id",
+                                            entry.request.request_id)
+          end
           response
         rescue StandardError => unexpected
           error = unexpected
@@ -601,7 +611,7 @@ module Rubernetes
           Thread.current[AUDIT_KEY] = previous_audit
           phase("security.exit") do
             @security.exit(entry, response, error: error, response_object: response&.body.is_a?(Hash) ? response.body : nil,
-                           request_object: entry.attributes.resource_request? && request.body.is_a?(String) && !request.body.empty? ? safe_json(request.body) : nil)
+                                            request_object: entry.attributes.resource_request? && request.body.is_a?(String) && !request.body.empty? ? safe_json(request.body) : nil)
           end
         end
       end
@@ -617,7 +627,10 @@ module Rubernetes
         group = resource.respond_to?(:group) ? resource.group.to_s : ""
         version = resource.respond_to?(:version) ? resource.version.to_s : ""
         if resource.respond_to?(:custom?) && resource.custom?
-          warning = @crd_manager.respond_to?(:deprecation_warning) ? @crd_manager.deprecation_warning(group, version, resource.resource) : nil
+          warning = if @crd_manager.respond_to?(:deprecation_warning)
+                      @crd_manager.deprecation_warning(group, version,
+                                                       resource.resource)
+                    end
           request_warnings(request) << warning if warning && !warning.empty?
           return
         end
@@ -628,7 +641,7 @@ module Rubernetes
         request_warnings(request) << deprecation.message
         unless @deprecated_metric_registered
           @metrics&.register("apiserver_requested_deprecated_apis", type: :gauge,
-                                                                   help: "Gauge of deprecated APIs that have been requested, broken out by API group, version, resource, subresource, and removed_release.")
+                                                                    help: "Gauge of deprecated APIs that have been requested, broken out by API group, version, resource, subresource, and removed_release.")
           @deprecated_metric_registered = true
         end
         @metrics&.set("apiserver_requested_deprecated_apis", 1,
@@ -696,7 +709,8 @@ module Rubernetes
                       {"type" => "Available", "status" => "True", "reason" => "Local", "message" => "Local APIServices are always available",
                        "lastTransitionTime" => @clock.call.utc.iso8601}
                     else
-                      @aggregator.availability_condition(backend, service: lookup_service(backend), endpoint_slices: lookup_endpoint_slices(backend))
+                      @aggregator.availability_condition(backend, service: lookup_service(backend),
+                                                                  endpoint_slices: lookup_endpoint_slices(backend))
                     end
         @aggregator.mark_available(name, condition["status"] == "True") if backend
         existing = Array(current.dig("status", "conditions"))
@@ -704,7 +718,10 @@ module Rubernetes
         observe_apiservice_availability(name, previous, condition)
         return if previous && previous.values_at("status", "reason", "message") == condition.values_at("status", "reason", "message")
 
-        condition["lastTransitionTime"] = previous["lastTransitionTime"] if previous && previous["status"] == condition["status"] && previous["lastTransitionTime"]
+        if previous && previous["status"] == condition["status"] && previous["lastTransitionTime"]
+          condition["lastTransitionTime"] =
+            previous["lastTransitionTime"]
+        end
         status = (current["status"] || {}).merge("conditions" => existing.reject { |entry| entry["type"] == "Available" } + [condition])
         @store.update(resource: resource, namespace: :cluster, name: name, object: current.merge("status" => status),
                       resource_version: metadata_value(current, "resourceVersion"))
@@ -731,7 +748,8 @@ module Rubernetes
         # condition is Unknown, not available).
         return if available || !was_available
 
-        @metrics.increment("aggregator_unavailable_apiservice_total", {"name" => name.to_s, "reason" => (condition["reason"] || "UnknownReason").to_s})
+        @metrics.increment("aggregator_unavailable_apiservice_total",
+                           {"name" => name.to_s, "reason" => (condition["reason"] || "UnknownReason").to_s})
       rescue StandardError
         nil
       end
@@ -781,8 +799,24 @@ module Rubernetes
         accepted = conditions.find { |condition| condition["type"] == "NamesAccepted" }
         status = (object["status"] || {}).merge(
           "conditions" => conditions,
-          "acceptedNames" => accepted && accepted["status"] == "True" ? (object.dig("spec", "names") || {}) : (object.dig("status", "acceptedNames") || {}),
-          "storedVersions" => established ? ((object.dig("status", "storedVersions") || []) | Array(object.dig("spec", "versions")).select { |version| version["storage"] }.map { |version| version["name"] }) : Array(object.dig("status", "storedVersions"))
+          "acceptedNames" => if accepted && accepted["status"] == "True"
+                               object.dig("spec",
+                                          "names") || {}
+                             else
+                               object.dig("status",
+                                          "acceptedNames") || {}
+                             end,
+          "storedVersions" => if established
+                                ((object.dig("status",
+                                             "storedVersions") || []) | Array(object.dig("spec",
+                                                                                         "versions")).select do |version|
+                                                                          version["storage"]
+                                                                        end.map do |version|
+                                                                          version["name"]
+                                                                        end)
+                              else
+                                Array(object.dig("status", "storedVersions"))
+                              end
         )
         return if status == object["status"]
 
@@ -812,18 +846,17 @@ module Rubernetes
         conditions = Array(status["conditions"]).reject { |condition| condition["type"] == type }
         previous = Array(status["conditions"]).find { |condition| condition["type"] == type }
         transition = previous && previous["status"] == value ? previous["lastTransitionTime"] : @clock.call.utc.iso8601
-        status.merge("conditions" => conditions + [{"type" => type, "status" => value, "lastTransitionTime" => transition, "reason" => reason, "message" => message}])
+        status.merge("conditions" => conditions + [{"type" => type, "status" => value, "lastTransitionTime" => transition,
+                                                    "reason" => reason, "message" => message}])
       end
 
       # apiextensions crd_finalizer controller: delete every custom resource,
       # then drop the cleanup finalizer so the CRD object disappears.
       def schedule_crd_finalizer(name)
         thread = Thread.new do
-          begin
-            finalize_crd(name)
-          rescue StandardError
-            nil
-          end
+          finalize_crd(name)
+        rescue StandardError
+          nil
         end
         thread.name = "crd-finalizer-#{name}"
         thread
@@ -842,7 +875,8 @@ module Rubernetes
         finalize_crd_resources(existing)
         remaining = Array(metadata_value(existing, "finalizers")) - [CRD::Manager::CLEANUP_FINALIZER]
         if remaining.empty?
-          @store.delete(resource: crd_resource, namespace: :cluster, name: name, resource_version: metadata_value(existing, "resourceVersion"))
+          @store.delete(resource: crd_resource, namespace: :cluster, name: name,
+                        resource_version: metadata_value(existing, "resourceVersion"))
           after_commit(crd_resource, existing, deleted: true)
         else
           released = deep_copy(existing)
@@ -973,7 +1007,11 @@ module Rubernetes
         options = {"kind" => kind, "apiVersion" => "v1"}
         if kind == "PodPortForwardOptions"
           ports = Array(request.query_values("ports")).flat_map { |value| value.to_s.split(",") }
-          options["ports"] = ports.filter_map { |port| Integer(port, 10) rescue nil }
+          options["ports"] = ports.filter_map do |port|
+            Integer(port, 10)
+          rescue StandardError
+            nil
+          end
           return options
         end
 
@@ -1048,7 +1086,8 @@ module Rubernetes
         when MemoryStore::Gone then error_response(Status::Expired.new(error.message))
         when JSON::ParserError then error_response(Status::BadRequest.new("request body is not valid JSON: #{error.message}"))
         when Psych::Exception then error_response(Status::BadRequest.new("request body is not valid YAML: #{error.message}"))
-        else error_response(Status::Error.new(message: error.message, code: error.respond_to?(:code) ? error.code : 500, reason: error.respond_to?(:reason) ? error.reason : "InternalError"))
+        else error_response(Status::Error.new(message: error.message, code: error.respond_to?(:code) ? error.code : 500,
+                                              reason: error.respond_to?(:reason) ? error.reason : "InternalError"))
         end
       end
 
@@ -1068,7 +1107,7 @@ module Rubernetes
           resource = route.resource
           target = route.subresource.to_s.empty? ? resource.resource : "#{resource.resource}/#{route.subresource}"
           verb = Security::Authorization::Attributes.verb_for(method: request.method, collection: route.collection,
-                                                               watch: watch_request?(request), name_present: !route.name.to_s.empty?)
+                                                              watch: watch_request?(request), name_present: !route.name.to_s.empty?)
           scope = route.namespace.to_s.empty? ? " at the cluster scope" : " in the namespace \"#{route.namespace}\""
           "#{target} is forbidden: User \"#{identity}\" cannot #{verb} resource \"#{target}\" in API group \"#{resource.group}\"#{scope}"
         else
@@ -1079,7 +1118,9 @@ module Rubernetes
       def forbidden_details(route)
         return nil unless route.respond_to?(:resource_route?) && route.resource_route? && route.resource
 
-        {"name" => route.name.to_s, "group" => route.resource.group, "kind" => route.resource.resource}.reject { |_key, value| value.to_s.empty? }
+        {"name" => route.name.to_s, "group" => route.resource.group, "kind" => route.resource.resource}.reject do |_key, value|
+          value.to_s.empty?
+        end
       end
 
       # Return a decoded body for callers that do not use a Response object.
@@ -1143,6 +1184,7 @@ module Rubernetes
       def resource_response(request, route)
         resource = route.resource
         raise Status::NotFound.new("the requested API path #{route.path.inspect} was not found") unless resource_enabled?(resource)
+
         api_verb = api_verb_for(request, route)
         allowed_verbs = route.subresource ? resource.subresource_verbs(route.subresource) : resource.verbs
         # A proxy subresource is a Connecter: upstream's ProxyREST accepts
@@ -1178,9 +1220,7 @@ module Rubernetes
         virtual = virtual_resource_response(request, route)
         return virtual if virtual
 
-        if watch_request?(request)
-          return watch_response(request, route)
-        end
+        return watch_response(request, route) if watch_request?(request)
 
         case request.method
         when "GET", "HEAD"
@@ -1216,12 +1256,8 @@ module Rubernetes
       def virtual_resource_response(request, route)
         resource = route.resource
         group = resource.group.to_s
-        if route.subresource == "eviction" && resource.resource == "pods" && group.empty?
-          return eviction_response(request, route)
-        end
-        if route.subresource == "binding" && resource.resource == "pods" && group.empty?
-          return binding_response(request, route)
-        end
+        return eviction_response(request, route) if route.subresource == "eviction" && resource.resource == "pods" && group.empty?
+        return binding_response(request, route) if route.subresource == "binding" && resource.resource == "pods" && group.empty?
         if route.subresource == "proxy" && group.empty? && %w[pods services nodes].include?(resource.resource)
           return proxy_response(request, route)
         end
@@ -1403,7 +1439,9 @@ module Rubernetes
         namespace = storage_namespace(route, operation: :get)
         account = @store.get(resource: route.resource, namespace: namespace, name: route.name)
         body = request_body(request)
-        raise Status::BadRequest.new("request body must be a TokenRequest") unless body.is_a?(Hash) && (body["kind"].nil? || body["kind"] == "TokenRequest")
+        unless body.is_a?(Hash) && (body["kind"].nil? || body["kind"] == "TokenRequest")
+          raise Status::BadRequest.new("request body must be a TokenRequest")
+        end
 
         # TokenRequestServiceAccountUIDValidation (Beta, on): a request for
         # another incarnation of the ServiceAccount is a conflict.
@@ -1430,6 +1468,7 @@ module Rubernetes
           if bound["uid"] && !bound["uid"].to_s.empty? && metadata_value(object, "uid").to_s != bound["uid"].to_s
             raise Status::Conflict.new("the UID in the bound object reference (#{bound["uid"]}) does not match the UID in record. The object might have been deleted and then recreated")
           end
+
           bound_object = {"kind" => kind, "name" => bound["name"], "uid" => metadata_value(object, "uid").to_s}
           # A pod-bound token also names the pod's node, with its UID when the
           # node still exists (pkg/registry/core/serviceaccount/storage/
@@ -1457,7 +1496,8 @@ module Rubernetes
                     "metadata" => {"name" => route.name, "namespace" => namespace, "creationTimestamp" => @clock.call.utc.iso8601},
                     "spec" => {"audiences" => Array(spec["audiences"]).empty? ? @service_account_issuer.api_audiences : Array(spec["audiences"]),
                                "expirationSeconds" => spec["expirationSeconds"] || Security::Authentication::ServiceAccount::DEFAULT_EXPIRATION_SECONDS,
-                               "boundObjectRef" => bound_object && {"kind" => bound_object["kind"], "apiVersion" => "v1", "name" => bound_object["name"], "uid" => bound_object["uid"]}}.compact,
+                               "boundObjectRef" => bound_object && {"kind" => bound_object["kind"], "apiVersion" => "v1",
+                                                                    "name" => bound_object["name"], "uid" => bound_object["uid"]}}.compact,
                     "status" => {"token" => token, "expirationTimestamp" => expiration.iso8601}}
         json_response(response, status: 201)
       rescue MemoryStore::NotFound
@@ -1471,7 +1511,8 @@ module Rubernetes
 
         document = route.path == "/openid/v1/jwks" ? @service_account_issuer.jwks : @service_account_issuer.openid_configuration
         content_type = route.path == "/openid/v1/jwks" ? "application/jwk-set+json" : "application/json"
-        Response.new(status: 200, headers: {"content-type" => content_type, "cache-control" => "public, max-age=3600"}, body: JSON.generate(document))
+        Response.new(status: 200, headers: {"content-type" => content_type, "cache-control" => "public, max-age=3600"},
+                     body: JSON.generate(document))
       end
 
       # pkg/registry/core/{pod,service,node}/rest: the `proxy` subresource
@@ -1495,7 +1536,13 @@ module Rubernetes
         if %w[GET HEAD].include?(request.method.to_s) && raw_path.end_with?("/proxy")
           location = "#{raw_path}/"
           query = request.respond_to?(:query) && request.query.is_a?(Hash) ? request.query : {}
-          location = "#{location}?#{URI.encode_www_form(query.flat_map { |key, value| Array(value).map { |item| [key.to_s, item.to_s] } })}" unless query.empty?
+          unless query.empty?
+            location = "#{location}?#{URI.encode_www_form(query.flat_map do |key, value|
+              Array(value).map do |item|
+                [key.to_s, item.to_s]
+              end
+            end)}"
+          end
           return Response.new(status: 301, headers: {"location" => location, "content-type" => "text/html; charset=utf-8"},
                               body: "<a href=\"#{location}\">Moved Permanently</a>.\n\n")
         end
@@ -1510,7 +1557,13 @@ module Rubernetes
         uri.path = "/#{route.subresource_path.to_s.delete_prefix("/")}"
         uri.path = "/" if uri.path == "/"
         query = request.respond_to?(:query) && request.query.is_a?(Hash) ? request.query.reject { |key, _| key == "path" } : {}
-        uri.query = URI.encode_www_form(query.flat_map { |key, value| Array(value).map { |item| [key.to_s, item.to_s] } }) unless query.empty?
+        unless query.empty?
+          uri.query = URI.encode_www_form(query.flat_map do |key, value|
+            Array(value).map do |item|
+              [key.to_s, item.to_s]
+            end
+          end)
+        end
         perform_proxy(request, uri, prefix: proxy_path_prefix(request, route), tls: target[:tls])
       end
 
@@ -1637,7 +1690,7 @@ module Rubernetes
         port_name = service_port["name"].to_s
         items.each do |slice|
           numbers = Array(slice["ports"]).select { |entry| port_name.empty? || entry["name"].to_s == port_name }
-                                         .filter_map { |entry| entry["port"] }
+            .filter_map { |entry| entry["port"] }
           next if numbers.empty?
 
           address = Array(slice["endpoints"]).find { |endpoint| endpoint.dig("conditions", "ready") != false }
@@ -1751,7 +1804,7 @@ module Rubernetes
         text = body.dup.force_encoding(Encoding::UTF_8)
         return body unless text.valid_encoding?
 
-        text.gsub(/<\s*([A-Za-z][A-Za-z0-9]*)((?:\s+[^<>]*?)?)(\/?)>/m) do
+        text.gsub(%r{<\s*([A-Za-z][A-Za-z0-9]*)((?:\s+[^<>]*?)?)(/?)>}m) do
           tag = Regexp.last_match(1)
           attributes = Regexp.last_match(2)
           closing = Regexp.last_match(3)
@@ -1870,7 +1923,9 @@ module Rubernetes
         else
           while (chunk = socket.read(65_536))
             body << chunk
-            raise Status::ServiceUnavailable.new("proxied response exceeds #{PROXY_MAX_BODY_BYTES} bytes") if body.bytesize > PROXY_MAX_BODY_BYTES
+            if body.bytesize > PROXY_MAX_BODY_BYTES
+              raise Status::ServiceUnavailable.new("proxied response exceeds #{PROXY_MAX_BODY_BYTES} bytes")
+            end
           end
           body = decode_chunked_body(body) if headers["transfer-encoding"].any? { |value| value.downcase.include?("chunked") }
         end
@@ -1922,7 +1977,9 @@ module Rubernetes
         raise Status::BadRequest.new("target is required") unless target.is_a?(Hash)
 
         target_kind = target["kind"].to_s
-        raise Status::BadRequest.new("target.kind #{target_kind.inspect} is not supported (expected Node)") unless target_kind.empty? || target_kind == "Node"
+        unless target_kind.empty? || target_kind == "Node"
+          raise Status::BadRequest.new("target.kind #{target_kind.inspect} is not supported (expected Node)")
+        end
 
         node_name = target["name"].to_s
         raise Status::BadRequest.new("target.name is required") if node_name.empty?
@@ -2020,8 +2077,11 @@ module Rubernetes
         # until the PDB is updated to allow it").
         caller_version = delete_options.is_a?(Hash) ? delete_options.dig("preconditions", "resourceVersion") : nil
         if caller_version && caller_version.to_s != metadata_value(existing, "resourceVersion").to_s
-          raise Status::Conflict.new("the ResourceVersion in the precondition (#{caller_version}) does not match the ResourceVersion in record (#{metadata_value(existing, "resourceVersion")}). The object might have been modified")
+          raise Status::Conflict.new("the ResourceVersion in the precondition (#{caller_version}) does not match the ResourceVersion in record (#{metadata_value(
+            existing, "resourceVersion"
+          )}). The object might have been modified")
         end
+
         existing = mark_evicted(route.resource, namespace, route.name, existing) unless dry_run
         pin_version = !caller_version.nil?
         if delete_options.is_a?(Hash) && Array(delete_options["dryRun"]).empty?
@@ -2116,7 +2176,11 @@ module Rubernetes
         return [] if descriptor.nil?
 
         list = @store.list(resource: descriptor, namespace: namespace, selectors: nil)
-        items = list.respond_to?(:items) ? list.items : Array(list.is_a?(Hash) ? list["items"] : list)
+        items = if list.respond_to?(:items)
+                  list.items
+                else
+                  Array(list.is_a?(Hash) ? list["items"] : list)
+                end
         labels = pod.dig("metadata", "labels") || {}
         items.select { |budget| budget_selects?(budget, labels) }
       rescue MemoryStore::Error, Status::Error
@@ -2193,7 +2257,7 @@ module Rubernetes
 
       # pkg/registry/core/componentstatus/rest.go: the fixed server inventory
       # of the legacy endpoint, probed the way kube-apiserver probes it.
-      COMPONENT_STATUS_DEPRECATION_WARNING = "299 - \"v1 ComponentStatus is deprecated in v1.19+\"".freeze
+      COMPONENT_STATUS_DEPRECATION_WARNING = "299 - \"v1 ComponentStatus is deprecated in v1.19+\""
 
       def component_status_response(_request, route)
         statuses = COMPONENT_STATUS_SERVERS.map { |server| component_status(server) }
@@ -2326,7 +2390,9 @@ module Rubernetes
         spec_path = paths[:spec_replicas].to_s
         spec, found = nested_int64(object, spec_path)
         unless found
-          raise Status::InternalError.new("the spec replicas field #{ManagedFields::Value.go_quote(spec_path)} does not exist") unless for_update
+          unless for_update
+            raise Status::InternalError.new("the spec replicas field #{ManagedFields::Value.go_quote(spec_path)} does not exist")
+          end
 
           spec = INVALID_SPEC_REPLICAS
         end
@@ -2427,6 +2493,7 @@ module Rubernetes
 
         kind = scale["kind"].to_s
         raise Status::BadRequest.new("wrong object passed to Scale update: kind #{kind.inspect}") unless kind.empty? || kind == "Scale"
+
         replicas = scale.dig("spec", "replicas") || 0
         unless replicas.is_a?(Integer)
           raise Status::BadRequest.new("json: cannot unmarshal #{replicas.class.name.downcase} into Go struct field ScaleSpec.spec.replicas of type int32")
@@ -2434,6 +2501,7 @@ module Rubernetes
         if replicas == INVALID_SPEC_REPLICAS && (paths = custom_scale_paths(route.resource))
           raise Status::BadRequest.new("the spec replicas field #{ManagedFields::Value.go_quote(paths[:spec_replicas].to_s)} cannot be empty")
         end
+
         if replicas.negative?
           cause = {"reason" => "FieldValueInvalid", "field" => "spec.replicas",
                    "message" => "Invalid value: #{replicas}: must be greater than or equal to 0"}
@@ -2603,7 +2671,7 @@ module Rubernetes
             details: {"kind" => route.resource.kind, "causes" => [cause]}
           )
         end
-        object["metadata"]["namespace"] = namespace unless namespace == :cluster || namespace == :all
+        object["metadata"]["namespace"] = namespace unless %i[cluster all].include?(namespace)
         ensure_namespace_exists!(route.resource, namespace)
         unknown_mode = enforce_field_validation(route.resource, object, request,
                                                 duplicates: request_duplicate_fields(request))
@@ -2618,8 +2686,7 @@ module Rubernetes
           # validator requires a ReplicationController selector.
           candidate = apply_pre_validation_defaults(route.resource, candidate)
           candidate = apply_schema(route.resource, candidate, operation: :create,
-                                   unknown_fields: unknown_mode)
-          before_mutation = candidate
+                                                              unknown_fields: unknown_mode)
           candidate = before_mutation = with_managed_fields(candidate, record_managed_update(request, route, nil, candidate))
           candidate = admit_mutating(request, route, "CREATE", candidate, nil, namespace)
           candidate = redefault_after_mutation(route.resource, candidate, before_mutation, unknown_fields: unknown_mode)
@@ -2754,8 +2821,10 @@ module Rubernetes
         # leases and endpoints are written -- fail against us and work
         # everywhere else.
         return create_response(request, route) if existing.nil? && allow_create_on_update?(route.resource)
-        raise Status::NotFound.new("#{route.resource.resource} #{route.name.inspect} not found",
-                                   details: resource_details(route)) if unconditional && existing.nil?
+        if unconditional && existing.nil?
+          raise Status::NotFound.new("#{route.resource.resource} #{route.name.inspect} not found",
+                                     details: resource_details(route))
+        end
         ensure_expected_version!(existing, expected) unless unconditional
         object = preserve_metadata(object, existing)
         unknown_mode = enforce_field_validation(route.resource, object, request,
@@ -2766,15 +2835,14 @@ module Rubernetes
           object = approval_update(existing, object)
         elsif pod_resize_route?(route)
           object = resize_update(existing, object)
-        else
-          object["status"] = deep_copy(existing["status"]) if existing.key?("status")
+        elsif existing.key?("status")
+          object["status"] = deep_copy(existing["status"])
         end
         object = phase("update.schema") do
           apply_schema(route.resource, object, operation: :update, old: existing, subresource: route.subresource,
-                       unknown_fields: unknown_mode)
+                                               unknown_fields: unknown_mode)
         end
         object = prepare_registry_update(route.resource, existing, object) if route.subresource.nil?
-        before_mutation = object
         object = before_mutation = with_managed_fields(object, record_managed_update(request, route, existing, object))
         object = admit_mutating(request, route, "UPDATE", object, existing, namespace)
         object = redefault_after_mutation(route.resource, object, before_mutation, unknown_fields: unknown_mode)
@@ -2793,7 +2861,9 @@ module Rubernetes
         # object then lost a 409 to.
         # Truncated once: the no-op check compares it, and the store takes it
         # as is instead of truncating it again in convert_in.
-        object = StoreAdapter.time_codec.truncated_frozen(object) if object.is_a?(Hash) && StoreAdapter.time_codec.respond_to?(:truncated_frozen)
+        if object.is_a?(Hash) && StoreAdapter.time_codec.respond_to?(:truncated_frozen)
+          object = StoreAdapter.time_codec.truncated_frozen(object)
+        end
         comparison_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         unchanged = phase("update.noop_check") { noop_update?(object, existing) }
         # apiserver_request_timestamp_comparison_time{code_path}: the old vs
@@ -2803,6 +2873,7 @@ module Rubernetes
         if unchanged
           return json_response(route.subresource == "status" ? status_view(existing) : existing)
         end
+
         write = lambda do
           @store.update(resource: route.resource, namespace: namespace, name: route.name,
                         object: object,
@@ -2836,6 +2907,7 @@ module Rubernetes
         if patch_type.nil? || patch_type == :apply_cbor
           raise Status::UnsupportedMediaType.new("unsupported patch content type #{content_type.inspect}")
         end
+
         validate_write_options!(request, "PatchOptions", patch_type: patch_type)
         patch_document = patch_document(request, patch_type)
         attempts = 0
@@ -2861,8 +2933,8 @@ module Rubernetes
       # handler reports it.
       def server_side_apply(request, route, existing, document)
         @field_managers.field_manager(route.resource, route.subresource)
-                       .apply(live: existing, config: document, manager: query(request, "fieldManager").to_s,
-                              force: truthy?(query(request, "force")))
+          .apply(live: existing, config: document, manager: query(request, "fieldManager").to_s,
+                 force: truthy?(query(request, "force")))
       rescue ManagedFields::FieldManager::Error, ManagedFields::TypedValue::Error, ManagedFields::FieldPath::DecodeError => error
         raise Status::InternalError.new(error.message)
       end
@@ -2891,13 +2963,17 @@ module Rubernetes
           # Namespace arrived after the finalizer removal had deleted it, and
           # the namespace came back Active with a new uid.  463 of them were
           # left after one conformance round.
-          raise Status::NotFound.new("#{route.resource.resource} #{route.name.inspect} not found",
-                                     details: resource_details(route)) unless patch_type == :apply && route.subresource.nil?
+          unless patch_type == :apply && route.subresource.nil?
+            raise Status::NotFound.new("#{route.resource.resource} #{route.name.inspect} not found",
+                                       details: resource_details(route))
+          end
           nil
         end
         if route.subresource == "scale"
-          raise Status::NotFound.new("#{route.resource.resource} #{route.name.inspect} not found",
-                                     details: resource_details(route)) if existing.nil?
+          if existing.nil?
+            raise Status::NotFound.new("#{route.resource.resource} #{route.name.inspect} not found",
+                                       details: resource_details(route))
+          end
           return scale_apply_response(request, route, existing, namespace, patch_document) if patch_type == :apply
 
           scale_patch_type = patch_type == :strategic ? :merge : patch_type
@@ -2914,6 +2990,7 @@ module Rubernetes
                                    [Patch.apply(existing, patch_document, type: patch_type, resource: route.resource), nil]
                                  end
         raise Status::Invalid.new("patch must produce a resource object") unless object.is_a?(Hash)
+
         # The patched document is decoded into the typed object upstream, so
         # a JSON null a merge or strategic patch leaves inside a replaced
         # list (Helm renders `annotations: null` / `selector: null` in a
@@ -2934,8 +3011,10 @@ module Rubernetes
         end
         patch_resource_version = metadata_value(object, "resourceVersion")
         if existing && patch_resource_version && patch_resource_version.to_s != metadata_value(existing, "resourceVersion").to_s
-          raise Status::Conflict.new("resourceVersion #{patch_resource_version.inspect} does not match current #{metadata_value(existing, "resourceVersion").inspect}")
+          raise Status::Conflict.new("resourceVersion #{patch_resource_version.inspect} does not match current #{metadata_value(existing,
+                                                                                                                                "resourceVersion").inspect}")
         end
+
         # A patch that names a metadata.uid is a precondition on the object's
         # identity (upstream: "Precondition failed: UID in precondition ...",
         # 409).  A node's status report for a Pod it was starting otherwise
@@ -2948,7 +3027,7 @@ module Rubernetes
             "Precondition failed: UID in precondition: #{patch_uid}, UID in object meta: #{metadata_value(existing, "uid")}"
           )
         end
-        object = existing ? preserve_metadata(object, existing) : object
+        object = preserve_metadata(object, existing) if existing
         object = with_managed_fields(object, managed_fields) if patch_type == :apply
         if existing.nil?
           object = prepare_created_metadata(object)
@@ -2983,7 +3062,10 @@ module Rubernetes
                               unknown_fields: unknown_mode, subresource: route.subresource)
         object = prepare_registry_update(route.resource, existing, object) if existing && route.subresource.nil?
         before_mutation = object
-        object = before_mutation = with_managed_fields(object, record_managed_update(request, route, existing, object)) unless patch_type == :apply
+        unless patch_type == :apply
+          object = before_mutation = with_managed_fields(object,
+                                                         record_managed_update(request, route, existing, object))
+        end
         object = admit_mutating(request, route, existing ? "UPDATE" : "CREATE", object, existing, namespace)
         object = redefault_after_mutation(route.resource, object, before_mutation, unknown_fields: unknown_mode)
         object = inject_csr_requester(request, route.resource, object) if existing.nil?
@@ -3125,9 +3207,7 @@ module Rubernetes
             candidate["metadata"]["deletionGracePeriodSeconds"] ||= metadata_value(object, "deletionGracePeriodSeconds")
             bump_pod_generation_on_delete(route.resource, candidate)
           end
-          if namespace_resource?(route.resource)
-            candidate["status"] = (candidate["status"] || {}).merge("phase" => "Terminating")
-          end
+          candidate["status"] = (candidate["status"] || {}).merge("phase" => "Terminating") if namespace_resource?(route.resource)
           retry
         end
       end
@@ -3195,9 +3275,7 @@ module Rubernetes
 
           object = deep_copy(existing)
           object["metadata"]["deletionTimestamp"] ||= @clock.call.utc.iso8601(6)
-          if namespace_resource?(route.resource)
-            object["status"] = (object["status"] || {}).merge("phase" => "Terminating")
-          end
+          object["status"] = (object["status"] || {}).merge("phase" => "Terminating") if namespace_resource?(route.resource)
           updated = mark_for_deletion_with_retry(route, namespace, object, existing)
           after_commit(route.resource, updated)
           return json_response(updated)
@@ -3292,10 +3370,10 @@ module Rubernetes
           end
         end
         json_response(Status.success(
-                        message: "deleted #{deleted.length} #{route.resource.resource}",
-                        details: {"group" => route.resource.group, "kind" => route.resource.kind,
-                                  "names" => deleted.map { |object| metadata_value(object, "name") }}
-                      ))
+          message: "deleted #{deleted.length} #{route.resource.resource}",
+          details: {"group" => route.resource.group, "kind" => route.resource.kind,
+                    "names" => deleted.map { |object| metadata_value(object, "name") }}
+        ))
       end
 
       def watch_response(request, route)
@@ -3312,7 +3390,7 @@ module Rubernetes
           timeout_seconds: integer_query(request, "timeoutSeconds")
         )
         Response.new(status: 200, headers: {"content-type" => "application/json",
-                                             "cache-control" => "no-cache, private"},
+                                            "cache-control" => "no-cache, private"},
                      body: stream, unbounded: true)
       end
 
@@ -3367,16 +3445,17 @@ module Rubernetes
           return json_response({"apiVersion" => "v1", "kind" => "APIGroup"}.merge(aggregated))
         end
         return discovery_not_found_response if group_resources.empty?
+
         versions = ordered_group_versions(route.group.to_s, group_resources.map(&:version)).map do |version|
           {"groupVersion" => "#{route.group}/#{version}", "version" => version}
         end
         json_response({
-          "apiVersion" => "v1",
-          "kind" => "APIGroup",
-          "name" => route.group.to_s,
-          "versions" => versions,
-          "preferredVersion" => versions.first
-        })
+                        "apiVersion" => "v1",
+                        "kind" => "APIGroup",
+                        "name" => route.group.to_s,
+                        "versions" => versions,
+                        "preferredVersion" => versions.first
+                      })
       end
 
       def resource_list_response(route)
@@ -3393,12 +3472,12 @@ module Rubernetes
           )
         end
         json_response({
-          "apiVersion" => "v1",
-          "groupVersion" => route.api_version,
-          "kind" => "APIResourceList",
-          "resources" => resources.sort_by(&:resource).flat_map { |resource| resource_discovery_entries(resource) }
-            .sort_by { |entry| entry.fetch("name") }
-        })
+                        "apiVersion" => "v1",
+                        "groupVersion" => route.api_version,
+                        "kind" => "APIResourceList",
+                        "resources" => resources.sort_by(&:resource).flat_map { |resource| resource_discovery_entries(resource) }
+                          .sort_by { |entry| entry.fetch("name") }
+                      })
       end
 
       def resource_discovery_entries(resource)
@@ -3464,7 +3543,9 @@ module Rubernetes
             next unless terms.is_a?(Hash)
 
             required = Array(terms["requiredDuringSchedulingIgnoredDuringExecution"])
-            preferred = Array(terms["preferredDuringSchedulingIgnoredDuringExecution"]).map { |weighted| weighted.is_a?(Hash) ? weighted["podAffinityTerm"] : nil }
+            preferred = Array(terms["preferredDuringSchedulingIgnoredDuringExecution"]).map do |weighted|
+              weighted.is_a?(Hash) ? weighted["podAffinityTerm"] : nil
+            end
             (required + preferred).each do |term|
               next unless term.is_a?(Hash) && term["labelSelector"].is_a?(Hash)
               next if Array(term["matchLabelKeys"]).empty? && Array(term["mismatchLabelKeys"]).empty?
@@ -3651,8 +3732,6 @@ module Rubernetes
 
             key.delete_prefix("/apis/")
           end.to_set
-        else
-          nil
         end
       end
 
@@ -3662,7 +3741,7 @@ module Rubernetes
 
         group_version = resource.group.empty? ? resource.version : "#{resource.group}/#{resource.version}"
         value = @runtime_config[group_version]
-        return value == true || value == "true" unless value.nil?
+        return [true, "true"].include?(value) unless value.nil?
         return true if %w[true 1].include?(@runtime_config["api/all"].to_s)
 
         DEFAULT_SERVED_GROUP_VERSIONS.include?(group_version)
@@ -3711,7 +3790,9 @@ module Rubernetes
         if (phases = Thread.current[REQUEST_PHASES_KEY])
           @logger.info("request.trace", method: request.respond_to?(:method) ? request.method : nil, path: request.path.to_s[0, 200],
                                         status: response.respond_to?(:status) ? response.status : nil, seconds: elapsed.round(4),
-                                        phases: phases.sort_by { |_name, seconds| -seconds }.to_h.transform_values { |seconds| seconds.round(4) })
+                                        phases: phases.sort_by do |_name, seconds|
+                                          -seconds
+                                        end.to_h.transform_values { |seconds| seconds.round(4) })
         end
         return if elapsed < SLOW_REQUEST_SECONDS
 
@@ -3732,7 +3813,11 @@ module Rubernetes
         return unless status
 
         body = response.respond_to?(:body) ? response.body : nil
-        size = body.is_a?(String) ? body.bytesize : (body.is_a?(Array) && body.all?(String) ? body.sum(&:bytesize) : nil)
+        size = if body.is_a?(String)
+                 body.bytesize
+               else
+                 (body.is_a?(Array) && body.all?(String) ? body.sum(&:bytesize) : nil)
+               end
         size ||= response.encoded_body.bytesize if response.respond_to?(:encoded_body) && response.encoded_body.is_a?(String)
         dry_run = request.respond_to?(:query_values) ? Array(request.query_values("dryRun")).sort.join(",") : ""
         labels = request_metric_labels(request, route)
@@ -3742,8 +3827,8 @@ module Rubernetes
           response.on_body_encoded { |bytes| metrics.response_size(endpoint, bytes) }
         end
         @metrics.record_request(**labels, code: status,
-                                                                         duration: Process.clock_gettime(Process::CLOCK_MONOTONIC) - started,
-                                                                         dry_run: dry_run, response_size: size, webhook_seconds: webhook_seconds)
+                                          duration: Process.clock_gettime(Process::CLOCK_MONOTONIC) - started,
+                                          dry_run: dry_run, response_size: size, webhook_seconds: webhook_seconds)
         record_request_extras(request, route, labels)
       rescue StandardError
         nil
@@ -3775,7 +3860,12 @@ module Rubernetes
 
       # cleanFieldValidation.
       def metric_field_validation(request)
-        values = request.respond_to?(:query_values) ? Array(request.query_values("fieldValidation")) : Array(query(request, "fieldValidation"))
+        values = if request.respond_to?(:query_values)
+                   Array(request.query_values("fieldValidation"))
+                 else
+                   Array(query(request,
+                               "fieldValidation"))
+                 end
         return "" if values.empty?
         return "invalid" unless values.length == 1 && ["", *FIELD_VALIDATION_DIRECTIVES].include?(values.first.to_s)
 
@@ -3817,7 +3907,11 @@ module Rubernetes
       def request_metric_labels(request, route)
         resource = route&.resource_route? ? route.resource : nil
         subresource = route&.subresource
-        name = resource ? (subresource ? "#{resource.resource}/#{subresource}" : resource.resource) : (route&.kind || "unknown").to_s
+        name = if resource
+                 subresource ? "#{resource.resource}/#{subresource}" : resource.resource
+               else
+                 (route&.kind || "unknown").to_s
+               end
         method = request.method.to_s.upcase
         scope = if resource && (route.name || method == "POST")
                   "resource"
@@ -3917,13 +4011,15 @@ module Rubernetes
 
       def health_response(path)
         observe_health_checks(path, path != "/readyz" || ready?)
-        return Response.new(status: 500, headers: {"content-type" => "text/plain; charset=utf-8",
-                                                   "cache-control" => "no-cache, private",
-                                                   "x-content-type-options" => "nosniff"}, body: "not ready") if path == "/readyz" && !ready?
+        if path == "/readyz" && !ready?
+          return Response.new(status: 500, headers: {"content-type" => "text/plain; charset=utf-8",
+                                                     "cache-control" => "no-cache, private",
+                                                     "x-content-type-options" => "nosniff"}, body: "not ready")
+        end
 
         Response.new(status: 200, headers: {"content-type" => "text/plain; charset=utf-8",
-                                             "cache-control" => "no-cache, private",
-                                             "x-content-type-options" => "nosniff"}, body: "ok")
+                                            "cache-control" => "no-cache, private",
+                                            "x-content-type-options" => "nosniff"}, body: "ok")
       end
 
       # kube-apiserver routes an unserved discovery group/version through the
@@ -3989,18 +4085,22 @@ module Rubernetes
       end
 
       def error_response(error)
-        status = error.respond_to?(:to_status) ? error.to_status : Status.failure(message: error.message, code: 500, reason: "InternalError")
+        status = if error.respond_to?(:to_status)
+                   error.to_status
+                 else
+                   Status.failure(message: error.message, code: 500,
+                                  reason: "InternalError")
+                 end
         headers = {"content-type" => "application/json", "cache-control" => "no-cache, private"}
         headers["www-authenticate"] = "Bearer" if status.fetch("code") == 401
         # ErrorNegotiated: Retry-After only for a positive retryAfterSeconds.
-        headers["retry-after"] = status.dig("details", "retryAfterSeconds").to_s if status.dig("details", "retryAfterSeconds").to_i.positive?
+        headers["retry-after"] = status.dig("details", "retryAfterSeconds").to_s if status.dig("details",
+                                                                                               "retryAfterSeconds").to_i.positive?
         Response.new(status: status.fetch("code"), headers: headers, body: status)
       end
 
       def authenticate_request(request)
-        unless request.respond_to?(:identity) && request.identity.nil? && @identity_resolver
-          return impersonate(request)
-        end
+        return impersonate(request) unless request.respond_to?(:identity) && request.identity.nil? && @identity_resolver
 
         identity = invoke_identity_resolver(request)
         impersonate(request.with(identity: identity))
@@ -4019,7 +4119,7 @@ module Rubernetes
         return request unless request.respond_to?(:headers) && Security::Impersonation.requested?(request)
 
         filter = (@legacy_impersonation ||= Security::Impersonation::Filter.new(ImpersonationAuthorizer.new(@impersonation_authorizer),
-                                                                                  constrained: false))
+                                                                                constrained: false))
         wanted = filter.wanted_user(request)
         return request unless wanted
 
@@ -4092,6 +4192,7 @@ module Rubernetes
       def normalize_object(request, route)
         body = request_body(request)
         raise Status::Invalid.new("request body must be a JSON object") unless body.is_a?(Hash)
+
         # A JSON or protobuf body was just decoded into a fresh object with
         # String keys (request_body keeps nothing): copying it again was a
         # tenth of a Pod PUT's normalization.  A Hash handed in-process, or
@@ -4229,18 +4330,18 @@ module Rubernetes
         until scanner.eos?
           if scanner.scan(/\s+/)
             next
-          elsif scanner.scan(/\{/)
+          elsif scanner.scan("{")
             stack.push(pending_key)
             seen.push({})
             pending_key = nil
-          elsif scanner.scan(/\}/)
+          elsif scanner.scan("}")
             stack.pop
             seen.pop
-          elsif scanner.scan(/\[/)
+          elsif scanner.scan("[")
             stack.push(pending_key)
             seen.push(nil)
             pending_key = nil
-          elsif scanner.scan(/\]/)
+          elsif scanner.scan("]")
             stack.pop
             seen.pop
           elsif (literal = scanner.scan(/"(?:\\.|[^"\\])*"/))
@@ -4263,6 +4364,7 @@ module Rubernetes
         return {} if body.nil?
         return {} if body.is_a?(String) && body.empty?
         return body unless body.is_a?(String)
+
         media_type = request.content_type.to_s.split(";", 2).first.to_s.strip.downcase
         unless media_type == Negotiation::PROTOBUF_TYPE
           # JSON and YAML bodies must be valid UTF-8 (RFC 8259); anything else
@@ -4311,6 +4413,7 @@ module Rubernetes
 
         response = with_warning_headers(request, response)
         return response if route && route.kind == :openapi
+
         content_type = response.header("content-type").to_s
         return response unless content_type.empty? || content_type.start_with?("application/json")
 
@@ -4406,7 +4509,10 @@ module Rubernetes
       # resource's served-version printer columns, otherwise chosen by kind.
       def table_convertor(route)
         resource = route&.resource
-        resource = @registry.find_gvr(group: route.group.to_s, version: route.version.to_s, resource: resource.to_s) if resource && !resource.is_a?(Resource)
+        if resource && !resource.is_a?(Resource)
+          resource = @registry.find_gvr(group: route.group.to_s, version: route.version.to_s,
+                                        resource: resource.to_s)
+        end
         return nil unless resource.respond_to?(:custom?) && resource.custom?
         return nil if route.subresource && !route.subresource.to_s.empty? && route.subresource.to_s != "status"
 
@@ -4480,14 +4586,14 @@ module Rubernetes
 
       def patch_document(request, patch_type)
         body = request_body(request)
-        if patch_type == :json && !body.is_a?(Array)
-          raise Status::Invalid.new("JSON Patch body must be an array")
-        end
+        raise Status::Invalid.new("JSON Patch body must be an array") if patch_type == :json && !body.is_a?(Array)
+
         body
       end
 
       def normalize_apply_document(document, route)
         raise Status::Invalid.new("server-side apply body must be a JSON/YAML object") unless document.is_a?(Hash)
+
         result = stringify_keys(document)
         validate_route_identity!(result, route)
         result["apiVersion"] ||= route_identity(route).fetch(:api_version)
@@ -4553,13 +4659,14 @@ module Rubernetes
       def integer_query(request, key)
         value = query(request, key)
         return nil if value.nil? || value.to_s.empty?
+
         integer = Integer(value)
         if integer.negative?
           raise Status::BadRequest.new(
             "query parameter #{key} must be a non-negative integer",
             details: {"causes" => [{"reason" => "FieldValueInvalid",
-                                     "message" => "must be a non-negative integer",
-                                     "field" => key}]}
+                                    "message" => "must be a non-negative integer",
+                                    "field" => key}]}
           )
         end
 
@@ -4568,8 +4675,8 @@ module Rubernetes
         raise Status::BadRequest.new(
           "query parameter #{key} must be an integer",
           details: {"causes" => [{"reason" => "FieldValueInvalid",
-                                   "message" => "must be an integer",
-                                   "field" => key}]}
+                                  "message" => "must be an integer",
+                                  "field" => key}]}
         )
       end
 
@@ -4598,7 +4705,7 @@ module Rubernetes
       def storage_namespace(route, operation:)
         return :cluster if route.resource.cluster_scoped?
         return route.namespace unless route.namespace.nil?
-        return :all if operation == :list || operation == :watch
+        return :all if %i[list watch].include?(operation)
 
         raise Status::Invalid.new("namespace is required for #{operation} on namespaced resources")
       end
@@ -4652,7 +4759,7 @@ module Rubernetes
         result
       end
 
-# E2 status writes keep metadata unless the kind's status strategy resets it
+      # E2 status writes keep metadata unless the kind's status strategy resets it
       # Kinds whose status strategy calls rest.ResetObjectMetaForStatus
       # (pkg/registry/**/strategy.go): only these discard metadata changes
       # sent on the status subresource.  Every other kind (Namespace,
@@ -4778,14 +4885,17 @@ module Rubernetes
         if !force.nil? && !GO_BOOLS.include?(force.to_s)
           raise Status::BadRequest.new("strconv.ParseBool: parsing #{ManagedFields::Value.go_quote(force.to_s)}: invalid syntax")
         end
+
         causes = []
         manager = query(request, "fieldManager").to_s
         if %i[apply apply_cbor].include?(patch_type)
           if manager.empty?
-            causes << {"reason" => "FieldValueRequired", "message" => "Required value: is required for apply patch", "field" => "fieldManager"}
+            causes << {"reason" => "FieldValueRequired", "message" => "Required value: is required for apply patch",
+                       "field" => "fieldManager"}
           end
         elsif patch_type && !force.nil?
-          causes << {"reason" => "FieldValueForbidden", "message" => "Forbidden: may not be specified for non-apply patch", "field" => "force"}
+          causes << {"reason" => "FieldValueForbidden", "message" => "Forbidden: may not be specified for non-apply patch",
+                     "field" => "force"}
         end
         if manager.bytesize > FIELD_MANAGER_MAX_LENGTH
           causes << {"reason" => "FieldValueTooLong", "message" => "Too long: may not be more than #{FIELD_MANAGER_MAX_LENGTH} bytes",
@@ -4995,7 +5105,7 @@ module Rubernetes
             return nil unless container.is_a?(Hash) && old_list[index].is_a?(Hash) && container["name"] == old_list[index]["name"]
 
             deep_copy(old_list[index]).merge("resources" => deep_copy(container["resources"]),
-                                            "resizePolicy" => deep_copy(container["resizePolicy"])).compact
+                                             "resizePolicy" => deep_copy(container["resizePolicy"])).compact
           end
         end
         containers = merged.call("containers")
@@ -5038,7 +5148,7 @@ module Rubernetes
         if validator
           validation = if validator.respond_to?(:validate)
                          validator.validate(result, unknown_fields: :preserve,
-                                            operation: operation, old: old, subresource: subresource)
+                                                    operation: operation, old: old, subresource: subresource)
                        else
                          true
                        end
@@ -5165,7 +5275,9 @@ module Rubernetes
         return if causes.empty?
 
         name = metadata_value(object, "name")
-        raise Status::Invalid.new(%(ResourceClaim.resource.k8s.io "#{name}" is invalid: #{causes.map { |cause| "#{cause["field"]}: #{cause["message"]}" }.join(", ")}),
+        raise Status::Invalid.new(%(ResourceClaim.resource.k8s.io "#{name}" is invalid: #{causes.map do |cause|
+          "#{cause["field"]}: #{cause["message"]}"
+        end.join(", ")}),
                                   details: {"name" => name, "group" => "resource.k8s.io", "kind" => "ResourceClaim", "causes" => causes})
       end
 
@@ -5246,7 +5358,8 @@ module Rubernetes
         # kube-controller-manager clamps and skews by up to 5 minutes.
         return unless (issued - requested.to_i).abs <= 600
 
-        @metrics&.increment("apiserver_certificates_registry_csr_honored_duration_total", {"signerName" => updated.dig("spec", "signerName").to_s})
+        @metrics&.increment("apiserver_certificates_registry_csr_honored_duration_total",
+                            {"signerName" => updated.dig("spec", "signerName").to_s})
       rescue StandardError
         nil
       end
@@ -5320,7 +5433,10 @@ module Rubernetes
           result["spec"] = {} unless result["spec"].is_a?(Hash)
           result["spec"]["replicas"] = 1 if result["spec"]["replicas"].nil?
           labels = result.dig("spec", "template", "metadata", "labels")
-          result["spec"]["selector"] = deep_copy(labels) if (result["spec"]["selector"].nil? || result["spec"]["selector"] == {}) && labels.is_a?(Hash) && !labels.empty?
+          if (result["spec"]["selector"].nil? || result["spec"]["selector"] == {}) && labels.is_a?(Hash) && !labels.empty?
+            result["spec"]["selector"] =
+              deep_copy(labels)
+          end
           result
         elsif persistent_volume_resource?(resource)
           # pkg/registry/core/persistentvolume/strategy.go PrepareForCreate:
@@ -5421,6 +5537,7 @@ module Rubernetes
       def cascade_delete_dependents(owner, visited: {}, owner_kind: nil)
         uid = metadata_value(owner, "uid").to_s
         return if uid.empty? || visited[uid]
+
         kind = (owner_kind || owner["kind"]).to_s
         return unless visited.any? || CASCADE_OWNER_KINDS.include?(kind)
 
@@ -5431,7 +5548,11 @@ module Rubernetes
           next if descriptor.nil?
 
           listing = @store.list(resource: descriptor, namespace: descriptor.namespaced? ? namespace : nil, selectors: nil)
-          items = listing.respond_to?(:items) ? Array(listing.items) : Array(listing.is_a?(Hash) ? listing["items"] : listing)
+          items = if listing.respond_to?(:items)
+                    Array(listing.items)
+                  else
+                    Array(listing.is_a?(Hash) ? listing["items"] : listing)
+                  end
           items.each do |item|
             references = Array(item.dig("metadata", "ownerReferences"))
             next unless references.any? { |reference| reference["uid"].to_s == uid }
@@ -5464,7 +5585,13 @@ module Rubernetes
         Array(item.dig("metadata", "ownerReferences")).any? do |reference|
           next false if reference["uid"].to_s == uid
 
-          group, version = reference["apiVersion"].to_s.include?("/") ? reference["apiVersion"].to_s.split("/", 2) : ["", reference["apiVersion"].to_s]
+          group, version = if reference["apiVersion"].to_s.include?("/")
+                             reference["apiVersion"].to_s.split("/",
+                                                                2)
+                           else
+                             ["",
+                              reference["apiVersion"].to_s]
+                           end
           resource = @registry.find_gvk(group: group, version: version, kind: reference["kind"].to_s)
           next false if resource.nil?
 
@@ -5482,7 +5609,9 @@ module Rubernetes
       def release_dependent(descriptor, item, uid)
         ORPHAN_CONFLICT_ATTEMPTS.times do
           updated = deep_copy(item)
-          updated["metadata"]["ownerReferences"] = Array(updated["metadata"]["ownerReferences"]).reject { |reference| reference["uid"].to_s == uid }
+          updated["metadata"]["ownerReferences"] = Array(updated["metadata"]["ownerReferences"]).reject do |reference|
+            reference["uid"].to_s == uid
+          end
           @store.update(resource: descriptor, namespace: item.dig("metadata", "namespace"), name: item.dig("metadata", "name"),
                         object: updated, resource_version: metadata_value(item, "resourceVersion"))
           return
@@ -5589,7 +5718,7 @@ module Rubernetes
       def dry_run_view(object, namespace)
         result = deep_copy(object)
         result["metadata"] ||= {}
-        result["metadata"]["namespace"] ||= namespace unless namespace == :cluster || namespace == :all
+        result["metadata"]["namespace"] ||= namespace unless %i[cluster all].include?(namespace)
         result["metadata"]["uid"] ||= @uid_generator ? @uid_generator.call : SecureRandom.uuid
         result["metadata"]["creationTimestamp"] ||= @clock.call.utc.iso8601
         result["metadata"]["resourceVersion"] ||= "0"
@@ -5640,7 +5769,11 @@ module Rubernetes
           next if resource.namespaced? && !descriptor.namespaced?
 
           listing = @store.list(resource: descriptor, namespace: resource.namespaced? ? namespace : nil, selectors: nil)
-          items = listing.respond_to?(:items) ? Array(listing.items) : Array(listing.is_a?(Hash) ? listing["items"] : listing)
+          items = if listing.respond_to?(:items)
+                    Array(listing.items)
+                  else
+                    Array(listing.is_a?(Hash) ? listing["items"] : listing)
+                  end
           items.each { |item| orphan_one_dependent(descriptor, item, uid) }
         rescue StandardError
           next
@@ -5865,8 +5998,8 @@ module Rubernetes
           candidate["metadata"]["generation"] = 1
         elsif existing["spec"] != candidate["spec"]
           candidate["metadata"]["generation"] = metadata_value(existing, "generation").to_i + 1
-        else
-          candidate["metadata"]["generation"] = metadata_value(existing, "generation").to_i if metadata_value(existing, "generation")
+        elsif metadata_value(existing, "generation")
+          candidate["metadata"]["generation"] = metadata_value(existing, "generation").to_i
         end
         candidate
       end
@@ -5892,7 +6025,7 @@ module Rubernetes
       # mutating admission, where upstream's handlers run it.
       def record_managed_update(request, route, existing, object)
         @field_managers.field_manager(route.resource, route.subresource)
-                       .update(live: existing, new_object: object, manager: update_manager(request))
+          .update(live: existing, new_object: object, manager: update_manager(request))
       end
 
       # The object with +managed_fields+ as its metadata.managedFields (none

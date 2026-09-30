@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 module Rubernetes
   module Security
     module Authorization
@@ -101,7 +99,11 @@ module Rubernetes
         end
 
         def add_volume_attachment(name, node)
-          NodeGraph.timed("AddVolumeAttachment") { @mutex.synchronize { node.to_s.empty? ? @attachments.delete(name.to_s) : @attachments[name.to_s] = node.to_s } }
+          NodeGraph.timed("AddVolumeAttachment") do
+            @mutex.synchronize do
+              node.to_s.empty? ? @attachments.delete(name.to_s) : @attachments[name.to_s] = node.to_s
+            end
+          end
         end
 
         def delete_volume_attachment(name)
@@ -109,7 +111,11 @@ module Rubernetes
         end
 
         def add_resource_slice(name, node)
-          NodeGraph.timed("AddResourceSlice") { @mutex.synchronize { node.to_s.empty? ? @slices.delete(name.to_s) : @slices[name.to_s] = node.to_s } }
+          NodeGraph.timed("AddResourceSlice") do
+            @mutex.synchronize do
+              node.to_s.empty? ? @slices.delete(name.to_s) : @slices[name.to_s] = node.to_s
+            end
+          end
         end
 
         def delete_resource_slice(name)
@@ -179,7 +185,11 @@ module Rubernetes
         end
 
         def value(object, *path)
-          path.reduce(object) { |current, step| current.is_a?(Hash) ? (current.key?(step) ? current[step] : current[step.to_sym]) : nil }
+          path.reduce(object) do |current, step|
+            if current.is_a?(Hash)
+              current.key?(step) ? current[step] : current[step.to_sym]
+            end
+          end
         end
 
         def namespace(object) = value(object, "metadata", "namespace").to_s
@@ -219,8 +229,8 @@ module Rubernetes
           end
         end
 
-        def each_container(pod, &block)
-          %w[initContainers containers ephemeralContainers].each { |field| Array(value(pod, "spec", field)).each(&block) }
+        def each_container(pod, &)
+          %w[initContainers containers ephemeralContainers].each { |field| Array(value(pod, "spec", field)).each(&) }
         end
 
         def pod_secret_names(pod)
@@ -255,7 +265,9 @@ module Rubernetes
         def resource_claim_names(pod)
           statuses = Array(value(pod, "status", "resourceClaimStatuses"))
           names = Array(value(pod, "spec", "resourceClaims")).map do |claim|
-            value(claim, "resourceClaimName") || statuses.find { |status| value(status, "name") == value(claim, "name") }&.then { |status| value(status, "resourceClaimName") }
+            value(claim, "resourceClaimName") || statuses.find do |status|
+              value(status, "name") == value(claim, "name")
+            end&.then { |status| value(status, "resourceClaimName") }
           end
           names << value(pod, "status", "extendedResourceClaimStatus", "resourceClaimName")
           names.compact.map(&:to_s).reject(&:empty?)
@@ -294,7 +306,10 @@ module Rubernetes
                   apply(kind, event)
                 end
               rescue StandardError => error
-                @logger&.warn("node_authorizer.graph_watch_failed", kind: kind.to_s, error: error.message.to_s[0, 200]) if @logger.respond_to?(:warn)
+                if @logger.respond_to?(:warn)
+                  @logger&.warn("node_authorizer.graph_watch_failed", kind: kind.to_s,
+                                                                      error: error.message.to_s[0, 200])
+                end
               end
             end
             self
@@ -302,7 +317,11 @@ module Rubernetes
 
           def stop
             @stop = true
-            @streams.each { |stream| stream.close rescue nil }
+            @streams.each do |stream|
+              stream.close
+            rescue StandardError
+              nil
+            end
             @threads.each { |thread| thread.join(2) }
             @threads.clear
             @streams.clear
@@ -321,12 +340,21 @@ module Rubernetes
             case kind
             when :pod then deleted ? @graph.delete_pod(namespace, name) : @graph.add_pod(object)
             when :pv then deleted ? @graph.delete_pv(name) : @graph.add_pv(object)
-            when :attachment then deleted ? @graph.delete_volume_attachment(name) : @graph.add_volume_attachment(name, object.dig("spec", "nodeName"))
+            when :attachment then if deleted
+                                    @graph.delete_volume_attachment(name)
+                                  else
+                                    @graph.add_volume_attachment(name,
+                                                                 object.dig("spec",
+                                                                            "nodeName"))
+                                  end
             when :slice then deleted ? @graph.delete_resource_slice(name) : @graph.add_resource_slice(name, object.dig("spec", "nodeName"))
             when :pcr then deleted ? @graph.delete_pod_certificate_request(namespace, name) : @graph.add_pod_certificate_request(object)
             end
           rescue StandardError => error
-            @logger&.warn("node_authorizer.graph_event_failed", kind: kind.to_s, error: error.message.to_s[0, 200]) if @logger.respond_to?(:warn)
+            if @logger.respond_to?(:warn)
+              @logger&.warn("node_authorizer.graph_event_failed", kind: kind.to_s,
+                                                                  error: error.message.to_s[0, 200])
+            end
           end
         end
       end

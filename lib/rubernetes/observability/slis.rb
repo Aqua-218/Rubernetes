@@ -17,7 +17,8 @@ module Rubernetes
         @registry = Metrics.new(apiserver: false, process: false)
         @registry.register("kubernetes_healthcheck", type: :gauge)
         @registry.register("kubernetes_healthchecks_total", type: :counter)
-        @registry.register("process_start_time_seconds", type: :gauge, help: "[ALPHA] Start time of the process since unix epoch in seconds.")
+        @registry.register("process_start_time_seconds", type: :gauge,
+                                                         help: "[ALPHA] Start time of the process since unix epoch in seconds.")
         start = @registry.send(:process_start_time)
         @registry.set("process_start_time_seconds", start) if start
       end
@@ -30,7 +31,8 @@ module Rubernetes
       # slis.ObserveHealthcheck.
       def observe(name, type, success)
         @registry.set("kubernetes_healthcheck", success ? 1 : 0, {"name" => name.to_s, "type" => type.to_s})
-        @registry.increment("kubernetes_healthchecks_total", {"name" => name.to_s, "type" => type.to_s, "status" => success ? "success" : "error"})
+        @registry.increment("kubernetes_healthchecks_total",
+                            {"name" => name.to_s, "type" => type.to_s, "status" => success ? "success" : "error"})
         self
       end
 

@@ -50,12 +50,15 @@ class CRILogsTest < Minitest::Test
       stream = Logs.read(path, follow: true, running: -> { running })
       chunks = Queue.new
       reader = Thread.new { stream.each { |chunk| chunks << chunk } }
+
       assert_equal "one\n", chunks.pop
       File.write(path, "2026-09-24T00:00:02Z stdout F two\n", mode: "a")
+
       assert_equal "two\n", chunks.pop
       running = false
       reader.join(5)
-      refute reader.alive?
+
+      refute_predicate reader, :alive?
     end
   end
 end

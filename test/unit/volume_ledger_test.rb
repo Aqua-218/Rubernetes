@@ -11,8 +11,8 @@ class VolumeLedgerTest < Minitest::Test
   def test_bind_mount_without_uuid_persists_kernel_identity_and_canonical_paths
     ledger = Ledger.new
     record = register_mount(ledger, volume_id: "bind", source: "/var/lib/../source",
-                            source_identity: "/var/lib/../source", root: "/mnt/../",
-                            filesystem: "bind", mount_id: "101", device_id: "0:42")
+                                    source_identity: "/var/lib/../source", root: "/mnt/../",
+                                    filesystem: "bind", mount_id: "101", device_id: "0:42")
 
     assert_nil record.fetch("filesystemUuid")
     refute record.fetch("filesystemUuidAvailable")
@@ -24,13 +24,13 @@ class VolumeLedgerTest < Minitest::Test
   def test_tmpfs_mount_without_uuid_is_owned_by_mountinfo_identity
     ledger = Ledger.new
     register_mount(ledger, volume_id: "tmpfs", source: "tmpfs", source_identity: "tmpfs",
-                   target: "/tmpfs", filesystem: "tmpfs", mount_id: "102", device_id: "0:43")
+                           target: "/tmpfs", filesystem: "tmpfs", mount_id: "102", device_id: "0:43")
 
     report = ledger.reconcile([
-      {"mountId" => "102", "filesystemUuid" => nil, "filesystemUuidAvailable" => false,
-       "deviceId" => "0:43", "root" => "/", "source" => "tmpfs", "target" => "/tmpfs",
-       "filesystem" => "tmpfs"}
-    ])
+                                {"mountId" => "102", "filesystemUuid" => nil, "filesystemUuidAvailable" => false,
+                                 "deviceId" => "0:43", "root" => "/", "source" => "tmpfs", "target" => "/tmpfs",
+                                 "filesystem" => "tmpfs"}
+                              ])
 
     assert_equal 1, report.fetch("owned").length
     assert_empty report.fetch("identityMismatches")
@@ -42,9 +42,9 @@ class VolumeLedgerTest < Minitest::Test
       ledger = Ledger.new
       error = assert_raises(Rubernetes::Volume::MountIdentityError) do
         register_mount(ledger, volume_id: filesystem, source: "/dev/sda1",
-                       source_identity: "/dev/sda1", filesystem: filesystem,
-                       mount_id: filesystem == "ext4" ? "103" : "104",
-                       device_id: filesystem == "ext4" ? "8:1" : "8:2")
+                               source_identity: "/dev/sda1", filesystem: filesystem,
+                               mount_id: filesystem == "ext4" ? "103" : "104",
+                               device_id: filesystem == "ext4" ? "8:1" : "8:2")
       end
       assert_match(/filesystem UUID/, error.message)
       assert_empty ledger.entries
@@ -61,11 +61,11 @@ class VolumeLedgerTest < Minitest::Test
   def test_mount_id_conflict_cannot_be_hidden_by_changed_source_identity
     ledger = Ledger.new
     register_mount(ledger, volume_id: "first", source: "/source", source_identity: "/source",
-                   target: "/first", mount_id: "105", device_id: "0:44", filesystem: "bind")
+                           target: "/first", mount_id: "105", device_id: "0:44", filesystem: "bind")
 
     assert_raises(Rubernetes::Volume::MountIdentityError) do
       register_mount(ledger, volume_id: "second", source: "/other", source_identity: "/other",
-                     target: "/second", mount_id: "105", device_id: "0:45", filesystem: "bind")
+                             target: "/second", mount_id: "105", device_id: "0:45", filesystem: "bind")
     end
     assert_equal 1, ledger.entries.length
   end
@@ -75,17 +75,20 @@ class VolumeLedgerTest < Minitest::Test
       path = File.join(directory, "mounts.json")
       ledger = Ledger.new(path: path, fsync: false)
       record = register_mount(ledger, volume_id: "reload", source: "/source",
-                              source_identity: "/source", target: "/reload", root: "/",
-                              filesystem: "bind", mount_id: "106", device_id: "0:46")
+                                      source_identity: "/source", target: "/reload", root: "/",
+                                      filesystem: "bind", mount_id: "106", device_id: "0:46")
 
       persisted = Rubernetes::Volume::RecordFiles.read(path).fetch(0)
+
       assert_equal "/", persisted.fetch("root")
       assert_equal "/source", persisted.fetch("sourceIdentity")
       refute persisted.fetch("filesystemUuidAvailable")
 
       reloaded = Ledger.new(path: path, fsync: false)
+
       assert_equal record, reloaded.entries.fetch(0)
       report = reloaded.reconcile([persisted])
+
       assert_equal 1, report.fetch("owned").length
       assert_empty report.fetch("missing")
       assert_empty report.fetch("identityMismatches")
@@ -96,21 +99,23 @@ class VolumeLedgerTest < Minitest::Test
     Dir.mktmpdir("volume-ledger-legacy") do |directory|
       path = File.join(directory, "mounts.json")
       File.write(path, JSON.generate([
-        {"volumeId" => "legacy", "source" => "/dev/sda1", "target" => "/legacy",
-         "mountId" => "m1", "filesystemUuid" => "fs1", "deviceId" => "8:1", "owner" => "legacy"}
-      ]))
+                                       {"volumeId" => "legacy", "source" => "/dev/sda1", "target" => "/legacy",
+                                        "mountId" => "m1", "filesystemUuid" => "fs1", "deviceId" => "8:1", "owner" => "legacy"}
+                                     ]))
 
       ledger = Ledger.new(path: path, fsync: false)
       record = ledger.entries.fetch(0)
+
       assert_equal 1, record.fetch("identityVersion")
       assert_equal "/dev/sda1", record.fetch("sourceIdentity")
       assert record.fetch("filesystemUuidAvailable")
 
       report = ledger.reconcile([
-        {"mountId" => "m1", "filesystemUuid" => "fs1", "deviceId" => "8:1",
-         "root" => "/", "source" => "/dev/sda1", "target" => "/legacy",
-         "filesystem" => "ext4", "filesystemUuidAvailable" => true}
-      ])
+                                  {"mountId" => "m1", "filesystemUuid" => "fs1", "deviceId" => "8:1",
+                                   "root" => "/", "source" => "/dev/sda1", "target" => "/legacy",
+                                   "filesystem" => "ext4", "filesystemUuidAvailable" => true}
+                                ])
+
       assert_equal 1, report.fetch("owned").length
       assert_empty report.fetch("orphans")
     end
@@ -119,10 +124,8 @@ class VolumeLedgerTest < Minitest::Test
   private
 
   def register_mount(ledger, **overrides)
-    ledger.register(**{
-      volume_id: "volume", source: "/source", target: "/tmp/target", mount_id: "100",
-      filesystem_uuid: nil, device_id: "0:41", owner: "volume", root: "/",
-      source_identity: "/source", filesystem_uuid_available: false, filesystem: "bind"
-    }.merge(overrides))
+    ledger.register(volume_id: "volume", source: "/source", target: "/tmp/target", mount_id: "100",
+                    filesystem_uuid: nil, device_id: "0:41", owner: "volume", root: "/",
+                    source_identity: "/source", filesystem_uuid_available: false, filesystem: "bind", **overrides)
   end
 end

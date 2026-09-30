@@ -24,6 +24,7 @@ class NativeRuntimeOwnershipTest < Minitest::Test
   # Mutation target: removing cgroup inheritance or reporting the wrapper PID.
   def test_actual_workload_is_attached_to_the_real_cgroup_before_release
     cgroup = NativeAdapters::CgroupAdapter.new(root: "/sys/fs/cgroup")
+
     assert_predicate(cgroup, :available?)
     pod_id = "m2-owner-#{Process.pid}-#{SecureRandom.hex(4)}"
     cgroup_handle = cgroup.create(qos: "besteffort", pod_id: pod_id, container_id: "workload",
@@ -49,6 +50,7 @@ class NativeRuntimeOwnershipTest < Minitest::Test
     cgroup.attach(cgroup_handle, pid: handle.pid)
     supervisor.release_gate(handle)
     observed = supervisor.handles.fetch(handle.id)
+
     refute_equal(observed.pid, observed.workload_pid)
     assert_operator(observed.workload_pid, :>, 0)
     assert_includes(File.readlines(File.join(cgroup_handle.path, "cgroup.procs"), chomp: true).map(&:to_i), observed.workload_pid)
@@ -63,8 +65,16 @@ class NativeRuntimeOwnershipTest < Minitest::Test
     rescue StandardError
       nil
     end
-    supervisor&.close(handle) rescue nil
-    cgroup&.remove(cgroup_handle, force: true) rescue nil
+    begin
+      supervisor&.close(handle)
+    rescue StandardError
+      nil
+    end
+    begin
+      cgroup&.remove(cgroup_handle, force: true)
+    rescue StandardError
+      nil
+    end
   end
 
   # Requirement: the PID namespace holder is owned by the agent supervisor;
@@ -110,7 +120,8 @@ class NativeRuntimeOwnershipTest < Minitest::Test
     Process.kill(Signal.list.fetch("KILL"), orchestrator_pid)
     Process.wait(orchestrator_pid)
     wait_until(timeout: 3.0) { !File.exist?("/proc/#{holder_pid}") }
-    refute(File.exist?("/proc/#{holder_pid}"), "PID namespace holder survived agent SIGKILL")
+
+    refute_path_exists("/proc/#{holder_pid}", "PID namespace holder survived agent SIGKILL")
   ensure
     reader&.close unless reader&.closed?
     writer&.close unless writer&.closed?
@@ -162,17 +173,20 @@ class NativeRuntimeOwnershipTest < Minitest::Test
     first.start_container(container, request_id: "reconstruct-start")
     observed = first.resource_inventory
 
-    second = Rubernetes::Runtime::Native.new(**options.merge(log_root: File.join(directory, "logs-restarted")))
+    second = Rubernetes::Runtime::Native.new(**options, log_root: File.join(directory, "logs-restarted"))
     report = second.recover(observer: -> { observed })
+
     assert_empty(report.to_h.fetch("errors"))
     assert_equal(:running, second.sandbox(sandbox_id).state)
     restored = second.container_status(container)
+
     assert_equal("running", restored.fetch("state"))
     assert_operator(restored.fetch("process").fetch("workload_pid"), :>, 0)
     assert_match(/\Asha256:[0-9a-f]{64}\z/, restored.fetch("process").fetch("workload_executable_digest"))
 
     second.stop_sandbox(sandbox_id, timeout: 2)
     second.remove_sandbox(sandbox_id)
+
     refute(second.resource_inventory.any? { |entry| entry.fetch("id").to_s.start_with?(sandbox_id) })
   ensure
     begin
@@ -201,12 +215,14 @@ class NativeRuntimeOwnershipTest < Minitest::Test
     gate = process.fetch(:gate)
     adapter.release_gate(gate)
     workload_pid = gate.workload_pid
+
     refute_nil(workload_pid)
     refute_equal(process.fetch(:pid), workload_pid)
 
     Process.kill(Signal.list.fetch("KILL"), process.fetch(:pid))
     wait_until(timeout: 3.0) { !File.exist?("/proc/#{workload_pid}") }
-    refute(File.exist?("/proc/#{workload_pid}"), "actual workload survived wrapper SIGKILL")
+
+    refute_path_exists("/proc/#{workload_pid}", "actual workload survived wrapper SIGKILL")
   ensure
     begin
       Process.kill(Signal.list.fetch("KILL"), process.fetch(:pid)) if process && File.exist?("/proc/#{process.fetch(:pid)}")
@@ -238,18 +254,21 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       sandbox = first.run_sandbox({"id" => "owner-sandbox", "request_id" => "owner-sandbox-request"})
       container = first.create_container(sandbox, {"id" => "app", "command" => ["/bin/true"]}, request_id: "owner-create")
       duplicate = first.create_container(sandbox, {"id" => "app", "command" => ["/bin/true"]}, request_id: "owner-create")
+
       assert_equal(container.id, duplicate.id)
 
       first.start_container(container, request_id: "owner-start")
       first.start_container(container, request_id: "owner-start")
       first.stop_container(container, request_id: "owner-stop")
       first.stop_container(container, request_id: "owner-stop")
+
       assert(first.remove_container(container, request_id: "owner-remove"))
       assert(first.remove_container(container, request_id: "owner-remove"))
 
       reopened = Rubernetes::Runtime::Native::RollbackJournal.new(path)
       ledger = Rubernetes::Runtime::Native::OwnershipLedger.new(journal: reopened)
       requests = ledger.requests.each_with_object({}) { |record, result| result[record.fetch("id")] = record }
+
       %w[owner-create owner-start owner-stop owner-remove].each do |request_id|
         assert_equal("Completed", requests.fetch(request_id).fetch("state"))
       end
@@ -272,6 +291,7 @@ class NativeRuntimeOwnershipTest < Minitest::Test
                    identity: "workspace:metadata-refresh", metadata: {"mounted" => false})
       refreshed = ledger.claim(operation_id: operation.id, kind: "workspace", id: "metadata-refresh",
                                identity: "workspace:metadata-refresh", metadata: {"mounted" => true, "mount_id" => 41})
+
       assert_equal(true, refreshed.metadata.fetch("mounted"))
       assert_equal(41, refreshed.metadata.fetch("mount_id"))
 
@@ -280,6 +300,7 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       )
       replayed_resource = replayed.resources.fetch(0)
       replayed_metadata = replayed_resource.fetch(:metadata)
+
       assert_equal(true, replayed_metadata.fetch("mounted"))
       assert_equal(41, replayed_metadata.fetch("mount_id"))
 

@@ -33,7 +33,9 @@ paths.each do |path|
     when "consensus.apply_checkpoint"
       checkpoints[record["index"]][name] = record
     when "consensus.apply_invariant_violation", "consensus.ack_without_object"
-      problems << "#{name} #{record["timestamp"]} #{record["event"]} #{record.reject { |key, _| %w[timestamp level event process].include?(key) }}"
+      problems << "#{name} #{record["timestamp"]} #{record["event"]} #{record.reject do |key, _|
+        %w[timestamp level event process].include?(key)
+      end}"
     end
   end
 end
@@ -48,7 +50,9 @@ checkpoints.keys.sort.each do |index|
 
   mismatches += 1
   puts "index #{index}: replicas disagree"
-  entries.each { |name, record| puts "  #{name}: digest=#{record["digest"]} revision=#{record["revision"]} objects=#{record["objects"]} at #{record["timestamp"]}" }
+  entries.each do |name, record|
+    puts "  #{name}: digest=#{record["digest"]} revision=#{record["revision"]} objects=#{record["objects"]} at #{record["timestamp"]}"
+  end
 end
 
 compared = checkpoints.count { |_index, entries| entries.length >= 2 }

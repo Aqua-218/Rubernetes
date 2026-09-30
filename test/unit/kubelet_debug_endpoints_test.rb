@@ -22,6 +22,7 @@ class KubeletDebugEndpointsTest < Minitest::Test
               "crash_loop_back_off" => {"max_container_restart_period_seconds" => 60},
               "feature_gates" => {"KubeletCrashLoopBackOffMax" => true}}
     kubelet = Configz.build(config, cluster_dns: ["10.240.0.1"], cluster_domain: "cluster.local").fetch("kubeletconfig")
+
     assert_equal 21_250, kubelet["port"]
     assert_equal "5s", kubelet["syncFrequency"]
     assert_equal 64, kubelet["maxPods"]
@@ -43,7 +44,8 @@ class KubeletDebugEndpointsTest < Minitest::Test
 
     secured = Configz.build({"streaming" => {"tls" => {"cert_file" => "/pki/k.crt", "key_file" => "/pki/k.key", "client_ca_file" => "/pki/ca.crt"},
                                              "authentication" => {"webhook" => true}, "authorization" => {"mode" => "Webhook"}}})
-                     .fetch("kubeletconfig")
+      .fetch("kubeletconfig")
+
     assert_equal "Webhook", secured.dig("authorization", "mode")
     assert_equal false, secured.dig("authentication", "anonymous", "enabled")
     assert_equal "/pki/ca.crt", secured.dig("authentication", "x509", "clientCAFile")
@@ -65,6 +67,7 @@ class KubeletDebugEndpointsTest < Minitest::Test
   class Lifecycle
     def initialize(records) = @records = records
     attr_reader :records
+
     def record(uid) = @records[uid]
   end
 
@@ -98,11 +101,14 @@ class KubeletDebugEndpointsTest < Minitest::Test
 
   def test_runningpods_lists_running_containers
     status, headers, body = server.call(Request.new("/runningpods/", "GET"))
+
     assert_equal 200, status
     assert_equal "application/json", headers["content-type"]
     list = JSON.parse(body.join)
+
     assert_equal "PodList", list["kind"]
     item = list["items"].first
+
     assert_equal({"name" => "web", "namespace" => "ns", "uid" => "u1"}, item["metadata"])
     assert_equal [{"name" => "app", "image" => "nginx:1", "resources" => {}}], item.dig("spec", "containers")
   end
@@ -110,12 +116,15 @@ class KubeletDebugEndpointsTest < Minitest::Test
   def test_configz_and_debug_endpoints
     subject = server
     status, _headers, body = subject.call(Request.new("/configz", "GET"))
+
     assert_equal 200, status
     assert_equal({"kubeletconfig" => {"maxPods" => 7}}, JSON.parse(body.join))
     assert_equal 405, subject.call(Request.new("/debug/pprof/heap", "GET")).first
     status, _headers, body = subject.call(Request.new("/debug/flags/v", "PUT", {}, "4"))
+
     assert_equal [200, "successfully set klog.logging.verbosity to 4"], [status, body.join]
     subject.call(Request.new("/debug/flags/v", "PUT", {}, "2"))
+
     assert_equal %w[debug info], @levels
     require "stringio"
     require "rubernetes/bootstrap"
@@ -124,6 +133,7 @@ class KubeletDebugEndpointsTest < Minitest::Test
     logger.debug("hidden")
     logger.level = "debug"
     logger.debug("shown")
+
     assert_equal 1, io.string.lines.length
     assert_equal 400, subject.call(Request.new("/debug/flags/v", "PUT", {}, "x")).first
     assert_equal 405, subject.call(Request.new("/debug/flags/v", "GET")).first
@@ -134,13 +144,16 @@ class KubeletDebugEndpointsTest < Minitest::Test
     subject = server(exec: exec)
     subject.define_singleton_method(:await_container) { |_ns, _pod, name, follow:| "container-#{name}" }
     status, _headers, body = subject.call(Request.new("/run/ns/web/app", "POST", {"cmd" => "echo hello world"}))
+
     assert_equal [200, "hello world\n"], [status, body.join]
     assert_equal ["container-app", %w[echo hello world]], exec.commands.last
     assert_equal 200, subject.call(Request.new("/run/ns/web/u1/app", "POST", {"cmd" => "true"})).first
     assert_equal 404, subject.call(Request.new("/run/ns/missing/app", "POST", {"cmd" => "true"})).first
     match = Rubernetes::Node::StreamingServer::EXEC_PATH.match("/exec/ns/web/u1/app")
+
     assert_equal %w[ns web u1 app], [match[:namespace], match[:pod], match[:uid], match[:container]]
     match = Rubernetes::Node::StreamingServer::EXEC_PATH.match("/exec/ns/web/app")
+
     assert_equal ["app", nil], [match[:container], match[:uid]]
   end
 
@@ -153,8 +166,11 @@ class KubeletDebugEndpointsTest < Minitest::Test
     probes.check("c1", probe: {"exec" => {"command" => ["false"]}}, type: "readiness", context: labels)
     probes.check("c2", probe: nil, type: "liveness", context: labels)
     text = probes.metrics.render
-    assert_includes text, 'prober_probe_total{container="app",namespace="ns",pod="web",pod_uid="u1",probe_type="Readiness",result="successful"} 1'
-    assert_includes text, 'prober_probe_total{container="app",namespace="ns",pod="web",pod_uid="u1",probe_type="Readiness",result="failed"} 1'
+
+    assert_includes text,
+                    'prober_probe_total{container="app",namespace="ns",pod="web",pod_uid="u1",probe_type="Readiness",result="successful"} 1'
+    assert_includes text,
+                    'prober_probe_total{container="app",namespace="ns",pod="web",pod_uid="u1",probe_type="Readiness",result="failed"} 1'
     refute_includes text, 'probe_type="Liveness"', "no probe configured: nothing to count"
     assert_includes text, 'prober_probe_duration_seconds_count{container="app",namespace="ns",pod="web",probe_type="Readiness"} 1',
                     "only the successful probe observes its duration"
@@ -162,6 +178,7 @@ class KubeletDebugEndpointsTest < Minitest::Test
     lifecycle = Struct.new(:records, :probes).new({}, probes)
     server = Rubernetes::Node::StreamingServer.new(log_service: Object.new, lifecycle: lifecycle)
     status, _headers, body = server.call(Request.new("/metrics/probes", "GET"))
+
     assert_equal 200, status
     assert_includes body.join, "prober_probe_total"
   end
@@ -174,11 +191,17 @@ class KubeletDebugEndpointsTest < Minitest::Test
                                              "memory" => {"usageBytes" => 90, "workingSetBytes" => 80, "rssBytes" => 70, "pageFaults" => 5},
                                              "rootfs" => {"usedBytes" => 4096}}]}]}
     text = Rubernetes::Node::CadvisorMetrics.render(summary, machine: {cpu_cores: 4, memory_bytes: 1024}, images: {%w[u1 app] => "nginx:1"})
+
     assert_includes text, "machine_cpu_cores 4\n"
-    assert_includes text, 'container_cpu_usage_seconds_total{container="app",cpu="total",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} 2'
-    assert_includes text, 'container_cpu_usage_seconds_total{container="",cpu="total",id="/kubepods/podu1",image="",name="",namespace="ns",pod="web"} 3'
-    assert_includes text, 'container_memory_working_set_bytes{container="app",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} 80'
-    assert_includes text, 'container_fs_usage_bytes{container="app",device="rootfs",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} 4096'
-    assert_includes text, 'container_start_time_seconds{container="app",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} 1.7672256e+09'
+    assert_includes text,
+                    'container_cpu_usage_seconds_total{container="app",cpu="total",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} 2'
+    assert_includes text,
+                    'container_cpu_usage_seconds_total{container="",cpu="total",id="/kubepods/podu1",image="",name="",namespace="ns",pod="web"} 3'
+    assert_includes text,
+                    'container_memory_working_set_bytes{container="app",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} 80'
+    assert_includes text,
+                    'container_fs_usage_bytes{container="app",device="rootfs",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} 4096'
+    assert_includes text,
+                    'container_start_time_seconds{container="app",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} 1.7672256e+09'
   end
 end

@@ -27,8 +27,8 @@ module Rubernetes
 
       attr_reader :max_bytes, :max_resources
 
-      def self.load(path, **options)
-        new(**options).load(path)
+      def self.load(path, **)
+        new(**).load(path)
       end
 
       def initialize(max_bytes: DEFAULT_MAX_BYTES, max_resources: DEFAULT_MAX_RESOURCES, sandbox: nil, allow_code: false,
@@ -45,9 +45,7 @@ module Rubernetes
       def load(path)
         file_path = path.to_s
         raise ManifestError, "manifest path must be a non-empty string" if file_path.empty?
-        if File.extname(file_path).casecmp?(".rb")
-          return load_ruby(file_path)
-        end
+        return load_ruby(file_path) if File.extname(file_path).casecmp?(".rb")
 
         content = read_file(file_path)
         parse(content, filename: file_path)
@@ -164,9 +162,8 @@ module Rubernetes
           seen = {}
           node.children.each_slice(2) do |key_node, value_node|
             key = key_node.is_a?(Psych::Nodes::Scalar) ? key_node.value : nil
-            if key && seen.key?(key)
-              raise ManifestError, "duplicate YAML mapping key #{key.inspect}: #{filename}"
-            end
+            raise ManifestError, "duplicate YAML mapping key #{key.inspect}: #{filename}" if key && seen.key?(key)
+
             seen[key] = true if key
             reject_duplicate_yaml_keys(key_node, filename)
             reject_duplicate_yaml_keys(value_node, filename)
@@ -182,6 +179,7 @@ module Rubernetes
           if document["kind"].to_s.end_with?("List") && document.key?("items")
             items = document["items"]
             raise ManifestError, "manifest List items must be an array: #{filename}" unless items.is_a?(Array)
+
             items.flat_map { |item| normalize_document(item, filename) }
           else
             validate_resource_mapping(document, filename)
@@ -194,9 +192,7 @@ module Rubernetes
 
       def validate_resource_mapping(resource, filename)
         resource.each_key do |key|
-          unless key.is_a?(String)
-            raise ManifestError, "manifest field names must be strings: #{filename}"
-          end
+          raise ManifestError, "manifest field names must be strings: #{filename}" unless key.is_a?(String)
         end
       end
     end

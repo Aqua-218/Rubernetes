@@ -69,6 +69,7 @@ class SchemaUpdateBaselineTest < Minitest::Test
   def test_deep_freeze_remembers_what_it_froze
     value = {"a" => [{"b" => "c"}]}
     Schema::DeepFreeze.call(value)
+
     assert Schema::DeepFreeze.deep_frozen?(value)
     assert Schema::DeepFreeze.deep_frozen?(value["a"])
     refute Schema::DeepFreeze.deep_frozen?({"x" => +"y"}.freeze), "shallowly frozen is not deep frozen"
@@ -83,8 +84,7 @@ class SchemaUpdateBaselineTest < Minitest::Test
     truncated = codec.truncated_frozen(pod)
 
     assert_equal "2026-09-25T00:00:00Z", truncated["metadata"]["creationTimestamp"]
-    assert truncated.frozen?
+    assert_predicate truncated, :frozen?
     assert_same truncated, codec.truncate_times(truncated)
   end
 end
-

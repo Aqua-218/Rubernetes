@@ -37,12 +37,15 @@ class APIServerWatchCacheMetricsTest < Minitest::Test
   def test_lists_are_measured_as_watch_cache_lists_and_consistent_reads
     server, call = server_with(Rubernetes::Storage::MemoryStore.new(history_revisions: nil, history_seconds: nil))
     call.call("POST", "/api/v1/namespaces", {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "team"}})
-    3.times { |index| call.call("POST", "/api/v1/namespaces/team/configmaps", configmap("c#{index}", "keep" => (index.zero? ? "yes" : "no"))) }
+    3.times do |index|
+      call.call("POST", "/api/v1/namespaces/team/configmaps", configmap("c#{index}", "keep" => (index.zero? ? "yes" : "no")))
+    end
     before = server.metrics.render
     base_lists = value(before, 'apiserver_cache_list_total{group="",index="",resource="configmaps"}').to_i
     base_fetched = value(before, 'apiserver_cache_list_fetched_objects_total{group="",index="",resource="configmaps"}').to_i
     base_returned = value(before, 'apiserver_cache_list_returned_objects_total{group="",resource="configmaps"}').to_i
-    base_consistent = value(before, 'apiserver_watch_cache_consistent_read_total{fallback="false",group="",resource="configmaps",success="true"}').to_i
+    base_consistent = value(before,
+                            'apiserver_watch_cache_consistent_read_total{fallback="false",group="",resource="configmaps",success="true"}').to_i
 
     call.call("GET", "/api/v1/namespaces/team/configmaps?labelSelector=keep%3Dyes")
     call.call("GET", "/api/v1/namespaces/team/configmaps?resourceVersion=0")
@@ -61,8 +64,9 @@ class APIServerWatchCacheMetricsTest < Minitest::Test
 
   def test_group_resource_labels_come_from_the_storage_key
     store = Rubernetes::Storage::MemoryStore
+
     assert_equal ["", "pods"], store.group_resource("registry/v1/pods/ns/p")
-    assert_equal ["apps", "deployments"], store.group_resource("registry/apps/v1/deployments/ns/d")
+    assert_equal %w[apps deployments], store.group_resource("registry/apps/v1/deployments/ns/d")
     assert_equal ["stable.example.com", "crontabs"], store.group_resource("registry/stable.example.com/__stored__/crontabs")
     assert_equal ["", "namespaces"], store.group_resource("registry/v1/namespaces")
   end
@@ -77,6 +81,7 @@ class APIServerWatchCacheMetricsTest < Minitest::Test
     store.create("registry/apps/v1/deployments/ns/c", {"metadata" => {"name" => "c"}})
     text = metrics.render
     labels = '{group="apps",resource="deployments"}'
+
     assert_equal 3, value(text, "apiserver_watch_cache_events_received_total#{labels}")
     # Three watchers, one dispatch per event.
     assert_equal 3, value(text, "apiserver_watch_cache_events_dispatched_total#{labels}")
@@ -144,6 +149,7 @@ class APIServerWatchCacheMetricsTest < Minitest::Test
       text = metrics.render
 
       labels = '{group="",resource="configmaps"}'
+
       assert_equal 3, server.read_indexes
       assert_equal 3, value(text, "etcd_bookmark_total#{labels}")
       # ALPHA, deprecated in 1.36.0: hidden.
@@ -153,8 +159,10 @@ class APIServerWatchCacheMetricsTest < Minitest::Test
       assert_match(/^# HELP etcd_bookmark_total \[ALPHA\] Number of etcd bookmarks \(progress notify events\) split by kind\.$/, text)
 
       allocated = [File.join(directory, "wal-0001"), File.join(directory, "snap", "0001.snap")].sum { |path| File.stat(path).blocks * 512 }
+
       assert_equal allocated, value(text, 'apiserver_storage_size_bytes{storage_cluster_id="etcd-0"}')
-      assert_match(/^# HELP apiserver_storage_size_bytes \[STABLE\] Size of the storage database file physically allocated in bytes\.$/, text)
+      assert_match(/^# HELP apiserver_storage_size_bytes \[STABLE\] Size of the storage database file physically allocated in bytes\.$/,
+                   text)
       assert_match(/^# TYPE apiserver_storage_size_bytes gauge$/, text)
     end
   end

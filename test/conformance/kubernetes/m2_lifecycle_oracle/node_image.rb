@@ -50,8 +50,8 @@ module M2LifecycleOracleNodeImage
   REGISTRY_IMAGE = "docker.io/library/registry:3"
   # Ephemeral registry / API server ports stay above 20000 so the host k3s
   # cluster on 6443 and other services are never touched.
-  PORT_RANGE = (25000..25999).freeze
-  API_SERVER_PORT = 26443
+  PORT_RANGE = (25_000..25_999)
+  API_SERVER_PORT = 26_443
   RUNTIME_BINARIES = {
     "containerd" => "/usr/local/bin/containerd",
     "runc" => "/usr/local/sbin/runc",
@@ -70,7 +70,9 @@ module M2LifecycleOracleNodeImage
 
   def canonical_value(value, excluded = [])
     case value
-    when Hash then value.keys.map(&:to_s).reject { |key| excluded.include?(key) }.sort.each_with_object({}) { |key, result| result[key] = canonical_value(value[key] || value[key.to_sym]) }
+    when Hash then value.keys.map(&:to_s).reject do |key|
+      excluded.include?(key)
+    end.sort.each_with_object({}) { |key, result| result[key] = canonical_value(value[key] || value[key.to_sym]) }
     when Array then value.map { |child| canonical_value(child) }
     else value
     end
@@ -94,14 +96,16 @@ module M2LifecycleOracleNodeImage
     [stdout, stderr, status]
   end
 
-  def docker(*args, **options)
-    run("docker", *args, **options)
+  def docker(*, **)
+    run("docker", *, **)
   end
 
   def kind_lock
     lock = parse_json(KIND_LOCK_PATH)
     raise BuildError, "kind lock schema_version must be 1" unless lock["schema_version"] == 1
-    raise BuildError, "kind lock digest does not match content" unless lock["lock_sha256"] == canonical_digest(lock, excluded_keys: ["lock_sha256"])
+    raise BuildError, "kind lock digest does not match content" unless lock["lock_sha256"] == canonical_digest(lock,
+                                                                                                               excluded_keys: ["lock_sha256"])
+
     lock
   end
 
@@ -117,32 +121,51 @@ module M2LifecycleOracleNodeImage
       File.chmod(0o755, path)
     end
     actual = Digest::SHA256.file(path).hexdigest
-    raise BuildError, "kind binary #{path} SHA-256 #{actual} does not match lock #{artifact.fetch("sha256")}" unless actual == artifact.fetch("sha256")
+    unless actual == artifact.fetch("sha256")
+      raise BuildError,
+            "kind binary #{path} SHA-256 #{actual} does not match lock #{artifact.fetch("sha256")}"
+    end
+
     version, = run(path, "version")
-    raise BuildError, "kind binary reports #{version.strip.inspect}, lock expects #{lock.fetch("version_output").inspect}" unless version.strip == lock.fetch("version_output")
+    unless version.strip == lock.fetch("version_output")
+      raise BuildError,
+            "kind binary reports #{version.strip.inspect}, lock expects #{lock.fetch("version_output").inspect}"
+    end
+
     path
   end
 
   def verify_source_checkout!(source_root)
-    raise BuildError, "#{SOURCE_ENV} must point to the pinned Kubernetes source checkout" if source_root.to_s.empty? || !File.directory?(source_root)
+    if source_root.to_s.empty? || !File.directory?(source_root)
+      raise BuildError,
+            "#{SOURCE_ENV} must point to the pinned Kubernetes source checkout"
+    end
+
     head, = run("git", "-C", source_root, "rev-parse", "HEAD")
-    raise BuildError, "Kubernetes source checkout is at #{head.strip}, expected #{KUBERNETES_SOURCE_COMMIT}" unless head.strip == KUBERNETES_SOURCE_COMMIT
+    unless head.strip == KUBERNETES_SOURCE_COMMIT
+      raise BuildError,
+            "Kubernetes source checkout is at #{head.strip}, expected #{KUBERNETES_SOURCE_COMMIT}"
+    end
+
     tag, = run("git", "-C", source_root, "describe", "--tags", "--exact-match", "HEAD")
-    raise BuildError, "Kubernetes source checkout is tagged #{tag.strip}, expected #{KUBERNETES_VERSION}" unless tag.strip == KUBERNETES_VERSION
+    unless tag.strip == KUBERNETES_VERSION
+      raise BuildError,
+            "Kubernetes source checkout is tagged #{tag.strip}, expected #{KUBERNETES_VERSION}"
+    end
+
     dirty, = run("git", "-C", source_root, "status", "--porcelain", "--untracked-files=no")
     raise BuildError, "Kubernetes source checkout has tracked modifications" unless dirty.strip.empty?
+
     true
   end
 
   def free_port
     PORT_RANGE.each do |port|
-      begin
-        server = TCPServer.new("127.0.0.1", port)
-        server.close
-        return port
-      rescue Errno::EADDRINUSE, Errno::EACCES
-        next
-      end
+      server = TCPServer.new("127.0.0.1", port)
+      server.close
+      return port
+    rescue Errno::EADDRINUSE, Errno::EACCES
+      next
     end
     raise BuildError, "no free port in #{PORT_RANGE}"
   end
@@ -163,6 +186,7 @@ module M2LifecycleOracleNodeImage
     registry_id = image_id(REGISTRY_IMAGE)
     registry_digest = repo_digests(REGISTRY_IMAGE).find { |entry| entry.start_with?("registry@sha256:") }
     raise BuildError, "registry image digest is unavailable" unless registry_digest
+
     port = free_port
     name = "rubernetes-m2-node-image-registry-#{Process.pid}"
     docker("run", "-d", "--rm", "--name", name, "-p", "127.0.0.1:#{port}:5000", "docker.io/library/#{registry_digest}")
@@ -175,13 +199,17 @@ module M2LifecycleOracleNodeImage
         _stdout, stderr, status = docker("push", "-q", target, timeout: 900, allow_failure: true)
         break if status.success?
         raise BuildError, "docker push to the ephemeral registry failed after #{attempts} attempts: #{stderr.strip}" if attempts >= 5
+
         sleep(2)
       end
       digest_reference = repo_digests(target).find { |entry| entry.start_with?("localhost:#{port}/rubernetes/kind-node@sha256:") }
       raise BuildError, "docker did not record a repo digest for #{target}" unless digest_reference
+
       # The pushed tag must stay: `docker rmi <tag>` would also drop the digest
       # reference from the local store.
-      {"reference" => digest_reference, "registry_image" => {"reference" => REGISTRY_IMAGE, "digest_reference" => "docker.io/library/#{registry_digest}", "image_id" => registry_id}}
+      {"reference" => digest_reference,
+       "registry_image" => {"reference" => REGISTRY_IMAGE, "digest_reference" => "docker.io/library/#{registry_digest}",
+                            "image_id" => registry_id}}
     ensure
       docker("rm", "-f", name, allow_failure: true)
     end
@@ -226,15 +254,19 @@ module M2LifecycleOracleNodeImage
     end
     versions = sections.fetch("versions")
     shas = sections.fetch("sha").to_h { |line| line.split(/\s+/, 2).reverse }
-    images = sections.fetch("images").reject { |line| line.start_with?("sha256:") || line.start_with?("import-") }.to_h { |line| line.split(" ", 2) }
+    images = sections.fetch("images").reject do |line|
+      line.start_with?("sha256:", "import-")
+    end.to_h { |line| line.split(" ", 2) }
     image_ref = lambda do |name_prefix|
       entry = images.find { |name, _| name.start_with?(name_prefix) }
       raise BuildError, "node image does not contain #{name_prefix}" unless entry
+
       name, digest = entry
       "#{name.split(":").first}@#{digest}"
     end
     kindnetd_tag = sections.fetch("cni-manifest-image").first.to_s.strip
     raise BuildError, "default CNI manifest image is missing" if kindnetd_tag.empty?
+
     kindnetd_digest = images.fetch(kindnetd_tag) { raise BuildError, "kindnetd image #{kindnetd_tag} is not in the node image store" }
     cri_ids = sections.select { |name, _| name.start_with?("cri-inspect:") }.to_h do |name, lines|
       ref = name.delete_prefix("cri-inspect:")
@@ -244,14 +276,18 @@ module M2LifecycleOracleNodeImage
         raise BuildError, "crictl inspecti #{ref} returned invalid JSON: #{error.message}"
       end
       raise BuildError, "CRI image ID for #{ref} is unavailable" unless id.to_s.match?(/\Asha256:[0-9a-f]{64}\z/)
+
       [ref, id]
     end
     etcd_tag = cri_ids.keys.find { |ref| ref.start_with?("registry.k8s.io/etcd:") }
     {
       "runtime" => {
-        "containerd" => {"in_image_path" => "/usr/local/bin/containerd", "version" => versions.fetch(0), "binary_sha256" => shas.fetch("/usr/local/bin/containerd")},
-        "runc" => {"in_image_path" => "/usr/local/sbin/runc", "version" => versions.fetch(1), "binary_sha256" => shas.fetch("/usr/local/sbin/runc")},
-        "kubelet" => {"in_image_path" => "/usr/bin/kubelet", "version" => versions.fetch(2), "binary_sha256" => shas.fetch("/usr/bin/kubelet")}
+        "containerd" => {"in_image_path" => "/usr/local/bin/containerd", "version" => versions.fetch(0),
+                         "binary_sha256" => shas.fetch("/usr/local/bin/containerd")},
+        "runc" => {"in_image_path" => "/usr/local/sbin/runc", "version" => versions.fetch(1),
+                   "binary_sha256" => shas.fetch("/usr/local/sbin/runc")},
+        "kubelet" => {"in_image_path" => "/usr/bin/kubelet", "version" => versions.fetch(2),
+                      "binary_sha256" => shas.fetch("/usr/bin/kubelet")}
       },
       "images" => {
         "kube_apiserver" => image_ref.call("registry.k8s.io/kube-apiserver:"),
@@ -263,9 +299,11 @@ module M2LifecycleOracleNodeImage
         "pause" => image_ref.call("registry.k8s.io/pause:"),
         "kindnetd" => "#{kindnetd_tag.split(":").first}@#{kindnetd_digest}"
       },
-      "kindnetd" => {"tag" => kindnetd_tag, "version" => kindnetd_tag.split(":").last, "digest" => kindnetd_digest, "cri_image_id" => cri_ids.fetch(kindnetd_tag)},
+      "kindnetd" => {"tag" => kindnetd_tag, "version" => kindnetd_tag.split(":").last, "digest" => kindnetd_digest,
+                     "cri_image_id" => cri_ids.fetch(kindnetd_tag)},
       "cri_image_ids" => {
-        "kube_apiserver" => {"tag" => "registry.k8s.io/kube-apiserver:v1.36.2", "id" => cri_ids.fetch("registry.k8s.io/kube-apiserver:v1.36.2")},
+        "kube_apiserver" => {"tag" => "registry.k8s.io/kube-apiserver:v1.36.2",
+                             "id" => cri_ids.fetch("registry.k8s.io/kube-apiserver:v1.36.2")},
         "etcd" => {"tag" => etcd_tag, "id" => cri_ids.fetch(etcd_tag)},
         "kindnetd" => {"tag" => kindnetd_tag, "id" => cri_ids.fetch(kindnetd_tag)}
       },
@@ -294,10 +332,18 @@ module M2LifecycleOracleNodeImage
       end
       real_path = File.realpath(host_path)
       sha = Digest::SHA256.file(real_path).hexdigest
-      raise BuildError, "extracted #{name} SHA-256 #{sha} does not match the node image lock #{lock_runtime.fetch(name).fetch("binary_sha256")}" unless sha == lock_runtime.fetch(name).fetch("binary_sha256")
+      unless sha == lock_runtime.fetch(name).fetch("binary_sha256")
+        raise BuildError,
+              "extracted #{name} SHA-256 #{sha} does not match the node image lock #{lock_runtime.fetch(name).fetch("binary_sha256")}"
+      end
+
       version, = run(real_path, "--version")
       first_line = version.lines.first.to_s.strip
-      raise BuildError, "extracted #{name} reports #{first_line.inspect}, lock expects #{lock_runtime.fetch(name).fetch("version").inspect}" unless first_line == lock_runtime.fetch(name).fetch("version")
+      unless first_line == lock_runtime.fetch(name).fetch("version")
+        raise BuildError,
+              "extracted #{name} reports #{first_line.inspect}, lock expects #{lock_runtime.fetch(name).fetch("version").inspect}"
+      end
+
       runtime[name] = {
         "path" => real_path,
         "version" => first_line,
@@ -321,10 +367,13 @@ module M2LifecycleOracleNodeImage
       http.request(request)
     end
     raise BuildError, "GitHub commit lookup for #{ref} returned #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+
     document = JSON.parse(response.body)
     sha = document["sha"].to_s
     raise BuildError, "GitHub returned no commit for #{ref}" unless sha.match?(/\A[0-9a-f]{40}\z/)
-    {"sha" => sha, "date" => document.dig("commit", "committer", "date"), "subject" => document.dig("commit", "message").to_s.lines.first.to_s.strip}
+
+    {"sha" => sha, "date" => document.dig("commit", "committer", "date"),
+     "subject" => document.dig("commit", "message").to_s.lines.first.to_s.strip}
   end
 
   # Observe the rendered CNI config on a throwaway single-node cluster; this is
@@ -339,10 +388,15 @@ module M2LifecycleOracleNodeImage
       docker("network", "create", "--internal", network)
       docker("run", "-d", "--name", alias_container, "--network", network, "--network-alias", "host.docker.internal", alias_image)
       config = File.join(scratch, "kind.yaml")
-      File.write(config, "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnetworking:\n  apiServerAddress: 127.0.0.1\n  apiServerPort: #{API_SERVER_PORT}\nnodes:\n- role: control-plane\n")
+      File.write(config,
+                 "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnetworking:\n  apiServerAddress: 127.0.0.1\n  apiServerPort: #{API_SERVER_PORT}\nnodes:\n- role: control-plane\n")
       stdout, stderr, status = run(kind, "create", "cluster", "--name", name, "--image", reference, "--config", config, "--kubeconfig", File.join(scratch, "kubeconfig"), "--wait", "0", "--retain",
                                    env: {"KIND_EXPERIMENTAL_DOCKER_NETWORK" => network}, timeout: 600, allow_failure: true)
-      raise BuildError, "kind create cluster failed: #{stdout}\n#{stderr}" unless status.success? || "#{stdout}#{stderr}".include?("failed to get api server port")
+      unless status.success? || "#{stdout}#{stderr}".include?("failed to get api server port")
+        raise BuildError,
+              "kind create cluster failed: #{stdout}\n#{stderr}"
+      end
+
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 240
       content = nil
       loop do
@@ -352,21 +406,26 @@ module M2LifecycleOracleNodeImage
           break
         end
         raise BuildError, "#{CNI_CONFIG_PATH} was not written within 240s" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
         sleep(1)
       end
-      pods, = docker("exec", node, "kubectl", "--kubeconfig", "/etc/kubernetes/admin.conf", "get", "pods", "-n", "kube-system", "-l", "app=kindnet", "-o", "json")
+      pods, = docker("exec", node, "kubectl", "--kubeconfig", "/etc/kubernetes/admin.conf", "get", "pods", "-n", "kube-system", "-l",
+                     "app=kindnet", "-o", "json")
       image_id = nil
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 120
       loop do
         image_id = JSON.parse(pods).dig("items", 0, "status", "containerStatuses", 0, "imageID").to_s
         break unless image_id.empty?
         raise BuildError, "kindnet pod imageID was not reported within 120s" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
         sleep(1)
-        pods, = docker("exec", node, "kubectl", "--kubeconfig", "/etc/kubernetes/admin.conf", "get", "pods", "-n", "kube-system", "-l", "app=kindnet", "-o", "json")
+        pods, = docker("exec", node, "kubectl", "--kubeconfig", "/etc/kubernetes/admin.conf", "get", "pods", "-n", "kube-system", "-l",
+                       "app=kindnet", "-o", "json")
       end
       {"config" => content, "config_sha256" => Digest::SHA256.hexdigest(content), "kindnetd_image_id" => image_id}
     ensure
-      run(kind, "delete", "cluster", "--name", name, "--kubeconfig", File.join(scratch, "kubeconfig"), env: {"KIND_EXPERIMENTAL_DOCKER_NETWORK" => network}, timeout: 300, allow_failure: true)
+      run(kind, "delete", "cluster", "--name", name, "--kubeconfig", File.join(scratch, "kubeconfig"),
+          env: {"KIND_EXPERIMENTAL_DOCKER_NETWORK" => network}, timeout: 300, allow_failure: true)
       docker("rm", "-f", node, alias_container, allow_failure: true)
       docker("network", "rm", network, allow_failure: true)
       FileUtils.rm_rf(scratch)
@@ -386,24 +445,41 @@ module M2LifecycleOracleNodeImage
     else
       built_at = Time.now.utc.iso8601
       warn("building #{LOCAL_TAG} from #{source_root} with #{kind} (this compiles Kubernetes)")
-      run(kind, "build", "node-image", "--image", LOCAL_TAG, "--base-image", base_image, source_root, env: {"GOTOOLCHAIN" => "auto"}, timeout: BUILD_TIMEOUT_SECONDS)
+      run(kind, "build", "node-image", "--image", LOCAL_TAG, "--base-image", base_image, source_root, env: {"GOTOOLCHAIN" => "auto"},
+                                                                                                      timeout: BUILD_TIMEOUT_SECONDS)
     end
     base_digest = repo_digests(base_image).find { |entry| entry.include?("@sha256:") }
     raise BuildError, "base image #{base_image} has no repo digest locally" unless base_digest
+
     docker("pull", "-q", REGISTRY_IMAGE) unless docker("image", "inspect", REGISTRY_IMAGE, allow_failure: true).last.success?
-    docker("pull", "-q", "registry.k8s.io/pause:3.10") unless docker("image", "inspect", "registry.k8s.io/pause:3.10", allow_failure: true).last.success?
+    docker("pull", "-q", "registry.k8s.io/pause:3.10") unless docker("image", "inspect", "registry.k8s.io/pause:3.10",
+                                                                     allow_failure: true).last.success?
     pause_digest = repo_digests("registry.k8s.io/pause:3.10").find { |entry| entry.start_with?("registry.k8s.io/pause@sha256:") }
     raise BuildError, "pause image digest is unavailable" unless pause_digest
+
     pinned = pin_by_digest!(LOCAL_TAG)
     reference = pinned.fetch("reference")
     id = image_id(reference)
-    raise BuildError, "digest reference #{reference} resolves to #{id}, local tag is #{image_id(LOCAL_TAG)}" unless id == image_id(LOCAL_TAG)
+    unless id == image_id(LOCAL_TAG)
+      raise BuildError,
+            "digest reference #{reference} resolves to #{id}, local tag is #{image_id(LOCAL_TAG)}"
+    end
+
     inspected = inspect_node_image(reference)
-    raise BuildError, "node image kubelet reports #{inspected.dig("runtime", "kubelet", "version")}" unless inspected.dig("runtime", "kubelet", "version") == "Kubernetes #{KUBERNETES_VERSION}"
+    raise BuildError, "node image kubelet reports #{inspected.dig("runtime", "kubelet", "version")}" unless inspected.dig("runtime",
+                                                                                                                          "kubelet", "version") == "Kubernetes #{KUBERNETES_VERSION}"
+
     cni = observe_cni_config!(kind, reference, pause_digest)
     # Imported (not pulled) images expose their CRI image ID, not a repo digest,
     # through Pod status; the containerd name -> digest mapping is checked too.
-    raise BuildError, "kindnetd running imageID #{cni["kindnetd_image_id"]} is not the CRI image ID #{inspected.dig("kindnetd", "cri_image_id")}" unless cni.fetch("kindnetd_image_id") == inspected.dig("kindnetd", "cri_image_id")
+    unless cni.fetch("kindnetd_image_id") == inspected.dig(
+      "kindnetd", "cri_image_id"
+    )
+      raise BuildError,
+            "kindnetd running imageID #{cni["kindnetd_image_id"]} is not the CRI image ID #{inspected.dig("kindnetd",
+                                                                                                          "cri_image_id")}"
+    end
+
     kind_commit = github_commit("kubernetes-sigs/kind", inspected.dig("kindnetd", "version").split("-").last)
 
     node_lock = {
@@ -424,7 +500,8 @@ module M2LifecycleOracleNodeImage
         "kind_binary_sha256" => lock.fetch("artifacts").fetch("linux/amd64").fetch("sha256"),
         "base_image" => {"reference" => base_image, "digest_reference" => base_digest},
         "kubernetes" => {"tag" => KUBERNETES_VERSION, "commit" => KUBERNETES_SOURCE_COMMIT, "source_checkout_env" => SOURCE_ENV},
-        "command" => [lock.fetch("install_path"), "build", "node-image", "--image", LOCAL_TAG, "--base-image", base_image, "<#{SOURCE_ENV}>"],
+        "command" => [lock.fetch("install_path"), "build", "node-image", "--image", LOCAL_TAG, "--base-image", base_image,
+                      "<#{SOURCE_ENV}>"],
         "built_at" => built_at,
         "build_log_sha256" => build_log_path && File.file?(build_log_path) ? Digest::SHA256.file(build_log_path).hexdigest : nil,
         "reused_existing_image" => built_at.nil?
@@ -437,7 +514,8 @@ module M2LifecycleOracleNodeImage
         "reference" => pause_digest,
         "purpose" => "answers host.docker.internal for the kind node entrypoint on the gateway-less internal network"
       },
-      "cluster" => {"api_server_port" => API_SERVER_PORT, "network" => "docker network create --internal", "provisioner" => "kind create cluster --retain (host port export is expected to fail on an internal network)"},
+      "cluster" => {"api_server_port" => API_SERVER_PORT, "network" => "docker network create --internal",
+                    "provisioner" => "kind create cluster --retain (host port export is expected to fail on an internal network)"},
       "runtime" => inspected.fetch("runtime"),
       "images" => inspected.fetch("images"),
       "cri_image_ids" => inspected.fetch("cri_image_ids"),
@@ -478,20 +556,40 @@ module M2LifecycleOracleNodeImage
 
   # Runner mode: verify the locked image is present and report identities.
   def report(input)
-    raise BuildError, "self-contained image request is not pinned to #{KUBERNETES_VERSION}" unless input.is_a?(Hash) && input["kubernetes_version"] == KUBERNETES_VERSION && input["source_commit"] == KUBERNETES_SOURCE_COMMIT
+    unless input.is_a?(Hash) && input["kubernetes_version"] == KUBERNETES_VERSION && input["source_commit"] == KUBERNETES_SOURCE_COMMIT
+      raise BuildError,
+            "self-contained image request is not pinned to #{KUBERNETES_VERSION}"
+    end
+
     lock = parse_json(NODE_IMAGE_LOCK_PATH)
     raise BuildError, "node image lock schema_version must be 1" unless lock["schema_version"] == 1
-    raise BuildError, "node image lock digest does not match content" unless lock["lock_sha256"] == canonical_digest(lock, excluded_keys: ["lock_sha256"])
-    raise BuildError, "node image lock is not built from #{KUBERNETES_SOURCE_COMMIT}" unless lock.dig("build", "kubernetes", "commit") == KUBERNETES_SOURCE_COMMIT && lock.dig("build", "kubernetes", "tag") == KUBERNETES_VERSION
+    raise BuildError, "node image lock digest does not match content" unless lock["lock_sha256"] == canonical_digest(lock,
+                                                                                                                     excluded_keys: ["lock_sha256"])
+    raise BuildError, "node image lock is not built from #{KUBERNETES_SOURCE_COMMIT}" unless lock.dig("build", "kubernetes",
+                                                                                                      "commit") == KUBERNETES_SOURCE_COMMIT && lock.dig(
+                                                                                                        "build", "kubernetes", "tag"
+                                                                                                      ) == KUBERNETES_VERSION
+
     reference = lock.fetch("image").fetch("reference")
     raise BuildError, "node image lock reference is not digest-pinned" unless reference.match?(/\A[^@\s]+@sha256:[0-9a-f]{64}\z/)
+
     kind_lock_document = kind_lock
-    raise BuildError, "node image lock kind binary SHA-256 does not match the kind lock" unless lock.dig("build", "kind_binary_sha256") == kind_lock_document.fetch("artifacts").fetch("linux/amd64").fetch("sha256")
+    raise BuildError, "node image lock kind binary SHA-256 does not match the kind lock" unless lock.dig("build",
+                                                                                                         "kind_binary_sha256") == kind_lock_document.fetch("artifacts").fetch("linux/amd64").fetch("sha256")
+
     ensure_kind!(kind_lock_document)
     _stdout, stderr, status = docker("image", "inspect", "--format", "{{.Id}}", reference, allow_failure: true)
-    raise BuildError, "locked node image #{reference} is not in the local Docker image store (#{stderr.strip}); run `ruby #{File.basename(__FILE__)} --write-lock` after building" unless status.success?
+    unless status.success?
+      raise BuildError,
+            "locked node image #{reference} is not in the local Docker image store (#{stderr.strip}); run `ruby #{File.basename(__FILE__)} --write-lock` after building"
+    end
+
     id = image_id(reference)
-    raise BuildError, "node image #{reference} has ID #{id}, lock expects #{lock.fetch("image").fetch("image_id")}" unless id == lock.fetch("image").fetch("image_id")
+    unless id == lock.fetch("image").fetch("image_id")
+      raise BuildError,
+            "node image #{reference} has ID #{id}, lock expects #{lock.fetch("image").fetch("image_id")}"
+    end
+
     runtime = extract_runtime!(reference, id, lock.fetch("runtime"))
     {
       "image" => reference,
@@ -500,7 +598,8 @@ module M2LifecycleOracleNodeImage
       "source_commit" => KUBERNETES_SOURCE_COMMIT,
       "runtime" => runtime,
       "images" => lock.fetch("images"),
-      "kind" => {"version" => kind_lock_document.fetch("tag"), "binary_sha256" => kind_lock_document.fetch("artifacts").fetch("linux/amd64").fetch("sha256")},
+      "kind" => {"version" => kind_lock_document.fetch("tag"),
+                 "binary_sha256" => kind_lock_document.fetch("artifacts").fetch("linux/amd64").fetch("sha256")},
       "base_image" => lock.dig("build", "base_image"),
       "node_image_lock_sha256" => lock.fetch("lock_sha256"),
       "builder_sha256" => Digest::SHA256.file(__FILE__).hexdigest

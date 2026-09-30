@@ -20,14 +20,14 @@ module Rubernetes
           5 => "execve"
         }.freeze
 
-        def spawn(command:, output_fd:, proc_target: "/proc", flags: Clone3::NAMESPACE_FLAGS, resource_id:)
+        def spawn(command:, output_fd:, resource_id:, proc_target: "/proc", flags: Clone3::NAMESPACE_FLAGS)
           unless command.length.between?(1, MAX_ARGUMENTS)
             raise ArgumentError, "command must contain between 1 and #{MAX_ARGUMENTS} arguments"
           end
+
           flags = Integer(flags)
-          unless flags == Clone3::NAMESPACE_FLAGS
-            raise ArgumentError, "flags must be exactly CLONE_PIDFD | CLONE_NEWNS | CLONE_NEWPID"
-          end
+          raise ArgumentError, "flags must be exactly CLONE_PIDFD | CLONE_NEWNS | CLONE_NEWPID" unless flags == Clone3::NAMESPACE_FLAGS
+
           values = Rubernetes::LinuxNative.clone3_exec(
             flags,
             command.map { |argument| String(argument) },

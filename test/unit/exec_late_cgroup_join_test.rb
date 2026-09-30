@@ -56,6 +56,7 @@ class ExecLateCgroupJoinTest < Minitest::Test
     process = RecordingProcess.new
     cgroup = RecordingCgroup.new
     exec_with(process, cgroup)
+
     assert_equal "/sys/fs/cgroup/x/c1", cgroup.opened
     assert_kind_of IO, process.spawned.fetch(:cgroup_procs)
     assert_empty cgroup.attached, "the wrapper is no longer attached to the container's cgroup"
@@ -65,16 +66,18 @@ class ExecLateCgroupJoinTest < Minitest::Test
   # off because CgroupAdapter did not delegate open_procs.
   def test_the_production_adapters_take_the_late_join_path
     adapters = Rubernetes::Platform::Linux::NativeAdapters.for_profile(profile: "kernel_isolation", sandbox_root: Dir.tmpdir,
-                                                                         cgroup_root: "/sys/fs/cgroup")
+                                                                       cgroup_root: "/sys/fs/cgroup")
     streams = adapters.values.find { |adapter| adapter.is_a?(Connector) }
+
     refute_nil streams
-    assert streams.instance_variable_get(:@cgroup).respond_to?(:open_procs)
-    assert streams.instance_variable_get(:@process).join_cgroup_at_exec?
+    assert_respond_to streams.instance_variable_get(:@cgroup), :open_procs
+    assert_predicate streams.instance_variable_get(:@process), :join_cgroup_at_exec?
   end
 
   def test_an_adapter_without_late_join_keeps_the_descriptor_out
     process = RecordingProcess.new(late: false)
     exec_with(process, RecordingCgroup.new)
+
     assert_nil process.spawned.fetch(:cgroup_procs)
   end
 
@@ -97,11 +100,11 @@ class ExecLateCgroupJoinTest < Minitest::Test
     [path, parent].each { |dir| Dir.rmdir(dir) if dir && Dir.exist?(dir) }
   end
 
-  def traced_child(&block)
+  def traced_child(&)
     fork do
       GC.disable
       exit!(126) if Gate::PTRACE.call(Gate::PTRACE_TRACEME, 0, nil, nil) == -1
-      block.call
+      yield
     end
   end
 
@@ -114,13 +117,15 @@ class ExecLateCgroupJoinTest < Minitest::Test
         junk = Array.new(300) { "x" * (1024 * 1024) }
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         pid = traced_child { exec("/bin/sh", "-c", "cat /proc/self/cgroup > #{out}") }
+
         assert_nil Gate.allocate.join_cgroup_at_exec_stop(pid, procs)
         _, status = Process.waitpid2(pid)
         elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
         assert_equal 0, status.exitstatus
         assert_equal expected, File.read(out).strip, "the new program ran inside the container's cgroup"
         assert_operator elapsed, :<, 1.5
-        assert procs.closed?
+        assert_predicate procs, :closed?
         junk.clear
       end
     end
@@ -130,6 +135,7 @@ class ExecLateCgroupJoinTest < Minitest::Test
     with_limited_cgroup do |procs, _expected|
       pid = traced_child { exit!(3) }
       status = Gate.allocate.join_cgroup_at_exec_stop(pid, procs)
+
       assert_equal 3, status.exitstatus
     end
   end
@@ -144,8 +150,10 @@ class ExecLateCgroupJoinTest < Minitest::Test
           sleep 0.05
           exec("/bin/sh", "-c", "cat /proc/self/cgroup > #{out}")
         end
+
         assert_nil Gate.allocate.join_cgroup_at_exec_stop(pid, procs)
         Process.waitpid2(pid)
+
         assert_equal "yes", File.read("#{out}.usr1")
         assert_equal expected, File.read(out).strip
       end
@@ -192,6 +200,7 @@ class ExecLateCgroupJoinTest < Minitest::Test
     # time of even unthrottled work passed any fixed bound.  Only the few
     # steps after the join may be charged to c1, never the work before it.
     charged = File.read(File.join(path, "cpu.stat"))[/^usage_usec (\d+)/, 1].to_i
+
     assert_equal 65_534, report["uid"]
     refute_equal "0::/#{hierarchy}/c1", report["before"]
     assert_equal "0::/#{hierarchy}/c1", report["after"]

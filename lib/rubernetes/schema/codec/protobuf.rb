@@ -109,9 +109,8 @@ module Rubernetes
              content_type == "application/json" && content_encoding.nil? && type_meta.nil?
             return Codec.validate_output!(object.encoded.dup.b, max_bytes)
           end
-          if object.is_a?(RuntimeUnknown) && content_type == "application/json"
-            content_type = object.content_type
-          end
+
+          content_type = object.content_type if object.is_a?(RuntimeUnknown) && content_type == "application/json"
           content_encoding = object.content_encoding if content_encoding.nil? && object.is_a?(RuntimeUnknown)
           type_meta = object.type_meta if type_meta.nil? && object.is_a?(RuntimeUnknown)
           payload = if raw.nil?
@@ -154,12 +153,10 @@ module Rubernetes
         def decode_envelope(input, strict: true, max_bytes: Codec::DEFAULT_MAX_BYTES,
                             max_depth: Codec::DEFAULT_MAX_DEPTH)
           Codec.validate_body!(input, max_bytes)
-          unless input.start_with?(MAGIC)
-            raise Codec::ParseError, "Kubernetes protobuf payload must start with k8s\\0 magic"
-          end
+          raise Codec::ParseError, "Kubernetes protobuf payload must start with k8s\\0 magic" unless input.start_with?(MAGIC)
 
           fields = parse_fields(input.byteslice(MAGIC.bytesize..) || "".b, strict: strict, max_bytes: max_bytes,
-                                max_depth: max_depth)
+                                                                           max_depth: max_depth)
           raw = nil
           type_meta = nil
           content_encoding = nil
@@ -170,30 +167,26 @@ module Rubernetes
             case field[:number]
             when TYPE_META_FIELD
               ensure_wire_type!(field, WIRE_LENGTH_DELIMITED, "runtime.Unknown.typeMeta")
-              if !type_meta.nil? && strict
-                raise Codec::DuplicateKeyError, "duplicate runtime.Unknown.typeMeta field"
-              end
+              raise Codec::DuplicateKeyError, "duplicate runtime.Unknown.typeMeta field" if !type_meta.nil? && strict
+
               type_meta = decode_type_meta(field[:value], strict: strict, max_bytes: max_bytes,
-                                            max_depth: max_depth)
+                                                          max_depth: max_depth)
             when RAW_FIELD
               ensure_wire_type!(field, WIRE_LENGTH_DELIMITED, "runtime.Unknown.raw")
-              if raw_present && strict
-                raise Codec::DuplicateKeyError, "duplicate runtime.Unknown.raw field"
-              end
+              raise Codec::DuplicateKeyError, "duplicate runtime.Unknown.raw field" if raw_present && strict
+
               raw = field[:value]
               raw_present = true
             when CONTENT_ENCODING_FIELD
               ensure_wire_type!(field, WIRE_LENGTH_DELIMITED, "runtime.Unknown.contentEncoding")
-              if !content_encoding.nil? && strict
-                raise Codec::DuplicateKeyError, "duplicate runtime.Unknown.contentEncoding field"
-              end
+              raise Codec::DuplicateKeyError, "duplicate runtime.Unknown.contentEncoding field" if !content_encoding.nil? && strict
+
               content_encoding = field[:value].dup.force_encoding(Encoding::UTF_8)
               validate_utf8!(content_encoding, "runtime.Unknown.contentEncoding")
             when CONTENT_TYPE_FIELD
               ensure_wire_type!(field, WIRE_LENGTH_DELIMITED, "runtime.Unknown.contentType")
-              if !content_type.nil? && strict
-                raise Codec::DuplicateKeyError, "duplicate runtime.Unknown.contentType field"
-              end
+              raise Codec::DuplicateKeyError, "duplicate runtime.Unknown.contentType field" if !content_type.nil? && strict
+
               content_type = field[:value].dup.force_encoding(Encoding::UTF_8)
               validate_utf8!(content_type, "runtime.Unknown.contentType")
             else
@@ -277,9 +270,8 @@ module Rubernetes
         def decode_length_delimited(input, offset: 0, strict: true, return_offset: false)
           length, value_offset = read_varint(input, offset: offset, max_bits: 64, strict: strict)
           end_offset = value_offset + length
-          if end_offset > input.bytesize
-            raise Codec::ParseError, "protobuf length-delimited field exceeds body"
-          end
+          raise Codec::ParseError, "protobuf length-delimited field exceeds body" if end_offset > input.bytesize
+
           value = input.byteslice(value_offset, length)
           value.force_encoding(Encoding::BINARY) unless value.encoding == Encoding::BINARY
           return [value, end_offset] if return_offset
@@ -313,7 +305,7 @@ module Rubernetes
         end
 
         def encode_bool(value)
-          raise Codec::EncodeError, "protobuf bool must be true or false" unless value == true || value == false
+          raise Codec::EncodeError, "protobuf bool must be true or false" unless [true, false].include?(value)
 
           encode_varint(value ? 1 : 0, max_bits: 1)
         end
@@ -388,7 +380,7 @@ module Rubernetes
               offset += 1 + length
             else
               value, offset = read_wire_value(input, wire_type, offset: offset, strict: strict,
-                                              max_bytes: max_bytes, max_depth: max_depth)
+                                                                max_bytes: max_bytes, max_depth: max_depth)
             end
             encoded = input.byteslice(field_start, offset - field_start)
             encoded.force_encoding(Encoding::BINARY) unless encoded.encoding == Encoding::BINARY
@@ -439,9 +431,7 @@ module Rubernetes
                    end
           api_version = values[:api_version] || values["apiVersion"] || values["api_version"]
           kind = values[:kind] || values["kind"]
-          if api_version.nil? && type_meta.respond_to?(:api_version)
-            api_version = type_meta.api_version
-          end
+          api_version = type_meta.api_version if api_version.nil? && type_meta.respond_to?(:api_version)
           kind = type_meta.kind if kind.nil? && type_meta.respond_to?(:kind)
           # RawTypeMeta uses non-pointer Go string fields, so Kubernetes'
           # generated marshaler emits apiVersion and kind even when empty.
@@ -467,9 +457,8 @@ module Rubernetes
                   when TYPE_META_KIND_FIELD then :kind
                   end
             if key
-              if result.key?(key) && strict
-                raise Codec::DuplicateKeyError, "duplicate runtime.TypeMeta.#{key} field"
-              end
+              raise Codec::DuplicateKeyError, "duplicate runtime.TypeMeta.#{key} field" if result.key?(key) && strict
+
               value = field[:value].dup.force_encoding(Encoding::UTF_8)
               validate_utf8!(value, "runtime.TypeMeta.#{key}")
               result[key] = value
@@ -628,7 +617,7 @@ module Rubernetes
           when :sfixed32 then [WIRE_FIXED32, encode_sfixed32(value)]
           when :float then [WIRE_FIXED32, encode_float(value)]
           when :bytes, :message then [WIRE_LENGTH_DELIMITED, encode_length_delimited(value)]
-          when :string then
+          when :string
             string = String(value)
             validate_utf8!(string, "protobuf string")
             [WIRE_LENGTH_DELIMITED, encode_length_delimited(string)]
@@ -681,12 +670,9 @@ module Rubernetes
             cursor += 1
             value |= (byte & 0x7f) << shift
             if (byte & 0x80).zero?
-              if value >= (1 << max_bits)
-                raise Codec::ParseError, "protobuf varint exceeds #{max_bits} bits"
-              end
-              if strict && index.positive? && value < (1 << (7 * index))
-                raise Codec::ParseError, "non-canonical protobuf varint"
-              end
+              raise Codec::ParseError, "protobuf varint exceeds #{max_bits} bits" if value >= (1 << max_bits)
+              raise Codec::ParseError, "non-canonical protobuf varint" if strict && index.positive? && value < (1 << (7 * index))
+
               return [value, cursor]
             end
             shift += 7
@@ -695,9 +681,7 @@ module Rubernetes
         end
 
         def extract_raw(object, max_bytes:, max_depth:)
-          if object.is_a?(RuntimeUnknown)
-            return object.raw.dup.b
-          end
+          return object.raw.dup.b if object.is_a?(RuntimeUnknown)
           if object.is_a?(Hash) && (object.key?(:raw) || object.key?("raw"))
             return ensure_binary(object[:raw] || object["raw"], "protobuf raw payload")
           end
@@ -726,6 +710,7 @@ module Rubernetes
           unless (1..MAX_FIELD_NUMBER).cover?(number)
             raise Codec::EncodeError, "protobuf field number must be between 1 and #{MAX_FIELD_NUMBER}"
           end
+
           number
         rescue TypeError, ArgumentError => error
           raise Codec::EncodeError.new("invalid protobuf field number: #{error.message}"), cause: error

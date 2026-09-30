@@ -45,8 +45,10 @@ class ClusterAuthenticationTrustTest < Minitest::Test
     front = certificate("front-proxy-ca")
     Trust.new(api_server: api, authentication_info: info(client_ca, front)).sync_once
 
-    response = api.call(API::Request.new(method: "GET", path: "/api/v1/namespaces/kube-system/configmaps/extension-apiserver-authentication"))
+    response = api.call(API::Request.new(method: "GET",
+                                         path: "/api/v1/namespaces/kube-system/configmaps/extension-apiserver-authentication"))
     data = response.body["data"]
+
     assert_equal client_ca.to_pem, data["client-ca-file"]
     assert_equal front.to_pem, data["requestheader-client-ca-file"]
     assert_equal '["front-proxy-client"]', data["requestheader-allowed-names"]

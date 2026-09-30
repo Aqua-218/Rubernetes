@@ -148,11 +148,15 @@ module Rubernetes
         end
 
         def serving?(group, version, resource)
-          @mutex.synchronize { @served.values.any? { |entry| entry.group == group && entry.versions.include?(version) && entry.names["plural"] == resource } }
+          @mutex.synchronize do
+            @served.values.any? do |entry|
+              entry.group == group && entry.versions.include?(version) && entry.names["plural"] == resource
+            end
+          end
         end
 
         # Delete every custom resource of the CRD (finalizer handling).
-        def cleanup_resources(crd, &deleter)
+        def cleanup_resources(crd, &)
           spec = crd["spec"] || {}
           storage_version = Array(spec["versions"]).find { |version| version["storage"] == true }&.fetch("name")
           return 0 if storage_version.nil?
@@ -161,7 +165,7 @@ module Rubernetes
                         resource: spec.dig("names", "plural"))
           count = 0
           @store.list("registry/#{gvr}").items.each do |object|
-            deleter.call(object)
+            yield(object)
             count += 1
           end
           count
@@ -191,7 +195,8 @@ module Rubernetes
         end
 
         def record_openapi_published(name, group, previously_served, before)
-          touch_regeneration("apiextensions_openapi_v2_regeneration_count", {"crd" => name, "reason" => previously_served ? "update" : "add"})
+          touch_regeneration("apiextensions_openapi_v2_regeneration_count",
+                             {"crd" => name, "reason" => previously_served ? "update" : "add"})
           before.each do |version, state|
             next if state[:document] && state[:document] == @openapi.owner_document(group: group, version: version, owner: name)
 
@@ -215,7 +220,9 @@ module Rubernetes
           candidates = [names["plural"], names["singular"], *Array(names["shortNames"])].compact
           conflict = @registry.resources.find do |resource|
             next false if resource.group != group
-            next false if resource.custom? && @served.values.any? { |entry| entry.crd_name == crd.dig("metadata", "name") && entry.names["plural"] == resource.resource }
+            next false if resource.custom? && @served.values.any? do |entry|
+              entry.crd_name == crd.dig("metadata", "name") && entry.names["plural"] == resource.resource
+            end
 
             resource.resource == names["plural"] || resource.singular_name == names["singular"] || (resource.short_names & candidates).any? || resource.kind == names["kind"]
           end
@@ -227,11 +234,19 @@ module Rubernetes
         def register_version(crd, version, storage_version)
           spec = crd["spec"] || {}
           names = spec["names"] || {}
-          schema = StructuralSchema.new(version.dig("schema", "openAPIV3Schema") || {"type" => "object", "x-kubernetes-preserve-unknown-fields" => true}, cel: @cel)
+          schema = StructuralSchema.new(
+            version.dig("schema", "openAPIV3Schema") || {"type" => "object", "x-kubernetes-preserve-unknown-fields" => true}, cel: @cel
+          )
           subresources = []
           subresources << {resource: "status", verbs: %w[get patch update]} if version.dig("subresources", "status")
-          subresources << {resource: "scale", kind: "Scale", group: "autoscaling", version: "v1", verbs: %w[get patch update]} if version.dig("subresources", "scale")
-          contract = Contract.new(schema: schema, scale: version.dig("subresources", "scale"), status: !version.dig("subresources", "status").nil?)
+          if version.dig(
+            "subresources", "scale"
+          )
+            subresources << {resource: "scale", kind: "Scale", group: "autoscaling", version: "v1",
+                             verbs: %w[get patch update]}
+          end
+          contract = Contract.new(schema: schema, scale: version.dig("subresources", "scale"),
+                                  status: !version.dig("subresources", "status").nil?)
           converter = Converter.new(crd: crd, storage_version: storage_version, webhook_client: @webhook_client, clock: @clock)
           resource = Resource.new(
             group: spec["group"], version: version["name"], resource: names["plural"], kind: names["kind"],
@@ -239,7 +254,9 @@ module Rubernetes
             categories: Array(names["categories"]), list_kind: names["listKind"], singular_name: names["singular"],
             verbs: %w[delete deletecollection get list patch create update watch], subresources: subresources,
             schema: contract, storage_version: storage_version, converter: converter,
-            printer_columns: Array(version["additionalPrinterColumns"]), selectable_fields: Array(version["selectableFields"]).map { |field| field["jsonPath"] },
+            printer_columns: Array(version["additionalPrinterColumns"]), selectable_fields: Array(version["selectableFields"]).map do |field|
+                                                                           field["jsonPath"]
+                                                                         end,
             custom: true
           )
           @registry.register(resource)
@@ -247,7 +264,7 @@ module Rubernetes
                            document: openapi_document(crd, version, schema))
         end
 
-        def conditions(crd, accepted:, established: nil, reason: nil, message: nil)
+        def conditions(_crd, accepted:, established: nil, reason: nil, message: nil)
           now = @clock.call.utc.iso8601
           list = [
             {"type" => "NamesAccepted", "status" => accepted ? "True" : "False", "reason" => accepted ? "NoConflicts" : reason,
@@ -259,7 +276,8 @@ module Rubernetes
                    "message" => established_value ? "the initial names have been accepted" : (message || "not all names are accepted"),
                    "lastTransitionTime" => now}
           if reason == "NonStructuralSchema"
-            list << {"type" => "NonStructuralSchema", "status" => "True", "reason" => "Violations", "message" => message, "lastTransitionTime" => now}
+            list << {"type" => "NonStructuralSchema", "status" => "True", "reason" => "Violations", "message" => message,
+                     "lastTransitionTime" => now}
           end
           list
         end
@@ -317,11 +335,20 @@ module Rubernetes
                          "x-kubernetes-group-version-kind" => [gvk.merge("kind" => names["listKind"] || "#{kind}List")]}
           paths = {}
           paths[collection] = operations(definition_name, plural, gvk, collection: true, namespaced: spec["scope"] == "Namespaced")
-          paths["#{collection}/{name}"] = operations(definition_name, plural, gvk, collection: false, namespaced: spec["scope"] == "Namespaced")
-          paths["#{collection}/{name}/status"] = operations(definition_name, plural, gvk, collection: false, namespaced: spec["scope"] == "Namespaced", subresource: "status") if version.dig("subresources", "status")
+          paths["#{collection}/{name}"] =
+            operations(definition_name, plural, gvk, collection: false, namespaced: spec["scope"] == "Namespaced")
+          if version.dig(
+            "subresources", "status"
+          )
+            paths["#{collection}/{name}/status"] =
+              operations(definition_name, plural, gvk, collection: false, namespaced: spec["scope"] == "Namespaced",
+                                                       subresource: "status")
+          end
           if spec["scope"] == "Namespaced"
             all = operations(definition_name, plural, gvk, collection: true, namespaced: false)
-            all["get"] = all["get"].merge("operationId" => all["get"]["operationId"].sub(/\Alist/, "list").sub(/(Collection)?#{kind}\z/, "#{kind}ForAllNamespaces"))
+            all["get"] =
+              all["get"].merge("operationId" => all["get"]["operationId"].sub(/\Alist/, "list").sub(/(Collection)?#{kind}\z/,
+                                                                                                    "#{kind}ForAllNamespaces"))
             paths["#{base}/#{plural}"] = {"get" => all["get"], "parameters" => all["parameters"]}
           end
           {
@@ -332,12 +359,20 @@ module Rubernetes
           }
         end
 
-        def operations(definition_name, plural, gvk, collection:, namespaced:, subresource: nil)
-          parameters = namespaced ? [{"name" => "namespace", "in" => "path", "required" => true, "schema" => {"type" => "string", "uniqueItems" => true}}] : []
-          parameters << {"name" => "name", "in" => "path", "required" => true, "schema" => {"type" => "string", "uniqueItems" => true}} unless collection
+        def operations(definition_name, _plural, gvk, collection:, namespaced:, subresource: nil)
+          parameters = if namespaced
+                         [{"name" => "namespace", "in" => "path", "required" => true,
+                           "schema" => {"type" => "string", "uniqueItems" => true}}]
+                       else
+                         []
+                       end
+          unless collection
+            parameters << {"name" => "name", "in" => "path", "required" => true,
+                           "schema" => {"type" => "string", "uniqueItems" => true}}
+          end
           reference = {"$ref" => "#/components/schemas/#{definition_name}"}
           operation = lambda do |verb, action, response_ref, body: false|
-            document = {"operationId" => "#{verb}#{gvk["group"].split(".").first.capitalize}#{gvk["version"].capitalize}#{collection ? "Collection" : ""}#{gvk["kind"]}#{subresource ? subresource.capitalize : ""}",
+            document = {"operationId" => "#{verb}#{gvk["group"].split(".").first.capitalize}#{gvk["version"].capitalize}#{"Collection" if collection}#{gvk["kind"]}#{subresource.capitalize if subresource}",
                         "responses" => {"200" => {"description" => "OK", "content" => {"application/json" => {"schema" => response_ref}}}},
                         "x-kubernetes-action" => action, "x-kubernetes-group-version-kind" => gvk}
             document["requestBody"] = {"content" => {"application/json" => {"schema" => reference}}, "required" => true} if body
@@ -386,7 +421,8 @@ module Rubernetes
           def scale_paths
             return nil unless @scale
 
-            {spec_replicas: @scale["specReplicasPath"], status_replicas: @scale["statusReplicasPath"], label_selector: @scale["labelSelectorPath"]}
+            {spec_replicas: @scale["specReplicasPath"], status_replicas: @scale["statusReplicasPath"],
+             label_selector: @scale["labelSelectorPath"]}
           end
         end
 
@@ -514,17 +550,27 @@ module Rubernetes
             response = body.is_a?(Hash) ? body["response"] : nil
             fail_webhook("conversion webhook returned no response", "malformed_response") unless response.is_a?(Hash)
             fail_webhook("conversion webhook response UID mismatch", "malformed_response") unless response["uid"] == uid
-            fail_webhook("conversion webhook failed: #{response.dig("result", "message")}", "malformed_response") unless response.dig("result", "status") == "Success"
+            fail_webhook("conversion webhook failed: #{response.dig("result", "message")}", "malformed_response") unless response.dig(
+              "result", "status"
+            ) == "Success"
 
             converted = Array(response["convertedObjects"])
-            fail_webhook("conversion webhook returned #{converted.length} objects for #{objects.length}", "partial_response") unless converted.length == objects.length
+            unless converted.length == objects.length
+              fail_webhook("conversion webhook returned #{converted.length} objects for #{objects.length}",
+                           "partial_response")
+            end
 
             converted.each_with_index do |object, index|
               original = objects[index]
-              fail_webhook("conversion webhook changed apiVersion", "invalid_converted_object") unless object["apiVersion"] == "#{group}/#{to_version}"
-              unless object.dig("metadata", "name") == original.dig("metadata", "name") && object.dig("metadata", "uid") == original.dig("metadata", "uid")
-                fail_webhook("conversion webhook changed metadata identity", "invalid_converted_object")
+              unless object["apiVersion"] == "#{group}/#{to_version}"
+                fail_webhook("conversion webhook changed apiVersion",
+                             "invalid_converted_object")
               end
+              next if object.dig("metadata",
+                                 "name") == original.dig("metadata",
+                                                         "name") && object.dig("metadata", "uid") == original.dig("metadata", "uid")
+
+              fail_webhook("conversion webhook changed metadata identity", "invalid_converted_object")
             end
             converted
           end

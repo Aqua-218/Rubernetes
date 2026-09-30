@@ -20,7 +20,7 @@ class M3ControllerRegistryProbeTest < Minitest::Test
     stdout, stderr, process = Open3.capture3(RbConfig.ruby, "-Ilib", PROBE, chdir: ROOT)
     report = JSON.parse(stdout)
 
-    assert process.success?, "controller registry probe failed: #{stderr}\n#{report.fetch("errors", []).join("; ")}"
+    assert_predicate process, :success?, "controller registry probe failed: #{stderr}\n#{report.fetch("errors", []).join("; ")}"
     assert_equal "PASS", report.fetch("status")
     assert_equal true, report.fetch("passed")
     assert_equal 52, report.fetch("registered_count")

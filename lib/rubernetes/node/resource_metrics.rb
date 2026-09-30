@@ -20,8 +20,10 @@ module Rubernetes
         ["pod_cpu_usage_seconds_total", "counter", "STABLE", "Cumulative cpu time consumed by the pod in core-seconds"],
         ["pod_memory_working_set_bytes", "gauge", "STABLE", "Current working set of the pod in bytes"],
         ["node_swap_usage_bytes", "gauge", "ALPHA", "Current swap usage of the node in bytes. Reported only on non-windows systems"],
-        ["container_swap_usage_bytes", "gauge", "ALPHA", "Current amount of the container swap usage in bytes. Reported only on non-windows systems"],
-        ["container_swap_limit_bytes", "gauge", "ALPHA", "Current amount of the container swap limit in bytes. Reported only on non-windows systems"],
+        ["container_swap_usage_bytes", "gauge", "ALPHA",
+         "Current amount of the container swap usage in bytes. Reported only on non-windows systems"],
+        ["container_swap_limit_bytes", "gauge", "ALPHA",
+         "Current amount of the container swap limit in bytes. Reported only on non-windows systems"],
         ["pod_swap_usage_bytes", "gauge", "ALPHA", "Current amount of the pod swap usage in bytes. Reported only on non-windows systems"],
         ["resource_scrape_error", "gauge", "STABLE", "1 if there was an error while getting container metrics, 0 otherwise"]
       ].freeze
@@ -89,7 +91,7 @@ module Rubernetes
       def sample(name, labels, value, timestamp)
         label_text = labels.empty? ? "" : "{#{labels.map { |key, item| "#{key}=\"#{escape(item)}\"" }.join(",")}}"
         rendered = format_float(value)
-        "#{name}#{label_text} #{rendered}#{timestamp ? " #{timestamp}" : ""}\n"
+        "#{name}#{label_text} #{rendered}#{" #{timestamp}" if timestamp}\n"
       end
 
       # expfmt writeFloat: every sample value is a float64 ("1.3950976e+07").
@@ -178,7 +180,8 @@ module Rubernetes
         ["container_scrape_error", "gauge", "1 if there was an error while getting container metrics, 0 otherwise"]
       ].freeze
       MACHINE_FAMILIES = [
-        ["cadvisor_version_info", "gauge", "A metric with a constant '1' value labeled by kernel version, OS version, docker version, cadvisor version & cadvisor revision."],
+        ["cadvisor_version_info", "gauge",
+         "A metric with a constant '1' value labeled by kernel version, OS version, docker version, cadvisor version & cadvisor revision."],
         ["machine_cpu_cores", "gauge", "Number of logical CPU cores."],
         ["machine_cpu_physical_cores", "gauge", "Number of physical CPU cores."],
         ["machine_cpu_sockets", "gauge", "Number of CPU sockets."],
@@ -249,7 +252,8 @@ module Rubernetes
                                     "id" => (container["usage"]["path"] || "#{pod_labels["id"]}/#{id}").to_s)
           add_cgroup(samples, container["usage"], labels, stamp_ms, now, proc_root, sys_root)
           entry = entries.find { |candidate| (candidate[:id] || candidate["id"]).to_s == id }
-          started = entry && ResourceMetrics.parse_time(entry[:started_at] || entry["started_at"] || entry.dig(:status, "running", "startedAt"))
+          started = entry && ResourceMetrics.parse_time(entry[:started_at] || entry["started_at"] || entry.dig(:status, "running",
+                                                                                                               "startedAt"))
           samples["container_start_time_seconds"] << [labels, started.to_f, stamp_ms] if started
           add_rootfs(samples, container["rootfs"], labels, stamp_ms, disk_usage) if container["rootfs"]
         end
@@ -281,8 +285,14 @@ module Rubernetes
         end
         emit.call("container_memory_max_usage_bytes", usage["memory.peak"].to_i) if usage["memory.peak"]
         %w[container hierarchy].each do |scope|
-          emit.call("container_memory_failures_total", memory["pgfault"].to_i, "failure_type" => "pgfault", "scope" => scope) if memory.key?("pgfault")
-          emit.call("container_memory_failures_total", memory["pgmajfault"].to_i, "failure_type" => "pgmajfault", "scope" => scope) if memory.key?("pgmajfault")
+          if memory.key?("pgfault")
+            emit.call("container_memory_failures_total", memory["pgfault"].to_i, "failure_type" => "pgfault",
+                                                                                 "scope" => scope)
+          end
+          if memory.key?("pgmajfault")
+            emit.call("container_memory_failures_total", memory["pgmajfault"].to_i, "failure_type" => "pgmajfault",
+                                                                                    "scope" => scope)
+          end
         end
         emit.call("container_oom_events_total", events["oom_kill"].to_i) if events.key?("oom_kill")
         add_io(samples, usage["io.stat"], labels, stamp_ms, sys_root) if usage["io.stat"].is_a?(Hash)
@@ -299,8 +309,14 @@ module Rubernetes
           samples["container_fs_writes_bytes_total"] << [device_labels, counters["wbytes"].to_i, stamp_ms]
           samples["container_fs_reads_total"] << [device_labels, counters["rios"].to_i, stamp_ms]
           samples["container_fs_writes_total"] << [device_labels, counters["wios"].to_i, stamp_ms]
-          samples["container_blkio_device_usage_total"] << [labels.merge("device" => name, "major" => major.to_s, "minor" => minor.to_s, "operation" => "Read"), counters["rbytes"].to_i, stamp_ms]
-          samples["container_blkio_device_usage_total"] << [labels.merge("device" => name, "major" => major.to_s, "minor" => minor.to_s, "operation" => "Write"), counters["wbytes"].to_i, stamp_ms]
+          samples["container_blkio_device_usage_total"] << [
+            labels.merge("device" => name, "major" => major.to_s, "minor" => minor.to_s,
+                         "operation" => "Read"), counters["rbytes"].to_i, stamp_ms
+          ]
+          samples["container_blkio_device_usage_total"] << [
+            labels.merge("device" => name, "major" => major.to_s, "minor" => minor.to_s,
+                         "operation" => "Write"), counters["wbytes"].to_i, stamp_ms
+          ]
         end
       end
 
@@ -430,7 +446,7 @@ module Rubernetes
         end
         if usage["cpu.weight"]
           weight = usage["cpu.weight"].to_i
-          shares = weight <= 1 ? 2 : ((weight - 1) * 262_142) / 9_999 + 2
+          shares = weight <= 1 ? 2 : (((weight - 1) * 262_142) / 9_999) + 2
           samples["container_spec_cpu_shares"] << [labels, shares, stamp_ms]
         end
         if usage.key?("memory.max")
@@ -512,7 +528,9 @@ module Rubernetes
             end
           end
         end
-        (MACHINE_FAMILIES.map { |name, type, help| [name, type, help] } + SUMMARY_DESCRIPTORS.map { |name, (type, help)| [name, type, help] }).filter_map do |name, type, help|
+        (MACHINE_FAMILIES.map { |name, type, help| [name, type, help] } + SUMMARY_DESCRIPTORS.map do |name, (type, help)|
+          [name, type, help]
+        end).filter_map do |name, type, help|
           lines = samples[name]
           next if lines.empty?
 
@@ -532,10 +550,12 @@ module Rubernetes
           samples["container_memory_working_set_bytes"] << [labels, memory["workingSetBytes"].to_i] if memory["workingSetBytes"]
           samples["container_memory_rss"] << [labels, memory["rssBytes"].to_i] if memory["rssBytes"]
           if memory["pageFaults"]
-            samples["container_memory_failures_total"] << [labels.merge("failure_type" => "pgfault", "scope" => "container"), memory["pageFaults"].to_i]
+            samples["container_memory_failures_total"] << [labels.merge("failure_type" => "pgfault", "scope" => "container"),
+                                                           memory["pageFaults"].to_i]
           end
           if memory["majorPageFaults"]
-            samples["container_memory_failures_total"] << [labels.merge("failure_type" => "pgmajfault", "scope" => "container"), memory["majorPageFaults"].to_i]
+            samples["container_memory_failures_total"] << [labels.merge("failure_type" => "pgmajfault", "scope" => "container"),
+                                                           memory["majorPageFaults"].to_i]
           end
         end
         samples["container_last_seen"] << [labels, stamp.floor]

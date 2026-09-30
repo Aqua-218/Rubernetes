@@ -35,7 +35,7 @@ class M3SchedulerQueueStarvationRegressionTest < Minitest::Test
     result = scheduler.schedule_next(nodes: [node("worker")])
 
     assert_predicate result, :dropped?
-    refute scheduler.queue.include?(Scheduler::Pod.new(ghost)), "a deleted Pod must not stay queued"
+    refute_includes scheduler.queue, Scheduler::Pod.new(ghost), "a deleted Pod must not stay queued"
     assert_nil scheduler.schedule_next(nodes: [node("worker")]), "the queue must be empty afterwards"
   end
 
@@ -56,12 +56,14 @@ class M3SchedulerQueueStarvationRegressionTest < Minitest::Test
 
     # The ghost sorts first (older creationTimestamp) and fails.
     first = scheduler.schedule_next(nodes: [node("worker")])
+
     assert_predicate first, :dropped?
     assert_equal "ghost", first.pod.name
 
     # The very next tick must schedule the Pod behind it.  Before the fix this
     # popped the ghost again, forever.
     second = scheduler.schedule_next(nodes: [node("worker")])
+
     assert_predicate second, :scheduled?
     assert_equal "victim", second.pod.name
     assert_equal 1, attempts["ghost"]
@@ -75,6 +77,7 @@ class M3SchedulerQueueStarvationRegressionTest < Minitest::Test
 
     scheduler.enqueue(flaky)
     first = scheduler.schedule_next(nodes: [node("worker")])
+
     assert_predicate first, :requeued?
 
     # Still inside the first backoff window: the loop gets nothing to do rather
@@ -83,13 +86,16 @@ class M3SchedulerQueueStarvationRegressionTest < Minitest::Test
     assert_equal 1, queue.backoff_size
 
     clock += Scheduler::SchedulingQueue::INITIAL_BACKOFF_SECONDS
+
     assert_predicate scheduler.schedule_next(nodes: [node("worker")]), :requeued?
     assert_equal 2, queue.attempts(Scheduler::Pod.new(flaky))
 
     # Backoff doubles and is capped.
     clock += Scheduler::SchedulingQueue::INITIAL_BACKOFF_SECONDS
+
     assert_nil scheduler.schedule_next(nodes: [node("worker")])
     clock += Scheduler::SchedulingQueue::MAX_BACKOFF_SECONDS
+
     assert_predicate scheduler.schedule_next(nodes: [node("worker")]), :requeued?
   end
 
@@ -121,8 +127,8 @@ class M3SchedulerQueueStarvationRegressionTest < Minitest::Test
     result = scheduler.schedule_next(nodes: [node("worker")])
 
     assert_predicate result, :requeued?
-    assert scheduler.queue.include?(Scheduler::Pod.new(live)),
-           "a Pod must survive a 404 raised for some other object"
+    assert_includes scheduler.queue, Scheduler::Pod.new(live),
+                    "a Pod must survive a 404 raised for some other object"
   end
 
   def test_successful_bind_clears_the_failure_history
@@ -137,11 +143,13 @@ class M3SchedulerQueueStarvationRegressionTest < Minitest::Test
     end)
 
     scheduler.enqueue(target)
+
     assert_predicate scheduler.schedule_next(nodes: [node("worker")]), :requeued?
     assert_equal 1, queue.attempts(Scheduler::Pod.new(target))
 
     fail_once = false
     clock += Scheduler::SchedulingQueue::INITIAL_BACKOFF_SECONDS
+
     assert_predicate scheduler.schedule_next(nodes: [node("worker")]), :scheduled?
     assert_equal 0, queue.attempts(Scheduler::Pod.new(target))
   end

@@ -30,7 +30,10 @@ class OCIPullerParallelLayersTest < Minitest::Test
 
     def fetch_blob(_reference, digest, expected_size:, media_type:, io: nil)
       bytes = @blobs.fetch(digest.to_s)
-      @mutex.synchronize { @active += 1; @peak = [@peak, @active].max }
+      @mutex.synchronize do
+        @active += 1
+        @peak = [@peak, @active].max
+      end
       sleep @delay if media_type == Image::MediaTypes::OCI_IMAGE_LAYER
       raise Image::RegistryError, "blob #{digest} unavailable" if digest.to_s == @failing
 
@@ -65,7 +68,7 @@ class OCIPullerParallelLayersTest < Minitest::Test
 
       assert_operator registry.peak, :>, 1, "more than one layer was in flight"
       assert_operator elapsed, :<, 0.6
-      assert_equal layers.map { |layer| digest_for(layer) }, image.layers.map { |layer| layer.fetch(:descriptor).digest.to_s }
+      assert_equal(layers.map { |layer| digest_for(layer) }, image.layers.map { |layer| layer.fetch(:descriptor).digest.to_s })
     end
   end
 

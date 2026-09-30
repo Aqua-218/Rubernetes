@@ -2,7 +2,6 @@
 
 require "json"
 require "psych"
-require "thread"
 require "uri"
 
 require_relative "errors"
@@ -161,10 +160,10 @@ module Rubernetes
         end
       end
 
-      def self.from_kubeconfig(path: nil, context: nil, env: ENV, **options)
+      def self.from_kubeconfig(path: nil, context: nil, env: ENV, **)
         kubeconfig = Kubeconfig.load(path: path, env: env)
         resolved_context = kubeconfig.resolve(name: context)
-        rest_client = HTTPClient.new(context: resolved_context, **options)
+        rest_client = HTTPClient.new(context: resolved_context, **)
         new(rest_client: rest_client, context: resolved_context)
       end
 
@@ -187,6 +186,7 @@ module Rubernetes
         @rest_client = rest_client || http_client
         @rest_client ||= HTTPClient.new(context: @context, **http_options) if context || server
         raise ArgumentError, "rest_client or context is required" unless @rest_client
+
         @discovery_mutex = Mutex.new
         @discovery_entries = {}
         @discovery_by_kind = {}
@@ -258,7 +258,7 @@ module Rubernetes
       def get(path_or_resource, name = nil, namespace: nil, api_version: "v1", query: nil,
               subresource: nil, return_response: false)
         path = resource_path(path_or_resource, name, namespace: namespace, api_version: api_version,
-                             subresource: subresource, operation: name ? :get : :list)
+                                                     subresource: subresource, operation: name ? :get : :list)
         response = raw("GET", path, query: query)
         return response if return_response
 
@@ -271,8 +271,8 @@ module Rubernetes
         resource = manifest || manifest_or_path
         resource_path_value = path || (manifest_or_path if manifest && manifest_or_path.to_s.start_with?("/"))
         resource_path_value ||= resource_path(resource, nil, namespace: namespace, api_version: api_version,
-                                              use_manifest_name: !subresource.nil?, subresource: subresource,
-                                              operation: :create)
+                                                             use_manifest_name: !subresource.nil?, subresource: subresource,
+                                                             operation: :create)
         response = raw("POST", resource_path_value, body: encode_resource(resource), headers: json_headers)
         return response if return_response
 
@@ -285,8 +285,9 @@ module Rubernetes
         resource = normalize_resource(manifest)
         name = resource.dig("metadata", "name")
         raise UsageError, "apply manifest metadata.name is required" if name.to_s.empty?
+
         target_path = path || resource_path(resource, name, namespace: namespace, api_version: resource["apiVersion"],
-                                             subresource: subresource, operation: :patch)
+                                                            subresource: subresource, operation: :patch)
         query = {"fieldManager" => field_manager}
         query["force"] = "true" if force
         response = raw(
@@ -309,8 +310,9 @@ module Rubernetes
         resource = normalize_resource(manifest)
         name = resource.dig("metadata", "name")
         raise UsageError, "update manifest metadata.name is required" if name.to_s.empty?
+
         target_path = path || resource_path(resource, name, namespace: namespace, api_version: resource["apiVersion"],
-                                             subresource: subresource, operation: :update)
+                                                            subresource: subresource, operation: :update)
         response = raw("PUT", target_path, body: encode_resource(resource), headers: json_headers)
         return response if return_response
 
@@ -331,12 +333,12 @@ module Rubernetes
       )
         resource = path_or_resource.is_a?(Hash) ? path_or_resource : nil
         target_path = path || if resource
-                               resource_path(resource, name || resource.dig("metadata", "name"), namespace: namespace,
-                                             api_version: api_version, subresource: subresource, operation: :patch)
-                             else
-                               resource_path(path_or_resource, name, namespace: namespace, api_version: api_version,
-                                             subresource: subresource, operation: :patch)
-                             end
+                                resource_path(resource, name || resource.dig("metadata", "name"), namespace: namespace,
+                                                                                                  api_version: api_version, subresource: subresource, operation: :patch)
+                              else
+                                resource_path(path_or_resource, name, namespace: namespace, api_version: api_version,
+                                                                      subresource: subresource, operation: :patch)
+                              end
         content_type = patch_content_type(type)
         response = raw(
           "PATCH",
@@ -358,7 +360,7 @@ module Rubernetes
       def delete(path_or_resource, name = nil, namespace: nil, api_version: "v1", query: nil,
                  subresource: nil, return_response: false, options: nil)
         path = resource_path(path_or_resource, name, namespace: namespace, api_version: api_version,
-                             subresource: subresource, operation: name ? :delete : :deletecollection)
+                                                     subresource: subresource, operation: name ? :delete : :deletecollection)
         body = nil
         headers = {}
         unless options.nil?
@@ -381,16 +383,14 @@ module Rubernetes
                 return_response: true, max_bytes: DEFAULT_WATCH_MAX_BYTES, max_events: DEFAULT_WATCH_MAX_EVENTS,
                 reconnect: true, max_reconnects: DEFAULT_WATCH_RECONNECTS)
         path = resource_path(path_or_resource, nil, namespace: namespace, api_version: api_version,
-                             subresource: subresource, operation: :watch)
-        unless query.respond_to?(:to_h)
-          raise UsageError, "watch query must be a mapping"
-        end
+                                                    subresource: subresource, operation: :watch)
+        raise UsageError, "watch query must be a mapping" unless query.respond_to?(:to_h)
 
         if !return_response && reconnect && @rest_client.respond_to?(:stream)
           return collect_watch_events(path_or_resource, namespace: namespace, api_version: api_version,
-                                      subresource: subresource, query: query, max_bytes: max_bytes,
-                                      max_events: max_events, reconnect: reconnect,
-                                      max_reconnects: max_reconnects)
+                                                        subresource: subresource, query: query, max_bytes: max_bytes,
+                                                        max_events: max_events, reconnect: reconnect,
+                                                        max_reconnects: max_reconnects)
         end
         watch_query = stringify_query(query).merge("watch" => "true")
         response = raw("GET", path, query: watch_query)
@@ -406,9 +406,9 @@ module Rubernetes
                        max_reconnects: DEFAULT_WATCH_RECONNECTS)
         if @rest_client.respond_to?(:stream) && reconnect
           return collect_watch_events(path_or_resource, namespace: namespace, api_version: api_version,
-                                      subresource: subresource, query: query, max_bytes: max_bytes,
-                                      max_events: max_events, reconnect: reconnect,
-                                      max_reconnects: max_reconnects)
+                                                        subresource: subresource, query: query, max_bytes: max_bytes,
+                                                        max_events: max_events, reconnect: reconnect,
+                                                        max_reconnects: max_reconnects)
         end
         watch(
           path_or_resource,
@@ -446,12 +446,10 @@ module Rubernetes
           )
         end
 
-        unless query.respond_to?(:to_h)
-          raise UsageError, "watch query must be a mapping"
-        end
+        raise UsageError, "watch query must be a mapping" unless query.respond_to?(:to_h)
 
         path = resource_path(path_or_resource, nil, namespace: namespace, api_version: api_version,
-                             subresource: subresource, operation: :watch)
+                                                    subresource: subresource, operation: :watch)
         watch_query = stringify_query(query).merge("watch" => "true")
         unless @rest_client.respond_to?(:stream)
           return watch_events(
@@ -468,7 +466,7 @@ module Rubernetes
         end
 
         stream_watch(path, watch_query, max_bytes: max_bytes, max_events: max_events,
-                     reconnect: reconnect, max_reconnects: max_reconnects, &block)
+                                        reconnect: reconnect, max_reconnects: max_reconnects, &block)
       end
 
       # Close a transport-owned streaming watch during agent shutdown.  A
@@ -491,7 +489,8 @@ module Rubernetes
           manifest = stringify_keys(path_or_resource)
           kind = manifest["kind"].to_s
           raise UsageError, "Kubernetes manifest kind is required" if kind.empty?
-          api_version = manifest["apiVersion"] if api_version.to_s.empty? || api_version.to_s == "v1" && manifest["apiVersion"]
+
+          api_version = manifest["apiVersion"] if api_version.to_s.empty? || (api_version.to_s == "v1" && manifest["apiVersion"])
           namespace ||= manifest.dig("metadata", "namespace")
           name ||= manifest.dig("metadata", "name") if use_manifest_name
           path_or_resource = kind
@@ -506,11 +505,11 @@ module Rubernetes
 
         resource = path
         raise UsageError, "Kubernetes resource name is required" if resource.empty?
+
         version = api_version.to_s
         raise UsageError, "Kubernetes apiVersion is required" if version.empty?
-        if version == "v1" && !resource.include?("/")
-          version = discover_default_api_version(resource) || version
-        end
+
+        version = discover_default_api_version(resource) || version if version == "v1" && !resource.include?("/")
 
         group, version_name = version.split("/", 2)
         if version_name.nil?
@@ -528,6 +527,7 @@ module Rubernetes
         resource_name = descriptor ? descriptor.resource : resource_name_for_kind(resource_name)
         namespaced = descriptor ? descriptor.namespaced : !self.class.cluster_scoped_resources.include?(resource_name)
         raise UsageError, "Kubernetes subresource name is required" if subresource && name.to_s.empty?
+
         validate_verb!(descriptor, operation, subresource)
         path_parts = [base]
         if namespaced
@@ -577,7 +577,7 @@ module Rubernetes
         return nil unless kind || RESOURCE_PLURALS.value?(plural)
         return nil if group.to_s.empty? && version.to_s == "v1" && !CORE_STATIC_KINDS.include?(kind || resource_name)
 
-        descriptor = ResourceDescriptor.new(
+        ResourceDescriptor.new(
           group: group.to_s,
           version: version.to_s,
           resource: plural,
@@ -589,7 +589,6 @@ module Rubernetes
           list_kind: "#{kind || resource_name}List",
           subresource: subresource
         )
-        descriptor
       end
 
       def discover_default_api_version(value)
@@ -643,12 +642,8 @@ module Rubernetes
         resource_name, subresource = value.to_s.split("/", 2)
         key = "#{group}/#{version}/#{resource_name}"
         descriptor = @discovery_entries[key]
-        unless descriptor
-          descriptor = @discovery_by_kind[[group.to_s, version.to_s, resource_name.to_s]]
-        end
-        unless descriptor
-          descriptor = @discovery_by_kind[[group.to_s, version.to_s, resource_name.to_s.downcase]]
-        end
+        descriptor ||= @discovery_by_kind[[group.to_s, version.to_s, resource_name.to_s]]
+        descriptor ||= @discovery_by_kind[[group.to_s, version.to_s, resource_name.to_s.downcase]]
         return nil unless descriptor
         return descriptor unless subresource
 
@@ -687,6 +682,7 @@ module Rubernetes
 
       def validate_verb!(descriptor, operation, subresource)
         return if descriptor.nil? || operation.nil?
+
         candidate = descriptor
         if subresource
           candidate = lookup_discovery_descriptor("#{descriptor.resource}/#{subresource}",
@@ -709,6 +705,7 @@ module Rubernetes
         versions.each do |version|
           version = version.to_s
           next if version.empty?
+
           register_resource_list(group: "", version: version,
                                  payload: decode_response(raw("GET", "/api/#{escape_path(version)}")))
         end
@@ -719,8 +716,10 @@ module Rubernetes
         groups = payload.is_a?(Hash) ? Array(payload["groups"]) : []
         groups.each do |group_payload|
           next unless group_payload.is_a?(Hash)
+
           group = group_payload["name"].to_s
           next if group.empty?
+
           preferred = group_payload.dig("preferredVersion", "version").to_s
           @discovery_preferred[group] = preferred unless preferred.empty?
           versions = Array(group_payload["versions"]).filter_map do |entry|
@@ -746,12 +745,14 @@ module Rubernetes
 
       def register_resource_list(group:, version:, payload:)
         return unless payload.is_a?(Hash)
+
         entries = Array(payload["resources"]).select { |entry| entry.is_a?(Hash) }
         # Base resources are registered first because subresources inherit
         # scope and identity defaults from their parent APIResource entry.
         entries.sort_by { |entry| entry["name"].to_s.include?("/") ? 1 : 0 }.each do |entry|
           name = entry["name"].to_s
           next if name.empty?
+
           base_name, subresource = name.split("/", 2)
           parent = @discovery_entries["#{group}/#{version}/#{base_name}"]
           # APIResourceList may advertise a subresource under a different
@@ -773,6 +774,7 @@ module Rubernetes
             subresource: subresource
           )
           next if descriptor.kind.to_s.empty?
+
           key = "#{entry_group}/#{entry_version}/#{name}"
           @discovery_entries[key] = descriptor
           @discovery_cache[key] = descriptor.to_h
@@ -785,6 +787,7 @@ module Rubernetes
 
       def seed_discovery_cache(cache)
         return unless cache.respond_to?(:each)
+
         cache.each do |key, value|
           if value.is_a?(Hash) && value["resources"].is_a?(Array)
             group, version = key.to_s.split("/", 2)
@@ -795,13 +798,19 @@ module Rubernetes
           end
           parts = key.to_s.split("/")
           if parts.length == 2
-            group, version, resource = "", parts[0], parts[1]
+            group = ""
+            version = parts[0]
+            resource = parts[1]
           else
             next unless parts.length >= 3
-            group, version, resource = parts[-3], parts[-2], parts[-1]
+
+            group = parts[-3]
+            version = parts[-2]
+            resource = parts[-1]
           end
           descriptor = normalize_descriptor(value, group: group, version: version)
           next unless descriptor
+
           descriptor.resource ||= resource
           descriptor.group = group
           descriptor.version = version
@@ -812,6 +821,7 @@ module Rubernetes
 
       def context_namespace
         return nil unless @context
+
         if @context.respond_to?(:namespace)
           @context.namespace
         elsif @context.is_a?(Hash)
@@ -833,6 +843,7 @@ module Rubernetes
 
       def normalize_resource(value)
         return stringify_keys(value) if value.is_a?(Hash)
+
         if value.is_a?(String)
           parsed = JSON.parse(value)
           return parsed if parsed.is_a?(Hash)
@@ -848,8 +859,9 @@ module Rubernetes
         raise ManifestError.new("manifest cannot be encoded as JSON: #{error.message}", cause: error), cause: error
       end
 
-      def encode_patch_body(body, content_type)
+      def encode_patch_body(body, _content_type)
         return body if body.is_a?(String)
+
         JSON.generate(stringify_keys(body))
       rescue JSON::GeneratorError => error
         raise UsageError.new("patch cannot be encoded as JSON: #{error.message}", cause: error), cause: error
@@ -858,6 +870,7 @@ module Rubernetes
       def patch_content_type(type)
         key = type.to_s.downcase.tr("-", "_").to_sym
         return type.to_s if type.to_s.include?("/")
+
         PATCH_CONTENT_TYPES.fetch(key) do
           raise UsageError, "unsupported patch type #{type.inspect}; choose #{PATCH_CONTENT_TYPES.keys.join(", ")}"
         end
@@ -868,9 +881,7 @@ module Rubernetes
       end
 
       def stringify_query(query)
-        unless query.respond_to?(:to_h)
-          raise UsageError, "watch query must be a mapping"
-        end
+        raise UsageError, "watch query must be a mapping" unless query.respond_to?(:to_h)
 
         query.to_h.each_with_object({}) { |(key, value), normalized| normalized[key.to_s] = value }
       end
@@ -888,8 +899,8 @@ module Rubernetes
                                max_bytes:, max_events:, reconnect:, max_reconnects:)
         events = []
         watch_each(path_or_resource, namespace: namespace, api_version: api_version,
-                   subresource: subresource, query: query, max_bytes: max_bytes,
-                   max_events: max_events, reconnect: reconnect, max_reconnects: max_reconnects) do |event|
+                                     subresource: subresource, query: query, max_bytes: max_bytes,
+                                     max_events: max_events, reconnect: reconnect, max_reconnects: max_reconnects) do |event|
           events << event
         end
         events
@@ -898,6 +909,7 @@ module Rubernetes
       def stream_watch(path, base_query, max_bytes:, max_events:, reconnect:, max_reconnects:)
         reconnect_limit = Integer(max_reconnects)
         raise UsageError, "watch max_reconnects must be non-negative" if reconnect_limit.negative?
+
         last_resource_version = base_query["resourceVersion"]&.to_s
         reconnect_count = 0
 
@@ -915,9 +927,8 @@ module Rubernetes
             stream = @rest_client.stream("GET", path, query: current_query)
             body = normalize_stream_response(stream, path)
             parse_watch_stream(body, max_bytes: max_bytes, max_events: max_events) do |event|
-              if expired_watch_event?(event)
-                raise WatchReset, "watch resourceVersion expired"
-              end
+              raise WatchReset, "watch resourceVersion expired" if expired_watch_event?(event)
+
               event_resource_version = watch_resource_version(event)
               last_resource_version = event_resource_version if event_resource_version
               yield event
@@ -939,7 +950,7 @@ module Rubernetes
             raise unless transport_disconnect?(error)
 
             reconnect_count += 1
-          rescue TransportError, EOFError, IOError => error
+          rescue TransportError, EOFError, IOError
             raise unless reconnect && reconnect_count < reconnect_limit
 
             reconnect_count += 1
@@ -966,15 +977,14 @@ module Rubernetes
         normalized = normalize_rest_response(response)
         return normalized.body if normalized.success?
 
-        if @rest_client.respond_to?(:raise_for_status!)
-          @rest_client.raise_for_status!(normalized, "GET", path)
-        end
+        @rest_client.raise_for_status!(normalized, "GET", path) if @rest_client.respond_to?(:raise_for_status!)
         raise APIError.new("Kubernetes watch request GET #{path} failed with HTTP #{normalized.status}",
                            response: normalized)
       end
 
       def expired_watch_event?(event)
         return false unless event["type"].to_s == "ERROR"
+
         object = event["object"]
         return false unless object.is_a?(Hash)
 
@@ -1001,14 +1011,11 @@ module Rubernetes
         event_count = 0
 
         each_body_chunk(body) do |chunk|
-          unless chunk.is_a?(String)
-            raise WatchStreamError, "watch stream chunks must be strings"
-          end
+          raise WatchStreamError, "watch stream chunks must be strings" unless chunk.is_a?(String)
 
           total_bytes += chunk.bytesize
-          if total_bytes > byte_limit
-            raise WatchLimitError, "watch stream exceeds #{byte_limit} bytes"
-          end
+          raise WatchLimitError, "watch stream exceeds #{byte_limit} bytes" if total_bytes > byte_limit
+
           buffer << chunk
 
           while (newline_index = buffer.index("\n"))
@@ -1019,8 +1026,9 @@ module Rubernetes
             next if event.nil?
 
             raise WatchLimitError, "watch stream exceeds #{event_limit} events" if event_count >= event_limit
+
             event_count += 1
-            consumer ? consumer.call(event) : events << event
+            consumer ? yield(event) : events << event
           end
         end
 
@@ -1029,18 +1037,20 @@ module Rubernetes
           event = decode_watch_event(buffer, line_number)
           if event
             raise WatchLimitError, "watch stream exceeds #{event_limit} events" if event_count >= event_limit
-            consumer ? consumer.call(event) : events << event
+
+            consumer ? yield(event) : events << event
           end
         end
         consumer ? nil : events
       end
 
-      def each_body_chunk(body)
+      def each_body_chunk(body, &)
         return if body.nil?
+
         if body.is_a?(String)
           yield body
         elsif body.respond_to?(:each)
-          body.each { |chunk| yield chunk }
+          body.each(&)
         else
           raise WatchStreamError, "watch response body must be a string or enumerable stream"
         end
@@ -1055,17 +1065,13 @@ module Rubernetes
           object_class: ManifestReader::DuplicateKeyHash,
           max_nesting: 512
         )
-        unless event.is_a?(Hash)
-          raise WatchStreamError, "watch stream line #{line_number} must be a JSON object"
-        end
+        raise WatchStreamError, "watch stream line #{line_number} must be a JSON object" unless event.is_a?(Hash)
 
         event_type = event["type"]
         unless WATCH_EVENT_TYPES.include?(event_type)
           raise WatchStreamError, "watch stream line #{line_number} has an unsupported event type"
         end
-        unless event["object"].is_a?(Hash)
-          raise WatchStreamError, "watch stream line #{line_number} must contain an object mapping"
-        end
+        raise WatchStreamError, "watch stream line #{line_number} must contain an object mapping" unless event["object"].is_a?(Hash)
 
         event
       rescue JSON::ParserError, ManifestError => error

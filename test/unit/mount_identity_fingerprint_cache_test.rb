@@ -19,8 +19,12 @@ class MountIdentityFingerprintCacheTest < Minitest::Test
     subject = mount(target: "/a", mount_id: "10")
     calls = 0
     original = Ledger.method(:identity_fingerprint)
-    Ledger.define_singleton_method(:identity_fingerprint) { |fields| calls += 1; original.call(fields) }
+    Ledger.define_singleton_method(:identity_fingerprint) do |fields|
+      calls += 1
+      original.call(fields)
+    end
     first = subject.fingerprint
+
     3.times { assert_equal first, subject.fingerprint }
     assert_equal 1, calls
   ensure
@@ -31,6 +35,7 @@ class MountIdentityFingerprintCacheTest < Minitest::Test
     subject = mount(target: "/a", mount_id: "10")
     before = subject.fingerprint
     subject.mount_id = "11"
+
     refute_equal before, subject.fingerprint
     assert_equal mount(target: "/a", mount_id: "11").fingerprint, subject.fingerprint
   end

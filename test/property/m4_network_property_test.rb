@@ -11,6 +11,7 @@ class M4NetworkPropertyTest < Minitest::Test
       ipam.commit(reserved)
     end
     addresses = leases.map(&:ip)
+
     assert_equal addresses.length, addresses.uniq.length
   end
 
@@ -28,7 +29,8 @@ class M4NetworkPropertyTest < Minitest::Test
     current = {"routes" => [{"destination" => "10.1.0.0/24"}], "fdb" => [{"mac" => "aa:bb:cc:dd:ee:01"}]}
     desired = {"routes" => [{"destination" => "10.1.0.0/24"}], "fdb" => [{"mac" => "aa:bb:cc:dd:ee:01"}]}
     diff = overlay.diff(current: current, desired: desired, revision: 7)
-    assert diff.fetch("routes").empty?
-    assert diff.fetch("fdb").empty?
+
+    assert_empty diff.fetch("routes")
+    assert_empty diff.fetch("fdb")
   end
 end

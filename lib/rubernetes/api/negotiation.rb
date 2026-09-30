@@ -117,8 +117,10 @@ module Rubernetes
         selection = nil
         if clauses.empty?
           candidate = stream ? supported.find { |type| STREAM_TYPES.include?(type) } : supported.first
-          selection = Selection.new(media_type: candidate, convert: nil, stream: stream ? "watch" : nil,
-                                    pretty: false, params: {}) if candidate
+          if candidate
+            selection = Selection.new(media_type: candidate, convert: nil, stream: stream ? "watch" : nil,
+                                      pretty: false, params: {})
+          end
         else
           clauses.each do |clause|
             supported.each do |media_type|
@@ -155,12 +157,13 @@ module Rubernetes
           when "stream"
             return nil unless value.empty? || (value == "watch" && STREAM_TYPES.include?(media_type))
           when "pretty"
-            pretty = value == "1" || value == "true"
+            pretty = %w[1 true].include?(value)
           when "charset", "profile", "sv", "export"
             # Accepted but without effect on the served representation.
           end
         end
         return {convert: nil, pretty: pretty} if convert.nil?
+
         # apidiscovery.k8s.io/v2 APIGroupDiscoveryList is a discovery
         # representation, not an object conversion: the handler builds it and
         # the body is serialized as ordinary JSON or YAML.
@@ -185,9 +188,7 @@ module Rubernetes
       # kube-apiserver pretty-prints for browsers and command-line HTTP tools
       # unless the pretty query parameter says otherwise.
       def pretty_print?(pretty_query, user_agent)
-        unless pretty_query.nil? || pretty_query.to_s.empty?
-          return %w[1 t true yes y].include?(pretty_query.to_s.downcase)
-        end
+        return %w[1 t true yes y].include?(pretty_query.to_s.downcase) unless pretty_query.nil? || pretty_query.to_s.empty?
 
         agent = user_agent.to_s
         PRETTY_USER_AGENTS.any? { |prefix| agent.start_with?(prefix) }
@@ -208,8 +209,7 @@ module Rubernetes
       # Sorted-key YAML matching sigs.k8s.io/yaml JSONToYAML output.
       def dump_yaml(object)
         text = ::YAML.dump(sort_keys(object), line_width: -1)
-        text = text.delete_prefix("---\n").delete_prefix("--- ")
-        text
+        text.delete_prefix("---\n").delete_prefix("--- ")
       end
 
       def sort_keys(value)

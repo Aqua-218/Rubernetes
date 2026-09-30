@@ -45,13 +45,9 @@ module Rubernetes
         end
 
         def volume_data(context)
-          if context.respond_to?(:volume_data)
-            return context.volume_data
-          end
+          return context.volume_data if context.respond_to?(:volume_data)
 
-          if context.is_a?(Hash)
-            return Support.object_hash(context["volume_data"] || context[:volume_data] || {})
-          end
+          return Support.object_hash(context["volume_data"] || context[:volume_data] || {}) if context.is_a?(Hash)
 
           {}
         end
@@ -75,9 +71,11 @@ module Rubernetes
           if collection_value.is_a?(Hash)
             value = collection_value[name.to_s] || collection_value[name.to_sym]
             return value unless value.nil?
+
             namespaced = namespace && "#{namespace}/#{name}"
             return collection_value[namespaced] if namespaced && collection_value.key?(namespaced)
             return collection_value[namespaced.to_sym] if namespaced && collection_value.key?(namespaced.to_sym)
+
             return nil
           end
 
@@ -102,9 +100,7 @@ module Rubernetes
 
         def pv_for(volume, pod, context)
           claim = claim_for(volume, pod, context)
-          pv_name = if claim
-                      Support.value(claim, "volumeName", Support.value(Support.value(claim, "spec", {}), "volumeName", nil))
-                    end
+          pv_name = (Support.value(claim, "volumeName", Support.value(Support.value(claim, "spec", {}), "volumeName", nil)) if claim)
           pv_name ||= Support.value(volume, "volumeName", nil)
           return nil if pv_name.to_s.empty?
 
@@ -253,10 +249,13 @@ module Rubernetes
 
         def node_affinity_matches?(affinity, node)
           return true if affinity.nil? || Support.object_hash(affinity).empty?
-          required = Support.value(affinity, "required", Support.value(affinity, "requiredDuringSchedulingIgnoredDuringExecution", affinity))
+
+          required = Support.value(affinity, "required",
+                                   Support.value(affinity, "requiredDuringSchedulingIgnoredDuringExecution", affinity))
           required = Support.object_hash(required)
           terms = Array(Support.value(required, "nodeSelectorTerms", []))
           return true if terms.empty?
+
           terms.any? do |term|
             Array(Support.value(term, "matchExpressions", [])).all? do |expression|
               requirement_matches?(expression, node.labels)
@@ -314,6 +313,7 @@ module Rubernetes
 
         def labels_for(value)
           return value.labels if value.is_a?(Pod) || value.is_a?(Node)
+
           raw = Support.object_hash(value)
           if raw.key?("metadata")
             Support.labels(raw)
@@ -398,7 +398,7 @@ module Rubernetes
             selector_matches?(existing_pod.labels, effective_selector(term, pending_pod))
         end
 
-        def in_same_domain?(existing_pod, existing_node, candidate_node, topology_key)
+        def in_same_domain?(_existing_pod, existing_node, candidate_node, topology_key)
           existing_value = topology_value(existing_node, topology_key)
           candidate_value = topology_value(candidate_node, topology_key)
           !existing_value.nil? && !candidate_value.nil? && existing_value == candidate_value
@@ -468,8 +468,8 @@ module Rubernetes
         def call(pod, _node = nil, _context = nil)
           return true if pod.scheduling_gates.empty?
 
-          Helpers.reject("waiting for scheduling gates: #{pod.scheduling_gates.map { |gate| Support.value(gate, 'name', '') }}",
-                        code: "SchedulingGates")
+          Helpers.reject("waiting for scheduling gates: #{pod.scheduling_gates.map { |gate| Support.value(gate, "name", "") }}",
+                         code: "SchedulingGates")
         end
 
         alias filter call
@@ -487,12 +487,17 @@ module Rubernetes
           return true if group_name.nil?
 
           group = context.respond_to?(:pod_group) ? context.pod_group(pod.namespace, group_name) : nil
-          return Helpers.reject("waiting for pods's pod group #{group_name.inspect} to appear in scheduling queue", code: "GangScheduling") if group.nil?
+          if group.nil?
+            return Helpers.reject("waiting for pods's pod group #{group_name.inspect} to appear in scheduling queue",
+                                  code: "GangScheduling")
+          end
 
           gang = Support.value(Support.value(Support.value(group, "spec", {}), "schedulingPolicy", {}), "gang", nil)
           return true if gang.nil?
 
-          members = Array(context&.pods).count { |other| other.namespace == pod.namespace && other.scheduling_group == group_name && other.uid != pod.uid } + 1
+          members = Array(context&.pods).count do |other|
+            other.namespace == pod.namespace && other.scheduling_group == group_name && other.uid != pod.uid
+          end + 1
           return true if members >= Support.value(gang, "minCount", 0).to_i
 
           Helpers.reject("waiting for minCount pods from a gang to appear in scheduling queue", code: "GangScheduling")
@@ -507,7 +512,9 @@ module Rubernetes
           gang = group && Support.value(Support.value(Support.value(group, "spec", {}), "schedulingPolicy", {}), "gang", nil)
           return true if gang.nil?
 
-          scheduled = Array(context&.pods).count { |other| other.namespace == pod.namespace && other.scheduling_group == group_name && !other.node_name.empty? } + 1
+          scheduled = Array(context&.pods).count do |other|
+            other.namespace == pod.namespace && other.scheduling_group == group_name && !other.node_name.empty?
+          end + 1
           return true if scheduled >= Support.value(gang, "minCount", 0).to_i
 
           Permit::Wait.new(PERMIT_TIMEOUT_SECONDS)
@@ -561,7 +568,7 @@ module Rubernetes
           conflict = requested.find { |wanted| used.any? { |existing| Helpers.ports_conflict?(wanted, existing) } }
           return true unless conflict
 
-          Helpers.reject("node has no free host port #{conflict.fetch('hostPort')}/#{conflict.fetch('protocol')}",
+          Helpers.reject("node has no free host port #{conflict.fetch("hostPort")}/#{conflict.fetch("protocol")}",
                          code: "NodePorts", details: {"port" => conflict})
         end
 
@@ -582,8 +589,8 @@ module Rubernetes
                 next unless Helpers.volume_source(existing_volume, candidate, context) == source
                 next if Helpers.volume_read_only?(volume) && Helpers.volume_read_only?(existing_volume)
 
-                return Helpers.reject("node has a conflicting volume #{source.fetch('name')}", code: "VolumeRestrictions",
-                                      details: {"volume" => source})
+                return Helpers.reject("node has a conflicting volume #{source.fetch("name")}", code: "VolumeRestrictions",
+                                                                                               details: {"volume" => source})
               end
             end
           end
@@ -616,19 +623,17 @@ module Rubernetes
         def call(pod, node, context = nil)
           pod.volumes.each do |volume|
             pv = Helpers.pv_for(volume, pod, context)
-            affinity = if pv
-                         Support.value(pv, "nodeAffinity", Support.value(Support.value(pv, "spec", {}), "nodeAffinity", nil))
-                       end
+            affinity = (Support.value(pv, "nodeAffinity", Support.value(Support.value(pv, "spec", {}), "nodeAffinity", nil)) if pv)
             unless Helpers.node_affinity_matches?(affinity, node)
               return Helpers.reject("node does not satisfy persistent volume topology", code: "VolumeZone",
-                                    details: {"node" => node.name})
+                                                                                        details: {"node" => node.name})
             end
 
             zones = volume_zones(volume, pv, context)
             next if zones.empty? || zones.any? { |zone| zone_matches_node?(zone, node) }
 
             return Helpers.reject("node is outside the volume topology", code: "VolumeZone",
-                                  details: {"zones" => zones})
+                                                                         details: {"zones" => zones})
           end
           true
         end
@@ -656,6 +661,7 @@ module Rubernetes
 
         def zone_matches_node?(zone, node)
           return true if node.labels.values.map(&:to_s).include?(zone.to_s)
+
           node.labels.any? { |key, value| key.to_s.match?(/(?:zone|region)$/) && value.to_s == zone.to_s }
         end
       end
@@ -738,7 +744,7 @@ module Rubernetes
             next if limit.nil? || counts[driver] + count <= limit
 
             return Helpers.reject(REASON, code: "NodeVolumeLimits",
-                                  details: {"driver" => driver, "used" => counts[driver], "requested" => count, "limit" => limit})
+                                          details: {"driver" => driver, "used" => counts[driver], "requested" => count, "limit" => limit})
           end
           true
         end
@@ -759,15 +765,21 @@ module Rubernetes
           return @index if @index_key.equal?(data)
 
           name = ->(object) { Support.value(Support.value(object, "metadata", {}), "name", Support.value(object, "name", "")).to_s }
-          namespace = ->(object) { Support.value(Support.value(object, "metadata", {}), "namespace", Support.value(object, "namespace", "")).to_s }
+          namespace = lambda { |object|
+            Support.value(Support.value(object, "metadata", {}), "namespace", Support.value(object, "namespace", "")).to_s
+          }
           items = ->(*keys) { Helpers.items(Helpers.collection(data, *keys)) }
           @index = {
             csi_nodes: items.call("csiNodes").to_h { |object| [name.call(object), object] },
             csi_drivers: items.call("csiDrivers").to_h { |object| [name.call(object), object] },
-            claims: items.call("persistentVolumeClaims", "pvcs", "claims").to_h { |object| ["#{namespace.call(object)}/#{name.call(object)}", object] },
+            claims: items.call("persistentVolumeClaims", "pvcs", "claims").to_h do |object|
+              ["#{namespace.call(object)}/#{name.call(object)}", object]
+            end,
             volumes: items.call("persistentVolumes", "pvs", "volumes").to_h { |object| [name.call(object), object] },
             classes: items.call("storageClasses").to_h { |object| [name.call(object), object] },
-            attachments: items.call("volumeAttachments").group_by { |object| Support.value(Support.value(object, "spec", {}), "nodeName", "").to_s }
+            attachments: items.call("volumeAttachments").group_by do |object|
+              Support.value(Support.value(object, "spec", {}), "nodeName", "").to_s
+            end
           }
           @index_key = data
           @index
@@ -792,7 +804,10 @@ module Rubernetes
 
             pvc = index[:claims]["#{pod.namespace}/#{claim_name}"]
             if pvc.nil?
-              raise ClaimNotFound, %(looking up PVC #{pod.namespace}/#{claim_name}: persistentvolumeclaim "#{claim_name}" not found) if new_pod
+              if new_pod
+                raise ClaimNotFound,
+                      %(looking up PVC #{pod.namespace}/#{claim_name}: persistentvolumeclaim "#{claim_name}" not found)
+              end
 
               next
             end
@@ -807,7 +822,9 @@ module Rubernetes
         # ephemeral.VolumeIsForPod.
         def owned_by_pod!(pod, pvc)
           metadata = Support.value(pvc, "metadata", {})
-          owner = Array(Support.value(metadata, "ownerReferences", [])).find { |reference| Support.value(reference, "controller", false) == true }
+          owner = Array(Support.value(metadata, "ownerReferences", [])).find do |reference|
+            Support.value(reference, "controller", false) == true
+          end
           return if owner && Support.value(owner, "uid", "").to_s == pod.uid.to_s
 
           raise ArgumentError, "PVC #{Support.value(metadata, "namespace", "")}/#{Support.value(metadata, "name", "")} was not created for pod " \
@@ -845,7 +862,8 @@ module Rubernetes
         def driver_from_class(csi_node, pvc, index)
           spec = Support.value(pvc, "spec", {})
           class_name = Support.value(spec, "storageClassName", nil)
-          class_name ||= Support.value(Support.value(Support.value(pvc, "metadata", {}), "annotations", {}), "volume.beta.kubernetes.io/storage-class", nil)
+          class_name ||= Support.value(Support.value(Support.value(pvc, "metadata", {}), "annotations", {}),
+                                       "volume.beta.kubernetes.io/storage-class", nil)
           return [nil, nil] if class_name.to_s.empty?
 
           storage_class = index[:classes][class_name.to_s]
@@ -872,7 +890,8 @@ module Rubernetes
             id.start_with?("aws://") ? id.split("/").last : id
           when "gcePersistentDisk"
             labels = Support.value(Support.value(pv, "metadata", {}), "labels", {}) if pv
-            zone = pv && (Support.value(labels, "topology.kubernetes.io/zone", nil) || Support.value(labels, "failure-domain.beta.kubernetes.io/zone", nil))
+            zone = pv && (Support.value(labels, "topology.kubernetes.io/zone",
+                                        nil) || Support.value(labels, "failure-domain.beta.kubernetes.io/zone", nil))
             zones = zone.to_s.split("__")
             disk = Support.value(source, "pdName", "")
             if zones.length > 1
@@ -904,7 +923,9 @@ module Rubernetes
           return true unless Support.value(Support.value(csi_driver, "spec", {}), "preventPodSchedulingIfMissing", false) == true
           return false if csi_node.nil?
 
-          Array(Support.value(Support.value(csi_node, "spec", {}), "drivers", [])).any? { |entry| Support.value(entry, "name", "").to_s == driver }
+          Array(Support.value(Support.value(csi_node, "spec", {}), "drivers", [])).any? do |entry|
+            Support.value(entry, "name", "").to_s == driver
+          end
         end
 
         # getNodeVolumeAttachmentInfo.
@@ -931,6 +952,7 @@ module Rubernetes
           pod.volumes.each do |volume|
             driver = Helpers.volume_driver(volume, pod, context)
             next if driver.empty?
+
             requested[driver] += 1
           end
           counts = Helpers.node_volume_counts(node, context)
@@ -939,8 +961,8 @@ module Rubernetes
             next if limit.nil? || counts.fetch(driver, 0) + amount <= limit
 
             return Helpers.reject(REASON, code: "NodeVolumeLimits",
-                                  details: {"driver" => driver, "used" => counts.fetch(driver, 0),
-                                            "requested" => amount, "limit" => limit})
+                                          details: {"driver" => driver, "used" => counts.fetch(driver, 0),
+                                                    "requested" => amount, "limit" => limit})
           end
           true
         end
@@ -967,25 +989,34 @@ module Rubernetes
 
             claim_name = Support.value(claim_ref, "claimName", "").to_s
             next if claim_name.empty?
+
             claim = Helpers.lookup_resource(claims, claim_name, namespace: pod.namespace)
-            return Helpers.reject("persistent volume claim #{claim_name.inspect} was not found", code: "VolumeBinding",
-                                  details: {"claimName" => claim_name}) if claim.nil?
+            if claim.nil?
+              return Helpers.reject("persistent volume claim #{claim_name.inspect} was not found", code: "VolumeBinding",
+                                                                                                   details: {"claimName" => claim_name})
+            end
 
             bound_name = Support.value(claim, "volumeName", Support.value(Support.value(claim, "spec", {}), "volumeName", nil))
             if bound_name && !bound_name.to_s.empty?
               pv = Helpers.lookup_resource(volumes, bound_name)
               return Helpers.reject("persistent volume #{bound_name.inspect} is unavailable", code: "VolumeBinding") unless pv
+
               phase = Support.value(pv, "phase", Support.value(Support.value(pv, "status", {}), "phase", "Available")).to_s
-              return Helpers.reject("persistent volume #{bound_name.inspect} is not bound", code: "VolumeBinding") if phase == "Released" || phase == "Failed"
+              if %w[Released Failed].include?(phase)
+                return Helpers.reject("persistent volume #{bound_name.inspect} is not bound",
+                                      code: "VolumeBinding")
+              end
+
               next
             end
 
             next if matching_volume?(claim, volumes, node)
+
             mode = storage_binding_mode(claim, Helpers.volume_data(context))
             next if mode == "WaitForFirstConsumer" && dynamic_provisioning_available?(claim, Helpers.volume_data(context))
 
             return Helpers.reject("no persistent volume matches claim #{claim_name.inspect}", code: "VolumeBinding",
-                                  details: {"claimName" => claim_name})
+                                                                                              details: {"claimName" => claim_name})
           end
           true
         end
@@ -1010,6 +1041,7 @@ module Rubernetes
           Helpers.items(volumes).any? do |pv|
             phase = Support.value(pv, "phase", Support.value(Support.value(pv, "status", {}), "phase", "Available")).to_s
             next false unless phase == "Available"
+
             pv_spec = Support.value(pv, "spec", {})
             capacity = Support.value(pv, "capacityBytes",
                                      Support.value(pv, "capacity",
@@ -1030,14 +1062,17 @@ module Rubernetes
         end
 
         def storage_binding_mode(claim, data)
-          class_name = Support.value(claim, "storageClassName", Support.value(Support.value(claim, "spec", {}), "storageClassName", "")).to_s
+          class_name = Support.value(claim, "storageClassName",
+                                     Support.value(Support.value(claim, "spec", {}), "storageClassName", "")).to_s
           classes = Helpers.collection(data, "storageClasses", "classes")
           klass = Helpers.lookup_resource(classes, class_name)
-          Support.value(klass, "volumeBindingMode", Support.value(klass && Support.value(klass, "spec", {}), "volumeBindingMode", "Immediate")).to_s
+          Support.value(klass, "volumeBindingMode",
+                        Support.value(klass && Support.value(klass, "spec", {}), "volumeBindingMode", "Immediate")).to_s
         end
 
         def dynamic_provisioning_available?(claim, data)
-          class_name = Support.value(claim, "storageClassName", Support.value(Support.value(claim, "spec", {}), "storageClassName", "")).to_s
+          class_name = Support.value(claim, "storageClassName",
+                                     Support.value(Support.value(claim, "spec", {}), "storageClassName", "")).to_s
           classes = Helpers.collection(data, "storageClasses", "classes")
           klass = Helpers.lookup_resource(classes, class_name)
           provisioner = Support.value(klass, "provisioner", Support.value(Support.value(klass, "spec", {}), "provisioner", "")).to_s
@@ -1053,6 +1088,7 @@ module Rubernetes
 
             topology_key = Support.value(constraint, "topologyKey", "").to_s
             next if topology_key.empty?
+
             candidate_domain = node.labels[topology_key]
             return Helpers.reject("node lacks topology key #{topology_key.inspect}", code: "PodTopologySpread") if candidate_domain.nil?
 
@@ -1066,9 +1102,9 @@ module Rubernetes
             max_skew = Integer(Support.value(constraint, "maxSkew", 1) || 1)
             if counts.fetch(candidate_domain) + 1 - minimum > max_skew
               return Helpers.reject("node would violate topology spread maxSkew", code: "PodTopologySpread",
-                                    details: {"topologyKey" => topology_key, "domain" => candidate_domain,
-                                              "skew" => counts.fetch(candidate_domain) + 1 - minimum,
-                                              "maxSkew" => max_skew})
+                                                                                  details: {"topologyKey" => topology_key, "domain" => candidate_domain,
+                                                                                            "skew" => counts.fetch(candidate_domain) + 1 - minimum,
+                                                                                            "maxSkew" => max_skew})
             end
           rescue ArgumentError, TypeError
             return Helpers.reject("pod topology spread constraint is invalid", code: "PodTopologySpread")
@@ -1083,6 +1119,7 @@ module Rubernetes
         def matching_count(domain, topology_key, selector, pod, context)
           Helpers.context_pods(context).count do |existing|
             next false if existing.uid == pod.uid && !pod.uid.empty?
+
             existing_node = Helpers.node_for_pod(existing, context)
             existing_node && existing_node.labels[topology_key] == domain &&
               Helpers.namespace_matches?(existing, {"labelSelector" => selector}, pod, context) &&
@@ -1187,8 +1224,8 @@ module Rubernetes
           end
           return true if untolerated.empty?
 
-          Helpers.reject("pod does not tolerate node taint #{Support.value(untolerated.first, 'key', '')}", code: "TaintToleration",
-                         details: {"taints" => untolerated})
+          Helpers.reject("pod does not tolerate node taint #{Support.value(untolerated.first, "key", "")}", code: "TaintToleration",
+                                                                                                            details: {"taints" => untolerated})
         end
 
         alias filter call
@@ -1281,7 +1318,7 @@ module Rubernetes
 
         # PreFilter: the Pod's requirements, as a FeatureSet.
         def requirements(pod)
-          spec = pod.respond_to?(:spec) ? pod.spec : Support.snapshot((pod["spec"] || {}))
+          spec = pod.respond_to?(:spec) ? pod.spec : Support.snapshot(pod["spec"] || {})
           @mutex.synchronize do
             cached = @requirements[spec]
             return cached if cached

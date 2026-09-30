@@ -17,38 +17,15 @@ require "rubernetes/rubectl"
 
 class RubectlClientTest < Minitest::Test
   class RecordingHTTP
-    attr_reader :requests, :use_ssl, :verify_mode, :ca_file, :cert, :key, :cert_store
+    attr_accessor :use_ssl, :verify_mode, :ca_file, :cert, :key, :cert_store
+    attr_reader :requests
 
     def initialize(_host, _port)
       @requests = []
     end
 
-    def use_ssl=(value)
-      @use_ssl = value
-    end
-
     def use_ssl?
       @use_ssl == true
-    end
-
-    def verify_mode=(value)
-      @verify_mode = value
-    end
-
-    def ca_file=(value)
-      @ca_file = value
-    end
-
-    def cert_store=(value)
-      @cert_store = value
-    end
-
-    def cert=(value)
-      @cert = value
-    end
-
-    def key=(value)
-      @key = value
     end
 
     def request(request)
@@ -86,7 +63,7 @@ class RubectlClientTest < Minitest::Test
   end
 
   class BlockingStreamingHTTP
-    attr_reader :close_calls
+    attr_reader :close_calls, :started
 
     def initialize
       @close_calls = 0
@@ -95,8 +72,6 @@ class RubectlClientTest < Minitest::Test
       @started = Queue.new
       @closed = false
     end
-
-    attr_reader :started
 
     def request(_request)
       @started << true
@@ -217,18 +192,16 @@ class RubectlClientTest < Minitest::Test
     )
     stream_error = nil
     worker = Thread.new do
-      begin
-        client.stream("GET", "/watch") { |_chunk| }
-      rescue StandardError => error
-        stream_error = error
-      end
+      client.stream("GET", "/watch") { |_chunk| }
+    rescue StandardError => error
+      stream_error = error
     end
 
     Timeout.timeout(1) { http.started.pop }
     Timeout.timeout(1) { client.close }
     worker.join(1)
 
-    refute worker.alive?, "closing the client must interrupt the blocking stream"
+    refute_predicate worker, :alive?, "closing the client must interrupt the blocking stream"
     assert_instance_of(Rubernetes::Client::TransportError, stream_error)
     assert_equal 1, http.close_calls
   ensure
@@ -284,8 +257,10 @@ class RubectlClientTest < Minitest::Test
 
     resource.fail_close = false
     client.close
+
     assert_equal 2, resource.close_calls
     client.send(:unregister_stream, session)
+
     assert_empty client.instance_variable_get(:@active_streams)
   end
 
@@ -314,13 +289,14 @@ class RubectlClientTest < Minitest::Test
     closer = Thread.new { client.close }
 
     sleep 0.02
-    assert closer.alive?, "close must wait for an in-flight stream factory"
+
+    assert_predicate closer, :alive?, "close must wait for an in-flight stream factory"
     release_factory << true
     closer.join(1)
     worker.join(1)
 
-    refute closer.alive?
-    refute worker.alive?
+    refute_predicate closer, :alive?
+    refute_predicate worker, :alive?
     assert_instance_of Rubernetes::Client::TransportError, stream_error
     assert_empty client.instance_variable_get(:@active_streams)
   ensure
@@ -386,6 +362,7 @@ class RubectlClientTest < Minitest::Test
         stderr: stderr,
         client: client
       )
+
       assert_equal(0, status)
     end
 
@@ -452,8 +429,8 @@ class RubectlClientTest < Minitest::Test
       def request(request)
         @requests << request
         response = Struct.new(:code, :body, :headers) do
-          def each_header
-            headers.each { |name, value| yield name, value }
+          def each_header(&)
+            headers.each(&)
           end
         end
         response.new("302", "", {"location" => "https://other.example.test/"})
@@ -499,6 +476,7 @@ class RubectlClientTest < Minitest::Test
     event = JSON.generate("type" => "ADDED", "object" => {"kind" => "Pod"})
     rest = RecordingRest.new(raw_body: "#{event}\n")
     client = Rubernetes::Client::KubernetesClient.new(rest_client: rest, context: {namespace: "prod"})
+
     assert_equal(["ADDED"], client.watch_events("pods").map { |item| item.fetch("type") })
 
     malformed = Rubernetes::Client::KubernetesClient.new(
@@ -538,6 +516,7 @@ class RubectlClientTest < Minitest::Test
         sandbox_factory: ->(_options) { sandbox },
         stdout: StringIO.new
       )
+
       assert_equal(0, status)
     end
 
@@ -618,6 +597,7 @@ class RubectlClientTest < Minitest::Test
       context: {server: "http://127.0.0.1", bearer_token: "local-development-token"},
       http: loopback_http
     ).request("GET", "/version")
+
     assert_equal("Bearer local-development-token", loopback_http.requests.fetch(0)["Authorization"])
   end
 
@@ -725,11 +705,13 @@ class RubectlClientTest < Minitest::Test
 
     client.request("GET", "/api/v1", query: {"labelSelector" => "app=web\r\nX-Test: injected"})
     request_path = http.requests.fetch(0).path
+
     refute_match(/[\r\n]/, request_path)
     assert_includes(request_path, "%0D%0A")
 
     client.request("GET", "/api/v1?watch=false&resourceVersion=1", query: {"watch" => "true"})
     authoritative_path = http.requests.fetch(1).path
+
     assert_equal(["true"], URI.decode_www_form(URI.parse(authoritative_path).query).to_h.values_at("watch"))
     assert_includes(authoritative_path, "resourceVersion=1")
   end
@@ -740,8 +722,8 @@ class RubectlClientTest < Minitest::Test
       def request(request)
         @requests << request
         response = Struct.new(:code, :body, :headers) do
-          def each_header
-            headers.each { |name, value| yield name, value }
+          def each_header(&)
+            headers.each(&)
           end
         end
         response.new("307", "redirected", {"location" => "https://attacker.example.test/"})
@@ -829,7 +811,7 @@ class RubectlClientTest < Minitest::Test
     stderr = StringIO.new
 
     status = Rubernetes::Rubectl::CLI.run(
-      ["get", "pods"],
+      %w[get pods],
       client: client,
       stdout: stdout,
       stderr: stderr
@@ -859,6 +841,7 @@ class RubectlClientTest < Minitest::Test
         stdout: StringIO.new,
         stderr: manifest_stderr
       )
+
       assert_equal(Rubernetes::Rubectl::CLI::EX_DATAERR, manifest_status)
     end
     refute_includes(manifest_stderr.string, environment_secret)
@@ -876,11 +859,12 @@ class RubectlClientTest < Minitest::Test
     watch_stdout = StringIO.new
     watch_stderr = StringIO.new
     watch_status = Rubernetes::Rubectl::CLI.run(
-      ["watch", "pods"],
+      %w[watch pods],
       client: watch_client,
       stdout: watch_stdout,
       stderr: watch_stderr
     )
+
     assert_equal(Rubernetes::Rubectl::CLI::EX_DATAERR, watch_status)
     assert_empty(watch_stdout.string)
     refute_includes(watch_stderr.string, token)
@@ -906,6 +890,7 @@ class RubectlClientTest < Minitest::Test
         stdout: StringIO.new,
         stderr: stderr
       )
+
       assert_equal(Rubernetes::Rubectl::CLI::EX_DATAERR, status)
     end
     assert_equal(0, sandbox_calls)
@@ -918,6 +903,7 @@ class RubectlClientTest < Minitest::Test
       stdout: StringIO.new,
       stderr: usage_stderr
     )
+
     assert_equal(Rubernetes::Rubectl::CLI::EX_USAGE, usage_status)
     assert_includes(usage_stderr.string, "raw requires METHOD PATH")
   end
@@ -1023,37 +1009,45 @@ class RubectlClientTest < Minitest::Test
           chdir: project_root
         )
         transcript << stdout << stderr
-        assert(status.success?, "rubectl #{arguments.join(" ")} failed with #{status.exitstatus}: #{stderr}")
+
+        assert_predicate(status, :success?, "rubectl #{arguments.join(" ")} failed with #{status.exitstatus}: #{stderr}")
         assert_empty(stderr)
         stdout
       end
 
       version = JSON.parse(run.call("raw", "GET", "/version"))
+
       assert(version.key?("gitVersion"))
 
       # NamespaceLifecycle admission in the real API server process.
       namespace_path = File.join(directory, "d03-namespace.json")
       File.write(namespace_path, JSON.generate("apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "d03"}))
+
       assert_equal("d03", JSON.parse(run.call("create", "-f", namespace_path)).dig("metadata", "name"))
 
       created_json = JSON.parse(run.call("create", "-f", json_path))
+
       assert_equal("json-created", created_json.dig("metadata", "name"))
       created_yaml = JSON.parse(run.call("create", "-f", yaml_path))
+
       assert_equal("yaml", created_yaml.dig("data", "format"))
 
       applied = JSON.parse(run.call("apply", "-f", apply_path))
+
       assert_equal("apply", applied.dig("data", "operation"))
       fetched = JSON.parse(run.call("get", "configmaps", "json-created", "-o", "json"))
+
       assert_equal("json", fetched.dig("data", "format"))
 
       patched = JSON.parse(run.call(
         "patch", "configmaps/json-created", "--type", "merge",
         "--patch", '{"metadata":{"labels":{"e2e":"true"}}}'
       ))
+
       assert_equal("true", patched.dig("metadata", "labels", "e2e"))
 
       watch_path = "/api/v1/namespaces/d03/configmaps?sendInitialEvents=true&resourceVersionMatch=NotOlderThan"
-      watch_input = watch_output = watch_error = watch_wait = nil
+      watch_output = watch_error = watch_wait = nil
       begin
         watch_input, watch_output, watch_error, watch_wait = Open3.popen3(
           {"RUBYLIB" => File.join(project_root, "lib"), "D03_PARENT_SECRET" => parent_secret},
@@ -1084,9 +1078,11 @@ class RubectlClientTest < Minitest::Test
       end
 
       ruby_created = JSON.parse(run.call("apply", "--allow-code", "-f", ruby_path))
+
       assert_equal("false", ruby_created.dig("data", "PARENT_SECRET_VISIBLE"))
 
       deleted = JSON.parse(run.call("delete", "configmaps", "json-created"))
+
       assert_equal("Status", deleted["kind"])
       assert_equal("Success", deleted["status"])
       assert_equal("json-created", deleted.dig("details", "name"))
@@ -1099,6 +1095,7 @@ class RubectlClientTest < Minitest::Test
         chdir: project_root
       )
       transcript << missing_stdout << missing_stderr
+
       assert_equal(1, missing_status.exitstatus)
       assert_empty(missing_stdout)
       assert_includes(missing_stderr, '"reason":"NotFound"')
@@ -1111,6 +1108,7 @@ class RubectlClientTest < Minitest::Test
         chdir: project_root
       )
       transcript << usage_stdout << usage_stderr
+
       assert_equal(Rubernetes::Rubectl::CLI::EX_USAGE, usage_status.exitstatus)
       assert_empty(usage_stdout)
       assert_includes(usage_stderr, "raw requires METHOD PATH")
@@ -1123,6 +1121,7 @@ class RubectlClientTest < Minitest::Test
         chdir: project_root
       )
       transcript << config_stdout << config_stderr
+
       assert_equal(Rubernetes::Rubectl::CLI::EX_CONFIG, config_status.exitstatus)
       assert_empty(config_stdout)
       assert_includes(config_stderr, "cannot read kubeconfig")
@@ -1214,7 +1213,7 @@ class RubectlClientTest < Minitest::Test
       certificate.add_extension(extensions.create_extension("basicConstraints", "CA:TRUE", true))
       certificate.add_extension(extensions.create_extension("keyUsage", "keyCertSign,digitalSignature", true))
     end
-    certificate.sign(key, OpenSSL::Digest::SHA256.new)
+    certificate.sign(key, OpenSSL::Digest.new("SHA256"))
     [certificate, key]
   end
 end

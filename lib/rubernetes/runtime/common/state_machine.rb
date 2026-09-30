@@ -90,9 +90,7 @@ module Rubernetes
       def transition(to, owned_resources: @owned_resources)
         to = to.to_s
         self.class.validate!(@state, to)
-        if to == "Running" && @gate_released
-          raise InvalidTransition, "workload gate can only be released once"
-        end
+        raise InvalidTransition, "workload gate can only be released once" if to == "Running" && @gate_released
 
         from = @state
         @state = to

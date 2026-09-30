@@ -12,6 +12,7 @@ class M4ProxyPropertyTest < Minitest::Test
     key = Rubernetes::Proxy::ConnectionKey.new(protocol: "TCP", source_ip: "192.0.2.1", source_port: 321,
                                                destination_ip: "10.96.0.1", destination_port: 80)
     expected = hasher.select(key, endpoints).identity
+
     20.times do
       assert_equal expected, hasher.select(key, endpoints.shuffle).identity
     end
@@ -27,14 +28,18 @@ class M4ProxyPropertyTest < Minitest::Test
     key = Rubernetes::Proxy::ConnectionKey.new(protocol: "UDP", source_ip: "192.0.2.4", source_port: 55,
                                                destination_ip: "10.96.0.4", destination_port: 53)
     first = table.find_or_select(key, service_key: "default/dns", backends: endpoints,
-                                 selector: ->(items) { hasher.select(key, items) }, now: clock)
+                                      selector: ->(items) { hasher.select(key, items) }, now: clock)
     clock += 1
     second = table.find_or_select(key, service_key: "default/dns", backends: endpoints,
-                                  selector: ->(items) { hasher.select(key, items) }, now: clock)
+                                       selector: ->(items) { hasher.select(key, items) }, now: clock)
+
     assert_equal first.backend.identity, second.backend.identity
     table.remove_backend(first.backend)
-    replacement = table.find_or_select(key, service_key: "default/dns", backends: endpoints.reject { |item| item.identity == first.backend.identity },
-                                        selector: ->(items) { hasher.select(key, items) }, now: clock)
+    replacement = table.find_or_select(key, service_key: "default/dns", backends: endpoints.reject do |item|
+      item.identity == first.backend.identity
+    end,
+                                            selector: ->(items) { hasher.select(key, items) }, now: clock)
+
     refute_equal first.backend.identity, replacement.backend.identity
   end
 
@@ -49,10 +54,11 @@ class M4ProxyPropertyTest < Minitest::Test
     nftables = Rubernetes::Proxy::NftablesBackend.new
     ebpf.apply(compiled)
     nftables.apply(compiled)
+
     assert_equal ebpf.digest, nftables.digest
     assert_equal ebpf.rules.map(&:to_h), nftables.rules.map(&:to_h)
-    refute ebpf.ready?
-    refute nftables.ready?
+    refute_predicate ebpf, :ready?
+    refute_predicate nftables, :ready?
   end
 
   # An EndpointSlice port is named after the *Service* port, never after the
@@ -73,6 +79,7 @@ class M4ProxyPropertyTest < Minitest::Test
     # slice of this Service port and must not be routed to.
     non_matching = Rubernetes::Proxy::Endpoint.new(address: "10.0.0.50", port: 8080, port_name: "web")
     rule = compiler.compile(service, endpoints: [matching, non_matching]).rules.first
+
     assert_equal [matching.identity], rule.backends.map(&:identity)
   end
 
@@ -85,6 +92,7 @@ class M4ProxyPropertyTest < Minitest::Test
     matching = Rubernetes::Proxy::Endpoint.new(address: "10.0.0.52", port: 8080)
     non_matching = Rubernetes::Proxy::Endpoint.new(address: "10.0.0.53", port: 8080, port_name: "http")
     rule = compiler.compile(service, endpoints: [matching, non_matching]).rules.first
+
     assert_equal [matching.identity], rule.backends.map(&:identity)
   end
 
@@ -96,20 +104,21 @@ class M4ProxyPropertyTest < Minitest::Test
     service = Rubernetes::Proxy::Service.new(
       "metadata" => {"name" => "sticky"},
       "spec" => {"clusterIP" => "10.96.0.60", "sessionAffinity" => "ClientIP",
-                  "sessionAffinityConfig" => {"clientIP" => {"timeoutSeconds" => 2}},
-                  "ports" => [{"port" => 80, "targetPort" => 8080}]}
+                 "sessionAffinityConfig" => {"clientIP" => {"timeoutSeconds" => 2}},
+                 "ports" => [{"port" => 80, "targetPort" => 8080}]}
     )
     table = Rubernetes::Proxy::ConntrackTable.new(clock: -> { now })
     key = Rubernetes::Proxy::ConnectionKey.new(protocol: "TCP", source_ip: "192.0.2.60", source_port: 1,
                                                destination_ip: "10.96.0.60", destination_port: 80)
     selector = ->(items) { items.first }
     first = table.find_or_select(key, service_key: service.key, backends: endpoints, selector: selector,
-                                 session_affinity: service.session_affinity, source_ip: "192.0.2.60",
-                                 timeout_seconds: service.session_affinity_timeout_seconds, now: now)
+                                      session_affinity: service.session_affinity, source_ip: "192.0.2.60",
+                                      timeout_seconds: service.session_affinity_timeout_seconds, now: now)
     now = 3.0
     second = table.find_or_select(key, service_key: service.key, backends: endpoints, selector: ->(items) { items.last },
-                                  session_affinity: service.session_affinity, source_ip: "192.0.2.60",
-                                  timeout_seconds: service.session_affinity_timeout_seconds, now: now)
+                                       session_affinity: service.session_affinity, source_ip: "192.0.2.60",
+                                       timeout_seconds: service.session_affinity_timeout_seconds, now: now)
+
     refute_equal first.created_at, second.created_at
     assert_equal endpoints.last.identity, second.backend.identity
   end
@@ -118,11 +127,12 @@ class M4ProxyPropertyTest < Minitest::Test
     service = Rubernetes::Proxy::Service.new(
       "metadata" => {"name" => "dual-node"},
       "spec" => {"type" => "NodePort", "clusterIP" => "10.96.0.61", "clusterIPs" => ["10.96.0.61", "fd00::61"],
-                  "ipFamilies" => ["IPv4", "IPv6"], "ports" => [{"port" => 80, "nodePort" => 30061}]}
+                 "ipFamilies" => %w[IPv4 IPv6], "ports" => [{"port" => 80, "nodePort" => 30_061}]}
     )
     rule = Rubernetes::Proxy::RuleCompiler.new.compile(service, endpoints: []).rules.find { |entry| entry.kind == "NodePort" }
     backend = Rubernetes::Proxy::NftablesBackend.new
     backend.apply(Rubernetes::Proxy::RuleDiff.new(added: [rule], from_revision: 0, to_revision: 1))
+
     assert_equal "inet", backend.messages.first.fetch("family")
   end
 end

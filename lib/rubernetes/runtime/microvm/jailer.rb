@@ -36,7 +36,8 @@ module Rubernetes
           end
         end
 
-        def initialize(artifacts:, chroot_base:, cgroup_root: "/sys/fs/cgroup", parent_cgroup: "rubernetes/microvm", pidfd: nil, logger: nil)
+        def initialize(artifacts:, chroot_base:, cgroup_root: "/sys/fs/cgroup", parent_cgroup: "rubernetes/microvm", pidfd: nil,
+                       logger: nil)
           @artifacts = artifacts
           @chroot_base = File.expand_path(chroot_base)
           @cgroup_root = cgroup_root
@@ -108,7 +109,12 @@ module Rubernetes
           else
             stat = File.stat(host_path)
             raise JailerError, "read-only input #{host_path} is writable by group/other" unless (stat.mode & 0o022).zero?
-            raise JailerError, "read-only input #{host_path} is not readable by uid #{uid}" unless (stat.mode & 0o004) == 0o004 || acl_grants_read?(host_path, uid)
+            unless (stat.mode & 0o004) == 0o004 || acl_grants_read?(
+              host_path, uid
+            )
+              raise JailerError,
+                    "read-only input #{host_path} is not readable by uid #{uid}"
+            end
 
             begin
               File.link(host_path, target)
@@ -167,7 +173,10 @@ module Rubernetes
             status = File.read("/proc/#{pid}/status")
             uids = status[/^Uid:\s+(.+)$/, 1].to_s.split.map(&:to_i)
             break if uids.uniq == [uid] && status[/^Name:\s+(.+)$/, 1].to_s.start_with?("firecracker")
-            raise JailerError, "VMM did not drop to uid #{uid} within #{timeout}s (uid #{uids.inspect})" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+            if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+              raise JailerError,
+                    "VMM did not drop to uid #{uid} within #{timeout}s (uid #{uids.inspect})"
+            end
 
             sleep 0.005
           end
@@ -190,7 +199,10 @@ module Rubernetes
           loop do
             status = File.read("/proc/#{instance.vmm_pid}/status")
             break if status[/^Seccomp:\s+(\d)/, 1] == "2" && status[/^NoNewPrivs:\s+(\d)/, 1] == "1"
-            raise JailerError, "VMM is not under seccomp filter mode with no_new_privs" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+            if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+              raise JailerError,
+                    "VMM is not under seccomp filter mode with no_new_privs"
+            end
 
             sleep 0.01
           end
@@ -229,7 +241,10 @@ module Rubernetes
         def wait_exit(instance, timeout: 10.0)
           deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
           while alive?(instance)
-            raise JailerError, "VMM #{instance.vmm_pid} did not exit within #{timeout}s" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+            if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+              raise JailerError,
+                    "VMM #{instance.vmm_pid} did not exit within #{timeout}s"
+            end
 
             sleep 0.02
           end
@@ -280,7 +295,10 @@ module Rubernetes
             end
             _pid, status = Process.waitpid2(jailer_pid, Process::WNOHANG)
             raise JailerError, "jailer exited before Firecracker started (status #{status.exitstatus.inspect})" if status
-            raise JailerError, "Firecracker did not report its PID within #{timeout}s" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+            if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+              raise JailerError,
+                    "Firecracker did not report its PID within #{timeout}s"
+            end
 
             sleep 0.01
           end
@@ -290,7 +308,10 @@ module Rubernetes
           deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
           until File.socket?(path)
             raise JailerError, "Firecracker exited before opening its API socket" unless File.exist?("/proc/#{pid}")
-            raise JailerError, "Firecracker did not open #{path} within #{timeout}s" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+            if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+              raise JailerError,
+                    "Firecracker did not open #{path} within #{timeout}s"
+            end
 
             sleep 0.005
           end
@@ -325,7 +346,9 @@ module Rubernetes
           output, status = Open3.capture2("getfacl", "--omit-header", "--numeric", "--absolute-names", path)
           return false unless status.success?
 
-          output.lines.any? { |line| line.strip.match?(/\Auser:#{Integer(uid)}:r/) } && output.lines.none? { |line| line.strip.match?(/\Amask::-/) }
+          output.lines.any? { |line| line.strip.match?(/\Auser:#{Integer(uid)}:r/) } && output.lines.none? do |line|
+            line.strip.match?(/\Amask::-/)
+          end
         rescue SystemCallError
           false
         end

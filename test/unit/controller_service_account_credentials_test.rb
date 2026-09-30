@@ -53,7 +53,10 @@ class ControllerServiceAccountCredentialsTest < Minitest::Test
     @root = Root.new
     @contexts = []
     @credentials = Credentials.new(root_client: @root, clock: -> { @now },
-                                   client_factory: ->(context) { @contexts << context; context })
+                                   client_factory: lambda { |context|
+                                     @contexts << context
+                                     context
+                                   })
   end
 
   def test_upstream_client_names
@@ -67,6 +70,7 @@ class ControllerServiceAccountCredentialsTest < Minitest::Test
 
   def test_a_controller_client_uses_its_service_account_token
     context = @credentials.client_for("deployment-controller")
+
     assert_equal "https://127.0.0.1:6443", context.server
     assert_equal "/pki/ca.crt", context.ca_file
     assert_nil context.client_certificate_file, "the controller manager's certificate is not presented"
@@ -78,10 +82,12 @@ class ControllerServiceAccountCredentialsTest < Minitest::Test
     assert_same context, @credentials.client_for("deployment-controller"), "one client per service account"
 
     @now += 3600 * 0.79
+
     assert_equal "token-deployment-controller-1", context.bearer_token
     @now += 3600 * 0.02
+
     assert_equal "token-deployment-controller-2", context.bearer_token, "refreshed at 80% of its lifetime"
-    assert_equal 1, @root.calls.count { |call| call[0] == :create && call[1] == "ServiceAccount" }
+    assert_equal(1, @root.calls.count { |call| call[0] == :create && call[1] == "ServiceAccount" })
   end
 
   def test_a_real_http_client_sends_the_current_token
@@ -89,8 +95,10 @@ class ControllerServiceAccountCredentialsTest < Minitest::Test
     context = Credentials::TokenContext.new(@root.context, -> { token })
     client = Rubernetes::Client::KubernetesClient.new(context: context)
     headers = client.rest_client.send(:build_headers, {}, nil)
+
     assert_equal "Bearer first", headers["Authorization"]
     token = "second"
+
     assert_equal "Bearer second", client.rest_client.send(:build_headers, {}, nil)["Authorization"]
   end
 
@@ -101,6 +109,7 @@ class ControllerServiceAccountCredentialsTest < Minitest::Test
     credentials = Credentials.new(root_client: @root, clock: -> { @now })
     client = credentials.client_for("deployment-controller")
     headers = client.rest_client.send(:build_headers, {}, nil)
+
     assert_equal "Bearer token-deployment-controller-1", headers["Authorization"]
     assert_match %r{\A[^/]+/v1\.36\.2 \(linux/[a-z0-9]+\) kubernetes/unknown/deployment-controller\z}, headers["User-Agent"]
     assert_same client, credentials.client_for("deployment-controller")
@@ -118,7 +127,9 @@ class ControllerServiceAccountCredentialsTest < Minitest::Test
     definition = Controller::ControllerDefinition.new(
       name: "configmap-sa-controller", kind: kind,
       watches: [Controller::WatchSpec.new(resource: kind, via: :all, index_name: "sa/configmaps",
-                                          queue_key: ->(object) { "#{Controller::Support.namespace(object)}/#{Controller::Support.name(object)}" })],
+                                          queue_key: lambda { |object|
+                                            "#{Controller::Support.namespace(object)}/#{Controller::Support.name(object)}"
+                                          })],
       reconcile_block: lambda do |resource, context|
         seen << context[:store]
         Controller::ReconcileResult.new(operations: [], controller: "configmap-sa-controller", key: Controller::Support.name(resource))
@@ -130,7 +141,10 @@ class ControllerServiceAccountCredentialsTest < Minitest::Test
     names = []
     manager = Controller::Manager.new(store: store, identity: "sa-#{Process.pid}", registry: registry,
                                       lease: {lease_duration_seconds: 10, renew_deadline_seconds: 6, retry_period_seconds: 1},
-                                      store_for: ->(name) { names << name; other })
+                                      store_for: lambda { |name|
+                                        names << name
+                                        other
+                                      })
     manager.register_definition(definition, store: store)
     informer = Class.new do
       def on(_event = nil, &handler) = (@handler = handler) && self
@@ -141,6 +155,7 @@ class ControllerServiceAccountCredentialsTest < Minitest::Test
                                                descriptor: kind)
     informer.emit({"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "c", "namespace" => "default", "uid" => "u"}})
     manager.step
+
     assert_equal ["configmap-sa-controller"], names.uniq
     assert_same other, seen.last
   ensure
@@ -152,6 +167,7 @@ class ControllerServiceAccountCredentialsTest < Minitest::Test
     caches = {"x" => 1}
     adapter = Rubernetes::Bootstrap::KubernetesStoreAdapter.new(client: Object.new, resource_descriptors: ["ConfigMap"], caches: caches)
     view = adapter.with_client(client)
+
     assert_same client, view.client
     assert_same caches, view.caches
     assert_equal adapter.resource_descriptors, view.resource_descriptors
@@ -159,6 +175,7 @@ class ControllerServiceAccountCredentialsTest < Minitest::Test
 
   def test_the_option_is_validated
     config = Rubernetes::Bootstrap::Config
+
     assert_includes config::CONTROL_PLANE_KEYS, "use_service_account_credentials"
   end
 end

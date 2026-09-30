@@ -128,8 +128,9 @@ module Rubernetes
         base = quantity_to_base(value)
         return base if unit.nil? || unit.empty?
         return (base * 1_000).round if unit == "m"
-        return (base * 1_024**2).round if unit == "Mi"
-        return (base * 1_024**3).round if unit == "Gi"
+        return (base * (1_024**2)).round if unit == "Mi"
+        return (base * (1_024**3)).round if unit == "Gi"
+
         base
       end
 
@@ -154,7 +155,9 @@ module Rubernetes
       def format_binary_quantity(value, unit, suffix)
         scaled = value.to_f / unit
         return "#{Integer(scaled.round)}#{suffix}" if scaled.round == scaled
-        return "#{Integer((value.to_f / (1024.0**2)).round)}Mi" if unit > 1024.0**2 && (value.to_f / (1024.0**2)).round == value.to_f / (1024.0**2)
+        if unit > 1024.0**2 && (value.to_f / (1024.0**2)).round == value.to_f / (1024.0**2)
+          return "#{Integer((value.to_f / (1024.0**2)).round)}Mi"
+        end
         return "#{Integer((value.to_f / 1024.0).round)}Ki" if unit > 1024.0 && (value.to_f / 1024.0).round == value.to_f / 1024.0
 
         "#{scaled.round(6)}#{suffix}"

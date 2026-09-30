@@ -146,10 +146,10 @@ class M2AgentRecoveryTest < Minitest::Test
 
     agent.start
 
-    assert_equal [:recovery, :loop_start], events
+    assert_equal %i[recovery loop_start], events
     assert_equal "node-a", api.nodes.fetch(0).dig("metadata", "name")
-    assert agent.ready?
-    assert agent.registered?
+    assert_predicate agent, :ready?
+    assert_predicate agent, :registered?
   end
 
   # Requirement: unresolved recovery must not open the worker or register a
@@ -162,8 +162,8 @@ class M2AgentRecoveryTest < Minitest::Test
     agent = Rubernetes::Node::Agent.new(node_name: "node-a", api: api, lifecycle: lifecycle, sync_loop: loop_)
 
     assert_raises(Rubernetes::Runtime::RecoveryRequired) { agent.start }
-    refute agent.ready?
-    refute agent.registered?
+    refute_predicate agent, :ready?
+    refute_predicate agent, :registered?
     assert_equal [:recovery], events
     assert_empty api.nodes
   end
@@ -188,8 +188,8 @@ class M2AgentRecoveryTest < Minitest::Test
     )
 
     assert_raises(Rubernetes::Runtime::RecoveryRequired) { agent.start }
-    refute agent.ready?
-    refute agent.registered?
+    refute_predicate agent, :ready?
+    refute_predicate agent, :registered?
     assert_empty api.nodes
   end
 
@@ -211,10 +211,10 @@ class M2AgentRecoveryTest < Minitest::Test
     agent.start(lease_thread: true)
     Timeout.timeout(1) { sleep 0.005 until events.include?(:loop_start) }
 
-    assert agent.registered?
-    assert agent.running?
-    assert agent.ready?
-    assert_equal [:recovery, :loop_start], events
+    assert_predicate agent, :registered?
+    assert_predicate agent, :running?
+    assert_predicate agent, :ready?
+    assert_equal %i[recovery loop_start], events
   ensure
     agent&.stop(reason: "test")
   end
@@ -226,7 +226,7 @@ class M2AgentRecoveryTest < Minitest::Test
       state_path = File.join(directory, "node-state.json")
       first_runtime = Runtime.new(fail_remove: true)
       first = Rubernetes::Node::Lifecycle.new(runtime: first_runtime, state_store: state_path)
-      pending = first.start(pod)
+      first.start(pod)
       pending = first.terminate(pod)
 
       assert_equal "CleanupPending", pending.state
@@ -240,7 +240,7 @@ class M2AgentRecoveryTest < Minitest::Test
       assert_equal ["recovery-uid"], report.fetch("recovered")
       assert_equal "Removed", second.state(pod)
       assert_empty second.record(pod).fetch(:resources)
-      refute second_runtime.calls.any? { |entry| entry.is_a?(Array) && entry.first == :start }
+      refute(second_runtime.calls.any? { |entry| entry.is_a?(Array) && entry.first == :start })
     end
   end
 
@@ -278,9 +278,11 @@ class M2AgentRecoveryTest < Minitest::Test
     )
 
     service.start
+
     assert_same service, resolver.resolve(node_name: "node-a")
 
     service.stop(reason: "test")
+
     assert_nil resolver.resolve(node_name: "node-a")
   end
 
@@ -302,6 +304,7 @@ class M2AgentRecoveryTest < Minitest::Test
     ).build
 
     service = assembly.service
+
     assert_same resolver, service.node_resolver
     assert_same authorizer, service.authorizer
     assert_same identity, service.identity_resolver

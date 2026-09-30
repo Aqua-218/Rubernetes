@@ -22,7 +22,9 @@ module Rubernetes
         kube = quantities(kube_reserved)
         eviction = hard_eviction_reservation(hard_thresholds, capacity)
         capacity.each_key.with_object({}) do |name, result|
-          value = [system[name], kube[name], eviction[name]].compact.reduce(Quantity.new(Rational(0), :decimal_si)) { |sum, item| add(sum, item) }
+          value = [system[name], kube[name], eviction[name]].compact.reduce(Quantity.new(Rational(0), :decimal_si)) do |sum, item|
+            add(sum, item)
+          end
           result[name] = value unless value.value.zero?
         end
       end

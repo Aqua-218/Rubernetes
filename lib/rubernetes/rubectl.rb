@@ -4,8 +4,8 @@ require_relative "rubectl/cli"
 
 module Rubernetes
   module Rubectl
-    def self.run(argv = ARGV, **options)
-      CLI.run(argv, **options)
+    def self.run(argv = ARGV, **)
+      CLI.run(argv, **)
     end
   end
 end

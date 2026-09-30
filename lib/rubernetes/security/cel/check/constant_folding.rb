@@ -24,7 +24,8 @@ module Rubernetes
           TYPE_NAMES = {Integer => "int", Values::UInt => "uint", Float => "double", String => "string", Values::Bytes => "bytes",
                         TrueClass => "bool", FalseClass => "bool", NilClass => "null_type"}.freeze
 
-          Failure = Class.new(StandardError)
+          class Failure < StandardError
+          end
           Duration = Struct.new(:nanos)
           Timestamp = Struct.new(:seconds, :nanos)
           TypeValue = Struct.new(:name)
@@ -57,7 +58,9 @@ module Rubernetes
             when :call
               fold(node.target, type_idents) if node.member?
               args = node.args.map { |arg| fold(arg, type_idents) }
-              return NOT_CONSTANT unless !node.member? && CONVERSIONS.include?(node.name) && args.length == 1 && !args[0].equal?(NOT_CONSTANT)
+              unless !node.member? && CONVERSIONS.include?(node.name) && args.length == 1 && !args[0].equal?(NOT_CONSTANT)
+                return NOT_CONSTANT
+              end
 
               convert(node.name, args[0])
             when :select then fold(node.operand, type_idents)
@@ -92,7 +95,10 @@ module Rubernetes
           def convert(function, value)
             accepted = @accepts.fetch(function, [])
             # The dispatcher picks the overload by the argument's runtime type.
-            raise Failure, "no such overload: #{function}(#{type_name(value)})" unless accepted.include?(:any) || accepted.include?(type_name(value))
+            unless accepted.include?(:any) || accepted.include?(type_name(value))
+              raise Failure,
+                    "no such overload: #{function}(#{type_name(value)})"
+            end
             return value if function == "dyn"
             return TypeValue.new(type_name(value)) if function == "type"
 
@@ -126,7 +132,10 @@ module Rubernetes
               case function
               when "timestamp" then value
               when "int" then value.seconds
-              when "string" then Time.at(value.seconds, value.nanos, :nanosecond).utc.iso8601(value.nanos.zero? ? 0 : 9).sub(/\.?0+Z\z/) { |m| m.start_with?(".") ? "Z" : m }
+              when "string" then Time.at(value.seconds, value.nanos,
+                                         :nanosecond).utc.iso8601(value.nanos.zero? ? 0 : 9).sub(/\.?0+Z\z/) do |m|
+                m.start_with?(".") ? "Z" : m
+              end
               else conversion_error("google.protobuf.Timestamp", target)
               end
             else conversion_error(type_name(value), target)
@@ -160,11 +169,17 @@ module Rubernetes
           def from_double(value, function, target)
             case function
             when "int"
-              raise Failure, "integer overflow" if value.nan? || value.infinite? || value <= -9_223_372_036_854_775_809.0 || value >= 9_223_372_036_854_775_808.0
+              if value.nan? || value.infinite? || value <= -9_223_372_036_854_775_809.0 || value >= 9_223_372_036_854_775_808.0
+                raise Failure,
+                      "integer overflow"
+              end
 
               value.truncate
             when "uint"
-              raise Failure, "unsigned integer overflow" if value.nan? || value.infinite? || value.negative? || value >= 18_446_744_073_709_551_616.0
+              if value.nan? || value.infinite? || value.negative? || value >= 18_446_744_073_709_551_616.0
+                raise Failure,
+                      "unsigned integer overflow"
+              end
 
               Values::UInt.new(value.truncate)
             when "double" then value
@@ -206,7 +221,8 @@ module Rubernetes
             nil
           end
 
-          UNITS = {"ns" => 1, "us" => 1_000, "µs" => 1_000, "μs" => 1_000, "ms" => 1_000_000, "s" => 1_000_000_000, "m" => 60_000_000_000, "h" => 3_600_000_000_000}.freeze
+          UNITS = {"ns" => 1, "us" => 1_000, "µs" => 1_000, "μs" => 1_000, "ms" => 1_000_000, "s" => 1_000_000_000, "m" => 60_000_000_000,
+                   "h" => 3_600_000_000_000}.freeze
 
           def parse_duration(value)
             sign = value.start_with?("-") ? -1 : 1
@@ -214,7 +230,9 @@ module Rubernetes
             return 0 if text == "0"
 
             total = 0r
-            text.scan(/([0-9]*(?:\.[0-9]*)?)([^0-9.]+)/) { |number, unit| total += Rational(number.empty? ? "0" : number) * UNITS.fetch(unit) }
+            text.scan(/([0-9]*(?:\.[0-9]*)?)([^0-9.]+)/) do |number, unit|
+              total += Rational(number.empty? ? "0" : number) * UNITS.fetch(unit)
+            end
             sign * total.truncate
           end
 

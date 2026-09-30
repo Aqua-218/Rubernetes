@@ -3,7 +3,6 @@
 require "digest"
 require "ipaddr"
 require "open3"
-require "set"
 require "socket"
 require_relative "backend"
 
@@ -136,8 +135,10 @@ module Rubernetes
               entry.endpoints << backend
             end
           end
-          groups.values.select { |entry| !entry.cluster_ips.empty? || !entry.external_ips.empty? || !entry.load_balancer_ips.empty? || entry.node_port.positive? }
-                .sort_by(&:name_string)
+          groups.values.select do |entry|
+            !entry.cluster_ips.empty? || !entry.external_ips.empty? || !entry.load_balancer_ips.empty? || entry.node_port.positive?
+          end
+            .sort_by(&:name_string)
         end
 
         # proxy.CategorizeEndpoints: [cluster, local, all reachable, has any].
@@ -157,7 +158,13 @@ module Rubernetes
           if service_port.uses_local_endpoints?
             local_ready = endpoints.select { |endpoint| endpoint.healthy? && endpoint.local_to?(@node_name) }
             has_any ||= endpoints.any? { |endpoint| endpoint.healthy? || (endpoint.serving? && endpoint.terminating?) }
-            local = local_ready.empty? ? endpoints.select { |endpoint| endpoint.serving? && endpoint.terminating? && endpoint.local_to?(@node_name) } : local_ready
+            local = if local_ready.empty?
+                      endpoints.select do |endpoint|
+                        endpoint.serving? && endpoint.terminating? && endpoint.local_to?(@node_name)
+                      end
+                    else
+                      local_ready
+                    end
           end
           [cluster, local, (cluster + local).uniq { |endpoint| [endpoint.address, endpoint.port] }, has_any]
         end
@@ -165,14 +172,15 @@ module Rubernetes
         # Topology-aware hints: endpoints hinted for this node's zone, when
         # every endpoint carries a hint and the node has a zone.
         def apply_hints(service_port, endpoints)
-          return endpoints if @node_zone.to_s.empty? || service_port.hints.to_s.downcase == "disabled" && service_port.hints
+          return endpoints if @node_zone.to_s.empty? || (service_port.hints.to_s.downcase == "disabled" && service_port.hints)
           return endpoints unless endpoints.all? { |endpoint| endpoint.respond_to?(:hints) && !Array(endpoint.hints).empty? }
 
           hinted = endpoints.select { |endpoint| Array(endpoint.hints).map(&:to_s).include?(@node_zone.to_s) }
           hinted.empty? ? endpoints : hinted
         end
 
-        Program = Struct.new(:text, :filter_rules, :nat_rules, :active_chains, :skipped_nat_rules, :no_local_internal, :no_local_external, keyword_init: true)
+        Program = Struct.new(:text, :filter_rules, :nat_rules, :active_chains, :skipped_nat_rules, :no_local_internal, :no_local_external,
+                             keyword_init: true)
 
         # syncProxyRules' rule generation.  +changed_services+ (partial sync):
         # only these services' chain bodies are rewritten; nil rewrites all.
@@ -184,7 +192,9 @@ module Rubernetes
           nat_chains = []
           nat_rules = []
           skipped_nat_rules = 0
-          %w[KUBE-SERVICES KUBE-EXTERNAL-SERVICES KUBE-FORWARD KUBE-NODEPORTS KUBE-PROXY-FIREWALL].each { |chain| filter_chains << ":#{chain} - [0:0]" }
+          %w[KUBE-SERVICES KUBE-EXTERNAL-SERVICES KUBE-FORWARD KUBE-NODEPORTS KUBE-PROXY-FIREWALL].each do |chain|
+            filter_chains << ":#{chain} - [0:0]"
+          end
           %w[KUBE-SERVICES KUBE-NODEPORTS KUBE-POSTROUTING KUBE-MARK-MASQ].each { |chain| nat_chains << ":#{chain} - [0:0]" }
           nat_rules << "-A KUBE-POSTROUTING -m mark ! --mark #{MASQUERADE_MARK}/#{MASQUERADE_MARK} -j RETURN"
           nat_rules << "-A KUBE-POSTROUTING -j MARK --xor-mark #{MASQUERADE_MARK}"
@@ -224,10 +234,7 @@ module Rubernetes
             uses_fw_chain = has_endpoints && !svc.load_balancer_ips.empty? && !svc.source_ranges.empty?
             lb_chain = fw_chain if uses_fw_chain
             internal_filter = external_filter = nil
-            if !has_endpoints
-              internal_filter = ["REJECT", "\"#{name} has no endpoints\""]
-              external_filter = internal_filter
-            else
+            if has_endpoints
               unless has_internal
                 internal_filter = ["DROP", "\"#{name} has no local endpoints\""]
                 no_local_internal += 1
@@ -236,6 +243,9 @@ module Rubernetes
                 external_filter = ["DROP", "\"#{name} has no local endpoints\""]
                 no_local_external += 1
               end
+            else
+              internal_filter = ["REJECT", "\"#{name} has no endpoints\""]
+              external_filter = internal_filter
             end
             svc.cluster_ips.each do |cluster_ip|
               if has_internal
@@ -245,12 +255,20 @@ module Rubernetes
               end
             end
             svc.external_ips.each do |external_ip|
-              nat_rules << "-A KUBE-SERVICES -m comment --comment \"#{name} external IP\" -m #{protocol} -p #{protocol} -d #{external_ip} --dport #{svc.port} -j #{external_chain}" if has_endpoints
-              filter_rules << "-A KUBE-EXTERNAL-SERVICES -m comment --comment #{external_filter[1]} -m #{protocol} -p #{protocol} -d #{external_ip} --dport #{svc.port} -j #{external_filter[0]}" unless has_external
+              if has_endpoints
+                nat_rules << "-A KUBE-SERVICES -m comment --comment \"#{name} external IP\" -m #{protocol} -p #{protocol} -d #{external_ip} --dport #{svc.port} -j #{external_chain}"
+              end
+              unless has_external
+                filter_rules << "-A KUBE-EXTERNAL-SERVICES -m comment --comment #{external_filter[1]} -m #{protocol} -p #{protocol} -d #{external_ip} --dport #{svc.port} -j #{external_filter[0]}"
+              end
             end
             svc.load_balancer_ips.each do |lb_ip|
-              nat_rules << "-A KUBE-SERVICES -m comment --comment \"#{name} loadbalancer IP\" -m #{protocol} -p #{protocol} -d #{lb_ip} --dport #{svc.port} -j #{lb_chain}" if has_endpoints
-              filter_rules << "-A KUBE-PROXY-FIREWALL -m comment --comment \"#{name} traffic not accepted by #{fw_chain}\" -m #{protocol} -p #{protocol} -d #{lb_ip} --dport #{svc.port} -j DROP" if uses_fw_chain
+              if has_endpoints
+                nat_rules << "-A KUBE-SERVICES -m comment --comment \"#{name} loadbalancer IP\" -m #{protocol} -p #{protocol} -d #{lb_ip} --dport #{svc.port} -j #{lb_chain}"
+              end
+              if uses_fw_chain
+                filter_rules << "-A KUBE-PROXY-FIREWALL -m comment --comment \"#{name} traffic not accepted by #{fw_chain}\" -m #{protocol} -p #{protocol} -d #{lb_ip} --dport #{svc.port} -j DROP"
+              end
             end
             unless has_external
               svc.load_balancer_ips.each do |lb_ip|
@@ -264,7 +282,9 @@ module Rubernetes
                 end
                 nat_rules << "-A KUBE-NODEPORTS -m comment --comment #{name} -m #{protocol} -p #{protocol} --dport #{svc.node_port} -j #{external_chain}"
               end
-              filter_rules << "-A KUBE-EXTERNAL-SERVICES -m comment --comment #{external_filter[1]} -m addrtype --dst-type LOCAL -m #{protocol} -p #{protocol} --dport #{svc.node_port} -j #{external_filter[0]}" unless has_external
+              unless has_external
+                filter_rules << "-A KUBE-EXTERNAL-SERVICES -m comment --comment #{external_filter[1]} -m addrtype --dst-type LOCAL -m #{protocol} -p #{protocol} --dport #{svc.node_port} -j #{external_filter[0]}"
+              end
             end
             if svc.health_check_node_port.positive?
               filter_rules << "-A KUBE-NODEPORTS -m comment --comment \"#{name} health check node port\" -m tcp -p tcp --dport #{svc.health_check_node_port} -j ACCEPT"
@@ -292,12 +312,14 @@ module Rubernetes
             if uses_external_chain
               body_chains&.push(":#{external_chain} - [0:0]")
               active_chains << external_chain
-              if !svc.external_policy_local
-                write.call("-A #{external_chain} -m comment --comment \"masquerade traffic for #{name} external destinations\" -j KUBE-MARK-MASQ")
-              else
-                write.call("-A #{external_chain} -m comment --comment \"pod traffic for #{name} external destinations\" -s #{@cluster_cidr} -j #{cluster_chain}") if @cluster_cidr
+              if svc.external_policy_local
+                if @cluster_cidr
+                  write.call("-A #{external_chain} -m comment --comment \"pod traffic for #{name} external destinations\" -s #{@cluster_cidr} -j #{cluster_chain}")
+                end
                 write.call("-A #{external_chain} -m comment --comment \"masquerade LOCAL traffic for #{name} external destinations\" -m addrtype --src-type LOCAL -j KUBE-MARK-MASQ")
                 write.call("-A #{external_chain} -m comment --comment \"route LOCAL traffic for #{name} external destinations\" -m addrtype --src-type LOCAL -j #{cluster_chain}")
+              else
+                write.call("-A #{external_chain} -m comment --comment \"masquerade traffic for #{name} external destinations\" -j KUBE-MARK-MASQ")
               end
               write.call("-A #{external_chain} -j #{external_policy_chain}") if has_external
             end
@@ -307,10 +329,16 @@ module Rubernetes
               allow_from_node = false
               svc.source_ranges.each do |cidr|
                 write.call("-A #{fw_chain} -m comment --comment \"#{name} loadbalancer IP\" -s #{cidr} -j #{external_chain}")
-                allow_from_node ||= @node_ips.any? { |ip| IPAddr.new(cidr).include?(IPAddr.new(ip)) rescue false }
+                allow_from_node ||= @node_ips.any? do |ip|
+                  IPAddr.new(cidr).include?(IPAddr.new(ip))
+                rescue StandardError
+                  false
+                end
               end
               if allow_from_node
-                svc.load_balancer_ips.each { |lb_ip| write.call("-A #{fw_chain} -m comment --comment \"#{name} loadbalancer IP\" -s #{lb_ip} -j #{external_chain}") }
+                svc.load_balancer_ips.each do |lb_ip|
+                  write.call("-A #{fw_chain} -m comment --comment \"#{name} loadbalancer IP\" -s #{lb_ip} -j #{external_chain}")
+                end
               end
               write.call("-A #{fw_chain} -m comment --comment \"other traffic to #{name} will be dropped by KUBE-PROXY-FIREWALL\"")
             end
@@ -343,7 +371,11 @@ module Rubernetes
             deleted += 1
           end
           destinations = "-m addrtype --dst-type LOCAL"
-          destinations += ipv6? ? " ! -d ::1/128" : (@localhost_node_ports ? "" : " ! -d 127.0.0.0/8")
+          destinations += if ipv6?
+                            " ! -d ::1/128"
+                          else
+                            (@localhost_node_ports ? "" : " ! -d 127.0.0.0/8")
+                          end
           nat_rules << "-A KUBE-SERVICES -m comment --comment \"kubernetes service nodeports; NOTE: this must be the last rule in this chain\" #{destinations} -j KUBE-NODEPORTS"
           unless @conntrack_tcp_liberal
             nfacct = @nfacct_counters[CT_STATE_INVALID_COUNTER] ? " -m nfacct --nfacct-name #{CT_STATE_INVALID_COUNTER}" : ""
@@ -442,7 +474,10 @@ module Rubernetes
           @sequence += 1
           payload = [0, 0, 0].pack("CCn") + body
           length = 16 + payload.bytesize
-          socket.send([length, (NFNL_SUBSYS_ACCT << 8) | type, flags, @sequence, 0].pack("L<S<S<L<L<") + payload + ("\0" * ((length + 3) / 4 * 4 - length)), 0)
+          socket.send(
+            [length, (NFNL_SUBSYS_ACCT << 8) | type, flags, @sequence,
+             0].pack("L<S<S<L<L<") + payload + ("\0" * (((length + 3) / 4 * 4) - length)), 0
+          )
           replies = []
           deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
           loop do
@@ -473,7 +508,7 @@ module Rubernetes
 
         def attribute(type, value)
           length = 4 + value.bytesize
-          [length, type].pack("S<S<") + value + ("\0" * ((length + 3) / 4 * 4 - length))
+          [length, type].pack("S<S<") + value + ("\0" * (((length + 3) / 4 * 4) - length))
         end
 
         def decode_attributes(bytes)
@@ -559,7 +594,9 @@ module Rubernetes
             end
           end
           %w[filter nat].each do |table|
-            chains = run!([binary("iptables-save", family), "-t", table], allow_failure: true)[1].to_s.lines.filter_map { |line| line[/\A:(KUBE-[A-Z0-9-]+) /, 1] }
+            chains = run!([binary("iptables-save", family), "-t", table], allow_failure: true)[1].to_s.lines.filter_map do |line|
+              line[/\A:(KUBE-[A-Z0-9-]+) /, 1]
+            end
             chains.each { |chain| run!([binary("iptables", family), "-w", "5", "-t", table, "-F", chain], allow_failure: true) }
             chains.each { |chain| run!([binary("iptables", family), "-w", "5", "-t", table, "-X", chain], allow_failure: true) }
           end
@@ -569,7 +606,10 @@ module Rubernetes
 
         def run!(argv, stdin: nil, allow_failure: false)
           status, stdout, stderr = @runner.call(argv, stdin)
-          raise BackendError, "#{argv.first(4).join(" ")} failed (#{status}): #{stderr.to_s.strip[0, 300]}" unless allow_failure || status.to_i.zero?
+          unless allow_failure || status.to_i.zero?
+            raise BackendError,
+                  "#{argv.first(4).join(" ")} failed (#{status}): #{stderr.to_s.strip[0, 300]}"
+          end
 
           [status.to_i, stdout, stderr]
         end
@@ -584,13 +624,13 @@ module Rubernetes
 
       # The iptables proxier as a Proxy backend.
       class Backend < Proxy::Backend
-        attr_accessor :node_name, :node_addresses, :node_zone, :cluster_cidr, :masquerade_all, :localhost_node_ports
-        attr_reader :adapter, :metrics, :last_programs
+        attr_accessor :node_name, :node_addresses, :node_zone, :cluster_cidr, :masquerade_all, :localhost_node_ports, :metrics
+        attr_reader :adapter, :last_programs
 
         def initialize(adapter: nil, metrics: nil, families: nil, clock: -> { Time.now.utc }, node_name: nil, node_addresses: [],
-                       masquerade_all: false, localhost_node_ports: true, cluster_cidr: nil, test_adapter: false, **options)
+                       masquerade_all: false, localhost_node_ports: true, cluster_cidr: nil, test_adapter: false, **)
           @adapter = adapter || Adapter.new(test_adapter: test_adapter)
-          super(name: "iptables", clock: clock, syscall_adapter: @adapter, test_adapter: test_adapter, **options)
+          super(name: "iptables", clock: clock, syscall_adapter: @adapter, test_adapter: test_adapter, **)
           @metrics = metrics
           @families = families
           @node_name = node_name
@@ -607,13 +647,13 @@ module Rubernetes
           @pending_services = Hash.new { |hash, family| hash[family] = Set.new }
         end
 
-        def metrics=(observer)
-          @metrics = observer
-        end
-
         def families
           @families || begin
-            detected = @node_addresses.map { |ip| IPAddr.new(ip.to_s).ipv6? ? "IPv6" : "IPv4" rescue nil }.compact.uniq
+            detected = @node_addresses.map do |ip|
+              IPAddr.new(ip.to_s).ipv6? ? "IPv6" : "IPv4"
+            rescue StandardError
+              nil
+            end.compact.uniq
             detected.empty? ? ["IPv4"] : detected
           end
         end
@@ -706,7 +746,9 @@ module Rubernetes
           if full
             @adapter.ensure_jump_chains(family, localhost_node_ports: @localhost_node_ports) if @adapter.respond_to?(:ensure_jump_chains)
             if @adapter.respond_to?(:ensure_nfacct)
-              [CT_STATE_INVALID_COUNTER, LOCALHOST_NODEPORTS_COUNTER].each { |counter| @nfacct_counters[counter] = @adapter.ensure_nfacct(counter) }
+              [CT_STATE_INVALID_COUNTER, LOCALHOST_NODEPORTS_COUNTER].each do |counter|
+                @nfacct_counters[counter] = @adapter.ensure_nfacct(counter)
+              end
             end
           end
           renderer = Renderer.new(family: family, node_name: @node_name, node_ips: @node_addresses, masquerade_all: @masquerade_all,
@@ -741,7 +783,9 @@ module Rubernetes
         private
 
         def remember_changed(diff)
-          services = (diff.added + diff.deleted + diff.updated.flatten).map { |rule| rule.respond_to?(:service_key) ? rule.service_key : nil }.compact
+          services = (diff.added + diff.deleted + diff.updated.flatten).map do |rule|
+            rule.respond_to?(:service_key) ? rule.service_key : nil
+          end.compact
           families.each { |family| @pending_services[family].merge(services) }
         end
 

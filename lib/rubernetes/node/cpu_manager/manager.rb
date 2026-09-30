@@ -39,7 +39,10 @@ module Rubernetes
                       raise Error, "[cpumanager] unable to determine reserved CPU resources for static policy" if reservation.nil?
 
                       milli = (ResourceHelpers::Quantity.from_json(reservation).value * 1000).ceil
-                      raise Error, "[cpumanager] the static policy requires systemreserved.cpu + kubereserved.cpu to be greater than zero" if milli.zero?
+                      if milli.zero?
+                        raise Error,
+                              "[cpumanager] the static policy requires systemreserved.cpu + kubereserved.cpu to be greater than zero"
+                      end
 
                       specific = reserved_cpus.nil? || reserved_cpus.to_s.empty? ? CPUSet.empty : CPUSet.parse(reserved_cpus.to_s)
                       StaticPolicy.new(topology: @topology, num_reserved: (milli / 1000.0).ceil, reserved_cpus: specific,

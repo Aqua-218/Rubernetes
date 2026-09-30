@@ -86,7 +86,7 @@ module Rubernetes
         return true if key.empty? && operator == "Exists"
         return false unless key == value(taint, "key").to_s
 
-        operator == "Exists" || (operator.empty? || operator == "Equal") && value(toleration, "value").to_s == value(taint, "value").to_s
+        operator == "Exists" || ((operator.empty? || operator == "Equal") && value(toleration, "value").to_s == value(taint, "value").to_s)
       end
 
       def self.untolerated_taint?(node, pod)
@@ -208,7 +208,9 @@ module Rubernetes
       def self.resource_claim_names(pod)
         statuses = Array(value(pod, "status", "resourceClaimStatuses"))
         Array(value(pod, "spec", "resourceClaims")).map do |claim|
-          value(claim, "resourceClaimName") || statuses.find { |status| value(status, "name") == value(claim, "name") }&.then { |status| value(status, "resourceClaimName") }
+          value(claim, "resourceClaimName") || statuses.find do |status|
+            value(status, "name") == value(claim, "name")
+          end&.then { |status| value(status, "resourceClaimName") }
         end.compact.map(&:to_s)
       end
 
@@ -287,8 +289,16 @@ module Rubernetes
       end
 
       CSINODE_LIMIT_RAISED = lambda do |_pod, old_csi_node, new_csi_node|
-        old_limits = Array(value(old_csi_node, "spec", "drivers")).to_h { |driver| [value(driver, "name"), value(driver, "allocatable", "count").to_i] }
-        Array(value(new_csi_node, "spec", "drivers")).any? { |driver| value(driver, "allocatable", "count").to_i > old_limits.fetch(value(driver, "name"), 0) } ? QUEUE : SKIP
+        old_limits = Array(value(old_csi_node, "spec", "drivers")).to_h do |driver|
+          [value(driver, "name"), value(driver, "allocatable", "count").to_i]
+        end
+        if Array(value(new_csi_node, "spec", "drivers")).any? do |driver|
+          value(driver, "allocatable", "count").to_i > old_limits.fetch(value(driver, "name"), 0)
+        end
+          QUEUE
+        else
+          SKIP
+        end
       end
 
       VOLUME_ATTACHMENT_DELETED = lambda do |pod, _deleted, _new|
@@ -298,14 +308,14 @@ module Rubernetes
       STORAGE_CLASS_CHANGE = lambda do |_pod, old_class, new_class|
         next QUEUE if old_class.nil?
 
-        value(old_class, "allowedTopologies") != value(new_class, "allowedTopologies") ? QUEUE : SKIP
+        value(old_class, "allowedTopologies") == value(new_class, "allowedTopologies") ? SKIP : QUEUE
       end
 
       CSINODE_MIGRATION_CHANGE = lambda do |_pod, old_csi_node, new_csi_node|
         next QUEUE if old_csi_node.nil?
 
         key = "storage.alpha.kubernetes.io/migrated-plugins"
-        value(old_csi_node, "metadata", "annotations", key) != value(new_csi_node, "metadata", "annotations", key) ? QUEUE : SKIP
+        value(old_csi_node, "metadata", "annotations", key) == value(new_csi_node, "metadata", "annotations", key) ? SKIP : QUEUE
       end
 
       STORAGE_CLASS_WFFC = lambda do |_pod, _old, new_class|
@@ -315,8 +325,10 @@ module Rubernetes
       PV_TOPOLOGY_CHANGE = lambda do |_pod, old_pv, new_pv|
         next QUEUE if old_pv.nil?
 
-        topology = ->(pv) { [value(pv, "spec", "nodeAffinity"), (labels(pv)["topology.kubernetes.io/zone"]), labels(pv)["topology.kubernetes.io/region"]] }
-        topology.call(old_pv) != topology.call(new_pv) ? QUEUE : SKIP
+        topology = lambda { |pv|
+          [value(pv, "spec", "nodeAffinity"), labels(pv)["topology.kubernetes.io/zone"], labels(pv)["topology.kubernetes.io/region"]]
+        }
+        topology.call(old_pv) == topology.call(new_pv) ? SKIP : QUEUE
       end
 
       SPREAD_POD_CHANGE = lambda do |pod, old_pod, new_pod|
@@ -326,10 +338,19 @@ module Rubernetes
 
         matches = ->(other) { constraints.any? { |constraint| selector_matches?(value(constraint, "labelSelector"), labels(other)) } }
         if new_pod && old_pod
-          next QUEUE if uid(pod) == uid(new_pod) && tolerations(old_pod) != tolerations(new_pod) && constraints.any? { |constraint| value(constraint, "nodeTaintsPolicy").to_s == "Honor" }
+          next QUEUE if uid(pod) == uid(new_pod) && tolerations(old_pod) != tolerations(new_pod) && constraints.any? do |constraint|
+            value(constraint, "nodeTaintsPolicy").to_s == "Honor"
+          end
           next SKIP if labels(old_pod) == labels(new_pod)
 
-          constraints.any? { |constraint| selector_matches?(value(constraint, "labelSelector"), labels(old_pod)) != selector_matches?(value(constraint, "labelSelector"), labels(new_pod)) } ? QUEUE : SKIP
+          if constraints.any? do |constraint|
+            selector_matches?(value(constraint, "labelSelector"),
+                              labels(old_pod)) != selector_matches?(value(constraint, "labelSelector"), labels(new_pod))
+          end
+            QUEUE
+          else
+            SKIP
+          end
         else
           matches.call(new_pod || old_pod) ? QUEUE : SKIP
         end
@@ -344,7 +365,13 @@ module Rubernetes
           next QUEUE if before != after
 
           keys = constraints.map { |constraint| value(constraint, "topologyKey").to_s }
-          after && (keys.any? { |key| labels(old_node)[key] != labels(new_node)[key] } || taints(old_node) != taints(new_node)) ? QUEUE : SKIP
+          if after && (keys.any? do |key|
+            labels(old_node)[key] != labels(new_node)[key]
+          end || taints(old_node) != taints(new_node))
+            QUEUE
+          else
+            SKIP
+          end
         elsif new_node
           matching.call(new_node) ? QUEUE : SKIP
         else
@@ -403,9 +430,15 @@ module Rubernetes
       GENERATED_CLAIM = lambda do |pod, _old, new_pod|
         next SKIP unless uid(pod) == uid(new_pod)
 
-        Array(value(new_pod, "spec", "resourceClaims")).all? do |claim|
-          value(claim, "resourceClaimName") || Array(value(new_pod, "status", "resourceClaimStatuses")).any? { |status| value(status, "name") == value(claim, "name") && value(status, "resourceClaimName") }
-        end ? QUEUE : SKIP
+        if Array(value(new_pod, "spec", "resourceClaims")).all? do |claim|
+          value(claim, "resourceClaimName") || Array(value(new_pod, "status", "resourceClaimStatuses")).any? do |status|
+            value(status, "name") == value(claim, "name") && value(status, "resourceClaimName")
+          end
+        end
+          QUEUE
+        else
+          SKIP
+        end
       end
 
       # helper.MatchingSchedulingGroup: same namespace and podGroupName.
@@ -423,7 +456,8 @@ module Rubernetes
       NODE_UPDATE_ALL = %w[Add UpdateNodeTaint UpdateNodeLabel].freeze
 
       REGISTRATIONS = {
-        "NodeUnschedulable" => [node(NODE_UPDATE_ALL, NODE_UNSCHEDULABLE), *pod_registration(%w[UpdatePodToleration], TOLERATES_UNSCHEDULABLE)],
+        "NodeUnschedulable" => [node(NODE_UPDATE_ALL, NODE_UNSCHEDULABLE),
+                                *pod_registration(%w[UpdatePodToleration], TOLERATES_UNSCHEDULABLE)],
         "NodeName" => [node(NODE_UPDATE_ALL)],
         "TaintToleration" => [node(%w[Add UpdateNodeTaint], TAINT_NODE_CHANGE), *pod_registration(%w[UpdatePodToleration], SAME_POD)],
         "NodeAffinity" => [node(NODE_UPDATE_ALL, NODE_AFFINITY_CHANGE)],
@@ -450,7 +484,8 @@ module Rubernetes
                          Registration.new(resource: "PersistentVolume", actions: %w[Add Update], hint: PV_TOPOLOGY_CHANGE)],
         "PodTopologySpread" => [*pod_registration(%w[Add UpdatePodLabel UpdatePodToleration Delete], SPREAD_POD_CHANGE),
                                 node(%w[Add Delete UpdateNodeLabel UpdateNodeTaint], SPREAD_NODE_CHANGE)],
-        "InterPodAffinity" => [*pod_registration(%w[Add UpdatePodLabel Delete], AFFINITY_POD_CHANGE), node(%w[Add UpdateNodeLabel UpdateNodeTaint], AFFINITY_NODE_CHANGE)],
+        "InterPodAffinity" => [*pod_registration(%w[Add UpdatePodLabel Delete], AFFINITY_POD_CHANGE),
+                               node(%w[Add UpdateNodeLabel UpdateNodeTaint], AFFINITY_NODE_CHANGE)],
         "DynamicResources" => [node(%w[Add UpdateNodeLabel UpdateNodeTaint UpdateNodeAllocatable]),
                                Registration.new(resource: "ResourceClaim", actions: %w[Add Update], hint: CLAIM_CHANGE),
                                *pod_registration(%w[UpdatePodGeneratedResourceClaim], GENERATED_CLAIM),

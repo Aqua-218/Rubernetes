@@ -18,7 +18,13 @@ class VolumeLedgerPrunesFinishedTest < Minitest::Test
   def run_op(ledger, index, status: "succeeded")
     key = "vol-#{index}"
     ledger.begin!(key: key, operation: "create", token: "t-#{index}", fingerprint: "f-#{index}")
-    status == "succeeded" ? ledger.finish!(key: key, operation: "create", token: "t-#{index}") : ledger.fail!(key: key, operation: "create", token: "t-#{index}", error: StandardError.new("boom"))
+    if status == "succeeded"
+      ledger.finish!(key: key, operation: "create",
+                     token: "t-#{index}")
+    else
+      ledger.fail!(key: key,
+                   operation: "create", token: "t-#{index}", error: StandardError.new("boom"))
+    end
   end
 
   def test_finished_entries_are_capped_and_the_oldest_go_first
@@ -26,9 +32,13 @@ class VolumeLedgerPrunesFinishedTest < Minitest::Test
       @dir = dir
       now = Time.utc(2026, 9, 21, 7, 0, 0)
       led = ledger(-> { now })
-      (Ledger::MAX_FINISHED_ENTRIES + 50).times { |i| now += 1; run_op(led, i) }
+      (Ledger::MAX_FINISHED_ENTRIES + 50).times do |i|
+        now += 1
+        run_op(led, i)
+      end
 
       finished = led.entries.select { |entry| entry.status == "succeeded" }
+
       assert_equal Ledger::MAX_FINISHED_ENTRIES, finished.length
       assert_nil led.fetch(key: "vol-0", operation: "create"), "the oldest finished entry was pruned"
       refute_nil led.fetch(key: "vol-#{Ledger::MAX_FINISHED_ENTRIES + 49}", operation: "create")

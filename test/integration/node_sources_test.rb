@@ -24,15 +24,16 @@ class NodeSourcesTest < Minitest::Test
         {"kind" => "Pod", "metadata" => {"name" => "remote", "namespace" => "default"}, "spec" => {"nodeName" => "node-b"}},
         {"kind" => "Pod", "metadata" => {"name" => "api", "namespace" => "default"}, "spec" => {"nodeName" => "node-a"}},
         {"kind" => "Pod", "metadata" => {"name" => "local", "namespace" => "default", "uid" => "mirror-uid",
-                                              "annotations" => {"kubernetes.io/config.mirror" => "old"}},
+                                         "annotations" => {"kubernetes.io/config.mirror" => "old"}},
          "spec" => {"nodeName" => "node-a"}}
       ]
 
       merged = manager.merge(api_pods: api, static_pods: static)
       keys = merged.map { |pod| [pod.dig("metadata", "namespace"), pod.dig("metadata", "name")] }
 
-      assert_equal([["default", "api"], ["default", "local"]], keys)
+      assert_equal([%w[default api], %w[default local]], keys)
       local = merged.find { |pod| pod.dig("metadata", "name") == "local" }
+
       assert_equal("file", local.dig("metadata", "annotations", "kubernetes.io/config.source"))
       assert_equal("node-a", local.dig("spec", "nodeName"))
       assert_equal("mirror-uid", local.dig("metadata", "uid"))
@@ -42,7 +43,9 @@ class NodeSourcesTest < Minitest::Test
   def test_multi_document_yaml_and_mirror_writer_reconcile
     calls = []
     writer = Object.new
-    writer.define_singleton_method(:create) { |resource:, namespace:, name:, object:| calls << [:create, resource, namespace, name, object] }
+    writer.define_singleton_method(:create) do |resource:, namespace:, name:, object:|
+      calls << [:create, resource, namespace, name, object]
+    end
     Dir.mktmpdir("rubernetes-static") do |directory|
       File.write(File.join(directory, "pods.yaml"), <<~YAML)
         ---
@@ -59,6 +62,7 @@ class NodeSourcesTest < Minitest::Test
       manager = Rubernetes::Node::SourceManager.new(node_name: "node-a", manifest_dir: directory, mirror_writer: writer)
       manager.refresh
     end
+
     assert_equal(2, calls.length)
     assert(calls.all? { |call| call[1] == "v1/pods" })
     assert(calls.all? { |call| call[4].dig("metadata", "annotations", "kubernetes.io/config.mirror") })

@@ -34,8 +34,8 @@ class IndexerReadWithoutCopyTest < Minitest::Test
     idx = indexer
     object = idx.list.first
 
-    assert object.frozen?
-    assert object.fetch("metadata").fetch("labels").frozen?
+    assert_predicate object, :frozen?
+    assert_predicate object.fetch("metadata").fetch("labels"), :frozen?
     assert_raises(FrozenError) { object["metadata"]["labels"]["app"] = "b" }
     assert_equal "a", idx.get("ns/p1").dig("metadata", "labels", "app")
   end

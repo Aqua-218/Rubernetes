@@ -34,15 +34,16 @@ module Rubernetes
             "annotations" => annotations
           }
           event["impersonatedUser"] = impersonated.to_h if impersonated
-          event["authenticationMetadata"] = {"impersonationConstraint" => impersonation_constraint} unless impersonation_constraint.to_s.empty?
+          unless impersonation_constraint.to_s.empty?
+            event["authenticationMetadata"] =
+              {"impersonationConstraint" => impersonation_constraint}
+          end
           if attributes.resource_request?
             event["objectRef"] = {"resource" => attributes.resource, "namespace" => attributes.namespace, "name" => attributes.name,
                                   "apiGroup" => attributes.api_group, "apiVersion" => attributes.api_version,
                                   "subresource" => attributes.subresource}.reject { |_key, value| value.to_s.empty? }
           end
-          if response
-            event["responseStatus"] = response_status(response)
-          end
+          event["responseStatus"] = response_status(response) if response
           if %w[Request RequestResponse].include?(level) && request_object
             event["requestObject"] = sanitize(attributes, request_object, omit_managed_fields)
           end
@@ -53,7 +54,13 @@ module Rubernetes
         end
 
         def request_uri(request)
-          query = request.query.is_a?(Hash) && !request.query.empty? ? "?" + request.query.map { |key, value| "#{key}=#{Array(value).join(",")}" }.join("&") : ""
+          query = if request.query.is_a?(Hash) && !request.query.empty?
+                    "?" + request.query.map { |key, value|
+                      "#{key}=#{Array(value).join(",")}"
+                    }.join("&")
+                  else
+                    ""
+                  end
           "#{request.path}#{query}"
         end
 
@@ -61,7 +68,10 @@ module Rubernetes
           status = response.respond_to?(:status) ? response.status : 200
           body = response.respond_to?(:body) ? response.body : nil
           if body.is_a?(Hash) && body["kind"] == "Status"
-            {"metadata" => {}, "code" => status, "status" => body["status"], "reason" => body["reason"], "message" => body["message"]}.reject { |_key, value| value.nil? }
+            {"metadata" => {}, "code" => status, "status" => body["status"], "reason" => body["reason"],
+             "message" => body["message"]}.reject do |_key, value|
+              value.nil?
+            end
           else
             {"metadata" => {}, "code" => status}
           end

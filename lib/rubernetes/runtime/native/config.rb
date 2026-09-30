@@ -13,11 +13,11 @@ module Rubernetes
     class Native
       class Configuration
         PROFILES = %i[pure fake_io host_integration kernel_isolation l3].freeze
-        RUNTIME_CLASS = "rubernetes-native".freeze
-        DEFAULT_SANDBOX_ROOT = "/var/lib/rubernetes/native".freeze
-        DEFAULT_CGROUP_ROOT = "/sys/fs/cgroup".freeze
-        DEFAULT_LOG_ROOT = "/var/log/rubernetes/native".freeze
-        DEFAULT_JOURNAL_PATH = "/var/lib/rubernetes/native/ledger.jsonl".freeze
+        RUNTIME_CLASS = "rubernetes-native"
+        DEFAULT_SANDBOX_ROOT = "/var/lib/rubernetes/native"
+        DEFAULT_CGROUP_ROOT = "/sys/fs/cgroup"
+        DEFAULT_LOG_ROOT = "/var/log/rubernetes/native"
+        DEFAULT_JOURNAL_PATH = "/var/lib/rubernetes/native/ledger.jsonl"
 
         attr_reader :profile, :sandbox_root, :cgroup_root, :log_root, :journal_path,
                     :runtime_class, :architecture, :host_integration, :l3,
@@ -121,18 +121,13 @@ module Rubernetes
           if host_integration && pure_profile?
             raise ConfigurationError, "host_integration requires an explicit host_integration, kernel_isolation, or l3 profile"
           end
-          if l3 && !kernel_profile?
-            raise ConfigurationError, "l3 requires the explicit kernel_isolation or l3 profile"
-          end
-          if profile == :l3 && !l3
-            raise ConfigurationError, "the l3 profile requires l3: true"
-          end
-          unless runtime_class == RUNTIME_CLASS
-            raise ConfigurationError, "unsupported Native runtime class #{runtime_class.inspect}"
-          end
+          raise ConfigurationError, "l3 requires the explicit kernel_isolation or l3 profile" if l3 && !kernel_profile?
+          raise ConfigurationError, "the l3 profile requires l3: true" if profile == :l3 && !l3
+          raise ConfigurationError, "unsupported Native runtime class #{runtime_class.inspect}" unless runtime_class == RUNTIME_CLASS
           raise ConfigurationError, "max_log_bytes must be positive" unless max_log_bytes.positive?
           raise ConfigurationError, "max_log_files must be between 1 and 64" unless max_log_files.between?(1, 64)
           raise ConfigurationError, "pod_pids_limit must be positive" if pod_pids_limit && !pod_pids_limit.positive?
+
           validate_path_relationships!
           validate_limits!
           true
@@ -181,10 +176,10 @@ module Rubernetes
 
         def immutable(value)
           copied = case value
-          when Hash then value.to_h { |key, child| [String(key), immutable(child)] }
-          when Array then value.map { |child| immutable(child) }
-          else value
-          end
+                   when Hash then value.to_h { |key, child| [String(key), immutable(child)] }
+                   when Array then value.map { |child| immutable(child) }
+                   else value
+                   end
           copied.freeze
         end
 
@@ -201,7 +196,8 @@ module Rubernetes
         end
 
         def self.symbolize_known(input)
-          known = %i[profile sandbox_root cgroup_root log_root journal_path runtime_class architecture host_integration l3 security_context capabilities limits image network namespace max_log_bytes max_log_files strict memory_qos pod_pids_limit userns_allocation_path seccomp_root]
+          known = %i[profile sandbox_root cgroup_root log_root journal_path runtime_class architecture host_integration l3 security_context
+                     capabilities limits image network namespace max_log_bytes max_log_files strict memory_qos pod_pids_limit userns_allocation_path seccomp_root]
           input.each_with_object({}) do |(key, value), result|
             symbol = key.to_sym
             result[symbol] = value if known.include?(symbol)

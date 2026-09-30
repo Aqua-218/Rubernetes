@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "base64"
-require "thread"
 require "zlib"
 
 module Rubernetes
@@ -130,9 +129,12 @@ module Rubernetes
           when RstStream then control(TYPE_RST_STREAM, 0, [frame.stream_id & 0x7fffffff, frame.status].pack("NN"))
           when Ping then control(TYPE_PING, 0, [frame.id].pack("N"))
           when GoAway then control(TYPE_GOAWAY, 0, [frame.last_good_stream_id & 0x7fffffff, frame.status].pack("NN"))
-          when HeadersFrame then control(TYPE_HEADERS, frame.fin ? FLAG_FIN : 0, [frame.stream_id & 0x7fffffff].pack("N") + compress_headers(frame.headers))
+          when HeadersFrame then control(TYPE_HEADERS, frame.fin ? FLAG_FIN : 0,
+                                         [frame.stream_id & 0x7fffffff].pack("N") + compress_headers(frame.headers))
           when WindowUpdate then control(TYPE_WINDOW_UPDATE, 0, [frame.stream_id & 0x7fffffff, frame.delta].pack("NN"))
-          when Settings then control(TYPE_SETTINGS, 0, [frame.entries.length].pack("N") + frame.entries.map { |(flag, id, value)| [((flag & 0xff) << 24) | (id & 0xffffff), value].pack("NN") }.join)
+          when Settings then control(TYPE_SETTINGS, 0, [frame.entries.length].pack("N") + frame.entries.map { |(flag, id, value)|
+            [((flag & 0xff) << 24) | (id & 0xffffff), value].pack("NN")
+          }.join)
           else raise ArgumentError, "unknown SPDY frame #{frame.class}"
           end
         end
@@ -214,7 +216,8 @@ module Rubernetes
           when TYPE_SYN_REPLY
             raise ProtocolError, "short SYN_REPLY" if payload.bytesize < 4
 
-            SynReply.new(stream_id: payload.unpack1("N") & 0x7fffffff, headers: decompress_headers(payload.byteslice(4..)), fin: (flags & FLAG_FIN) != 0)
+            SynReply.new(stream_id: payload.unpack1("N") & 0x7fffffff, headers: decompress_headers(payload.byteslice(4..)),
+                         fin: (flags & FLAG_FIN) != 0)
           when TYPE_RST_STREAM
             raise ProtocolError, "short RST_STREAM" if payload.bytesize < 8
 
@@ -223,7 +226,7 @@ module Rubernetes
           when TYPE_SETTINGS
             count = payload.bytesize >= 4 ? payload.unpack1("N") : 0
             entries = (0...count).filter_map do |index|
-              entry = payload.byteslice(4 + index * 8, 8)
+              entry = payload.byteslice(4 + (index * 8), 8)
               next unless entry && entry.bytesize == 8
 
               id_word, value = entry.unpack("NN")
@@ -242,7 +245,8 @@ module Rubernetes
           when TYPE_HEADERS
             raise ProtocolError, "short HEADERS" if payload.bytesize < 4
 
-            HeadersFrame.new(stream_id: payload.unpack1("N") & 0x7fffffff, headers: decompress_headers(payload.byteslice(4..)), fin: (flags & FLAG_FIN) != 0)
+            HeadersFrame.new(stream_id: payload.unpack1("N") & 0x7fffffff, headers: decompress_headers(payload.byteslice(4..)),
+                             fin: (flags & FLAG_FIN) != 0)
           when TYPE_WINDOW_UPDATE
             raise ProtocolError, "short WINDOW_UPDATE" if payload.bytesize < 8
 
@@ -449,11 +453,11 @@ module Rubernetes
         # Called by the session for inbound frames.
         def deliver(data, fin:)
           @queue << data unless data.nil? || data.empty?
-          if fin
-            @remote_closed = true
-            @queue << :eof
-            @session.stream_finished(self) if @local_closed
-          end
+          return unless fin
+
+          @remote_closed = true
+          @queue << :eof
+          @session.stream_finished(self) if @local_closed
         end
 
         def deliver_reset
@@ -474,6 +478,7 @@ module Rubernetes
                     @queue.pop(timeout: timeout)
                   end
           raise IO::WaitReadable, "SPDY stream #{@id} read timed out" if value.nil? && !timeout.nil?
+
           if value == :eof
             @queue << :eof
             return nil
@@ -555,7 +560,8 @@ module Rubernetes
           @reply_waiters ||= {}
           queue = Queue.new
           @mutex.synchronize { @reply_waiters[stream.id] = queue }
-          send_frame(SynStream.new(stream_id: stream.id, associated_stream_id: 0, priority: 0, headers: headers, fin: fin, unidirectional: false))
+          send_frame(SynStream.new(stream_id: stream.id, associated_stream_id: 0, priority: 0, headers: headers, fin: fin,
+                                   unidirectional: false))
           stream.close if fin
           outcome = queue.pop(timeout: timeout)
           @mutex.synchronize { @reply_waiters.delete(stream.id) }

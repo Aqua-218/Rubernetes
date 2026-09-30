@@ -44,9 +44,7 @@ module GRPCFakeServer
     # A cold `require "grpc"` alone takes seconds on a loaded host.
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + WAIT_SECONDS
     until File.socket?(socket)
-      if Process.waitpid(pid, Process::WNOHANG)
-        raise "test gRPC server exited before creating #{socket}"
-      end
+      raise "test gRPC server exited before creating #{socket}" if Process.waitpid(pid, Process::WNOHANG)
       raise "test gRPC server never created #{socket}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
 
       sleep 0.05
@@ -61,7 +59,15 @@ module GRPCFakeServer
   def self.stop(pid)
     return unless pid
 
-    Process.kill("TERM", pid) rescue nil
-    Process.wait(pid) rescue nil
+    begin
+      Process.kill("TERM", pid)
+    rescue StandardError
+      nil
+    end
+    begin
+      Process.wait(pid)
+    rescue StandardError
+      nil
+    end
   end
 end

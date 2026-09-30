@@ -16,7 +16,7 @@ module Rubernetes
         NAME = "bootstrap-token"
         NAMESPACE = "kube-system"
         SECRET_TYPE = "bootstrap.kubernetes.io/token"
-        TOKEN_PATTERN = /\A([a-z0-9]{6})\.([a-z0-9]{16})\z/.freeze
+        TOKEN_PATTERN = /\A([a-z0-9]{6})\.([a-z0-9]{16})\z/
         USER_PREFIX = "system:bootstrap:"
         GROUP = "system:bootstrappers"
 
@@ -53,9 +53,13 @@ module Rubernetes
             return nil if expires_at <= @clock.call
           end
           groups = data["auth-extra-groups"].to_s.split(",").map(&:strip).reject(&:empty?)
-          return nil unless groups.all? { |group| group.start_with?("system:bootstrappers:") && group.match?(/\Asystem:bootstrappers:[a-z0-9:-]{0,255}[a-z0-9]\z/) }
+          return nil unless groups.all? do |group|
+            group.start_with?("system:bootstrappers:") && group.match?(/\Asystem:bootstrappers:[a-z0-9:-]{0,255}[a-z0-9]\z/)
+          end
 
-          AuthenticationResult.new(user: UserInfo.new(name: "#{USER_PREFIX}#{id}", groups: [GROUP] + groups + [UserInfo::ALL_AUTHENTICATED]), authenticator: NAME)
+          AuthenticationResult.new(
+            user: UserInfo.new(name: "#{USER_PREFIX}#{id}", groups: [GROUP] + groups + [UserInfo::ALL_AUTHENTICATED]), authenticator: NAME
+          )
         end
 
         def authenticate(context)

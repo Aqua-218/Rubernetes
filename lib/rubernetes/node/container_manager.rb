@@ -41,7 +41,9 @@ module Rubernetes
                                                sleeper: sleeper, pod_level: pod_level_resource_managers)
         @memory_manager = MemoryManager::Manager.new(policy: memory.fetch("policy", MemoryManager::POLICY_NONE),
                                                      machine: Array(machine[:topology]), reserved_memory: memory_reservations(memory),
-                                                     node_allocatable_reservation: reservation.to_h { |name, quantity| [name, quantity.to_s] },
+                                                     node_allocatable_reservation: reservation.to_h do |name, quantity|
+                                                       [name, quantity.to_s]
+                                                     end,
                                                      state_directory: state_directory, affinity: @topology_manager,
                                                      pod_level: pod_level_resource_managers)
         @topology_manager.add_hint_provider(@cpu_manager)

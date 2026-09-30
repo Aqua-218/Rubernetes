@@ -11,15 +11,17 @@ class InfrastructureStorageControllerTest < Minitest::Test
                                     "timeAdded" => "2026-01-01T00:00:00Z"}])
     immediate = pod("immediate", node: "node-a")
     delayed = pod("delayed", node: "node-a",
-                  tolerations: [{"key" => "node.kubernetes.io/unreachable", "effect" => "NoExecute",
-                                 "tolerationSeconds" => 60}])
+                             tolerations: [{"key" => "node.kubernetes.io/unreachable", "effect" => "NoExecute",
+                                            "tolerationSeconds" => 60}])
     controller = Controller::TaintEvictionController.new(clock: -> { Time.utc(2026, 1, 1, 0, 0, 30) })
 
     before_deadline = controller.plan(node, pods: [immediate, delayed])
+
     assert_equal ["immediate"], deleted_names(before_deadline)
     assert_equal "TaintManagerEviction", before_deadline.events.first.fetch("reason")
 
     after_deadline = controller.plan(node, pods: [delayed], now: Time.utc(2026, 1, 1, 0, 1))
+
     assert_equal ["delayed"], deleted_names(after_deadline)
   end
 
@@ -28,14 +30,15 @@ class InfrastructureStorageControllerTest < Minitest::Test
     device_taint = {"key" => "resource.kubernetes.io/gpu", "effect" => "NoExecute",
                     "timeAdded" => "2026-01-01T00:00:00Z"}
     pod_value = pod("gpu", node: "node-a",
-                    tolerations: [{"key" => "resource.kubernetes.io/gpu", "effect" => "NoExecute",
-                                   "tolerationSeconds" => 120}])
+                           tolerations: [{"key" => "resource.kubernetes.io/gpu", "effect" => "NoExecute",
+                                          "tolerationSeconds" => 120}])
     controller = Controller::DeviceTaintEvictionController.new
 
     assert_empty deleted_names(controller.plan(node, pods: [pod_value], device_taints: [device_taint],
-                                                now: Time.utc(2026, 1, 1, 0, 1)))
+                                                     now: Time.utc(2026, 1, 1, 0, 1)))
     result = controller.plan(node, pods: [pod_value], device_taints: [device_taint],
-                             now: Time.utc(2026, 1, 1, 0, 2))
+                                   now: Time.utc(2026, 1, 1, 0, 2))
+
     assert_equal ["gpu"], deleted_names(result)
   end
 
@@ -68,7 +71,8 @@ class InfrastructureStorageControllerTest < Minitest::Test
     assert_empty controller.plan(ignored, nodes: [node_value]).operations
 
     route_result = Controller::NodeRouteController.new(provider: provider).plan(node_value)
-    assert_equal ["10.244.0.0/24"], route_result.status.fetch("routes").map { |route| route.fetch("destination") }
+
+    assert_equal(["10.244.0.0/24"], route_result.status.fetch("routes").map { |route| route.fetch("destination") })
     assert_equal [["node-a", "10.244.0.0/24"]], provider.routes
   end
 
@@ -79,14 +83,16 @@ class InfrastructureStorageControllerTest < Minitest::Test
     too_small = pv("too-small", storage_class: "fast", access_modes: ["ReadWriteOnce"], capacity: "5Gi")
     matching = pv("matching", storage_class: "fast", access_modes: ["ReadWriteOnce"], capacity: "20Gi")
     result = Controller::PersistentVolumeBinderController.new.plan(claim,
-                                                                    persistent_volumes: [wrong_class, wrong_mode, too_small, matching])
+                                                                   persistent_volumes: [wrong_class, wrong_mode, too_small, matching])
 
     # bind: the volume's claimRef (update) and phase (status), then the
     # claim's volumeName and annotations (update) and phase (status).
     actions = result.operations.map { |operation| [operation.action, operation.resource.kind, operation.object.dig("metadata", "name")] }
+
     assert_equal [[:update, "PersistentVolume", "matching"], [:status_update, "PersistentVolume", "matching"],
                   [:update, "PersistentVolumeClaim", "claim"], [:status_update, "PersistentVolumeClaim", "claim"]], actions
     volume_update, volume_status, claim_update, claim_status = result.operations
+
     assert_equal "claim", volume_update.object.dig("spec", "claimRef", "name")
     assert_equal "yes", volume_update.object.dig("metadata", "annotations", "pv.kubernetes.io/bound-by-controller")
     assert_equal "Bound", volume_status.patch["phase"]
@@ -102,7 +108,7 @@ class InfrastructureStorageControllerTest < Minitest::Test
     volume = pv("data", capacity: "20Gi", csi_driver: "example.csi")
     claim = pvc("claim", volume_name: "data", storage_class: "")
     pod_value = pod("consumer", node: "node-b",
-                    volumes: [{"name" => "data", "persistentVolumeClaim" => {"claimName" => "claim"}}])
+                                volumes: [{"name" => "data", "persistentVolumeClaim" => {"claimName" => "claim"}}])
     existing = volume_attachment("data", node_name: "node-a", attacher: "example.csi", attached: true)
     managed = %w[node-a node-b].map do |name|
       {"apiVersion" => "v1", "kind" => "Node",
@@ -110,13 +116,13 @@ class InfrastructureStorageControllerTest < Minitest::Test
        "status" => {"volumesInUse" => ["kubernetes.io/csi/example.csi^"]}}
     end
     result = Controller::PersistentVolumeAttachDetachController.new.plan(volume, pods: [pod_value], claims: [claim],
-                                                                           attachments: [existing], nodes: managed)
+                                                                                 attachments: [existing], nodes: managed)
 
     assert_empty result.creates
     assert_empty result.operations.reject { |operation| operation.action == :status_merge }, "node-a still has it mounted: no detach yet"
-    assert_equal [["FailedAttachVolume", "Multi-Attach error for volume \"data\" Volume is already exclusively attached to one node " \
+    assert_equal([["FailedAttachVolume", "Multi-Attach error for volume \"data\" Volume is already exclusively attached to one node " \
                                          "and can't be attached to another"]],
-                 result.events.map { |event| event.values_at("reason", "message") }
+                 result.events.map { |event| event.values_at("reason", "message") })
   end
 
   def test_expander_updates_capacity_and_filesystem_pending_status
@@ -125,11 +131,12 @@ class InfrastructureStorageControllerTest < Minitest::Test
     volume = pv("data", storage_class: "fast", capacity: "20Gi")
     result = Controller::PersistentVolumeExpanderController.new.plan(
       claim, persistent_volume: volume,
-      storage_class: {"apiVersion" => "storage.k8s.io/v1", "kind" => "StorageClass",
-                      "metadata" => {"name" => "fast"}, "spec" => {"allowVolumeExpansion" => true}}
+             storage_class: {"apiVersion" => "storage.k8s.io/v1", "kind" => "StorageClass",
+                             "metadata" => {"name" => "fast"}, "spec" => {"allowVolumeExpansion" => true}}
     )
 
     status_update = result.operations.find { |operation| operation.action == :status_update }
+
     assert_equal "20Gi", status_update.patch.dig("capacity", "storage")
     assert_equal "FileSystemResizePending", result.status.fetch("conditions").last.fetch("type")
     assert_equal "VolumeResizeSuccessful", result.events.first.fetch("reason")
@@ -137,11 +144,11 @@ class InfrastructureStorageControllerTest < Minitest::Test
 
   def test_cluster_role_aggregation_is_owned_and_idempotent
     target = cluster_role("admin", aggregation_rule: [{"matchLabels" => {"rbac.example/aggregate" => "true"}}],
-                          rules: [{"apiGroups" => [""], "resources" => ["pods"], "verbs" => ["get"]}])
+                                   rules: [{"apiGroups" => [""], "resources" => ["pods"], "verbs" => ["get"]}])
     source_a = cluster_role("source-a", labels: {"rbac.example/aggregate" => "true"},
-                            rules: [{"apiGroups" => [""], "resources" => ["pods"], "verbs" => ["get"]}])
+                                        rules: [{"apiGroups" => [""], "resources" => ["pods"], "verbs" => ["get"]}])
     source_b = cluster_role("source-b", labels: {"rbac.example/aggregate" => "true"},
-                            rules: [{"apiGroups" => [""], "resources" => ["deployments"], "verbs" => ["list"]}])
+                                        rules: [{"apiGroups" => [""], "resources" => ["deployments"], "verbs" => ["list"]}])
     controller = Controller::ClusterRoleAggregationController.new
     first = controller.plan(target, roles: [target, source_b, source_a])
     candidate = first.operations.first.object
@@ -155,11 +162,12 @@ class InfrastructureStorageControllerTest < Minitest::Test
 
   def test_factory_exposes_pinned_metadata_and_concrete_implementations
     factory = Controller::InfrastructureStorageControllerFactory
+
     assert_equal "v1.36.2", factory::VERSION
     assert_equal factory::NAMES.sort, factory::IMPLEMENTATIONS.keys.sort
     factory.definitions.each do |definition|
       refute_nil definition.implementation
-      assert definition.implementation <= Controller::BaseController
+      assert_operator definition.implementation, :<=, Controller::BaseController
       definition.validate!
     end
   end

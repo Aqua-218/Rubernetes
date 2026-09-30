@@ -42,7 +42,10 @@ module Rubernetes
           raise ArtifactError, "artifact lock is missing #{missing.join(", ")}" unless missing.empty?
 
           @entries = files.to_h do |name, entry|
-            raise ArtifactError, "artifact #{name} entry is malformed" unless entry.is_a?(Hash) && entry["path"].is_a?(String) && entry["sha256"].to_s.match?(/\A[0-9a-f]{64}\z/)
+            unless entry.is_a?(Hash) && entry["path"].is_a?(String) && entry["sha256"].to_s.match?(/\A[0-9a-f]{64}\z/)
+              raise ArtifactError,
+                    "artifact #{name} entry is malformed"
+            end
 
             [name, Entry.new(name: name, path: File.expand_path(entry["path"], @root), sha256: entry["sha256"], bytes: entry["bytes"])]
           end
@@ -69,7 +72,10 @@ module Rubernetes
 
             stat = File.stat(entry.path)
             raise ArtifactError, "artifact #{name} is owned by uid #{stat.uid}, expected #{expected_uid}" unless stat.uid == expected_uid
-            raise ArtifactError, "artifact #{name} is group/world writable (mode #{format("%o", stat.mode & 0o777)})" unless (stat.mode & 0o022).zero?
+            unless (stat.mode & 0o022).zero?
+              raise ArtifactError,
+                    "artifact #{name} is group/world writable (mode #{format("%o", stat.mode & 0o777)})"
+            end
 
             digest = self.class.file_digest(entry.path)
             raise ArtifactError, "artifact #{name} digest #{digest} does not match the lock #{entry.sha256}" unless digest == entry.sha256
@@ -78,7 +84,8 @@ module Rubernetes
             parent = File.stat(File.dirname(entry.path))
             raise ArtifactError, "artifact #{name} parent directory is writable by others" unless (parent.mode & 0o022).zero?
 
-            {"name" => name, "path" => entry.path, "sha256" => digest, "bytes" => stat.size, "uid" => stat.uid, "mode" => format("%o", stat.mode & 0o777)}
+            {"name" => name, "path" => entry.path, "sha256" => digest, "bytes" => stat.size, "uid" => stat.uid,
+             "mode" => format("%o", stat.mode & 0o777)}
           end
           report.freeze
         end
@@ -98,7 +105,9 @@ module Rubernetes
 
         def to_h
           {"lock_path" => @lock_path, "firecracker_version" => firecracker_version, "verity_root_hash" => verity_root_hash,
-           "guest_bundle_sha256" => guest_bundle_sha256, "files" => entries.transform_values { |entry| {"path" => entry.path, "sha256" => entry.sha256} },
+           "guest_bundle_sha256" => guest_bundle_sha256, "files" => entries.transform_values do |entry|
+                                                           {"path" => entry.path, "sha256" => entry.sha256}
+                                                         end,
            "digest" => digest}
         end
       end

@@ -34,7 +34,7 @@ class MetricsServerTest < Minitest::Test
       end
     end
 
-    def raw(method, path, body: nil, headers: {}, raise_for_status: true)
+    def raw(_method, path, body: nil, headers: {}, raise_for_status: true)
       review = JSON.parse(body)
       @reviews << [path, review]
       status = if path.end_with?("tokenreviews")
@@ -97,6 +97,7 @@ class MetricsServerTest < Minitest::Test
 
   def test_node_metrics_are_rates_over_the_window
     code, body = get("/apis/metrics.k8s.io/v1beta1/nodes/node-a")
+
     assert_equal 200, code
     assert_equal %w[NodeMetrics metrics.k8s.io/v1beta1], body.values_at("kind", "apiVersion")
     assert_equal "15s", body["window"]
@@ -107,59 +108,82 @@ class MetricsServerTest < Minitest::Test
 
   def test_pod_metrics_list_and_get
     code, list = get("/apis/metrics.k8s.io/v1beta1/namespaces/ns/pods")
+
     assert_equal 200, code
     assert_equal "PodMetricsList", list["kind"]
     pod = list["items"].first
+
     assert_equal [{"name" => "app", "usage" => {"cpu" => "200m", "memory" => "80Mi"}}], pod["containers"]
     code, single = get("/apis/metrics.k8s.io/v1beta1/namespaces/ns/pods/web")
+
     assert_equal [200, "web"], [code, single.dig("metadata", "name")]
   end
 
   def test_field_selectors_and_unknown_fields
     _code, list = get("/apis/metrics.k8s.io/v1beta1/nodes", query: {"fieldSelector" => ["metadata.name=other"]})
+
     assert_empty list["items"]
     code, status = get("/apis/metrics.k8s.io/v1beta1/nodes", query: {"fieldSelector" => ["spec.unschedulable=true"]})
+
     assert_equal 400, code
     assert_includes status["message"], "field label not supported"
   end
 
   def test_discovery_and_table
     _code, resources = get("/apis/metrics.k8s.io/v1beta1")
-    assert_equal %w[nodes pods], resources["resources"].map { |resource| resource["name"] }
+
+    assert_equal(%w[nodes pods], resources["resources"].map { |resource| resource["name"] })
     _code, table = get("/apis/metrics.k8s.io/v1beta1/nodes", accept: "application/json;as=Table;v=v1beta1;g=meta.k8s.io")
-    assert_equal %w[Name cpu memory Window], table["columnDefinitions"].map { |column| column["name"] }
-    assert_equal ["node-a", "800m", "320Mi", "15s"], table["rows"].first["cells"]
+
+    assert_equal(%w[Name cpu memory Window], table["columnDefinitions"].map { |column| column["name"] })
+    assert_equal %w[node-a 800m 320Mi 15s], table["rows"].first["cells"]
   end
 
   def test_delegated_authentication_and_authorization
     code, _body = get("/apis/metrics.k8s.io/v1beta1/nodes", token: "bad")
+
     assert_equal 401, code
     @client.allowed = false
     code, status = get("/apis/metrics.k8s.io/v1beta1/namespaces/ns/pods")
+
     assert_equal 403, code
     assert_includes status["message"], %(User "alice" cannot list resource "pods")
     _path, review = @client.reviews.reverse.find { |path, _| path.end_with?("subjectaccessreviews") }
+
     assert_equal({"group" => "metrics.k8s.io", "version" => "v1beta1", "resource" => "pods", "namespace" => "ns", "verb" => "list"},
                  review.dig("spec", "resourceAttributes").slice("group", "version", "resource", "namespace", "verb"))
   end
 
   def test_health_paths_need_no_credentials
     code, _headers, body = @server.call(Request.new(method: "GET", path: "/readyz", query: {}, headers: {}))
+
     assert_equal [200, "ok"], [code, body.join]
   end
 
   def test_the_https_listener_serves_behind_tls
     require "net/http"
     server = MS::Server.new(client: FakeClient.new, config: {"port" => 0, "bind_address" => "127.0.0.1", "jitter" => false,
-                                                              "metric_resolution_seconds" => 3600},
-                            http_get: ->(_url, _timeout) { nil }, logger: (ENV["MS_DEBUG"] ? Class.new { def method_missing(level, event, **fields) = warn("#{level} #{event} #{fields}"); def respond_to_missing?(*) = true }.new : nil))
+                                                             "metric_resolution_seconds" => 3600},
+                            http_get: ->(_url, _timeout) {}, logger: (if ENV["MS_DEBUG"]
+                                                                        Class.new do
+                                                                          def method_missing(level, event, **fields)
+                                                                            warn("#{level} #{event} #{fields}")
+                                                                          end
+
+                                                                          def respond_to_missing?(*)
+                                                                            true
+                                                                          end
+                                                                        end.new
+                                                                      end))
     server.start
     http = Net::HTTP.new("127.0.0.1", server.port)
     http.use_ssl = true
     http.verify_mode = OpenSSL::SSL::VERIFY_NONE
     response = http.get("/healthz")
-    assert_equal ["200", "ok"], [response.code, response.body]
+
+    assert_equal %w[200 ok], [response.code, response.body]
     denied = http.get("/apis/metrics.k8s.io/v1beta1/nodes", {"authorization" => "Bearer bad"})
+
     assert_equal "401", denied.code
   ensure
     server&.stop

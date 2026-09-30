@@ -16,7 +16,7 @@ class LayerExtractorXattrTest < Minitest::Test
   Image = Rubernetes::Image
   Xattr = Rubernetes::Platform::Linux::Xattr
   # cap_net_bind_service=+ep, VFS_CAP_REVISION_2 little-endian, as setcap writes it.
-  CAPABILITY = ["01000002", "00040000", "00000000", "00000000", "00000000"].map { |hex| [hex].pack("H*") }.join.b
+  CAPABILITY = %w[01000002 00040000 00000000 00000000 00000000].map { |hex| [hex].pack("H*") }.join.b
 
   def test_security_capability_and_user_xattrs_are_applied_and_others_ignored
     skip "xattr on the temp filesystem requires root" unless Process.uid.zero?
@@ -46,24 +46,25 @@ class LayerExtractorXattrTest < Minitest::Test
         assert_nil Xattr.fget(file.fileno, "user.absent")
         assert_nil Xattr.fget(file.fileno, "trusted.overlay.opaque") if Process.uid.zero?
       end
+
       File.open(File.join(root, "etc/plain"), File::RDONLY) do |file|
         assert_nil Xattr.fget(file.fileno, "security.capability")
       end
       assert_equal 2, extractor.ignored_xattrs, "trusted.* and security.selinux are counted, not applied"
 
       # Ownership from the tar header, PAX uid/gid records and symlink ownership.
-      assert_equal [101, 82], File.stat(File.join(root, "bin/server")).then { |st| [st.uid, st.gid] }
-      assert_equal [101, 82], File.stat(File.join(root, "etc/app")).then { |st| [st.uid, st.gid] }
-      assert_equal [3_000_000, 3_000_001], File.stat(File.join(root, "etc/app/big-owner")).then { |st| [st.uid, st.gid] }
-      assert_equal [101, 82], File.lstat(File.join(root, "etc/app/link")).then { |st| [st.uid, st.gid] }
-      assert_equal [0, 0], File.stat(File.join(root, "etc/plain")).then { |st| [st.uid, st.gid] }
+      assert_equal([101, 82], File.stat(File.join(root, "bin/server")).then { |st| [st.uid, st.gid] })
+      assert_equal([101, 82], File.stat(File.join(root, "etc/app")).then { |st| [st.uid, st.gid] })
+      assert_equal([3_000_000, 3_000_001], File.stat(File.join(root, "etc/app/big-owner")).then { |st| [st.uid, st.gid] })
+      assert_equal([101, 82], File.lstat(File.join(root, "etc/app/link")).then { |st| [st.uid, st.gid] })
+      assert_equal([0, 0], File.stat(File.join(root, "etc/plain")).then { |st| [st.uid, st.gid] })
       assert_equal 0o755, File.stat(File.join(root, "bin/server")).mode & 0o7777
 
       # Device nodes and FIFOs in a layer (bitnami/redis ships one) are skipped,
       # not fatal: the whole image used to be unpullable.
       assert_equal 2, extractor.skipped_special_files
-      refute File.exist?(File.join(root, "var/run/redis.pipe"))
-      refute File.exist?(File.join(root, "dev/tty-copy"))
+      refute_path_exists File.join(root, "var/run/redis.pipe")
+      refute_path_exists File.join(root, "dev/tty-copy")
     end
   end
 
@@ -105,7 +106,7 @@ class LayerExtractorXattrTest < Minitest::Test
   end
 
   def padded(bytes)
-    bytes + ("\0" * ((512 - bytes.bytesize % 512) % 512)).b
+    bytes + ("\0" * ((512 - (bytes.bytesize % 512)) % 512)).b
   end
 
   def header(name, type, size, mode:, uid: 0, gid: 0, linkname: "")

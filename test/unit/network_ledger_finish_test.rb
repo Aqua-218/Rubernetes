@@ -64,7 +64,8 @@ class NetworkLedgerFinishTest < Minitest::Test
   # A /proc/sys of our own with every sysctl the manager owns for bridge cni0.
   def sysctl_manager(journal)
     root = File.join(@directory, "sys")
-    Network::SysctlManager::STATIC_TARGETS.merge("net/ipv4/conf/cni0/rp_filter" => "0", "net/ipv6/conf/cni0/forwarding" => "1").each_key do |relative|
+    Network::SysctlManager::STATIC_TARGETS.merge("net/ipv4/conf/cni0/rp_filter" => "0",
+                                                 "net/ipv6/conf/cni0/forwarding" => "1").each_key do |relative|
       path = File.join(root, relative)
       FileUtils.mkdir_p(File.dirname(path))
       File.write(path, "9\n") unless File.exist?(path)
@@ -101,8 +102,9 @@ class NetworkLedgerFinishTest < Minitest::Test
     operation_id = attach_and_detach(interface(ledger), "sb-1")
 
     operation = ledger.operation(operation_id)
+
     assert_equal "Removed", operation.state
-    assert ledger.resources(owner: operation.owner, include_released: true).all? { |resource| resource[:state] == "Released" }
+    assert(ledger.resources(owner: operation.owner, include_released: true).all? { |resource| resource[:state] == "Released" })
   end
 
   def test_churn_keeps_the_ledger_bounded_and_compacts_the_journal
@@ -115,9 +117,10 @@ class NetworkLedgerFinishTest < Minitest::Test
     end
 
     live = ledger.operations.length
+
     assert_operator live, :<=, Native::OwnershipLedger::RETAINED_FINISHED_OPERATIONS + 1,
                     "finished operations beyond the retained window must be forgotten (#{live} live)"
-    assert File.read(@journal_path).include?(Native::OwnershipLedger::COMPACTION_EVENT), "the journal must have been rewritten"
+    assert_includes File.read(@journal_path), Native::OwnershipLedger::COMPACTION_EVENT, "the journal must have been rewritten"
     assert_operator sizes.last, :<, sizes.max, "the journal must shrink after compaction, not only grow"
   end
 
@@ -142,7 +145,7 @@ class NetworkLedgerFinishTest < Minitest::Test
     assert_operator orphaned.length, :<, Native::OwnershipLedger::COMPACTION_MIN_DROPPED_RECORDS,
                     "reference records of forgotten operations must be compacted away"
     assert_operator references.length, :<, 120, "the journal must not keep one pair per churned Pod (#{references.length})"
-    assert File.read(@journal_path).include?(Native::OwnershipLedger::COMPACTION_EVENT)
+    assert_includes File.read(@journal_path), Native::OwnershipLedger::COMPACTION_EVENT
     refute_empty references, "the live Pod's neighbours were reference-counted"
     assert references.none? { |record| record["operation_id"] == Network::SysctlManager::JOURNAL_OPERATION_ID },
            "per-Pod records are filed under the Pod's operation, not the manager's own id"
@@ -151,6 +154,7 @@ class NetworkLedgerFinishTest < Minitest::Test
 
     recovered = Network::SysctlManager.new(state_path: File.join(@directory, "sysctl.json"), root: File.join(@directory, "sys"),
                                            journal: ledger.journal, fsync: false)
+
     assert_equal ["sb-live"], recovered.recover.fetch("owners"), "recovery reads the state file, not the journal"
     assert_equal "1", File.read(File.join(@directory, "sys/net/ipv4/ip_forward")).strip
   end

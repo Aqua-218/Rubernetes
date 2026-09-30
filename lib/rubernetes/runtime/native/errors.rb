@@ -7,6 +7,7 @@ module Rubernetes
       class ConfigurationError < Error; end
       class CapabilityError < Error; end
       class InvalidState < Error; end
+
       class ResourceError < Error
         attr_reader :cleanup_errors
 
@@ -17,6 +18,7 @@ module Rubernetes
           end.freeze
         end
       end
+
       class UnsupportedProfile < Error; end
       class FailClosed < Error; end
     end

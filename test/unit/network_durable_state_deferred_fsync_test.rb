@@ -20,6 +20,7 @@ class NetworkDurableStateDeferredFsyncTest < Minitest::Test
         state = DurableState.new(path, default: {"operations" => {}}, fsync: :deferred)
         state.replace({"operations" => {"a" => {"state" => "committed"}}})
         state.replace({"operations" => {"a" => {"state" => "removed"}}})
+
         assert_equal [path, path], synced, "each write schedules one coalesced barrier"
       end
       assert_equal({"operations" => {"a" => {"state" => "removed"}}}, JSON.parse(File.read(path)))
@@ -32,6 +33,7 @@ class NetworkDurableStateDeferredFsyncTest < Minitest::Test
       path = File.join(dir, "network.json")
       DurableState.new(path, default: {}, fsync: :deferred).replace({"operations" => {"x" => 1}})
       Rubernetes::Volume::DeferredFsync.flush!
+
       assert_equal({"operations" => {"x" => 1}}, DurableState.new(path, default: {}, fsync: :deferred).read)
     end
   end
@@ -41,9 +43,17 @@ class NetworkDurableStateDeferredFsyncTest < Minitest::Test
       %i[inline none].each do |mode|
         path = File.join(dir, "#{mode}.json")
         calls = 0
-        fsync = mode == :inline ? ->(file) { calls += 1; file.fsync } : false
+        fsync = if mode == :inline
+                  lambda { |file|
+                    calls += 1
+                    file.fsync
+                  }
+                else
+                  false
+                end
         state = DurableState.new(path, default: {}, fsync: fsync)
         state.replace({"k" => mode.to_s})
+
         assert_equal({"k" => mode.to_s}, JSON.parse(File.read(path)))
         assert_operator calls, :>, 0 if mode == :inline
       end
@@ -52,6 +62,7 @@ class NetworkDurableStateDeferredFsyncTest < Minitest::Test
 
   def test_the_assembler_asks_for_the_deferred_barrier
     source = File.read(File.expand_path("../../lib/rubernetes/bootstrap/assembler.rb", __dir__))
+
     assert_match(/fsync: config\.fetch\("fsync", true\) == false \? false : :deferred/, source)
   end
 end

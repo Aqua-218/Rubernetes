@@ -33,7 +33,8 @@ class RuntimeLedgerCompactionTest < Minitest::Test
     %w[Validated ImagePinned WorkspaceAllocated IsolationCreated ResourcesAttached WorkloadStopped Running Stopping Stopped].each do |state|
       ledger.transition(operation_id: id, to: state)
     end
-    ledger.claim(operation_id: id, kind: "workspace", id: id, identity: "workspace:#{id}", metadata: {"root" => "/x/#{id}", "big" => "z" * 200})
+    ledger.claim(operation_id: id, kind: "workspace", id: id, identity: "workspace:#{id}",
+                 metadata: {"root" => "/x/#{id}", "big" => "z" * 200})
     ledger.claim(operation_id: id, kind: "namespace", id: id, identity: "namespace:#{id}", metadata: {})
     ledger.claim(operation_id: id, kind: "cgroup", id: "#{id}:c1", identity: "cgroup:#{id}:c1", metadata: {"spec" => {"image" => "pause"}})
     ledger.begin_request(request_id: "start:#{id}:c1", operation: "container.start", config_digest: "d", owner: id)
@@ -50,9 +51,11 @@ class RuntimeLedgerCompactionTest < Minitest::Test
     ledger = open_ledger
     run_sandbox(ledger, "s1", finish: false)
     released = ledger.resources(owner: "sandbox:s1:0123456789abcdef", include_released: true)
+
     assert_equal 3, released.length
-    assert released.all? { |resource| resource[:state] == "Released" && resource[:metadata] == {} }
+    assert(released.all? { |resource| resource[:state] == "Released" && resource[:metadata] == {} })
     line = File.readlines(@path).find { |entry| entry.include?('"resource_released"') && entry.include?('"kind":"workspace"') }
+
     refute_includes line, "zzzz", "the release record must not repeat the claim metadata"
   end
 
@@ -61,6 +64,7 @@ class RuntimeLedgerCompactionTest < Minitest::Test
     total = Native::OwnershipLedger::RETAINED_FINISHED_OPERATIONS + 5
     total.times { |index| run_sandbox(ledger, "s#{index}") }
     ids = ledger.operations.map { |operation| operation[:id] }
+
     assert_equal Native::OwnershipLedger::RETAINED_FINISHED_OPERATIONS, ids.length
     assert_equal (5...total).map { |index| "s#{index}" }, ids
     assert_nil ledger.request("start:s0:c1"), "requests of a forgotten operation go with it"
@@ -68,7 +72,7 @@ class RuntimeLedgerCompactionTest < Minitest::Test
     assert_empty ledger.resources(owner: "sandbox:s0:0123456789abcdef", include_released: true)
     assert_equal 3, ledger.resources(owner: "sandbox:s#{total - 1}:0123456789abcdef", include_released: true).length
     # The journal itself is untouched until enough records are dead.
-    refute File.read(@path).include?("journal_compacted")
+    refute_includes File.read(@path), "journal_compacted"
   end
 
   def test_unreleased_or_pending_operations_are_never_forgotten
@@ -78,6 +82,7 @@ class RuntimeLedgerCompactionTest < Minitest::Test
     run_sandbox(ledger, "pending")
     (Native::OwnershipLedger::RETAINED_FINISHED_OPERATIONS + 3).times { |index| run_sandbox(ledger, "s#{index}") }
     ids = ledger.operations.map { |operation| operation[:id] }
+
     assert_includes ids, "held", "an operation still holding a resource keeps its records"
     assert_includes ids, "pending", "an operation with a pending request keeps its records"
     refute_includes ids, "s0"
@@ -86,25 +91,32 @@ class RuntimeLedgerCompactionTest < Minitest::Test
   def test_journal_is_compacted_with_a_fresh_valid_chain_and_replays_identically
     ledger = open_ledger
     count = 0
-    count += 1 until (run_sandbox(ledger, "s#{count}"); File.read(@path).include?("journal_compacted"))
+    compacted_after = lambda do |index|
+      run_sandbox(ledger, "s#{index}")
+      File.read(@path).include?("journal_compacted")
+    end
+    count += 1 until compacted_after.call(count)
     live_before = {operations: ledger.operations, resources: ledger.resources(include_released: true), requests: ledger.requests}
     lines = File.readlines(@path)
     marker = JSON.parse(lines.first)
+
     assert_equal "journal_compacted", marker["event"]
     assert_equal 1, marker["sequence"]
     assert_equal 1, marker["payload"]["generation"]
     assert_operator marker["payload"]["dropped_records"], :>=, Native::OwnershipLedger::COMPACTION_MIN_DROPPED_RECORDS
     assert_equal lines.length - 1, marker["payload"]["retained_records"]
-    assert_equal lines.each_index.map { |index| index + 1 }, lines.map { |line| JSON.parse(line)["sequence"] }
+    assert_equal(lines.each_index.map { |index| index + 1 }, lines.map { |line| JSON.parse(line)["sequence"] })
     refute lines.any? { |line| line.include?('"operation_id":"s0"') }, "forgotten records are gone from disk"
 
     reopened = open_ledger
+
     assert_equal live_before[:operations], reopened.operations
     assert_equal live_before[:resources], reopened.resources(include_released: true)
     assert_equal live_before[:requests], reopened.requests
     # Still usable: the retained operations answer replays, new work appends.
     assert_equal "Removed", reopened.operation("s#{count}").state
     run_sandbox(reopened, "after")
+
     assert_equal "Removed", reopened.operation("after").state
   end
 
@@ -116,14 +128,19 @@ class RuntimeLedgerCompactionTest < Minitest::Test
       first = JSON.parse(File.readlines(@path).first)
       generations << first["payload"]["generation"] if first["event"] == "journal_compacted"
     end
+
     assert_operator generations.uniq.max, :>=, 2
-    assert_equal 1, File.readlines(@path).count { |line| line.include?("journal_compacted") }
+    assert_equal(1, File.readlines(@path).count { |line| line.include?("journal_compacted") })
   end
 
   def test_tampering_is_still_detected_after_compaction
     ledger = open_ledger
     count = 0
-    count += 1 until (run_sandbox(ledger, "s#{count}"); File.read(@path).include?("journal_compacted"))
+    compacted_after = lambda do |index|
+      run_sandbox(ledger, "s#{index}")
+      File.read(@path).include?("journal_compacted")
+    end
+    count += 1 until compacted_after.call(count)
     lines = File.readlines(@path)
     record = JSON.parse(lines[3])
     record["payload"]["state"] = "Running" if record["payload"].is_a?(Hash)
@@ -138,8 +155,13 @@ class RuntimeLedgerCompactionTest < Minitest::Test
     ledger = Native::OwnershipLedger.new(journal: journal)
     journal.append(operation_id: "network:sysctl", event: "network_sysctl_apply_committed", payload: {"state" => "active"})
     count = 0
-    count += 1 until (run_sandbox(ledger, "s#{count}"); File.read(@path).include?("journal_compacted"))
-    assert File.read(@path).include?("network_sysctl_apply_committed")
+    compacted_after = lambda do |index|
+      run_sandbox(ledger, "s#{index}")
+      File.read(@path).include?("journal_compacted")
+    end
+    count += 1 until compacted_after.call(count)
+
+    assert_includes File.read(@path), "network_sysctl_apply_committed"
   end
 
   def test_legacy_requests_without_owner_are_forgotten_by_id
@@ -147,8 +169,10 @@ class RuntimeLedgerCompactionTest < Minitest::Test
     ledger = Native::OwnershipLedger.new(journal: journal)
     ledger.begin_request(request_id: "create:s0:c1", operation: "container.create", config_digest: "d")
     ledger.complete_request(request_id: "create:s0:c1", state: "Completed")
+
     assert_nil ledger.request("create:s0:c1").owner
     (Native::OwnershipLedger::RETAINED_FINISHED_OPERATIONS + 1).times { |index| run_sandbox(ledger, "s#{index}") }
+
     assert_nil ledger.request("create:s0:c1")
   end
 
@@ -161,11 +185,13 @@ class RuntimeLedgerCompactionTest < Minitest::Test
     ledger.release(operation_id: "a", kind: "veth", id: "veth1", identity: "veth:1")
     ledger.begin_operation(operation_id: "b", owner: "sandbox:b:0000000000000000", config_digest: "c")
     ledger.claim(operation_id: "b", kind: "veth", id: "veth1", identity: "veth:2", metadata: {})
+
     assert_empty ledger.resources(owner: "sandbox:a:0000000000000000", include_released: true)
-    assert_equal ["veth:2"], ledger.resources(owner: "sandbox:b:0000000000000000").map { |resource| resource[:identity] }
+    assert_equal(["veth:2"], ledger.resources(owner: "sandbox:b:0000000000000000").map { |resource| resource[:identity] })
     reopened = open_ledger
+
     assert_empty reopened.resources(owner: "sandbox:a:0000000000000000", include_released: true)
-    assert_equal ["veth:2"], reopened.resources(owner: "sandbox:b:0000000000000000").map { |resource| resource[:identity] }
+    assert_equal(["veth:2"], reopened.resources(owner: "sandbox:b:0000000000000000").map { |resource| resource[:identity] })
   end
 end
 
@@ -203,19 +229,23 @@ class RuntimeLedgerInertOperationsTest < Minitest::Test
   def test_released_new_operations_are_closed_and_compacted_away_at_load
     before = write_legacy_journal(released: 500, live: 10)
     live_resources = before.resources(include_released: false)
+
     assert_equal 511, before.operations.length
 
     reopened = Native::OwnershipLedger.new(journal: Native::RollbackJournal.new(@path, fsync: false))
     ids = reopened.operations.map { |operation| operation[:id] }
+
     assert_equal 10.times.map { |index| "live-#{index}" } + ["empty"], ids
     assert_equal live_resources, reopened.resources(include_released: false)
     assert reopened.operations.all? { |operation| operation[:state] == "New" }, "live operations keep their state"
     lines = File.readlines(@path)
+
     assert_equal "journal_compacted", JSON.parse(lines.first)["event"]
-    refute lines.any? { |line| line.include?("net-7") }
+    refute(lines.any? { |line| line.include?("net-7") })
     assert_operator lines.length, :<, 60
 
     again = Native::OwnershipLedger.new(journal: Native::RollbackJournal.new(@path, fsync: false))
-    assert_equal ids, again.operations.map { |operation| operation[:id] }
+
+    assert_equal(ids, again.operations.map { |operation| operation[:id] })
   end
 end

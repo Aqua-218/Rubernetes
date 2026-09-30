@@ -14,8 +14,8 @@ module Rubernetes
     # optimistic compare-and-update, so two managers cannot both observe a
     # successful acquisition for the same resource version.
     class LeaseElector
-      DEFAULT_NAMESPACE = "kube-system".freeze
-      DEFAULT_NAME = "rubernetes-controller-manager".freeze
+      DEFAULT_NAMESPACE = "kube-system"
+      DEFAULT_NAME = "rubernetes-controller-manager"
       DEFAULT_LEASE_DURATION_SECONDS = 15.0
       DEFAULT_RENEW_DEADLINE_SECONDS = 10.0
       DEFAULT_RETRY_PERIOD_SECONDS = 2.0
@@ -33,6 +33,7 @@ module Rubernetes
         @adapter = store.is_a?(StoreAdapter) ? store : StoreAdapter.new(store)
         @identity = identity.to_s
         raise ArgumentError, "leader identity must not be empty" if @identity.empty?
+
         @namespace = namespace.to_s
         @name = name.to_s
         @lease_duration_seconds = Float(lease_duration_seconds)
@@ -42,6 +43,7 @@ module Rubernetes
                @retry_period_seconds.positive? && @renew_deadline_seconds < @lease_duration_seconds
           raise ArgumentError, "lease duration must exceed renew deadline and all election periods must be positive"
         end
+
         @clock = clock
         @state = :follower
         @last_error = nil
@@ -155,9 +157,7 @@ module Rubernetes
 
           return acquire(now, lease, same_holder: true)
         end
-        if expired
-          return acquire(now, lease)
-        end
+        return acquire(now, lease) if expired
 
         @state = :follower
         :follower
@@ -210,8 +210,10 @@ module Rubernetes
 
       public def renew(now = normalize_time(@clock.call), lease = current)
         return :follower unless lease
+
         holder = Support.value(Support.spec(lease), "holderIdentity", nil).to_s
         return lose_leadership unless holder == identity
+
         last_renew = Support.parse_time(Support.value(Support.spec(lease), "renewTime", nil))
         if last_renew && (now - last_renew) > renew_deadline_seconds
           @state = :lost
@@ -243,6 +245,7 @@ module Rubernetes
 
       def acquire(now = normalize_time(@clock.call), lease = current, same_holder: false)
         return :follower unless lease
+
         candidate = Support.deep_copy(lease)
         candidate["spec"] ||= {}
         candidate["spec"]["holderIdentity"] = identity
@@ -324,6 +327,7 @@ module Rubernetes
       def normalize_time(value)
         parsed = Support.parse_time(value)
         return parsed if parsed
+
         raise ArgumentError, "clock must return Time or RFC3339 value"
       end
 
@@ -338,7 +342,7 @@ module Rubernetes
       # server into a component crash.  A 5xx, a timeout or a dropped
       # connection is that kind of failure.
       TRANSIENT_ERROR_NAMES = /\A(?:Timeout|ServerTimeout|ServiceUnavailable|InternalError|TooManyRequests|
-                               APIError|ConnectionError|IOError|Errno::[A-Z]+)\z/x.freeze
+                               APIError|ConnectionError|IOError|Errno::[A-Z]+)\z/x
 
       def transient_error?(error)
         status = error.respond_to?(:status) ? error.status.to_i : nil

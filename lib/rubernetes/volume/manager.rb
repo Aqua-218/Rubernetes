@@ -41,8 +41,8 @@ module Rubernetes
         end
       end
 
-      def fetch(id, &fallback)
-        @mutex.synchronize { @values.fetch(id.to_s, &fallback) }
+      def fetch(id, &)
+        @mutex.synchronize { @values.fetch(id.to_s, &) }
       end
 
       def delete(id)
@@ -66,6 +66,7 @@ module Rubernetes
 
       def each_value(&block)
         return enum_for(__method__) unless block
+
         values.each(&block)
       end
 
@@ -148,9 +149,7 @@ module Rubernetes
           when "succeeded"
             next Types.deep_copy(entry.result)
           when "pending", "effecting", "unknown"
-            unless retryable
-              raise OperationUnknown, "operation #{operation} for #{key} is #{entry.status}; recover before retrying"
-            end
+            raise OperationUnknown, "operation #{operation} for #{key} is #{entry.status}; recover before retrying" unless retryable
           when "new"
             # The ledger has just durably reserved this token for this payload.
             # Execute the effect exactly once and finalize the reservation below.
@@ -185,21 +184,24 @@ module Rubernetes
           @manager.operations.unknown!(key: key, operation: operation, token: token,
                                        error: persisted_error)
           @manager.mark_unknown(key, operation: operation, payload: durable_payload,
-                                details: persisted_error.respond_to?(:details) ? persisted_error.details : nil)
+                                     details: persisted_error.respond_to?(:details) ? persisted_error.details : nil)
         end
         raise
       rescue StandardError => error
         raise if error.is_a?(StateUnknownError)
+
         if entry && (effect_started || ambiguous_error?(error))
           persisted_error = @manager.persistence_error(error)
           @manager.operations.unknown!(key: key, operation: operation, token: token,
                                        error: persisted_error)
           @manager.mark_unknown(key, operation: operation, payload: durable_payload,
-                                details: persisted_error.respond_to?(:details) ? persisted_error.details : nil)
+                                     details: persisted_error.respond_to?(:details) ? persisted_error.details : nil)
           raise OperationUnknown.new("operation #{operation} for #{key} has an ambiguous result"), cause: error
         end
-        @manager.operations.fail!(key: key, operation: operation, token: token,
-                                  error: @manager.persistence_error(error)) if entry
+        if entry
+          @manager.operations.fail!(key: key, operation: operation, token: token,
+                                    error: @manager.persistence_error(error))
+        end
         raise
       end
 
@@ -218,10 +220,10 @@ module Rubernetes
     class RemoteBackend < Backend
       TYPE = "csi"
 
-      def initialize(csi:, secret_provider: nil, persistence_sanitizer: nil, error_sanitizer: nil, **kwargs)
+      def initialize(csi:, secret_provider: nil, persistence_sanitizer: nil, error_sanitizer: nil, **)
         raise CSIUnavailable, "CSI adapter is not configured" unless csi
 
-        super(**kwargs)
+        super(**)
         @csi = csi
         @secret_provider = secret_provider
         @persistence_sanitizer = persistence_sanitizer
@@ -257,8 +259,8 @@ module Rubernetes
         with_secure_csi_target(target, directory: nil, create: false, post_effect: :mounted) do |dispatch_path, _lease|
           sanitize_response(AdapterSupport.result_hash(
             invoke_csi(:expand_node, remote_id, dispatch_path, token: token, capacity_bytes: capacity_bytes,
-                                                                    volume_capability: csi_volume_capability,
-                                                                    secrets: secrets_for(:node_expand), staging_path: stage_path)
+                                                               volume_capability: csi_volume_capability,
+                                                               secrets: secrets_for(:node_expand), staging_path: stage_path)
           ))
         end
       end
@@ -284,7 +286,7 @@ module Rubernetes
 
       # The periodic remount: NodePublishVolume on the existing target, with
       # the context rebuilt as at publish.
-      def republish(stage_path:, target:, pod:, readonly: false, context: {}, token:)
+      def republish(stage_path:, target:, pod:, token:, readonly: false, context: {})
         ensure_path!(stage_path)
         ensure_path!(target)
         remote_context = kubelet_csi_context(with_secrets(Types.deep_copy(context), :node_publish))
@@ -347,7 +349,7 @@ module Rubernetes
         request_context = with_secrets(context, :controller_unpublish)
         invoke_remote_mutation(effect_boundary) do
           invoke_csi(:unpublish, remote_id, node, token: Types.key(context, "token", "detach-#{id}-#{node}"),
-                     context: request_context)
+                                                  context: request_context)
         end
       end
 
@@ -364,9 +366,9 @@ module Rubernetes
         token = Types.key(context, "token", "stage-#{id}-#{node}")
         with_secure_csi_target(
           path, directory: true, create: true, post_effect: :mounted,
-          compensation: lambda do |dispatch_path, original_path|
-            compensate_stage_mount!(dispatch_path, original_path, token: token)
-          end
+                compensation: lambda do |dispatch_path, original_path|
+                  compensate_stage_mount!(dispatch_path, original_path, token: token)
+                end
         ) do |dispatch_path, lease|
           response = invoke_remote_mutation(effect_boundary) do
             invoke_csi(:stage, remote_id, dispatch_path,
@@ -374,7 +376,7 @@ module Rubernetes
                        readonly: readonly || readonly?, context: request_context)
           end
           normalize_remote_mount(response, path, stage: true,
-                                  aliases: [dispatch_path], path_identity: lease&.identity)
+                                                 aliases: [dispatch_path], path_identity: lease&.identity)
         end
       end
 
@@ -415,7 +417,7 @@ module Rubernetes
                                                        create: !(readonly || readonly?))
           ensure
             parent_handle.close unless handle && parent_handle.equal?(handle)
-            parent_handle = nil
+            nil
           end
           remote_context["subPath"] = handle.path.to_s if handle.respond_to?(:path)
           remote_context["subPathIdentity"] = handle.identity if handle.respond_to?(:identity)
@@ -428,10 +430,10 @@ module Rubernetes
         with_secure_csi_target(stage_path, directory: true, create: false, post_effect: :mounted) do |dispatch_stage, _stage_lease|
           with_secure_csi_target(
             target, directory: target_directory, create: true, post_effect: :mounted,
-            compensation: lambda do |dispatch_path, original_path|
-              compensate_publish_mount!(dispatch_path, original_path,
-                                         token: Types.key(context, "token", "publish-#{id}-#{target}"))
-            end
+                    compensation: lambda do |dispatch_path, original_path|
+                      compensate_publish_mount!(dispatch_path, original_path,
+                                                token: Types.key(context, "token", "publish-#{id}-#{target}"))
+                    end
           ) do |dispatch_target, target_lease|
             response = invoke_remote_mutation(effect_boundary) do
               invoke_csi(:publish_node, remote_id, dispatch_stage, dispatch_target,
@@ -439,7 +441,7 @@ module Rubernetes
                          readonly: readonly || readonly?, context: remote_context)
             end
             result = normalize_remote_mount(response, target, stage: false,
-                                            aliases: [dispatch_target], path_identity: target_lease&.identity)
+                                                              aliases: [dispatch_target], path_identity: target_lease&.identity)
             result["node"] = node.to_s
             result["pod"] = pod_identifier(pod)
             result
@@ -483,28 +485,27 @@ module Rubernetes
         with_target_leases(target_paths, post_effect: :mounted) do |leases|
           response = sanitize_response(invoke_remote_mutation(effect_boundary) do
             invoke_csi(:expand, remote_id, capacity_bytes, token: token, secrets: secrets,
-                       volume_capability: csi_volume_capability)
+                                                           volume_capability: csi_volume_capability)
           end)
           verify_target_leases!(leases, post_effect: :mounted)
           required = Types.key(response, "nodeExpansionRequired", Types.key(response, "node_expansion_required", false)) == true
           expanded_paths = []
           if required
             leases.each do |path, lease|
-              begin
-                # Same contract as with_secure_csi_target: the plugin acts on
-                # the canonical path while the lease pins the inode.
-                invoke_csi(:expand_node, remote_id, lease.original_path,
-                           token: "#{token}:node:#{Types.digest(path)[0, 16]}",
-                           capacity_bytes: capacity_bytes,
-                           volume_capability: csi_volume_capability,
-                           secrets: secrets_for(:node_expand))
-                verify_target_leases!([[path, lease]], post_effect: :mounted)
-                expanded_paths << path
-              rescue OperationUnknown
-                raise
-              rescue StandardError => error
-                raise OperationUnknown.new("CSI NodeExpandVolume failed after controller expansion: #{sanitize_error(error).message}"), cause: error
-              end
+              # Same contract as with_secure_csi_target: the plugin acts on
+              # the canonical path while the lease pins the inode.
+              invoke_csi(:expand_node, remote_id, lease.original_path,
+                         token: "#{token}:node:#{Types.digest(path)[0, 16]}",
+                         capacity_bytes: capacity_bytes,
+                         volume_capability: csi_volume_capability,
+                         secrets: secrets_for(:node_expand))
+              verify_target_leases!([[path, lease]], post_effect: :mounted)
+              expanded_paths << path
+            rescue OperationUnknown
+              raise
+            rescue StandardError => error
+              raise OperationUnknown.new("CSI NodeExpandVolume failed after controller expansion: #{sanitize_error(error).message}"),
+                    cause: error
             end
           end
           {
@@ -534,9 +535,9 @@ module Rubernetes
 
       def csi_volume_capability
         Types.deep_copy(Types.key(spec, "volumeCapability", {
-          "accessModes" => Array(Types.key(spec, "accessModes", ["ReadWriteOnce"])),
-          "volumeMode" => Types.key(spec, "volumeMode", "Filesystem")
-        }))
+                                    "accessModes" => Array(Types.key(spec, "accessModes", ["ReadWriteOnce"])),
+                                    "volumeMode" => Types.key(spec, "volumeMode", "Filesystem")
+                                  }))
       end
 
       def with_secrets(context, purpose)
@@ -562,25 +563,27 @@ module Rubernetes
         effect_boundary&.call(:rejected) unless error.ambiguous?
         sanitized = sanitize_error(error)
         raise if sanitized.equal?(error)
+
         raise sanitized, cause: error
       rescue CSIUnavailable => error
         effect_boundary&.call(:rejected)
         sanitized = sanitize_error(error)
         raise if sanitized.equal?(error)
+
         raise sanitized, cause: error
       end
 
       # Keep compatibility with narrow injected test adapters while passing
       # every CSI context keyword to the real UDS client.
-      def invoke_csi(method_name, *args, **kwargs)
+      def invoke_csi(method_name, *, **kwargs)
         method = @csi.method(method_name)
         parameters = method.parameters
-        return method.call(*args, **kwargs) if parameters.any? { |kind, _| kind == :keyrest }
+        return method.call(*, **kwargs) if parameters.any? { |kind, _| kind == :keyrest }
 
         accepted = kwargs.select do |key, _|
           parameters.any? { |kind, name| %i[key keyreq].include?(kind) && name.to_sym == key.to_sym }
         end
-        method.call(*args, **accepted)
+        method.call(*, **accepted)
       rescue NoMethodError
         raise CSIUnavailable, "CSI adapter does not implement #{method_name}"
       end
@@ -601,8 +604,10 @@ module Rubernetes
             return unmounted_stage_identity(response, target, path_identity: path_identity)
           end
           unless observed
-            raise MountIdentityError, "CSI #{stage ? "stage" : "publish"} succeeded but #{target.inspect} is absent from independent mount readback"
+            raise MountIdentityError,
+                  "CSI #{stage ? "stage" : "publish"} succeeded but #{target.inspect} is absent from independent mount readback"
           end
+
           normalized = normalize_mount(observed, target, stage: stage)
         else
           identity = response["mountIdentity"] || response["mount_identity"]
@@ -769,7 +774,7 @@ module Rubernetes
           yield leases
         ensure
           verify_and_close_target_leases(leases.map(&:last), post_effect: post_effect,
-                                         mount_observer: ->(target) { mount_identity_for_target(target) })
+                                                             mount_observer: ->(target) { mount_identity_for_target(target) })
         end
       end
 
@@ -788,12 +793,10 @@ module Rubernetes
         mounted = mounted_post_effect?(post_effect)
         verification_error = nil
         Array(leases).each do |lease|
-          begin
-            observation = mount_identity || (mount_observer && mount_observer.call(lease.original_path))
-            verify_target_lease!(lease, mounted: mounted, mount_identity: observation)
-          rescue StandardError => error
-            verification_error ||= error
-          end
+          observation = mount_identity || (mount_observer && mount_observer.call(lease.original_path))
+          verify_target_lease!(lease, mounted: mounted, mount_identity: observation)
+        rescue StandardError => error
+          verification_error ||= error
         end
         Array(leases).reverse_each(&:close)
         return true unless verification_error
@@ -875,7 +878,9 @@ module Rubernetes
         context["mountOptions"] = Array(Types.key(spec, "mountOptions", [])).map(&:to_s)
         # SELinuxMount: the file label as a mount flag (AddSELinuxMountOption).
         label = Types.key(spec, "selinuxMountLabel", nil).to_s
-        context["mountOptions"] += [SELinux.mount_option(label)] unless label.empty? || context["mountOptions"].any? { |option| option.start_with?("context=") }
+        context["mountOptions"] += [SELinux.mount_option(label)] unless label.empty? || context["mountOptions"].any? do |option|
+          option.start_with?("context=")
+        end
         context
       end
 
@@ -904,9 +909,9 @@ module Rubernetes
         ensure_path!(path)
         with_secure_csi_target(path, directory: nil, create: false, post_effect: :mounted) do |dispatch_path, _lease|
           invoke_csi(:expand_node, remote_id, dispatch_path, token: token,
-                     capacity_bytes: capacity_bytes,
-                     volume_capability: csi_volume_capability,
-                     secrets: secrets_for(:node_expand))
+                                                             capacity_bytes: capacity_bytes,
+                                                             volume_capability: csi_volume_capability,
+                                                             secrets: secrets_for(:node_expand))
         end
       end
     end
@@ -933,11 +938,12 @@ module Rubernetes
         @manager.remember_csi_secrets(id, normalized)
         execute_operation(key: id, operation: "create", token: token, payload: normalized) do |effect_boundary|
           raise ConflictError, "volume #{id} already exists" if @manager.volume_store[id]
+
           persisted_spec = @manager.persisted_spec(normalized)
           backend_spec = Types.key(normalized, "backend").to_s.casecmp?("csi") ? persisted_spec : normalized
           backend = @manager.build_backend(id, backend_spec)
           record = VolumeRecord.new(id: id, spec: persisted_spec, backend: backend.type, state: "Declared",
-                                   capacity_bytes: Types.key(normalized, "capacityBytes", Types.key(normalized, "capacity")))
+                                    capacity_bytes: Types.key(normalized, "capacityBytes", Types.key(normalized, "capacity")))
           @manager.volume_store[id] = record
           @manager.backends[id] = backend
           begin
@@ -997,6 +1003,7 @@ module Rubernetes
           record = @manager.fetch_record(id)
           raise ConflictError, "volume #{id} has active published consumers" unless record.publishes.empty?
           raise ConflictError, "volume #{id} has active attachments or stages" unless record.attachments.empty? && record.stages.empty?
+
           @manager.ensure_known!(record, action: "Cleanup")
           # An Unknown volume may still be torn down, but only when there is a
           # backend to tear it down WITH.  A record whose backend could not be
@@ -1009,6 +1016,7 @@ module Rubernetes
                   "volume #{id} is #{record.state} and its backend could not be reconstructed; recover before deleting"
           end
           raise ConflictError, "volume #{id} must be detached before delete" unless %w[Provisioned Detached Declared].include?(record.state)
+
           if backend.is_a?(RemoteBackend)
             backend.delete(token: token, effect_boundary: effect_boundary)
           else
@@ -1033,6 +1041,7 @@ module Rubernetes
         if (existing = current.attachments[node])
           return Types.deep_copy(existing["backendResult"] || existing)
         end
+
         operation = "controller-publish:#{node}:#{current.generation}"
         execute_operation(key: id, operation: operation, token: token,
                           payload: {"id" => id, "node" => node, "generation" => current.generation}) do |effect_boundary|
@@ -1042,6 +1051,7 @@ module Rubernetes
           if (existing = record.attachments[node])
             return Types.deep_copy(existing["backendResult"] || existing)
           end
+
           backend = @manager.backends.fetch(id)
           context = attachment_context(record, node)
           result = if backend.is_a?(RemoteBackend)
@@ -1078,13 +1088,17 @@ module Rubernetes
         current = @manager.fetch_record(id)
         @manager.ensure_known!(current, action: "Cleanup")
         return true unless current.attachments.key?(node)
+
         operation = "controller-unpublish:#{node}:#{current.generation}"
         execute_operation(key: id, operation: operation, token: token,
                           payload: {"id" => id, "node" => node, "generation" => current.generation}) do |effect_boundary|
           record = @manager.fetch_record(id)
           @manager.ensure_known!(record, action: "Cleanup")
           return true unless record.attachments.key?(node)
-          raise ConflictError, "volume #{id} still has published consumers on #{node}" if record.publishes.values.any? { |entry| entry["node"].to_s == node }
+          raise ConflictError, "volume #{id} still has published consumers on #{node}" if record.publishes.values.any? do |entry|
+            entry["node"].to_s == node
+          end
+
           backend = @manager.backends.fetch(id)
           context = attachment_context(record, node, attachment: record.attachments[node])
           if backend.is_a?(RemoteBackend)
@@ -1131,11 +1145,13 @@ module Rubernetes
           bytes = Types.parse_capacity(capacity)
           current = record.capacity_bytes || 0
           raise CapacityError, "volume expansion must increase capacity" unless bytes > current
+
           class_name = Types.key(record.spec, "storageClassName", Types.key(record.spec, "storageClass", "")).to_s
           storage_class = class_name.empty? ? nil : @manager.binder.find_storage_class(class_name)
           if storage_class && !storage_class.allow_volume_expansion
             raise UnsupportedError, "online expansion is disabled for storage class #{class_name.inspect}"
           end
+
           backend = @manager.backends.fetch(id)
           result = if backend.is_a?(RemoteBackend)
                      expansion = backend.expand(capacity_bytes: bytes, token: token,
@@ -1187,14 +1203,23 @@ module Rubernetes
       def enforce_attach_policy!(record, node:, pod:)
         modes = Array(Types.key(record.spec, "accessModes", ["ReadWriteOnce"]))
         existing_nodes = record.attachments.keys
-        if modes.include?("ReadWriteOncePod") && !existing_nodes.empty?
-          raise MultiAttachError, "ReadWriteOncePod volume #{record.id} is already attached to another node" if existing_nodes.any? { |existing| existing.to_s != node.to_s }
+        if modes.include?("ReadWriteOncePod") && !existing_nodes.empty? && existing_nodes.any? do |existing|
+          existing.to_s != node.to_s
+        end && existing_nodes.any? do |existing|
+                 existing.to_s != node.to_s
+               end
+          raise MultiAttachError,
+                "ReadWriteOncePod volume #{record.id} is already attached to another node"
         end
         if (modes & %w[ReadWriteOnce ReadWriteOncePod]).any? && existing_nodes.any? { |existing| existing.to_s != node.to_s }
           raise MultiAttachError, "volume #{record.id} with #{modes.join(", ")} cannot attach to multiple nodes"
         end
         return true unless pod
-        if modes.include?("ReadWriteOncePod") && record.attachments.values.any? { |entry| Array(entry["pods"]).any? { |value| value != pod } }
+        if modes.include?("ReadWriteOncePod") && record.attachments.values.any? do |entry|
+          Array(entry["pods"]).any? do |value|
+            value != pod
+          end
+        end
           raise MultiAttachError, "ReadWriteOncePod volume #{record.id} is already used by another pod"
         end
       end
@@ -1222,16 +1247,16 @@ module Rubernetes
           record = @manager.fetch_record(id)
           @manager.ensure_known!(record)
           record = ensure_attached(record, node)
-          if node && !record.attachments.key?(node.to_s)
-            raise ConflictError, "volume #{id} is not attached to node #{node}"
-          end
+          raise ConflictError, "volume #{id} is not attached to node #{node}" if node && !record.attachments.key?(node.to_s)
+
           effective_node = node || attached_node(record)
-          raise InvalidStateError, "volume #{id} must be Attached before staging (state #{record.state})" unless %w[Attached Staged].include?(record.state)
+          raise InvalidStateError, "volume #{id} must be Attached before staging (state #{record.state})" unless %w[Attached
+                                                                                                                    Staged].include?(record.state)
+
           if record.stages.key?(path)
             existing = record.stages.fetch(path)
-            if node && existing["node"].to_s != node.to_s
-              raise ConflictError, "volume #{id} is already staged on node #{existing["node"]}"
-            end
+            raise ConflictError, "volume #{id} is already staged on node #{existing["node"]}" if node && existing["node"].to_s != node.to_s
+
             next existing
           end
           backend = @manager.backends.fetch(id)
@@ -1288,7 +1313,7 @@ module Rubernetes
         return true if backend.is_a?(RemoteBackend) && !backend.csi_fs_group_mode(fs_group, readonly: readonly).nil?
 
         apply_security!(backend, stage_path: stage_path, pod: pod, readonly: readonly, fs_group: fs_group,
-                        selinux_label: nil, mount_propagation: nil, context: {})
+                                 selinux_label: nil, mount_propagation: nil, context: {})
         true
       end
 
@@ -1314,14 +1339,17 @@ module Rubernetes
         end
         record = @manager.fetch_record(id)
         @manager.ensure_known!(record)
-        raise InvalidStateError, "volume #{id} must be Provisioned to be used directly (state #{record.state})" unless record.state == "Provisioned"
+        unless record.state == "Provisioned"
+          raise InvalidStateError,
+                "volume #{id} must be Provisioned to be used directly (state #{record.state})"
+        end
 
         backend = @manager.backends.fetch(id)
         raise ValidationError, "#{backend.type} volume #{id} cannot be used without a publish" unless DIRECT_TYPES.include?(backend.type)
 
         path = backend.source_path
         apply_security!(backend, stage_path: path, pod: pod, readonly: true, fs_group: fs_group,
-                        selinux_label: nil, mount_propagation: nil, context: {})
+                                 selinux_label: nil, mount_propagation: nil, context: {})
         path
       end
 
@@ -1332,6 +1360,7 @@ module Rubernetes
         if mount_propagation && !%w[None HostToContainer Bidirectional].include?(mount_propagation.to_s)
           raise ValidationError, "unsupported mountPropagation #{mount_propagation.inspect}"
         end
+
         if fs_group
           begin
             raise ValidationError, "fsGroup must be non-negative" if Integer(fs_group).negative?
@@ -1347,10 +1376,12 @@ module Rubernetes
                                     "propagation" => mount_propagation}) do |effect_boundary|
           record = @manager.fetch_record(id)
           @manager.ensure_known!(record)
-          raise InvalidStateError, "volume #{id} must be Staged before publishing (state #{record.state})" unless %w[Staged Published].include?(record.state)
+          raise InvalidStateError, "volume #{id} must be Staged before publishing (state #{record.state})" unless %w[Staged
+                                                                                                                     Published].include?(record.state)
           if Array(Types.key(record.spec, "accessModes", [])).include?("ReadOnlyMany") && !readonly
             raise SecurityError, "ReadOnlyMany volume #{id} cannot be published writable"
           end
+
           stage_path = stage_for(record, node)
           backend = @manager.backends.fetch(id)
           effective_node = node || attached_node(record)
@@ -1358,7 +1389,11 @@ module Rubernetes
           publish_key = "#{pod_id}\0#{target}"
           if record.publishes.key?(publish_key)
             existing = record.publishes.fetch(publish_key)
-            raise SecurityError, "volume #{id} cannot change an existing read-only publish to writable" if existing["readonly"] == true && !readonly
+            if existing["readonly"] == true && !readonly
+              raise SecurityError,
+                    "volume #{id} cannot change an existing read-only publish to writable"
+            end
+
             next existing
           end
           effective_context = @manager.context_for_node(record, effective_node, context)
@@ -1368,7 +1403,7 @@ module Rubernetes
           csi_fs_group = backend.is_a?(RemoteBackend) ? backend.csi_fs_group_mode(fs_group, readonly: readonly) : nil
           effective_context = effective_context.merge("volumeMountGroup" => fs_group.to_s) if csi_fs_group == :delegate
           apply_security!(backend, stage_path: stage_path, pod: pod, readonly: readonly, fs_group: csi_fs_group ? nil : fs_group,
-                          selinux_label: selinux_label, mount_propagation: mount_propagation, context: context)
+                                   selinux_label: selinux_label, mount_propagation: mount_propagation, context: context)
           result = if backend.is_a?(RemoteBackend)
                      backend.publish(stage_path: stage_path, target: target, node: effective_node, pod: pod,
                                      readonly: readonly, sub_path: sub_path, context: effective_context,
@@ -1385,7 +1420,7 @@ module Rubernetes
           begin
             if csi_fs_group == :kubelet
               apply_security!(backend, stage_path: target, pod: pod, readonly: readonly, fs_group: fs_group,
-                              selinux_label: nil, mount_propagation: nil, context: context)
+                                       selinux_label: nil, mount_propagation: nil, context: context)
             end
             @manager.register_mount_identity(volume_id: id, identity: result, target: target,
                                              owner: "pod:#{pod_id}", stage_path: stage_path,
@@ -1431,7 +1466,10 @@ module Rubernetes
                                           capacity_bytes: Integer(capacity_bytes), token: token)
           if result.is_a?(Hash)
             capacity = [Integer(result["capacityBytes"] || 0), Integer(capacity_bytes)].max
-            @manager.volume_store[id] = record.with(capacity_bytes: capacity, generation: record.generation + 1) if capacity > record.capacity_bytes.to_i
+            if capacity > record.capacity_bytes.to_i
+              @manager.volume_store[id] =
+                record.with(capacity_bytes: capacity, generation: record.generation + 1)
+            end
           end
           result
         end
@@ -1507,7 +1545,7 @@ module Rubernetes
             end
             state = publishes.empty? ? "Staged" : "Published"
             @manager.volume_store[id] = transitional.with(state: state, publishes: publishes, attachments: attachments,
-                                                           generation: transitional.generation + 1)
+                                                          generation: transitional.generation + 1)
             true
           end
         end
@@ -1523,9 +1561,8 @@ module Rubernetes
           record = @manager.fetch_record(id)
           @manager.ensure_known!(record, action: "Cleanup")
           raise ConflictError, "volume #{id} still has published consumers" unless record.publishes.empty?
-          if !record.stages.key?(path)
-            true
-          else
+
+          if record.stages.key?(path)
             entry = record.stages.fetch(path)
             transitional = record.with(state: "Unstaged", generation: record.generation + 1)
             @manager.volume_store[id] = transitional
@@ -1548,6 +1585,8 @@ module Rubernetes
             stages.delete(path)
             state = transitional.attachments.empty? ? "Detached" : "Attached"
             @manager.volume_store[id] = transitional.with(state: state, stages: stages, generation: transitional.generation + 1)
+            true
+          else
             true
           end
         end
@@ -1576,12 +1615,12 @@ module Rubernetes
 
       def collect_cleanup_errors
         result = yield
-        return [] if result == true || result == 0
+        return [] if [true, 0].include?(result)
 
         [CleanupError.new(
           "mount cleanup did not report success (result=#{result.inspect})",
           details: {"cleanupErrors" => [{"class" => CleanupError.name,
-                                          "message" => "adapter returned #{result.inspect}"}]},
+                                         "message" => "adapter returned #{result.inspect}"}]},
           cleanup_errors: []
         )]
       rescue StandardError => error
@@ -1592,8 +1631,13 @@ module Rubernetes
         value = String(path)
         raise PathSecurityError, "volume path must be absolute" unless value.start_with?("/")
         raise PathSecurityError, "volume path contains NUL" if value.include?("\0")
+
         components = value.split("/")
-        raise PathSecurityError, "volume path contains traversal" if components.include?("..") || components.include?(".") || components.drop(1).any?(&:empty?)
+        if components.include?("..") || components.include?(".") || components.drop(1).any?(&:empty?)
+          raise PathSecurityError,
+                "volume path contains traversal"
+        end
+
         @manager.path_security.validate_target!(value)
         value
       rescue TypeError
@@ -1602,6 +1646,7 @@ module Rubernetes
 
       def ensure_attached(record, node)
         return record unless node && record.attachments.key?(node.to_s)
+
         record
       end
 
@@ -1611,8 +1656,10 @@ module Rubernetes
 
       def stage_for(record, node)
         return record.stages.values.first["target"] if node.nil? && record.stages.length == 1
+
         value = record.stages.values.find { |entry| node.nil? || entry["node"].to_s == node.to_s }
         return value["target"] if value
+
         raise ConflictError, "volume #{record.id} has no stage path on node #{node}"
       end
 
@@ -1625,6 +1672,7 @@ module Rubernetes
 
       def pod_identifier(pod)
         return Types.identifier(pod, "pod") unless pod.respond_to?(:to_h)
+
         metadata = Types.key(pod.to_h, "metadata", {})
         Types.identifier(Types.key(metadata, "uid", Types.key(metadata, "name", "pod")), "pod")
       end
@@ -1644,7 +1692,7 @@ module Rubernetes
         adapter = @manager.mount_adapter
         if fs_group && adapter.respond_to?(:apply_fs_group)
           AdapterSupport.call(adapter, :apply_fs_group, path: stage_path, fs_group: fs_group, pod: pod,
-                              readonly: readonly, change_policy: fs_group_change_policy(pod))
+                                                        readonly: readonly, change_policy: fs_group_change_policy(pod))
         elsif fs_group && !adapter.respond_to?(:apply_fs_group)
           raise SecurityError, "fsGroup was requested but no injected adapter can apply it"
         end
@@ -1658,19 +1706,14 @@ module Rubernetes
         elsif mount_propagation
           raise SecurityError, "mountPropagation was requested but no injected adapter can apply it"
         end
-        if backend.readonly? && !readonly
-          raise SecurityError, "read-only volume cannot be published writable"
-        end
+        raise SecurityError, "read-only volume cannot be published writable" if backend.readonly? && !readonly
+
         true
       end
     end
 
     class Manager
       CSI_RECOVERY_PAGE_LIMIT = 10_000
-
-      attr_reader :volume_store, :backends, :operations, :mount_ledger, :controller, :node,
-                  :binder, :snapshot_manager, :adapter, :mount_adapter, :device_adapter,
-                  :path_security, :data_dir, :require_real_readback
 
       def initialize(data_dir: nil, root: nil, adapter: nil, mount_adapter: nil, path_security: nil,
                      resolver: nil, store: nil, operation_ledger: nil, mount_ledger: nil, csi: nil,
@@ -1695,18 +1738,18 @@ module Rubernetes
         @require_real_readback = require_real_readback == true || native_mount_adapter
         @default_path_security = path_security.nil? && resolver.nil?
         @path_security = path_security || if resolver
-                                           PathSecurity.new(root: @root, resolver: resolver)
-                                         elsif csi
-                                           # Public Manager construction is a
-                                           # supported CSI entry point. Keep it
-                                           # descriptor-safe just like the
-                                           # production Assembler instead of
-                                           # silently dispatching raw paths.
-                                           openat2 = Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true)
-                                           PathSecurity.new(root: "/", adapter: openat2, require_openat2: true)
-                                         else
-                                           PathSecurity.new(root: "/", require_openat2: true)
-                                         end
+                                            PathSecurity.new(root: @root, resolver: resolver)
+                                          elsif csi
+                                            # Public Manager construction is a
+                                            # supported CSI entry point. Keep it
+                                            # descriptor-safe just like the
+                                            # production Assembler instead of
+                                            # silently dispatching raw paths.
+                                            openat2 = Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true)
+                                            PathSecurity.new(root: "/", adapter: openat2, require_openat2: true)
+                                          else
+                                            PathSecurity.new(root: "/", require_openat2: true)
+                                          end
         @volume_store = store || VolumeStore.new(path: File.join(@data_dir, "volumes.json"), fsync: fsync)
         # What the durable state gave back at startup (kubelet's volume
         # reconstruction): records with mounts or attachments, and the ones
@@ -1750,8 +1793,6 @@ module Rubernetes
         recover_backends_from_store!
       end
 
-
-      attr_reader :reconstruction_stats
       def identity
         @identity_value.is_a?(Identity) ? @identity_value : Identity.new(**@identity_value.to_h.transform_keys(&:to_sym))
       end
@@ -1762,9 +1803,9 @@ module Rubernetes
       # minutes (volume.ready median 65 s late in a round).  The ledgers and
       # the volume store synchronize themselves; the lock only orders the
       # operations of ONE volume.
-      def with_volume_lock(key)
+      def with_volume_lock(key, &)
         lock = @volume_lock.synchronize { (@volume_locks ||= {})[key.to_s] ||= Monitor.new }
-        lock.synchronize { yield }
+        lock.synchronize(&)
       end
 
       # Mutating an object after an effect response was lost is unsafe: the
@@ -1787,6 +1828,7 @@ module Rubernetes
       def mark_unknown(id, operation: nil, payload: nil, details: nil)
         record = volume_store[id.to_s]
         return nil unless record
+
         if record.state == "Unknown"
           return record unless operation && !Types.present?(Types.key(record.operation || {}, "name"))
 
@@ -1866,12 +1908,12 @@ module Rubernetes
         controller.expand(id, capacity, token: token)
       end
 
-      def stage(id, path, token:, **options)
-        node.stage(id, path, token: token, **options)
+      def stage(id, path, token:, **)
+        node.stage(id, path, token: token, **)
       end
 
-      def node_publish(id, pod, container_path, readonly:, token:, **options)
-        node.publish(id, pod, container_path, readonly: readonly, token: token, **options)
+      def node_publish(id, pod, container_path, readonly:, token:, **)
+        node.publish(id, pod, container_path, readonly: readonly, token: token, **)
       end
 
       def direct_path(id, pod:, fs_group: nil)
@@ -1903,8 +1945,8 @@ module Rubernetes
         node.republish(id, pod, container_path, token: token)
       end
 
-      def unstage(id, path, token:, **options)
-        node.unstage(id, path, token: token, **options)
+      def unstage(id, path, token:, **)
+        node.unstage(id, path, token: token, **)
       end
 
       def stats(id, path: nil)
@@ -2004,10 +2046,10 @@ module Rubernetes
 
         replacement = if error.is_a?(CSIError)
                         CSIError.new(message, ambiguous: error.ambiguous?, operation: error.operation,
-                                    resource_id: error.resource_id, details: details)
+                                              resource_id: error.resource_id, details: details)
                       elsif error.is_a?(Error)
                         error.class.new(message, operation: error.operation, resource_id: error.resource_id,
-                                        details: details)
+                                                 details: details)
                       else
                         Error.new(message, details: details)
                       end
@@ -2088,10 +2130,11 @@ module Rubernetes
         end
       end
 
-      def rotate_token(id, now: @clock.call, token:)
+      def rotate_token(id, token:, now: @clock.call)
         run_manager_operation(id, "token-rotate:#{token}", token, {"now" => now.to_s}) do
           backend = backends.fetch(id.to_s)
           raise UnsupportedError, "volume #{id} does not expose token rotation" unless backend.respond_to?(:rotate_token)
+
           backend.rotate_token(now: now)
         end
       end
@@ -2267,6 +2310,7 @@ module Rubernetes
         ids.each_with_index do |id, index|
           record = volume_store[id]
           next unless record
+
           token_value = token || "release-#{id}-#{index}"
           # Only delete records with no ownership; an active consumer is never
           # forcefully detached by the lifecycle compatibility hook.
@@ -2275,8 +2319,8 @@ module Rubernetes
         true
       end
 
-      def bind(pvc, **options)
-        binder.bind(pvc, **options)
+      def bind(pvc, **)
+        binder.bind(pvc, **)
       end
 
       def register_pv(value)
@@ -2291,11 +2335,11 @@ module Rubernetes
         binder.register_storage_class(value)
       end
 
-      def restore(snapshot_id, spec: {}, token:)
+      def restore(snapshot_id, token:, spec: {})
         snapshot_manager.restore(snapshot_id, spec: spec, token: token)
       end
 
-      def clone(id, spec: {}, token:)
+      def clone(id, token:, spec: {})
         snapshot_manager.clone(id, spec: spec, token: token)
       end
 
@@ -2322,6 +2366,7 @@ module Rubernetes
       def volume_id_for(spec)
         supplied = Types.key(spec, "id", Types.key(spec, "volumeId"))
         return Types.identifier(supplied, "volume id") if supplied
+
         name = Types.key(spec, "name") || Types.key(Types.key(spec, "metadata", {}), "name")
         digest = Types.digest(spec)
         name && !name.to_s.empty? ? "vol-#{name}-#{digest[0, 16]}" : "vol-#{digest[0, 24]}"
@@ -2330,10 +2375,12 @@ module Rubernetes
       def normalize_spec(value)
         hash = value.respond_to?(:to_h) ? Types.deep_copy(value.to_h) : {}
         raise ValidationError, "volume spec must be a map" unless value.respond_to?(:to_h)
+
         backend = detect_backend(hash)
         if csi_source_present?(hash) && backend && !backend.to_s.casecmp?("csi")
           raise ValidationError, "CSI volume source cannot be combined with backend #{backend.inspect}"
         end
+
         if backend
           nested = Types.key(hash, backend, {})
           if nested.respond_to?(:to_h) && !nested.is_a?(String)
@@ -2342,9 +2389,7 @@ module Rubernetes
         end
         hash["backend"] = backend || Types.key(hash, "backend", "emptyDir").to_s
         hash["capacityBytes"] = Types.parse_capacity(Types.key(hash, "capacityBytes", Types.key(hash, "capacity", 1)))
-        if Types.key(hash, "accessModes")
-          hash["accessModes"] = Types.normalize_access_modes(Types.key(hash, "accessModes"))
-        end
+        hash["accessModes"] = Types.normalize_access_modes(Types.key(hash, "accessModes")) if Types.key(hash, "accessModes")
         hash
       end
 
@@ -2367,7 +2412,8 @@ module Rubernetes
       end
 
       SECRET_PROJECTION_SOURCE_KEYS = %w[secret serviceAccountToken service_account_token].freeze
-      SECRET_PROJECTION_PAYLOAD_KEYS = %w[data binaryData binary_data stringData string_data token tokenRotator token_rotator podCertificateProvider pod_certificate_provider].freeze
+      SECRET_PROJECTION_PAYLOAD_KEYS = %w[data binaryData binary_data stringData string_data token tokenRotator token_rotator
+                                          podCertificateProvider pod_certificate_provider].freeze
 
       def secret_projection_present?(value)
         case value
@@ -2402,6 +2448,7 @@ module Rubernetes
       def record_backend_mount(id, provisioned)
         identity = provisioned && (provisioned["mountIdentity"] || provisioned[:mount_identity])
         return true unless identity
+
         hash = identity.respond_to?(:to_h) ? identity.to_h : identity
         register_mount_identity(
           volume_id: id,
@@ -2455,9 +2502,8 @@ module Rubernetes
           # under the volume's driver name.
           registered = csi.respond_to?(:for_driver)
           csi = RegisteredCSIDriver.new(csi, Types.key(spec, "driver").to_s) if registered
-          unless csi && csi.respond_to?(:create_volume)
-            raise CSIUnavailable, "CSI adapter is not configured; initialize Manager with csi:"
-          end
+          raise CSIUnavailable, "CSI adapter is not configured; initialize Manager with csi:" unless csi && csi.respond_to?(:create_volume)
+
           # A registered plugin is looked up by the driver name itself.
           validate_csi_driver!(spec, csi) unless registered
 
@@ -2473,7 +2519,8 @@ module Rubernetes
                                    persistence_sanitizer: method(:sanitize_for_persistence),
                                    error_sanitizer: method(:persistence_error))
         end
-        klass = BUILTIN_BACKENDS[backend_name] || BUILTIN_BACKENDS[backend_name.downcase] || raise(UnsupportedError, "unsupported volume backend #{backend_name.inspect}")
+        klass = BUILTIN_BACKENDS[backend_name] || BUILTIN_BACKENDS[backend_name.downcase] || raise(UnsupportedError,
+                                                                                                   "unsupported volume backend #{backend_name.inspect}")
         klass.new(id: id, spec: spec, adapter: @adapter, root: @root, path_security: @path_security,
                   mount_adapter: @mount_adapter, device_adapter: @device_adapter,
                   require_real_readback: @require_real_readback)
@@ -2520,7 +2567,8 @@ module Rubernetes
         @mount_ledger.register(**arguments)
       end
 
-      attr_reader :root
+      attr_reader :volume_store, :backends, :operations, :mount_ledger, :controller, :node, :binder, :snapshot_manager, :adapter,
+                  :mount_adapter, :device_adapter, :path_security, :data_dir, :require_real_readback, :reconstruction_stats, :root
 
       # The rotator that mints and refreshes a projected ServiceAccount token
       # for one Pod (TokenRequest through the node's API client); nil when
@@ -2547,7 +2595,13 @@ module Rubernetes
         entries = Array(missing).map { |entry| entry.respond_to?(:to_h) ? entry.to_h.transform_keys(&:to_s) : entry }
         entries = entries.select { |entry| entry.is_a?(Hash) }
         # Publishes ride on stages, stages on the source: retract in that order.
-        rank = ->(entry) { entry["owner"].to_s.start_with?("pod:") ? 0 : (entry["stagePath"].to_s == entry["target"].to_s ? 2 : 1) }
+        rank = lambda { |entry|
+          if entry["owner"].to_s.start_with?("pod:")
+            0
+          else
+            (entry["stagePath"].to_s == entry["target"].to_s ? 2 : 1)
+          end
+        }
         entries.sort_by { |entry| rank.call(entry) }.each do |entry|
           volume_id = entry["volumeId"].to_s
           record = volume_store[volume_id]
@@ -2574,9 +2628,7 @@ module Rubernetes
           attachments = Types.deep_copy(record.attachments)
           pod_id = publish_entry["pod"].to_s
           node_key = publish_entry["node"].to_s
-          if attachments[node_key]
-            attachments[node_key]["pods"] = Array(attachments[node_key]["pods"]) - [pod_id]
-          end
+          attachments[node_key]["pods"] = Array(attachments[node_key]["pods"]) - [pod_id] if attachments[node_key]
           state = publishes.empty? ? "Staged" : "Published"
           volume_store[id] = record.with(state: state, publishes: publishes, attachments: attachments,
                                          generation: record.generation + 1)
@@ -2628,8 +2680,8 @@ module Rubernetes
         resolved = []
         operations.unknown_entries.each do |entry|
           outcome = resolve_unknown_operation(entry, volumes: volumes, snapshots: snapshots, mounts: mounts,
-                                               csi_observed: !csi_volume_entries.nil?,
-                                               snapshots_observed: !snapshot_entries.nil?)
+                                                     csi_observed: !csi_volume_entries.nil?,
+                                                     snapshots_observed: !snapshot_entries.nil?)
           resolved << {"key" => entry.key, "operation" => entry.operation, "outcome" => outcome} if outcome
         rescue StandardError => error
           errors << {"kind" => "operation-resolve", "key" => entry.key,
@@ -2659,7 +2711,7 @@ module Rubernetes
           durable_result = sanitize_for_persistence(result)
           durable_spec = record.spec.merge("backendResult" => durable_result)
           volume_store[record.id] = record.with(state: "Provisioned", spec: durable_spec,
-                                                 operation: nil, generation: record.generation + 1)
+                                                operation: nil, generation: record.generation + 1)
           backends[record.id] = build_backend(record.id, durable_spec)
           operations.finish!(key: entry.key, operation: operation, token: entry.token, result: record.id)
           "succeeded"
@@ -2679,10 +2731,14 @@ module Rubernetes
           end
         when /\Acontroller-publish:/
           return nil unless record && csi_observed
+
           node = Types.key(payload, "node") || operation.split(":", 3)[1]
           observed = volumes[csi_driver_id(record)]
           published_nodes = csi_published_nodes(observed)
-          return resolve_operation_as_retryable(entry, record, "CSI volume is not published to #{node}") if published_nodes && !published_nodes.include?(node.to_s)
+          if published_nodes && !published_nodes.include?(node.to_s)
+            return resolve_operation_as_retryable(entry, record,
+                                                  "CSI volume is not published to #{node}")
+          end
 
           backend = backends.fetch(record.id)
           context = context_for_node(record, node, {})
@@ -2697,36 +2753,43 @@ module Rubernetes
             "backendResult" => sanitize_for_persistence(result)
           }
           volume_store[record.id] = record.with(state: "Attached", attachments: attachments,
-                                                 operation: nil, generation: record.generation + 1)
+                                                operation: nil, generation: record.generation + 1)
           operations.finish!(key: entry.key, operation: operation, token: entry.token,
                              result: sanitize_for_persistence(result))
           "succeeded"
         when /\Acontroller-unpublish:/
           return nil unless record && csi_observed
+
           node = Types.key(payload, "node") || operation.split(":", 3)[1]
           observed = volumes[csi_driver_id(record)]
           published_nodes = csi_published_nodes(observed)
-          backends.fetch(record.id).detach(node: node, context: context_for_node(record, node, {})) if published_nodes.nil? || published_nodes.include?(node.to_s)
+          if published_nodes.nil? || published_nodes.include?(node.to_s)
+            backends.fetch(record.id).detach(node: node,
+                                             context: context_for_node(record, node,
+                                                                       {}))
+          end
           attachments = Types.deep_copy(record.attachments)
           attachments.delete(node.to_s)
           state = attachments.empty? && record.stages.empty? ? "Detached" : restored_state(record, "Attached")
           volume_store[record.id] = record.with(state: state, attachments: attachments,
-                                                 operation: nil, generation: record.generation + 1)
+                                                operation: nil, generation: record.generation + 1)
           operations.finish!(key: entry.key, operation: operation, token: entry.token, result: true)
           "succeeded"
         when "expand"
           return nil unless record && csi_observed
+
           desired = Types.parse_capacity(Types.key(payload, "capacity"))
           expansion = backends.fetch(record.id).expand(capacity_bytes: desired, token: entry.token,
                                                        node_paths: expansion_paths(record))
           record = record_expansion_result(record, expansion)
           result = Types.key(expansion, "capacityBytes", desired)
           volume_store[record.id] = record.with(state: restored_state(record, "Provisioned"), capacity_bytes: desired,
-                                                 operation: nil, generation: record.generation + 1)
+                                                operation: nil, generation: record.generation + 1)
           operations.finish!(key: entry.key, operation: operation, token: entry.token, result: result)
           "succeeded"
         when "snapshot"
           return nil unless record && snapshots_observed
+
           name = Types.key(payload, "name")
           existing = snapshot_manager.list.find do |snapshot|
             snapshot.source_id == record.id && (name.nil? || snapshot.name.to_s == name.to_s) && snapshots.key?(snapshot.id)
@@ -2738,6 +2801,7 @@ module Rubernetes
         when "delete-snapshot"
           snapshot_id = Types.key(payload, "snapshotId") || entry.key.delete_prefix("snapshot-")
           return nil unless snapshots_observed
+
           if snapshots.key?(snapshot_id.to_s)
             snapshot = snapshot_manager.store[snapshot_id.to_s]
             return nil unless snapshot
@@ -2784,7 +2848,7 @@ module Rubernetes
                                   generation: record.generation, secret: false)
           stages = Types.deep_copy(record.stages).merge(target => result)
           volume_store[record.id] = record.with(state: "Staged", stages: stages, operation: nil,
-                                                 generation: record.generation + 1)
+                                                generation: record.generation + 1)
           operations.finish!(key: entry.key, operation: operation, token: entry.token, result: result)
           "succeeded"
         when /\Apublish:/
@@ -2805,7 +2869,7 @@ module Rubernetes
                                   generation: record.generation, secret: false)
           publishes = Types.deep_copy(record.publishes).merge("#{pod}\0#{target}" => result)
           volume_store[record.id] = record.with(state: "Published", publishes: publishes, operation: nil,
-                                                 generation: record.generation + 1)
+                                                generation: record.generation + 1)
           operations.finish!(key: entry.key, operation: operation, token: entry.token, result: result)
           "succeeded"
         when /\Aunpublish:/
@@ -2817,7 +2881,7 @@ module Rubernetes
           mount_ledger.remove(identity: mount_ledger.identity_for(removed), expected: removed) if removed
           state = publishes.empty? ? "Staged" : "Published"
           volume_store[record.id] = record.with(state: state, publishes: publishes, operation: nil,
-                                                 generation: record.generation + 1)
+                                                generation: record.generation + 1)
           operations.finish!(key: entry.key, operation: operation, token: entry.token, result: true)
           "succeeded"
         when /\Aunstage:/
@@ -2828,7 +2892,7 @@ module Rubernetes
           mount_ledger.remove(identity: mount_ledger.identity_for(removed), expected: removed) if removed
           state = record.attachments.empty? ? "Detached" : "Attached"
           volume_store[record.id] = record.with(state: state, stages: stages, operation: nil,
-                                                 generation: record.generation + 1)
+                                                generation: record.generation + 1)
           operations.finish!(key: entry.key, operation: operation, token: entry.token, result: true)
           "succeeded"
         end
@@ -2857,7 +2921,7 @@ module Rubernetes
 
       def restore_known_record(record, default_state:)
         volume_store[record.id] = record.with(state: restored_state(record, default_state), operation: nil,
-                                               generation: record.generation + 1)
+                                              generation: record.generation + 1)
       end
 
       # kubelet's reconstruction fallback: a volume whose backend could not
@@ -2916,6 +2980,7 @@ module Rubernetes
 
       def csi_published_nodes(observed)
         return nil unless observed
+
         status = Types.key(observed, "status")
         return nil unless status
 
@@ -2939,6 +3004,7 @@ module Rubernetes
         end
       rescue StandardError => error
         raise if error.is_a?(StateUnknownError)
+
         ambiguous = effect_applied || error.is_a?(OperationUnknown) ||
                     (!error.is_a?(StateUnknownError) && error.class.name.to_s.match?(/Timeout|Unknown|EOF|Connection/)) ||
                     (error.respond_to?(:ambiguous?) && error.ambiguous?)
@@ -2959,6 +3025,7 @@ module Rubernetes
       def detect_backend(hash)
         explicit = Types.key(hash, "backend")
         return explicit.to_s if explicit && !explicit.to_s.empty?
+
         typed = Types.key(hash, "type")
         return "csi" if typed && typed.to_s.casecmp?("csi")
         return typed.to_s if typed && (BUILTIN_BACKENDS.key?(typed.to_s) || BUILTIN_BACKENDS.key?(typed.to_s.downcase))
@@ -3102,9 +3169,7 @@ module Rubernetes
         pages = 0
         loop do
           pages += 1
-          if pages > CSI_RECOVERY_PAGE_LIMIT
-            raise CSIError, "CSI #{operation} pagination exceeded the recovery bound"
-          end
+          raise CSIError, "CSI #{operation} pagination exceeded the recovery bound" if pages > CSI_RECOVERY_PAGE_LIMIT
 
           page = invoke_csi_with_supported_keywords(method_name, kwargs.merge(starting_token: starting_token))
           unless page.is_a?(Array) || (!page.nil? && page.respond_to?(:to_h))
@@ -3139,17 +3204,14 @@ module Rubernetes
       end
 
       def normalize_csi_observation_entry(entry, id_key:, operation:)
-        unless !entry.nil? && entry.respond_to?(:to_h)
-          raise CSIError, "CSI #{operation} returned a malformed entry"
-        end
+        raise CSIError, "CSI #{operation} returned a malformed entry" unless !entry.nil? && entry.respond_to?(:to_h)
 
         hash = AdapterSupport.result_hash(entry)
         nested_key = id_key == "volumeId" ? "volume" : "snapshot"
         if hash.key?(nested_key)
           nested = hash[nested_key]
-          unless !nested.nil? && nested.respond_to?(:to_h)
-            raise CSIError, "CSI #{operation} returned a malformed #{nested_key} entry"
-          end
+          raise CSIError, "CSI #{operation} returned a malformed #{nested_key} entry" unless !nested.nil? && nested.respond_to?(:to_h)
+
           hash = AdapterSupport.result_hash(nested).merge(hash.reject { |key, _| key == nested_key })
         end
         underscored_id_key = id_key.gsub(/([A-Z])/, '_\\1').downcase
@@ -3174,22 +3236,20 @@ module Rubernetes
 
       def recover_backends_from_store!
         volume_store.each_value do |record|
-          begin
-            @backends[record.id] = build_backend(record.id, record.spec)
-          rescue StandardError => error
-            # A corrupt/incomplete record remains visible but is fenced.  The
-            # old behavior swallowed the reconstruction failure, allowing a
-            # later mutation to hit a missing backend and fail open as a
-            # generic KeyError.
-            previous_state = record.state
-            mark_unknown(record.id)
-            operation = {"status" => "unknown", "reason" => "backend reconstruction failed",
-                         "error" => redact_secret_text(error.message.to_s), "previousState" => previous_state}
-            # No CSI adapter yet: a kubelet plugin registry attached later
-            # (csi_registry=) reconstructs the volume.
-            operation["csiUnconfigured"] = true if error.is_a?(CSIUnavailable) && @csi.nil?
-            volume_store[record.id] = volume_store[record.id].with(operation: operation)
-          end
+          @backends[record.id] = build_backend(record.id, record.spec)
+        rescue StandardError => error
+          # A corrupt/incomplete record remains visible but is fenced.  The
+          # old behavior swallowed the reconstruction failure, allowing a
+          # later mutation to hit a missing backend and fail open as a
+          # generic KeyError.
+          previous_state = record.state
+          mark_unknown(record.id)
+          operation = {"status" => "unknown", "reason" => "backend reconstruction failed",
+                       "error" => redact_secret_text(error.message.to_s), "previousState" => previous_state}
+          # No CSI adapter yet: a kubelet plugin registry attached later
+          # (csi_registry=) reconstructs the volume.
+          operation["csiUnconfigured"] = true if error.is_a?(CSIUnavailable) && @csi.nil?
+          volume_store[record.id] = volume_store[record.id].with(operation: operation)
         end
       end
 

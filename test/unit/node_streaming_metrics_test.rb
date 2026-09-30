@@ -13,10 +13,11 @@ class NodeStreamingMetricsTest < Minitest::Test
   def server
     server = Rubernetes::Node::StreamingServer.allocate
     server.instance_variable_set(:@lifecycle, Lifecycle.new({
-      "u1" => {pod: {"metadata" => {"name" => "p"}}, containers: [{name: "a"}, {name: "b"}]},
-      "u2" => {pod: {"metadata" => {"name" => "q"}}},
-      "u3" => {}
-    }))
+                                                              "u1" => {pod: {"metadata" => {"name" => "p"}},
+                                                                       containers: [{name: "a"}, {name: "b"}]},
+                                                              "u2" => {pod: {"metadata" => {"name" => "q"}}},
+                                                              "u3" => {}
+                                                            }))
     server
   end
 
@@ -26,6 +27,7 @@ class NodeStreamingMetricsTest < Minitest::Test
     assert_equal 200, status
     assert_equal "text/plain; version=0.0.4; charset=utf-8", headers["content-type"]
     text = body.join
+
     assert_includes text, "# TYPE kubelet_running_pods gauge"
     assert_includes text, "kubelet_running_pods 2"
     assert_includes text, "kubelet_running_containers{container_state=\"running\"} 2"
@@ -35,6 +37,7 @@ class NodeStreamingMetricsTest < Minitest::Test
   def test_the_kubelet_metric_variants_answer_too
     %w[/metrics/cadvisor /metrics/resource /metrics/probes].each do |path|
       status, = server.call(Request.new(path, "GET"))
+
       assert_equal 200, status, path
     end
   end

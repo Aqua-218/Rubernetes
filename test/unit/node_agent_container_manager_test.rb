@@ -36,12 +36,15 @@ class NodeAgentContainerManagerTest < Minitest::Test
                               pod_root: pod_root, capacity: {"cpu" => "4", "memory" => "8Gi", "pods" => "110"},
                               system_reserved: {"cpu" => "500m", "memory" => "512Mi"}, kube_reserved: {"cpu" => "500m"},
                               cpu_manager: {"policy" => "static"})
+
       assert_equal({"cpu" => "3", "memory" => "7680Mi", "pods" => "110"}, agent.allocatable)
       manager = agent.container_manager
+
       assert_equal 1, manager.cpu_manager.policy.reserved_cpus.size
       assert_equal "static", JSON.parse(File.read(File.join(dir, "cpu_manager_state")))["policyName"]
       assert_equal "None", JSON.parse(File.read(File.join(dir, "memory_manager_state")))["policyName"]
       admission = agent.instance_variable_get(:@admission)
+
       assert_equal manager.method(:admit), admission.allocation_admit_handler
     end
   end
@@ -66,19 +69,25 @@ class NodeAgentContainerManagerTest < Minitest::Test
                               pod_root: pod_root, capacity: {"cpu" => "4", "memory" => "8Gi", "pods" => "110"},
                               shutdown: {"grace_period" => "30s", "grace_period_critical_pods" => "10s"})
       manager = agent.shutdown_manager
+
       assert_equal [0, 2_000_000_000], manager.periods.map(&:priority)
       ready = agent.send(:build_node, ready: true).dig("status", "conditions").find { |c| c["type"] == "Ready" }
+
       assert_equal ["True", "KubeletReady", "kubelet is posting ready status"], ready.values_at("status", "reason", "message")
 
       manager.handle_event(true)
       ready = agent.send(:build_node, ready: true).dig("status", "conditions").find { |c| c["type"] == "Ready" }
+
       assert_equal ["False", "KubeletNotReady", "node is shutting down"], ready.values_at("status", "reason", "message")
-      decision = agent.instance_variable_get(:@admission).admit({"metadata" => {"name" => "p", "uid" => "u"}, "spec" => {"containers" => []}})
+      decision = agent.instance_variable_get(:@admission).admit({"metadata" => {"name" => "p", "uid" => "u"},
+                                                                 "spec" => {"containers" => []}})
+
       refute decision.accepted
       assert_equal "NodeShutdown", decision.reason
       assert_equal "Pod was rejected as the node is shutting down.", decision.message
     end
-    assert_nil Node::Agent.new(node_name: "n", api: API.new, lifecycle: Lifecycle.new, sync_loop: Loop.new, sleeper: ->(_) {}).shutdown_manager,
+    assert_nil Node::Agent.new(node_name: "n", api: API.new, lifecycle: Lifecycle.new, sync_loop: Loop.new, sleeper: lambda { |_|
+    }).shutdown_manager,
                "no grace period, no shutdown manager"
   end
 end

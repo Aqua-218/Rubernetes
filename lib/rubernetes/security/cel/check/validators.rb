@@ -20,11 +20,11 @@ module Rubernetes
             names.each do |name|
               case name
               when "cel.validator.duration" then literal_arguments(root, "duration") { |value| valid_duration?(value) }
-                                                   .each { |node| issues.report(node.offset, "invalid duration argument") }
+                .each { |node| issues.report(node.offset, "invalid duration argument") }
               when "cel.validator.timestamp" then literal_arguments(root, "timestamp") { |value| valid_timestamp?(value) }
-                                                    .each { |node| issues.report(node.offset, "invalid timestamp argument") }
+                .each { |node| issues.report(node.offset, "invalid timestamp argument") }
               when "cel.validator.matches" then literal_arguments(root, "matches") { |value| valid_regex?(value) }
-                                                  .each { |node| issues.report(node.offset, "invalid matches argument") }
+                .each { |node| issues.report(node.offset, "invalid matches argument") }
               when "cel.validator.homogeneous_literals" then homogeneous(root, types, issues)
               when "cel.validator.string_format" then string_format(root, types, references, issues)
               end
@@ -32,24 +32,24 @@ module Rubernetes
           end
 
           # ast.MatchDescendants: post-order, with the ancestors of each node.
-          def descendants(node, ancestors = [], &block)
+          def descendants(node, ancestors = [], &)
             return if node.nil?
 
             path = ancestors + [node]
             case node.kind
             when :call
-              descendants(node.target, path, &block) if node.member?
-              node.args.each { |arg| descendants(arg, path, &block) }
+              descendants(node.target, path, &) if node.member?
+              node.args.each { |arg| descendants(arg, path, &) }
             when :comprehension
-              %i[iter_range accu_init loop_condition loop_step result].each { |part| descendants(node.public_send(part), path, &block) }
-            when :list then node.elements.each { |element| descendants(element, path, &block) }
+              %i[iter_range accu_init loop_condition loop_step result].each { |part| descendants(node.public_send(part), path, &) }
+            when :list then node.elements.each { |element| descendants(element, path, &) }
             when :map
               node.entries.each do |entry|
-                descendants(entry.key, path, &block)
-                descendants(entry.value, path, &block)
+                descendants(entry.key, path, &)
+                descendants(entry.value, path, &)
               end
-            when :struct then node.fields.each { |field| descendants(field.value, path, &block) }
-            when :select then descendants(node.operand, path, &block)
+            when :struct then node.fields.each { |field| descendants(field.value, path, &) }
+            when :select then descendants(node.operand, path, &)
             end
             yield node, ancestors
           end
@@ -115,7 +115,11 @@ module Rubernetes
             return false unless Date.valid_date?(year, month, day) && hour < 24 && minute < 60 && second < 60
             return false if match[9] && (match[9].to_i >= 24 || match[10].to_i >= 60)
 
-            offset = match[8] == "Z" ? 0 : (match[9].to_i * 3600 + match[10].to_i * 60) * (match[8].start_with?("-") ? -1 : 1)
+            offset = if match[8] == "Z"
+                       0
+                     else
+                       ((match[9].to_i * 3600) + (match[10].to_i * 60)) * (match[8].start_with?("-") ? -1 : 1)
+                     end
             seconds = Time.utc(year, month, day, hour, minute, second).to_i - offset
             seconds.between?(-62_135_596_800, 253_402_300_799)
           rescue ArgumentError
@@ -241,7 +245,9 @@ module Rubernetes
               index = 1
               loop do
                 if index >= text.bytesize
-                  return [nil, FormatError.new(nil, "could not parse formatting clause: error while parsing precision: could not find end of precision specifier")]
+                  return [nil,
+                          FormatError.new(nil,
+                                          "could not parse formatting clause: error while parsing precision: could not find end of precision specifier")]
                 end
                 break unless text.getbyte(index).between?(0x30, 0x39)
 
@@ -257,15 +263,22 @@ module Rubernetes
             index += 1
             valid, bad, message = case clause
                                   when "s" then verify_string(argument, types)
-                                  when "d" then [kind_in?(types[argument], :int, :uint), argument, "decimal clause can only be used on integers"]
-                                  when "f" then [kind_in?(types[argument], :double, :string), argument, "fixed-point clause can only be used on doubles"]
-                                  when "e" then [kind_in?(types[argument], :double, :string), argument, "scientific clause can only be used on doubles"]
-                                  when "b" then [kind_in?(types[argument], :int, :uint, :bool), argument, "only integers and bools can be formatted as binary"]
+                                  when "d" then [kind_in?(types[argument], :int, :uint), argument,
+                                                 "decimal clause can only be used on integers"]
+                                  when "f" then [kind_in?(types[argument], :double, :string), argument,
+                                                 "fixed-point clause can only be used on doubles"]
+                                  when "e" then [kind_in?(types[argument], :double, :string), argument,
+                                                 "scientific clause can only be used on doubles"]
+                                  when "b" then [kind_in?(types[argument], :int, :uint, :bool), argument,
+                                                 "only integers and bools can be formatted as binary"]
                                   when "x", "X" then [kind_in?(types[argument], :int, :uint, :string, :bytes), argument,
                                                       "only integers, byte buffers, and strings can be formatted as hex"]
-                                  when "o" then [kind_in?(types[argument], :int, :uint), argument, "octal clause can only be used on integers"]
+                                  when "o" then [kind_in?(types[argument], :int, :uint), argument,
+                                                 "octal clause can only be used on integers"]
                                   else
-                                    return [nil, FormatError.new(nil, "could not parse formatting clause: unrecognized formatting clause \"#{clause}\"")]
+                                    return [nil,
+                                            FormatError.new(nil,
+                                                            "could not parse formatting clause: unrecognized formatting clause \"#{clause}\"")]
                                   end
             return [index, nil] if valid
 

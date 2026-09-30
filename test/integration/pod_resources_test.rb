@@ -34,12 +34,16 @@ class PodResourcesIntegrationTest < Minitest::Test
   def test_list_get_and_allocatable_over_grpc
     listed = @stub.list(@api::ListPodResourcesRequest.new)
     container = listed.pod_resources.first.containers.first
-    assert_equal ["app", "example.com/gpu", ["d1"]], [container.name, container.devices.first.resource_name, container.devices.first.device_ids.to_a]
+
+    assert_equal ["app", "example.com/gpu", ["d1"]],
+                 [container.name, container.devices.first.resource_name, container.devices.first.device_ids.to_a]
     got = @stub.get(@api::GetPodResourcesRequest.new(pod_name: "p", pod_namespace: "ns"))
+
     assert_equal "p", got.pod_resources.name
     error = assert_raises(GRPC::BadStatus) { @stub.get(@api::GetPodResourcesRequest.new(pod_name: "x", pod_namespace: "ns")) }
     assert_equal "pod x in namespace ns not found", error.details
     allocatable = @stub.get_allocatable_resources(@api::AllocatableResourcesRequest.new)
+
     assert_equal %w[d1 d2], allocatable.devices.first.device_ids.to_a
   end
 end

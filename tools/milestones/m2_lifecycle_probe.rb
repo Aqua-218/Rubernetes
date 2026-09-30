@@ -207,162 +207,162 @@ module M2LifecycleProbe
   # test/conformance/kubernetes/m2_lifecycle_oracle/harness.rb derivation) that
   # Rubernetes' production semantics must reproduce.
   EXPECTED_LIFECYCLE_OBSERVABLES = JSON.parse(<<~'JSON').freeze
-{
-      "init_sidecar_app_order": {
-        "operations": [
-          "create:prepare",
-          "start:prepare",
-          "wait:prepare",
-          "create:sidecar",
-          "start:sidecar",
-          "create:app",
-          "start:app"
-        ],
-        "phase": "Running",
-        "status": {
-          "initContainerStatuses": [
-            {
-              "name": "prepare",
-              "state": "terminated",
-              "restartCount": 0,
-              "ready": true,
-              "started": false,
-              "exitCode": 0
+    {
+          "init_sidecar_app_order": {
+            "operations": [
+              "create:prepare",
+              "start:prepare",
+              "wait:prepare",
+              "create:sidecar",
+              "start:sidecar",
+              "create:app",
+              "start:app"
+            ],
+            "phase": "Running",
+            "status": {
+              "initContainerStatuses": [
+                {
+                  "name": "prepare",
+                  "state": "terminated",
+                  "restartCount": 0,
+                  "ready": true,
+                  "started": false,
+                  "exitCode": 0
+                },
+                {
+                  "name": "sidecar",
+                  "state": "running",
+                  "restartCount": 0,
+                  "ready": true,
+                  "started": true
+                }
+              ],
+              "containerStatuses": [
+                {
+                  "name": "app",
+                  "state": "running",
+                  "restartCount": 0,
+                  "ready": true,
+                  "started": true
+                }
+              ]
+            }
+          },
+          "startup_liveness_readiness_thresholds": {
+            "startup": {
+              "probe": "exec:/bin/true",
+              "successThreshold": 1,
+              "failureThreshold": 3,
+              "periodSeconds": 1,
+              "result": "succeeded",
+              "started": true
             },
-            {
-              "name": "sidecar",
-              "state": "running",
-              "restartCount": 0,
+            "readiness": {
+              "probe": "exec:/bin/true",
+              "successThreshold": 2,
+              "failureThreshold": 1,
+              "periodSeconds": 1,
+              "result": "succeeded",
               "ready": true,
-              "started": true
+              "ready_before_liveness_kill": true
+            },
+            "liveness": {
+              "probe": "exec:/bin/false",
+              "failureThreshold": 2,
+              "periodSeconds": 1,
+              "initialDelaySeconds": 10,
+              "result": "failed",
+              "failures_before_kill": 2,
+              "kill_reason": "Killing",
+              "kill_message": "Container app failed liveness probe, will be restarted",
+              "restartCount_after_kill": 1
             }
-          ],
-          "containerStatuses": [
-            {
-              "name": "app",
-              "state": "running",
-              "restartCount": 0,
-              "ready": true,
-              "started": true
+          },
+          "restart_policy_and_backoff": {
+            "restartPolicy": {
+              "always_exit_0": "Always",
+              "on_failure_exit_0": "OnFailure",
+              "on_failure_exit_1": "OnFailure",
+              "never_exit_1": "Never"
+            },
+            "restartCount": {
+              "always_exit_0": 2,
+              "on_failure_exit_0": 0,
+              "on_failure_exit_1": 2,
+              "never_exit_1": 0
+            },
+            "phase": {
+              "always_exit_0": "Running",
+              "on_failure_exit_0": "Succeeded",
+              "on_failure_exit_1": "Running",
+              "never_exit_1": "Failed"
+            },
+            "status": {
+              "always_exit_0": {
+                "state": "waiting",
+                "reason": "CrashLoopBackOff",
+                "exitCode": null,
+                "lastState": "terminated",
+                "lastReason": "Completed",
+                "lastExitCode": 0
+              },
+              "on_failure_exit_0": {
+                "state": "terminated",
+                "reason": "Completed",
+                "exitCode": 0,
+                "lastState": null,
+                "lastReason": null,
+                "lastExitCode": null
+              },
+              "on_failure_exit_1": {
+                "state": "waiting",
+                "reason": "CrashLoopBackOff",
+                "exitCode": null,
+                "lastState": "terminated",
+                "lastReason": "Error",
+                "lastExitCode": 1
+              },
+              "never_exit_1": {
+                "state": "terminated",
+                "reason": "Error",
+                "exitCode": 1,
+                "lastState": null,
+                "lastReason": null,
+                "lastExitCode": null
+              }
+            },
+            "backoff_seconds": {
+              "always_exit_0": [
+                "10s",
+                "20s"
+              ],
+              "on_failure_exit_1": [
+                "10s",
+                "20s"
+              ]
             }
-          ]
-        }
-      },
-      "startup_liveness_readiness_thresholds": {
-        "startup": {
-          "probe": "exec:/bin/true",
-          "successThreshold": 1,
-          "failureThreshold": 3,
-          "periodSeconds": 1,
-          "result": "succeeded",
-          "started": true
-        },
-        "readiness": {
-          "probe": "exec:/bin/true",
-          "successThreshold": 2,
-          "failureThreshold": 1,
-          "periodSeconds": 1,
-          "result": "succeeded",
-          "ready": true,
-          "ready_before_liveness_kill": true
-        },
-        "liveness": {
-          "probe": "exec:/bin/false",
-          "failureThreshold": 2,
-          "periodSeconds": 1,
-          "initialDelaySeconds": 10,
-          "result": "failed",
-          "failures_before_kill": 2,
-          "kill_reason": "Killing",
-          "kill_message": "Container app failed liveness probe, will be restarted",
-          "restartCount_after_kill": 1
-        }
-      },
-      "restart_policy_and_backoff": {
-        "restartPolicy": {
-          "always_exit_0": "Always",
-          "on_failure_exit_0": "OnFailure",
-          "on_failure_exit_1": "OnFailure",
-          "never_exit_1": "Never"
-        },
-        "restartCount": {
-          "always_exit_0": 2,
-          "on_failure_exit_0": 0,
-          "on_failure_exit_1": 2,
-          "never_exit_1": 0
-        },
-        "phase": {
-          "always_exit_0": "Running",
-          "on_failure_exit_0": "Succeeded",
-          "on_failure_exit_1": "Running",
-          "never_exit_1": "Failed"
-        },
-        "status": {
-          "always_exit_0": {
-            "state": "waiting",
-            "reason": "CrashLoopBackOff",
-            "exitCode": null,
-            "lastState": "terminated",
-            "lastReason": "Completed",
-            "lastExitCode": 0
           },
-          "on_failure_exit_0": {
-            "state": "terminated",
-            "reason": "Completed",
-            "exitCode": 0,
-            "lastState": null,
-            "lastReason": null,
-            "lastExitCode": null
-          },
-          "on_failure_exit_1": {
-            "state": "waiting",
-            "reason": "CrashLoopBackOff",
-            "exitCode": null,
-            "lastState": "terminated",
-            "lastReason": "Error",
-            "lastExitCode": 1
-          },
-          "never_exit_1": {
-            "state": "terminated",
-            "reason": "Error",
-            "exitCode": 1,
-            "lastState": null,
-            "lastReason": null,
-            "lastExitCode": null
+          "graceful_termination_oracle": {
+            "operations": [
+              "exec:preStop",
+              "signal:TERM",
+              "wait:2",
+              "signal:KILL"
+            ],
+            "events": [
+              "Killing"
+            ],
+            "phase": "Failed",
+            "status": {
+              "state": "terminated",
+              "exitCode": 137,
+              "reason": "Error",
+              "message": "preStop\nTERM\n"
+            },
+            "terminationGracePeriodSeconds": 2,
+            "killed_after_grace_period": true
           }
-        },
-        "backoff_seconds": {
-          "always_exit_0": [
-            "10s",
-            "20s"
-          ],
-          "on_failure_exit_1": [
-            "10s",
-            "20s"
-          ]
         }
-      },
-      "graceful_termination_oracle": {
-        "operations": [
-          "exec:preStop",
-          "signal:TERM",
-          "wait:2",
-          "signal:KILL"
-        ],
-        "events": [
-          "Killing"
-        ],
-        "phase": "Failed",
-        "status": {
-          "state": "terminated",
-          "exitCode": 137,
-          "reason": "Error",
-          "message": "preStop\nTERM\n"
-        },
-        "terminationGracePeriodSeconds": 2,
-        "killed_after_grace_period": true
-      }
-    }
   JSON
 
   # The observables mirror test/conformance/kubernetes/m2_lifecycle_oracle/
@@ -426,8 +426,16 @@ module M2LifecycleProbe
       "operations" => operations,
       "phase" => result.phase,
       "status" => {
-        "initContainerStatuses" => Array(spec["initContainers"]).map { |container| container_summary(result.status.fetch("initContainerStatuses").find { |status| status["name"] == container.fetch("name") }) },
-        "containerStatuses" => Array(spec["containers"]).map { |container| container_summary(result.status.fetch("containerStatuses").find { |status| status["name"] == container.fetch("name") }) }
+        "initContainerStatuses" => Array(spec["initContainers"]).map do |container|
+          container_summary(result.status.fetch("initContainerStatuses").find do |status|
+            status["name"] == container.fetch("name")
+          end)
+        end,
+        "containerStatuses" => Array(spec["containers"]).map do |container|
+          container_summary(result.status.fetch("containerStatuses").find do |status|
+            status["name"] == container.fetch("name")
+          end)
+        end
       }
     }
     lifecycle.terminate(pod)
@@ -447,7 +455,7 @@ module M2LifecycleProbe
   def probe_thresholds_case(fixture)
     pod = fixture.fetch("pod")
     container = pod.fetch("spec").fetch("containers").first
-    name = container.fetch("name")
+    container.fetch("name")
     startup = container.fetch("startupProbe")
     liveness = container.fetch("livenessProbe")
     readiness = container.fetch("readinessProbe")
@@ -481,7 +489,10 @@ module M2LifecycleProbe
       end
       # Liveness failures of the container that was (or is about to be) killed:
       # the kubelet counts the Unhealthy events recorded before the Killing event.
-      failures_before_kill = probes.failure_count(container_id, type: "liveness") if kill_event.nil? || failures_before_kill.zero? || status["restartCount"].to_i >= 1
+      if kill_event.nil? || failures_before_kill.zero? || status["restartCount"].to_i >= 1
+        failures_before_kill = probes.failure_count(container_id,
+                                                    type: "liveness")
+      end
       break if status["restartCount"].to_i >= 1
     end
     final = lifecycle.record(pod).fetch(:status).fetch("containerStatuses").first
@@ -537,13 +548,14 @@ module M2LifecycleProbe
     observed = {"restartPolicy" => {}, "restartCount" => {}, "phase" => {}, "status" => {}, "backoff_seconds" => {}}
     production = []
     variants.each do |variant, document|
-      pod = {"metadata" => {"name" => "restart-#{variant.tr("_", "-")}", "namespace" => "m2", "uid" => "restart-#{variant}"}, "spec" => document.fetch("spec")}
+      pod = {"metadata" => {"name" => "restart-#{variant.tr("_", "-")}", "namespace" => "m2", "uid" => "restart-#{variant}"},
+             "spec" => document.fetch("spec")}
       container = document.fetch("spec").fetch("containers").first
       exit_code = Integer(container.fetch("command").last.split.last)
       runtime = SemanticsRuntime.new
       clock_state, clock = semantics_clock
       backoffs = []
-      lifecycle = nil
+      nil
       sleeper = ->(seconds) { clock_state[:now] += seconds }
       restarts = Rubernetes::Node::RestartManager.new(clock: -> { clock_state[:now] }, sleeper: sleeper)
       lifecycle = Rubernetes::Node::Lifecycle.new(runtime: runtime, restart_manager: restarts, clock: clock, sleeper: sleeper)
@@ -574,14 +586,17 @@ module M2LifecycleProbe
         end
       end
       raise "restart variant #{variant} did not settle" unless settled
+
       phase, status = settled
       observed["restartPolicy"][variant] = document.fetch("spec").fetch("restartPolicy")
       observed["restartCount"][variant] = status.fetch("restartCount")
       observed["phase"][variant] = phase
       observed["status"][variant] = restart_status_summary(status)
-      if restarting.include?(variant)
-        observed["backoff_seconds"][variant] = backoffs.first(2).map { |entry| entry.dig("state", "waiting", "message")[/back-off (\d+s)/, 1] }.uniq
-      end
+      next unless restarting.include?(variant)
+
+      observed["backoff_seconds"][variant] = backoffs.first(2).map do |entry|
+        entry.dig("state", "waiting", "message")[/back-off (\d+s)/, 1]
+      end.uniq
     end
     expected = EXPECTED_LIFECYCLE_OBSERVABLES.fetch("restart_policy_and_backoff")
     semantics_case(
@@ -615,7 +630,10 @@ module M2LifecycleProbe
     # delete request (the kind harness measures the same interval on its
     # wall clock; here the fake clock advances exactly by the waited grace).
     killed_after_grace = terminated.dig("state", "terminated", "exitCode") == 137 && finished_at - deletion_at >= grace
-    operations.insert(operations.index("signal:KILL"), "wait:#{grace}") if killed_after_grace && operations.include?("signal:KILL") && kill_call_index
+    if killed_after_grace && operations.include?("signal:KILL") && kill_call_index
+      operations.insert(operations.index("signal:KILL"),
+                        "wait:#{grace}")
+    end
     observed = {
       "operations" => operations,
       "events" => result.events.filter_map { |event| event["reason"] }.uniq,
@@ -659,7 +677,7 @@ module M2LifecycleProbe
   end
 
   def run(input)
-    Dir.mktmpdir("rubernetes-m2-lifecycle-") do |directory|
+    Dir.mktmpdir("rubernetes-m2-lifecycle-") do |_directory|
       node_runtime = NodeRuntime.new
       node_lifecycle = Rubernetes::Node::Lifecycle.new(
         runtime: node_runtime,
@@ -673,7 +691,9 @@ module M2LifecycleProbe
       }
       node_started = node_lifecycle.start(pod)
       node_finished = node_lifecycle.terminate(pod)
-      raise "Node lifecycle did not reach Removed/Succeeded" unless node_started.phase == "Running" && node_finished.state == "Removed" && node_finished.phase == "Succeeded"
+      unless node_started.phase == "Running" && node_finished.state == "Removed" && node_finished.phase == "Succeeded"
+        raise "Node lifecycle did not reach Removed/Succeeded"
+      end
 
       # RuntimeLifecycle trace: replayed from the production Native runtime's
       # hash-chained ownership journal (one real L3 lifecycle plus one real
@@ -699,15 +719,19 @@ module M2LifecycleProbe
       semantics_matrix = lifecycle_semantics_matrix
       lifecycle_oracle = M2KubernetesLifecycleOracle.run(input: input, actual_cases: semantics_matrix)
       oracle_difference_count = if lifecycle_oracle["executed"] == true
-                                 Array(lifecycle_oracle["comparisons"]).count { |entry| entry["passed"] != true }
-                               else
-                                 M2Gate::REQUIRED_LIFECYCLE_SEMANTICS.length
-                               end
+                                  Array(lifecycle_oracle["comparisons"]).count { |entry| entry["passed"] != true }
+                                else
+                                  M2Gate::REQUIRED_LIFECYCLE_SEMANTICS.length
+                                end
       errors = []
       errors << "L3 kernel isolation profile is unavailable" unless kernel_l3_available
-      errors << "L3 resource inventory is incomplete: #{inventory_measurement.fetch("missing_resource_kinds").join(", ")}" unless inventory_measurement.fetch("missing_resource_kinds").empty?
+      unless inventory_measurement.fetch("missing_resource_kinds").empty?
+        errors << "L3 resource inventory is incomplete: #{inventory_measurement.fetch("missing_resource_kinds").join(", ")}"
+      end
       errors << "subresource E2E requires a real Native adapter" unless subresources_passed
-      errors << "Native lifecycle trace left kernel resources: #{trace_measurement.fetch("cleanup_readback").length}" unless trace_measurement.fetch("cleanup_readback").empty?
+      unless trace_measurement.fetch("cleanup_readback").empty?
+        errors << "Native lifecycle trace left kernel resources: #{trace_measurement.fetch("cleanup_readback").length}"
+      end
       errors << "Native lifecycle trace did not end in Removed" unless trace.any? { |event| event["to"] == "Removed" }
       errors << "lifecycle semantic oracle has #{oracle_difference_count} differences" unless oracle_difference_count.zero?
       errors.concat(Array(lifecycle_oracle["errors"])) unless lifecycle_oracle["errors"].nil?
@@ -723,7 +747,7 @@ module M2LifecycleProbe
         "trace_measurement" => trace_measurement.reject { |key, _| key == "trace" },
         "trace_measurement_source" => trace_measurement.fetch("measurement_source"),
         "node_lifecycle" => {"start_phase" => node_started.phase, "finish_state" => node_finished.state,
-                              "finish_phase" => node_finished.phase},
+                             "finish_phase" => node_finished.phase},
         "lifecycle_semantics_measurement_source" => M2Gate::LIFECYCLE_SEMANTICS_ACTUAL_SOURCE,
         "lifecycle_semantics_matrix" => semantics_matrix,
         "lifecycle_semantics_matrix_sha256" => M2Gate.canonical_document_digest(semantics_matrix),
@@ -745,7 +769,7 @@ module M2LifecycleProbe
         "resource_kinds" => inventory_measurement.fetch("resource_kinds"),
         "l3_available" => l3_available,
         "passed" => l3_available && matrix_passed && subresources_passed && lifecycle_oracle["executed"] == true && oracle_difference_count.zero? && live.zero? &&
-                     sigkill_matrix.all? { |entry| entry["dead_residual_count"] == 0 } && errors.empty?,
+          sigkill_matrix.all? { |entry| entry["dead_residual_count"] == 0 } && errors.empty?,
         "errors" => errors
       }
     end

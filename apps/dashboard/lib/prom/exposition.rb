@@ -141,7 +141,7 @@ module Prom
       def peek = @line[@pos]
 
       def skip_space
-        @pos += 1 while !eos? && (peek == " " || peek == "\t")
+        @pos += 1 while !eos? && [" ", "\t"].include?(peek)
       end
 
       def metric_name

@@ -13,6 +13,7 @@ class MicroVMProtocolTest < Minitest::Test
   def test_cbor_is_canonical_and_rejects_non_canonical_documents
     value = {"z" => 1, "a" => [1, -2, "bytes".b, "text", true, nil, 2.5], "aa" => {"k" => 2**40}}
     encoded = M::CBOR.encode(value)
+
     assert_equal value, M::CBOR.decode(encoded)
     assert_equal encoded, M::CBOR.encode(M::CBOR.decode(encoded)), "round trip is byte-stable"
     assert_raises(M::ProtocolError, "indefinite length") { M::CBOR.decode("\x9f".b) }
@@ -26,6 +27,7 @@ class MicroVMProtocolTest < Minitest::Test
   def test_framing_bounds_length_before_allocation_and_round_trips
     reader, writer = IO.pipe
     M::Framing.write_frame(writer, {"id" => 1, "request" => "hello", "params" => {}})
+
     assert_equal({"id" => 1, "request" => "hello", "params" => {}}, M::Framing.read_frame(reader))
     writer.write([M::Framing::MAX_FRAME_BYTES + 1].pack("N"))
     writer.close
@@ -40,6 +42,7 @@ class MicroVMProtocolTest < Minitest::Test
     handler = ->(name, params) { name == "echo" ? {"echo" => params} : raise(M::ProtocolError, "unknown #{name}") }
     thread = Thread.new { M::Server.new(guest, handler).serve }
     channel = M::Channel.new(host, timeout: 2)
+
     assert_equal({"echo" => {"a" => 1}}, channel.call("echo", {"a" => 1}))
     error = assert_raises(M::ProtocolError) { channel.call("nope") }
     assert_includes error.message, "unknown nope"
@@ -47,11 +50,17 @@ class MicroVMProtocolTest < Minitest::Test
     thread.join(2)
     # A response with a foreign id is unrequested.
     host2, guest2 = UNIXSocket.pair
-    Thread.new { M::Framing.read_frame(guest2); M::Framing.write_frame(guest2, {"id" => 99, "result" => {}}) }
+    Thread.new do
+      M::Framing.read_frame(guest2)
+      M::Framing.write_frame(guest2, {"id" => 99, "result" => {}})
+    end
     assert_raises(M::ProtocolError) { M::Channel.new(host2, timeout: 2).call("x") }
     # A closed connection after the request is ambiguous (ResponseLost).
     host3, guest3 = UNIXSocket.pair
-    Thread.new { M::Framing.read_frame(guest3); guest3.close }
+    Thread.new do
+      M::Framing.read_frame(guest3)
+      guest3.close
+    end
     assert_raises(M::ResponseLost) { M::Channel.new(host3, timeout: 2).call("x") }
   end
 
@@ -66,6 +75,7 @@ class MicroVMProtocolTest < Minitest::Test
     key = "k" * 32
     fields = {"kind" => "gate.open", "nonce" => "n1"}
     signature = M::Signature.sign(key, fields)
+
     assert M::Signature.valid?(key, fields, signature)
     refute M::Signature.valid?(key, fields.merge("nonce" => "n2"), signature)
     refute M::Signature.valid?("other" * 6, fields, signature)
@@ -137,6 +147,7 @@ class MicroVMProtocolTest < Minitest::Test
       ledger = M::IdentityLedger.new(path)
       first = ledger.allocate(sandbox_id: "s1", runtime_class: "rubernetes-firecracker", artifact_digest: "a", policy_digest: "p")
       second = ledger.allocate(sandbox_id: "s2", runtime_class: "rubernetes-firecracker", artifact_digest: "a", policy_digest: "p")
+
       refute_equal first.fields["jail_uid"], second.fields["jail_uid"]
       refute_equal first.fields["guest_cid"], second.fields["guest_cid"]
       refute_equal first.fields["policy_digest"], second.fields["policy_digest"], "policy digest is bound to the VM generation"
@@ -146,8 +157,9 @@ class MicroVMProtocolTest < Minitest::Test
       ledger.release(first.vm_id)
       replayed = M::IdentityLedger.new(path)
       third = replayed.allocate(sandbox_id: "s1", runtime_class: "rubernetes-firecracker", artifact_digest: "a", policy_digest: "p")
+
       assert_operator third.fields["jail_uid"], :>, second.fields["jail_uid"], "UIDs are never reused after replay"
-      assert_equal 0, replayed.reuse_report.values.sum { |entry| entry["reused"] }
+      assert_equal(0, replayed.reuse_report.values.sum { |entry| entry["reused"] })
       assert_equal 1, replayed.revoke!
       assert_raises(M::IdentityError, "released identities are immutable") { replayed.bind_network(first.vm_id, ip: "10.0.0.9") }
     end
@@ -162,9 +174,10 @@ class MicroVMProtocolTest < Minitest::Test
       File.binwrite(vmstate, "V" * 512)
       base = pool.store(id: "base-1", runtime_class: "rubernetes-firecracker", mem_path: mem, vmstate_path: vmstate, artifact_digest: "art",
                         drive_layout: [], machine: {"vcpu_count" => 1}, guest_hello: {"phase" => "base"}, pause_ack: {"nonce" => "n"})
+
       assert pool.verify!(base, artifact_digest: "art")
       assert_raises(M::SnapshotCorruption) { pool.verify!(base, artifact_digest: "other") }
-      File.binwrite(base.mem_path, "M" * 4095 + "X")
+      File.binwrite(base.mem_path, ("M" * 4095) + "X")
       assert_raises(M::SnapshotCorruption) { pool.verify!(pool.load_base("rubernetes-firecracker", "base-1"), artifact_digest: "art") }
       File.truncate(base.vmstate_path, 100)
       assert_raises(M::SnapshotCorruption) { pool.verify!(pool.load_base("rubernetes-firecracker", "base-1"), artifact_digest: "art") }
@@ -183,7 +196,9 @@ class MicroVMProtocolTest < Minitest::Test
     identity = {"capability_id" => "cap-1", "subject_id" => "subj-1", "policy_digest" => "pd", "revocation_epoch" => 0}
     broker.bind(vm_id: "vm-1", identity: identity, policy: {"operations" => %w[dns.resolve http.get], "allowed_hosts" => ["api.example.com", "*.internal"],
                                                             "allowed_cidrs" => ["10.1.0.0/16"], "allowed_ports" => [443], "expires_at" => (Time.now + 60).utc.iso8601})
-    assert_equal({"name" => "api.example.com", "addresses" => ["10.1.0.5", "10.1.0.6"]}, broker.handle("vm-1", "broker.request", {"operation" => "dns.resolve", "params" => {"name" => "api.example.com"}}))
+
+    assert_equal({"name" => "api.example.com", "addresses" => ["10.1.0.5", "10.1.0.6"]},
+                 broker.handle("vm-1", "broker.request", {"operation" => "dns.resolve", "params" => {"name" => "api.example.com"}}))
     assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "dns.resolve", "params" => {"name" => "evil.example.com"}}) }
     assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "dns.resolve", "params" => {"name" => "api.example.com", "extra" => 1}}) }
     assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "time.now", "params" => {}}) }
@@ -195,7 +210,7 @@ class MicroVMProtocolTest < Minitest::Test
     assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "dns.resolve", "params" => {"name" => "api.example.com"}}) }
     epoch = 1
     assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "time.now", "params" => {}}) }
-    assert_equal %w[allowed denied denied denied denied denied denied denied denied], audit.map { |entry| entry["outcome"] }
+    assert_equal(%w[allowed denied denied denied denied denied denied denied denied], audit.map { |entry| entry["outcome"] })
   end
 
   def test_broker_http_redirects_are_reauthorized_per_hop
@@ -225,8 +240,10 @@ class MicroVMProtocolTest < Minitest::Test
     firecracker = fake_backend("firecracker")
     mux = Rubernetes::Runtime::Multiplexer.new(backends: {"rubernetes-native" => native, "rubernetes-firecracker" => firecracker})
     sandbox = mux.run_sandbox({"id" => "p1"}, runtime_class: "rubernetes-firecracker")
+
     assert_equal "firecracker:sandbox", sandbox
     container = mux.create_container(sandbox, {"image" => "x"})
+
     assert_equal "firecracker:container", container
     assert_equal "firecracker:start", mux.start_container(container)
     assert_equal "native:sandbox", mux.run_sandbox({"id" => "p2"})
@@ -243,6 +260,7 @@ class MicroVMProtocolTest < Minitest::Test
       files = M::Artifacts::REQUIRED.to_h { |name| [name, {"path" => "firecracker", "sha256" => digest, "bytes" => 6}] }
       document = {"schema_version" => 1, "files" => files, "verity" => {"root_hash" => "a" * 64}, "firecracker" => {"version" => "1.16.1"}}
       artifacts = M::Artifacts.new(document, root: dir)
+
       assert_equal 6, artifacts.verify!(expected_uid: Process.uid).length
       File.write(file, "tampered")
       assert_raises(M::ArtifactError) { artifacts.verify!(expected_uid: Process.uid) }

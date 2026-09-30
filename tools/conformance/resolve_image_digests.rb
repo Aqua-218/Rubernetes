@@ -29,9 +29,11 @@ module Conformance
       # (`localhost:5000/app`).  A bare `busybox:1.28` is name plus tag.
       without_digest = reference.split("@").first
       last_segment = without_digest.rpartition("/").last
-      body, tag = last_segment.include?(":") ?
-                  [without_digest.rpartition(":").first, without_digest.rpartition(":").last] :
-                  [without_digest, "latest"]
+      body, tag = if last_segment.include?(":")
+                    [without_digest.rpartition(":").first, without_digest.rpartition(":").last]
+                  else
+                    [without_digest, "latest"]
+                  end
       parts = body.split("/")
       if parts.length > 1 && (parts.first.include?(".") || parts.first.include?(":") || parts.first == "localhost")
         host = parts.first

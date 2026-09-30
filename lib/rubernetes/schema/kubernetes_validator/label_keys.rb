@@ -34,7 +34,8 @@ module Rubernetes
 
         old_spec = old && operation == :update ? dig_path(old, base + ["spec"]) : nil
         old_violates = old_spec.is_a?(Hash) && Array(fetch(old_spec, "topologySpreadConstraints")).any? do |constraint|
-          constraint.is_a?(Hash) && !preferred_label_key_errors([], fetch(constraint, "matchLabelKeys"), nil, fetch(constraint, "labelSelector")).empty?
+          constraint.is_a?(Hash) && !preferred_label_key_errors([], fetch(constraint, "matchLabelKeys"), nil,
+                                                                fetch(constraint, "labelSelector")).empty?
         end
         path = base + ["spec"]
         issues = []
@@ -65,8 +66,9 @@ module Rubernetes
           constraint_path = path + ["topologySpreadConstraints", index.to_s]
           keys = fetch(constraint, "matchLabelKeys")
           selector = fetch(constraint, "labelSelector")
-          issues.concat(old_violates ? legacy_spread_label_key_errors(constraint_path + ["matchLabelKeys"], keys, selector) :
-                                       preferred_label_key_errors(constraint_path, keys, nil, selector))
+          issues.concat(old_violates ? legacy_spread_label_key_errors(constraint_path + ["matchLabelKeys"], keys,
+                                                                      selector) : preferred_label_key_errors(constraint_path, keys, nil,
+                                                                                                             selector))
         end
         issues
       end

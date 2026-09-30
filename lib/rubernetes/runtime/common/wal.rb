@@ -3,7 +3,6 @@
 require "fileutils"
 require "json"
 require "securerandom"
-require "thread"
 require "time"
 
 require_relative "canonical"
@@ -31,7 +30,7 @@ module Rubernetes
       end
 
       EMPTY_DIGEST = "0" * 64
-      DIGEST_PATTERN = /\A[0-9a-f]{64}\z/.freeze
+      DIGEST_PATTERN = /\A[0-9a-f]{64}\z/
       MAX_RECORD_BYTES = StrictJSON::DEFAULT_MAX_BYTES
       MAX_RECORD_DEPTH = StrictJSON::DEFAULT_MAX_DEPTH
 
@@ -53,7 +52,7 @@ module Rubernetes
         @mutex.synchronize do
           sequence = @records.length + 1
           previous_digest = @records.empty? ? EMPTY_DIGEST : @records.last.digest
-          timestamp_value = (timestamp || @clock.call)
+          timestamp_value = timestamp || @clock.call
           timestamp_value = Time.iso8601(timestamp_value.to_s) unless timestamp_value.is_a?(Time)
           timestamp_value = timestamp_value.utc.iso8601(6)
           body = {
@@ -162,13 +161,11 @@ module Rubernetes
         records = []
         File.open(@path, "rb") do |file|
           file.each_line.with_index(1) do |line, line_number|
-            unless line.end_with?("\n")
-              raise JournalCorruption, "WAL line #{line_number} is not newline terminated"
-            end
+            raise JournalCorruption, "WAL line #{line_number} is not newline terminated" unless line.end_with?("\n")
 
             begin
               records << normalize_record(StrictJSON.parse(line, max_bytes: MAX_RECORD_BYTES, max_depth: MAX_RECORD_DEPTH,
-                                                           require_newline: true))
+                                                                 require_newline: true))
             rescue StrictJSON::Error, JSON::ParserError, KeyError, TypeError, ArgumentError => error
               raise JournalCorruption, "WAL line #{line_number} is invalid: #{error.message}"
             end
@@ -204,12 +201,8 @@ module Rubernetes
           unless record.sequence == expected_sequence
             raise JournalCorruption, "WAL sequence #{record.sequence} expected #{expected_sequence}"
           end
-          unless record.previous_digest == previous
-            raise JournalCorruption, "WAL previous digest mismatch at #{record.sequence}"
-          end
-          unless record.digest.match?(DIGEST_PATTERN)
-            raise JournalCorruption, "WAL digest is invalid at #{record.sequence}"
-          end
+          raise JournalCorruption, "WAL previous digest mismatch at #{record.sequence}" unless record.previous_digest == previous
+          raise JournalCorruption, "WAL digest is invalid at #{record.sequence}" unless record.digest.match?(DIGEST_PATTERN)
 
           body = {
             "sequence" => record.sequence,
@@ -220,9 +213,8 @@ module Rubernetes
             "previous_digest" => record.previous_digest
           }
           expected_digest = Digest::SHA256.hexdigest(JSON.generate(body))
-          unless expected_digest == record.digest
-            raise JournalCorruption, "WAL hash mismatch at #{record.sequence}"
-          end
+          raise JournalCorruption, "WAL hash mismatch at #{record.sequence}" unless expected_digest == record.digest
+
           previous = record.digest
         end
         records

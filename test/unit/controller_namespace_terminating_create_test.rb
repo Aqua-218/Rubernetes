@@ -16,9 +16,10 @@ class ControllerNamespaceTerminatingCreateTest < Minitest::Test
   FINALIZER = "batch.kubernetes.io/job-tracking"
 
   class TerminatingNamespaceAdapter < Controller::StoreAdapter
-    Refused = Class.new(StandardError)
+    class Refused < StandardError
+    end
 
-    def apply_create(operation, fence: nil)
+    def apply_create(_operation, fence: nil)
       raise Refused, "unable to create new content in namespace ns because it is being terminated"
     end
   end
@@ -54,17 +55,19 @@ class ControllerNamespaceTerminatingCreateTest < Minitest::Test
     controller = Controller::JobController.new(store: nil)
     live_job = store_adapter.find(Controller::ResourceDescriptor.parse("batch/v1/Job"), name: "j", namespace: "ns")
     planned = controller.plan(live_job, store: store_adapter, now: "2026-09-25T08:04:00Z")
+
     assert(planned.operations.any?(&:create?), "the Job wants more Pods")
 
     controller.reconcile(live_job, store: store_adapter, apply: true, now: "2026-09-25T08:04:00Z")
 
     pod = store_adapter.find(Controller::ResourceDescriptor.parse("Pod"), name: "j-done", namespace: "ns")
+
     refute_includes Array(pod.dig("metadata", "finalizers")), FINALIZER
   end
 
   def test_other_create_failures_still_fail_the_batch
     failing = Class.new(Controller::StoreAdapter) do
-      def apply_create(operation, fence: nil) = raise(ArgumentError, "quota exceeded")
+      def apply_create(_operation, fence: nil) = raise(ArgumentError, "quota exceeded")
     end
     store_adapter = adapter(failing)
     live_job = store_adapter.find(Controller::ResourceDescriptor.parse("batch/v1/Job"), name: "j", namespace: "ns")
@@ -76,6 +79,7 @@ class ControllerNamespaceTerminatingCreateTest < Minitest::Test
   def test_namespace_terminating_is_recognised_by_cause_or_message
     status = {"kind" => "Status", "details" => {"causes" => [{"reason" => "NamespaceTerminating"}]}}
     error = Struct.new(:status_object, :message).new(status, "forbidden")
+
     assert Controller::StoreAdapter.namespace_terminating?(error)
     refute Controller::StoreAdapter.namespace_terminating?(StandardError.new("forbidden"))
   end

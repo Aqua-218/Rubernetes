@@ -57,6 +57,7 @@ class NodeHousekeepingSyncTest < Minitest::Test
 
     assert(sync.housekeeping_due?(0), "the first pass is always due")
     sync.housekeep(now: 10)
+
     refute(sync.housekeeping_due?(10.5))
     assert(sync.housekeeping_due?(10 + Node::SyncLoop::DEFAULT_HOUSEKEEPING_PERIOD_SECONDS))
   end

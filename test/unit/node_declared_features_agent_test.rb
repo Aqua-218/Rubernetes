@@ -58,15 +58,21 @@ class NodeDeclaredFeaturesAgentTest < Minitest::Test
     api = API.new
     agent = Node::Agent.new(node_name: "node-a", api: api, lifecycle: Lifecycle.new, sync_loop: Loop.new, sleeper: ->(_) {})
     agent.start
+
     assert_equal DECLARED, api.nodes.first.dig("status", "declaredFeatures")
     assert_equal DECLARED, agent.declared_features
 
     api = API.new
     Node::Agent.new(node_name: "node-b", api: api, lifecycle: Lifecycle.new, sync_loop: Loop.new, sleeper: ->(_) {},
                     feature_gates: {"NodeDeclaredFeatures" => false}).start
+
     refute api.nodes.first.fetch("status").key?("declaredFeatures")
   ensure
-    agent&.stop rescue nil
+    begin
+      agent&.stop
+    rescue StandardError
+      nil
+    end
   end
 
   def test_admission_rejects_pod_needing_undeclared_feature
@@ -75,12 +81,14 @@ class NodeDeclaredFeaturesAgentTest < Minitest::Test
     admission = Node::Admission.new(node_name: "n", capacity: {"cpu" => "4", "memory" => "8Gi", "pods" => "10"},
                                     declared_features: %w[ExtendWebSocketsToKubelet])
     decision = admission.admit(pod)
+
     refute decision.accepted
     assert_equal "PodFeatureUnsupported", decision.reason
     assert_equal "Pod requires node features that are not available: RestartAllContainersOnContainerExits", decision.message
 
     declaring = Node::Admission.new(node_name: "n", capacity: {"cpu" => "4", "memory" => "8Gi", "pods" => "10"},
                                     declared_features: DECLARED)
+
     assert declaring.admit(pod).accepted
     # With the gate off there is no handler at all.
     assert Node::Admission.new(node_name: "n", capacity: {"cpu" => "4", "memory" => "8Gi", "pods" => "10"}).admit(pod).accepted
@@ -96,12 +104,14 @@ class NodeDeclaredFeaturesAgentTest < Minitest::Test
                "spec" => {"resources" => {"limits" => {"cpu" => "1"}}, "containers" => [{"name" => "c"}]}}
     lifecycle.pods["u"] = old_pod
     agent.send(:check_declared_features_update, old_pod)
+
     assert_empty recorder.events
 
     resized = Marshal.load(Marshal.dump(old_pod))
     resized["spec"]["resources"]["limits"]["cpu"] = "2"
     agent.send(:check_declared_features_update, resized)
     event = recorder.events.fetch(0)
+
     assert_equal "FailedNodeDeclaredFeaturesCheck", event[:reason]
     assert_equal "Warning", event[:type]
     assert_equal "Pod requires node features that are not available: InPlacePodLevelResourcesVerticalScaling", event[:message]

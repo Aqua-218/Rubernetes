@@ -14,7 +14,7 @@ module Rubernetes
                   :session_affinity, :session_affinity_timeout_seconds,
                   :metadata
 
-      def initialize(service_key:, service_type:, kind:, virtual_ip: nil, port:, protocol:,
+      def initialize(service_key:, service_type:, kind:, port:, protocol:, virtual_ip: nil,
                      node_port: nil, health_check: false, backends: [],
                      external_traffic_policy: "Cluster", internal_traffic_policy: "Cluster",
                      session_affinity: "None", session_affinity_timeout_seconds: 10_800,
@@ -180,12 +180,12 @@ module Rubernetes
             backend_groups = backend_groups_for(service, service_port, endpoint_set, family: ModelSupport.ip_family(vip))
             rules << build_rule(service, service_port, backend_groups, kind: "LoadBalancer", virtual_ip: vip)
           end
-          if service.node_port?
-            node_port = service_port.node_port
-            if node_port
-              backend_groups = backend_groups_for(service, service_port, endpoint_set)
-              rules << build_rule(service, service_port, backend_groups, kind: "NodePort", virtual_ip: nil, node_port: node_port)
-            end
+          next unless service.node_port?
+
+          node_port = service_port.node_port
+          if node_port
+            backend_groups = backend_groups_for(service, service_port, endpoint_set)
+            rules << build_rule(service, service_port, backend_groups, kind: "NodePort", virtual_ip: nil, node_port: node_port)
           end
         end
         if service.node_port? && service.health_check_node_port
@@ -194,12 +194,12 @@ module Rubernetes
                                           target_port: service.health_check_node_port, protocol: "TCP")
           health_groups = backend_groups_for(service, health_port, endpoints)
           rules << build_rule(service, health_port, health_groups, kind: "HealthCheckNodePort", virtual_ip: nil,
-                              node_port: service.health_check_node_port, health_check: true)
+                                                                   node_port: service.health_check_node_port, health_check: true)
         end
         rules
       end
 
-      def backend_groups_for(service, service_port, endpoints, family: nil)
+      def backend_groups_for(_service, service_port, endpoints, family: nil)
         endpoint_set = endpoints.select do |endpoint|
           endpoint.port_compatible?(service_port) && (family.nil? || endpoint.family == family)
         end
@@ -261,7 +261,7 @@ module Rubernetes
       def initialize(added: [], updated: [], deleted: [], from_revision: 0, to_revision: 0)
         @added = Array(added).sort_by(&:key).freeze
         @updated = Array(updated).sort_by { |pair| pair.is_a?(Array) ? pair.first.key : pair.key }
-                              .map { |pair| pair.is_a?(Array) ? pair.freeze : pair }.freeze
+          .map { |pair| pair.is_a?(Array) ? pair.freeze : pair }.freeze
         @deleted = Array(deleted).sort_by { |entry| entry.is_a?(Rule) ? entry.key : entry }.freeze
         @from_revision = Integer(from_revision)
         @to_revision = Integer(to_revision)
@@ -392,7 +392,8 @@ module Rubernetes
                 object = ModelSupport.string_keys(value)
                 metadata = ModelSupport.key(object, "metadata", {})
                 [ModelSupport.service_key(namespace || ModelSupport.key(metadata, "namespace", "default"),
-                                           ModelSupport.key(ModelSupport.key(metadata, "labels", {}) || {}, "kubernetes.io/service-name", "")),
+                                          ModelSupport.key(ModelSupport.key(metadata, "labels", {}) || {}, "kubernetes.io/service-name",
+                                                           "")),
                  name || ModelSupport.key(metadata, "name", "")]
               else
                 [ModelSupport.service_key(namespace || "default", ""), name || value.to_s]
@@ -409,7 +410,16 @@ module Rubernetes
       end
 
       def service(key, namespace: nil)
-        normalized = key.is_a?(Service) ? key.key : (key.to_s.include?("/") ? key.to_s : ModelSupport.service_key(namespace || "default", key))
+        normalized = if key.is_a?(Service)
+                       key.key
+                     else
+                       (if key.to_s.include?("/")
+                          key.to_s
+                        else
+                          ModelSupport.service_key(namespace || "default",
+                                                   key)
+                        end)
+                     end
         @mutex.synchronize { @services[normalized] }
       end
 
@@ -501,7 +511,7 @@ module Rubernetes
 
       Event = Struct.new(:kind, :key, :object, :revision, :at, keyword_init: true) do
         def initialize(**attributes)
-          super(**attributes)
+          super
           freeze
         end
 
@@ -535,6 +545,7 @@ module Rubernetes
         def initialize(capacity: 1_024)
           @capacity = Integer(capacity)
           raise ArgumentError, "watch capacity must be positive" unless @capacity.positive?
+
           @mutex = Mutex.new
           @condition = ConditionVariable.new
           @events = []
@@ -550,6 +561,7 @@ module Rubernetes
         def push(event)
           @mutex.synchronize do
             return false if @closed
+
             @events.shift if @events.length >= @capacity
             @events << event
             @condition.broadcast
@@ -558,13 +570,15 @@ module Rubernetes
         end
 
         def next(timeout: nil)
-          deadline = timeout && Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout.to_f
+          deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout.to_f)
           @mutex.synchronize do
             loop do
               return @events.shift unless @events.empty?
               return nil if @closed
-              remaining = deadline && deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+              remaining = deadline && (deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC))
               return nil if remaining && remaining <= 0
+
               @condition.wait(@mutex, remaining)
             end
           end
@@ -576,6 +590,7 @@ module Rubernetes
           loop do
             event = self.next(timeout: timeout)
             break if event.nil?
+
             yield event
           end
           self
@@ -584,6 +599,7 @@ module Rubernetes
         def close
           @mutex.synchronize do
             return self if @closed
+
             @closed = true
             @condition.broadcast
           end

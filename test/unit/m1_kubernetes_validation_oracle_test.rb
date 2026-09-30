@@ -23,28 +23,35 @@ class M1KubernetesValidationOracleTest < Minitest::Test
 
     # Strategies with collaborators are constructed from source-backed
     # upstream implementations and the ledger names each one.
-    constructor = mappings.find { |mapping| mapping.fetch("target_schema") == "io.k8s.api.admissionregistration.v1.MutatingAdmissionPolicy" }
+    constructor = mappings.find do |mapping|
+      mapping.fetch("target_schema") == "io.k8s.api.admissionregistration.v1.MutatingAdmissionPolicy"
+    end
+
     assert_equal("constructor", constructor.fetch("validation_mode"))
     assert_equal(true, constructor.fetch("constructor_safe"))
     assert_equal(%w[authorizer resourceResolver], constructor.fetch("collaborators").map { |entry| entry.fetch("name") }.sort)
     assert(constructor.fetch("collaborators").all? { |entry| entry.fetch("source_path").end_with?(".go") })
 
     response = mappings.find { |mapping| mapping.fetch("target_schema") == "io.k8s.apimachinery.pkg.apis.meta.v1.WatchEvent" }
+
     assert_equal("response", response.fetch("validation_mode"))
     assert_equal("api-differential", response.dig("evidence", "report"))
     assert_includes(response.dig("evidence", "operations"), "watch")
 
     list = mappings.find { |mapping| mapping.fetch("target_schema") == "io.k8s.api.core.v1.ConfigMapList" }
+
     assert_equal("list", list.fetch("validation_mode"))
     assert_equal("io.k8s.api.core.v1.ConfigMap", list.fetch("item_schema"))
     assert_equal("strategy", list.fetch("item_mode"))
 
     token_request_spec = mappings.find { |mapping| mapping.fetch("target_schema") == "io.k8s.api.authentication.v1.TokenRequestSpec" }
+
     assert_equal("handler", token_request_spec.fetch("validation_mode"))
     assert_equal("io.k8s.api.authentication.v1.TokenRequest", token_request_spec.fetch("owner_schema"))
     assert_equal([{"field" => "spec", "container" => "object"}], token_request_spec.fetch("target_path"))
 
     events = mappings.find { |mapping| mapping.fetch("target_schema") == "io.k8s.api.events.v1.Event" }
+
     assert_equal("strategy", events.fetch("validation_mode"))
     assert_equal("k8s.io/kubernetes/pkg/apis/events/v1", events.fetch("version_import"))
   end
@@ -75,7 +82,8 @@ class M1KubernetesValidationOracleTest < Minitest::Test
       "spec" => {}
     )
     missing_fixture = JSON.generate("apiVersion" => "apps/v1", "kind" => "Deployment", "metadata" => {"namespace" => "default"})
-    update_fixture = JSON.generate(JSON.parse(fixture).merge("metadata" => {"name" => "m1-validation", "namespace" => "default", "resourceVersion" => "1"}))
+    update_fixture = JSON.generate(JSON.parse(fixture).merge("metadata" => {"name" => "m1-validation", "namespace" => "default",
+                                                                            "resourceVersion" => "1"}))
     report = M1KubernetesValidationOracle.compare(
       source_root: SOURCE_ROOT,
       requests: [{
@@ -92,6 +100,7 @@ class M1KubernetesValidationOracleTest < Minitest::Test
     assert_equal(true, report.fetch("executed"))
     assert_equal(1, report.fetch("comparison_count"))
     comparison = report.fetch("comparisons").fetch(0)
+
     assert_equal(true, comparison.fetch("applicable"))
     assert_equal(true, comparison.fetch("passed"))
     assert_equal(mapping.fetch("owner_schema"), comparison.fetch("owner_schema"))
@@ -103,7 +112,7 @@ class M1KubernetesValidationOracleTest < Minitest::Test
     assert_equal(false, comparison.dig("invalid", "accepted"))
     assert_equal(false, comparison.dig("missing", "accepted"))
     assert_equal(true, comparison.dig("update", "accepted"))
-    assert(comparison.dig("invalid", "errors").any?)
+    assert_predicate(comparison.dig("invalid", "errors"), :any?)
   end
 
   def test_evidence_modes_pass_through_the_runner_without_fixtures
@@ -140,15 +149,16 @@ class M1KubernetesValidationOracleTest < Minitest::Test
       refute_empty(comparison.dig("evidence", "operations"))
     end
     ledger = report.dig("validation_criterion", "ledger")
+
     assert_equal(ids.sort, ledger.map { |entry| entry.fetch("id") }.sort)
     assert(ledger.all? { |entry| entry.fetch("applicable") && %w[response rest_endpoint].include?(entry.fetch("mode")) })
   end
 
   def test_normalization_accepts_source_anchored_validation_requests
-    valid_fixture = %q({"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy"})
-    invalid_fixture = %q({"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy","metadata":{"name":7}})
-    missing_fixture = %q({"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy","metadata":{}})
-    update_fixture = %q({"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy","metadata":{"name":"m1","resourceVersion":"1"}})
+    valid_fixture = '{"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy"}'
+    invalid_fixture = '{"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy","metadata":{"name":7}}'
+    missing_fixture = '{"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy","metadata":{}}'
+    update_fixture = '{"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy","metadata":{"name":"m1","resourceVersion":"1"}}'
     request = {
       "id" => "io.k8s.api.admissionregistration.v1.MutatingAdmissionPolicy",
       "validation_mapping" => {
@@ -163,14 +173,15 @@ class M1KubernetesValidationOracleTest < Minitest::Test
       "missing_fixture_json" => missing_fixture,
       "update_fixture_json" => update_fixture
     }
+
     assert_nil(M1KubernetesValidationOracle.normalize_requests([request]).fetch(0).fetch("validation_mapping"))
   end
 
   def test_normalization_rejects_unsafe_constructor_collaborators
-    valid_fixture = %q({"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy"})
-    invalid_fixture = %q({"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy","metadata":{"name":7}})
-    missing_fixture = %q({"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy","metadata":{}})
-    update_fixture = %q({"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy","metadata":{"name":"m1","resourceVersion":"1"}})
+    valid_fixture = '{"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy"}'
+    invalid_fixture = '{"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy","metadata":{"name":7}}'
+    missing_fixture = '{"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy","metadata":{}}'
+    update_fixture = '{"apiVersion":"admissionregistration.k8s.io/v1","kind":"MutatingAdmissionPolicy","metadata":{"name":"m1","resourceVersion":"1"}}'
     request = {
       "id" => "io.k8s.api.admissionregistration.v1.MutatingAdmissionPolicy",
       "validation_mapping" => {

@@ -28,23 +28,19 @@ module Rubernetes
         errors = []
         resources = @ledger.resources(operation_id: operation_id, include_released: false).sort_by(&:sequence).reverse
         resources.each do |resource|
-          begin
-            cleanup(resource)
-            @ledger.release(operation_id: operation_id, kind: resource.kind, id: resource.id,
-                            identity: resource.identity, force: true)
-          rescue StandardError => error
-            entry = {"resource" => "#{resource.kind}:#{resource.id}",
-                     "error" => "#{error.class}: #{error.message}"}
-            errors << entry
-            @ledger.record_cleanup_error(operation_id, resource_key: entry.fetch("resource"), error: error)
-          end
+          cleanup(resource)
+          @ledger.release(operation_id: operation_id, kind: resource.kind, id: resource.id,
+                          identity: resource.identity, force: true)
+        rescue StandardError => error
+          entry = {"resource" => "#{resource.kind}:#{resource.id}",
+                   "error" => "#{error.class}: #{error.message}"}
+          errors << entry
+          @ledger.record_cleanup_error(operation_id, resource_key: entry.fetch("resource"), error: error)
         end
 
         current = @ledger.operation(operation_id)
         if errors.empty?
-          if current.state == "RollingBack"
-            @ledger.transition(operation_id: operation_id, to: "Stopped")
-          end
+          @ledger.transition(operation_id: operation_id, to: "Stopped") if current.state == "RollingBack"
         elsif current.state == "RollingBack"
           @ledger.transition(operation_id: operation_id, to: "CleanupPending")
         end
@@ -64,7 +60,8 @@ module Rubernetes
 
         response = invoke_cleanup(resource)
         raise Error, "cleanup returned false for #{resource.kind}:#{resource.id}" if response == false
-        if response == NOT_FOUND || response == :missing
+
+        if [NOT_FOUND, :missing].include?(response)
           observed_after = observe(resource)
           if observed_after && !same_identity?(resource, observed_after)
             raise IdentityMismatch, "not-found cleanup observed a different resource identity"
@@ -97,12 +94,8 @@ module Rubernetes
       def invoke_cleanup(resource)
         return nil unless @adapter
 
-        if @adapter.respond_to?(:cleanup_resource)
-          return call_method(:cleanup_resource, resource)
-        end
-        if @adapter.respond_to?(:release_resource)
-          return call_method(:release_resource, resource)
-        end
+        return call_method(:cleanup_resource, resource) if @adapter.respond_to?(:cleanup_resource)
+        return call_method(:release_resource, resource) if @adapter.respond_to?(:release_resource)
 
         method_name = {
           "workspace" => :remove_workspace,
@@ -155,9 +148,7 @@ module Rubernetes
         @resources = Array(resources).freeze
       end
 
-      def resources
-        @resources
-      end
+      attr_reader :resources
 
       alias entries resources
 

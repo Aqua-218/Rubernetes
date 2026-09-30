@@ -6,7 +6,6 @@
 
 require "securerandom"
 require "socket"
-require "thread"
 require "timeout"
 
 module Rubernetes
@@ -216,9 +215,7 @@ module Rubernetes
       def read(length = nil, timeout: @read_timeout)
         requested = length.nil? ? nil : Integer(length)
         raise ArgumentError, "stream read length must be positive" if requested && requested <= 0
-        if read_closed?
-          raise StreamClosed.new("stream read side is closed", request_id: request_id)
-        end
+        raise StreamClosed.new("stream read side is closed", request_id: request_id) if read_closed?
         return nil if eof?
 
         value = read_from_source(requested, timeout: timeout)
@@ -273,9 +270,7 @@ module Rubernetes
       end
 
       def write(value, timeout: @write_timeout)
-        if write_closed?
-          raise StreamClosed.new("stream write side is closed", request_id: request_id)
-        end
+        raise StreamClosed.new("stream write side is closed", request_id: request_id) if write_closed?
 
         bytes = self.class.binary(value)
         return 0 if bytes.empty?
@@ -387,7 +382,8 @@ module Rubernetes
         return nil if @source.nil?
 
         if @source.respond_to?(:read)
-          if endpoint_accepts_timeout?(@source, :read) || @source.respond_to?(:readpartial) && endpoint_accepts_timeout?(@source, :readpartial)
+          if endpoint_accepts_timeout?(@source,
+                                       :read) || (@source.respond_to?(:readpartial) && endpoint_accepts_timeout?(@source, :readpartial))
             read_io(@source, length, timeout: timeout)
           else
             invoke_with_timeout(timeout, StreamTimeout, "stream read timed out") do
@@ -444,20 +440,22 @@ module Rubernetes
       def invoke_io_read(io, length, method_name: :read, timeout: nil)
         callable = io.method(method_name)
         parameters = callable.parameters
-        if parameters.any? { |kind, _| kind == :keyrest } || parameters.any? { |kind, name| %i[key keyreq].include?(kind) && name == :timeout }
+        if parameters.any? { |kind, _| kind == :keyrest } || parameters.any? do |kind, name|
+          %i[key keyreq].include?(kind) && name == :timeout
+        end
           return length.nil? ? callable.call(timeout: timeout) : callable.call(length, timeout: timeout)
         end
 
         length.nil? ? callable.call : callable.call(length)
       end
 
-      def invoke_with_timeout(timeout, error_class, message)
+      def invoke_with_timeout(timeout, error_class, message, &)
         return yield if timeout.nil?
 
         seconds = Float(timeout)
         raise ArgumentError, "stream timeout must be non-negative" if seconds.negative?
 
-        Timeout.timeout(seconds) { yield }
+        Timeout.timeout(seconds, &)
       rescue Timeout::Error => error
         raise error_class.new(message, request_id: request_id), cause: error
       end
@@ -465,7 +463,11 @@ module Rubernetes
       def timeout_keyword(callable, timeout)
         return {} if timeout.nil?
 
-        parameters = callable.method(:write).parameters rescue []
+        parameters = begin
+          callable.method(:write).parameters
+        rescue StandardError
+          []
+        end
         supports_timeout = parameters.any? { |kind, _| kind == :keyrest } ||
                            parameters.any? { |kind, name| %i[key keyreq].include?(kind) && name == :timeout }
         supports_timeout ? {timeout: timeout} : {}
@@ -492,7 +494,10 @@ module Rubernetes
       def deep_freeze(value)
         case value
         when Hash
-          value.each { |key, child| key.freeze; deep_freeze(child) }
+          value.each do |key, child|
+            key.freeze
+            deep_freeze(child)
+          end
         when Array
           value.each { |child| deep_freeze(child) }
         end
@@ -504,7 +509,7 @@ module Rubernetes
     # adapters may expose stdout/stderr separately; stderr is retained as a
     # second byte stream unless tty mode intentionally merges it.
     class DuplexStream < Stream
-      attr_reader :stdin, :stdout, :stderr, :status
+      attr_reader :stdin, :stdout, :stderr, :status, :resizer, :terminator
 
       def self.pair(capacity: 1_048_576, request_id: nil,
                     clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
@@ -515,15 +520,18 @@ module Rubernetes
         [left, right]
       end
 
-      attr_reader :resizer, :terminator
-
       def initialize(input: nil, output: nil, error: nil, status: nil, tty: false, request_id: nil, metadata: {},
                      read_timeout: nil, write_timeout: nil, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
                      resizer: nil, terminator: nil)
         @resizer = resizer
         @terminator = terminator
         @stdin = input.is_a?(Stream) ? input : Stream.new(sink: input, request_id: request_id, write_timeout: write_timeout, clock: clock)
-        @stdout = output.is_a?(Stream) ? output : Stream.new(source: output, request_id: request_id, read_timeout: read_timeout, clock: clock)
+        @stdout = if output.is_a?(Stream)
+                    output
+                  else
+                    Stream.new(source: output, request_id: request_id, read_timeout: read_timeout,
+                               clock: clock)
+                  end
         @stderr = if tty
                     nil
                   elsif error.is_a?(Stream)
@@ -767,7 +775,7 @@ module Rubernetes
       end
 
       def normalize_bool(value, name)
-        return value if value == true || value == false
+        return value if [true, false].include?(value)
 
         raise InvalidRequest, "#{name} must be boolean"
       end
@@ -786,7 +794,10 @@ module Rubernetes
       def deep_freeze(value)
         case value
         when Hash
-          value.each { |key, child| key.freeze; deep_freeze(child) }
+          value.each do |key, child|
+            key.freeze
+            deep_freeze(child)
+          end
         when Array
           value.each { |child| deep_freeze(child) }
         end

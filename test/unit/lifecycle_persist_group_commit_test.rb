@@ -44,10 +44,11 @@ class LifecyclePersistGroupCommitTest < Minitest::Test
       Thread.new do
         mutex.synchronize { records["uid-#{i}"] = {uid: "uid-#{i}", state: "Running"} }
         subject.send(:persist_state!)
-        persisted_after_return << (store.saves.any? { |uids| uids.include?("uid-#{i}") })
+        persisted_after_return << store.saves.any? { |uids| uids.include?("uid-#{i}") }
       end
     end
     threads.each(&:join)
+
     assert_equal [true] * 20, Array.new(20) { persisted_after_return.pop }
     assert_operator store.saves.length, :<, 20, "concurrent calls shared writes"
     assert_equal 20, store.saves.last.length
@@ -57,6 +58,7 @@ class LifecyclePersistGroupCommitTest < Minitest::Test
     store = SlowStore.new
     subject = lifecycle(store)
     3.times { subject.send(:persist_state!) }
+
     assert_equal 3, store.saves.length
   end
 end
@@ -83,37 +85,48 @@ class LifecyclePersistRecordCacheTest < Minitest::Test
       records["a"] = {uid: "a", state: "Running", at: Time.utc(2026, 9, 23), containers: [{name: "c", status: {"ready" => true}}]}
       records["b"] = {uid: "b", state: "Running", containers: []}
       encoded = []
-      subject.define_singleton_method(:serializable_record) { |record| encoded << record[:uid]; super(record) }
+      subject.define_singleton_method(:serializable_record) do |record|
+        encoded << record[:uid]
+        super(record)
+      end
 
       subject.send(:persist_state!)
+
       assert_equal %w[a b], encoded.sort
       encoded.clear
       subject.send(:persist_state!)
+
       assert_empty encoded, "unchanged records are not converted again"
 
       # Lifecycle changes mark their record (#event, #update_status).
       records["b"][:state] = "Stopping"
       subject.send(:mark_dirty, records["b"])
       subject.send(:persist_state!)
+
       assert_equal %w[b], encoded
 
       # A change made without a mark is still picked up by the periodic sweep.
       encoded.clear
       records["a"][:containers][0][:status]["ready"] = false
       subject.send(:persist_state!)
+
       assert_empty encoded
       now += Rubernetes::Node::Lifecycle::FULL_CHECK_SECONDS
       subject.send(:persist_state!)
+
       assert_equal %w[a], encoded, "the sweep sees a change deep inside a mutable part"
 
       encoded.clear
       now += Rubernetes::Node::Lifecycle::FULL_CHECK_SECONDS
       subject.send(:persist_state!)
+
       assert_empty encoded, "the sweep re-encodes nothing that did not change"
 
       loaded = store.load
+
       assert_equal "rubernetes.node.lifecycle.v1", loaded["schema"]
       by_uid = loaded["records"].to_h { |record| [record["uid"], record] }
+
       assert_equal "Stopping", by_uid["b"]["state"]
       assert_equal "2026-09-23T00:00:00.000000Z", by_uid["a"]["at"]
       assert_equal false, by_uid["a"]["containers"][0]["status"]["ready"]

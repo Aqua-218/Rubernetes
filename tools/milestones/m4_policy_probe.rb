@@ -37,24 +37,24 @@ M4ProbeSupport.run_report(kind: "m4_policy_differential", adapter_name: "policy-
   end
 
   evaluate_case.call("default_deny", make_policy.call("default-deny", {
-    "podSelector" => {"matchLabels" => {"app" => "server"}}, "policyTypes" => ["Ingress"]
-  }), false)
+                                                        "podSelector" => {"matchLabels" => {"app" => "server"}}, "policyTypes" => ["Ingress"]
+                                                      }), false)
   evaluate_case.call("selector", make_policy.call("selector", {
-    "podSelector" => {"matchLabels" => {"app" => "server"}}, "policyTypes" => ["Ingress"],
-    "ingress" => [{"from" => [{"podSelector" => {"matchLabels" => {"role" => "client"}}}]}]
-  }), true)
+                                                    "podSelector" => {"matchLabels" => {"app" => "server"}}, "policyTypes" => ["Ingress"],
+                                                    "ingress" => [{"from" => [{"podSelector" => {"matchLabels" => {"role" => "client"}}}]}]
+                                                  }), true)
   evaluate_case.call("named_port", make_policy.call("named-port", {
-    "podSelector" => {"matchLabels" => {"app" => "server"}}, "policyTypes" => ["Ingress"],
-    "ingress" => [{"ports" => [{"protocol" => "TCP", "port" => "http"}]}]
-  }), true, port: "http")
+                                                      "podSelector" => {"matchLabels" => {"app" => "server"}}, "policyTypes" => ["Ingress"],
+                                                      "ingress" => [{"ports" => [{"protocol" => "TCP", "port" => "http"}]}]
+                                                    }), true, port: "http")
   evaluate_case.call("end_port", make_policy.call("end-port", {
-    "podSelector" => {"matchLabels" => {"app" => "server"}}, "policyTypes" => ["Ingress"],
-    "ingress" => [{"ports" => [{"protocol" => "TCP", "port" => 8000, "endPort" => 8002}]}]
-  }), true, port: 8001, end_port: 8002)
+                                                    "podSelector" => {"matchLabels" => {"app" => "server"}}, "policyTypes" => ["Ingress"],
+                                                    "ingress" => [{"ports" => [{"protocol" => "TCP", "port" => 8000, "endPort" => 8002}]}]
+                                                  }), true, port: 8001, end_port: 8002)
   evaluate_case.call("sctp", make_policy.call("sctp", {
-    "podSelector" => {"matchLabels" => {"app" => "server"}}, "policyTypes" => ["Ingress"],
-    "ingress" => [{"ports" => [{"protocol" => "SCTP", "port" => 9999}]}]
-  }), true, protocol: "SCTP", port: 9999)
+                                                "podSelector" => {"matchLabels" => {"app" => "server"}}, "policyTypes" => ["Ingress"],
+                                                "ingress" => [{"ports" => [{"protocol" => "SCTP", "port" => 9999}]}]
+                                              }), true, protocol: "SCTP", port: 9999)
 
   oracle_document = M4ProbeSupport.run_external_json(
     env_keys: %w[RUBERNETES_M4_NETWORK_POLICY_ORACLE_COMMAND RUBERNETES_M4_CNI_NETWORK_POLICY_ORACLE_COMMAND],

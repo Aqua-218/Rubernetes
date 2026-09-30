@@ -161,13 +161,13 @@ module Rubernetes
               else
                 expression = [:select, expression, name_token.value, optional_select]
               end
-              optional = nil
+              nil
             elsif accept("[") || (optional = accept("[?"))
               optional_index = !optional.nil?
               index = nested { parse_conditional }
               expect("]")
               expression = [:index, expression, index, optional_index]
-              optional = nil
+              nil
             elsif peek.type == :operator && peek.value == "{" && (path = struct_type_path(expression))
               expression = parse_struct(path)
             else
@@ -192,13 +192,20 @@ module Rubernetes
         def parse_primary
           token = peek
           case token.type
-          when :int then advance; [:literal, token.value]
-          when :uint then advance; [:literal, Values::UInt.new(token.value)]
-          when :double then advance; [:literal, token.value]
-          when :string then advance; [:literal, token.value]
-          when :bytes then advance; [:literal, Values::Bytes.new(token.value)]
-          when :bool then advance; [:literal, token.value]
-          when :null then advance; [:literal, nil]
+          when :int then advance
+                         [:literal, token.value]
+          when :uint then advance
+                          [:literal, Values::UInt.new(token.value)]
+          when :double then advance
+                            [:literal, token.value]
+          when :string then advance
+                            [:literal, token.value]
+          when :bytes then advance
+                           [:literal, Values::Bytes.new(token.value)]
+          when :bool then advance
+                          [:literal, token.value]
+          when :null then advance
+                          [:literal, nil]
           when :reserved
             raise SyntaxError, "reserved identifier #{token.value} at #{token.position}"
           when :identifier
@@ -274,7 +281,7 @@ module Rubernetes
             return nil if expression[3]
 
             parent = struct_type_path(expression[1])
-            parent && parent + [expression[2]]
+            parent && (parent + [expression[2]])
           end
         end
 
@@ -306,14 +313,17 @@ module Rubernetes
             case name
             when "all"
               raise SyntaxError, "all() takes 2 arguments" unless arguments.length == 2
+
               [:comprehension, variable, target, "__result__", [:literal, true], [:ident, "__result__"],
                [:binary, "&&", [:ident, "__result__"], arguments[1]], [:ident, "__result__"]]
             when "exists"
               raise SyntaxError, "exists() takes 2 arguments" unless arguments.length == 2
+
               [:comprehension, variable, target, "__result__", [:literal, false], [:unary, "!", [:ident, "__result__"]],
                [:binary, "||", [:ident, "__result__"], arguments[1]], [:ident, "__result__"]]
             when "exists_one"
               raise SyntaxError, "exists_one() takes 2 arguments" unless arguments.length == 2
+
               [:comprehension, variable, target, "__result__", [:literal, 0], [:literal, true],
                [:conditional, arguments[1], [:binary, "+", [:ident, "__result__"], [:literal, 1]], [:ident, "__result__"]],
                [:binary, "==", [:ident, "__result__"], [:literal, 1]]]
@@ -329,6 +339,7 @@ module Rubernetes
               end
             when "filter"
               raise SyntaxError, "filter() takes 2 arguments" unless arguments.length == 2
+
               [:comprehension, variable, target, "__result__", [:list, []], [:literal, true],
                [:conditional, arguments[1], [:binary, "+", [:ident, "__result__"], [:list, [[:ident, variable]]]], [:ident, "__result__"]], [:ident, "__result__"]]
             end

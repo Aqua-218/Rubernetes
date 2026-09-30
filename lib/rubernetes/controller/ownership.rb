@@ -36,6 +36,7 @@ module Rubernetes
         descriptor = dependent && self.class.descriptor(dependent)
         Array(objects).select do |object|
           next false if descriptor && descriptor.kind != Support.kind(object)
+
           owned?(owner, object, controller: controller)
         end
       end
@@ -74,7 +75,7 @@ module Rubernetes
     # state: a restart with the same object snapshot produces byte-identical
     # operations and events.
     class GarbageCollector
-      attr_reader :index
+      attr_reader :index, :known_kinds, :owner_lookup
 
       def initialize(store: nil, index: OwnerReferenceIndex.new, event_sink: nil,
                      known_kinds: nil, owner_lookup: nil, dependent_lookup: nil)
@@ -85,8 +86,6 @@ module Rubernetes
         @owner_lookup = owner_lookup
         @dependent_lookup = dependent_lookup
       end
-
-      attr_reader :known_kinds, :owner_lookup
 
       # The kinds this collector is allowed to reason about the ABSENCE of.
       # Upstream resolves an owner with a live GET through the REST mapper and
@@ -154,6 +153,7 @@ module Rubernetes
         unless %i[background foreground orphan].include?(policy)
           raise ArgumentError, "propagation policy must be :background, :foreground, or :orphan"
         end
+
         cycle_paths = cycles(values)
         events = cycle_paths.map do |path|
           {"type" => "Warning", "reason" => "OwnerReferenceCycle",
@@ -314,6 +314,7 @@ module Rubernetes
         return nil unless owner
         return nil unless Support.kind(owner) == Support.ref_value(reference, "kind", "").to_s
         return nil unless Support.name(owner) == Support.ref_value(reference, "name", "").to_s
+
         if dependent
           owner_namespace = Support.namespace(owner)
           dependent_namespace = Support.namespace(dependent)

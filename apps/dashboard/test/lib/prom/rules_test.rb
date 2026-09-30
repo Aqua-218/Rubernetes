@@ -19,9 +19,12 @@ class Prom::RulesTest < ActiveSupport::TestCase
     FileUtils.rm_rf(@dir)
   end
 
-  def rules(yaml, **options)
+  def rules(yaml, **)
     Prom::Rules.new(YAML.safe_load(yaml), webhook_url: "http://alertmanager.test/api/v2/alerts",
-                    http: ->(url, payload) { @posted << [url, payload]; true }, **options)
+                                          http: lambda { |url, payload|
+                                            @posted << [url, payload]
+                                            true
+                                          }, **)
   end
 
   def up(instance, value, at = @now)
@@ -45,8 +48,10 @@ class Prom::RulesTest < ActiveSupport::TestCase
     YAML
     r.evaluate(@engine, @now)
     result = @engine.query("job:up:avg")
-    assert_equal [[{"__name__" => "job:up:avg", "job" => "j", "source" => "rule"}, 0.5]], result.value.map { |s| [s.metric, s.point[1]] }
+
+    assert_equal([[{"__name__" => "job:up:avg", "job" => "j", "source" => "rule"}, 0.5]], result.value.map { |s| [s.metric, s.point[1]] })
     api = r.to_api["groups"][0]
+
     assert_equal "recording", api["rules"][0]["type"]
     assert_equal "ok", api["rules"][0]["health"]
   end
@@ -67,40 +72,48 @@ class Prom::RulesTest < ActiveSupport::TestCase
     YAML
     r.evaluate(@engine, @now)
     alert = r.alerts.first
+
     assert_equal "pending", alert.state
     assert_equal "a of j is down (value 0)", alert.annotations["summary"]
     assert_equal "25.6%", alert.annotations["pct"]
     assert_equal({"alertname" => "TargetDown", "job" => "j", "instance" => "a", "severity" => "critical"}, alert.labels)
     assert_equal [], @posted, "pending alerts are not notified"
-    assert_equal [1.0], @engine.query('ALERTS{alertstate="pending"}').value.map { |s| s.point[1] }
-    assert_equal [T0 / 1000.0], @engine.query("ALERTS_FOR_STATE").value.map { |s| s.point[1] }
+    assert_equal([1.0], @engine.query('ALERTS{alertstate="pending"}').value.map { |s| s.point[1] })
+    assert_equal([T0 / 1000.0], @engine.query("ALERTS_FOR_STATE").value.map { |s| s.point[1] })
 
     @now += 15_000
     up("a", 0)
     r.evaluate(@engine, @now, force: true)
+
     assert_equal "pending", r.alerts.first.state
 
     @now += 15_000
     up("a", 0)
     r.evaluate(@engine, @now, force: true)
+
     assert_equal "firing", r.alerts.first.state
     wait_threads
+
     assert_equal 1, @posted.length
     payload = @posted[0][1]
+
     assert_equal "firing", payload[0]["status"]
     assert_equal "TargetDown", payload[0]["labels"]["alertname"]
-    assert_equal [1.0], @engine.query('ALERTS{alertstate="firing"}').value.map { |s| s.point[1] }
+    assert_equal([1.0], @engine.query('ALERTS{alertstate="firing"}').value.map { |s| s.point[1] })
     assert_equal [], @engine.query('ALERTS{alertstate="pending"}').value
     api = r.to_api["groups"][0]["rules"][0]
+
     assert_equal "firing", api["state"]
-    assert_equal 30.0, api["duration"]
+    assert_in_delta(30.0, api["duration"])
     assert_equal 1, api["alerts"].length
 
     @now += 15_000
     up("a", 1)
     r.evaluate(@engine, @now, force: true)
+
     assert_equal [], r.alerts
     wait_threads
+
     assert_equal 2, @posted.length
     assert_equal "resolved", @posted[1][1][0]["status"]
     refute_equal "0001-01-01T00:00:00Z", @posted[1][1][0]["endsAt"]
@@ -119,14 +132,17 @@ class Prom::RulesTest < ActiveSupport::TestCase
           keep_firing_for: 1m
     YAML
     r.evaluate(@engine, @now)
+
     assert_equal "firing", r.alerts.first.state, "no `for` means firing at once"
     @now += 15_000
     up("a", 1)
     r.evaluate(@engine, @now, force: true)
+
     assert_equal "firing", r.alerts.first.state
     @now += 60_000
     up("a", 1)
     r.evaluate(@engine, @now, force: true)
+
     assert_equal [], r.alerts
   end
 
@@ -146,14 +162,16 @@ class Prom::RulesTest < ActiveSupport::TestCase
     r.evaluate(@engine, @now)
     slow = r.groups.find { |g| g.name == "slow" }
     fast = r.groups.find { |g| g.name == "fast" }
+
     assert_equal @now, slow.last_evaluation_ms
     assert_equal @now, fast.last_evaluation_ms
     @now += 15_000
     r.evaluate(@engine, @now)
+
     assert_equal @now - 15_000, slow.last_evaluation_ms, "not due yet"
     assert_equal @now, fast.last_evaluation_ms
     assert_equal "ok", slow.rules[0].health, "an empty result is fine"
-    assert_equal [1.0], @engine.query("fine").value.map { |s| s.point[1] }
+    assert_equal([1.0], @engine.query("fine").value.map { |s| s.point[1] })
   end
 
   test "invalid rule files are rejected with a reason" do
@@ -166,6 +184,7 @@ class Prom::RulesTest < ActiveSupport::TestCase
 
   test "templates: humanize functions and printf" do
     r = rules("groups: []")
+
     assert_equal "1.5k", r.send(:expand, "{{ humanize 1500 }}", {}, 0)
     assert_equal "1.465Ki", r.send(:expand, "{{ humanize1024 1500 }}", {}, 0)
     assert_equal "1h 1m 1s", r.send(:expand, "{{ humanizeDuration 3661 }}", {}, 0)

@@ -64,8 +64,8 @@ module Rubernetes
             value = parse_quantity(quantity)
             if restart_always
               sums[resource.to_s] += value
-            else
-              sums[resource.to_s] = value if value > sums[resource.to_s]
+            elsif value > sums[resource.to_s]
+              sums[resource.to_s] = value
             end
           end
         end

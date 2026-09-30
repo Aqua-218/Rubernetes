@@ -21,8 +21,10 @@ module Rubernetes
       def initialize(root, max_blob_bytes: DEFAULT_MAX_BLOB_BYTES, fsync_directory: true)
         @root = File.expand_path(root.to_s)
         raise StoreError, "content store root must be a non-empty path" if root.to_s.empty?
+
         @max_blob_bytes = Integer(max_blob_bytes)
         raise StoreError, "content store blob limit must be positive" unless @max_blob_bytes.positive?
+
         @fsync_directory = !!fsync_directory
         FileUtils.mkdir_p(@root, mode: 0o700)
         ensure_directory!(@root)
@@ -55,6 +57,7 @@ module Rubernetes
         parsed = Digest.parse(digest)
         blob_path = path(parsed)
         raise StoreError, "content blob is not present: #{parsed}" unless File.file?(blob_path) && !File.symlink?(blob_path)
+
         verify_file!(blob_path, parsed) if verify
         File.binread(blob_path)
       rescue DigestError => error
@@ -68,9 +71,8 @@ module Rubernetes
       # Stores a String or IO under its verified digest and returns the durable path.
       def put(digest, data = nil, io: nil, size: nil, media_type: nil)
         parsed = Digest.parse(digest)
-        if !data.nil? && !io.nil?
-          raise StoreError, "provide either blob data or an IO, not both"
-        end
+        raise StoreError, "provide either blob data or an IO, not both" if !data.nil? && !io.nil?
+
         source = io || StringIO.new(data.to_s.b)
         store_stream(parsed, source, expected_size: size, media_type: media_type)
       rescue DigestError => error
@@ -108,6 +110,7 @@ module Rubernetes
           if expected_size && File.size(destination) != Integer(expected_size)
             raise StoreError, "existing content blob size does not match the descriptor"
           end
+
           return destination
         elsif File.exist?(destination) || File.symlink?(destination)
           raise StoreError, "content store destination is not a regular file"
@@ -125,16 +128,17 @@ module Rubernetes
               chunk = chunk.to_s.b
               bytes += chunk.bytesize
               raise LimitError, "content blob exceeds the configured byte limit" if bytes > max_blob_bytes
+
               digest.update(chunk)
               file.write(chunk)
             end
-            if expected_size && bytes != Integer(expected_size)
-              raise StoreError, "content blob size does not match the descriptor"
-            end
+            raise StoreError, "content blob size does not match the descriptor" if expected_size && bytes != Integer(expected_size)
+
             actual = digest.hexdigest
             unless secure_compare(actual, parsed.hex)
               raise DigestMismatch, "content blob digest mismatch: expected #{parsed}, got sha256:#{actual}"
             end
+
             file.flush
             file.fsync
           end
@@ -173,6 +177,7 @@ module Rubernetes
           while (chunk = file.read(CHUNK_BYTES))
             bytes += chunk.bytesize
             raise LimitError, "content blob exceeds the configured byte limit" if bytes > max_blob_bytes
+
             digest.update(chunk)
           end
         end

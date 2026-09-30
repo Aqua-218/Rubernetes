@@ -97,7 +97,7 @@ module Promql
       raise ParseError, "bad duration #{text.inspect}" if match.nil? || text.empty?
 
       y, w, d, h, m, s, ms = match.captures.map { |c| c.nil? ? 0 : Integer(c) }
-      (((((y * 365 + w * 7 + d) * 24 + h) * 60 + m) * 60 + s) * 1000) + ms
+      (((((((((y * 365) + (w * 7) + d) * 24) + h) * 60) + m) * 60) + s) * 1000) + ms
     end
 
     private
@@ -174,11 +174,9 @@ module Promql
     def skip_space_and_comments
       loop do
         @pos += 1 while @pos < @input.length && @input[@pos].match?(/\s/)
-        if @input[@pos] == "#"
-          @pos += 1 while @pos < @input.length && @input[@pos] != "\n"
-        else
-          break
-        end
+        break unless @input[@pos] == "#"
+
+        @pos += 1 while @pos < @input.length && @input[@pos] != "\n"
       end
     end
 
@@ -215,12 +213,9 @@ module Promql
       start = @pos
       @pos += 1 while @pos < @input.length && @input[@pos].match?(/[0-9a-zA-Z_.]/)
       text = @input[start...@pos]
-      if text.match?(/\A\d+(?:y|w|d|h|m|s|ms)/) && Lexer::DURATION.match?(text)
-        return Token.new(:duration, text, start)
-      end
-      if text.match?(/\A0x[0-9a-fA-F]+\z/)
-        return Token.new(:number, Integer(text, 16).to_f, start)
-      end
+      return Token.new(:duration, text, start) if text.match?(/\A\d+(?:y|w|d|h|m|s|ms)/) && Lexer::DURATION.match?(text)
+      return Token.new(:number, Integer(text, 16).to_f, start) if text.match?(/\A0x[0-9a-fA-F]+\z/)
+
       # Scientific notation: the exponent sign is consumed here.
       if text.match?(/[eE]\z/) && @input[@pos].to_s.match?(/[+-]/)
         @pos += 1
@@ -502,7 +497,9 @@ module Promql
 
         selector.matchers.unshift(AST::LabelMatcher.new("__name__", "=", selector.name))
       end
-      unless selector.matchers.any? { |m| %w[= =~].include?(m.op) ? !m.value.empty? && !(m.op == "=~" && m.value.match?(/\A(?:\.\*|\.\+)?\z/) && m.value != ".+") : false } ||
+      unless selector.matchers.any? do |m|
+        %w[= =~].include?(m.op) ? !m.value.empty? && !(m.op == "=~" && m.value.match?(/\A(?:\.\*|\.\+)?\z/) && m.value != ".+") : false
+      end ||
              selector.matchers.any? { |m| m.op == "=~" && m.value == ".+" }
         raise ParseError.new("vector selector must contain at least one non-empty matcher", pos)
       end
@@ -569,7 +566,9 @@ module Promql
         without = take.value == "without"
         grouping = parse_grouping
       end
-      raise ParseError.new("count_values needs a string label as first argument", peek.pos) if op == "count_values" && !param.is_a?(AST::StringLiteral)
+      if op == "count_values" && !param.is_a?(AST::StringLiteral)
+        raise ParseError.new("count_values needs a string label as first argument", peek.pos)
+      end
 
       AST::AggregateExpr.new(op, expr, param, grouping || [], without)
     end
@@ -613,12 +612,10 @@ module Promql
         check_types(node.rhs)
         lt = node.lhs.type
         rt = node.rhs.type
-        if SET_OPS.include?(node.op)
-          raise ParseError, "set operator #{node.op} not allowed in binary scalar expression" unless lt == :vector && rt == :vector
+        if SET_OPS.include?(node.op) && !(lt == :vector && rt == :vector)
+          raise ParseError, "set operator #{node.op} not allowed in binary scalar expression"
         end
-        if node.return_bool && !COMPARISON.include?(node.op)
-          raise ParseError, "bool modifier can only be used on comparison operators"
-        end
+        raise ParseError, "bool modifier can only be used on comparison operators" if node.return_bool && !COMPARISON.include?(node.op)
         if COMPARISON.include?(node.op) && lt == :scalar && rt == :scalar && !node.return_bool
           raise ParseError, "comparisons between scalars must use BOOL modifier"
         end

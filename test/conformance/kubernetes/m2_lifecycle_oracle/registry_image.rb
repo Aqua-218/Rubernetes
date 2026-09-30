@@ -30,17 +30,26 @@ module M2LifecycleOracleRegistryImage
   MAX_REDIRECTS = 5
   MAX_ATTEMPTS = 3
   RETRY_SLEEP_SECONDS = 2
-  DIGEST_PATTERN = /\Asha256:[0-9a-f]{64}\z/.freeze
+  DIGEST_PATTERN = /\Asha256:[0-9a-f]{64}\z/
 
   module_function
 
   # reference: "registry.k8s.io/e2e-test-images/busybox@sha256:<digest>"
   def parse_reference(reference)
-    raise FetchError, "image reference must be digest-pinned: #{reference.inspect}" unless reference.is_a?(String) && reference.include?("@sha256:")
+    unless reference.is_a?(String) && reference.include?("@sha256:")
+      raise FetchError,
+            "image reference must be digest-pinned: #{reference.inspect}"
+    end
+
     name, digest = reference.split("@", 2)
     raise FetchError, "image digest is invalid: #{digest.inspect}" unless DIGEST_PATTERN.match?(digest)
+
     registry, repository = name.split("/", 2)
-    raise FetchError, "image reference must include a registry host: #{reference.inspect}" if repository.nil? || !registry.include?(".") && !registry.include?(":") && registry != "localhost"
+    if repository.nil? || (!registry.include?(".") && !registry.include?(":") && registry != "localhost")
+      raise FetchError,
+            "image reference must include a registry host: #{reference.inspect}"
+    end
+
     {"registry" => registry, "repository" => repository, "digest" => digest, "name" => name}
   end
 
@@ -56,21 +65,28 @@ module M2LifecycleOracleRegistryImage
     manifest_bytes = get_with_retries(parsed, "manifests/#{parsed.fetch("digest")}", accept: MANIFEST_ACCEPT)
     actual = "sha256:#{Digest::SHA256.hexdigest(manifest_bytes)}"
     raise FetchError, "manifest digest mismatch: expected #{parsed.fetch("digest")}, got #{actual}" unless actual == parsed.fetch("digest")
+
     manifest = JSON.parse(manifest_bytes)
-    raise FetchError, "manifest must be a single-platform image manifest, got #{manifest["mediaType"].inspect}" unless manifest.is_a?(Hash) && manifest["config"].is_a?(Hash) && manifest["layers"].is_a?(Array)
+    unless manifest.is_a?(Hash) && manifest["config"].is_a?(Hash) && manifest["layers"].is_a?(Array)
+      raise FetchError,
+            "manifest must be a single-platform image manifest, got #{manifest["mediaType"].inspect}"
+    end
 
     blobs = {}
     [manifest.fetch("config"), *manifest.fetch("layers")].each do |descriptor|
       digest = descriptor["digest"]
       raise FetchError, "descriptor digest is invalid: #{digest.inspect}" unless DIGEST_PATTERN.match?(digest.to_s)
+
       bytes = get_with_retries(parsed, "blobs/#{digest}", accept: "*/*")
       actual_blob = "sha256:#{Digest::SHA256.hexdigest(bytes)}"
       raise FetchError, "blob digest mismatch for #{digest}: got #{actual_blob}" unless actual_blob == digest
       raise FetchError, "blob size mismatch for #{digest}" if descriptor["size"].is_a?(Integer) && descriptor["size"] != bytes.bytesize
+
       blobs[digest] = bytes
     end
     write_oci_layout(archive, parsed, manifest_bytes, manifest.fetch("mediaType", MANIFEST_ACCEPT.split(", ").first), blobs)
     raise FetchError, "written OCI archive failed verification: #{archive}" unless verify_archive(archive, parsed)
+
     archive
   end
 
@@ -118,6 +134,7 @@ module M2LifecycleOracleRegistryImage
       Gem::Package::TarReader.new(io) do |tar|
         tar.each do |entry|
           next unless entry.file?
+
           bytes = entry.read.to_s
           case entry.full_name
           when "index.json"
@@ -126,6 +143,7 @@ module M2LifecycleOracleRegistryImage
           when %r{\Ablobs/sha256/([0-9a-f]{64})\z}
             hex = Regexp.last_match(1)
             return false unless Digest::SHA256.hexdigest(bytes) == hex
+
             found_manifest = true if hex == manifest_hex
           end
         end
@@ -144,6 +162,7 @@ module M2LifecycleOracleRegistryImage
         return get(parsed, path, accept: accept)
       rescue FetchError, SocketError, Timeout::Error, SystemCallError, OpenSSL::SSL::SSLError => error
         raise FetchError, "registry fetch failed after #{attempts} attempts: #{path}: #{error.message}" if attempts >= MAX_ATTEMPTS
+
         sleep(RETRY_SLEEP_SECONDS)
       end
     end
@@ -166,12 +185,15 @@ module M2LifecycleOracleRegistryImage
       when Net::HTTPRedirection
         redirects += 1
         raise FetchError, "too many redirects for #{uri}" if redirects > MAX_REDIRECTS
+
         location = response["location"]
         raise FetchError, "redirect without location for #{uri}" if location.to_s.empty?
+
         uri = URI.join(uri.to_s, location)
         token = nil
       when Net::HTTPUnauthorized
         raise FetchError, "registry rejected anonymous token for #{uri}" if token
+
         token = anonymous_token(response["www-authenticate"].to_s, parsed)
       else
         raise FetchError, "registry returned #{response.code} for #{uri}"
@@ -184,6 +206,7 @@ module M2LifecycleOracleRegistryImage
     params = challenge.sub(/\ABearer\s+/i, "").scan(/(\w+)="([^"]*)"/).to_h
     realm = params["realm"]
     raise FetchError, "registry auth challenge has no realm: #{challenge.inspect}" if realm.to_s.empty?
+
     uri = URI(realm)
     query = {"service" => params["service"], "scope" => params["scope"] || "repository:#{parsed.fetch("repository")}:pull"}.compact
     uri.query = URI.encode_www_form(query)
@@ -191,9 +214,11 @@ module M2LifecycleOracleRegistryImage
       http.request(Net::HTTP::Get.new(uri))
     end
     raise FetchError, "token endpoint returned #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+
     document = JSON.parse(response.body)
     token = document["token"] || document["access_token"]
     raise FetchError, "token endpoint returned no token" unless token.is_a?(String) && !token.empty?
+
     token
   end
 end

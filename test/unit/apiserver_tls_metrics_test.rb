@@ -41,9 +41,11 @@ class APIServerTLSMetricsTest < Minitest::Test
     registry = Rubernetes::Observability::Metrics.new(apiserver: false)
     authenticator.metrics = registry
     context = Rubernetes::Security::Authentication::RequestContext.new(client_certificate: client)
+
     assert_equal "alice", authenticator.authenticate(context).user.name
     authenticator.authenticate(context)
     text = registry.render
+
     assert_includes text, "apiserver_client_certificate_expiration_seconds_count 2"
     assert_includes text, 'apiserver_client_certificate_expiration_seconds_bucket{le="3600"} 0'
     assert_includes text, 'apiserver_client_certificate_expiration_seconds_bucket{le="7200"} 2'
@@ -57,13 +59,14 @@ class APIServerTLSMetricsTest < Minitest::Test
       File.write(File.join(directory, "tls.key"), key.to_pem)
       failures = Queue.new
       server = Rubernetes::Transport::HTTPServer.new(->(_request) { [200, {}, ["ok"]] }, host: "127.0.0.1", port: 0,
-                                                     cert_file: File.join(directory, "tls.crt"), key_file: File.join(directory, "tls.key"))
+                                                                                         cert_file: File.join(directory, "tls.crt"), key_file: File.join(directory, "tls.key"))
       server.on_tls_handshake_error = -> { failures << true }
       server.start(background: true)
       begin
         socket = TCPSocket.new("127.0.0.1", server.port)
         socket.write("GET / HTTP/1.1\r\nHost: x\r\n\r\n")
         socket.close
+
         assert Timeout.timeout(5) { failures.pop }
       ensure
         server.stop

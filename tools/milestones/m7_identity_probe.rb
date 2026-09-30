@@ -32,8 +32,9 @@ module M7IdentityProbe
         pod = S.start_pod(runtime, network, "clone-#{index}")
         session = pod["session"]
         guest_view = session.acks.dig("identity.apply", "ack")
-        fields = session.identity.fields.slice(*FIELDS).merge("guest_identity_digest" => guest_view["identity_digest"], "boot_nonce" => guest_view["boot_nonce"])
-        hostname_in_guest = session.probe_tcp("127.0.0.1", 1, timeout: 0.2) && nil
+        fields = session.identity.fields.slice(*FIELDS).merge("guest_identity_digest" => guest_view["identity_digest"],
+                                                              "boot_nonce" => guest_view["boot_nonce"])
+        session.probe_tcp("127.0.0.1", 1, timeout: 0.2) && nil
         clones << {"index" => index, "base" => session.base&.id, "fields" => fields, "ack_vm_id" => guest_view["vm_id"]}
         errors = S.stop_pod(runtime, network, pod)
         clones.last["stop_errors"] = errors
@@ -46,7 +47,9 @@ module M7IdentityProbe
       end
       cases << {"id" => "clone_identities", "clones" => CLONES, "base" => base, "records" => clones, "reused_values" => reused,
                 "all_restored_from_base" => clones.all? { |clone| clone["base"] == base },
-                "passed" => clones.length == CLONES && clones.all? { |clone| clone["base"] == base && clone["stop_errors"].empty? && clone["ack_vm_id"] == clone["fields"]["vm_id"] } &&
+                "passed" => clones.length == CLONES && clones.all? do |clone|
+                  clone["base"] == base && clone["stop_errors"].empty? && clone["ack_vm_id"] == clone["fields"]["vm_id"]
+                end &&
                             reused.values.all?(&:empty?)}
       report = runtime.identity_ledger.reuse_report
       cases << {"id" => "ledger_history_reuse", "report" => report, "records" => runtime.identity_ledger.all.length,
@@ -54,7 +57,10 @@ module M7IdentityProbe
       # A replayed identity ACK from an earlier clone must not be accepted by a later one.
       pod = S.start_pod(runtime, network, "clone-verify")
       session = pod["session"]
-      stale_response = {"ack" => clones.first["fields"].slice("vm_id").merge("kind" => "gate.open", "nonce" => "n", "policy_digest" => clones.first["fields"]["policy_digest"]), "signature" => "0" * 64}
+      stale_response = {
+        "ack" => clones.first["fields"].slice("vm_id").merge("kind" => "gate.open", "nonce" => "n",
+                                                             "policy_digest" => clones.first["fields"]["policy_digest"]), "signature" => "0" * 64
+      }
       stale_rejected = begin
         session.send(:verify_ack!, stale_response, "gate.open", "n")
         false

@@ -66,7 +66,7 @@ module Rubernetes
         ["user-agent", ""].freeze,
         ["vary", ""].freeze,
         ["via", ""].freeze,
-        ["www-authenticate", ""].freeze,
+        ["www-authenticate", ""].freeze
       ].freeze
       # [code, bit length] for symbols 0..255; symbol 256 is EOS.
       HUFFMAN_CODES = [

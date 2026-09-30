@@ -19,7 +19,7 @@ module KVSequentialOracle
   module_function
 
   def lean_executable
-    candidates = [ENV["RUBERNETES_LEAN"], "/root/.elan/bin/lean", "lean"].compact
+    candidates = [ENV.fetch("RUBERNETES_LEAN", nil), "/root/.elan/bin/lean", "lean"].compact
     candidates.find { |candidate| candidate.include?("/") ? File.executable?(candidate) : system("which #{candidate} >/dev/null 2>&1") }
   end
 
@@ -32,10 +32,11 @@ module KVSequentialOracle
         key = keys.sample(random: random)
         case random.rand(5)
         when 0 then {"op" => "create", "key" => key, "value" => random.rand(100)}
-        when 1 then {"op" => "update", "key" => key, "value" => random.rand(100), "expected_version" => random.rand < 0.5 ? (versions[key] || random.rand(1..6)) : nil}.compact
+        when 1 then {"op" => "update", "key" => key, "value" => random.rand(100),
+                     "expected_version" => random.rand < 0.5 ? (versions[key] || random.rand(1..6)) : nil}.compact
         when 2 then {"op" => "delete", "key" => key, "expected_version" => random.rand < 0.5 ? random.rand(1..6) : nil}.compact
         else {"op" => "read", "key" => key}
-        end.tap { |op| versions[key] = (versions[key] || 0) + 1 }
+        end.tap { |_op| versions[key] = (versions[key] || 0) + 1 }
       end
     end
   end
@@ -50,7 +51,8 @@ module KVSequentialOracle
   end
 
   def lean_outputs(sequence, lean:)
-    stdout, stderr, status = Open3.capture3(lean, "--run", LEAN_SOURCE, stdin_data: JSON.generate(sequence), chdir: File.dirname(LEAN_SOURCE))
+    stdout, stderr, status = Open3.capture3(lean, "--run", LEAN_SOURCE, stdin_data: JSON.generate(sequence),
+                                                                        chdir: File.dirname(LEAN_SOURCE))
     raise "lean oracle failed (#{status.exitstatus}): #{stderr}" unless status.success?
 
     JSON.parse(stdout)

@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require "json"
 require "time"
 
@@ -129,9 +130,8 @@ module Rubernetes
 
         def initialize(**options)
           @clock = options.delete(:clock) || -> { Time.now.utc }
-          super(**options)
+          super
         end
-
 
         # PodControllerRefManager canAdoptFunc / RecheckDeletionTimestamp: a
         # controller adopts only after a fresh read shows the same object, not
@@ -155,6 +155,7 @@ module Rubernetes
           pods ||= list_children(adapter, POD, Support.namespace(replica_set))
           now = Support.parse_time(now) || Support.parse_time(@clock.call)
           raise ArgumentError, "clock must return Time or RFC3339 value" unless now
+
           all_pods = Array(pods)
           owned_pods = owned(replica_set, all_pods).select do |pod|
             Support.owner_references(pod).any? do |reference|
@@ -172,6 +173,7 @@ module Rubernetes
             next false unless namespace_matches?(replica_set, pod)
             next false if Support.value(Support.metadata(pod), "deletionTimestamp", nil)
             next false unless selector_matches?(replica_set, pod)
+
             !controlling_owner_reference?(pod)
           end
           adoptable_pods = [] unless adoptable_pods.empty? || adoption_allowed?(adapter, replica_set, DESCRIPTOR)
@@ -183,7 +185,7 @@ module Rubernetes
             candidate["metadata"]["ownerReferences"] = references
             operation_update(pod, candidate, descriptor: POD, reason: "replicaset pod adoption")
           end
-          owned_pods = owned_pods + adoptable_pods
+          owned_pods += adoptable_pods
           # ClaimPods/ReleasePod: an owned Pod whose labels stopped matching
           # the selector is released (its controller reference removed) so
           # another owner may adopt it, and it no longer counts as a replica.
@@ -229,22 +231,25 @@ module Rubernetes
           available = alive.count { |pod| Support.pod_available?(pod, min_ready_seconds, now) }
           status = Support.deep_copy(Support.status(replica_set))
           status["replicas"] = alive.length
-          status["fullyLabeledReplicas"] = alive.count { |pod| selector_for(replica_set).all? { |key, value| Support.labels(pod)[key.to_s] == value.to_s } }
+          status["fullyLabeledReplicas"] = alive.count do |pod|
+            selector_for(replica_set).all? do |key, value|
+              Support.labels(pod)[key.to_s] == value.to_s
+            end
+          end
           # Zero counters are written, not omitted: a status apply that leaves
           # a counter out does not clear the stored value (see
           # DeploymentController#compact_status).
           status["readyReplicas"] = ready_count
           status["availableReplicas"] = available
-          status["observedGeneration"] = Support.integer(Support.metadata(replica_set)["generation"], Support.integer(status["observedGeneration"], 0))
+          status["observedGeneration"] =
+            Support.integer(Support.metadata(replica_set)["generation"], Support.integer(status["observedGeneration"], 0))
           status["terminatingReplicas"] = owned_pods.count do |pod|
             Support.value(Support.metadata(pod), "deletionTimestamp", nil) &&
               !%w[Succeeded Failed].include?(Support.value(Support.status(pod), "phase", "").to_s)
           end
           # Upstream re-syncs after minReadySeconds so availability catches up
           # without a Pod event (replica_set.go syncReplicaSet).
-          requeue_after = if min_ready_seconds.positive? && ready_count == desired && available != desired
-                            min_ready_seconds.to_f
-                          end
+          requeue_after = (min_ready_seconds.to_f if min_ready_seconds.positive? && ready_count == desired && available != desired)
           planned = result(replica_set, operations, status: status, batches: creation_batches)
           return planned if requeue_after.nil?
 
@@ -279,6 +284,7 @@ module Rubernetes
               # collided with Pods that exist but are not owned by this set.
               candidate_name = "#{Support.name(replica_set)}-#{Support.random_suffix}"
               next if existing_names.include?(candidate_name)
+
               pod = pod_for(replica_set, name: candidate_name, template_value: template_value, labels: labels)
               operations << operation_create(pod, owner: replica_set, descriptor: POD, reason: "replicaset scale up")
               existing_names << candidate_name
@@ -341,7 +347,7 @@ module Rubernetes
             Array(siblings).each do |sibling|
               next unless Support.owner_references(sibling).any? do |reference|
                 Support.ref_value(reference, "controller", false).to_s.casecmp("true").zero? &&
-                  Support.ref_value(reference, "uid", nil).to_s == owner_uid
+                Support.ref_value(reference, "uid", nil).to_s == owner_uid
               end
 
               uids << Support.uid(sibling).to_s
@@ -360,9 +366,9 @@ module Rubernetes
         DESCRIPTOR = ResourceDescriptor.parse("StatefulSet")
         CONTROLLER_REVISION = ResourceDescriptor.parse("ControllerRevision")
         PERSISTENT_VOLUME_CLAIM = ResourceDescriptor.parse("PersistentVolumeClaim")
-        REVISION_LABEL = "controller-revision-hash".freeze
-        POD_NAME_LABEL = "statefulset.kubernetes.io/pod-name".freeze
-        POD_INDEX_LABEL = "apps.kubernetes.io/pod-index".freeze
+        REVISION_LABEL = "controller-revision-hash"
+        POD_NAME_LABEL = "statefulset.kubernetes.io/pod-name"
+        POD_INDEX_LABEL = "apps.kubernetes.io/pod-index"
 
         # +max_unavailable_stateful_set+: the MaxUnavailableStatefulSet gate
         # (Beta, off by default); off, a rolling update replaces one Pod at a
@@ -370,7 +376,7 @@ module Rubernetes
         def initialize(**options)
           @clock = options.delete(:clock) || -> { Time.now.utc }
           @max_unavailable_stateful_set = options.delete(:max_unavailable_stateful_set) == true
-          super(**options)
+          super
         end
 
         # pkg/controller/statefulset/stateful_set_control.go updateStatefulSet.
@@ -381,6 +387,7 @@ module Rubernetes
           pods ||= list_children(adapter, POD, Support.namespace(stateful_set))
           now = Support.parse_time(now) || Support.parse_time(@clock.call)
           raise ArgumentError, "clock must return Time or RFC3339 value" unless now
+
           owned_pods = owned(stateful_set, pods)
 
           revisions = controller_revisions unless controller_revisions.nil?
@@ -411,6 +418,7 @@ module Rubernetes
           unless %w[OrderedReady Parallel].include?(pod_policy)
             raise ArgumentError, "unsupported StatefulSet podManagementPolicy #{pod_policy.inspect}"
           end
+
           monotonic = pod_policy == "OrderedReady"
           strategy = Support.value(Support.spec(working_set), "updateStrategy", {})
           strategy = {} unless strategy.is_a?(Hash)
@@ -421,14 +429,14 @@ module Rubernetes
 
           replicas = (start...(start + desired)).map { |ordinal| existing_by_ordinal[ordinal] }
           condemned = existing_by_ordinal.select { |ordinal, _pod| ordinal < start || ordinal >= start + desired }
-                                         .sort_by { |ordinal, _pod| -ordinal }.map { |_ordinal, pod| pod }
+            .sort_by { |ordinal, _pod| -ordinal }.map { |_ordinal, pod| pod }
           unavailable = ->(pod) { !Support.pod_available?(pod, min_ready_seconds, now) || terminating?(pod) }
           first_unavailable = replicas.compact.find { |pod| unavailable.call(pod) } ||
                               condemned.reverse.find { |pod| unavailable.call(pod) }
 
           status = Support.deep_copy(Support.status(stateful_set))
           status["observedGeneration"] = Support.integer(Support.metadata(stateful_set)["generation"],
-                                                           Support.integer(status["observedGeneration"], 0))
+                                                         Support.integer(status["observedGeneration"], 0))
           status["currentRevision"] = Support.name(current_revision)
           status["updateRevision"] = Support.name(update_revision)
           status["collisionCount"] = collision_count
@@ -455,8 +463,8 @@ module Rubernetes
             if pod.nil?
               source_set, revision_name = versioned_source(current_set, update_set, current_revision, update_revision, ordinal, start)
               candidate = stateful_pod_for(source_set, name: "#{Support.name(working_set)}-#{ordinal}",
-                                           template_value: template(source_set), revision_hash: revision_name,
-                                           ordinal: ordinal, claim_templates: volume_claim_templates)
+                                                       template_value: template(source_set), revision_hash: revision_name,
+                                                       ordinal: ordinal, claim_templates: volume_claim_templates)
               operations << operation_create(candidate, owner: working_set, descriptor: POD, reason: "statefulset scale up")
               events << {"type" => "Normal", "reason" => "SuccessfulCreate",
                          "message" => "Create Pod #{Support.name(candidate)} in StatefulSet #{Support.name(working_set)} successful"}
@@ -483,8 +491,8 @@ module Rubernetes
             next if volume_claim_templates.empty?
 
             candidate = stateful_pod_for(update_set, name: Support.name(pod), template_value: template(update_set),
-                                         revision_hash: Support.labels(pod)[REVISION_LABEL].to_s,
-                                         ordinal: ordinal, claim_templates: volume_claim_templates, existing: pod)
+                                                     revision_hash: Support.labels(pod)[REVISION_LABEL].to_s,
+                                                     ordinal: ordinal, claim_templates: volume_claim_templates, existing: pod)
             storage_update = operation_update(pod, candidate, descriptor: POD, reason: "statefulset volume claim reconciliation")
             operations << storage_update if storage_update
           end
@@ -502,6 +510,7 @@ module Rubernetes
                  (!running_and_ready?(pod) || !Support.pod_available?(pod, min_ready_seconds, now))
                 break
               end
+
               operations << operation_delete(pod, descriptor: POD, reason: "statefulset scale down")
               events << {"type" => "Normal", "reason" => "SuccessfulDelete",
                          "message" => "delete Pod #{Support.name(pod)} in StatefulSet #{Support.name(working_set)} successful"}
@@ -583,7 +592,13 @@ module Rubernetes
         def delete(stateful_set, pods: nil, store: nil, orphan: false)
           adapter = store || (self.store && StoreAdapter.new(self.store))
           pods ||= list_children(adapter, POD, Support.namespace(stateful_set))
-          operations = orphan ? [] : owned(stateful_set, pods).map { |pod| operation_delete(pod, descriptor: POD, reason: "statefulset deletion") }
+          operations = if orphan
+                         []
+                       else
+                         owned(stateful_set, pods).map do |pod|
+                           operation_delete(pod, descriptor: POD, reason: "statefulset deletion")
+                         end
+                       end
           operations << operation_delete(stateful_set, descriptor: DESCRIPTOR, reason: "statefulset deletion")
           ReconcileResult.new(operations: operations, controller: name)
         end
@@ -666,13 +681,13 @@ module Rubernetes
               current = existing[name]
               if current.nil?
                 operations << operation_create(desired_claim, descriptor: PERSISTENT_VOLUME_CLAIM,
-                                               reason: "statefulset volume claim")
+                                                              reason: "statefulset volume claim")
                 next
               end
 
               candidate = claim_metadata_update(current, desired_claim, owner: owner)
               update = operation_update(current, candidate, descriptor: PERSISTENT_VOLUME_CLAIM,
-                                        reason: "statefulset volume claim retention policy")
+                                                            reason: "statefulset volume claim retention policy")
               operations << update if update
             end
           end
@@ -685,18 +700,18 @@ module Rubernetes
               next unless existing_by_ordinal[ordinal]
 
               desired_claim = claim_for(owner, claim, Support.name(claim), ordinal, scaled_down: true,
-                                        pod: existing_by_ordinal[ordinal])
+                                                                                    pod: existing_by_ordinal[ordinal])
               candidate = claim_metadata_update(claim, desired_claim, owner: owner,
-                                                pod: existing_by_ordinal[ordinal])
+                                                                      pod: existing_by_ordinal[ordinal])
               update = operation_update(claim, candidate, descriptor: PERSISTENT_VOLUME_CLAIM,
-                                        reason: "statefulset scaled volume claim retention policy")
+                                                          reason: "statefulset scaled volume claim retention policy")
               operations << update if update
             end
           end
           operations
         end
 
-        def claim_for(owner, template_value, name, ordinal, scaled_down:, pod: nil)
+        def claim_for(owner, template_value, name, _ordinal, scaled_down:, pod: nil)
           candidate = Support.deep_copy(template_value)
           candidate["apiVersion"] ||= "v1"
           candidate["kind"] = "PersistentVolumeClaim"
@@ -730,14 +745,12 @@ module Rubernetes
           candidate
         end
 
-        def desired_claim_owner_references(owner, claim, scaled_down:, pod: nil)
+        def desired_claim_owner_references(owner, _claim, scaled_down:, pod: nil)
           policy = pvc_retention_policy(owner)
           retain = []
           return retain if policy.fetch(:when_deleted) == "Retain" && policy.fetch(:when_scaled) == "Retain"
 
-          if scaled_down && policy.fetch(:when_scaled) == "Delete" && pod
-            return [Support.owner_reference(pod)]
-          end
+          return [Support.owner_reference(pod)] if scaled_down && policy.fetch(:when_scaled) == "Delete" && pod
           return [Support.owner_reference(owner)] if policy.fetch(:when_deleted) == "Delete"
 
           retain
@@ -751,6 +764,7 @@ module Rubernetes
           unless %w[Retain Delete].include?(when_deleted) && %w[Retain Delete].include?(when_scaled)
             raise ArgumentError, "StatefulSet PVC retention policy must use Retain or Delete"
           end
+
           {when_deleted: when_deleted, when_scaled: when_scaled}
         end
 
@@ -805,7 +819,7 @@ module Rubernetes
           status
         end
 
-        def complete_rolling_update!(set, status, strategy_type, desired)
+        def complete_rolling_update!(_set, status, strategy_type, desired)
           return unless strategy_type == "RollingUpdate" &&
                         Support.integer(status["updatedReplicas"], 0) == desired &&
                         Support.integer(status["readyReplicas"], 0) == desired &&
@@ -851,7 +865,7 @@ module Rubernetes
             update_revision = Support.deep_copy(equivalent.last)
             update_revision["revision"] = next_number
             operations << operation_update(equivalent.last, update_revision, descriptor: CONTROLLER_REVISION,
-                                           reason: "statefulset controller revision rollback")
+                                                                             reason: "statefulset controller revision rollback")
           elsif owned_revisions.any? && set_matches_latest_revision?(owner, data, owned_revisions.last)
             # StatefulSetSemanticRevisionComparison: the latest revision, once
             # restored and defaulted, is this spec -- only its stored form
@@ -869,7 +883,7 @@ module Rubernetes
               collision_count += 1
             end
             operations << operation_create(update_revision, descriptor: CONTROLLER_REVISION, owner: owner,
-                                           reason: "statefulset controller revision")
+                                                            reason: "statefulset controller revision")
             owned_revisions << update_revision
           end
 
@@ -938,9 +952,9 @@ module Rubernetes
           revision = {
             "apiVersion" => "apps/v1", "kind" => "ControllerRevision",
             "metadata" => {"name" => "#{Support.name(owner)}-#{revision_hash}",
-                            "namespace" => Support.namespace(owner),
-                            "labels" => Support.deep_copy(template_labels).merge("controller.kubernetes.io/hash" => revision_hash),
-                            "ownerReferences" => [Support.owner_reference(owner)]},
+                           "namespace" => Support.namespace(owner),
+                           "labels" => Support.deep_copy(template_labels).merge("controller.kubernetes.io/hash" => revision_hash),
+                           "ownerReferences" => [Support.owner_reference(owner)]},
             "revision" => number,
             "data" => Support.deep_copy(data)
           }
@@ -1014,10 +1028,10 @@ module Rubernetes
           candidate
         end
 
-
         def ordinal_for(pod, prefix)
           label = Support.labels(pod)["controller.kubernetes.io/ordinal"]
           return Integer(label) if label && label.to_s.match?(/\A\d+\z/)
+
           match = Support.name(pod).match(/\A#{Regexp.escape(prefix)}-(\d+)\z/)
           match && Integer(match[1])
         rescue ArgumentError
@@ -1039,10 +1053,10 @@ module Rubernetes
 
         def initialize(**options)
           @clock = options.delete(:clock) || -> { Time.now.utc }
-          super(**options)
+          super
         end
 
-        SCHEDULED_TIMESTAMP_ANNOTATION = "batch.kubernetes.io/cronjob-scheduled-timestamp".freeze
+        SCHEDULED_TIMESTAMP_ANNOTATION = "batch.kubernetes.io/cronjob-scheduled-timestamp"
         DEFAULT_SUCCESSFUL_JOBS_HISTORY_LIMIT = 3
         DEFAULT_FAILED_JOBS_HISTORY_LIMIT = 1
         NEXT_SCHEDULE_DELAY_SECONDS = 0.1
@@ -1054,6 +1068,7 @@ module Rubernetes
           jobs ||= list_children(adapter, JOB, Support.namespace(cron_job))
           now = Support.parse_time(now) || Support.parse_time(@clock.call)
           raise ArgumentError, "clock must return Time or RFC3339 value" unless now
+
           owned_jobs = owned(cron_job, jobs)
           spec_value = Support.spec(cron_job)
           status = Support.deep_copy(Support.status(cron_job))
@@ -1065,7 +1080,7 @@ module Rubernetes
           # reference on the following sync, leaving status.active empty for
           # good -- which also disabled the Forbid concurrency policy.
           previous_active = Array(status["active"]).select { |reference| reference.is_a?(Hash) }
-                                                   .map { |reference| Support.deep_copy(reference) }
+            .map { |reference| Support.deep_copy(reference) }
           active = previous_active.map { |reference| Support.deep_copy(reference) }
           operations = []
           events = []
@@ -1125,7 +1140,9 @@ module Rubernetes
                 offset = time_zone_offset(time_zone)
                 scheduled_at, missed = next_schedule_time(cron_job, status, now, fields, offset, events)
                 policy = Support.value(spec_value, "concurrencyPolicy", "Allow").to_s
-                raise ArgumentError, "unsupported CronJob concurrencyPolicy #{policy.inspect}" unless %w[Allow Forbid Replace].include?(policy)
+                raise ArgumentError, "unsupported CronJob concurrencyPolicy #{policy.inspect}" unless %w[Allow Forbid
+                                                                                                         Replace].include?(policy)
+
                 requeue_after = next_schedule_delay(cron_job, status, now, fields, offset)
                 starting_deadline = Support.value(spec_value, "startingDeadlineSeconds", nil)
                 if scheduled_at.nil?
@@ -1153,12 +1170,15 @@ module Rubernetes
                   candidate = job_from_template(cron_job, scheduled_at, offset)
                   existing = owned_jobs.find { |job| Support.name(job) == Support.name(candidate) }
                   if existing
-                    active << job_reference(existing) unless active.any? { |reference| Support.ref_value(reference, "uid", nil).to_s == Support.uid(existing) }
+                    active << job_reference(existing) unless active.any? do |reference|
+                      Support.ref_value(reference, "uid", nil).to_s == Support.uid(existing)
+                    end
                   else
                     # metrics.CronJobCreationSkew: the new Job's creationTimestamp
                     # (whole seconds) less the time it was scheduled for.
                     scheduled_for = scheduled_at
-                    operations << operation_create(candidate, owner: cron_job, descriptor: JOB, reason: "cron schedule").observed do |succeeded, _|
+                    operations << operation_create(candidate, owner: cron_job, descriptor: JOB,
+                                                              reason: "cron schedule").observed do |succeeded, _|
                       next unless succeeded
 
                       ControllerMetrics.observe("cronjob_controller_job_creation_skew_duration_seconds",
@@ -1187,8 +1207,8 @@ module Rubernetes
                               requeue_after: requeue_after)
         end
 
-        def scale(cron_job, _replicas, **options)
-          plan(cron_job, **options)
+        def scale(cron_job, _replicas, **)
+          plan(cron_job, **)
         end
 
         def delete(cron_job, jobs: nil, store: nil, orphan: false)
@@ -1299,7 +1319,7 @@ module Rubernetes
         end
 
         def cron_field_valid?(field, range)
-          return true if field == "*" || field == "?"
+          return true if ["*", "?"].include?(field)
 
           field.split(",").all? do |part|
             base, step = part.split("/", 2)
@@ -1318,7 +1338,7 @@ module Rubernetes
           minute, hour, day, month, weekday = fields
           cursor = after.getlocal(offset)
           cursor = Time.new(cursor.year, cursor.month, cursor.day, cursor.hour, cursor.min, 0, offset) + 60
-          deadline = cursor + limit_days * 86_400
+          deadline = cursor + (limit_days * 86_400)
           while cursor <= deadline
             day_match = cron_field_match?(day, cursor.day, 1..31)
             weekday_match = cron_field_match?(weekday, cursor.wday, 0..6)
@@ -1329,6 +1349,7 @@ module Rubernetes
                cron_field_match?(hour, cursor.hour, 0..23) && cron_field_match?(minute, cursor.min, 0..59)
               return cursor.utc
             end
+
             cursor += 60
           end
           nil
@@ -1353,7 +1374,7 @@ module Rubernetes
           raise ArgumentError, "time difference between two schedules is less than 1 second" if between < 1
 
           missed = ((now - t1).to_i / between) + 1
-          potential_earliest = t1 + (missed - 2) * between
+          potential_earliest = t1 + ((missed - 2) * between)
           most_recent = nil
           cursor = cron_next(fields, potential_earliest, offset)
           while cursor && cursor <= now
@@ -1382,12 +1403,14 @@ module Rubernetes
         end
 
         def cron_field_match?(field, value, range)
-          return true if field == "*" || field == "?"
+          return true if ["*", "?"].include?(field)
+
           field.split(",").any? do |part|
             if part.include?("/")
               base, raw_step = part.split("/", 2)
               step = Integer(raw_step)
               next false unless step.positive?
+
               first, last = if base == "*"
                               [range.begin, range.end]
                             elsif base.include?("-")
@@ -1420,7 +1443,7 @@ module Rubernetes
           @clock = options.delete(:clock) || -> { Time.now.utc }
           @heartbeat_grace_seconds = options.delete(:heartbeat_grace_seconds) || HEARTBEAT_GRACE_SECONDS
           @taint_delay_seconds = options.delete(:taint_delay_seconds) || NOT_READY_TAINT_DELAY_SECONDS
-          super(**options)
+          super
         end
 
         def plan(node, store: nil, pods: nil, now: nil, lease: nil, **_options)
@@ -1429,6 +1452,7 @@ module Rubernetes
           pods ||= adapter ? adapter.list(POD, namespace: :all) : []
           now = Support.parse_time(now) || Support.parse_time(@clock.call)
           raise ArgumentError, "clock must return Time or RFC3339 value" unless now
+
           ready_condition = Support.condition(node, "Ready") || {}
           # The node lease is the primary heartbeat (monitorNodeHealth observes
           # the lease's renewTime and only falls back to the condition stamp).
@@ -1534,7 +1558,9 @@ module Rubernetes
         def record_zone_health(name, zone, ready)
           ZONE_MUTEX.synchronize do
             previous = ZONE_NODES[name]
-            ControllerMetrics.increment("node_collector_evictions_total", {"zone" => zone}, by: 0) unless ZONE_NODES.values.any? { |entry| entry[0] == zone }
+            ControllerMetrics.increment("node_collector_evictions_total", {"zone" => zone}, by: 0) unless ZONE_NODES.values.any? do |entry|
+              entry[0] == zone
+            end
             ZONE_NODES[name] = [zone, ready]
             publish_zones([zone, previous&.first].compact.uniq)
           end
@@ -1581,7 +1607,14 @@ module Rubernetes
         def delete(node, pods: nil, store: nil, orphan: false)
           adapter = store || (self.store && StoreAdapter.new(self.store))
           pods ||= adapter ? adapter.list(POD, namespace: :all) : []
-          operations = orphan ? [] : Array(pods).select { |pod| Support.value(Support.spec(pod), "nodeName", nil).to_s == Support.name(node) }.map { |pod| operation_delete(pod, descriptor: POD, reason: "node deletion") }
+          operations = if orphan
+                         []
+                       else
+                         Array(pods).select do |pod|
+                           Support.value(Support.spec(pod), "nodeName",
+                                         nil).to_s == Support.name(node)
+                         end.map { |pod| operation_delete(pod, descriptor: POD, reason: "node deletion") }
+                       end
           operations << operation_delete(node, descriptor: DESCRIPTOR, reason: "node deletion")
           ReconcileResult.new(operations: operations, controller: name)
         end
@@ -1678,7 +1711,7 @@ module Rubernetes
               # deletes the Service.
               return ReconcileResult.new(
                 operations: [operation_delete(resource, descriptor: ENDPOINTS,
-                                              reason: "service deleted")],
+                                                        reason: "service deleted")],
                 status: {}, controller: name,
                 key: [Support.namespace(resource), Support.name(resource)].compact.join("/")
               )
@@ -1707,8 +1740,8 @@ module Rubernetes
                      else
                        []
                      end
-          addresses = selected.select { |pod| Support.ready?(pod) }.filter_map { |pod| address_for(pod, service) }
-          not_ready = selected.reject { |pod| Support.ready?(pod) }.filter_map { |pod| address_for(pod, service) }
+          selected.select { |pod| Support.ready?(pod) }.filter_map { |pod| address_for(pod, service) }
+          selected.reject { |pod| Support.ready?(pod) }.filter_map { |pod| address_for(pod, service) }
           # v1.EndpointPort carries the port *on the Pod*, not the Service
           # port: a subset describes where traffic actually lands.  Copying
           # the ServicePort verbatim published the Service port (and its
@@ -1718,7 +1751,13 @@ module Rubernetes
           # differ land in different subsets, exactly as upstream's
           # endpoints controller groups them.
           resolve_ports = lambda do |pod|
-            container_ports = pod ? Array(Support.value(Support.spec(pod), "containers", [])).flat_map { |container| Array(Support.value(container, "ports", [])) } : []
+            container_ports = if pod
+                                Array(Support.value(Support.spec(pod), "containers", [])).flat_map do |container|
+                                  Array(Support.value(container, "ports", []))
+                                end
+                              else
+                                []
+                              end
             Array(Support.value(Support.spec(service), "ports", [])).map do |port|
               target = Support.value(port, "targetPort", nil)
               target = Support.value(port, "port", nil) if target.nil? || target.to_s.empty?
@@ -1748,16 +1787,21 @@ module Rubernetes
             group = (groups[ports] ||= {"ports" => ports, "addresses" => [], "notReadyAddresses" => []})
             (Support.ready?(pod) ? group["addresses"] : group["notReadyAddresses"]) << address
           end
-          ports = resolve_ports.call(selected.first)
-          addresses = groups.values.flat_map { |group| group["addresses"] }
-          not_ready = groups.values.flat_map { |group| group["notReadyAddresses"] }
+          resolve_ports.call(selected.first)
+          groups.values.flat_map { |group| group["addresses"] }
+          groups.values.flat_map { |group| group["notReadyAddresses"] }
           subsets = groups.values.sort_by { |group| group["ports"].map { |entry| entry["port"].to_i } }.map do |group|
             subset = {"ports" => group["ports"]}
             subset["addresses"] = group["addresses"] unless group["addresses"].empty?
             subset["notReadyAddresses"] = group["notReadyAddresses"] unless group["notReadyAddresses"].empty?
             subset
           end
-          candidate = endpoints ? Support.deep_copy(endpoints) : {"apiVersion" => "v1", "kind" => "Endpoints", "metadata" => {"name" => Support.name(service), "namespace" => Support.namespace(service)}}
+          candidate = if endpoints
+                        Support.deep_copy(endpoints)
+                      else
+                        {"apiVersion" => "v1", "kind" => "Endpoints",
+                         "metadata" => {"name" => Support.name(service), "namespace" => Support.namespace(service)}}
+                      end
           candidate["subsets"] = subsets
           candidate["metadata"] ||= {}
           candidate["metadata"]["labels"] ||= {}
@@ -1812,6 +1856,7 @@ module Rubernetes
           end
           ip = ips.find { |candidate| (family == "IPv6") == candidate.include?(":") }
           return nil if ip.nil? || ip.to_s.empty?
+
           # v1.ObjectReference: a targetRef without its namespace does not
           # identify the Pod, and the EndpointSlice conformance spec checks
           # the field explicitly.
@@ -1830,7 +1875,7 @@ module Rubernetes
           @sweep_mutex = Mutex.new
           @collector_mutex = Mutex.new
           @last_sweep_at = nil
-          super(**options)
+          super
         end
 
         def plan(resource = nil, store: nil, objects: nil, deleted: [], propagation_policy: :background, **_options)

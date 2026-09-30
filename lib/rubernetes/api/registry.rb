@@ -4,7 +4,7 @@ module Rubernetes
   module API
     # Group/version/kind identifier used by schema and discovery adapters.
     GVK = Struct.new(:group, :version, :kind, keyword_init: true) do
-      def initialize(group: "", version: "v1", kind:)
+      def initialize(kind:, group: "", version: "v1")
         super(group: group.to_s, version: version.to_s, kind: kind.to_s)
         freeze
       end
@@ -24,7 +24,7 @@ module Rubernetes
 
     # Group/version/resource identifier used by REST paths and storage keys.
     GVR = Struct.new(:group, :version, :resource, keyword_init: true) do
-      def initialize(group: "", version: "v1", resource:)
+      def initialize(resource:, group: "", version: "v1")
         super(group: group.to_s, version: version.to_s, resource: resource.to_s)
         freeze
       end
@@ -60,8 +60,8 @@ module Rubernetes
         def initialize(resource:, kind: nil, verbs: [], group: nil, version: nil)
           group = group.nil? ? nil : group.to_s
           version = version.nil? ? nil : version.to_s
-          group = nil if group&.empty?
-          version = nil if version&.empty?
+          group = nil if group && group.empty?
+          version = nil if version && version.empty?
           super(resource: resource.to_s.freeze, kind: kind&.to_s&.freeze,
                 verbs: Array(verbs).map(&:to_s).freeze,
                 group: group&.freeze, version: version&.freeze)
@@ -84,7 +84,7 @@ module Rubernetes
           nil
         end
 
-        def advertised_version(parent_group, parent_version)
+        def advertised_version(parent_group, _parent_version)
           return version if version
           return "v1" if kind == "Scale" && parent_group.to_s.empty?
           return "v1" if %w[Eviction TokenRequest].include?(kind) && parent_group.to_s.empty?
@@ -93,7 +93,7 @@ module Rubernetes
         end
       end
 
-      def initialize(group: "", version: "v1", resource:, kind:, scope: :cluster,
+      def initialize(resource:, kind:, group: "", version: "v1", scope: :cluster,
                      short_names: [], categories: [], verbs: nil, list_kind: nil,
                      singular_name: nil, merge_keys: {}, patch_strategy: :merge,
                      storage_version_hash: nil, schema: nil, namespaced: nil, subresources: [],
@@ -116,7 +116,11 @@ module Rubernetes
         @version = version.to_s.freeze
         @resource = resource.to_s.freeze
         @kind = kind.to_s.freeze
-        @scope = normalize_scope(namespaced.nil? ? scope : (namespaced ? :namespaced : :cluster))
+        @scope = normalize_scope(if namespaced.nil?
+                                   scope
+                                 else
+                                   (namespaced ? :namespaced : :cluster)
+                                 end)
         @short_names = Array(short_names).map(&:to_s).freeze
         @categories = Array(categories).map(&:to_s).freeze
         @verbs = (verbs || %w[get list watch create update patch delete deletecollection]).map(&:to_s).freeze
@@ -235,6 +239,7 @@ module Rubernetes
 
       def normalize_merge_keys(value)
         return {} unless value.respond_to?(:each)
+
         value.each_with_object({}) do |(path, key), normalized|
           normalized[path.to_s] = key.to_s
         end
@@ -335,6 +340,7 @@ module Rubernetes
         if @resources_by_gvr.key?(gvr_key) || @resources_by_gvk.key?(gvk_key)
           raise AlreadyRegistered, "resource #{entry.group_version}/#{entry.resource} is already registered"
         end
+
         @resources_by_gvr[gvr_key] = entry
         @resources_by_gvk[gvk_key] = entry
         entry
@@ -359,8 +365,8 @@ module Rubernetes
 
       alias all resources
 
-      def each(&block)
-        resources.each(&block)
+      def each(&)
+        resources.each(&)
       end
 
       include Enumerable
@@ -436,7 +442,9 @@ module Rubernetes
         values[:kind] ||= gvk.kind if gvk.respond_to?(:kind)
         values[:kind] ||= infer_kind(values[:resource])
         values[:scope] ||= values.delete(:scope) || (values[:namespaced] ? :namespaced : :cluster)
-        Resource.new(**values.slice(*Resource.instance_method(:initialize).parameters.filter_map { |kind, name| name if %i[key keyreq].include?(kind) }))
+        Resource.new(**values.slice(*Resource.instance_method(:initialize).parameters.filter_map do |kind, name|
+          name if %i[key keyreq].include?(kind)
+        end))
       end
 
       def resource_to_hash(resource)
@@ -541,6 +549,7 @@ module Rubernetes
 
       def call_lookup(method_name, **keywords)
         return nil unless @registry.respond_to?(method_name)
+
         method = @registry.method(method_name)
         if method.parameters.any? { |kind, _| %i[key keyreq keyrest].include?(kind) }
           method.call(**keywords)
@@ -563,6 +572,7 @@ module Rubernetes
       def normalize(entry)
         return nil if entry.nil?
         return entry if entry.is_a?(Resource)
+
         original_schema = entry if entry.respond_to?(:validator) && entry.respond_to?(:defaulting)
         values = if entry.is_a?(Hash)
                    entry
@@ -590,7 +600,9 @@ module Rubernetes
         values[:kind] ||= values[:resource].to_s.sub(/s\z/, "").split(/[-_]/).map { |word| word.capitalize }.join
         values[:scope] ||= values[:namespaced] ? :namespaced : :cluster
         values[:schema] ||= original_schema if original_schema
-        Resource.new(**values.slice(*Resource.instance_method(:initialize).parameters.filter_map { |kind, name| name if %i[key keyreq].include?(kind) }))
+        Resource.new(**values.slice(*Resource.instance_method(:initialize).parameters.filter_map do |kind, name|
+          name if %i[key keyreq].include?(kind)
+        end))
       rescue ArgumentError
         nil
       end

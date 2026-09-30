@@ -191,7 +191,13 @@ module Rubernetes
         case value
         when Hash
           value.to_h do |key, item|
-            [key, %w[requests limits].include?(key) && item.is_a?(Hash) ? item.transform_values { |quantity| quantity_value(quantity) } : semantic(item)]
+            [key, if %w[requests limits].include?(key) && item.is_a?(Hash)
+                    item.transform_values do |quantity|
+                      quantity_value(quantity)
+                    end
+                  else
+                    semantic(item)
+                  end]
           end
         when Array then value.map { |item| semantic(item) }
         else value

@@ -12,7 +12,7 @@ class ConformanceLanesNetnsTest < Minitest::Test
   Lanes = Conformance::Lanes
 
   def with_env(value)
-    previous = ENV["RUBERNETES_M8_NETNS"]
+    previous = ENV.fetch("RUBERNETES_M8_NETNS", nil)
     value.nil? ? ENV.delete("RUBERNETES_M8_NETNS") : ENV["RUBERNETES_M8_NETNS"] = value
     yield
   ensure
@@ -31,6 +31,7 @@ class ConformanceLanesNetnsTest < Minitest::Test
     with_env("no such") { assert_raises(ArgumentError) { Lanes.in_cluster_namespace(%w[true]) } }
     with_env(nil) do
       result = Lanes.capture(["sh", "-c", "echo out; exit 3"])
+
       assert_equal 3, result.fetch("exit_status")
       assert_equal "out\n", result.fetch("stdout")
     end

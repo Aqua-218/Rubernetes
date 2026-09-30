@@ -45,21 +45,25 @@ module ServiceIPFamilyDifferential
       base.call("plain-both-single", sel.merge("ipFamilies" => %w[IPv4 IPv6], "ipFamilyPolicy" => "SingleStack")),
       base.call("plain-clusterip-v6", sel.merge("clusterIP" => "fd00:d8:5::77")),
       base.call("plain-clusterips-both", sel.merge("clusterIPs" => ["10.96.0.77", "fd00:d8:5::78"])),
-      base.call("plain-clusterips-both-single", sel.merge("clusterIPs" => ["10.96.0.79", "fd00:d8:5::79"], "ipFamilyPolicy" => "SingleStack")),
+      base.call("plain-clusterips-both-single",
+                sel.merge("clusterIPs" => ["10.96.0.79", "fd00:d8:5::79"], "ipFamilyPolicy" => "SingleStack")),
       base.call("headless-selector", sel.merge("clusterIP" => "None")),
       base.call("headless-selector-prefer", sel.merge("clusterIP" => "None", "ipFamilyPolicy" => "PreferDualStack")),
       base.call("headless-selector-require", sel.merge("clusterIP" => "None", "ipFamilyPolicy" => "RequireDualStack")),
       base.call("headless-selector-v6", sel.merge("clusterIP" => "None", "ipFamilies" => ["IPv6"])),
-      base.call("headless-selector-both-single", sel.merge("clusterIP" => "None", "ipFamilies" => %w[IPv4 IPv6], "ipFamilyPolicy" => "SingleStack")),
+      base.call("headless-selector-both-single",
+                sel.merge("clusterIP" => "None", "ipFamilies" => %w[IPv4 IPv6], "ipFamilyPolicy" => "SingleStack")),
       base.call("headless-selectorless", {"clusterIP" => "None"}),
       base.call("headless-selectorless-single", {"clusterIP" => "None", "ipFamilyPolicy" => "SingleStack"}),
       base.call("headless-selectorless-prefer", {"clusterIP" => "None", "ipFamilyPolicy" => "PreferDualStack"}),
       base.call("headless-selectorless-v6", {"clusterIP" => "None", "ipFamilies" => ["IPv6"]}),
       base.call("headless-selectorless-v6-single", {"clusterIP" => "None", "ipFamilies" => ["IPv6"], "ipFamilyPolicy" => "SingleStack"}),
       base.call("headless-selectorless-both", {"clusterIP" => "None", "ipFamilies" => %w[IPv6 IPv4]}),
-      base.call("headless-selectorless-both-single", {"clusterIP" => "None", "ipFamilies" => %w[IPv4 IPv6], "ipFamilyPolicy" => "SingleStack"}),
+      base.call("headless-selectorless-both-single",
+                {"clusterIP" => "None", "ipFamilies" => %w[IPv4 IPv6], "ipFamilyPolicy" => "SingleStack"}),
       base.call("external-name", {"type" => "ExternalName", "externalName" => "example.com"}),
-      base.call("external-name-families", {"type" => "ExternalName", "externalName" => "example.com", "ipFamilies" => ["IPv4"], "ipFamilyPolicy" => "SingleStack"}),
+      base.call("external-name-families",
+                {"type" => "ExternalName", "externalName" => "example.com", "ipFamilies" => ["IPv4"], "ipFamilyPolicy" => "SingleStack"}),
       base.call("nodeport-prefer", sel.merge("type" => "NodePort", "ipFamilyPolicy" => "PreferDualStack"))
     ]
   end
@@ -71,8 +75,18 @@ module ServiceIPFamilyDifferential
       spec = body.fetch("spec")
       {"status" => status,
        "ipFamilies" => spec["ipFamilies"], "ipFamilyPolicy" => spec["ipFamilyPolicy"],
-       "clusterIPFamilies" => Array(spec["clusterIPs"]).map { |ip| ip == "None" ? "None" : (IPAddr.new(ip).ipv6? ? "IPv6" : "IPv4") },
-       "clusterIP" => spec["clusterIP"] == "None" ? "None" : (spec["clusterIP"].to_s.empty? ? "" : "allocated")}
+       "clusterIPFamilies" => Array(spec["clusterIPs"]).map do |ip|
+         if ip == "None"
+           "None"
+         else
+           (IPAddr.new(ip).ipv6? ? "IPv6" : "IPv4")
+         end
+       end,
+       "clusterIP" => if spec["clusterIP"] == "None"
+                        "None"
+                      else
+                        (spec["clusterIP"].to_s.empty? ? "" : "allocated")
+                      end}
     else
       {"status" => status, "message" => normalise_message(body.is_a?(Hash) ? body["message"].to_s : body.to_s)}
     end
@@ -105,7 +119,7 @@ module ServiceIPFamilyDifferential
   end
 
   def run_port(kubeconfig)
-    config = YAML.safe_load(File.read(kubeconfig))
+    config = YAML.safe_load_file(kubeconfig)
     cluster = config.fetch("clusters").first.fetch("cluster")
     user = config.fetch("users").first.fetch("user")
     uri = URI(cluster.fetch("server"))
@@ -135,7 +149,7 @@ module ServiceIPFamilyDifferential
   end
 
   def main(argv)
-    kubeconfig = ENV["RUBERNETES_CONFORMANCE_KUBECONFIG"]
+    kubeconfig = ENV.fetch("RUBERNETES_CONFORMANCE_KUBECONFIG", nil)
     OptionParser.new do |parser|
       parser.on("--kubeconfig PATH") { |value| kubeconfig = value }
     end.parse!(argv)

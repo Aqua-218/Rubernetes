@@ -61,6 +61,7 @@ class DisruptionControllerUpstreamTest < Minitest::Test
 
   def verify(allowed, healthy, desired, expected, disrupted = {})
     status = @pdb["status"]
+
     assert_equal [allowed, healthy, desired, expected],
                  status.values_at("disruptionsAllowed", "currentHealthy", "desiredHealthy", "expectedPods")
     assert_equal disrupted, status["disruptedPods"] || {}
@@ -82,6 +83,7 @@ class DisruptionControllerUpstreamTest < Minitest::Test
     pod("anything")
     sync
     verify(0, 0, 1, 0)
+
     assert_includes events, "NoPods"
   end
 
@@ -102,9 +104,11 @@ class DisruptionControllerUpstreamTest < Minitest::Test
   def test_integer_max_unavailable_with_a_naked_pod
     pdb(max_unavailable: 1)
     sync
+
     assert_equal 0, @pdb.dig("status", "disruptionsAllowed")
     pod("naked")
     sync
+
     assert_equal 0, @pdb.dig("status", "disruptionsAllowed")
     assert_includes events, "UnmanagedPods"
   end
@@ -137,11 +141,15 @@ class DisruptionControllerUpstreamTest < Minitest::Test
     pdb(min_available: "28%")
     pod("naked")
     sync
+
     assert_equal 0, @pdb.dig("status", "disruptionsAllowed")
     assert_includes events, "UnmanagedPods"
     message = @last.events.find { |event| event["reason"] == "UnmanagedPods" }["message"]
-    assert_includes message, "(selector: &LabelSelector{MatchLabels:map[string]string{foo: bar,},MatchExpressions:[]LabelSelectorRequirement{},})"
+
+    assert_includes message,
+                    "(selector: &LabelSelector{MatchLabels:map[string]string{foo: bar,},MatchExpressions:[]LabelSelectorRequirement{},})"
     condition = @pdb.dig("status", "conditions").first
+
     assert_equal %w[DisruptionAllowed False InsufficientPods], condition.values_at("type", "status", "reason"),
                  "unmanaged Pods are not a sync failure"
   end
@@ -151,9 +159,11 @@ class DisruptionControllerUpstreamTest < Minitest::Test
     pod("naked", owner: {"apiVersion" => "apps.test.io/v1", "kind" => "TestWorkload", "name" => "fake-controller",
                          "uid" => "b7329742-8daa-493a-8881-6ca07139172b", "controller" => true})
     sync
+
     assert_equal 0, @pdb.dig("status", "disruptionsAllowed")
     assert_includes events, "CalculateExpectedPodCountFailed"
     condition = @pdb.dig("status", "conditions").first
+
     assert_equal %w[DisruptionAllowed False SyncFailed], condition.values_at("type", "status", "reason")
   end
 
@@ -202,13 +212,15 @@ class DisruptionControllerUpstreamTest < Minitest::Test
   def test_update_disrupted_pods
     pdb(min_available: 1)
     stamp = ->(offset) { (NOW + offset).utc.strftime("%Y-%m-%dT%H:%M:%SZ") }
-    @pdb["status"]["disruptedPods"] = {"p1" => stamp.call(0), "p2" => stamp.call(-180), "p3" => stamp.call(-60), "notthere" => stamp.call(0)}
+    @pdb["status"]["disruptedPods"] =
+      {"p1" => stamp.call(0), "p2" => stamp.call(-180), "p3" => stamp.call(-60), "notthere" => stamp.call(0)}
     deleting = pod("p1")
     deleting["metadata"]["deletionTimestamp"] = stamp.call(0)
     pod("p2")
     pod("p3")
     result = sync
     verify(0, 1, 1, 3, {"p3" => stamp.call(-60)})
+
     assert_in_delta 60.0, result.requeue_after, 0.001, "rechecked when p3's expected deletion passes"
     assert_includes events, "NotDeleted"
   end
@@ -217,8 +229,10 @@ class DisruptionControllerUpstreamTest < Minitest::Test
     pdb(min_available: 1)
     pod("a")
     sync
+
     refute_empty @last.operations
     sync
+
     assert_empty @last.operations
   end
 
@@ -228,16 +242,19 @@ class DisruptionControllerUpstreamTest < Minitest::Test
     target["status"]["conditions"] << {"type" => "DisruptionTarget", "status" => "True", "reason" => "EvictionByEvictionAPI",
                                        "lastTransitionTime" => stamp.call(-30)}
     early = @controller.plan(target, now: NOW)
+
     assert_empty early.operations
     assert_in_delta 90.0, early.requeue_after, 0.001
 
     target["status"]["conditions"].last["lastTransitionTime"] = stamp.call(-121)
     reset = @controller.plan(target, now: NOW)
     condition = reset.operations.first.patch["conditions"].find { |entry| entry["type"] == "DisruptionTarget" }
+
     assert_equal "False", condition["status"]
     assert_nil condition["reason"]
 
     target["status"]["conditions"].last["reason"] = "TerminationByKubelet"
+
     assert_empty @controller.plan(target, now: NOW).operations, "the kubelet's own condition is left alone"
   end
 end

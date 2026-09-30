@@ -154,8 +154,10 @@ module Rubernetes
 
       def flow_attributes(flow, id: false)
         v6 = flow.family.to_s == "IPv6"
-        body = attribute(CTA_TUPLE_ORIG, tuple_attributes(flow.orig_src, flow.orig_sport, flow.orig_dst, flow.orig_dport, flow.protocol, v6), nested: true) +
-               attribute(CTA_TUPLE_REPLY, tuple_attributes(flow.reply_src, flow.reply_sport, flow.reply_dst, flow.reply_dport, flow.protocol, v6), nested: true)
+        body = attribute(CTA_TUPLE_ORIG,
+                         tuple_attributes(flow.orig_src, flow.orig_sport, flow.orig_dst, flow.orig_dport, flow.protocol, v6), nested: true) +
+               attribute(CTA_TUPLE_REPLY,
+                         tuple_attributes(flow.reply_src, flow.reply_sport, flow.reply_dst, flow.reply_dport, flow.protocol, v6), nested: true)
         body += attribute(CTA_ZONE, [flow.zone].pack("S>")) if flow.zone && !flow.zone.zero?
         body += attribute(CTA_ID, [flow.id].pack("L>")) if id && flow.id
         body
@@ -256,7 +258,8 @@ module Rubernetes
       def receive_bytes(socket, deadline:)
         remaining = deadline - monotonic_now
         raise ConntrackNetlinkError.new("conntrack dump timed out", errno: Errno::ETIMEDOUT::Errno) if remaining <= 0
-        raise ConntrackNetlinkError.new("conntrack dump timed out", errno: Errno::ETIMEDOUT::Errno) unless IO.select([socket], nil, nil, remaining)
+        raise ConntrackNetlinkError.new("conntrack dump timed out", errno: Errno::ETIMEDOUT::Errno) unless IO.select([socket], nil, nil,
+                                                                                                                     remaining)
 
         socket.recv(MAX_MESSAGE_BYTES)
       rescue SystemCallError => error
@@ -269,7 +272,10 @@ module Rubernetes
         messages = []
         while offset + NETLINK_HEADER_SIZE <= buffer.bytesize
           length, type, flags, sequence, _pid = buffer.byteslice(offset, NETLINK_HEADER_SIZE).unpack("L<S<S<L<L<")
-          raise ConntrackNetlinkError, "conntrack netlink message has invalid length #{length}" if length < NETLINK_HEADER_SIZE || offset + length > buffer.bytesize
+          if length < NETLINK_HEADER_SIZE || offset + length > buffer.bytesize
+            raise ConntrackNetlinkError,
+                  "conntrack netlink message has invalid length #{length}"
+          end
 
           messages << Message.new(type: type, flags: flags, sequence: sequence,
                                   payload: buffer.byteslice(offset + NETLINK_HEADER_SIZE, length - NETLINK_HEADER_SIZE).to_s)
@@ -369,7 +375,10 @@ module Rubernetes
           # than logging on every sync.
           @disabled = true if [Errno::EPERM::Errno, Errno::EACCES::Errno, Errno::EPROTONOSUPPORT::Errno,
                                Errno::EAFNOSUPPORT::Errno, Errno::ENOENT::Errno].include?(error.errno)
-          @logger&.warn("proxy.conntrack_reconcile_failed", family: family, error: error.message, disabled: @disabled) if @logger.respond_to?(:warn)
+          if @logger.respond_to?(:warn)
+            @logger&.warn("proxy.conntrack_reconcile_failed", family: family, error: error.message,
+                                                              disabled: @disabled)
+          end
         end
         seconds = @clock.call - started
         @metrics.conntrack_reconciled(family, seconds, deleted) if @metrics.respond_to?(:conntrack_reconciled)

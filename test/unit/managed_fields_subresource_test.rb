@@ -39,6 +39,7 @@ class ManagedFieldsSubresourceTest < Minitest::Test
   def apply(object, manager:, subresource: nil)
     path = subresource ? "#{PATH}/#{subresource}" : PATH
     status, body = call("PATCH", "#{path}?fieldManager=#{manager}&force=true", object, content_type: "application/apply-patch+yaml")
+
     assert_includes [200, 201], status, body.inspect
     body
   end
@@ -64,7 +65,7 @@ class ManagedFieldsSubresourceTest < Minitest::Test
 
     assert_equal("1", after.dig("metadata", "annotations", "deployment.kubernetes.io/revision"))
     assert_equal(1, after.dig("status", "replicas"))
-    assert_includes(entries(after), ["controller-manager", "Apply", "status"])
+    assert_includes(entries(after), %w[controller-manager Apply status])
     assert_includes(entries(after), ["controller-manager", "Apply", nil])
   end
 
@@ -91,6 +92,6 @@ class ManagedFieldsSubresourceTest < Minitest::Test
     after = apply(status({"replicas" => 2}), manager: "two", subresource: "status")
 
     assert_includes(entries(after), ["one", "Apply", nil])
-    assert_includes(entries(after), ["two", "Apply", "status"])
+    assert_includes(entries(after), %w[two Apply status])
   end
 end

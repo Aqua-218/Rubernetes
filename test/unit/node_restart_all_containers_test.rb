@@ -117,6 +117,7 @@ class NodeRestartAllContainersTest < Minitest::Test
     spec = pod(init: [container("init"), container("sidecar", policy: "Always")],
                containers: [container("source-container", rules: RULES, policy: "Never"), container("regular")])
     subject.start(spec)
+
     assert_equal %w[init sidecar source-container regular], runtime.created
 
     runtime.exit!("source-container", 42)
@@ -129,6 +130,7 @@ class NodeRestartAllContainersTest < Minitest::Test
     assert_equal %w[regular init sidecar source-container], runtime.removed
     %w[init sidecar source-container regular].each do |name|
       status = entry(subject, name)[:status]
+
       assert_equal 1, status["restartCount"], name
       assert_equal "RestartingAllContainers", status.dig("lastState", "terminated", "reason"), name
       assert_equal 137, status.dig("lastState", "terminated", "exitCode"), name
@@ -137,14 +139,17 @@ class NodeRestartAllContainersTest < Minitest::Test
     assert entry(subject, "regular")[:started]
 
     during = @reporter.statuses.find { |status| condition(status, "AllContainersRestarting")&.fetch("status") == "True" }
+
     refute_nil during, "AllContainersRestarting=True is published while the Pod is reset"
     assert_equal "RestartAllContainersStarted", condition(during, "AllContainersRestarting")["reason"]
     assert_equal "Running", during["phase"]
     assert_equal "True", condition(during, "Initialized")["status"], "an initialized Pod stays initialized"
     waiting = Array(during["containerStatuses"]).find { |status| status["name"] == "regular" }
+
     assert_equal "RestartingAllContainers", waiting.dig("state", "waiting", "reason")
 
     final = @reporter.statuses.last
+
     assert_equal "False", condition(final, "AllContainersRestarting")["status"]
     assert_equal "Running", final["phase"]
   end
@@ -201,10 +206,12 @@ class NodeRestartAllContainersTest < Minitest::Test
     subject.start(spec)
     runtime.exit!("source-container", 1)
     subject.observe_exits("pod-1", spec)
+
     assert_equal 1, entry(subject, "source-container")[:status]["restartCount"]
 
     runtime.exit!("source-container", 42)
     subject.observe_exits("pod-1", spec)
+
     assert_equal 2, entry(subject, "source-container")[:status]["restartCount"]
     assert_equal 1, entry(subject, "regular")[:status]["restartCount"]
     assert entry(subject, "source-container")[:started]
@@ -214,6 +221,7 @@ class NodeRestartAllContainersTest < Minitest::Test
     runtime = Runtime.new
     subject = lifecycle(runtime)
     subject.start(pod(containers: [container("plain")]))
+
     assert_nil condition(@reporter.statuses.last, "AllContainersRestarting")
   end
 end

@@ -28,7 +28,7 @@ class KubeletClientCertificateTest < Minitest::Test
       @ca.subject = @ca.issuer = OpenSSL::X509::Name.parse("/CN=ca")
       @ca.public_key = @ca_key
       @ca.not_before = now.call - 60
-      @ca.not_after = now.call + 86_400 * 10
+      @ca.not_after = now.call + (86_400 * 10)
       @ca.sign(@ca_key, OpenSSL::Digest.new("SHA256"))
       @requests = {}
       @lifetime = 1000
@@ -42,7 +42,7 @@ class KubeletClientCertificateTest < Minitest::Test
       {"metadata" => {"name" => name}}
     end
 
-    def get(resource, name, api_version:)
+    def get(_resource, name, api_version:)
       object = @requests.fetch(name)
       return {"status" => {"conditions" => [{"type" => "Denied", "status" => "True", "reason" => "Nope"}]}} if deny
 
@@ -67,9 +67,9 @@ class KubeletClientCertificateTest < Minitest::Test
     @random = Object.new.tap { |random| random.define_singleton_method(:rand) { 0.5 } }
   end
 
-  def manager(directory, **options)
+  def manager(directory, **)
     Manager.new(node_name: "worker-0", cert_dir: File.join(directory, "pki"), clock: @now, random: @random,
-                sleeper: ->(_) {}, **options)
+                sleeper: ->(_) {}, **)
   end
 
   def test_bootstrap_requests_a_node_certificate_and_writes_the_kubeconfig
@@ -79,10 +79,12 @@ class KubeletClientCertificateTest < Minitest::Test
       subject.bootstrap!(kubeconfig_path: kubeconfig, bootstrap_client: @signer, server: "https://127.0.0.1:6443", ca_file: "/pki/ca.crt")
 
       request = @signer.requests.values.first
+
       assert_equal "csr-", request.dig("metadata", "generateName")
       assert_equal "kubernetes.io/kube-apiserver-client-kubelet", request.dig("spec", "signerName")
       assert_equal ["digital signature", "client auth"], request.dig("spec", "usages")
       csr = OpenSSL::X509::Request.new(request.dig("spec", "request").unpack1("m"))
+
       assert_equal "/O=system:nodes/CN=system:node:worker-0", csr.subject.to_s
       assert_kind_of OpenSSL::PKey::EC, csr.public_key
 
@@ -90,15 +92,18 @@ class KubeletClientCertificateTest < Minitest::Test
       assert_equal "kubelet-client-2026-09-25-12-00-00.pem", File.readlink(subject.current_path)
       pem = File.read(subject.current_path)
       certificate = OpenSSL::X509::Certificate.new(pem)
+
       assert certificate.check_private_key(OpenSSL::PKey.read(pem[/-----BEGIN EC PRIVATE KEY-----.+-----END EC PRIVATE KEY-----/m] ||
                                                              pem[/-----BEGIN PRIVATE KEY-----.+-----END PRIVATE KEY-----/m]))
       assert_equal "0600", format("%04o", File.stat(File.join(directory, "pki", File.readlink(subject.current_path))).mode & 0o777)
-      document = YAML.safe_load(File.read(kubeconfig))
+      document = YAML.safe_load_file(kubeconfig)
+
       assert_equal subject.current_path, document.dig("users", 0, "user", "client-certificate")
       assert_equal "https://127.0.0.1:6443", document.dig("clusters", 0, "cluster", "server")
 
       # A valid kubeconfig is used as it is.
       subject.bootstrap!(kubeconfig_path: kubeconfig, bootstrap_client: @signer, server: "x")
+
       assert_equal 1, @signer.requests.length
     end
   end
@@ -106,10 +111,13 @@ class KubeletClientCertificateTest < Minitest::Test
   def test_rotation_deadline_is_a_jittered_70_to_90_percent
     Dir.mktmpdir do |directory|
       subject = manager(directory)
+
       assert_equal @time, subject.rotation_deadline, "no certificate: rotate now"
       certificate = subject.rotate!(@signer)
+
       assert_in_delta (certificate.not_before + 800).to_f, subject.rotation_deadline.to_f, 0.001, "0.7 + 0.2 * 0.5 of 1000s"
       low = Object.new.tap { |random| random.define_singleton_method(:rand) { 0.0 } }
+
       assert_in_delta (certificate.not_before + 700).to_f, manager(directory, random: low).rotation_deadline.to_f, 0.001
     end
   end
@@ -118,6 +126,7 @@ class KubeletClientCertificateTest < Minitest::Test
     Dir.mktmpdir do |directory|
       other = Manager.new(node_name: "worker-1", cert_dir: File.join(directory, "pki"), clock: @now, random: @random, sleeper: ->(_) {})
       other.rotate!(@signer)
+
       assert_nil manager(directory).current_certificate
       assert_equal @time, manager(directory).rotation_deadline
     end
@@ -137,6 +146,7 @@ class KubeletClientCertificateTest < Minitest::Test
       subject = manager(directory)
       subject.start(client: @signer, on_rotate: ->(certificate) { rotated << certificate })
       certificate = Timeout.timeout(5) { rotated.pop }
+
       assert_equal "/O=system:nodes/CN=system:node:worker-0", certificate.subject.to_s
       subject.stop
     end
@@ -144,6 +154,7 @@ class KubeletClientCertificateTest < Minitest::Test
 
   def test_the_http_client_starts_new_sessions_after_a_reset
     client = Rubernetes::Client::HTTPClient.new(server: "https://127.0.0.1:1", insecure_skip_tls_verify: true)
+
     assert_equal 0, client.connection_generation
     assert_equal [], client.reset_connections!
     assert_equal 1, client.connection_generation

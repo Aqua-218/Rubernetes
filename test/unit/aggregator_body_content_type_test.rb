@@ -16,7 +16,8 @@ class AggregatorBodyContentTypeTest < Minitest::Test
         sent[:content_type] = req["content-type"]
         sent[:body] = req.body
         r = Net::HTTPCreated.new("1.1", "201", "Created")
-        r.instance_variable_set(:@body, "{}"); r.instance_variable_set(:@read, true)
+        r.instance_variable_set(:@body, "{}")
+        r.instance_variable_set(:@read, true)
         r["content-type"] = "application/json"
         r
       end
@@ -45,7 +46,8 @@ class AggregatorBodyContentTypeTest < Minitest::Test
       http.define_singleton_method(:request) do |req|
         sent[:content_type] = req["content-type"]
         r = Net::HTTPCreated.new("1.1", "201", "Created")
-        r.instance_variable_set(:@body, "{}"); r.instance_variable_set(:@read, true)
+        r.instance_variable_set(:@body, "{}")
+        r.instance_variable_set(:@read, true)
         r["content-type"] = "application/json"
         r
       end
@@ -62,6 +64,7 @@ class AggregatorBodyContentTypeTest < Minitest::Test
     )
 
     aggregator.proxy(request, group: "wardle.example.com", version: "v1alpha1")
+
     assert_equal "application/vnd.kubernetes.protobuf", sent[:content_type]
   end
 end

@@ -31,7 +31,11 @@ module Rubernetes
 
         # Fsync every dirty path now.  Used at shutdown and by tests.
         def flush!
-          paths = @mutex.synchronize { taken = @dirty.keys; @dirty.clear; taken }
+          paths = @mutex.synchronize do
+            taken = @dirty.keys
+            @dirty.clear
+            taken
+          end
           paths.each { |path| sync_path(path) }
           paths.length
         end
@@ -52,7 +56,11 @@ module Rubernetes
             Thread.current.name = "deferred-fsync"
             loop do
               sleep(INTERVAL_SECONDS)
-              paths = @mutex.synchronize { taken = @dirty.keys; @dirty.clear; taken }
+              paths = @mutex.synchronize do
+                taken = @dirty.keys
+                @dirty.clear
+                taken
+              end
               paths.each { |path| sync_path(path) }
             end
           end

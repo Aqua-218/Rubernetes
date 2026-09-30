@@ -68,8 +68,8 @@ module Rubernetes
         current
       end
 
-      def fetch(key, *arguments, &block)
-        @raw.fetch(key.to_s, *arguments, &block)
+      def fetch(key, *, &)
+        @raw.fetch(key.to_s, *, &)
       end
 
       def to_h
@@ -104,7 +104,6 @@ module Rubernetes
       def hash
         to_h.hash
       end
-
     end
 
     class Pod < Snapshot
@@ -112,6 +111,7 @@ module Rubernetes
         super
         kind = self["kind"]
         raise ValidationError, "scheduler expected a Pod, got #{kind.inspect}" if kind && kind.to_s != "Pod"
+
         validate_shape!
         freeze
       end
@@ -160,7 +160,7 @@ module Rubernetes
       end
 
       def node_name
-        Support.value(spec, "nodeName", "")&.to_s.to_s
+        Support.value(spec, "nodeName", "")&.to_s
       end
 
       def priority
@@ -190,7 +190,7 @@ module Rubernetes
       end
 
       def priority_class_name
-        Support.value(spec, "priorityClassName", "")&.to_s.to_s
+        Support.value(spec, "priorityClassName", "")&.to_s
       end
 
       def preemption_policy
@@ -265,6 +265,7 @@ module Rubernetes
         end
         labels = Support.value(metadata, "labels")
         raise ValidationError, "pod metadata.labels must be an object" if labels && !labels.respond_to?(:to_h)
+
         selectors = Support.value(spec, "nodeSelector")
         raise ValidationError, "pod spec.nodeSelector must be an object" if selectors && !selectors.respond_to?(:to_h)
       end
@@ -277,6 +278,7 @@ module Rubernetes
         super(value)
         kind = self["kind"]
         raise ValidationError, "scheduler expected a Node, got #{kind.inspect}" if kind && kind.to_s != "Node"
+
         validate_shape!
         @pods_explicit = !pods.nil? || key?("pods")
         source_pods = pods.nil? ? self["pods"] : pods
@@ -341,7 +343,8 @@ module Rubernetes
         return ResourceMap.new(Support.sum_maps(@pods.map(&:requests))) if @pods_explicit
 
         ResourceMap.new(
-          Support.value(self, "requested", Support.value(status, "requested", Support.value(status, "used", Support.value(self, "used", {}))))
+          Support.value(self, "requested",
+                        Support.value(status, "requested", Support.value(status, "used", Support.value(self, "used", {}))))
         )
       end
 
@@ -363,7 +366,7 @@ module Rubernetes
         return 0 if resources.empty?
 
         ratio = resources.sum do |resource|
-          [(requested.fetch(resource, Rational(0)) * 100 / allocatable.fetch(resource)), Rational(100)] .min
+          [(requested.fetch(resource, Rational(0)) * 100 / allocatable.fetch(resource)), Rational(100)].min
         end
         (ratio / resources.length).floor
       end

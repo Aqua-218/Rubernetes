@@ -41,7 +41,7 @@ class NativeRuntimeConfigTest < Minitest::Test
   end
 
   def test_seccomp_rejects_unknown_syscall_numbers
-    compiler = Linux::SeccompCompiler.new(syscall_numbers: {"read" => 0}, allowlist: ["read", "unknown"])
+    compiler = Linux::SeccompCompiler.new(syscall_numbers: {"read" => 0}, allowlist: %w[read unknown])
 
     error = assert_raises(Linux::Security::Unsupported) { compiler.compile }
 

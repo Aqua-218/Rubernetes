@@ -50,7 +50,9 @@ class ProxyIptablesBackendTest < Minitest::Test
     {"apiVersion" => "discovery.k8s.io/v1", "kind" => "EndpointSlice",
      "metadata" => {"name" => "svc-abc", "namespace" => "ns", "labels" => {"kubernetes.io/service-name" => "svc"}},
      "addressType" => "IPv4", "ports" => [{"name" => "http", "port" => 8080, "protocol" => "TCP"}],
-     "endpoints" => endpoints.map { |ip, node, ready| {"addresses" => [ip], "nodeName" => node, "conditions" => {"ready" => ready.nil? ? true : ready, "serving" => true, "terminating" => false}} }}
+     "endpoints" => endpoints.map do |ip, node, ready|
+       {"addresses" => [ip], "nodeName" => node, "conditions" => {"ready" => ready.nil? || ready, "serving" => true, "terminating" => false}}
+     end}
   end
 
   def build(runner: FakeRunner.new, metrics: nil)
@@ -73,17 +75,22 @@ class ProxyIptablesBackendTest < Minitest::Test
     metrics = Proxy::Metrics.new(mode: :iptables)
     proxy, backend, runner = build(metrics: metrics)
     proxy.apply_service(service(type: "NodePort", extra: {"externalTrafficPolicy" => "Local", "externalIPs" => ["192.168.99.22"]},
-                                ports: [{"name" => "http", "port" => 80, "protocol" => "TCP", "targetPort" => 8080, "nodePort" => 30080}]))
+                                ports: [{"name" => "http", "port" => 80, "protocol" => "TCP", "targetPort" => 8080, "nodePort" => 30_080}]))
     proxy.apply_endpoint_slice(slice([["10.244.0.5", "worker-0"], ["10.244.1.6", "worker-1"]]))
     backend.attach
-    assert backend.attached?
+
+    assert_predicate backend, :attached?
     program = runner.programs.last
-    assert_match(/\A\*filter\n:KUBE-SERVICES - \[0:0\]\n:KUBE-EXTERNAL-SERVICES - \[0:0\]\n:KUBE-FORWARD - \[0:0\]\n:KUBE-NODEPORTS - \[0:0\]\n:KUBE-PROXY-FIREWALL - \[0:0\]\n:KUBE-FIREWALL - \[0:0\]\n/, program)
+
+    assert_match(
+      /\A\*filter\n:KUBE-SERVICES - \[0:0\]\n:KUBE-EXTERNAL-SERVICES - \[0:0\]\n:KUBE-FORWARD - \[0:0\]\n:KUBE-NODEPORTS - \[0:0\]\n:KUBE-PROXY-FIREWALL - \[0:0\]\n:KUBE-FIREWALL - \[0:0\]\n/, program
+    )
     svc = Iptables.service_chain("ns/svc:http", "TCP")
     svl = Iptables.local_chain("ns/svc:http", "TCP")
     ext = Iptables.external_chain("ns/svc:http", "TCP")
     sep_local = Iptables.endpoint_chain("ns/svc:http", "TCP", "10.244.0.5:8080")
     sep_remote = Iptables.endpoint_chain("ns/svc:http", "TCP", "10.244.1.6:8080")
+
     [
       "-A KUBE-SERVICES -m comment --comment \"ns/svc:http cluster IP\" -m tcp -p tcp -d 10.96.0.10 --dport 80 -j #{svc}",
       "-A KUBE-SERVICES -m comment --comment \"ns/svc:http external IP\" -m tcp -p tcp -d 192.168.99.22 --dport 80 -j #{ext}",
@@ -106,14 +113,23 @@ class ProxyIptablesBackendTest < Minitest::Test
     assert program.end_with?("COMMIT\n")
     # The jump chains were ensured (EnsureChain then -C / -I per hook).
     inserted = runner.calls.select { |argv| argv.include?("-I") }
-    assert_includes inserted, ["iptables", "-w", "5", "-t", "nat", "-I", "PREROUTING", "-m", "comment", "--comment", "kubernetes service portals", "-j", "KUBE-SERVICES"]
-    assert_includes inserted, ["iptables", "-w", "5", "-t", "filter", "-I", "FORWARD", "-m", "conntrack", "--ctstate", "NEW", "-m", "comment", "--comment", "kubernetes service portals", "-j", "KUBE-SERVICES"]
-    assert_equal ["iptables-restore", "-w", "5", "--noflush", "--counters"], runner.calls.find { |argv| argv.first == "iptables-restore" }
+
+    assert_includes inserted,
+                    ["iptables", "-w", "5", "-t", "nat", "-I", "PREROUTING", "-m", "comment", "--comment", "kubernetes service portals",
+                     "-j", "KUBE-SERVICES"]
+    assert_includes inserted,
+                    ["iptables", "-w", "5", "-t", "filter", "-I", "FORWARD", "-m", "conntrack", "--ctstate", "NEW", "-m", "comment", "--comment",
+                     "kubernetes service portals", "-j", "KUBE-SERVICES"]
+    assert_equal(["iptables-restore", "-w", "5", "--noflush", "--counters"], runner.calls.find { |argv| argv.first == "iptables-restore" })
     text = metrics.render
-    assert_match(/kubeproxy_sync_proxy_rules_iptables_last\{ip_family="IPv4",table="nat"\} #{program.lines.count { |l| l.start_with?("-A") && program.index(l) > program.index("*nat") }}/, text)
+
+    assert_match(/kubeproxy_sync_proxy_rules_iptables_last\{ip_family="IPv4",table="nat"\} #{program.lines.count do |l|
+      l.start_with?("-A") && program.index(l) > program.index("*nat")
+    end}/, text)
     assert_match(/kubeproxy_sync_proxy_rules_iptables_total\{ip_family="IPv4",table="filter"\} \d+/, text)
     refute_match(/nftables_sync_failures/, text)
-    refute_match(/kubeproxy_sync_proxy_rules_iptables_restore_failures_total\{ip_family="IPv4"\}/, text, "no failure series before a failure")
+    refute_match(/kubeproxy_sync_proxy_rules_iptables_restore_failures_total\{ip_family="IPv4"\}/, text,
+                 "no failure series before a failure")
   end
 
   def test_partial_sync_skips_unchanged_services_and_full_sync_deletes_stale_chains
@@ -125,18 +141,22 @@ class ProxyIptablesBackendTest < Minitest::Test
     proxy.apply_service(other)
     backend.attach
     full = runner.programs.last
-    assert_includes full, "-A KUBE-SERVICES -m comment --comment \"ns/other:http has no endpoints\" -m tcp -p tcp -d 10.96.0.11 --dport 80 -j REJECT"
+
+    assert_includes full,
+                    "-A KUBE-SERVICES -m comment --comment \"ns/other:http has no endpoints\" -m tcp -p tcp -d 10.96.0.11 --dport 80 -j REJECT"
     # Partial: only ns/svc changes -> other service's chains are not rewritten.
     proxy.apply_endpoint_slice(slice([["10.244.0.5", "worker-0"], ["10.244.0.7", "worker-0"]]))
     partial = runner.programs.last
+
     refute_equal full, partial
     assert_includes partial, Iptables.endpoint_chain("ns/svc:http", "TCP", "10.244.0.7:8080")
     assert_equal 1, partial.scan(":KUBE-SVC-").length
     assert_equal 0, backend.last_programs["IPv4"].skipped_nat_rules, "the other service owns no chain rules (no endpoints)"
     # A full sync removes chains no service owns any more.
-    runner.existing_chains = ["KUBE-SERVICES", "KUBE-SVC-DEADBEEFDEADBEEF", "KUBE-SEP-DEADBEEFDEADBEEF"]
+    runner.existing_chains = %w[KUBE-SERVICES KUBE-SVC-DEADBEEFDEADBEEF KUBE-SEP-DEADBEEFDEADBEEF]
     backend.sync_family!("IPv4", now: Time.now + 4000)
     resync = runner.programs.last
+
     assert_includes resync, ":KUBE-SVC-DEADBEEFDEADBEEF - [0:0]\n"
     assert_includes resync, "-X KUBE-SVC-DEADBEEFDEADBEEF\n"
     assert_includes resync, "-X KUBE-SEP-DEADBEEFDEADBEEF\n"
@@ -153,11 +173,13 @@ class ProxyIptablesBackendTest < Minitest::Test
     error = assert_raises(Proxy::BackendError) { backend.sync_family!("IPv4") }
     assert_match(/iptables-restore failed \(IPv4\)/, error.message)
     text = metrics.render
+
     assert_match(/kubeproxy_sync_proxy_rules_iptables_restore_failures_total\{ip_family="IPv4"\} 1/, text)
     assert_match(/kubeproxy_sync_proxy_rules_iptables_partial_restore_failures_total\{ip_family="IPv4"\} 1/, text)
     runner.fail_restore = false
     saves_before = runner.calls.count { |argv| argv.first == "iptables-save" }
     backend.sync_family!("IPv4")
+
     assert_operator runner.calls.count { |argv| argv.first == "iptables-save" }, :>, saves_before, "the retry is a full sync"
     # A failed publish through the engine leaves the model at the previous revision.
     runner.fail_restore = true
@@ -169,13 +191,16 @@ class ProxyIptablesBackendTest < Minitest::Test
   def test_metrics_mode_registers_the_iptables_families_only_in_iptables_mode
     iptables = Proxy::Metrics.new(mode: :iptables)
     names = iptables.registry.registered_names
+
     (Proxy::Metrics::IPTABLES_FAMILIES + Proxy::Metrics::IPTABLES_NFACCT_FAMILIES.keys).each { |name| assert_includes names, name }
     refute_includes names, "kubeproxy_sync_proxy_rules_nftables_sync_failures_total"
     iptables.nfacct_counters = -> { {Iptables::CT_STATE_INVALID_COUNTER => [42, 4200]} }
     text = iptables.render
+
     assert_match(/kubeproxy_iptables_ct_state_invalid_dropped_packets_total 42/, text)
     refute_match(/kubeproxy_iptables_localhost_nodeports_accepted_packets_total [1-9]/, text, "an unknown counter publishes no count")
     nftables = Proxy::Metrics.new
+
     Proxy::Metrics::IPTABLES_FAMILIES.each { |name| refute_includes nftables.registry.registered_names, name }
     assert_includes nftables.registry.registered_names, "kubeproxy_sync_proxy_rules_nftables_sync_failures_total"
     refute Rubernetes::Observability::Metrics::UNIMPLEMENTED.key?("kube-proxy")
@@ -191,10 +216,14 @@ class ProxyIptablesBackendTest < Minitest::Test
     fw = Iptables.firewall_chain("ns/svc:https", "TCP")
     ext = Iptables.external_chain("ns/svc:https", "TCP")
     sep = Iptables.endpoint_chain("ns/svc:https", "TCP", "[fd00:1::5]:8443")
-    assert_includes program, "-A KUBE-SERVICES -m comment --comment \"ns/svc:https loadbalancer IP\" -m tcp -p tcp -d 2001:db8::5 --dport 443 -j #{fw}"
+
+    assert_includes program,
+                    "-A KUBE-SERVICES -m comment --comment \"ns/svc:https loadbalancer IP\" -m tcp -p tcp -d 2001:db8::5 --dport 443 -j #{fw}"
     assert_includes program, "-A #{fw} -m comment --comment \"ns/svc:https loadbalancer IP\" -s fd00::/64 -j #{ext}"
-    assert_includes program, "-A #{fw} -m comment --comment \"ns/svc:https loadbalancer IP\" -s 2001:db8::5 -j #{ext}", "the node sits inside the source range"
-    assert_includes program, "-A KUBE-PROXY-FIREWALL -m comment --comment \"ns/svc:https traffic not accepted by #{fw}\" -m tcp -p tcp -d 2001:db8::5 --dport 443 -j DROP"
+    assert_includes program, "-A #{fw} -m comment --comment \"ns/svc:https loadbalancer IP\" -s 2001:db8::5 -j #{ext}",
+                    "the node sits inside the source range"
+    assert_includes program,
+                    "-A KUBE-PROXY-FIREWALL -m comment --comment \"ns/svc:https traffic not accepted by #{fw}\" -m tcp -p tcp -d 2001:db8::5 --dport 443 -j DROP"
     assert_includes program, "-m recent --name #{sep} --rcheck --seconds 300 --reap -j #{sep}"
     assert_includes program, "-m recent --name #{sep} --set -m tcp -p tcp -j DNAT --to-destination [fd00:1::5]:8443"
     assert_includes program, "-m addrtype --dst-type LOCAL ! -d ::1/128 -j KUBE-NODEPORTS"
@@ -207,12 +236,16 @@ class ProxyIptablesBackendTest < Minitest::Test
     proxy, backend, = build
     proxy.apply_service(service(type: "LoadBalancer", extra: {"externalTrafficPolicy" => "Local", "loadBalancerSourceRanges" => ["192.168.0.0/16"],
                                                               "sessionAffinity" => "ClientIP", "sessionAffinityConfig" => {"clientIP" => {"timeoutSeconds" => 60}}},
-                                ports: [{"name" => "http", "port" => 80, "protocol" => "TCP", "targetPort" => 8080, "nodePort" => 30080}]).tap { |s| s["status"] = {"loadBalancer" => {"ingress" => [{"ip" => "203.0.113.5"}]}} })
+                                ports: [{"name" => "http", "port" => 80, "protocol" => "TCP", "targetPort" => 8080, "nodePort" => 30_080}]).tap do |s|
+      s["status"] =
+        {"loadBalancer" => {"ingress" => [{"ip" => "203.0.113.5"}]}}
+    end)
     proxy.apply_endpoint_slice(slice([["10.244.0.5", "worker-0"], ["10.244.1.6", "worker-1"]]))
     program = Iptables::Renderer.new(family: "IPv4", node_name: "worker-0", node_ips: ["192.168.1.10"], cluster_cidr: "10.244.0.0/16",
                                      nfacct_counters: {Iptables::CT_STATE_INVALID_COUNTER => system("nfacct list >/dev/null 2>&1")}).render(backend.rules).text
     stdout, stderr, status = Open3.capture3("iptables-restore", "--test", "--noflush", stdin_data: program)
-    assert status.success?, "iptables-restore --test rejected the program: #{stderr} #{stdout}\n#{program}"
+
+    assert_predicate status, :success?, "iptables-restore --test rejected the program: #{stderr} #{stdout}\n#{program}"
   end
 
   def test_nfacct_client_round_trip
@@ -222,6 +255,7 @@ class ProxyIptablesBackendTest < Minitest::Test
     name = "rbn_test_#{Process.pid}"
     skip "nfnetlink_acct unavailable" unless client.ensure(name)
     counters = client.counters
+
     assert_equal [0, 0], counters[name]
     assert client.delete(name)
     refute client.counters.key?(name)

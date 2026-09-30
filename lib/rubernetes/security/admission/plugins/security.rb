@@ -21,6 +21,7 @@ module Rubernetes
         # ResourceSlices, its PodCertificateRequests and its own CSRs.
         class NodeRestriction < Plugin
           include Helpers
+
           MIRROR_ANNOTATION = "kubernetes.io/config.mirror"
           NODE_RESTRICTION_NAMESPACE = "node-restriction.kubernetes.io"
           # k8s.io/kubelet/pkg/apis kubeletLabels / kubeletLabelNamespaces.
@@ -70,7 +71,9 @@ module Rubernetes
             when "CREATE" then validate_mirror_pod(attributes.object, node_name)
             when "DELETE"
               pod = existing_pod(attributes.namespace, attributes.name)
-              reject!("node #{node_name.inspect} can only delete pods with spec.nodeName set to itself") unless spec(pod)["nodeName"] == node_name
+              unless spec(pod)["nodeName"] == node_name
+                reject!("node #{node_name.inspect} can only delete pods with spec.nodeName set to itself")
+              end
             else
               reject!("unexpected operation #{attributes.operation.inspect}, node #{node_name.inspect} can only create and delete mirror pods")
             end
@@ -105,15 +108,19 @@ module Rubernetes
             reject!("unexpected operation #{attributes.operation.inspect}") unless attributes.operation == "UPDATE"
 
             old = attributes.old_object
-            reject!("node #{node_name.inspect} can only update pod status for pods with spec.nodeName set to itself") unless spec(old)["nodeName"] == node_name
+            unless spec(old)["nodeName"] == node_name
+              reject!("node #{node_name.inspect} can only update pod status for pods with spec.nodeName set to itself")
+            end
             pod = attributes.object
-            reject!("node #{node_name.inspect} cannot update labels through pod status") unless (metadata(old)["labels"] || {}) == (metadata(pod)["labels"] || {})
+            unless (metadata(old)["labels"] || {}) == (metadata(pod)["labels"] || {})
+              reject!("node #{node_name.inspect} cannot update labels through pod status")
+            end
             unless resource_claim_statuses(old) == resource_claim_statuses(pod)
               reject!("node #{node_name.inspect} cannot update resource claim statues")
             end
-            unless (old || {}).dig("status", "extendedResourceClaimStatus") == (pod || {}).dig("status", "extendedResourceClaimStatus")
-              reject!("node #{node_name.inspect} cannot update extended resource claim status")
-            end
+            return if (old || {}).dig("status", "extendedResourceClaimStatus") == (pod || {}).dig("status", "extendedResourceClaimStatus")
+
+            reject!("node #{node_name.inspect} cannot update extended resource claim status")
           end
 
           def resource_claim_statuses(pod)
@@ -164,7 +171,9 @@ module Rubernetes
             case attributes.operation
             when "CREATE"
               object = attributes.object || {}
-              reject!("node #{node_name.inspect} is not allowed to create pods with a non-nil configSource") unless spec(object)["configSource"].nil?
+              unless spec(object)["configSource"].nil?
+                reject!("node #{node_name.inspect} is not allowed to create pods with a non-nil configSource")
+              end
               bad = forbidden_labels(modified_labels(metadata(object)["labels"] || {}, {}))
               reject!("node #{node_name.inspect} is not allowed to set the following labels: #{bad.join(", ")}") unless bad.empty?
             when "UPDATE"
@@ -173,7 +182,9 @@ module Rubernetes
               if !spec(object)["configSource"].nil? && spec(object)["configSource"] != spec(old)["configSource"]
                 reject!("node #{node_name.inspect} is not allowed to update configSource to a new non-nil configSource")
               end
-              reject!("node #{node_name.inspect} is not allowed to modify taints") unless Array(spec(object)["taints"]) == Array(spec(old)["taints"])
+              unless Array(spec(object)["taints"]) == Array(spec(old)["taints"])
+                reject!("node #{node_name.inspect} is not allowed to modify taints")
+              end
               unless Array(metadata(object)["ownerReferences"]) == Array(metadata(old)["ownerReferences"])
                 reject!("node #{node_name.inspect} is not allowed to modify ownerReferences")
               end
@@ -287,7 +298,8 @@ module Rubernetes
           # account UIDs.  UID mismatches may be informer lag, so they are not
           # Forbidden.
           def admit_pod_certificate_request(attributes, node_name)
-            reject!("PodCertificateRequest feature gate is disabled") if @context.feature_gates.fetch("PodCertificateRequest", false) == false
+            reject!("PodCertificateRequest feature gate is disabled") if @context.feature_gates.fetch("PodCertificateRequest",
+                                                                                                      false) == false
             reject!("unexpected operation #{attributes.operation}") unless attributes.operation == "CREATE"
             reject!("unexpected subresource #{attributes.subresource}") unless attributes.subresource.to_s.empty?
 
@@ -379,7 +391,8 @@ module Rubernetes
         Registry.register("NodeRestriction") { |context, config| NodeRestriction.new("NodeRestriction", context: context, config: config) }
 
         module CertificateHelpers
-          SIGNERS = %w[kubernetes.io/kube-apiserver-client kubernetes.io/kube-apiserver-client-kubelet kubernetes.io/kubelet-serving kubernetes.io/legacy-unknown].freeze
+          SIGNERS = %w[kubernetes.io/kube-apiserver-client kubernetes.io/kube-apiserver-client-kubelet kubernetes.io/kubelet-serving
+                       kubernetes.io/legacy-unknown].freeze
 
           def signer_resource(signer)
             if SIGNERS.include?(signer) || signer.start_with?("kubernetes.io/")
@@ -409,40 +422,52 @@ module Rubernetes
         class CertificateApproval < Plugin
           include Helpers
           include CertificateHelpers
+
           def validate(attributes)
-            return unless resource?(attributes, "certificates.k8s.io", "certificatesigningrequests") && attributes.subresource == "approval" && attributes.operation == "UPDATE"
+            return unless resource?(attributes, "certificates.k8s.io",
+                                    "certificatesigningrequests") && attributes.subresource == "approval" && attributes.operation == "UPDATE"
 
             old_conditions = Array(attributes.old_object&.dig("status", "conditions")).map { |condition| condition["type"] }
             new_conditions = Array(attributes.object&.dig("status", "conditions")).map { |condition| condition["type"] }
             return if (new_conditions - old_conditions).empty?
 
             signer = spec(attributes.object)["signerName"].to_s
-            reject!("user not permitted to approve requests with signerName #{signer.inspect}") unless signer_permitted?(attributes, "approve", signer)
+            reject!("user not permitted to approve requests with signerName #{signer.inspect}") unless signer_permitted?(attributes,
+                                                                                                                         "approve", signer)
           end
         end
-        Registry.register("CertificateApproval") { |context, config| CertificateApproval.new("CertificateApproval", context: context, config: config) }
+        Registry.register("CertificateApproval") do |context, config|
+          CertificateApproval.new("CertificateApproval", context: context, config: config)
+        end
 
         class CertificateSigning < Plugin
           include Helpers
           include CertificateHelpers
+
           def validate(attributes)
-            return unless resource?(attributes, "certificates.k8s.io", "certificatesigningrequests") && attributes.subresource == "status" && attributes.operation == "UPDATE"
+            return unless resource?(attributes, "certificates.k8s.io",
+                                    "certificatesigningrequests") && attributes.subresource == "status" && attributes.operation == "UPDATE"
 
             old_certificate = attributes.old_object&.dig("status", "certificate").to_s
             new_certificate = attributes.object&.dig("status", "certificate").to_s
             return if new_certificate.empty? || new_certificate == old_certificate
 
             signer = spec(attributes.object)["signerName"].to_s
-            reject!("user not permitted to sign requests with signerName #{signer.inspect}") unless signer_permitted?(attributes, "sign", signer)
+            reject!("user not permitted to sign requests with signerName #{signer.inspect}") unless signer_permitted?(attributes, "sign",
+                                                                                                                      signer)
           end
         end
-        Registry.register("CertificateSigning") { |context, config| CertificateSigning.new("CertificateSigning", context: context, config: config) }
+        Registry.register("CertificateSigning") do |context, config|
+          CertificateSigning.new("CertificateSigning", context: context, config: config)
+        end
 
         class ClusterTrustBundleAttest < Plugin
           include Helpers
           include CertificateHelpers
+
           def validate(attributes)
-            return unless attributes.group == "certificates.k8s.io" && attributes.resource == "clustertrustbundles" && %w[CREATE UPDATE].include?(attributes.operation)
+            return unless attributes.group == "certificates.k8s.io" && attributes.resource == "clustertrustbundles" && %w[CREATE
+                                                                                                                          UPDATE].include?(attributes.operation)
 
             signer = spec(attributes.object)["signerName"].to_s
             return if signer.empty?
@@ -450,12 +475,15 @@ module Rubernetes
             reject!("user not permitted to attest for signerName #{signer.inspect}") unless signer_permitted?(attributes, "attest", signer)
           end
         end
-        Registry.register("ClusterTrustBundleAttest") { |context, config| ClusterTrustBundleAttest.new("ClusterTrustBundleAttest", context: context, config: config) }
+        Registry.register("ClusterTrustBundleAttest") do |context, config|
+          ClusterTrustBundleAttest.new("ClusterTrustBundleAttest", context: context, config: config)
+        end
 
         # CertificateSubjectRestriction: kube-apiserver-client CSRs may not
         # request system:masters.
         class CertificateSubjectRestriction < Plugin
           include Helpers
+
           def validate(attributes)
             return unless resource?(attributes, "certificates.k8s.io", "certificatesigningrequests") && attributes.operation == "CREATE"
             return unless spec(attributes.object)["signerName"] == "kubernetes.io/kube-apiserver-client"
@@ -465,12 +493,16 @@ module Rubernetes
 
             csr = OpenSSL::X509::Request.new(request.unpack1("m0"))
             organizations = csr.subject.to_a.select { |entry| entry[0] == "O" }.map { |entry| entry[1] }
-            reject!("use of kubernetes.io/kube-apiserver-client signer with system:masters group is not allowed") if organizations.include?("system:masters")
+            if organizations.include?("system:masters")
+              reject!("use of kubernetes.io/kube-apiserver-client signer with system:masters group is not allowed")
+            end
           rescue OpenSSL::X509::RequestError, ArgumentError
             reject!("certificate request is not a valid PEM/DER CSR", code: 400, reason: "BadRequest")
           end
         end
-        Registry.register("CertificateSubjectRestriction") { |context, config| CertificateSubjectRestriction.new("CertificateSubjectRestriction", context: context, config: config) }
+        Registry.register("CertificateSubjectRestriction") do |context, config|
+          CertificateSubjectRestriction.new("CertificateSubjectRestriction", context: context, config: config)
+        end
 
         # ResourceQuota: enforce namespace quotas on object counts and
         # compute resources.  Usage is computed from live objects so the
@@ -478,6 +510,7 @@ module Rubernetes
         # through the context after admission.
         class ResourceQuota < Plugin
           include Helpers
+
           COUNTED = {
             "pods" => ["", "pods"], "services" => ["", "services"], "replicationcontrollers" => ["", "replicationcontrollers"],
             "resourcequotas" => ["", "resourcequotas"], "secrets" => ["", "secrets"], "configmaps" => ["", "configmaps"],
@@ -496,7 +529,12 @@ module Rubernetes
 
             MAX_CHARGE_ATTEMPTS.times do
               quotas = begin
-                @context.respond_to?(:list!) ? @context.list!("resourcequotas", attributes.namespace) : @context.list("resourcequotas", attributes.namespace)
+                if @context.respond_to?(:list!)
+                  @context.list!("resourcequotas",
+                                 attributes.namespace)
+                else
+                  @context.list("resourcequotas", attributes.namespace)
+                end
               rescue StandardError => error
                 # plugin/pkg/admission/resourcequota: an error reading the
                 # quotas fails the request; it never admits by default.
@@ -530,7 +568,9 @@ module Rubernetes
                     "namespace" => attributes.namespace, "resource" => attributes.resource,
                     "name" => attributes.object&.dig("metadata", "name") || attributes.object&.dig("metadata", "generateName"),
                     "delta" => delta.transform_values { |value| Quantity.format(value) },
-                    "quotas" => quotas.map { |quota| {"name" => quota.dig("metadata", "name"), "rv" => quota.dig("metadata", "resourceVersion"), "used" => quota.dig("status", "used")} },
+                    "quotas" => quotas.map do |quota|
+                      {"name" => quota.dig("metadata", "name"), "rv" => quota.dig("metadata", "resourceVersion"), "used" => quota.dig("status", "used")}
+                    end,
                     "outcome" => outcome}
             $stderr.write(JSON.generate(line) << "\n")
           rescue StandardError
@@ -658,7 +698,9 @@ module Rubernetes
           def cross_namespace_affinity?(pod)
             affinity = spec(pod)["affinity"] || {}
             %w[podAffinity podAntiAffinity].any? do |kind|
-              Array(affinity.dig(kind, "requiredDuringSchedulingIgnoredDuringExecution")).any? { |term| term["namespaces"] || term["namespaceSelector"] }
+              Array(affinity.dig(kind, "requiredDuringSchedulingIgnoredDuringExecution")).any? do |term|
+                term["namespaces"] || term["namespaceSelector"]
+              end
             end
           end
 
@@ -715,7 +757,6 @@ module Rubernetes
             else 0
             end
           end
-
         end
         Registry.register("ResourceQuota") { |context, config| ResourceQuota.new("ResourceQuota", context: context, config: config) }
       end

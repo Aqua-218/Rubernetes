@@ -5,7 +5,6 @@ require "json"
 require "rbconfig"
 require "tempfile"
 require "time"
-require "thread"
 
 module Rubernetes
   module Node
@@ -83,9 +82,7 @@ module Rubernetes
               key = "#{device["pool"]}/#{device["device"]}"
               reported[key] = true
               existing = current[key]
-              if existing.nil? || %w[health message timeout].any? { |field| existing[field] != device[field] }
-                changed << device
-              end
+              changed << device if existing.nil? || %w[health message timeout].any? { |field| existing[field] != device[field] }
               current[key] = device.merge("updated" => now)
             end
             current.each do |key, existing|
@@ -228,9 +225,21 @@ module Rubernetes
           end
           return self unless pid
 
-          @stdin&.close rescue nil
-          Process.kill(:TERM, pid) rescue nil
-          Process.wait(pid) rescue nil
+          begin
+            @stdin&.close
+          rescue StandardError
+            nil
+          end
+          begin
+            Process.kill(:TERM, pid)
+          rescue StandardError
+            nil
+          end
+          begin
+            Process.wait(pid)
+          rescue StandardError
+            nil
+          end
           thread&.join(5)
           self
         end

@@ -27,7 +27,7 @@ class RuntimeCommonTest < Minitest::Test
     assert_raises(Rubernetes::Runtime::InvalidTransition) { runtime.exec(container, ["true"], tty: false) }
     runtime.start_container(container, request_id: "start")
 
-    assert_equal [[:start, :closed], [:open, container]], adapter.workload_calls
+    assert_equal [%i[start closed], [:open, container]], adapter.workload_calls
   end
 
   def test_request_id_replay_does_not_repeat_effects
@@ -48,12 +48,15 @@ class RuntimeCommonTest < Minitest::Test
     wal = Rubernetes::Runtime::DurableWAL.new(wal_path)
     wal.append(operation_id: "op", event: "state_transition", payload: {"to" => "Validated"})
     reopened = Rubernetes::Runtime::DurableWAL.new(wal_path)
+
     assert_equal "state_transition", reopened.records.fetch(0).to_h.fetch("event")
     reopened.append(operation_id: "op", event: "state_transition", payload: {"to" => "ImagePinned"})
+
     assert_equal [1, 2], reopened.records.map(&:sequence)
 
     snapshots = Rubernetes::Runtime::AtomicSnapshotStore.new(File.join(directory, "snapshots"))
     snapshots.write(snapshot_id: "base", state: "WorkloadStopped", identity: "base-id", payload: {"digest" => "sha256:x"})
+
     assert_equal "base-id", snapshots.read("base").fetch("identity")
   end
 
@@ -67,6 +70,7 @@ class RuntimeCommonTest < Minitest::Test
     assert_match(/injected effect failure/, error.cause_error.message)
     refute_empty error.cleanup_errors
     operation = runtime.ledger.operation_for_request("rollback")
+
     assert_equal "CleanupPending", operation.state
     assert_equal error.cause_error.message, operation.error.fetch("message")
   end

@@ -16,7 +16,7 @@ class NodeTerminateWithoutRecordTest < Minitest::Test
   def lifecycle(deleted)
     Node::Lifecycle.new(
       runtime: Object.new,
-      pod_deleter: lambda { |namespace:, name:, uid: nil| deleted << [namespace, name, uid] }
+      pod_deleter: ->(namespace:, name:, uid: nil) { deleted << [namespace, name, uid] }
     )
   end
 
@@ -33,7 +33,7 @@ class NodeTerminateWithoutRecordTest < Minitest::Test
 
     lifecycle(deleted).terminate(pod)
 
-    assert_equal([["ns", "never-ran", "pod-uid"]], deleted)
+    assert_equal([%w[ns never-ran pod-uid]], deleted)
   end
 
   # Only a Pod the API server actually marked for deletion: an unknown Pod

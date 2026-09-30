@@ -34,6 +34,7 @@ class NetworkHostForwardTest < Minitest::Test
     assert_equal 2, result.installed.length
     assert_empty result.skipped
     inserts = runner.calls.select { |call| call[1] == "-I" }
+
     assert_equal 2, inserts.length
     assert_includes inserts, ["iptables", "-I", "FORWARD", "1", "-s", "10.240.0.0/16", "-j", "ACCEPT"]
     assert_includes inserts, ["iptables", "-I", "FORWARD", "1", "-d", "10.240.0.0/16", "-j", "ACCEPT"]

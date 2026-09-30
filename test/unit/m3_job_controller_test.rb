@@ -20,12 +20,14 @@ class M3JobControllerTest < Minitest::Test
     assert_equal 2, result.creates.length
     result.creates.each do |create|
       metadata = create.object.fetch("metadata")
+
       assert_equal "batch-", metadata.fetch("generateName")
       assert_nil metadata["name"]
       assert_includes metadata.fetch("finalizers"), FINALIZER
       assert_equal "Job", metadata.fetch("ownerReferences").first.fetch("kind")
     end
     status = result.status
+
     assert_equal 2, status.fetch("active")
     assert_equal 0, status.fetch("ready")
     assert_equal 0, status.fetch("terminating")
@@ -33,7 +35,7 @@ class M3JobControllerTest < Minitest::Test
     assert_equal NOW.iso8601(6), status.fetch("startTime")
     assert_equal 0, status.fetch("succeeded")
     refute status.key?("conditions")
-    assert_equal %w[SuccessfulCreate SuccessfulCreate], result.events.map { |event| event.fetch("reason") }
+    assert_equal(%w[SuccessfulCreate SuccessfulCreate], result.events.map { |event| event.fetch("reason") })
   end
 
   def test_completed_pods_are_counted_through_uncounted_terminated_pods_and_finalizer_removal
@@ -42,24 +44,31 @@ class M3JobControllerTest < Minitest::Test
     result = controller.plan(job, pods: [done], now: NOW)
 
     statuses = result.operations.select { |operation| operation.action == :status_update }
+
     assert_equal 2, statuses.length, "interim and final status writes"
     interim = statuses.first.patch
+
     assert_equal ["uid-batch-a"], interim.dig("uncountedTerminatedPods", "succeeded")
     assert_equal "SuccessCriteriaMet", interim.fetch("conditions").first.fetch("type")
     removal = result.updates.find { |operation| operation.resource.kind == "Pod" }
+
     assert_equal [], removal.object.dig("metadata", "finalizers")
     final = result.status
+
     assert_equal 1, final.fetch("succeeded")
     assert_equal({}, final.fetch("uncountedTerminatedPods"))
     types = final.fetch("conditions").map { |condition| condition.fetch("type") }
+
     assert_equal %w[SuccessCriteriaMet Complete], types
     complete = final.fetch("conditions").last
+
     assert_equal "CompletionsReached", complete.fetch("reason")
     assert_equal "Reached expected number of succeeded pods", complete.fetch("message")
     assert_equal complete.fetch("lastTransitionTime"), final.fetch("completionTime")
     assert_includes result.events.map { |event| event.fetch("reason") }, "Completed"
 
     finished_job = job.merge("status" => final)
+
     assert_empty controller.plan(finished_job, pods: [done], now: NOW + 60).operations
   end
 
@@ -70,12 +79,14 @@ class M3JobControllerTest < Minitest::Test
     active = pod("batch-run", job, phase: "Running", finalizer: true)
     result = controller.plan(job, pods: failed + [active], now: NOW)
 
-    assert_equal ["batch-run"], result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+    assert_equal(["batch-run"], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
     interim = result.operations.find { |operation| operation.action == :status_update }.patch
     failure_target = interim.fetch("conditions").find { |condition| condition.fetch("type") == "FailureTarget" }
+
     assert_equal "BackoffLimitExceeded", failure_target.fetch("reason")
     assert_equal "Job has reached the specified backoff limit", failure_target.fetch("message")
     final = result.status
+
     assert_equal 3, final.fetch("failed"), "active pods are counted failed once the Job fails"
     assert_equal 1, final.fetch("terminating")
     refute final.fetch("conditions").any? { |condition| condition.fetch("type") == "Failed" },
@@ -83,6 +94,7 @@ class M3JobControllerTest < Minitest::Test
 
     second = controller.plan(job.merge("status" => final), pods: failed.map { |pod| strip_finalizer(pod) }, now: NOW + 1)
     types = second.status.fetch("conditions").map { |condition| condition.fetch("type") }
+
     assert_equal %w[FailureTarget Failed], types
     assert_equal "BackoffLimitExceeded", second.status.fetch("conditions").last.fetch("reason")
     assert_equal 0, second.status.fetch("terminating")
@@ -98,6 +110,7 @@ class M3JobControllerTest < Minitest::Test
     assert_in_delta 15.0, result.requeue_after, 0.001, "two failures: 20s backoff minus 5s elapsed"
 
     later = controller.plan(job.merge("status" => {"failed" => 2}), pods: failed, now: NOW + 16)
+
     assert_equal 1, later.creates.length
     assert_nil later.requeue_after
   end
@@ -106,10 +119,12 @@ class M3JobControllerTest < Minitest::Test
     job = job(completions: 4, parallelism: 1, backoff_limit: 20)
     many = (1..8).map { |index| pod("batch-f#{index}", job, phase: "Failed", finalizer: false, finished_at: NOW - 60) }
     capped = controller.plan(job.merge("status" => {"failed" => 8}), pods: many, now: NOW)
+
     assert_in_delta 540.0, capped.requeue_after, 0.001
 
     success = pod("batch-ok", job, phase: "Succeeded", finalizer: false, finished_at: NOW - 30)
     reset = controller.plan(job.merge("status" => {"failed" => 8, "succeeded" => 1}), pods: many + [success], now: NOW)
+
     assert_equal 1, reset.creates.length
   end
 
@@ -119,12 +134,15 @@ class M3JobControllerTest < Minitest::Test
     result = controller.plan(job, pods: [existing], now: NOW)
 
     indexes = result.creates.map { |create| Integer(create.object.dig("metadata", "annotations", INDEX)) }
+
     assert_equal [0, 2], indexes
     first = result.creates.first.object
+
     assert_equal "batch-0-", first.dig("metadata", "generateName")
     assert_equal "0", first.dig("metadata", "labels", INDEX)
     assert_equal "batch-0", first.dig("spec", "hostname")
     env = first.dig("spec", "containers", 0, "env").first
+
     assert_equal "JOB_COMPLETION_INDEX", env.fetch("name")
     assert_equal "metadata.annotations['#{INDEX}']", env.dig("valueFrom", "fieldRef", "fieldPath")
   end
@@ -134,38 +152,42 @@ class M3JobControllerTest < Minitest::Test
     pods = [pod("batch-0-a", job, phase: "Succeeded", finalizer: true, index: 0),
             pod("batch-2-a", job, phase: "Succeeded", finalizer: true, index: 2)]
     partial = controller.plan(job, pods: pods, now: NOW)
+
     assert_equal "0,2", partial.status.fetch("completedIndexes")
     assert_equal 2, partial.status.fetch("succeeded")
-    assert_equal [1], partial.creates.map { |create| Integer(create.object.dig("metadata", "annotations", INDEX)) }
+    assert_equal([1], partial.creates.map { |create| Integer(create.object.dig("metadata", "annotations", INDEX)) })
 
     job_with_status = job.merge("status" => partial.status)
     middle = pod("batch-1-a", job, phase: "Succeeded", finalizer: true, index: 1)
     complete = controller.plan(job_with_status, pods: pods.map { |pod| strip_finalizer(pod) } + [middle], now: NOW + 5)
+
     assert_equal "0-2", complete.status.fetch("completedIndexes")
     assert_equal 3, complete.status.fetch("succeeded")
-    assert_equal %w[SuccessCriteriaMet Complete], complete.status.fetch("conditions").map { |condition| condition.fetch("type") }
+    assert_equal(%w[SuccessCriteriaMet Complete], complete.status.fetch("conditions").map { |condition| condition.fetch("type") })
   end
 
   def test_backoff_limit_per_index_marks_failed_indexes_and_fails_the_job_at_max_failed_indexes
     job = job(completions: 2, parallelism: 2, completion_mode: "Indexed", backoff_limit_per_index: 1, max_failed_indexes: 0)
     failed_once = pod("batch-0-a", job, phase: "Failed", finalizer: true, index: 0, finished_at: NOW - 30,
-                      annotations: {"batch.kubernetes.io/job-index-failure-count" => "1"})
+                                        annotations: {"batch.kubernetes.io/job-index-failure-count" => "1"})
     result = controller.plan(job, pods: [failed_once], now: NOW)
 
     assert_equal "0", result.status.fetch("failedIndexes")
     reasons = result.status.fetch("conditions").map { |condition| condition.fetch("reason") }
+
     assert_includes reasons, "MaxFailedIndexesExceeded"
   end
 
   def test_backoff_limit_per_index_replacement_carries_failure_count_annotation
     job = job(completions: 1, parallelism: 1, completion_mode: "Indexed", backoff_limit_per_index: 3)
     failed = pod("batch-0-a", job, phase: "Failed", finalizer: true, index: 0, finished_at: NOW - 60,
-                 annotations: {"batch.kubernetes.io/job-index-failure-count" => "1"})
+                                   annotations: {"batch.kubernetes.io/job-index-failure-count" => "1"})
     result = controller.plan(job, pods: [failed], now: NOW)
 
     assert_empty result.updates.select { |operation| operation.resource.kind == "Pod" },
                  "finalizer removal is delayed until the replacement carries the count"
     replacement = result.creates.first.object
+
     assert_equal "2", replacement.dig("metadata", "annotations", "batch.kubernetes.io/job-index-failure-count")
   end
 
@@ -176,8 +198,9 @@ class M3JobControllerTest < Minitest::Test
     ]}
     job = job(completions: 2, parallelism: 2, backoff_limit: 6, pod_failure_policy: policy)
     disrupted = pod("batch-disrupted", job, phase: "Failed", finalizer: true, finished_at: NOW - 10,
-                    conditions: [{"type" => "DisruptionTarget", "status" => "True"}])
+                                            conditions: [{"type" => "DisruptionTarget", "status" => "True"}])
     ignored = controller.plan(job, pods: [disrupted], now: NOW)
+
     assert_equal 0, ignored.status.fetch("failed"), "Ignore rule must not count towards backoffLimit"
     assert_equal 2, ignored.creates.length
 
@@ -185,10 +208,11 @@ class M3JobControllerTest < Minitest::Test
     failed = controller.plan(job, pods: [crashed], now: NOW)
     interim = failed.operations.find { |operation| operation.action == :status_update }.patch
     target = interim.fetch("conditions").find { |condition| condition.fetch("type") == "FailureTarget" }
+
     assert_equal "PodFailurePolicy", target.fetch("reason")
     assert_equal "Container job for pod default/batch-crash failed with exit code 42 matching FailJob rule at index 1",
                  target.fetch("message")
-    assert_equal %w[FailureTarget Failed], failed.status.fetch("conditions").map { |condition| condition.fetch("type") }
+    assert_equal(%w[FailureTarget Failed], failed.status.fetch("conditions").map { |condition| condition.fetch("type") })
   end
 
   def test_success_policy_marks_success_criteria_met_and_deletes_remaining_pods
@@ -198,9 +222,10 @@ class M3JobControllerTest < Minitest::Test
             pod("batch-1-a", job, phase: "Running", finalizer: true, index: 1)]
     result = controller.plan(job, pods: pods, now: NOW)
 
-    assert_equal ["batch-1-a"], result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+    assert_equal(["batch-1-a"], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
     interim = result.operations.find { |operation| operation.action == :status_update }.patch
     met = interim.fetch("conditions").find { |condition| condition.fetch("type") == "SuccessCriteriaMet" }
+
     assert_equal "SuccessPolicy", met.fetch("reason")
     assert_equal "Matched rules at index 0", met.fetch("message")
     assert_equal 0, result.status.fetch("failed"), "running pods deleted after SuccessCriteriaMet are not failures"
@@ -210,18 +235,21 @@ class M3JobControllerTest < Minitest::Test
     job = job(completions: 2, parallelism: 2, suspend: true)
     running = pod("batch-run", job, phase: "Running", finalizer: true)
     suspended = controller.plan(job.merge("status" => {"startTime" => (NOW - 100).iso8601(6)}), pods: [running], now: NOW)
-    assert_equal ["batch-run"], suspended.deletes.map { |operation| operation.object.dig("metadata", "name") }
+
+    assert_equal(["batch-run"], suspended.deletes.map { |operation| operation.object.dig("metadata", "name") })
     condition = suspended.status.fetch("conditions").first
-    assert_equal ["Suspended", "True", "JobSuspended", "Job suspended"],
-                 %w[type status reason message].map { |key| condition.fetch(key) }
+
+    assert_equal(["Suspended", "True", "JobSuspended", "Job suspended"],
+                 %w[type status reason message].map { |key| condition.fetch(key) })
     refute suspended.status.key?("startTime")
     assert_includes suspended.events.map { |event| event.fetch("reason") }, "Suspended"
 
     resumed_job = job.merge("spec" => job.fetch("spec").merge("suspend" => false), "status" => suspended.status)
     resumed = controller.plan(resumed_job, pods: [], now: NOW + 30)
     condition = resumed.status.fetch("conditions").first
-    assert_equal ["Suspended", "False", "JobResumed", "Job resumed"],
-                 %w[type status reason message].map { |key| condition.fetch(key) }
+
+    assert_equal(["Suspended", "False", "JobResumed", "Job resumed"],
+                 %w[type status reason message].map { |key| condition.fetch(key) })
     assert_equal (NOW + 30).iso8601(6), resumed.status.fetch("startTime")
     assert_equal 2, resumed.creates.length
   end
@@ -231,11 +259,14 @@ class M3JobControllerTest < Minitest::Test
     started = job.merge("status" => {"startTime" => (NOW - 40).iso8601(6), "active" => 1})
     running = pod("batch-run", job, phase: "Running", finalizer: true)
     pending = controller.plan(started, pods: [running], now: NOW)
+
     assert_in_delta 60.0, pending.requeue_after, 0.001
 
     expired = controller.plan(started, pods: [running], now: NOW + 61)
-    assert_equal ["batch-run"], expired.deletes.map { |operation| operation.object.dig("metadata", "name") }
+
+    assert_equal(["batch-run"], expired.deletes.map { |operation| operation.object.dig("metadata", "name") })
     target = expired.status.fetch("conditions").find { |condition| condition.fetch("type") == "FailureTarget" }
+
     assert_equal "DeadlineExceeded", target.fetch("reason")
     assert_equal "Job was active longer than specified deadline", target.fetch("message")
   end
@@ -251,7 +282,10 @@ class M3JobControllerTest < Minitest::Test
   end
 
   def test_externally_managed_and_finished_jobs_are_left_untouched
-    managed = job(completions: 1, parallelism: 1).merge("spec" => job(completions: 1, parallelism: 1).fetch("spec").merge("managedBy" => "example.com/other"))
+    managed = job(completions: 1,
+                  parallelism: 1).merge("spec" => job(completions: 1,
+                                                      parallelism: 1).fetch("spec").merge("managedBy" => "example.com/other"))
+
     assert_empty controller.plan(managed, pods: [], now: NOW).operations
   end
 
@@ -261,7 +295,7 @@ class M3JobControllerTest < Minitest::Test
     running = pod("batch-run", job, phase: "Running", finalizer: true)
     result = controller.plan(job, pods: [running, unscheduled], now: NOW)
 
-    assert_equal ["batch-unsched"], result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+    assert_equal(["batch-unsched"], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
     assert_empty result.creates
   end
 
@@ -277,6 +311,7 @@ class M3JobControllerTest < Minitest::Test
     finished = Controller::JobController.new(clock: -> { NOW }).plan(batch, pods: [done])
     finished.operations.each { |operation| operation.notify(true) }
     text = registry.render
+
     assert_includes text, %(job_controller_job_syncs_total{action="pods_created",completion_mode="NonIndexed",result="success"} 1)
     assert_includes text, %(job_controller_job_pods_creation_total{reason="new",status="succeeded"} 1)
     assert_match(/job_controller_job_pods_finished_total\{completion_mode="NonIndexed",result="succeeded"\} [1-9]/, text)
@@ -298,13 +333,16 @@ class M3JobControllerTest < Minitest::Test
     adapter = Controller::StoreAdapter.new(store)
 
     result = controller.plan_orphans("default/batch", store: adapter)
+
     refute_nil result, "an orphaned pod must be planned for finalizer removal"
     update = result.updates.fetch(0)
+
     assert_equal "Pod", update.resource.kind
     assert_equal [], update.object.dig("metadata", "finalizers")
 
     # With the Job present the Pod is not an orphan and the normal sync owns it.
     store.create(owner, descriptor: Controller::ResourceDescriptor.parse("Job"))
+
     assert_nil controller.plan_orphans("default/batch", store: adapter)
   end
 
@@ -316,10 +354,12 @@ class M3JobControllerTest < Minitest::Test
     registry = Rubernetes::Controller.default_registry
     definition = registry.fetch("job-controller")
     wrapper = Controller::DefinitionController.new(definition, store: nil)
-    assert wrapper.orphan_cleanup?, "job-controller must advertise orphan cleanup through its wrapper"
+
+    assert_predicate wrapper, :orphan_cleanup?, "job-controller must advertise orphan cleanup through its wrapper"
 
     plain = Controller::DefinitionController.new(registry.fetch("deployment-controller"), store: nil)
-    refute plain.orphan_cleanup?, "a controller without orphan work must not advertise any"
+
+    refute_predicate plain, :orphan_cleanup?, "a controller without orphan work must not advertise any"
   end
 
   def controller
@@ -364,10 +404,10 @@ class M3JobControllerTest < Minitest::Test
     metadata["deletionTimestamp"] = NOW.iso8601(6) if deleting
     status = {"phase" => phase}
     status["conditions"] = conditions || [{"type" => "Ready", "status" => phase == "Running" ? "True" : "False",
-                                             "lastTransitionTime" => (finished_at || NOW - 300).iso8601(6)}]
+                                           "lastTransitionTime" => (finished_at || (NOW - 300)).iso8601(6)}]
     if finished_at || exit_code
       status["containerStatuses"] = [{"name" => "job", "state" => {"terminated" => {
-        "exitCode" => exit_code || (phase == "Succeeded" ? 0 : 1), "finishedAt" => (finished_at || NOW - 10).iso8601(6)
+        "exitCode" => exit_code || (phase == "Succeeded" ? 0 : 1), "finishedAt" => (finished_at || (NOW - 10)).iso8601(6)
       }}}]
     end
     spec = {"containers" => [{"name" => "job", "image" => "example/job:1"}]}

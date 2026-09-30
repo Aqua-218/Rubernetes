@@ -13,7 +13,8 @@ class CRISupportCheckTest < Minitest::Test
 
   class Client
     def initialize(answer) = @answer = answer
-    def runtime(method, _request = {}, timeout: nil)
+
+    def runtime(_method, _request = {}, timeout: nil)
       raise @answer if @answer.is_a?(Exception)
 
       @answer
@@ -26,10 +27,14 @@ class CRISupportCheckTest < Minitest::Test
     fresh = Backend.new(Client.new({"linux" => {"cgroup_driver" => "SYSTEMD"}}), "kata")
     runtime = Struct.new(:backends).new({"runc" => old, "kata" => fresh})
     flagged = Node::CRISupportCheck.run(runtime: runtime, metrics: metrics)
+
     assert_equal ["runc"], flagged.map(&:handler)
     assert_match(/kubelet_cri_losing_support\{version="1.37.0"\} 1/, metrics.registry.render_own)
-    refute_match(/kubelet_cri_losing_support/, Node::KubeletMetrics.new(node_name: "w").registry.render_own, "absent until a runtime is flagged")
+    refute_match(/kubelet_cri_losing_support/, Node::KubeletMetrics.new(node_name: "w").registry.render_own,
+                 "absent until a runtime is flagged")
     down = Backend.new(Client.new(Rubernetes::Runtime::CRI::Client::Error.new("connection refused")), "runc")
-    assert_empty Node::CRISupportCheck.run(runtime: Struct.new(:backends).new({"runc" => down}), metrics: Node::KubeletMetrics.new(node_name: "w")), "a transport failure is not a deprecation"
+
+    assert_empty Node::CRISupportCheck.run(runtime: Struct.new(:backends).new({"runc" => down}), metrics: Node::KubeletMetrics.new(node_name: "w")),
+                 "a transport failure is not a deprecation"
   end
 end

@@ -36,7 +36,8 @@ module Rubernetes
           request_id: request.request_id
         )
         result = result[:body] || result["body"] if result.is_a?(Hash) && (result.key?(:body) || result.key?("body"))
-        stream = normalize_stream(result, request, metadata: {operation: "logs", follow: follow, since: since, tail: tail, stream: stream_name})
+        stream = normalize_stream(result, request,
+                                  metadata: {operation: "logs", follow: follow, since: since, tail: tail, stream: stream_name})
         if bounded_source?(result, follow: follow) && !tail.nil?
           stream = Stream.new(
             source: tail_bytes(result, tail),
@@ -151,6 +152,7 @@ module Rubernetes
 
       def tail_bytes(value, tail)
         return "".b if tail == 0
+
         bytes = if value.is_a?(Array)
                   value.join
                 elsif value.is_a?(String)

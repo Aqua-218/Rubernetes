@@ -127,9 +127,8 @@ module Rubernetes
           # protobuf DELETE body undecodable, so propagationPolicy=Orphan was
           # silently read as the default and the garbage collector removed
           # the ReplicaSet the spec expected to keep.
-          if META_KINDS.include?(kind.to_s)
-            return registry.resolve("#{META_PACKAGE}.#{kind}")
-          end
+          return registry.resolve("#{META_PACKAGE}.#{kind}") if META_KINDS.include?(kind.to_s)
+
           package = GROUP_PACKAGES[group]
           return registry.resolve("#{package}.#{version}.#{kind}") if package
           return registry.resolve_gvk(group: "", version: version, kind: kind.to_s) if group.empty?
@@ -209,9 +208,7 @@ module Rubernetes
           api_version = string_value(object, "apiVersion")
           kind = string_value(object, "kind")
           descriptor = descriptor_for(api_version: api_version, kind: kind)
-          if descriptor.nil?
-            raise UnsupportedKind, "#{api_version.inspect}, Kind=#{kind.inspect} has no protobuf representation"
-          end
+          raise UnsupportedKind, "#{api_version.inspect}, Kind=#{kind.inspect} has no protobuf representation" if descriptor.nil?
 
           raw = encode_message(descriptor, object)
           # kube-apiserver leaves runtime.Unknown.contentType/contentEncoding
@@ -243,9 +240,7 @@ module Rubernetes
             kind = expected.fetch(:kind).to_s if kind.empty?
           end
           descriptor = descriptor_for(api_version: api_version, kind: kind)
-          if descriptor.nil?
-            raise UnsupportedKind, "no kind #{kind.inspect} is registered for version #{api_version.inspect} in scheme"
-          end
+          raise UnsupportedKind, "no kind #{kind.inspect} is registered for version #{api_version.inspect} in scheme" if descriptor.nil?
 
           result = {"kind" => kind, "apiVersion" => api_version}
           result.merge!(decode_message(descriptor, envelope.raw))
@@ -491,9 +486,7 @@ module Rubernetes
 
             return encode_repeated(field, value)
           end
-          if field.message?
-            return encode_message_field(parent, field, value, embedded_raw: embedded_raw)
-          end
+          return encode_message_field(parent, field, value, embedded_raw: embedded_raw) if field.message?
           return encode_absent(parent, field) if value.nil?
 
           Protobuf.encode_field(field.number, scalar_for_wire(field.type, value, parent, field), type: field.type)
@@ -785,7 +778,7 @@ module Rubernetes
               raise EncodeError, "illegal base64 data in field #{field.json_name}"
             end
           when :bool
-            raise EncodeError, "field #{field.json_name} must be a boolean" unless value == true || value == false
+            raise EncodeError, "field #{field.json_name} must be a boolean" unless [true, false].include?(value)
 
             value
           when *INTEGER_TYPES
@@ -872,7 +865,7 @@ module Rubernetes
             schema ? decode_message(registry.resolve(JSON_SCHEMA_PROPS), schema[:value]) : nil
           when VERBS, *EXTRA_VALUES
             Protobuf.parse_fields(bytes).select { |field| field[:number] == 1 }
-                    .map { |field| utf8(field[:value]) }
+              .map { |field| utf8(field[:value]) }
           else
             decode_message(type, bytes)
           end
@@ -926,7 +919,7 @@ module Rubernetes
 
         def parse_json(bytes)
           ::JSON.parse(bytes.dup.force_encoding(Encoding::UTF_8),
-                                                                 max_nesting: Codec::DEFAULT_MAX_DEPTH)
+                       max_nesting: Codec::DEFAULT_MAX_DEPTH)
         rescue ::JSON::ParserError => error
           raise DecodeError, "embedded JSON is invalid: #{error.message}"
         end

@@ -49,6 +49,7 @@ class MatchLabelKeysTest < Minitest::Test
         issues = Validator.send(:label_keys_errors, template, "PodTemplate", :create, nil)
         object = template
       end
+
       assert_equal (want["errors"] || []), render(issues, object), entry["name"]
     end
   end

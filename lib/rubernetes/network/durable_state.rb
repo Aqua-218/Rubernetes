@@ -78,9 +78,7 @@ module Rubernetes
       def safe_path(path)
         candidate = File.expand_path(String(path))
         raise ValidationError, "network state path must not be a directory" if File.directory?(candidate)
-        if File.symlink?(candidate)
-          raise ValidationError, "network state path must not be a symlink"
-        end
+        raise ValidationError, "network state path must not be a symlink" if File.symlink?(candidate)
 
         validate_parent_path!(File.dirname(candidate))
 
@@ -166,6 +164,7 @@ module Rubernetes
       def initialize(path, fsync: true, clock: -> { Time.now.utc })
         @path = File.expand_path(String(path))
         raise ValidationError, "network journal path must not be a symlink" if File.symlink?(@path)
+
         validate_parent_path!(File.dirname(@path))
         @fsync = fsync
         @clock = clock
@@ -224,14 +223,13 @@ module Rubernetes
         return [] unless File.file?(@path)
 
         File.foreach(@path).with_index(1).map do |line, number|
-          begin
-            value = JSON.parse(line)
-            raise JSON::ParserError, "event is not an object" unless value.is_a?(Hash)
-            raise JSON::ParserError, "invalid event sequence" unless value.fetch("sequence") == number
-            value
-          rescue JSON::ParserError, KeyError, TypeError => error
-            raise DurabilityError, "network journal line #{number} is invalid: #{error.message}"
-          end
+          value = JSON.parse(line)
+          raise JSON::ParserError, "event is not an object" unless value.is_a?(Hash)
+          raise JSON::ParserError, "invalid event sequence" unless value.fetch("sequence") == number
+
+          value
+        rescue JSON::ParserError, KeyError, TypeError => error
+          raise DurabilityError, "network journal line #{number} is invalid: #{error.message}"
         end
       rescue SystemCallError => error
         raise DurabilityError, "network journal read failed at #{@path}: #{error.message}"

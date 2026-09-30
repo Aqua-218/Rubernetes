@@ -64,8 +64,9 @@ class HPAControllerUpstreamTest < Minitest::Test
   def test_scale_up
     metrics = FakeMetrics.new("web-0" => 300, "web-1" => 500, "web-2" => 700)
     result = controller(metrics, deployment(3)).plan(hpa, pods: pods(3))
+
     assert_equal 5, result.operations.find { |operation| operation.action == :update }.object.dig("spec", "replicas")
-    assert_equal ["SuccessfulRescale"], result.events.map { |event| event["reason"] }
+    assert_equal(["SuccessfulRescale"], result.events.map { |event| event["reason"] })
     assert_equal "New size: 5; reason: cpu resource utilization (percentage of request) above target", result.events.first["message"]
     assert_equal %w[True SucceededRescale], condition(result, "AbleToScale")
     assert_equal %w[True ValidMetricFound], condition(result, "ScalingActive")
@@ -79,11 +80,15 @@ class HPAControllerUpstreamTest < Minitest::Test
   def test_scale_down_and_its_stabilization
     metrics = FakeMetrics.new("web-0" => 100, "web-1" => 300, "web-2" => 500, "web-3" => 250, "web-4" => 250)
     result = controller(metrics, deployment(5), history: []).plan(hpa(target: 50), pods: pods(5))
+
     assert_equal 3, result.operations.find { |operation| operation.action == :update }.object.dig("spec", "replicas")
     assert_equal "New size: 3; reason: All metrics below target", result.events.first["message"]
 
     stabilized = controller(metrics, deployment(5)).plan(hpa(target: 50), pods: pods(5))
-    assert_empty stabilized.operations.select { |operation| operation.action == :update }, "the initial recommendation (5) is within the window"
+
+    assert_empty stabilized.operations.select { |operation|
+      operation.action == :update
+    }, "the initial recommendation (5) is within the window"
     assert_equal %w[True ScaleDownStabilized], condition(stabilized, "AbleToScale")
   end
 
@@ -91,20 +96,24 @@ class HPAControllerUpstreamTest < Minitest::Test
     metrics = FakeMetrics.new({})
     metrics.error = "no metrics returned from resource metrics API"
     result = controller(metrics, deployment(3)).plan(hpa, pods: pods(3))
-    assert_empty result.operations.select { |operation| operation.action == :update }
-    assert_equal %w[FailedGetResourceMetric FailedComputeMetricsReplicas], result.events.map { |event| event["reason"] }
-    assert_equal ["False", "FailedGetResourceMetric"], condition(result, "ScalingActive")
+
+    assert_empty(result.operations.select { |operation| operation.action == :update })
+    assert_equal(%w[FailedGetResourceMetric FailedComputeMetricsReplicas], result.events.map { |event| event["reason"] })
+    assert_equal %w[False FailedGetResourceMetric], condition(result, "ScalingActive")
     message = result.status["conditions"].find { |entry| entry["type"] == "ScalingActive" }["message"]
+
     assert_equal "the HPA was unable to compute the replica count: failed to get cpu utilization: unable to get metrics for resource cpu: " \
                  "no metrics returned from resource metrics API", message
   end
 
   def test_zero_replicas_disable_scaling_and_bounds_are_enforced
     result = controller(FakeMetrics.new({}), deployment(0)).plan(hpa, pods: [])
-    assert_equal ["False", "ScalingDisabled"], condition(result, "ScalingActive")
-    assert_empty result.operations.select { |operation| operation.action == :update }
+
+    assert_equal %w[False ScalingDisabled], condition(result, "ScalingActive")
+    assert_empty(result.operations.select { |operation| operation.action == :update })
 
     above = controller(FakeMetrics.new({}), deployment(9)).plan(hpa, pods: pods(9))
+
     assert_equal 6, above.operations.find { |operation| operation.action == :update }.object.dig("spec", "replicas")
     assert_equal "New size: 6; reason: Current number of replicas above Spec.MaxReplicas", above.events.first["message"]
   end
@@ -126,6 +135,7 @@ class HPAControllerUpstreamTest < Minitest::Test
                 "scaleDown" => {"selectPolicy" => "Max", "policies" => [{"type" => "Percent", "value" => 100, "periodSeconds" => 15}]}}
     metrics = FakeMetrics.new("web-0" => 10_000)
     result = controller(metrics, deployment(1), history: []).plan(hpa(min: 1, max: 20, target: 50, behavior: behavior), pods: pods(1))
+
     assert_equal 5, result.operations.find { |operation| operation.action == :update }.object.dig("spec", "replicas"), "max(1+4, 1*2)"
     assert_equal %w[True ScaleUpLimit], condition(result, "ScalingLimited")
   end
@@ -134,9 +144,11 @@ class HPAControllerUpstreamTest < Minitest::Test
     no_request = pods(1)
     no_request[0]["spec"]["containers"][0]["resources"] = {}
     result = controller(FakeMetrics.new("web-0" => 100), deployment(1)).plan(hpa(min: 1), pods: no_request)
+
     assert_includes result.status["conditions"].find { |entry| entry["type"] == "ScalingActive" }["message"],
                     "missing request for cpu in container c of Pod web-0"
   end
+
   # podautoscaler/monitor: reconciliations, metric computations, desired
   # replicas and the number of HPAs.
   def test_monitor_metrics
@@ -149,13 +161,17 @@ class HPAControllerUpstreamTest < Minitest::Test
     metrics.error = "no metrics"
     subject.plan(hpa, pods: pods(3))
     text = registry.render
+
     assert_includes text, %(horizontal_pod_autoscaler_controller_reconciliations_total{action="scale_up",error="none"} 1)
     assert_includes text, %(horizontal_pod_autoscaler_controller_reconciliations_total{action="none",error="internal"} 1)
-    assert_includes text, %(horizontal_pod_autoscaler_controller_metric_computation_total{action="scale_up",error="none",metric_type="Resource"} 1)
-    assert_includes text, %(horizontal_pod_autoscaler_controller_metric_computation_total{action="none",error="internal",metric_type="Resource"} 1)
+    assert_includes text,
+                    %(horizontal_pod_autoscaler_controller_metric_computation_total{action="scale_up",error="none",metric_type="Resource"} 1)
+    assert_includes text,
+                    %(horizontal_pod_autoscaler_controller_metric_computation_total{action="none",error="internal",metric_type="Resource"} 1)
     assert_includes text, %(horizontal_pod_autoscaler_controller_desired_replicas{hpa_name="web-hpa",namespace="ns"} 5)
     assert_includes text, "horizontal_pod_autoscaler_controller_num_horizontal_pod_autoscalers 1"
     subject.plan_orphans("ns/web-hpa")
+
     assert_includes registry.render, "horizontal_pod_autoscaler_controller_num_horizontal_pod_autoscalers 0"
   ensure
     Controller.metrics = nil

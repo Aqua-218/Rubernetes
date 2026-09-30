@@ -35,13 +35,16 @@ module M9OperationsProbe
                           %w[unexpected_process_exits resource_leaks stuck_queues lost_watches lost_commits]
                             .all? { |key| Array(soak[key]).empty? },
               "findings" => %w[unexpected_process_exits resource_leaks stuck_queues lost_watches lost_commits]
-                              .to_h { |key| [key, Array(soak[key]).length] }}
+                .to_h { |key| [key, Array(soak[key]).length] }}
 
     cases << {"id" => "clean_host_reproduction",
               "passed" => reproduction["available"] == true && reproduction["passed"] == true,
-              "detail" => reproduction["available"] ? nil :
-                          "clean-host-reproduction.json is missing: exit criterion 8 needs a clean x86_64 host that " \
-                          "installs only the release artifact, creates a cluster and runs every M8 gate"}
+              "detail" => if reproduction["available"]
+                            nil
+                          else
+                            "clean-host-reproduction.json is missing: exit criterion 8 needs a clean x86_64 host that " \
+                              "installs only the release artifact, creates a cluster and runs every M8 gate"
+                          end}
 
     S.emit(S.report(kind: "m9_operations", measurement_level: "integration_tested",
                     started_at: started_at, cases: cases))

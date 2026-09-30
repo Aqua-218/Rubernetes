@@ -37,9 +37,7 @@ module KubernetesBootstrapImporter
     return object unless object.is_a?(Hash)
 
     copy = object.dup
-    if copy["metadata"].is_a?(Hash)
-      copy["metadata"] = copy["metadata"].reject { |key, _| VOLATILE_METADATA.include?(key) }
-    end
+    copy["metadata"] = copy["metadata"].reject { |key, _| VOLATILE_METADATA.include?(key) } if copy["metadata"].is_a?(Hash)
     if copy["items"].is_a?(Array)
       copy["items"] = copy["items"].map { |item| strip(item) }
       copy.delete("metadata")
@@ -57,9 +55,14 @@ module KubernetesBootstrapImporter
   def discovery(client)
     documents = {}
     %w[/api /apis].each { |path| documents[path] = client.request(method: :get, path: path).body }
-    aggregated = client.request(method: :get, path: "/apis", headers: {"accept" => "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList"})
+    aggregated = client.request(method: :get, path: "/apis",
+                                headers: {"accept" => "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList"})
     documents["/apis(aggregated)"] = aggregated.body
-    groups = documents["/apis"].fetch("groups", []).flat_map { |group| group.fetch("versions", []).map { |version| version.fetch("groupVersion") } }
+    groups = documents["/apis"].fetch("groups", []).flat_map do |group|
+      group.fetch("versions", []).map do |version|
+        version.fetch("groupVersion")
+      end
+    end
     (["v1"] + groups).each do |group_version|
       path = group_version == "v1" ? "/api/v1" : "/apis/#{group_version}"
       documents[path] = client.request(method: :get, path: path).body
@@ -121,7 +124,9 @@ module KubernetesBootstrapImporter
         sleep 2
         return
       end
-      raise "#{path} was not bootstrapped (#{document["items"].length} < #{minimum})" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+        raise "#{path} was not bootstrapped (#{document["items"].length} < #{minimum})"
+      end
 
       sleep 0.5
     end

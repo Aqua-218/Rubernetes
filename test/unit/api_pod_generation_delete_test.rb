@@ -23,9 +23,11 @@ class APIPodGenerationDeleteTest < Minitest::Test
     created = call("POST", "/api/v1/namespaces/ns/pods",
                    {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "p", "generation" => 100},
                     "spec" => {"nodeName" => "n1", "containers" => [{"name" => "c", "image" => "x"}]}})
+
     assert_equal 1, created.body.dig("metadata", "generation")
 
     deleted = call("DELETE", "/api/v1/namespaces/ns/pods/p?gracePeriodSeconds=60")
+
     assert_equal 200, deleted.status
     assert_equal 2, call("GET", "/api/v1/namespaces/ns/pods/p").body.dig("metadata", "generation")
   end

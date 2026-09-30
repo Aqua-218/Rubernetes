@@ -7,7 +7,8 @@ require "rbconfig"
 
 RUNNER = File.expand_path("../../test/conformance/kubernetes/m3_control_plane_chaos/runner.rb", __dir__).freeze
 
-M3ProbeSupport.run_report(kind: "m3_queue_informer_property", adapter_name: "queue-informer-probe", load_production: false) do |_input, errors|
+M3ProbeSupport.run_report(kind: "m3_queue_informer_property", adapter_name: "queue-informer-probe",
+                          load_production: false) do |_input, errors|
   chaos = M3ProbeSupport.run_external_json(
     env_keys: %w[RUBERNETES_M3_QUEUE_CHAOS_COMMAND RUBERNETES_M3_WATCH_CHAOS_COMMAND],
     default_command: [RbConfig.ruby, RUNNER],

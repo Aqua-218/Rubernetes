@@ -2,7 +2,6 @@
 
 require "digest"
 require "monitor"
-require "set"
 
 require_relative "../identity"
 
@@ -94,12 +93,10 @@ module Rubernetes
         end
 
         def results_locked
-          if @elapsed <= 0
-            return Results.new(duration: 0.0, average: Float::NAN, deviation: Float::NAN, min: @min, max: @max)
-          end
+          return Results.new(duration: 0.0, average: Float::NAN, deviation: Float::NAN, min: @min, max: @max) if @elapsed <= 0
 
           average = @integral_x / @elapsed
-          variance = @integral_xx / @elapsed - average * average
+          variance = (@integral_xx / @elapsed) - (average * average)
           deviation = variance >= 0 ? Math.sqrt(variance) : 0.0
           Results.new(duration: @elapsed, average: average, deviation: deviation, min: @min, max: @max)
         end
@@ -131,7 +128,7 @@ module Rubernetes
           @hand_size.times do |i|
             divisor = @deck_size - i
             next_value = hash_value / divisor
-            remainders[i] = hash_value - divisor * next_value
+            remainders[i] = hash_value - (divisor * next_value)
             hash_value = next_value
           end
           hand = []
@@ -164,8 +161,11 @@ module Rubernetes
         STALE_SECONDS = 180.0
         Stats = Struct.new(:count, :average_bytes, :updated_at, keyword_init: true)
 
-        NotFound = Class.new(StandardError)
-        Stale = Class.new(StandardError)
+        class NotFound < StandardError
+        end
+
+        class Stale < StandardError
+        end
 
         # +source+: -> { {"pods" => [count, total_bytes], ...} }
         def initialize(source: nil, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
@@ -177,7 +177,9 @@ module Rubernetes
         end
 
         def set(resource, count, average_bytes)
-          @mutex.synchronize { @counts[resource.to_s] = Stats.new(count: count.to_i, average_bytes: average_bytes.to_i, updated_at: @clock.call) }
+          @mutex.synchronize do
+            @counts[resource.to_s] = Stats.new(count: count.to_i, average_bytes: average_bytes.to_i, updated_at: @clock.call)
+          end
         end
 
         # [count, average_bytes]; raises NotFound / Stale like upstream.
@@ -321,7 +323,12 @@ module Rubernetes
           when "watch"
             send_initial = %w[true 1].include?(query.to_h["sendInitialEvents"].to_s)
             legacy = ["", "0"].include?(query.to_h["resourceVersion"].to_s)
-            send_initial || legacy ? list_estimate(attributes, query || {}, priority_level) : WorkEstimate.new(initial_seats: @minimum_seats)
+            if send_initial || legacy
+              list_estimate(attributes, query || {},
+                            priority_level)
+            else
+              WorkEstimate.new(initial_seats: @minimum_seats)
+            end
           when *MUTATING_VERBS then mutating_estimate(attributes, flow_schema, priority_level)
           else WorkEstimate.new(initial_seats: @minimum_seats)
           end
@@ -407,7 +414,7 @@ module Rubernetes
       class QueueSet
         ESTIMATED_SERVICE_SECONDS = 0.003
         R_DECREMENT = SeatSeconds::MAX / 2
-        HIGH_R = R_DECREMENT + R_DECREMENT / 2
+        HIGH_R = R_DECREMENT + (R_DECREMENT / 2)
 
         class Request
           attr_reader :flow_schema, :distinguisher, :arrival_time, :work, :total_work, :final_work, :queue
@@ -478,7 +485,12 @@ module Rubernetes
           @name = name
           @clock = clock
           @observer = observer
-          @after = after || ->(seconds, &block) { Thread.new { sleep(seconds); block.call } }
+          @after = after || lambda { |seconds, &block|
+            Thread.new do
+              sleep(seconds)
+              block.call
+            end
+          }
           @monitor = Monitor.new
           @condition = @monitor.new_cond
           @queues = []
@@ -511,7 +523,11 @@ module Rubernetes
                 @queue_length_limit = queue_length_limit || @queue_length_limit
                 @hand_size = hand_size || @hand_size
                 @dealer = Dealer.new(desired_queues, [@hand_size, desired_queues].min)
-                @queues.concat(Array.new(desired_queues - @queues.length) { |i| Queue.new(@queues.length + i) }) if desired_queues > @queues.length
+                if desired_queues > @queues.length
+                  @queues.concat(Array.new(desired_queues - @queues.length) do |i|
+                    Queue.new(@queues.length + i)
+                  end)
+                end
               end
             end
             @concurrency_limit = concurrency_limit.to_i
@@ -757,11 +773,11 @@ module Rubernetes
             ds_min = [ds_min, queue.next_dispatch_r - in_progress].min
             ds_max = [ds_max, queue.next_dispatch_r - in_progress].max
             virtual_finish = queue.next_dispatch_r + oldest.total_work
-            if min_virtual_finish.nil? || virtual_finish < min_virtual_finish
-              min_virtual_finish = virtual_finish
-              min_queue = queue
-              min_index = @robin_index
-            end
+            next unless min_virtual_finish.nil? || virtual_finish < min_virtual_finish
+
+            min_virtual_finish = virtual_finish
+            min_queue = queue
+            min_index = @robin_index
           end
           return [nil, nil] if min_queue.nil?
 
@@ -900,7 +916,11 @@ module Rubernetes
             @borrowing_limit_percent = @exempt ? nil : limited["borrowingLimitPercent"]
             queuing = limited.dig("limitResponse", "queuing")
             @reject = !@exempt && limited.dig("limitResponse", "type") == "Reject"
-            @queues = @exempt ? -1 : (queuing ? (queuing["queues"] || DEFAULT_QUEUES).to_i : 0)
+            @queues = if @exempt
+                        -1
+                      else
+                        (queuing ? (queuing["queues"] || DEFAULT_QUEUES).to_i : 0)
+                      end
             @hand_size = queuing ? (queuing["handSize"] || DEFAULT_HAND_SIZE).to_i : 1
             @queue_length_limit = queuing ? (queuing["queueLengthLimit"] || DEFAULT_QUEUE_LENGTH_LIMIT).to_i : 0
             @wait_limit = DEFAULT_REQUEST_WAIT_LIMIT
@@ -930,11 +950,13 @@ module Rubernetes
             @min_seats = @nominal_seats - lendable
             @max_seats = @nominal_seats + borrowing
             @estimator_max_seats = if @queues.positive?
-                                     [1, [(@nominal_seats * PRIORITY_LEVEL_MAX_SEATS_PERCENT).ceil, @nominal_seats / [@hand_size, 1].max].min].max
+                                     [1,
+                                      [(@nominal_seats * PRIORITY_LEVEL_MAX_SEATS_PERCENT).ceil,
+                                       @nominal_seats / [@hand_size, 1].max].min].max
                                    else
                                      0
                                    end
-            @current_seats = @nominal_seats - lendable / 2 if @current_seats.zero?
+            @current_seats = @nominal_seats - (lendable / 2) if @current_seats.zero?
             @controller.set_priority_level_configuration(@name, @nominal_seats, @min_seats, @max_seats, exempt: @exempt)
           end
 
@@ -957,7 +979,8 @@ module Rubernetes
             stats.average = results.average.nan? ? 0.0 : results.average
             stats.stdev = deviation
             envelope = stats.average + deviation
-            stats.smoothed = [envelope, SEAT_DEMAND_SMOOTHING_COEFFICIENT * stats.smoothed + (1 - SEAT_DEMAND_SMOOTHING_COEFFICIENT) * envelope].max
+            stats.smoothed = [envelope,
+                              (SEAT_DEMAND_SMOOTHING_COEFFICIENT * stats.smoothed) + ((1 - SEAT_DEMAND_SMOOTHING_COEFFICIENT) * envelope)].max
             stats
           end
 
@@ -965,14 +988,31 @@ module Rubernetes
 
           def labels(flow_schema) = {"flow_schema" => flow_schema.to_s, "priority_level" => @name}
           def add_requests_in_queues(flow_schema, delta) = @controller.note_queued(labels(flow_schema), delta)
-          def add_seats_in_queues(flow_schema, delta) = @controller.adjust("apiserver_flowcontrol_current_inqueue_seats", labels(flow_schema), delta)
-          def observe_queue_length(flow_schema, length) = @controller.observe("apiserver_flowcontrol_request_queue_length_after_enqueue", length, labels(flow_schema))
+
+          def add_seats_in_queues(flow_schema, delta)
+            @controller.adjust("apiserver_flowcontrol_current_inqueue_seats", labels(flow_schema), delta)
+          end
+
+          def observe_queue_length(flow_schema, length)
+            @controller.observe("apiserver_flowcontrol_request_queue_length_after_enqueue", length, labels(flow_schema))
+          end
+
           def add_requests_executing(flow_schema, delta) = @controller.note_executing(labels(flow_schema), delta)
-          def add_seat_concurrency_in_use(flow_schema, delta) = @controller.adjust("apiserver_flowcontrol_current_executing_seats", labels(flow_schema), delta)
+
+          def add_seat_concurrency_in_use(flow_schema, delta)
+            @controller.adjust("apiserver_flowcontrol_current_executing_seats", labels(flow_schema), delta)
+          end
+
           def add_reject(flow_schema, reason) = @controller.note_rejected(labels(flow_schema), reason)
           def set_current_r(r) = @controller.set("apiserver_flowcontrol_current_r", r, {"priority_level" => @name})
-          def add_dispatch_with_no_accommodation(flow_schema) = @controller.adjust("apiserver_flowcontrol_request_dispatch_no_accommodation_total", labels(flow_schema), 1)
-          def add_epoch_advance(success) = @controller.adjust("apiserver_flowcontrol_epoch_advance_total", {"priority_level" => @name, "success" => success.to_s}, 1)
+
+          def add_dispatch_with_no_accommodation(flow_schema)
+            @controller.adjust("apiserver_flowcontrol_request_dispatch_no_accommodation_total", labels(flow_schema), 1)
+          end
+
+          def add_epoch_advance(success)
+            @controller.adjust("apiserver_flowcontrol_epoch_advance_total", {"priority_level" => @name, "success" => success.to_s}, 1)
+          end
 
           def set_dispatch_metrics(r, s, s_min, s_max, ds_min, ds_max)
             level = {"priority_level" => @name}
@@ -1014,7 +1054,9 @@ module Rubernetes
           @metrics = nil
           @fair_frac = 0.0
           @targets = {}
-          @flow_schemas = Array(flow_schemas).sort_by { |schema| [schema.dig("spec", "matchingPrecedence").to_i, schema.dig("metadata", "name").to_s] }
+          @flow_schemas = Array(flow_schemas).sort_by do |schema|
+            [schema.dig("spec", "matchingPrecedence").to_i, schema.dig("metadata", "name").to_s]
+          end
           @server_seats = read_seats + mutating_seats
           @borrowing_adjustment_seconds = borrowing_adjustment_seconds
           @priority_levels = Array(priority_level_configurations).each_with_object({}) do |plc, levels|
@@ -1045,14 +1087,20 @@ module Rubernetes
           return unless registry
 
           {"apiserver_flowcontrol_dispatched_requests_total" => [:counter, "Number of requests executed by API Priority and Fairness subsystem"],
-           "apiserver_flowcontrol_rejected_requests_total" => [:counter, "Number of requests rejected by API Priority and Fairness subsystem"],
-           "apiserver_flowcontrol_current_executing_requests" => [:gauge, "Number of requests in initial (for a WATCH) or any (for a non-WATCH) execution stage in the API Priority and Fairness subsystem"],
-           "apiserver_flowcontrol_current_inqueue_requests" => [:gauge, "Number of requests currently pending in queues of the API Priority and Fairness subsystem"],
-           "apiserver_flowcontrol_nominal_limit_seats" => [:gauge, "Nominal number of execution seats configured for each priority level"]}.each do |name, (type, help)|
+           "apiserver_flowcontrol_rejected_requests_total" => [:counter,
+                                                               "Number of requests rejected by API Priority and Fairness subsystem"],
+           "apiserver_flowcontrol_current_executing_requests" => [:gauge,
+                                                                  "Number of requests in initial (for a WATCH) or any (for a non-WATCH) execution stage in the API Priority and Fairness subsystem"],
+           "apiserver_flowcontrol_current_inqueue_requests" => [:gauge,
+                                                                "Number of requests currently pending in queues of the API Priority and Fairness subsystem"],
+           "apiserver_flowcontrol_nominal_limit_seats" => [:gauge,
+                                                           "Nominal number of execution seats configured for each priority level"]}.each do |name, (type, help)|
             registry.register(name, type: type, help: help) unless registry.registered?(name)
           end
-          registry.register("apiserver_flowcontrol_request_wait_duration_seconds", type: :histogram, buckets: WAIT_BUCKETS,
-                                                                                   help: "Length of time a request spent waiting in its queue") unless registry.registered?("apiserver_flowcontrol_request_wait_duration_seconds")
+          unless registry.registered?("apiserver_flowcontrol_request_wait_duration_seconds")
+            registry.register("apiserver_flowcontrol_request_wait_duration_seconds", type: :histogram, buckets: WAIT_BUCKETS,
+                                                                                     help: "Length of time a request spent waiting in its queue")
+          end
           register_seat_metrics(registry)
           @priority_levels.each_value do |level|
             set_priority_level_configuration(level.name, level.nominal_seats, level.min_seats, level.max_seats, exempt: level.exempt)
@@ -1081,7 +1129,8 @@ module Rubernetes
                                               denominator: [level.current_seats, 1].max, clock: @clock),
               seats: registry.ratio_gauge("apiserver_flowcontrol_priority_level_seat_utilization", labels.merge("phase" => "executing"),
                                           denominator: [level.current_seats, 1].max, clock: @clock),
-              demand: registry.ratio_gauge("apiserver_flowcontrol_demand_seats", labels, denominator: [level.current_seats, 1].max, clock: @clock)
+              demand: registry.ratio_gauge("apiserver_flowcontrol_demand_seats", labels, denominator: [level.current_seats, 1].max,
+                                                                                         clock: @clock)
             }
           end
           @read_write = %w[waiting executing].product(%w[readOnly mutating]).to_h do |phase, kind|
@@ -1131,7 +1180,7 @@ module Rubernetes
               end
               unless executed
                 raise RejectedError.new("request waited #{level.wait_limit}s for priority level #{level_name}", retry_after: [level.wait_limit.ceil, 1].max,
-                                                                                                             reason: "time-out")
+                                                                                                                reason: "time-out")
               end
             end
           rescue RejectedError
@@ -1264,9 +1313,15 @@ module Rubernetes
           ub_max = lb_max = -Float::MAX
           relative = classes.each_with_index.map do |item, index|
             target = item[:target]
-            raise ArgumentError, "lower bound #{index} is #{item[:lower]} but negative lower bounds are not allowed" if item[:lower].negative?
+            if item[:lower].negative?
+              raise ArgumentError,
+                    "lower bound #{index} is #{item[:lower]} but negative lower bounds are not allowed"
+            end
             raise ArgumentError, "target #{index} is #{target}, which is below its lower bound of #{item[:lower]}" if target < item[:lower]
-            raise ArgumentError, "upper bound #{index} is #{item[:upper]} but should not be less than the lower bound #{item[:lower]}" if item[:upper] < item[:lower]
+            if item[:upper] < item[:lower]
+              raise ArgumentError,
+                    "upper bound #{index} is #{item[:upper]} but should not be less than the lower bound #{item[:lower]}"
+            end
 
             target = MIN_TARGET if target < MIN_TARGET
             low_sum += item[:lower]
@@ -1279,9 +1334,18 @@ module Rubernetes
             lb_max = [lb_max, entry[:lower]].max
             entry
           end
-          raise ArgumentError, "lbRange.max-1=#{lb_max - 1}, which is impossible because lbRange.max can not be greater than 1" if lb_max > 1
-          raise ArgumentError, "lower bounds sum to #{low_sum}, which is higher than the required sum of #{required_sum}" if low_sum - required > EPSILON
-          raise ArgumentError, "upper bounds sum to #{high_sum}, which is lower than the required sum of #{required_sum}" if required - high_sum > EPSILON
+          if lb_max > 1
+            raise ArgumentError,
+                  "lbRange.max-1=#{lb_max - 1}, which is impossible because lbRange.max can not be greater than 1"
+          end
+          if low_sum - required > EPSILON
+            raise ArgumentError,
+                  "lower bounds sum to #{low_sum}, which is higher than the required sum of #{required_sum}"
+          end
+          if required - high_sum > EPSILON
+            raise ArgumentError,
+                  "upper bounds sum to #{high_sum}, which is lower than the required sum of #{required_sum}"
+          end
 
           answer = Array.new(classes.length, 0.0)
           return [answer, 0.0] if required_sum.zero?
@@ -1429,7 +1493,8 @@ module Rubernetes
         def query_of(request)
           return {} unless request.respond_to?(:query_value)
 
-          %w[limit continue resourceVersion resourceVersionMatch labelSelector fieldSelector sendInitialEvents].each_with_object({}) do |name, query|
+          %w[limit continue resourceVersion resourceVersionMatch labelSelector fieldSelector
+             sendInitialEvents].each_with_object({}) do |name, query|
             value = request.query_value(name)
             query[name] = value unless value.nil?
           end
@@ -1488,7 +1553,9 @@ module Rubernetes
               verbs = Array(non_resource_rule["verbs"])
               urls = Array(non_resource_rule["nonResourceURLs"])
               (verbs.include?("*") || verbs.include?(attributes.verb)) &&
-                urls.any? { |url| url == "*" || url == attributes.path || (url.end_with?("*") && attributes.path.to_s.start_with?(url.delete_suffix("*"))) }
+                urls.any? do |url|
+                  url == "*" || url == attributes.path || (url.end_with?("*") && attributes.path.to_s.start_with?(url.delete_suffix("*")))
+                end
             end
           end
         end

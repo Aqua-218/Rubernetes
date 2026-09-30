@@ -66,7 +66,10 @@ module Rubernetes
         @enforce = Array(enforce_node_allocatable).map(&:to_s)
         unknown = @enforce - ENFORCEMENT_KEYS
         raise Error, "invalid enforce_node_allocatable #{unknown.join(", ")}" unless unknown.empty?
-        raise Error, "enforce_node_allocatable \"none\" cannot be combined with other values" if @enforce.include?("none") && @enforce.length > 1
+        if @enforce.include?("none") && @enforce.length > 1
+          raise Error,
+                "enforce_node_allocatable \"none\" cannot be combined with other values"
+        end
 
         @system_reserved_cgroup = system_reserved_cgroup
         @kube_reserved_cgroup = kube_reserved_cgroup
@@ -76,6 +79,7 @@ module Rubernetes
         if @enforce.intersect?(%w[kube-reserved kube-reserved-compressible]) && blank?(kube_reserved_cgroup)
           raise Error, "kube_reserved_cgroup must be set when enforce_node_allocatable has kube-reserved"
         end
+
         @active_pods = active_pods
         @event = event
         @error_handler = error_handler
@@ -174,7 +178,8 @@ module Rubernetes
         @event&.call("Normal", "NodeAllocatableEnforced", "Updated Node Allocatable limit across pods") if first
         limits
       rescue SystemCallError, Error => error
-        @event&.call("Warning", "FailedNodeAllocatableEnforcement", "Failed to update Node Allocatable Limits #{@base.inspect}: #{error.message}")
+        @event&.call("Warning", "FailedNodeAllocatableEnforcement",
+                     "Failed to update Node Allocatable Limits #{@base.inspect}: #{error.message}")
         raise
       end
 
@@ -242,7 +247,7 @@ module Rubernetes
       def self.shares_to_weight(shares)
         return 0 if shares.zero?
 
-        1 + ((shares - 2) * 9999) / 262_142
+        1 + (((shares - 2) * 9999) / 262_142)
       end
 
       def milli_cpu_to_shares(milli) = self.class.milli_cpu_to_shares(milli)

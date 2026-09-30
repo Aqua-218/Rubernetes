@@ -44,7 +44,8 @@ module Rubernetes
         return issues + ordering unless ordering.empty?
 
         Array(old_spec["initContainers"]).each_with_index do |container, index|
-          issues.concat(container_resize_errors(new_spec["initContainers"][index], container, ["spec", "initContainers", index.to_s, "resources"]))
+          issues.concat(container_resize_errors(new_spec["initContainers"][index], container,
+                                                ["spec", "initContainers", index.to_s, "resources"]))
         end
         Array(old_spec["containers"]).each_with_index do |container, index|
           issues.concat(container_resize_errors(new_spec["containers"][index], container, ["spec", "containers", index.to_s, "resources"]))
@@ -52,7 +53,9 @@ module Rubernetes
 
         munged["containers"] = Array(munged["containers"]).each_with_index.map do |container, index|
           dropped = drop_cpu_memory_from_container(container, old_spec["containers"][index])
-          issues << issue(["spec"], :forbidden, "only cpu and memory resources are mutable") unless semantic_equal?(dropped, old_spec["containers"][index])
+          unless semantic_equal?(dropped, old_spec["containers"][index])
+            issues << issue(["spec"], :forbidden, "only cpu and memory resources are mutable")
+          end
           dropped
         end
         if munged.key?("initContainers")
@@ -64,7 +67,9 @@ module Rubernetes
             unless semantic_equal?(dropped, old_container)
               issues << issue(["spec", "initContainers", index.to_s], :forbidden, "only cpu and memory resources for init or sidecar containers are mutable")
             end
-            if modified && !restartable && Array(dropped["resizePolicy"]).any? { |policy| policy["restartPolicy"].to_s == "RestartContainer" }
+            if modified && !restartable && Array(dropped["resizePolicy"]).any? do |policy|
+              policy["restartPolicy"].to_s == "RestartContainer"
+            end
               issues << issue(["spec", "initContainers", index.to_s], :forbidden,
                               "non-sidecar init containers with a resize policy of RestartContainer cannot be resized")
             end
@@ -120,14 +125,14 @@ module Rubernetes
         {"containers" => "containers", "initContainers" => "initContainers"}.each do |field, label|
           new_list = Array(new_spec[field])
           old_list = Array(old_spec[field])
-          if new_list.length != old_list.length
-            issues << issue(["spec", field], :forbidden, "#{label} may not be added or removed on resize")
-          else
+          if new_list.length == old_list.length
             old_list.each_with_index do |container, index|
               next if new_list[index]["name"] == container["name"]
 
               issues << issue(["spec", field, index.to_s, "name"], :forbidden, "#{label} may not be renamed or reordered on resize")
             end
+          else
+            issues << issue(["spec", field], :forbidden, "#{label} may not be added or removed on resize")
           end
         end
         issues
@@ -138,14 +143,17 @@ module Rubernetes
         issues = []
         new_resources = new_container["resources"] || {}
         old_resources = old_container["resources"] || {}
-        issues << issue(path + ["requests"], :forbidden, "resource requests cannot be removed") if resources_removed?(new_resources["requests"], old_resources["requests"])
-        issues << issue(path + ["limits"], :forbidden, "resource limits cannot be removed") if resources_removed?(new_resources["limits"], old_resources["limits"])
+        issues << issue(path + ["requests"], :forbidden, "resource requests cannot be removed") if resources_removed?(
+          new_resources["requests"], old_resources["requests"]
+        )
+        issues << issue(path + ["limits"], :forbidden, "resource limits cannot be removed") if resources_removed?(new_resources["limits"],
+                                                                                                                  old_resources["limits"])
         issues
       end
 
       def resources_removed?(list, old_list)
-        list = list.is_a?(Hash) ? list : {}
-        old_list = old_list.is_a?(Hash) ? old_list : {}
+        list = {} unless list.is_a?(Hash)
+        old_list = {} unless old_list.is_a?(Hash)
         old_list.length > list.length || old_list.keys.any? { |name| !list.key?(name) }
       end
 
@@ -206,7 +214,15 @@ module Rubernetes
           end
         when Array then value.map { |item| semantic_form(item) }
         when String
-          value.match?(/\A[+-]?\d/) ? (Quantity.parse(value).value rescue value) : value
+          if value.match?(/\A[+-]?\d/)
+            begin
+              Quantity.parse(value).value
+            rescue StandardError
+              value
+            end
+          else
+            value
+          end
         else value
         end
       end

@@ -39,12 +39,14 @@ class StatefulSetSemanticRevisionTest < Minitest::Test
 
   def test_a_revision_that_only_lacks_defaults_is_reused
     result = reconcile(set)
+
     assert_equal "web-abc", Controller::Support.name(result[:update])
     assert_empty result[:operations]
   end
 
   def test_a_real_change_still_makes_a_new_revision
     result = reconcile(set(image: "web:2"))
+
     refute_equal "web-abc", Controller::Support.name(result[:update])
     assert(result[:operations].any? { |operation| operation.action == :create })
   end

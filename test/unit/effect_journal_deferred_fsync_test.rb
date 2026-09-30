@@ -15,10 +15,12 @@ class EffectJournalDeferredFsyncTest < Minitest::Test
       journal.record(effect_type: "create", reconcile_key: "ns/b", action: :create, object: {"metadata" => {"name" => "b"}})
 
       assert_equal 2, File.readlines(journal.path).length, "written and flushed immediately"
-      assert journal.fsync_pending?
+      assert_predicate journal, :fsync_pending?
       journal.flush!
-      refute journal.fsync_pending?
+
+      refute_predicate journal, :fsync_pending?
       journal.close
+
       assert_equal 2, File.readlines(journal.path).length
     end
   end
@@ -31,7 +33,7 @@ class EffectJournalDeferredFsyncTest < Minitest::Test
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2
       sleep 0.01 while journal.fsync_pending? && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
 
-      refute journal.fsync_pending?
+      refute_predicate journal, :fsync_pending?
       journal.close
     end
   end

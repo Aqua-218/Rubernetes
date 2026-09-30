@@ -35,7 +35,7 @@ class APINodeLogFollowStreamTest < Minitest::Test
           begin
             loop do
               break if socket.closed?
-              raise EOFError if socket.read_nonblock(1, exception: false) == nil
+              raise EOFError if socket.read_nonblock(1, exception: false).nil?
 
               sleep 0.02
             end

@@ -20,10 +20,10 @@ require File.expand_path("../../lib/rubernetes/version", __dir__)
 
 module M3ProbeSupport
   ROOT = File.expand_path("../..", __dir__).freeze
-  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}.freeze
-  SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
-  KUBERNETES_VERSION = "v1.36.2".freeze
-  KUBERNETES_SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467".freeze
+  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}
+  SHA256_PATTERN = /\A[0-9a-f]{64}\z/
+  KUBERNETES_VERSION = "v1.36.2"
+  KUBERNETES_SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467"
 
   module_function
 
@@ -109,20 +109,16 @@ module M3ProbeSupport
     # volume packages; loading their children alphabetically would load
     # framework.rb before scores.rb and produce a misleading missing constant.
     %w[controller watch scheduler proxy volume].each do |package|
-      begin
-        require "rubernetes/#{package}"
-      rescue LoadError, NameError
-        # The caller will fail closed when the requested production class is
-        # absent. Unrelated optional packages must not mask that diagnosis.
-      end
+      require "rubernetes/#{package}"
+    rescue LoadError, NameError
+      # The caller will fail closed when the requested production class is
+      # absent. Unrelated optional packages must not mask that diagnosis.
     end
     %w[network service storage].each do |directory|
       Dir.glob(File.join(ROOT, "lib", "rubernetes", directory, "*.rb")).sort.each do |path|
-        begin
-          require path
-        rescue LoadError, NameError
-          # Probe-specific production availability is checked below.
-        end
+        require path
+      rescue LoadError, NameError
+        # Probe-specific production availability is checked below.
       end
     end
     true
@@ -146,7 +142,9 @@ module M3ProbeSupport
     Array(names).filter_map do |name|
       value = constant(name)
       next unless production_class?(value)
-      next unless Array(required_methods).all? { |method_name| value.instance_methods.include?(method_name.to_sym) || value.respond_to?(method_name.to_sym) }
+      next unless Array(required_methods).all? do |method_name|
+        value.method_defined?(method_name.to_sym) || value.respond_to?(method_name.to_sym)
+      end
 
       [name, value]
     end
@@ -170,29 +168,23 @@ module M3ProbeSupport
     attempts << -> { callable.call }
     last_shape_error = nil
     attempts.each do |attempt|
-      begin
-        return attempt.call
-      rescue ArgumentError => error
-        last_shape_error = error
-      end
+      return attempt.call
+    rescue ArgumentError => error
+      last_shape_error = error
     end
     raise(last_shape_error || ArgumentError.new("unable to call ##{method_name}"))
   end
 
   def instantiate(klass, keyword_sets: [], positional_sets: [[]])
     Array(keyword_sets).each do |keywords|
-      begin
-        return klass.new(**keywords)
-      rescue ArgumentError
-        next
-      end
+      return klass.new(**keywords)
+    rescue ArgumentError
+      next
     end
     Array(positional_sets).each do |positional|
-      begin
-        return klass.new(*positional)
-      rescue ArgumentError
-        next
-      end
+      return klass.new(*positional)
+    rescue ArgumentError
+      next
     end
     klass.new
   end
@@ -311,11 +303,9 @@ module M3ProbeSupport
     started_input = source_identity
     errors = []
     begin
-      expected_sha = ENV["#{input_env_prefix}_INPUT_SHA256"]
+      expected_sha = ENV.fetch("#{input_env_prefix}_INPUT_SHA256", nil)
       expected_count = ENV["#{input_env_prefix}_INPUT_FILE_COUNT"]&.to_i
-      if expected_sha && expected_sha != started_input.fetch("sha256")
-        errors << "source input changed before probe execution"
-      end
+      errors << "source input changed before probe execution" if expected_sha && expected_sha != started_input.fetch("sha256")
       if expected_count && expected_count.positive? && expected_count != started_input.fetch("file_count")
         errors << "source input file count changed before probe execution"
       end

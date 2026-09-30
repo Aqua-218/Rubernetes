@@ -136,9 +136,7 @@ module Rubernetes
             end
           end
 
-          @state = if signature && ranked && !ranked.empty?
-                     {signature: signature, nodes: ranked.dup, created: @clock.call}
-                   end
+          @state = ({signature: signature, nodes: ranked.dup, created: @clock.call} if signature && ranked && !ranked.empty?)
         end
       ensure
         @metrics&.store_schedule_results(@clock.call - started)

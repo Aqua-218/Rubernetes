@@ -19,7 +19,7 @@ class ProtoDescriptorTest < Minitest::Test
     assert_equal "k8s.io.api.core.v1.ConfigMap", config_map.full_name
     assert_equal 1, config_map.field("metadata").number
     assert_equal :message, config_map.field("metadata").type_kind
-    assert config_map.field("data").map?
+    assert_predicate config_map.field("data"), :map?
     assert_equal :string, config_map.field("data").key_type
     assert_equal :string, config_map.field("data").value_type
     assert_equal 11, metadata.field("labels").number

@@ -41,9 +41,9 @@ module M2AttackProbe
               end
 
       expected = case id
-                when "image_digest_mismatch" then Rubernetes::Image::DigestMismatch
-                when "path_traversal", "whiteout_escape", "symlink_race" then Rubernetes::Image::SecurityError
-                end
+                 when "image_digest_mismatch" then Rubernetes::Image::DigestMismatch
+                 when "path_traversal", "whiteout_escape", "symlink_race" then Rubernetes::Image::SecurityError
+                 end
       error = nil
       begin
         digest = id == "image_digest_mismatch" ? "sha256:#{"0" * 64}" : digest_for(layer)
@@ -64,9 +64,9 @@ module M2AttackProbe
     end
   end
 
-  def gzip_layer
+  def gzip_layer(&)
     tar_io = StringIO.new("".b)
-    Gem::Package::TarWriter.new(tar_io) { |tar| yield tar }
+    Gem::Package::TarWriter.new(tar_io, &)
     output = StringIO.new("".b)
     gzip = Zlib::GzipWriter.new(output)
     gzip.write(tar_io.string)

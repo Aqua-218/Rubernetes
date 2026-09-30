@@ -286,12 +286,8 @@ module Rubernetes
         # -- frames ------------------------------------------------------------
 
         def handle_frame(type, flags, stream_id, payload)
-          if @continuation && type != CONTINUATION
-            raise ConnectionError.new(PROTOCOL_ERROR, "expected CONTINUATION")
-          end
-          unless @settings_received || type == SETTINGS
-            raise ConnectionError.new(PROTOCOL_ERROR, "the first frame must be SETTINGS")
-          end
+          raise ConnectionError.new(PROTOCOL_ERROR, "expected CONTINUATION") if @continuation && type != CONTINUATION
+          raise ConnectionError.new(PROTOCOL_ERROR, "the first frame must be SETTINGS") unless @settings_received || type == SETTINGS
 
           case type
           when DATA then on_data(flags, stream_id, payload)
@@ -459,7 +455,7 @@ module Rubernetes
 
             fragment = fragment.byteslice(5, fragment.bytesize - 5)
           end
-          @continuation = { stream_id: stream_id, flags: flags, block: fragment.b }
+          @continuation = {stream_id: stream_id, flags: flags, block: fragment.b}
           header_block_complete if flags & FLAG_END_HEADERS != 0
         end
 
@@ -517,10 +513,10 @@ module Rubernetes
           raise StreamError.new(stream_id, REFUSED_STREAM, "too many concurrent streams") unless admitted
 
           stream.fields = fields
-          if end_stream
-            stream.remote_closed = true
-            dispatch(stream)
-          end
+          return unless end_stream
+
+          stream.remote_closed = true
+          dispatch(stream)
         end
 
         def strip_padding(flags, payload)
@@ -642,8 +638,8 @@ module Rubernetes
         def reject_stream(stream, status, reason, message)
           stream.rejected = true
           Thread.new do
-            response = Response.json({ "kind" => "Status", "apiVersion" => "v1", "metadata" => {}, "status" => "Failure",
-                                       "message" => message, "reason" => reason, "code" => status }, status: status)
+            response = Response.json({"kind" => "Status", "apiVersion" => "v1", "metadata" => {}, "status" => "Failure",
+                                      "message" => message, "reason" => reason, "code" => status}, status: status)
             write_response(stream, response, nil)
             reset_stream(stream.id, NO_ERROR)
           rescue StreamClosed, ResponseTimeout
@@ -677,6 +673,7 @@ module Rubernetes
             if @max_response_bytes && body_bytes.bytesize > @max_response_bytes
               raise ResponseTooLarge, "response body exceeds #{@max_response_bytes} bytes"
             end
+
             if request && @server.__send__(:gzip_requested?, request) &&
                body_bytes.bytesize >= HTTPServer::GZIP_MIN_BYTES && !headers.include?("content-encoding")
               body_bytes = @server.__send__(:gzip_bytes, body_bytes)

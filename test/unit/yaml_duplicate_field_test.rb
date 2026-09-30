@@ -19,7 +19,7 @@ class YAMLDuplicateFieldTest < Minitest::Test
 
   def server = Server.allocate
 
-  CR_BODY = <<~YAML.freeze
+  CR_BODY = <<~YAML
 
     apiVersion: fv.example.com/v1
     kind: Noxu
@@ -77,8 +77,8 @@ class YAMLDuplicateFieldTest < Minitest::Test
   # Warn splits the block back into one warning per line, exactly as
   # endpoints/handlers/rest.go parseYAMLWarnings does.
   def test_the_block_splits_into_one_warning_per_line
-    block = "yaml: unmarshal errors:\n  line 9: key \"field2\" already set in map\n" \
-            "  line 14: key \"nestedField2\" already set in map"
+    block = "yaml: unmarshal errors:\n  line 9: key \"field2\" already set in map\n  " \
+            "line 14: key \"nestedField2\" already set in map"
 
     assert_equal(["line 9: key \"field2\" already set in map",
                   "line 14: key \"nestedField2\" already set in map"],

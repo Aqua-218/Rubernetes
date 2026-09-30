@@ -131,12 +131,13 @@ module Rubernetes
       end
 
       def list(prefix = "", resource_version: nil, resource_version_match: nil, **options)
-        read_barrier(prefix) unless historical?(resource_version, options) || (resource_version_match.to_s == "NotOlderThan" && !resource_version.nil? && resource_version.to_s != "0")
+        read_barrier(prefix) unless historical?(resource_version,
+                                                options) || (resource_version_match.to_s == "NotOlderThan" && !resource_version.nil? && resource_version.to_s != "0")
         local_store.list(prefix, resource_version: resource_version, resource_version_match: resource_version_match, **options)
       end
 
-      def watch(prefix = "", *positional, **options)
-        local_store.watch(prefix, *positional, **options)
+      def watch(prefix = "", *positional, **)
+        local_store.watch(prefix, *positional, **)
       end
 
       def await_watch_delivery(revision, timeout:)
@@ -167,16 +168,20 @@ module Rubernetes
         raise ArgumentError, "unknown guaranteed_update options: #{options.keys.join(", ")}" unless options.empty?
         raise ArgumentError, "guaranteed_update requires a block" unless block
 
-        expected = prec.nil? ? (precondition.nil? ? resource_version : precondition) : prec
+        expected = if prec.nil?
+                     precondition.nil? ? resource_version : precondition
+                   else
+                     prec
+                   end
         normalized_key = normalize_key(key)
-        request_uid = request_uid && String(request_uid)
+        request_uid &&= String(request_uid)
         attempt = 0
         loop do
           barrier
           current = local_store.get(normalized_key)
           check_precondition!(normalized_key, current, expected)
           current_version = current.dig("metadata", "resourceVersion")
-          candidate = block.call(Rubernetes::Storage::MemoryStoreSupport.deep_dup(current))
+          candidate = yield(Rubernetes::Storage::MemoryStoreSupport.deep_dup(current))
           candidate = current if candidate.nil? && allow_nil_result
           raise ArgumentError, "guaranteed_update block must return an API object Hash" unless candidate.is_a?(Hash)
 
@@ -190,7 +195,7 @@ module Rubernetes
           begin
             return submit(command, effect: "update", key: normalized_key)
           rescue Conflict => error
-            raise error if attempt >= max_retries || !expected.nil? && precondition_conflict?(error, expected)
+            raise error if attempt >= max_retries || (!expected.nil? && precondition_conflict?(error, expected))
 
             sleep_for_retry(attempt)
             attempt += 1
@@ -208,7 +213,11 @@ module Rubernetes
         raise ArgumentError, "unknown update options: #{options.keys.join(", ")}" unless options.empty?
         raise ArgumentError, "update requires an API object Hash" unless object.is_a?(Hash)
 
-        expected = prec.nil? ? (precondition.nil? ? resource_version : precondition) : prec
+        expected = if prec.nil?
+                     precondition.nil? ? resource_version : precondition
+                   else
+                     prec
+                   end
         guaranteed_update(key, prec: expected, request_uid: request_uid) { |_current| object }
       end
       alias replace update
@@ -218,7 +227,11 @@ module Rubernetes
         discard(options, :gvr, :resource, :namespace, :name)
         raise ArgumentError, "unknown delete options: #{options.keys.join(", ")}" unless options.empty?
 
-        expected = prec.nil? ? (precondition.nil? ? resource_version : precondition) : prec
+        expected = if prec.nil?
+                     precondition.nil? ? resource_version : precondition
+                   else
+                     prec
+                   end
         normalized_key = normalize_key(key)
         expected_version = expected.is_a?(Hash) ? (expected[:resourceVersion] || expected["resourceVersion"]) : expected
         command = {"type" => "delete", "key" => normalized_key, "expected_resource_version" => expected_version.nil? ? nil : String(expected_version),
@@ -424,7 +437,7 @@ module Rubernetes
                                              index: position[:index], term: position[:term], via: position[:via].to_s,
                                              error: ok ? nil : result.dig("error", "class"))
         end
-        return unless ok && revision && (effect == "create" || effect == "update")
+        return unless ok && revision && %w[create update].include?(effect)
 
         begin
           local_store.get(key, resource_version: revision)
@@ -433,9 +446,9 @@ module Rubernetes
           # InvalidResourceVersion: the store has not even reached that
           # revision, so the entry cannot have been applied here.
           logger&.error("consensus.ack_without_object", request_id: request_id, effect: effect, key: key, revision: revision,
-                                                       index: position[:index], term: position[:term], via: position[:via].to_s,
-                                                       store_revision: local_store.revision, last_applied: @server.node.last_applied,
-                                                       error: "#{error.class}: #{error.message}")
+                                                        index: position[:index], term: position[:term], via: position[:via].to_s,
+                                                        store_revision: local_store.revision, last_applied: @server.node.last_applied,
+                                                        error: "#{error.class}: #{error.message}")
         rescue Rubernetes::Storage::Error
           # Compacted away: not a missing object.
           nil
@@ -459,7 +472,7 @@ module Rubernetes
                   klass.new(document["message"])
                 else
                   Error.new(document["message"], status: document["status"], reason: document["reason"], key: document["key"],
-                            resource_version: document["resource_version"], details: document["details"], causes: document["causes"])
+                                                 resource_version: document["resource_version"], details: document["details"], causes: document["causes"])
                 end
         error
       end
@@ -474,12 +487,15 @@ module Rubernetes
                                          end
         current_version = object.dig("metadata", "resourceVersion")
         if !expected_version.nil? && String(expected_version) != current_version.to_s
-          raise Conflict.new(key, "expected resourceVersion #{expected_version.inspect}, current is #{current_version.inspect}", resource_version: current_version)
+          raise Conflict.new(key, "expected resourceVersion #{expected_version.inspect}, current is #{current_version.inspect}",
+                             resource_version: current_version)
         end
+
         current_uid = object.dig("metadata", "uid")
-        if !expected_uid.nil? && String(expected_uid) != current_uid.to_s
-          raise Conflict.new(key, "expected uid #{expected_uid.inspect}, current is #{current_uid.inspect}", resource_version: current_version)
-        end
+        return unless !expected_uid.nil? && String(expected_uid) != current_uid.to_s
+
+        raise Conflict.new(key, "expected uid #{expected_uid.inspect}, current is #{current_uid.inspect}",
+                           resource_version: current_version)
       end
 
       def precondition_conflict?(error, expected)

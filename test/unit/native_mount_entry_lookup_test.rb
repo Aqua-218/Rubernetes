@@ -51,6 +51,7 @@ class NativeMountRootPrecheckTest < Minitest::Test
     Dir.mktmpdir do |dir|
       target = File.join(dir, "target")
       Dir.mkdir(target)
+
       refute adapter.send(:possibly_mount_root?, target)
     end
   end
@@ -72,8 +73,10 @@ class NativeMountTargetLockTest < Minitest::Test
   def test_different_targets_use_different_locks_and_the_same_target_the_same
     adapter = Adapter.new(mount: Object.new, mountinfo_reader: -> { "" })
     a = adapter.send(:target_lock, "/var/lib/pods/a/volumes/x")
+
     assert_same a, adapter.send(:target_lock, "/var/lib/pods/a/volumes/x")
     locks = (1..20).map { |i| adapter.send(:target_lock, "/var/lib/pods/p#{i}/volumes/x") }.uniq
+
     assert_operator locks.length, :>, 10, "targets spread across the lock stripes"
   end
 
@@ -82,10 +85,16 @@ class NativeMountTargetLockTest < Minitest::Test
     held = adapter.send(:target_lock, "/busy/target")
     other = (1..200).map { |i| "/free/target#{i}" }.find { |path| !adapter.send(:target_lock, path).equal?(held) }
     entered = Queue.new
-    holder = Thread.new { held.synchronize { entered << :held; sleep 0.5 } }
+    holder = Thread.new do
+      held.synchronize do
+        entered << :held
+        sleep 0.5
+      end
+    end
     entered.pop
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     adapter.send(:target_lock, other).synchronize { nil }
+
     assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.2
   ensure
     holder&.join

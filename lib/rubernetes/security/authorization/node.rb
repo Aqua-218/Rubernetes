@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 require_relative "attributes"
 
 module Rubernetes
@@ -20,7 +18,8 @@ module Rubernetes
         MIRROR_POD_ANNOTATION = "kubernetes.io/config.mirror"
         NODE_RULES = [
           {"apiGroups" => ["authentication.k8s.io"], "resources" => %w[tokenreviews], "verbs" => %w[create]},
-          {"apiGroups" => ["authorization.k8s.io"], "resources" => %w[subjectaccessreviews localsubjectaccessreviews], "verbs" => %w[create]},
+          {"apiGroups" => ["authorization.k8s.io"], "resources" => %w[subjectaccessreviews localsubjectaccessreviews],
+           "verbs" => %w[create]},
           {"apiGroups" => [""], "resources" => %w[services], "verbs" => %w[get list watch]},
           {"apiGroups" => [""], "resources" => %w[nodes], "verbs" => %w[create get list watch update patch]},
           {"apiGroups" => [""], "resources" => %w[nodes/status], "verbs" => %w[update patch]},
@@ -166,15 +165,19 @@ module Rubernetes
             return no_opinion("can only create tokens for individual service accounts")
           end
           return no_opinion("can only create token subresource of serviceaccount") unless attributes.subresource == "token"
-          return allow("token of a service account related to the node") if related?(node_name, :serviceaccounts, attributes.namespace, attributes.name)
+          return allow("token of a service account related to the node") if related?(node_name, :serviceaccounts, attributes.namespace,
+                                                                                     attributes.name)
 
           no_opinion("no relationship found between node '#{node_name}' and this object")
         end
 
         def authorize_lease(node_name, attributes)
           verb = attributes.verb
-          return no_opinion("can only get, create, update, patch, or delete a node lease") unless %w[get create update patch delete].include?(verb)
-          return no_opinion("can only access leases in the \"kube-node-lease\" system namespace") unless attributes.namespace == "kube-node-lease"
+          return no_opinion("can only get, create, update, patch, or delete a node lease") unless %w[get create update patch
+                                                                                                     delete].include?(verb)
+          unless attributes.namespace == "kube-node-lease"
+            return no_opinion("can only access leases in the \"kube-node-lease\" system namespace")
+          end
           if verb != "create" && attributes.name != node_name
             return no_opinion("can only access node lease with the same name as the requesting node")
           end
@@ -184,7 +187,8 @@ module Rubernetes
 
         def authorize_csi_node(node_name, attributes)
           verb = attributes.verb
-          return no_opinion("can only get, create, update, patch, or delete a CSINode") unless %w[get create update patch delete].include?(verb)
+          return no_opinion("can only get, create, update, patch, or delete a CSINode") unless %w[get create update patch
+                                                                                                  delete].include?(verb)
           return no_opinion("cannot authorize CSINode subresources") unless attributes.subresource.empty?
           if verb != "create" && attributes.name != node_name
             return no_opinion("can only access CSINode with the same name as the requesting node")
@@ -231,6 +235,7 @@ module Rubernetes
           case attributes.subresource
           when ""
             return allow("node write (NodeRestriction limits it)") if %w[create update patch].include?(attributes.verb)
+
             if %w[get list watch].include?(attributes.verb)
               return allow("own node") if attributes.name == node_name
               return no_opinion("node '#{node_name}' cannot read all nodes, only its own Node object") if attributes.name.empty?
@@ -312,10 +317,10 @@ module Rubernetes
           end
         end
 
-        def graph_call(method, *arguments)
+        def graph_call(method, *)
           return nil unless @graph.respond_to?(method)
 
-          @graph.public_send(method, *arguments)
+          @graph.public_send(method, *)
         rescue StandardError
           nil
         end
@@ -423,9 +428,9 @@ module Rubernetes
           names.compact.map(&:to_s).reject(&:empty?).uniq
         end
 
-        def each_container(pod, &block)
+        def each_container(pod, &)
           %w[initContainers containers ephemeralContainers].each do |field|
-            Array(pod.dig("spec", field)).each(&block)
+            Array(pod.dig("spec", field)).each(&)
           end
         end
 

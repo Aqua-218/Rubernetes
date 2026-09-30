@@ -55,7 +55,9 @@ module Api
       def matcher_sets(values)
         Array(values).map do |selector|
           node = Promql::Parser.parse(selector.to_s)
-          raise Dashboard::Errors::BadRequest, "invalid parameter \"match[]\": #{selector} is not a vector selector" unless node.is_a?(Promql::AST::VectorSelector)
+          unless node.is_a?(Promql::AST::VectorSelector)
+            raise Dashboard::Errors::BadRequest, "invalid parameter \"match[]\": #{selector} is not a vector selector"
+          end
 
           node.matchers
         end

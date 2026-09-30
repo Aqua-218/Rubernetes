@@ -37,6 +37,7 @@ class NodeBackoffWakeupTest < Minitest::Test
 
     now += 1
     lifecycle.handle_container_exit(pod, container_name: "app", exit_code: 1, now: now)
+
     assert_empty wakeups, "the first failure restarts at once"
     lifecycle.reconcile(pod)
     now += 1

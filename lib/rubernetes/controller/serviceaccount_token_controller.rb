@@ -36,7 +36,7 @@ module Rubernetes
         adapter = adapter_for(store)
         secrets ||= list_for(adapter, SECRET, namespace: Support.namespace(service_account))
         managed = Array(secrets).select { |secret| token_secret_for?(secret, service_account) }
-                                .sort_by { |candidate| [Support.name(candidate), Support.uid(candidate).to_s] }
+          .sort_by { |candidate| [Support.name(candidate), Support.uid(candidate).to_s] }
         operations = []
         if managed.empty? && !secret_name.to_s.empty?
           desired = token_secret(service_account, secret_name.to_s,
@@ -44,12 +44,12 @@ module Rubernetes
                                                                             secret_name: secret_name.to_s),
                                  root_ca: root_ca)
           operations << operation_create(desired, owner: service_account, descriptor: SECRET,
-                                          reason: "service account token created")
+                                                  reason: "service account token created")
           managed = [desired]
         end
         managed.each do |secret|
           next if operations.any? { |operation| operation.create? && Support.name(operation.object) == Support.name(secret) }
-      
+
           # An existing token is kept: rewriting it would invalidate every
           # copy a client already holds (tokens_controller only fills a
           # Secret missing its token).
@@ -61,7 +61,7 @@ module Rubernetes
                                  root_ca: root_ca)
           candidate = merge_token_secret(secret, desired)
           update = operation_update(secret, candidate, descriptor: SECRET,
-                                    reason: "service account token populated")
+                                                       reason: "service account token populated")
           operations << update if update
         end
         status = Support.deep_copy(Support.status(service_account))
@@ -88,7 +88,7 @@ module Rubernetes
       end
 
       def token_secret_name(service_account)
-        base = Support.name(service_account).downcase.gsub(/[^a-z0-9-]/, "-").gsub(/-+/, "-").sub(/\A-|-\z/, "")
+        base = Support.name(service_account).downcase.gsub(/[^a-z0-9-]/, "-").squeeze("-").sub(/\A-|-\z/, "")
         digest = Digest::SHA256.hexdigest("#{Support.namespace(service_account)}/#{Support.uid(service_account)}")[0, 10]
         "#{base.empty? ? "serviceaccount" : base}-token-#{digest}"[0, 253]
       end
@@ -105,8 +105,8 @@ module Rubernetes
         {
           "apiVersion" => "v1", "kind" => "Secret",
           "metadata" => {"name" => name, "namespace" => namespace,
-                          "annotations" => annotations,
-                          "ownerReferences" => [owner_ref(service_account)]},
+                         "annotations" => annotations,
+                         "ownerReferences" => [owner_ref(service_account)]},
           "type" => TOKEN_TYPE, "data" => data
         }
       end

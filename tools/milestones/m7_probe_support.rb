@@ -75,7 +75,9 @@ module M7ProbeSupport
     # image disks are content-addressed and cost one mkfs per digest per run.
     adapter = M::Adapter.new(runtime_class: klass.runtime_class, data_dir: File.join(root, "data"), artifacts: artifacts, chroot_base: File.join(root, "jail"),
                              netns_root: File.join(root, "netns"), run_root: File.join(root, "run"), parent_cgroup: "rubernetes-m7/#{label[0, 12]}",
-                             clock: -> { Time.now.utc }, machine: machine, use_base_snapshot: use_base_snapshot, network_device: klass.network_device?)
+                             clock: lambda {
+                               Time.now.utc
+                             }, machine: machine, use_base_snapshot: use_base_snapshot, network_device: klass.network_device?)
     runtime = klass.new(data_dir: File.join(root, "data"), artifacts: artifacts, adapter: adapter)
     [runtime, root]
   end
@@ -114,7 +116,8 @@ module M7ProbeSupport
       shell!("ip", "-n", alias_name, "addr", "add", "#{ip}/24", "dev", "eth0")
       shell!("ip", "-n", alias_name, "link", "set", "eth0", "up")
       shell!("ip", "-n", alias_name, "route", "add", "default", "via", gateway)
-      shell!("ip", "addr", "add", "#{gateway}/24", "dev", host_link) unless system("ip", "addr", "show", "dev", host_link, out: File::NULL, err: File::NULL) && `ip addr show dev #{host_link}`.include?(gateway)
+      shell!("ip", "addr", "add", "#{gateway}/24", "dev", host_link) unless system("ip", "addr", "show", "dev", host_link, out: File::NULL,
+                                                                                                                           err: File::NULL) && `ip addr show dev #{host_link}`.include?(gateway)
       shell!("ip", "link", "set", host_link, "up")
       @attached[sandbox_id] = {"ip" => ip, "host_link" => host_link, "alias" => alias_name}
       {"ip" => ip, "gateway" => gateway, "host_link" => host_link}
@@ -147,7 +150,8 @@ module M7ProbeSupport
 
   # Runs one Pod through the backend: sandbox, network, container, start.
   # Returns the session and a hash of per-phase seconds.
-  def start_pod(runtime, network, label, command: ["/bin/busybox", "sh", "-c", "echo m7-ready; while :; do /bin/busybox sleep 1; done"], workspace_mib: 512)
+  def start_pod(runtime, network, label, command: ["/bin/busybox", "sh", "-c", "echo m7-ready; while :; do /bin/busybox sleep 1; done"],
+                workspace_mib: 512)
     image = pinned_image
     timings = {}
     started = monotonic
@@ -204,7 +208,9 @@ module M7ProbeSupport
       "workspace_exists" => adapter.instance_variable_get(:@disks).workspaces.include?(session.identity.fields["workspace_id"]),
       "cgroup_exists" => session.instance ? File.directory?(session.instance.cgroup_path) : false,
       "identity_live" => runtime.identity_ledger.record(session.vm_id)&.state == "live",
-      "resources_listed" => adapter.list_resources.select { |resource| resource["id"].to_s.include?(session.vm_id) || resource["id"] == session.jail_id }
+      "resources_listed" => adapter.list_resources.select do |resource|
+        resource["id"].to_s.include?(session.vm_id) || resource["id"] == session.jail_id
+      end
     }
   end
 

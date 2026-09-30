@@ -61,7 +61,7 @@ class SecretConfigMapDataKeyValidationTest < Minitest::Test
 
   # MaxSecretSize (pkg/apis/core/types.go:6626): 1 MiB total.
   def test_a_secret_larger_than_one_mebibyte_is_rejected
-    refute_empty key_errors(secret("blob" => "x" * (1024 * 1024 + 1)))
+    refute_empty key_errors(secret("blob" => "x" * ((1024 * 1024) + 1)))
     assert_empty key_errors(secret("blob" => "x" * (1024 * 1024)))
   end
 

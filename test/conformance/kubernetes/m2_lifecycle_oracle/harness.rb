@@ -48,7 +48,8 @@ module M2LifecycleOracleHarness
   NAMESPACE = "default"
   KUBERNETES_VERSION = "v1.36.2"
   KUBERNETES_SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467"
-  REQUIRED_CASES = %w[init_sidecar_app_order startup_liveness_readiness_thresholds restart_policy_and_backoff graceful_termination_oracle].freeze
+  REQUIRED_CASES = %w[init_sidecar_app_order startup_liveness_readiness_thresholds restart_policy_and_backoff
+                      graceful_termination_oracle].freeze
   CNI_IDENTITY_KEYS = %w[plugin version source_commit image_reference image_digest config_sha256].freeze
   RESTARTING_VARIANTS = %w[always_exit_0 on_failure_exit_1].freeze
   TERMINAL_VARIANTS = %w[on_failure_exit_0 never_exit_1].freeze
@@ -79,7 +80,9 @@ module M2LifecycleOracleHarness
 
   def canonical_value(value)
     case value
-    when Hash then value.keys.map(&:to_s).sort.each_with_object({}) { |key, result| result[key] = canonical_value(value[key] || value[key.to_sym]) }
+    when Hash then value.keys.map(&:to_s).sort.each_with_object({}) do |key, result|
+      result[key] = canonical_value(value[key] || value[key.to_sym])
+    end
     when Array then value.map { |child| canonical_value(child) }
     else value
     end
@@ -87,6 +90,7 @@ module M2LifecycleOracleHarness
 
   def parse_time(value)
     return nil if value.nil? || value.to_s.empty? || value.to_s.start_with?("0001-01-01")
+
     Time.iso8601(value.to_s)
   rescue ArgumentError
     nil
@@ -100,6 +104,7 @@ module M2LifecycleOracleHarness
 
   def state_kind(state)
     return nil unless state.is_a?(Hash)
+
     %w[waiting running terminated].find { |kind| state.key?(kind) }
   end
 
@@ -150,6 +155,7 @@ module M2LifecycleOracleHarness
       started = parse_time(container["startedAt"])
       finished = parse_time(container["finishedAt"])
       raise HarnessError, "CRI container #{name} has no createdAt" unless created
+
       events << [created, 0, "create:#{name}"]
       events << [started, 1, "start:#{name}"] if started
       events << [finished, 2, "wait:#{name}"] if finished && container["init"] == true && container["restartable"] != true
@@ -163,8 +169,12 @@ module M2LifecycleOracleHarness
       "operations" => order_operations(cri_containers),
       "phase" => pod.dig("status", "phase"),
       "status" => {
-        "initContainerStatuses" => Array(spec["initContainers"]).map { |container| container_summary(container_status(pod, container.fetch("name"), init: true) || {"name" => container.fetch("name")}) },
-        "containerStatuses" => Array(spec["containers"]).map { |container| container_summary(container_status(pod, container.fetch("name")) || {"name" => container.fetch("name")}) }
+        "initContainerStatuses" => Array(spec["initContainers"]).map do |container|
+          container_summary(container_status(pod, container.fetch("name"), init: true) || {"name" => container.fetch("name")})
+        end,
+        "containerStatuses" => Array(spec["containers"]).map do |container|
+          container_summary(container_status(pod, container.fetch("name")) || {"name" => container.fetch("name")})
+        end
       }
     }
   end
@@ -183,13 +193,18 @@ module M2LifecycleOracleHarness
     name = container_spec.fetch("name")
     kill_index = event_history.index do |entry|
       object = entry.fetch("object")
-      object["reason"] == "Killing" && object["message"].to_s.strip == LIVENESS_KILL_MESSAGE && object.dig("involvedObject", "fieldPath") == "spec.containers{#{name}}"
+      object["reason"] == "Killing" && object["message"].to_s.strip == LIVENESS_KILL_MESSAGE && object.dig("involvedObject",
+                                                                                                           "fieldPath") == "spec.containers{#{name}}"
     end
     raise HarnessError, "liveness Killing event for container #{name} was not observed" unless kill_index
+
     kill_at = event_history.fetch(kill_index).fetch("at")
     failures_before_kill = event_history.first(kill_index).filter_map do |entry|
       object = entry.fetch("object")
-      next unless object["reason"] == "Unhealthy" && object["message"].to_s.start_with?("Liveness probe failed") && object.dig("involvedObject", "fieldPath") == "spec.containers{#{name}}"
+      next unless object["reason"] == "Unhealthy" && object["message"].to_s.start_with?("Liveness probe failed") && object.dig(
+        "involvedObject", "fieldPath"
+      ) == "spec.containers{#{name}}"
+
       object["count"].to_i
     end.max || 0
     before_kill = pod_history.select { |entry| entry.fetch("at") <= kill_at }.map { |entry| entry.fetch("object") }
@@ -197,8 +212,11 @@ module M2LifecycleOracleHarness
     status_before_kill = latest_before_kill && container_status(latest_before_kill, name)
     started_before_kill = before_kill.any? { |pod| (status = container_status(pod, name)) && status["started"] == true }
     ready_before_kill = before_kill.any? { |pod| (status = container_status(pod, name)) && status["ready"] == true }
-    restarted = pod_history.map { |entry| entry.fetch("object") }.find { |pod| (status = container_status(pod, name)) && status["restartCount"].to_i >= 1 }
+    restarted = pod_history.map do |entry|
+      entry.fetch("object")
+    end.find { |pod| (status = container_status(pod, name)) && status["restartCount"].to_i >= 1 }
     raise HarnessError, "container #{name} did not restart after the liveness kill" unless restarted
+
     {
       "startup" => {
         "probe" => probe_label(startup),
@@ -243,19 +261,21 @@ module M2LifecycleOracleHarness
                   history.find { |pod| %w[Succeeded Failed].include?(pod.dig("status", "phase")) }
                 end
       raise HarnessError, "restart variant #{variant} did not settle" unless settled
+
       status = container_status(settled, container)
       observable["restartPolicy"][variant] = document.fetch("spec").fetch("restartPolicy")
       observable["restartCount"][variant] = status["restartCount"]
       observable["phase"][variant] = settled.dig("status", "phase")
       observable["status"][variant] = restart_status_summary(status)
-      if RESTARTING_VARIANTS.include?(variant)
-        upto = history.index(settled)
-        observable["backoff_seconds"][variant] = history.first(upto + 1).filter_map do |pod|
-          current = container_status(pod, container)
-          next unless current && state_kind(current["state"]) == "waiting" && current.dig("state", "waiting", "reason") == "CrashLoopBackOff"
-          parse_backoff_message(current.dig("state", "waiting", "message"))
-        end.uniq
-      end
+      next unless RESTARTING_VARIANTS.include?(variant)
+
+      upto = history.index(settled)
+      observable["backoff_seconds"][variant] = history.first(upto + 1).filter_map do |pod|
+        current = container_status(pod, container)
+        next unless current && state_kind(current["state"]) == "waiting" && current.dig("state", "waiting", "reason") == "CrashLoopBackOff"
+
+        parse_backoff_message(current.dig("state", "waiting", "message"))
+      end.uniq
     end
     observable
   end
@@ -280,8 +300,13 @@ module M2LifecycleOracleHarness
     grace = pod_document.fetch("spec").fetch("terminationGracePeriodSeconds")
     status = container_status(final_pod, container.fetch("name"))
     raise HarnessError, "final status for #{container.fetch("name")} is missing" unless status
+
     terminated = status.dig("state", "terminated")
-    raise HarnessError, "container #{container.fetch("name")} was not terminated at deletion: #{JSON.generate(status["state"])}" unless terminated.is_a?(Hash)
+    unless terminated.is_a?(Hash)
+      raise HarnessError,
+            "container #{container.fetch("name")} was not terminated at deletion: #{JSON.generate(status["state"])}"
+    end
+
     message = terminated["message"].to_s
     lines = message.lines.map(&:strip).reject(&:empty?)
     deletion_timestamp = parse_time(final_pod.dig("metadata", "deletionTimestamp"))
@@ -370,8 +395,8 @@ module M2LifecycleOracleHarness
     [stdout, stderr, status]
   end
 
-  def docker(*args, **options)
-    run_command("docker", *args, **options)
+  def docker(*, **)
+    run_command("docker", *, **)
   end
 
   class Watcher
@@ -399,6 +424,7 @@ module M2LifecycleOracleHarness
       @thread = Thread.new do
         reader.each_line do |line|
           next if line.strip.empty?
+
           begin
             document = JSON.parse(line, max_nesting: 512)
           rescue JSON::ParserError => error
@@ -429,6 +455,7 @@ module M2LifecycleOracleHarness
 
     def stop
       return unless @pid
+
       begin
         Process.kill("TERM", @pid)
       rescue Errno::ESRCH
@@ -468,17 +495,18 @@ module M2LifecycleOracleHarness
       @trace << {"kind" => "step", "at" => Time.now.utc.iso8601(6), "step" => name}.merge(details.transform_keys(&:to_s))
     end
 
-    def kubectl(*args, stdin_data: nil, allow_failure: false, timeout: TIMEOUTS.fetch(:docker_command))
-      M2LifecycleOracleHarness.docker("exec", "-i", @node, "kubectl", "--kubeconfig", ADMIN_CONF, *args, stdin_data: stdin_data, allow_failure: allow_failure, timeout: timeout)
+    def kubectl(*, stdin_data: nil, allow_failure: false, timeout: TIMEOUTS.fetch(:docker_command))
+      M2LifecycleOracleHarness.docker("exec", "-i", @node, "kubectl", "--kubeconfig", ADMIN_CONF, *, stdin_data: stdin_data,
+                                                                                                     allow_failure: allow_failure, timeout: timeout)
     end
 
-    def kubectl_json(*args)
-      stdout, = kubectl(*args, "-o", "json")
+    def kubectl_json(*)
+      stdout, = kubectl(*, "-o", "json")
       JSON.parse(stdout, max_nesting: 512)
     end
 
-    def node_exec(*args, allow_failure: false)
-      M2LifecycleOracleHarness.docker("exec", @node, *args, allow_failure: allow_failure)
+    def node_exec(*, allow_failure: false)
+      M2LifecycleOracleHarness.docker("exec", @node, *, allow_failure: allow_failure)
     end
 
     def wait_until(label, timeout)
@@ -488,7 +516,11 @@ module M2LifecycleOracleHarness
         attempts += 1
         result = yield
         return result if result
-        raise HarnessError, "#{label} did not happen within #{timeout}s (#{attempts} polls)" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+        if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+          raise HarnessError,
+                "#{label} did not happen within #{timeout}s (#{attempts} polls)"
+        end
+
         sleep(POLL_INTERVAL_SECONDS)
       end
     end
@@ -511,29 +543,53 @@ module M2LifecycleOracleHarness
 
     def validate_inputs!
       raise HarnessError, "harness requires uid 0" unless Process.uid.zero?
-      raise HarnessError, "node_image must be digest-pinned" unless @node_image.is_a?(String) && @node_image.match?(/\A[^@\s]+@sha256:[0-9a-f]{64}\z/)
+      unless @node_image.is_a?(String) && @node_image.match?(/\A[^@\s]+@sha256:[0-9a-f]{64}\z/)
+        raise HarnessError,
+              "node_image must be digest-pinned"
+      end
+
       missing = REQUIRED_CASES - @fixture_cases.keys
       raise HarnessError, "request is missing cases: #{missing.join(", ")}" unless missing.empty?
+
       %w[containerd runc].each do |name|
         identity = @runtime[name]
-        raise HarnessError, "runtime identity for #{name} is required" unless identity.is_a?(Hash) && identity["binary_sha256"].to_s.match?(/\A[0-9a-f]{64}\z/)
+        unless identity.is_a?(Hash) && identity["binary_sha256"].to_s.match?(/\A[0-9a-f]{64}\z/)
+          raise HarnessError,
+                "runtime identity for #{name} is required"
+        end
       end
       @kind_lock = M2LifecycleOracleHarness.parse_json(KIND_LOCK_PATH)
       @node_image_lock = M2LifecycleOracleHarness.parse_json(NODE_IMAGE_LOCK_PATH)
       @cni_lock = M2LifecycleOracleHarness.parse_json(CNI_LOCK_PATH)
       @kubernetes_lock = M2LifecycleOracleHarness.parse_json(KUBERNETES_LOCK_PATH)
-      raise HarnessError, "node image #{@node_image} is not the locked node image #{@node_image_lock.dig("image", "reference")}" unless @node_image == @node_image_lock.dig("image", "reference")
+      unless @node_image == @node_image_lock.dig(
+        "image", "reference"
+      )
+        raise HarnessError,
+              "node image #{@node_image} is not the locked node image #{@node_image_lock.dig("image",
+                                                                                             "reference")}"
+      end
+
       @kind = File.join(ROOT, @kind_lock.fetch("install_path"))
       raise HarnessError, "kind binary is missing: #{@kind}" unless File.file?(@kind) && File.executable?(@kind)
+
       actual = Digest::SHA256.file(@kind).hexdigest
       expected = @kind_lock.dig("artifacts", "linux/amd64", "sha256")
       raise HarnessError, "kind binary SHA-256 #{actual} does not match lock #{expected}" unless actual == expected
+
       inspect, = M2LifecycleOracleHarness.docker("image", "inspect", "--format", "{{.Id}}", @node_image)
-      raise HarnessError, "node image #{@node_image} resolves to #{inspect.strip}, lock says #{@node_image_lock.dig("image", "image_id")}" unless inspect.strip == @node_image_lock.dig("image", "image_id")
+      unless inspect.strip == @node_image_lock.dig(
+        "image", "image_id"
+      )
+        raise HarnessError,
+              "node image #{@node_image} resolves to #{inspect.strip}, lock says #{@node_image_lock.dig("image",
+                                                                                                        "image_id")}"
+      end
+
       busybox = @kubernetes_lock.dig("runner_support_images", "busybox")
       @busybox_tag = busybox.fetch("reference")
       @busybox_digest = busybox.dig("platforms", "linux/amd64")
-      @busybox_reference = "#{@busybox_tag.sub(/:[^:\/]+\z/, "")}@#{@busybox_digest}"
+      @busybox_reference = "#{@busybox_tag.sub(%r{:[^:/]+\z}, "")}@#{@busybox_digest}"
       step("inputs_validated", node_image: @node_image, kind_sha256: actual, cluster: @cluster)
     end
 
@@ -541,13 +597,14 @@ module M2LifecycleOracleHarness
       M2LifecycleOracleHarness.docker("network", "create", "--internal", "--label", "rubernetes.m2.lifecycle-oracle=#{@cluster}", @network)
       inspect, = M2LifecycleOracleHarness.docker("network", "inspect", "--format", "{{.Internal}} {{.Driver}}", @network)
       raise HarnessError, "docker network #{@network} is not internal: #{inspect.strip}" unless inspect.split.first == "true"
+
       # kind's node entrypoint resolves host.docker.internal (or the default
       # gateway) to rewrite the embedded-DNS iptables rules. An internal network
       # has no gateway, so a sleeping pause container answers that name. It has
       # no listener and no route anywhere; the node keeps zero egress.
       alias_image = @node_image_lock.fetch("alias_container_image").fetch("reference")
       M2LifecycleOracleHarness.docker("run", "-d", "--name", @alias_container, "--network", @network, "--network-alias", "host.docker.internal",
-                                       "--label", "rubernetes.m2.lifecycle-oracle=#{@cluster}", alias_image)
+                                      "--label", "rubernetes.m2.lifecycle-oracle=#{@cluster}", alias_image)
       step("network_created", network: @network, internal: true, alias_container_image: alias_image)
     end
 
@@ -564,8 +621,10 @@ module M2LifecycleOracleHarness
         - role: control-plane
       YAML
       kubeconfig = File.join(@scratch, "kubeconfig")
-      command = [@kind, "create", "cluster", "--name", @cluster, "--image", @node_image, "--config", config_path, "--kubeconfig", kubeconfig, "--wait", "0", "--retain"]
-      stdout, stderr, status = M2LifecycleOracleHarness.run_command(*command, env: {"KIND_EXPERIMENTAL_DOCKER_NETWORK" => @network}, timeout: TIMEOUTS.fetch(:kind_create), allow_failure: true)
+      command = [@kind, "create", "cluster", "--name", @cluster, "--image", @node_image, "--config", config_path, "--kubeconfig",
+                 kubeconfig, "--wait", "0", "--retain"]
+      stdout, stderr, status = M2LifecycleOracleHarness.run_command(*command, env: {"KIND_EXPERIMENTAL_DOCKER_NETWORK" => @network},
+                                                                              timeout: TIMEOUTS.fetch(:kind_create), allow_failure: true)
       output = "#{stdout}\n#{stderr}"
       # On an internal network Docker publishes no host port, so kind's final
       # kubeconfig export fails after the cluster is fully provisioned. That is
@@ -573,15 +632,20 @@ module M2LifecycleOracleHarness
       unless status.success? || output.include?("failed to get api server port")
         raise HarnessError, "kind create cluster failed: #{output.strip[-3000..] || output.strip}"
       end
+
       step("kind_create_finished", exit_status: status.exitstatus, accepted_port_export_failure: !status.success?, output_sha256: Digest::SHA256.hexdigest(output))
       running, = M2LifecycleOracleHarness.docker("inspect", "--format", "{{.State.Running}} {{.Config.Image}}", @node)
       raise HarnessError, "node container #{@node} is not running: #{running.strip}" unless running.split.first == "true"
       raise HarnessError, "node container image is #{running.split.last}, expected #{@node_image}" unless running.split.last == @node_image
+
       wait_until("node Ready", TIMEOUTS.fetch(:node_ready)) do
         stdout, _stderr, node_status = kubectl("get", "nodes", "-o", "json", allow_failure: true)
         next false unless node_status.success?
+
         nodes = JSON.parse(stdout, max_nesting: 512)["items"] || []
-        nodes.length == 1 && Array(nodes.first.dig("status", "conditions")).any? { |condition| condition["type"] == "Ready" && condition["status"] == "True" }
+        nodes.length == 1 && Array(nodes.first.dig("status", "conditions")).any? do |condition|
+          condition["type"] == "Ready" && condition["status"] == "True"
+        end
       end
       step("node_ready")
     end
@@ -589,16 +653,23 @@ module M2LifecycleOracleHarness
     def verify_cluster_identity!
       version, = kubectl("version", "-o", "json")
       server = JSON.parse(version)["serverVersion"] || {}
-      raise HarnessError, "kube-apiserver reports #{server["gitVersion"]} at #{server["gitCommit"]} (#{server["gitTreeState"]}), expected #{KUBERNETES_VERSION} at #{KUBERNETES_SOURCE_COMMIT}" unless
-        server["gitVersion"] == KUBERNETES_VERSION && server["gitCommit"] == KUBERNETES_SOURCE_COMMIT && server["gitTreeState"] == "clean"
+      unless server["gitVersion"] == KUBERNETES_VERSION && server["gitCommit"] == KUBERNETES_SOURCE_COMMIT && server["gitTreeState"] == "clean"
+        raise HarnessError,
+              "kube-apiserver reports #{server["gitVersion"]} at #{server["gitCommit"]} (#{server["gitTreeState"]}), expected #{KUBERNETES_VERSION} at #{KUBERNETES_SOURCE_COMMIT}"
+      end
+
       kubelet, = node_exec("kubelet", "--version")
       raise HarnessError, "kubelet reports #{kubelet.strip}" unless kubelet.strip == "Kubernetes #{KUBERNETES_VERSION}"
+
       kubelet_sha, = node_exec("sha256sum", @node_image_lock.dig("runtime", "kubelet", "in_image_path"))
       nodes = kubectl_json("get", "nodes")
       node_info = nodes.fetch("items").first.dig("status", "nodeInfo") || {}
       pods = kubectl_json("get", "pods", "-n", "kube-system")
       listing, = node_exec("ctr", "-n", "k8s.io", "images", "ls")
-      store_digests = listing.lines.drop(1).to_h { |line| words = line.split; [words[0], words[2]] }
+      store_digests = listing.lines.drop(1).to_h do |line|
+        words = line.split
+        [words[0], words[2]]
+      end
       # Images imported into containerd (not pulled) expose their CRI image ID
       # through Pod status. The locked digest-pinned reference is proven by
       # (a) the Pod's image tag mapping to the locked digest in the node's
@@ -606,16 +677,26 @@ module M2LifecycleOracleHarness
       image_of = lambda do |prefix, key|
         pod = pods.fetch("items").find { |item| item.dig("metadata", "name").to_s.start_with?(prefix) }
         raise HarnessError, "kube-system pod #{prefix}* is missing" unless pod
+
         tag = pod.dig("spec", "containers", 0, "image").to_s
         expected = @node_image_lock.fetch("images").fetch(key)
         expected_cri = @node_image_lock.fetch("cri_image_ids").fetch(key)
         raise HarnessError, "#{prefix} runs image tag #{tag}, lock expects #{expected_cri["tag"]}" unless tag == expected_cri["tag"]
+
         digest = store_digests[tag]
-        raise HarnessError, "#{prefix} image #{tag} maps to #{digest.inspect} in the node store, lock expects #{expected}" unless digest && expected.end_with?(digest)
+        unless digest && expected.end_with?(digest)
+          raise HarnessError,
+                "#{prefix} image #{tag} maps to #{digest.inspect} in the node store, lock expects #{expected}"
+        end
+
         cri_id = pod.dig("status", "containerStatuses", 0, "imageID").to_s
         inspect, = node_exec("crictl", "inspecti", tag)
         cri_status = JSON.parse(inspect)["status"] || {}
-        raise HarnessError, "#{prefix} CRI image ID #{cri_status["id"]} (pod reports #{cri_id}) is not the locked #{expected_cri["id"]}" unless cri_status["id"] == expected_cri["id"] && (cri_id == expected_cri["id"] || Array(cri_status["repoDigests"]).include?(cri_id))
+        unless cri_status["id"] == expected_cri["id"] && (cri_id == expected_cri["id"] || Array(cri_status["repoDigests"]).include?(cri_id))
+          raise HarnessError,
+                "#{prefix} CRI image ID #{cri_status["id"]} (pod reports #{cri_id}) is not the locked #{expected_cri["id"]}"
+        end
+
         {"reference" => expected, "tag" => tag, "cri_image_id" => cri_status["id"], "pod_image_id" => cri_id}
       end
       apiserver = image_of.call("kube-apiserver-", "kube_apiserver")
@@ -642,6 +723,7 @@ module M2LifecycleOracleHarness
     def verify_network_isolation!
       inspect, = M2LifecycleOracleHarness.docker("network", "inspect", "--format", "{{.Internal}}", @network)
       raise HarnessError, "network #{@network} lost its internal flag" unless inspect.strip == "true"
+
       probes = {}
       %w[1.1.1.1:80 8.8.8.8:53 registry.k8s.io:443].each do |target|
         host, port = target.split(":")
@@ -651,6 +733,7 @@ module M2LifecycleOracleHarness
       end
       routes, = node_exec("ip", "-4", "route", "show", "default", allow_failure: true)
       raise HarnessError, "node has a default route (#{routes.strip}); the oracle network is not isolated" unless routes.strip.empty?
+
       @source["network_isolated"] = true
       @source["network_isolation_proof"] = {"docker_network_internal" => true, "default_route" => routes.strip, "egress_probes" => probes}
       step("network_isolation_verified", probes: probes)
@@ -662,10 +745,18 @@ module M2LifecycleOracleHarness
         in_node_path = @node_image_lock.dig("runtime", name, "in_image_path")
         sha, = node_exec("sha256sum", in_node_path)
         in_node_sha = sha.split.first
-        raise HarnessError, "#{name} inside the node (#{in_node_sha}) differs from the runner identity (#{identity["binary_sha256"]})" unless in_node_sha == identity["binary_sha256"]
+        unless in_node_sha == identity["binary_sha256"]
+          raise HarnessError,
+                "#{name} inside the node (#{in_node_sha}) differs from the runner identity (#{identity["binary_sha256"]})"
+        end
+
         version, = node_exec(in_node_path, "--version")
         first_line = version.lines.first.to_s.strip
-        raise HarnessError, "#{name} version inside the node (#{first_line}) differs from the runner identity (#{identity["version"]})" unless first_line == identity["version"]
+        unless first_line == identity["version"]
+          raise HarnessError,
+                "#{name} version inside the node (#{first_line}) differs from the runner identity (#{identity["version"]})"
+        end
+
         @runtime[name] = identity.merge("in_node_path" => in_node_path, "in_node_sha256" => in_node_sha, "in_node_version" => first_line)
       end
       step("runtime_identity_verified", containerd: @runtime["containerd"]["in_node_version"], runc: @runtime["runc"]["in_node_version"])
@@ -680,32 +771,55 @@ module M2LifecycleOracleHarness
       pods = kubectl_json("get", "pods", "-n", "kube-system", "-l", "app=kindnet")
       pod = pods.fetch("items").first
       raise HarnessError, "kindnet pod is missing" unless pod
+
       image_id = pod.dig("status", "containerStatuses", 0, "imageID").to_s
-      raise HarnessError, "kindnetd imageID #{image_id} is not the locked CRI image ID #{@cni_lock["cri_image_id"]}" unless image_id == @cni_lock["cri_image_id"]
+      unless image_id == @cni_lock["cri_image_id"]
+        raise HarnessError,
+              "kindnetd imageID #{image_id} is not the locked CRI image ID #{@cni_lock["cri_image_id"]}"
+      end
+
       image_ref = pod.dig("spec", "containers", 0, "image").to_s
-      raise HarnessError, "kindnetd image tag #{image_ref} is not the locked #{@cni_lock["image_tag"]}" unless image_ref == @cni_lock["image_tag"]
+      unless image_ref == @cni_lock["image_tag"]
+        raise HarnessError,
+              "kindnetd image tag #{image_ref} is not the locked #{@cni_lock["image_tag"]}"
+      end
+
       listing, = node_exec("ctr", "-n", "k8s.io", "images", "ls")
       store_digest = listing.lines.drop(1).map(&:split).find { |words| words[0] == image_ref }&.fetch(2)
-      raise HarnessError, "kindnetd image #{image_ref} maps to #{store_digest.inspect} in the node store, lock expects sha256:#{@cni_lock["image_digest"]}" unless store_digest == "sha256:#{@cni_lock["image_digest"]}"
+      unless store_digest == "sha256:#{@cni_lock["image_digest"]}"
+        raise HarnessError,
+              "kindnetd image #{image_ref} maps to #{store_digest.inspect} in the node store, lock expects sha256:#{@cni_lock["image_digest"]}"
+      end
+
       version = image_ref.split(":").last
-      raise HarnessError, "kindnetd image tag #{version} is not the locked version #{@cni_lock["version"]}" unless version == @cni_lock["version"]
+      unless version == @cni_lock["version"]
+        raise HarnessError,
+              "kindnetd image tag #{version} is not the locked version #{@cni_lock["version"]}"
+      end
+
       config_path = @cni_lock.fetch("config_path")
       config = wait_until("CNI config #{config_path}", TIMEOUTS.fetch(:cni_ready)) do
         stdout, _stderr, status = node_exec("cat", config_path, allow_failure: true)
         status.success? && !stdout.empty? ? stdout : nil
       end
       config_sha = Digest::SHA256.hexdigest(config)
-      raise HarnessError, "CNI config #{config_path} SHA-256 #{config_sha} does not match lock #{@cni_lock["config_sha256"]}" unless config_sha == @cni_lock["config_sha256"]
+      unless config_sha == @cni_lock["config_sha256"]
+        raise HarnessError,
+              "CNI config #{config_path} SHA-256 #{config_sha} does not match lock #{@cni_lock["config_sha256"]}"
+      end
+
       binaries = {}
       Array(@cni_lock["plugin_binaries"]).each do |binary, expected|
         stdout, = node_exec("sha256sum", "/opt/cni/bin/#{binary}")
         actual = stdout.split.first
         raise HarnessError, "CNI plugin binary #{binary} SHA-256 #{actual} does not match lock #{expected}" unless actual == expected
+
         binaries[binary] = actual
       end
       @cni = @cni_lock.slice(*CNI_IDENTITY_KEYS)
       @source["cni"] = @cni
-      @source["cni_detail"] = {"image_id" => image_id, "config_path" => config_path, "config_sha256" => config_sha, "plugin_binaries" => binaries}
+      @source["cni_detail"] =
+        {"image_id" => image_id, "config_path" => config_path, "config_sha256" => config_sha, "plugin_binaries" => binaries}
       step("cni_verified", image_id: image_id, config_sha256: config_sha)
     end
 
@@ -714,15 +828,26 @@ module M2LifecycleOracleHarness
       M2LifecycleOracleHarness.docker("cp", archive, "#{@node}:/kind/workload-image.oci.tar")
       # --index-name gives the OCI index a fully qualified name; without it ctr
       # invents `import-<date>` which the CRI image store cannot resolve back.
-      node_exec("ctr", "-n", "k8s.io", "images", "import", "--digests", "--all-platforms", "--snapshotter", "overlayfs", "--index-name", @busybox_tag, "/kind/workload-image.oci.tar")
+      node_exec("ctr", "-n", "k8s.io", "images", "import", "--digests", "--all-platforms", "--snapshotter", "overlayfs", "--index-name",
+                @busybox_tag, "/kind/workload-image.oci.tar")
       listing, = node_exec("ctr", "-n", "k8s.io", "images", "ls", "-q")
       names = listing.lines.map(&:strip)
-      raise HarnessError, "imported workload image #{@busybox_reference} is not in the node image store" unless names.include?(@busybox_reference)
+      unless names.include?(@busybox_reference)
+        raise HarnessError,
+              "imported workload image #{@busybox_reference} is not in the node image store"
+      end
+
       stray = names.select { |name| name.start_with?("import-") && name.include?(@busybox_digest.delete_prefix("sha256:")) }
       raise HarnessError, "ctr created unresolvable image names: #{stray.join(", ")}" unless stray.empty?
+
       inspect, = node_exec("crictl", "inspecti", @busybox_reference)
       status = JSON.parse(inspect)["status"] || {}
-      raise HarnessError, "CRI does not resolve #{@busybox_reference}: #{JSON.generate(status.slice("repoDigests", "repoTags"))}" unless Array(status["repoDigests"]).include?(@busybox_reference)
+      unless Array(status["repoDigests"]).include?(@busybox_reference)
+        raise HarnessError,
+              "CRI does not resolve #{@busybox_reference}: #{JSON.generate(status.slice("repoDigests",
+                                                                                        "repoTags"))}"
+      end
+
       @source["workload_image"] = {"reference" => @busybox_reference, "cri_image_id" => status["id"], "oci_archive_sha256" => Digest::SHA256.file(archive).hexdigest}
       step("workload_image_imported", reference: @busybox_reference, cri_image_id: status["id"])
     end
@@ -790,10 +915,16 @@ module M2LifecycleOracleHarness
           container = documents.fetch("startup_liveness_readiness_thresholds").fetch("spec").fetch("containers").first
           pod_history = history.call(pod_name)
           event_history = events.select { |entry| entry.fetch("object").dig("involvedObject", "name") == pod_name }
-          killed = event_history.any? { |entry| entry.fetch("object")["reason"] == "Killing" && entry.fetch("object")["message"].to_s.strip == LIVENESS_KILL_MESSAGE }
-          restarted = pod_history.any? { |entry| (status = M2LifecycleOracleHarness.container_status(entry.fetch("object"), container.fetch("name"))) && status["restartCount"].to_i >= 1 }
+          killed = event_history.any? do |entry|
+            entry.fetch("object")["reason"] == "Killing" && entry.fetch("object")["message"].to_s.strip == LIVENESS_KILL_MESSAGE
+          end
+          restarted = pod_history.any? do |entry|
+            (status = M2LifecycleOracleHarness.container_status(entry.fetch("object"),
+                                                                container.fetch("name"))) && status["restartCount"].to_i >= 1
+          end
           if killed && restarted
-            results["startup_liveness_readiness_thresholds"] = M2LifecycleOracleHarness.probe_observable(container, pod_history, event_history)
+            results["startup_liveness_readiness_thresholds"] =
+              M2LifecycleOracleHarness.probe_observable(container, pod_history, event_history)
             pending.delete("startup_liveness_readiness_thresholds")
             step("case_settled", case: "startup_liveness_readiness_thresholds")
           end
@@ -801,7 +932,11 @@ module M2LifecycleOracleHarness
 
         if pending.include?("restart_policy_and_backoff")
           variants = @fixture_cases.fetch("restart_policy_and_backoff").fetch("variants")
-          histories = variants.to_h { |variant, document| [variant, history.call(document.dig("metadata", "name")).map { |entry| entry.fetch("object") }] }
+          histories = variants.to_h do |variant, document|
+            [variant, history.call(document.dig("metadata", "name")).map do |entry|
+              entry.fetch("object")
+            end]
+          end
           settled = variants.all? do |variant, document|
             container = document.fetch("spec").fetch("containers").first.fetch("name")
             if RESTARTING_VARIANTS.include?(variant)
@@ -833,13 +968,16 @@ module M2LifecycleOracleHarness
           else
             deleted = pod_history.find { |entry| entry["type"] == "DELETED" }
             if deleted
-              events_after = events.select { |entry| entry.fetch("at") >= delete_requested_at && entry.fetch("object").dig("involvedObject", "name") == pod_name }
+              events_after = events.select do |entry|
+                entry.fetch("at") >= delete_requested_at && entry.fetch("object").dig("involvedObject", "name") == pod_name
+              end
               results["graceful_termination_oracle"] = M2LifecycleOracleHarness.termination_observable(
                 document, deleted.fetch("object"), events_after,
                 elapsed_seconds: Float(deleted.fetch("at")) - delete_requested_at
               )
               pending.delete("graceful_termination_oracle")
-              step("case_settled", case: "graceful_termination_oracle", deleted_after_seconds: (deleted.fetch("at") - delete_requested_at).round(3))
+              step("case_settled", case: "graceful_termination_oracle",
+                                   deleted_after_seconds: (deleted.fetch("at") - delete_requested_at).round(3))
             elsif Time.now.to_f - delete_requested_at > TIMEOUTS.fetch(:delete)
               raise HarnessError, "pod #{pod_name} was not deleted within #{TIMEOUTS.fetch(:delete)}s after the delete request"
             end
@@ -847,15 +985,22 @@ module M2LifecycleOracleHarness
         end
 
         break if pending.empty?
+
         if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
           snapshot = pending.to_h do |name|
-            latest = pods.reverse.find { |entry| pod_names.values.include?(entry.fetch("object").dig("metadata", "name")) && (pod_names[name].nil? || entry.fetch("object").dig("metadata", "name") == pod_names[name]) }
+            latest = pods.reverse.find do |entry|
+              pod_names.values.include?(entry.fetch("object").dig("metadata",
+                                                                  "name")) && (pod_names[name].nil? || entry.fetch("object").dig("metadata",
+                                                                                                                                 "name") == pod_names[name])
+            end
             [name, latest ? M2LifecycleOracleHarness.trace_pod_entry(latest) : nil]
           end
-          raise HarnessError, "lifecycle cases did not settle within #{TIMEOUTS.fetch(:cases)}s: #{pending.join(", ")}; last observed: #{JSON.generate(snapshot)}"
+          raise HarnessError,
+                "lifecycle cases did not settle within #{TIMEOUTS.fetch(:cases)}s: #{pending.join(", ")}; last observed: #{JSON.generate(snapshot)}"
         end
         raise HarnessError, "pod watch died: #{pod_watcher.stderr}" unless pod_watcher.alive?
         raise HarnessError, "event watch died: #{event_watcher.stderr}" unless event_watcher.alive?
+
         sleep(POLL_INTERVAL_SECONDS)
       end
 
@@ -865,16 +1010,19 @@ module M2LifecycleOracleHarness
       @trace.concat(final_events.map { |entry| M2LifecycleOracleHarness.trace_event_entry(entry) })
       @trace.concat(Array(order_cri).map { |container| {"kind" => "cri_container"}.merge(container) })
       @trace.sort_by! { |entry| entry["at"].to_s }
-      step("cases_complete", applied_at: applied_at.iso8601(6), pod_watch_entries: final_pods.length, event_watch_entries: final_events.length)
+      step("cases_complete", applied_at: applied_at.iso8601(6), pod_watch_entries: final_pods.length,
+                             event_watch_entries: final_events.length)
       results
     end
 
     def order_settled?(pod, document)
       return false unless pod.dig("status", "phase") == "Running"
+
       spec = document.fetch("spec")
       spec.fetch("initContainers").all? do |container|
         status = M2LifecycleOracleHarness.container_status(pod, container.fetch("name"), init: true)
         next false unless status
+
         if container["restartPolicy"] == "Always"
           M2LifecycleOracleHarness.state_kind(status["state"]) == "running" && status["ready"] == true
         else
@@ -890,7 +1038,9 @@ module M2LifecycleOracleHarness
       listing, = node_exec("crictl", "ps", "-a", "-o", "json", "--label", "io.kubernetes.pod.name=#{pod_name}")
       containers = JSON.parse(listing, max_nesting: 64)["containers"] || []
       init_names = Array(document.dig("spec", "initContainers")).map { |container| container.fetch("name") }
-      restartable = Array(document.dig("spec", "initContainers")).select { |container| container["restartPolicy"] == "Always" }.map { |container| container.fetch("name") }
+      restartable = Array(document.dig("spec", "initContainers")).select do |container|
+        container["restartPolicy"] == "Always"
+      end.map { |container| container.fetch("name") }
       containers.map do |container|
         inspect, = node_exec("crictl", "inspect", container.fetch("id"))
         status = JSON.parse(inspect, max_nesting: 64)["status"] || {}
@@ -946,7 +1096,7 @@ module M2LifecycleOracleHarness
       if @kind
         begin
           M2LifecycleOracleHarness.run_command(@kind, "delete", "cluster", "--name", @cluster, "--kubeconfig", File.join(@scratch.to_s, "kubeconfig"),
-                                                env: {"KIND_EXPERIMENTAL_DOCKER_NETWORK" => @network}, timeout: TIMEOUTS.fetch(:teardown))
+                                               env: {"KIND_EXPERIMENTAL_DOCKER_NETWORK" => @network}, timeout: TIMEOUTS.fetch(:teardown))
         rescue HarnessError => error
           failures << error.message
         end
@@ -966,7 +1116,11 @@ module M2LifecycleOracleHarness
 
   def read_input
     input = JSON.parse($stdin.read, max_nesting: 512)
-    raise HarnessError, "harness input must be an object with request, node_image, and runtime" unless input.is_a?(Hash) && input["request"].is_a?(Hash) && input["runtime"].is_a?(Hash)
+    unless input.is_a?(Hash) && input["request"].is_a?(Hash) && input["runtime"].is_a?(Hash)
+      raise HarnessError,
+            "harness input must be an object with request, node_image, and runtime"
+    end
+
     input
   rescue JSON::ParserError => error
     raise HarnessError, "harness input is not JSON: #{error.message}"

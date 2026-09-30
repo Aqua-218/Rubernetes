@@ -40,6 +40,7 @@ class NetworkWorkerTest < Minitest::Test
 
   def test_calls_run_in_the_worker_and_return_their_result
     result = @remote.add({"sandbox_id" => "s1"}, {"a" => 1}, request_id: "r1")
+
     assert_equal({"sandbox_id" => "s1"}, result["sandbox"])
     assert_equal({request_id: "r1"}, result["options"])
     refute_equal Process.pid, result["pid"], "the work happened in the worker"
@@ -56,6 +57,7 @@ class NetworkWorkerTest < Minitest::Test
   def test_concurrent_calls_proceed_in_parallel
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     4.times.map { Thread.new { @remote.check(0.3) } }.each(&:join)
+
     assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.9
   end
 
@@ -75,6 +77,7 @@ class NetworkWorkerNamespaceTest < Minitest::Test
     sandbox = {"sandbox_id" => "s", "netns" => {"pid" => Process.pid, "pidfd" => 9999, "path" => "/proc/#{Process.pid}/ns/net"}}
     local = Rubernetes::Network::Worker.localize_namespace(sandbox, opened)
     fd = local.dig("netns", "pidfd")
+
     refute_equal 9999, fd
     assert_equal "anon_inode:[pidfd]", File.readlink("/proc/self/fd/#{fd}")
     assert_equal 9999, sandbox.dig("netns", "pidfd"), "the caller's value is untouched"

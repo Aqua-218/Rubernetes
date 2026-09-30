@@ -33,7 +33,8 @@ module NodeStatsSummaryHarness
     @cgroup = File.join(@dir, "cgroup")
     @proc = File.join(@dir, "proc")
     FileUtils.mkdir_p([@cgroup, File.join(@proc, "sys/kernel"), File.join(@proc, "1"), File.join(@proc, "42"), File.join(@proc, "self")])
-    File.write(File.join(@cgroup, "memory.stat"), "anon #{300 * MI}\nfile #{200 * MI}\ninactive_file #{100 * MI}\npgfault 7\npgmajfault 1\n")
+    File.write(File.join(@cgroup, "memory.stat"),
+               "anon #{300 * MI}\nfile #{200 * MI}\ninactive_file #{100 * MI}\npgfault 7\npgmajfault 1\n")
     File.write(File.join(@cgroup, "cpu.stat"), "usage_usec 2000000\nuser_usec 1\n")
     File.write(File.join(@proc, "meminfo"), "MemTotal:        2097152 kB\nMemFree: 1 kB\n")
     File.write(File.join(@proc, "stat"), "cpu 1 2 3\nbtime 1767225600\n")

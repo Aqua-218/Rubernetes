@@ -213,7 +213,7 @@ module Rubernetes
         "shell" => [/\A[ \t]*(?:function[ \t]+)?([A-Za-z_][\w-]*)[ \t]*\(\)/, /\A[ \t]*function[ \t]+([A-Za-z_][\w-]*)/],
         "toml" => [/\A[ \t]*\[\[?([^\]]+)\]\]?[ \t]*\z/],
         "ini" => [/\A[ \t]*\[([^\]]+)\][ \t]*\z/],
-        "make" => [/\A([A-Za-z0-9_.\/$()%-]+)[ \t]*:(?!=)/, /\A(?:define|override)\s+(#{ID})/],
+        "make" => [%r{\A([A-Za-z0-9_./$()%-]+)[ \t]*:(?!=)}, /\A(?:define|override)\s+(#{ID})/],
         "c" => [
           /\A\s*(?:typedef\s+)?(?:class|struct|union|enum|namespace)\s+(#{ID})\b/,
           /\A\s*#\s*define\s+(#{ID})/,
@@ -221,7 +221,7 @@ module Rubernetes
           /\A#{ID}(?:::#{ID})*\s*\(\s*\z/
         ],
         "go" => [/\Afunc\s+(?:\([^)]*\)\s*)?(#{ID})/, /\A(?:type|var|const)\s+(#{ID})/],
-        "yaml" => [/\A\s*(?:-\s+)?name\s*:\s*["']?(.+?)["']?\s*\z/, /\A\s*(?:-\s+)?([A-Za-z_][\w.\/-]*)\s*:(?:\s|\z)/],
+        "yaml" => [/\A\s*(?:-\s+)?name\s*:\s*["']?(.+?)["']?\s*\z/, %r{\A\s*(?:-\s+)?([A-Za-z_][\w./-]*)\s*:(?:\s|\z)}],
         "json" => [/\A\s*"([^"]+)"\s*:/],
         "tla" => [
           /\A\s*(?:THEOREM|LEMMA|COROLLARY|PROPOSITION|ASSUME|AXIOM)\s+([A-Za-z_]\w*)/,
@@ -229,7 +229,8 @@ module Rubernetes
           /\A-{4,}\s*MODULE\s+([A-Za-z_]\w*)/
         ],
         "rbs" => [/\A\s*(?:def\s+(?:self\.)?|class\s+|module\s+|interface\s+|type\s+)([A-Za-z_][\w?!.:]*)/],
-        "dockerfile" => [/\A\s*FROM\s+\S+\s+(?:AS|as)\s+(\w+)/, /\A\s*(FROM|RUN|COPY|ADD|ENV|ARG|WORKDIR|ENTRYPOINT|CMD|EXPOSE|LABEL|USER|VOLUME)\b/i],
+        "dockerfile" => [/\A\s*FROM\s+\S+\s+(?:AS|as)\s+(\w+)/,
+                         /\A\s*(FROM|RUN|COPY|ADD|ENV|ARG|WORKDIR|ENTRYPOINT|CMD|EXPOSE|LABEL|USER|VOLUME)\b/i],
         "plain" => []
       }.freeze
       STRICT_INDENT_LANGUAGES = %w[json yaml].freeze
@@ -277,10 +278,10 @@ module Rubernetes
           binary ? out : out.force_encoding(Encoding::UTF_8)
         end
 
-        def status_of(*args, input: nil)
+        def status_of(*, input: nil)
           options = {chdir: root, binmode: true}
           options[:stdin_data] = input if input
-          out, err, status = Open3.capture3({}, "git", *args, **options)
+          out, err, status = Open3.capture3({}, "git", *, **options)
           [status.exitstatus, out, err]
         end
 
@@ -428,8 +429,8 @@ module Rubernetes
           scope = generic_scope(parts, TEST_DIRS)
           return [scope == "repo" ? "tests" : scope, "tests"]
         end
-        if !(dirs & DOC_DIRS).empty? || DOC_SUFFIXES.include?(suffix) || DOC_FILES.include?(stem) || DOC_FILES.include?(lowered)
-          return %w[docs docs] unless SOURCE_SUFFIXES.include?(suffix) && (dirs & DOC_DIRS).empty?
+        if (!(dirs & DOC_DIRS).empty? || DOC_SUFFIXES.include?(suffix) || DOC_FILES.include?(stem) || DOC_FILES.include?(lowered)) && !(SOURCE_SUFFIXES.include?(suffix) && (dirs & DOC_DIRS).empty?)
+          return %w[docs docs]
         end
         return %w[schemas schemas] unless (dirs & SCHEMA_DIRS).empty?
 
@@ -463,7 +464,7 @@ module Rubernetes
 
         value = size.to_f
         %w[B KiB MiB GiB].each do |unit|
-          return(unit == "B" ? format("%d B", value) : format("%.1f %s", value, unit)) if value < 1024 || unit == "GiB"
+          return (unit == "B" ? format("%d B", value) : format("%.1f %s", value, unit)) if value < 1024 || unit == "GiB"
 
           value /= 1024
         end
@@ -480,7 +481,7 @@ module Rubernetes
       end
 
       def plural(count, noun)
-        "#{count} #{noun}#{count == 1 ? "" : "s"}"
+        "#{count} #{noun}#{"s" unless count == 1}"
       end
 
       # --------------------------------------------------------- declarations
@@ -851,10 +852,10 @@ module Rubernetes
         end
         %w[passed success ok].each do |key|
           flag = payload[key]
-          return(flag ? key : "not #{key}") if flag == true || flag == false
+          return (flag ? key : "not #{key}") if [true, false].include?(flag)
         end
         complete = payload["complete"]
-        if complete == true || complete == false
+        if [true, false].include?(complete)
           return "complete" if complete
 
           blockers = payload["blockers"]
@@ -862,7 +863,7 @@ module Rubernetes
           return count.positive? ? "blocked (#{count} blockers)" : "blocked"
         end
         available = payload["available"]
-        return(available ? "available" : "unavailable") if available == true || available == false
+        return (available ? "available" : "unavailable") if [true, false].include?(available)
 
         nil
       end
@@ -906,7 +907,7 @@ module Rubernetes
         if value.is_a?(Array) && value.length == 2 && %i[list dict].include?(value[0])
           return plural(value[1], value[0] == :list ? "item" : "key")
         end
-        return value ? "true" : "false" if value == true || value == false
+        return value ? "true" : "false" if [true, false].include?(value)
         return "null" if value.nil?
         return format("%.6g", value) if value.is_a?(Float)
 
@@ -1178,7 +1179,7 @@ module Rubernetes
         return "update" if statuses.empty?
         return "add" if statuses == ["A"]
         return "remove" if statuses == ["D"]
-        return(statuses == ["R"] ? "rename" : "copy") if (statuses - %w[R C]).empty?
+        return (statuses == ["R"] ? "rename" : "copy") if (statuses - %w[R C]).empty?
         return "refresh" if GENERATED_CATEGORIES.include?(category)
 
         "update"
@@ -1223,7 +1224,11 @@ module Rubernetes
         kind = CATEGORY_TYPE.fetch(category, "chore")
         if kind == "feat" && entry.letter == "M"
           net = entry.added - entry.removed
-          kind = net.positive? ? "feat" : (net.negative? ? "refactor" : "chore")
+          kind = if net.positive?
+                   "feat"
+                 else
+                   (net.negative? ? "refactor" : "chore")
+                 end
         end
         verb = {"A" => "add", "D" => "remove", "R" => "rename", "C" => "copy", "T" => "retype"}[entry.letter]
         if verb.nil?
@@ -1279,7 +1284,7 @@ module Rubernetes
 
       def hunk_verb(hunk)
         return "add" if hunk.introduces
-        return(hunk.context.empty? ? "add" : "extend") if hunk.removed.zero?
+        return (hunk.context.empty? ? "add" : "extend") if hunk.removed.zero?
         return "remove" if hunk.added.zero?
         return "extend" if hunk.added > hunk.removed * 3
         return "trim" if hunk.removed > hunk.added * 3
@@ -1370,8 +1375,8 @@ module Rubernetes
         end
         total_added = entries.reject(&:attribute_nodiff).sum(&:added)
         total_removed = entries.reject(&:attribute_nodiff).sum(&:removed)
-        lines << "#{plural(entries.length, "file")} changed, #{total_added} insertion#{total_added == 1 ? "" : "s"}(+), " \
-                 "#{total_removed} deletion#{total_removed == 1 ? "" : "s"}(-)."
+        lines << "#{plural(entries.length, "file")} changed, #{total_added} insertion#{"s" unless total_added == 1}(+), " \
+                 "#{total_removed} deletion#{"s" unless total_removed == 1}(-)."
         trailers = cycle_trailers(cycle, status)
         lines << "" unless trailers.empty?
         lines.concat(trailers)
@@ -1726,9 +1731,13 @@ module Rubernetes
           opts.on("-m", "--message SUBJECT", "override the subject line (cycle granularity only)") { |v| options.message = v }
           opts.on("--paths x,y,z", Array, "limit recording to these paths") { |v| options.paths = v }
           opts.on("--allow-empty", "commit even when nothing changed (cycle granularity only)") { options.allow_empty = true }
-          opts.on("--settle SECONDS", Float, "wait until no candidate file was written within this many seconds (default 0.2)") { |v| options.settle = v }
+          opts.on("--settle SECONDS", Float, "wait until no candidate file was written within this many seconds (default 0.2)") do |v|
+            options.settle = v
+          end
           opts.on("--settle-max SECONDS", Float, "upper bound on the settle wait (default 5)") { |v| options.settle_max = v }
-          opts.on("--lock-timeout SECONDS", Float, "seconds to wait for another recorder or an index lock (default 30)") { |v| options.lock_timeout = v }
+          opts.on("--lock-timeout SECONDS", Float, "seconds to wait for another recorder or an index lock (default 30)") do |v|
+            options.lock_timeout = v
+          end
           opts.on("--retries N", Integer, "times to retake the snapshot when HEAD moves underneath (default 5)") { |v| options.retries = v }
           opts.on("--report PATH", "write a JSON report of the commits made to this path") { |v| options.report = v }
           opts.on("--dry-run", "print the commits that would be made and change nothing") { options.dry_run = true }

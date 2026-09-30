@@ -52,6 +52,7 @@ class SchedulerServiceTypedCacheTest < Minitest::Test
 
     stored_pod = subject.instance_variable_get(:@pods).values.first
     stored_node = subject.instance_variable_get(:@nodes).values.first
+
     assert_kind_of Scheduler::Pod, stored_pod
     assert_kind_of Scheduler::Node, stored_node
     assert_equal "a", stored_pod.name
@@ -63,20 +64,24 @@ class SchedulerServiceTypedCacheTest < Minitest::Test
     subject.send(:observe_pod, pod("a"))
     stored = subject.instance_variable_get(:@pods).values.first
     normalized = Scheduler::Framework.allocate.send(:normalize_pods, [stored], [])
+
     assert_same stored, normalized.first, "a stored snapshot must not be rebuilt"
   end
 
   def test_a_node_whose_scheduling_fields_are_unchanged_does_not_retry_unschedulable
     subject = service
     retries = []
-    subject.define_singleton_method(:retry_unschedulable) { |reason, **fields| retries << reason }
+    subject.define_singleton_method(:retry_unschedulable) { |reason, **_fields| retries << reason }
     subject.send(:observe_node, node_object("n1"))
+
     assert_equal ["node_changed"], retries, "the first sighting always retries"
     subject.send(:observe_node, node_object("n1"))
+
     assert_equal ["node_changed"], retries, "an unchanged node does not"
     changed = node_object("n1")
     changed["spec"]["unschedulable"] = true
     subject.send(:observe_node, changed)
+
     assert_equal %w[node_changed node_changed], retries
   end
 
@@ -85,6 +90,7 @@ class SchedulerServiceTypedCacheTest < Minitest::Test
     subject.send(:observe_pod, pod("a"))
     subject.define_singleton_method(:retry_unschedulable) { |*, **| nil }
     subject.send(:delete_pod, pod("a"))
+
     assert_empty subject.instance_variable_get(:@pods)
   end
 end

@@ -5,7 +5,6 @@ require "stringio"
 require "digest/sha1"
 require "openssl"
 require "securerandom"
-require "thread"
 require_relative "../security/authorization/attributes"
 
 module Rubernetes
@@ -197,7 +196,8 @@ module Rubernetes
         return if status.dig("lastState", "terminated")
 
         reason = waiting["reason"].to_s.empty? ? "ContainerCreating" : waiting["reason"].to_s
-        raise Status::BadRequest.new("container #{name.inspect} in pod #{pod.dig("metadata", "name").to_s.inspect} is waiting to start: #{reason}")
+        raise Status::BadRequest.new("container #{name.inspect} in pod #{pod.dig("metadata",
+                                                                                 "name").to_s.inspect} is waiting to start: #{reason}")
       end
 
       def watch?(request)
@@ -248,7 +248,12 @@ module Rubernetes
           # The first side to finish ends the session: half-open proxies keep
           # kubectl waiting on a peer that has already gone.
           finished = Queue.new
-          copies.each { |thread| Thread.new { thread.join; finished << thread } }
+          copies.each do |thread|
+            Thread.new do
+              thread.join
+              finished << thread
+            end
+          end
           finished.pop
           copies.each { |thread| thread.join(1) }
         ensure
@@ -278,7 +283,9 @@ module Rubernetes
       end
 
       def authorize!(request, route, identity, correlation_id)
-        raise Status::Unauthorized.new("authentication is required for Pod #{route.subresource} subresources") if identity.nil? || identity.to_s.empty?
+        if identity.nil? || identity.to_s.empty?
+          raise Status::Unauthorized.new("authentication is required for Pod #{route.subresource} subresources")
+        end
         unless @trusted_mode || @authorizer
           raise Status::ServiceUnavailable.new("Pod streaming subresource authorization is not configured")
         end
@@ -334,9 +341,7 @@ module Rubernetes
         #   * an authorizer#authorize(Authorization::Attributes)
         if @authorizer.respond_to?(:authorize)
           arity = @authorizer.method(:authorize).arity
-          if arity == 2 || arity < -1
-            return @authorizer.authorize(context.identity, subject_access_review_spec(context))
-          end
+          return @authorizer.authorize(context.identity, subject_access_review_spec(context)) if arity == 2 || arity < -1
 
           return @authorizer.authorize(authorization_attributes(context))
         end
@@ -455,9 +460,7 @@ module Rubernetes
                        record.containers
                      end
         containers = Array(containers)
-        if containers.empty?
-          raise Status::ServiceUnavailable.new("Pod has no running container record on its node")
-        end
+        raise Status::ServiceUnavailable.new("Pod has no running container record on its node") if containers.empty?
 
         requested_name = name.to_s
         default_name = Array(pod.dig("spec", "containers")).first
@@ -515,15 +518,15 @@ module Rubernetes
       def invoke_log(service, container_id, request, identity, correlation_id)
         callable = service.respond_to?(:logs) ? service.method(:logs) : service.method(:call)
         invoke_with_keywords(callable, [container_id], {
-          follow: boolean_query(request, "follow", default: false),
-          since: log_since(request),
-          tail: request.query_value("tailLines"),
-          timestamps: boolean_query(request, "timestamps", default: false),
-          limit_bytes: request.query_value("limitBytes"),
-          stream: normalize_log_stream(request.query_value("stream")),
-          request_id: correlation_id,
-          identity: identity
-        })
+                               follow: boolean_query(request, "follow", default: false),
+                               since: log_since(request),
+                               tail: request.query_value("tailLines"),
+                               timestamps: boolean_query(request, "timestamps", default: false),
+                               limit_bytes: request.query_value("limitBytes"),
+                               stream: normalize_log_stream(request.query_value("stream")),
+                               request_id: correlation_id,
+                               identity: identity
+                             })
       end
 
       # sinceSeconds and sinceTime both mean "log written from this moment"
@@ -552,6 +555,7 @@ module Rubernetes
         if operation == "exec"
           raise Status::BadRequest.new("exec requires at least one command argument") if command.empty?
           raise Status::BadRequest.new("exec command has too many arguments") if command.length > MAX_COMMAND_ARGUMENTS
+
           command.each { |argument| validate_argument!(argument, "exec command argument") }
         end
         invoke_with_keywords(callable, [container_id], {
@@ -573,15 +577,16 @@ module Rubernetes
 
         callable = service.respond_to?(:port_forward) ? service.method(:port_forward) : service.method(:call)
         invoke_with_keywords(callable, [container_id, ports], {
-          timeout: request.query_value("timeout") || 30.0,
-          request_id: correlation_id,
-          identity: identity
-        })
+                               timeout: request.query_value("timeout") || 30.0,
+                               request_id: correlation_id,
+                               identity: identity
+                             })
       end
 
       def invoke_with_keywords(callable, positional, keywords)
         parameters = callable.parameters
         return callable.call(*positional, **keywords) if parameters.any? { |kind, _| kind == :keyrest }
+
         accepted = parameters.filter_map { |kind, name| name if %i[key keyreq].include?(kind) }
         callable.call(*positional, **keywords.select { |key, _| accepted.include?(key) })
       rescue ArgumentError => error
@@ -620,9 +625,7 @@ module Rubernetes
 
       def stream_output(result)
         return result.stdout if result.respond_to?(:stdout)
-        if result.is_a?(Hash)
-          return result[:stdout] || result["stdout"] || result[:stderr] || result["stderr"]
-        end
+        return result[:stdout] || result["stdout"] || result[:stderr] || result["stderr"] if result.is_a?(Hash)
 
         result.is_a?(String) ? [result.b] : result
       end
@@ -646,10 +649,13 @@ module Rubernetes
         when WEBSOCKET_UPGRADE
           version = request.header("sec-websocket-version").to_s
           key = request.header("sec-websocket-key").to_s
-          raise Status::BadRequest.new("websocket upgrade requires version 13 and a valid key") unless version == WEBSOCKET_VERSION && valid_websocket_key?(key)
+          unless version == WEBSOCKET_VERSION && valid_websocket_key?(key)
+            raise Status::BadRequest.new("websocket upgrade requires version 13 and a valid key")
+          end
 
           protocol = select_websocket_protocol(request.header("sec-websocket-protocol"), operation)
           raise Status::BadRequest.new("websocket upgrade does not offer a supported Kubernetes channel protocol") unless protocol
+
           headers = stream_headers(operation).merge(
             "connection" => "Upgrade",
             "upgrade" => "websocket",
@@ -811,10 +817,10 @@ module Rubernetes
         if name.end_with?("::AuthorizationError")
           raise Status::Forbidden.new("request is not authorized for Pod #{operation}"), cause: error
         end
-        if name.end_with?("::InvalidRequest") || name.end_with?("::ConfigurationError")
+        if name.end_with?("::InvalidRequest", "::ConfigurationError")
           raise Status::BadRequest.new("Pod #{operation} request is invalid"), cause: error
         end
-        if name.end_with?("::RuntimeUnavailable") || name.end_with?("::CapabilityError")
+        if name.end_with?("::RuntimeUnavailable", "::CapabilityError")
           raise Status::ServiceUnavailable.new("Pod #{operation} runtime is unavailable"), cause: error
         end
 
@@ -961,6 +967,7 @@ module Rubernetes
             length = second & 0x7f
             raise IOError, "fragmented websocket frames are not supported" unless fin
             raise IOError, "client websocket frames must be masked" unless masked
+
             if length == 126
               length = read_bytes(socket, 2).unpack1("n")
             elsif length == 127
@@ -1052,6 +1059,7 @@ module Rubernetes
           loop do
             length = socket.read(4)
             raise EOFError if length.nil? || length.bytesize != 4
+
             size = length.unpack1("N")
             raise IOError, "duplex frame exceeds configured limit" if size > MAX_FRAME_BYTES
             break if size.zero?

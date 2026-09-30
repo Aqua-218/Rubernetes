@@ -60,24 +60,31 @@ class NetlinkTest < Minitest::Test
     netlink.link_add(name: "rk-veth0", kind: "veth", peer: "rk-peer0", up: false)
 
     header, payload = split_message(socket.message)
+
     assert_equal Netlink::RTM_NEWLINK, header.fetch(:type)
     assert_equal Netlink::NLM_F_REQUEST | Netlink::NLM_F_ACK | Netlink::NLM_F_CREATE | Netlink::NLM_F_EXCL, header.fetch(:flags)
     family, pad, arphrd, index, flags, change = payload.byteslice(0, 16).unpack("CCS<l<L<L<")
+
     assert_equal [0, 0, 0, 0, 0, 1], [family, pad, arphrd, index, flags, change]
 
     attributes = Netlink::TLV.decode(payload.byteslice(16, payload.bytesize - 16))
-    assert_equal [Netlink::IFLA_IFNAME, Netlink::IFLA_LINKINFO], attributes.map { |entry| entry.fetch("type") }
+
+    assert_equal([Netlink::IFLA_IFNAME, Netlink::IFLA_LINKINFO], attributes.map { |entry| entry.fetch("type") })
     assert_equal "rk-veth0\0", attributes.fetch(0).fetch("value")
 
     link_info = Netlink::TLV.decode(attributes.fetch(1).fetch("value"))
-    assert_equal [Netlink::IFLA_INFO_KIND, Netlink::IFLA_INFO_DATA], link_info.map { |entry| entry.fetch("type") }
+
+    assert_equal([Netlink::IFLA_INFO_KIND, Netlink::IFLA_INFO_DATA], link_info.map { |entry| entry.fetch("type") })
     assert_equal "veth\0", link_info.fetch(0).fetch("value")
 
     info_data = Netlink::TLV.decode(link_info.fetch(1).fetch("value"))
-    assert_equal [Netlink::VETH_INFO_PEER], info_data.map { |entry| entry.fetch("type") }
+
+    assert_equal([Netlink::VETH_INFO_PEER], info_data.map { |entry| entry.fetch("type") })
     peer_payload = info_data.fetch(0).fetch("value")
     peer_attributes = Netlink::TLV.decode(peer_payload.byteslice(16, peer_payload.bytesize - 16))
-    assert_equal [[0, 0, 0, 0, 0, 0], "rk-peer0\0"], [peer_payload.byteslice(0, 16).unpack("CCS<l<L<L<"), peer_attributes.fetch(0).fetch("value")]
+
+    assert_equal [[0, 0, 0, 0, 0, 0], "rk-peer0\0"],
+                 [peer_payload.byteslice(0, 16).unpack("CCS<l<L<L<"), peer_attributes.fetch(0).fetch("value")]
   ensure
     socket&.close
   end
@@ -89,12 +96,15 @@ class NetlinkTest < Minitest::Test
     netlink.address_add(address: "198.18.1.7/24", name: "lo")
 
     header, payload = split_message(socket.message)
+
     assert_equal Netlink::RTM_NEWADDR, header.fetch(:type)
     family, prefix, flags, scope, index = payload.byteslice(0, 8).unpack("CCCCL<")
+
     assert_equal [Netlink::AF_INET, 24, 0, 0, 1], [family, prefix, flags, scope, index]
     attributes = Netlink::TLV.decode(payload.byteslice(8, payload.bytesize - 8))
-    assert_equal [Netlink::IFA_ADDRESS, Netlink::IFA_LOCAL], attributes.map { |entry| entry.fetch("type") }
-    assert_equal ["\xC6\x12\x01\x07".b, "\xC6\x12\x01\x07".b], attributes.map { |entry| entry.fetch("value") }
+
+    assert_equal([Netlink::IFA_ADDRESS, Netlink::IFA_LOCAL], attributes.map { |entry| entry.fetch("type") })
+    assert_equal(["\xC6\x12\x01\x07".b, "\xC6\x12\x01\x07".b], attributes.map { |entry| entry.fetch("value") })
   ensure
     socket&.close
   end
@@ -119,13 +129,18 @@ class NetlinkTest < Minitest::Test
     netlink.route_add(destination: "198.18.2.0/24", via: "198.18.1.1", dev: "lo", metric: 42)
 
     header, payload = split_message(socket.message)
+
     assert_equal Netlink::RTM_NEWROUTE, header.fetch(:type)
     family, prefix, src_len, tos, table, protocol, scope, type, route_flags = payload.byteslice(0, 12).unpack("CCCCCCCCL<")
+
     assert_equal [Netlink::AF_INET, 24, 0, 0, Netlink::RT_TABLE_MAIN, Netlink::RTPROT_STATIC,
                   Netlink::RT_SCOPE_UNIVERSE, Netlink::RTN_UNICAST, 0],
                  [family, prefix, src_len, tos, table, protocol, scope, type, route_flags]
     attributes = Netlink::TLV.decode(payload.byteslice(12, payload.bytesize - 12))
-    assert_equal [Netlink::RTA_DST, Netlink::RTA_GATEWAY, Netlink::RTA_OIF, Netlink::RTA_PRIORITY], attributes.map { |entry| entry.fetch("type") }
+
+    assert_equal([Netlink::RTA_DST, Netlink::RTA_GATEWAY, Netlink::RTA_OIF, Netlink::RTA_PRIORITY], attributes.map do |entry|
+      entry.fetch("type")
+    end)
     assert_equal "\xC6\x12\x02\x00".b, attributes.fetch(0).fetch("value")
     assert_equal "\xC6\x12\x01\x01".b, attributes.fetch(1).fetch("value")
     assert_equal [1].pack("L<"), attributes.fetch(2).fetch("value")
@@ -142,9 +157,11 @@ class NetlinkTest < Minitest::Test
 
     _header, payload = split_message(socket.message)
     _family, _prefix, _src_len, _tos, table, = payload.byteslice(0, 12).unpack("CCCCCCCCL<")
+
     assert_equal 0xff, table
     attributes = Netlink::TLV.decode(payload.byteslice(12, payload.bytesize - 12))
-    assert_equal [Netlink::RTA_DST, Netlink::RTA_OIF, Netlink::RTA_TABLE], attributes.map { |entry| entry.fetch("type") }
+
+    assert_equal([Netlink::RTA_DST, Netlink::RTA_OIF, Netlink::RTA_TABLE], attributes.map { |entry| entry.fetch("type") })
     assert_equal [1000].pack("L<"), attributes.fetch(2).fetch("value")
   ensure
     socket&.close
@@ -157,12 +174,15 @@ class NetlinkTest < Minitest::Test
     netlink.neighbor_add(destination: "198.18.1.9", lladdr: "02:00:00:00:00:09", dev: "lo")
 
     header, payload = split_message(socket.message)
+
     assert_equal Netlink::RTM_NEWNEIGH, header.fetch(:type)
     family, pad1, pad2, index, state, flags, type = payload.byteslice(0, 12).unpack("CCS<l<S<CC")
+
     assert_equal [Netlink::AF_INET, 0, 0, 1, Netlink::NUD_PERMANENT, 0, Netlink::RTN_UNICAST],
                  [family, pad1, pad2, index, state, flags, type]
     attributes = Netlink::TLV.decode(payload.byteslice(12, payload.bytesize - 12))
-    assert_equal [Netlink::NDA_DST, Netlink::NDA_LLADDR], attributes.map { |entry| entry.fetch("type") }
+
+    assert_equal([Netlink::NDA_DST, Netlink::NDA_LLADDR], attributes.map { |entry| entry.fetch("type") })
     assert_equal "\xC6\x12\x01\x09".b, attributes.fetch(0).fetch("value")
     assert_equal "\x02\x00\x00\x00\x00\x09".b, attributes.fetch(1).fetch("value")
   ensure
@@ -181,6 +201,7 @@ class NetlinkTest < Minitest::Test
     link_info = Netlink::TLV.decode(attributes.find { |entry| entry.fetch("type") == Netlink::IFLA_LINKINFO }.fetch("value"))
     data = Netlink::TLV.decode(link_info.find { |entry| entry.fetch("type") == Netlink::IFLA_INFO_DATA }.fetch("value"))
     values = data.to_h { |entry| [entry.fetch("type"), entry.fetch("value")] }
+
     assert_equal [4096].pack("L<"), values.fetch(Netlink::IFLA_VXLAN_ID)
     assert_equal [4789].pack("S>"), values.fetch(Netlink::IFLA_VXLAN_PORT)
     assert_equal [0].pack("C"), values.fetch(Netlink::IFLA_VXLAN_LEARNING)
@@ -197,6 +218,7 @@ class NetlinkTest < Minitest::Test
     netlink.link_set(name: "fake-interface", up: true)
 
     request = adapter.requests.fetch(0)
+
     assert_equal Netlink::RTM_SETLINK, request.fetch(:type)
     assert_includes request.fetch(:attributes).map { |entry| entry.fetch("type") }, Netlink::IFLA_IFNAME
   end
@@ -209,7 +231,7 @@ class NetlinkTest < Minitest::Test
 
     assert_equal context.fetch("inode"), File.stat("/proc/self/fd/#{lease.fileno}").ino
     assert_equal context.fetch("pid"), lease.pid
-    refute lease.closed?
+    refute_predicate lease, :closed?
   ensure
     lease&.close
     IO.for_fd(pidfd).close if pidfd
@@ -256,6 +278,7 @@ class NetlinkTest < Minitest::Test
 
   def split_message(message)
     length, type, flags, sequence, pid = message.byteslice(0, Netlink::HEADER_SIZE).unpack("L<S<S<L<L<")
+
     assert_equal message.bytesize, length
     assert_operator sequence, :>, 0
     assert_equal 0, pid

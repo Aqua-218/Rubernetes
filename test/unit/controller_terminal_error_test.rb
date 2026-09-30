@@ -20,12 +20,12 @@ class ControllerTerminalErrorTest < Minitest::Test
   end
 
   def test_a_write_into_a_terminating_namespace_is_terminal
-    assert(terminal?('Kubernetes API request POST /api/v1/namespaces/cronjob-4024/pods failed with HTTP 403: ' \
-                     'unable to create new content in namespace cronjob-4024 because it is being terminated'))
+    assert(terminal?("Kubernetes API request POST /api/v1/namespaces/cronjob-4024/pods failed with HTTP 403: " \
+                     "unable to create new content in namespace cronjob-4024 because it is being terminated"))
   end
 
   def test_a_write_into_a_namespace_that_is_gone_is_terminal
-    assert(terminal?('Kubernetes API request POST /api/v1/namespaces/watch-2370/serviceaccounts failed with ' \
+    assert(terminal?("Kubernetes API request POST /api/v1/namespaces/watch-2370/serviceaccounts failed with " \
                      'HTTP 404: namespaces "watch-2370" not found'))
   end
 

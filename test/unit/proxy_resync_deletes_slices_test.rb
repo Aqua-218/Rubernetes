@@ -60,11 +60,12 @@ class ProxyResyncToleratesUnusableSlicesTest < Minitest::Test
     source = Source.new([slice("web-1"), slice("custom", service: nil)])
 
     result = @proxy.send(:resync_watch_source, source, kind: :endpoint_slice, resource_version: "1",
-                                                        known_keys: [["apps/web", "web-old"]])
+                                                       known_keys: [["apps/web", "web-old"]])
 
     assert_equal [["apps/web", "web-1"]], result[:keys]
     assert_equal "77", result[:resource_version]
     store = @proxy.send(:instance_variable_get, :@endpoint_store)
+
     assert_nil store.delete_endpoint_slice({"metadata" => {"name" => "web-old", "namespace" => "apps", "labels" => {"kubernetes.io/service-name" => "web"}}}),
                "the vanished slice was pruned by the resync"
   end

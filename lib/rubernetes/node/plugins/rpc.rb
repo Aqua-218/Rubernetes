@@ -71,7 +71,7 @@ module Rubernetes
           {"error" => "#{error.class.name.split("::").last}: #{details}", "code" => code}
         end
 
-        HELPER = <<~'RUBY'
+        HELPER = <<~RUBY
           require "json"
           require "rubernetes/node/plugins/rpc"
           args = JSON.parse($stdin.read)

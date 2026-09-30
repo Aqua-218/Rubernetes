@@ -93,9 +93,7 @@ module Rubernetes
         end.to_h { |definition| [definition.name, definition] }
         BuiltinControllerCorpus.entries.each do |entry|
           implementation = BUILTIN_IMPLEMENTATIONS[entry.name]
-          unless implementation
-            raise MissingControllerError, "built-in controller #{entry.name.inspect} has no concrete implementation"
-          end
+          raise MissingControllerError, "built-in controller #{entry.name.inspect} has no concrete implementation" unless implementation
 
           definition = factory_definitions[entry.name]
           if definition
@@ -115,10 +113,8 @@ module Rubernetes
             options = options.dup if options.is_a?(Hash)
             options = {} unless options.is_a?(Hash)
             options[:store] ||= context[:store] || context["store"]
-            unless controller
-              controller = instance_mutex.synchronize do
-                controller_instance ||= implementation.new(store: options[:store] || options["store"], definition: definition)
-              end
+            controller ||= instance_mutex.synchronize do
+              controller_instance ||= implementation.new(store: options[:store] || options["store"], definition: definition)
             end
             controller.plan(resource, **options)
           end
@@ -178,18 +174,21 @@ module Rubernetes
                when "deployment-controller" then [OwnershipEdge.new(owner: owner, dependent: replica_set)]
                when "replicaset-controller", "daemonset-controller", "job-controller" then [OwnershipEdge.new(owner: owner, dependent: pod)]
                when "cronjob-controller" then [OwnershipEdge.new(owner: owner, dependent: job)]
-               when "statefulset-controller" then [OwnershipEdge.new(owner: owner, dependent: pod), OwnershipEdge.new(owner: owner, dependent: stateful_revision)]
+               when "statefulset-controller" then [OwnershipEdge.new(owner: owner, dependent: pod),
+                                                   OwnershipEdge.new(owner: owner, dependent: stateful_revision)]
                when "serviceaccount-token-controller" then [OwnershipEdge.new(owner: owner, dependent: secret)]
                when "replicationcontroller-controller" then [OwnershipEdge.new(owner: owner, dependent: pod)]
                else []
                end
         watches = case name
-                  when "deployment-controller" then [watch_for(owner, :all), watch_for(replica_set, :owner_reference, owner: owner), watch_for(pod, :owner_reference, owner: owner)]
+                  when "deployment-controller" then [watch_for(owner, :all), watch_for(replica_set, :owner_reference, owner: owner),
+                                                     watch_for(pod, :owner_reference, owner: owner)]
                   when "replicaset-controller" then [watch_for(owner, :all), watch_for(pod, :owner_reference, owner: owner)]
                   when "statefulset-controller" then [watch_for(owner, :all), watch_for(pod, :owner_reference, owner: owner),
-                                                       watch_for(stateful_revision, :owner_reference, owner: owner),
-                                                       watch_for(stateful_claim, :label)]
-                  when "daemonset-controller" then [watch_for(owner, :all), watch_for(pod, :owner_reference, owner: owner), watch_for(node, :all)]
+                                                      watch_for(stateful_revision, :owner_reference, owner: owner),
+                                                      watch_for(stateful_claim, :label)]
+                  when "daemonset-controller" then [watch_for(owner, :all), watch_for(pod, :owner_reference, owner: owner),
+                                                    watch_for(node, :all)]
                   when "job-controller" then [watch_for(owner, :all), watch_for(pod, :owner_reference, owner: owner)]
                   when "cronjob-controller" then [watch_for(owner, :all), watch_for(job, :owner_reference, owner: owner)]
                   when "endpoints-controller"
@@ -210,13 +209,15 @@ module Rubernetes
                   when "endpointslice-controller"
                     [watch_for(service, :all, route: :self), watch_for(pod, :label, selector_source: service),
                      watch_for(endpoint_slice, :all, route: :self, queue_key: SLICE_OWNER_KEY,
-                                               predicate: slice_managed_by("endpointslice-controller.k8s.io"))]
+                                                     predicate: slice_managed_by("endpointslice-controller.k8s.io"))]
                   when "endpointslice-mirroring-controller"
                     [watch_for(endpoints, :all, route: :self),
                      watch_for(endpoint_slice, :all, route: :self, queue_key: SLICE_OWNER_KEY,
-                                               predicate: slice_managed_by("endpointslicemirroring-controller.k8s.io"))]
-                  when "replicationcontroller-controller" then [watch_for(owner, :all), watch_for(pod, :owner_reference, owner: owner), watch_for(pod, :label)]
-                  when "serviceaccount-token-controller" then [watch_for(service_account, :all), watch_for(secret, :owner_reference, owner: owner)]
+                                                     predicate: slice_managed_by("endpointslicemirroring-controller.k8s.io"))]
+                  when "replicationcontroller-controller" then [watch_for(owner, :all), watch_for(pod, :owner_reference, owner: owner),
+                                                                watch_for(pod, :label)]
+                  when "serviceaccount-token-controller" then [watch_for(service_account, :all),
+                                                               watch_for(secret, :owner_reference, owner: owner)]
                   when "pod-garbage-collector-controller" then [watch_for(pod, :all), watch_for(node, :all)]
                   when "resourcequota-controller"
                     # Replenishment (pkg/controller/resourcequota): every kind a
@@ -288,21 +289,21 @@ module Rubernetes
 
       def watch_for(resource, via, owner: nil, route: :fan_out, selector_source: nil, queue_key: nil, predicate: nil)
         queue_key ||= if via.to_sym == :owner_reference && owner
-                      lambda do |object|
-                        reference = Support.owner_references(object).find do |ref|
-                          Support.ref_value(ref, "kind", "").to_s == owner.kind &&
-                            (Support.ref_value(ref, "controller", true) == true ||
-                             Support.ref_value(ref, "controller", true).to_s.casecmp("true").zero?)
+                        lambda do |object|
+                          reference = Support.owner_references(object).find do |ref|
+                            Support.ref_value(ref, "kind", "").to_s == owner.kind &&
+                              (Support.ref_value(ref, "controller", true) == true ||
+                               Support.ref_value(ref, "controller", true).to_s.casecmp("true").zero?)
+                          end
+                          if reference
+                            [Support.namespace(object), Support.ref_value(reference, "name", "")].compact.join("/")
+                          else
+                            [Support.namespace(object), Support.name(object)].compact.join("/")
+                          end
                         end
-                        if reference
-                          [Support.namespace(object), Support.ref_value(reference, "name", "")].compact.join("/")
-                        else
-                          [Support.namespace(object), Support.name(object)].compact.join("/")
-                        end
+                      else
+                        ->(object) { [Support.namespace(object), Support.name(object)].compact.join("/") }
                       end
-                    else
-                      ->(object) { [Support.namespace(object), Support.name(object)].compact.join("/") }
-                    end
         WatchSpec.new(resource: resource, via: via, scope: resource.scope,
                       index_name: "builtin/#{resource.identifier}/#{via}",
                       predicate: predicate || ->(_object) { true }, queue_key: queue_key, route: route,
@@ -313,8 +314,8 @@ module Rubernetes
     # Compatibility convenience for callers that use `Rubernetes::Controller::DSL`.
     module_function
 
-    def controller(name, registry: default_registry, kind: nil, implementation: nil, &block)
-      DSL.controller(name, registry: registry, kind: kind, implementation: implementation, &block)
+    def controller(name, registry: default_registry, kind: nil, implementation: nil, &)
+      DSL.controller(name, registry: registry, kind: kind, implementation: implementation, &)
     end
   end
 end

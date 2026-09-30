@@ -26,8 +26,8 @@ class M3ExternalProcessChaosTest < Minitest::Test
         "executed" => true,
         "status" => "PASS",
         "runner" => {"runner_sha256" => "a" * 64, "command" => ["chaos-runner"], "process_id" => 1,
-                      "mode" => "external", "self_comparison" => false, "implementation" => "runner.rb",
-                      "started_at" => Time.now.utc.iso8601, "finished_at" => Time.now.utc.iso8601},
+                     "mode" => "external", "self_comparison" => false, "implementation" => "runner.rb",
+                     "started_at" => Time.now.utc.iso8601, "finished_at" => Time.now.utc.iso8601},
         "processes" => [{"pid" => 2, "start_time" => 3, "observed_exit" => true, "exit_status" => 0}],
         "events" => [{"id" => "acquire", "observed_at" => Time.now.utc.iso8601, "observation" => {"pid" => 2}}],
         "trace" => [], "effect_ids" => [], "lease_observations" => [], "component_runs" => []
@@ -37,10 +37,10 @@ class M3ExternalProcessChaosTest < Minitest::Test
 
     M3Gate.send(:validate_process_chaos, document, errors, "leader-loss process chaos", %w[acquire])
 
-    assert errors.any? { |error| error.include?("namespace") }
-    assert errors.any? { |error| error.include?("lease observations") }
-    assert errors.any? { |error| error.include?("effect IDs") }
-    assert errors.any? { |error| error.include?("separate controller-manager and scheduler") }
+    assert(errors.any? { |error| error.include?("namespace") })
+    assert(errors.any? { |error| error.include?("lease observations") })
+    assert(errors.any? { |error| error.include?("effect IDs") })
+    assert(errors.any? { |error| error.include?("separate controller-manager and scheduler") })
   end
 
   def test_blocked_process_chaos_preserves_blocker_in_gate_diagnostics
@@ -60,6 +60,7 @@ class M3ExternalProcessChaosTest < Minitest::Test
 
     [leader_source, queue_source].each do |source|
       code = source.lines.reject { |line| line.lstrip.start_with?("#") }.join
+
       refute_match(/MemoryStore|Object\.new|LeaseElector\.new/, code)
       assert_match(/external_process/, code)
     end
@@ -80,7 +81,8 @@ class M3ExternalProcessChaosTest < Minitest::Test
     assert_equal true, capabilities.fetch("worker_restart_durable")
     assert_equal false, capabilities.fetch("m5_disk_durable")
     assert_equal false, capabilities.fetch("m5_api_ha")
-    assert_empty M3ControlPlaneChaosRunner.capability_errors(capabilities, request("m3-control-plane-queue-chaos").merge("scenario" => "watch-queue-chaos"))
+    assert_empty M3ControlPlaneChaosRunner.capability_errors(capabilities,
+                                                             request("m3-control-plane-queue-chaos").merge("scenario" => "watch-queue-chaos"))
   end
 
   # Requirement: a stale holder and a dead/recycled PID cannot satisfy
@@ -95,7 +97,7 @@ class M3ExternalProcessChaosTest < Minitest::Test
     harness.define_singleton_method(:wait_until) { |timeout:, &block| block.call }
     record = {"identity" => "old", "pid" => 999_999, "start_time" => 1, "generation" => "old:999999:1"}
     result = harness.send(:wait_for_recovery, [record], record, lease_name: "m3", started_at: M3ControlPlaneChaosRunner.monotonic_time,
-                           old_identity: "old", old_lease: {"metadata" => {"resourceVersion" => "7"}, "spec" => {"holderIdentity" => "old", "renewTime" => "2026-01-01T00:00:00Z"}})
+                                                                old_identity: "old", old_lease: {"metadata" => {"resourceVersion" => "7"}, "spec" => {"holderIdentity" => "old", "renewTime" => "2026-01-01T00:00:00Z"}})
 
     assert_equal false, result.fetch("recovered")
   end

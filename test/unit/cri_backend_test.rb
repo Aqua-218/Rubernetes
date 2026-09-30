@@ -38,7 +38,12 @@ class CRIBackendTest < Minitest::Test
 
     def image(method, request = {}, **)
       @calls << [method, request]
-      method == "ImageStatus" ? {"image" => @images[request.dig("image", "image")]} : (@images[request.dig("image", "image")] = {"id" => "sha256:x"})
+      if method == "ImageStatus"
+        {"image" => @images[request.dig("image",
+                                        "image")]}
+      else
+        (@images[request.dig("image", "image")] = {"id" => "sha256:x"})
+      end
     end
 
     def close; end
@@ -76,8 +81,10 @@ class CRIBackendTest < Minitest::Test
   def test_sandbox_config
     assert_equal "sb1", @backend.run_sandbox(pod)
     method, request = @client.calls.last
-    assert_equal ["RunPodSandbox", "runc"], [method, request["runtime_handler"]]
+
+    assert_equal %w[RunPodSandbox runc], [method, request["runtime_handler"]]
     config = request["config"]
+
     assert_equal({"name" => "web", "uid" => "u1", "namespace" => "ns", "attempt" => 0}, config["metadata"])
     assert_equal File.join(@dir, "pods", "ns_web_u1"), config["log_directory"]
     assert File.directory?(config["log_directory"])
@@ -94,10 +101,16 @@ class CRIBackendTest < Minitest::Test
   # its containers'.
   def test_pod_cgroup_limits_and_usage
     guaranteed = pod.merge("spec" => pod["spec"].merge("containers" => [
-      {"name" => "main", "image" => "busybox", "resources" => {"requests" => {"cpu" => "500m", "memory" => "64Mi"},
-                                                               "limits" => {"cpu" => "500m", "memory" => "64Mi"}}}
-    ]))
-    File.write(File.join(@cgroups, "rbn"), "") rescue nil
+                                                         {"name" => "main", "image" => "busybox", "resources" => {"requests" => {"cpu" => "500m", "memory" => "64Mi"},
+                                                                                                                  "limits" => {
+                                                                                                                    "cpu" => "500m", "memory" => "64Mi"
+                                                                                                                  }}}
+                                                       ]))
+    begin
+      File.write(File.join(@cgroups, "rbn"), "")
+    rescue StandardError
+      nil
+    end
     FileUtils.rm_f(File.join(@cgroups, "rbn"))
     %w[cpu.weight cpu.max memory.max].each do |file|
       FileUtils.mkdir_p(File.join(@cgroups, "rbn", "podu1"))
@@ -105,6 +118,7 @@ class CRIBackendTest < Minitest::Test
     end
     @backend.run_sandbox(guaranteed)
     read = ->(file) { File.read(File.join(@cgroups, "rbn", "podu1", file)) }
+
     assert_equal ["20", "50000 100000", (64 * 1024 * 1024).to_s], [read.call("cpu.weight"), read.call("cpu.max"), read.call("memory.max")]
 
     @backend.create_container("sb1", spec)
@@ -114,21 +128,31 @@ class CRIBackendTest < Minitest::Test
     File.write(File.join(container_dir, "memory.current"), "4096\n")
     File.write(File.join(@cgroups, "rbn", "podu1", "memory.current"), "8192\n")
     usage = @backend.pod_usage("sb1")
+
     assert_equal 8192, usage.dig("pod", "memory.current")
-    assert_equal [["c1", "main", 1500, 4096]],
-                 usage["containers"].map { |entry| [entry["id"], entry["name"], entry.dig("usage", "cpu", "usage_usec"), entry.dig("usage", "memory.current")] }
+    assert_equal([["c1", "main", 1500, 4096]],
+                 usage["containers"].map do |entry|
+                   [entry["id"], entry["name"], entry.dig("usage", "cpu", "usage_usec"), entry.dig("usage", "memory.current")]
+                 end)
 
     %w[cpu.weight cpu.max memory.max memory.current].each { |file| File.delete(File.join(@cgroups, "rbn", "podu1", file)) }
-    Dir.rmdir(container_dir) rescue FileUtils.rm_rf(container_dir)
+    begin
+      Dir.rmdir(container_dir)
+    rescue StandardError
+      FileUtils.rm_rf(container_dir)
+    end
     @backend.remove_sandbox("sb1")
+
     refute File.directory?(File.join(@cgroups, "rbn", "podu1")), "the Pod's cgroup goes with it"
   end
 
   def test_container_config_pulls_and_creates
     @backend.run_sandbox(pod)
+
     assert_equal "c1", @backend.create_container("sb1", spec)
     assert_equal %w[ImageStatus PullImage CreateContainer], @client.calls.drop(1).map(&:first)
     config = @client.calls.last.last["config"]
+
     assert_equal ["sh", "-c", "echo hi"], config["command"]
     assert_equal [], config["args"]
     assert_equal "/work", config["working_dir"]
@@ -144,25 +168,33 @@ class CRIBackendTest < Minitest::Test
     FileUtils.mkdir_p(File.join(@dir, "pods", "ns_web_u1", "main"))
     File.write(File.join(@dir, "pods", "ns_web_u1", "main", "0.log"), "")
     @backend.create_container("sb1", spec)
+
     refute_includes @client.calls.last(2).map(&:first), "PullImage", "a present image is not pulled again"
     restarted = @client.calls.last.last["config"]
+
     assert_equal [1, "main/1.log"], [restarted.dig("metadata", "attempt"), restarted["log_path"]], "a restart logs to its own file"
   end
 
   def test_pulls_carry_the_pod_credentials
     @backend.credential_provider = lambda do |pod, image|
-      {"registry" => "registry.example.com", "username" => "u-#{pod.dig("metadata", "name")}", "password" => "p", "identity_token" => nil} if image.start_with?("registry.example.com")
+      if image.start_with?("registry.example.com")
+        {"registry" => "registry.example.com", "username" => "u-#{pod.dig("metadata", "name")}", "password" => "p",
+         "identity_token" => nil}
+      end
     end
     @backend.run_sandbox(pod)
     @backend.create_container("sb1", spec.merge("image" => "registry.example.com/private:1"))
     pull = @client.calls.find { |method, _| method == "PullImage" }.last
+
     assert_equal({"username" => "u-web", "password" => "p", "server_address" => "registry.example.com"}, pull["auth"])
     @backend.create_container("sb1", spec.merge("image" => "docker.io/library/public:1"))
+
     assert_nil @client.calls.select { |method, _| method == "PullImage" }.last.last["auth"]
   end
 
   def test_status_mapping
     status = @backend.container_status("c1")
+
     assert_equal "terminated", status["state"]
     assert_equal 137, status["exitCode"]
     assert status["oom_killed"]
@@ -172,6 +204,7 @@ class CRIBackendTest < Minitest::Test
 
   def test_network_context_is_the_pause_process_namespace
     context = @backend.network_sandbox_context("sb1")
+
     assert_equal "/proc/#{Process.pid}/ns/net", context.dig("netns", "path")
     assert_equal File.stat("/proc/self/ns/net").ino, context.dig("netns", "inode")
   end
@@ -181,6 +214,7 @@ class CRIBackendTest < Minitest::Test
     @backend.create_container("sb1", spec)
     result = @backend.exec("c1", %w[echo out])
     status = result[:status].pop
+
     assert_equal [2, "out\n"], [status.exit_status, result[:stdout].read]
     assert_equal "http://127.0.0.1:1/exec/abc", @backend.streaming_url(:exec, "c1", command: ["sh"], tty: true, stdin: true)
     assert_equal({"container_id" => "c1", "cmd" => ["sh"], "tty" => true, "stdin" => true, "stdout" => true, "stderr" => false},
@@ -191,7 +225,8 @@ class CRIBackendTest < Minitest::Test
     native = Object.new
     def native.run_sandbox(*, **) = "native-sb"
     multiplexer = Rubernetes::Runtime::Multiplexer.new(backends: {"rubernetes-native" => native, "cri" => @backend})
-    assert multiplexer.streaming_backends?
+
+    assert_predicate multiplexer, :streaming_backends?
     assert_nil multiplexer.streaming_url(:exec, "unknown-native-container"), "native containers stream through the node"
   end
 
@@ -217,8 +252,10 @@ class CRIBackendTest < Minitest::Test
     end
     @backend.run_sandbox(pod)
     @backend.create_container("sb1", spec)
+
     assert_equal true, @backend.tcp_socket("c1", {"port" => port}, timeout: 2)["success"]
     result = @backend.http_get("c1", {"port" => port, "path" => "healthz"}, timeout: 2)
+
     assert_equal [204, true], result.values_at("status", "success")
   ensure
     server&.close
@@ -237,8 +274,10 @@ class CRIBackendTest < Minitest::Test
 
         {"status" => {"id" => "c1", "state" => "CONTAINER_RUNNING", "log_path" => "/logs/main/0.log",
                       "labels" => {"io.kubernetes.pod.sandbox" => "sb1"}, "metadata" => {"name" => "main"}}}
-      when "PodSandboxStatus" then {"status" => {"id" => "sb1", "runtime_handler" => "runc", "metadata" => {"name" => "web", "namespace" => "ns", "uid" => "u1"}}}
-      when "ListPodSandbox" then {"items" => [{"id" => "sb1", "runtime_handler" => "runc", "metadata" => {"name" => "web"}}, {"id" => "other", "runtime_handler" => "kata"}]}
+      when "PodSandboxStatus" then {"status" => {"id" => "sb1", "runtime_handler" => "runc",
+                                                 "metadata" => {"name" => "web", "namespace" => "ns", "uid" => "u1"}}}
+      when "ListPodSandbox" then {"items" => [{"id" => "sb1", "runtime_handler" => "runc", "metadata" => {"name" => "web"}},
+                                              {"id" => "other", "runtime_handler" => "kata"}]}
       when "ListContainers" then {"containers" => [{"id" => "c1", "pod_sandbox_id" => "sb1"}, {"id" => "c9", "pod_sandbox_id" => "other"}]}
       else {}
       end
@@ -251,15 +290,18 @@ class CRIBackendTest < Minitest::Test
       def container_status(id) = (@asked << id) && {"state" => "running"}
     end.new
     multiplexer = Rubernetes::Runtime::Multiplexer.new(backends: {"rubernetes-native" => native, "cri" => backend})
+
     assert_equal "running", multiplexer.container_status("c1")["state"]
     assert_empty native.asked, "the CRI container went to the CRI backend"
     multiplexer.container_status("native-7")
     multiplexer.container_status("native-7")
+
     assert_equal %w[native-7 native-7], native.asked
     assert_equal 1, client.calls.count { |method, request| method == "ContainerStatus" && request["container_id"] == "native-7" },
                  "the runtime is asked about an id once"
 
     fresh = CRI::Backend.new(client: client, handler: "runc", log_root: @dir)
+
     assert_equal({"sandboxes" => 1}, fresh.recover)
     assert fresh.owns_container?("c1")
     refute fresh.owns_container?("c9"), "another handler's container"
@@ -267,8 +309,13 @@ class CRIBackendTest < Minitest::Test
 
   def test_the_noop_cni_plugin_answers_add
     conf, plugin = CRI::Backend.install_cni(conf_dir: File.join(@dir, "conf"), bin_dir: File.join(@dir, "bin"))
+
     assert_equal "rubernetes-noop", JSON.parse(File.read(File.join(conf, "10-rubernetes.conflist"))).dig("plugins", 0, "type")
-    output = IO.popen({"CNI_COMMAND" => "ADD", "CNI_NETNS" => "/var/run/netns/x"}, [plugin], "r+") { |io| io.close_write; io.read }
+    output = IO.popen({"CNI_COMMAND" => "ADD", "CNI_NETNS" => "/var/run/netns/x"}, [plugin], "r+") do |io|
+      io.close_write
+      io.read
+    end
+
     assert_equal({"cniVersion" => "1.0.0", "interfaces" => [{"name" => "eth0", "sandbox" => "/var/run/netns/x"}],
                   "ips" => [{"address" => "127.0.0.1/8", "interface" => 0}], "dns" => {}}, JSON.parse(output))
   end

@@ -47,6 +47,7 @@ def regular_source_file?(path)
 
   current = ROOT
   return false if File.symlink?(current)
+
   path.delete_prefix("#{ROOT}/").split("/").each do |component|
     next if component.empty? || component == "."
 
@@ -67,9 +68,7 @@ OptionParser.new do |parser|
   parser.on("--output-root PATH", "milestone evidence root") { |value| options[:output_root] = File.expand_path(value) }
 end.parse!(ARGV)
 
-unless options[:run_id].match?(/\A[0-9A-Za-z._-]+\z/)
-  abort "run ID may contain only letters, digits, dot, underscore, and hyphen"
-end
+abort "run ID may contain only letters, digits, dot, underscore, and hyphen" unless options[:run_id].match?(/\A[0-9A-Za-z._-]+\z/)
 
 directory = File.join(options[:output_root], options[:run_id])
 FileUtils.mkdir_p(directory)
@@ -128,7 +127,7 @@ gem_build = run_command.call("gem_build", ["gem", "build", "rubernetes.gemspec",
 File.write(File.join(directory, "gem-build.json"), JSON.pretty_generate(gem_build) << "\n")
 
 junit_path = File.join(directory, "junit.xml")
-rake_command = ["bundle", "exec", "rake", "test"]
+rake_command = %w[bundle exec rake test]
 test_entries = starting_input.fetch("entries").select { |entry| entry.fetch("path").match?(%r{\Atest/.*_test\.rb\z}) }
 test_inventory_content = test_entries.map { |entry| "#{entry.fetch("path")}\0#{entry.fetch("sha256")}\n" }.join
 run_command.call(

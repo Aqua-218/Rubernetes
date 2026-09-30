@@ -35,7 +35,7 @@ module Rubernetes
           flags = IFF_TAP | IFF_NO_PI
           flags |= IFF_VNET_HDR if vnet_hdr
           request = [name, flags].pack("a#{IFNAMSIZ}s")
-          request << "\0" * (40 - request.bytesize) if request.bytesize < 40
+          request << ("\0" * (40 - request.bytesize)) if request.bytesize < 40
           tun.ioctl(TUNSETIFF, request)
           tun.ioctl(TUNSETOWNER, Integer(owner_uid))
           tun.ioctl(TUNSETGROUP, Integer(owner_gid)) if owner_gid
@@ -53,7 +53,7 @@ module Rubernetes
 
           tun = File.open("/dev/net/tun", File::RDWR)
           request = [name, IFF_TAP | IFF_NO_PI].pack("a#{IFNAMSIZ}s")
-          request << "\0" * (40 - request.bytesize)
+          request << ("\0" * (40 - request.bytesize))
           tun.ioctl(TUNSETIFF, request)
           tun.ioctl(TUNSETPERSIST, 0)
           true

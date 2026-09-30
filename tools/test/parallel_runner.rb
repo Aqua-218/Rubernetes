@@ -51,7 +51,7 @@ module ParallelTestRunner
   # file lands in exactly one shard; the summary checks the file's total runs.
   SHARDS = {
     "test/unit/m1_gate_test.rb" => 6,
-    "test/unit/m0_gate_test.rb" => 3,
+    "test/unit/m0_gate_test.rb" => 3
   }.freeze
 
   Result = Struct.new(:file, :seconds, :status, :runs, :assertions, :failures, :errors, :skips, :output, :label)
@@ -84,7 +84,10 @@ module ParallelTestRunner
     results = []
     mutex = Mutex.new
     record = lambda do |result|
-      mutex.synchronize { results << result; report_line(result, options[:verbose]) }
+      mutex.synchronize do
+        results << result
+        report_line(result, options[:verbose])
+      end
     end
 
     serial_worker = Thread.new do
@@ -156,7 +159,10 @@ module ParallelTestRunner
   def report_line(result, verbose)
     marker = failed?(result) ? "FAIL" : "ok  "
     line = format("%s %7.1fs %s", marker, result.seconds, result.label)
-    line += format("  (%d runs, %d failures, %d errors, %d skips)", result.runs, result.failures, result.errors, result.skips) if result.runs
+    if result.runs
+      line += format("  (%d runs, %d failures, %d errors, %d skips)", result.runs, result.failures, result.errors,
+                     result.skips)
+    end
     line += "  (exit #{result.status.exitstatus.inspect}, no summary)" if result.runs.nil?
     $stdout.puts(line)
     $stdout.flush

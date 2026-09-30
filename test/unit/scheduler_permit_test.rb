@@ -31,13 +31,18 @@ class SchedulerPermitTest < Minitest::Test
 
   def test_allow_and_reject
     metrics = Scheduler::Metrics.new
-    assert framework(metrics) { |_pod, _node| true }.schedule(pod("a"), [node("n")]).scheduled?
+
+    assert_predicate framework(metrics) { |_pod, _node| true }.schedule(pod("a"), [node("n")]), :scheduled?
     result = framework(metrics) { |_pod, _node| false }.schedule(pod("b"), [node("n")])
-    refute result.scheduled?
+
+    refute_predicate result, :scheduled?
     assert_kind_of Scheduler::PermitError, result.error
     text = metrics.render
-    assert_equal 1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Permit", status: "Success")
-    assert_equal 1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Permit", status: "Unschedulable")
+
+    assert_in_delta(1.0,
+                    value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Permit", status: "Success"))
+    assert_in_delta(1.0, value(text, "scheduler_framework_extension_point_duration_seconds_count", extension_point: "Permit",
+                                                                                                   status: "Unschedulable"))
   end
 
   def test_a_waiting_pod_is_scheduled_once_allowed
@@ -49,17 +54,20 @@ class SchedulerPermitTest < Minitest::Test
     end
     result = fw.schedule(pod("c"), [node("n")])
     allower.join
-    assert result.scheduled?
+
+    assert_predicate result, :scheduled?
     assert_empty fw.waiting_pods
     text = metrics.render
-    assert_equal 1.0, value(text, "scheduler_permit_wait_duration_seconds_count", result: "Success")
+
+    assert_in_delta(1.0, value(text, "scheduler_permit_wait_duration_seconds_count", result: "Success"))
   end
 
   def test_a_waiting_pod_times_out_or_is_rejected
     metrics = Scheduler::Metrics.new
     fw = framework(metrics) { |_pod, _node| Scheduler::Permit::Wait.new(0.2) }
     result = fw.schedule(pod("d"), [node("n")])
-    refute result.scheduled?
+
+    refute_predicate result, :scheduled?
     assert_match(/timeout after waiting/, result.error.message)
     rejecter = Thread.new do
       sleep 0.05 until (waiting = fw.waiting_pod("default/e"))
@@ -73,8 +81,10 @@ class SchedulerPermitTest < Minitest::Test
     rejecter.kill
     result = fw2.schedule(pod("e"), [node("n")])
     rejecter2.join
+
     assert_match(/quota exceeded/, result.error.message)
     text = metrics.render
-    assert_equal 2.0, value(text, "scheduler_permit_wait_duration_seconds_count", result: "Unschedulable")
+
+    assert_in_delta(2.0, value(text, "scheduler_permit_wait_duration_seconds_count", result: "Unschedulable"))
   end
 end

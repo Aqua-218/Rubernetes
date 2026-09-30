@@ -30,7 +30,8 @@ class NodeHealthMonitorTest < Minitest::Test
   def test_the_pass_reconciles_every_node_and_records_its_duration
     store = Rubernetes::Storage::MemoryStore.new
     %w[worker-0 worker-1].each do |name|
-      store.create("registry/v1/nodes/#{name}", {"apiVersion" => "v1", "kind" => "Node", "metadata" => {"name" => name}, "spec" => {}, "status" => {}})
+      store.create("registry/v1/nodes/#{name}",
+                   {"apiVersion" => "v1", "kind" => "Node", "metadata" => {"name" => name}, "spec" => {}, "status" => {}})
     end
     controller = FakeNodeController.new
     manager = Manager.allocate
@@ -41,11 +42,14 @@ class NodeHealthMonitorTest < Minitest::Test
     registry = Rubernetes::Observability::Metrics.new(apiserver: false, component: "kube-controller-manager")
     previous_metrics = Rubernetes::Controller.metrics
     Rubernetes::Controller.metrics = registry
+
     assert_equal 2, manager.node_health_pass!
     assert_equal %w[worker-0 worker-1], controller.seen.sort
     text = registry.render
+
     assert_match(/node_collector_update_all_nodes_health_duration_seconds_count 1/, text)
     manager.instance_variable_set(:@elector, Elector.new(false))
+
     assert_equal 0, manager.node_health_pass!, "a follower does not sweep"
   ensure
     Rubernetes::Controller.metrics = previous_metrics

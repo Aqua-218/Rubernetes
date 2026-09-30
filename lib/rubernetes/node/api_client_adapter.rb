@@ -12,16 +12,16 @@ require_relative "../client/kubernetes_client"
 module Rubernetes
   module Node
     class APIClientAdapter
-      POD_RESOURCE = "pods".freeze
-      POD_API_VERSION = "v1".freeze
-      NODE_RESOURCE = "nodes".freeze
-      LEASE_API_VERSION = "coordination.k8s.io/v1".freeze
-      LEASE_NAMESPACE = "kube-node-lease".freeze
-      LEASE_RESOURCE = "leases".freeze
+      POD_RESOURCE = "pods"
+      POD_API_VERSION = "v1"
+      NODE_RESOURCE = "nodes"
+      LEASE_API_VERSION = "coordination.k8s.io/v1"
+      LEASE_NAMESPACE = "kube-node-lease"
+      LEASE_RESOURCE = "leases"
       # Kept for callers that still apply through this adapter; kubelet
       # itself sends no fieldManager, so its writes are recorded under its
       # user agent ("kubelet").
-      DEFAULT_FIELD_MANAGER = "kubelet".freeze
+      DEFAULT_FIELD_MANAGER = "kubelet"
 
       attr_reader :client, :node_name, :lease_namespace, :field_manager
 
@@ -72,7 +72,11 @@ module Rubernetes
       end
 
       def list_objects(resource, namespace: nil, api_version: "v1")
-        scope = namespace.nil? ? nil : (namespace == :all ? :all : String(namespace))
+        scope = if namespace.nil?
+                  nil
+                else
+                  (namespace == :all ? :all : String(namespace))
+                end
         response = @client.get(String(resource), api_version: api_version, namespace: scope)
         stringify_keys(response_body(response))
       end
@@ -86,12 +90,10 @@ module Rubernetes
         if @client.respond_to?(:watch_each)
           return @client.watch_each(POD_RESOURCE, api_version: POD_API_VERSION, namespace: :all, query: query)
         end
-        unless @client.respond_to?(:watch)
-          raise ArgumentError, "client must implement watch_each or watch for Pod watches"
-        end
+        raise ArgumentError, "client must implement watch_each or watch for Pod watches" unless @client.respond_to?(:watch)
 
         @client.watch(POD_RESOURCE, api_version: POD_API_VERSION, namespace: :all, query: query,
-                      return_response: false)
+                                    return_response: false)
       end
 
       alias watch_pods watch
@@ -213,7 +215,8 @@ module Rubernetes
           @client.patch(path, body, type: :merge)
         elsif @client.respond_to?(:apply)
           @client.apply(
-            {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => name, "namespace" => namespace, **(body["metadata"] || {})}, "status" => body["status"]},
+            {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => name, "namespace" => namespace, **(body["metadata"] || {})},
+             "status" => body["status"]},
             path: path,
             field_manager: @field_manager
           )
@@ -254,10 +257,10 @@ module Rubernetes
         options["preconditions"] = {"uid" => uid.to_s} unless uid.nil? || uid.to_s.empty?
         if @client.respond_to?(:raw)
           @client.raw("DELETE", path, body: JSON.generate(options),
-                      headers: {"content-type" => "application/json"})
+                                      headers: {"content-type" => "application/json"})
         elsif @client.respond_to?(:delete)
           @client.delete(POD_RESOURCE, name, namespace: namespace, api_version: POD_API_VERSION,
-                         options: options)
+                                             options: options)
         else
           raise ArgumentError, "client must implement raw or delete to remove a Pod"
         end
@@ -292,6 +295,7 @@ module Rubernetes
         object = object.to_h if object.respond_to?(:to_h) && !object.is_a?(Hash)
         object = stringify_keys(object)
         raise ArgumentError, "#{expected_kind} must be a mapping" unless object.is_a?(Hash)
+
         kind = object["kind"].to_s
         raise ArgumentError, "expected #{expected_kind}, got #{kind.inspect}" unless kind.empty? || kind == expected_kind
 

@@ -22,13 +22,20 @@ require_relative "m2_gate"
 ROOT = File.expand_path("../..", __dir__) unless defined?(ROOT)
 # Keep the temporary generator exclusion anchored to a root-level mktemp name;
 # broad prefixes would let a real source directory disappear from the input.
-SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}.freeze unless defined?(SOURCE_EXCLUSIONS)
+unless defined?(SOURCE_EXCLUSIONS)
+  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}
+end
 REPORT_SPECS = {
-  "runtime" => {filename: "runtime-report.json", kind: "m2_runtime_profiles", default: [RbConfig.ruby, "tools/milestones/m2_runtime_probe.rb"]},
-  "attacks" => {filename: "oci-attack-corpus.json", kind: "m2_oci_attack_corpus", default: [RbConfig.ruby, "tools/milestones/m2_attack_probe.rb"]},
-  "lifecycle" => {filename: "pod-lifecycle-trace.json", kind: "m2_pod_lifecycle_trace", default: [RbConfig.ruby, "tools/milestones/m2_lifecycle_probe.rb"]},
-  "ledger" => {filename: "resource-ledger.json", kind: "m2_resource_ledger", default: [RbConfig.ruby, "tools/milestones/m2_ledger_probe.rb"]},
-  "kernel" => {filename: "kernel-inventory.json", kind: "m2_kernel_inventory", default: [RbConfig.ruby, "tools/milestones/m2_kernel_probe.rb"]}
+  "runtime" => {filename: "runtime-report.json", kind: "m2_runtime_profiles",
+                default: [RbConfig.ruby, "tools/milestones/m2_runtime_probe.rb"]},
+  "attacks" => {filename: "oci-attack-corpus.json", kind: "m2_oci_attack_corpus",
+                default: [RbConfig.ruby, "tools/milestones/m2_attack_probe.rb"]},
+  "lifecycle" => {filename: "pod-lifecycle-trace.json", kind: "m2_pod_lifecycle_trace",
+                  default: [RbConfig.ruby, "tools/milestones/m2_lifecycle_probe.rb"]},
+  "ledger" => {filename: "resource-ledger.json", kind: "m2_resource_ledger",
+               default: [RbConfig.ruby, "tools/milestones/m2_ledger_probe.rb"]},
+  "kernel" => {filename: "kernel-inventory.json", kind: "m2_kernel_inventory",
+               default: [RbConfig.ruby, "tools/milestones/m2_kernel_probe.rb"]}
 }.freeze
 FORMAL_REPORT_SPEC = {
   filename: "formal-report.json",
@@ -144,8 +151,8 @@ end
 options = {
   run_id: Time.now.utc.strftime("%Y%m%dT%H%M%S.%6NZ"),
   output_root: File.join(ROOT, "artifacts/milestones/M2"),
-  m0_manifest: ENV["RUBERNETES_M2_M0_MANIFEST"],
-  m1_manifest: ENV["RUBERNETES_M2_M1_MANIFEST"],
+  m0_manifest: ENV.fetch("RUBERNETES_M2_M0_MANIFEST", nil),
+  m1_manifest: ENV.fetch("RUBERNETES_M2_M1_MANIFEST", nil),
   reports: {},
   formal_report: nil,
   formal_command: nil,
@@ -156,12 +163,18 @@ OptionParser.new do |parser|
   parser.on("--run-id ID", "evidence run identifier") { |value| options[:run_id] = value }
   parser.on("--output-root PATH", "milestone evidence root") { |value| options[:output_root] = File.expand_path(value) }
   parser.on("--m0-manifest PATH", "copy and verify COMPLETE M0 evidence") { |value| options[:m0_manifest] = File.expand_path(value) }
-  parser.on("--m1-manifest PATH", "copy and verify COMPLETE M1 evidence for the same input") { |value| options[:m1_manifest] = File.expand_path(value) }
+  parser.on("--m1-manifest PATH", "copy and verify COMPLETE M1 evidence for the same input") do |value|
+    options[:m1_manifest] = File.expand_path(value)
+  end
   REPORT_SPECS.each_key do |name|
-    parser.on("--#{name}-report PATH", "copy a machine-readable #{name} report") { |value| options[:reports][name] = File.expand_path(value) }
+    parser.on("--#{name}-report PATH", "copy a machine-readable #{name} report") do |value|
+      options[:reports][name] = File.expand_path(value)
+    end
     parser.on("--#{name}-command COMMAND", "run the #{name} adapter and read JSON from stdout") { |value| options[:commands][name] = value }
   end
-  parser.on("--formal-report PATH", "copy a RuntimeLifecycle formal verification report") { |value| options[:formal_report] = File.expand_path(value) }
+  parser.on("--formal-report PATH", "copy a RuntimeLifecycle formal verification report") do |value|
+    options[:formal_report] = File.expand_path(value)
+  end
   parser.on("--formal-command COMMAND", "run the RuntimeLifecycle formal verifier") { |value| options[:formal_command] = value }
 end.parse!(ARGV)
 
@@ -169,16 +182,17 @@ REPORT_SPECS.each_key do |name|
   command_key = "RUBERNETES_M2_#{name.upcase}_COMMAND"
   report_key = "RUBERNETES_M2_#{name.upcase}_REPORT"
   options[:commands][name] = ENV.fetch(command_key) if ENV.key?(command_key) && !options[:commands].key?(name)
-  options[:reports][name] = File.expand_path(ENV.fetch(report_key)) if ENV.key?(report_key) && !options[:commands].key?(name) && !options[:reports].key?(name)
+  if ENV.key?(report_key) && !options[:commands].key?(name) && !options[:reports].key?(name)
+    options[:reports][name] =
+      File.expand_path(ENV.fetch(report_key))
+  end
 end
 options[:formal_command] = ENV.fetch("RUBERNETES_M2_FORMAL_COMMAND") if
   ENV.key?("RUBERNETES_M2_FORMAL_COMMAND") && !options[:formal_command]
 options[:formal_report] = File.expand_path(ENV.fetch("RUBERNETES_M2_FORMAL_REPORT")) if
   ENV.key?("RUBERNETES_M2_FORMAL_REPORT") && !options[:formal_command] && !options[:formal_report]
 
-unless options[:run_id].match?(/\A[0-9A-Za-z._-]+\z/)
-  abort "run ID may contain only letters, digits, dot, underscore, and hyphen"
-end
+abort "run ID may contain only letters, digits, dot, underscore, and hyphen" unless options[:run_id].match?(/\A[0-9A-Za-z._-]+\z/)
 
 directory = File.join(options[:output_root], options[:run_id])
 FileUtils.mkdir_p(directory)
@@ -327,18 +341,20 @@ REPORT_SPECS.each do |name, specification|
     )
   elsif options[:commands].key?(name)
     command = command_words(options[:commands].fetch(name))
-    if command.empty?
-      commands << command_record("m2_#{name}", ["<empty adapter command>"], iso8601_now, iso8601_now, 127, error: "adapter command is empty")
-    else
-      commands << capture_command("m2_#{name}", command, destination, starting_input)
-    end
+    commands << if command.empty?
+                  command_record("m2_#{name}", ["<empty adapter command>"], iso8601_now, iso8601_now, 127,
+                                 error: "adapter command is empty")
+                else
+                  capture_command("m2_#{name}", command, destination, starting_input)
+                end
   elsif options[:reports].key?(name)
     copy_started = iso8601_now
     begin
       copy_report(options[:reports].fetch(name), destination)
       commands << command_record("m2_#{name}_report_copy", ["copy", options[:reports].fetch(name)], copy_started, iso8601_now, 0)
     rescue StandardError => error
-      commands << command_record("m2_#{name}_report_copy", ["copy", options[:reports].fetch(name)], copy_started, iso8601_now, 1, error: error.message)
+      commands << command_record("m2_#{name}_report_copy", ["copy", options[:reports].fetch(name)], copy_started, iso8601_now, 1,
+                                 error: error.message)
     end
   else
     commands << capture_command("m2_#{name}", specification.fetch(:default), destination, starting_input)
@@ -354,12 +370,12 @@ if formal_claimed
   if options[:formal_command]
     command = command_words(options.fetch(:formal_command))
     command += ["--trace", lifecycle_report_path] unless command.include?("--trace")
-    if command.empty?
-      commands << command_record("m2_formal", ["<empty formal command>"], iso8601_now, iso8601_now, 127,
-                                  error: "formal command is empty")
-    else
-      commands << capture_command("m2_formal", command, formal_report_path, starting_input)
-    end
+    commands << if command.empty?
+                  command_record("m2_formal", ["<empty formal command>"], iso8601_now, iso8601_now, 127,
+                                 error: "formal command is empty")
+                else
+                  capture_command("m2_formal", command, formal_report_path, starting_input)
+                end
   elsif options[:formal_report]
     copy_started = iso8601_now
     begin
@@ -367,7 +383,7 @@ if formal_claimed
       commands << command_record("m2_formal_report_copy", ["copy", options.fetch(:formal_report)], copy_started, iso8601_now, 0)
     rescue StandardError => error
       commands << command_record("m2_formal_report_copy", ["copy", options.fetch(:formal_report)], copy_started, iso8601_now, 1,
-                                  error: error.message)
+                                 error: error.message)
     end
   else
     command = FORMAL_REPORT_SPEC.fetch(:default) + ["--trace", lifecycle_report_path]
@@ -414,13 +430,17 @@ manifest = {
   "input_sha256" => starting_input.fetch("sha256"),
   "input_file_count" => starting_input.fetch("file_count"),
   "input_stable" => input_stable,
-  "input_capture" => {"stable" => input_stable, "start" => identity, "finish" => {"sha256" => finished_input.fetch("sha256"), "file_count" => finished_input.fetch("file_count")}},
-  "git_metadata_capture" => {"stable" => starting_git_metadata == finished_git_metadata, "start_paths" => starting_git_metadata, "finish_paths" => finished_git_metadata, "count" => (starting_git_metadata | finished_git_metadata).length},
+  "input_capture" => {"stable" => input_stable, "start" => identity,
+                      "finish" => {"sha256" => finished_input.fetch("sha256"), "file_count" => finished_input.fetch("file_count")}},
+  "git_metadata_capture" => {"stable" => starting_git_metadata == finished_git_metadata, "start_paths" => starting_git_metadata,
+                             "finish_paths" => finished_git_metadata, "count" => (starting_git_metadata | finished_git_metadata).length},
   "started_at" => started_at,
   "finished_at" => iso8601_now,
   "commands" => commands,
   "prior_milestones" => prior_milestones,
-  "result_counts" => {"commands" => commands.length, "command_failures" => commands.count { |command| command.fetch("exit_status") != 0 }, "artifacts" => artifacts.length, "subjects" => 0, "reports" => REPORT_SPECS.length + (formal_requested && File.file?(formal_report_path) ? 1 : 0), "source_files" => starting_input.fetch("file_count")},
+  "result_counts" => {"commands" => commands.length, "command_failures" => commands.count do |command|
+    command.fetch("exit_status") != 0
+  end, "artifacts" => artifacts.length, "subjects" => 0, "reports" => REPORT_SPECS.length + (formal_requested && File.file?(formal_report_path) ? 1 : 0), "source_files" => starting_input.fetch("file_count")},
   "artifacts" => artifacts,
   "subjects" => []
 }
@@ -435,7 +455,8 @@ unless candidate.fetch("passed")
   File.write(manifest_path, JSON.pretty_generate(manifest) << "\n")
 end
 
-gate_stdout, gate_stderr, gate_status = Open3.capture3(RbConfig.ruby, File.join(ROOT, "tools/milestones/m2_gate.rb"), manifest_path, chdir: ROOT)
+gate_stdout, gate_stderr, gate_status = Open3.capture3(RbConfig.ruby, File.join(ROOT, "tools/milestones/m2_gate.rb"), manifest_path,
+                                                       chdir: ROOT)
 $stdout.write(gate_stdout)
 $stderr.write(gate_stderr)
 exit(gate_status.exitstatus)

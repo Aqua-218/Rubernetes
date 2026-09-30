@@ -207,9 +207,7 @@ module M2LifecycleTraceSupport
     require File.join(File.expand_path("../..", __dir__), "lib/rubernetes/runtime/native")
     raise "production Native L3 lifecycle trace requires root" unless Process.uid.zero?
 
-    unless defined?(InjectedEffectFailure)
-      const_set(:InjectedEffectFailure, Class.new(Rubernetes::Runtime::Native::Error))
-    end
+    const_set(:InjectedEffectFailure, Class.new(Rubernetes::Runtime::Native::Error)) unless defined?(InjectedEffectFailure)
     image = M2ProbeSupport.pinned_image
     image.image
     result = nil
@@ -259,7 +257,9 @@ module M2LifecycleTraceSupport
         failure_error = "#{error.class}: #{error.message}"
       end
       raise "injected effect failure did not surface" unless failure_error
-      raise "failed sandbox #{failure_id} is still registered" if runtime.sandboxes.any? { |entry| (entry.respond_to?(:id) ? entry.id : entry["id"] || entry[:id]) == failure_id }
+      raise "failed sandbox #{failure_id} is still registered" if runtime.sandboxes.any? do |entry|
+        (entry.respond_to?(:id) ? entry.id : entry["id"] || entry[:id]) == failure_id
+      end
 
       runtime.run_sandbox(image.runtime_input(id: success_id), request_id: success_id)
       sandbox = runtime.sandbox(success_id)

@@ -40,17 +40,20 @@ module M2KernelProbe
       )
     end
     objects.concat([
-      object("host", "architecture", before: architecture, active: architecture, after: architecture),
-      object("kernel", "release", before: kernel.fetch(:release), active: kernel.fetch(:release), after: kernel.fetch(:release)),
-      object("cgroup_v2", "/sys/fs/cgroup", before: JSON.generate(cgroup_state), active: JSON.generate(cgroup_state), after: JSON.generate(cgroup_state)),
-      object("security_capabilities", architecture, before: JSON.generate(security_state), active: JSON.generate(security_state), after: JSON.generate(security_state)),
-      object(
-        "child_security", "#{architecture}:native-workload",
-        before: JSON.generate(native.fetch("parent_security")),
-        active: JSON.generate(native.fetch("child_security")),
-        after: JSON.generate(M2ProbeSupport.proc_status_security_fields(File.binread("/proc/self/status")))
-      )
-    ])
+                     object("host", "architecture", before: architecture, active: architecture, after: architecture),
+                     object("kernel", "release", before: kernel.fetch(:release), active: kernel.fetch(:release),
+                                                 after: kernel.fetch(:release)),
+                     object("cgroup_v2", "/sys/fs/cgroup", before: JSON.generate(cgroup_state), active: JSON.generate(cgroup_state),
+                                                           after: JSON.generate(cgroup_state)),
+                     object("security_capabilities", architecture, before: JSON.generate(security_state), active: JSON.generate(security_state),
+                                                                   after: JSON.generate(security_state)),
+                     object(
+                       "child_security", "#{architecture}:native-workload",
+                       before: JSON.generate(native.fetch("parent_security")),
+                       active: JSON.generate(native.fetch("child_security")),
+                       after: JSON.generate(M2ProbeSupport.proc_status_security_fields(File.binread("/proc/self/status")))
+                     )
+                   ])
     missing = []
     missing << "cgroup_v2" unless cgroup.available?
     missing << "no_new_privs" unless security.available?(:no_new_privs)

@@ -41,13 +41,13 @@ module GoPointerFields
     "staging/src/k8s.io/kube-aggregator/pkg/apis/apiregistration/v1" =>
       "k8s.io.kube_aggregator.pkg.apis.apiregistration.v1"
   }.freeze
-  STRUCT_START = /\Atype\s+([A-Z][A-Za-z0-9]*)\s+struct\s*\{\s*\z/.freeze
+  STRUCT_START = /\Atype\s+([A-Z][A-Za-z0-9]*)\s+struct\s*\{\s*\z/
   # A named field: exported name, type, and the struct tag.
-  FIELD = /\A([A-Z][A-Za-z0-9]*)\s+(\*?[A-Za-z0-9_.\[\]]+)\s+`([^`]*)`/.freeze
+  FIELD = /\A([A-Z][A-Za-z0-9]*)\s+(\*?[A-Za-z0-9_.\[\]]+)\s+`([^`]*)`/
   # An embedded struct flattened into the parent JSON object.
-  INLINE = /\A(\*?[A-Za-z0-9_.]+)\s+`([^`]*json:",inline"[^`]*)`/.freeze
-  JSON_TAG = /json:"([^"]*)"/.freeze
-  PROTOBUF_NAME = /protobuf:"[^"]*\bname=([A-Za-z0-9_]+)/.freeze
+  INLINE = /\A(\*?[A-Za-z0-9_.]+)\s+`([^`]*json:",inline"[^`]*)`/
+  JSON_TAG = /json:"([^"]*)"/
+  PROTOBUF_NAME = /protobuf:"[^"]*\bname=([A-Za-z0-9_]+)/
 
   module_function
 
@@ -96,9 +96,7 @@ module GoPointerFields
       raise Error, "source checkout lacks #{entry.fetch("upstream_path")}" unless upstream.file?
 
       digest = Digest::SHA256.file(upstream.to_s).hexdigest
-      unless digest == entry.fetch("source_sha256")
-        raise Error, "#{entry.fetch("upstream_path")} differs from the pinned commit #{commit}"
-      end
+      raise Error, "#{entry.fetch("upstream_path")} differs from the pinned commit #{commit}" unless digest == entry.fetch("source_sha256")
     end
 
     commit

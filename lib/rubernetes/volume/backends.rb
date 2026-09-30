@@ -28,11 +28,9 @@ module Rubernetes
       rescue ArgumentError => error
         # A small number of test/third-party adapters expose a positional
         # request object. Retry only when the signature proves that shape.
-        if kwargs.any? && !method.parameters.any? { |kind, _| %i[keyreq keyrest key].include?(kind) }
-          method.call(*args, kwargs)
-        else
-          raise error
-        end
+        raise error unless kwargs.any? && !method.parameters.any? { |kind, _| %i[keyreq keyrest key].include?(kind) }
+
+        method.call(*args, kwargs)
       end
 
       def result_hash(value)
@@ -95,8 +93,8 @@ module Rubernetes
         identity
       end
 
-      def bind(source:, target:, readonly: false, volume_id: nil, **kwargs)
-        mount(source: source, target: target, filesystem: "bind", readonly: readonly, volume_id: volume_id, stage: false, **kwargs)
+      def bind(source:, target:, readonly: false, volume_id: nil, **)
+        mount(source: source, target: target, filesystem: "bind", readonly: readonly, volume_id: volume_id, stage: false, **)
       end
 
       def unmount(target:, mount_id: nil, **_kwargs)
@@ -105,9 +103,8 @@ module Rubernetes
           matches = @mounts.values.select do |mount|
             mount["target"] == target && (!mount_id || mount["mountId"] == mount_id.to_s)
           end
-          if mount_id && matches.empty?
-            raise MountIdentityError, "mount #{mount_id} is not present at #{target}"
-          end
+          raise MountIdentityError, "mount #{mount_id} is not present at #{target}" if mount_id && matches.empty?
+
           @mounts.delete_if { |_id, mount| matches.include?(mount) }
         end
         true
@@ -119,6 +116,7 @@ module Rubernetes
 
       def tmpfs?(path = nil)
         return @tmpfs unless path
+
         @mutex.synchronize do
           @mounts.values.any? do |mount|
             mount["target"] == File.expand_path(path.to_s) && mount["filesystem"] == "tmpfs"
@@ -128,6 +126,7 @@ module Rubernetes
 
       def ensure_tmpfs(path, size_limit: nil, volume_id: nil)
         return false unless @tmpfs
+
         mount(source: "tmpfs", target: path, filesystem: "tmpfs", readonly: false,
               options: {"size" => size_limit}, volume_id: volume_id)
         true
@@ -135,13 +134,18 @@ module Rubernetes
 
       def create_loop(path:, volume_id:, size_bytes: nil, **_kwargs)
         identity = "loop-#{Digest::SHA256.hexdigest("#{volume_id}\0#{path}")[0, 20]}"
-        @mutex.synchronize { @devices[identity] = {"id" => identity, "kind" => "loop", "path" => path, "volumeId" => volume_id, "sizeBytes" => size_bytes} }
+        @mutex.synchronize do
+          @devices[identity] = {"id" => identity, "kind" => "loop", "path" => path, "volumeId" => volume_id, "sizeBytes" => size_bytes}
+        end
         @devices[identity]
       end
 
       def create_dm(device:, volume_id:, size_bytes: nil, **_kwargs)
         identity = "dm-#{Digest::SHA256.hexdigest("#{volume_id}\0#{device}")[0, 20]}"
-        @mutex.synchronize { @devices[identity] = {"id" => identity, "kind" => "device-mapper", "device" => device, "volumeId" => volume_id, "sizeBytes" => size_bytes} }
+        @mutex.synchronize do
+          @devices[identity] =
+            {"id" => identity, "kind" => "device-mapper", "device" => device, "volumeId" => volume_id, "sizeBytes" => size_bytes}
+        end
         @devices[identity]
       end
 
@@ -280,7 +284,7 @@ module Rubernetes
         target_lease = acquire_target_lease(path, directory: nil, create: false)
         begin
           result = unmount_owned_target(path, identity: identity, target_lease: target_lease,
-                                        operation: "unstage", context: context)
+                                              operation: "unstage", context: context)
           verify_unmounted_target!(path, identity)
           result
         ensure
@@ -296,6 +300,7 @@ module Rubernetes
         target_lease = nil
         if sub_path
           raise PathSecurityError, "subPath requires openat2 descriptor validation" unless @path_security
+
           parent_handle = open_stage_handle(stage_path)
           begin
             # A read-only volume is never modified to satisfy a subPath.
@@ -303,7 +308,7 @@ module Rubernetes
                                                        create: !(readonly || readonly?))
           ensure
             parent_handle.close unless handle && parent_handle.equal?(handle)
-            parent_handle = nil
+            nil
           end
           if handle.respond_to?(:path)
             child_path = handle.path.to_s
@@ -324,9 +329,8 @@ module Rubernetes
         identity = if @mount_adapter.respond_to?(:bind)
                      AdapterSupport.call(@mount_adapter, :bind, **mount_arguments)
                    elsif @mount_adapter.respond_to?(:mount)
-                     AdapterSupport.call(@mount_adapter, :mount, **mount_arguments.merge(
-                       filesystem: "bind", options: {"bind" => true}, stage: false
-                     ))
+                     AdapterSupport.call(@mount_adapter, :mount, **mount_arguments, filesystem: "bind", options: {"bind" => true},
+                                                                                    stage: false)
                    else
                      {"source" => source, "target" => target, "readonly" => readonly || readonly?}
                    end
@@ -349,7 +353,7 @@ module Rubernetes
         target_lease = acquire_target_lease(target, directory: nil, create: false)
         begin
           result = unmount_owned_target(target, identity: identity, target_lease: target_lease,
-                                        operation: "unpublish", context: context)
+                                                operation: "unpublish", context: context)
           verify_unmounted_target!(target, identity)
           result
         ensure
@@ -361,6 +365,7 @@ module Rubernetes
         if @adapter.respond_to?(:stats)
           value = AdapterSupport.call(@adapter, :stats, path: path, volume_id: id, capacity_bytes: capacity_bytes)
           return value if value.is_a?(Stats)
+
           hash = AdapterSupport.result_hash(value)
           return Stats.new(volume_id: id, used_bytes: hash["usedBytes"] || hash["used_bytes"] || 0,
                            capacity_bytes: hash["capacityBytes"] || hash["capacity_bytes"] || capacity_bytes || 0,
@@ -374,6 +379,7 @@ module Rubernetes
       def expand(capacity_bytes:)
         bytes = Types.parse_capacity(capacity_bytes)
         raise UnsupportedError, "backend #{type} does not provide an expansion adapter" unless @adapter.respond_to?(:expand)
+
         AdapterSupport.call(@adapter, :expand, source: source_path, capacity_bytes: bytes, volume_id: id)
         bytes
       end
@@ -446,8 +452,10 @@ module Rubernetes
         missing = expected.keys - actual.keys
         extra = actual.keys - expected.keys
         unless missing.empty? && extra.empty?
-          raise SnapshotIntegrityError, "snapshot content file set changed for #{volume_id}: missing #{missing.inspect}, unexpected #{extra.inspect}"
+          raise SnapshotIntegrityError,
+                "snapshot content file set changed for #{volume_id}: missing #{missing.inspect}, unexpected #{extra.inspect}"
         end
+
         corrupted = actual.select { |relative, digest| expected.fetch(relative).to_s != digest }.keys
         raise SnapshotIntegrityError, "snapshot content digest mismatch for #{volume_id}: #{corrupted.inspect}" unless corrupted.empty?
 
@@ -468,7 +476,7 @@ module Rubernetes
       def clone_from(source_backend:)
         if @adapter.respond_to?(:clone) && ![Object, Kernel].include?(@adapter.method(:clone).owner)
           AdapterSupport.call(@adapter, :clone, source: source_backend.source_path, target: source_path,
-                              source_volume_id: source_backend.id, volume_id: id)
+                                                source_volume_id: source_backend.id, volume_id: id)
         elsif source_backend.respond_to?(:snapshot)
           snapshot = source_backend.snapshot
           content = AdapterSupport.result_hash(snapshot)["content"]
@@ -537,6 +545,7 @@ module Rubernetes
       def ensure_path!(path)
         value = File.expand_path(String(path))
         return value unless @path_security
+
         # Backend methods are public lifecycle seams and must carry the same
         # symlink boundary as Node#stage/#publish.  Manager callers already
         # validate targets, but a direct backend invocation must not be able
@@ -602,6 +611,7 @@ module Rubernetes
           destination = File.join(source_path, relative)
           prefix = "#{File.expand_path(source_path)}#{File::SEPARATOR}"
           raise PathSecurityError, "snapshot content escaped the volume root" unless File.expand_path(destination).start_with?(prefix)
+
           FileUtils.mkdir_p(File.dirname(destination))
           File.binwrite(destination, Backend.content_bytes(value))
         end
@@ -614,12 +624,10 @@ module Rubernetes
                             hash["filesystemUuid"]
                           elsif hash.key?("filesystem_uuid")
                             hash["filesystem_uuid"]
-                          else
-                            nil
                           end
         source = hash["source"] || source_path
         normalized_target = hash["target"] || target
-        declared_filesystem = self.filesystem
+        declared_filesystem = filesystem
         filesystem = hash["filesystem"] || hash["fsType"] || declared_filesystem
         device_id = hash["deviceId"] || hash["device_id"]
         root = hash["root"]
@@ -643,10 +651,11 @@ module Rubernetes
           unless device_id.to_s.match?(/\A\d+:\d+\z/)
             raise MountIdentityError, "mount readback for volume #{id} lacks a kernel major:minor device identity"
           end
-          if block_filesystem_mount?(source: source, filesystem: filesystem, root: root, bind: bind_identity)
-            unless %w[ext4 xfs].include?(filesystem.to_s.downcase) && filesystem_uuid_present?(filesystem_uuid) && uuid_available
-              raise MountIdentityError, "persistent block mount for volume #{id} requires a real ext4/xfs filesystem UUID"
-            end
+
+          if block_filesystem_mount?(source: source, filesystem: filesystem, root: root,
+                                     bind: bind_identity) && !(%w[ext4
+                                                                  xfs].include?(filesystem.to_s.downcase) && filesystem_uuid_present?(filesystem_uuid) && uuid_available)
+            raise MountIdentityError, "persistent block mount for volume #{id} requires a real ext4/xfs filesystem UUID"
           end
         end
         filesystem_uuid = nil if bind_identity && @require_real_readback
@@ -656,7 +665,7 @@ module Rubernetes
           "mountId" => mount_id || "mount-#{Digest::SHA256.hexdigest("#{id}\0#{target}")[0, 20]}",
           "filesystemUuid" => filesystem_uuid || (@require_real_readback ? nil : "fs-#{id}"),
           "filesystemUuidAvailable" => filesystem_uuid_available || (!@require_real_readback && filesystem_uuid.nil?),
-          "deviceId" => (device_id || "device-#{id}"), "root" => root, "filesystem" => filesystem,
+          "deviceId" => device_id || "device-#{id}", "root" => root, "filesystem" => filesystem,
           "sourceIdentity" => hash["sourceIdentity"] || hash["source_identity"] || source,
           "kernelSource" => kernel_source, "bind" => bind_identity == true,
           "mountApi" => hash["mountApi"] || hash["mount_api"],
@@ -697,6 +706,7 @@ module Rubernetes
         unless hash && %w[mountId deviceId target].all? { |field| Types.present?(hash[field]) }
           raise MountIdentityError, "#{type} mount cleanup requires a validated mount identity"
         end
+
         expected_target = identity_value(identity, "target")
         unless File.expand_path(expected_target.to_s) == File.expand_path(path.to_s)
           raise MountIdentityError, "mount target identity changed for volume #{id}"
@@ -730,7 +740,8 @@ module Rubernetes
       def expected_kernel_source(identity)
         kernel = identity_value(identity, "kernelSource") || identity_value(identity, "kernel_source")
         return kernel unless kernel.nil?
-        return identity_value(identity, "sourceIdentity") || identity_value(identity, "source_identity") if identity_value(identity, "bind") == true
+        return identity_value(identity, "sourceIdentity") || identity_value(identity, "source_identity") if identity_value(identity,
+                                                                                                                           "bind") == true
 
         identity_value(identity, "source")
       end
@@ -739,11 +750,13 @@ module Rubernetes
         return nil unless identity
         return identity[key] if identity.respond_to?(:key?) && identity.key?(key)
         return identity[key.to_sym] if identity.respond_to?(:key?) && identity.key?(key.to_sym)
+
         identity.respond_to?(key) ? identity.public_send(key) : nil
       end
 
       def pod_identifier(pod)
         return pod.to_s unless pod.respond_to?(:to_h)
+
         hash = pod.to_h
         metadata = hash["metadata"] || hash[:metadata] || {}
         metadata["uid"] || metadata[:uid] || metadata["name"] || metadata[:name] || "pod"
@@ -791,12 +804,12 @@ module Rubernetes
       end
 
       def ensure_cleanup_result!(result, operation, path)
-        return true if result == true || result == 0
+        return true if [true, 0].include?(result)
 
         raise CleanupError.new(
           "#{operation} cleanup at #{path.inspect} did not report success",
           details: {"cleanupErrors" => [{"class" => CleanupError.name,
-                                          "message" => "adapter returned #{result.inspect}"}]},
+                                         "message" => "adapter returned #{result.inspect}"}]},
           cleanup_errors: []
         )
       end
@@ -836,15 +849,13 @@ module Rubernetes
         raise CleanupError.new(
           "#{type} cleanup at #{path.inspect} remains mounted",
           details: {"cleanupErrors" => [{"class" => MountIdentityError.name,
-                                          "message" => "mount #{expected_id} remains mounted"}]},
+                                         "message" => "mount #{expected_id} remains mounted"}]},
           cleanup_errors: [MountIdentityError.new("mount #{expected_id} remains mounted")]
         )
       end
 
       def mount_identity_at(path)
-        if @mount_adapter.respond_to?(:find_mount)
-          return @mount_adapter.find_mount(path)
-        end
+        return @mount_adapter.find_mount(path) if @mount_adapter.respond_to?(:find_mount)
         return nil unless @mount_adapter.respond_to?(:list_mounts)
 
         normalized = File.expand_path(path.to_s)
@@ -876,6 +887,7 @@ module Rubernetes
           end
             raise MountIdentityError, "#{type} tmpfs mount has no stable identity"
           end
+
           verify_target_lease!(target_lease, mount_identity: descriptor_mount_binding? ? identity : nil)
           identity
         ensure
@@ -928,6 +940,7 @@ module Rubernetes
           FileUtils.mkdir_p(path)
         end
         raise MountIdentityError, "volume source #{path.inspect} is not a directory" unless File.directory?(path)
+
         # The umask has already applied; set the mode explicitly (kubelet's
         # emptyDir setupDir does the same so a non-root container can write).
         File.chmod(mode, path) if mode && File.stat(path).mode & 0o7777 != mode
@@ -945,16 +958,12 @@ module Rubernetes
                    FileUtils.rm_rf(path)
                    !File.exist?(path) && !File.symlink?(path)
                  end
-        unless result == true || result == 0
-          raise CleanupError.new(
-            "volume source #{path.inspect} removal did not report success",
-            details: {"cleanupErrors" => [{"class" => CleanupError.name,
-                                            "message" => "adapter returned #{result.inspect}"}]},
-            cleanup_errors: []
-          )
-        else
-          true
-        end
+        [true, 0].include?(result) || raise(CleanupError.new(
+          "volume source #{path.inspect} removal did not report success",
+          details: {"cleanupErrors" => [{"class" => CleanupError.name,
+                                         "message" => "adapter returned #{result.inspect}"}]},
+          cleanup_errors: []
+        ))
       rescue SystemCallError => error
         raise MountIdentityError, "volume source #{path.inspect} could not be removed: #{error.message}", cause: error
       end
@@ -973,6 +982,7 @@ module Rubernetes
           unless @mount_adapter.respond_to?(:ensure_tmpfs)
             raise UnsupportedError, "emptyDir medium Memory requires a tmpfs-capable mount adapter"
           end
+
           mount_identity = ensure_tmpfs_mount!(source_path, size_limit: size_limit)
           File.chmod(EMPTY_DIR_MODE, source_path) if File.directory?(source_path)
         else
@@ -984,9 +994,7 @@ module Rubernetes
 
       def delete
         medium = Types.key(spec, "medium", "").to_s
-        if medium.casecmp?("Memory")
-          delete_tmpfs_mount!(source_path, identity: mount_identity_for_cleanup)
-        end
+        delete_tmpfs_mount!(source_path, identity: mount_identity_for_cleanup) if medium.casecmp?("Memory")
         remove_path(source_path)
       end
 
@@ -1362,8 +1370,8 @@ module Rubernetes
         @token = nil
         @token_path = nil
         @projector = Types.key(spec, "projector") || Projector.new(writer: AtomicWriter.new(source_path, fsync: false,
-                                                                                         tmpfs: false, mount_adapter: @mount_adapter),
-                                                       token_rotator: @token_rotator)
+                                                                                                         tmpfs: false, mount_adapter: @mount_adapter),
+                                                                   token_rotator: @token_rotator)
       end
 
       def secret?
@@ -1424,7 +1432,7 @@ module Rubernetes
         # root, which a non-root container cannot read (kube-api-access is
         # 0644 by default).
         @projector.writer.write(@projected_files, generation: options[:generation], secret: true,
-                                mode: default_file_mode, modes: file_modes).merge("token" => @token.to_h).freeze
+                                                  mode: default_file_mode, modes: file_modes).merge("token" => @token.to_h).freeze
       end
 
       def delete
@@ -1446,6 +1454,7 @@ module Rubernetes
         sources.map do |source|
           value = source.respond_to?(:to_h) ? source.to_h : source
           next value unless value.is_a?(Hash)
+
           if value.key?("configMap") || value.key?(:configMap)
             inner = Types.key(value, "configMap", {})
             Types.key(inner, "data", {}).to_h.merge(decode_binary(Types.key(inner, "binaryData", {}).to_h))
@@ -1458,12 +1467,15 @@ module Rubernetes
             Array(Types.key(inner, "items", [])).each_with_object({}) do |item, result|
               item = item.to_h
               field = Types.key(Types.key(item, "fieldRef", {}), "fieldPath")
-              result[Types.key(item, "path")] = field.to_s.split(".").reduce(pod) { |current, key| current.respond_to?(:[]) ? (current[key] || current[key.to_sym]) : nil }.to_s
+              result[Types.key(item, "path")] = field.to_s.split(".").reduce(pod) do |current, key|
+                current.respond_to?(:[]) ? (current[key] || current[key.to_sym]) : nil
+              end.to_s
             end
           elsif value.key?("serviceAccountToken") || value.key?(:serviceAccountToken)
             inner = Types.key(value, "serviceAccountToken", {})
             rotator = Types.key(spec, "tokenRotator")
             raise SecretPersistenceError, "projected service account token requires a token rotator" unless rotator
+
             token = if rotator.respond_to?(:issue)
                       # An omitted audience means "the API server's default"
                       # (kubelet sends no audiences and lets the TokenRequest
@@ -1550,27 +1562,24 @@ module Rubernetes
       def merge_projected_files(sources)
         sources.each_with_object({}) do |source, files|
           raise ValidationError, "projected source must return a map" unless source.respond_to?(:to_h)
+
           source.to_h.each { |path, value| files[path.to_s] = value }
         end
       end
 
       def decode_binary(values)
         values.each_with_object({}) do |(path, encoded), result|
-          begin
-            result[path] = Base64.strict_decode64(String(encoded))
-          rescue ArgumentError
-            raise ValidationError, "projected ConfigMap binaryData for #{path.inspect} is not valid base64"
-          end
+          result[path] = Base64.strict_decode64(String(encoded))
+        rescue ArgumentError
+          raise ValidationError, "projected ConfigMap binaryData for #{path.inspect} is not valid base64"
         end
       end
 
       def decode_secret(values)
         values.each_with_object({}) do |(path, encoded), result|
-          begin
-            result[path] = Base64.strict_decode64(String(encoded))
-          rescue ArgumentError
-            raise ValidationError, "projected Secret data for #{path.inspect} is not valid base64"
-          end
+          result[path] = Base64.strict_decode64(String(encoded))
+        rescue ArgumentError
+          raise ValidationError, "projected Secret data for #{path.inspect} is not valid base64"
         end
       end
     end
@@ -1590,6 +1599,7 @@ module Rubernetes
         image = Types.key(spec, "image") || Types.key(spec, "reference")
         digest = Types.key(spec, "digest") || image.to_s[/@((?:sha256|sha512):[0-9a-f]+)\z/i, 1]
         raise ValidationError, "image volume requires an immutable digest" unless digest.to_s.match?(/\Asha256:[0-9a-f]{64}\z/i)
+
         if @adapter.respond_to?(:verify_image)
           verified = AdapterSupport.call(@adapter, :verify_image, image: image, digest: digest, volume_id: id)
           verified_digest = verified.respond_to?(:to_h) ? (verified.to_h["digest"] || verified.to_h[:digest]) : verified
@@ -1660,6 +1670,7 @@ module Rubernetes
                       end
         loop_id = AdapterSupport.result_hash(loop_device)["id"] || AdapterSupport.result_hash(loop_device)["device"]
         raise MountIdentityError, "loop adapter returned no device identity" if loop_id.to_s.empty?
+
         @loop_id = loop_id
         @loop_identity = AdapterSupport.result_hash(loop_device)
         loop_created = true
@@ -1671,6 +1682,7 @@ module Rubernetes
         dm_hash = AdapterSupport.result_hash(dm)
         dm_id = dm_hash["id"] || dm_hash["path"] || dm_hash["device"]
         raise MountIdentityError, "device-mapper adapter returned no device identity" if dm_id.to_s.empty?
+
         @device_source = dm_hash["path"] || dm_hash["device"] || dm_id
         @dm_id = dm_id
         @dm_identity = dm_hash
@@ -1728,7 +1740,7 @@ module Rubernetes
         if dm_created && @dm_id
           begin
             AdapterSupport.call(@device_adapter, :destroy_device, id: device_identity_argument(@dm_identity, @dm_id),
-                                volume_id: id)
+                                                                  volume_id: id)
           rescue StandardError => error
             cleanup_errors << ["device-mapper", error]
           end
@@ -1736,7 +1748,7 @@ module Rubernetes
         if loop_created && @loop_id && cleanup_errors.empty?
           begin
             AdapterSupport.call(@device_adapter, :destroy_device, id: device_identity_argument(@loop_identity, @loop_id),
-                                volume_id: id)
+                                                                  volume_id: id)
           rescue StandardError => error
             cleanup_errors << ["loop", error]
           end

@@ -62,18 +62,21 @@ class NodeContainerManagerLifecycleTest < Minitest::Test
     manager = Manager.new(runtime)
     lifecycle = Rubernetes::Node::Lifecycle.new(runtime: runtime, sleeper: ->(_) {}, container_spec: Spec.new, container_manager: manager)
     pod = {"metadata" => {"name" => "p", "namespace" => "ns", "uid" => "uid-p"},
-           "spec" => {"restartPolicy" => "Always", "containers" => [{"name" => "pinned", "image" => "x"}, {"name" => "plain", "image" => "x"}]}}
+           "spec" => {"restartPolicy" => "Always",
+                      "containers" => [{"name" => "pinned", "image" => "x"}, {"name" => "plain", "image" => "x"}]}}
     lifecycle.start(pod)
 
     assert_equal({"cpuset.cpus" => "2-3", "cpuset.mems" => "0"}, runtime.specs.fetch("pinned")["limits"])
     assert_nil runtime.specs.fetch("plain")["limits"], "nothing pinned, nothing added"
     first = runtime.calls.index([:pre_start, "c1"])
+
     assert first && runtime.calls.index([:start, "c1"]) > first, "PreStartContainer runs before the start"
     assert_equal [[:pre_start, "uid-p", "pinned", "c1"], [:pre_start, "uid-p", "plain", "c2"]], manager.calls
 
     lifecycle.terminate(pod)
     removed = runtime.calls.index([:remove, "c1"])
+
     assert removed, "the container is removed"
-    assert runtime.calls.index([:post_stop, "c1"]) < removed, "PostStopContainer runs as it is removed"
+    assert_operator runtime.calls.index([:post_stop, "c1"]), :<, removed, "PostStopContainer runs as it is removed"
   end
 end

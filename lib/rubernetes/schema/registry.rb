@@ -53,9 +53,7 @@ module Rubernetes
       def register(definition = nil, gvk: nil, gvr: nil, schema: nil, **keywords)
         if schema
           definition = schema
-          unless definition.is_a?(Definition)
-            definition = Definition.new(definition)
-          end
+          definition = Definition.new(definition) unless definition.is_a?(Definition)
         end
         if definition.nil? && (gvk || gvr)
           gvk_object = gvk && normalize_gvk(gvk)
@@ -108,6 +106,7 @@ module Rubernetes
             if local_gvrs.key?(definition.gvr) || @by_gvr.key?(definition.gvr)
               raise DuplicateGVRError.new(definition.gvr, @by_gvr[definition.gvr])
             end
+
             local_gvks[definition.gvk] = definition
             local_gvrs[definition.gvr] = definition
           end
@@ -141,8 +140,6 @@ module Rubernetes
           @mutex.synchronize do
             @by_gvk[parse_gvk(value)] || @by_gvr[parse_gvr(value)]
           end
-        else
-          nil
         end
       rescue ArgumentError
         nil
@@ -153,7 +150,7 @@ module Rubernetes
         @mutex.synchronize { @by_gvk.fetch(gvk) { raise UnknownSchemaError, gvk } }
       end
 
-      def find_gvk(group: "", version: "v1", kind:)
+      def find_gvk(kind:, group: "", version: "v1")
         @mutex.synchronize { @by_gvk[GVK.new(group: group, version: version, kind: kind)] }
       end
 
@@ -165,7 +162,7 @@ module Rubernetes
         @mutex.synchronize { @by_gvr.fetch(gvr) { raise UnknownSchemaError, gvr } }
       end
 
-      def find_gvr(group: "", version: "v1", resource:)
+      def find_gvr(resource:, group: "", version: "v1")
         @mutex.synchronize { @by_gvr[GVR.new(group: group, version: version, resource: resource)] }
       end
 

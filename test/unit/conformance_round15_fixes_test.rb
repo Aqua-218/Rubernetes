@@ -23,9 +23,9 @@ class ConformanceRound15FixesTest < Minitest::Test
     pod = Rubernetes::Schema::Codec::KubernetesProtobuf.new.decode(POD_WITH_EPHEMERAL_CONTAINERS)
     containers = pod.dig("spec", "ephemeralContainers")
 
-    assert_equal %w[debugger debugger-2], containers.map { |entry| entry["name"] }
+    assert_equal(%w[debugger debugger-2], containers.map { |entry| entry["name"] })
     assert_equal "main", containers[1]["targetContainerName"]
-    refute containers.any? { |entry| entry.key?("ephemeralContainerCommon") }
+    refute(containers.any? { |entry| entry.key?("ephemeralContainerCommon") })
   end
 
   # etcd auto-compaction: a deleted object's versions leave the store once
@@ -38,6 +38,7 @@ class ConformanceRound15FixesTest < Minitest::Test
     store.delete("pods/ns/a")
     store.create("pods/ns/b", {"metadata" => {"name" => "b"}})
     versions = store.instance_variable_get(:@versions)
+
     assert versions.key?("pods/ns/a"), "inside the window the deleted key keeps its history"
 
     now += 120
@@ -50,6 +51,7 @@ class ConformanceRound15FixesTest < Minitest::Test
     # its current version only.
     now += 120
     store.create("pods/ns/c", {"metadata" => {"name" => "c"}})
+
     assert_equal 1, versions.fetch("pods/ns/b").length, "a live key keeps only its current version"
     assert_equal({"y" => 2}, store.get("pods/ns/b")["spec"])
   end
@@ -65,7 +67,7 @@ class ConformanceRound15FixesTest < Minitest::Test
              "lastState" => {"terminated" => {"exitCode" => 1}}}
     done = {"name" => "b", "state" => {"terminated" => {"exitCode" => 0}}}
     failed = {"name" => "b", "state" => {"terminated" => {"exitCode" => 2}}}
-    phase = ->(statuses, policy = "Always") {
+    phase = lambda { |statuses, policy = "Always"|
       status.send(:derive_phase, {"spec" => pod["spec"].merge("restartPolicy" => policy)}, statuses, [],
                   explicit_phase: nil, explicit_reason: nil)
     }
@@ -81,7 +83,9 @@ class ConformanceRound15FixesTest < Minitest::Test
     assert_equal "Pending", phase.call([creating.merge("name" => "a"), creating])
     # The lifecycle's own "Running" never outranks a container still waiting.
     assert_equal "Pending", status.send(:derive_phase, pod, [running, creating], [], explicit_phase: "Running", explicit_reason: nil)
-    assert_equal "Running", status.send(:derive_phase, pod, [running, running.merge("name" => "b")], [], explicit_phase: "Running", explicit_reason: nil)
+    assert_equal "Running",
+                 status.send(:derive_phase, pod, [running, running.merge("name" => "b")], [], explicit_phase: "Running",
+                                                                                              explicit_reason: nil)
     assert_equal "Failed", status.send(:derive_phase, pod, [running, creating], [], explicit_phase: "Failed", explicit_reason: nil)
   end
 
@@ -127,6 +131,7 @@ class ConformanceRound15FixesTest < Minitest::Test
 
     Dir.mktmpdir("binary-volume") do |dir|
       backend = Rubernetes::Volume::ConfigMapBackend.new(id: "v", root: dir, spec: spec.merge("backend" => "configMap"))
+
       assert_equal "\xDE\xAD\xBE\xEF".b, backend.send(:precomputed_files).fetch("blob")
     end
   end
@@ -138,6 +143,7 @@ class ConformanceRound15FixesTest < Minitest::Test
       spec = Rubernetes::Node::ContainerSpec.allocate
       context = Struct.new(:pod_directory).new(dir)
       message = spec.send(:termination_message, {"name" => "c", "terminationMessagePath" => "/dev/termination-custom-log"}, context)
+
       assert_equal 0o666, File.stat(message.fetch("host_path")).mode & 0o777
     end
   end
@@ -156,7 +162,8 @@ class ConformanceRound15FixesTest < Minitest::Test
     assert_equal 'container "b" in pod "p" is waiting to start: ImagePullBackOff', error.message
     assert_nil bridge.send(:refuse_waiting_container!, pod, request.class.new({"container" => "a"}))
     crashed = pod.merge("status" => {"containerStatuses" => [{"name" => "b", "state" => {"waiting" => {"reason" => "CrashLoopBackOff"}},
-                                                               "lastState" => {"terminated" => {"exitCode" => 1}}}]})
+                                                              "lastState" => {"terminated" => {"exitCode" => 1}}}]})
+
     assert_nil bridge.send(:refuse_waiting_container!, crashed, request), "a crashed container's last run is readable"
   end
 end

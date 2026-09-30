@@ -61,10 +61,11 @@ class M3SchedulerTest < Minitest::Test
     assert_includes %w[a z], result.node_name
     assert_equal "SchedulingGates", result.trace.events.first.fetch("plugin")
     filter_events = result.trace.events.select { |event| event.fetch("phase") == "filter" }
-    assert_equal ["NodeUnschedulable", "NodeName", "TaintToleration", "NodeAffinity", "NodePorts",
-                  "NodeResourcesFit", "VolumeRestrictions", "NodeVolumeLimits", "VolumeBinding", "VolumeZone",
-                  "PodTopologySpread", "InterPodAffinity", "DynamicResources", "NodeDeclaredFeatures", "typed"],
-                 filter_events.first(15).map { |event| event.fetch("plugin") }
+
+    assert_equal(%w[NodeUnschedulable NodeName TaintToleration NodeAffinity NodePorts
+                    NodeResourcesFit VolumeRestrictions NodeVolumeLimits VolumeBinding VolumeZone
+                    PodTopologySpread InterPodAffinity DynamicResources NodeDeclaredFeatures typed],
+                 filter_events.first(15).map { |event| event.fetch("plugin") })
     assert_equal result.trace.digest, result.trace_sha256
     # The trace records what every plugin saw and scored, which does not depend
     # on which of the tied nodes won.
@@ -81,12 +82,12 @@ class M3SchedulerTest < Minitest::Test
     not_ready = node("down", labels: {"disk" => "ssd"}, conditions: [{"type" => "Ready", "status" => "False"}])
     good = node("good", labels: {"disk" => "ssd"})
     pending = pod("filtered", requests: {"cpu" => "3"}, extra_spec: {
-      "nodeSelector" => {"disk" => "ssd"},
-      "tolerations" => [{"key" => "dedicated", "operator" => "Equal", "value" => "batch", "effect" => "NoSchedule"}],
-      "affinity" => {"nodeAffinity" => {"requiredDuringSchedulingIgnoredDuringExecution" => {
-        "nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "disk", "operator" => "In", "values" => ["ssd"]}]}]
-      }}}
-    })
+                    "nodeSelector" => {"disk" => "ssd"},
+                    "tolerations" => [{"key" => "dedicated", "operator" => "Equal", "value" => "batch", "effect" => "NoSchedule"}],
+                    "affinity" => {"nodeAffinity" => {"requiredDuringSchedulingIgnoredDuringExecution" => {
+                      "nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "disk", "operator" => "In", "values" => ["ssd"]}]}]
+                    }}}
+                  })
     # Make only the good node fit after the request is reduced.
     pending["spec"]["containers"].first["resources"]["requests"]["cpu"] = "1"
     result = Scheduler.new.schedule(pending, [tainted, wrong_label, not_ready, good])
@@ -106,31 +107,37 @@ class M3SchedulerTest < Minitest::Test
   def test_required_pod_anti_affinity_and_affinity_use_topology_and_namespace
     existing = pod("existing", labels: {"app" => "web"}, node_name: "a")
     affinity = pod("affinity", labels: {"app" => "client"}, extra_spec: {"affinity" => {
-      "podAffinity" => {"requiredDuringSchedulingIgnoredDuringExecution" => [{
-        "labelSelector" => {"matchLabels" => {"app" => "web"}}, "topologyKey" => "zone"
-      }]}
-    }})
+                     "podAffinity" => {"requiredDuringSchedulingIgnoredDuringExecution" => [{
+                       "labelSelector" => {"matchLabels" => {"app" => "web"}}, "topologyKey" => "zone"
+                     }]}
+                   }})
     nodes = [node("a", labels: {"zone" => "one"}), node("b", labels: {"zone" => "two"})]
+
     assert_equal "a", Scheduler.new.schedule(affinity, nodes, pods: [existing]).node_name
 
     anti = pod("anti", extra_spec: {"affinity" => {
-      "podAntiAffinity" => {"requiredDuringSchedulingIgnoredDuringExecution" => [{
-        "labelSelector" => {"matchLabels" => {"app" => "web"}}, "topologyKey" => "zone"
-      }]}
-    }})
+                 "podAntiAffinity" => {"requiredDuringSchedulingIgnoredDuringExecution" => [{
+                   "labelSelector" => {"matchLabels" => {"app" => "web"}}, "topologyKey" => "zone"
+                 }]}
+               }})
+
     assert_equal "b", Scheduler.new.schedule(anti, nodes, pods: [existing]).node_name
   end
 
   def test_least_allocated_and_topology_spread_scores_are_bounded
     occupied = pod("occupied", requests: {"cpu" => "1"}, labels: {"app" => "web"}, node_name: "a")
     pending = pod("spread", requests: {"cpu" => "500m"}, labels: {"app" => "web"}, extra_spec: {
-      "topologySpreadConstraints" => [{"maxSkew" => 1, "topologyKey" => "zone", "whenUnsatisfiable" => "ScheduleAnyway",
-                                        "labelSelector" => {"matchLabels" => {"app" => "web"}}}]
-    })
+                    "topologySpreadConstraints" => [{"maxSkew" => 1, "topologyKey" => "zone", "whenUnsatisfiable" => "ScheduleAnyway",
+                                                     "labelSelector" => {"matchLabels" => {"app" => "web"}}}]
+                  })
     scheduler = Scheduler.new
     result = scheduler.schedule(pending, [node("a", labels: {"zone" => "one"}), node("b", labels: {"zone" => "two"})], pods: [occupied])
+
     assert_equal "b", result.node_name
-    result.scores.each { |score| assert_operator score.total, :>=, 0; assert score.plugins.all? { |item| item["score"].between?(0, 100) } }
+    result.scores.each do |score|
+      assert_operator score.total, :>=, 0
+      assert(score.plugins.all? { |item| item["score"].between?(0, 100) })
+    end
   end
 
   def test_resource_filter_preserves_node_requested_aggregate_without_pod_snapshot
@@ -164,19 +171,25 @@ class M3SchedulerTest < Minitest::Test
   def test_bind_failure_unreserves_and_requeues
     calls = []
     scheduler = Scheduler.new(
-      reserve: ->(_pod, candidate) { calls << [:reserve, candidate.name]; :token },
+      reserve: lambda { |_pod, candidate|
+        calls << [:reserve, candidate.name]
+        :token
+      },
       unreserve: ->(token) { calls << [:unreserve, token.external] },
-      bind: ->(_pod, _candidate) { calls << [:bind]; false }
+      bind: lambda { |_pod, _candidate|
+        calls << [:bind]
+        false
+      }
     )
     result = scheduler.schedule(pod("rollback"), [node("a")])
 
     assert_predicate result, :requeued?
-    assert_equal [[:reserve, "a"], [:bind], [:unreserve, :token]], calls
+    assert_equal [[:reserve, "a"], [:bind], %i[unreserve token]], calls
     # Requeued means "queued again, after a backoff", not "back in the active
     # queue": see M3SchedulerQueueStarvationRegressionTest.
     assert_equal 0, scheduler.queue.size
     assert_equal 1, scheduler.queue.backoff_size
-    assert scheduler.queue.include?(Scheduler::Pod.new(pod("rollback")))
+    assert_includes scheduler.queue, Scheduler::Pod.new(pod("rollback"))
   end
 
   def test_bind_cas_rejects_external_node_name_change
@@ -237,11 +250,13 @@ class M3SchedulerTest < Minitest::Test
 
   def test_plugin_registry_and_trace_are_immutable_after_configuration
     scheduler = Scheduler.new
+
     assert_predicate scheduler.plugins.filters, :frozen?
 
     assert_raises(FrozenError) { scheduler.plugins.filters.clear }
 
     trace = scheduler.schedule(pod("immutable-trace"), [node("a")]).trace
+
     assert_predicate trace.events, :frozen?
     assert_raises(FrozenError) { trace.events.clear }
   end
@@ -262,6 +277,7 @@ class M3SchedulerTest < Minitest::Test
     deleted = []
     scheduler = Scheduler.new(delete_pod: ->(victim) { deleted << victim.name })
     result = scheduler.schedule(pending, [node("a", allocatable: {"cpu" => "2"})], pods: [low])
+
     assert_equal :unschedulable, result.status
     assert_equal "a", result.nominated_node
     assert_equal ["low"], result.victims.map(&:name)
@@ -271,6 +287,7 @@ class M3SchedulerTest < Minitest::Test
     never = pod("never", requests: {"cpu" => "3"}, priority: 10, extra_spec: {"preemptionPolicy" => "Never"})
     no_preemption_scheduler = Scheduler.new
     no_preemption = no_preemption_scheduler.schedule(never, [node("a", allocatable: {"cpu" => "2"})])
+
     assert_predicate no_preemption, :unschedulable?
     assert_equal 1, no_preemption_scheduler.queue.unschedulable_size
   end
@@ -300,6 +317,7 @@ class M3SchedulerTest < Minitest::Test
     scheduler = Scheduler.new(delete_pod: ->(victim) { deleted << victim.name }, bind: ->(_pod, _node) { true })
 
     first = scheduler.schedule(pending, [candidate], pods: [low, pending])
+
     assert_predicate first, :unschedulable?
     assert_equal "a", first.nominated_node
     assert scheduler.wait_for_preemptions
@@ -308,6 +326,7 @@ class M3SchedulerTest < Minitest::Test
 
     # The victim is gone: the next cycle tries the nominated node first.
     second = scheduler.schedule(pending, [candidate], pods: [pending])
+
     assert_predicate second, :scheduled?
     assert_equal "a", second.node_name
     assert_equal "", scheduler.nominated_node_for(Scheduler::Pod.new(pending)),
@@ -346,10 +365,12 @@ class M3SchedulerTest < Minitest::Test
 
     low = Scheduler.new(preemption: false).schedule(pod("low-late", requests: {"cpu" => "1"}, priority: 1),
                                                     [candidate], pods: [nominated])
+
     assert_predicate low, :unschedulable?
 
     high = Scheduler.new(preemption: false).schedule(pod("high-late", requests: {"cpu" => "1"}, priority: 10),
                                                      [candidate], pods: [nominated])
+
     assert_predicate high, :scheduled?
   end
 
@@ -369,10 +390,12 @@ class M3SchedulerTest < Minitest::Test
     assert_predicate scheduler.schedule(pending, [candidate], pods: [low, pending]), :unschedulable?
     assert scheduler.preempting?(Scheduler::Pod.new(pending))
     gated = scheduler.schedule(pending, [candidate], pods: [low, pending])
+
     assert_predicate gated, :gated?
     assert_equal 1, scheduler.queue.unschedulable_size
 
     release << true
+
     assert scheduler.wait_for_preemptions
     assert_equal ["low-async"], deleted
     refute scheduler.preempting?(Scheduler::Pod.new(pending))
@@ -433,10 +456,12 @@ class M3SchedulerTest < Minitest::Test
     })
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     result = scheduler.schedule(pending, [node("a", allocatable: {"cpu" => "3"})], pods: victims + [pending])
+
     assert scheduler.wait_for_preemptions
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
 
     deleted = Array.new(order.size) { order.pop }
+
     assert_equal %w[v1 v2 v3], deleted.sort
     assert_equal result.victims.last.name, deleted.last
     assert_operator elapsed, :<, 0.55, "the first victims were not evicted one after another"
@@ -470,12 +495,14 @@ class M3SchedulerTest < Minitest::Test
     nominated = []
     scheduler = Scheduler.new(dynamic_resources: busy, bind: ->(_pod, _node) { true },
                               nominate: ->(pending, node_name) { nominated << [pending.name, node_name] })
+
     assert_predicate scheduler.schedule(pod("claims"), [node("a")]), :scheduled?
-    assert_equal [["claims", "a"]], nominated
+    assert_equal [%w[claims a]], nominated
 
     plain = []
     Scheduler.new(bind: ->(_pod, _node) { true }, nominate: ->(pending, node_name) { plain << [pending.name, node_name] })
-             .schedule(pod("no-work"), [node("a")])
+      .schedule(pod("no-work"), [node("a")])
+
     assert_empty plain, "a Pod bound right away is not nominated"
   end
 
@@ -498,8 +525,8 @@ class M3SchedulerTest < Minitest::Test
         plugin: Scheduler::Filters::VolumeRestrictions.new,
         pending: pod("volume-conflict", extra_spec: {"volumes" => [{"name" => "disk", "gcePersistentDisk" => {"pdName" => "disk-a"}}]}),
         candidate: node("a", pods: [pod("existing-volume", node_name: "a", extra_spec: {
-          "volumes" => [{"name" => "disk", "gcePersistentDisk" => {"pdName" => "disk-a"}}]
-        })])
+                                          "volumes" => [{"name" => "disk", "gcePersistentDisk" => {"pdName" => "disk-a"}}]
+                                        })])
       },
       {
         name: "VolumeZone",
@@ -507,13 +534,13 @@ class M3SchedulerTest < Minitest::Test
         pending: pod("zone-volume", extra_spec: {"volumes" => [{"name" => "claim", "persistentVolumeClaim" => {"claimName" => "claim"}}]}),
         candidate: node("a", labels: {"topology.kubernetes.io/zone" => "zone-b"}),
         context: Scheduler::CycleContext.new(nodes: [], pods: [], volume_data: {
-          "persistentVolumeClaims" => {"default/claim" => {"metadata" => {"name" => "claim", "namespace" => "default"},
-                                                               "spec" => {"volumeName" => "pv-a"}}},
-          "persistentVolumes" => {"pv-a" => {"metadata" => {"name" => "pv-a"},
-                                               "nodeAffinity" => {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{
-                                                 "key" => "topology.kubernetes.io/zone", "operator" => "In", "values" => ["zone-a"]
-                                               }]}]}}}}
-        })
+                                               "persistentVolumeClaims" => {"default/claim" => {"metadata" => {"name" => "claim", "namespace" => "default"},
+                                                                                                "spec" => {"volumeName" => "pv-a"}}},
+                                               "persistentVolumes" => {"pv-a" => {"metadata" => {"name" => "pv-a"},
+                                                                                  "nodeAffinity" => {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{
+                                                                                    "key" => "topology.kubernetes.io/zone", "operator" => "In", "values" => ["zone-a"]
+                                                                                  }]}]}}}}
+                                             })
       },
       {
         name: "NodeVolumeLimits",
@@ -521,11 +548,11 @@ class M3SchedulerTest < Minitest::Test
         pending: pod("volume-limit", extra_spec: {"volumes" => [{"name" => "claim", "persistentVolumeClaim" => {"claimName" => "claim"}}]}),
         candidate: node("a", volume_limits: {"example.csi" => 0}),
         context: Scheduler::CycleContext.new(nodes: [], pods: [], volume_data: {
-          "persistentVolumeClaims" => {"default/claim" => {"metadata" => {"name" => "claim", "namespace" => "default"},
-                                                               "spec" => {"volumeName" => "pv-a"}}},
-          "persistentVolumes" => {"pv-a" => {"metadata" => {"name" => "pv-a"},
-                                               "csi" => {"driver" => "example.csi"}}}
-        })
+                                               "persistentVolumeClaims" => {"default/claim" => {"metadata" => {"name" => "claim", "namespace" => "default"},
+                                                                                                "spec" => {"volumeName" => "pv-a"}}},
+                                               "persistentVolumes" => {"pv-a" => {"metadata" => {"name" => "pv-a"},
+                                                                                  "csi" => {"driver" => "example.csi"}}}
+                                             })
       },
       {
         name: "VolumeBinding",
@@ -533,18 +560,18 @@ class M3SchedulerTest < Minitest::Test
         pending: pod("unbound", extra_spec: {"volumes" => [{"name" => "claim", "persistentVolumeClaim" => {"claimName" => "missing"}}]}),
         candidate: node("a"),
         context: Scheduler::CycleContext.new(nodes: [], pods: [], volume_data: {
-          "persistentVolumeClaims" => {"default/missing" => {"metadata" => {"name" => "missing", "namespace" => "default"},
-                                                                  "spec" => {"resources" => {"requests" => {"storage" => "1Gi"}}}}},
-          "persistentVolumes" => []
-        })
+                                               "persistentVolumeClaims" => {"default/missing" => {"metadata" => {"name" => "missing", "namespace" => "default"},
+                                                                                                  "spec" => {"resources" => {"requests" => {"storage" => "1Gi"}}}}},
+                                               "persistentVolumes" => []
+                                             })
       },
       {
         name: "PodTopologySpread",
         plugin: Scheduler::Filters::PodTopologySpread.new,
         pending: pod("spread-reject", labels: {"app" => "web"}, extra_spec: {
-          "topologySpreadConstraints" => [{"maxSkew" => 1, "topologyKey" => "zone", "whenUnsatisfiable" => "DoNotSchedule",
-                                            "labelSelector" => {"matchLabels" => {"app" => "web"}}}]
-        }),
+                       "topologySpreadConstraints" => [{"maxSkew" => 1, "topologyKey" => "zone", "whenUnsatisfiable" => "DoNotSchedule",
+                                                        "labelSelector" => {"matchLabels" => {"app" => "web"}}}]
+                     }),
         candidate: node("a", labels: {"zone" => "zone-a"}),
         context: Scheduler::CycleContext.new(
           nodes: [node("a", labels: {"zone" => "zone-a"}), node("b", labels: {"zone" => "zone-b"})],
@@ -567,6 +594,7 @@ class M3SchedulerTest < Minitest::Test
                   Scheduler::CycleContext.new(nodes: [candidate], pods: candidate.pods)
                 end
       result = entry.fetch(:plugin).call(pending, candidate, context)
+
       assert_instance_of Scheduler::Rejection, result, entry.fetch(:name)
     end
   end
@@ -574,15 +602,16 @@ class M3SchedulerTest < Minitest::Test
   def test_default_scores_are_normalized_to_scheduler_range_table
     existing = pod("existing-score", labels: {"app" => "web"}, node_name: "a")
     pending = pod("pending-score", labels: {"app" => "web"}, requests: {"cpu" => "500m"}, extra_spec: {
-      "affinity" => {"nodeAffinity" => {"preferredDuringSchedulingIgnoredDuringExecution" => [{
-        "weight" => 50, "preference" => {"matchExpressions" => [{"key" => "disk", "operator" => "In", "values" => ["ssd"]}]}
-      }]}},
-      "topologySpreadConstraints" => [{"maxSkew" => 1, "topologyKey" => "zone", "whenUnsatisfiable" => "ScheduleAnyway",
-                                        "labelSelector" => {"matchLabels" => {"app" => "web"}}}],
-      "containers" => [{"name" => "c", "image" => "example/app:1", "resources" => {"requests" => {"cpu" => "500m"}}}]
-    })
+                    "affinity" => {"nodeAffinity" => {"preferredDuringSchedulingIgnoredDuringExecution" => [{
+                      "weight" => 50, "preference" => {"matchExpressions" => [{"key" => "disk", "operator" => "In", "values" => ["ssd"]}]}
+                    }]}},
+                    "topologySpreadConstraints" => [{"maxSkew" => 1, "topologyKey" => "zone", "whenUnsatisfiable" => "ScheduleAnyway",
+                                                     "labelSelector" => {"matchLabels" => {"app" => "web"}}}],
+                    "containers" => [{"name" => "c", "image" => "example/app:1", "resources" => {"requests" => {"cpu" => "500m"}}}]
+                  })
     nodes = [
-      node("a", labels: {"zone" => "one", "disk" => "ssd"}, image_states: {"example/app:1" => {"sizeBytes" => 50 * 1024 * 1024, "numNodes" => 1}}),
+      node("a", labels: {"zone" => "one", "disk" => "ssd"},
+                image_states: {"example/app:1" => {"sizeBytes" => 50 * 1024 * 1024, "numNodes" => 1}}),
       node("b", labels: {"zone" => "two", "disk" => "hdd"})
     ]
     typed_nodes = nodes.map { |item| Scheduler::Node.new(item) }
@@ -596,6 +625,7 @@ class M3SchedulerTest < Minitest::Test
     scores.each do |plugin|
       typed_nodes.each do |candidate|
         value = plugin.call(pending, candidate, context)
+
         assert_kind_of Integer, value, plugin.class.name
         assert_includes 0..100, value, plugin.class.name
       end
@@ -611,12 +641,14 @@ class M3SchedulerTest < Minitest::Test
     ]
     entries.each do |name, priority, timestamp|
       queue.enqueue(pod(name, priority: priority).merge("metadata" => {"name" => name, "uid" => name,
-                                                                        "creationTimestamp" => timestamp}))
+                                                                       "creationTimestamp" => timestamp}))
     end
-    assert_equal ["high-old", "high-new", "low"], 3.times.map { queue.pop.pod.name }
+
+    assert_equal(%w[high-old high-new low], 3.times.map { queue.pop.pod.name })
 
     pending = pod("default-bind")
     result = Scheduler.new(preemption: false).schedule(pending, [node("bound-node")])
+
     assert_predicate result, :scheduled?
     assert_equal "bound-node", result.bound_pod.node_name
     assert_equal "bound-node", result.pod.spec["nodeName"]

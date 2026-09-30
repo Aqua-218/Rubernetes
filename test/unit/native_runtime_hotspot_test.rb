@@ -29,6 +29,7 @@ class NativeRuntimeHotspotTest < Minitest::Test
     second = @runtime.create_container(sandbox_id, {"id" => "c2", "command" => ["/bin/true"]})
     other = @runtime.create_container(sandbox_id, {"id" => "c3", "command" => ["/bin/true"],
                                                    "security_context" => {"run_as_user" => 1234}})
+
     assert_same first.security_plan, second.security_plan
     refute_same first.security_plan, other.security_plan
     # Status serializes the plan once per plan object, not once per call.
@@ -38,7 +39,10 @@ class NativeRuntimeHotspotTest < Minitest::Test
   def test_container_claim_records_the_plan_digest_not_the_plan
     sandbox_id = @runtime.run_sandbox({"request_id" => "plan-digest"})
     @runtime.create_container(sandbox_id, {"id" => "c1", "command" => ["/bin/true"]})
-    claim = @runtime.ledger.resources(include_released: true).find { |resource| resource[:kind] == "cgroup" && resource[:id].end_with?(":c1") }
+    claim = @runtime.ledger.resources(include_released: true).find do |resource|
+      resource[:kind] == "cgroup" && resource[:id].end_with?(":c1")
+    end
+
     refute_nil claim
     assert_match(/\A[0-9a-f]{64}\z/, claim[:metadata]["security_plan_digest"])
     refute claim[:metadata].key?("security_plan")
@@ -52,7 +56,8 @@ class NativeRuntimeHotspotTest < Minitest::Test
     raised = []
     trace = TracePoint.new(:raise) { |point| raised << point.raised_exception }
     trace.enable { @runtime.container_status(container) }
-    assert_empty raised.select { |error| error.is_a?(Native::Sandbox::Error) }
+
+    assert_empty(raised.select { |error| error.is_a?(Native::Sandbox::Error) })
     assert_raises(Native::Error) { @runtime.container_status("no-such-container") }
   end
 
@@ -67,7 +72,8 @@ class NativeRuntimeHotspotTest < Minitest::Test
     FileUtils.mkdir_p(unrelated)
     @runtime.stop_sandbox(sandbox_id)
     @runtime.remove_sandbox(sandbox_id)
-    refute File.exist?(log_directory)
+
+    refute_path_exists log_directory
     assert File.directory?(unrelated)
   end
 end

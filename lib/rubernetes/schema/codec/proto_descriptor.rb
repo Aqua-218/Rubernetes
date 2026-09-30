@@ -5,8 +5,6 @@
 # intentionally conservative: it understands the common proto2/proto3
 # declarations and skips annotations without evaluating them.
 
-require "set"
-
 # Define the descriptor namespace before loading the codec facade.  This lets
 # callers require this file directly without making codec.rb require this same
 # in-progress feature at the end of its load sequence.
@@ -19,9 +17,7 @@ module Rubernetes
   end
 end
 
-unless defined?(Rubernetes::Schema::Codec::Protobuf)
-  require_relative "../codec"
-end
+require_relative "../codec" unless defined?(Rubernetes::Schema::Codec::Protobuf)
 
 module Rubernetes
   module Schema
@@ -278,15 +274,13 @@ module Rubernetes
         # Lexer for the generated corpus.  It does not execute option values;
         # quoted strings are decoded only enough to expose import/option text.
         class Lexer
-          PUNCTUATION = "{}[]=;<>(),.:+-".freeze
+          PUNCTUATION = "{}[]=;<>(),.:+-"
           PUNCTUATION_BYTES = PUNCTUATION.bytes.freeze
-          IDENTIFIER_START = /[A-Za-z_]/.freeze
-          IDENTIFIER_CONTINUATION = /[A-Za-z0-9_]/.freeze
+          IDENTIFIER_START = /[A-Za-z_]/
+          IDENTIFIER_CONTINUATION = /[A-Za-z0-9_]/
 
           def initialize(source, max_bytes: DEFAULT_MAX_BYTES)
-            unless source.is_a?(String)
-              raise ParseError, "protobuf source must be a String"
-            end
+            raise ParseError, "protobuf source must be a String" unless source.is_a?(String)
             raise LimitError, "protobuf source exceeds #{max_bytes} bytes" if source.bytesize > max_bytes
 
             @source = source.dup.force_encoding(Encoding::UTF_8)
@@ -367,9 +361,7 @@ module Rubernetes
 
           def skip_space_and_comments
             loop do
-              while !eof? && whitespace_byte?(current_byte)
-                advance_char
-              end
+              advance_char while !eof? && whitespace_byte?(current_byte)
               if current_byte == 47 && next_byte == 47
                 advance_char
                 advance_char
@@ -381,12 +373,9 @@ module Rubernetes
                 start_column = @column
                 advance_char
                 advance_char
-                until eof? || (current_byte == 42 && next_byte == 47)
-                  advance_char
-                end
-                if eof?
-                  raise ParseError, "unterminated comment at #{start_line}:#{start_column}"
-                end
+                advance_char until eof? || (current_byte == 42 && next_byte == 47)
+                raise ParseError, "unterminated comment at #{start_line}:#{start_column}" if eof?
+
                 advance_char
                 advance_char
                 next
@@ -404,7 +393,7 @@ module Rubernetes
 
           def consume_number
             start = @index
-            advance_char if current_byte == 43 || current_byte == 45
+            advance_char if [43, 45].include?(current_byte)
             if current_byte == 48 && [120, 88].include?(next_byte)
               advance_char
               advance_char
@@ -415,9 +404,9 @@ module Rubernetes
                 advance_char
                 advance_char while !eof? && digit_byte?(current_byte)
               end
-              if current_byte == 101 || current_byte == 69
+              if [101, 69].include?(current_byte)
                 advance_char
-                advance_char if current_byte == 43 || current_byte == 45
+                advance_char if [43, 45].include?(current_byte)
                 advance_char while !eof? && digit_byte?(current_byte)
               end
             end
@@ -431,6 +420,7 @@ module Rubernetes
               byte = current_byte
               advance_char
               return output.dup.force_encoding(Encoding::UTF_8) if byte == 34
+
               if byte == 92
                 raise ParseError, "unterminated string at #{@line}:#{@column}" if eof?
 
@@ -464,7 +454,7 @@ module Rubernetes
                             escaped.chr(Encoding::BINARY)
                           end
               else
-                raise ParseError, "newline in string literal" if byte == 10 || byte == 13
+                raise ParseError, "newline in string literal" if [10, 13].include?(byte)
 
                 output << byte
               end
@@ -503,6 +493,7 @@ module Rubernetes
             @path = path
             @max_depth = Integer(max_depth)
             raise ArgumentError, "max_depth must be non-negative" if @max_depth.negative?
+
             @position = 0
           end
 
@@ -526,7 +517,7 @@ module Rubernetes
                 expect(";")
               when "import"
                 advance
-                advance if ["public", "weak"].include?(current_value)
+                advance if %w[public weak].include?(current_value)
                 imports << expect_kind(:string).value
                 expect(";")
               when "option"
@@ -548,7 +539,7 @@ module Rubernetes
           rescue ParseError
             raise
           rescue StandardError => error
-            raise ParseError, "cannot parse #{@path || 'protobuf source'}: #{error.message}"
+            raise ParseError, "cannot parse #{@path || "protobuf source"}: #{error.message}"
           end
 
           private
@@ -570,7 +561,7 @@ module Rubernetes
             enums = []
             options = {}
             map_entry = false
-            oneof = nil
+            nil
             until eof? || current_value == "}"
               case current_value
               when "message"
@@ -602,9 +593,9 @@ module Rubernetes
             end
             expect("}")
             descriptor = MessageDescriptor.new(name: name, full_name: full_name, package: package,
-                                                fields: fields, parent: parent,
-                                                nested_messages: nested_messages, enums: enums,
-                                                map_entry: map_entry, options: options)
+                                               fields: fields, parent: parent,
+                                               nested_messages: nested_messages, enums: enums,
+                                               map_entry: map_entry, options: options)
             # Field descriptors retain their parent for resolution.  Rebuild
             # them once the immutable message descriptor exists.
             rebound_fields = fields.map { |field| rebind_field(field, descriptor) }
@@ -632,7 +623,7 @@ module Rubernetes
             fields
           end
 
-          def parse_field(package, full_name, parent, label, oneof)
+          def parse_field(_package, _full_name, parent, label, oneof)
             type = parse_type_name
             name = expect_identifier
             expect("=")
@@ -670,9 +661,8 @@ module Rubernetes
             key_type = key_type.to_sym
             value_kind = scalar_type?(value_type) ? :scalar : :message
             value = value_kind == :scalar ? value_type.to_sym : value_type
-            unless MAP_KEY_TYPES.include?(key_type)
-              raise ParseError, "invalid protobuf map key type #{key_type.inspect}"
-            end
+            raise ParseError, "invalid protobuf map key type #{key_type.inspect}" unless MAP_KEY_TYPES.include?(key_type)
+
             FieldDescriptor.new(
               name: name,
               json_name: option_value(options, "json_name") || camelize(name),
@@ -718,6 +708,7 @@ module Rubernetes
                 if values.any? { |item| item.name == value_name }
                   raise DuplicateFieldError, "duplicate enum value #{full_name}.#{value_name}"
                 end
+
                 values << EnumValueDescriptor.new(name: value_name, number: value_number, options: value_options)
               end
             end
@@ -739,9 +730,7 @@ module Rubernetes
                 value = parse_option_value
                 # Consume any trailing tokens until the semicolon.  This keeps
                 # custom option syntax parseable without evaluating it.
-                while !eof? && current_value != ";"
-                  advance
-                end
+                advance while !eof? && current_value != ";"
                 break
               end
               depth += 1 if ["(", "[", "{"].include?(token.value)
@@ -782,7 +771,7 @@ module Rubernetes
             until eof? || current_value == "]"
               key_parts = []
               depth = 0
-              while !eof?
+              until eof?
                 token = current
                 break if depth.zero? && ["=", ",", "]"].include?(token.value)
 
@@ -843,18 +832,16 @@ module Rubernetes
 
           def parse_field_number
             value = parse_signed_integer
-            unless (1..MAX_FIELD_NUMBER).cover?(value)
-              raise ParseError, "protobuf field number #{value} is outside 1..#{MAX_FIELD_NUMBER}"
-            end
+            raise ParseError, "protobuf field number #{value} is outside 1..#{MAX_FIELD_NUMBER}" unless (1..MAX_FIELD_NUMBER).cover?(value)
+
             value
           end
 
           def parse_signed_integer
             token = expect_kind(:number)
             value = parse_number(token.value)
-            unless value.is_a?(Integer)
-              raise ParseError, "protobuf field number must be an integer"
-            end
+            raise ParseError, "protobuf field number must be an integer" unless value.is_a?(Integer)
+
             value
           end
 
@@ -981,15 +968,14 @@ module Rubernetes
           end
 
           def [](key)
-            return unknown_fields if key.to_s == "unknown_fields" || key.to_s == "unknownFields" || key.to_s == "__protobuf_unknown_fields__"
+            return unknown_fields if %w[unknown_fields unknownFields __protobuf_unknown_fields__].include?(key.to_s)
 
             super
           end
 
           def fetch(key, *args, &block)
-            if (key.to_s == "unknown_fields" || key.to_s == "unknownFields" || key.to_s == "__protobuf_unknown_fields__") && !args.any? && !block
-              return unknown_fields
-            end
+            return unknown_fields if %w[unknown_fields unknownFields __protobuf_unknown_fields__].include?(key.to_s) && !args.any? && !block
+
             super
           end
 
@@ -1041,12 +1027,12 @@ module Rubernetes
           attr_reader :files, :messages, :enums, :gvk_index, :openapi_index
 
           class << self
-            def parse(source, path: nil, **options)
-              new([Parser.new(source, path: path, **options).parse], **options)
+            def parse(source, path: nil, **)
+              new([Parser.new(source, path: path, **).parse], **)
             end
 
-            def load(path, **options)
-              new.load_path(path, **options)
+            def load(path, **)
+              new.load_path(path, **)
             end
 
             alias from_path load
@@ -1070,7 +1056,7 @@ module Rubernetes
             add_files(files) if files
           end
 
-          def load_path(path, **options)
+          def load_path(path, **_options)
             paths = descriptor_paths(path)
             raise LimitError, "protobuf descriptor file count exceeds #{@max_files}" if paths.length > @max_files
 
@@ -1089,12 +1075,9 @@ module Rubernetes
           end
 
           def add_file(descriptor)
-            unless descriptor.is_a?(FileDescriptor)
-              raise ArgumentError, "descriptor must be a FileDescriptor"
-            end
-            if @files.any? { |item| item.path == descriptor.path && descriptor.path }
-              return self
-            end
+            raise ArgumentError, "descriptor must be a FileDescriptor" unless descriptor.is_a?(FileDescriptor)
+            return self if @files.any? { |item| item.path == descriptor.path && descriptor.path }
+
             descriptor.messages.each { |message| register_message(message) }
             descriptor.enums.each { |enum| register_enum(enum) }
             @files << descriptor
@@ -1104,12 +1087,12 @@ module Rubernetes
           def finalize!
             @messages.each_value do |message|
               message.fields.each do |field|
-                if field.message? || field.enum? || (field.map? && field.value_type_kind != :scalar)
-                  # Validate references early.  Keep unresolved descriptors
-                  # readable, but fail registry construction rather than emit a
-                  # wire message with a guessed field type.
-                  resolve_field_type(field, message)
-                end
+                next unless field.message? || field.enum? || (field.map? && field.value_type_kind != :scalar)
+
+                # Validate references early.  Keep unresolved descriptors
+                # readable, but fail registry construction rather than emit a
+                # wire message with a guessed field type.
+                resolve_field_type(field, message)
               end
             end
             build_indexes!
@@ -1126,6 +1109,7 @@ module Rubernetes
 
           def resolve(name = nil, group: nil, version: nil, kind: nil, gvk: nil, schema: nil)
             return resolve_gvk(gvk || {group: group, version: version, kind: kind}) if gvk || group || version || kind
+
             name = schema unless schema.nil?
             return name if name.is_a?(MessageDescriptor)
             return nil if name.nil?
@@ -1166,9 +1150,7 @@ module Rubernetes
           # symbol).  This is useful to descriptor-driven generators without
           # exposing the registry's protobuf name-resolution internals.
           def type_for(field)
-            unless field.is_a?(FieldDescriptor)
-              raise ArgumentError, "field must be a FieldDescriptor"
-            end
+            raise ArgumentError, "field must be a FieldDescriptor" unless field.is_a?(FieldDescriptor)
 
             if field.map?
               return field.value_type if field.value_type_kind == :scalar
@@ -1192,9 +1174,10 @@ module Rubernetes
             elsif object.is_a?(MessageValue) && object.original_unchanged? && object.original_bytes
               return Codec.validate_output!(object.original_bytes.dup.b, max_bytes)
             end
+
             normalized = normalize_object(object, max_depth: max_depth)
             encoded = encode_descriptor(descriptor, normalized, strict: strict, max_bytes: max_bytes,
-                                        max_depth: max_depth, depth: 0)
+                                                                max_depth: max_depth, depth: 0)
             Codec.validate_output!(encoded, max_bytes)
           rescue Codec::Error
             raise
@@ -1213,10 +1196,9 @@ module Rubernetes
             descriptor = fetch(message)
             Codec.validate_body!(input, max_bytes)
             unknown_policy = normalize_unknown_policy(unknown_fields, compatibility)
-            value = decode_descriptor(descriptor, input, strict: strict, max_bytes: max_bytes,
-                                      max_depth: max_depth, depth: 0, keys: keys,
-                                      unknown_policy: unknown_policy)
-            value
+            decode_descriptor(descriptor, input, strict: strict, max_bytes: max_bytes,
+                                                 max_depth: max_depth, depth: 0, keys: keys,
+                                                 unknown_policy: unknown_policy)
           rescue Codec::Error
             raise
           rescue Error
@@ -1241,6 +1223,7 @@ module Rubernetes
                object.original_unchanged? && object.original_bytes
               return Codec.validate_output!(object.original_bytes.dup.b, max_bytes)
             end
+
             raw = encode(descriptor, object, strict: strict, max_bytes: max_bytes, max_depth: max_depth)
             type_meta ||= default_type_meta(descriptor)
             content_type ||= object.content_type if object.is_a?(EnvelopeMessage)
@@ -1262,16 +1245,16 @@ module Rubernetes
                               unknown_fields: :preserve, compatibility: nil)
             descriptor = fetch(message)
             envelope = Codec::Protobuf.decode_envelope(input, strict: strict,
-                                                        max_bytes: max_bytes, max_depth: max_depth)
+                                                              max_bytes: max_bytes, max_depth: max_depth)
             value = decode(descriptor, envelope.raw, strict: strict, max_bytes: max_bytes,
-                           max_depth: max_depth, keys: keys, unknown_fields: unknown_fields,
-                           compatibility: compatibility)
+                                                     max_depth: max_depth, keys: keys, unknown_fields: unknown_fields,
+                                                     compatibility: compatibility)
             preserve_original = normalize_unknown_policy(unknown_fields, compatibility) == :preserve
             EnvelopeMessage.new(value, type_meta: envelope.type_meta,
-                                content_encoding: envelope.content_encoding,
-                                content_type: envelope.content_type, raw: value.original_bytes,
-                                unknown_fields: value.unknown_fields,
-                                original_bytes: preserve_original ? input : nil)
+                                       content_encoding: envelope.content_encoding,
+                                       content_type: envelope.content_type, raw: value.original_bytes,
+                                       unknown_fields: value.unknown_fields,
+                                       original_bytes: preserve_original ? input : nil)
           end
 
           alias decode_kubernetes decode_envelope
@@ -1282,43 +1265,43 @@ module Rubernetes
           def encode_descriptor(descriptor, value, strict:, max_bytes:, max_depth:, depth:)
             check_depth!(depth, max_depth)
             hash = value.respond_to?(:to_h) ? value.to_h : value
-            unless hash.is_a?(Hash)
-              raise Codec::UnsupportedTypeError, "#{descriptor.full_name} requires a Hash or to_h"
-            end
+            raise Codec::UnsupportedTypeError, "#{descriptor.full_name} requires a Hash or to_h" unless hash.is_a?(Hash)
+
             fields = {}
             hash.each do |key, item|
               next if unknown_key?(key)
+
               field = descriptor.field(key)
               if field.nil?
                 raise UnknownFieldError, "unknown field #{key.inspect} for #{descriptor.full_name}" if strict
 
                 next
               end
-              if fields.key?(field)
-                raise Codec::DuplicateKeyError, "duplicate field #{field.json_name.inspect}"
-              end
+              raise Codec::DuplicateKeyError, "duplicate field #{field.json_name.inspect}" if fields.key?(field)
+
               fields[field] = item
             end
 
             output = +"".b
             descriptor.fields.each do |field|
               next unless fields.key?(field)
+
               item = fields[field]
               next if item.nil?
+
               if field.map?
                 output << encode_map_field(field, item, strict: strict, max_bytes: max_bytes,
-                                           max_depth: max_depth, depth: depth + 1)
+                                                        max_depth: max_depth, depth: depth + 1)
               elsif field.repeated?
-                unless item.is_a?(Array)
-                  raise Codec::EncodeError, "repeated field #{field.json_name} must be an Array"
-                end
+                raise Codec::EncodeError, "repeated field #{field.json_name} must be an Array" unless item.is_a?(Array)
+
                 output << encode_repeated_field(field, item, strict: strict, max_bytes: max_bytes,
-                                                max_depth: max_depth, depth: depth + 1)
+                                                             max_depth: max_depth, depth: depth + 1)
               else
                 output << Codec::Protobuf.encode_field(field.number,
                                                        encode_value(field, item, strict: strict,
-                                                                    max_bytes: max_bytes,
-                                                                    max_depth: max_depth, depth: depth + 1),
+                                                                                 max_bytes: max_bytes,
+                                                                                 max_depth: max_depth, depth: depth + 1),
                                                        type: wire_type_for(field))
               end
             end
@@ -1329,26 +1312,23 @@ module Rubernetes
           def decode_descriptor(descriptor, input, strict:, max_bytes:, max_depth:, depth:, keys:,
                                 unknown_policy:)
             check_depth!(depth, max_depth)
-            if input.is_a?(MessageValue) && input.original_unchanged?
-              return input
-            end
+            return input if input.is_a?(MessageValue) && input.original_unchanged?
+
             fields = Codec::Protobuf.parse_fields(input, strict: strict, max_bytes: max_bytes,
-                                                  max_depth: max_depth)
+                                                         max_depth: max_depth)
             values = {}
             unknown = []
             fields.each do |wire_field|
               field = descriptor.fields_by_number[wire_field[:number]]
               if field.nil?
-                if unknown_policy == :preserve
-                  unknown << wire_field.slice(:number, :wire_type, :value, :encoded)
-                end
+                unknown << wire_field.slice(:number, :wire_type, :value, :encoded) if unknown_policy == :preserve
                 next
               end
               if field.map?
                 key, map_value = decode_map_entry(field, wire_field[:value], strict: strict,
-                                                  max_bytes: max_bytes, max_depth: max_depth,
-                                                  depth: depth + 1, keys: keys,
-                                                  unknown_policy: unknown_policy)
+                                                                             max_bytes: max_bytes, max_depth: max_depth,
+                                                                             depth: depth + 1, keys: keys,
+                                                                             unknown_policy: unknown_policy)
                 output_key = output_key(field, keys)
                 values[output_key] ||= {}
                 values[output_key][key] = map_value
@@ -1356,12 +1336,12 @@ module Rubernetes
                 output_key = output_key(field, keys)
                 values[output_key] ||= []
                 values[output_key].concat(decode_packed(field, wire_field[:value], strict: strict,
-                                                        max_bytes: max_bytes, max_depth: max_depth,
-                                                        depth: depth + 1, keys: keys))
+                                                                                   max_bytes: max_bytes, max_depth: max_depth,
+                                                                                   depth: depth + 1, keys: keys))
               else
                 item = decode_value(field, wire_field, strict: strict, max_bytes: max_bytes,
-                                    max_depth: max_depth, depth: depth + 1, keys: keys,
-                                    unknown_policy: unknown_policy)
+                                                       max_depth: max_depth, depth: depth + 1, keys: keys,
+                                                       unknown_policy: unknown_policy)
                 output_key = output_key(field, keys)
                 if field.repeated?
                   values[output_key] ||= []
@@ -1384,9 +1364,8 @@ module Rubernetes
           private
 
           def register_message(message)
-            if @messages.key?(message.full_name)
-              raise DuplicateMessageError, "duplicate protobuf message #{message.full_name}"
-            end
+            raise DuplicateMessageError, "duplicate protobuf message #{message.full_name}" if @messages.key?(message.full_name)
+
             validate_duplicate_fields!(message)
             @messages[message.full_name] = message
             message.nested_messages.each { |nested| register_message(nested) }
@@ -1394,9 +1373,8 @@ module Rubernetes
           end
 
           def register_enum(enum)
-            if @enums.key?(enum.full_name)
-              raise DuplicateEnumError, "duplicate protobuf enum #{enum.full_name}"
-            end
+            raise DuplicateEnumError, "duplicate protobuf enum #{enum.full_name}" if @enums.key?(enum.full_name)
+
             @enums[enum.full_name] = enum
           end
 
@@ -1404,12 +1382,11 @@ module Rubernetes
             names = {}
             numbers = {}
             message.fields.each do |field|
-              if names.key?(field.name)
-                raise DuplicateFieldError, "duplicate protobuf field #{message.full_name}.#{field.name}"
-              end
+              raise DuplicateFieldError, "duplicate protobuf field #{message.full_name}.#{field.name}" if names.key?(field.name)
               if numbers.key?(field.number)
                 raise DuplicateFieldError, "duplicate protobuf field number #{message.full_name}.#{field.number}"
               end
+
               names[field.name] = true
               numbers[field.number] = true
             end
@@ -1418,24 +1395,31 @@ module Rubernetes
           def resolve_field_type(field, current_message)
             if field.map?
               return resolve_reference(field.value_type_ref, current_message) if field.value_type_kind == :message
-              return resolve_enum(field.value_type_ref, current_message) if field.value_type_kind == :enum
+
+              resolve_enum(field.value_type_ref, current_message) if field.value_type_kind == :enum
             elsif field.message?
-              return resolve_reference(field.type_ref, current_message)
+              resolve_reference(field.type_ref, current_message)
             elsif field.enum?
-              return resolve_enum(field.type_ref, current_message)
+              resolve_enum(field.type_ref, current_message)
             end
           end
 
           def resolve_reference(reference, current_message)
             resolved = resolve_name(reference, current_message)
-            raise UnknownMessageError, "unresolved protobuf type #{reference.inspect} in #{current_message.full_name}" unless resolved && @messages.key?(resolved)
+            unless resolved && @messages.key?(resolved)
+              raise UnknownMessageError,
+                    "unresolved protobuf type #{reference.inspect} in #{current_message.full_name}"
+            end
 
             @messages[resolved]
           end
 
           def resolve_enum(reference, current_message)
             resolved = resolve_name(reference, current_message)
-            raise UnknownMessageError, "unresolved protobuf enum #{reference.inspect} in #{current_message.full_name}" unless resolved && @enums.key?(resolved)
+            unless resolved && @enums.key?(resolved)
+              raise UnknownMessageError,
+                    "unresolved protobuf enum #{reference.inspect} in #{current_message.full_name}"
+            end
 
             @enums[resolved]
           end
@@ -1504,8 +1488,6 @@ module Rubernetes
               resolve_gvk(group: "", version: parsed[0], kind: parsed[1])
             elsif parsed.length == 3
               resolve_gvk(group: parsed[0], version: parsed[1], kind: parsed[2])
-            else
-              nil
             end
           end
 
@@ -1518,9 +1500,7 @@ module Rubernetes
           end
 
           def descriptor_paths(path)
-            if path.respond_to?(:to_path)
-              path = path.to_path
-            end
+            path = path.to_path if path.respond_to?(:to_path)
             path = String(path)
             if ::File.directory?(path)
               Dir.glob(::File.join(path, "**", "*.proto")).select { |item| ::File.file?(item) }.sort
@@ -1550,6 +1530,7 @@ module Rubernetes
               unless %i[kubernetes upstream kubernetes_v1_36_2].include?(mode)
                 raise ArgumentError, "unknown protobuf compatibility mode #{compatibility.inspect}"
               end
+
               return :discard
             end
 
@@ -1565,7 +1546,7 @@ module Rubernetes
             raise LimitError, "protobuf message depth exceeds #{max_depth}" if depth > max_depth
           end
 
-          def normalize_object(value, depth: 0, max_depth:, seen: {})
+          def normalize_object(value, max_depth:, depth: 0, seen: {})
             raise LimitError, "protobuf message depth exceeds #{max_depth}" if depth > max_depth
 
             case value
@@ -1599,7 +1580,7 @@ module Rubernetes
                 end
                 if value.is_a?(MessageValue)
                   MessageValue.new(normalized, unknown_fields: value.unknown_fields,
-                                   original_bytes: value.original_bytes)
+                                               original_bytes: value.original_bytes)
                 else
                   normalized
                 end
@@ -1607,14 +1588,13 @@ module Rubernetes
                 seen.delete(object_id)
               end
             else
-              if value.respond_to?(:to_h)
-                hash = value.to_h
-                raise Codec::UnsupportedTypeError, "to_h for #{value.class} must return a Hash" unless hash.is_a?(Hash)
+              raise Codec::UnsupportedTypeError, "unsupported protobuf value #{value.class}" unless value.respond_to?(:to_h)
 
-                normalize_object(hash, depth: depth, max_depth: max_depth, seen: seen)
-              else
-                raise Codec::UnsupportedTypeError, "unsupported protobuf value #{value.class}"
-              end
+              hash = value.to_h
+              raise Codec::UnsupportedTypeError, "to_h for #{value.class} must return a Hash" unless hash.is_a?(Hash)
+
+              normalize_object(hash, depth: depth, max_depth: max_depth, seen: seen)
+
             end
           end
 
@@ -1644,16 +1624,15 @@ module Rubernetes
           end
 
           def encode_map_field(field, value, strict:, max_bytes:, max_depth:, depth:)
-            unless value.is_a?(Hash)
-              raise Codec::EncodeError, "map field #{field.json_name} must be a Hash"
-            end
+            raise Codec::EncodeError, "map field #{field.json_name} must be a Hash" unless value.is_a?(Hash)
+
             entries = value.map do |key, item|
               encoded_key = encode_map_scalar(field.key_type, key)
               encoded_value = if field.value_type_kind == :scalar
                                 encode_map_scalar(field.value_type, item)
                               else
                                 encode_descriptor(resolve_map_value_message(field), item, strict: strict,
-                                                  max_bytes: max_bytes, max_depth: max_depth, depth: depth)
+                                                                                          max_bytes: max_bytes, max_depth: max_depth, depth: depth)
                               end
               key_field = Codec::Protobuf.encode_field(1, decode_map_key_for_wire(field.key_type, key),
                                                        type: field.key_type)
@@ -1667,12 +1646,14 @@ module Rubernetes
 
           def encode_repeated_field(field, values, strict:, max_bytes:, max_depth:, depth:)
             if field.packed? && field.scalar?
-              scalar_values = values.map { |item| encode_scalar_value(field, item, strict: strict, max_bytes: max_bytes, max_depth: max_depth, depth: depth) }
+              scalar_values = values.map do |item|
+                encode_scalar_value(field, item, strict: strict, max_bytes: max_bytes, max_depth: max_depth, depth: depth)
+              end
               return Codec::Protobuf.encode_field(field.number, scalar_values, type: field.type, packed: true)
             end
             values.map do |item|
               encoded = encode_value(field, item, strict: strict, max_bytes: max_bytes,
-                                     max_depth: max_depth, depth: depth)
+                                                  max_depth: max_depth, depth: depth)
               Codec::Protobuf.encode_field(field.number, encoded, type: wire_type_for(field))
             end.join.b
           end
@@ -1680,18 +1661,20 @@ module Rubernetes
           def encode_value(field, value, strict:, max_bytes:, max_depth:, depth:)
             if field.message?
               encode_descriptor(resolve_message_field(field), value, strict: strict, max_bytes: max_bytes,
-                                max_depth: max_depth, depth: depth)
+                                                                     max_depth: max_depth, depth: depth)
             elsif field.enum?
               encode_enum_value(field, value)
             else
               encode_scalar_value(field, value, strict: strict, max_bytes: max_bytes,
-                                  max_depth: max_depth, depth: depth)
+                                                max_depth: max_depth, depth: depth)
             end
           end
 
           def encode_scalar_value(field, value, strict:, max_bytes:, max_depth:, depth:)
-            return encode_descriptor(resolve_map_value_message(field), value, strict: strict,
-                                     max_bytes: max_bytes, max_depth: max_depth, depth: depth) if field.type_kind == :message
+            if field.type_kind == :message
+              return encode_descriptor(resolve_map_value_message(field), value, strict: strict,
+                                                                                max_bytes: max_bytes, max_depth: max_depth, depth: depth)
+            end
             encode_scalar(field.type, value)
           end
 
@@ -1710,16 +1693,22 @@ module Rubernetes
             case type
             when :string
               string = String(value)
-              raise Codec::EncodeError, "protobuf string must be valid UTF-8" unless string.encoding == Encoding::UTF_8 && string.valid_encoding?
+              unless string.encoding == Encoding::UTF_8 && string.valid_encoding?
+                raise Codec::EncodeError,
+                      "protobuf string must be valid UTF-8"
+              end
+
               string
             when :bytes
               String(value).dup.force_encoding(Encoding::BINARY)
             when :bool
-              raise Codec::EncodeError, "protobuf bool must be true or false" unless value == true || value == false
+              raise Codec::EncodeError, "protobuf bool must be true or false" unless [true, false].include?(value)
+
               value
             when :double, :float
               number = Float(value)
               raise Codec::EncodeError, "protobuf float must be finite" unless number.finite?
+
               number
             when *INTEGER_TYPES
               Integer(value)
@@ -1743,10 +1732,11 @@ module Rubernetes
             unless wire_field[:wire_type] == expected
               raise Codec::ParseError, "protobuf field #{field.json_name} has wire type #{wire_field[:wire_type]}, expected #{expected}"
             end
+
             if field.message?
               decode_descriptor(resolve_message_field(field), wire_field[:value], strict: strict,
-                                max_bytes: max_bytes, max_depth: max_depth, depth: depth, keys: keys,
-                                unknown_policy: unknown_policy)
+                                                                                  max_bytes: max_bytes, max_depth: max_depth, depth: depth, keys: keys,
+                                                                                  unknown_policy: unknown_policy)
             elsif field.enum?
               decode_varint_scalar(:enum, wire_field[:value])
             else
@@ -1799,11 +1789,12 @@ module Rubernetes
             when :string
               value = raw.dup.force_encoding(Encoding::UTF_8)
               raise Codec::ParseError, "protobuf string is not valid UTF-8" unless value.valid_encoding?
+
               value
             when :bytes
               raw.dup.force_encoding(Encoding::BINARY)
             when :bool
-              raise Codec::ParseError, "invalid protobuf bool" unless raw == 0 || raw == 1
+              raise Codec::ParseError, "invalid protobuf bool" unless [0, 1].include?(raw)
 
               raw == 1
             when :int32
@@ -1863,8 +1854,8 @@ module Rubernetes
                           decode_scalar(field.value_type, wire_field[:value], wire_type: expected)
                         else
                           decode_descriptor(resolve_map_value_message(field), wire_field[:value], strict: strict,
-                                            max_bytes: max_bytes, max_depth: max_depth, depth: depth, keys: keys,
-                                            unknown_policy: unknown_policy)
+                                                                                                  max_bytes: max_bytes, max_depth: max_depth, depth: depth, keys: keys,
+                                                                                                  unknown_policy: unknown_policy)
                         end
               else
                 # Map-entry unknowns cannot be surfaced as top-level fields;
@@ -1908,16 +1899,15 @@ module Rubernetes
             else field.json_name
             end
           end
-
         end
 
         class << self
-          def parse(source, **options)
-            Registry.parse(source, **options)
+          def parse(source, **)
+            Registry.parse(source, **)
           end
 
-          def load(path, **options)
-            Registry.load(path, **options)
+          def load(path, **)
+            Registry.load(path, **)
           end
 
           alias from_path load

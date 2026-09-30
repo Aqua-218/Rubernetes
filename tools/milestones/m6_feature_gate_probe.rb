@@ -51,20 +51,30 @@ module M6FeatureGateProbe
   def compare_profile(name)
     oracle = M6ProbeSupport.corpus_discovery(name)
     # The alpha-apis oracle run also passed --runtime-config=api/all=true.
-    service = M6ProbeSupport.build_service(feature_gates: profile_gates(name), runtime_config: name == "alpha-apis" ? {"api/all" => true} : {})
+    service = M6ProbeSupport.build_service(feature_gates: profile_gates(name),
+                                           runtime_config: name == "alpha-apis" ? {"api/all" => true} : {})
     served = served_documents(service, oracle)
     differences = []
     oracle_groups = oracle["/apis"]["groups"].map { |group| group["name"] }.sort
     served_groups = served["/apis"].is_a?(Hash) ? served["/apis"]["groups"].map { |group| group["name"] }.sort : []
-    differences << {"path" => "/apis", "missing_groups" => oracle_groups - served_groups, "extra_groups" => served_groups - oracle_groups} unless oracle_groups == served_groups
+    unless oracle_groups == served_groups
+      differences << {"path" => "/apis", "missing_groups" => oracle_groups - served_groups,
+                      "extra_groups" => served_groups - oracle_groups}
+    end
     oracle["/apis"]["groups"].each do |group|
       served_group = served["/apis"]["groups"].find { |candidate| candidate["name"] == group["name"] } if served["/apis"].is_a?(Hash)
       next if served_group.nil?
 
       oracle_versions = group["versions"].map { |version| version["groupVersion"] }
       served_versions = served_group["versions"].map { |version| version["groupVersion"] }
-      differences << {"path" => "/apis/#{group["name"]}", "oracle_versions" => oracle_versions, "served_versions" => served_versions} unless oracle_versions == served_versions
-      differences << {"path" => "/apis/#{group["name"]}", "field" => "preferredVersion", "oracle" => group["preferredVersion"], "served" => served_group["preferredVersion"]} unless group["preferredVersion"] == served_group["preferredVersion"]
+      unless oracle_versions == served_versions
+        differences << {"path" => "/apis/#{group["name"]}", "oracle_versions" => oracle_versions,
+                        "served_versions" => served_versions}
+      end
+      unless group["preferredVersion"] == served_group["preferredVersion"]
+        differences << {"path" => "/apis/#{group["name"]}", "field" => "preferredVersion", "oracle" => group["preferredVersion"],
+                        "served" => served_group["preferredVersion"]}
+      end
     end
     oracle.each do |path, document|
       next if path == "/apis" || path == "/api" || path.end_with?("(aggregated)")
@@ -83,11 +93,14 @@ module M6FeatureGateProbe
     started_at = M6ProbeSupport.now
     cases = %w[default all-beta alpha-apis].map { |profile| compare_profile(profile) }
     gates = corpus_gates
-    cases << {"id" => "gate_corpus", "gate_count" => gates.length, "stages" => gates.values.map { |info| info["stage"] }.tally, "passed" => gates.length >= 200}
+    cases << {"id" => "gate_corpus", "gate_count" => gates.length, "stages" => gates.values.map do |info|
+      info["stage"]
+    end.tally, "passed" => gates.length >= 200}
     M6ProbeSupport.emit(M6ProbeSupport.report(
       kind: "m6_feature_gate_matrix", measurement_level: "differentially_tested", started_at: started_at, cases: cases,
       extra: {"profiles" => {"default" => [], "all-beta" => ["AllBeta=true"], "alpha-apis" => ALPHA_API_GATES + ["runtime-config=api/all=true"]},
-              "sources" => M5ProbeSupport.source_files(%w[schema/kubernetes/v1.36.2-defaults/features.json schema/kubernetes/v1.36.2-defaults/bootstrap/manifest.json lib/rubernetes/api/server.rb])}
+              "sources" => M5ProbeSupport.source_files(%w[schema/kubernetes/v1.36.2-defaults/features.json
+                                                          schema/kubernetes/v1.36.2-defaults/bootstrap/manifest.json lib/rubernetes/api/server.rb])}
     ))
   end
 end

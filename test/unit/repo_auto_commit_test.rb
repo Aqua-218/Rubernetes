@@ -63,11 +63,13 @@ class RepoAutoCommitTest < Minitest::Test
     write("README.md", "# Title\n\nText.\n")
     write("generated/report.json", JSON.pretty_generate("status" => "ok", "count" => 3))
     status, out, err = run_recorder("--quiet")
+
     assert_equal 0, status, err
 
     assert_equal ["feat(api): add thing", "test(unit): add thing test", "docs: add readme", "chore(generated): add report"],
                  subjects
     body = commit_message("HEAD~3")
+
     assert_includes body, "Declares:"
     assert_includes body, "  Thing"
     refute_match(/Co-Authored-By/i, git("log", "--format=%B"))
@@ -110,9 +112,11 @@ class RepoAutoCommitTest < Minitest::Test
       end
     RUBY
     status, = run_recorder("--quiet", "--cycle", "edit-cycle", "--status", "0")
+
     assert_equal 0, status
     assert_equal ["feat(node): extend start", "feat(node): extend status"], subjects.last(2)
     body = commit_message("HEAD")
+
     assert_includes body, "One edit in `status` (lib/rubernetes/node/agent.rb, line"
     assert_includes body, "Cycle: edit-cycle"
     assert_includes body, "Cycle-Result: pass"
@@ -126,6 +130,7 @@ class RepoAutoCommitTest < Minitest::Test
     write("lib/rubernetes/volume/manager.rb", "class Manager\n  def mount\n    1 + 1\n  end\n\n  def unmount\n    2 + 2\n  end\nend\n")
     write("lib/rubernetes/volume/other.rb", "class Other; end\n")
     status, = run_recorder("--quiet", "--granularity", "file")
+
     assert_equal 0, status
     assert_equal ["chore(volume): update mount and unmount", "feat(volume): add other"], subjects.last(2)
     assert_includes commit_message("HEAD~1"), "Declarations touched:"
@@ -139,10 +144,12 @@ class RepoAutoCommitTest < Minitest::Test
     write("test/unit/a_test.rb", "AT = 2\n")
     write("lib/rubernetes/api/b.rb", "B = 1\n")
     status, = run_recorder("--quiet", "--granularity", "cycle", "--cycle", "rake-test", "--status", "1")
+
     assert_equal 0, status
     assert_equal 1, subjects.length - 2
     assert_match(/\Afeat\(api\): update /, subjects.last)
     body = commit_message("HEAD")
+
     assert_includes body, "Recorded after `rake-test` exited 1 (fail-closed)."
     assert_includes body, "Source:"
     assert_includes body, "  M lib/rubernetes/api/a.rb (+1 -1)"
@@ -159,6 +166,7 @@ class RepoAutoCommitTest < Minitest::Test
     write("lib/rubernetes/api/c.rb", "C = 1\n")
     run_recorder("--quiet")
     last_two = subjects.last(2)
+
     assert_match(/update a\z/, last_two[0])
     assert_includes commit_message("HEAD~1"), "Changes that were already staged when the recorder ran."
     assert_equal "feat(api): add c", last_two[1]
@@ -175,18 +183,22 @@ class RepoAutoCommitTest < Minitest::Test
     write("generated/status.json", JSON.pretty_generate("status" => "ok", "items" => [1, 2, 3], "generated_at" => "t2"))
     File.binwrite(File.join(@dir, "artifact.bin"), [9, 8, 7, 255, 0].pack("C*") * 200)
     status, = run_recorder("--quiet")
+
     assert_equal 0, status
     recent = subjects.last(4)
+
     assert_includes recent, "feat(api): rename old name to new name"
     assert_includes recent, "feat(api): remove gone"
     # Every changed top-level key of a record is a "declaration touched".
     assert(recent.any? { |subject| subject.start_with?("chore(generated): refresh status") }, recent.inspect)
     record_body = commit_message(git("log", "-1", "--format=%H", "--grep=refresh status").strip)
+
     assert_includes record_body, "[pending -> ok]"
     assert_includes record_body, "items: 2 items -> 3 items"
     # Noise fields (timestamps, digests) never appear as headline changes.
     refute_includes record_body.split("Declarations touched").first, "generated_at"
     binary = recent.find { |subject| subject.include?("artifact") }
+
     refute_nil binary
     assert_includes commit_message(git("log", "-1", "--format=%H", "--grep=artifact").strip), "Git treats this file as binary"
     assert_equal "", git("status", "--porcelain")
@@ -198,6 +210,7 @@ class RepoAutoCommitTest < Minitest::Test
     write("lib/rubernetes/api/a.rb", "A = 2\n")
     head = git("rev-parse", "HEAD").strip
     status, out, = run_recorder("--dry-run")
+
     assert_equal 0, status
     assert_includes out, "[dry-run] chore(api): update a"
     assert_includes out, "would record 1 commit across 1 file"
@@ -211,10 +224,12 @@ class RepoAutoCommitTest < Minitest::Test
     head = git("rev-parse", "HEAD").strip
     report = File.join(@dir, "report.json")
     status, out, = run_recorder("--report", report, "--cycle", "noop")
+
     assert_equal 0, status
     assert_includes out, "nothing to record"
     assert_equal head, git("rev-parse", "HEAD").strip
     data = JSON.parse(File.read(report))
+
     assert_equal [], data["commits"]
     assert_equal "noop", data["cycle"]
   end
@@ -239,11 +254,13 @@ class RepoAutoCommitTest < Minitest::Test
     end
     begin
       status, _out, err = run_recorder
+
       assert_equal 0, status
       assert_includes err, "HEAD moved while recording; retaking the snapshot"
     ensure
       AutoCommit.define_singleton_method(:write_commits, original)
     end
+
     assert_equal ["other: commit", "chore(api): update a"], subjects.last(2)
     assert_equal "", git("status", "--porcelain")
     assert git_obj.head
@@ -254,6 +271,7 @@ class RepoAutoCommitTest < Minitest::Test
     write("docs/guide.md", "# Guide\n")
     run_recorder("--quiet", "--cycle", "check", "--status", "0")
     log = git("log", "--format=%B%n---%an <%ae>")
+
     refute_match(/co-authored-by|signed-off-by|generated with/i, log)
     assert_includes log, "Recorder Test <recorder@example.test>"
   end

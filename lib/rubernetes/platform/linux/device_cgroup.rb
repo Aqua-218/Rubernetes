@@ -137,6 +137,7 @@ module Rubernetes
               if index != 0 || rule.allow != emulator.blacklist?
                 raise Error, "[internal error] emulated cgroupv2 devices ruleset had bad wildcard at idx #{index} (#{rule.cgroup_string})"
               end
+
               next
             end
             if rule.allow == program.default_allow
@@ -477,11 +478,11 @@ module Rubernetes
                      expected_attach_type: BPF::BPF_CGROUP_DEVICE, name: NAME, resource_id: resource_id)
           end
 
-          def with_cgroup(path)
+          def with_cgroup(path, &)
             raise Error, "cgroup path must be absolute" unless path.start_with?("/")
 
             # Ruby opens descriptors close-on-exec.
-            File.open(path, File::RDONLY | O_DIRECTORY) { |directory| yield directory }
+            File.open(path, File::RDONLY | O_DIRECTORY, &)
           end
         end
       end

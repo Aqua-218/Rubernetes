@@ -14,7 +14,8 @@ require_relative "../../tools/milestones/m0_source_inventory"
 class M0GateTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   EXECUTABLES = %w[rubectl rubernetes-apiserver rubernetes-controller-manager rubernetes-scheduler rubernetes-agent rubernetes-proxy].freeze
-  PROBES = %w[abi_manifest clone3_pid_namespace_mount_proc_pidfd_wait netlink_ack bpf_verifier kvm_capability errno_clone3 errno_pidfd errno_mount errno_netlink errno_bpf errno_kvm errno_namespace_exec source_input_stability].freeze
+  PROBES = %w[abi_manifest clone3_pid_namespace_mount_proc_pidfd_wait netlink_ack bpf_verifier kvm_capability errno_clone3 errno_pidfd
+              errno_mount errno_netlink errno_bpf errno_kvm errno_namespace_exec source_input_stability].freeze
   ERRNO = {
     "errno_clone3" => ["clone3", "intentional:clone3"],
     "errno_pidfd" => ["pidfd_open", "intentional:pidfd"],
@@ -137,12 +138,17 @@ class M0GateTest < Minitest::Test
       link = File.join(directory, "linked")
       FileUtils.ln_s(directory, link)
       manifest = JSON.parse(File.read(manifest_path))
-      manifest.fetch("artifacts").find { |entry| entry.fetch("path") == "source-inventory.json" }.update("path" => "linked/source-inventory.json")
+      manifest.fetch("artifacts").find do |entry|
+        entry.fetch("path") == "source-inventory.json"
+      end.update("path" => "linked/source-inventory.json")
       File.write(manifest_path, JSON.generate(manifest))
 
       stdout, = run_gate(manifest_path)
       errors = JSON.parse(stdout).fetch("errors")
-      assert(errors.any? { |error| error.include?("artifact escapes evidence directory") || error.include?("missing source-inventory.json") })
+
+      assert(errors.any? do |error|
+        error.include?("artifact escapes evidence directory") || error.include?("missing source-inventory.json")
+      end)
       assert File.file?(evidence)
     end
   end
@@ -157,6 +163,7 @@ class M0GateTest < Minitest::Test
 
       stdout, = run_gate(manifest_path)
       errors = JSON.parse(stdout).fetch("errors")
+
       assert_includes(errors, "subject digest mismatch subjects/rubectl")
       assert(errors.any? { |error| error.include?("subject source digest mismatch exe/rubectl") })
     end
@@ -174,6 +181,7 @@ class M0GateTest < Minitest::Test
       File.write(manifest_path, JSON.generate(manifest))
 
       stdout, = run_gate(manifest_path)
+
       assert_includes(JSON.parse(stdout).fetch("errors"), "JUnit is not bound to the captured rake command")
     end
   end
@@ -184,7 +192,9 @@ class M0GateTest < Minitest::Test
       manifest = JSON.parse(File.read(manifest_path))
       inventory = JSON.parse(File.read(File.join(directory, "source-inventory.json")))
       inventory.fetch("entries").first["sha256"] = "a" * 64
-      canonical = inventory.fetch("entries").sort_by { |entry| entry.fetch("path") }.map { |entry| "#{entry.fetch("path")}\0#{entry.fetch("sha256")}\n" }.join
+      canonical = inventory.fetch("entries").sort_by do |entry|
+        entry.fetch("path")
+      end.map { |entry| "#{entry.fetch("path")}\0#{entry.fetch("sha256")}\n" }.join
       inventory["input_sha256"] = Digest::SHA256.hexdigest(canonical)
       manifest["input_sha256"] = inventory["input_sha256"]
       manifest["input_capture"]["start"] = {"sha256" => inventory["input_sha256"], "file_count" => inventory["entries"].length}
@@ -195,6 +205,7 @@ class M0GateTest < Minitest::Test
       File.write(manifest_path, JSON.pretty_generate(manifest))
 
       stdout, = run_gate(manifest_path)
+
       assert_includes(JSON.parse(stdout).fetch("errors"), "source inventory does not match the current source tree")
     end
   end
@@ -209,6 +220,7 @@ class M0GateTest < Minitest::Test
 
       stdout, = run_gate(manifest_path)
       errors = JSON.parse(stdout).fetch("errors")
+
       assert_includes(errors, "ABI probe is not bound to the current kernel probe tool")
       assert_includes(errors, "ABI probe host is not bound to the current host")
     end
@@ -226,6 +238,7 @@ class M0GateTest < Minitest::Test
 
       stdout, = run_gate(manifest_path)
       errors = JSON.parse(stdout).fetch("errors")
+
       assert_includes(errors, "BPF payload does not prove a loaded verifier program")
       assert(errors.any? { |error| error.include?("native boundary scan source is stale or unsafe") })
     end
@@ -239,6 +252,7 @@ class M0GateTest < Minitest::Test
       end
 
       stdout, = run_gate(manifest_path)
+
       assert(JSON.parse(stdout).fetch("errors").any? { |error| error.include?("result time is outside the report interval") })
     end
   end
@@ -250,6 +264,7 @@ class M0GateTest < Minitest::Test
 
       stdout, = run_gate(manifest_path)
       errors = JSON.parse(stdout).fetch("errors")
+
       assert(errors.any? { |error| error.include?("built gem is invalid") || error.include?("gem_build output is not linked") })
     end
   end
@@ -278,12 +293,14 @@ class M0GateTest < Minitest::Test
         "test_pattern" => "test/**/*_test.rb", "test_inventory_sha256" => file_digest,
         "test_inventory_count" => test_entries.length
       }.map { |key, value| %(#{key}="#{value}") }.join(" ")
-      File.write(File.join(directory, "junit.xml"), %(<testsuite #{attributes}><testcase classname="#{classname}" name="#{name}" time="0.001000"/></testsuite>))
+      File.write(File.join(directory, "junit.xml"),
+                 %(<testsuite #{attributes}><testcase classname="#{classname}" name="#{name}" time="0.001000"/></testsuite>))
       artifact = manifest.fetch("artifacts").find { |entry| entry.fetch("path") == "junit.xml" }
       artifact.replace(evidence_entry(directory, "junit.xml"))
       File.write(manifest_path, JSON.pretty_generate(manifest))
 
       stdout, = run_gate(manifest_path)
+
       assert_includes(JSON.parse(stdout).fetch("errors"), "JUnit does not contain the complete current Minitest runnable inventory")
     end
   end
@@ -297,6 +314,7 @@ class M0GateTest < Minitest::Test
       File.write(manifest_path, JSON.pretty_generate(manifest))
 
       stdout, = run_gate(manifest_path)
+
       assert_includes(JSON.parse(stdout).fetch("errors"), "evidence capture is stale")
     end
   end
@@ -309,6 +327,7 @@ class M0GateTest < Minitest::Test
       end
 
       stdout, = run_gate(manifest_path)
+
       assert_includes(JSON.parse(stdout).fetch("errors"), "ABI probe is not bound to the loaded native extension subject")
     end
   end
@@ -324,27 +343,27 @@ class M0GateTest < Minitest::Test
     commands = command_records(directory, timestamp, source_entries)
 
     write_json(directory, "source-inventory.json", {
-      "schema_version" => 1, "kind" => "m0_source_inventory", "input_sha256" => input_sha256,
-      "input_file_count" => source_entries.length, "entries" => source_entries
-    })
+                 "schema_version" => 1, "kind" => "m0_source_inventory", "input_sha256" => input_sha256,
+                 "input_file_count" => source_entries.length, "entries" => source_entries
+               })
     FileUtils.cp(self.class.current_gem_path, File.join(directory, "rubernetes-0.1.0.gem"))
     write_json(directory, "gem-build.json", commands.first)
     subjects = write_subjects(directory)
     write_json(directory, "executables.json", executable_report(subjects, timestamp, directory))
     native_entries = source_entries.select { |entry| entry.fetch("path").match?(%r{\Aext/rubernetes_linux/.*\.(?:c|cc|h)\z}) }
     write_json(directory, "native-boundary-scan.json", {
-      "schema_version" => 2, "kind" => "native_boundary_scan",
-      "command" => [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output", File.join(directory, "native-boundary-scan.json")],
-      "output_path" => File.join(directory, "native-boundary-scan.json"),
-      "tool_path" => "tools/milestones/native_boundary_scan.rb",
-      "tool_sha256" => Digest::SHA256.file(File.join(ROOT, "tools/milestones/native_boundary_scan.rb")).hexdigest,
-      "started_at" => timestamp,
-      "finished_at" => timestamp,
-      "host" => {"sysname" => Etc.uname[:sysname], "release" => Etc.uname[:release], "machine" => Etc.uname[:machine], "ruby" => RUBY_DESCRIPTION},
-      "source_files" => native_entries,
-      "policy_branch_count" => 0, "retry_count" => 0, "authorization_count" => 0,
-      "state_machine_count" => 0, "findings" => [], "passed" => true
-    })
+                 "schema_version" => 2, "kind" => "native_boundary_scan",
+                 "command" => [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output", File.join(directory, "native-boundary-scan.json")],
+                 "output_path" => File.join(directory, "native-boundary-scan.json"),
+                 "tool_path" => "tools/milestones/native_boundary_scan.rb",
+                 "tool_sha256" => Digest::SHA256.file(File.join(ROOT, "tools/milestones/native_boundary_scan.rb")).hexdigest,
+                 "started_at" => timestamp,
+                 "finished_at" => timestamp,
+                 "host" => {"sysname" => Etc.uname[:sysname], "release" => Etc.uname[:release], "machine" => Etc.uname[:machine], "ruby" => RUBY_DESCRIPTION},
+                 "source_files" => native_entries,
+                 "policy_branch_count" => 0, "retry_count" => 0, "authorization_count" => 0,
+                 "state_machine_count" => 0, "findings" => [], "passed" => true
+               })
     write_json(directory, "abi-probe-x86_64.json", abi_probe(input_sha256, timestamp, subjects, directory))
     test_entries = source_entries.select { |entry| entry.fetch("path").match?(%r{\Atest/.*_test\.rb\z}) }
     test_inventory_content = test_entries.map { |entry| "#{entry.fetch("path")}\0#{entry.fetch("sha256")}\n" }.join
@@ -362,23 +381,27 @@ class M0GateTest < Minitest::Test
       "registered_testcase_inventory_count" => testcases.length,
       "executed_testcase_inventory_sha256" => Digest::SHA256.hexdigest(identity_inventory),
       "inventory_complete" => true,
-      "command_sha256" => Digest::SHA256.hexdigest(JSON.generate(commands.find { |entry| entry.fetch("name") == "rake_test" }.fetch("command"))),
+      "command_sha256" => Digest::SHA256.hexdigest(JSON.generate(commands.find do |entry|
+        entry.fetch("name") == "rake_test"
+      end.fetch("command"))),
       "test_pattern" => "test/**/*_test.rb",
       "test_inventory_sha256" => Digest::SHA256.hexdigest(test_inventory_content),
       "test_inventory_count" => test_entries.length
     }
     attributes = junit_attributes.map { |key, value| %(#{key}="#{value}") }.join(" ")
-    cases = testcases.map { |classname, name| %(<testcase classname="#{classname}" name="#{name}" time="0.001000"/>)}.join
+    cases = testcases.map { |classname, name| %(<testcase classname="#{classname}" name="#{name}" time="0.001000"/>) }.join
     File.write(File.join(directory, "junit.xml"), %(<testsuite #{attributes}>#{cases}</testsuite>))
 
-    artifacts = %w[abi-probe-x86_64.json executables.json gem-build.json junit.xml native-boundary-scan.json source-inventory.json].sort.map do |name|
+    artifacts = %w[abi-probe-x86_64.json executables.json gem-build.json junit.xml native-boundary-scan.json
+                   source-inventory.json].sort.map do |name|
       evidence_entry(directory, name)
     end
     manifest = {
       "schema_version" => 3,
       "milestone" => "M0",
       "status" => "COMPLETE",
-      "host" => {"architecture" => RbConfig::CONFIG.fetch("host_cpu").sub("arm64", "aarch64").sub("amd64", "x86_64"), "kernel" => Etc.uname[:release], "sysname" => Etc.uname[:sysname], "ruby" => RUBY_DESCRIPTION},
+      "host" => {"architecture" => RbConfig::CONFIG.fetch("host_cpu").sub("arm64", "aarch64").sub("amd64", "x86_64"),
+                 "kernel" => Etc.uname[:release], "sysname" => Etc.uname[:sysname], "ruby" => RUBY_DESCRIPTION},
       "input_sha256" => input_sha256,
       "input_file_count" => source_entries.length,
       "input_stable" => true,
@@ -386,7 +409,8 @@ class M0GateTest < Minitest::Test
       "started_at" => timestamp,
       "finished_at" => timestamp,
       "commands" => commands,
-      "result_counts" => {"commands" => 6, "command_failures" => 0, "artifacts" => 6, "subjects" => subjects.length, "architecture_profiles" => 1, "source_files" => source_entries.length},
+      "result_counts" => {"commands" => 6, "command_failures" => 0, "artifacts" => 6, "subjects" => subjects.length,
+                          "architecture_profiles" => 1, "source_files" => source_entries.length},
       "artifacts" => artifacts,
       "subjects" => subjects
     }
@@ -398,11 +422,13 @@ class M0GateTest < Minitest::Test
   def command_records(directory, timestamp, source_entries)
     values = {
       "gem_build" => ["gem", "build", "rubernetes.gemspec", "--output", File.join(directory, "rubernetes-0.1.0.gem")],
-      "rake_test" => ["bundle", "exec", "rake", "test"],
+      "rake_test" => %w[bundle exec rake test],
       "executables" => [RbConfig.ruby, "tools/milestones/executables_probe.rb", "--output", File.join(directory, "executables.json")],
-      "native_boundary_scan" => [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output", File.join(directory, "native-boundary-scan.json")],
+      "native_boundary_scan" => [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output",
+                                 File.join(directory, "native-boundary-scan.json")],
       "rbs_validate" => ["bundle", "exec", "rbs", "-I", "sig", "-I", "generated/rbs", "validate"],
-      "kernel_probe_x86_64" => [RbConfig.ruby, "-I#{File.join(ROOT, "build/ext/rubernetes_linux")}", "tools/milestones/m0_kernel_probe.rb", "--output", File.join(directory, "abi-probe-x86_64.json")]
+      "kernel_probe_x86_64" => [RbConfig.ruby, "-I#{File.join(ROOT, "build/ext/rubernetes_linux")}", "tools/milestones/m0_kernel_probe.rb",
+                                "--output", File.join(directory, "abi-probe-x86_64.json")]
     }
     test_entries = source_entries.select { |entry| entry.fetch("path").match?(%r{\Atest/.*_test\.rb\z}) }
     test_inventory_content = test_entries.map { |entry| "#{entry.fetch("path")}\0#{entry.fetch("sha256")}\n" }.join
@@ -440,7 +466,8 @@ class M0GateTest < Minitest::Test
 
   def write_subjects(directory)
     source_paths = EXECUTABLES.map { |name| "exe/#{name}" }
-    source_paths.concat(["generated/platform/linux/abi/x86_64.json", "build/ext/rubernetes_linux/rubernetes_linux.so", "build/rubernetes-0.1.0.gem"])
+    source_paths.concat(["generated/platform/linux/abi/x86_64.json", "build/ext/rubernetes_linux/rubernetes_linux.so",
+                         "build/rubernetes-0.1.0.gem"])
     source_paths.map do |source_path|
       source = source_path == "build/rubernetes-0.1.0.gem" ? self.class.current_gem_path : File.join(ROOT, source_path)
       basename = source_path == "build/rubernetes-0.1.0.gem" ? "rubernetes-0.1.0.gem" : File.basename(source_path)
@@ -457,7 +484,8 @@ class M0GateTest < Minitest::Test
       {
         "executable" => executable,
         "option" => option,
-        "command" => [RbConfig.ruby, "-I#{ROOT}/lib", "#{ROOT}/exe/#{executable}", "--config", "/unreadable/m0-side-effect-sentinel", option],
+        "command" => [RbConfig.ruby, "-I#{ROOT}/lib", "#{ROOT}/exe/#{executable}", "--config", "/unreadable/m0-side-effect-sentinel",
+                      option],
         "started_at" => timestamp,
         "finished_at" => timestamp,
         "exit_status" => 0,

@@ -30,7 +30,8 @@ class SupplementalGroupsPolicyTest < Minitest::Test
   end
 
   def test_strict_uses_only_the_pod_groups
-    assert_equal [5], context({"supplementalGroups" => [5], "runAsUser" => 1000, "supplementalGroupsPolicy" => "Strict"})["supplementalGroups"]
+    assert_equal [5],
+                 context({"supplementalGroups" => [5], "runAsUser" => 1000, "supplementalGroupsPolicy" => "Strict"})["supplementalGroups"]
   end
 
   def test_an_unknown_uid_adds_nothing

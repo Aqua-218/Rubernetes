@@ -62,7 +62,10 @@ module Rubernetes
         (seen ||= {}.compare_by_identity)[value] = true
         case value
         when Hash
-          value.each { |key, child| deep_freeze(key, seen); deep_freeze(child, seen) }
+          value.each do |key, child|
+            deep_freeze(key, seen)
+            deep_freeze(child, seen)
+          end
         when Array
           value.each { |child| deep_freeze(child, seen) }
         end

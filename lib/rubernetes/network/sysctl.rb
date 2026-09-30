@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
-
 require_relative "durable_state"
 require_relative "errors"
 require_relative "support"
@@ -75,7 +73,7 @@ module Rubernetes
             persist!(default_state.merge("last_error" => error.message,
                                          "rollback_errors" => rollback_errors),
                      "network_sysctl_apply_rolled_back", operation_id: operation_id)
-            detail = rollback_errors.empty? ? "" : "; rollback: #{rollback_errors.join('; ')}"
+            detail = rollback_errors.empty? ? "" : "; rollback: #{rollback_errors.join("; ")}"
             raise EffectError, "network sysctl bootstrap failed: #{error.message}#{detail}"
           end
         end
@@ -98,7 +96,7 @@ module Rubernetes
           unless errors.empty?
             persist!(@state.merge("state" => "unknown", "owners" => []),
                      "network_sysctl_rollback_failed", operation_id: operation_id)
-            raise OwnershipError, "network sysctl rollback lost ownership: #{errors.join('; ')}"
+            raise OwnershipError, "network sysctl rollback lost ownership: #{errors.join("; ")}"
           end
           persist!(default_state, "network_sysctl_rollback_committed", operation_id: operation_id)
           true
@@ -115,8 +113,9 @@ module Rubernetes
           @state.fetch("entries").each do |entry|
             current = read_exact(entry.fetch("path"))
             unless [entry.fetch("original"), entry.fetch("target")].include?(current)
-              raise OwnershipError, "network sysctl #{entry.fetch('path')} changed outside its journal"
+              raise OwnershipError, "network sysctl #{entry.fetch("path")} changed outside its journal"
             end
+
             write_exact(entry.fetch("path"), entry.fetch("target")) unless current == entry.fetch("target")
           end
           persist!(@state.merge("state" => "active"), "network_sysctl_recovered")
@@ -165,7 +164,7 @@ module Rubernetes
 
         @state.fetch("entries").each do |entry|
           current = read_exact(entry.fetch("path"))
-          raise OwnershipError, "network sysctl #{entry.fetch('path')} changed while owned" unless current == entry.fetch("target")
+          raise OwnershipError, "network sysctl #{entry.fetch("path")} changed while owned" unless current == entry.fetch("target")
         end
       end
 
@@ -173,11 +172,11 @@ module Rubernetes
         Array(entries).filter_map do |entry|
           path = entry.fetch("path")
           current = read_exact(path)
-          if current != entry.fetch("target")
-            "#{path} expected owned value #{entry.fetch('target').inspect}, got #{current.inspect}"
-          else
+          if current == entry.fetch("target")
             write_exact(path, entry.fetch("original"))
             nil
+          else
+            "#{path} expected owned value #{entry.fetch("target").inspect}, got #{current.inspect}"
           end
         rescue StandardError => error
           "#{path}: #{error.class}: #{error.message}"
@@ -193,7 +192,10 @@ module Rubernetes
       def write_exact(path, value)
         flags = File::WRONLY | File::TRUNC
         flags |= File::NOFOLLOW if File.const_defined?(:NOFOLLOW)
-        File.open(path, flags) { |file| file.write("#{value}\n"); file.flush }
+        File.open(path, flags) do |file|
+          file.write("#{value}\n")
+          file.flush
+        end
         actual = read_exact(path)
         raise EffectError, "network sysctl #{path} read back #{actual.inspect}, expected #{value.inspect}" unless actual == value
 

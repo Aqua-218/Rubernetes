@@ -50,6 +50,7 @@ class NodeRestartExitRaceTest < Minitest::Test
     lifecycle.handle_container_exit(pod, container_name: "app", exit_code: 1, now: now)
 
     status = lifecycle.record(pod).fetch(:status).fetch("containerStatuses").first
+
     assert_equal 1, status.fetch("restartCount")
     assert status.fetch("state").key?("terminated"), status.inspect
   end

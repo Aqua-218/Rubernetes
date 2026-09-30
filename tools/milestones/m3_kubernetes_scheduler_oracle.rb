@@ -12,15 +12,16 @@ require "rbconfig"
 require "time"
 
 module M3KubernetesSchedulerOracle
-  VERSION = "v1.36.2".freeze
-  SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467".freeze
+  VERSION = "v1.36.2"
+  SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467"
   REQUIRED_CASE_IDS = %w[filter score tie_break preemption binding volume_binding].freeze
   PROJECT_ROOT = File.expand_path("../..", __dir__).freeze
   ORACLE_SOURCE = File.join(PROJECT_ROOT, "test", "conformance", "kubernetes", "m3_scheduler_oracle", "main.go").freeze
 
   module_function
 
-  def run(input_bytes: STDIN.read, source_root: ENV["RUBERNETES_M3_KUBERNETES_SOURCE_ROOT"] || ENV["KUBERNETES_SOURCE_ROOT"], go: ENV.fetch("GO", "go"))
+  def run(input_bytes: STDIN.read, source_root: ENV["RUBERNETES_M3_KUBERNETES_SOURCE_ROOT"] || ENV.fetch("KUBERNETES_SOURCE_ROOT", nil),
+          go: ENV.fetch("GO", "go"))
     source = verify_source!(source_root)
     request = JSON.parse(input_bytes, max_nesting: 512)
     verify_request!(request)
@@ -105,12 +106,16 @@ module M3KubernetesSchedulerOracle
 
     root = File.expand_path(source_root)
     raise "Kubernetes source root is not a directory: #{root}" unless File.directory?(root)
+
     commit = command!(root, "git", "rev-parse", "HEAD").strip
     raise "Kubernetes source commit is #{commit}, expected #{SOURCE_COMMIT}" unless commit == SOURCE_COMMIT
+
     tag = command!(root, "git", "describe", "--tags", "--exact-match", "HEAD").strip
     raise "Kubernetes source tag is #{tag.inspect}, expected #{VERSION.inspect}" unless tag == VERSION
+
     status = command!(root, "git", "status", "--porcelain", "--untracked-files=all")
     raise "Kubernetes source tree is not clean" unless status.empty?
+
     tree = command!(root, "git", "rev-parse", "HEAD^{tree}").strip
     source_inventory = command!(root, "git", "ls-tree", "-r", "--full-tree", "--name-only", "HEAD")
     {
@@ -133,6 +138,7 @@ module M3KubernetesSchedulerOracle
     raise "scheduler oracle request must be an object" unless request.is_a?(Hash)
     raise "scheduler oracle request version is not pinned" unless request["kubernetes_version"] == VERSION
     raise "scheduler oracle request source commit is not pinned" unless request["source_commit"] == SOURCE_COMMIT
+
     cases = request["cases"]
     raise "scheduler oracle request cases must be an object" unless cases.is_a?(Hash) && cases.length >= 6
     raise "scheduler oracle request case inventory is incomplete" unless cases.keys.map(&:to_s).sort == REQUIRED_CASE_IDS.sort
@@ -143,6 +149,7 @@ module M3KubernetesSchedulerOracle
 
     raw.sort_by { |id, _| id.to_s }.map do |id, observation|
       raise "scheduler oracle case #{id.inspect} is not an object" unless observation.is_a?(Hash)
+
       expected = observation["normalized_observable"]
       raise "scheduler oracle case #{id.inspect} has no normalized observable" unless expected.is_a?(Hash)
 

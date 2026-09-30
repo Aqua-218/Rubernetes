@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 module Rubernetes
   module Scheduler
     # A structured filter rejection is kept in traces instead of collapsing all
@@ -80,11 +78,10 @@ module Rubernetes
       # with {node name => score} or Scores::SKIP -- upstream's PreScore, Score
       # and NormalizeScore in one call, normalized over the feasible nodes.
       # Without one the block is asked for each node on its own.
-      def initialize(name:, kind: nil, phase: nil, weight: 1, block:, supported_phases: nil, score_extension: nil)
+      def initialize(name:, block:, kind: nil, phase: nil, weight: 1, supported_phases: nil, score_extension: nil)
         canonical_name = name.to_s
-        unless canonical_name.match?(/\A[a-zA-Z][a-zA-Z0-9_.-]*\z/)
-          raise ValidationError, "invalid scheduler plugin name #{name.inspect}"
-        end
+        raise ValidationError, "invalid scheduler plugin name #{name.inspect}" unless canonical_name.match?(/\A[a-zA-Z][a-zA-Z0-9_.-]*\z/)
+
         normalized_kind = kind&.to_sym
         normalized_phase = (phase || normalized_kind)&.to_sym
         raise ValidationError, "unsupported scheduler plugin phase #{normalized_phase.inspect}" unless PHASES.include?(normalized_phase)
@@ -92,9 +89,7 @@ module Rubernetes
           raise ValidationError, "plugin kind #{normalized_kind.inspect} conflicts with phase #{normalized_phase.inspect}"
         end
         raise ValidationError, "scheduler plugin block is required" unless block.respond_to?(:call)
-        unless block.arity == 2 || block.arity.negative?
-          raise ValidationError, "#{canonical_name} must accept pod and node arguments"
-        end
+        raise ValidationError, "#{canonical_name} must accept pod and node arguments" unless block.arity == 2 || block.arity.negative?
 
         normalized_weight = if weight.is_a?(Integer)
                               weight
@@ -192,9 +187,7 @@ module Rubernetes
 
       def phase_plugins(phase)
         normalized_phase = phase.to_sym
-        unless Plugin::PHASES.include?(normalized_phase)
-          raise ValidationError, "unsupported scheduler plugin phase #{phase.inspect}"
-        end
+        raise ValidationError, "unsupported scheduler plugin phase #{phase.inspect}" unless Plugin::PHASES.include?(normalized_phase)
 
         selected = @plugins.select { |plugin| plugin.supports_phase?(normalized_phase) }
         selected.frozen? ? selected : selected.freeze
@@ -209,9 +202,7 @@ module Rubernetes
 
       def register(plugin)
         raise FrozenError, "scheduler plugin registry is immutable" if frozen?
-        unless plugin.is_a?(Plugin)
-          raise ValidationError, "scheduler registry accepts Plugin instances"
-        end
+        raise ValidationError, "scheduler registry accepts Plugin instances" unless plugin.is_a?(Plugin)
 
         index = @plugins.index { |existing| existing.name == plugin.name && existing.phase == plugin.phase }
         if index
@@ -232,8 +223,8 @@ module Rubernetes
         self
       end
 
-      def filter(name, phase: :filter, **options, &block)
-        register(Plugin.new(name: name, kind: :filter, phase: phase, **options, block: block))
+      def filter(name, phase: :filter, **, &block)
+        register(Plugin.new(name: name, kind: :filter, phase: phase, **, block: block))
       end
 
       def score(name, phase: :score, weight: 1, &block)
@@ -284,16 +275,16 @@ module Rubernetes
         @registry = registry
       end
 
-      def filter(name, **options, &block)
-        registry.filter(name, **options, &block)
+      def filter(name, **, &)
+        registry.filter(name, **, &)
       end
 
-      def score(name, weight: 1, &block)
-        registry.score(name, weight: weight, &block)
+      def score(name, weight: 1, &)
+        registry.score(name, weight: weight, &)
       end
 
-      def queue_sort(name, weight: 1, &block)
-        registry.queue_sort(name, weight: weight, &block)
+      def queue_sort(name, weight: 1, &)
+        registry.queue_sort(name, weight: weight, &)
       end
 
       def scheduler(&block)

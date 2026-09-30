@@ -10,11 +10,14 @@ class HPAAPIDefaultingTest < Minitest::Test
     Rubernetes::Generated.definition_for(name).defaulting.apply_hash(object, kubernetes_admission_defaults: true)
   end
 
-  def hpa(spec) = {"metadata" => {"name" => "h", "namespace" => "ns"}, "spec" => {"scaleTargetRef" => {"kind" => "Deployment", "name" => "d"},
-                                                                                "maxReplicas" => 5}.merge(spec)}
+  def hpa(spec)
+    {"metadata" => {"name" => "h", "namespace" => "ns"}, "spec" => {"scaleTargetRef" => {"kind" => "Deployment", "name" => "d"},
+                                                                    "maxReplicas" => 5}.merge(spec)}
+  end
 
   def test_v2_defaults
     spec = defaulted("io.k8s.api.autoscaling.v2.HorizontalPodAutoscaler", hpa({}))["spec"]
+
     assert_equal 1, spec["minReplicas"]
     assert_equal [{"type" => "Resource", "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 80}}}],
                  spec["metrics"]
@@ -22,6 +25,7 @@ class HPAAPIDefaultingTest < Minitest::Test
 
     behavior = defaulted("io.k8s.api.autoscaling.v2.HorizontalPodAutoscaler",
                          hpa("behavior" => {"scaleDown" => {"stabilizationWindowSeconds" => 60}}))["spec"]["behavior"]
+
     assert_equal 0, behavior.dig("scaleUp", "stabilizationWindowSeconds")
     assert_equal [{"type" => "Pods", "value" => 4, "periodSeconds" => 15}, {"type" => "Percent", "value" => 100, "periodSeconds" => 15}],
                  behavior.dig("scaleUp", "policies")
@@ -31,6 +35,7 @@ class HPAAPIDefaultingTest < Minitest::Test
 
   def test_v1_defaults_only_min_replicas
     spec = defaulted("io.k8s.api.autoscaling.v1.HorizontalPodAutoscaler", hpa({}))["spec"]
+
     assert_equal 1, spec["minReplicas"]
     refute spec.key?("metrics")
   end

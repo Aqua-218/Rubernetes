@@ -30,8 +30,10 @@ class NodeEvictionLifecycleTest < Minitest::Test
                 "containers" => [{"name" => "app", "image" => "example/busybox"}]}}
   end
 
-  def condition = {"type" => "DisruptionTarget", "status" => "True", "reason" => "TerminationByKubelet",
-                   "message" => MESSAGE, "observedGeneration" => 3}
+  def condition
+    {"type" => "DisruptionTarget", "status" => "True", "reason" => "TerminationByKubelet",
+     "message" => MESSAGE, "observedGeneration" => 3}
+  end
 
   def test_evicted_pod_is_failed_with_reason_message_and_disruption_target
     spec = pod
@@ -40,10 +42,12 @@ class NodeEvictionLifecycleTest < Minitest::Test
 
     assert_equal [["app", 1]], @runtime.stopped, "the eviction grace period overrides terminationGracePeriodSeconds"
     status = @reporter.statuses.last
+
     assert_equal "Failed", status["phase"]
     assert_equal "Evicted", status["reason"]
     assert_equal MESSAGE, status["message"]
     target = status["conditions"].find { |entry| entry["type"] == "DisruptionTarget" }
+
     assert_equal "True", target["status"]
     assert_equal "TerminationByKubelet", target["reason"]
     assert_equal MESSAGE, target["message"]
@@ -53,6 +57,7 @@ class NodeEvictionLifecycleTest < Minitest::Test
     # restartPolicy Always: still never started again.
     @lifecycle.reconcile(spec)
     @lifecycle.reconcile(spec.merge("status" => status))
+
     assert_equal ["app"], @runtime.created
     assert_equal 1, @runtime.sandboxes
   end
@@ -61,11 +66,14 @@ class NodeEvictionLifecycleTest < Minitest::Test
     spec = pod(grace: 7)
     @lifecycle.start(spec)
     @lifecycle.request_eviction("pod-1", message: MESSAGE, grace_period_seconds: 7, condition: condition)
+
     assert_empty @runtime.stopped
     @lifecycle.reconcile(spec)
+
     assert_equal [["app", 7]], @runtime.stopped
     assert_equal "Evicted", @reporter.statuses.last["reason"]
     @lifecycle.reconcile(spec)
+
     assert_equal ["app"], @runtime.created
   end
 
@@ -75,9 +83,11 @@ class NodeEvictionLifecycleTest < Minitest::Test
     @lifecycle.start(spec)
     @lifecycle.send(:record, "pod-1")[:started_at] = (Time.now.utc - 60).iso8601(6)
     @lifecycle.reconcile(spec)
+
     assert_equal "DeadlineExceeded", @reporter.statuses.last["reason"]
     @lifecycle.reconcile(spec)
     @lifecycle.reconcile(spec)
+
     assert_equal ["app"], @runtime.created, "a Pod the kubelet failed is not restarted"
   end
 
@@ -103,9 +113,12 @@ class NodeEvictionLifecycleTest < Minitest::Test
   class Stats
     attr_accessor :available
 
-    def initialize = @available = 8 * 1024**3
-    def summary = {"node" => {"memory" => {"availableBytes" => available, "workingSetBytes" => 1024**3, "time" => Time.now.utc.iso8601(6)}},
-                   "pods" => []}
+    def initialize = @available = 8 * (1024**3)
+
+    def summary
+      {"node" => {"memory" => {"availableBytes" => available, "workingSetBytes" => 1024**3, "time" => Time.now.utc.iso8601(6)}},
+       "pods" => []}
+    end
   end
 
   def test_agent_wires_pressure_into_node_conditions_and_admission
@@ -116,28 +129,36 @@ class NodeEvictionLifecycleTest < Minitest::Test
                                         stats_provider: stats)
     agent.start
     memory = api.nodes.last.dig("status", "conditions").find { |entry| entry["type"] == "MemoryPressure" }
+
     assert_equal "False", memory["status"]
     assert_equal "KubeletHasSufficientMemory", memory["reason"]
     assert_equal "kubelet has sufficient memory available", memory["message"]
     first_transition = memory["lastTransitionTime"]
 
-    stats.available = 50 * 1024**2
+    stats.available = 50 * (1024**2)
     agent.eviction_manager.synchronize
     memory = api.nodes.last.dig("status", "conditions").find { |entry| entry["type"] == "MemoryPressure" }
+
     assert_equal "True", memory["status"], "a condition change is published at once"
     assert_equal "KubeletHasInsufficientMemory", memory["reason"]
 
     best_effort = {"metadata" => {"name" => "p", "uid" => "u"}, "spec" => {"containers" => [{"name" => "c"}]}}
     decision = agent.instance_variable_get(:@admission).admit(best_effort)
+
     refute decision.accepted
     assert_equal "Evicted", decision.reason
     assert_equal "The node had condition: [MemoryPressure]. ", decision.message
 
     disk = api.nodes.last.dig("status", "conditions").find { |entry| entry["type"] == "DiskPressure" }
+
     assert_equal "False", disk["status"]
     refute_nil first_transition
   ensure
-    agent&.stop rescue nil
+    begin
+      agent&.stop
+    rescue StandardError
+      nil
+    end
   end
 
   class ImageStats < Stats
@@ -155,8 +176,10 @@ class NodeEvictionLifecycleTest < Minitest::Test
   def test_agent_builds_image_gc_and_uses_it_for_disk_reclaim
     agent = Rubernetes::Node::Agent.new(node_name: "node-a", api: API.new, lifecycle: Lifecycle.new, sync_loop: Loop.new,
                                         sleeper: ->(_) {}, stats_provider: ImageStats.new, image_resolver: ImageResolver.new)
+
     refute_nil agent.image_gc_manager
     reclaim = agent.eviction_manager.instance_variable_get(:@node_reclaim)
+
     assert_equal %w[containerfs.available containerfs.inodesFree imagefs.available imagefs.inodesFree nodefs.available nodefs.inodesFree],
                  reclaim.keys.sort
     assert_empty agent.image_gc_manager.garbage_collect
@@ -168,6 +191,7 @@ class NodeEvictionLifecycleTest < Minitest::Test
   def test_eviction_can_be_disabled_and_is_absent_without_stats
     agent = Rubernetes::Node::Agent.new(node_name: "node-a", api: API.new, lifecycle: Lifecycle.new, sync_loop: Loop.new,
                                         sleeper: ->(_) {}, stats_provider: Stats.new, eviction: {"enabled" => false})
+
     assert_nil agent.eviction_manager
     assert_nil Rubernetes::Node::Agent.new(node_name: "node-a", api: API.new, lifecycle: Lifecycle.new, sync_loop: Loop.new,
                                            sleeper: ->(_) {}).eviction_manager

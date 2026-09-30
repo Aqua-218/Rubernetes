@@ -47,15 +47,18 @@ class NativeDeviceFilterWiringTest < Minitest::Test
 
     assert_equal 1, filter.attached.length
     cgroup_path, rules = filter.attached.first
+
     assert_equal container.cgroup.path, cgroup_path
     assert_equal DeviceCgroup.rules_for.map(&:to_h), rules
     assert_equal DeviceCgroup::DENY_ALL.to_h, rules.first
     attached = runtime.trace.find { |event| event[:event] == :device_filter_attached || event["event"] == "device_filter_attached" }
+
     refute_nil attached, runtime.trace.inspect
 
     runtime.start_container(container)
     runtime.stop_container(container)
     runtime.remove_container(container)
+
     assert_equal [cgroup_path], filter.detached
   end
 
@@ -67,6 +70,7 @@ class NativeDeviceFilterWiringTest < Minitest::Test
                                           "security_context" => {"privileged" => true}})
 
     _, rules = filter.attached.first
+
     assert_equal DeviceCgroup.rules_for(privileged: true).map(&:to_h), rules
     assert_equal DeviceCgroup::ALLOW_ALL.to_h, rules.first
   end
@@ -77,25 +81,29 @@ class NativeDeviceFilterWiringTest < Minitest::Test
     sandbox_id = runtime.run_sandbox({"request_id" => "request-devices"})
     null = File.stat("/dev/null")
     container = runtime.create_container(sandbox_id, {
-      "id" => "container-1", "command" => ["/bin/true"],
-      "mounts" => [
-        # A device plugin device: permissions verbatim.
-        {"source" => "/dev/null", "destination" => "/dev/fake0", "device" => true, "permissions" => "rw"},
-        # A CDI deviceNode naming its own type/major/minor.
-        {"source" => "/dev/null", "destination" => "/dev/nvidia0", "device" => true, "permissions" => "rwm",
-         "device_type" => "c", "major" => 195, "minor" => 0},
-        # A plain volume bind mount contributes nothing.
-        {"source" => "/tmp", "destination" => "/data"}
-      ]
-    })
+                                           "id" => "container-1", "command" => ["/bin/true"],
+                                           "mounts" => [
+                                             # A device plugin device: permissions verbatim.
+                                             {"source" => "/dev/null", "destination" => "/dev/fake0", "device" => true,
+                                              "permissions" => "rw"},
+                                             # A CDI deviceNode naming its own type/major/minor.
+                                             {"source" => "/dev/null", "destination" => "/dev/nvidia0", "device" => true, "permissions" => "rwm",
+                                              "device_type" => "c", "major" => 195, "minor" => 0},
+                                             # A plain volume bind mount contributes nothing.
+                                             {"source" => "/tmp", "destination" => "/data"}
+                                           ]
+                                         })
 
     _, rules = filter.attached.first
     expected = DeviceCgroup.rules_for(devices: [
-      {"type" => "c", "major" => null.rdev_major, "minor" => null.rdev_minor, "access" => "rw", "allow" => true},
-      {"type" => "c", "major" => 195, "minor" => 0, "access" => "rwm", "allow" => true}
-    ]).map(&:to_h)
+                                        {"type" => "c", "major" => null.rdev_major, "minor" => null.rdev_minor, "access" => "rw",
+                                         "allow" => true},
+                                        {"type" => "c", "major" => 195, "minor" => 0, "access" => "rwm", "allow" => true}
+                                      ]).map(&:to_h)
+
     assert_equal expected, rules
     mounts = container.spec["mounts"]
+
     assert_equal({"source" => "/dev/null", "destination" => "/dev/fake0", "readonly" => false, "propagation" => "None",
                   "device" => true, "permissions" => "rw"}, mounts[0])
     assert_equal 195, mounts[1]["major"]
@@ -120,6 +128,7 @@ class NativeDeviceFilterWiringTest < Minitest::Test
     devices = rules[1...-DeviceCgroup::DEFAULT_RULES.length]
     full = File.stat("/dev/full")
     zero = File.stat("/dev/zero")
+
     assert_equal [{"type" => "c", "major" => full.rdev_major, "minor" => full.rdev_minor, "access" => "r", "allow" => true},
                   {"type" => "c", "major" => zero.rdev_major, "minor" => zero.rdev_minor, "access" => "r", "allow" => true}], devices
   end
@@ -149,7 +158,8 @@ class NativeDeviceFilterWiringTest < Minitest::Test
     runtime = Native.new
     sandbox_id = runtime.run_sandbox({"request_id" => "request-pure"})
     runtime.create_container(sandbox_id, {"id" => "container-1", "command" => ["/bin/true"]})
-    refute runtime.trace.any? { |event| event.to_s.include?("device_filter") }
+
+    refute(runtime.trace.any? { |event| event.to_s.include?("device_filter") })
 
     skip "host profile construction requires root" unless Process.uid.zero?
     original = DeviceCgroup::Attacher.instance_method(:validate!)

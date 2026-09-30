@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "securerandom"
-require "set"
 
 require_relative "cel"
 require_relative "../schema/quantity"
@@ -71,9 +70,7 @@ module Rubernetes
               id = DeviceID.new(driver: result["driver"].to_s, pool: result["pool"].to_s, device: result["device"].to_s)
               if consumable_capacity && result["shareID"]
                 shared << SharedDeviceID.new(driver: id.driver, pool: id.pool, device: id.device, share_id: result["shareID"].to_s)
-                if result["consumedCapacity"]
-                  Allocator.insert_capacity(capacity, id, Allocator.quantities(result["consumedCapacity"]))
-                end
+                Allocator.insert_capacity(capacity, id, Allocator.quantities(result["consumedCapacity"])) if result["consumedCapacity"]
                 next
               end
               devices << id
@@ -299,9 +296,7 @@ module Rubernetes
               return "counter set #{consumption["counterSet"]} not found" unless counter_set
 
               (consumption["counters"] || {}).each_key do |name|
-                unless (counter_set["counters"] || {}).key?(name)
-                  return "counter #{name} not found in counter set #{counter_set["name"]}"
-                end
+                return "counter #{name} not found in counter set #{counter_set["name"]}" unless (counter_set["counters"] || {}).key?(name)
               end
             end
           end
@@ -415,16 +410,21 @@ module Rubernetes
             Array(claim.dig("spec", "devices", "requests")).each_with_index do |request, request_index|
               sub_requests = Array(request["firstAvailable"])
               if !@features.prioritized_list && !sub_requests.empty?
-                raise Error, "claim #{ref(claim)}, request #{request["name"]}: has subrequests, but the DRAPrioritizedList feature is disabled"
+                raise Error,
+                      "claim #{ref(claim)}, request #{request["name"]}: has subrequests, but the DRAPrioritizedList feature is disabled"
               end
+
               unless @features.consumable_capacity
                 if request.dig("exactly", "capacity")
-                  raise Error, "claim #{ref(claim)}, request #{request["name"]}: has capacity requests, but the DRAConsumableCapacity feature is disabled"
+                  raise Error,
+                        "claim #{ref(claim)}, request #{request["name"]}: has capacity requests, but the DRAConsumableCapacity feature is disabled"
                 end
+
                 sub_requests.each do |sub|
                   next unless sub["capacity"]
 
-                  raise Error, "claim #{ref(claim)}, subrequest #{sub["name"]}: has capacity requests, but the DRAConsumableCapacity feature is disabled"
+                  raise Error,
+                        "claim #{ref(claim)}, subrequest #{sub["name"]}: has capacity requests, but the DRAConsumableCapacity feature is disabled"
                 end
               end
               if sub_requests.empty?
@@ -444,7 +444,8 @@ module Rubernetes
               end
             end
             if min_per_claim > ALLOCATION_RESULTS_MAX_SIZE
-              raise Error, "claim #{ref(claim)}: number of requested devices #{min_per_claim} exceeds the claim limit of #{ALLOCATION_RESULTS_MAX_SIZE}"
+              raise Error,
+                    "claim #{ref(claim)}: number of requested devices #{min_per_claim} exceeds the claim limit of #{ALLOCATION_RESULTS_MAX_SIZE}"
             end
 
             @constraints[claim_index] = Array(claim.dig("spec", "devices", "constraints")).each_with_index.map do |constraint, index|
@@ -468,9 +469,7 @@ module Rubernetes
             raise Error, "allocation max size exceeded"
           end
           unless done
-            if @pools.any?(&:invalid)
-              raise FailedOnNode, "invalid resource pools were encountered"
-            end
+            raise FailedOnNode, "invalid resource pools were encountered" if @pools.any?(&:invalid)
 
             return nil
           end
@@ -492,7 +491,8 @@ module Rubernetes
           request.selectors.each_with_index do |selector, index|
             next if selector.is_a?(Hash) && selector["cel"]
 
-            raise Error, "claim #{ref(claim)}, request #{request.name}, selector ##{index}: CEL expression empty (unsupported selector type?)"
+            raise Error,
+                  "claim #{ref(claim)}, request #{request.name}, selector ##{index}: CEL expression empty (unsupported selector type?)"
           end
           if !@features.admin_access && request.admin_access_set?
             raise Error, "claim #{ref(claim)}, request #{request.name}: admin access is requested, but the feature is disabled"
@@ -514,10 +514,12 @@ module Rubernetes
             data.all_devices = []
             @pools.each do |pool|
               if pool.incomplete
-                raise Error, "claim #{ref(claim)}, request #{request.name}: asks for all devices, but resource pool #{pool.id} is currently being updated"
+                raise Error,
+                      "claim #{ref(claim)}, request #{request.name}: asks for all devices, but resource pool #{pool.id} is currently being updated"
               end
               if pool.invalid
-                raise Error, "claim #{ref(claim)}, request #{request.name}: asks for all devices, but resource pool #{pool.id} is currently invalid"
+                raise Error,
+                      "claim #{ref(claim)}, request #{request.name}: asks for all devices, but resource pool #{pool.id} is currently invalid"
               end
 
               pool.slices_targeting_node.each do |slice|
@@ -587,9 +589,7 @@ module Rubernetes
           request = data.request
           all_mode = request.allocation_mode == "All"
           return false if all_mode && data.all_devices.empty?
-          if device_index >= data.num_devices
-            return allocate_one(claim_index, request_index + 1, 0, 0, false, [0, 0, 0])
-          end
+          return allocate_one(claim_index, request_index + 1, 0, 0, false, [0, 0, 0]) if device_index >= data.num_devices
 
           after = @result[claim_index].length + data.num_devices - device_index
           raise MaxSizeExceeded if after > ALLOCATION_RESULTS_MAX_SIZE
@@ -661,6 +661,7 @@ module Rubernetes
              !Allocator.node_matches?(@node, device["nodeName"], device["allNodes"] == true, device["nodeSelector"])
             return @matches[memo] = false
           end
+
           @matches[memo] = true
         end
 
@@ -715,9 +716,7 @@ module Rubernetes
           return [false, nil] if !@features.partitionable_devices && !consumes.empty?
 
           skip_counters = multiple && capacity_in_use?(device.id)
-          if !skip_counters && !consumes.empty?
-            return [false, nil] unless available_counters?(device)
-          end
+          return [false, nil] if !skip_counters && !consumes.empty? && !available_counters?(device)
 
           if data.parent_request
             base_name = data.parent_request.name
@@ -735,7 +734,8 @@ module Rubernetes
             next if constraint.add(base_name, sub_name, device.device, device.id)
 
             if must
-              raise Error, "claim #{ref(claim)}, request #{request.name}: cannot add device #{device.id} because a claim constraint would not be satisfied"
+              raise Error,
+                    "claim #{ref(claim)}, request #{request.name}: cannot add device #{device.id} because a claim constraint would not be satisfied"
             end
 
             (0...index).each { |earlier| constraints[earlier].remove(base_name, sub_name, device.device, device.id) }
@@ -757,7 +757,7 @@ module Rubernetes
             end
           end
           result = DeviceResult.new(device: device.device, request: request.name, parent_request: parent_name, id: device.id,
-                                    share_id: share_id, slice: device.slice, admin_access: request.admin_access? ? true : nil,
+                                    share_id: share_id, slice: device.slice, admin_access: request.admin_access? || nil,
                                     consumed_capacity: consumed.empty? ? nil : consumed)
           previous = @result[claim_index].length
           @result[claim_index] << result
@@ -847,7 +847,10 @@ module Rubernetes
             tolerations = request&.tolerations
             value["tolerations"] = tolerations if tolerations && !tolerations.empty?
             if @features.device_binding_and_status
-              value["bindingConditions"] = entry.device["bindingConditions"] if entry.device["bindingConditions"] && !entry.device["bindingConditions"].empty?
+              if entry.device["bindingConditions"] && !entry.device["bindingConditions"].empty?
+                value["bindingConditions"] =
+                  entry.device["bindingConditions"]
+              end
               if entry.device["bindingFailureConditions"] && !entry.device["bindingFailureConditions"].empty?
                 value["bindingFailureConditions"] = entry.device["bindingFailureConditions"]
               end
@@ -1142,6 +1145,7 @@ module Rubernetes
           elsif policy["validValues"]
             return round_up_valid_values(requested, policy["validValues"])
           end
+
           requested
         end
 
@@ -1156,7 +1160,7 @@ module Rubernetes
           added = value - minimum
           n = go_div(added, step)
           n += 1 unless go_mod(added, step).zero?
-          Quantity.new(Rational(minimum + step * n), :binary_si)
+          Quantity.new(Rational(minimum + (step * n)), :binary_si)
         end
 
         def round_up_valid_values(requested, values)
@@ -1175,6 +1179,7 @@ module Rubernetes
           range = policy["validRange"]
           if range
             return true if range["max"] && requested.value > Quantity.from_json(range["max"]).value
+
             if range["step"]
               added = go_value(requested) - go_value(Quantity.from_json(range["min"]))
               return true unless go_mod(added, go_value(Quantity.from_json(range["step"]))).zero?
@@ -1191,8 +1196,8 @@ module Rubernetes
         def go_value(quantity) = quantity.value.ceil
 
         # Go integer division and remainder truncate towards zero.
-        def go_div(left, right) = (left.fdiv(right)).truncate
-        def go_mod(left, right) = left - right * go_div(left, right)
+        def go_div(left, right) = left.fdiv(right).truncate
+        def go_mod(left, right) = left - (right * go_div(left, right))
 
         # Go struct equality of two Quantities: same value, same format and
         # the same cached string (set only when parsed in canonical form).

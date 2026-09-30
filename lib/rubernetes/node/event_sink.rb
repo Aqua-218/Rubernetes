@@ -145,8 +145,6 @@ module Rubernetes
         event
       end
 
-      private
-
       def conflict?(error)
         message = error.message.to_s
         message.include?("409") || message.include?("AlreadyExists") || message.include?("already exists") ||
@@ -179,7 +177,9 @@ module Rubernetes
         "image.present" => ["Normal", "Pulled", lambda do |payload, _|
           "Container image #{payload["reference"].to_s.inspect} already present on machine and can be accessed by the pod"
         end],
-        "image.pull_failed" => ["Warning", "Failed", ->(payload, _) { "Failed to pull image #{payload["reference"].to_s.inspect}: #{payload["error"]}" }],
+        "image.pull_failed" => ["Warning", "Failed", lambda { |payload, _|
+          "Failed to pull image #{payload["reference"].to_s.inspect}: #{payload["error"]}"
+        }],
         "image.never_pull" => ["Warning", "ErrImageNeverPull", lambda do |payload, _|
           "Container image #{payload["reference"].to_s.inspect} is not present with pull policy of Never"
         end],
@@ -219,7 +219,7 @@ module Rubernetes
         "volume.fs_resize_failed" => ["Warning", "FileSystemResizeFailed", ->(payload, _) { payload["message"] }]
       }.freeze
 
-      def initialize(recorder:, lifecycle: nil, node_name:, logger: nil)
+      def initialize(recorder:, node_name:, lifecycle: nil, logger: nil)
         @recorder = recorder
         @lifecycle = lifecycle
         @node_name = node_name

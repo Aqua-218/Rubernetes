@@ -55,9 +55,9 @@ class M2RuntimeTracePropertyTest < Minitest::Test
 
     assert_equal false, report.fetch("success")
     assert_includes report.fetch("violations").map { |item| item.fetch("code") },
-                     "digest_mismatch_workload_effect"
+                    "digest_mismatch_workload_effect"
     assert_includes report.fetch("violations").map { |item| item.fetch("code") },
-                     "digest_mismatch_event_effect"
+                    "digest_mismatch_event_effect"
   end
 
   def test_workload_stopped_to_running_rejects_digest_mismatch_and_missing_effect
@@ -72,24 +72,24 @@ class M2RuntimeTracePropertyTest < Minitest::Test
       "ImagePinned", "WorkspaceAllocated", owned_resources: ["temp"], live_owner: ["temp"]
     )
     trace.fetch("events") << transition_event(
-      "WorkspaceAllocated", "IsolationCreated", owned_resources: ["temp", "mount", "ns"],
-      live_owner: ["temp", "mount", "ns"]
+      "WorkspaceAllocated", "IsolationCreated", owned_resources: %w[temp mount ns],
+                                                live_owner: %w[temp mount ns]
     )
     trace.fetch("events") << transition_event(
       "IsolationCreated", "ResourcesAttached",
-      owned_resources: ["temp", "mount", "ns", "cgroup", "pidfd"],
-      live_owner: ["temp", "mount", "ns", "cgroup", "pidfd"]
+      owned_resources: %w[temp mount ns cgroup pidfd],
+      live_owner: %w[temp mount ns cgroup pidfd]
     )
     trace.fetch("events") << transition_event(
       "ResourcesAttached", "WorkloadStopped",
-      owned_resources: ["temp", "mount", "ns", "cgroup", "pidfd"],
-      live_owner: ["temp", "mount", "ns", "cgroup", "pidfd"],
+      owned_resources: %w[temp mount ns cgroup pidfd],
+      live_owner: %w[temp mount ns cgroup pidfd],
       sandbox_ready: true
     )
     trace.fetch("events") << transition_event(
       "WorkloadStopped", "Running",
-      owned_resources: ["temp", "mount", "ns", "cgroup", "pidfd"],
-      live_owner: ["temp", "mount", "ns", "cgroup", "pidfd"],
+      owned_resources: %w[temp mount ns cgroup pidfd],
+      live_owner: %w[temp mount ns cgroup pidfd],
       sandbox_ready: true, digest_mismatch: true, no_workload_effect: true, live_process: false
     )
 
@@ -97,6 +97,7 @@ class M2RuntimeTracePropertyTest < Minitest::Test
 
     assert_equal false, report.fetch("success")
     codes = report.fetch("violations").map { |item| item.fetch("code") }
+
     assert_includes codes, "running_after_digest_mismatch"
     assert_includes codes, "running_without_workload_effect"
     assert_includes codes, "running_without_live_process"
@@ -110,16 +111,19 @@ class M2RuntimeTracePropertyTest < Minitest::Test
         transition_event("New", "Validated"),
         transition_event("Validated", "ImagePinned"),
         transition_event("ImagePinned", "WorkspaceAllocated", live_owner: ["temp"], owned_resources: ["temp"]),
-        transition_event("WorkspaceAllocated", "IsolationCreated", live_owner: ["temp", "mount"], owned_resources: ["temp", "mount"]),
-        transition_event("IsolationCreated", "ResourcesAttached", live_owner: ["temp", "mount", "ns"], owned_resources: ["temp", "mount", "ns"]),
-        transition_event("ResourcesAttached", "WorkloadStopped", live_owner: ["temp", "mount", "ns"], owned_resources: ["temp", "mount", "ns"], sandbox_ready: true),
-        transition_event("WorkloadStopped", "RollingBack", live_owner: ["temp", "mount", "ns"], owned_resources: ["temp", "mount", "ns"], next_action: "CleanupOrObserve"),
-        snapshot_event("resource_released", state: "RollingBack", live_owner: ["temp", "mount"],
-                       released: ["ns"], owned_resources: ["temp", "mount"], live_process: false),
+        transition_event("WorkspaceAllocated", "IsolationCreated", live_owner: %w[temp mount], owned_resources: %w[temp mount]),
+        transition_event("IsolationCreated", "ResourcesAttached", live_owner: %w[temp mount ns],
+                                                                  owned_resources: %w[temp mount ns]),
+        transition_event("ResourcesAttached", "WorkloadStopped", live_owner: %w[temp mount ns],
+                                                                 owned_resources: %w[temp mount ns], sandbox_ready: true),
+        transition_event("WorkloadStopped", "RollingBack", live_owner: %w[temp mount ns], owned_resources: %w[temp mount ns],
+                                                           next_action: "CleanupOrObserve"),
+        snapshot_event("resource_released", state: "RollingBack", live_owner: %w[temp mount],
+                                            released: ["ns"], owned_resources: %w[temp mount], live_process: false),
         snapshot_event("resource_released", state: "RollingBack", live_owner: ["mount"],
-                       released: ["ns", "temp"], owned_resources: ["mount"], live_process: false),
-        snapshot_event("resource_released", state: "RollingBack", live_owner: ["temp", "ns"],
-                       released: ["ns", "mount"], owned_resources: ["temp", "ns"], live_process: false)
+                                            released: %w[ns temp], owned_resources: ["mount"], live_process: false),
+        snapshot_event("resource_released", state: "RollingBack", live_owner: %w[temp ns],
+                                            released: %w[ns mount], owned_resources: %w[temp ns], live_process: false)
       ]
     }
 
@@ -127,6 +131,7 @@ class M2RuntimeTracePropertyTest < Minitest::Test
 
     assert_equal false, report.fetch("success")
     codes = report.fetch("violations").map { |item| item.fetch("code") }
+
     assert_includes codes, "cleanup_order_violation"
     assert_includes codes, "resource_identity_reused"
   end
@@ -143,20 +148,20 @@ class M2RuntimeTracePropertyTest < Minitest::Test
         transition_event("ImagePinned", "WorkspaceAllocated", live_owner: owner, owned_resources: owned),
         transition_event(
           "WorkspaceAllocated", "StateUnknown", live_owner: owner, owned_resources: owned,
-          next_action: "CleanupOrObserve"
+                                                next_action: "CleanupOrObserve"
         ),
         snapshot_event(
           "observation", state: "StateUnknown", live_owner: owner, owned_resources: owned,
-          next_action: "CleanupOrObserve"
+                         next_action: "CleanupOrObserve"
         ),
         transition_event(
           "StateUnknown", "Stopping", live_owner: owner, owned_resources: owned,
-          next_action: "CleanupOrObserve"
+                                      next_action: "CleanupOrObserve"
         ),
         transition_event("Stopping", "Stopped", live_owner: owner, owned_resources: owned),
         snapshot_event(
           "resource_released", state: "Stopped", released: owner, owned_resources: [],
-          live_process: false
+                               live_process: false
         ),
         transition_event("Stopped", "Removed", released: owner, owned_resources: [])
       ]
@@ -191,6 +196,7 @@ class M2RuntimeTracePropertyTest < Minitest::Test
       "StateUnknown", "Stopping", next_action: "CleanupOrObserve", live_process: false
     )
     live_report = Verifier.new(observed_live).verify
+
     assert_equal false, live_report.fetch("success")
     assert_includes live_report.fetch("violations").map { |item| item.fetch("code") },
                     "unknown_observation_with_live_process"
@@ -201,11 +207,12 @@ class M2RuntimeTracePropertyTest < Minitest::Test
     stopping.fetch("events") << transition_event("New", "Validated")
     stopping.fetch("events") << transition_event(
       "Validated", "Running", sandbox_ready: true, no_workload_effect: false,
-      live_process: true, owned_resources: Verifier::RESOURCE_KINDS,
-      live_owner: Verifier::RESOURCE_KINDS
+                              live_process: true, owned_resources: Verifier::RESOURCE_KINDS,
+                              live_owner: Verifier::RESOURCE_KINDS
     )
     stopping.fetch("events") << transition_event("Running", "Stopping", live_process: false, result: true)
     stopping_report = Verifier.new(stopping).verify
+
     assert_equal false, stopping_report.fetch("success")
     assert_includes stopping_report.fetch("violations").map { |item| item.fetch("code") }, "stopping_result_true"
 
@@ -219,11 +226,13 @@ class M2RuntimeTracePropertyTest < Minitest::Test
     )
     rollback.fetch("events") << transition_event(
       "WorkspaceAllocated", "RollingBack", next_action: "NoAction", live_process: true,
-      no_workload_effect: false, live_owner: ["temp"], owned_resources: ["temp"]
+                                           no_workload_effect: false, live_owner: ["temp"], owned_resources: ["temp"]
     )
     rollback_report = Verifier.new(rollback).verify
+
     assert_equal false, rollback_report.fetch("success")
     codes = rollback_report.fetch("violations").map { |item| item.fetch("code") }
+
     assert_includes codes, "rollback_missing_action"
     assert_includes codes, "rollback_with_workload_effect"
     assert_includes codes, "rollback_with_live_process"
@@ -239,23 +248,23 @@ class M2RuntimeTracePropertyTest < Minitest::Test
         transition_event("ImagePinned", "WorkspaceAllocated", live_owner: ["temp"], owned_resources: ["temp"]),
         transition_event(
           "WorkspaceAllocated", "RollingBack", live_owner: ["temp"], owned_resources: ["temp"],
-          next_action: "CleanupOrObserve"
+                                               next_action: "CleanupOrObserve"
         ),
         transition_event(
           "RollingBack", "CleanupPending", live_owner: ["temp"], owned_resources: ["temp"],
-          next_action: "CleanupOrObserve"
+                                           next_action: "CleanupOrObserve"
         ),
         transition_event(
           "CleanupPending", "RollingBack", live_owner: ["temp"], owned_resources: ["temp"],
-          next_action: "CleanupOrObserve"
+                                           next_action: "CleanupOrObserve"
         ),
         snapshot_event(
           "resource_released", state: "RollingBack", released: ["temp"], owned_resources: [],
-          live_owner: [], next_action: "CleanupOrObserve"
+                               live_owner: [], next_action: "CleanupOrObserve"
         ),
         transition_event(
           "RollingBack", "Stopped", released: ["temp"], owned_resources: [],
-          live_owner: [], live_process: false
+                                    live_owner: [], live_process: false
         ),
         transition_event("Stopped", "Removed", released: ["temp"], owned_resources: [], live_owner: [])
       ]
@@ -303,11 +312,13 @@ class M2RuntimeTracePropertyTest < Minitest::Test
       ]
     )
     report = Verifier.new(invalid_transition).verify
+
     assert_equal false, report.fetch("success")
     assert_includes report.fetch("violations").map { |item| item.fetch("code") }, "invalid_transition"
 
     missing = {"schema" => Verifier::TRACE_SCHEMA, "events" => [{"event" => "state_transition", "from" => "New", "to" => "Validated"}]}
     missing_report = Verifier.new(missing).verify
+
     assert_equal false, missing_report.fetch("success")
     assert_includes missing_report.fetch("violations").map { |item| item.fetch("code") }, "missing_live_owner"
   end
@@ -318,9 +329,11 @@ class M2RuntimeTracePropertyTest < Minitest::Test
     File.write(trace_path, complete_trace(0x1234).fetch("events").map { |event| JSON.generate(event) }.join("\n") << "\n")
 
     report = Verifier.verify_file(trace_path)
+
     assert_equal true, report.fetch("success")
 
     formal = FormalVerifier.new(trace_path: trace_path, proof_profile: File.join(directory, "missing.profile"), ruby_only: true).verify
+
     assert_equal false, formal.fetch("success")
     assert_equal "missing", formal.dig("external_proof_profile", "status")
     assert_equal true, formal.dig("tla", "isolated_workdir") if formal.dig("tla", "available")
@@ -353,11 +366,13 @@ class M2RuntimeTracePropertyTest < Minitest::Test
       "source_sha256" => M2Gate.canonical_document_digest(expected_formal_source_files),
       "tools" => [tool]
     }
-    profile["tool_output_sha256"] = M2Gate.canonical_document_digest([{"name" => tool["name"], "exit_status" => 0, "output_sha256" => tool["output_sha256"]}])
+    profile["tool_output_sha256"] =
+      M2Gate.canonical_document_digest([{"name" => tool["name"], "exit_status" => 0, "output_sha256" => tool["output_sha256"]}])
     profile["profile_sha256"] = M2Gate.canonical_document_digest(profile, excluded_keys: ["profile_sha256"])
     valid_path = File.join(directory, "valid.profile.json")
     File.write(valid_path, JSON.generate(profile) << "\n")
     valid_report = FormalVerifier.new(trace_path: trace_path, proof_profile: valid_path, ruby_only: true).verify
+
     assert_equal false, valid_report.fetch("external_proof_profile").fetch("success")
     assert_equal "invalid_schema", valid_report.fetch("external_proof_profile").fetch("status")
     assert_includes valid_report.fetch("external_proof_profile").fetch("message"), "tools must contain exactly"
@@ -432,40 +447,40 @@ class M2RuntimeTracePropertyTest < Minitest::Test
     events << transition_event("IsolationCreated", "ResourcesAttached", live_owner: owner.dup, owned_resources: owned.dup)
     events << transition_event(
       "ResourcesAttached", "WorkloadStopped", live_owner: owner.dup,
-      owned_resources: owned.dup, sandbox_ready: true
+                                              owned_resources: owned.dup, sandbox_ready: true
     )
 
     owner << "process"
     owned << "process"
     events << transition_event(
       "WorkloadStopped", "Running", live_owner: owner.dup, owned_resources: owned.dup,
-      sandbox_ready: true, no_workload_effect: false, live_process: true
+                                    sandbox_ready: true, no_workload_effect: false, live_process: true
     )
     events << transition_event(
       "Running", "Stopping", live_owner: owner.dup, owned_resources: owned.dup,
-      sandbox_ready: true, live_process: false
+                             sandbox_ready: true, live_process: false
     )
     events << transition_event(
       "Stopping", "Stopped", live_owner: owner.dup, owned_resources: owned.dup,
-      sandbox_ready: true, live_process: false
+                             sandbox_ready: true, live_process: false
     )
 
     # Cleanup observations are deliberately shuffled by a deterministic seed
     # only in their metadata; the resource release order remains reverse claim
     # order as required by the lifecycle specification.
-    ["process", "pidfd", "cgroup", "ns", "mount", "temp"].each_with_index do |resource, index|
+    %w[process pidfd cgroup ns mount temp].each_with_index do |resource, index|
       owner.delete(resource)
       owned.delete(resource)
       released << resource
       events << snapshot_event(
         "resource_released", state: "Stopped", live_owner: owner.dup,
-        released: released.dup, owned_resources: owned.dup,
-        sandbox_ready: true, live_process: false, cleanup_attempt: random.rand(10_000) + index
+                             released: released.dup, owned_resources: owned.dup,
+                             sandbox_ready: true, live_process: false, cleanup_attempt: random.rand(10_000) + index
       )
     end
     events << transition_event(
       "Stopped", "Removed", live_owner: owner.dup, released: released.dup,
-      owned_resources: owned.dup, sandbox_ready: true, live_process: false
+                            owned_resources: owned.dup, sandbox_ready: true, live_process: false
     )
 
     {"schema" => Verifier::TRACE_SCHEMA, "seed" => seed, "events" => events}

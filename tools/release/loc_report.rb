@@ -77,14 +77,14 @@ module Release
       PRODUCTION_ROOTS.flat_map do |root|
         Dir.glob(File.join(ROOT, root, "**", "*")).select { |path| File.file?(path) }
       end.map { |path| path.delete_prefix("#{ROOT}/") }
-         .reject { |path| EXCLUDED_ROOTS.include?(path.split("/").first) }
-         .sort
+        .reject { |path| EXCLUDED_ROOTS.include?(path.split("/").first) }
+        .sort
     end
 
     # Non-empty, non-comment lines: a comment-heavy file must not inflate a
     # language's share.
     def count_lines(path)
-      comment = File.extname(path) == ".c" || File.extname(path) == ".h" ? %r{\A\s*(//|/\*|\*)} : /\A\s*#/
+      comment = [".c", ".h"].include?(File.extname(path)) ? %r{\A\s*(//|/\*|\*)} : /\A\s*#/
       File.readlines(path, chomp: true).count { |line| !line.strip.empty? && !line.match?(comment) }
     rescue ArgumentError
       0

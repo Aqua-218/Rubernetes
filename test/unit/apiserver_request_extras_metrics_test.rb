@@ -25,6 +25,7 @@ class APIServerRequestExtrasMetricsTest < Minitest::Test
     body = JSON.generate({"metadata" => {"name" => "c"}, "data" => {"k" => "v"}})
     call("POST", "/api/v1/namespaces/team/configmaps?fieldValidation=Strict", JSON.parse(body))
     text = @metrics.render
+
     assert_includes text, %(apiserver_selfrequest_total{group="",resource="namespaces",subresource="",verb="POST"} 1)
     assert_includes text, %(apiserver_request_body_size_bytes_count{group="",resource="configmaps",verb="create"} 1)
     assert_includes text, %(apiserver_request_body_size_bytes_sum{group="",resource="configmaps",verb="create"} #{body.bytesize})

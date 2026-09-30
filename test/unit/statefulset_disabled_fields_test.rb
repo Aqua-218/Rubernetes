@@ -36,11 +36,14 @@ class StatefulSetDisabledFieldsTest < Minitest::Test
 
   def test_max_unavailable_is_dropped_on_create_and_update
     status, created = call("POST", PATH, stateful_set({"maxUnavailable" => 2}))
+
     assert_equal 201, status
     refute created.dig("spec", "updateStrategy", "rollingUpdate").key?("maxUnavailable")
     updated = created.merge("spec" => created["spec"].merge("updateStrategy" => {"type" => "RollingUpdate",
-                                                                                 "rollingUpdate" => {"maxUnavailable" => 3, "partition" => 0}}))
+                                                                                 "rollingUpdate" => {"maxUnavailable" => 3,
+                                                                                                     "partition" => 0}}))
     status, body = call("PUT", "#{PATH}/s", updated)
+
     assert_equal 200, status
     refute body.dig("spec", "updateStrategy", "rollingUpdate").key?("maxUnavailable")
   end

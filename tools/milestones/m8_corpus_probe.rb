@@ -22,7 +22,7 @@ module M8CorpusProbe
     cases = []
 
     if File.file?(MATRIX)
-      matrix = YAML.safe_load(File.read(MATRIX))
+      matrix = YAML.safe_load_file(MATRIX)
       entries = Array(matrix["kubectl"])
       verified = entries.map do |entry|
         path = File.join(S::ROOT, entry.fetch("path"))
@@ -42,7 +42,7 @@ module M8CorpusProbe
     end
 
     if File.file?(CORPUS)
-      corpus = YAML.safe_load(File.read(CORPUS))
+      corpus = YAML.safe_load_file(CORPUS)
       projects = Array(corpus["projects"])
       categories = projects.flat_map { |project| Array(project["categories"]) }.tally
       domains = projects.flat_map { |project| Array(project["domains"]) }.uniq

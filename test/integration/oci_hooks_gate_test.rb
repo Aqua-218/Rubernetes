@@ -56,38 +56,46 @@ class OCIHooksGateTest < Minitest::Test
                                                   runtime_calls << pid
                                                   File.write(host_log, "runtime #{pid}\n")
                                                 }})
+
       assert adapter.release_gate(process.fetch(:gate))
       status = adapter.wait(pid: process.fetch(:pid), timeout: 5.0)
       output = process.fetch(:stdout).read
+
       assert_predicate status, :success?, output + process.fetch(:stderr).read
 
       workload_pid = process.fetch(:gate).workload_pid
+
       assert_equal [workload_pid], runtime_calls, "the runtime stages see the workload's host pid"
       assert_equal ["runtime #{workload_pid}", "seen-runtime-first"], File.readlines(host_log, chomp: true)
       create_state = JSON.parse(File.read(File.join(directory, "create.state")))
+
       assert_equal({"status" => "creating", "pid" => workload_pid, "id" => "c1", "bundle" => directory},
                    create_state.slice("status", "pid", "id", "bundle"))
       marker, start_state = output.lines(chomp: true)
+
       assert_equal "inside", marker
       assert_equal "created", JSON.parse(start_state)["status"]
-      refute File.exist?(File.join(directory, "marker")), "startContainer ran inside the container root"
+      refute_path_exists File.join(directory, "marker"), "startContainer ran inside the container root"
     ensure
       process&.values_at(:stdout, :stderr)&.compact&.each { |io| io.close unless io.closed? }
     end
   end
 
   def test_a_failing_hook_keeps_the_workload_from_running
-    with_rootfs do |directory, rootfs|
+    with_rootfs do |_directory, rootfs|
       hooks = {"startContainer" => [{"path" => "/bin/busybox", "env" => [], "args" => ["busybox", "sh", "-c", "echo no-gpu; exit 7"]}]}
       process = adapter.spawn(command: ["/bin/busybox", "touch", "/ran"], rootfs: rootfs, security_plan: plan,
                               container_hooks: {"hooks" => hooks, "state" => {}, "runtime" => ->(_pid) {}})
       error = assert_raises(Linux::NativeAdapters::EffectError) { adapter.release_gate(process.fetch(:gate)) }
       assert_includes error.message, "error running startContainer hook #0: /bin/busybox: exit status 7, output: no-gpu"
       adapter.wait(pid: process.fetch(:pid), timeout: 5.0)
-      refute File.exist?(File.join(rootfs, "ran"))
+
+      refute_path_exists File.join(rootfs, "ran")
 
       failing_runtime = adapter.spawn(command: ["/bin/busybox", "true"], rootfs: rootfs, security_plan: plan,
-                                      container_hooks: {"hooks" => {}, "state" => {}, "runtime" => ->(_pid) { raise "createRuntime hook failed" }})
+                                      container_hooks: {"hooks" => {}, "state" => {}, "runtime" => lambda { |_pid|
+                                        raise "createRuntime hook failed"
+                                      }})
       error = assert_raises(Linux::NativeAdapters::EffectError) { adapter.release_gate(failing_runtime.fetch(:gate)) }
       assert_includes error.message, "createRuntime hook failed"
       adapter.wait(pid: failing_runtime.fetch(:pid), timeout: 5.0)
@@ -144,9 +152,9 @@ class OCIHooksNativeRuntimeTest < Minitest::Test
         host.call("poststop", %(echo "poststop"))
       ]
       container = runtime.create_container(sandbox, {
-        "id" => "main", "rootfs_path" => lower, "cdi_hooks" => hooks,
-        "command" => ["/bin/busybox", "sh", "-c", "cat /start.state; echo; readlink /proc/self/ns/net; sleep 30"]
-      })
+                                             "id" => "main", "rootfs_path" => lower, "cdi_hooks" => hooks,
+                                             "command" => ["/bin/busybox", "sh", "-c", "cat /start.state; echo; readlink /proc/self/ns/net; sleep 30"]
+                                           })
       runtime.start_container(container)
       output = Timeout.timeout(5) do
         text = +""
@@ -154,14 +162,17 @@ class OCIHooksNativeRuntimeTest < Minitest::Test
         text
       end
       state_line, workload_netns = output.lines(chomp: true)
+
       assert_equal "created", JSON.parse(state_line)["status"]
       lines = File.readlines(log, chomp: true)
+
       assert_equal ["createRuntime #{workload_netns}", "createContainer #{workload_netns}"], lines.first(2)
       refute_equal File.readlink("/proc/self/ns/net"), workload_netns, "the Pod has its own network namespace"
       assert_match(/\Apoststart \d+\z/, lines[2])
 
       runtime.stop_sandbox(sandbox, timeout: 2)
       runtime.remove_sandbox(sandbox)
+
       assert_equal "poststop", File.readlines(log, chomp: true).last
     ensure
       begin

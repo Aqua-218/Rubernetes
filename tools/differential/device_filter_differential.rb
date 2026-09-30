@@ -22,8 +22,8 @@ module DeviceFilterDifferential
   ORACLE = File.join(ROOT, "test/conformance/runc/device_filter_oracle")
   DeviceCgroup = Rubernetes::Platform::Linux::DeviceCgroup
   PERMISSIONS = %w[r w m rw rm wm rwm mrw wr].freeze
-  MAJORS = [-1, 0, 1, 5, 8, 10, 136, 195, 259, 2**31 - 1, 2**31, 2**32 - 1].freeze
-  MINORS = [-1, 0, 1, 2, 3, 5, 7, 8, 9, 200, 255, 2**32 - 1].freeze
+  MAJORS = [-1, 0, 1, 5, 8, 10, 136, 195, 259, (2**31) - 1, 2**31, (2**32) - 1].freeze
+  MINORS = [-1, 0, 1, 2, 3, 5, 7, 8, 9, 200, 255, (2**32) - 1].freeze
 
   module_function
 
@@ -54,7 +54,9 @@ module DeviceFilterDifferential
 
   def run_port(test_case)
     instructions, license = DeviceCgroup.compile(test_case["rules"])
-    {"name" => test_case["name"], "license" => license, "instructions" => instructions.map { |instruction| instruction.to_binary.unpack1("H*") }}
+    {"name" => test_case["name"], "license" => license, "instructions" => instructions.map do |instruction|
+      instruction.to_binary.unpack1("H*")
+    end}
   rescue DeviceCgroup::Error => error
     {"name" => test_case["name"], "error" => error.message}
   end
@@ -85,7 +87,9 @@ module DeviceFilterDifferential
     cases = cases(random, count)
     oracle = run_oracle(cases)
     mismatches = cases.reject { |test_case| compare(oracle.fetch(test_case["name"]), run_port(test_case)) }
-    puts "device filter differential: seed=#{seed} cases=#{cases.length} errors=#{oracle.values.count { |result| result["error"] }} mismatches=#{mismatches.length}"
+    puts "device filter differential: seed=#{seed} cases=#{cases.length} errors=#{oracle.values.count do |result|
+      result["error"]
+    end} mismatches=#{mismatches.length}"
     mismatches.first(5).each do |test_case|
       puts JSON.pretty_generate("rules" => test_case["rules"], "oracle" => oracle.fetch(test_case["name"]), "port" => run_port(test_case))
     end

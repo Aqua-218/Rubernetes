@@ -33,6 +33,7 @@ class ComponentServerTest < Minitest::Test
 
   def test_the_endpoints
     subject = server
+
     assert_equal [200, ["ok\n"]], subject.call(request("/healthz")).values_at(0, 2)
     assert_equal 200, subject.call(request("/livez"))[0]
     assert_equal 500, server(ready: -> { false }).call(request("/readyz"))[0]
@@ -41,6 +42,7 @@ class ComponentServerTest < Minitest::Test
     assert_equal({"name" => "x"}, JSON.parse(subject.call(request("/configz"))[2].join).dig("componentconfig", "lease"))
     assert_match(/\A\nkube-scheduler statusz\n/, subject.call(request("/statusz"))[2].join)
     flagz = JSON.parse(subject.call(request("/flagz", accept: "application/json;g=config.k8s.io;v=v1beta1;as=Flagz"))[2].join)
+
     assert_equal "x", flagz.dig("flags", "lease.name")
     assert_equal 404, subject.call(request("/nope"))[0]
     assert_equal 405, subject.call(request("/healthz", method: "POST"))[0]
@@ -60,12 +62,14 @@ class ComponentServerTest < Minitest::Test
     service.send(:record_attempt, Result.new(status: :failed, victims: []), 0.002)
     service.send(:record_attempt, Result.new(status: :dropped, victims: []), 0.002)
     text = service.metrics.render
+
     assert_includes text, %(scheduler_schedule_attempts_total{profile="default-scheduler",result="scheduled"} 2)
     assert_includes text, %(scheduler_schedule_attempts_total{profile="default-scheduler",result="unschedulable"} 1)
     assert_includes text, %(scheduler_schedule_attempts_total{profile="default-scheduler",result="error"} 1)
     assert_includes text, "scheduler_preemption_attempts_total 1"
     assert_includes text, %(scheduler_preemption_victims_bucket{le="2"} 1)
-    assert_includes text, %(scheduler_scheduling_attempt_duration_seconds_bucket{profile="default-scheduler",result="scheduled",le="0.004"} 1)
+    assert_includes text,
+                    %(scheduler_scheduling_attempt_duration_seconds_bucket{profile="default-scheduler",result="scheduled",le="0.004"} 1)
     assert_includes text, %(leader_election_master_status{name="kube-scheduler"} 0)
   end
 end

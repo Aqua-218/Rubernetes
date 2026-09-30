@@ -52,6 +52,7 @@ class NodeStatusReportOrderTest < Minitest::Test
 
     delivered = []
     delivered << reporter.reports.pop until reporter.reports.empty?
+
     assert_equal [], resize_types(delivered.last), "the last report is the completed resize"
     assert_equal 1, delivered.length, "the stale in-progress status is dropped, not sent late"
     assert_equal [], resize_types(status["u"].to_h)

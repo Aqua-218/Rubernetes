@@ -86,7 +86,11 @@ module Rubernetes
 
       def stop
         @mutex.synchronize { @stopping = true }
-        @threads.each { |thread| thread.wakeup rescue nil }
+        @threads.each do |thread|
+          thread.wakeup
+        rescue StandardError
+          nil
+        end
         @threads.each { |thread| thread.join(2) }
         @http&.stop
         self
@@ -154,7 +158,8 @@ module Rubernetes
         decision = authorize(attributes)
         unless decision
           subject = attributes.resource ? %(#{attributes.resource}.#{API::GROUP} is forbidden) : %(forbidden: #{path})
-          return status(403, "Forbidden", %(#{subject}: User "#{user.name}" cannot #{attributes.verb} resource "#{attributes.resource}" in API group "#{API::GROUP}"#{attributes.namespace.empty? ? " at the cluster scope" : %( in the namespace "#{attributes.namespace}")}))
+          return status(403, "Forbidden",
+                        %(#{subject}: User "#{user.name}" cannot #{attributes.verb} resource "#{attributes.resource}" in API group "#{API::GROUP}"#{attributes.namespace.empty? ? " at the cluster scope" : %( in the namespace "#{attributes.namespace}")}))
         end
 
         query = request.query.transform_values { |value| value.is_a?(Array) ? value.first : value }
@@ -244,7 +249,11 @@ module Rubernetes
       def authentication_loop
         until @mutex.synchronize { @stopping }
           sleep(60)
-          refresh_authentication rescue nil
+          begin
+            refresh_authentication
+          rescue StandardError
+            nil
+          end
         end
       end
 
@@ -265,7 +274,7 @@ module Rubernetes
         client_ca = certificates(data["client-ca-file"])
         authenticators << Security::Authentication::X509.new(ca_certificates: client_ca, clock: @clock) unless client_ca.empty?
         authenticators << Security::Authentication::WebhookToken.new(transport: review_transport("/apis/authentication.k8s.io/v1/tokenreviews"),
-                                                                    clock: @clock)
+                                                                     clock: @clock)
         @mutex.synchronize do
           @authenticators = authenticators
           @client_cas = front_proxy + client_ca
@@ -276,8 +285,8 @@ module Rubernetes
 
       def authenticate(request)
         context = Security::Authentication::RequestContext.new(headers: request.headers, client_certificate: request.client_certificate,
-                                                                client_chain: request.client_chain, remote_address: request.remote_address,
-                                                                path: request.path)
+                                                               client_chain: request.client_chain, remote_address: request.remote_address,
+                                                               path: request.path)
         authenticators = @mutex.synchronize { @authenticators }
         authenticators.each do |authenticator|
           result = authenticator.authenticate(context)
@@ -291,7 +300,7 @@ module Rubernetes
       end
 
       def authorization_attributes(user, method, path)
-        resource = %r{\A/apis/#{Regexp.escape(API::GROUP_VERSION)}(?:/namespaces/([^/]+))?/(nodes|pods)(?:/([^/]+))?\z}.match(path)
+        resource = %r{\A/apis/#{Regexp.escape(API::GROUP_VERSION)}(?:/namespaces/([^/]+))?/(nodes|pods)(?:/([^/]+))?\z}o.match(path)
         return Security::Authorization::Attributes.new(user: user, verb: method.downcase, path: path) unless resource
 
         Security::Authorization::Attributes.new(user: user, verb: resource[3] ? "get" : "list", namespace: resource[1],

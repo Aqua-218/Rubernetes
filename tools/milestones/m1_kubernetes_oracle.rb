@@ -51,10 +51,10 @@ module M1KubernetesOracle
   # token file entry of the isolated kube-apiserver and the in-process
   # resolver of the Rubernetes API server describe the same user.
   REQUESTER_IDENTITY = {"username" => "m1-oracle", "uid" => "1", "groups" => %w[system:masters system:authenticated]}.freeze
-  REVIEW_TOKEN = "m1-review-token-6f1c0d2a".freeze
-  REVIEW_USER = "m1-review".freeze
-  REVIEW_UID = "2".freeze
-  REVIEW_GROUP = "system:reviewers".freeze
+  REVIEW_TOKEN = "m1-review-token-6f1c0d2a"
+  REVIEW_USER = "m1-review"
+  REVIEW_UID = "2"
+  REVIEW_GROUP = "system:reviewers"
   REVIEW_IDENTITY = {"username" => REVIEW_USER, "uid" => REVIEW_UID, "groups" => [REVIEW_GROUP, "system:authenticated"]}.freeze
   API_AUDIENCES = %w[https://kubernetes.default.svc].freeze
 
@@ -117,6 +117,7 @@ module M1KubernetesOracle
     def parse_body(body, status: nil)
       value = body.to_s
       return nil if value.empty?
+
       JSON.parse(value)
     rescue JSON::ParserError => document_error
       return value if status && status >= 400
@@ -178,25 +179,23 @@ module M1KubernetesOracle
       result = nil
       cleanup_errors = []
       Dir.mktmpdir("rubernetes-m1-oracle-") do |certificate_directory|
-        begin
-          write_certificates(certificate_directory)
-          create_network
-          start_etcd
-          wait_for_etcd
-          port = start_api_server(certificate_directory)
-          client = HTTPClient.new(
-            port: port,
-            token: @token,
-            ca_file: File.join(certificate_directory, "ca.crt")
-          )
-          version = wait_for_api(client)
-          verify_version!(version)
-          result = yield(client, evidence(version: version, port: port))
-        rescue StandardError => error
-          primary_error = error
-        ensure
-          cleanup_errors = cleanup
-        end
+        write_certificates(certificate_directory)
+        create_network
+        start_etcd
+        wait_for_etcd
+        port = start_api_server(certificate_directory)
+        client = HTTPClient.new(
+          port: port,
+          token: @token,
+          ca_file: File.join(certificate_directory, "ca.crt")
+        )
+        version = wait_for_api(client)
+        verify_version!(version)
+        result = yield(client, evidence(version: version, port: port))
+      rescue StandardError => error
+        primary_error = error
+      ensure
+        cleanup_errors = cleanup
       end
       if primary_error
         detail = cleanup_errors.empty? ? "" : "; cleanup failures: #{cleanup_errors.join("; ")}"
@@ -306,9 +305,9 @@ module M1KubernetesOracle
     end
 
     def verify_version!(version)
-      unless version["gitVersion"] == KUBERNETES_VERSION && version["gitCommit"] == KUBERNETES_SOURCE_COMMIT
-        raise Error, "oracle version identity does not match pinned Kubernetes v1.36.2 source"
-      end
+      return if version["gitVersion"] == KUBERNETES_VERSION && version["gitCommit"] == KUBERNETES_SOURCE_COMMIT
+
+      raise Error, "oracle version identity does not match pinned Kubernetes v1.36.2 source"
     end
 
     def evidence(version:, port:)
@@ -364,7 +363,7 @@ module M1KubernetesOracle
       ca_certificate.add_extension(ca_extensions.create_extension("basicConstraints", "CA:TRUE", true))
       ca_certificate.add_extension(ca_extensions.create_extension("keyUsage", "keyCertSign,cRLSign", true))
       ca_certificate.add_extension(ca_extensions.create_extension("subjectKeyIdentifier", "hash", false))
-      ca_certificate.sign(ca_key, OpenSSL::Digest::SHA256.new)
+      ca_certificate.sign(ca_key, OpenSSL::Digest.new("SHA256"))
 
       key = OpenSSL::PKey::RSA.new(2048)
       certificate = OpenSSL::X509::Certificate.new
@@ -382,7 +381,7 @@ module M1KubernetesOracle
       certificate.add_extension(extension_factory.create_extension("keyUsage", "digitalSignature,keyEncipherment", true))
       certificate.add_extension(extension_factory.create_extension("extendedKeyUsage", "serverAuth", false))
       certificate.add_extension(extension_factory.create_extension("subjectAltName", "DNS:kubernetes,DNS:localhost,IP:127.0.0.1", false))
-      certificate.sign(ca_key, OpenSSL::Digest::SHA256.new)
+      certificate.sign(ca_key, OpenSSL::Digest.new("SHA256"))
       @token = SecureRandom.hex(32)
       File.write(File.join(directory, "ca.crt"), ca_certificate.to_pem)
       File.write(File.join(directory, "tls.crt"), certificate.to_pem)
@@ -515,8 +514,11 @@ module M1KubernetesOracle
 
     case key
     when "uid"
-      value.to_s.match?(/\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i) ?
-        "<uuid>" : "<invalid-uid>"
+      if value.to_s.match?(/\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/i)
+        "<uuid>"
+      else
+        "<invalid-uid>"
+      end
     when "resourceVersion"
       value.to_s.match?(/\A[1-9][0-9]*\z/) ? "<positive-integer>" : "<invalid-resourceVersion>"
     else

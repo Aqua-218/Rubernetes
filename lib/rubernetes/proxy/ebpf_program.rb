@@ -131,7 +131,7 @@ module Rubernetes
           end
         end
 
-        def jump(operation, destination: 0, source: nil, immediate: 0, label:)
+        def jump(operation, label:, destination: 0, source: nil, immediate: 0)
           code = BPF_JMP | operation | (source.nil? ? BPF_K : BPF_X)
           index = emit(code, destination: destination, source: source || 0, immediate: immediate)
           @fixups << Fixup.new(index: index, label: label.to_sym)
@@ -161,7 +161,7 @@ module Rubernetes
         # assembled avoids hand-maintained instruction offsets.
         def function_load(destination, label)
           index = emit(BPF_LD | BPF_DW | BPF_IMM, destination: destination,
-                       source: BPF_PSEUDO_FUNC, immediate: 0)
+                                                  source: BPF_PSEUDO_FUNC, immediate: 0)
           emit(0)
           @function_fixups << Fixup.new(index: index, label: label.to_sym)
           self
@@ -192,7 +192,7 @@ module Rubernetes
           # instruction no path can reach.  Failing here names the emitter
           # bug directly instead of surfacing "unreachable insn N" at load.
           unless unreachable.empty?
-            raise ArgumentError, "eBPF emitter produced unreachable instructions at #{unreachable.first(8).join(', ')}"
+            raise ArgumentError, "eBPF emitter produced unreachable instructions at #{unreachable.first(8).join(", ")}"
           end
 
           resolved.freeze
@@ -208,7 +208,7 @@ module Rubernetes
           instructions.each_with_index do |instruction, index|
             next unless instruction.code == (BPF_LD | BPF_DW | BPF_IMM) && instruction.source == BPF_PSEUDO_FUNC
 
-            work << index + 1 + instruction.immediate
+            work << (index + 1 + instruction.immediate)
           end
           until work.empty?
             index = work.pop
@@ -218,21 +218,21 @@ module Rubernetes
             instruction = instructions[index]
             if instruction.code == (BPF_LD | BPF_DW | BPF_IMM)
               reachable[index + 1] = true if index + 1 < instructions.length
-              work << index + 2
+              work << (index + 2)
               next
             end
             klass = instruction.code & 0x07
             operation = instruction.code & 0xf0
-            if klass == BPF_JMP || klass == 0x06
+            if [BPF_JMP, 0x06].include?(klass)
               next if operation == BPF_EXIT
 
               if operation == BPF_JA
-                work << index + 1 + instruction.offset
+                work << (index + 1 + instruction.offset)
                 next
               end
-              work << index + 1 + instruction.offset unless operation == BPF_CALL
+              work << (index + 1 + instruction.offset) unless operation == BPF_CALL
             end
-            work << index + 1
+            work << (index + 1)
           end
           reachable.each_index.reject { |index| reachable[index] }
         end
@@ -350,8 +350,11 @@ module Rubernetes
         def sctp_crc32c(frame, family:, l3_offset:, transport_offset:)
           bytes = String(frame).b
           payload_start, packet_end = ip_payload_bounds(bytes, family: family, l3_offset: l3_offset,
-                                                        transport_offset: transport_offset)
-          raise ArgumentError, "SCTP transport offset is outside the IP payload" unless transport_offset == payload_start && transport_offset + 12 <= packet_end
+                                                               transport_offset: transport_offset)
+          unless transport_offset == payload_start && transport_offset + 12 <= packet_end
+            raise ArgumentError,
+                  "SCTP transport offset is outside the IP payload"
+          end
 
           payload = bytes.byteslice(transport_offset, packet_end - transport_offset).dup
           payload[8, 4] = "\0" * 4
@@ -363,28 +366,43 @@ module Rubernetes
           l3 = Integer(l3_offset)
           if Integer(family) == 4
             raise ArgumentError, "truncated IPv4 header" if l3.negative? || l3 + 20 > bytes.bytesize
+
             version_ihl = bytes.getbyte(l3)
             ihl = (version_ihl & 0x0f) * 4
             total = bytes.byteslice(l3 + 2, 2).unpack1("n")
-            raise ArgumentError, "malformed IPv4 length" if (version_ihl & 0xf0) != 0x40 || ihl < 20 || total < ihl || l3 + total > bytes.bytesize
+            if (version_ihl & 0xf0) != 0x40 || ihl < 20 || total < ihl || l3 + total > bytes.bytesize
+              raise ArgumentError,
+                    "malformed IPv4 length"
+            end
             raise ArgumentError, "IPv4 packet is not SCTP" unless bytes.getbyte(l3 + 9) == ServiceDatapath::IPPROTO_SCTP
+
             fragment_bits = bytes.byteslice(l3 + 6, 2).unpack1("n") & 0x3fff
             raise ArgumentError, "fragmented IPv4 SCTP packet is unsupported" unless fragment_bits.zero?
+
             payload_start = l3 + ihl
-            raise ArgumentError, "SCTP transport does not follow the IPv4 header" if transport_offset && Integer(transport_offset) != payload_start
+            if transport_offset && Integer(transport_offset) != payload_start
+              raise ArgumentError,
+                    "SCTP transport does not follow the IPv4 header"
+            end
+
             [payload_start, l3 + total]
           elsif Integer(family) == 6
             raise ArgumentError, "truncated IPv6 header" if l3.negative? || l3 + 40 > bytes.bytesize
+
             payload_length = bytes.byteslice(l3 + 4, 2).unpack1("n")
             raise ArgumentError, "IPv6 jumbograms are unsupported by the bounded TC parser" if payload_length.zero?
+
             packet_end = l3 + 40 + payload_length
             raise ArgumentError, "malformed IPv6 length" if packet_end > bytes.bytesize
+
             cursor = l3 + 40
             next_header = bytes.getbyte(l3 + 6)
             extension_count = 0
             while ipv6_extension_header?(next_header)
               extension_count += 1
-              raise ArgumentError, "IPv6 extension header chain exceeds parser bound" if extension_count > ServiceDatapath::MAX_IPV6_EXTENSION_HEADERS
+              if extension_count > ServiceDatapath::MAX_IPV6_EXTENSION_HEADERS
+                raise ArgumentError, "IPv6 extension header chain exceeds parser bound"
+              end
               raise ArgumentError, "truncated IPv6 extension header" if cursor + 2 > packet_end
 
               current_header = next_header
@@ -400,7 +418,11 @@ module Rubernetes
               cursor += header_length
             end
             raise ArgumentError, "IPv6 packet is not SCTP" unless next_header == ServiceDatapath::IPPROTO_SCTP
-            raise ArgumentError, "SCTP transport does not follow the IPv6 extension chain" if transport_offset && Integer(transport_offset) != cursor
+            if transport_offset && Integer(transport_offset) != cursor
+              raise ArgumentError,
+                    "SCTP transport does not follow the IPv6 extension chain"
+            end
+
             [cursor, packet_end]
           else
             raise ArgumentError, "unsupported IP family #{family.inspect}"
@@ -681,12 +703,12 @@ module Rubernetes
         end
 
         def parse_ipv6_extensions(a)
-          stages = (0...MAX_IPV6_EXTENSION_HEADERS).map { |index| "ipv6_extension_#{index}".to_sym }
+          stages = (0...MAX_IPV6_EXTENSION_HEADERS).map { |index| :"ipv6_extension_#{index}" }
           a.ja(stages.first)
 
           stages.each_with_index do |stage, index|
             next_stage = stages[index + 1] || :drop
-            extension_label = "ipv6_parse_extension_#{index}".to_sym
+            extension_label = :"ipv6_parse_extension_#{index}"
             a.label(stage)
             a.load_mem(Assembler::BPF_B, 2, 10, STACK_META + 13)
             [IPPROTO_TCP, IPPROTO_UDP, IPPROTO_SCTP].each do |protocol|
@@ -715,14 +737,14 @@ module Rubernetes
             a.load_mem(Assembler::BPF_B, 4, 10, STACK_SCRATCH + 2)
             # AH carries a four-byte length unit; every other supported
             # extension uses eight-byte length units.
-            a.jump(Assembler::BPF_JEQ, destination: 4, immediate: IPPROTO_AH, label: "ipv6_ah_length_#{index}".to_sym)
+            a.jump(Assembler::BPF_JEQ, destination: 4, immediate: IPPROTO_AH, label: :"ipv6_ah_length_#{index}")
             a.alu_imm(Assembler::BPF_ADD, 3, 1)
             a.alu_imm(Assembler::BPF_LSH, 3, 3)
-            a.ja("ipv6_extension_length_ready_#{index}".to_sym)
-            a.label("ipv6_ah_length_#{index}".to_sym)
+            a.ja(:"ipv6_extension_length_ready_#{index}")
+            a.label(:"ipv6_ah_length_#{index}")
             a.alu_imm(Assembler::BPF_ADD, 3, 2)
             a.alu_imm(Assembler::BPF_LSH, 3, 2)
-            a.label("ipv6_extension_length_ready_#{index}".to_sym)
+            a.label(:"ipv6_extension_length_ready_#{index}")
             a.mov_reg(4, 9)
             a.alu_reg(Assembler::BPF_ADD, 4, 3)
             a.mov_reg(2, 6)
@@ -916,11 +938,11 @@ module Rubernetes
         def build_connection_state(a)
           sequence = @connection_sequence
           @connection_sequence += 1
-          nodeport_label = "connection_nodeport_vip_#{sequence}".to_sym
-          vip_ready_label = "connection_vip_ready_#{sequence}".to_sym
-          reverse_source_label = "connection_reverse_source_#{sequence}".to_sym
-          reverse_address_ready_label = "connection_reverse_address_ready_#{sequence}".to_sym
-          snat_ready_label = "connection_snat_ready_#{sequence}".to_sym
+          nodeport_label = :"connection_nodeport_vip_#{sequence}"
+          vip_ready_label = :"connection_vip_ready_#{sequence}"
+          reverse_source_label = :"connection_reverse_source_#{sequence}"
+          reverse_address_ready_label = :"connection_reverse_address_ready_#{sequence}"
+          snat_ready_label = :"connection_snat_ready_#{sequence}"
           zero_stack(a, STACK_CONNTRACK_VALUE, 48)
           copy_map_to_stack(a, 9, BACKEND_ADDRESS_OFFSET, STACK_CONNTRACK_VALUE, 16)
           a.load_mem(Assembler::BPF_B, 2, 6, SERVICE_KIND_OFFSET)
@@ -931,11 +953,11 @@ module Rubernetes
           copy_stack(a, STACK_DST_IP, STACK_CONNTRACK_VALUE + 16, 16)
           a.label(vip_ready_label)
           copy_map_to_stack(a, 9, BACKEND_PORT_OFFSET, STACK_CONNTRACK_VALUE + 32, 2)
-          service_port_nodeport_label = "connection_service_port_nodeport_#{sequence}".to_sym
-          service_port_ready_label = "connection_service_port_ready_#{sequence}".to_sym
+          service_port_nodeport_label = :"connection_service_port_nodeport_#{sequence}"
+          service_port_ready_label = :"connection_service_port_ready_#{sequence}"
           a.load_mem(Assembler::BPF_B, 2, 6, SERVICE_KIND_OFFSET)
           a.jump(Assembler::BPF_JEQ, destination: 2, immediate: SERVICE_KIND.fetch("NodePort"),
-                 label: service_port_nodeport_label)
+                                     label: service_port_nodeport_label)
           copy_map_to_stack(a, 6, SERVICE_PORT_OFFSET, STACK_CONNTRACK_VALUE + 34, 2)
           a.ja(service_port_ready_label)
           a.label(service_port_nodeport_label)
@@ -988,9 +1010,9 @@ module Rubernetes
 
         def prepare_snat(a)
           sequence = @connection_sequence
-          snat_label = "snat_connection_#{sequence}".to_sym
-          no_snat_label = "no_snat_connection_#{sequence}".to_sym
-          snat_state_ready_label = "snat_state_ready_#{sequence}".to_sym
+          snat_label = :"snat_connection_#{sequence}"
+          no_snat_label = :"no_snat_connection_#{sequence}"
+          snat_state_ready_label = :"snat_state_ready_#{sequence}"
           a.load_mem(Assembler::BPF_B, 2, 6, SERVICE_FLAGS_OFFSET)
           a.alu_imm(Assembler::BPF_AND, 2, WireFormat::SERVICE_FLAG_MASQUERADE)
           a.jump(Assembler::BPF_JNE, destination: 2, immediate: 0, label: snat_label)
@@ -1010,7 +1032,7 @@ module Rubernetes
 
         def rewrite_forward_snat(a, failure_label)
           sequence = @rewrite_sequence
-          skip_label = "skip_forward_snat_#{sequence}".to_sym
+          skip_label = :"skip_forward_snat_#{sequence}"
           a.load_mem(Assembler::BPF_B, 2, 10, STACK_META + 16)
           a.jump(Assembler::BPF_JEQ, destination: 2, immediate: 0, label: skip_label)
           # Every masqueraded flow (NodePort included) leaves with the node's
@@ -1023,7 +1045,7 @@ module Rubernetes
         end
 
         def rewrite_existing_forward_source(a, failure_label)
-          lookup_label = "existing_forward_snat_#{@rewrite_sequence}".to_sym
+          lookup_label = :"existing_forward_snat_#{@rewrite_sequence}"
           map_lookup(a, "snat", STACK_CONNTRACK_KEY, 1)
           a.jump(Assembler::BPF_JEQ, destination: 0, immediate: 0, label: lookup_label)
           copy_map_to_stack(a, 0, 0, STACK_REWRITE, 16)
@@ -1033,7 +1055,7 @@ module Rubernetes
         end
 
         def rewrite_existing_reverse_destination(a, failure_label)
-          lookup_label = "existing_reverse_snat_#{@rewrite_sequence}".to_sym
+          lookup_label = :"existing_reverse_snat_#{@rewrite_sequence}"
           map_lookup(a, "snat", STACK_CONNTRACK_KEY, 1)
           a.jump(Assembler::BPF_JEQ, destination: 0, immediate: 0, label: lookup_label)
           copy_map_to_stack(a, 0, 0, STACK_REWRITE, 16)
@@ -1064,7 +1086,7 @@ module Rubernetes
           sequence = @rewrite_sequence
           @rewrite_sequence += 1
           store_address_rewrite(a, direction, address_stack, failure_label, sequence: sequence,
-                                update_transport_checksum: false)
+                                                                            update_transport_checksum: false)
           a.mov_reg(1, 8)
           a.load_mem(Assembler::BPF_W, 2, 10, STACK_META)
           # The transport offset points at the source port. Destination
@@ -1090,8 +1112,8 @@ module Rubernetes
                                   update_transport_checksum: true)
           sequence ||= @rewrite_sequence
           @rewrite_sequence += 1 if sequence == @rewrite_sequence
-          ipv4_label = "rewrite_address_ipv4_#{sequence}".to_sym
-          address_done_label = "rewrite_address_done_#{sequence}".to_sym
+          ipv4_label = :"rewrite_address_ipv4_#{sequence}"
+          address_done_label = :"rewrite_address_done_#{sequence}"
           a.load_mem(Assembler::BPF_B, 2, 10, STACK_META + 12)
           a.jump(Assembler::BPF_JEQ, destination: 2, immediate: 4, label: ipv4_label)
           a.jump(Assembler::BPF_JNE, destination: 2, immediate: 6, label: failure_label)
@@ -1118,12 +1140,12 @@ module Rubernetes
           a.jump(Assembler::BPF_JNE, destination: 0, immediate: 0, label: failure_label)
           update_address_checksums(a, direction, address_stack, failure_label, family: 4, sequence: sequence)
           a.label(address_done_label)
-          if update_transport_checksum
-            if @map_fds.key?("sctp_crc32c")
-              update_sctp_crc32c(a, nil, direction, failure_label)
-            else
-              reject_sctp_without_crc(a, failure_label)
-            end
+          return unless update_transport_checksum
+
+          if @map_fds.key?("sctp_crc32c")
+            update_sctp_crc32c(a, nil, direction, failure_label)
+          else
+            reject_sctp_without_crc(a, failure_label)
           end
         end
 
@@ -1138,14 +1160,12 @@ module Rubernetes
         # The old address/port values remain in the parser stacks, while the
         # replacement values are in the rewrite stack.
         def update_address_checksums(a, direction, address_stack, failure_label, family:, sequence:)
-          done_label = "address_checksum_done_#{sequence}_#{family}".to_sym
-          tcp_label = "address_checksum_tcp_#{sequence}_#{family}".to_sym
-          udp_label = "address_checksum_udp_#{sequence}_#{family}".to_sym
+          done_label = :"address_checksum_done_#{sequence}_#{family}"
+          tcp_label = :"address_checksum_tcp_#{sequence}_#{family}"
+          udp_label = :"address_checksum_udp_#{sequence}_#{family}"
           old_stack = direction == :destination ? STACK_DST_IP : STACK_SRC_IP
 
-          if family == 4
-            replace_ipv4_header_checksum(a, old_stack, address_stack, failure_label)
-          end
+          replace_ipv4_header_checksum(a, old_stack, address_stack, failure_label) if family == 4
 
           a.load_mem(Assembler::BPF_B, 2, 10, STACK_META + 13)
           a.jump(Assembler::BPF_JEQ, destination: 2, immediate: IPPROTO_TCP, label: tcp_label)
@@ -1194,9 +1214,9 @@ module Rubernetes
         end
 
         def update_port_checksum(a, old_port_stack, new_port_stack, failure_label, sequence:)
-          done_label = "port_checksum_done_#{sequence}".to_sym
-          tcp_label = "port_checksum_tcp_#{sequence}".to_sym
-          udp_label = "port_checksum_udp_#{sequence}".to_sym
+          done_label = :"port_checksum_done_#{sequence}"
+          tcp_label = :"port_checksum_tcp_#{sequence}"
+          udp_label = :"port_checksum_udp_#{sequence}"
           a.load_mem(Assembler::BPF_B, 2, 10, STACK_META + 13)
           a.jump(Assembler::BPF_JEQ, destination: 2, immediate: IPPROTO_TCP, label: tcp_label)
           a.jump(Assembler::BPF_JEQ, destination: 2, immediate: IPPROTO_UDP, label: udp_label)
@@ -1225,8 +1245,8 @@ module Rubernetes
         end
 
         def update_sctp_crc32c(a, _port_stack, _direction, failure_label)
-          done_label = "sctp_crc_done_#{@rewrite_sequence}".to_sym
-          local_failure_label = "sctp_crc_failure_#{@rewrite_sequence}".to_sym
+          done_label = :"sctp_crc_done_#{@rewrite_sequence}"
+          local_failure_label = :"sctp_crc_failure_#{@rewrite_sequence}"
           a.load_mem(Assembler::BPF_B, 2, 10, STACK_META + 13)
           a.jump(Assembler::BPF_JNE, destination: 2, immediate: IPPROTO_SCTP, label: done_label)
           # The callback walks exactly the IP payload from the SCTP header to
@@ -1238,7 +1258,7 @@ module Rubernetes
           a.alu_reg(Assembler::BPF_SUB, 5, 2)
           a.jump(Assembler::BPF_JLT, destination: 5, immediate: 12, label: local_failure_label)
           a.jump(Assembler::BPF_JGT, destination: 5, immediate: WireFormat::SCTP_CRC32C_MAX_BYTES,
-                 label: local_failure_label)
+                                     label: local_failure_label)
 
           # skb_store_bytes() is a helper call and therefore clobbers R1-R5.
           # Preserve the validated loop count before zeroing the wire checksum.
@@ -1546,12 +1566,12 @@ module Rubernetes
 
         def copy_map_to_stack(a, map_register, map_offset, stack_offset, length)
           copy_memory(a, source_base: map_register, source_offset: map_offset,
-                      destination_base: 10, destination_offset: stack_offset, length: length)
+                         destination_base: 10, destination_offset: stack_offset, length: length)
         end
 
         def copy_stack(a, source_offset, destination_offset, length)
           copy_memory(a, source_base: 10, source_offset: source_offset,
-                      destination_base: 10, destination_offset: destination_offset, length: length)
+                         destination_base: 10, destination_offset: destination_offset, length: length)
         end
 
         def copy_memory(a, source_base:, source_offset:, destination_base:, destination_offset:, length:)
@@ -1559,7 +1579,7 @@ module Rubernetes
           cursor = 0
           while remaining >= 8
             break unless ((Integer(source_offset) + cursor) % 8).zero? &&
-                        ((Integer(destination_offset) + cursor) % 8).zero?
+                         ((Integer(destination_offset) + cursor) % 8).zero?
 
             a.load_mem(Assembler::BPF_DW, 2, source_base, source_offset + cursor)
             a.store_mem(Assembler::BPF_DW, destination_base, destination_offset + cursor, source: 2)
@@ -1568,7 +1588,7 @@ module Rubernetes
           end
           while remaining >= 4
             break unless ((Integer(source_offset) + cursor) % 4).zero? &&
-                        ((Integer(destination_offset) + cursor) % 4).zero?
+                         ((Integer(destination_offset) + cursor) % 4).zero?
 
             a.load_mem(Assembler::BPF_W, 2, source_base, source_offset + cursor)
             a.store_mem(Assembler::BPF_W, destination_base, destination_offset + cursor, source: 2)
@@ -1577,7 +1597,7 @@ module Rubernetes
           end
           while remaining >= 2
             break unless ((Integer(source_offset) + cursor) % 2).zero? &&
-                        ((Integer(destination_offset) + cursor) % 2).zero?
+                         ((Integer(destination_offset) + cursor) % 2).zero?
 
             a.load_mem(Assembler::BPF_H, 2, source_base, source_offset + cursor)
             a.store_mem(Assembler::BPF_H, destination_base, destination_offset + cursor, source: 2)

@@ -15,14 +15,14 @@ require_relative "m3_probe_support"
 module M4ProbeSupport
   module_function
 
-  def run_report(kind:, adapter_name:, measurement_level: "L3", &block)
+  def run_report(kind:, adapter_name:, measurement_level: "L3", &)
     M3ProbeSupport.run_report(
       kind: kind,
       adapter_name: adapter_name,
       measurement_level: measurement_level,
       milestone: "M4",
       input_env_prefix: "RUBERNETES_M4",
-      &block
+      &
     )
   end
 
@@ -164,7 +164,8 @@ module M4ProbeSupport
         "result" => worker_result, "stderr" => worker_stderr.byteslice(-4096..) || worker_stderr
       }
       unless worker_status&.success? && worker_result.is_a?(Hash) && worker_result["passed"] == true
-        errors << "#{label} worker did not complete its scenario: #{worker_result && worker_result.dig("error", "message") || worker_stderr.strip.lines.last}"
+        errors << "#{label} worker did not complete its scenario: #{(worker_result && worker_result.dig("error",
+                                                                                                        "message")) || worker_stderr.strip.lines.last}"
       end
       document.is_a?(Hash) ? document.merge("observed_worker" => worker_record) : document
     end

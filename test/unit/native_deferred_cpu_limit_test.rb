@@ -22,10 +22,12 @@ class NativeDeferredCPULimitTest < Minitest::Test
                                                       "limits" => {"cpu.max" => "1000 100000", "cpu.weight" => "10"}})
     handle = runtime.sandbox(sandbox_id).container(container.respond_to?(:id) ? container.id : container).cgroup
     before = limits_written(cgroup, handle)
+
     refute before.any? { |limits| limits.key?("cpu.max") }, "cpu.max is not set while the bootstrap runs"
     assert before.any? { |limits| limits["cpu.weight"] == "10" }, "the other limits are applied at create"
 
     runtime.start_container(container)
+
     assert limits_written(cgroup, handle).any? { |limits| limits["cpu.max"] == "1000 100000" }, "cpu.max is applied after exec"
   end
 end

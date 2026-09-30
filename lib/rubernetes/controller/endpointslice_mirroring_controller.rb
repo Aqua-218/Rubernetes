@@ -98,8 +98,13 @@ module Rubernetes
           Array(Support.value(subset, "addresses", [])).length + Array(Support.value(subset, "notReadyAddresses", [])).length
         end
         wanted = desired_groups.values.flatten
-        ControllerMetrics.observe("endpoint_slice_mirroring_controller_addresses_skipped_per_sync", [total - wanted.length, 0].max) unless desired_groups.empty?
-        before = existing.flat_map { |slice| Array(Support.value(slice, "endpoints", [])) }.to_h { |endpoint| [Array(endpoint["addresses"]).first, endpoint] }
+        unless desired_groups.empty?
+          ControllerMetrics.observe("endpoint_slice_mirroring_controller_addresses_skipped_per_sync",
+                                    [total - wanted.length, 0].max)
+        end
+        before = existing.flat_map do |slice|
+          Array(Support.value(slice, "endpoints", []))
+        end.to_h { |endpoint| [Array(endpoint["addresses"]).first, endpoint] }
         after = wanted.to_h { |endpoint| [Array(endpoint["addresses"]).first, endpoint] }
         ControllerMetrics.observe("endpoint_slice_mirroring_controller_endpoints_added_per_sync", (after.keys - before.keys).length)
         ControllerMetrics.observe("endpoint_slice_mirroring_controller_endpoints_updated_per_sync",
@@ -108,7 +113,8 @@ module Rubernetes
         slices = existing.length + operations.count(&:create?) - operations.count(&:delete?)
         desired = desired_groups.values.sum { |group| group.empty? ? 0 : (group.length + ENDPOINT_LIMIT - 1) / ENDPOINT_LIMIT }
         ENDPOINTS_CACHE_MUTEX.synchronize do
-          ENDPOINTS_CACHE["#{Support.namespace(endpoints)}/#{Support.name(endpoints)}"] = {slices: slices, desired: desired, endpoints: wanted.length}
+          ENDPOINTS_CACHE["#{Support.namespace(endpoints)}/#{Support.name(endpoints)}"] =
+            {slices: slices, desired: desired, endpoints: wanted.length}
           publish_cache
         end
         operations.map do |operation|
@@ -116,7 +122,9 @@ module Rubernetes
                    elsif operation.delete? then "delete"
                    else "update"
                    end
-          operation.observed { |succeeded, _| ControllerMetrics.increment("endpoint_slice_mirroring_controller_changes", {"operation" => change}) if succeeded }
+          operation.observed do |succeeded, _|
+            ControllerMetrics.increment("endpoint_slice_mirroring_controller_changes", {"operation" => change}) if succeeded
+          end
         end
       end
 
@@ -139,6 +147,7 @@ module Rubernetes
 
       def resolve_endpoints(resource, adapter)
         return resource if Support.kind(resource) == "Endpoints"
+
         service_name = Support.labels(resource)[SERVICE_LABEL]
         candidate = find_for(adapter, ENDPOINTS, service_name, namespace: Support.namespace(resource))
         raise StoreError, "Endpoints #{service_name.inspect} was not found" unless candidate
@@ -183,7 +192,9 @@ module Rubernetes
         end
         groups.each_value do |endpoints_for_type|
           endpoints_for_type.each { |endpoint| endpoint.delete("_ports") }
-          endpoints_for_type.sort_by! { |endpoint| [endpoint.fetch("addresses").first, Support.value(endpoint.dig("targetRef"), "name", "")] }
+          endpoints_for_type.sort_by! do |endpoint|
+            [endpoint.fetch("addresses").first, Support.value(endpoint.dig("targetRef"), "name", "")]
+          end
         end
         groups
       end
@@ -229,21 +240,21 @@ module Rubernetes
             if current
               candidate = preserve_metadata(current, candidate)
               update = operation_update(current, candidate, descriptor: ENDPOINT_SLICE,
-                                        reason: "legacy Endpoints mirror")
+                                                            reason: "legacy Endpoints mirror")
               operations << update if update
             else
               operations << operation_create(candidate, owner: endpoints, descriptor: ENDPOINT_SLICE,
-                                              reason: "legacy Endpoints mirror")
+                                                        reason: "legacy Endpoints mirror")
             end
           end
           slices.drop(chunks.length).each do |slice|
             operations << operation_delete(slice, descriptor: ENDPOINT_SLICE,
-                                            reason: "stale mirrored EndpointSlice")
+                                                  reason: "stale mirrored EndpointSlice")
           end
         end
         existing_by_type.values.flatten.each do |slice|
           operations << operation_delete(slice, descriptor: ENDPOINT_SLICE,
-                                          reason: "empty mirrored EndpointSlice")
+                                                reason: "empty mirrored EndpointSlice")
         end
         operations
       end

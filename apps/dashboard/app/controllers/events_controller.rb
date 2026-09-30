@@ -15,6 +15,6 @@ class EventsController < ApplicationController
 
   def sorted(events)
     events = events.select { |e| e["type"] == "Warning" } if params[:type] == "Warning"
-    events.sort_by { |e| e["lastTimestamp"] || e.dig("metadata", "creationTimestamp") || "" }.reverse.first(300)
+    events.sort_by { |e| e["lastTimestamp"] || e.dig("metadata", "creationTimestamp") || "" }.last(300).reverse
   end
 end

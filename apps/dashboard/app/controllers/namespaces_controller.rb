@@ -11,15 +11,19 @@ class NamespacesController < ApplicationController
     @namespace = client.get("namespaces", params[:id])
     ns = params[:id]
     @counts = {}
-    {"pods" => ["pods", "v1"], "deployments" => ["deployments", "apps/v1"], "statefulsets" => ["statefulsets", "apps/v1"],
-     "daemonsets" => ["daemonsets", "apps/v1"], "jobs" => ["jobs", "batch/v1"], "services" => ["services", "v1"],
-     "ingresses" => ["ingresses", "networking.k8s.io/v1"], "configmaps" => ["configmaps", "v1"], "secrets" => ["secrets", "v1"],
-     "persistentvolumeclaims" => ["persistentvolumeclaims", "v1"]}.each do |key, (resource, version)|
+    {"pods" => %w[pods v1], "deployments" => ["deployments", "apps/v1"], "statefulsets" => ["statefulsets", "apps/v1"],
+     "daemonsets" => ["daemonsets", "apps/v1"], "jobs" => ["jobs", "batch/v1"], "services" => %w[services v1],
+     "ingresses" => ["ingresses", "networking.k8s.io/v1"], "configmaps" => %w[configmaps v1], "secrets" => %w[secrets v1],
+     "persistentvolumeclaims" => %w[persistentvolumeclaims v1]}.each do |key, (resource, version)|
       @counts[key] = Array(client.get(resource, namespace: ns, api_version: version)["items"]).length
     rescue StandardError
       @counts[key] = "?"
     end
-    @quotas = Array(client.get("resourcequotas", namespace: ns)["items"]) rescue []
-    @events = Array(client.get("events", namespace: ns)["items"]).sort_by { |e| e["lastTimestamp"] || "" }.reverse.first(20)
+    @quotas = begin
+      Array(client.get("resourcequotas", namespace: ns)["items"])
+    rescue StandardError
+      []
+    end
+    @events = Array(client.get("events", namespace: ns)["items"]).sort_by { |e| e["lastTimestamp"] || "" }.last(20).reverse
   end
 end

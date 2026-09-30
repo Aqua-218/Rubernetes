@@ -27,12 +27,16 @@ class ProxyPublishCoalescingTest < Minitest::Test
     proxy.publish_coalescing_seconds = 0.05
     proxy.publish_stats(reset: true)
 
-    40.times { |i| proxy.apply_service(service(i)); proxy.apply_endpoint_slice(slice(i)) }
+    40.times do |i|
+      proxy.apply_service(service(i))
+      proxy.apply_endpoint_slice(slice(i))
+    end
     proxy.flush_publish!
     sleep 0.2
     proxy.flush_publish!
 
     stats = proxy.publish_stats
+
     assert_operator stats[:count], :<, 10, "80 events must not mean 80 publishes (#{stats[:count]})"
     assert_equal 40, proxy.rules.length
     assert_equal 40, proxy.backend.rules.length
@@ -55,7 +59,10 @@ class ProxyPublishCoalescingTest < Minitest::Test
   def test_a_deletion_during_the_burst_reaches_the_datapath
     proxy = Proxy::Proxy.new(local_node: "worker-0", backend: Proxy::MemoryBackend.new)
     proxy.publish_coalescing_seconds = 0.02
-    3.times { |i| proxy.apply_service(service(i)); proxy.apply_endpoint_slice(slice(i)) }
+    3.times do |i|
+      proxy.apply_service(service(i))
+      proxy.apply_endpoint_slice(slice(i))
+    end
     proxy.delete_service(service(1))
     proxy.flush_publish!
     sleep 0.1

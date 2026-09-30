@@ -79,14 +79,16 @@ module M6CRDDifferentialProbe
       ["create_missing_required", "POST", "/apis/probe.example.com/v1/namespaces/default/widgets", widget("w1", {"color" => "blue"})],
       ["create_bad_enum", "POST", "/apis/probe.example.com/v1/namespaces/default/widgets", widget("w1", {"size" => 2, "color" => "green"})],
       ["create_cel_violation", "POST", "/apis/probe.example.com/v1/namespaces/default/widgets", widget("w1", {"size" => 8})],
-      ["create_duplicate_set_item", "POST", "/apis/probe.example.com/v1/namespaces/default/widgets", widget("w1", {"size" => 2, "tags" => %w[a a]})],
+      ["create_duplicate_set_item", "POST", "/apis/probe.example.com/v1/namespaces/default/widgets",
+       widget("w1", {"size" => 2, "tags" => %w[a a]})],
       ["create_ok", "POST", "/apis/probe.example.com/v1/namespaces/default/widgets", widget("w1", {"size" => 3, "junk" => "x"})],
       ["get_ok", "GET", "/apis/probe.example.com/v1/namespaces/default/widgets/w1", nil],
       ["get_via_v2", "GET", "/apis/probe.example.com/v2/namespaces/default/widgets/w1", nil],
       ["list", "GET", "/apis/probe.example.com/v1/namespaces/default/widgets", nil],
       ["status_update", :status_update, nil, nil],
       ["get_after_status", "GET", "/apis/probe.example.com/v1/namespaces/default/widgets/w1", nil],
-      ["patch_merge", "PATCH", "/apis/probe.example.com/v1/namespaces/default/widgets/w1", {"spec" => {"color" => "red", "size" => 7}}, {"content-type" => "application/merge-patch+json"}],
+      ["patch_merge", "PATCH", "/apis/probe.example.com/v1/namespaces/default/widgets/w1", {"spec" => {"color" => "red", "size" => 7}},
+       {"content-type" => "application/merge-patch+json"}],
       ["create_apiservice", "POST", "/apis/apiregistration.k8s.io/v1/apiservices", apiservice],
       ["wait_apiservice", :wait_apiservice, nil, nil],
       ["discovery_with_apiservice", "GET", "/apis", nil],
@@ -102,15 +104,26 @@ module M6CRDDifferentialProbe
     document = body.is_a?(Hash) ? deep_strip(body) : body
     case step
     when "get_crd_conditions"
-      conditions = Array(document.dig("status", "conditions")).map { |condition| condition.slice("type", "status", "reason") }.sort_by { |condition| condition["type"] }
-      {"status" => status, "conditions" => conditions.reject { |condition| condition["type"] == "NonStructuralSchema" && condition["status"] == "False" },
+      conditions = Array(document.dig("status", "conditions")).map do |condition|
+        condition.slice("type", "status", "reason")
+      end.sort_by { |condition| condition["type"] }
+      {"status" => status, "conditions" => conditions.reject do |condition|
+        condition["type"] == "NonStructuralSchema" && condition["status"] == "False"
+      end,
        "acceptedNames" => document.dig("status", "acceptedNames"), "storedVersions" => document.dig("status", "storedVersions")}
     when "discovery_group"
-      {"status" => status, "name" => document["name"], "versions" => document["versions"], "preferredVersion" => document["preferredVersion"]}
+      {"status" => status, "name" => document["name"], "versions" => document["versions"],
+       "preferredVersion" => document["preferredVersion"]}
     when "discovery_v1"
-      {"status" => status, "resources" => Array(document["resources"]).map { |resource| resource.slice("name", "singularName", "namespaced", "kind", "verbs", "shortNames", "storageVersionHash").reject { |key, _| key == "storageVersionHash" } }}
+      {"status" => status, "resources" => Array(document["resources"]).map do |resource|
+        resource.slice("name", "singularName", "namespaced", "kind", "verbs", "shortNames", "storageVersionHash").reject do |key, _|
+          key == "storageVersionHash"
+        end
+      end}
     when "openapi_v3"
-      {"status" => status, "paths" => Array(document["paths"]&.keys).sort, "operations" => (document["paths"] || {}).transform_values { |operations| operations.keys.sort }}
+      {"status" => status, "paths" => Array(document["paths"]&.keys).sort, "operations" => (document["paths"] || {}).transform_values do |operations|
+        operations.keys.sort
+      end}
     when "discovery_with_apiservice"
       {"status" => status, "group" => Array(document["groups"]).find { |group| group["name"] == "metrics.probe.example.com" }}
     when "list"
@@ -119,7 +132,9 @@ module M6CRDDifferentialProbe
       {"status" => status, "reason" => document.is_a?(Hash) ? document["reason"] : nil}
     else
       if document.is_a?(Hash) && document["kind"] == "Status"
-        {"status" => status, "reason" => document["reason"], "causes" => Array(document.dig("details", "causes")).map { |cause| cause.slice("reason", "field") }.sort_by(&:to_s),
+        {"status" => status, "reason" => document["reason"], "causes" => Array(document.dig("details", "causes")).map do |cause|
+          cause.slice("reason", "field")
+        end.sort_by(&:to_s),
          "message_fragments" => message_fragments(document["message"])}
       elsif document.is_a?(Hash)
         {"status" => status, "spec" => document["spec"], "status_field" => document["status"], "apiVersion" => document["apiVersion"], "kind" => document["kind"],
@@ -131,7 +146,10 @@ module M6CRDDifferentialProbe
   end
 
   def message_fragments(message)
-    %w[Required\ value should\ be\ greater\ than\ or\ equal\ to Unsupported\ value large\ widgets\ must\ be\ red Duplicate\ value not\ found already\ exists Invalid\ value].select { |fragment| message.to_s.include?(fragment) }.sort
+    ["Required value", "should be greater than or equal to", "Unsupported value", "large widgets must be red", "Duplicate value",
+     "not found", "already exists", "Invalid value"].select do |fragment|
+      message.to_s.include?(fragment)
+    end.sort
   end
 
   def deep_strip(value)
@@ -149,14 +167,16 @@ module M6CRDDifferentialProbe
 
   def run_script(client)
     observations = {}
-    stored = nil
+    nil
     script.each do |step, method, path, body, headers|
       case method
       when :wait_established
         deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 30
         loop do
           status, document = client.call("GET", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/widgets.probe.example.com")
-          break if status == 200 && Array(document.dig("status", "conditions")).any? { |condition| condition["type"] == "Established" && condition["status"] == "True" }
+          break if status == 200 && Array(document.dig("status", "conditions")).any? do |condition|
+            condition["type"] == "Established" && condition["status"] == "True"
+          end
           break if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
 
           sleep 0.2

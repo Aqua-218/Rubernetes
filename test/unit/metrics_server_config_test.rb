@@ -29,6 +29,7 @@ class MetricsServerConfigTest < Minitest::Test
   def test_valid_settings_load
     config = load({"enabled" => true, "port" => 4443, "metric_resolution_seconds" => 15, "kubelet_scheme" => "http",
                    "register" => true, "advertise_address" => "10.0.0.1"})
+
     assert_equal true, config.process.dig("metrics_server", "enabled")
   end
 

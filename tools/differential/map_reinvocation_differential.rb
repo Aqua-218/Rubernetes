@@ -28,7 +28,7 @@ module MAPReinvocationDifferential
   PACKAGE = "k8s.io/apiserver/pkg/admission/plugin/policy/mutating"
   A = Rubernetes::Security::Admission
   GROUP = "admissionregistration.k8s.io"
-  PARAMS = [["pa1", "a", "one"], ["pa2", "a", "two"], ["pb1", "b", "three"]].freeze
+  PARAMS = [%w[pa1 a one], %w[pa2 a two], %w[pb1 b three]].freeze
 
   module_function
 
@@ -115,7 +115,9 @@ module MAPReinvocationDifferential
       metadata = {"name" => "cm", "namespace" => "default"}
       metadata["labels"] = labels if labels.any?
       {"object" => {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => metadata, "data" => {"seed" => "1"}},
-       "params" => PARAMS.map { |name, set, value| {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => name, "namespace" => "default", "labels" => {"set" => set}}, "data" => {"v" => value}} },
+       "params" => PARAMS.map do |name, set, value|
+         {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => name, "namespace" => "default", "labels" => {"set" => set}}, "data" => {"v" => value}}
+       end,
        "policies" => policies, "bindings" => policies.flat_map { |item| bindings(random, item) },
        "chain" => before + [{"name" => "MutatingAdmissionPolicy", "type" => "policy"}] + after}
     end
@@ -185,7 +187,9 @@ module MAPReinvocationDifferential
     context.put("namespaces", nil, "default", {"metadata" => {"name" => "default"}})
     test_case["params"].each { |param| context.put("configmaps", "default", param.dig("metadata", "name"), param) }
     test_case["policies"].each { |item| context.put("mutatingadmissionpolicies", nil, item.dig("metadata", "name"), item, group: GROUP) }
-    test_case["bindings"].each { |item| context.put("mutatingadmissionpolicybindings", nil, item.dig("metadata", "name"), item, group: GROUP) }
+    test_case["bindings"].each do |item|
+      context.put("mutatingadmissionpolicybindings", nil, item.dig("metadata", "name"), item, group: GROUP)
+    end
     trace = []
     plugins = test_case["chain"].map do |step|
       if step["type"] == "policy"

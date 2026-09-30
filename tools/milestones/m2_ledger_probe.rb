@@ -69,9 +69,15 @@ module M2LedgerProbe
       end
       errors = []
       errors << "L3 kernel isolation profile is unavailable" unless kernel_l3_available
-      errors << "L3 resource inventory is incomplete: #{inventory_measurement.fetch("missing_resource_kinds").join(", ")}" unless inventory_measurement.fetch("missing_resource_kinds").empty?
-      errors << "Native lifecycle cycle inventory is incomplete: #{cycle_inventory.fetch("missing_resource_kinds").join(", ")}" unless cycle_inventory.fetch("missing_resource_kinds").empty?
-      errors << "Native lifecycle cycle cleanup left #{cycle_inventory.fetch("live_leak_count")} resources" unless cycle_inventory.fetch("live_leak_count").zero?
+      unless inventory_measurement.fetch("missing_resource_kinds").empty?
+        errors << "L3 resource inventory is incomplete: #{inventory_measurement.fetch("missing_resource_kinds").join(", ")}"
+      end
+      unless cycle_inventory.fetch("missing_resource_kinds").empty?
+        errors << "Native lifecycle cycle inventory is incomplete: #{cycle_inventory.fetch("missing_resource_kinds").join(", ")}"
+      end
+      unless cycle_inventory.fetch("live_leak_count").zero?
+        errors << "Native lifecycle cycle cleanup left #{cycle_inventory.fetch("live_leak_count")} resources"
+      end
       canonical_payload = {
         "cycle_count" => cycles.length,
         "cycles" => cycles,
@@ -83,7 +89,7 @@ module M2LedgerProbe
       }
       {
         "passed" => cycles.all? { |cycle| cycle.fetch("passed") } && cycle_inventory.fetch("live_leak_count").zero? &&
-                    native_cycles.fetch("resource_reuse_count").zero? && l3_available && matrix_passed && errors.empty?,
+          native_cycles.fetch("resource_reuse_count").zero? && l3_available && matrix_passed && errors.empty?,
         "measurement_source" => "production_native_l3_cycles",
         "cycle_count" => cycles.length,
         "cycles" => cycles,

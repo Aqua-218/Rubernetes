@@ -45,7 +45,7 @@ module Conformance
       raise ArgumentError, "--kubeconfig is required" if options[:kubeconfig].nil?
 
       FileUtils.mkdir_p(options[:output])
-      driver = options[:driver] || ENV["RUBERNETES_K7_DRIVER"]
+      driver = options[:driver] || ENV.fetch("RUBERNETES_K7_DRIVER", nil)
       baseline = capture_state(options)
       results = STAGES.map { |stage| run_stage(stage, driver, baseline, options) }
       report = {
@@ -60,8 +60,12 @@ module Conformance
         "irreversible_migrations" => results.select { |stage| stage["reversible"] == false }.map { |s| s.fetch("id") }
       }
       File.write(File.join(options[:output], "lifecycle.json"), "#{JSON.pretty_generate(report)}\n")
-      report.fetch("data_loss").empty? && report.fetch("stuck_operations").empty? &&
-        report.fetch("irreversible_migrations").empty? && results.all? { |stage| stage["passed"] } ? 0 : 1
+      if report.fetch("data_loss").empty? && report.fetch("stuck_operations").empty? &&
+         report.fetch("irreversible_migrations").empty? && results.all? { |stage| stage["passed"] }
+        0
+      else
+        1
+      end
     end
 
     def run_stage(stage, driver, baseline, options)
@@ -96,7 +100,11 @@ module Conformance
                                          "-o", "json", "--show-managed-fields")
       return {"available" => false, "objects" => []} unless status.success?
 
-      items = (JSON.parse(out)["items"] rescue []) || []
+      items = begin
+        JSON.parse(out)["items"]
+      rescue StandardError
+        []
+      end || []
       {
         "available" => true,
         "objects" => items.map do |item|
@@ -122,7 +130,10 @@ module Conformance
         key = [object["kind"], object["namespace"], object["name"]]
         current = index[key]
         next {"object" => key, "reason" => "object disappeared"} if current.nil?
-        next {"object" => key, "reason" => "uid changed", "before" => object["uid"], "after" => current["uid"]} if current["uid"] != object["uid"]
+        if current["uid"] != object["uid"]
+          next {"object" => key, "reason" => "uid changed", "before" => object["uid"],
+                "after" => current["uid"]}
+        end
         next {"object" => key, "reason" => "ownerReferences changed"} if current["owners"] != object["owners"]
         next {"object" => key, "reason" => "managedFields changed"} if current["managed_fields"] != object["managed_fields"]
         next {"object" => key, "reason" => "volumes changed"} if current["volumes"] != object["volumes"]
@@ -136,7 +147,11 @@ module Conformance
                                          "get", "namespaces,pods", "--all-namespaces", "-o", "json")
       return [] unless status.success?
 
-      items = (JSON.parse(out)["items"] rescue []) || []
+      items = begin
+        JSON.parse(out)["items"]
+      rescue StandardError
+        []
+      end || []
       items.filter_map do |item|
         phase = item.dig("status", "phase")
         deleting = !item.dig("metadata", "deletionTimestamp").nil?
@@ -152,7 +167,7 @@ module Conformance
     # the on-disk state; the driver reports this through a `<stage>-reversible`
     # probe so the check stays a real observation rather than an assumption.
     def reversible?(stage_id, options)
-      driver = options[:driver] || ENV["RUBERNETES_K7_DRIVER"]
+      driver = options[:driver] || ENV.fetch("RUBERNETES_K7_DRIVER", nil)
       return nil if driver.nil? || !File.executable?(driver)
 
       _out, _err, status = Open3.capture3({"KUBECONFIG" => options.fetch(:kubeconfig)},

@@ -102,17 +102,22 @@ class NativeSubresourcesTest < Minitest::Test
     assert_respond_to attached, :read
     underlying_stdout = runtime.process_supervisor.handles.values.fetch(0).stdout
     attached.close
+
     refute_predicate underlying_stdout, :closed?, "closing one attach client closed supervisor-owned stdout"
 
     executed = Rubernetes::Node::ExecService.new(runtime: runtime, trusted: true).exec(container.id, ["/bin/echo", "ok"])
+
     assert_equal "exec\xFF".b, executed.read
-    forwarded = Rubernetes::Node::PortForwardService.new(runtime: runtime, trusted: true).port_forward(container.id, ["127.0.0.1:8080"], timeout: 2)
+    forwarded = Rubernetes::Node::PortForwardService.new(runtime: runtime, trusted: true).port_forward(container.id, ["127.0.0.1:8080"],
+                                                                                                       timeout: 2)
+
     assert_equal "forwarded".b, forwarded.read
 
     manager = Rubernetes::Node::ProbeManager.new(runtime: runtime)
-    assert manager.check(container.id, {"httpGet" => {"port" => 8080}}).success?
-    assert manager.check(container.id, {"tcpSocket" => {"port" => 8080}}).success?
-    assert_equal [:exec, :port_forward, :http_get, :tcp_socket], connector.calls.map(&:first)
+
+    assert_predicate manager.check(container.id, {"httpGet" => {"port" => 8080}}), :success?
+    assert_predicate manager.check(container.id, {"tcpSocket" => {"port" => 8080}}), :success?
+    assert_equal %i[exec port_forward http_get tcp_socket], connector.calls.map(&:first)
   end
 
   def test_native_subresources_fail_closed_without_unsafe_fallbacks
@@ -150,6 +155,7 @@ class NativeSubresourcesTest < Minitest::Test
 
     assert_equal "Running", result.phase
     entry = lifecycle.record("pod-native").fetch(:containers).last
+
     assert_equal entry.fetch(:id), runtime.container_status(entry.fetch(:id)).fetch("id")
     assert_equal "running", runtime.container_status(entry.fetch(:id)).fetch("state")
   end
@@ -167,13 +173,13 @@ class NativeSubresourcesTest < Minitest::Test
 
   private
 
-  def native(**options)
+  def native(**)
     Native.new(
       profile: :pure,
       sandbox_root: File.join(@directory, "sandboxes"),
       log_root: File.join(@directory, "logs"),
       journal_path: File.join(@directory, "journal.wal"),
-      **options
+      **
     )
   end
 

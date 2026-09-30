@@ -34,7 +34,7 @@ class HTTPClientConnectionPoolTest < Minitest::Test
       self.class.lock.synchronize { self.class.live.delete(self) }
     end
 
-    def request(req, _body = nil)
+    def request(_req, _body = nil)
       self.class.lock.synchronize { self.class.requests += 1 }
       if self.class.fail_next
         self.class.fail_next = false
@@ -73,11 +73,13 @@ class HTTPClientConnectionPoolTest < Minitest::Test
     threads = 4.times.map { Thread.new { 10.times { @client.request("GET", "/api/v1/namespaces") } } }
     threads.each(&:join)
     first_wave = FakeNetHTTP.starts
+
     assert_operator first_wave, :<=, 4, "no more connections than concurrent threads"
     assert_equal 40, FakeNetHTTP.requests
 
     # A second wave of new threads reuses the idle connections of the first.
     4.times.map { Thread.new { 10.times { @client.request("GET", "/api/v1/namespaces") } } }.each(&:join)
+
     assert_equal first_wave, FakeNetHTTP.starts
     assert_operator pool_size, :<=, Rubernetes::Client::HTTPClient::POOL_MAX_IDLE_PER_SERVER
   end
@@ -85,6 +87,7 @@ class HTTPClientConnectionPoolTest < Minitest::Test
   def test_idle_pool_is_bounded
     threads = 20.times.map { Thread.new { @client.request("GET", "/api/v1/namespaces") } }
     threads.each(&:join)
+
     assert_operator pool_size, :<=, Rubernetes::Client::HTTPClient::POOL_MAX_IDLE_PER_SERVER
     assert_equal pool_size, FakeNetHTTP.live.length, "connections beyond the bound are finished, not leaked"
   end
@@ -93,6 +96,7 @@ class HTTPClientConnectionPoolTest < Minitest::Test
     @client.request("GET", "/api/v1/namespaces")
     FakeNetHTTP.fail_next = true
     response = @client.request("GET", "/api/v1/namespaces")
+
     assert_equal 200, response.status
     assert_equal 2, FakeNetHTTP.starts
     assert_equal 3, FakeNetHTTP.requests
@@ -103,8 +107,10 @@ class HTTPClientConnectionPoolTest < Minitest::Test
     @client.request("GET", "/api/v1/namespaces")
     old = FakeNetHTTP.live.first
     @client.reset_connections!
-    refute old.started?, "an idle connection of the old generation is finished"
+
+    refute_predicate old, :started?, "an idle connection of the old generation is finished"
     @client.request("GET", "/api/v1/namespaces")
+
     assert_equal 2, FakeNetHTTP.starts
     assert_equal 1, pool_size
   end
@@ -112,8 +118,10 @@ class HTTPClientConnectionPoolTest < Minitest::Test
   def test_a_stream_never_lands_in_the_pool
     chunks = []
     @client.stream("GET", "/api/v1/namespaces") { |chunk| chunks << chunk }
+
     assert_equal 0, pool_size
     @client.request("GET", "/api/v1/namespaces")
+
     assert_equal 1, pool_size
     assert_equal ["{\"kind\":\"Status\"}"], chunks
   end
@@ -121,6 +129,7 @@ class HTTPClientConnectionPoolTest < Minitest::Test
   def test_close_finishes_pooled_connections
     @client.request("GET", "/api/v1/namespaces")
     @client.close
+
     assert_equal 0, pool_size
     assert_empty FakeNetHTTP.live
   end

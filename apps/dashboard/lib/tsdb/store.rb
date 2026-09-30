@@ -67,9 +67,7 @@ module Tsdb
       end
 
       def append(timestamp, value)
-        if @encoder && @encoder.count >= MAX_CHUNK_SAMPLES
-          close_encoder
-        end
+        close_encoder if @encoder && @encoder.count >= MAX_CHUNK_SAMPLES
         @encoder ||= Prom::Gorilla::Encoder.new
         @encoder.append(timestamp, value)
         @last_time = timestamp
@@ -584,6 +582,7 @@ module Tsdb
           # API layer enforces it; here we honour the caller).
           return @db.execute("SELECT id FROM series").flatten
         end
+
         matcher = bounding.first
         values = @db.execute("SELECT DISTINCT value FROM labels WHERE name = ?", [matcher.name]).flatten.select { |v| matcher.match?(v) }
         return [] if values.empty?

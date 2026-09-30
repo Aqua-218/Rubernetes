@@ -170,7 +170,7 @@ module Rubernetes
           message
         end
 
-        def decode_name(buffer, offset, depth = 0)
+        def decode_name(buffer, offset, _depth = 0)
           labels = []
           pointers = 0
           cursor = offset
@@ -187,6 +187,7 @@ module Rubernetes
               # Only backward pointers are legal; a forward or self pointer
               # is how a hostile packet builds an infinite decompression loop.
               raise FormatError, "forward compression pointer" if pointer >= cursor
+
               pointers += 1
               raise FormatError, "compression pointer chain too long" if pointers > MAX_POINTERS
 
@@ -407,6 +408,7 @@ module Rubernetes
           return "" if name.empty?
 
           raise FormatError, "name exceeds #{MAX_NAME_BYTES} bytes" if name.bytesize > MAX_NAME_BYTES - 2
+
           name.split(".", -1).each do |label|
             raise FormatError, "empty DNS label" if label.empty?
             raise FormatError, "label exceeds #{MAX_LABEL_BYTES} bytes" if label.bytesize > MAX_LABEL_BYTES

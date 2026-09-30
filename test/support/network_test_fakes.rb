@@ -51,9 +51,7 @@ module NetworkTestFakes
 
     def link_set(**parameters)
       @calls << parameters
-      if @calls.length == 2
-        raise Rubernetes::Network::NetlinkError, "injected link_set failure"
-      end
+      raise Rubernetes::Network::NetlinkError, "injected link_set failure" if @calls.length == 2
 
       true
     end

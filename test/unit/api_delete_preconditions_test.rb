@@ -32,7 +32,10 @@ class APIDeletePreconditionsTest < Minitest::Test
     # that moves the resourceVersion) before removing it.
     def update(resource:, namespace:, name:, object:, resource_version: nil, **)
       stored = @objects.fetch(name).dig("metadata", "resourceVersion").to_s
-      raise Rubernetes::Storage::MemoryStore::Conflict.new(name, "conflict", resource_version: stored) if resource_version && resource_version.to_s != stored
+      if resource_version && resource_version.to_s != stored
+        raise Rubernetes::Storage::MemoryStore::Conflict.new(name, "conflict",
+                                                             resource_version: stored)
+      end
 
       updated = Marshal.load(Marshal.dump(object))
       updated["metadata"]["resourceVersion"] = (Integer(stored) + 1).to_s
@@ -102,7 +105,7 @@ class APIDeletePreconditionsTest < Minitest::Test
 
     # The precondition matched 1130; the removal is pinned to the version
     # the deleting mark wrote on top of it.
-    assert_equal [["forbid", "1131"]], store.deletes
+    assert_equal [%w[forbid 1131]], store.deletes
   end
 
   private

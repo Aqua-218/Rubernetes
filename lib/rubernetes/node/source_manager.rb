@@ -20,8 +20,8 @@ module Rubernetes
         end
       end
 
-      CONFIG_SOURCE_ANNOTATION = "kubernetes.io/config.source".freeze
-      CONFIG_MIRROR_ANNOTATION = "kubernetes.io/config.mirror".freeze
+      CONFIG_SOURCE_ANNOTATION = "kubernetes.io/config.source"
+      CONFIG_MIRROR_ANNOTATION = "kubernetes.io/config.mirror"
       STATIC_SOURCES = %w[file http].freeze
       MANIFEST_EXTENSIONS = %w[.yaml .yml .json].freeze
 
@@ -74,14 +74,15 @@ module Rubernetes
 
       alias handle_api_event apply_api_event
 
-      def watch(**options)
+      def watch(**)
         return nil unless @api_source&.respond_to?(:watch)
 
-        @api_source.watch(**options)
+        @api_source.watch(**)
       end
 
       def load_static(directory: @manifest_dir)
         return [] if directory.nil?
+
         directory = File.expand_path(directory)
         return [] unless Dir.exist?(directory)
 
@@ -139,7 +140,7 @@ module Rubernetes
           existing = by_key[key]
           if existing.nil? || existing.mirror
             by_key[key] = Source.new(pod: merge_server_metadata(pod, existing&.pod), source: :static,
-                                      key: key, mirror: true)
+                                     key: key, mirror: true)
           end
         end
         by_key.values.sort_by(&:key).map(&:pod)
@@ -214,9 +215,7 @@ module Rubernetes
 
       def normalize_pod_list(value)
         value = Support.value(value, "items", value) if !value.is_a?(Array) && !value.is_a?(Hash)
-        if value.is_a?(Hash) && Support.present?(value, "items")
-          value = Support.value(value, "items", [])
-        end
+        value = Support.value(value, "items", []) if value.is_a?(Hash) && Support.present?(value, "items")
         value = [value] if value.is_a?(Hash) && pod_kind?(value)
         Array(value).filter_map do |item|
           object = Support.object_hash(item)
@@ -278,7 +277,9 @@ module Rubernetes
         annotations = Support.object_hash(metadata["annotations"])
         annotations.delete(CONFIG_MIRROR_ANNOTATION)
         annotations.delete("kubernetes.io/config.path")
-        metadata = metadata.reject { |key, _| %w[uid resourceVersion generation creationTimestamp managedFields deletionTimestamp].include?(key) }
+        metadata = metadata.reject do |key, _|
+          %w[uid resourceVersion generation creationTimestamp managedFields deletionTimestamp].include?(key)
+        end
         metadata["annotations"] = annotations unless annotations.empty?
         normalized["metadata"] = metadata
         Digest::SHA256.hexdigest(JSON.generate(canonical(normalized)))
@@ -298,8 +299,9 @@ module Rubernetes
 
       def invoke_writer(method_name, pod, namespace:, name:)
         return false unless @mirror_writer.respond_to?(method_name)
+
         result = Support.invoke(@mirror_writer, method_name, resource: "v1/pods", namespace: namespace,
-                                name: name, object: pod)
+                                                             name: name, object: pod)
         result != false
       end
 

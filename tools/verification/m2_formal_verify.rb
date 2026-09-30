@@ -153,14 +153,16 @@ module Rubernetes
       private
 
       def verify_profile
-        return {
-          "requested" => false,
-          "available" => false,
-          "success" => false,
-          "status" => "not_requested",
-          "authoritative" => true,
-          "message" => "no external proof profile was requested; formal evidence is not a pass"
-        } unless @proof_profile
+        unless @proof_profile
+          return {
+            "requested" => false,
+            "available" => false,
+            "success" => false,
+            "status" => "not_requested",
+            "authoritative" => true,
+            "message" => "no external proof profile was requested; formal evidence is not a pass"
+          }
+        end
 
         unless File.file?(@proof_profile)
           return {
@@ -200,8 +202,8 @@ module Rubernetes
         else
           source_files = profile["source_files"]
           errors << "source_files must exactly match the selected formal source files" unless source_files == source_manifest["files"]
-          if M2Gate::SHA256_PATTERN.match?(profile["source_sha256"].to_s)
-            errors << "source_sha256 does not match the selected formal source files" unless profile["source_sha256"] == source_manifest["sha256"]
+          if M2Gate::SHA256_PATTERN.match?(profile["source_sha256"].to_s) && !(profile["source_sha256"] == source_manifest["sha256"])
+            errors << "source_sha256 does not match the selected formal source files"
           end
         end
         if profile["skip"] == true || profile["skipped"] == true || profile["ruby_only"] == true || profile["available"] == false
@@ -212,7 +214,6 @@ module Rubernetes
           tools.is_a?(Array) && tools.length == REQUIRED_FORMAL_TOOL_NAMES.length &&
           tools.all? { |tool| tool.is_a?(Hash) && REQUIRED_FORMAL_TOOL_NAMES.include?(tool["name"]) } &&
           tools.map { |tool| tool["name"] }.uniq.sort == REQUIRED_FORMAL_TOOL_NAMES.sort
-        tool_output_records = []
         tool_declarations = []
         Array(tools).each_with_index do |tool, index|
           unless tool.is_a?(Hash)
@@ -230,12 +231,16 @@ module Rubernetes
             errors << "#{label} cannot use skip, ruby_only, or unavailable escape hatches"
           end
           command = tool["command"]
-          errors << "#{label} command must be a non-empty argv" unless command.is_a?(Array) && !command.empty? && command.all? { |part| non_empty_string?(part) }
+          errors << "#{label} command must be a non-empty argv" unless command.is_a?(Array) && !command.empty? && command.all? do |part|
+            non_empty_string?(part)
+          end
           validate_tool_declaration(tool, label, errors, source_manifest)
         end
         errors << "profile_sha256 is required" unless M2Gate::SHA256_PATTERN.match?(profile["profile_sha256"].to_s)
-        if M2Gate::SHA256_PATTERN.match?(profile["profile_sha256"].to_s)
-          errors << "profile_sha256 does not match profile content" unless profile["profile_sha256"] == M2Gate.canonical_document_digest(profile, excluded_keys: ["profile_sha256"])
+        if M2Gate::SHA256_PATTERN.match?(profile["profile_sha256"].to_s) && !(profile["profile_sha256"] == M2Gate.canonical_document_digest(
+          profile, excluded_keys: ["profile_sha256"]
+        ))
+          errors << "profile_sha256 does not match profile content"
         end
         return profile_failure("invalid_schema", errors.join("; ")) unless errors.empty?
 
@@ -282,7 +287,9 @@ module Rubernetes
         errors << "#{label} version is required" unless non_empty_string?(tool["version"])
         errors << "#{label} executable_sha256 is required" unless M2Gate::SHA256_PATTERN.match?(tool["executable_sha256"].to_s)
         errors << "#{label} properties must bind the complete #{name} property set" unless
-          tool["properties"] == FORMAL_PROPERTY_BINDINGS.fetch({"tlc" => "tla", "apalache" => "apalache", "lean" => "lean"}.fetch(name, name), [])
+          tool["properties"] == FORMAL_PROPERTY_BINDINGS.fetch(
+            {"tlc" => "tla", "apalache" => "apalache", "lean" => "lean"}.fetch(name, name), []
+          )
 
         expected_bindings = formal_bindings_for(name, source_manifest)
         errors << "#{label} source_bindings must bind the selected formal sources" unless tool["source_bindings"] == expected_bindings
@@ -296,7 +303,7 @@ module Rubernetes
                            when "lean"
                              executable_name == "lean"
                            when "apalache"
-                             executable_name == "apalache-mc" || executable_name == "apalache"
+                             %w[apalache-mc apalache].include?(executable_name)
                            else
                              false
                            end
@@ -305,7 +312,11 @@ module Rubernetes
         missing_binding = bindings.reject do |path|
           # A bound path may also be carried as an option value (Apalache's
           # --config=PATH form).
-          command.any? { |part| part == path || part == File.join(ROOT, path) || part.end_with?("/#{path}") || part.end_with?("=#{path}") || part.end_with?("=#{File.join(ROOT, path)}") }
+          command.any? do |part|
+            part == path || part == File.join(ROOT,
+                                              path) || part.end_with?("/#{path}") || part.end_with?("=#{path}") || part.end_with?("=#{File.join(ROOT,
+                                                                                                                                                path)}")
+          end
         end
         errors << "#{label} command must bind every selected source/config path" unless missing_binding.empty?
         if name == "tlc"
@@ -338,7 +349,7 @@ module Rubernetes
         end
       end
 
-      def execute_profile_tool(tool, source_manifest)
+      def execute_profile_tool(tool, _source_manifest)
         name = tool["name"]
         command = tool["command"]
         version_command = tool["version_command"]
@@ -447,9 +458,9 @@ module Rubernetes
           line.match?(/Total time|It took me|Finished in|Finished computing|Finished checking|Progress\(|Starting\.\.\.|Starting SANY|Parsing file|Semantic processing|Checking temporal|initial state|states generated|at \(|_apalache-out|m2-formal-|Created by|Output directory|Check the trace|Loading configuration|Writing|Generated|Running in|Tool home|Warning: Please run|Finished by|Running breadth-first|\[pid:|heap and|seed/i)
         end.map do |line|
           line.gsub(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?/, "<timestamp>")
-              .gsub(/[IEW]@\d{2}:\d{2}:\d{2}\.\d{3}/, "<log>")
-              .gsub(/\b\d{2}:\d{2}:\d{2}\b/, "<time>")
-              .gsub(%r{/tmp/[^\s]+}, "<workdir>")
+            .gsub(/[IEW]@\d{2}:\d{2}:\d{2}\.\d{3}/, "<log>")
+            .gsub(/\b\d{2}:\d{2}:\d{2}\b/, "<time>")
+            .gsub(%r{/tmp/[^\s]+}, "<workdir>")
         end.join
       end
 
@@ -555,55 +566,61 @@ module Rubernetes
 
       def verify_tla
         missing = [@tla_source, @tla_config].reject { |path| File.file?(path) }
-        return {
-          "available" => false,
-          "success" => false,
-          "status" => "missing_source",
-          "missing" => missing
-        } unless missing.empty?
+        unless missing.empty?
+          return {
+            "available" => false,
+            "success" => false,
+            "status" => "missing_source",
+            "missing" => missing
+          }
+        end
 
-        return {
-          "available" => false,
-          "success" => false,
-          "status" => "tool_unavailable",
-          "properties" => TLA_PROPERTIES,
-          "message" => "TLC is not installed; Ruby trace verification remains available"
-        } unless tlc_command
+        unless tlc_command
+          return {
+            "available" => false,
+            "success" => false,
+            "status" => "tool_unavailable",
+            "properties" => TLA_PROPERTIES,
+            "message" => "TLC is not installed; Ruby trace verification remains available"
+          }
+        end
 
         command = tlc_command + ["-config", @tla_config, @tla_source]
         run_external(command, "tlc").merge("properties" => TLA_PROPERTIES,
-                                             "source_bindings" => {"tla_source" => source_display_path(@tla_source), "tla_config" => source_display_path(@tla_config)})
+                                           "source_bindings" => {"tla_source" => source_display_path(@tla_source),
+                                                                 "tla_config" => source_display_path(@tla_config)})
       end
 
       def verify_lean
         unless File.file?(@lean_source)
           return {
             "available" => false,
-          "success" => false,
-          "status" => "missing_source",
+            "success" => false,
+            "status" => "missing_source",
             "properties" => LEAN_PROPERTIES,
             "missing" => [@lean_source]
           }
         end
 
         lean = executable("lean")
-        return {
-          "available" => false,
-          "success" => false,
-          "status" => "tool_unavailable",
-          "properties" => LEAN_PROPERTIES,
-          "message" => "Lean is not installed; Ruby trace verification remains available"
-        } unless lean
+        unless lean
+          return {
+            "available" => false,
+            "success" => false,
+            "status" => "tool_unavailable",
+            "properties" => LEAN_PROPERTIES,
+            "message" => "Lean is not installed; Ruby trace verification remains available"
+          }
+        end
 
         run_external([lean, @lean_source], "lean").merge("properties" => LEAN_PROPERTIES,
-                                                            "source_bindings" => {"lean_source" => source_display_path(@lean_source)})
+                                                         "source_bindings" => {"lean_source" => source_display_path(@lean_source)})
       end
 
       def tlc_command
-        if ENV["TLC_COMMAND"] && !ENV["TLC_COMMAND"].strip.empty?
-          return Shellwords.split(ENV.fetch("TLC_COMMAND"))
-        end
-        jar = ENV["TLC_JAR"]
+        return Shellwords.split(ENV.fetch("TLC_COMMAND")) if ENV["TLC_COMMAND"] && !ENV["TLC_COMMAND"].strip.empty?
+
+        jar = ENV.fetch("TLC_JAR", nil)
         jar ||= [
           File.join(ROOT, "third_party", "cache", "tla2tools.jar"),
           "/opt/tla/tla2tools.jar"

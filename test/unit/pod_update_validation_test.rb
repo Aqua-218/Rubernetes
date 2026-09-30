@@ -25,7 +25,9 @@ class PodUpdateValidationTest < Minitest::Test
   end
 
   def affinity(*terms)
-    {"nodeAffinity" => {"requiredDuringSchedulingIgnoredDuringExecution" => {"nodeSelectorTerms" => terms.map { |exprs| {"matchExpressions" => exprs} }}}}
+    {"nodeAffinity" => {"requiredDuringSchedulingIgnoredDuringExecution" => {"nodeSelectorTerms" => terms.map do |exprs|
+      {"matchExpressions" => exprs}
+    end}}}
   end
 
   def errors(old, new)
@@ -79,8 +81,9 @@ class PodUpdateValidationTest < Minitest::Test
     expected = "spec: Forbidden: pod updates may not change fields other than `spec.containers[*].image`,`spec.initContainers[*].image`," \
                "`spec.activeDeadlineSeconds`,`spec.tolerations` (only additions to existing tolerations),`spec.terminationGracePeriodSeconds` " \
                "(allow it to be set to 1 if it was previously negative)\n@@ -40,7 +40,8 @@\n  \"ActiveDeadlineSeconds\": null,\n  \"DNSPolicy\": " \
-               "\"ClusterFirst\",\n  \"NodeSelector\": {\n-  \"a\": \"b\"\n+  \"a\": \"b\",\n+  \"c\": \"d\"\n  },\n  \"ServiceAccountName\": \"\",\n" \
-               "  \"AutomountServiceAccountToken\": null,\n"
+               "\"ClusterFirst\",\n  \"NodeSelector\": {\n-  \"a\": \"b\"\n+  \"a\": \"b\",\n+  \"c\": \"d\"\n  },\n  \"ServiceAccountName\": \"\",\n  " \
+               "\"AutomountServiceAccountToken\": null,\n"
+
     assert_equal [expected], errors(pod("nodeSelector" => {"a" => "b"}), pod("nodeSelector" => {"a" => "b", "c" => "d"}))
     # Semantic equality: an empty list or map equals an absent one; a grace
     # period set to 1 from a negative one is allowed.
@@ -95,9 +98,10 @@ class PodUpdateValidationTest < Minitest::Test
     lib = KV::GoDiffLib
     a = lib.split_lines("a\nb\nc\nd\ne\nf\ng\nh\ni\nj")
     b = lib.split_lines("a\nb\nc\nD\ne\nf\ng\nh\ni\nJ\nk")
+
     assert_equal "@@ -1,10 +1,11 @@\n a\n b\n c\n-d\n+D\n e\n f\n g\n h\n i\n-j\n+J\n+k\n", lib.unified_diff(a, b)
-    long_a = lib.split_lines((["}"] * 150 + ["x"] + ["}"] * 100).join("\n"))
-    long_b = lib.split_lines((["}"] * 150 + ["y"] + ["}"] * 100).join("\n"))
+    long_a = lib.split_lines(((["}"] * 150) + ["x"] + (["}"] * 100)).join("\n"))
+    long_b = lib.split_lines(((["}"] * 150) + ["y"] + (["}"] * 100)).join("\n"))
     # Every "}" is popular: after the "x"/"y" line nothing re-anchors, so the
     # tail is replaced wholesale -- exactly what go-difflib prints.
     assert_equal "@@ -148,104 +148,104 @@\n }\n }\n }\n-x\n#{"-}\n" * 100}+y\n#{"+}\n" * 100}", lib.unified_diff(long_a, long_b)

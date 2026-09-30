@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
-
 module Rubernetes
   module Proxy
     # A transactional in-memory store used by default.  The allocator accepts
@@ -85,7 +83,7 @@ module Rubernetes
     class NodePortAllocator
       DEFAULT_MIN = 30_000
       DEFAULT_MAX = 32_767
-      DEFAULT_RANGE = (DEFAULT_MIN..DEFAULT_MAX).freeze
+      DEFAULT_RANGE = (DEFAULT_MIN..DEFAULT_MAX)
 
       attr_reader :store, :range_min, :range_max
 
@@ -99,19 +97,20 @@ module Rubernetes
           @range_max = Integer(max)
         end
         raise ArgumentError, "node port range is invalid" unless @range_min.between?(1, 65_535) && @range_max.between?(@range_min, 65_535)
+
         @clock = clock
       end
 
       def allocate(service_key = nil, protocol: "TCP", port: nil, requested: nil, transaction: nil, **options)
         service_key ||= options[:service] || options["service"] || options[:service_key] || options["service_key"]
         raise ArgumentError, "service_key is required" if service_key.nil?
+
         normalized_protocol = ModelSupport.normalize_protocol(protocol)
         operation = lambda do |tx|
           normalized_service = service_key.to_s
           service_port = Integer(port || requested || 0)
-          unless service_port.between?(1, 65_535)
-            raise AllocationError, "service port must be between 1 and 65535"
-          end
+          raise AllocationError, "service port must be between 1 and 65535" unless service_port.between?(1, 65_535)
+
           requested_port = requested.nil? ? nil : Integer(requested)
           validate_requested!(requested_port) if requested_port
           existing = find_reservation(tx, normalized_service, normalized_protocol, service_port)
@@ -119,6 +118,7 @@ module Rubernetes
             if requested_port && existing["nodePort"].to_i != requested_port
               raise AllocationError, "service port #{normalized_service}/#{service_port} is already allocated to #{existing["nodePort"]}"
             end
+
             return reservation_from(existing)
           end
           node_port = requested_port || find_free_port(tx, normalized_protocol)
@@ -127,6 +127,7 @@ module Rubernetes
                                           collision["port"].to_i) != reservation_key(normalized_service, normalized_protocol, service_port)
             raise AllocationError, "node port #{node_port} is already allocated"
           end
+
           timestamp = @clock.call
           record = {
             "serviceKey" => normalized_service,
@@ -181,6 +182,7 @@ module Rubernetes
       def release(service_key = nil, protocol: nil, port: nil, **options)
         service_key ||= options[:service] || options["service"] || options[:service_key] || options["service_key"]
         raise ArgumentError, "service_key is required" if service_key.nil?
+
         @store.transaction do |tx|
           keys = tx.reservations.keys.select do |key|
             record = tx.reservations[key]
@@ -243,7 +245,7 @@ module Rubernetes
 
       def reservation_from(record)
         NodePortReservation.new(service_key: record["serviceKey"], protocol: record["protocol"],
-                                 port: record["port"], node_port: record["nodePort"])
+                                port: record["port"], node_port: record["nodePort"])
       end
 
       def replace_service_ports(service, allocated)
@@ -255,7 +257,7 @@ module Rubernetes
                           app_protocol: service_port.app_protocol)
         end
         Service.new(service.raw.merge("metadata" => service.raw.fetch("metadata", {}).merge("name" => service.name,
-                                   "namespace" => service.namespace), "spec" => service.raw.fetch("spec", {}).merge("ports" => ports.map(&:to_h))),
+                                                                                            "namespace" => service.namespace), "spec" => service.raw.fetch("spec", {}).merge("ports" => ports.map(&:to_h))),
                     name: service.name, namespace: service.namespace, uid: service.uid, service_type: service.service_type,
                     cluster_ips: service.cluster_ips, ip_families: service.ip_families, ports: ports,
                     selector: service.selector, session_affinity: service.session_affinity,

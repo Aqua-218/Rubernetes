@@ -32,11 +32,15 @@ module M6FuzzProbe
       ["nul_in_name", with_nul],
       ["invalid_utf8", invalid_utf8],
       ["wrong_types", JSON.generate("apiVersion" => 1, "kind" => [], "metadata" => "x")],
-      ["huge_value", "{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"big\"},\"data\":{\"k\":\"#{"x" * 100_000}\"}}"],
-      ["oversized", "{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"over\"},\"data\":{\"k\":\"#{"y" * 3_200_000}\"}}"],
+      ["huge_value",
+       "{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"big\"},\"data\":{\"k\":\"#{"x" * 100_000}\"}}"],
+      ["oversized",
+       "{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"over\"},\"data\":{\"k\":\"#{"y" * 3_200_000}\"}}"],
       ["yaml_bomb", yaml_bomb],
       ["random_bytes", random.bytes(512)],
-      ["random_json_like", "{" + Array.new(50) { "\"#{random.alphanumeric(5)}\":#{random.rand(3).zero? ? "\"#{random.alphanumeric(8)}\"" : random.rand(1 << 40)}" }.join(",") + "}"]
+      ["random_json_like", "{" + Array.new(50) {
+        "\"#{random.alphanumeric(5)}\":#{random.rand(3).zero? ? "\"#{random.alphanumeric(8)}\"" : random.rand(1 << 40)}"
+      }.join(",") + "}"]
     ]
   end
 
@@ -72,8 +76,12 @@ module M6FuzzProbe
     message = body_document && body_document["message"].to_s
     leaks = message && message.match?(/Error\z|#<|\.rb:\d+|NoMethodError|undefined method/)
     passed = !panic && !leaks && response.status.between?(200, 499)
-    crash_corpus << {"id" => id, "method" => method, "path" => path, "body_sha256" => body && Digest::SHA256.hexdigest(body.to_s), "status" => response.status, "message" => message} unless passed
-    {"id" => id, "method" => method, "path" => path[0, 120], "status" => response.status, "elapsed_seconds" => elapsed.round(4), "panic" => panic == true, "internal_leak" => leaks == true, "passed" => passed}
+    unless passed
+      crash_corpus << {"id" => id, "method" => method, "path" => path, "body_sha256" => body && Digest::SHA256.hexdigest(body.to_s),
+                       "status" => response.status, "message" => message}
+    end
+    {"id" => id, "method" => method, "path" => path[0, 120], "status" => response.status, "elapsed_seconds" => elapsed.round(4),
+     "panic" => panic == true, "internal_leak" => leaks == true, "passed" => passed}
   rescue Timeout::Error
     crash_corpus << {"id" => id, "method" => method, "path" => path, "hang" => true}
     {"id" => id, "method" => method, "path" => path[0, 120], "hang" => true, "passed" => false}
@@ -103,10 +111,12 @@ module M6FuzzProbe
                         body: JSON.generate("apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "n#{index}"}), headers: headers)
     end
     paths(random).each_with_index { |path, index| cases << exercise(service, crash_corpus, "path-#{index}", "GET", path) }
-    content_types = ["application/json", "application/merge-patch+json", "application/strategic-merge-patch+json", "application/json-patch+json", "application/apply-patch+yaml"]
+    content_types = ["application/json", "application/merge-patch+json", "application/strategic-merge-patch+json",
+                     "application/json-patch+json", "application/apply-patch+yaml"]
     iterations.times do |round|
       pairs = Array.new(random.rand(1..20)) do
-        value = [random.rand(1 << 62).to_s, "\"#{random.alphanumeric(random.rand(0..64))}\"", "null", "[]", "{}", "true"].sample(random: random)
+        value = [random.rand(1 << 62).to_s, "\"#{random.alphanumeric(random.rand(0..64))}\"", "null", "[]", "{}",
+                 "true"].sample(random: random)
         "\"#{random.alphanumeric(random.rand(1..40))}\":#{value}"
       end
       body = "{#{pairs.join(",")}}"
@@ -124,7 +134,9 @@ module M6FuzzProbe
     cases.concat(bypass)
     M6ProbeSupport.emit(M6ProbeSupport.report(
       kind: "m6_fuzz_summary", measurement_level: "integration_tested", started_at: started_at, cases: cases,
-      extra: {"seed" => seed, "iterations" => iterations, "crash_corpus" => crash_corpus, "panics" => cases.count { |entry| entry["panic"] },
+      extra: {"seed" => seed, "iterations" => iterations, "crash_corpus" => crash_corpus, "panics" => cases.count do |entry|
+        entry["panic"]
+      end,
               "hangs" => cases.count { |entry| entry["hang"] }, "policy_bypasses" => bypass.count { |entry| !entry["passed"] },
               "sources" => M5ProbeSupport.source_files(%w[lib/rubernetes/api/server.rb lib/rubernetes/security/pipeline.rb lib/rubernetes/api/request.rb])}
     ))

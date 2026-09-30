@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
-
 require_relative "../network/dns"
 require_relative "../network/dns_server"
 
@@ -108,7 +106,7 @@ module Rubernetes
         query = {"allowWatchBookmarks" => "true"}
         query["resourceVersion"] = resource_version if resource_version
         @client.watch_each(resource, api_version: api_version, namespace: :all, query: query,
-                           reconnect: true) do |event|
+                                     reconnect: true) do |event|
           break if stopped?
 
           type = event["type"].to_s

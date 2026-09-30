@@ -62,8 +62,10 @@ class ResourceClaimControllerTest < Minitest::Test
   def test_a_claim_is_created_from_the_template_and_recorded_in_the_pod_status
     result = controller.plan(pod, claims: [], templates: [template])
     create, status = result.operations
+
     assert_equal :create, create.action
     created = create.object
+
     assert_match(/\Ap1-gpu-[bcdfghjklmnpqrstvwxz2456789]{5}\z/, created.dig("metadata", "name"))
     assert_equal "ns", created.dig("metadata", "namespace")
     assert_equal [{"apiVersion" => "v1", "kind" => "Pod", "name" => "p1", "uid" => "uid-p1", "controller" => true, "blockOwnerDeletion" => true}],
@@ -79,6 +81,7 @@ class ResourceClaimControllerTest < Minitest::Test
     owner = pod
     existing = claim("p1-gpu-abcde", owner: owner, pod_claim: "gpu")
     recorded = pod(status: {"resourceClaimStatuses" => [{"name" => "gpu", "resourceClaimName" => "p1-gpu-abcde"}]})
+
     assert_empty controller.plan(recorded, claims: [existing], templates: [template]).operations
   end
 
@@ -86,6 +89,7 @@ class ResourceClaimControllerTest < Minitest::Test
     owner = pod
     existing = claim("p1-gpu-abcde", owner: owner, pod_claim: "gpu")
     operations = controller.plan(owner, claims: [existing], templates: [template]).operations
+
     assert_equal [:status_update], operations.map(&:action)
     assert_equal({"resourceClaimStatuses" => [{"name" => "gpu", "resourceClaimName" => "p1-gpu-abcde"}]}, operations.first.patch)
   end
@@ -94,28 +98,35 @@ class ResourceClaimControllerTest < Minitest::Test
     stranger = claim("p1-gpu-abcde", owner: pod("other"), pod_claim: "gpu")
     recorded = pod(status: {"resourceClaimStatuses" => [{"name" => "gpu", "resourceClaimName" => "p1-gpu-abcde"}]})
     operations = controller.plan(recorded, claims: [stranger], templates: [template]).operations
+
     assert_equal %i[create status_update], operations.map(&:action)
     refute_equal "p1-gpu-abcde", operations.first.object.dig("metadata", "name")
   end
 
   def test_a_missing_template_is_reported_on_the_pod
     result = controller.plan(pod, claims: [], templates: [])
+
     assert_empty result.operations
     event = result.events.fetch(0)
+
     assert_equal "FailedResourceClaimCreation", event["reason"]
     assert_equal "PodResourceClaim gpu: resource claim template \"gpu-template\": resourceclaimtemplate.resource.k8s.io \"gpu-template\" not found",
                  event["message"]
   end
 
   def test_a_scheduled_pod_reserves_its_allocated_claims
-    shared = claim("shared", allocation: {"devices" => {"results" => []}}, reserved: [{"resource" => "pods", "name" => "x", "uid" => "uid-x"}])
+    shared = claim("shared", allocation: {"devices" => {"results" => []}},
+                             reserved: [{"resource" => "pods", "name" => "x", "uid" => "uid-x"}])
     bound = pod(node: "n1", claims: [{"name" => "s", "resourceClaimName" => "shared"}])
     operations = controller.plan(bound, claims: [shared], templates: []).operations
+
     assert_equal [:status_update], operations.map(&:action)
     assert_equal [{"resource" => "pods", "name" => "x", "uid" => "uid-x"}, {"resource" => "pods", "name" => "p1", "uid" => "uid-p1"}],
                  operations.first.patch["reservedFor"]
     # Already reserved, or not allocated: nothing.
-    reserved = claim("shared", allocation: {"devices" => {"results" => []}}, reserved: [{"resource" => "pods", "name" => "p1", "uid" => "uid-p1"}])
+    reserved = claim("shared", allocation: {"devices" => {"results" => []}},
+                               reserved: [{"resource" => "pods", "name" => "p1", "uid" => "uid-p1"}])
+
     assert_empty controller.plan(bound, claims: [reserved], templates: []).operations
     assert_empty controller.plan(bound, claims: [claim("shared")], templates: []).operations
   end
@@ -123,6 +134,7 @@ class ResourceClaimControllerTest < Minitest::Test
   def test_deleted_pods_and_pods_without_claims_are_left_alone
     deleting = pod
     deleting["metadata"]["deletionTimestamp"] = "2026-01-01T00:00:00Z"
+
     assert_empty controller.plan(deleting, claims: [], templates: [template]).operations
     assert_empty controller.plan(pod(claims: []), claims: [], templates: []).operations
   end
@@ -130,6 +142,7 @@ class ResourceClaimControllerTest < Minitest::Test
   def test_a_template_event_plans_the_pods_that_use_it
     adapter = Adapter.new([pod("p1"), pod("p2", claims: [{"name" => "x", "resourceClaimTemplateName" => "other"}]), template])
     operations = controller.plan(template, store: adapter).operations
+
     assert_equal %i[create status_update], operations.map(&:action)
     assert_equal "p1", operations.first.object.dig("metadata", "ownerReferences", 0, "name")
   end
@@ -138,11 +151,13 @@ class ResourceClaimControllerTest < Minitest::Test
     same_name = claim("p1")
     adapter = Adapter.new([pod("p1"), same_name, template])
     operations = controller.plan(same_name, store: adapter).operations
+
     assert_includes operations.map(&:action), :create
   end
 
   def test_watches_route_pods_and_templates_to_themselves
     specs = Controller::AdvancedMiscControllerFactory.watch_specs("resourceclaim-controller")
+
     assert_equal({"ResourceClaim" => :fan_out, "Pod" => :self, "ResourceClaimTemplate" => :self},
                  specs.to_h { |spec| [spec.resource.kind, spec.route] })
   end
@@ -155,6 +170,7 @@ class ResourceClaimControllerTest < Minitest::Test
            "status" => {"phase" => "Succeeded", "resourceClaimStatuses" => [{"name" => "b", "resourceClaimName" => "p-b-xyz"}],
                         "extendedResourceClaimStatus" => {"resourceClaimName" => "p-extended-resources-q"}}}
     spec = Controller::AdvancedMiscControllerFactory.watch_specs("resourceclaim-controller").find { |s| s.resource.kind == "Pod" }
+
     assert_equal %w[ns/p ns/p-extended-resources-q ns/shared ns/p-b-xyz], spec.queue_key.call(pod)
 
     claim = {"apiVersion" => "resource.k8s.io/v1", "kind" => "ResourceClaim",
@@ -162,6 +178,7 @@ class ResourceClaimControllerTest < Minitest::Test
              "spec" => {}, "status" => {"allocation" => {"devices" => {"results" => []}}, "reservedFor" => [{"resource" => "pods", "name" => "p", "uid" => "p1"}]}}
     operations = controller.plan(claim, store: Adapter.new([pod, claim])).operations
     status = operations.find { |operation| operation.action == :status_update }
+
     assert_equal({"reservedFor" => []}, status.patch, "a done Pod's reservation is dropped and the claim deallocated")
     assert(operations.any? { |operation| operation.action == :update && operation.object.dig("metadata", "finalizers") == [] })
   end

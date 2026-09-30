@@ -17,9 +17,9 @@ module Promql
       "avg_over_time" => [[:matrix], false, :vector],
       "ceil" => [[:vector], false, :vector],
       "changes" => [[:matrix], false, :vector],
-      "clamp" => [[:vector, :scalar, :scalar], false, :vector],
-      "clamp_max" => [[:vector, :scalar], false, :vector],
-      "clamp_min" => [[:vector, :scalar], false, :vector],
+      "clamp" => [%i[vector scalar scalar], false, :vector],
+      "clamp_max" => [%i[vector scalar], false, :vector],
+      "clamp_min" => [%i[vector scalar], false, :vector],
       "cos" => [[:vector], false, :vector],
       "cosh" => [[:vector], false, :vector],
       "count_over_time" => [[:matrix], false, :vector],
@@ -30,17 +30,17 @@ module Promql
       "deg" => [[:vector], false, :vector],
       "delta" => [[:matrix], false, :vector],
       "deriv" => [[:matrix], false, :vector],
-      "double_exponential_smoothing" => [[:matrix, :scalar, :scalar], false, :vector],
+      "double_exponential_smoothing" => [%i[matrix scalar scalar], false, :vector],
       "exp" => [[:vector], false, :vector],
       "floor" => [[:vector], false, :vector],
-      "histogram_quantile" => [[:scalar, :vector], false, :vector],
-      "holt_winters" => [[:matrix, :scalar, :scalar], false, :vector],
+      "histogram_quantile" => [%i[scalar vector], false, :vector],
+      "holt_winters" => [%i[matrix scalar scalar], false, :vector],
       "hour" => [[:vector], true, :vector],
       "idelta" => [[:matrix], false, :vector],
       "increase" => [[:matrix], false, :vector],
       "irate" => [[:matrix], false, :vector],
-      "label_join" => [[:vector, :string, :string, :string], true, :vector],
-      "label_replace" => [[:vector, :string, :string, :string, :string], false, :vector],
+      "label_join" => [%i[vector string string string], true, :vector],
+      "label_replace" => [%i[vector string string string string], false, :vector],
       "last_over_time" => [[:matrix], false, :vector],
       "ln" => [[:vector], false, :vector],
       "log10" => [[:vector], false, :vector],
@@ -51,20 +51,20 @@ module Promql
       "minute" => [[:vector], true, :vector],
       "month" => [[:vector], true, :vector],
       "pi" => [[], false, :scalar],
-      "predict_linear" => [[:matrix, :scalar], false, :vector],
+      "predict_linear" => [%i[matrix scalar], false, :vector],
       "present_over_time" => [[:matrix], false, :vector],
-      "quantile_over_time" => [[:scalar, :matrix], false, :vector],
+      "quantile_over_time" => [%i[scalar matrix], false, :vector],
       "rad" => [[:vector], false, :vector],
       "rate" => [[:matrix], false, :vector],
       "resets" => [[:matrix], false, :vector],
-      "round" => [[:vector, :scalar], true, :vector],
+      "round" => [%i[vector scalar], true, :vector],
       "scalar" => [[:vector], false, :scalar],
       "sgn" => [[:vector], false, :vector],
       "sin" => [[:vector], false, :vector],
       "sinh" => [[:vector], false, :vector],
       "sort" => [[:vector], false, :vector],
-      "sort_by_label" => [[:vector, :string], true, :vector],
-      "sort_by_label_desc" => [[:vector, :string], true, :vector],
+      "sort_by_label" => [%i[vector string], true, :vector],
+      "sort_by_label_desc" => [%i[vector string], true, :vector],
       "sort_desc" => [[:vector], false, :vector],
       "sqrt" => [[:vector], false, :vector],
       "stddev_over_time" => [[:matrix], false, :vector],
@@ -95,9 +95,9 @@ module Promql
         expected = variadic ? "at least #{required}" : types.length.to_s
         raise ParseError, "expected #{expected} argument(s) in call to #{name.inspect}, got #{args.length}"
       end
-      if name == "label_join" && args.length < 3
-        raise ParseError, "expected at least 3 argument(s) in call to \"label_join\", got #{args.length}"
-      end
+      return unless name == "label_join" && args.length < 3
+
+      raise ParseError, "expected at least 3 argument(s) in call to \"label_join\", got #{args.length}"
     end
 
     def check_types!(call)
@@ -109,6 +109,7 @@ module Promql
         actual = arg.type
         actual = :scalar if actual == :scalar
         next if actual == expected
+
         # A number literal is also acceptable where a scalar is expected; a
         # subquery yields a matrix.
         raise ParseError, "expected type #{expected} in call to function #{call.func.inspect}, got #{actual} for argument #{index + 1}"

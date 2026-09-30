@@ -33,8 +33,8 @@ class NodeRestrictionUpstreamTest < Minitest::Test
                                        namespace: namespace, name: name, object: object, old_object: old, subresource: subresource))
   end
 
-  def rejected(message = nil, &block)
-    error = assert_raises(A::Rejected, &block)
+  def rejected(message = nil, &)
+    error = assert_raises(A::Rejected, &)
     assert_includes error.message, message if message
     error
   end
@@ -46,6 +46,7 @@ class NodeRestrictionUpstreamTest < Minitest::Test
     admit("DELETE", "pods", name: "mine", old: {"spec" => {"nodeName" => "n1"}})
     rejected("can only delete pods with spec.nodeName set to itself") { admit("DELETE", "pods", name: "theirs") }
     error = rejected { admit("DELETE", "pods", name: "gone") }
+
     assert_equal 404, error.code
     rejected("unexpected pod subresource \"binding\"") { admit("CREATE", "pods", name: "mine", subresource: "binding", object: {}) }
   end
@@ -53,7 +54,8 @@ class NodeRestrictionUpstreamTest < Minitest::Test
   def test_pod_status
     old = {"metadata" => {"labels" => {"a" => "1"}}, "spec" => {"nodeName" => "n1"},
            "status" => {"resourceClaimStatuses" => [{"name" => "gpu", "resourceClaimName" => "c1"}]}}
-    admit("UPDATE", "pods", name: "mine", subresource: "status", old: old, object: old.merge("status" => old["status"].merge("phase" => "Running")))
+    admit("UPDATE", "pods", name: "mine", subresource: "status", old: old,
+                            object: old.merge("status" => old["status"].merge("phase" => "Running")))
     rejected("cannot update labels through pod status") do
       admit("UPDATE", "pods", name: "mine", subresource: "status", old: old, object: old.merge("metadata" => {"labels" => {"a" => "2"}}))
     end
@@ -66,7 +68,8 @@ class NodeRestrictionUpstreamTest < Minitest::Test
                               object: old.merge("status" => old["status"].merge("extendedResourceClaimStatus" => {"resourceClaimName" => "x"})))
     end
     rejected("can only update pod status for pods with spec.nodeName set to itself") do
-      admit("UPDATE", "pods", name: "theirs", subresource: "status", old: {"spec" => {"nodeName" => "n2"}}, object: {"spec" => {"nodeName" => "n2"}})
+      admit("UPDATE", "pods", name: "theirs", subresource: "status", old: {"spec" => {"nodeName" => "n2"}},
+                              object: {"spec" => {"nodeName" => "n2"}})
     end
   end
 
@@ -88,13 +91,14 @@ class NodeRestrictionUpstreamTest < Minitest::Test
     end
     rejected("not allowed to set the following labels: foo.k8s.io/x, node-restriction.kubernetes.io/tier") do
       admit("CREATE", "nodes", namespace: "", object: {"metadata" => {"name" => "n1",
-                                                                     "labels" => {"node-restriction.kubernetes.io/tier" => "a", "foo.k8s.io/x" => "b",
-                                                                                  "x.node.kubernetes.io/ok" => "c", "kubelet.kubernetes.io/ok" => "d"}}})
+                                                                      "labels" => {"node-restriction.kubernetes.io/tier" => "a", "foo.k8s.io/x" => "b",
+                                                                                   "x.node.kubernetes.io/ok" => "c", "kubelet.kubernetes.io/ok" => "d"}}})
     end
     rejected("is not allowed to modify node \"n2\"") { admit("UPDATE", "nodes", namespace: "", name: "n2", object: {}, old: {}) }
     old = {"metadata" => {"name" => "n1", "labels" => {"kubernetes.io/arch" => "amd64"}}}
     rejected("not allowed to modify taints") do
-      admit("UPDATE", "nodes", namespace: "", name: "n1", subresource: "status", old: old, object: old.merge("spec" => {"taints" => [{"key" => "k"}]}))
+      admit("UPDATE", "nodes", namespace: "", name: "n1", subresource: "status", old: old,
+                               object: old.merge("spec" => {"taints" => [{"key" => "k"}]}))
     end
     rejected("is not allowed to modify labels: kubernetes.io/role") do
       admit("UPDATE", "nodes", namespace: "", name: "n1", old: old,
@@ -130,16 +134,21 @@ class NodeRestrictionUpstreamTest < Minitest::Test
     @context.feature_gates["ServiceAccountNodeAudienceRestriction"] = false
     ref = {"apiVersion" => "v1", "kind" => "Pod", "name" => "mine", "uid" => "mine-uid"}
     admit("CREATE", "serviceaccounts", name: "sa", subresource: "token", object: token(ref))
-    rejected("node requested token not bound to a pod") { admit("CREATE", "serviceaccounts", name: "sa", subresource: "token", object: token(nil)) }
+    rejected("node requested token not bound to a pod") do
+      admit("CREATE", "serviceaccounts", name: "sa", subresource: "token", object: token(nil))
+    end
     rejected("node requested token not bound to a pod") do
       admit("CREATE", "serviceaccounts", name: "sa", subresource: "token", object: token(ref.merge("kind" => "Secret")))
     end
-    rejected("without a uid") { admit("CREATE", "serviceaccounts", name: "sa", subresource: "token", object: token(ref.merge("uid" => ""))) }
+    rejected("without a uid") do
+      admit("CREATE", "serviceaccounts", name: "sa", subresource: "token", object: token(ref.merge("uid" => "")))
+    end
     rejected("does not match the UID in record") do
       admit("CREATE", "serviceaccounts", name: "sa", subresource: "token", object: token(ref.merge("uid" => "stale")))
     end
     rejected("bound to a pod scheduled on a different node") do
-      admit("CREATE", "serviceaccounts", name: "sa", subresource: "token", object: token(ref.merge("name" => "theirs", "uid" => "theirs-uid")))
+      admit("CREATE", "serviceaccounts", name: "sa", subresource: "token",
+                                         object: token(ref.merge("name" => "theirs", "uid" => "theirs-uid")))
     end
     admit("UPDATE", "serviceaccounts", name: "sa", object: {}, old: {})
   end
@@ -149,12 +158,20 @@ class NodeRestrictionUpstreamTest < Minitest::Test
     rejected("same name as the requesting node") do
       admit("CREATE", "leases", group: "coordination.k8s.io", namespace: "kube-node-lease", object: {"metadata" => {"name" => "n2"}})
     end
-    rejected("kube-node-lease") { admit("UPDATE", "leases", group: "coordination.k8s.io", namespace: "default", name: "n1", object: {}, old: {}) }
+    rejected("kube-node-lease") do
+      admit("UPDATE", "leases", group: "coordination.k8s.io", namespace: "default", name: "n1", object: {}, old: {})
+    end
     admit("CREATE", "csinodes", group: "storage.k8s.io", namespace: "", object: {"metadata" => {"name" => "n1"}})
-    rejected("CSINode with the same name") { admit("CREATE", "csinodes", group: "storage.k8s.io", namespace: "", object: {"metadata" => {"name" => "n2"}}) }
-    rejected("CSINode with the same name") { admit("UPDATE", "csinodes", group: "storage.k8s.io", namespace: "", name: "n2", object: {}, old: {}) }
+    rejected("CSINode with the same name") do
+      admit("CREATE", "csinodes", group: "storage.k8s.io", namespace: "", object: {"metadata" => {"name" => "n2"}})
+    end
+    rejected("CSINode with the same name") do
+      admit("UPDATE", "csinodes", group: "storage.k8s.io", namespace: "", name: "n2", object: {}, old: {})
+    end
     admit("CREATE", "resourceslices", group: "resource.k8s.io", namespace: "", object: {"spec" => {"nodeName" => "n1"}})
-    rejected("can only create ResourceSlice") { admit("CREATE", "resourceslices", group: "resource.k8s.io", namespace: "", object: {"spec" => {}}) }
+    rejected("can only create ResourceSlice") do
+      admit("CREATE", "resourceslices", group: "resource.k8s.io", namespace: "", object: {"spec" => {}})
+    end
     rejected("can only delete ResourceSlice") do
       admit("DELETE", "resourceslices", group: "resource.k8s.io", namespace: "", name: "s", old: {"spec" => {"nodeName" => "n2"}})
     end
@@ -196,14 +213,18 @@ class NodeRestrictionUpstreamTest < Minitest::Test
     error = rejected("names node UID") do
       admit("CREATE", "podcertificaterequests", group: "certificates.k8s.io", object: {"spec" => request["spec"].merge("nodeUID" => "old")})
     end
+
     assert_equal 500, error.code, "informer lag: not Forbidden"
     rejected("is not the requesting node") do
       admit("CREATE", "podcertificaterequests", group: "certificates.k8s.io", object: {"spec" => request["spec"].merge("nodeName" => "n2")})
     end
     rejected("differs from running pod") do
-      admit("CREATE", "podcertificaterequests", group: "certificates.k8s.io", object: {"spec" => request["spec"].merge("serviceAccountName" => "x")})
+      admit("CREATE", "podcertificaterequests", group: "certificates.k8s.io",
+                                                object: {"spec" => request["spec"].merge("serviceAccountName" => "x")})
     end
-    rejected("unexpected operation") { admit("UPDATE", "podcertificaterequests", group: "certificates.k8s.io", object: request, old: request) }
+    rejected("unexpected operation") do
+      admit("UPDATE", "podcertificaterequests", group: "certificates.k8s.io", object: request, old: request)
+    end
   end
 
   def test_other_users_and_unnamed_nodes

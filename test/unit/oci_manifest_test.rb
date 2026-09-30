@@ -12,13 +12,14 @@ class OCIManifestTest < Minitest::Test
       "schemaVersion" => 2,
       "mediaType" => Rubernetes::Image::MediaTypes::OCI_IMAGE_INDEX,
       "manifests" => [
-        descriptor("amd64", "linux", "sha256:#{'a' * 64}"),
-        descriptor("arm64", "linux", "sha256:#{'b' * 64}")
+        descriptor("amd64", "linux", "sha256:#{"a" * 64}"),
+        descriptor("arm64", "linux", "sha256:#{"b" * 64}")
       ]
     ))
 
     selected = index.select(os: "linux", architecture: "arm64")
-    assert_equal "sha256:#{'b' * 64}", selected.digest.to_s
+
+    assert_equal "sha256:#{"b" * 64}", selected.digest.to_s
     assert_raises(Rubernetes::Image::ManifestError) { index.select(os: "linux", architecture: "ppc64le") }
   end
 
@@ -28,14 +29,14 @@ class OCIManifestTest < Minitest::Test
       "mediaType" => Rubernetes::Image::MediaTypes::OCI_IMAGE_MANIFEST,
       "config" => {
         "mediaType" => Rubernetes::Image::MediaTypes::OCI_IMAGE_CONFIG,
-        "digest" => "sha256:#{'a' * 64}",
+        "digest" => "sha256:#{"a" * 64}",
         "size" => 1
       },
       "layers" => []
     )
 
     assert_raises(Rubernetes::Image::DigestMismatch) do
-      Rubernetes::Image::Manifest.parse(raw, expected_digest: "sha256:#{'b' * 64}")
+      Rubernetes::Image::Manifest.parse(raw, expected_digest: "sha256:#{"b" * 64}")
     end
     assert_raises(Rubernetes::Image::ManifestError) do
       Rubernetes::Image::Manifest.parse(raw, expected_size: raw.bytesize + 1)
@@ -44,10 +45,10 @@ class OCIManifestTest < Minitest::Test
 
   def test_rejects_duplicate_keys_in_manifest_index_and_config_json
     manifest = <<~JSON.chomp
-      {"schemaVersion":2,"schemaVersion":2,"mediaType":"#{Rubernetes::Image::MediaTypes::OCI_IMAGE_MANIFEST}","config":{"mediaType":"#{Rubernetes::Image::MediaTypes::OCI_IMAGE_CONFIG}","digest":"sha256:#{'a' * 64}","size":2},"layers":[]}
+      {"schemaVersion":2,"schemaVersion":2,"mediaType":"#{Rubernetes::Image::MediaTypes::OCI_IMAGE_MANIFEST}","config":{"mediaType":"#{Rubernetes::Image::MediaTypes::OCI_IMAGE_CONFIG}","digest":"sha256:#{"a" * 64}","size":2},"layers":[]}
     JSON
     index = <<~JSON.chomp
-      {"schemaVersion":2,"mediaType":"#{Rubernetes::Image::MediaTypes::OCI_IMAGE_INDEX}","manifests":[{"mediaType":"#{Rubernetes::Image::MediaTypes::OCI_IMAGE_MANIFEST}","digest":"sha256:#{'a' * 64}","digest":"sha256:#{'b' * 64}","size":1,"platform":{"os":"linux","architecture":"amd64"}}]}
+      {"schemaVersion":2,"mediaType":"#{Rubernetes::Image::MediaTypes::OCI_IMAGE_INDEX}","manifests":[{"mediaType":"#{Rubernetes::Image::MediaTypes::OCI_IMAGE_MANIFEST}","digest":"sha256:#{"a" * 64}","digest":"sha256:#{"b" * 64}","size":1,"platform":{"os":"linux","architecture":"amd64"}}]}
     JSON
 
     assert_raises(Rubernetes::Image::ManifestError) { Rubernetes::Image::Manifest.parse(manifest) }

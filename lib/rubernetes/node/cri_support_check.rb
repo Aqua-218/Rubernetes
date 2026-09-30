@@ -27,8 +27,10 @@ module Rubernetes
             unimplemented = code.to_i == Runtime::CRI::Client::UNIMPLEMENTED || error.message.to_s.match?(/unimplemented|unknown method|not implemented/i)
             if unimplemented
               metrics.cri_losing_support(LOSING_SUPPORT_VERSION) if metrics.respond_to?(:cri_losing_support)
-              logger&.warn("cri.runtime_config_unimplemented", handler: backend.respond_to?(:handler) ? backend.handler : nil,
-                                                              message: "CRI implementation should be updated to support RuntimeConfig") if logger.respond_to?(:warn)
+              if logger.respond_to?(:warn)
+                logger&.warn("cri.runtime_config_unimplemented", handler: backend.respond_to?(:handler) ? backend.handler : nil,
+                                                                 message: "CRI implementation should be updated to support RuntimeConfig")
+              end
             end
             unimplemented
           end

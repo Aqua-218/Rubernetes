@@ -33,7 +33,7 @@ class NodeReadinessGatesTest < Minitest::Test
     aggregator.aggregate(pod: pod_object, state: running_state, phase: "Running",
                          reason: nil, message: nil, start_time: Time.at(1_699_999_000).utc,
                          pod_ip: "10.0.0.1", pod_ips: ["10.0.0.1"], host_ip: "10.0.0.254")
-             .conditions.to_h { |entry| [entry.type, entry.status] }
+      .conditions.to_h { |entry| [entry.type, entry.status] }
   end
 
   def test_a_pod_without_gates_is_ready

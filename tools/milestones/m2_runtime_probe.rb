@@ -15,7 +15,7 @@ module M2RuntimeProbe
 
   def run_for(architecture)
     levels = [
-      exercise_level("L0", :pure, architecture) { |runtime|
+      exercise_level("L0", :pure, architecture) do |runtime|
         sandbox = runtime.run_sandbox({"request_id" => "m2-l0"})
         container = runtime.create_container(sandbox, {"id" => "m2-l0-container", "command" => ["/bin/true"]})
         runtime.start_container(container)
@@ -23,8 +23,8 @@ module M2RuntimeProbe
         runtime.stop_sandbox(sandbox)
         runtime.remove_sandbox(sandbox)
         runtime.sandboxes.empty?
-      },
-      exercise_level("L1", :fake_io, architecture) { |runtime|
+      end,
+      exercise_level("L1", :fake_io, architecture) do |runtime|
         sandbox = runtime.run_sandbox({"request_id" => "m2-l1"})
         container = runtime.create_container(sandbox, {"id" => "m2-container", "command" => ["/bin/true"]})
         runtime.start_container(container)
@@ -32,7 +32,7 @@ module M2RuntimeProbe
         runtime.stop_sandbox(sandbox)
         runtime.remove_sandbox(sandbox)
         runtime.sandboxes.empty?
-      },
+      end,
       exercise_l2(architecture)
     ]
     l3 = exercise_l3(architecture)

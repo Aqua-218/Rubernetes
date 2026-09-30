@@ -29,7 +29,7 @@ module Conformance
     def source_tree_digest
       @source_tree_digest ||= begin
         files = Dir.glob(File.join(ROOT, "{lib,exe,tools,spec,test,verification}/**/*"))
-                   .select { |path| File.file?(path) }.sort
+          .select { |path| File.file?(path) }.sort
         digest = Digest::SHA256.new
         files.each do |path|
           digest << path.delete_prefix("#{ROOT}/")
@@ -48,9 +48,8 @@ module Conformance
       path = File.join(ROOT, "build/conformance/bin", name)
       return path if File.executable?(path)
 
-      found = ENV.fetch("PATH", "").split(File::PATH_SEPARATOR)
-                 .map { |dir| File.join(dir, name) }.find { |candidate| File.executable?(candidate) }
-      found
+      ENV.fetch("PATH", "").split(File::PATH_SEPARATOR)
+        .map { |dir| File.join(dir, name) }.find { |candidate| File.executable?(candidate) }
     end
 
     def cluster_reachable?(kubeconfig)
@@ -90,9 +89,9 @@ module Conformance
       Open3.popen3(env, *command, chdir: chdir, pgroup: true) do |stdin, out, err, thread|
         stdin.close
         readers = {out => stdout, err => stderr}
-        deadline = timeout && Process.clock_gettime(Process::CLOCK_MONOTONIC) + Float(timeout)
+        deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + Float(timeout))
         until readers.empty?
-          remaining = deadline && deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          remaining = deadline && (deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC))
           if remaining && remaining <= 0
             timed_out = true
             break
@@ -102,11 +101,9 @@ module Conformance
           break if ready.nil? && !thread.alive?
 
           Array(ready && ready.first).each do |io|
-            begin
-              readers.fetch(io) << io.readpartial(65_536)
-            rescue EOFError, IOError
-              readers.delete(io)
-            end
+            readers.fetch(io) << io.readpartial(65_536)
+          rescue EOFError, IOError
+            readers.delete(io)
           end
         end
         if timed_out
@@ -246,7 +243,10 @@ module Conformance
         retrieve = Lanes.capture([sonobuoy, "retrieve", directory, "--kubeconfig", kubeconfig])
         artifacts << Lanes.record(directory, "sonobuoy-retrieve.json", retrieve)
         archive = Dir.glob(File.join(directory, "*.tar.gz")).sort.first
-        return Lanes.incomplete("K2", "sonobuoy produced no results archive", "execution" => execution.slice("exit_status", "stderr")) if archive.nil?
+        if archive.nil?
+          return Lanes.incomplete("K2", "sonobuoy produced no results archive",
+                                  "execution" => execution.slice("exit_status", "stderr"))
+        end
 
         artifacts << {"path" => archive.delete_prefix("#{ROOT}/"), "sha256" => Digest::SHA256.file(archive).hexdigest}
         passed = execution.fetch("exit_status").zero? && retrieve.fetch("exit_status").zero?
@@ -268,7 +268,9 @@ module Conformance
         ledger = JSON.parse(File.read(LEDGER))
         inventory = ledger.fetch("tests", [])
         classified = inventory.group_by { |entry| entry["classification"] }
-        unclassified = inventory.reject { |entry| %w[required platform-inapplicable provider-private implementation-internal].include?(entry["classification"]) }
+        unclassified = inventory.reject do |entry|
+          %w[required platform-inapplicable provider-private implementation-internal].include?(entry["classification"])
+        end
         unlinked = inventory.select do |entry|
           %w[provider-private implementation-internal].include?(entry["classification"]) &&
             entry["external_contract"] == true && entry["replacement_test"].to_s.empty?
@@ -286,7 +288,10 @@ module Conformance
         end
 
         binary = Lanes.tool_path("e2e.test")
-        return Lanes.incomplete("K3", "upstream e2e.test binary is not built; run `rake m8:e2e_build`", "artifacts" => artifacts) if binary.nil?
+        if binary.nil?
+          return Lanes.incomplete("K3", "upstream e2e.test binary is not built; run `rake m8:e2e_build`",
+                                  "artifacts" => artifacts)
+        end
 
         required = inventory.select { |entry| entry["classification"] == "required" }
         execution = Lanes.capture([binary, "--provider=skeleton", "--kubeconfig", kubeconfig,
@@ -331,7 +336,10 @@ module Conformance
         oracle = options[:oracle_kubeconfig]
         return Lanes.incomplete("K5", "no oracle kubeconfig: K5 compares against a real Kubernetes v1.36.2 cluster") if oracle.nil?
         return Lanes.incomplete("K5", "oracle kubeconfig does not reach a cluster") unless Lanes.cluster_reachable?(oracle)
-        return Lanes.incomplete("K5", "no Rubernetes kubeconfig to compare against the oracle") unless Lanes.cluster_reachable?(options[:kubeconfig])
+        unless Lanes.cluster_reachable?(options[:kubeconfig])
+          return Lanes.incomplete("K5",
+                                  "no Rubernetes kubeconfig to compare against the oracle")
+        end
 
         differential = File.join(ROOT, "tools/conformance/k5_differential.rb")
         execution = Lanes.capture([RbConfig.ruby, differential,
@@ -360,7 +368,7 @@ module Conformance
         return Lanes.incomplete("K6", "project corpus #{CORPUS.delete_prefix("#{ROOT}/")} is missing") unless File.file?(CORPUS)
 
         require "yaml"
-        corpus = YAML.safe_load(File.read(CORPUS))
+        corpus = YAML.safe_load_file(CORPUS)
         projects = corpus.fetch("projects", [])
         shape = Lanes.corpus_shape(projects)
         artifacts = [Lanes.record(directory, "corpus-shape.json", shape)]
@@ -392,7 +400,10 @@ module Conformance
       module_function
 
       def run(options:, profile:, directory:)
-        return Lanes.incomplete("K7", "no reachable cluster for the upgrade and recovery lane") unless Lanes.cluster_reachable?(options[:kubeconfig])
+        unless Lanes.cluster_reachable?(options[:kubeconfig])
+          return Lanes.incomplete("K7",
+                                  "no reachable cluster for the upgrade and recovery lane")
+        end
 
         runner = File.join(ROOT, "tools/conformance/k7_lifecycle.rb")
         execution = Lanes.capture([RbConfig.ruby, runner, "--kubeconfig", options[:kubeconfig], "--output", directory])
@@ -458,7 +469,9 @@ module Conformance
     def join_conformance_codenames(junit_path)
       definition = File.join(ROOT, "third_party/kubernetes/v1.36.2/conformance.yaml")
       codenames = if File.file?(definition)
-                    File.read(definition).scan(/^\s*codename:\s*(.+)$/).flatten.map { |name| name.strip.delete_prefix("'").delete_suffix("'") }
+                    File.read(definition).scan(/^\s*codename:\s*(.+)$/).flatten.map do |name|
+                      name.strip.delete_prefix("'").delete_suffix("'")
+                    end
                   else
                     []
                   end
@@ -491,12 +504,12 @@ module Conformance
         "fully_pinned" => pinned.length,
         "satisfies_minimums" =>
           projects.length >= 30 &&
-          categories.fetch("helm-chart", 0) >= 10 &&
-          categories.fetch("operator", 0) >= 10 &&
-          categories.fetch("crd-webhook", 0) >= 5 &&
-          categories.fetch("statefulset-pvc", 0) >= 5 &&
-          (required_domains - domains).empty? &&
-          pinned.length == projects.length
+            categories.fetch("helm-chart", 0) >= 10 &&
+            categories.fetch("operator", 0) >= 10 &&
+            categories.fetch("crd-webhook", 0) >= 5 &&
+            categories.fetch("statefulset-pvc", 0) >= 5 &&
+            (required_domains - domains).empty? &&
+            pinned.length == projects.length
       }
     end
   end

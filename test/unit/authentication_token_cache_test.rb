@@ -13,7 +13,10 @@ class AuthenticationTokenCacheTest < Minitest::Test
   class Counting
     attr_reader :calls
 
-    def initialize(result) = (@result = result; @calls = 0)
+    def initialize(result)
+      @result = result
+      @calls = 0
+    end
 
     def authenticate(_context)
       @calls += 1
@@ -45,14 +48,17 @@ class AuthenticationTokenCacheTest < Minitest::Test
     assert_equal 1, inner.calls
     now += 10.5
     cache.authenticate(context("t1"))
+
     assert_equal 2, inner.calls, "expired entries are verified again"
     cache.authenticate(context("t2"))
+
     assert_equal 3, inner.calls, "another token is another entry"
   end
 
   def test_failures_and_unrecognised_tokens_are_not_cached
     inner = Counting.new(nil)
     cache = S::Authentication::TokenCache.new(inner)
+
     2.times { assert_nil cache.authenticate(context("t")) }
     assert_equal 2, inner.calls
 
@@ -67,6 +73,7 @@ class AuthenticationTokenCacheTest < Minitest::Test
     cache.authenticate_token("t", ["api"])
     cache.authenticate_token("t", ["api"])
     cache.authenticate_token("t", ["vault"])
+
     assert_equal 2, inner.calls
   end
 
@@ -74,6 +81,7 @@ class AuthenticationTokenCacheTest < Minitest::Test
     inner = Counting.new(result)
     cache = S::Authentication::TokenCache.new(inner)
     2.times { cache.authenticate(S::Authentication::RequestContext.new(headers: {}, path: "/api")) }
+
     assert_equal 2, inner.calls
     assert_equal :inner, cache.issue_marker
   end

@@ -21,9 +21,11 @@ class NodeAllocatableTest < Minitest::Test
 
   def test_the_default_eviction_thresholds_are_reserved
     reservation = NA.reservation(capacity: capacity, hard_thresholds: EM.parse_threshold_config(allocatable_config: []))
+
     assert_equal({"memory" => "100Mi", "ephemeral-storage" => "10737418400"}, reservation.transform_values(&:to_s),
                  "10% as upstream's float32 fraction of the capacity")
     allocatable = NA.allocatable(capacity, reservation)
+
     assert_equal "8", allocatable["cpu"]
     assert_equal "15260Mi", allocatable["memory"], "16Gi - 100Mi - the 1Gi of 2Mi hugepages"
     assert_equal "96636764000", allocatable["ephemeral-storage"]
@@ -34,8 +36,10 @@ class NodeAllocatableTest < Minitest::Test
   def test_system_and_kube_reserved_add_up_and_clamp_at_zero
     reservation = NA.reservation(capacity: capacity, system_reserved: {"cpu" => "500m", "memory" => "1Gi"},
                                  kube_reserved: {"cpu" => "1", "pods" => "200"})
+
     assert_equal({"cpu" => "1500m", "memory" => "1Gi", "pods" => "200"}, reservation.transform_values(&:to_s))
     allocatable = NA.allocatable(capacity, reservation)
+
     assert_equal "6500m", allocatable["cpu"]
     assert_equal "14Gi", allocatable["memory"]
     assert_equal "0", allocatable["pods"]
@@ -44,7 +48,9 @@ class NodeAllocatableTest < Minitest::Test
   def test_reserved_system_cpus_replace_both_cpu_reservations
     agent = Rubernetes::Node::Agent.allocate
     agent.instance_variable_set(:@capacity, capacity)
-    reservation = agent.send(:node_allocatable_reservation, {"cpu" => "250m"}, {"cpu" => "2", "memory" => "512Mi"}, "0-1,4", {}, host: false)
+    reservation = agent.send(:node_allocatable_reservation, {"cpu" => "250m"}, {"cpu" => "2", "memory" => "512Mi"}, "0-1,4", {},
+                             host: false)
+
     assert_equal({"cpu" => "3", "memory" => "512Mi"}, reservation.transform_values(&:to_s))
     assert_empty agent.send(:node_allocatable_reservation, {}, {}, nil, {}, host: false), "no reservation without a real node"
   end
@@ -83,6 +89,7 @@ class NodeAllocatableTest < Minitest::Test
       YAML
       file.flush
       config = Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-agent", path: file.path)
+
       assert_equal "static", config.process.dig("cpu_manager", "policy")
     end
   end

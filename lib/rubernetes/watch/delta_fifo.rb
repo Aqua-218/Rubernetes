@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
 require_relative "support"
 
 module Rubernetes
@@ -13,9 +12,8 @@ module Rubernetes
         def initialize(type:, key:, object: nil, old_object: nil, resource_version: nil)
           normalized_type = type.respond_to?(:to_sym) ? type.to_sym : nil
           raise ArgumentError, "delta type must be a symbol or string" unless normalized_type
-          unless DeltaFIFO::VALID_TYPES.include?(normalized_type)
-            raise ArgumentError, "unknown delta type #{type.inspect}"
-          end
+          raise ArgumentError, "unknown delta type #{type.inspect}" unless DeltaFIFO::VALID_TYPES.include?(normalized_type)
+
           normalized_key = String(key)
           raise ArgumentError, "delta key must not be empty" if normalized_key.empty?
 
@@ -157,7 +155,7 @@ module Rubernetes
       # processing so far; nil when unknown); available until #done.
       def queued_seconds(key)
         queued_at, = @mutex.synchronize { @popped_age[normalize_key(key)] }
-        queued_at && @clock.call - queued_at
+        queued_at && (@clock.call - queued_at)
       end
 
       def done(key)
@@ -170,8 +168,8 @@ module Rubernetes
           if @closed
             @items.delete(normalized)
             @queued.delete(normalized)
-          else
-            enqueue_order_locked(normalized) if @items.key?(normalized)
+          elsif @items.key?(normalized)
+            enqueue_order_locked(normalized)
           end
           signal_locked
         end
@@ -186,7 +184,7 @@ module Rubernetes
           @processing.delete(normalized)
           existing = @items[normalized] || []
           @items[normalized] = normalized_deltas + existing
-          (@items[normalized]).each { |delta| update_latest_locked(delta) }
+          @items[normalized].each { |delta| update_latest_locked(delta) }
           @has_synced ||= normalized_deltas.any? { |delta| delta.type == :sync }
           enqueue_order_locked(normalized)
           signal_locked

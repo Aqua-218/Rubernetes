@@ -174,12 +174,14 @@ module M5RTORPOProbe
                                       "--config", controller_config(root, "http://127.0.0.1:#{http_ports[survivor]}")]).start
       namespace = "m5-rto"
       client.raw("POST", "/api/v1/namespaces", body: JSON.generate("apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => namespace}),
-                 headers: {"content-type" => "application/json"})
+                                               headers: {"content-type" => "application/json"})
       deployment = {"apiVersion" => "apps/v1", "kind" => "Deployment", "metadata" => {"name" => "web", "namespace" => namespace},
                     "spec" => {"replicas" => 2, "selector" => {"matchLabels" => {"app" => "web"}},
                                "template" => {"metadata" => {"labels" => {"app" => "web"}},
-                                              "spec" => {"containers" => [{"name" => "web", "image" => "registry.example/web@sha256:#{"0" * 64}"}]}}}}
-      client.raw("POST", "/apis/apps/v1/namespaces/#{namespace}/deployments", body: JSON.generate(deployment), headers: {"content-type" => "application/json"})
+                                              "spec" => {"containers" => [{"name" => "web",
+                                                                           "image" => "registry.example/web@sha256:#{"0" * 64}"}]}}}}
+      client.raw("POST", "/apis/apps/v1/namespaces/#{namespace}/deployments", body: JSON.generate(deployment),
+                                                                              headers: {"content-type" => "application/json"})
       replicaset_replicas = lambda do
         list = client.raw("GET", "/apis/apps/v1/namespaces/#{namespace}/replicasets").json
         list.fetch("items").map { |item| item.dig("spec", "replicas") }
@@ -211,8 +213,10 @@ module M5RTORPOProbe
       sleep 1.0
       readyz_during_outage = ready?(client)
       # Restore quorum.
-      victims.each { |id| processes[id] = Process.new(name: "apiserver-#{id}", log: File.join(root, "apiserver-#{id}.log"),
-                                                      argv: [RbConfig.ruby, "-I", File.join(ROOT, "lib"), File.join(ROOT, "exe/rubernetes-apiserver"), "--config", configs[id]]).start }
+      victims.each do |id|
+        processes[id] = Process.new(name: "apiserver-#{id}", log: File.join(root, "apiserver-#{id}.log"),
+                                    argv: [RbConfig.ruby, "-I", File.join(ROOT, "lib"), File.join(ROOT, "exe/rubernetes-apiserver"), "--config", configs[id]]).start
+      end
       restored_at = M5ProbeSupport.monotonic
       read_ok = wait_until(timeout: 60) do
         response = client.raw("GET", "/api/v1/namespaces/#{namespace}/configmaps/cm-0", raise_for_status: false)
@@ -234,7 +238,9 @@ module M5RTORPOProbe
       end
       control_ok = scale_ok && wait_until(timeout: 60) { replicaset_replicas.call == [3] }
       control_seconds = M5ProbeSupport.monotonic - restored_at
-      present = client.raw("GET", "/api/v1/namespaces/#{namespace}/configmaps").json.fetch("items").map { |item| item.dig("metadata", "name") }
+      present = client.raw("GET", "/api/v1/namespaces/#{namespace}/configmaps").json.fetch("items").map do |item|
+        item.dig("metadata", "name")
+      end
       lost = acknowledged - present
       # Every replica converges to the same object set.
       counts = IDS.map do |id|
@@ -258,7 +264,7 @@ module M5RTORPOProbe
         "outage_seconds" => (restored_at - killed_at).round(3),
         "measurement_source" => "real_apiserver_and_controller_manager_processes",
         "passed" => lost.empty? && read_ok && write_ok && control_ok && outage_write_ok && !readyz_during_outage &&
-                    read_seconds < 60 && write_seconds < 60 && control_seconds < 60 && counts.uniq.length == 1
+          read_seconds < 60 && write_seconds < 60 && control_seconds < 60 && counts.uniq.length == 1
       }]
       M5ProbeSupport.emit(M5ProbeSupport.report(
         kind: "m5_rto_rpo_report", measurement_level: "integration_tested", started_at: started_at, cases: cases,

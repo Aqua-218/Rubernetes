@@ -173,7 +173,8 @@ module Rubernetes
             Encryption.increment("apiserver_storage_data_key_generation_failures_total")
             raise
           end
-          Encryption.observe("apiserver_storage_data_key_generation_duration_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - generation_started)
+          Encryption.observe("apiserver_storage_data_key_generation_duration_seconds",
+                             Process.clock_gettime(Process::CLOCK_MONOTONIC) - generation_started)
           note_key_id(wrapped.fetch("key_id"), "to_storage")
           envelope = {"encryptedDEK" => Base64.strict_encode64(wrapped.fetch("ciphertext")), "keyID" => wrapped.fetch("key_id"),
                       "annotations" => wrapped.fetch("annotations", {}), "nonce" => Base64.strict_encode64(nonce),
@@ -190,9 +191,15 @@ module Rubernetes
           if dek.nil?
             now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             Encryption.increment("apiserver_storage_envelope_transformation_cache_misses_total")
-            Encryption.observe("apiserver_envelope_encryption_dek_cache_inter_arrival_time_seconds", now - @last_miss_at, {"transformation_type" => "from_storage"}) if @last_miss_at
+            if @last_miss_at
+              Encryption.observe("apiserver_envelope_encryption_dek_cache_inter_arrival_time_seconds", now - @last_miss_at,
+                                 {"transformation_type" => "from_storage"})
+            end
             @last_miss_at = now
-            dek = timed_kms("Decrypt") { @client.decrypt(wrapped, uid: SecureRandom.uuid, key_id: document.fetch("keyID"), annotations: document.fetch("annotations", {})) }
+            dek = timed_kms("Decrypt") do
+              @client.decrypt(wrapped, uid: SecureRandom.uuid, key_id: document.fetch("keyID"),
+                                       annotations: document.fetch("annotations", {}))
+            end
             @mutex.synchronize do
               @dek_cache[wrapped] = dek
               @dek_cache.shift while @dek_cache.length > @cache_size
@@ -343,7 +350,7 @@ module Rubernetes
 
       # Routes envelopes to providers and rewrites stale envelopes.
       class Transformer
-        IDENTITY_PREFIX = "".freeze
+        IDENTITY_PREFIX = ""
 
         def initialize(providers:)
           @providers = Array(providers)
@@ -379,14 +386,18 @@ module Rubernetes
       # (authenticated data), so a ciphertext moved between keys fails to
       # decrypt.
       class EncryptedStore
-        ENVELOPE_KEY = "__encrypted__".freeze
+        ENVELOPE_KEY = "__encrypted__"
         CLEAR_FIELDS = %w[apiVersion kind metadata].freeze
 
         def initialize(store, transformer:, resources:, key_matcher: nil)
           @store = store
           @transformer = transformer
           @resources = Array(resources).map(&:to_s)
-          @key_matcher = key_matcher || ->(key) { @resources.any? { |resource| key.to_s.start_with?("registry/#{resource}/") || key.to_s.include?("/#{resource}/") } }
+          @key_matcher = key_matcher || lambda { |key|
+            @resources.any? do |resource|
+              key.to_s.start_with?("registry/#{resource}/") || key.to_s.include?("/#{resource}/")
+            end
+          }
         end
 
         attr_reader :store, :resources
@@ -407,8 +418,10 @@ module Rubernetes
           elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
           _group, resource = Configuration.key_group_resource(key)
           Encryption.increment("apiserver_storage_transformation_operations_total",
-                               {"resource" => resource.to_s, "status" => status, "transformation_type" => transformation_type, "transformer_prefix" => prefix})
-          Encryption.observe("apiserver_storage_transformation_duration_seconds", elapsed, {"transformation_type" => transformation_type, "transformer_prefix" => prefix})
+                               {"resource" => resource.to_s, "status" => status, "transformation_type" => transformation_type,
+                                "transformer_prefix" => prefix})
+          Encryption.observe("apiserver_storage_transformation_duration_seconds", elapsed,
+                             {"transformation_type" => transformation_type, "transformer_prefix" => prefix})
         end
         private :timed_transformation
 
@@ -417,33 +430,37 @@ module Rubernetes
         end
 
         def create(key, object = nil, **options)
-          @store.create(key, seal(key, object || options[:object] || options[:body]), **options.reject { |name, _| %i[object body].include?(name) })
-              .then { |result| unseal(key, result) }
+          @store.create(key, seal(key, object || options[:object] || options[:body]), **options.reject do |name, _|
+            %i[object body].include?(name)
+          end)
+            .then { |result| unseal(key, result) }
         end
 
         def update(key, object = nil, **options)
-          @store.update(key, seal(key, object || options[:object] || options[:body]), **options.reject { |name, _| %i[object body].include?(name) })
-                .then { |result| unseal(key, result) }
+          @store.update(key, seal(key, object || options[:object] || options[:body]), **options.reject do |name, _|
+            %i[object body].include?(name)
+          end)
+            .then { |result| unseal(key, result) }
         end
 
-        def guaranteed_update(key, **options, &block)
-          result = @store.guaranteed_update(key, **options) do |current|
-            candidate = block.call(unseal(key, current))
+        def guaranteed_update(key, **, &)
+          result = @store.guaranteed_update(key, **) do |current|
+            candidate = yield(unseal(key, current))
             candidate.nil? ? nil : seal(key, candidate)
           end
           unseal(key, result)
         end
 
-        def get(key, **options)
-          unseal(key, @store.get(key, **options))
+        def get(key, **)
+          unseal(key, @store.get(key, **))
         end
 
-        def delete(key, **options)
-          unseal(key, @store.delete(key, **options))
+        def delete(key, **)
+          unseal(key, @store.delete(key, **))
         end
 
-        def list(prefix = "", **options)
-          result = @store.list(prefix, **options)
+        def list(prefix = "", **)
+          result = @store.list(prefix, **)
           return result unless result.respond_to?(:items)
 
           items = result.items.map { |item| unseal(key_of(prefix, item), item) }
@@ -451,15 +468,15 @@ module Rubernetes
                                               remaining_item_count: result.remaining_item_count)
         end
 
-        def watch(prefix = "", *positional, **options)
-          stream = @store.watch(prefix, *positional, **options)
+        def watch(prefix = "", *positional, **)
+          stream = @store.watch(prefix, *positional, **)
           DecryptingWatch.new(stream, self, prefix)
         end
 
-        def method_missing(name, *arguments, **keywords, &block)
+        def method_missing(name, *, **keywords, &)
           return super unless @store.respond_to?(name)
 
-          @store.public_send(name, *arguments, **keywords, &block)
+          @store.public_send(name, *, **keywords, &)
         end
 
         def respond_to_missing?(name, include_private = false)
@@ -472,7 +489,9 @@ module Rubernetes
 
           clear = object.select { |field, _| CLEAR_FIELDS.include?(field) }
           sealed = object.reject { |field, _| CLEAR_FIELDS.include?(field) }
-          envelope = timed_transformation(key, "to_storage", @transformer.writer.prefix) { @transformer.encrypt(JSON.generate(sealed), key.to_s) }
+          envelope = timed_transformation(key, "to_storage", @transformer.writer.prefix) do
+            @transformer.encrypt(JSON.generate(sealed), key.to_s)
+          end
           clear.merge(ENVELOPE_KEY => envelope)
         end
 
@@ -532,9 +551,9 @@ module Rubernetes
             return enum_for(:each, timeout: timeout) unless block
 
             if timeout == :default
-              @stream.each { |event| block.call(translate(event)) }
+              @stream.each { |event| yield(translate(event)) }
             else
-              @stream.each(timeout: timeout) { |event| block.call(translate(event)) }
+              @stream.each(timeout: timeout) { |event| yield(translate(event)) }
             end
             self
           end
@@ -544,13 +563,13 @@ module Rubernetes
           end
 
           def each_json_line(timeout: :default, &block)
-            each(timeout: timeout) { |event| block.call(JSON.generate(event.to_h)) }
+            each(timeout: timeout) { |event| yield(JSON.generate(event.to_h)) }
           end
 
-          def method_missing(name, *arguments, **keywords, &block)
+          def method_missing(name, *, **keywords, &)
             return super unless @stream.respond_to?(name)
 
-            @stream.public_send(name, *arguments, **keywords, &block)
+            @stream.public_send(name, *, **keywords, &)
           end
 
           def respond_to_missing?(name, include_private = false)

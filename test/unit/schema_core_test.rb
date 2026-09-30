@@ -51,6 +51,7 @@ class SchemaCoreTest < Minitest::Test
     defaulting = schema_definition.defaulting
 
     defaulted = defaulting.apply_hash("name" => "demo", "spec" => {})
+
     assert_equal(1, defaulted.fetch("spec").fetch("replicas"))
     assert_equal("Always", defaulted.fetch("spec").fetch("mode"))
     assert_nil(defaulting.apply_hash("name" => "demo", "spec" => {"mode" => nil}).fetch("spec").fetch("mode"))
@@ -96,6 +97,7 @@ class SchemaCoreTest < Minitest::Test
     after = {"name" => "demo", "spec" => {"replicas" => 2}, "status" => {"phase" => "Running"}}
 
     diff = definition.diff.call(before, after)
+
     assert_equal(1, diff.spec.size)
     assert_equal(1, diff.status.size)
     assert_equal(%w[spec replicas], diff.spec.first.path)

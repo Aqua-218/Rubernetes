@@ -38,7 +38,10 @@ class APICachedUpdateReadTest < Minitest::Test
     @raft.define_singleton_method(:submit) do |command, effect:, key:|
       Thread.current[Rubernetes::Consensus::RaftStore::BARRIER_SCOPE_KEY]&.store(:taken, false)
       result = machine.apply(counter.call, command)
-      raise Rubernetes::Storage::Conflict.new(key, result.inspect, resource_version: result.dig("error", "resource_version")) unless result["ok"]
+      unless result["ok"]
+        raise Rubernetes::Storage::Conflict.new(key, result.inspect,
+                                                resource_version: result.dig("error", "resource_version"))
+      end
 
       result["object"]
     end
@@ -56,6 +59,7 @@ class APICachedUpdateReadTest < Minitest::Test
   def test_a_conditional_update_takes_no_read_barrier
     before = @server.read_indexes
     response = put(@created.merge("data" => {"n" => "1"}))
+
     assert_equal 200, response.status
     assert_equal before, @server.read_indexes
   end
@@ -64,6 +68,7 @@ class APICachedUpdateReadTest < Minitest::Test
     unconditional = @created.merge("data" => {"n" => "1"})
     unconditional["metadata"] = unconditional["metadata"].except("resourceVersion")
     before = @server.read_indexes
+
     assert_equal 200, put(unconditional).status
     assert_equal before + 1, @server.read_indexes
   end
@@ -72,7 +77,11 @@ class APICachedUpdateReadTest < Minitest::Test
   # read again through the barrier and the update goes through.
   def test_a_copy_that_does_not_match_is_read_again_through_the_barrier
     newer = body(put(@created.merge("data" => {"n" => "1"})))
-    stale = @server.store.get("registry/v1/configmaps/dev/a") rescue nil
+    stale = begin
+      @server.store.get("registry/v1/configmaps/dev/a")
+    rescue StandardError
+      nil
+    end
     lagging = @raft.local_store
     real_get = lagging.method(:get)
     calls = 0

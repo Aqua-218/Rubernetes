@@ -51,8 +51,8 @@ class ProxyWatchBookmarkTest < Minitest::Test
     errors = []
     proxy = Proxy::Proxy.new(local_node: "worker-0", backend: Proxy::MemoryBackend.new)
     subscriptions = proxy.start_watch(
-      service_source: Source.new([bookmark("Service"), event("ADDED", service())]),
-      endpoint_slice_source: Source.new([bookmark("EndpointSlice"), event("ADDED", slice())]),
+      service_source: Source.new([bookmark("Service"), event("ADDED", service)]),
+      endpoint_slice_source: Source.new([bookmark("EndpointSlice"), event("ADDED", slice)]),
       error_handler: ->(error) { errors << error.message }
     )
     wait_until { proxy.services.length.positive? && proxy.endpoint_slices.length.positive? }
@@ -68,7 +68,7 @@ class ProxyWatchBookmarkTest < Minitest::Test
     proxy = Proxy::Proxy.new(local_node: "worker-0", backend: Proxy::MemoryBackend.new)
     nameless = {"apiVersion" => "v1", "kind" => "Service", "metadata" => {"namespace" => "ns"}, "spec" => {}}
     subscriptions = proxy.start_watch(
-      service_source: Source.new([event("ADDED", nameless), event("ADDED", service())]),
+      service_source: Source.new([event("ADDED", nameless), event("ADDED", service)]),
       error_handler: ->(error) { errors << error.message }
     )
     wait_until { errors.any? && proxy.services.length.positive? }

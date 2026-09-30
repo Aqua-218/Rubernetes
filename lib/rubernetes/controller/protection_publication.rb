@@ -128,7 +128,7 @@ module Rubernetes
       end
 
       def ephemeral_claim_name(pod, volume)
-        "#{Support.name(pod)}-#{Support.value(volume, "name", "")}".to_s
+        "#{Support.name(pod)}-#{Support.value(volume, "name", "")}"
       end
 
       def owner_reference_for?(owner, dependent)
@@ -177,10 +177,11 @@ module Rubernetes
           operation = operation_update(pvc, candidate, descriptor: PVC, reason: "add PVC protection finalizer")
           event = operation_event("Normal", "PVCProtectionFinalizer", "PVC #{Support.name(pvc)} protection finalizer added")
           return result_for(pvc, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                            events: [event], controller: name)
+                                 events: [event], controller: name)
         end
 
-        return empty_result(pvc, controller: name, status: {"finalizers" => current_finalizers}) unless deletion_candidate?(pvc, PVC_PROTECTION_FINALIZER)
+        return empty_result(pvc, controller: name, status: {"finalizers" => current_finalizers}) unless deletion_candidate?(pvc,
+                                                                                                                            PVC_PROTECTION_FINALIZER)
 
         adapter = adapter_for(store, self.store)
         observed = !pods.nil? || !adapter.nil?
@@ -192,13 +193,15 @@ module Rubernetes
         # A missing list is an unknown dependency, not evidence that a PVC is
         # unused.  Keeping the finalizer is the safe result during recovery.
         return empty_result(pvc, controller: name, status: {"finalizers" => current_finalizers}) unless observed
-        return empty_result(pvc, controller: name, status: {"finalizers" => current_finalizers}) if observed_pods.any? { |pod| pod_uses_pvc_for_deletion?(pod, pvc) }
+        return empty_result(pvc, controller: name, status: {"finalizers" => current_finalizers}) if observed_pods.any? do |pod|
+          pod_uses_pvc_for_deletion?(pod, pvc)
+        end
 
         candidate = candidate_with_finalizers(pvc, current_finalizers.reject { |value| value == PVC_PROTECTION_FINALIZER })
         operation = operation_update(pvc, candidate, descriptor: PVC, reason: "remove PVC protection finalizer")
         event = operation_event("Normal", "PVCProtectionFinalizer", "PVC #{Support.name(pvc)} protection finalizer removed")
         result_for(pvc, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                   events: [event], controller: name)
+                        events: [event], controller: name)
       end
 
       private
@@ -234,10 +237,12 @@ module Rubernetes
           operation = operation_update(pv, candidate, descriptor: PV, reason: "add PV protection finalizer")
           event = operation_event("Normal", "PVProtectionFinalizer", "PV #{Support.name(pv)} protection finalizer added")
           return result_for(pv, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                            events: [event], controller: name)
+                                events: [event], controller: name)
         end
 
-        return empty_result(pv, controller: name, status: {"finalizers" => current_finalizers}) unless deletion_candidate?(pv, PV_PROTECTION_FINALIZER)
+        return empty_result(pv, controller: name, status: {"finalizers" => current_finalizers}) unless deletion_candidate?(pv,
+                                                                                                                           PV_PROTECTION_FINALIZER)
+
         phase = Support.value(Support.status(pv), "phase", "").to_s
         return empty_result(pv, controller: name, status: {"finalizers" => current_finalizers}) if phase == "Bound"
 
@@ -245,7 +250,7 @@ module Rubernetes
         operation = operation_update(pv, candidate, descriptor: PV, reason: "remove PV protection finalizer")
         event = operation_event("Normal", "PVProtectionFinalizer", "PV #{Support.name(pv)} protection finalizer removed")
         result_for(pv, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                   events: [event], controller: name)
+                       events: [event], controller: name)
       end
     end
 
@@ -259,7 +264,9 @@ module Rubernetes
         return empty_result(pod_group, controller: name) unless resource_kind?(pod_group, POD_GROUP.kind)
 
         current_finalizers = finalizers(pod_group)
-        return empty_result(pod_group, controller: name, status: {"finalizers" => current_finalizers}) unless deletion_candidate?(pod_group, POD_GROUP_PROTECTION_FINALIZER)
+        return empty_result(pod_group, controller: name, status: {"finalizers" => current_finalizers}) unless deletion_candidate?(
+          pod_group, POD_GROUP_PROTECTION_FINALIZER
+        )
 
         adapter = adapter_for(store, self.store)
         observed = !pods.nil? || !adapter.nil?
@@ -269,13 +276,15 @@ module Rubernetes
                           Array(pods).select { |pod| Support.namespace(pod).to_s == Support.namespace(pod_group).to_s }
                         end
         return empty_result(pod_group, controller: name, status: {"finalizers" => current_finalizers}) unless observed
-        return empty_result(pod_group, controller: name, status: {"finalizers" => current_finalizers}) if observed_pods.any? { |pod| active_pod_group_reference?(pod, pod_group) }
+        return empty_result(pod_group, controller: name, status: {"finalizers" => current_finalizers}) if observed_pods.any? do |pod|
+          active_pod_group_reference?(pod, pod_group)
+        end
 
         candidate = candidate_with_finalizers(pod_group, current_finalizers.reject { |value| value == POD_GROUP_PROTECTION_FINALIZER })
         operation = operation_update(pod_group, candidate, descriptor: POD_GROUP, reason: "remove PodGroup protection finalizer")
         event = operation_event("Normal", "PodGroupProtectionFinalizer", "PodGroup #{Support.name(pod_group)} protection finalizer removed")
         result_for(pod_group, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                   events: [event], controller: name)
+                              events: [event], controller: name)
       end
 
       private
@@ -305,10 +314,11 @@ module Rubernetes
           event = operation_event("Normal", "VolumeAttributesClassProtectionFinalizer",
                                   "VolumeAttributesClass #{Support.name(vac)} protection finalizer added")
           return result_for(vac, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                            events: [event], controller: name)
+                                 events: [event], controller: name)
         end
 
-        return empty_result(vac, controller: name, status: {"finalizers" => current_finalizers}) unless deletion_candidate?(vac, VAC_PROTECTION_FINALIZER)
+        return empty_result(vac, controller: name, status: {"finalizers" => current_finalizers}) unless deletion_candidate?(vac,
+                                                                                                                            VAC_PROTECTION_FINALIZER)
 
         adapter = adapter_for(store, self.store)
         pvs_observed = !pvs.nil? || !adapter.nil?
@@ -327,7 +337,7 @@ module Rubernetes
         event = operation_event("Normal", "VolumeAttributesClassProtectionFinalizer",
                                 "VolumeAttributesClass #{Support.name(vac)} protection finalizer removed")
         result_for(vac, operations: [operation], status: {"finalizers" => candidate.dig("metadata", "finalizers")},
-                   events: [event], controller: name)
+                        events: [event], controller: name)
       end
 
       private
@@ -351,9 +361,9 @@ module Rubernetes
     class TTLAfterFinishedController < BaseController
       include ProtectionPublicationSupport
 
-      def initialize(clock: nil, **options)
+      def initialize(clock: nil, **)
         @clock = clock || -> { Time.now.utc }
-        super(**options)
+        super(**)
       end
 
       def plan(job, fresh: nil, now: nil, **_options)
@@ -372,6 +382,7 @@ module Rubernetes
 
         current_time = Support.parse_time(now || @clock.call)
         raise ArgumentError, "clock must return Time or RFC3339 value" unless current_time
+
         expires_at = finished_at + ttl
         return empty_result(candidate, controller: name) if current_time < expires_at
 
@@ -406,9 +417,9 @@ module Rubernetes
     class RootCACertificatePublisherController < BaseController
       include ProtectionPublicationSupport
 
-      def initialize(root_ca: "", ca_bundle: nil, **options)
+      def initialize(root_ca: "", ca_bundle: nil, **)
         @root_ca = ca_bundle.nil? ? root_ca.to_s : ca_bundle.to_s
-        super(**options)
+        super(**)
       end
 
       def plan(resource = nil, store: nil, namespaces: nil, config_maps: nil, root_ca: nil, **_options)
@@ -430,6 +441,7 @@ module Rubernetes
         namespace_values.each do |namespace_value|
           namespace = namespace_name(namespace_value)
           next if namespace.empty?
+
           if namespace_value.is_a?(Hash) && !active_namespace?(namespace_value)
             record_sync(started, nil)
             next
@@ -460,7 +472,8 @@ module Rubernetes
               ignored = error && ((error.respond_to?(:status) && error.status.to_i == 404) || StoreAdapter.namespace_terminating?(error))
               record_sync(started, ignored ? nil : error)
             end
-            events << operation_event("Normal", "RootCACertificatePublisher", "published #{ROOT_CA_CONFIG_MAP_NAME} in namespace #{namespace}")
+            events << operation_event("Normal", "RootCACertificatePublisher",
+                                      "published #{ROOT_CA_CONFIG_MAP_NAME} in namespace #{namespace}")
             next
           end
 
@@ -479,7 +492,10 @@ module Rubernetes
           operation = operation_update(current, candidate, descriptor: CONFIG_MAP, reason: "publish root CA certificate")
           operations << operation.observed { |_succeeded, error| record_sync(started, error) } if operation
           record_sync(started, nil) unless operation
-          events << operation_event("Normal", "RootCACertificatePublisher", "updated #{ROOT_CA_CONFIG_MAP_NAME} in namespace #{namespace}") if operation
+          if operation
+            events << operation_event("Normal", "RootCACertificatePublisher",
+                                      "updated #{ROOT_CA_CONFIG_MAP_NAME} in namespace #{namespace}")
+          end
         end
         status = operations.empty? ? Support.status(resource || {}) : {"data" => {"ca.crt" => ca_value}}
         result_for(resource || {"metadata" => {}}, operations: operations, status: status, events: events, controller: name)
@@ -494,7 +510,8 @@ module Rubernetes
                else "500"
                end
         labels = {"code" => code}
-        ControllerMetrics.observe("root_ca_cert_publisher_sync_duration_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, labels)
+        ControllerMetrics.observe("root_ca_cert_publisher_sync_duration_seconds",
+                                  Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, labels)
         ControllerMetrics.increment("root_ca_cert_publisher_sync_total", labels)
       end
 
@@ -540,9 +557,7 @@ module Rubernetes
           return namespace ? [namespace] : []
         end
 
-        if adapter
-          return list_kind(adapter, "Namespace", namespace: :all)
-        end
+        return list_kind(adapter, "Namespace", namespace: :all) if adapter
         return [resource] if resource_kind?(resource, NAMESPACE.kind)
 
         []
@@ -566,12 +581,12 @@ module Rubernetes
 
       API_VERSION = "certificates.k8s.io/v1beta1"
 
-      def initialize(signer_name: CLUSTER_TRUST_BUNDLE_SIGNER, ca_bundle: "", **options)
+      def initialize(signer_name: CLUSTER_TRUST_BUNDLE_SIGNER, ca_bundle: "", **)
         @signer_name = signer_name.to_s
         raise ArgumentError, "signerName cannot be empty" if @signer_name.empty?
 
         @ca_bundle = ca_bundle.to_s
-        super(**options)
+        super(**)
       end
 
       def plan(resource = nil, store: nil, trust_bundles: nil, ca_bundle: nil, signer_name: nil, **_options)
@@ -585,9 +600,7 @@ module Rubernetes
                            else
                              Array(trust_bundles)
                            end
-        if observed_bundles.empty? && resource_kind?(resource, CLUSTER_TRUST_BUNDLE.kind)
-          observed_bundles = [resource]
-        end
+        observed_bundles = [resource] if observed_bundles.empty? && resource_kind?(resource, CLUSTER_TRUST_BUNDLE.kind)
         signer_bundles = observed_bundles.select { |bundle| ctb_signer_name(bundle) == selected_signer }
         desired_name = self.class.construct_bundle_name(selected_signer, bundle_content)
         current = signer_bundles.find { |bundle| Support.name(bundle) == desired_name }
@@ -607,7 +620,7 @@ module Rubernetes
           candidate["spec"]["signerName"] = selected_signer
           candidate["spec"]["trustBundle"] = bundle_content
           operation = operation_update(current, candidate, descriptor: actual_descriptor_for(current, CLUSTER_TRUST_BUNDLE),
-                                       reason: "publish cluster trust bundle")
+                                                           reason: "publish cluster trust bundle")
           operations << operation if operation
           events << operation_event("Normal", "ClusterTrustBundlePublished", "updated ClusterTrustBundle #{desired_name}") if operation
         end
@@ -616,11 +629,11 @@ module Rubernetes
           next if Support.name(bundle) == desired_name
 
           operations << operation_delete(bundle, descriptor: actual_descriptor_for(bundle, CLUSTER_TRUST_BUNDLE),
-                                         reason: "remove stale cluster trust bundle")
+                                                 reason: "remove stale cluster trust bundle")
           events << operation_event("Normal", "ClusterTrustBundlePublished", "removed stale ClusterTrustBundle #{Support.name(bundle)}")
         end
         result_for(resource || {"metadata" => {}}, operations: record_sync(operations), status: {"data" => {"trustBundle" => bundle_content}},
-                   events: events, controller: name)
+                                                   events: events, controller: name)
       end
 
       # clustertrustbundlepublisher recordMetrics: one per sync -- when its
@@ -660,7 +673,7 @@ module Rubernetes
       end
 
       def self.construct_bundle_name(signer_name, bundle_content)
-        normalized_signer = signer_name.to_s.gsub("/", ":")
+        normalized_signer = signer_name.to_s.tr("/", ":")
         digest = Digest::SHA256.hexdigest(bundle_content.to_s)[0, 24]
         "#{normalized_signer}:#{digest}"
       end
@@ -706,8 +719,10 @@ module Rubernetes
           current = observed_pvcs.find { |pvc| Support.name(pvc) == pvc_name }
           if current
             unless owner_reference_for?(pod, current)
-              raise StoreError, "PVC #{Support.namespace(current)}/#{Support.name(current)} was not created for pod #{Support.namespace(pod)}/#{Support.name(pod)} (pod is not owner)"
+              raise StoreError,
+                    "PVC #{Support.namespace(current)}/#{Support.name(current)} was not created for pod #{Support.namespace(pod)}/#{Support.name(pod)} (pod is not owner)"
             end
+
             next
           end
 
@@ -727,14 +742,16 @@ module Rubernetes
             "spec" => Support.deep_copy(Support.value(template, "spec", {}))
           }
           # ephemeral volume metrics: every create attempted, and the failed ones.
-          operations << operation_create(candidate, owner: pod, descriptor: PVC, reason: "create ephemeral volume PVC").observed do |succeeded, _|
+          operations << operation_create(candidate, owner: pod, descriptor: PVC,
+                                                    reason: "create ephemeral volume PVC").observed do |succeeded, _|
             ControllerMetrics.increment("ephemeral_volume_controller_create_total")
             ControllerMetrics.increment("ephemeral_volume_controller_create_failures_total") unless succeeded
           end
-          events << operation_event("Normal", "EphemeralVolumeCreated", "created PVC #{Support.namespace(pod)}/#{pvc_name} for Pod #{Support.name(pod)}")
+          events << operation_event("Normal", "EphemeralVolumeCreated",
+                                    "created PVC #{Support.namespace(pod)}/#{pvc_name} for Pod #{Support.name(pod)}")
         end
         result_for(pod, operations: operations, status: {"volume" => operations.map { |operation| Support.name(operation.object) }},
-                   events: events, controller: name)
+                        events: events, controller: name)
       end
     end
 
@@ -746,9 +763,9 @@ module Rubernetes
 
       ALL_ENCODING_VERSIONS_EQUAL = "AllEncodingVersionsEqual"
 
-      def initialize(clock: nil, **options)
+      def initialize(clock: nil, **)
         @clock = clock || -> { Time.now.utc }
-        super(**options)
+        super(**)
       end
 
       def plan(storage_version, store: nil, leases: nil, deleted_lease: nil, storage_versions: nil, now: nil, **_options)
@@ -779,6 +796,7 @@ module Rubernetes
                         entries.reject { |entry| Support.value(entry, "apiServerID", "").to_s == deleted_lease.to_s }
                       else
                         next unless leases_observed
+
                         valid_ids = observed_leases.select { |lease| identity_lease?(lease) }.map { |lease| Support.name(lease) }
                         entries.select { |entry| valid_ids.include?(Support.value(entry, "apiServerID", "").to_s) }
                       end
@@ -792,13 +810,16 @@ module Rubernetes
 
           desired_status = status_after_pruning(candidate, remaining, now: now)
           operation = operation_status(candidate, desired_status, descriptor: STORAGE_VERSION,
-                                       reason: "StorageVersionGarbageCollected")
+                                                                  reason: "StorageVersionGarbageCollected")
           operations << operation if operation
           result_status = desired_status if operation && candidate.equal?(storage_version || targets.first)
-          events << operation_event("Normal", "StorageVersionGarbageCollected", "removed stale API-server entries from StorageVersion #{Support.name(candidate)}") if operation
+          if operation
+            events << operation_event("Normal", "StorageVersionGarbageCollected",
+                                      "removed stale API-server entries from StorageVersion #{Support.name(candidate)}")
+          end
         end
         result_for(storage_version || targets.first, operations: operations, status: result_status,
-                   events: events, controller: name)
+                                                     events: events, controller: name)
       end
 
       private
@@ -814,7 +835,7 @@ module Rubernetes
           status.delete("commonEncodingVersion")
         end
         status["conditions"] = encoding_condition(status, storage_version, encodings,
-                                                    previous_common: previous_common, now: now)
+                                                  previous_common: previous_common, now: now)
         status
       end
 
@@ -830,12 +851,15 @@ module Rubernetes
         condition["status"] = equal ? "True" : "False"
         condition["reason"] = equal ? "CommonEncodingVersionSet" : "CommonEncodingVersionUnset"
         condition["message"] = equal ? "Common encoding version set" : "Common encoding version unset"
-        condition["observedGeneration"] = Support.value(Support.metadata(storage_version), "generation", nil) if Support.value(Support.metadata(storage_version), "generation", nil)
+        condition["observedGeneration"] = Support.value(Support.metadata(storage_version), "generation", nil) if Support.value(
+          Support.metadata(storage_version), "generation", nil
+        )
         common = Support.value(status, "commonEncodingVersion", nil)
         common_changed = previous_common != common
         if previous_status != condition["status"] || common_changed || Support.value(condition, "lastTransitionTime", nil).nil?
           timestamp = Support.parse_time(now || @clock.call)
           raise ArgumentError, "clock must return Time or RFC3339 value" unless timestamp
+
           condition["lastTransitionTime"] = timestamp.iso8601
         end
         values
@@ -881,7 +905,8 @@ module Rubernetes
         "persistentvolumeclaim-protection-controller" => [["PersistentVolumeClaim", :all], ["Pod", :all]],
         "persistent-volume-protection-controller" => [["PersistentVolume", :all]],
         "podgroup-protection-controller" => [["PodGroup", :all], ["Pod", :all]],
-        "volume-attributes-class-protection-controller" => [["VolumeAttributesClass", :all], ["PersistentVolume", :all], ["PersistentVolumeClaim", :all]],
+        "volume-attributes-class-protection-controller" => [["VolumeAttributesClass", :all], ["PersistentVolume", :all],
+                                                            ["PersistentVolumeClaim", :all]],
         "ttl-after-finished-controller" => [["Job", :all]],
         "root-ca-certificate-publisher-controller" => [["Namespace", :all], ["ConfigMap", :all]],
         "kube-apiserver-serving-clustertrustbundle-publisher-controller" => [["ClusterTrustBundle", :all], ["ConfigMap", :all]],
@@ -890,7 +915,7 @@ module Rubernetes
       }.freeze
 
       OWNERS = {
-        "ephemeral-volume-controller" => [["Pod", "PersistentVolumeClaim"]]
+        "ephemeral-volume-controller" => [%w[Pod PersistentVolumeClaim]]
       }.freeze
 
       module_function
@@ -956,8 +981,8 @@ module Rubernetes
 
       alias build_definitions definitions
 
-      def register!(registry, **options)
-        definitions(registry: registry, **options).each { |definition| registry.register(definition) }
+      def register!(registry, **)
+        definitions(registry: registry, **).each { |definition| registry.register(definition) }
         registry
       end
 

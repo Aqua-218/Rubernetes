@@ -175,8 +175,12 @@ module Rubernetes
     # they name; the overhead is added on top.
     def pod_requests(pod, use_status_resources: false, exclude_overhead: false, skip_pod_level: false,
                      skip_container_level: false, in_place_pod_level_resize: true, non_missing: nil, container_fn: nil)
-      requests = skip_container_level ? {} : aggregate_container_requests(pod, use_status_resources: use_status_resources,
-                                                                                non_missing: non_missing, container_fn: container_fn)
+      requests = if skip_container_level
+                   {}
+                 else
+                   aggregate_container_requests(pod, use_status_resources: use_status_resources,
+                                                     non_missing: non_missing, container_fn: container_fn)
+                 end
       if !skip_pod_level && pod_level_requests_set?(pod)
         spec_requests = resource_list(pod_resources(pod)["requests"])
         effective = nil
@@ -242,9 +246,7 @@ module Rubernetes
       end
       return "BestEffort" if requests.empty? && limits.empty?
 
-      if guaranteed
-        guaranteed = requests.all? { |name, quantity| limits.key?(name) && limits[name].value == quantity.value }
-      end
+      guaranteed = requests.all? { |name, quantity| limits.key?(name) && limits[name].value == quantity.value } if guaranteed
       guaranteed && requests.length == limits.length ? "Guaranteed" : "Burstable"
     end
 

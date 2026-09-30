@@ -11,7 +11,8 @@ require "rubernetes/schema"
 class JobTemplateUpdateValidationTest < Minitest::Test
   V = Rubernetes::Schema::KubernetesValidator
 
-  def job(suspend: false, status: {}, resources: {"requests" => {"cpu" => "1"}}, node_selector: nil, labels: {"job-name" => "j"}, image: "busybox")
+  def job(suspend: false, status: {}, resources: {"requests" => {"cpu" => "1"}}, node_selector: nil, labels: {"job-name" => "j"},
+          image: "busybox")
     pod = {"containers" => [{"name" => "c", "image" => image, "resources" => resources}], "restartPolicy" => "Never"}
     pod["nodeSelector"] = node_selector if node_selector
     {"metadata" => {"name" => "j"}, "spec" => {"suspend" => suspend, "template" => {"metadata" => {"labels" => labels}, "spec" => pod}},
@@ -24,6 +25,7 @@ class JobTemplateUpdateValidationTest < Minitest::Test
 
   def test_a_running_job_template_is_immutable
     old = job
+
     assert_empty errors(job, old)
     assert_equal ["spec.template: field is immutable"], errors(job(image: "other"), old)
     assert_equal ["spec.template: field is immutable"], errors(job(resources: {"requests" => {"cpu" => "2"}}), old)
@@ -31,6 +33,7 @@ class JobTemplateUpdateValidationTest < Minitest::Test
 
   def test_a_suspended_never_started_job_may_change_resources_and_scheduling
     old = job(suspend: true)
+
     assert_empty errors(job(suspend: true, resources: {"requests" => {"cpu" => "4"}}), old)
     assert_empty errors(job(suspend: true, node_selector: {"zone" => "a"}, labels: {"job-name" => "j", "x" => "y"}), old)
     # Anything else still is immutable.
@@ -40,10 +43,13 @@ class JobTemplateUpdateValidationTest < Minitest::Test
   def test_a_started_suspended_job_needs_the_suspended_condition_and_no_active_pods
     started = {"startTime" => "2026-09-24T00:00:00Z"}
     old = job(suspend: true, status: started)
+
     assert_equal ["spec.template: field is immutable"], errors(job(suspend: true, resources: {"requests" => {"cpu" => "4"}}), old)
     marked = job(suspend: true, status: started.merge("conditions" => [{"type" => "JobSuspended", "status" => "True"}]))
+
     assert_empty errors(job(suspend: true, resources: {"requests" => {"cpu" => "4"}}), marked)
     busy = job(suspend: true, status: {"active" => 1})
+
     assert_equal ["spec.template: field is immutable"], errors(job(suspend: true, resources: {"requests" => {"cpu" => "4"}}), busy)
   end
 
@@ -52,6 +58,7 @@ class JobTemplateUpdateValidationTest < Minitest::Test
     new_job = job(resources: {})
     new_job["spec"]["template"]["spec"]["containers"][0].delete("resources")
     new_job["spec"]["template"]["spec"]["volumes"] = []
+
     assert_empty errors(new_job, old)
   end
 end

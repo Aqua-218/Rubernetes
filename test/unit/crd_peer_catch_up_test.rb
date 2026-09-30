@@ -51,9 +51,11 @@ class CRDPeerCatchUpTest < Minitest::Test
 
   def test_peer_serves_custom_resource_created_through_another_apiserver
     call(@creator, "POST", "/api/v1/namespaces", body: {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "team"}})
+
     assert_equal 201, call(@creator, "POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", body: crd).status
 
     created = call(@peer, "POST", "/apis/example.com/v1/namespaces/team/widgets", body: widget)
+
     assert_equal 201, created.status, created.body.inspect
     assert_equal "blue", created.body.dig("spec", "color"), "the peer applies the CRD's defaulting"
   end
@@ -62,6 +64,7 @@ class CRDPeerCatchUpTest < Minitest::Test
     assert_equal 201, call(@creator, "POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", body: crd).status
 
     listing = call(@peer, "GET", "/apis/example.com/v1")
+
     assert_equal 200, listing.status, listing.body.inspect
     assert_includes listing.body["resources"].map { |resource| resource["name"] }, "widgets"
   end
@@ -78,6 +81,7 @@ class CRDPeerCatchUpTest < Minitest::Test
       flunk "CRD never removed" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
       sleep 0.05
     end
+
     assert_equal 404, call(@peer, "GET", "/apis/example.com/v1/namespaces/team/widgets").status
   end
 end

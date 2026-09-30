@@ -77,11 +77,11 @@ module Prom
       when "P" then number * 1e15
       when "E" then number * 1e18
       when "Ki" then number * 1024
-      when "Mi" then number * 1024**2
-      when "Gi" then number * 1024**3
-      when "Ti" then number * 1024**4
-      when "Pi" then number * 1024**5
-      when "Ei" then number * 1024**6
+      when "Mi" then number * (1024**2)
+      when "Gi" then number * (1024**3)
+      when "Ti" then number * (1024**4)
+      when "Pi" then number * (1024**5)
+      when "Ei" then number * (1024**6)
       else number
       end
     end
@@ -97,7 +97,8 @@ module Prom
       header(out, "kube_node_info", "gauge", "Information about a cluster node.")
       header(out, "kube_node_status_condition", "gauge", "The condition of a cluster node.")
       header(out, "kube_node_status_capacity", "gauge", "The capacity for different resources of a node.")
-      header(out, "kube_node_status_allocatable", "gauge", "The allocatable for different resources of a node that are available for scheduling.")
+      header(out, "kube_node_status_allocatable", "gauge",
+             "The allocatable for different resources of a node that are available for scheduling.")
       header(out, "kube_node_spec_unschedulable", "gauge", "Whether a node can schedule new pods.")
       header(out, "kube_node_created", "gauge", "Unix creation timestamp")
       items.each do |node|
@@ -105,7 +106,9 @@ module Prom
         info = node.dig("status", "nodeInfo") || {}
         sample(out, "kube_node_info", {"node" => name, "kernel_version" => info["kernelVersion"], "os_image" => info["osImage"],
                                        "container_runtime_version" => info["containerRuntimeVersion"], "kubelet_version" => info["kubeletVersion"],
-                                       "internal_ip" => Array(node.dig("status", "addresses")).find { |a| a["type"] == "InternalIP" }&.dig("address")}, 1)
+                                       "internal_ip" => Array(node.dig("status", "addresses")).find do |a|
+                                         a["type"] == "InternalIP"
+                                       end&.dig("address")}, 1)
         Array(node.dig("status", "conditions")).each do |condition|
           %w[true false unknown].each do |status|
             sample(out, "kube_node_status_condition", {"node" => name, "condition" => condition["type"], "status" => status},
@@ -136,7 +139,9 @@ module Prom
       list("namespaces").each do |ns|
         name = ns.dig("metadata", "name")
         phase = ns.dig("status", "phase")
-        %w[Active Terminating].each { |p| sample(out, "kube_namespace_status_phase", {"namespace" => name, "phase" => p}, phase == p ? 1 : 0) }
+        %w[Active Terminating].each do |p|
+          sample(out, "kube_namespace_status_phase", {"namespace" => name, "phase" => p}, phase == p ? 1 : 0)
+        end
       end
     end
 
@@ -149,7 +154,8 @@ module Prom
       header(out, "kube_pod_container_status_ready", "gauge", "Describes whether the containers readiness check succeeded.")
       header(out, "kube_pod_container_status_running", "gauge", "Describes whether the container is currently in running state.")
       header(out, "kube_pod_container_status_waiting_reason", "gauge", "Describes the reason the container is currently in waiting state.")
-      header(out, "kube_pod_container_status_terminated_reason", "gauge", "Describes the reason the container is currently in terminated state.")
+      header(out, "kube_pod_container_status_terminated_reason", "gauge",
+             "Describes the reason the container is currently in terminated state.")
       header(out, "kube_pod_container_resource_requests", "gauge", "The number of requested request resource by a container.")
       header(out, "kube_pod_container_resource_limits", "gauge", "The number of requested limit resource by a container.")
       header(out, "kube_pod_start_time", "gauge", "Start time in unix timestamp for a pod.")
@@ -194,7 +200,11 @@ module Prom
               value = quantity(raw)
               next if value.nil?
 
-              unit = resource == "cpu" ? "core" : (resource.include?("memory") || resource.include?("storage") ? "byte" : "integer")
+              unit = if resource == "cpu"
+                       "core"
+                     else
+                       (resource.include?("memory") || resource.include?("storage") ? "byte" : "integer")
+                     end
               sample(out, "kube_pod_container_resource_#{kind}", base.merge("container" => container["name"], "node" => pod.dig("spec", "nodeName"),
                                                                             "resource" => resource.tr("-", "_"), "unit" => unit), value)
             end
@@ -245,7 +255,8 @@ module Prom
 
     def daemonsets(out)
       items = list("daemonsets", api_version: "apps/v1")
-      %w[desired_number_scheduled current_number_scheduled number_ready number_available number_misscheduled updated_number_scheduled].each do |field|
+      %w[desired_number_scheduled current_number_scheduled number_ready number_available number_misscheduled
+         updated_number_scheduled].each do |field|
         header(out, "kube_daemonset_status_#{field}", "gauge", "DaemonSet status #{field.tr("_", " ")}.")
       end
       items.each do |item|
@@ -294,11 +305,14 @@ module Prom
 
     def persistent_volume_claims(out)
       header(out, "kube_persistentvolumeclaim_status_phase", "gauge", "The phase the persistent volume claim is currently in.")
-      header(out, "kube_persistentvolumeclaim_resource_requests_storage_bytes", "gauge", "The capacity of storage requested by the persistent volume claim.")
+      header(out, "kube_persistentvolumeclaim_resource_requests_storage_bytes", "gauge",
+             "The capacity of storage requested by the persistent volume claim.")
       list("persistentvolumeclaims").each do |item|
         labels = {"namespace" => item.dig("metadata", "namespace"), "persistentvolumeclaim" => item.dig("metadata", "name")}
         phase = item.dig("status", "phase")
-        %w[Lost Bound Pending].each { |p| sample(out, "kube_persistentvolumeclaim_status_phase", labels.merge("phase" => p), phase == p ? 1 : 0) }
+        %w[Lost Bound Pending].each do |p|
+          sample(out, "kube_persistentvolumeclaim_status_phase", labels.merge("phase" => p), phase == p ? 1 : 0)
+        end
         storage = quantity(item.dig("spec", "resources", "requests", "storage"))
         sample(out, "kube_persistentvolumeclaim_resource_requests_storage_bytes", labels, storage) if storage
       end

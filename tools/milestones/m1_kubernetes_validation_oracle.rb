@@ -96,13 +96,17 @@ module M1KubernetesValidationOracle
         "update" => {"spec" => {"resourceAttributes" => {"verb" => "list"}}},
         "nested" => {
           "io.k8s.api.authorization.v1.NonResourceAttributes" => {
-            "create" => {"spec" => {"resourceAttributes" => "__delete__", "user" => "m1-validation", "nonResourceAttributes" => {"path" => "/healthz", "verb" => "get"}}},
+            "create" => {"spec" => {"resourceAttributes" => "__delete__", "user" => "m1-validation",
+                                    "nonResourceAttributes" => {"path" => "/healthz", "verb" => "get"}}},
             "invalid" => {"spec" => {"resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods"}}},
             "update" => {"spec" => {"nonResourceAttributes" => {"verb" => "list"}}}
           },
-          "io.k8s.api.authorization.v1.FieldSelectorAttributes" => {"spec" => {"nonResourceAttributes" => "__delete__", "user" => "m1-validation", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "labelSelector" => "__delete__", "fieldSelector" => {"requirements" => [{"key" => "metadata.name", "operator" => "In", "values" => ["m1"]}]}}}},
-          "io.k8s.api.authorization.v1.LabelSelectorAttributes" => {"spec" => {"nonResourceAttributes" => "__delete__", "user" => "m1-validation", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "fieldSelector" => "__delete__", "labelSelector" => {"requirements" => [{"key" => "app", "operator" => "In", "values" => ["m1"]}]}}}},
-          "io.k8s.apimachinery.pkg.apis.meta.v1.FieldSelectorRequirement" => {"spec" => {"nonResourceAttributes" => "__delete__", "user" => "m1-validation", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "labelSelector" => "__delete__", "fieldSelector" => {"requirements" => [{"key" => "metadata.name", "operator" => "In", "values" => ["m1"]}]}}}}
+          "io.k8s.api.authorization.v1.FieldSelectorAttributes" => {"spec" => {"nonResourceAttributes" => "__delete__",
+                                                                               "user" => "m1-validation", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "labelSelector" => "__delete__", "fieldSelector" => {"requirements" => [{"key" => "metadata.name", "operator" => "In", "values" => ["m1"]}]}}}},
+          "io.k8s.api.authorization.v1.LabelSelectorAttributes" => {"spec" => {"nonResourceAttributes" => "__delete__",
+                                                                               "user" => "m1-validation", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "fieldSelector" => "__delete__", "labelSelector" => {"requirements" => [{"key" => "app", "operator" => "In", "values" => ["m1"]}]}}}},
+          "io.k8s.apimachinery.pkg.apis.meta.v1.FieldSelectorRequirement" => {"spec" => {"nonResourceAttributes" => "__delete__",
+                                                                                         "user" => "m1-validation", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "labelSelector" => "__delete__", "fieldSelector" => {"requirements" => [{"key" => "metadata.name", "operator" => "In", "values" => ["m1"]}]}}}}
         },
         "create" => {"spec" => {"nonResourceAttributes" => "__delete__", "user" => "m1-validation",
                                 "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "fieldSelector" => "__delete__", "labelSelector" => "__delete__"}}},
@@ -126,16 +130,24 @@ module M1KubernetesValidationOracle
         "update" => {"spec" => {"resourceAttributes" => {"verb" => "list"}}},
         "nested" => {
           "io.k8s.api.authorization.v1.NonResourceAttributes" => {
-            "create" => {"spec" => {"resourceAttributes" => "__delete__", "nonResourceAttributes" => {"path" => "/healthz", "verb" => "get"}}},
+            "create" => {"spec" => {"resourceAttributes" => "__delete__",
+                                    "nonResourceAttributes" => {"path" => "/healthz", "verb" => "get"}}},
             "invalid" => {"spec" => {"resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods"}}},
             "update" => {"spec" => {"nonResourceAttributes" => {"verb" => "list"}}}
           },
-          "io.k8s.api.authorization.v1.FieldSelectorAttributes" => {"spec" => {"nonResourceAttributes" => "__delete__", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "labelSelector" => "__delete__", "fieldSelector" => {"requirements" => [{"key" => "metadata.name", "operator" => "In", "values" => ["m1"]}]}}}},
-          "io.k8s.api.authorization.v1.LabelSelectorAttributes" => {"spec" => {"nonResourceAttributes" => "__delete__", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "fieldSelector" => "__delete__", "labelSelector" => {"requirements" => [{"key" => "app", "operator" => "In", "values" => ["m1"]}]}}}},
-          "io.k8s.apimachinery.pkg.apis.meta.v1.FieldSelectorRequirement" => {"spec" => {"nonResourceAttributes" => "__delete__", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "labelSelector" => "__delete__", "fieldSelector" => {"requirements" => [{"key" => "metadata.name", "operator" => "In", "values" => ["m1"]}]}}}}
+          "io.k8s.api.authorization.v1.FieldSelectorAttributes" => {"spec" => {"nonResourceAttributes" => "__delete__",
+                                                                               "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "labelSelector" => "__delete__",
+                                                                                                        "fieldSelector" => {"requirements" => [{"key" => "metadata.name", "operator" => "In", "values" => ["m1"]}]}}}},
+          "io.k8s.api.authorization.v1.LabelSelectorAttributes" => {"spec" => {"nonResourceAttributes" => "__delete__",
+                                                                               "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "fieldSelector" => "__delete__",
+                                                                                                        "labelSelector" => {"requirements" => [{"key" => "app", "operator" => "In", "values" => ["m1"]}]}}}},
+          "io.k8s.apimachinery.pkg.apis.meta.v1.FieldSelectorRequirement" => {"spec" => {"nonResourceAttributes" => "__delete__",
+                                                                                         "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "labelSelector" => "__delete__",
+                                                                                                                  "fieldSelector" => {"requirements" => [{"key" => "metadata.name", "operator" => "In", "values" => ["m1"]}]}}}}
         },
         "create" => {"spec" => {"nonResourceAttributes" => "__delete__",
-                                "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "fieldSelector" => "__delete__", "labelSelector" => "__delete__"}}},
+                                "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods",
+                                                         "fieldSelector" => "__delete__", "labelSelector" => "__delete__"}}},
         "invalid" => {"spec" => {"nonResourceAttributes" => {"path" => "/healthz", "verb" => "get"}}}
       },
       "expectations" => {"create" => true, "invalid" => false, "missing" => false, "update" => true}
@@ -155,9 +167,12 @@ module M1KubernetesValidationOracle
       "metadata_policy" => "namespace_only",
       "fixture" => {
         "nested" => {
-          "io.k8s.api.authorization.v1.FieldSelectorAttributes" => {"spec" => {"nonResourceAttributes" => "__delete__", "user" => "m1-validation", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "labelSelector" => "__delete__", "fieldSelector" => {"requirements" => [{"key" => "metadata.name", "operator" => "In", "values" => ["m1"]}]}}}},
-          "io.k8s.api.authorization.v1.LabelSelectorAttributes" => {"spec" => {"nonResourceAttributes" => "__delete__", "user" => "m1-validation", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "fieldSelector" => "__delete__", "labelSelector" => {"requirements" => [{"key" => "app", "operator" => "In", "values" => ["m1"]}]}}}},
-          "io.k8s.apimachinery.pkg.apis.meta.v1.FieldSelectorRequirement" => {"spec" => {"nonResourceAttributes" => "__delete__", "user" => "m1-validation", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "labelSelector" => "__delete__", "fieldSelector" => {"requirements" => [{"key" => "metadata.name", "operator" => "In", "values" => ["m1"]}]}}}}
+          "io.k8s.api.authorization.v1.FieldSelectorAttributes" => {"spec" => {"nonResourceAttributes" => "__delete__",
+                                                                               "user" => "m1-validation", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "labelSelector" => "__delete__", "fieldSelector" => {"requirements" => [{"key" => "metadata.name", "operator" => "In", "values" => ["m1"]}]}}}},
+          "io.k8s.api.authorization.v1.LabelSelectorAttributes" => {"spec" => {"nonResourceAttributes" => "__delete__",
+                                                                               "user" => "m1-validation", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "fieldSelector" => "__delete__", "labelSelector" => {"requirements" => [{"key" => "app", "operator" => "In", "values" => ["m1"]}]}}}},
+          "io.k8s.apimachinery.pkg.apis.meta.v1.FieldSelectorRequirement" => {"spec" => {"nonResourceAttributes" => "__delete__",
+                                                                                         "user" => "m1-validation", "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "labelSelector" => "__delete__", "fieldSelector" => {"requirements" => [{"key" => "metadata.name", "operator" => "In", "values" => ["m1"]}]}}}}
         },
         "create" => {"spec" => {"nonResourceAttributes" => "__delete__", "user" => "m1-validation",
                                 "resourceAttributes" => {"namespace" => "m1-validation", "verb" => "get", "resource" => "pods", "fieldSelector" => "__delete__", "labelSelector" => "__delete__"}}},
@@ -193,7 +208,8 @@ module M1KubernetesValidationOracle
       "gvk" => {"group" => "", "version" => "v1", "kind" => "Binding"},
       "namespace_scoped" => true,
       "metadata_policy" => "name",
-      "fixture" => {"create" => {"target" => {"kind" => "Node", "name" => "m1-node"}}, "invalid" => {"target" => {"kind" => "Deployment", "name" => "m1-node"}}},
+      "fixture" => {"create" => {"target" => {"kind" => "Node", "name" => "m1-node"}},
+                    "invalid" => {"target" => {"kind" => "Deployment", "name" => "m1-node"}}},
       "expectations" => {"create" => true, "invalid" => false, "missing" => false, "update" => true}
     },
     "io.k8s.apimachinery.pkg.apis.meta.v1.DeleteOptions" => {
@@ -247,14 +263,24 @@ module M1KubernetesValidationOracle
   # Server-generated protocol types: never submitted for create/update, they
   # are validated as kube-apiserver responses in the API differential.
   RESPONSE_ROOTS = {
-    "io.k8s.apimachinery.pkg.apis.meta.v1.APIVersions" => {"api_operations" => %w[/api], "source_path" => "staging/src/k8s.io/apiserver/pkg/endpoints/discovery/legacy.go"},
-    "io.k8s.apimachinery.pkg.apis.meta.v1.APIGroupList" => {"api_operations" => %w[/apis], "source_path" => "staging/src/k8s.io/apiserver/pkg/endpoints/discovery/root.go"},
-    "io.k8s.apimachinery.pkg.apis.meta.v1.APIGroup" => {"api_operations" => %w[/apis/apps], "source_path" => "staging/src/k8s.io/apiserver/pkg/endpoints/discovery/group.go"},
-    "io.k8s.apimachinery.pkg.apis.meta.v1.APIResourceList" => {"api_operations" => %w[/api/v1 /apis/apps/v1], "source_path" => "staging/src/k8s.io/apiserver/pkg/endpoints/discovery/version.go"},
-    "io.k8s.apimachinery.pkg.apis.meta.v1.Status" => {"api_operations" => %w[duplicate-create-status validation-status not-found-status delete], "source_path" => "staging/src/k8s.io/apimachinery/pkg/api/errors/errors.go"},
-    "io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta" => {"api_operations" => %w[list], "source_path" => "staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go"},
-    "io.k8s.apimachinery.pkg.apis.meta.v1.Patch" => {"api_operations" => %w[merge-patch apply-create apply-force], "source_path" => "staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go"},
-    "io.k8s.apimachinery.pkg.apis.meta.v1.WatchEvent" => {"api_operations" => %w[watch initial-watch], "source_path" => "staging/src/k8s.io/apiserver/pkg/endpoints/handlers/watch.go"}
+    "io.k8s.apimachinery.pkg.apis.meta.v1.APIVersions" => {"api_operations" => %w[/api],
+                                                           "source_path" => "staging/src/k8s.io/apiserver/pkg/endpoints/discovery/legacy.go"},
+    "io.k8s.apimachinery.pkg.apis.meta.v1.APIGroupList" => {"api_operations" => %w[/apis],
+                                                            "source_path" => "staging/src/k8s.io/apiserver/pkg/endpoints/discovery/root.go"},
+    "io.k8s.apimachinery.pkg.apis.meta.v1.APIGroup" => {"api_operations" => %w[/apis/apps],
+                                                        "source_path" => "staging/src/k8s.io/apiserver/pkg/endpoints/discovery/group.go"},
+    "io.k8s.apimachinery.pkg.apis.meta.v1.APIResourceList" => {"api_operations" => %w[/api/v1 /apis/apps/v1],
+                                                               "source_path" => "staging/src/k8s.io/apiserver/pkg/endpoints/discovery/version.go"},
+    "io.k8s.apimachinery.pkg.apis.meta.v1.Status" => {
+      "api_operations" => %w[duplicate-create-status validation-status not-found-status
+                             delete], "source_path" => "staging/src/k8s.io/apimachinery/pkg/api/errors/errors.go"
+    },
+    "io.k8s.apimachinery.pkg.apis.meta.v1.ListMeta" => {"api_operations" => %w[list],
+                                                        "source_path" => "staging/src/k8s.io/apiserver/pkg/registry/generic/registry/store.go"},
+    "io.k8s.apimachinery.pkg.apis.meta.v1.Patch" => {"api_operations" => %w[merge-patch apply-create apply-force],
+                                                     "source_path" => "staging/src/k8s.io/apiserver/pkg/endpoints/handlers/patch.go"},
+    "io.k8s.apimachinery.pkg.apis.meta.v1.WatchEvent" => {"api_operations" => %w[watch initial-watch],
+                                                          "source_path" => "staging/src/k8s.io/apiserver/pkg/endpoints/handlers/watch.go"}
   }.freeze
 
   VALIDATION_MODES = %w[strategy constructor handler list rest_endpoint response].freeze
@@ -291,9 +317,12 @@ module M1KubernetesValidationOracle
         "nested" => {
           "ApplyConfiguration" => {"spec" => {"mutations" => [{"patchType" => "ApplyConfiguration", "jsonPatch" => "__delete__",
                                                                "applyConfiguration" => {"expression" => "Object{metadata: Object.metadata{labels: {\"m1\": \"m1\"}}}"}}]}},
-          "NamedRuleWithOperations" => {"spec" => {"matchConstraints" => {"excludeResourceRules" => [{"apiGroups" => ["apps"], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["deployments"]}]}}},
-          "ManagedFieldsEntry" => {"metadata" => {"managedFields" => [{"manager" => "m1", "operation" => "Update", "apiVersion" => "admissionregistration.k8s.io/v1", "fieldsType" => "FieldsV1", "fieldsV1" => {"f:spec" => {}}}]}},
-          "FieldsV1" => {"metadata" => {"managedFields" => [{"manager" => "m1", "operation" => "Update", "apiVersion" => "admissionregistration.k8s.io/v1", "fieldsType" => "FieldsV1", "fieldsV1" => {"f:spec" => {}}}]}}
+          "NamedRuleWithOperations" => {"spec" => {"matchConstraints" => {"excludeResourceRules" => [{"apiGroups" => ["apps"],
+                                                                                                      "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["deployments"]}]}}},
+          "ManagedFieldsEntry" => {"metadata" => {"managedFields" => [{"manager" => "m1", "operation" => "Update",
+                                                                       "apiVersion" => "admissionregistration.k8s.io/v1", "fieldsType" => "FieldsV1", "fieldsV1" => {"f:spec" => {}}}]}},
+          "FieldsV1" => {"metadata" => {"managedFields" => [{"manager" => "m1", "operation" => "Update",
+                                                             "apiVersion" => "admissionregistration.k8s.io/v1", "fieldsType" => "FieldsV1", "fieldsV1" => {"f:spec" => {}}}]}}
         }
       }
     },
@@ -303,7 +332,8 @@ module M1KubernetesValidationOracle
         "create" => {"spec" => {"policyName" => "m1-policy",
                                 "paramRef" => {"name" => "m1-param", "selector" => "__delete__", "parameterNotFoundAction" => "Deny"},
                                 "matchResources" => MATCH_RESOURCES_FIXTURE}},
-        "nested" => {"NamedRuleWithOperations" => {"spec" => {"matchResources" => {"excludeResourceRules" => [{"apiGroups" => ["apps"], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["deployments"]}]}}}}
+        "nested" => {"NamedRuleWithOperations" => {"spec" => {"matchResources" => {"excludeResourceRules" => [{"apiGroups" => ["apps"],
+                                                                                                               "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["deployments"]}]}}}}
       }
     },
     ["admissionregistration.k8s.io", "ValidatingAdmissionPolicy"] => {
@@ -313,7 +343,8 @@ module M1KubernetesValidationOracle
           "validations" => [{"expression" => "true", "message" => "m1 validation"}],
           "auditAnnotations" => [{"key" => "m1-audit", "valueExpression" => "'m1'"}]
         )},
-        "nested" => {"NamedRuleWithOperations" => {"spec" => {"matchConstraints" => {"excludeResourceRules" => [{"apiGroups" => ["apps"], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["deployments"]}]}}}}
+        "nested" => {"NamedRuleWithOperations" => {"spec" => {"matchConstraints" => {"excludeResourceRules" => [{"apiGroups" => ["apps"],
+                                                                                                                 "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["deployments"]}]}}}}
       }
     },
     ["apiextensions.k8s.io", "CustomResourceDefinition"] => {
@@ -345,22 +376,42 @@ module M1KubernetesValidationOracle
                        "storedVersions" => ["v1"], "conditions" => "__delete__"}
         },
         "nested" => {
-          "WebhookConversion" => {"spec" => {"conversion" => {"strategy" => "Webhook", "webhook" => {"conversionReviewVersions" => ["v1"], "clientConfig" => {"url" => "__delete__", "service" => {"name" => "m1", "namespace" => "m1", "path" => "/convert", "port" => 443}}}}}},
-          "WebhookClientConfig" => {"spec" => {"conversion" => {"strategy" => "Webhook", "webhook" => {"conversionReviewVersions" => ["v1"], "clientConfig" => {"url" => "__delete__", "service" => {"name" => "m1", "namespace" => "m1", "path" => "/convert", "port" => 443}}}}}},
-          "ServiceReference" => {"spec" => {"conversion" => {"strategy" => "Webhook", "webhook" => {"conversionReviewVersions" => ["v1"], "clientConfig" => {"url" => "__delete__", "service" => {"name" => "m1", "namespace" => "m1", "path" => "/convert", "port" => 443}}}}}},
+          "WebhookConversion" => {"spec" => {"conversion" => {"strategy" => "Webhook",
+                                                              "webhook" => {"conversionReviewVersions" => ["v1"],
+                                                                            "clientConfig" => {"url" => "__delete__",
+                                                                                               "service" => {"name" => "m1",
+                                                                                                             "namespace" => "m1", "path" => "/convert", "port" => 443}}}}}},
+          "WebhookClientConfig" => {"spec" => {"conversion" => {"strategy" => "Webhook",
+                                                                "webhook" => {"conversionReviewVersions" => ["v1"],
+                                                                              "clientConfig" => {"url" => "__delete__",
+                                                                                                 "service" => {"name" => "m1",
+                                                                                                               "namespace" => "m1", "path" => "/convert", "port" => 443}}}}}},
+          "ServiceReference" => {"spec" => {"conversion" => {"strategy" => "Webhook",
+                                                             "webhook" => {"conversionReviewVersions" => ["v1"],
+                                                                           "clientConfig" => {"url" => "__delete__",
+                                                                                              "service" => {"name" => "m1",
+                                                                                                            "namespace" => "m1", "path" => "/convert", "port" => 443}}}}}},
           # A schema at the root of a CRD must be an object; array items live
           # under a property.  The descriptor's own root slot is removed.
-          "JSONSchemaPropsOrArray" => {"spec" => {"versions" => [{"schema" => {"openAPIV3Schema" => {"type" => "object", "items" => "__delete__", "properties" => {"list" => {"type" => "array", "items" => {"type" => "string"}}}}}}]}},
+          "JSONSchemaPropsOrArray" => {"spec" => {"versions" => [{"schema" => {"openAPIV3Schema" => {"type" => "object",
+                                                                                                     "items" => "__delete__", "properties" => {"list" => {"type" => "array", "items" => {"type" => "string"}}}}}}]}},
           # The wire form of JSONSchemaPropsOrBool is either a bool or a schema;
           # additionalItems is not supported by CRDs, so the descriptor is
           # exercised through additionalProperties of a map property.
-          "JSONSchemaPropsOrBool" => {"spec" => {"versions" => [{"schema" => {"openAPIV3Schema" => {"type" => "object", "additionalItems" => "__delete__", "additionalProperties" => "__delete__", "properties" => {"labels" => {"type" => "object", "additionalProperties" => {"type" => "string"}}}}}}]}},
-          "JSONSchemaPropsOrStringArray" => {"spec" => {"versions" => [{"schema" => {"openAPIV3Schema" => {"type" => "object", "dependencies" => "__delete__", "properties" => {"spec" => {"type" => "object", "properties" => {"replicas" => {"type" => "integer"}}}}}}}]}},
-          "ValidationRule" => {"spec" => {"versions" => [{"schema" => {"openAPIV3Schema" => {"x-kubernetes-validations" => [{"rule" => "true", "message" => "m1"}]}}}]}},
-          "ExternalDocumentation" => {"spec" => {"versions" => [{"schema" => {"openAPIV3Schema" => {"externalDocs" => {"url" => "https://m1.example.com/docs", "description" => "m1"}}}}]}},
+          "JSONSchemaPropsOrBool" => {"spec" => {"versions" => [{"schema" => {"openAPIV3Schema" => {"type" => "object",
+                                                                                                    "additionalItems" => "__delete__", "additionalProperties" => "__delete__", "properties" => {"labels" => {"type" => "object", "additionalProperties" => {"type" => "string"}}}}}}]}},
+          "JSONSchemaPropsOrStringArray" => {"spec" => {"versions" => [{"schema" => {"openAPIV3Schema" => {"type" => "object",
+                                                                                                           "dependencies" => "__delete__", "properties" => {"spec" => {"type" => "object", "properties" => {"replicas" => {"type" => "integer"}}}}}}}]}},
+          "ValidationRule" => {"spec" => {"versions" => [{"schema" => {"openAPIV3Schema" => {"x-kubernetes-validations" => [{
+            "rule" => "true", "message" => "m1"
+          }]}}}]}},
+          "ExternalDocumentation" => {"spec" => {"versions" => [{"schema" => {"openAPIV3Schema" => {"externalDocs" => {
+            "url" => "https://m1.example.com/docs", "description" => "m1"
+          }}}}]}},
           # A root-level default is not allowed with the status subresource;
           # the JSON carrier is exercised as an example and a nested default.
-          "JSON" => {"spec" => {"versions" => [{"schema" => {"openAPIV3Schema" => {"type" => "object", "default" => "__delete__", "example" => {"spec" => {"replicas" => 1}}, "properties" => {"spec" => {"type" => "object", "properties" => {"replicas" => {"type" => "integer", "default" => 1}}}}}}}]}}
+          "JSON" => {"spec" => {"versions" => [{"schema" => {"openAPIV3Schema" => {"type" => "object", "default" => "__delete__",
+                                                                                   "example" => {"spec" => {"replicas" => 1}}, "properties" => {"spec" => {"type" => "object", "properties" => {"replicas" => {"type" => "integer", "default" => 1}}}}}}}]}}
         }
       }
     },
@@ -387,7 +438,10 @@ module M1KubernetesValidationOracle
       "fixture" => {
         "create" => {"metadata" => {"name" => "apps.deployments"}},
         "nested" => {
-          "ServerStorageVersion" => {"status" => {"storageVersions" => [{"apiServerID" => "m1-apiserver", "encodingVersion" => "apps/v1", "decodableVersions" => ["apps/v1"], "servedVersions" => ["apps/v1"]}], "commonEncodingVersion" => "apps/v1"}}
+          "ServerStorageVersion" => {"status" => {
+            "storageVersions" => [{"apiServerID" => "m1-apiserver", "encodingVersion" => "apps/v1", "decodableVersions" => ["apps/v1"],
+                                   "servedVersions" => ["apps/v1"]}], "commonEncodingVersion" => "apps/v1"
+          }}
         }
       }
     },
@@ -412,20 +466,26 @@ module M1KubernetesValidationOracle
         "create" => {"spec" => {"schedulingPolicy" => {"basic" => {}, "gang" => "__delete__"}}},
         "nested" => {
           "GangSchedulingPolicy" => {"spec" => {"schedulingPolicy" => {"basic" => "__delete__", "gang" => {"minCount" => 1}}}},
-          "PodGroupTemplateReference" => {"spec" => {"podGroupTemplateRef" => {"workload" => {"workloadName" => "m1-workload", "podGroupTemplateName" => "m1-template"}}}},
-          "WorkloadPodGroupTemplateReference" => {"spec" => {"podGroupTemplateRef" => {"workload" => {"workloadName" => "m1-workload", "podGroupTemplateName" => "m1-template"}}}},
-          "PodGroupResourceClaim" => {"spec" => {"resourceClaims" => [{"name" => "m1-claim", "resourceClaimName" => "m1-claim", "resourceClaimTemplateName" => "__delete__"}]}},
+          "PodGroupTemplateReference" => {"spec" => {"podGroupTemplateRef" => {"workload" => {"workloadName" => "m1-workload",
+                                                                                              "podGroupTemplateName" => "m1-template"}}}},
+          "WorkloadPodGroupTemplateReference" => {"spec" => {"podGroupTemplateRef" => {"workload" => {"workloadName" => "m1-workload",
+                                                                                                      "podGroupTemplateName" => "m1-template"}}}},
+          "PodGroupResourceClaim" => {"spec" => {"resourceClaims" => [{"name" => "m1-claim", "resourceClaimName" => "m1-claim",
+                                                                       "resourceClaimTemplateName" => "__delete__"}]}}
         }
       }
     },
     ["scheduling.k8s.io", "Workload"] => {
       "source" => "staging/src/k8s.io/api/scheduling/v1alpha2/types.go declarative validation (podGroupTemplates required)",
       "fixture" => {
-        "create" => {"spec" => {"podGroupTemplates" => [{"name" => "m1-template", "schedulingPolicy" => {"basic" => {}, "gang" => "__delete__"}}]}},
+        "create" => {"spec" => {"podGroupTemplates" => [{"name" => "m1-template",
+                                                         "schedulingPolicy" => {"basic" => {}, "gang" => "__delete__"}}]}},
         "nested" => {
-          "GangSchedulingPolicy" => {"spec" => {"podGroupTemplates" => [{"schedulingPolicy" => {"basic" => "__delete__", "gang" => {"minCount" => 1}}}]}},
+          "GangSchedulingPolicy" => {"spec" => {"podGroupTemplates" => [{"schedulingPolicy" => {"basic" => "__delete__",
+                                                                                                "gang" => {"minCount" => 1}}}]}},
           "TypedLocalObjectReference" => {"spec" => {"controllerRef" => {"apiGroup" => "apps", "kind" => "Deployment", "name" => "m1"}}},
-          "PodGroupResourceClaim" => {"spec" => {"podGroupTemplates" => [{"resourceClaims" => [{"name" => "m1-claim", "resourceClaimName" => "m1-claim", "resourceClaimTemplateName" => "__delete__"}]}]}}
+          "PodGroupResourceClaim" => {"spec" => {"podGroupTemplates" => [{"resourceClaims" => [{"name" => "m1-claim",
+                                                                                                "resourceClaimName" => "m1-claim", "resourceClaimTemplateName" => "__delete__"}]}]}}
         }
       }
     },
@@ -434,65 +494,133 @@ module M1KubernetesValidationOracle
       "fixture" => {
         "create" => {"spec" => {"containers" => [{"name" => "m1", "image" => "m1.example.com/pause:1"}]}},
         "nested" => {
-          "AppArmorProfile" => {"spec" => {"securityContext" => {"appArmorProfile" => {"type" => "RuntimeDefault", "localhostProfile" => "__delete__"}}, "containers" => [{"securityContext" => {"appArmorProfile" => {"type" => "RuntimeDefault", "localhostProfile" => "__delete__"}}}]}},
-          "SeccompProfile" => {"spec" => {"securityContext" => {"seccompProfile" => {"type" => "RuntimeDefault", "localhostProfile" => "__delete__"}}, "containers" => [{"securityContext" => {"seccompProfile" => {"type" => "RuntimeDefault", "localhostProfile" => "__delete__"}}}]}},
-          "AzureFileVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "azureFile" => {"secretName" => "m1", "shareName" => "m1"}}]}},
+          "AppArmorProfile" => {"spec" => {
+            "securityContext" => {"appArmorProfile" => {"type" => "RuntimeDefault",
+                                                        "localhostProfile" => "__delete__"}}, "containers" => [{"securityContext" => {"appArmorProfile" => {"type" => "RuntimeDefault", "localhostProfile" => "__delete__"}}}]
+          }},
+          "SeccompProfile" => {"spec" => {
+            "securityContext" => {"seccompProfile" => {"type" => "RuntimeDefault",
+                                                       "localhostProfile" => "__delete__"}}, "containers" => [{"securityContext" => {"seccompProfile" => {"type" => "RuntimeDefault", "localhostProfile" => "__delete__"}}}]
+          }},
+          "AzureFileVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                                "azureFile" => {"secretName" => "m1", "shareName" => "m1"}}]}},
           "CSIVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "csi" => {"driver" => "m1.example.com"}}]}},
           "CephFSVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "cephfs" => {"monitors" => ["10.0.0.1:6789"]}}]}},
           "CinderVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "cinder" => {"volumeID" => "m1"}}]}},
-          "ClusterTrustBundleProjection" => {"spec" => {"volumes" => [{"name" => "m1-volume", "projected" => {"sources" => [{"clusterTrustBundle" => {"name" => "m1", "signerName" => "__delete__", "labelSelector" => "__delete__", "path" => "ca.pem"}}]}}]}},
-          "ConfigMapEnvSource" => {"spec" => {"containers" => [{"envFrom" => [{"configMapRef" => {"name" => "m1"}, "secretRef" => "__delete__"}]}]}},
-          "SecretEnvSource" => {"spec" => {"containers" => [{"envFrom" => [{"secretRef" => {"name" => "m1"}, "configMapRef" => "__delete__"}]}]}},
-          "EnvFromSource" => {"spec" => {"containers" => [{"envFrom" => [{"configMapRef" => {"name" => "m1"}, "secretRef" => "__delete__"}]}]}},
-          "ConfigMapKeySelector" => {"spec" => {"containers" => [{"env" => [{"name" => "M1", "value" => "__delete__", "valueFrom" => {"configMapKeyRef" => {"name" => "m1", "key" => "k"}, "fieldRef" => "__delete__", "resourceFieldRef" => "__delete__", "secretKeyRef" => "__delete__", "fileKeyRef" => "__delete__"}}]}]}},
-          "SecretKeySelector" => {"spec" => {"containers" => [{"env" => [{"name" => "M1", "value" => "__delete__", "valueFrom" => {"secretKeyRef" => {"name" => "m1", "key" => "k"}, "fieldRef" => "__delete__", "resourceFieldRef" => "__delete__", "configMapKeyRef" => "__delete__", "fileKeyRef" => "__delete__"}}]}]}},
-          "ObjectFieldSelector" => {"spec" => {"containers" => [{"env" => [{"name" => "M1", "value" => "__delete__", "valueFrom" => {"fieldRef" => {"fieldPath" => "metadata.name"}, "resourceFieldRef" => "__delete__", "configMapKeyRef" => "__delete__", "secretKeyRef" => "__delete__", "fileKeyRef" => "__delete__"}}]}]}},
-          "EnvVarSource" => {"spec" => {"containers" => [{"env" => [{"name" => "M1", "value" => "__delete__", "valueFrom" => {"fieldRef" => {"fieldPath" => "metadata.name"}, "resourceFieldRef" => "__delete__", "configMapKeyRef" => "__delete__", "secretKeyRef" => "__delete__", "fileKeyRef" => "__delete__"}}]}]}},
-          "ResourceFieldSelector" => {"spec" => {"containers" => [{"env" => [{"name" => "M1", "value" => "__delete__", "valueFrom" => {"resourceFieldRef" => {"resource" => "limits.cpu", "containerName" => "__delete__", "divisor" => "__delete__"}, "fieldRef" => "__delete__", "configMapKeyRef" => "__delete__", "secretKeyRef" => "__delete__", "fileKeyRef" => "__delete__"}}]}]}},
-          "FileKeySelector" => {"spec" => {"volumes" => [{"name" => "m1-volume", "emptyDir" => {}}], "containers" => [{"env" => [{"name" => "M1", "value" => "__delete__", "valueFrom" => {"fileKeyRef" => {"volumeName" => "m1-volume", "path" => "m1.env", "key" => "K"}, "fieldRef" => "__delete__", "resourceFieldRef" => "__delete__", "configMapKeyRef" => "__delete__", "secretKeyRef" => "__delete__"}}]}]}},
-          "ConfigMapProjection" => {"spec" => {"volumes" => [{"name" => "m1-volume", "projected" => {"sources" => [{"configMap" => {"name" => "m1"}}]}}]}},
-          "SecretProjection" => {"spec" => {"volumes" => [{"name" => "m1-volume", "projected" => {"sources" => [{"secret" => {"name" => "m1"}}]}}]}},
-          "ProjectedVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "projected" => {"sources" => [{"configMap" => {"name" => "m1"}}]}}]}},
-          "VolumeProjection" => {"spec" => {"volumes" => [{"name" => "m1-volume", "projected" => {"sources" => [{"configMap" => {"name" => "m1"}, "secret" => "__delete__", "downwardAPI" => "__delete__", "serviceAccountToken" => "__delete__", "clusterTrustBundle" => "__delete__", "podCertificate" => "__delete__"}]}}]}},
-          "DownwardAPIProjection" => {"spec" => {"volumes" => [{"name" => "m1-volume", "projected" => {"sources" => [{"downwardAPI" => {"items" => [{"path" => "m1", "fieldRef" => {"fieldPath" => "metadata.name"}}]}}]}}]}},
-          "ServiceAccountTokenProjection" => {"spec" => {"serviceAccountName" => "m1", "volumes" => [{"name" => "m1-volume", "projected" => {"sources" => [{"serviceAccountToken" => {"path" => "token", "audience" => "__delete__", "expirationSeconds" => "__delete__"}}]}}]}},
-          "PodCertificateProjection" => {"spec" => {"volumes" => [{"name" => "m1-volume", "projected" => {"sources" => [{"podCertificate" => {"signerName" => "m1.example.com/signer", "keyType" => "ED25519", "credentialBundlePath" => "creds", "keyPath" => "__delete__", "certificateChainPath" => "__delete__", "maxExpirationSeconds" => "__delete__"}}]}}]}},
+          "ClusterTrustBundleProjection" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                                       "projected" => {"sources" => [{"clusterTrustBundle" => {"name" => "m1", "signerName" => "__delete__", "labelSelector" => "__delete__",
+                                                                                                                               "path" => "ca.pem"}}]}}]}},
+          "ConfigMapEnvSource" => {"spec" => {"containers" => [{"envFrom" => [{"configMapRef" => {"name" => "m1"},
+                                                                               "secretRef" => "__delete__"}]}]}},
+          "SecretEnvSource" => {"spec" => {"containers" => [{"envFrom" => [{"secretRef" => {"name" => "m1"},
+                                                                            "configMapRef" => "__delete__"}]}]}},
+          "EnvFromSource" => {"spec" => {"containers" => [{"envFrom" => [{"configMapRef" => {"name" => "m1"},
+                                                                          "secretRef" => "__delete__"}]}]}},
+          "ConfigMapKeySelector" => {"spec" => {"containers" => [{"env" => [{"name" => "M1", "value" => "__delete__",
+                                                                             "valueFrom" => {"configMapKeyRef" => {"name" => "m1", "key" => "k"}, "fieldRef" => "__delete__", "resourceFieldRef" => "__delete__", "secretKeyRef" => "__delete__", "fileKeyRef" => "__delete__"}}]}]}},
+          "SecretKeySelector" => {"spec" => {"containers" => [{"env" => [{"name" => "M1", "value" => "__delete__",
+                                                                          "valueFrom" => {"secretKeyRef" => {"name" => "m1", "key" => "k"}, "fieldRef" => "__delete__", "resourceFieldRef" => "__delete__", "configMapKeyRef" => "__delete__", "fileKeyRef" => "__delete__"}}]}]}},
+          "ObjectFieldSelector" => {"spec" => {"containers" => [{"env" => [{"name" => "M1", "value" => "__delete__",
+                                                                            "valueFrom" => {"fieldRef" => {"fieldPath" => "metadata.name"}, "resourceFieldRef" => "__delete__", "configMapKeyRef" => "__delete__", "secretKeyRef" => "__delete__", "fileKeyRef" => "__delete__"}}]}]}},
+          "EnvVarSource" => {"spec" => {"containers" => [{"env" => [{"name" => "M1", "value" => "__delete__",
+                                                                     "valueFrom" => {"fieldRef" => {"fieldPath" => "metadata.name"}, "resourceFieldRef" => "__delete__", "configMapKeyRef" => "__delete__", "secretKeyRef" => "__delete__", "fileKeyRef" => "__delete__"}}]}]}},
+          "ResourceFieldSelector" => {"spec" => {"containers" => [{"env" => [{"name" => "M1", "value" => "__delete__",
+                                                                              "valueFrom" => {"resourceFieldRef" => {"resource" => "limits.cpu", "containerName" => "__delete__", "divisor" => "__delete__"}, "fieldRef" => "__delete__", "configMapKeyRef" => "__delete__", "secretKeyRef" => "__delete__", "fileKeyRef" => "__delete__"}}]}]}},
+          "FileKeySelector" => {"spec" => {"volumes" => [{"name" => "m1-volume", "emptyDir" => {}}],
+                                           "containers" => [{"env" => [{"name" => "M1", "value" => "__delete__",
+                                                                        "valueFrom" => {"fileKeyRef" => {"volumeName" => "m1-volume", "path" => "m1.env", "key" => "K"}, "fieldRef" => "__delete__", "resourceFieldRef" => "__delete__", "configMapKeyRef" => "__delete__", "secretKeyRef" => "__delete__"}}]}]}},
+          "ConfigMapProjection" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                              "projected" => {"sources" => [{"configMap" => {"name" => "m1"}}]}}]}},
+          "SecretProjection" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                           "projected" => {"sources" => [{"secret" => {"name" => "m1"}}]}}]}},
+          "ProjectedVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                                "projected" => {"sources" => [{"configMap" => {"name" => "m1"}}]}}]}},
+          "VolumeProjection" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                           "projected" => {"sources" => [{"configMap" => {"name" => "m1"}, "secret" => "__delete__", "downwardAPI" => "__delete__",
+                                                                                          "serviceAccountToken" => "__delete__", "clusterTrustBundle" => "__delete__", "podCertificate" => "__delete__"}]}}]}},
+          "DownwardAPIProjection" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                                "projected" => {"sources" => [{"downwardAPI" => {"items" => [{
+                                                                  "path" => "m1", "fieldRef" => {"fieldPath" => "metadata.name"}
+                                                                }]}}]}}]}},
+          "ServiceAccountTokenProjection" => {"spec" => {"serviceAccountName" => "m1",
+                                                         "volumes" => [{"name" => "m1-volume",
+                                                                        "projected" => {"sources" => [{"serviceAccountToken" => {"path" => "token", "audience" => "__delete__",
+                                                                                                                                 "expirationSeconds" => "__delete__"}}]}}]}},
+          "PodCertificateProjection" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                                   "projected" => {"sources" => [{"podCertificate" => {"signerName" => "m1.example.com/signer", "keyType" => "ED25519",
+                                                                                                                       "credentialBundlePath" => "creds", "keyPath" => "__delete__", "certificateChainPath" => "__delete__", "maxExpirationSeconds" => "__delete__"}}]}}]}},
           "ConfigMapVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "configMap" => {"name" => "m1"}}]}},
-          "KeyToPath" => {"spec" => {"volumes" => [{"name" => "m1-volume", "configMap" => {"name" => "m1", "items" => [{"key" => "k", "path" => "k"}]}}]}},
+          "KeyToPath" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                    "configMap" => {"name" => "m1", "items" => [{"key" => "k", "path" => "k"}]}}]}},
           "SecretVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "secret" => {"secretName" => "m1"}}]}},
-          "DownwardAPIVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "downwardAPI" => {"items" => [{"path" => "m1", "fieldRef" => {"fieldPath" => "metadata.name"}}]}}]}},
-          "DownwardAPIVolumeFile" => {"spec" => {"volumes" => [{"name" => "m1-volume", "downwardAPI" => {"items" => [{"path" => "m1", "fieldRef" => {"fieldPath" => "metadata.name"}, "resourceFieldRef" => "__delete__"}]}}]}},
+          "DownwardAPIVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                                  "downwardAPI" => {"items" => [{"path" => "m1",
+                                                                                                 "fieldRef" => {"fieldPath" => "metadata.name"}}]}}]}},
+          "DownwardAPIVolumeFile" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                                "downwardAPI" => {"items" => [{"path" => "m1",
+                                                                                               "fieldRef" => {"fieldPath" => "metadata.name"}, "resourceFieldRef" => "__delete__"}]}}]}},
           "EmptyDirVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "emptyDir" => {}}]}},
-          "EphemeralVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "ephemeral" => {"volumeClaimTemplate" => {"spec" => {"accessModes" => ["ReadWriteOnce"], "resources" => {"requests" => {"storage" => "1Gi"}}}}}}]}},
-          "PersistentVolumeClaimTemplate" => {"spec" => {"volumes" => [{"name" => "m1-volume", "ephemeral" => {"volumeClaimTemplate" => {"spec" => {"accessModes" => ["ReadWriteOnce"], "resources" => {"requests" => {"storage" => "1Gi"}}}}}}]}},
+          "EphemeralVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                                "ephemeral" => {"volumeClaimTemplate" => {"spec" => {"accessModes" => ["ReadWriteOnce"],
+                                                                                                                     "resources" => {"requests" => {"storage" => "1Gi"}}}}}}]}},
+          "PersistentVolumeClaimTemplate" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                                        "ephemeral" => {"volumeClaimTemplate" => {"spec" => {"accessModes" => ["ReadWriteOnce"],
+                                                                                                                             "resources" => {"requests" => {"storage" => "1Gi"}}}}}}]}},
           "FlexVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "flexVolume" => {"driver" => "m1.example.com/driver"}}]}},
           "GitRepoVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "gitRepo" => {"repository" => "https://m1.example.com/repo.git"}}]}},
-          "GlusterfsVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "glusterfs" => {"endpoints" => "m1", "path" => "m1"}}]}},
-          "ISCSIVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "iscsi" => {"targetPortal" => "10.0.0.1:3260", "iqn" => "iqn.2026-01.com.example:m1", "lun" => 0}}]}},
+          "GlusterfsVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                                "glusterfs" => {"endpoints" => "m1", "path" => "m1"}}]}},
+          "ISCSIVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                            "iscsi" => {"targetPortal" => "10.0.0.1:3260",
+                                                                        "iqn" => "iqn.2026-01.com.example:m1", "lun" => 0}}]}},
           "ImageVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "image" => {"reference" => "m1.example.com/data:1"}}]}},
-          "PersistentVolumeClaimVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "persistentVolumeClaim" => {"claimName" => "m1"}}]}},
-          "RBDVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "rbd" => {"monitors" => ["10.0.0.1:6789"], "image" => "m1"}}]}},
-          "ScaleIOVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "scaleIO" => {"gateway" => "https://m1.example.com", "system" => "m1", "volumeName" => "m1", "secretRef" => {"name" => "m1"}}}]}},
+          "PersistentVolumeClaimVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                                            "persistentVolumeClaim" => {"claimName" => "m1"}}]}},
+          "RBDVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                          "rbd" => {"monitors" => ["10.0.0.1:6789"], "image" => "m1"}}]}},
+          "ScaleIOVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume",
+                                                              "scaleIO" => {"gateway" => "https://m1.example.com", "system" => "m1",
+                                                                            "volumeName" => "m1", "secretRef" => {"name" => "m1"}}}]}},
           "StorageOSVolumeSource" => {"spec" => {"volumes" => [{"name" => "m1-volume", "storageos" => {"volumeName" => "m1"}}]}},
-          "ContainerResizePolicy" => {"spec" => {"containers" => [{"resizePolicy" => [{"resourceName" => "cpu", "restartPolicy" => "NotRequired"}]}]}},
-          "ContainerRestartRule" => {"spec" => {"containers" => [{"restartPolicy" => "Never", "restartPolicyRules" => [{"action" => "Restart", "exitCodes" => {"operator" => "In", "values" => [1]}}]}]}},
-          "ContainerRestartRuleOnExitCodes" => {"spec" => {"containers" => [{"restartPolicy" => "Never", "restartPolicyRules" => [{"action" => "Restart", "exitCodes" => {"operator" => "In", "values" => [1]}}]}]}},
-          "ExecAction" => {"spec" => {"containers" => [{"livenessProbe" => {"httpGet" => "__delete__", "tcpSocket" => "__delete__", "grpc" => "__delete__", "exec" => {"command" => ["/bin/true"]}}}]}},
-          "Probe" => {"spec" => {"containers" => [{"livenessProbe" => {"httpGet" => "__delete__", "tcpSocket" => "__delete__", "grpc" => "__delete__", "exec" => {"command" => ["/bin/true"]}}}]}},
-          "HTTPGetAction" => {"spec" => {"containers" => [{"livenessProbe" => {"exec" => "__delete__", "tcpSocket" => "__delete__", "grpc" => "__delete__", "httpGet" => {"port" => 80, "path" => "/healthz", "scheme" => "__delete__"}}}]}},
-          "HTTPHeader" => {"spec" => {"containers" => [{"livenessProbe" => {"exec" => "__delete__", "tcpSocket" => "__delete__", "grpc" => "__delete__", "httpGet" => {"port" => 80, "path" => "/healthz", "scheme" => "__delete__", "httpHeaders" => [{"name" => "X-M1", "value" => "1"}]}}}]}},
-          "TCPSocketAction" => {"spec" => {"containers" => [{"livenessProbe" => {"exec" => "__delete__", "httpGet" => "__delete__", "grpc" => "__delete__", "tcpSocket" => {"port" => 80, "host" => "__delete__"}}}]}},
-          "LifecycleHandler" => {"spec" => {"containers" => [{"lifecycle" => {"postStart" => {"exec" => {"command" => ["/bin/true"]}, "httpGet" => "__delete__", "tcpSocket" => "__delete__", "sleep" => "__delete__"}, "preStop" => "__delete__"}}]}},
+          "ContainerResizePolicy" => {"spec" => {"containers" => [{"resizePolicy" => [{"resourceName" => "cpu",
+                                                                                       "restartPolicy" => "NotRequired"}]}]}},
+          "ContainerRestartRule" => {"spec" => {"containers" => [{"restartPolicy" => "Never",
+                                                                  "restartPolicyRules" => [{"action" => "Restart",
+                                                                                            "exitCodes" => {"operator" => "In",
+                                                                                                            "values" => [1]}}]}]}},
+          "ContainerRestartRuleOnExitCodes" => {"spec" => {"containers" => [{"restartPolicy" => "Never",
+                                                                             "restartPolicyRules" => [{"action" => "Restart",
+                                                                                                       "exitCodes" => {"operator" => "In",
+                                                                                                                       "values" => [1]}}]}]}},
+          "ExecAction" => {"spec" => {"containers" => [{"livenessProbe" => {"httpGet" => "__delete__", "tcpSocket" => "__delete__",
+                                                                            "grpc" => "__delete__", "exec" => {"command" => ["/bin/true"]}}}]}},
+          "Probe" => {"spec" => {"containers" => [{"livenessProbe" => {"httpGet" => "__delete__", "tcpSocket" => "__delete__",
+                                                                       "grpc" => "__delete__", "exec" => {"command" => ["/bin/true"]}}}]}},
+          "HTTPGetAction" => {"spec" => {"containers" => [{"livenessProbe" => {"exec" => "__delete__", "tcpSocket" => "__delete__",
+                                                                               "grpc" => "__delete__", "httpGet" => {"port" => 80, "path" => "/healthz", "scheme" => "__delete__"}}}]}},
+          "HTTPHeader" => {"spec" => {"containers" => [{"livenessProbe" => {"exec" => "__delete__", "tcpSocket" => "__delete__",
+                                                                            "grpc" => "__delete__", "httpGet" => {"port" => 80, "path" => "/healthz", "scheme" => "__delete__", "httpHeaders" => [{"name" => "X-M1", "value" => "1"}]}}}]}},
+          "TCPSocketAction" => {"spec" => {"containers" => [{"livenessProbe" => {"exec" => "__delete__", "httpGet" => "__delete__",
+                                                                                 "grpc" => "__delete__", "tcpSocket" => {"port" => 80, "host" => "__delete__"}}}]}},
+          "LifecycleHandler" => {"spec" => {"containers" => [{"lifecycle" => {
+            "postStart" => {"exec" => {"command" => ["/bin/true"]}, "httpGet" => "__delete__", "tcpSocket" => "__delete__",
+                            "sleep" => "__delete__"}, "preStop" => "__delete__"
+          }}]}},
           "HostAlias" => {"spec" => {"hostAliases" => [{"ip" => "10.0.0.1", "hostnames" => ["m1.example.com"]}]}},
           "PodDNSConfigOption" => {"spec" => {"dnsConfig" => {"options" => [{"name" => "ndots", "value" => "2"}]}}},
           "PodOS" => {"spec" => {"os" => {"name" => "linux"}}},
-          "PodResourceClaim" => {"spec" => {"resourceClaims" => [{"name" => "m1-claim", "resourceClaimName" => "m1", "resourceClaimTemplateName" => "__delete__"}]}},
+          "PodResourceClaim" => {"spec" => {"resourceClaims" => [{"name" => "m1-claim", "resourceClaimName" => "m1",
+                                                                  "resourceClaimTemplateName" => "__delete__"}]}},
           "PodSchedulingGroup" => {"spec" => {"schedulingGroup" => {"podGroupName" => "m1"}}},
-          "ResourceClaim" => {"spec" => {"resources" => "__delete__", "resourceClaims" => [{"name" => "m1-claim", "resourceClaimName" => "m1"}], "containers" => [{"resources" => {"claims" => [{"name" => "m1-claim"}]}}]}},
+          "ResourceClaim" => {"spec" => {"resources" => "__delete__",
+                                         "resourceClaims" => [{"name" => "m1-claim", "resourceClaimName" => "m1"}], "containers" => [{"resources" => {"claims" => [{"name" => "m1-claim"}]}}]}},
           "Toleration" => {"spec" => {"tolerations" => [{"key" => "m1", "operator" => "Exists", "value" => "__delete__"}]}},
-          "TopologySpreadConstraint" => {"spec" => {"topologySpreadConstraints" => [{"maxSkew" => 1, "topologyKey" => "topology.kubernetes.io/zone", "whenUnsatisfiable" => "DoNotSchedule"}]}},
-          "VolumeMount" => {"spec" => {"volumes" => [{"name" => "m1-volume", "emptyDir" => {}}], "containers" => [{"volumeMounts" => [{"name" => "m1-volume", "mountPath" => "/m1"}]}]}},
-          "VolumeDevice" => {"spec" => {"volumes" => [{"name" => "m1-volume", "persistentVolumeClaim" => {"claimName" => "m1"}}], "containers" => [{"volumeDevices" => [{"name" => "m1-volume", "devicePath" => "/dev/m1"}]}]}},
+          "TopologySpreadConstraint" => {"spec" => {"topologySpreadConstraints" => [{"maxSkew" => 1,
+                                                                                     "topologyKey" => "topology.kubernetes.io/zone", "whenUnsatisfiable" => "DoNotSchedule"}]}},
+          "VolumeMount" => {"spec" => {"volumes" => [{"name" => "m1-volume", "emptyDir" => {}}],
+                                       "containers" => [{"volumeMounts" => [{"name" => "m1-volume", "mountPath" => "/m1"}]}]}},
+          "VolumeDevice" => {"spec" => {"volumes" => [{"name" => "m1-volume", "persistentVolumeClaim" => {"claimName" => "m1"}}],
+                                        "containers" => [{"volumeDevices" => [{"name" => "m1-volume", "devicePath" => "/dev/m1"}]}]}},
           "EphemeralContainer" => {
             "create" => {"spec" => {"ephemeralContainers" => [{"name" => "m1-debug", "image" => "m1.example.com/pause:1"}]}},
             # Ephemeral containers are only reachable through the subresource on
@@ -502,12 +630,13 @@ module M1KubernetesValidationOracle
         }
       }
     },
-    ["apps", "Deployment"] => {
+    %w[apps Deployment] => {
       "source" => "pkg/apis/apps/validation/validation.go ValidateDeploymentSpec (selector must match template labels)",
       "fixture" => {"create" => {"spec" => {"selector" => {"matchLabels" => {"app" => "m1"}},
-                                            "template" => {"metadata" => {"labels" => {"app" => "m1"}}, "spec" => {"containers" => [{"image" => "m1.example.com/pause:1"}]}}}}}
+                                            "template" => {"metadata" => {"labels" => {"app" => "m1"}},
+                                                           "spec" => {"containers" => [{"image" => "m1.example.com/pause:1"}]}}}}}
     },
-    ["batch", "Job"] => {
+    %w[batch Job] => {
       "source" => "pkg/apis/batch/validation/validation.go validateJobSpec (pod template must be valid)",
       # manualSelector keeps the strategy from generating the controller-uid
       # selector, which needs the server-assigned UID that FillObjectMetaSystemFields
@@ -515,14 +644,21 @@ module M1KubernetesValidationOracle
       "fixture" => {
         "create" => {"spec" => {"manualSelector" => true, "selector" => {"matchLabels" => {"job" => "m1"}},
                                 "template" => {"metadata" => {"labels" => {"job" => "m1"}},
-                                               "spec" => {"restartPolicy" => "Never", "containers" => [{"name" => "m1", "image" => "m1.example.com/pause:1"}]}}}},
+                                               "spec" => {"restartPolicy" => "Never",
+                                                          "containers" => [{"name" => "m1", "image" => "m1.example.com/pause:1"}]}}}},
         "nested" => {
-          "PodFailurePolicy" => {"spec" => {"podFailurePolicy" => {"rules" => [{"action" => "FailJob", "onPodConditions" => "__delete__", "onExitCodes" => {"operator" => "In", "values" => [1]}}]}}},
-          "PodFailurePolicyRule" => {"spec" => {"podFailurePolicy" => {"rules" => [{"action" => "FailJob", "onPodConditions" => "__delete__", "onExitCodes" => {"operator" => "In", "values" => [1]}}]}}},
-          "PodFailurePolicyOnExitCodesRequirement" => {"spec" => {"podFailurePolicy" => {"rules" => [{"action" => "FailJob", "onPodConditions" => "__delete__", "onExitCodes" => {"operator" => "In", "values" => [1]}}]}}},
-          "PodFailurePolicyOnPodConditionsPattern" => {"spec" => {"podFailurePolicy" => {"rules" => [{"action" => "FailJob", "onExitCodes" => "__delete__", "onPodConditions" => [{"type" => "DisruptionTarget", "status" => "True"}]}]}}},
-          "SuccessPolicy" => {"spec" => {"completionMode" => "Indexed", "completions" => 2, "parallelism" => 1, "successPolicy" => {"rules" => [{"succeededIndexes" => "0", "succeededCount" => "__delete__"}]}}},
-          "SuccessPolicyRule" => {"spec" => {"completionMode" => "Indexed", "completions" => 2, "parallelism" => 1, "successPolicy" => {"rules" => [{"succeededIndexes" => "0", "succeededCount" => "__delete__"}]}}}
+          "PodFailurePolicy" => {"spec" => {"podFailurePolicy" => {"rules" => [{"action" => "FailJob", "onPodConditions" => "__delete__",
+                                                                                "onExitCodes" => {"operator" => "In", "values" => [1]}}]}}},
+          "PodFailurePolicyRule" => {"spec" => {"podFailurePolicy" => {"rules" => [{"action" => "FailJob",
+                                                                                    "onPodConditions" => "__delete__", "onExitCodes" => {"operator" => "In", "values" => [1]}}]}}},
+          "PodFailurePolicyOnExitCodesRequirement" => {"spec" => {"podFailurePolicy" => {"rules" => [{"action" => "FailJob",
+                                                                                                      "onPodConditions" => "__delete__", "onExitCodes" => {"operator" => "In", "values" => [1]}}]}}},
+          "PodFailurePolicyOnPodConditionsPattern" => {"spec" => {"podFailurePolicy" => {"rules" => [{"action" => "FailJob",
+                                                                                                      "onExitCodes" => "__delete__", "onPodConditions" => [{"type" => "DisruptionTarget", "status" => "True"}]}]}}},
+          "SuccessPolicy" => {"spec" => {"completionMode" => "Indexed", "completions" => 2, "parallelism" => 1,
+                                         "successPolicy" => {"rules" => [{"succeededIndexes" => "0", "succeededCount" => "__delete__"}]}}},
+          "SuccessPolicyRule" => {"spec" => {"completionMode" => "Indexed", "completions" => 2, "parallelism" => 1,
+                                             "successPolicy" => {"rules" => [{"succeededIndexes" => "0", "succeededCount" => "__delete__"}]}}}
         }
       }
     },
@@ -536,56 +672,81 @@ module M1KubernetesValidationOracle
     ["admissionregistration.k8s.io", "ValidatingAdmissionPolicyBinding"] => {
       "source" => "pkg/apis/admissionregistration/validation/validation.go validateValidationActions",
       "fixture" => {"create" => {"spec" => {"validationActions" => ["Deny"]}},
-                    "nested" => {"NamedRuleWithOperations" => {"spec" => {"matchResources" => {"excludeResourceRules" => [{"apiGroups" => ["apps"], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["deployments"]}]}}}}}
+                    "nested" => {"NamedRuleWithOperations" => {"spec" => {"matchResources" => {"excludeResourceRules" => [{
+                      "apiGroups" => ["apps"], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["deployments"]
+                    }]}}}}}
     },
-    ["policy", "PodDisruptionBudget"] => {
+    %w[policy PodDisruptionBudget] => {
       "source" => "pkg/apis/policy/validation/validation.go ValidatePodDisruptionBudgetSpec (ObjectMeta is not validated by the strategy)",
       "fixture" => {"invalid" => {"spec" => {"minAvailable" => 1, "maxUnavailable" => 1}}},
       "expectations" => {"create" => true, "invalid" => false, "update" => true, "missing" => true}
     },
 
-    ["apps", "DaemonSet"] => {
+    %w[apps DaemonSet] => {
       "source" => "pkg/apis/apps/validation/validation.go ValidateDaemonSetSpec",
-      "fixture" => {"create" => {"spec" => {"selector" => {"matchLabels" => {"app" => "m1"}}, "template" => {"metadata" => {"labels" => {"app" => "m1"}}, "spec" => {"containers" => [{"name" => "m1", "image" => "m1.example.com/pause:1"}]}}}}}
+      "fixture" => {"create" => {"spec" => {"selector" => {"matchLabels" => {"app" => "m1"}},
+                                            "template" => {"metadata" => {"labels" => {"app" => "m1"}},
+                                                           "spec" => {"containers" => [{"name" => "m1",
+                                                                                        "image" => "m1.example.com/pause:1"}]}}}}}
     },
-    ["apps", "ReplicaSet"] => {
+    %w[apps ReplicaSet] => {
       "source" => "pkg/apis/apps/validation/validation.go ValidateReplicaSetSpec",
-      "fixture" => {"create" => {"spec" => {"selector" => {"matchLabels" => {"app" => "m1"}}, "template" => {"metadata" => {"labels" => {"app" => "m1"}}, "spec" => {"containers" => [{"name" => "m1", "image" => "m1.example.com/pause:1"}]}}}}}
+      "fixture" => {"create" => {"spec" => {"selector" => {"matchLabels" => {"app" => "m1"}},
+                                            "template" => {"metadata" => {"labels" => {"app" => "m1"}},
+                                                           "spec" => {"containers" => [{"name" => "m1",
+                                                                                        "image" => "m1.example.com/pause:1"}]}}}}}
     },
-    ["apps", "StatefulSet"] => {
+    %w[apps StatefulSet] => {
       "source" => "pkg/apis/apps/validation/validation.go ValidateStatefulSetSpec",
-      "fixture" => {"create" => {"spec" => {"selector" => {"matchLabels" => {"app" => "m1"}}, "template" => {"metadata" => {"labels" => {"app" => "m1"}}, "spec" => {"containers" => [{"name" => "m1", "image" => "m1.example.com/pause:1"}]}}}}}
+      "fixture" => {"create" => {"spec" => {"selector" => {"matchLabels" => {"app" => "m1"}},
+                                            "template" => {"metadata" => {"labels" => {"app" => "m1"}},
+                                                           "spec" => {"containers" => [{"name" => "m1",
+                                                                                        "image" => "m1.example.com/pause:1"}]}}}}}
     },
-    ["autoscaling", "HorizontalPodAutoscaler"] => {
+    %w[autoscaling HorizontalPodAutoscaler] => {
       "source" => "pkg/apis/autoscaling/validation/validation.go validateMetricSpec",
       "fixture" => {
-        "create" => {"spec" => {"scaleTargetRef" => {"apiVersion" => "apps/v1", "kind" => "Deployment", "name" => "m1"}, "maxReplicas" => 2}},
+        "create" => {"spec" => {"scaleTargetRef" => {"apiVersion" => "apps/v1", "kind" => "Deployment", "name" => "m1"},
+                                "maxReplicas" => 2}},
         "nested" => {
-          "MetricSpec" => {"spec" => {"metrics" => [{"type" => "Resource", "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 50}}, "containerResource" => "__delete__", "external" => "__delete__", "object" => "__delete__", "pods" => "__delete__"}]}},
-          "ResourceMetricSource" => {"spec" => {"metrics" => [{"type" => "Resource", "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 50}}, "containerResource" => "__delete__", "external" => "__delete__", "object" => "__delete__", "pods" => "__delete__"}]}},
-          "MetricTarget" => {"spec" => {"metrics" => [{"type" => "Resource", "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 50}}, "containerResource" => "__delete__", "external" => "__delete__", "object" => "__delete__", "pods" => "__delete__"}]}},
-          "ContainerResourceMetricSource" => {"spec" => {"metrics" => [{"type" => "ContainerResource", "containerResource" => {"name" => "cpu", "container" => "m1", "target" => {"type" => "Utilization", "averageUtilization" => 50}}, "resource" => "__delete__", "external" => "__delete__", "object" => "__delete__", "pods" => "__delete__"}]}},
-          "ExternalMetricSource" => {"spec" => {"metrics" => [{"type" => "External", "external" => {"metric" => {"name" => "m1-metric"}, "target" => {"type" => "Value", "value" => "1"}}, "resource" => "__delete__", "containerResource" => "__delete__", "object" => "__delete__", "pods" => "__delete__"}]}},
-          "MetricIdentifier" => {"spec" => {"metrics" => [{"type" => "External", "external" => {"metric" => {"name" => "m1-metric"}, "target" => {"type" => "Value", "value" => "1"}}, "resource" => "__delete__", "containerResource" => "__delete__", "object" => "__delete__", "pods" => "__delete__"}]}},
-          "ObjectMetricSource" => {"spec" => {"metrics" => [{"type" => "Object", "object" => {"describedObject" => {"apiVersion" => "apps/v1", "kind" => "Deployment", "name" => "m1"}, "metric" => {"name" => "m1-metric"}, "target" => {"type" => "Value", "value" => "1"}}, "resource" => "__delete__", "containerResource" => "__delete__", "external" => "__delete__", "pods" => "__delete__"}]}},
-          "PodsMetricSource" => {"spec" => {"metrics" => [{"type" => "Pods", "pods" => {"metric" => {"name" => "m1-metric"}, "target" => {"type" => "AverageValue", "averageValue" => "1"}}, "resource" => "__delete__", "containerResource" => "__delete__", "external" => "__delete__", "object" => "__delete__"}]}},
+          "MetricSpec" => {"spec" => {"metrics" => [{"type" => "Resource",
+                                                     "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 50}}, "containerResource" => "__delete__", "external" => "__delete__", "object" => "__delete__", "pods" => "__delete__"}]}},
+          "ResourceMetricSource" => {"spec" => {"metrics" => [{"type" => "Resource",
+                                                               "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 50}}, "containerResource" => "__delete__", "external" => "__delete__", "object" => "__delete__", "pods" => "__delete__"}]}},
+          "MetricTarget" => {"spec" => {"metrics" => [{"type" => "Resource",
+                                                       "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 50}}, "containerResource" => "__delete__", "external" => "__delete__", "object" => "__delete__", "pods" => "__delete__"}]}},
+          "ContainerResourceMetricSource" => {"spec" => {"metrics" => [{"type" => "ContainerResource",
+                                                                        "containerResource" => {"name" => "cpu", "container" => "m1", "target" => {"type" => "Utilization", "averageUtilization" => 50}}, "resource" => "__delete__", "external" => "__delete__", "object" => "__delete__", "pods" => "__delete__"}]}},
+          "ExternalMetricSource" => {"spec" => {"metrics" => [{"type" => "External",
+                                                               "external" => {"metric" => {"name" => "m1-metric"}, "target" => {"type" => "Value", "value" => "1"}}, "resource" => "__delete__", "containerResource" => "__delete__", "object" => "__delete__", "pods" => "__delete__"}]}},
+          "MetricIdentifier" => {"spec" => {"metrics" => [{"type" => "External",
+                                                           "external" => {"metric" => {"name" => "m1-metric"}, "target" => {"type" => "Value", "value" => "1"}}, "resource" => "__delete__", "containerResource" => "__delete__", "object" => "__delete__", "pods" => "__delete__"}]}},
+          "ObjectMetricSource" => {"spec" => {"metrics" => [{"type" => "Object",
+                                                             "object" => {"describedObject" => {"apiVersion" => "apps/v1", "kind" => "Deployment", "name" => "m1"}, "metric" => {"name" => "m1-metric"}, "target" => {"type" => "Value", "value" => "1"}}, "resource" => "__delete__", "containerResource" => "__delete__", "external" => "__delete__", "pods" => "__delete__"}]}},
+          "PodsMetricSource" => {"spec" => {"metrics" => [{"type" => "Pods",
+                                                           "pods" => {"metric" => {"name" => "m1-metric"}, "target" => {"type" => "AverageValue", "averageValue" => "1"}}, "resource" => "__delete__", "containerResource" => "__delete__", "external" => "__delete__", "object" => "__delete__"}]}},
           "HPAScalingRules" => {"spec" => {"behavior" => {"scaleUp" => {"selectPolicy" => "Max", "stabilizationWindowSeconds" => 0, "policies" => [{"type" => "Pods", "value" => 1, "periodSeconds" => 15}]},
-                                                           "scaleDown" => {"selectPolicy" => "Max", "stabilizationWindowSeconds" => 0, "policies" => [{"type" => "Pods", "value" => 1, "periodSeconds" => 15}]}}}},
+                                                          "scaleDown" => {"selectPolicy" => "Max", "stabilizationWindowSeconds" => 0,
+                                                                          "policies" => [{"type" => "Pods", "value" => 1, "periodSeconds" => 15}]}}}},
           "HPAScalingPolicy" => {"spec" => {"behavior" => {"scaleUp" => {"selectPolicy" => "Max", "stabilizationWindowSeconds" => 0, "policies" => [{"type" => "Pods", "value" => 1, "periodSeconds" => 15}]},
-                                                            "scaleDown" => {"selectPolicy" => "Max", "stabilizationWindowSeconds" => 0, "policies" => [{"type" => "Pods", "value" => 1, "periodSeconds" => 15}]}}}}
+                                                           "scaleDown" => {"selectPolicy" => "Max", "stabilizationWindowSeconds" => 0,
+                                                                           "policies" => [{"type" => "Pods", "value" => 1, "periodSeconds" => 15}]}}}}
         }
       }
     },
-    ["batch", "CronJob"] => {
+    %w[batch CronJob] => {
       "source" => "pkg/apis/batch/validation/validation.go validateCronJobSpec",
       "fixture" => {"create" => {"spec" => {"schedule" => "*/5 * * * *",
-                                            "jobTemplate" => {"spec" => {"template" => {"spec" => {"restartPolicy" => "Never", "containers" => [{"name" => "m1", "image" => "m1.example.com/pause:1"}]}}}}}}}
+                                            "jobTemplate" => {"spec" => {"template" => {"spec" => {"restartPolicy" => "Never",
+                                                                                                   "containers" => [{"name" => "m1",
+                                                                                                                     "image" => "m1.example.com/pause:1"}]}}}}}}}
     },
     ["certificates.k8s.io", "CertificateSigningRequest"] => {
       "source" => "pkg/apis/certificates/validation/validation.go validateCertificateSigningRequest",
       "fixture" => {"create" => {"spec" => {"request" => "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURSBSRVFVRVNULS0tLS0KTUlIU01Ib0NBUUF3R0RFV01CUUdBMVVFQXd3TmJURXRkbUZzYVdSaGRHbHZiakJaTUJNR0J5cUdTTTQ5QWdFRwpDQ3FHU000OUF3RUhBMElBQkJnTTgrYTA5dW1JeWp0S3BNSWNPMG52eU0rZGZYZlM5cG50WHBIblI2WnlJa3NKCmhKa0dDTjBCanZtQkF1NkVuKzFvSzV2NDZ6azBiNEpZd05EUk1lNmdBREFLQmdncWhrak9QUVFEQWdOSUFEQkYKQWlBWjlEeFYxZllxVTNMOFh0WFRBRmtwdFZMV1VNSlRMcWNkUEVEM1Mwb2xuZ0loQUk0NVhpZ0hMeHR1ZThoTQpzRkUrNHZQcnJiUmFsbzEwOUFUMmhVWWY5Y3VmCi0tLS0tRU5EIENFUlRJRklDQVRFIFJFUVVFU1QtLS0tLQo=", "signerName" => "kubernetes.io/kube-apiserver-client", "usages" => ["client auth"]},
                                  "status" => {"conditions" => "__delete__"}},
-                    "nested" => {"CertificateSigningRequestCondition" => {"status" => {"conditions" => [{"type" => "Approved", "status" => "True", "reason" => "M1", "message" => "m1"}]}}}}
+                    "nested" => {"CertificateSigningRequestCondition" => {"status" => {"conditions" => [{"type" => "Approved",
+                                                                                                         "status" => "True", "reason" => "M1", "message" => "m1"}]}}}}
     },
     ["certificates.k8s.io", "ClusterTrustBundle"] => {
       "source" => "pkg/apis/certificates/validation/validation.go ValidateClusterTrustBundle (at least one trust anchor)",
@@ -593,34 +754,51 @@ module M1KubernetesValidationOracle
     },
     ["coordination.k8s.io", "LeaseCandidate"] => {
       "source" => "pkg/apis/coordination/validation/validation.go ValidateLeaseCandidateSpec",
-      "fixture" => {"create" => {"spec" => {"leaseName" => "m1-lease", "binaryVersion" => "1.36.2", "emulationVersion" => "1.36.2", "strategy" => "OldestEmulationVersion"}}}
+      "fixture" => {"create" => {"spec" => {"leaseName" => "m1-lease", "binaryVersion" => "1.36.2", "emulationVersion" => "1.36.2",
+                                            "strategy" => "OldestEmulationVersion"}}}
     },
     ["", "PersistentVolume"] => {
       "source" => "pkg/apis/core/validation/validation.go ValidatePersistentVolumeSpec (one volume source, capacity, access modes)",
       "fixture" => {
         "create" => {"spec" => {"capacity" => {"storage" => "1Gi"}, "accessModes" => ["ReadWriteOnce"], "hostPath" => {"path" => "/m1"}}},
         "nested" => {
-          "AWSElasticBlockStoreVolumeSource" => {"spec" => {"hostPath" => "__delete__", "awsElasticBlockStore" => {"volumeID" => "vol-m1"}}},
+          "AWSElasticBlockStoreVolumeSource" => {"spec" => {"hostPath" => "__delete__",
+                                                            "awsElasticBlockStore" => {"volumeID" => "vol-m1"}}},
           "AzureDiskVolumeSource" => {"spec" => {"hostPath" => "__delete__", "azureDisk" => {"diskName" => "m1", "diskURI" => "https://m1.example.com/disks/m1.vhd"}}},
-          "AzureFilePersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__", "azureFile" => {"secretName" => "m1", "shareName" => "m1"}}},
+          "AzureFilePersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__",
+                                                           "azureFile" => {"secretName" => "m1", "shareName" => "m1"}}},
           "CephFSPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__", "cephfs" => {"monitors" => ["10.0.0.1:6789"]}}},
           "CinderPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__", "cinder" => {"volumeID" => "m1"}}},
-          "CSIPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__", "csi" => {"driver" => "m1.example.com", "volumeHandle" => "m1", "controllerPublishSecretRef" => {"name" => "m1", "namespace" => "m1"}}}},
-          "SecretReference" => {"spec" => {"hostPath" => "__delete__", "csi" => {"driver" => "m1.example.com", "volumeHandle" => "m1", "controllerPublishSecretRef" => {"name" => "m1", "namespace" => "m1"}, "nodeStageSecretRef" => {"name" => "m1", "namespace" => "m1"}, "nodePublishSecretRef" => {"name" => "m1", "namespace" => "m1"}, "controllerExpandSecretRef" => {"name" => "m1", "namespace" => "m1"}, "nodeExpandSecretRef" => {"name" => "m1", "namespace" => "m1"}}}},
-          "VolumeNodeAffinity" => {"spec" => {"nodeAffinity" => {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In", "values" => ["m1"]}]}]}}}},
+          "CSIPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__",
+                                                     "csi" => {"driver" => "m1.example.com", "volumeHandle" => "m1",
+                                                               "controllerPublishSecretRef" => {"name" => "m1", "namespace" => "m1"}}}},
+          "SecretReference" => {"spec" => {"hostPath" => "__delete__",
+                                           "csi" => {"driver" => "m1.example.com", "volumeHandle" => "m1", "controllerPublishSecretRef" => {"name" => "m1", "namespace" => "m1"},
+                                                     "nodeStageSecretRef" => {"name" => "m1", "namespace" => "m1"}, "nodePublishSecretRef" => {"name" => "m1", "namespace" => "m1"}, "controllerExpandSecretRef" => {"name" => "m1", "namespace" => "m1"}, "nodeExpandSecretRef" => {"name" => "m1", "namespace" => "m1"}}}},
+          "VolumeNodeAffinity" => {"spec" => {"nodeAffinity" => {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{
+            "key" => "kubernetes.io/hostname", "operator" => "In", "values" => ["m1"]
+          }]}]}}}},
           "FCVolumeSource" => {"spec" => {"hostPath" => "__delete__", "fc" => {"targetWWNs" => ["50060e801049cfd1"], "lun" => 0}}},
           "FlexPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__", "flexVolume" => {"driver" => "m1.example.com/driver"}}},
-          "FlockerVolumeSource" => {"spec" => {"hostPath" => "__delete__", "flocker" => {"datasetName" => "m1", "datasetUUID" => "__delete__"}}},
+          "FlockerVolumeSource" => {"spec" => {"hostPath" => "__delete__",
+                                               "flocker" => {"datasetName" => "m1", "datasetUUID" => "__delete__"}}},
           "GCEPersistentDiskVolumeSource" => {"spec" => {"hostPath" => "__delete__", "gcePersistentDisk" => {"pdName" => "m1"}}},
-          "GlusterfsPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__", "glusterfs" => {"endpoints" => "m1", "path" => "m1"}}},
-          "ISCSIPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__", "iscsi" => {"targetPortal" => "10.0.0.1:3260", "iqn" => "iqn.2026-01.com.example:m1", "lun" => 0}}},
-          "LocalVolumeSource" => {"spec" => {"hostPath" => "__delete__", "local" => {"path" => "/m1"}, "nodeAffinity" => {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In", "values" => ["m1"]}]}]}}}},
+          "GlusterfsPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__",
+                                                           "glusterfs" => {"endpoints" => "m1", "path" => "m1"}}},
+          "ISCSIPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__",
+                                                       "iscsi" => {"targetPortal" => "10.0.0.1:3260",
+                                                                   "iqn" => "iqn.2026-01.com.example:m1", "lun" => 0}}},
+          "LocalVolumeSource" => {"spec" => {"hostPath" => "__delete__", "local" => {"path" => "/m1"},
+                                             "nodeAffinity" => {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In", "values" => ["m1"]}]}]}}}},
           "NFSVolumeSource" => {"spec" => {"hostPath" => "__delete__", "nfs" => {"server" => "10.0.0.1", "path" => "/m1"}}},
           "PhotonPersistentDiskVolumeSource" => {"spec" => {"hostPath" => "__delete__", "photonPersistentDisk" => {"pdID" => "m1"}}},
           "PortworxVolumeSource" => {"spec" => {"hostPath" => "__delete__", "portworxVolume" => {"volumeID" => "m1"}}},
           "QuobyteVolumeSource" => {"spec" => {"hostPath" => "__delete__", "quobyte" => {"registry" => "10.0.0.1:7861", "volume" => "m1"}}},
-          "RBDPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__", "rbd" => {"monitors" => ["10.0.0.1:6789"], "image" => "m1"}}},
-          "ScaleIOPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__", "scaleIO" => {"gateway" => "https://m1.example.com", "system" => "m1", "volumeName" => "m1", "secretRef" => {"name" => "m1", "namespace" => "m1"}}}},
+          "RBDPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__",
+                                                     "rbd" => {"monitors" => ["10.0.0.1:6789"], "image" => "m1"}}},
+          "ScaleIOPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__",
+                                                         "scaleIO" => {"gateway" => "https://m1.example.com", "system" => "m1", "volumeName" => "m1",
+                                                                       "secretRef" => {"name" => "m1", "namespace" => "m1"}}}},
           "StorageOSPersistentVolumeSource" => {"spec" => {"hostPath" => "__delete__", "storageos" => {"volumeName" => "m1"}}},
           "VsphereVirtualDiskVolumeSource" => {"spec" => {"hostPath" => "__delete__", "vsphereVolume" => {"volumePath" => "[ds] m1.vmdk"}}}
         }
@@ -634,9 +812,11 @@ module M1KubernetesValidationOracle
       "source" => "pkg/apis/core/validation/validation.go ValidateNodeUpdate (status.config sources)",
       "fixture" => {
         "nested" => {
-          "NodeConfigSource" => {"spec" => {"configSource" => {"configMap" => {"namespace" => "kube-system", "name" => "m1", "kubeletConfigKey" => "kubelet"}}}},
+          "NodeConfigSource" => {"spec" => {"configSource" => {"configMap" => {"namespace" => "kube-system", "name" => "m1",
+                                                                               "kubeletConfigKey" => "kubelet"}}}},
           "ConfigMapNodeConfigSource" => {"spec" => {"configSource" => {"configMap" => {"namespace" => "kube-system", "name" => "m1", "kubeletConfigKey" => "kubelet"}}},
-                                          "status" => {"config" => {"active" => {"configMap" => {"namespace" => "kube-system", "name" => "m1", "kubeletConfigKey" => "kubelet", "uid" => "11111111-1111-4111-8111-111111111111", "resourceVersion" => "1"}}}}},
+                                          "status" => {"config" => {"active" => {"configMap" => {"namespace" => "kube-system",
+                                                                                                 "name" => "m1", "kubeletConfigKey" => "kubelet", "uid" => "11111111-1111-4111-8111-111111111111", "resourceVersion" => "1"}}}}},
           "Taint" => {"spec" => {"taints" => [{"key" => "m1.example.com/taint", "effect" => "NoSchedule"}]}}
         }
       }
@@ -649,41 +829,59 @@ module M1KubernetesValidationOracle
       "source" => "pkg/apis/core/validation/validation.go ValidatePersistentVolumeClaimSpec",
       "fixture" => {"create" => {"spec" => {"accessModes" => ["ReadWriteOnce"], "resources" => {"requests" => {"storage" => "1Gi"}}}},
                     "nested" => {"TypedLocalObjectReference" => {"spec" => {"dataSource" => {"apiGroup" => "__delete__", "kind" => "PersistentVolumeClaim", "name" => "m1"}}},
-                                 "TypedObjectReference" => {"spec" => {"dataSourceRef" => {"apiGroup" => "__delete__", "kind" => "PersistentVolumeClaim", "name" => "m1", "namespace" => "__delete__"}}}}}
+                                 "TypedObjectReference" => {"spec" => {"dataSourceRef" => {"apiGroup" => "__delete__",
+                                                                                           "kind" => "PersistentVolumeClaim", "name" => "m1", "namespace" => "__delete__"}}}}}
     },
     ["", "PodTemplate"] => {
       "source" => "pkg/apis/core/validation/validation.go ValidatePodTemplateSpec",
-      "fixture" => {"create" => {"template" => {"spec" => {"containers" => [{"name" => "m1", "image" => "m1.example.com/pause:1"}], "restartPolicy" => "Always"}}}}
+      "fixture" => {"create" => {"template" => {"spec" => {"containers" => [{"name" => "m1", "image" => "m1.example.com/pause:1"}],
+                                                           "restartPolicy" => "Always"}}}}
     },
     ["", "ReplicationController"] => {
       "source" => "pkg/apis/core/validation/validation.go ValidateReplicationControllerSpec",
-      "fixture" => {"create" => {"spec" => {"selector" => {"app" => "m1"}, "template" => {"metadata" => {"labels" => {"app" => "m1"}}, "spec" => {"containers" => [{"name" => "m1", "image" => "m1.example.com/pause:1"}], "restartPolicy" => "Always"}}}}}
+      "fixture" => {"create" => {"spec" => {"selector" => {"app" => "m1"},
+                                            "template" => {"metadata" => {"labels" => {"app" => "m1"}},
+                                                           "spec" => {
+                                                             "containers" => [{"name" => "m1",
+                                                                               "image" => "m1.example.com/pause:1"}], "restartPolicy" => "Always"
+                                                           }}}}}
     },
     ["", "ResourceQuota"] => {
       "source" => "pkg/apis/core/validation/validation.go validateScopedResourceSelectorRequirement",
-      "fixture" => {"nested" => {"ScopedResourceSelectorRequirement" => {"spec" => {"scopeSelector" => {"matchExpressions" => [{"scopeName" => "PriorityClass", "operator" => "In", "values" => ["m1"]}]}}}}}
+      "fixture" => {"nested" => {"ScopedResourceSelectorRequirement" => {"spec" => {"scopeSelector" => {"matchExpressions" => [{
+        "scopeName" => "PriorityClass", "operator" => "In", "values" => ["m1"]
+      }]}}}}}
     },
     ["storage.k8s.io", "StorageClass"] => {
       "source" => "pkg/apis/storage/validation/validation.go validateAllowedTopologies",
       "fixture" => {"nested" => {"TopologySelectorTerm" => {"allowedTopologies" => [{"matchLabelExpressions" => [{"key" => "topology.kubernetes.io/zone", "values" => ["m1"]}]}]},
-                                 "TopologySelectorLabelRequirement" => {"allowedTopologies" => [{"matchLabelExpressions" => [{"key" => "topology.kubernetes.io/zone", "values" => ["m1"]}]}]}}}
+                                 "TopologySelectorLabelRequirement" => {"allowedTopologies" => [{"matchLabelExpressions" => [{
+                                   "key" => "topology.kubernetes.io/zone", "values" => ["m1"]
+                                 }]}]}}}
     },
     ["discovery.k8s.io", "EndpointSlice"] => {
       "source" => "pkg/apis/discovery/validation/validation.go validateAddressType",
       "fixture" => {"create" => {"addressType" => "IPv4", "endpoints" => [{"addresses" => ["10.0.0.1"]}], "ports" => [{"name" => "http", "port" => 80, "protocol" => "TCP"}]},
                     "nested" => {"ForZone" => {"endpoints" => [{"addresses" => ["10.0.0.1"], "hints" => {"forZones" => [{"name" => "m1-zone"}]}}]},
-                                 "ForNode" => {"endpoints" => [{"addresses" => ["10.0.0.1"], "hints" => {"forNodes" => [{"name" => "m1-node"}]}}]},
-                                 "EndpointHints" => {"endpoints" => [{"addresses" => ["10.0.0.1"], "hints" => {"forZones" => [{"name" => "m1-zone"}]}}]}}}
+                                 "ForNode" => {"endpoints" => [{"addresses" => ["10.0.0.1"],
+                                                                "hints" => {"forNodes" => [{"name" => "m1-node"}]}}]},
+                                 "EndpointHints" => {"endpoints" => [{"addresses" => ["10.0.0.1"],
+                                                                      "hints" => {"forZones" => [{"name" => "m1-zone"}]}}]}}}
     },
     ["flowcontrol.apiserver.k8s.io", "PriorityLevelConfiguration"] => {
       "source" => "pkg/apis/flowcontrol/validation/validation.go ValidatePriorityLevelConfigurationSpec",
       "fixture" => {
         # Only the mandatory "exempt" level may be of type Exempt.
-        "create" => {"spec" => {"type" => "Limited", "exempt" => "__delete__", "limited" => {"nominalConcurrencyShares" => 1, "limitResponse" => {"type" => "Reject", "queuing" => "__delete__"}}}},
+        "create" => {"spec" => {"type" => "Limited", "exempt" => "__delete__",
+                                "limited" => {"nominalConcurrencyShares" => 1, "limitResponse" => {"type" => "Reject", "queuing" => "__delete__"}}}},
         "nested" => {
-          "QueuingConfiguration" => {"spec" => {"type" => "Limited", "exempt" => "__delete__", "limited" => {"nominalConcurrencyShares" => 1, "limitResponse" => {"type" => "Queue", "queuing" => {"queues" => 64, "handSize" => 8, "queueLengthLimit" => 50}}}}},
-          "ExemptPriorityLevelConfiguration" => {"metadata" => {"name" => "exempt"}, "spec" => {"type" => "Exempt", "limited" => "__delete__", "exempt" => {"nominalConcurrencyShares" => 0, "lendablePercent" => 0}}},
-          "PriorityLevelConfigurationCondition" => {"status" => {"conditions" => [{"type" => "Ready", "status" => "True", "reason" => "M1", "message" => "m1"}]}}
+          "QueuingConfiguration" => {"spec" => {"type" => "Limited", "exempt" => "__delete__",
+                                                "limited" => {"nominalConcurrencyShares" => 1, "limitResponse" => {"type" => "Queue", "queuing" => {"queues" => 64, "handSize" => 8, "queueLengthLimit" => 50}}}}},
+          "ExemptPriorityLevelConfiguration" => {"metadata" => {"name" => "exempt"},
+                                                 "spec" => {"type" => "Exempt", "limited" => "__delete__",
+                                                            "exempt" => {"nominalConcurrencyShares" => 0, "lendablePercent" => 0}}},
+          "PriorityLevelConfigurationCondition" => {"status" => {"conditions" => [{"type" => "Ready", "status" => "True", "reason" => "M1",
+                                                                                   "message" => "m1"}]}}
         }
       }
     },
@@ -692,25 +890,42 @@ module M1KubernetesValidationOracle
       "fixture" => {
         "create" => {"spec" => {"priorityLevelConfiguration" => {"name" => "m1-level"}, "distinguisherMethod" => {"type" => "ByUser"},
                                 "rules" => [{"subjects" => [{"kind" => "User", "user" => {"name" => "m1"}, "group" => "__delete__", "serviceAccount" => "__delete__"}],
-                                             "resourceRules" => [{"verbs" => ["*"], "apiGroups" => ["*"], "resources" => ["*"], "clusterScope" => true}]}]}},
+                                             "resourceRules" => [{"verbs" => ["*"], "apiGroups" => ["*"], "resources" => ["*"],
+                                                                  "clusterScope" => true}]}]}},
         "nested" => {
-          "GroupSubject" => {"spec" => {"rules" => [{"subjects" => [{"kind" => "Group", "user" => "__delete__", "serviceAccount" => "__delete__", "group" => {"name" => "m1"}}]}]}},
-          "ServiceAccountSubject" => {"spec" => {"rules" => [{"subjects" => [{"kind" => "ServiceAccount", "user" => "__delete__", "group" => "__delete__", "serviceAccount" => {"namespace" => "m1", "name" => "m1"}}]}]}},
-          "NonResourcePolicyRule" => {"spec" => {"rules" => [{"nonResourceRules" => [{"verbs" => ["*"], "nonResourceURLs" => ["/healthz"]}]}]}},
-          "FlowSchemaCondition" => {"status" => {"conditions" => [{"type" => "Dangling", "status" => "False", "reason" => "M1", "message" => "m1"}]}}
+          "GroupSubject" => {"spec" => {"rules" => [{"subjects" => [{"kind" => "Group", "user" => "__delete__",
+                                                                     "serviceAccount" => "__delete__", "group" => {"name" => "m1"}}]}]}},
+          "ServiceAccountSubject" => {"spec" => {"rules" => [{"subjects" => [{"kind" => "ServiceAccount", "user" => "__delete__",
+                                                                              "group" => "__delete__", "serviceAccount" => {"namespace" => "m1", "name" => "m1"}}]}]}},
+          "NonResourcePolicyRule" => {"spec" => {"rules" => [{"nonResourceRules" => [{"verbs" => ["*"],
+                                                                                      "nonResourceURLs" => ["/healthz"]}]}]}},
+          "FlowSchemaCondition" => {"status" => {"conditions" => [{"type" => "Dangling", "status" => "False", "reason" => "M1",
+                                                                   "message" => "m1"}]}}
         }
       }
     },
     ["networking.k8s.io", "Ingress"] => {
       "source" => "pkg/apis/networking/validation/validation.go validateIngressSpec",
       "fixture" => {
-        "create" => {"spec" => {"defaultBackend" => {"service" => {"name" => "m1", "port" => {"number" => 80, "name" => "__delete__"}}, "resource" => "__delete__"}}},
+        "create" => {"spec" => {"defaultBackend" => {"service" => {"name" => "m1", "port" => {"number" => 80, "name" => "__delete__"}},
+                                                     "resource" => "__delete__"}}},
         "nested" => {
-          "IngressRule" => {"spec" => {"defaultBackend" => "__delete__", "rules" => [{"host" => "m1.example.com", "http" => {"paths" => [{"path" => "/m1", "pathType" => "Prefix", "backend" => {"service" => {"name" => "m1", "port" => {"number" => 80}}}}]}}]}},
-          "HTTPIngressRuleValue" => {"spec" => {"defaultBackend" => "__delete__", "rules" => [{"host" => "m1.example.com", "http" => {"paths" => [{"path" => "/m1", "pathType" => "Prefix", "backend" => {"service" => {"name" => "m1", "port" => {"number" => 80}}}}]}}]}},
-          "HTTPIngressPath" => {"spec" => {"defaultBackend" => "__delete__", "rules" => [{"host" => "m1.example.com", "http" => {"paths" => [{"path" => "/m1", "pathType" => "Prefix", "backend" => {"service" => {"name" => "m1", "port" => {"number" => 80}}}}]}}]}},
+          "IngressRule" => {"spec" => {"defaultBackend" => "__delete__",
+                                       "rules" => [{"host" => "m1.example.com",
+                                                    "http" => {"paths" => [{"path" => "/m1", "pathType" => "Prefix",
+                                                                            "backend" => {"service" => {"name" => "m1", "port" => {"number" => 80}}}}]}}]}},
+          "HTTPIngressRuleValue" => {"spec" => {"defaultBackend" => "__delete__",
+                                                "rules" => [{"host" => "m1.example.com",
+                                                             "http" => {"paths" => [{"path" => "/m1", "pathType" => "Prefix",
+                                                                                     "backend" => {"service" => {"name" => "m1", "port" => {"number" => 80}}}}]}}]}},
+          "HTTPIngressPath" => {"spec" => {"defaultBackend" => "__delete__",
+                                           "rules" => [{"host" => "m1.example.com",
+                                                        "http" => {"paths" => [{"path" => "/m1", "pathType" => "Prefix",
+                                                                                "backend" => {"service" => {"name" => "m1", "port" => {"number" => 80}}}}]}}]}},
           "IngressTLS" => {"spec" => {"tls" => [{"hosts" => ["m1.example.com"], "secretName" => "m1-tls"}]}},
-          "TypedLocalObjectReference" => {"spec" => {"defaultBackend" => {"service" => "__delete__", "resource" => {"apiGroup" => "m1.example.com", "kind" => "StorageBucket", "name" => "m1"}}}}
+          "TypedLocalObjectReference" => {"spec" => {"defaultBackend" => {"service" => "__delete__",
+                                                                          "resource" => {"apiGroup" => "m1.example.com",
+                                                                                         "kind" => "StorageBucket", "name" => "m1"}}}}
         }
       }
     },
@@ -722,7 +937,8 @@ module M1KubernetesValidationOracle
     ["networking.k8s.io", "IngressClass"] => {
       "source" => "pkg/apis/networking/validation/validation.go ValidateIngressClassSpec",
       "fixture" => {"create" => {"spec" => {"controller" => "m1.example.com/ingress"}},
-                    "nested" => {"IngressClassParametersReference" => {"spec" => {"parameters" => {"apiGroup" => "m1.example.com", "kind" => "IngressParameters", "name" => "m1", "scope" => "Cluster", "namespace" => "__delete__"}}}}}
+                    "nested" => {"IngressClassParametersReference" => {"spec" => {"parameters" => {"apiGroup" => "m1.example.com",
+                                                                                                   "kind" => "IngressParameters", "name" => "m1", "scope" => "Cluster", "namespace" => "__delete__"}}}}}
     },
     ["networking.k8s.io", "ServiceCIDR"] => {
       "source" => "pkg/apis/networking/validation/validation.go ValidateServiceCIDR",
@@ -735,7 +951,8 @@ module M1KubernetesValidationOracle
     },
     ["rbac.authorization.k8s.io", "ClusterRoleBinding"] => {
       "source" => "pkg/apis/rbac/validation/validation.go ValidateClusterRoleBinding (roleRef)",
-      "fixture" => {"create" => {"roleRef" => {"apiGroup" => "rbac.authorization.k8s.io", "kind" => "ClusterRole", "name" => "m1"}, "subjects" => [{"kind" => "User", "apiGroup" => "rbac.authorization.k8s.io", "name" => "m1"}]}}
+      "fixture" => {"create" => {"roleRef" => {"apiGroup" => "rbac.authorization.k8s.io", "kind" => "ClusterRole", "name" => "m1"},
+                                 "subjects" => [{"kind" => "User", "apiGroup" => "rbac.authorization.k8s.io", "name" => "m1"}]}}
     },
     ["rbac.authorization.k8s.io", "RoleBinding"] => {
       "source" => "pkg/apis/rbac/validation/validation.go ValidateRoleBinding (roleRef)",
@@ -745,61 +962,114 @@ module M1KubernetesValidationOracle
       "source" => "pkg/apis/resource/validation/validation.go validateCELSelector",
       "fixture" => {"nested" => {"CELDeviceSelector" => {"spec" => {"selectors" => [{"cel" => {"expression" => "true"}}]}},
                                  "DeviceSelector" => {"spec" => {"selectors" => [{"cel" => {"expression" => "true"}}]}},
-                                 "DeviceClassConfiguration" => {"spec" => {"config" => [{"opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]}}}}
+                                 "DeviceClassConfiguration" => {"spec" => {"config" => [{"opaque" => {"driver" => "m1.example.com",
+                                                                                                      "parameters" => {"m1" => true}}}]}}}}
     },
     ["resource.k8s.io", "ResourceClaim"] => {
       "source" => "pkg/apis/resource/validation/validation.go validateDeviceClaim",
       "fixture" => {
-        "create" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__", "exactly" => {"deviceClassName" => "m1-class"}}]}}},
+        "create" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__",
+                                                              "exactly" => {"deviceClassName" => "m1-class"}}]}}},
         "nested" => {
-          "DeviceSubRequest" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "exactly" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class"}]}]}}},
-          "DeviceToleration" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "exactly" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "tolerations" => [{"key" => "m1.example.com/taint", "operator" => "Exists", "effect" => "NoSchedule"}]}]}]}}},
-          "CapacityRequirements" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "exactly" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "capacity" => {"requests" => {"memory" => "1Gi"}}}]}]}}},
-          "DeviceConstraint" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__", "exactly" => {"deviceClassName" => "m1-class"}}], "constraints" => [{"requests" => ["m1-request"], "matchAttribute" => "m1.example.com/attr", "distinctAttribute" => "__delete__"}]}}},
-          "DeviceClaimConfiguration" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__", "exactly" => {"deviceClassName" => "m1-class"}}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]}}},
-          "OpaqueDeviceConfiguration" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__", "exactly" => {"deviceClassName" => "m1-class"}}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]}}}
+          "DeviceSubRequest" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "exactly" => "__delete__",
+                                                                          "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class"}]}]}}},
+          "DeviceToleration" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "exactly" => "__delete__",
+                                                                          "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "tolerations" => [{"key" => "m1.example.com/taint", "operator" => "Exists", "effect" => "NoSchedule"}]}]}]}}},
+          "CapacityRequirements" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "exactly" => "__delete__",
+                                                                              "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "capacity" => {"requests" => {"memory" => "1Gi"}}}]}]}}},
+          "DeviceConstraint" => {"spec" => {"devices" => {
+            "requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__",
+                            "exactly" => {"deviceClassName" => "m1-class"}}], "constraints" => [{"requests" => ["m1-request"], "matchAttribute" => "m1.example.com/attr", "distinctAttribute" => "__delete__"}]
+          }}},
+          "DeviceClaimConfiguration" => {"spec" => {"devices" => {
+            "requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__",
+                            "exactly" => {"deviceClassName" => "m1-class"}}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]
+          }}},
+          "OpaqueDeviceConfiguration" => {"spec" => {"devices" => {
+            "requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__",
+                            "exactly" => {"deviceClassName" => "m1-class"}}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]
+          }}}
         }
       }
     },
     ["resource.k8s.io", "ResourceClaimTemplate"] => {
       "source" => "pkg/apis/resource/validation/validation.go validateDeviceClaim",
       "fixture" => {
-        "create" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__", "exactly" => {"deviceClassName" => "m1-class"}}]}}}},
+        "create" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__",
+                                                                         "exactly" => {"deviceClassName" => "m1-class"}}]}}}},
         "nested" => {
-          "DeviceSubRequest" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "exactly" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class"}]}]}}}},
-          "DeviceToleration" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "exactly" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "tolerations" => [{"key" => "m1.example.com/taint", "operator" => "Exists", "effect" => "NoSchedule"}]}]}]}}}},
-          "CapacityRequirements" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "exactly" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "capacity" => {"requests" => {"memory" => "1Gi"}}}]}]}}}},
-          "DeviceConstraint" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__", "exactly" => {"deviceClassName" => "m1-class"}}], "constraints" => [{"requests" => ["m1-request"], "matchAttribute" => "m1.example.com/attr", "distinctAttribute" => "__delete__"}]}}}},
-          "DeviceClaimConfiguration" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__", "exactly" => {"deviceClassName" => "m1-class"}}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]}}}},
-          "OpaqueDeviceConfiguration" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__", "exactly" => {"deviceClassName" => "m1-class"}}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]}}}}
+          "DeviceSubRequest" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "exactly" => "__delete__",
+                                                                                     "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class"}]}]}}}},
+          "DeviceToleration" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "exactly" => "__delete__",
+                                                                                     "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "tolerations" => [{"key" => "m1.example.com/taint", "operator" => "Exists", "effect" => "NoSchedule"}]}]}]}}}},
+          "CapacityRequirements" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "exactly" => "__delete__",
+                                                                                         "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "capacity" => {"requests" => {"memory" => "1Gi"}}}]}]}}}},
+          "DeviceConstraint" => {"spec" => {"spec" => {"devices" => {
+            "requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__",
+                            "exactly" => {"deviceClassName" => "m1-class"}}], "constraints" => [{"requests" => ["m1-request"], "matchAttribute" => "m1.example.com/attr", "distinctAttribute" => "__delete__"}]
+          }}}},
+          "DeviceClaimConfiguration" => {"spec" => {"spec" => {"devices" => {
+            "requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__",
+                            "exactly" => {"deviceClassName" => "m1-class"}}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]
+          }}}},
+          "OpaqueDeviceConfiguration" => {"spec" => {"spec" => {"devices" => {
+            "requests" => [{"name" => "m1-request", "firstAvailable" => "__delete__",
+                            "exactly" => {"deviceClassName" => "m1-class"}}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]
+          }}}}
         }
       }
     },
     ["resource.k8s.io", "v1beta1", "ResourceClaim"] => {
       "source" => "pkg/apis/resource/validation/validation.go validateDeviceClaim (v1beta1 requests carry the exact request fields inline)",
       "fixture" => {
-        "create" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class", "firstAvailable" => "__delete__"}]}}},
+        "create" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class",
+                                                              "firstAvailable" => "__delete__"}]}}},
         "nested" => {
-          "DeviceSubRequest" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "__delete__", "allocationMode" => "__delete__", "count" => "__delete__", "selectors" => "__delete__", "tolerations" => "__delete__", "capacity" => "__delete__", "adminAccess" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class"}]}]}}},
-          "DeviceToleration" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "__delete__", "allocationMode" => "__delete__", "count" => "__delete__", "selectors" => "__delete__", "tolerations" => "__delete__", "capacity" => "__delete__", "adminAccess" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "tolerations" => [{"key" => "m1.example.com/taint", "operator" => "Exists", "effect" => "NoSchedule"}]}]}]}}},
-          "CapacityRequirements" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "__delete__", "allocationMode" => "__delete__", "count" => "__delete__", "selectors" => "__delete__", "tolerations" => "__delete__", "capacity" => "__delete__", "adminAccess" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "capacity" => {"requests" => {"memory" => "1Gi"}}}]}]}}},
-          "DeviceConstraint" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class", "firstAvailable" => "__delete__"}], "constraints" => [{"requests" => ["m1-request"], "matchAttribute" => "m1.example.com/attr", "distinctAttribute" => "__delete__"}]}}},
-          "DeviceClaimConfiguration" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class", "firstAvailable" => "__delete__"}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]}}},
-          "OpaqueDeviceConfiguration" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class", "firstAvailable" => "__delete__"}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]}}}
+          "DeviceSubRequest" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "__delete__",
+                                                                          "allocationMode" => "__delete__", "count" => "__delete__", "selectors" => "__delete__", "tolerations" => "__delete__", "capacity" => "__delete__", "adminAccess" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class"}]}]}}},
+          "DeviceToleration" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "__delete__",
+                                                                          "allocationMode" => "__delete__", "count" => "__delete__", "selectors" => "__delete__", "tolerations" => "__delete__", "capacity" => "__delete__", "adminAccess" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "tolerations" => [{"key" => "m1.example.com/taint", "operator" => "Exists", "effect" => "NoSchedule"}]}]}]}}},
+          "CapacityRequirements" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "__delete__",
+                                                                              "allocationMode" => "__delete__", "count" => "__delete__", "selectors" => "__delete__", "tolerations" => "__delete__", "capacity" => "__delete__", "adminAccess" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "capacity" => {"requests" => {"memory" => "1Gi"}}}]}]}}},
+          "DeviceConstraint" => {"spec" => {"devices" => {
+            "requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class",
+                            "firstAvailable" => "__delete__"}], "constraints" => [{"requests" => ["m1-request"], "matchAttribute" => "m1.example.com/attr", "distinctAttribute" => "__delete__"}]
+          }}},
+          "DeviceClaimConfiguration" => {"spec" => {"devices" => {
+            "requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class",
+                            "firstAvailable" => "__delete__"}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]
+          }}},
+          "OpaqueDeviceConfiguration" => {"spec" => {"devices" => {
+            "requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class",
+                            "firstAvailable" => "__delete__"}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]
+          }}}
         }
       }
     },
     ["resource.k8s.io", "v1beta1", "ResourceClaimTemplate"] => {
       "source" => "pkg/apis/resource/validation/validation.go validateDeviceClaim (v1beta1 requests carry the exact request fields inline)",
       "fixture" => {
-        "create" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class", "firstAvailable" => "__delete__"}]}}}},
+        "create" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class",
+                                                                         "firstAvailable" => "__delete__"}]}}}},
         "nested" => {
-          "DeviceSubRequest" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "__delete__", "allocationMode" => "__delete__", "count" => "__delete__", "selectors" => "__delete__", "tolerations" => "__delete__", "capacity" => "__delete__", "adminAccess" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class"}]}]}}}},
-          "DeviceToleration" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "__delete__", "allocationMode" => "__delete__", "count" => "__delete__", "selectors" => "__delete__", "tolerations" => "__delete__", "capacity" => "__delete__", "adminAccess" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "tolerations" => [{"key" => "m1.example.com/taint", "operator" => "Exists", "effect" => "NoSchedule"}]}]}]}}}},
-          "CapacityRequirements" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "__delete__", "allocationMode" => "__delete__", "count" => "__delete__", "selectors" => "__delete__", "tolerations" => "__delete__", "capacity" => "__delete__", "adminAccess" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "capacity" => {"requests" => {"memory" => "1Gi"}}}]}]}}}},
-          "DeviceConstraint" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class", "firstAvailable" => "__delete__"}], "constraints" => [{"requests" => ["m1-request"], "matchAttribute" => "m1.example.com/attr", "distinctAttribute" => "__delete__"}]}}}},
-          "DeviceClaimConfiguration" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class", "firstAvailable" => "__delete__"}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]}}}},
-          "OpaqueDeviceConfiguration" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class", "firstAvailable" => "__delete__"}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]}}}}
+          "DeviceSubRequest" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request",
+                                                                                     "deviceClassName" => "__delete__", "allocationMode" => "__delete__", "count" => "__delete__", "selectors" => "__delete__", "tolerations" => "__delete__", "capacity" => "__delete__", "adminAccess" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class"}]}]}}}},
+          "DeviceToleration" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request",
+                                                                                     "deviceClassName" => "__delete__", "allocationMode" => "__delete__", "count" => "__delete__", "selectors" => "__delete__", "tolerations" => "__delete__", "capacity" => "__delete__", "adminAccess" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "tolerations" => [{"key" => "m1.example.com/taint", "operator" => "Exists", "effect" => "NoSchedule"}]}]}]}}}},
+          "CapacityRequirements" => {"spec" => {"spec" => {"devices" => {"requests" => [{"name" => "m1-request",
+                                                                                         "deviceClassName" => "__delete__", "allocationMode" => "__delete__", "count" => "__delete__", "selectors" => "__delete__", "tolerations" => "__delete__", "capacity" => "__delete__", "adminAccess" => "__delete__", "firstAvailable" => [{"name" => "m1-sub", "deviceClassName" => "m1-class", "capacity" => {"requests" => {"memory" => "1Gi"}}}]}]}}}},
+          "DeviceConstraint" => {"spec" => {"spec" => {"devices" => {
+            "requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class",
+                            "firstAvailable" => "__delete__"}], "constraints" => [{"requests" => ["m1-request"], "matchAttribute" => "m1.example.com/attr", "distinctAttribute" => "__delete__"}]
+          }}}},
+          "DeviceClaimConfiguration" => {"spec" => {"spec" => {"devices" => {
+            "requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class",
+                            "firstAvailable" => "__delete__"}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]
+          }}}},
+          "OpaqueDeviceConfiguration" => {"spec" => {"spec" => {"devices" => {
+            "requests" => [{"name" => "m1-request", "deviceClassName" => "m1-class",
+                            "firstAvailable" => "__delete__"}], "config" => [{"requests" => ["m1-request"], "opaque" => {"driver" => "m1.example.com", "parameters" => {"m1" => true}}}]
+          }}}}
         }
       }
     },
@@ -809,18 +1079,34 @@ module M1KubernetesValidationOracle
         "create" => {"spec" => {"nodeName" => "m1-node", "nodeSelector" => "__delete__", "allNodes" => "__delete__", "perDeviceNodeSelection" => "__delete__",
                                 "driver" => "m1.example.com", "pool" => {"name" => "m1-pool", "generation" => 1, "resourceSliceCount" => 1}}},
         "nested" => {
-          "NodeSelector" => {"spec" => {"nodeName" => "__delete__", "nodeSelector" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In", "values" => ["m1"]}]}]}}},
-          "NodeSelectorTerm" => {"spec" => {"nodeName" => "__delete__", "nodeSelector" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In", "values" => ["m1"]}]}]}}},
-          "NodeSelectorRequirement" => {"spec" => {"nodeName" => "__delete__", "nodeSelector" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In", "values" => ["m1"]}]}]}}},
+          "NodeSelector" => {"spec" => {"nodeName" => "__delete__",
+                                        "nodeSelector" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In",
+                                                                                                            "values" => ["m1"]}]}]}}},
+          "NodeSelectorTerm" => {"spec" => {"nodeName" => "__delete__",
+                                            "nodeSelector" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In",
+                                                                                                                "values" => ["m1"]}]}]}}},
+          "NodeSelectorRequirement" => {"spec" => {"nodeName" => "__delete__",
+                                                   "nodeSelector" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In",
+                                                                                                                       "values" => ["m1"]}]}]}}},
           "Device" => {"spec" => {"devices" => [{"name" => "m1-device"}]}},
-          "DeviceTaint" => {"spec" => {"devices" => [{"name" => "m1-device", "taints" => [{"key" => "m1.example.com/taint", "effect" => "NoSchedule"}]}]}},
+          "DeviceTaint" => {"spec" => {"devices" => [{"name" => "m1-device",
+                                                      "taints" => [{"key" => "m1.example.com/taint", "effect" => "NoSchedule"}]}]}},
           "DeviceCapacity" => {"spec" => {"devices" => [{"name" => "m1-device", "allowMultipleAllocations" => true}]}},
-          "CapacityRequestPolicy" => {"spec" => {"devices" => [{"name" => "m1-device", "allowMultipleAllocations" => true, "capacity" => {"m1" => {"value" => "8", "requestPolicy" => {"default" => "1", "validValues" => "__delete__", "validRange" => {"min" => "1", "max" => "8", "step" => "1"}}}}}]}},
-          "CapacityRequestPolicyRange" => {"spec" => {"devices" => [{"name" => "m1-device", "allowMultipleAllocations" => true, "capacity" => {"m1" => {"value" => "8", "requestPolicy" => {"default" => "1", "validValues" => "__delete__", "validRange" => {"min" => "1", "max" => "8", "step" => "1"}}}}}]}},
-          "Counter" => {"spec" => {"devices" => "__delete__", "sharedCounters" => [{"name" => "m1-counters", "counters" => {"m1" => {"value" => "8"}}}]}},
-          "CounterSet" => {"spec" => {"devices" => "__delete__", "sharedCounters" => [{"name" => "m1-counters", "counters" => {"m1" => {"value" => "8"}}}]}},
-          "DeviceCounterConsumption" => {"spec" => {"sharedCounters" => "__delete__", "devices" => [{"name" => "m1-device", "consumesCounters" => [{"counterSet" => "m1-counters", "counters" => {"m1" => {"value" => "1"}}}]}]}},
-          "DeviceAttribute" => {"spec" => {"devices" => [{"name" => "m1-device", "attributes" => {"m1" => {"string" => "m1", "bool" => "__delete__", "int" => "__delete__", "version" => "__delete__"}}}]}},
+          "CapacityRequestPolicy" => {"spec" => {"devices" => [{"name" => "m1-device", "allowMultipleAllocations" => true,
+                                                                "capacity" => {"m1" => {"value" => "8", "requestPolicy" => {"default" => "1", "validValues" => "__delete__", "validRange" => {"min" => "1", "max" => "8", "step" => "1"}}}}}]}},
+          "CapacityRequestPolicyRange" => {"spec" => {"devices" => [{"name" => "m1-device", "allowMultipleAllocations" => true,
+                                                                     "capacity" => {"m1" => {"value" => "8", "requestPolicy" => {"default" => "1", "validValues" => "__delete__", "validRange" => {"min" => "1", "max" => "8", "step" => "1"}}}}}]}},
+          "Counter" => {"spec" => {"devices" => "__delete__",
+                                   "sharedCounters" => [{"name" => "m1-counters", "counters" => {"m1" => {"value" => "8"}}}]}},
+          "CounterSet" => {"spec" => {"devices" => "__delete__",
+                                      "sharedCounters" => [{"name" => "m1-counters", "counters" => {"m1" => {"value" => "8"}}}]}},
+          "DeviceCounterConsumption" => {"spec" => {"sharedCounters" => "__delete__",
+                                                    "devices" => [{"name" => "m1-device",
+                                                                   "consumesCounters" => [{"counterSet" => "m1-counters",
+                                                                                           "counters" => {"m1" => {"value" => "1"}}}]}]}},
+          "DeviceAttribute" => {"spec" => {"devices" => [{"name" => "m1-device",
+                                                          "attributes" => {"m1" => {"string" => "m1", "bool" => "__delete__",
+                                                                                    "int" => "__delete__", "version" => "__delete__"}}}]}},
           "NodeAllocatableResourceMapping" => {"spec" => {"devices" => [{"name" => "m1-device"}]}},
           "BasicDevice" => {"spec" => {"devices" => [{"name" => "m1-device", "basic" => {"allowMultipleAllocations" => true}}]}}
         }
@@ -832,19 +1118,45 @@ module M1KubernetesValidationOracle
         "create" => {"spec" => {"nodeName" => "m1-node", "nodeSelector" => "__delete__", "allNodes" => "__delete__", "perDeviceNodeSelection" => "__delete__",
                                 "driver" => "m1.example.com", "pool" => {"name" => "m1-pool", "generation" => 1, "resourceSliceCount" => 1}}},
         "nested" => {
-          "NodeSelector" => {"spec" => {"nodeName" => "__delete__", "nodeSelector" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In", "values" => ["m1"]}]}]}}},
-          "NodeSelectorTerm" => {"spec" => {"nodeName" => "__delete__", "nodeSelector" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In", "values" => ["m1"]}]}]}}},
-          "NodeSelectorRequirement" => {"spec" => {"nodeName" => "__delete__", "nodeSelector" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In", "values" => ["m1"]}]}]}}},
+          "NodeSelector" => {"spec" => {"nodeName" => "__delete__",
+                                        "nodeSelector" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In",
+                                                                                                            "values" => ["m1"]}]}]}}},
+          "NodeSelectorTerm" => {"spec" => {"nodeName" => "__delete__",
+                                            "nodeSelector" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In",
+                                                                                                                "values" => ["m1"]}]}]}}},
+          "NodeSelectorRequirement" => {"spec" => {"nodeName" => "__delete__",
+                                                   "nodeSelector" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "kubernetes.io/hostname", "operator" => "In",
+                                                                                                                       "values" => ["m1"]}]}]}}},
           "Device" => {"spec" => {"devices" => [{"name" => "m1-device"}]}},
           "BasicDevice" => {"spec" => {"devices" => [{"name" => "m1-device", "basic" => {"allowMultipleAllocations" => true}}]}},
-          "DeviceTaint" => {"spec" => {"devices" => [{"name" => "m1-device", "basic" => {"taints" => [{"key" => "m1.example.com/taint", "effect" => "NoSchedule"}]}}]}},
+          "DeviceTaint" => {"spec" => {"devices" => [{"name" => "m1-device",
+                                                      "basic" => {"taints" => [{"key" => "m1.example.com/taint",
+                                                                                "effect" => "NoSchedule"}]}}]}},
           "DeviceCapacity" => {"spec" => {"devices" => [{"name" => "m1-device", "basic" => {"allowMultipleAllocations" => true}}]}},
-          "CapacityRequestPolicy" => {"spec" => {"devices" => [{"name" => "m1-device", "basic" => {"allowMultipleAllocations" => true, "capacity" => {"m1" => {"value" => "8", "requestPolicy" => {"default" => "1", "validValues" => "__delete__", "validRange" => {"min" => "1", "max" => "8", "step" => "1"}}}}}}]}},
-          "CapacityRequestPolicyRange" => {"spec" => {"devices" => [{"name" => "m1-device", "basic" => {"allowMultipleAllocations" => true, "capacity" => {"m1" => {"value" => "8", "requestPolicy" => {"default" => "1", "validValues" => "__delete__", "validRange" => {"min" => "1", "max" => "8", "step" => "1"}}}}}}]}},
-          "Counter" => {"spec" => {"devices" => "__delete__", "sharedCounters" => [{"name" => "m1-counters", "counters" => {"m1" => {"value" => "8"}}}]}},
-          "CounterSet" => {"spec" => {"devices" => "__delete__", "sharedCounters" => [{"name" => "m1-counters", "counters" => {"m1" => {"value" => "8"}}}]}},
-          "DeviceCounterConsumption" => {"spec" => {"sharedCounters" => "__delete__", "devices" => [{"name" => "m1-device", "basic" => {"consumesCounters" => [{"counterSet" => "m1-counters", "counters" => {"m1" => {"value" => "1"}}}]}}]}},
-          "DeviceAttribute" => {"spec" => {"devices" => [{"name" => "m1-device", "basic" => {"attributes" => {"m1" => {"string" => "m1", "bool" => "__delete__", "int" => "__delete__", "version" => "__delete__"}}}}]}},
+          "CapacityRequestPolicy" => {"spec" => {"devices" => [{"name" => "m1-device",
+                                                                "basic" => {"allowMultipleAllocations" => true,
+                                                                            "capacity" => {"m1" => {"value" => "8",
+                                                                                                    "requestPolicy" => {"default" => "1",
+                                                                                                                        "validValues" => "__delete__", "validRange" => {"min" => "1", "max" => "8", "step" => "1"}}}}}}]}},
+          "CapacityRequestPolicyRange" => {"spec" => {"devices" => [{"name" => "m1-device",
+                                                                     "basic" => {"allowMultipleAllocations" => true,
+                                                                                 "capacity" => {"m1" => {"value" => "8",
+                                                                                                         "requestPolicy" => {
+                                                                                                           "default" => "1", "validValues" => "__delete__", "validRange" => {
+                                                                                                             "min" => "1", "max" => "8", "step" => "1"
+                                                                                                           }
+                                                                                                         }}}}}]}},
+          "Counter" => {"spec" => {"devices" => "__delete__",
+                                   "sharedCounters" => [{"name" => "m1-counters", "counters" => {"m1" => {"value" => "8"}}}]}},
+          "CounterSet" => {"spec" => {"devices" => "__delete__",
+                                      "sharedCounters" => [{"name" => "m1-counters", "counters" => {"m1" => {"value" => "8"}}}]}},
+          "DeviceCounterConsumption" => {"spec" => {"sharedCounters" => "__delete__",
+                                                    "devices" => [{"name" => "m1-device",
+                                                                   "basic" => {"consumesCounters" => [{"counterSet" => "m1-counters",
+                                                                                                       "counters" => {"m1" => {"value" => "1"}}}]}}]}},
+          "DeviceAttribute" => {"spec" => {"devices" => [{"name" => "m1-device",
+                                                          "basic" => {"attributes" => {"m1" => {"string" => "m1", "bool" => "__delete__",
+                                                                                                "int" => "__delete__", "version" => "__delete__"}}}}]}},
           "NodeAllocatableResourceMapping" => {"spec" => {"devices" => [{"name" => "m1-device"}]}}
         }
       }
@@ -852,7 +1164,9 @@ module M1KubernetesValidationOracle
     ["storage.k8s.io", "VolumeAttachment"] => {
       "source" => "pkg/apis/storage/validation/validation.go validateVolumeAttachmentSource",
       "fixture" => {"create" => {"spec" => {"attacher" => "m1.example.com", "nodeName" => "m1-node", "source" => {"persistentVolumeName" => "m1-pv", "inlineVolumeSpec" => "__delete__"}}},
-                    "nested" => {"PersistentVolumeSpec" => {"spec" => {"source" => {"persistentVolumeName" => "__delete__", "inlineVolumeSpec" => {"capacity" => {"storage" => "1Gi"}, "accessModes" => ["ReadWriteOnce"], "csi" => {"driver" => "m1.example.com", "volumeHandle" => "m1"}}}}}}}
+                    "nested" => {"PersistentVolumeSpec" => {"spec" => {"source" => {"persistentVolumeName" => "__delete__",
+                                                                                    "inlineVolumeSpec" => {"capacity" => {"storage" => "1Gi"}, "accessModes" => ["ReadWriteOnce"],
+                                                                                                           "csi" => {"driver" => "m1.example.com", "volumeHandle" => "m1"}}}}}}}
     },
     ["storage.k8s.io", "VolumeAttributesClass"] => {
       "source" => "pkg/apis/storage/validation/validation.go ValidateVolumeAttributesClass",
@@ -868,15 +1182,19 @@ module M1KubernetesValidationOracle
     },
     ["storage.k8s.io", "CSIStorageCapacity"] => {
       "source" => "pkg/apis/storage/validation/validation.go ValidateCSIStorageCapacity (nodeTopology)",
-      "fixture" => {"nested" => {"LabelSelectorRequirement" => {"nodeTopology" => {"matchExpressions" => [{"key" => "topology.kubernetes.io/zone", "operator" => "In", "values" => ["m1"]}]}}}}
+      "fixture" => {"nested" => {"LabelSelectorRequirement" => {"nodeTopology" => {"matchExpressions" => [{
+        "key" => "topology.kubernetes.io/zone", "operator" => "In", "values" => ["m1"]
+      }]}}}}
     },
     ["admissionregistration.k8s.io", "MutatingWebhookConfiguration"] => {
       "source" => "pkg/apis/admissionregistration/validation/validation.go validateMutatingWebhook",
-      "fixture" => {"create" => {"webhooks" => [{"name" => "hook.m1.example.com", "admissionReviewVersions" => ["v1"], "sideEffects" => "None", "clientConfig" => {"url" => "__delete__", "service" => {"name" => "m1", "namespace" => "m1", "path" => "/hook", "port" => 443}}, "rules" => [{"apiGroups" => [""], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["pods"]}], "matchConditions" => [{"name" => "m1-condition", "expression" => "true"}]}]}}
+      "fixture" => {"create" => {"webhooks" => [{"name" => "hook.m1.example.com", "admissionReviewVersions" => ["v1"],
+                                                 "sideEffects" => "None", "clientConfig" => {"url" => "__delete__", "service" => {"name" => "m1", "namespace" => "m1", "path" => "/hook", "port" => 443}}, "rules" => [{"apiGroups" => [""], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["pods"]}], "matchConditions" => [{"name" => "m1-condition", "expression" => "true"}]}]}}
     },
     ["admissionregistration.k8s.io", "ValidatingWebhookConfiguration"] => {
       "source" => "pkg/apis/admissionregistration/validation/validation.go validateValidatingWebhook",
-      "fixture" => {"create" => {"webhooks" => [{"name" => "hook.m1.example.com", "admissionReviewVersions" => ["v1"], "sideEffects" => "None", "clientConfig" => {"url" => "__delete__", "service" => {"name" => "m1", "namespace" => "m1", "path" => "/hook", "port" => 443}}, "rules" => [{"apiGroups" => [""], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["pods"]}], "matchConditions" => [{"name" => "m1-condition", "expression" => "true"}]}]}}
+      "fixture" => {"create" => {"webhooks" => [{"name" => "hook.m1.example.com", "admissionReviewVersions" => ["v1"],
+                                                 "sideEffects" => "None", "clientConfig" => {"url" => "__delete__", "service" => {"name" => "m1", "namespace" => "m1", "path" => "/hook", "port" => 443}}, "rules" => [{"apiGroups" => [""], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["pods"]}], "matchConditions" => [{"name" => "m1-condition", "expression" => "true"}]}]}}
     },
     ["", "Event"] => {
       "source" => "pkg/apis/core/validation/events.go legacyValidateEvent (core/v1 requests skip ObjectMeta validation)",
@@ -1044,7 +1362,7 @@ module M1KubernetesValidationOracle
       candidates = by_schema.values.select do |type|
         next false unless type.fetch("schema").end_with?(".#{entry.fetch("internal_type")}")
 
-        type.fetch("schema").start_with?("#{entry.fetch("schema_prefix") }.") &&
+        type.fetch("schema").start_with?("#{entry.fetch("schema_prefix")}.") &&
           type.fetch("gvks").any? do |gvk|
             !%w[DeleteOptions WatchEvent Status].include?(gvk.fetch("kind"))
           end
@@ -1131,25 +1449,29 @@ module M1KubernetesValidationOracle
     edges = schema_edges(by_schema)
     assign_owners = lambda do |root_entries|
       result = {}
-      root_entries.sort_by { |entry| [MODE_PRIORITY.fetch(entry.fetch("strategy_mode")), entry.fetch("owner_rank", 0), entry.fetch("owner_schema")] }.each do |root|
-      root_schema = root.fetch("owner_schema")
-      queue = [[root_schema, []]]
-      seen = {root_schema => true}
-      until queue.empty?
-        schema, path = queue.shift
-        candidate = result[schema]
-        if candidate.nil? || ([MODE_PRIORITY.fetch(root.fetch("strategy_mode")), root.fetch("owner_rank", 0), path.length, root_schema, path_key(path)] <=>
-                              [MODE_PRIORITY.fetch(candidate.fetch("strategy_mode")), candidate.fetch("owner_rank", 0), candidate.fetch("target_path").length, candidate.fetch("owner_schema"), path_key(candidate.fetch("target_path"))]) == -1
-          result[schema] = root.merge("target_schema" => schema, "target_path" => path)
-        end
-        edges.fetch(schema, []).sort_by { |edge| [edge.fetch("to"), edge.fetch("field"), edge.fetch("container")] }.each do |edge|
-          target = edge.fetch("to")
-          next if seen.key?(target)
+      root_entries.sort_by do |entry|
+        [MODE_PRIORITY.fetch(entry.fetch("strategy_mode")), entry.fetch("owner_rank", 0), entry.fetch("owner_schema")]
+      end.each do |root|
+        root_schema = root.fetch("owner_schema")
+        queue = [[root_schema, []]]
+        seen = {root_schema => true}
+        until queue.empty?
+          schema, path = queue.shift
+          candidate = result[schema]
+          if candidate.nil? || ([MODE_PRIORITY.fetch(root.fetch("strategy_mode")), root.fetch("owner_rank", 0), path.length, root_schema,
+                                 path_key(path)] <=>
+                                [MODE_PRIORITY.fetch(candidate.fetch("strategy_mode")), candidate.fetch("owner_rank", 0),
+                                 candidate.fetch("target_path").length, candidate.fetch("owner_schema"), path_key(candidate.fetch("target_path"))]) == -1
+            result[schema] = root.merge("target_schema" => schema, "target_path" => path)
+          end
+          edges.fetch(schema, []).sort_by { |edge| [edge.fetch("to"), edge.fetch("field"), edge.fetch("container")] }.each do |edge|
+            target = edge.fetch("to")
+            next if seen.key?(target)
 
-          seen[target] = true
-          queue << [target, path + [edge.slice("field", "container")]]
+            seen[target] = true
+            queue << [target, path + [edge.slice("field", "container")]]
+          end
         end
-      end
       end
       result
     end
@@ -1250,7 +1572,7 @@ module M1KubernetesValidationOracle
                  elsif field_validator_paths.empty?
                    "upstream concrete type implements runtime.Object but no REST create/update strategy or registered field validator endpoint was found; JSON decode and Scheme observation are not validation"
                  else
-                   "upstream source exposes field-validator code at #{field_validator_paths.join(', ')}, but no safe REST owner adapter is available for this descriptor; JSON decode alone is not validation"
+                   "upstream source exposes field-validator code at #{field_validator_paths.join(", ")}, but no safe REST owner adapter is available for this descriptor; JSON decode alone is not validation"
                  end
         source_paths = (source_paths + runtime_object_paths + field_validator_paths).uniq.sort
         {
@@ -1312,7 +1634,7 @@ module M1KubernetesValidationOracle
         strategy_import = if relative.start_with?("staging/src/")
                             relative.delete_prefix("staging/src/").delete_suffix("/strategy.go")
                           else
-                            "k8s.io/kubernetes/#{relative.delete_suffix("/strategy.go")}" 
+                            "k8s.io/kubernetes/#{relative.delete_suffix("/strategy.go")}"
                           end
         version = preferred_version_for_strategy(internal_package, internal_type, full_root)
         versions = available_versions_for_strategy(internal_package, full_root)
@@ -1381,9 +1703,8 @@ module M1KubernetesValidationOracle
       raise OracleError, "duplicate Kubernetes validation oracle request #{id.inspect}" if seen.key?(id)
 
       mapping = entry["validation_mapping"]
-      unless mapping.nil? || mapping.is_a?(Hash)
-        raise OracleError, "validation mapping for #{id.inspect} must be an object"
-      end
+      raise OracleError, "validation mapping for #{id.inspect} must be an object" unless mapping.nil? || mapping.is_a?(Hash)
+
       if mapping && mapping["applicable"] == false
         mapping = nil
       elsif mapping && mapping["validation_mode"] == "protocol"
@@ -1398,20 +1719,21 @@ module M1KubernetesValidationOracle
       end
       evidence_only = mapping && %w[rest_endpoint response].include?(mapping["validation_mode"])
       validation_reason = entry.fetch("validation_reason", "")
-      unless validation_reason.is_a?(String)
-        raise OracleError, "validation reason for #{id.inspect} must be a string"
-      end
+      raise OracleError, "validation reason for #{id.inspect} must be a string" unless validation_reason.is_a?(String)
+
       validation_source_paths = entry.fetch("validation_source_paths", mapping ? mapping["source_paths"] : [])
       unless validation_source_paths.is_a?(Array) && !validation_source_paths.empty? &&
              validation_source_paths.all? { |path| path.is_a?(String) && !path.empty? }
         raise OracleError, "validation source paths for #{id.inspect} must be an array of paths"
       end
+
       %w[fixture_json invalid_fixture_json missing_fixture_json update_fixture_json].each do |key|
         value = entry.fetch(key)
         parsed = JSON.parse(value, max_nesting: 256)
         if mapping && !evidence_only && (!parsed.is_a?(Hash) || parsed.empty?)
           raise OracleError, "validation oracle request #{id.inspect} #{key} must be a non-empty object fixture"
         end
+
         # A handler root's "missing" fixture is the empty request body the REST
         # handler itself receives; every other fixture must carry a field.
         empty_body_allowed = mapping && mapping["validation_mode"] == "handler" && key == "missing_fixture_json"
@@ -1424,12 +1746,13 @@ module M1KubernetesValidationOracle
       if mapping && !evidence_only && entry.fetch("fixture_json") == entry.fetch("update_fixture_json")
         raise OracleError, "validation oracle request #{id.inspect} update fixture must be independent from the valid fixture"
       end
+
       expectations = normalize_expectations(entry.fetch("validation_expectations", {
-        "create" => true,
-        "invalid" => false,
-        "missing" => false,
-        "update" => true
-      }), id)
+                                                          "create" => true,
+                                                          "invalid" => false,
+                                                          "missing" => false,
+                                                          "update" => true
+                                                        }), id)
       seen[id] = true
       {
         "id" => id,
@@ -1446,19 +1769,16 @@ module M1KubernetesValidationOracle
   end
 
   def normalize_expectations(value, id)
-    unless value.is_a?(Hash)
-      raise OracleError, "validation expectations for #{id.inspect} must be an object"
-    end
+    raise OracleError, "validation expectations for #{id.inspect} must be an object" unless value.is_a?(Hash)
 
     expected_keys = %w[create invalid missing update]
     unless value.keys.map(&:to_s).sort == expected_keys.sort
-      raise OracleError, "validation expectations for #{id.inspect} must contain #{expected_keys.join(', ')}"
+      raise OracleError, "validation expectations for #{id.inspect} must contain #{expected_keys.join(", ")}"
     end
+
     expected_keys.to_h do |key|
       expected = value.fetch(key) { value.fetch(key.to_sym) }
-      unless expected == true || expected == false
-        raise OracleError, "validation expectation #{id.inspect}/#{key} must be boolean"
-      end
+      raise OracleError, "validation expectation #{id.inspect}/#{key} must be boolean" unless [true, false].include?(expected)
 
       [key, expected]
     end.freeze
@@ -1466,8 +1786,14 @@ module M1KubernetesValidationOracle
 
   def go_source(requests, mappings)
     executable = mappings.select { |mapping| %w[strategy constructor handler list].include?(mapping.fetch("validation_mode")) }
-    strategy_mappings = executable.select { |mapping| %w[strategy constructor].include?(mapping.fetch("validation_mode")) || (mapping.fetch("validation_mode") == "list" && %w[strategy constructor].include?(mapping["item_mode"])) }
-    handler_mappings = executable.select { |mapping| mapping.fetch("validation_mode") == "handler" || (mapping.fetch("validation_mode") == "list" && mapping["item_mode"] == "handler") }
+    strategy_mappings = executable.select do |mapping|
+      %w[strategy
+         constructor].include?(mapping.fetch("validation_mode")) || (mapping.fetch("validation_mode") == "list" && %w[strategy
+                                                                                                                      constructor].include?(mapping["item_mode"]))
+    end
+    handler_mappings = executable.select do |mapping|
+      mapping.fetch("validation_mode") == "handler" || (mapping.fetch("validation_mode") == "list" && mapping["item_mode"] == "handler")
+    end
     strategy_imports = strategy_mappings.map { |mapping| mapping.fetch("strategy_import") }.uniq.sort
     internal_groups = (executable.filter_map { |mapping| mapping["internal_package"] } +
                        executable.flat_map { |mapping| Array(mapping["scheme_imports"]) }).uniq.sort
@@ -1477,10 +1803,14 @@ module M1KubernetesValidationOracle
     collaborator_imports = collaborators.filter_map { |collaborator| collaborator["import"] }.uniq.sort
     helpers = collaborators.filter_map { |collaborator| collaborator["helper"] }.uniq.sort
     helper_imports = ["k8s.io/apimachinery/pkg/api/meta"]
-    helper_imports << "k8s.io/apimachinery/pkg/api/errors" << "k8s.io/kubernetes/pkg/apis/admissionregistration" if helpers.include?("policy_getter")
+    if helpers.include?("policy_getter")
+      helper_imports << "k8s.io/apimachinery/pkg/api/errors" << "k8s.io/kubernetes/pkg/apis/admissionregistration"
+    end
     # Only API packages register themselves on the scheme; apimachinery's
     # meta/v1 types are already registered by every group's AddToScheme.
-    registrable = lambda { |path| path.match?(%r{\A(?:k8s\.io/kubernetes|k8s\.io/apiextensions-apiserver|k8s\.io/kube-aggregator)/pkg/apis/}) }
+    registrable = lambda { |path|
+      path.match?(%r{\A(?:k8s\.io/kubernetes|k8s\.io/apiextensions-apiserver|k8s\.io/kube-aggregator)/pkg/apis/})
+    }
     imports = (strategy_imports + internal_groups + version_imports + handler_imports + collaborator_imports + helper_imports + [
       "k8s.io/apimachinery/pkg/runtime",
       "k8s.io/apimachinery/pkg/runtime/schema",
@@ -1508,9 +1838,8 @@ module M1KubernetesValidationOracle
     strategy_source = strategies.sort.map do |path, mapping|
       expression = case mapping.fetch("validation_mode") == "list" ? mapping.fetch("item_mode") : mapping.fetch("validation_mode")
                    when "constructor"
-                     unless mapping.fetch("constructor_safe") == true
-                       raise OracleError, "constructor #{path} is not source-backed safe"
-                     end
+                     raise OracleError, "constructor #{path} is not source-backed safe" unless mapping.fetch("constructor_safe") == true
+
                      arguments = Array(mapping["collaborators"]).map do |collaborator|
                        template = collaborator.fetch("expression")
                        alias_name = collaborator["import"] ? aliases.fetch(collaborator.fetch("import")) : nil
@@ -1541,16 +1870,16 @@ module M1KubernetesValidationOracle
       if mapping.nil?
         request = requests.find { |entry| entry.fetch("id") == id }
         <<~GO.chomp
-          	case #{JSON.generate(id)}:
-          		return validationMapping{mode: "na", reason: #{JSON.generate(request.fetch("validation_reason"))}, sourcePaths: []string{#{request.fetch("validation_source_paths").map { |path| JSON.generate(path) }.join(", ")}}}, nil
+          case #{JSON.generate(id)}:
+          	return validationMapping{mode: "na", reason: #{JSON.generate(request.fetch("validation_reason"))}, sourcePaths: []string{#{request.fetch("validation_source_paths").map { |path| JSON.generate(path) }.join(", ")}}}, nil
         GO
       elsif mapping.fetch("validation_mode") == "protocol"
         raise OracleError, "protocol validation mapping #{id.inspect} is decode-only and cannot be applicable"
       elsif %w[rest_endpoint response].include?(mapping.fetch("validation_mode"))
         operations = Array(mapping.dig("evidence", "operations")).map { |operation| JSON.generate(operation) }.join(", ")
         <<~GO.chomp
-          	case #{JSON.generate(id)}:
-          		return validationMapping{mode: #{JSON.generate(mapping.fetch("validation_mode"))}, evidenceReport: #{JSON.generate(mapping.dig("evidence", "report"))}, evidenceOperations: []string{#{operations}}, sourcePaths: []string{#{Array(mapping["source_paths"]).map { |path| JSON.generate(path) }.join(", ")}}}, nil
+          case #{JSON.generate(id)}:
+          	return validationMapping{mode: #{JSON.generate(mapping.fetch("validation_mode"))}, evidenceReport: #{JSON.generate(mapping.dig("evidence", "report"))}, evidenceOperations: []string{#{operations}}, sourcePaths: []string{#{Array(mapping["source_paths"]).map { |path| JSON.generate(path) }.join(", ")}}}, nil
         GO
       else
         mode = mapping.fetch("validation_mode")
@@ -1559,23 +1888,27 @@ module M1KubernetesValidationOracle
         internal_gvk = convert ? gvk_literal.call(mapping.fetch("owner_gvk"), true) : "#{schema_alias}.GroupVersionKind{}"
         list_gvk = mode == "list" ? gvk_literal.call(mapping.fetch("list_gvk"), false) : "#{schema_alias}.GroupVersionKind{}"
         <<~GO.chomp
-          	case #{JSON.generate(id)}:
-          		return validationMapping{
-          			mode: #{JSON.generate(mode)},
-          			itemMode: #{JSON.generate(item_mode)},
-          			strategyKey: #{JSON.generate(mapping["strategy_import"].to_s)},
-          			handlerKey: #{JSON.generate(mapping["handler_key"].to_s)},
-          			convert: #{convert},
-          			ownerGVK: #{gvk_literal.call(mapping.fetch("owner_gvk"), false)},
-          			internalGVK: #{internal_gvk},
-          			listGVK: #{list_gvk},
-          			resource: #{JSON.generate(mapping["owner_resource"].to_s)},
-          		}, nil
+          case #{JSON.generate(id)}:
+          	return validationMapping{
+          		mode: #{JSON.generate(mode)},
+          		itemMode: #{JSON.generate(item_mode)},
+          		strategyKey: #{JSON.generate(mapping["strategy_import"].to_s)},
+          		handlerKey: #{JSON.generate(mapping["handler_key"].to_s)},
+          		convert: #{convert},
+          		ownerGVK: #{gvk_literal.call(mapping.fetch("owner_gvk"), false)},
+          		internalGVK: #{internal_gvk},
+          		listGVK: #{list_gvk},
+          		resource: #{JSON.generate(mapping["owner_resource"].to_s)},
+          	}, nil
         GO
       end
     end.join("\n")
-    register_internal = internal_groups.select(&registrable).map { |path| "\tif err := #{aliases.fetch(path)}.AddToScheme(scheme); err != nil { return nil, fmt.Errorf(\"register internal #{path}: %w\", err) }" }.join("\n")
-    register_versions = version_imports.select(&registrable).map { |path| "\tif err := #{aliases.fetch(path)}.AddToScheme(scheme); err != nil { return nil, fmt.Errorf(\"register version #{path}: %w\", err) }" }.join("\n")
+    register_internal = internal_groups.select(&registrable).map do |path|
+      "\tif err := #{aliases.fetch(path)}.AddToScheme(scheme); err != nil { return nil, fmt.Errorf(\"register internal #{path}: %w\", err) }"
+    end.join("\n")
+    register_versions = version_imports.select(&registrable).map do |path|
+      "\tif err := #{aliases.fetch(path)}.AddToScheme(scheme); err != nil { return nil, fmt.Errorf(\"register version #{path}: %w\", err) }"
+    end.join("\n")
     import_source = imports.map { |path| "\t#{aliases.fetch(path)} #{JSON.generate(path)}" }.join("\n")
     helper_source = +""
     if helpers.include?("resource_resolver")
@@ -1606,7 +1939,6 @@ module M1KubernetesValidationOracle
         }
       GO
     end
-    list_support = "true"
 
     source = <<~GO
       package main
@@ -1974,14 +2306,14 @@ module M1KubernetesValidationOracle
 
     collaborators = arguments.map do |(name, type)|
       spec = COLLABORATORS.find { |candidate| candidate.fetch("pattern").match?(type.to_s) }
-      unless spec
-        return [false, "constructor collaborator #{name} #{type} has no source-backed implementation in the pinned checkout", []]
-      end
+      return [false, "constructor collaborator #{name} #{type} has no source-backed implementation in the pinned checkout", []] unless spec
 
       spec.reject { |key, _value| key == "pattern" }.merge("name" => name.to_s, "type" => type.to_s)
     end
     reason = "constructor collaborators are source-backed: " +
-             collaborators.map { |collaborator| "#{collaborator["name"]} #{collaborator["type"]} => #{collaborator["expression"]}" }.join(", ")
+             collaborators.map { |collaborator|
+               "#{collaborator["name"]} #{collaborator["type"]} => #{collaborator["expression"]}"
+             }.join(", ")
     [true, reason, collaborators]
   rescue StandardError => error
     [false, "constructor safety analysis failed closed: #{error.message}", []]
@@ -2004,7 +2336,7 @@ module M1KubernetesValidationOracle
   def strategy_candidate_source_paths(schema, entries)
     entries.filter_map do |entry|
       next unless entry.fetch("schema_prefix").to_s != "" &&
-                  schema.start_with?("#{entry.fetch("schema_prefix") }.") &&
+                  schema.start_with?("#{entry.fetch("schema_prefix")}.") &&
                   schema.end_with?(".#{entry.fetch("internal_type")}")
 
       entry.fetch("strategy_source_path")
@@ -2061,9 +2393,9 @@ module M1KubernetesValidationOracle
   def schema_prefix_for_internal(internal_package)
     case internal_package
     when %r{\Ak8s\.io/kubernetes/pkg/apis/([^/]+)\z}
-      "io.k8s.api.#{$1}"
+      "io.k8s.api.#{::Regexp.last_match(1)}"
     when %r{\Ak8s\.io/(apiextensions-apiserver|kube-aggregator)/pkg/apis/([^/]+)\z}
-      "io.k8s.#{$1}.pkg.apis.#{$2}"
+      "io.k8s.#{::Regexp.last_match(1)}.pkg.apis.#{::Regexp.last_match(2)}"
     end
   end
 
@@ -2101,7 +2433,7 @@ module M1KubernetesValidationOracle
                  "staging/src/#{internal_package}"
                end
     versions = Dir.glob(::File.join(source_root, relative, "v*"))
-      .filter_map { |path| ::File.basename(path) if ::File.directory?(path) && ::File.basename(path).match?(%r{\Av\d}) }
+      .filter_map { |path| ::File.basename(path) if ::File.directory?(path) && ::File.basename(path).match?(/\Av\d/) }
     versions.sort_by { |version| version_sort_key(version) }
   end
 
@@ -2115,7 +2447,11 @@ module M1KubernetesValidationOracle
     match = version.to_s.match(/\Av(\d+)(?:(alpha|beta)(\d+))?\z/)
     return [0, 0, 0] unless match
 
-    stability = match[2].nil? ? 3 : (match[2] == "beta" ? 2 : 1)
+    stability = if match[2].nil?
+                  3
+                else
+                  (match[2] == "beta" ? 2 : 1)
+                end
     [Integer(match[1]), stability, Integer(match[3] || 0)]
   end
 
@@ -2134,7 +2470,9 @@ module M1KubernetesValidationOracle
   def external_mapping_for_schema(schema)
     parts = schema.split(".")
     if schema.start_with?("io.k8s.api.")
-      group, version, type = parts.fetch(3), parts.fetch(4), parts.fetch(5)
+      group = parts.fetch(3)
+      version = parts.fetch(4)
+      type = parts.fetch(5)
       package = "k8s.io/api/#{group}/#{version}"
     elsif schema.start_with?("io.k8s.apimachinery.pkg.")
       relative = parts.drop(4)
@@ -2174,17 +2512,21 @@ module M1KubernetesValidationOracle
     unless ::File.directory?(::File.join(source_root, ".git"))
       raise OracleError, "Kubernetes oracle source is not a Git checkout: #{source_root}"
     end
+
     commit = capture!("git", "-C", source_root, "rev-parse", "HEAD").strip
     raise OracleError, "Kubernetes oracle source commit must be #{SOURCE_COMMIT}, got #{commit}" unless commit == SOURCE_COMMIT
+
     tag = capture!("git", "-C", source_root, "describe", "--tags", "--exact-match", "HEAD").strip
     raise OracleError, "Kubernetes oracle source tag must be #{KUBERNETES_VERSION}, got #{tag.inspect}" unless tag == KUBERNETES_VERSION
+
     dirty = capture!("git", "-C", source_root, "status", "--porcelain", "--untracked-files=no").strip
     raise OracleError, "Kubernetes oracle source checkout has tracked modifications" unless dirty.empty?
   end
 
   def with_hydrated_source(source_root)
     Dir.mktmpdir("rubernetes-kubernetes-validation-source-") do |directory|
-      _git_in, git_out, git_err, git_wait = Open3.popen3("git", "-C", source_root, "archive", "HEAD", "go.mod", "go.sum", "staging", "pkg", "plugin", "test")
+      _git_in, git_out, git_err, git_wait = Open3.popen3("git", "-C", source_root, "archive", "HEAD", "go.mod", "go.sum", "staging", "pkg",
+                                                         "plugin", "test")
       tar_in, _tar_out, tar_err, tar_wait = Open3.popen3("tar", "-x", "-C", directory)
       begin
         IO.copy_stream(git_out, tar_in)
@@ -2199,6 +2541,7 @@ module M1KubernetesValidationOracle
       unless git_status.success? && tar_status.success?
         raise OracleError, "cannot hydrate pinned Kubernetes source: git=#{git_error.strip} tar=#{tar_error.strip}"
       end
+
       yield directory
     end
   rescue SystemCallError => error
@@ -2228,6 +2571,7 @@ module M1KubernetesValidationOracle
         document = JSON.parse(stdout, max_nesting: 256)
         results = document.fetch("results")
         raise OracleError, "Kubernetes validation oracle results must be an array" unless results.is_a?(Array)
+
         [results, String(document.fetch("go_version"))]
       end
     end
@@ -2237,7 +2581,7 @@ module M1KubernetesValidationOracle
 
   def go_mod(source_root)
     replacements = ::File.read(::File.join(source_root, "go.mod")).lines.filter_map do |line|
-      match = line.match(/^\s*(k8s\.io\/[^\s]+)\s*=>\s*(\.\/staging\/src\/[^\s]+)\s*$/)
+      match = line.match(%r{^\s*(k8s\.io/[^\s]+)\s*=>\s*(\./staging/src/[^\s]+)\s*$})
       next unless match
 
       "#{match[1]} => #{::File.join(source_root, match[2].delete_prefix("./"))}"

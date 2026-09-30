@@ -8,7 +8,6 @@ require "digest"
 require "fileutils"
 require "json"
 require "securerandom"
-require "thread"
 require "time"
 
 require_relative "common/strict_json"
@@ -40,7 +39,7 @@ module Rubernetes
       end
 
       EMPTY_DIGEST = "0" * 64
-      DIGEST_PATTERN = /\A[0-9a-f]{64}\z/.freeze
+      DIGEST_PATTERN = /\A[0-9a-f]{64}\z/
       MAX_RECORD_BYTES = StrictJSON::DEFAULT_MAX_BYTES
       MAX_RECORD_DEPTH = StrictJSON::DEFAULT_MAX_DEPTH
 
@@ -188,10 +187,6 @@ module Rubernetes
         raise
       end
 
-      public
-
-      private
-
       def load_records
         return [] unless File.exist?(@path)
 
@@ -202,7 +197,7 @@ module Rubernetes
 
             begin
               records << normalize_record(StrictJSON.parse(line, max_bytes: MAX_RECORD_BYTES, max_depth: MAX_RECORD_DEPTH,
-                                                           require_newline: true))
+                                                                 require_newline: true))
             rescue StrictJSON::Error, JSON::ParserError, KeyError, TypeError, ArgumentError => error
               raise JournalCorruption, "journal line #{line_number} is invalid: #{error.message}"
             end
@@ -231,7 +226,10 @@ module Rubernetes
         previous = EMPTY_DIGEST
         records.each_with_index do |record, index|
           expected_sequence = index + 1
-          raise JournalCorruption, "journal sequence #{record.sequence} expected #{expected_sequence}" unless record.sequence == expected_sequence
+          unless record.sequence == expected_sequence
+            raise JournalCorruption,
+                  "journal sequence #{record.sequence} expected #{expected_sequence}"
+          end
           raise JournalCorruption, "journal previous digest mismatch at #{record.sequence}" unless record.previous_digest == previous
           raise JournalCorruption, "journal digest is invalid at #{record.sequence}" unless record.digest.match?(DIGEST_PATTERN)
 
@@ -294,7 +292,8 @@ module Rubernetes
     # Durable owner ledger.  A resource can only be claimed once for a stable
     # identity and is released only after the owning operation has stopped.
     class OwnershipLedger
-      STATES = %w[New Validated ImagePinned WorkspaceAllocated IsolationCreated ResourcesAttached WorkloadStopped Running Stopping Stopped Removed RollingBack CleanupPending StateUnknown].freeze
+      STATES = %w[New Validated ImagePinned WorkspaceAllocated IsolationCreated ResourcesAttached WorkloadStopped Running Stopping Stopped
+                  Removed RollingBack CleanupPending StateUnknown].freeze
       Resource = Data.define(:kind, :id, :identity, :owner, :state, :metadata)
       Operation = Data.define(:id, :owner, :state, :from, :to, :config_digest, :resources, :request_id)
       # Request records are separate from lifecycle operations.  A container
@@ -369,6 +368,7 @@ module Rubernetes
             unless existing.config_digest == String(config_digest) && existing.request_id == String(request_id)
               raise OwnershipConflict, "operation #{operation_id} was replayed with a different request"
             end
+
             return existing
           end
 
@@ -426,12 +426,17 @@ module Rubernetes
           from ||= operation.state
           to = String(to)
           validate_transition!(from, to)
-          if state && String(state) != to
-            raise InvalidTransition, "state #{state.inspect} disagrees with transition target #{to.inspect}"
-          end
-          keys = resources ? Array(resources).map { |resource| resource_key(resource.fetch(:kind), resource.fetch(:id)) } : operation.resources
+          raise InvalidTransition, "state #{state.inspect} disagrees with transition target #{to.inspect}" if state && String(state) != to
+
+          keys = if resources
+                   Array(resources).map do |resource|
+                     resource_key(resource.fetch(:kind), resource.fetch(:id))
+                   end
+                 else
+                   operation.resources
+                 end
           keys.each { |key| raise OwnershipConflict, "resource #{key} is not owned" unless @resources.key?(key) }
-          next_operation = Operation.new(**operation.to_h.merge(from: from, to: to, state: to, resources: keys))
+          next_operation = Operation.new(**operation.to_h, from: from, to: to, state: to, resources: keys)
           append!(operation.id, "state_transition", next_operation.to_h)
           @operations[operation.id] = next_operation
           if to == "Removed"
@@ -469,10 +474,11 @@ module Rubernetes
           unless force || %w[Stopped Removed RollingBack CleanupPending StateUnknown].include?(operation.state)
             raise InvalidTransition, "cannot release #{key} while operation is #{operation.state}"
           end
+
           # A tombstone only says which owner gave up which identity; the
           # claim's kernel proof (a container's whole spec and security plan,
           # 25 KB) has no reader once released and doubled the journal.
-          released = Resource.new(**resource.to_h.merge(state: "Released", metadata: {}.freeze))
+          released = Resource.new(**resource.to_h, state: "Released", metadata: {}.freeze)
           append!(operation.id, "resource_released", released.to_h)
           @resources[key] = released
           released
@@ -535,6 +541,7 @@ module Rubernetes
             unless existing.config_digest == digest && existing.operation == operation_name
               raise OwnershipConflict, "request #{request} was replayed with different intent"
             end
+
             return existing
           end
 
@@ -554,6 +561,7 @@ module Rubernetes
         unless %w[Completed Failed CleanupPending].include?(terminal)
           raise ArgumentError, "request terminal state must be Completed, Failed, or CleanupPending"
         end
+
         @mutex.synchronize do
           existing = @requests.fetch(request) { raise OwnershipConflict, "unknown request #{request}" }
           record = Request.new(id: existing.id, operation: existing.operation,
@@ -604,9 +612,7 @@ module Rubernetes
           when "state_transition"
             operation = Operation.new(**symbolize_operation(payload))
             @operations[operation.id] = operation
-            if operation.state == "Removed"
-              @finished << operation.id unless @finished.include?(operation.id)
-            end
+            @finished << operation.id if (operation.state == "Removed") && !@finished.include?(operation.id)
           when "resource_released"
             resource = Resource.new(**symbolize_resource(payload))
             key = resource_key(resource.kind, resource.id)
@@ -646,7 +652,7 @@ module Rubernetes
           operation.state == "New" && !operation.resources.empty? && forgettable?(operation)
         end
         inert.each do |operation|
-          closed = Operation.new(**operation.to_h.merge(from: "New", to: "Removed", state: "Removed"))
+          closed = Operation.new(**operation.to_h, from: "New", to: "Removed", state: "Removed")
           append!(operation.id, "state_transition", closed.to_h)
           @operations[operation.id] = closed
           forget_operation_locked!(closed)
@@ -733,7 +739,7 @@ module Rubernetes
       def operation_with_resources(operation, key)
         return operation if operation.resources.include?(key)
 
-        Operation.new(**operation.to_h.merge(resources: (operation.resources + [key]).uniq))
+        Operation.new(**operation.to_h, resources: (operation.resources + [key]).uniq)
       end
 
       def resource_key(kind, id)
@@ -781,10 +787,10 @@ module Rubernetes
 
       def immutable_copy(value)
         copied = case value
-        when Hash then value.to_h { |key, child| [String(key), immutable_copy(child)] }
-        when Array then value.map { |child| immutable_copy(child) }
-        else value
-        end
+                 when Hash then value.to_h { |key, child| [String(key), immutable_copy(child)] }
+                 when Array then value.map { |child| immutable_copy(child) }
+                 else value
+                 end
         copied.freeze
       end
 
@@ -856,7 +862,9 @@ module Rubernetes
 
           {"resource" => resource_key, "ledger" => expected, "observed" => actual}
         end
-        orphans = kernel_only.map { |resource_key| observed_by_key.fetch(resource_key) }.select { |resource| @orphan_predicate.call(resource) }
+        orphans = kernel_only.map do |resource_key|
+          observed_by_key.fetch(resource_key)
+        end.select { |resource| @orphan_predicate.call(resource) }
         errors = []
         released = []
         cleaned_orphans = []
@@ -878,7 +886,11 @@ module Rubernetes
           end
         end
 
-        kernel_only.each { |resource_key| audit << audit_entry(orphans.any? { |entry| key(entry) == resource_key } ? "orphan" : "kernel_only", resource_key) }
+        kernel_only.each do |resource_key|
+          audit << audit_entry(orphans.any? do |entry|
+            key(entry) == resource_key
+          end ? "orphan" : "kernel_only", resource_key)
+        end
         identity_mismatch.each { |entry| audit << audit_entry("identity_mismatch", entry.fetch("resource")) }
 
         cleanup_in_dependency_order(orphans).each do |resource|
@@ -918,14 +930,16 @@ module Rubernetes
         end
       end
 
-      def recover_pending_operations(ledger_by_key, observed_by_key, identity_mismatch, released, errors, audit)
+      def recover_pending_operations(_ledger_by_key, observed_by_key, identity_mismatch, released, errors, audit)
         mismatch_keys = identity_mismatch.map { |entry| entry.fetch("resource") }
         @ledger.recovery_candidates.each do |candidate|
           candidate_hash = candidate.respond_to?(:to_h) ? candidate.to_h : candidate
           operation = @ledger.operation(candidate_hash.fetch("id") { candidate_hash.fetch(:id) })
           operation_resources = normalize_observed(@ledger.resources(owner: operation.owner, include_released: false))
           operation_errors = []
-          operation_resources.sort_by { |resource| [-CLEANUP_ORDER.fetch(resource["kind"], 0), -resource["id"].length, key(resource)] }.each do |resource|
+          operation_resources.sort_by do |resource|
+            [-CLEANUP_ORDER.fetch(resource["kind"], 0), -resource["id"].length, key(resource)]
+          end.each do |resource|
             resource_key = key(resource)
             next if released.include?(resource_key)
             next if mismatch_keys.include?(resource_key)
@@ -959,7 +973,7 @@ module Rubernetes
         end
       end
 
-      def finalize_operation(operation, operation_errors, released)
+      def finalize_operation(operation, operation_errors, _released)
         current = @ledger.operation(operation.id)
         return unless current
 
@@ -981,7 +995,7 @@ module Rubernetes
         nil
       end
 
-      def mark_recovery_failure(operation, error)
+      def mark_recovery_failure(operation, _error)
         return unless operation
 
         current = @ledger.operation(operation.id)

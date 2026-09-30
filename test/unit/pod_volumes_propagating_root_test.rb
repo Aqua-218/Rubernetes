@@ -21,8 +21,9 @@ class PodVolumesPropagatingRootTest < Minitest::Test
     Dir.mktmpdir do |dir|
       manager = Rubernetes::Volume::Manager.new(data_dir: dir, fsync: false)
       volumes = Node::PodVolumes.new(volume: manager, root: File.join(dir, "pods"), node_name: "worker-0")
+
       refute volumes.ensure_propagating_root!
-      refute volumes.propagating_root?
+      refute_predicate volumes, :propagating_root?
       assert_nil Mount.new.mountinfo_entry(File.join(dir, "pods"))
     end
   end
@@ -39,21 +40,24 @@ class PodVolumesPropagatingRootTest < Minitest::Test
       volumes = Node::PodVolumes.new(volume: manager, root: root, node_name: "worker-0")
       begin
         assert volumes.ensure_propagating_root!
-        assert volumes.propagating_root?
+        assert_predicate volumes, :propagating_root?
         fields = Mount.new.mountinfo_entry(root)
+
         refute_nil fields, "the Pod root is a mount point"
         assert fields.any? { |field| field.start_with?("shared:") }, "the Pod root is shared: #{fields.inspect}"
 
         # Idempotent, and a second PodVolumes over the same root reuses it.
         assert volumes.ensure_propagating_root!
         again = Node::PodVolumes.new(volume: manager, root: root, node_name: "worker-0")
+
         assert again.ensure_propagating_root!
         refute Mount.new.ensure_shared_self_bind(target: root), "nothing left to change"
 
         # Lost propagation (something made the tree private) is repaired on
         # the next Pod start instead of being trusted from the first check.
         Mount.new.make_private(target: root, recursive: false)
-        refute Mount.new.mountinfo_entry(root).any? { |field| field.start_with?("shared:") }
+
+        refute(Mount.new.mountinfo_entry(root).any? { |field| field.start_with?("shared:") })
         assert volumes.ensure_propagating_root!
         assert Mount.new.mountinfo_entry(root).any? { |field| field.start_with?("shared:") }, "re-shared"
 
@@ -62,6 +66,7 @@ class PodVolumesPropagatingRootTest < Minitest::Test
         assert_includes manager.path_security.resolver.mount_boundaries, root.delete_prefix("/")
         FileUtils.mkdir_p(File.join(root, "u1", "stages"))
         handle = manager.path_security.open(File.join(root, "u1", "stages"))
+
         assert handle.fd, "resolved through the boundary"
         handle.close
         strict = Rubernetes::Volume::PathSecurity.new(root: "/", adapter: Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true),

@@ -16,7 +16,7 @@ class X509UserUIDTest < Minitest::Test
     ca = OpenSSL::X509::Certificate.new
     ca.version = 2
     ca.serial = 1
-    ca.subject = OpenSSL::X509::Name.new([["CN", "uid-ca"]])
+    ca.subject = OpenSSL::X509::Name.new([%w[CN uid-ca]])
     ca.issuer = ca.subject
     ca.public_key = ca_key
     ca.not_before = Time.now - 60
@@ -44,16 +44,19 @@ class X509UserUIDTest < Minitest::Test
   end
 
   def test_the_uid_element_and_the_credential_id
-    result, cert = authenticate([["CN", "alice"], ["O", "dev"], [A::X509::UID_OID, "4f2c-uid"]])
+    result, cert = authenticate([%w[CN alice], %w[O dev], [A::X509::UID_OID, "4f2c-uid"]])
+
     assert_equal "alice", result.user.name
     assert_equal "4f2c-uid", result.user.uid
-    assert_equal ["X509SHA256=#{OpenSSL::Digest::SHA256.hexdigest(cert.to_der)}"], result.user.extra["authentication.kubernetes.io/credential-id"]
-    plain, = authenticate([["CN", "bob"]])
+    assert_equal ["X509SHA256=#{OpenSSL::Digest::SHA256.hexdigest(cert.to_der)}"],
+                 result.user.extra["authentication.kubernetes.io/credential-id"]
+    plain, = authenticate([%w[CN bob]])
+
     assert_nil plain.user.uid
   end
 
   def test_several_or_empty_uids_are_refused
-    error = assert_raises(Rubernetes::Security::AuthenticationError) { authenticate([["CN", "a"], [A::X509::UID_OID, "1"], [A::X509::UID_OID, "2"]]) }
+    error = assert_raises(Rubernetes::Security::AuthenticationError) { authenticate([%w[CN a], [A::X509::UID_OID, "1"], [A::X509::UID_OID, "2"]]) }
     assert_equal "expected 1 UID, but found multiple: [1 2]", error.message
   end
 end

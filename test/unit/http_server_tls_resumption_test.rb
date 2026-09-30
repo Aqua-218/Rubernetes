@@ -25,11 +25,12 @@ class HTTPServerTLSResumptionTest < Minitest::Test
   def test_a_resumed_session_is_accepted
     key = OpenSSL::PKey::EC.generate("prime256v1")
     server = Rubernetes::Transport::HTTPServer.new(->(_request) { [200, {}, ["ok"]] }, host: "127.0.0.1", port: 0,
-                                                   cert: certificate(key), key: key, request_client_certificates: true)
+                                                                                       cert: certificate(key), key: key, request_client_certificates: true)
     server.start
     http = Net::HTTP.new("127.0.0.1", server.port)
     http.use_ssl = true
     http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
     assert_equal %w[200 200 200], Array.new(3) { http.get("/").code }
   ensure
     server&.stop

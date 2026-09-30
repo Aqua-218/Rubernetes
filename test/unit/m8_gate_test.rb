@@ -20,6 +20,7 @@ class M8GateTest < Minitest::Test
 
   def test_missing_manifest_fails_closed
     result = M8Gate.evaluate(File.join(Dir.tmpdir, "rubernetes-m8-missing-#{Process.pid}.json"))
+
     refute result.fetch("passed")
     assert_operator result.fetch("error_count"), :>, 0
   end
@@ -39,6 +40,7 @@ class M8GateTest < Minitest::Test
       {"id" => "k2_certified_conformance", "passed" => true}
     ]
     M8Gate.send(:validate_conformance, report("m8_conformance", cases), cases, errors)
+
     assert errors.any? { |error| error.include?("must pass 446") }, errors.inspect
     assert errors.any? { |error| error.include?("skipped 0") }, errors.inspect
   end
@@ -56,6 +58,7 @@ class M8GateTest < Minitest::Test
       {"id" => "k2_certified_conformance", "passed" => true}
     ]
     M8Gate.send(:validate_conformance, report("m8_conformance", cases), cases, errors)
+
     assert errors.any? { |error| error.include?("3 consecutive clean K1 runs") }, errors.inspect
   end
 
@@ -70,6 +73,7 @@ class M8GateTest < Minitest::Test
       {"id" => "k4_node_conformance", "passed" => true}
     ]
     M8Gate.send(:validate_selection, report("m8_selection", cases, "counts" => {"required" => 10}), cases, errors)
+
     assert errors.any? { |error| error.include?("classify every spec") }, errors.inspect
     assert errors.any? { |error| error.include?("reuse a test id") }, errors.inspect
     assert errors.any? { |error| error.include?("needs a replacement test") }, errors.inspect
@@ -89,6 +93,7 @@ class M8GateTest < Minitest::Test
       {"id" => "k6_executed", "passed" => true}
     ]
     M8Gate.send(:validate_corpus, report("m8_corpus", cases), cases, errors)
+
     assert errors.any? { |error| error.include?("at least 30 projects") }, errors.inspect
     assert errors.any? { |error| error.include?("10 operator") }, errors.inspect
     assert errors.any? { |error| error.include?("every required domain") }, errors.inspect
@@ -109,6 +114,7 @@ class M8GateTest < Minitest::Test
       {"id" => "failure_ledger_has_no_open_items", "passed" => false, "open" => 3}
     ]
     M8Gate.send(:validate_integrity, report("m8_integrity", cases), cases, errors)
+
     assert errors.any? { |error| error.include?("must not narrow focus") }, errors.inspect
     assert errors.any? { |error| error.include?("no open item") }, errors.inspect
   end
@@ -126,6 +132,7 @@ class M8GateTest < Minitest::Test
       {"id" => "k2_certified_conformance", "passed" => true}
     ]
     M8Gate.send(:validate_conformance, report("m8_conformance", conformance), conformance, errors)
+
     assert_empty errors, errors.inspect
   end
 end

@@ -76,6 +76,7 @@ class EnsureSecretPulledImagesTest < Minitest::Test
     images = resolver(registry)
     first = images.resolve(IMAGE)
     second = images.resolve(IMAGE, credentials: {username: "bob"}, pull_secret: SECRET_B)
+
     assert_same first, second
     assert_equal [nil], registry.pulls
     assert_empty registry.checks
@@ -97,6 +98,7 @@ class EnsureSecretPulledImagesTest < Minitest::Test
     first = images.resolve(IMAGE, credentials: {username: "alice"}, pull_secret: SECRET_A)
     again = images.resolve(IMAGE, credentials: {username: "alice"}, pull_secret: SECRET_A,
                                   pod_credentials: -> { [[SECRET_A], nil] })
+
     assert_same first, again
     assert_empty registry.checks
   end
@@ -107,9 +109,11 @@ class EnsureSecretPulledImagesTest < Minitest::Test
     first = images.resolve(IMAGE, credentials: {username: "alice"}, pull_secret: SECRET_A)
     other = {uid: "uid-c", namespace: "ns2", name: "carol", hash: "hash-c"}
     reused = images.resolve(IMAGE, credentials: {username: "carol"}, pull_secret: other, pod_credentials: -> { [[other], nil] })
+
     assert_same first, reused, "a matching digest reuses the unpacked image"
     assert_equal ["carol"], registry.checks
     images.resolve(IMAGE, credentials: {username: "carol"}, pull_secret: other, pod_credentials: -> { [[other], nil] })
+
     assert_equal ["carol"], registry.checks, "the verified Secret is recorded"
   end
 
@@ -117,11 +121,14 @@ class EnsureSecretPulledImagesTest < Minitest::Test
     records = Records.new
     records.record_pulled("r/app", "sha256:x", Records::Credentials.secret(**SECRET_A))
     copy = SECRET_A.merge(uid: "uid-z", name: "copy")
+
     refute records.must_attempt_pull?("r/app", "sha256:x", -> { [[copy], nil] })
     names = records.record("sha256:x")[:mapping]["r/app"].secrets.map { |secret| secret[:name] }
+
     assert_equal %w[copy regcred], names
     # A rotated Secret (same coordinates, new hash) still may use it.
     rotated = SECRET_A.merge(hash: "hash-new")
+
     refute records.must_attempt_pull?("r/app", "sha256:x", -> { [[rotated], nil] })
     assert records.must_attempt_pull?("r/app", "sha256:x", -> { [[SECRET_B], nil] })
     # Another repository of the same image has no record.
@@ -132,19 +139,24 @@ class EnsureSecretPulledImagesTest < Minitest::Test
     records = Records.new
     account = {uid: "sa-1", namespace: "ns", name: "builder"}
     records.record_pulled("r/app", "sha256:x", Records::Credentials.new(node_accessible: false, secrets: [], service_accounts: [account]))
+
     refute records.must_attempt_pull?("r/app", "sha256:x", -> { [[], account] })
     assert records.must_attempt_pull?("r/app", "sha256:x", -> { [[], nil] })
     records.record_pulled("r/app", "sha256:x", Records::Credentials.node)
+
     refute records.must_attempt_pull?("r/app", "sha256:x", -> { raise "not consulted" })
   end
 
   def test_policies_and_allowlist
     never = Records.new(policy: "NeverVerify")
+
     refute never.must_attempt_pull?("r/app", "sha256:x", -> { [[], nil] })
     always = Records.new(policy: "AlwaysVerify")
     always.record_pulled("r/app", "sha256:x", Records::Credentials.secret(**SECRET_A))
+
     assert always.must_attempt_pull?("r/app", "sha256:x", -> { [[], nil] })
     listed = Records.new(policy: "NeverVerifyAllowlistedImages", allowlist: ["registry.example/team/*", "docker.io/library/busybox"])
+
     refute listed.verification_required?("registry.example/team/app")
     refute listed.verification_required?("docker.io/library/busybox")
     assert listed.verification_required?("registry.example/other")
@@ -161,6 +173,7 @@ class EnsureSecretPulledImagesTest < Minitest::Test
     error = assert_raises(Image::NeverPullError) { images.resolve(IMAGE, pull_policy: "Never") }
     assert_equal %(Container image "#{IMAGE}" is not present with pull policy of Never), error.message
     first = images.resolve(IMAGE, credentials: {username: "alice"}, pull_secret: SECRET_A)
+
     assert_same first, images.resolve(IMAGE, pull_policy: "Never", pull_secret: SECRET_A, pod_credentials: -> { [[SECRET_A], nil] })
     assert_raises(Image::NeverPullError) { images.resolve(IMAGE, pull_policy: "Never") }
     assert_empty registry.checks, "Never never asks the registry"
@@ -170,6 +183,7 @@ class EnsureSecretPulledImagesTest < Minitest::Test
     registry = Registry.new(private_image: false)
     images = resolver(registry)
     first = images.resolve(IMAGE, pull_policy: "Always")
+
     assert_equal [nil], registry.pulls
     assert_same first, images.resolve(IMAGE, pull_policy: "Always")
     assert_same first, images.resolve(IMAGE, pull_policy: "Always")
@@ -182,11 +196,13 @@ class EnsureSecretPulledImagesTest < Minitest::Test
     images = resolver(registry)
     account = {uid: "sa-1", namespace: "ns", name: "builder"}
     first = images.resolve(IMAGE, credentials: {username: "alice"}, pull_secret: {service_account: account})
+
     assert_same first, images.resolve(IMAGE, credentials: {username: "alice"}, pull_secret: {service_account: account},
                                              pod_credentials: -> { [[], account] })
     assert_empty registry.checks
     other = {uid: "sa-2", namespace: "ns", name: "other"}
     images.resolve(IMAGE, credentials: {username: "carol"}, pull_secret: {service_account: other}, pod_credentials: -> { [[], other] })
+
     assert_equal ["carol"], registry.checks
   end
 
@@ -194,9 +210,11 @@ class EnsureSecretPulledImagesTest < Minitest::Test
     registry = Registry.new(private_image: false)
     images = resolver(registry)
     image = images.resolve(IMAGE)
+
     refute_nil images.pull_records.record(image.digest.to_s)
     key, = images.cached_images.first
     images.evict_cached_image(key)
+
     assert_nil images.pull_records.record(image.digest.to_s)
   end
 
@@ -204,6 +222,7 @@ class EnsureSecretPulledImagesTest < Minitest::Test
     registry = Registry.new
     images = resolver(registry, records: nil)
     first = images.resolve(IMAGE, credentials: {username: "alice"}, pull_secret: SECRET_A)
+
     assert_same first, images.resolve(IMAGE)
   end
 
@@ -215,7 +234,8 @@ class EnsureSecretPulledImagesTest < Minitest::Test
                           "data" => {".dockerconfigjson" => [JSON.generate(config.call(name))].pack("m0")}})
     end
     all = keyring.lookup_all(IMAGE)
-    assert_equal %w[a b], all.map { |credential| credential.source[:name] }
+
+    assert_equal(%w[a b], all.map { |credential| credential.source[:name] })
     assert_equal({uid: "uid-b", namespace: "ns", name: "b", hash: all.last.auth_hash}, keyring.lookup(IMAGE).pull_secret)
     refute_equal all.first.auth_hash, all.last.auth_hash
   end
@@ -231,10 +251,13 @@ class EnsureSecretPulledImagesTest < Minitest::Test
     end
     error = Rubernetes::Bootstrap::Config::Error
     build.call({"verification_policy" => "AlwaysVerify"})
-    build.call({"verification_policy" => "NeverVerifyAllowlistedImages", "preloaded_images_verification_allowlist" => ["registry.example/*"]})
+    build.call({"verification_policy" => "NeverVerifyAllowlistedImages",
+                "preloaded_images_verification_allowlist" => ["registry.example/*"]})
     assert_raises(error) { build.call({"verification_policy" => "Sometimes"}) }
     assert_raises(error) { build.call({"preloaded_images_verification_allowlist" => ["registry.example/*"]}) }
-    assert_raises(error) { build.call({"verification_policy" => "NeverVerifyAllowlistedImages", "preloaded_images_verification_allowlist" => ["a:1"]}) }
+    assert_raises(error) do
+      build.call({"verification_policy" => "NeverVerifyAllowlistedImages", "preloaded_images_verification_allowlist" => ["a:1"]})
+    end
     assert_raises(error) { build.call({"verification_policy" => "AlwaysVerify"}, {"KubeletEnsureSecretPulledImages" => false}) }
   end
 end

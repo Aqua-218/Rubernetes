@@ -28,9 +28,7 @@ class CSIUDSClientTest < Minitest::Test
         @requests[name] = request
         @history[name] << request
         path = request.volume_path if request.respond_to?(:volume_path)
-        if path&.match?(%r{\A/proc/\d+/fd/\d+\z})
-          @descriptor_targets[name] << File.readlink(path)
-        end
+        @descriptor_targets[name] << File.readlink(path) if path&.match?(%r{\A/proc/\d+/fd/\d+\z})
       end
     end
 
@@ -235,11 +233,13 @@ class CSIUDSClientTest < Minitest::Test
     assert_includes client.capabilities.fetch("node"), "STAGE_UNSTAGE_VOLUME"
     bridge = Rubernetes::Volume::CSIBridge.new(socket: @socket, timeout: 2)
     @clients << bridge.client
+
     assert_equal client.capabilities, bridge.capabilities
 
     volume = client.create_volume({"name" => "claim", "capacityBytes" => 4096, "accessModes" => ["ReadWriteOnce"],
                                    "parameters" => {"fstype" => "ext4"}, "secrets" => {"user" => "u"}}, token: "create-token")
     create_request = @state.request(:create_volume)
+
     assert_equal "claim", create_request.name
     assert_equal 4096, create_request.capacity_range.required_bytes
     assert_equal :SINGLE_NODE_WRITER, create_request.volume_capabilities.first.access_mode.mode
@@ -249,27 +249,32 @@ class CSIUDSClientTest < Minitest::Test
     client.create_volume({"name" => "restored", "capacityBytes" => 4096, "sourceSnapshotId" => "snapshot-1"},
                          token: "restore-token")
     source = @state.request(:create_volume).volume_content_source
+
     assert_equal "snapshot-1", source.snapshot.snapshot_id
     bridge.create_volume({"name" => "bridge-restored", "capacityBytes" => 4096, "sourceSnapshotId" => "snapshot-1"},
                          token: "bridge-restore-token")
+
     assert_equal "snapshot-1", @state.request(:create_volume).volume_content_source.snapshot.snapshot_id
 
     client.publish("volume-1", "node-a", token: "publish-token",
-                   context: {"volumeContext" => {"device" => "pci-1"}, "secrets" => {"user" => "u"},
-                             "accessModes" => ["ReadWriteOnce"]})
+                                         context: {"volumeContext" => {"device" => "pci-1"}, "secrets" => {"user" => "u"},
+                                                   "accessModes" => ["ReadWriteOnce"]})
+
     assert_equal "volume-1", @state.request(:publish).volume_id
     assert_equal({"device" => "pci-1"}, @state.request(:publish).volume_context.to_h)
     assert_equal({"user" => "u"}, @state.request(:publish).secrets.to_h)
     client.stage("volume-1", "/staging/volume-1", token: "stage-token",
-                 context: {"volumeContext" => {"x" => "y"}, "publishContext" => {"published" => "true"},
-                           "secrets" => {"user" => "u"}, "accessModes" => ["ReadWriteOnce"]})
+                                                  context: {"volumeContext" => {"x" => "y"}, "publishContext" => {"published" => "true"},
+                                                            "secrets" => {"user" => "u"}, "accessModes" => ["ReadWriteOnce"]})
+
     assert_equal "/staging/volume-1", @state.request(:stage).staging_target_path
     assert_equal({"published" => "true"}, @state.request(:stage).publish_context.to_h)
     assert_equal({"x" => "y"}, @state.request(:stage).volume_context.to_h)
     assert_equal({"user" => "u"}, @state.request(:stage).secrets.to_h)
     client.publish_node("volume-1", "/staging/volume-1", "/pods/pod-a", token: "node-publish-token",
-                        context: {"publishContext" => {"published" => "true"}, "volumeContext" => {"x" => "y"},
-                                  "secrets" => {"user" => "u"}, "accessModes" => ["ReadWriteOnce"]})
+                                                                        context: {"publishContext" => {"published" => "true"}, "volumeContext" => {"x" => "y"},
+                                                                                  "secrets" => {"user" => "u"}, "accessModes" => ["ReadWriteOnce"]})
+
     assert_equal "/pods/pod-a", @state.request(:publish_node).target_path
     assert_equal({"published" => "true"}, @state.request(:publish_node).publish_context.to_h)
     assert_equal({"x" => "y"}, @state.request(:publish_node).volume_context.to_h)
@@ -280,17 +285,20 @@ class CSIUDSClientTest < Minitest::Test
       "secrets" => {"bridge-secret" => "s"}, "accessModes" => ["ReadWriteOnce"]
     }
     bridge.stage("volume-1", "/staging/bridge", token: "bridge-stage", context: bridge_context)
+
     assert_equal({"bridge-publish" => "p"}, @state.request(:stage).publish_context.to_h)
     assert_equal({"bridge-volume" => "v"}, @state.request(:stage).volume_context.to_h)
     assert_equal({"bridge-secret" => "s"}, @state.request(:stage).secrets.to_h)
     bridge.publish_node("volume-1", "/staging/bridge", "/pods/bridge", token: "bridge-publish",
-                        context: bridge_context)
+                                                                       context: bridge_context)
+
     assert_equal({"bridge-publish" => "p"}, @state.request(:publish_node).publish_context.to_h)
     assert_equal({"bridge-volume" => "v"}, @state.request(:publish_node).volume_context.to_h)
     assert_equal({"bridge-secret" => "s"}, @state.request(:publish_node).secrets.to_h)
     assert_equal 2, client.stats("volume-1").fetch("capacityBytes")
 
     snapshot = client.create_snapshot("volume-1", token: "snapshot-token")
+
     assert_equal "volume-1", @state.request(:create_snapshot).source_volume_id
     assert_equal "snapshot-1", snapshot.fetch("snapshotId")
     assert_equal "next-snapshot", client.list_snapshots(max_entries: 1, source_volume_id: "volume-1").fetch("nextToken")
@@ -301,6 +309,7 @@ class CSIUDSClientTest < Minitest::Test
     client.unstage("volume-1", "/staging/volume-1", token: "unstage-token")
     client.unpublish("volume-1", "node-a", token: "unpublish-token")
     client.delete_volume("volume-1", token: "delete-token")
+
     assert_equal "volume-1", @state.request(:delete_volume).volume_id
   end
 
@@ -319,11 +328,12 @@ class CSIUDSClientTest < Minitest::Test
   def test_socket_filesystem_and_peer_identity_are_pinned_and_replacement_is_rejected
     client = new_client
     identity = client.endpoint_identity
+
     assert_equal Process.euid, identity.fetch("uid")
     assert_equal Process.egid, identity.fetch("gid")
     assert_equal Process.euid, identity.fetch("peerUid")
     assert_equal Process.egid, identity.fetch("peerGid")
-    assert identity.fetch("inode").positive?
+    assert_predicate identity.fetch("inode"), :positive?
 
     assert_raises(Rubernetes::Volume::CSIUnavailable) do
       Rubernetes::Volume::CSIUDSClient.new(
@@ -370,7 +380,7 @@ class CSIUDSClientTest < Minitest::Test
     error = assert_raises(Rubernetes::Volume::CSIError) do
       client.create_volume({"name" => "replaced", "capacityBytes" => 1}, token: "replace")
     end
-    assert error.ambiguous?
+    assert_predicate error, :ambiguous?
     assert_match(/identity changed while the RPC was in flight/, error.message)
     assert_equal 1, @state.requests_for(:create_volume).length
   ensure
@@ -382,11 +392,13 @@ class CSIUDSClientTest < Minitest::Test
     context = {"accessModes" => ["ReadOnlyMany"], "volumeContext" => {}, "secrets" => {}}
 
     client.publish("volume-1", "node-a", token: "readonly-controller", context: context)
+
     assert @state.request(:publish).readonly
     assert_equal :MULTI_NODE_READER_ONLY, @state.request(:publish).volume_capability.access_mode.mode
 
     client.publish_node("volume-1", "/staging/volume-1", "/pods/readonly",
                         token: "readonly-node", context: context)
+
     assert @state.request(:publish_node).readonly
     assert_equal :MULTI_NODE_READER_ONLY, @state.request(:publish_node).volume_capability.access_mode.mode
     assert_includes @state.request(:publish_node).volume_capability.mount.mount_flags, "ro"
@@ -418,11 +430,13 @@ class CSIUDSClientTest < Minitest::Test
       {"name" => "assembled", "capacityBytes" => 512, "csi" => {"driver" => "test.csi"}},
       token: "assembled-create"
     )
+
     assert_equal "csi", manager.fetch_record(id).backend
     assert_equal "assembled", @state.request(:create_volume).name
     manager.controller.publish(id, "node-a", token: "assembled-attach")
     stage_path = File.join(@directory, "assembled-stage")
     manager.node.stage(id, stage_path, token: "assembled-stage", node: "node-a")
+
     assert_equal stage_path, @state.request(:stage).staging_target_path
     assert_equal stage_path, manager.volume(id).stages.fetch(stage_path).fetch("target")
   end
@@ -446,6 +460,7 @@ class CSIUDSClientTest < Minitest::Test
       {"name" => "claim", "capacityBytes" => 64, "csi" => {"driver" => "test.csi"},
        "secretRef" => {"name" => "csi-credentials"}}, token: "create"
     )
+
     refute_equal "volume-1", local_id
     assert_equal "volume-1", first.fetch_record(local_id).spec.fetch("backendResult").fetch("volumeId")
     assert_equal({"credential" => "memory-only-secret"}, @state.request(:create_volume).secrets.to_h)
@@ -454,6 +469,7 @@ class CSIUDSClientTest < Minitest::Test
       data_dir: data_dir, csi: bridge, secret_resolver: resolver, fsync: true
     )
     manager.controller.publish(local_id, "node-a", token: "attach")
+
     assert_equal "volume-1", @state.request(:publish).volume_id
     assert_equal({"credential" => "memory-only-secret"}, @state.request(:publish).secrets.to_h)
 
@@ -461,33 +477,44 @@ class CSIUDSClientTest < Minitest::Test
     target_path = File.join(@directory, "target")
     pod = {"metadata" => {"uid" => "pod-a"}}
     manager.node.stage(local_id, stage_path, token: "stage", node: "node-a")
+
     assert_equal "volume-1", @state.request(:stage).volume_id
     assert_equal({"credential" => "memory-only-secret"}, @state.request(:stage).secrets.to_h)
     manager.node.publish(local_id, pod, target_path, readonly: false, token: "publish", node: "node-a")
+
     assert_equal "volume-1", @state.request(:publish_node).volume_id
     assert_equal({"credential" => "memory-only-secret"}, @state.request(:publish_node).secrets.to_h)
     manager.stats(local_id, path: target_path)
+
     assert_equal "volume-1", @state.request(:stats).volume_id
     assert_equal target_path, @state.request(:stats).volume_path
     manager.expand(local_id, 128, token: "expand")
+
     assert_equal "volume-1", @state.request(:expand).volume_id
     assert_equal({"credential" => "memory-only-secret"}, @state.request(:expand).secrets.to_h)
     manager.node.unpublish(local_id, pod, target_path, token: "unpublish")
+
     assert_equal "volume-1", @state.request(:unpublish_node).volume_id
     snapshot_id = manager.create_snapshot(local_id, token: "snapshot", name: "backup")
+
     assert_equal "volume-1", @state.request(:create_snapshot).source_volume_id
     assert_equal({"credential" => "memory-only-secret"}, @state.request(:create_snapshot).secrets.to_h)
     manager.delete_snapshot(snapshot_id, token: "delete-snapshot")
+
     assert_equal "snapshot-1", @state.request(:delete_snapshot).snapshot_id
     assert_equal({"credential" => "memory-only-secret"}, @state.request(:delete_snapshot).secrets.to_h)
     manager.node.unstage(local_id, stage_path, token: "unstage", node: "node-a")
+
     assert_equal "volume-1", @state.request(:unstage).volume_id
     manager.controller.unpublish(local_id, "node-a", token: "detach")
+
     assert_equal "volume-1", @state.request(:unpublish).volume_id
     manager.delete_volume(local_id, token: "delete")
+
     assert_equal "volume-1", @state.request(:delete_volume).volume_id
 
     persisted = Dir.glob(File.join(data_dir, "*.json")).map { |path| File.binread(path) }.join
+
     refute_includes persisted, "memory-only-secret"
   end
 
@@ -506,6 +533,7 @@ class CSIUDSClientTest < Minitest::Test
 
     manager.controller.publish(id, "node-a", token: "attach-rox")
     controller_request = @state.request(:publish)
+
     assert controller_request.readonly
     assert_equal :MULTI_NODE_READER_ONLY, controller_request.volume_capability.access_mode.mode
 
@@ -516,6 +544,7 @@ class CSIUDSClientTest < Minitest::Test
 
     assert_equal 128, manager.expand(id, 128, token: "expand-rox")
     node_requests = @state.requests_for(:expand_node).last(2)
+
     assert_equal 2, node_requests.length
     assert_equal [stage_path, target_path].sort, node_requests.map(&:volume_path).sort
     node_requests.each do |request|
@@ -546,6 +575,7 @@ class CSIUDSClientTest < Minitest::Test
     manager.controller.publish(id, "node-a", token: "attach-echo")
 
     record = manager.volume(id)
+
     assert_equal "[REDACTED]", record.spec.fetch("backendResult").fetch("volumeContext").fetch("opaque")
     assert_equal "prefix-[REDACTED]-suffix", record.attachments.fetch("node-a").fetch("publishContext").fetch("opaque")
 
@@ -557,6 +587,7 @@ class CSIUDSClientTest < Minitest::Test
     refute_includes error.message, secret
     refute_includes JSON.generate(error.details), secret
     persisted = Dir.glob(File.join(data_dir, "**", "*.json")).map { |path| File.binread(path) }.join("\n")
+
     refute_includes persisted, secret
   end
 
@@ -592,6 +623,7 @@ class CSIUDSClientTest < Minitest::Test
     assert_empty report.errors
     assert_empty restarted.list_snapshots
     list_request = @state.request(:list_snapshots)
+
     assert_equal "volume-1", list_request.source_volume_id
     assert_equal({"credential" => secret}, list_request.secrets.to_h)
     assert_equal({"credential" => secret}, @state.request(:delete_snapshot).secrets.to_h)
@@ -601,11 +633,12 @@ class CSIUDSClientTest < Minitest::Test
   def test_not_found_is_idempotent_and_transient_mutations_are_ambiguous
     client = new_client
     @state.delete_status = GRPC::Core::StatusCodes::NOT_FOUND
+
     assert_equal({}, client.delete_volume("already-gone", token: "delete-token"))
 
     @state.delete_status = GRPC::Core::StatusCodes::UNAVAILABLE
     error = assert_raises(Rubernetes::Volume::CSIError) { client.delete_volume("maybe-gone", token: "delete-token-2") }
-    assert error.ambiguous?
+    assert_predicate error, :ambiguous?
     assert_equal "UNAVAILABLE", error.details.fetch("grpcCode")
   end
 end

@@ -10,7 +10,6 @@ module ActiveSupport
     # one process keeps the tests honest.
     parallelize(workers: 1)
 
-
     # Add more helper methods to be used by all tests here...
   end
 end

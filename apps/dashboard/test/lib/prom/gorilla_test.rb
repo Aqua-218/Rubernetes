@@ -13,8 +13,9 @@ class Prom::GorillaTest < ActiveSupport::TestCase
 
   test "roundtrips regular scrape data compactly" do
     t0 = 1_700_000_000_000
-    samples = 240.times.map { |i| [t0 + i * 15_000 + (i % 7 == 0 ? 3 : 0), 1000.0 + i] }
+    samples = 240.times.map { |i| [t0 + (i * 15_000) + (i % 7 == 0 ? 3 : 0), 1000.0 + i] }
     bytes, decoded = roundtrip(samples)
+
     assert_equal samples, decoded
     assert_operator bytes.bytesize, :<, samples.length * 3, "about 1-2 bytes per sample, got #{bytes.bytesize}"
   end
@@ -22,14 +23,16 @@ class Prom::GorillaTest < ActiveSupport::TestCase
   test "roundtrips floats with awkward bit patterns" do
     values = [0.0, -0.0, 1.0, -1.0, 3.14159, 1e-300, 1e300, 123_456_789.0, 0.1, 0.2, 0.30000000000000004,
               Float::INFINITY, -Float::INFINITY, 2.0**52, 5e-324, 42.0, 42.0, 42.0, 41.999]
-    samples = values.each_with_index.map { |v, i| [1000 + i * 1000, v] }
+    samples = values.each_with_index.map { |v, i| [1000 + (i * 1000), v] }
     _, decoded = roundtrip(samples)
+
     assert_equal samples, decoded
   end
 
   test "NaN survives as NaN" do
     _, decoded = roundtrip([[1, 1.0], [2, Float::NAN], [3, 2.0]])
-    assert decoded[1][1].nan?
+
+    assert_predicate decoded[1][1], :nan?
     assert_equal [1, 1.0], decoded[0]
     assert_equal [3, 2.0], decoded[2]
   end
@@ -48,6 +51,7 @@ class Prom::GorillaTest < ActiveSupport::TestCase
       samples << [t, i.to_f]
     end
     _, decoded = roundtrip(samples)
+
     assert_equal samples, decoded
   end
 
@@ -60,6 +64,7 @@ class Prom::GorillaTest < ActiveSupport::TestCase
   test "counts and bounds are tracked" do
     encoder = Prom::Gorilla::Encoder.new
     encoder.append(100, 1.0).append(200, 2.0).append(300, 3.0)
+
     assert_equal 3, encoder.count
     assert_equal 100, encoder.min_time
     assert_equal 300, encoder.max_time

@@ -120,7 +120,9 @@ module Rubernetes
         when :crd
           crd_table(crd_columns, items, now)
         else
-          [DEFAULT_COLUMNS, items.map { |item| [object_name(item), rfc3339(parse_time(item.dig("metadata", "creationTimestamp")) || ZERO_TIME)] }]
+          [DEFAULT_COLUMNS, items.map do |item|
+            [object_name(item), rfc3339(parse_time(item.dig("metadata", "creationTimestamp")) || ZERO_TIME)]
+          end]
         end
       end
 
@@ -164,7 +166,7 @@ module Rubernetes
       # Go integer division truncates toward zero.
       def go_div(dividend, divisor)
         quotient = dividend.abs / divisor.abs
-        (dividend.negative? ^ divisor.negative?) ? -quotient : quotient
+        dividend.negative? ^ divisor.negative? ? -quotient : quotient
       end
 
       # k8s.io/apimachinery/pkg/util/duration.HumanDuration, on nanoseconds.
@@ -188,11 +190,13 @@ module Rubernetes
           return remainder.zero? ? "#{hours}h" : "#{hours}h#{remainder}m"
         end
         return "#{hours}h" if hours < 48
+
         if hours < 24 * 8
           remainder = hours % 24
           return remainder.zero? ? "#{hours / 24}d" : "#{hours / 24}d#{remainder}h"
         end
         return "#{hours / 24}d" if hours < 24 * 365 * 2
+
         if hours < 24 * 365 * 8
           remainder = (hours / 24) % 365
           return remainder.zero? ? "#{hours / 24 / 365}y" : "#{hours / 24 / 365}y#{remainder}d"
@@ -424,6 +428,7 @@ module Rubernetes
           else
             reason = "Init:#{index}/#{init_specs.length}"
           end
+
           initializing = true
           break
         end
@@ -454,7 +459,9 @@ module Rubernetes
             end
           end
           if reason == "Completed"
-            if has_running && condition_true?(conditions.select { |condition| condition["type"] == "Ready" && condition["status"] == "True" }, "Ready")
+            if has_running && condition_true?(conditions.select do |condition|
+              condition["type"] == "Ready" && condition["status"] == "True"
+            end, "Ready")
               reason = "Running"
             elsif !error_reason.empty?
               reason = error_reason
@@ -540,7 +547,11 @@ module Rubernetes
         count = 0
         Array(ports).each do |port|
           if list.length < 3
-            list << (!port["port"].nil? ? port["port"].to_i.to_s : (!port["name"].nil? ? port["name"].to_s : "*"))
+            list << (if port["port"].nil?
+                       (port["name"].nil? ? "*" : port["name"].to_s)
+                     else
+                       port["port"].to_i.to_s
+                     end)
           elsif list.length == 3
             more = true
           end
@@ -681,11 +692,17 @@ module Rubernetes
           case metric["type"]
           when "External" then hpa_value_metric(metric["external"], current_status && current_status["external"])
           when "Pods"
-            current = current_status && current_status["pods"] ? quantity_ptr(current_status.dig("pods", "current", "averageValue")) : "<unknown>"
+            current = if current_status && current_status["pods"]
+                        quantity_ptr(current_status.dig("pods", "current",
+                                                        "averageValue"))
+                      else
+                        "<unknown>"
+                      end
             "#{current}/#{quantity_ptr(metric.dig("pods", "target", "averageValue"))}"
           when "Object" then hpa_value_metric(metric["object"], current_status && current_status["object"])
           when "Resource" then hpa_resource_metric(metric["resource"], current_status && current_status["resource"])
-          when "ContainerResource" then hpa_resource_metric(metric["containerResource"], current_status && current_status["containerResource"])
+          when "ContainerResource" then hpa_resource_metric(metric["containerResource"],
+                                                            current_status && current_status["containerResource"])
           else "<unknown type>"
           end
         end
@@ -697,27 +714,28 @@ module Rubernetes
 
       def hpa_value_metric(source, current_status)
         target = source.is_a?(Hash) ? source["target"] || {} : {}
-        if !target["averageValue"].nil?
-          current = "<unknown>"
-          current = quantity(current_status.dig("current", "averageValue")) if current_status && !current_status.dig("current", "averageValue").nil?
-          "#{current}/#{quantity(target["averageValue"])} (avg)"
-        else
+        if target["averageValue"].nil?
           current = current_status ? quantity_ptr(current_status.dig("current", "value")) : "<unknown>"
           "#{current}/#{quantity_ptr(target["value"])}"
+        else
+          current = "<unknown>"
+          current = quantity(current_status.dig("current", "averageValue")) if current_status && !current_status.dig("current",
+                                                                                                                     "averageValue").nil?
+          "#{current}/#{quantity(target["averageValue"])} (avg)"
         end
       end
 
       def hpa_resource_metric(source, current_status)
-        source = source.is_a?(Hash) ? source : {}
+        source = {} unless source.is_a?(Hash)
         target = source["target"] || {}
-        if !target["averageValue"].nil?
-          current = current_status ? quantity_ptr(current_status.dig("current", "averageValue")) : "<unknown>"
-          "#{source["name"]}: #{current}/#{quantity(target["averageValue"])}"
-        else
+        if target["averageValue"].nil?
           utilization = current_status && current_status.dig("current", "averageUtilization")
           current = utilization.nil? ? "<unknown>" : "#{utilization.to_i}%"
           wanted = target["averageUtilization"].nil? ? "<auto>" : "#{target["averageUtilization"].to_i}%"
           "#{source["name"]}: #{current}/#{wanted}"
+        else
+          current = current_status ? quantity_ptr(current_status.dig("current", "averageValue")) : "<unknown>"
+          "#{source["name"]}: #{current}/#{quantity(target["averageValue"])}"
         end
       end
 
@@ -801,7 +819,11 @@ module Rubernetes
             counts = sums.map(&:to_s) + [pools.count { |pool| !pool["validationError"].nil? }.to_s]
           end
         end
-        completed_text = completed.nil? ? "<none>" : (completed == :zero ? "<unknown>" : since(completed, now))
+        completed_text = if completed.nil?
+                           "<none>"
+                         else
+                           (completed == :zero ? "<unknown>" : since(completed, now))
+                         end
         [object_name(request), spec(request)["driver"].to_s, *counts, pool_count, text, completed_text]
       end
 
@@ -1038,7 +1060,11 @@ module Rubernetes
           spec = spec(node)
           status = status(node)
           ready = Array(status["conditions"]).select { |condition| condition["type"] == "Ready" }.last
-          states = if ready then [ready["status"] == "True" ? "Ready" : "NotReady"] else ["Unknown"] end
+          states = if ready
+                     [ready["status"] == "True" ? "Ready" : "NotReady"]
+                   else
+                     ["Unknown"]
+                   end
           states << "SchedulingDisabled" if spec["unschedulable"] == true
           labels = node.dig("metadata", "labels").is_a?(Hash) ? node.dig("metadata", "labels") : {}
           roles = labels.filter_map do |key, value|
@@ -1095,7 +1121,11 @@ module Rubernetes
         end,
         "ComponentStatus" => lambda do |component, _now|
           condition = Array(component["conditions"]).find { |entry| entry["type"] == "Healthy" }
-          state = condition.nil? ? "Unknown" : (condition["status"] == "True" ? "Healthy" : "Unhealthy")
+          state = if condition.nil?
+                    "Unknown"
+                  else
+                    (condition["status"] == "True" ? "Healthy" : "Unhealthy")
+                  end
           [object_name(component), state, condition.to_h["message"].to_s, condition.to_h["error"].to_s]
         end,
         "Deployment" => lambda do |deployment, now|
@@ -1111,7 +1141,9 @@ module Rubernetes
           count = (map["data"].is_a?(Hash) ? map["data"].length : 0) + (map["binaryData"].is_a?(Hash) ? map["binaryData"].length : 0)
           [object_name(map), count, age(map, now)]
         end,
-        "NetworkPolicy" => ->(policy, now) { [object_name(policy), format_label_selector(spec(policy)["podSelector"] || {}), age(policy, now)] },
+        "NetworkPolicy" => lambda { |policy, now|
+          [object_name(policy), format_label_selector(spec(policy)["podSelector"] || {}), age(policy, now)]
+        },
         "RoleBinding" => lambda do |binding, now|
           ref = binding["roleRef"].is_a?(Hash) ? binding["roleRef"] : {}
           [object_name(binding), "#{ref["kind"]}/#{ref["name"]}", age(binding, now), *subjects(binding["subjects"])]
@@ -1145,7 +1177,7 @@ module Rubernetes
         "StorageClass" => lambda do |storage_class, now|
           label = object_name(storage_class)
           label += " (default)" if %w[storageclass.kubernetes.io/is-default-class storageclass.beta.kubernetes.io/is-default-class]
-                                     .any? { |key| annotations(storage_class)[key] == "true" }
+            .any? { |key| annotations(storage_class)[key] == "true" }
           [label, storage_class["provisioner"].to_s, (storage_class["reclaimPolicy"] || "Delete").to_s,
            (storage_class["volumeBindingMode"] || "Immediate").to_s, storage_class["allowVolumeExpansion"] == true, age(storage_class, now)]
         end,
@@ -1164,14 +1196,21 @@ module Rubernetes
            status(attachment)["attached"] == true, age(attachment, now)]
         end,
         "EndpointSlice" => lambda do |slice, now|
-          [object_name(slice), slice["addressType"].to_s, discovery_ports(slice["ports"]), discovery_endpoints(slice["endpoints"]), age(slice, now)]
+          [object_name(slice), slice["addressType"].to_s, discovery_ports(slice["ports"]), discovery_endpoints(slice["endpoints"]),
+           age(slice, now)]
         end,
         "CSINode" => ->(node, now) { [object_name(node), Array(spec(node)["drivers"]).length, age(node, now)] },
         "CSIDriver" => lambda do |driver, now|
           spec = spec(driver)
           modes = Array(spec["volumeLifecycleModes"]).join(",")
-          tokens = spec["tokenRequests"].nil? ? "<unset>" : Array(spec["tokenRequests"]).map { |request| request["audience"].to_s }.join(",")
-          [object_name(driver), spec["attachRequired"].nil? ? true : spec["attachRequired"] == true, spec["podInfoOnMount"] == true,
+          tokens = if spec["tokenRequests"].nil?
+                     "<unset>"
+                   else
+                     Array(spec["tokenRequests"]).map do |request|
+                       request["audience"].to_s
+                     end.join(",")
+                   end
+          [object_name(driver), spec["attachRequired"].nil? || spec["attachRequired"] == true, spec["podInfoOnMount"] == true,
            spec["storageCapacity"] == true, tokens, spec["requiresRepublish"] == true, modes.empty? ? "<none>" : modes, age(driver, now)]
         end,
         "CSIStorageCapacity" => lambda do |capacity, _now|
@@ -1203,7 +1242,8 @@ module Rubernetes
           versions = Array(status(version)["storageVersions"])
           list = versions.first(3).map { |entry| "#{entry["apiServerID"]}=#{entry["encodingVersion"]}" }
           encoding = status(version)["commonEncodingVersion"]
-          [object_name(version), encoding.nil? ? "<unset>" : encoding.to_s, list_with_more(list, versions.length > 3, versions.length, 3), age(version, now)]
+          [object_name(version), encoding.nil? ? "<unset>" : encoding.to_s, list_with_more(list, versions.length > 3, versions.length, 3),
+           age(version, now)]
         end,
         "Scale" => ->(scale, now) { [object_name(scale), spec(scale)["replicas"].to_i, status(scale)["replicas"].to_i, age(scale, now)] },
         "DeviceClass" => ->(device_class, now) { [object_name(device_class), age(device_class, now)] },

@@ -36,7 +36,11 @@ class RaftStoreRequestBarrierTest < Minitest::Test
     raft = store(server)
 
     raft.with_read_barrier do
-      3.times { raft.get("registry/v1/configmaps/dev/a") rescue nil }
+      3.times do
+        raft.get("registry/v1/configmaps/dev/a")
+      rescue StandardError
+        nil
+      end
       raft.list("registry/v1/configmaps/dev")
     end
 
@@ -55,7 +59,7 @@ class RaftStoreRequestBarrierTest < Minitest::Test
   def test_a_write_inside_the_scope_re_arms_the_barrier
     server = CountingServer.new
     raft = store(server)
-    raft.define_singleton_method(:submit) do |command, effect:, key:|
+    raft.define_singleton_method(:submit) do |_command, effect:, key:|
       Thread.current[Rubernetes::Consensus::RaftStore::BARRIER_SCOPE_KEY]&.store(:taken, false)
       {}
     end

@@ -13,6 +13,7 @@ class EventedPLEGTest < Minitest::Test
 
   class FakeClient
     def initialize(scripts) = @scripts = scripts
+
     def stream(_service, _method, _request)
       script = @scripts.shift or raise Rubernetes::Runtime::CRI::Client::Error, "runtime gone"
       script.each do |message|
@@ -40,11 +41,20 @@ class EventedPLEGTest < Minitest::Test
                               event("u1", "CONTAINER_STOPPED_EVENT", (now - 0.05) * 1e9)],
                              [{error: "stream broke"}],
                              [:connected]])
-    pleg = Node::EventedPLEG.new(client: client, metrics: metrics, on_event: ->(uid, type, id) { seen << [uid, type, id] }, relist: -> { relists += 1 },
+    pleg = Node::EventedPLEG.new(client: client, metrics: metrics, on_event: ->(uid, type, id) { seen << [uid, type, id] }, relist: lambda {
+      relists += 1
+    },
                                  max_stream_retries: 5, retry_delay: 0, clock: -> { now })
-    pleg.watch_events rescue nil # the fourth stream raises: FakeClient is empty
-    assert_equal [["u1", "CONTAINER_STARTED_EVENT", "c-u1"], ["u1", "CONTAINER_STOPPED_EVENT", "c-u1"]], seen, "created events are not lifecycle events"
+    begin
+      pleg.watch_events
+    rescue StandardError
+      nil
+    end # the fourth stream raises: FakeClient is empty
+
+    assert_equal [%w[u1 CONTAINER_STARTED_EVENT c-u1], %w[u1 CONTAINER_STOPPED_EVENT c-u1]], seen,
+                 "created events are not lifecycle events"
     text = render
+
     assert_match(/kubelet_evented_pleg_connection_success_count 2/, text)
     assert_match(/kubelet_evented_pleg_connection_latency_seconds_count 3/, text)
     assert_match(/kubelet_evented_pleg_connection_latency_seconds_bucket\{le="0.1"\} 2/, text)
@@ -54,12 +64,15 @@ class EventedPLEGTest < Minitest::Test
   def test_giving_up_after_the_retries_hands_back_to_the_generic_relist
     fell_back = false
     client = FakeClient.new([])
-    pleg = Node::EventedPLEG.new(client: client, metrics: metrics, on_event: ->(*) {}, on_fallback: -> { fell_back = true }, max_stream_retries: 3, retry_delay: 0)
+    pleg = Node::EventedPLEG.new(client: client, metrics: metrics, on_event: ->(*) {}, on_fallback: lambda {
+      fell_back = true
+    }, max_stream_retries: 3, retry_delay: 0)
     pleg.start
     pleg.instance_variable_get(:@thread).join(5)
+
     assert fell_back
     assert_equal 3, pleg.attempts
-    refute pleg.in_use?
+    refute_predicate pleg, :in_use?
     assert_match(/kubelet_evented_pleg_connection_error_count 3/, render)
   end
 
@@ -87,9 +100,11 @@ class EventedPLEGTest < Minitest::Test
       begin
         client = Rubernetes::Runtime::CRI::Client.new(endpoint: socket, timeout: 10)
         messages = []
+
         assert client.stream("RuntimeService", "GetContainerEvents", {}) { |message| messages << message }
         assert_equal :connected, messages.first
         events = messages.drop(1)
+
         assert_equal 2, events.length
         assert_equal "CONTAINER_STOPPED_EVENT", events.first["container_event_type"]
         assert_equal "uid-0", events.first.dig("pod_sandbox_status", "metadata", "uid")

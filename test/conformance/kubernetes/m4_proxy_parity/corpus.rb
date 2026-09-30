@@ -52,14 +52,14 @@ module M4ProxyParityCorpus
 
   module_function
 
-  def endpoint(address, protocol, node: NODE_NAME, ready: true, serving: nil, terminating: false, hostname: nil)
+  def endpoint(address, _protocol, node: NODE_NAME, ready: true, serving: nil, terminating: false, hostname: nil)
     serving = ready if serving.nil?
     {
       "addresses" => [address],
       "conditions" => {"ready" => ready, "serving" => serving, "terminating" => terminating},
       "nodeName" => node,
       "hostname" => hostname,
-      "targetRef" => {"kind" => "Pod", "name" => "pod-#{address.tr('.:', '--')}", "uid" => "uid-#{address}"}
+      "targetRef" => {"kind" => "Pod", "name" => "pod-#{address.tr(".:", "--")}", "uid" => "uid-#{address}"}
     }.compact
   end
 
@@ -89,9 +89,9 @@ module M4ProxyParityCorpus
     {"clusterIP" => v4, "clusterIPs" => [v4, v6], "ipFamilies" => %w[IPv4 IPv6]}
   end
 
-  def both_backends(protocol, **options)
-    v4 = TOPOLOGY.dig("backend", "ipv4").map { |ip| endpoint(ip, protocol, **options) }
-    v6 = TOPOLOGY.dig("backend", "ipv6").map { |ip| endpoint(ip, protocol, **options) }
+  def both_backends(protocol, **)
+    v4 = TOPOLOGY.dig("backend", "ipv4").map { |ip| endpoint(ip, protocol, **) }
+    v6 = TOPOLOGY.dig("backend", "ipv6").map { |ip| endpoint(ip, protocol, **) }
     [v4, v6]
   end
 

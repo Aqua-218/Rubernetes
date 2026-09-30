@@ -20,11 +20,13 @@ class MemoryStoreRevisionUnderTest < Minitest::Test
     store = Store.new
     store.create("registry/clusterroles/_cluster/admin", object("admin"))
     role_revision = store.revision
+
     assert_equal role_revision, store.revision_under("registry/clusterroles/")
     assert_equal role_revision, store.revision_under("registry/clusterroles/_cluster/")
 
     store.create("registry/pods/ns/p", object("p", namespace: "ns"))
     store.create("registry/pods/ns/q", object("q", namespace: "ns"))
+
     assert_equal role_revision, store.revision_under("registry/clusterroles/"), "pod writes leave the clusterrole key space alone"
     assert_equal store.revision, store.revision_under("registry/pods/ns/")
     assert_equal 0, store.revision_under("registry/rolebindings/"), "an untouched key space is at zero"
@@ -34,14 +36,17 @@ class MemoryStoreRevisionUnderTest < Minitest::Test
     store = Store.new
     store.create("/registry/roles/ns/reader", object("reader", namespace: "ns"))
     store.guaranteed_update("/registry/roles/ns/reader") { |current| current.merge("rules" => []) }
+
     assert_equal store.revision, store.revision_under("registry/roles/")
     store.delete("/registry/roles/ns/reader")
+
     assert_equal store.revision, store.revision_under("/registry/roles/other/"), "a delete is a write too"
   end
 
   def test_a_prefix_shorter_than_a_key_space_answers_with_the_global_revision
     store = Store.new
     store.create("registry/pods/ns/p", object("p", namespace: "ns"))
+
     assert_equal store.revision, store.revision_under("registry/")
     assert_equal store.revision, store.revision_under("")
   end
@@ -53,6 +58,7 @@ class MemoryStoreRevisionUnderTest < Minitest::Test
     store.delete("registry/pods/ns/p")
     restored = Store.new
     restored.import_state(store.export_state)
+
     %w[registry/clusterroles/ registry/pods/ registry/rolebindings/].each do |prefix|
       assert_equal store.revision_under(prefix), restored.revision_under(prefix), prefix
     end

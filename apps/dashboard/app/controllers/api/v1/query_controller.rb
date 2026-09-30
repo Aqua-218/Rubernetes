@@ -17,7 +17,10 @@ module Api
         start_ms = parse_time(params.require(:start))
         end_ms = parse_time(params.require(:end))
         step_ms = parse_duration_ms(params.require(:step))
-        raise Dashboard::Errors::BadRequest, "invalid parameter \"step\": zero or negative query resolution step widths are not accepted" unless step_ms.positive?
+        unless step_ms.positive?
+          raise Dashboard::Errors::BadRequest,
+                "invalid parameter \"step\": zero or negative query resolution step widths are not accepted"
+        end
         raise Dashboard::Errors::BadRequest, "invalid parameter \"end\": end timestamp must not be before start time" if end_ms < start_ms
 
         result = engine.query_range(expression, start_ms, end_ms, step_ms)
@@ -29,7 +32,7 @@ module Api
         sets = matcher_sets(params[:match] || params["match[]"])
         raise Dashboard::Errors::BadRequest, "no match[] parameter provided" if sets.empty?
 
-        start_ms = parse_time(params[:start], default: engine.now_ms - 60 * 60 * 1000)
+        start_ms = parse_time(params[:start], default: engine.now_ms - (60 * 60 * 1000))
         end_ms = parse_time(params[:end], default: engine.now_ms)
         success(engine.series(sets, start_ms, end_ms))
       end
@@ -40,7 +43,11 @@ module Api
         names = if sets.empty?
                   store.label_names
                 else
-                  sets.flat_map { |m| store.label_names(m.map { |x| Tsdb::Store::Matcher.new(name: x.name, op: x.op, value: x.value) }) }.uniq.sort
+                  sets.flat_map do |m|
+                    store.label_names(m.map do |x|
+                                        Tsdb::Store::Matcher.new(name: x.name, op: x.op, value: x.value)
+                                      end)
+                  end.uniq.sort
                 end
         success(names)
       end
@@ -54,7 +61,11 @@ module Api
         values = if sets.empty?
                    store.label_values(name)
                  else
-                   sets.flat_map { |m| store.label_values(name, m.map { |x| Tsdb::Store::Matcher.new(name: x.name, op: x.op, value: x.value) }) }.uniq.sort
+                   sets.flat_map do |m|
+                     store.label_values(name, m.map do |x|
+                       Tsdb::Store::Matcher.new(name: x.name, op: x.op, value: x.value)
+                     end)
+                   end.uniq.sort
                  end
         success(values)
       end

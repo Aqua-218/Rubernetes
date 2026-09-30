@@ -34,8 +34,9 @@ class ProtoRoundtripPropertyTest < Minitest::Test
     assert_empty report.fetch("failures")
 
     cases = report.fetch("cases")
+
     assert_equal 770, cases.map { |item| item.fetch("schema") }.uniq.length
-    assert cases.all? { |item| item.fetch("unknown_wire_preserved") }
+    assert(cases.all? { |item| item.fetch("unknown_wire_preserved") })
     assert(cases.all? do |item|
       kinds = item.fetch("field_kinds")
       item.fetch("field_count") == kinds.fetch("scalar_fields") + kinds.fetch("nested_fields") + kinds.fetch("map_fields")
@@ -91,11 +92,12 @@ class ProtoRoundtripPropertyTest < Minitest::Test
       )
 
       report = runner.run
+
       assert_equal false, report.fetch("success")
       assert_equal 0, report.fetch("resolved_count")
       assert_equal 2, report.fetch("failure_count")
-      assert_equal %w[descriptor_resolution supported_schema_count],
-                   report.fetch("failures").map { |failure| failure.fetch("stage") }
+      assert_equal(%w[descriptor_resolution supported_schema_count],
+                   report.fetch("failures").map { |failure| failure.fetch("stage") })
       assert_raises(Coverage::CoverageError) { runner.run! }
     end
   end

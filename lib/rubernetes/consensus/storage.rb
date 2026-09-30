@@ -20,7 +20,7 @@ module Rubernetes
     # to the next sequence number and only then deletes older files.  A crash
     # at any point leaves either the old or the new WAL complete.
     class Storage
-      WAL_PATTERN = /\Awal-(\d{20})\.rbwal\z/.freeze
+      WAL_PATTERN = /\Awal-(\d{20})\.rbwal\z/
 
       attr_reader :directory, :wal, :log, :snapshots, :recovery
 
@@ -107,6 +107,7 @@ module Rubernetes
         rescue TornWAL, WALCorruption => error
           previous = files[0...-1].last
           raise if previous.nil? || !File.basename(newest).match?(WAL_PATTERN)
+
           # Rotation crashed before the new file was fully renamed: it would
           # have been a temporary file.  A named but damaged newest file is
           # corruption, never silently replaced by an older generation.

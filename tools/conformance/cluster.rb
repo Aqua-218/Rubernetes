@@ -20,7 +20,6 @@ require "English"
 require "json"
 require "net/http"
 require "securerandom"
-require "set"
 require "ipaddr"
 require "openssl"
 require "optparse"
@@ -207,7 +206,9 @@ module Conformance
       # controller whose loop crashed) must not hide behind Ready nodes.
       dead = descriptor["processes"].reject { |process| alive?(process.fetch("pid")) }
       unless dead.empty?
-        details = dead.map { |process| "#{process["name"]}: #{File.file?(process["log"]) ? File.readlines(process["log"]).last(2).join.strip[0, 300] : "no log"}" }
+        details = dead.map do |process|
+          "#{process["name"]}: #{File.file?(process["log"]) ? File.readlines(process["log"]).last(2).join.strip[0, 300] : "no log"}"
+        end
         raise "cluster processes exited during bring-up: #{details.join(" | ")}"
       end
 
@@ -239,11 +240,9 @@ module Conformance
         end
       end
       Dir[File.join(options.fetch(:root), "*", "pids", "*.pid")].each do |path|
-        begin
-          stopped << terminate(Integer(File.read(path).strip), File.basename(path, ".pid"))
-        rescue ArgumentError, SystemCallError
-          nil
-        end
+        stopped << terminate(Integer(File.read(path).strip), File.basename(path, ".pid"))
+      rescue ArgumentError, SystemCallError
+        nil
       end
       puts JSON.pretty_generate({"kind" => "conformance_cluster_down", "stopped" => stopped.compact})
       0
@@ -394,7 +393,8 @@ module Conformance
                           "usage-bootstrap-signing" => "true", "auth-extra-groups" => BOOTSTRAP_GROUP,
                           "expiration" => (Time.now.utc + 86_400).iso8601}},
         binding.call("kubeadm:kubelet-bootstrap", "system:node-bootstrapper", BOOTSTRAP_GROUP),
-        binding.call("kubeadm:node-autoapprove-bootstrap", "system:certificates.k8s.io:certificatesigningrequests:nodeclient", BOOTSTRAP_GROUP),
+        binding.call("kubeadm:node-autoapprove-bootstrap", "system:certificates.k8s.io:certificatesigningrequests:nodeclient",
+                     BOOTSTRAP_GROUP),
         binding.call("kubeadm:node-autoapprove-certificate-rotation",
                      "system:certificates.k8s.io:certificatesigningrequests:selfnodeclient", "system:nodes")
       ]}
@@ -453,7 +453,7 @@ module Conformance
     # The raft transport authenticates peers with its own per-node bundles; the
     # datastore reads them from `pki_dir` and refuses to start without one.
     def purge_stale_namespaces
-      output = IO.popen(["ip", "netns", "list"], err: File::NULL, &:read).to_s
+      output = IO.popen(%w[ip netns list], err: File::NULL, &:read).to_s
       output.each_line do |line|
         name = line.split.first.to_s
         next unless name.start_with?("rbn-")
@@ -503,7 +503,7 @@ module Conformance
       prefix = "#{File.expand_path(root)}/"
       targets = File.readlines("/proc/self/mountinfo").filter_map do |line|
         fields = line.split(" ")
-        target = fields[4].to_s.gsub(/\\(\d{3})/) { $1.to_i(8).chr }
+        target = fields[4].to_s.gsub(/\\(\d{3})/) { ::Regexp.last_match(1).to_i(8).chr }
         target if target.start_with?(prefix)
       end
       targets.sort_by { |target| [-target.count("/"), target] }.each do |target|
@@ -668,7 +668,7 @@ module Conformance
 
     def write_apiserver_config(root, id, _index, ports, pki, profile)
       peers = CONTROL_IDS.reject { |peer| peer == id }
-                         .to_h { |peer| [peer, "127.0.0.1:#{ports.fetch(:raft).fetch(peer)}"] }
+        .to_h { |peer| [peer, "127.0.0.1:#{ports.fetch(:raft).fetch(peer)}"] }
       document = {
         "version" => 1, "logging" => {"level" => "info"},
         "processes" => {
@@ -864,7 +864,9 @@ module Conformance
                        # from its InternalIP.
                        "streaming" => {"host" => "127.0.0.1", "port" => 21_250 + index,
                                        "advertise_address" => "127.0.0.1"}.merge(kubelet_streaming_security(pki, id)),
-                       "addresses" => [*node_advertise_addresses(index, profile).map { |address| {"type" => "InternalIP", "address" => address} },
+                       "addresses" => [*node_advertise_addresses(index, profile).map do |address|
+                         {"type" => "InternalIP", "address" => address}
+                       end,
                                        {"type" => "Hostname", "address" => id}],
                        "network" => network,
                        "volume" => {"data_dir" => File.join(root, "runtime", id, "volumes"),
@@ -952,7 +954,9 @@ module Conformance
         address = output[/\bsrc\s+(\S+)/, 1]
         return address if address && !address.empty?
 
-        return Socket.ip_address_list.find { |entry| entry.ipv6? && !entry.ipv6_loopback? && !entry.ipv6_linklocal? && !entry.ipv6_multicast? }&.ip_address || "::1"
+        return Socket.ip_address_list.find do |entry|
+          entry.ipv6? && !entry.ipv6_loopback? && !entry.ipv6_linklocal? && !entry.ipv6_multicast?
+        end&.ip_address || "::1"
       end
 
       output = `ip -4 route get 1.1.1.1 2>/dev/null`
@@ -1085,9 +1089,7 @@ module Conformance
     def await!(what)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + READY_TIMEOUT
       until yield
-        if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
-          raise "#{what} did not become ready within #{READY_TIMEOUT}s"
-        end
+        raise "#{what} did not become ready within #{READY_TIMEOUT}s" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
 
         sleep(0.25)
       end

@@ -65,7 +65,8 @@ class ControllerManagerWorkerPoolTest < Minitest::Test
     subject.step(wait: 0.05)
     feeder.join
     eventually { log.map { |entry| entry[1] }.include?("b") }
-    finished = log.to_h { |name, key, at| [key, at - started] }
+    finished = log.to_h { |_name, key, at| [key, at - started] }
+
     assert_operator finished.fetch("a"), :<, 0.45, "a key queued behind a slow one must not wait for it"
     assert_operator finished.fetch("b"), :<, 0.45
   end
@@ -87,6 +88,7 @@ class ControllerManagerWorkerPoolTest < Minitest::Test
     feeder.join
     eventually { log.length == 4 }
     elapsed = log.map(&:last).max + 0.3 - started
+
     assert_equal 4, log.length
     assert_operator elapsed, :<, 0.8, "four 0.3 s reconciles on four workers must not run serially (took #{elapsed.round(2)} s)"
   end
@@ -99,6 +101,7 @@ class ControllerManagerWorkerPoolTest < Minitest::Test
     subject.instance_variable_get(:@queue).add("ns")
     subject.step(wait: 0.05)
     eventually { log.length >= 2 }
+
     assert_equal %w[root-ca serviceaccount], log.map(&:first).first(2)
     assert_equal "admission webhook denied the request", subject.instance_variable_get(:@last_error).message
   end

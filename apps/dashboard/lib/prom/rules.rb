@@ -46,11 +46,11 @@ module Prom
 
     attr_reader :groups, :external_labels, :webhook_url, :notifications
 
-    def self.load_file(path, **options)
+    def self.load_file(path, **)
       raise Error, "rules file #{path} not found" unless File.file?(path)
 
-      document = YAML.safe_load(File.read(path), aliases: true) || {}
-      new(document, file: path, **options)
+      document = YAML.safe_load_file(path, aliases: true) || {}
+      new(document, file: path, **)
     end
 
     def initialize(document, file: nil, webhook_url: nil, external_labels: {}, logger: nil, http: nil,
@@ -267,7 +267,10 @@ module Prom
           else
             rows << [alert_labels, now_ms, 1.0]
             other = entry.state == "firing" ? "pending" : "firing"
-            rows << [alert_labels.merge("alertstate" => other), now_ms, Tsdb::Store::STALE_NAN] if entry.state == "firing" && entry.fired_at_ms == now_ms
+            if entry.state == "firing" && entry.fired_at_ms == now_ms
+              rows << [alert_labels.merge("alertstate" => other), now_ms,
+                       Tsdb::Store::STALE_NAN]
+            end
             rows << [entry.labels.merge("__name__" => "ALERTS_FOR_STATE"), now_ms, entry.active_at_ms / 1000.0]
           end
         end

@@ -13,14 +13,17 @@ class Dashboard::RuntimeTest < ActiveSupport::TestCase
       client.define_singleton_method(:get) { |*| {"items" => []} }
       runtime = Dashboard::Runtime.new(client: client, kubeconfig_context: {server: "https://api"})
       collector = runtime.collector # builds store, scraper, engine, rules, targets inside one lock
+
       assert_same collector, runtime.collector
       assert_same runtime.store, runtime.engine.store
       assert_same runtime.scraper, collector.scraper
       # Concurrent first access yields one store, never two writers.
       threads = 8.times.map { Thread.new { runtime.store } }
+
       assert_equal 1, threads.map(&:value).uniq.length
       assert_kind_of Prom::Rules, runtime.rules
       collector.round
+
       assert_equal 1, collector.targets.length, "the built-in kube-state target"
       runtime.stop
     ensure

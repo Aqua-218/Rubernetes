@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
 require "json"
 require "time"
 require_relative "errors"
@@ -70,9 +69,8 @@ module Rubernetes
 
       def reconcile(resource_or_key, store: @store, apply: nil, **options)
         leader_guard = options.delete(:leader_guard)
-        if leader_guard && !leader_guard.respond_to?(:call)
-          raise ArgumentError, "leader_guard must respond to call"
-        end
+        raise ArgumentError, "leader_guard must respond to call" if leader_guard && !leader_guard.respond_to?(:call)
+
         adapter = store && (store.is_a?(StoreAdapter) ? store : StoreAdapter.new(store))
         resource = resolve_resource(resource_or_key, adapter)
         stale = stale_sync_skip(resource)
@@ -82,7 +80,7 @@ module Rubernetes
         should_apply = apply.nil? ? (!adapter.nil? && @apply) : !!apply
         return result unless should_apply
 
-        applied = begin
+        begin
           responses = result.batches.each_with_object([]) do |batch, collected|
             batch_responses = Support.with_controller(result.controller || name) { adapter.apply_batch(batch, fence: leader_guard) }
             batch_responses.each_with_index do |response, index|
@@ -103,10 +101,10 @@ module Rubernetes
         end
         ReconcileResult.new(operations: result.operations, batches: result.batches, status: result.status,
                             events: result.events, controller: result.controller,
-                            key: result.key, applied: true, requeue_after: result.requeue_after).tap { |_record| applied }
+                            key: result.key, applied: true, requeue_after: result.requeue_after).tap { |_record| }
       end
 
-      def plan(resource, store: nil, **_options)
+      def plan(_resource, store: nil, **_options)
         raise MissingReconcileError, "controller #{self.class} must implement #plan before it can reconcile"
       end
 
@@ -187,21 +185,21 @@ module Rubernetes
       # particular resource treats one operation as a no-op.  Keeping these
       # entry points on the common boundary lets callers issue a lifecycle
       # request without reaching into an implementation class.
-      def rollout(resource, **options)
-        plan(resource, **options)
+      def rollout(resource, **)
+        plan(resource, **)
       end
 
-      def rollback(resource, **options)
-        plan(resource, **options)
+      def rollback(resource, **)
+        plan(resource, **)
       end
 
-      def scale(resource, replicas = nil, **options)
-        return plan(resource, **options) if replicas.nil?
+      def scale(resource, replicas = nil, **)
+        return plan(resource, **) if replicas.nil?
 
         candidate = Support.deep_copy(resource)
         candidate["spec"] ||= {}
         candidate["spec"]["replicas"] = Integer(replicas)
-        plan(candidate, **options)
+        plan(candidate, **)
       end
 
       def delete(resource, **_options)
@@ -217,6 +215,7 @@ module Rubernetes
 
       def operation_update(resource, candidate, descriptor: nil, reason: nil)
         return nil if resource == candidate
+
         descriptor ||= ResourceDescriptor.parse(resource)
         Operation.new(action: :update, resource: descriptor,
                       key: object_key(descriptor, candidate), object: candidate,
@@ -225,6 +224,7 @@ module Rubernetes
 
       def operation_status(resource, status, descriptor: nil, reason: "status update", force: false)
         return nil if !force && Support.status(resource) == status
+
         descriptor ||= ResourceDescriptor.parse(resource)
         Operation.new(action: :status_update, resource: descriptor,
                       key: object_key(descriptor, resource), object: resource,
@@ -283,7 +283,15 @@ module Rubernetes
       # A changed set is emitted in full and remembered.
       def once_per_state(key, events)
         events = Array(events)
-        signature = events.map { |event| event.is_a?(Hash) ? event.reject { |field, _| field.to_s == "involvedObject" }.sort.to_s : event.to_s }
+        signature = events.map do |event|
+          if event.is_a?(Hash)
+            event.reject do |field, _|
+              field.to_s == "involvedObject"
+            end.sort.to_s
+          else
+            event.to_s
+          end
+        end
         @emitted_events_mutex ||= Mutex.new
         @emitted_events_mutex.synchronize do
           @emitted_events ||= {}
@@ -314,6 +322,7 @@ module Rubernetes
             Support.name(object) == key || object_key(ResourceDescriptor.parse(object), object) == key
         end
         raise StoreError, "resource #{key.inspect} was not found" unless found
+
         found
       end
 
@@ -426,8 +435,8 @@ module Rubernetes
         ApplyFailures.record_apply_failure(result, error, fallback: name)
       end
 
-      def reconcile(resource, store: @store, apply: true, leader_guard: nil, **options)
-        result = plan(resource, store: store, **options)
+      def reconcile(resource, store: @store, apply: true, leader_guard: nil, **)
+        result = plan(resource, store: store, **)
 
         return result unless apply
 
@@ -540,9 +549,8 @@ module Rubernetes
 
         @manager_mutex.synchronize do
           existing = @controllers[key]
-          if existing && !existing.equal?(controller)
-            raise DuplicateControllerError, "controller #{key.inspect} is already registered"
-          end
+          raise DuplicateControllerError, "controller #{key.inspect} is already registered" if existing && !existing.equal?(controller)
+
           @controllers[key] = controller
         end
         self
@@ -559,6 +567,7 @@ module Rubernetes
 
         normalized_name = name.to_s
         raise ArgumentError, "controller name must not be empty" if normalized_name.empty?
+
         @manager_mutex.synchronize { @informers[normalized_name] = informer }
         informer.on do |object, old_object = nil, type = nil|
           enqueue_for(normalized_name, object, old_object, type)
@@ -717,15 +726,24 @@ module Rubernetes
 
           begin
             controller.reconcile(node, store: store, apply: true,
-                                 leader_guard: -> { raise LeadershipLostError, "controller leadership was lost before applying an operation" unless @elector.leader? })
+                                       leader_guard: lambda {
+                                         unless @elector.leader?
+                                           raise LeadershipLostError, "controller leadership was lost before applying an operation"
+                                         end
+                                       })
             reconciled += 1
           rescue LeadershipLostError
             break
           rescue StandardError => error
-            @error_handler&.call(Support.name(node), controller.name, error) rescue nil
+            begin
+              @error_handler&.call(Support.name(node), controller.name, error)
+            rescue StandardError
+              nil
+            end
           end
         end
-        ControllerMetrics.observe("node_collector_update_all_nodes_health_duration_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+        ControllerMetrics.observe("node_collector_update_all_nodes_health_duration_seconds",
+                                  Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
         reconciled
       end
 
@@ -764,6 +782,7 @@ module Rubernetes
           key, shutdown = @queue.get(timeout: first ? wait : 0)
           first = false
           break if shutdown || key.nil?
+
           begin
             unless refresh_leadership
               # Work acquired before a lease loss must remain dirty.  The
@@ -782,9 +801,11 @@ module Rubernetes
               break unless refresh_leadership
 
               orphan_result = controller.reconcile_orphans(key, store: store_for(controller), apply: true,
-                                                           leader_guard: lambda {
-                                                             raise LeadershipLostError, "controller leadership was lost before applying an operation" unless refresh_leadership
-                                                           })
+                                                                leader_guard: lambda {
+                                                                  unless refresh_leadership
+                                                                    raise LeadershipLostError, "controller leadership was lost before applying an operation"
+                                                                  end
+                                                                })
               # Collecting an object nobody asked about is invisible otherwise:
               # say what was reclaimed, for the same reason kube-controller-manager
               # logs its garbage-collector deletions.
@@ -810,9 +831,11 @@ module Rubernetes
               started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
               result = begin
                 controller.reconcile(resource, store: store_for(controller), apply: true,
-                                     leader_guard: lambda {
-                                       raise LeadershipLostError, "controller leadership was lost before applying an operation" unless refresh_leadership
-                                     })
+                                               leader_guard: lambda {
+                                                 unless refresh_leadership
+                                                   raise LeadershipLostError, "controller leadership was lost before applying an operation"
+                                                 end
+                                               })
               rescue LeadershipLostError
                 raise
               rescue StandardError => error
@@ -821,7 +844,9 @@ module Rubernetes
               end
               elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
               trace_key("reconcile.trace", key, controller: controller.name, seconds: elapsed.round(3),
-                                                operations: Array(result.respond_to?(:operations) ? result.operations : []).map { |operation| [operation.action, operation.object && Support.name(operation.object)] },
+                                                operations: Array(result.respond_to?(:operations) ? result.operations : []).map do |operation|
+                                                  [operation.action, operation.object && Support.name(operation.object)]
+                                                end,
                                                 status: result.respond_to?(:status) ? result.status : nil)
               record_controller_time(controller.name, elapsed)
               if elapsed > SLOW_RECONCILE_SECONDS && @slow_handler
@@ -840,6 +865,7 @@ module Rubernetes
             end
             record_key_time(orphan_elapsed, Process.clock_gettime(Process::CLOCK_MONOTONIC) - key_started_at)
             raise controller_error if controller_error && !leadership_lost
+
             if leadership_lost
               @queue.add(key)
               break
@@ -932,7 +958,11 @@ module Rubernetes
         @running = false
         @queue.shutdown
         threads = @pool_mutex ? @pool_mutex.synchronize { Array(@pool_threads).dup } : []
-        @node_monitor_thread&.wakeup rescue nil
+        begin
+          @node_monitor_thread&.wakeup
+        rescue StandardError
+          nil
+        end
         threads.each { |thread| thread.join(5) }
         self
       end
@@ -942,6 +972,7 @@ module Rubernetes
       def enqueue_for(name, object, _old_object = nil, type = nil)
         controller = @manager_mutex.synchronize { @controllers[name.to_s] }
         return unless controller
+
         # A controller may decline an event outright (the quota controller
         # ignores its own status writes and plain adds, as upstream's does).
         if controller.respond_to?(:skip_event?)
@@ -991,7 +1022,8 @@ module Rubernetes
       def trace_key(event, key, **fields)
         return if TRACE_KEYS.nil? || !TRACE_KEYS.match?(key.to_s)
 
-        line = {"timestamp" => Time.now.utc.iso8601(6), "level" => "info", "event" => event, "key" => key.to_s}.merge(fields.transform_keys(&:to_s))
+        line = {"timestamp" => Time.now.utc.iso8601(6), "level" => "info", "event" => event,
+                "key" => key.to_s}.merge(fields.transform_keys(&:to_s))
         $stderr.write(JSON.generate(line) << "\n")
       rescue StandardError
         nil
@@ -1204,7 +1236,9 @@ module Rubernetes
         candidate["metadata"] ||= {}
         references = Array(Support.value(candidate["metadata"], "ownerReferences", []))
         selected = references.find { |entry| entry == reference }
-        candidate["metadata"]["ownerReferences"] = [selected || reference] + references.reject { |entry| entry == selected || entry == reference }
+        candidate["metadata"]["ownerReferences"] = [selected || reference] + references.reject do |entry|
+          entry == selected || entry == reference
+        end
         watch.queue_key.call(candidate)
       end
 
@@ -1290,7 +1324,7 @@ module Rubernetes
         return nil if descriptor.nil?
 
         store_adapter.find(descriptor, name: name,
-                           namespace: descriptor.cluster_scoped? ? nil : namespace)
+                                       namespace: descriptor.cluster_scoped? ? nil : namespace)
       rescue StandardError
         nil
       end
@@ -1375,6 +1409,7 @@ module Rubernetes
         owner_descriptor = controller.resource_descriptor
         return false unless Support.ref_value(reference, "apiVersion", nil).to_s == owner_descriptor.api_version
         return false unless Support.ref_value(reference, "kind", "").to_s == owner_descriptor.kind
+
         reference_uid = Support.ref_value(reference, "uid", nil).to_s
         reference_name = Support.ref_value(reference, "name", "").to_s
         return false if reference_uid.empty? || reference_name.empty?

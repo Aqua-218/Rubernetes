@@ -8,7 +8,7 @@ require "tmpdir"
 
 class M4VolumeSecurityTest < Minitest::Test
   class TargetRaceMount
-    attr_reader :mount_calls, :unmount_calls
+    attr_reader :mount_calls, :unmount_calls, :mountinfo
     attr_accessor :race_target
 
     def initialize(outside:)
@@ -40,10 +40,6 @@ class M4VolumeSecurityTest < Minitest::Test
       @unmount_calls << kwargs
       @mountinfo = "" unless kwargs[:target].to_s.start_with?("/proc/self/fd/")
       true
-    end
-
-    def mountinfo
-      @mountinfo
     end
   end
 
@@ -97,7 +93,10 @@ class M4VolumeSecurityTest < Minitest::Test
   def test_path_validator_rejects_traversal_before_adapter_call
     calls = []
     adapter = Object.new
-    adapter.define_singleton_method(:open) { |*args, **kwargs| calls << [args, kwargs]; 1 }
+    adapter.define_singleton_method(:open) do |*args, **kwargs|
+      calls << [args, kwargs]
+      1
+    end
     security = Rubernetes::Volume::PathSecurity.new(root: "/tmp", adapter: adapter)
     assert_raises(Rubernetes::Volume::PathSecurityError) { security.open("../etc/passwd") }
     assert_empty calls
@@ -107,7 +106,8 @@ class M4VolumeSecurityTest < Minitest::Test
     ledger = Rubernetes::Volume::MountIdentityLedger.new
     ledger.register(volume_id: "v", source: "/s", target: "/t", mount_id: "m1", filesystem_uuid: "fs1", device_id: "d1", owner: "v")
     assert_raises(Rubernetes::Volume::MountIdentityError) do
-      ledger.remove(identity: "m1/fs1/d1//t", expected: {"mountId" => "m1", "filesystemUuid" => "fs2", "deviceId" => "d1", "target" => "/t"})
+      ledger.remove(identity: "m1/fs1/d1//t",
+                    expected: {"mountId" => "m1", "filesystemUuid" => "fs2", "deviceId" => "d1", "target" => "/t"})
     end
   end
 
@@ -128,6 +128,7 @@ class M4VolumeSecurityTest < Minitest::Test
 
     assert_equal "Unknown", manager.volume(id).state
     entry = manager.operations.entries.find { |candidate| candidate.operation.start_with?("stage:") }
+
     assert_equal "unknown", entry.status
     assert_equal Rubernetes::Volume::CleanupError.name, entry.error.fetch("class")
     refute_empty entry.error.fetch("details").fetch("cleanupErrors")
@@ -153,6 +154,7 @@ class M4VolumeSecurityTest < Minitest::Test
   def test_default_manager_rejects_symlink_stage_and_publish_targets
     directory = Dir.mktmpdir("m4-volume-target-symlink")
     manager = Rubernetes::Volume::Manager.new(data_dir: File.join(directory, "data"), fsync: false)
+
     assert_instance_of Rubernetes::Volume::PathSecurity, manager.path_security
     id = manager.create_volume({"name" => "safe", "emptyDir" => {}}, token: "create")
     manager.controller.publish(id, "node-a", token: "attach")
@@ -302,7 +304,7 @@ class M4VolumeSecurityTest < Minitest::Test
     path_security = Rubernetes::Volume::PathSecurity.new(root: root, require_openat2: false)
     adapter = Rubernetes::Volume::FilesystemAdapter.new(root: File.join(directory, "volumes"))
     manager = Rubernetes::Volume::Manager.new(data_dir: File.join(directory, "data"), adapter: adapter,
-                                               mount_adapter: adapter, path_security: path_security, fsync: false)
+                                              mount_adapter: adapter, path_security: path_security, fsync: false)
 
     id = manager.create_volume({"name" => "created-dir", "hostPath" => {"path" => "nested/dir", "type" => "DirectoryOrCreate"}},
                                token: "created-dir")
@@ -314,10 +316,12 @@ class M4VolumeSecurityTest < Minitest::Test
     refute_nil handle
 
     manager.delete_volume(id, token: "delete-created-dir")
+
     assert_nil backend.instance_variable_get(:@host_handle)
 
     file_id = manager.create_volume({"name" => "created-file", "hostPath" => {"path" => "nested/file", "type" => "FileOrCreate"}},
                                     token: "created-file")
+
     assert File.file?(File.join(root, "nested", "file"))
     manager.delete_volume(file_id, token: "delete-created-file")
   ensure
@@ -335,10 +339,11 @@ class M4VolumeSecurityTest < Minitest::Test
     path_security = Rubernetes::Volume::PathSecurity.new(root: root, require_openat2: false)
     adapter = Rubernetes::Volume::FilesystemAdapter.new(root: File.join(directory, "volumes"))
     manager = Rubernetes::Volume::Manager.new(data_dir: File.join(directory, "data"), adapter: adapter,
-                                               mount_adapter: adapter, path_security: path_security, fsync: false)
+                                              mount_adapter: adapter, path_security: path_security, fsync: false)
 
     file_id = manager.create_volume({"name" => "file", "hostPath" => {"path" => "file", "type" => "File"}}, token: "file")
     socket_id = manager.create_volume({"name" => "socket", "hostPath" => {"path" => "socket", "type" => "Socket"}}, token: "socket")
+
     assert file_id
     assert socket_id
     assert_raises(Rubernetes::Volume::ValidationError) do
@@ -435,6 +440,7 @@ class M4VolumeSecurityTest < Minitest::Test
 
     lease = security.acquire_target!(target, directory: true, create: true)
     held_target = File.join(held_parent, "target")
+
     assert_equal File.stat(held_target).ino, File.stat(lease.dispatch_path).ino
     refute_equal File.stat(target).ino, File.stat(lease.dispatch_path).ino
     assert_raises(Rubernetes::Volume::PathSecurityError) { lease.verify_original! }

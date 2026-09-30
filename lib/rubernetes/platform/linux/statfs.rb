@@ -17,7 +17,7 @@ module Rubernetes
         # f_files, f_ffree, f_fsid (two ints), f_namelen, f_frsize, f_flags,
         # f_spare[4].  120 bytes on x86_64 and aarch64.
         STRUCT_SIZE = 120
-        STRUCT_FORMAT = "q<q<Q<Q<Q<Q<Q<l<l<q<q<q<q<4".freeze
+        STRUCT_FORMAT = "q<q<Q<Q<Q<Q<Q<l<l<q<q<q<q<4"
         SUPPORTED_CPUS = %w[x86_64 amd64 aarch64 arm64].freeze
 
         # include/uapi/linux/magic.h

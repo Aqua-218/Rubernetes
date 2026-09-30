@@ -16,7 +16,8 @@ class HealthcheckSLIsMetricsTest < Minitest::Test
   end
 
   def get(server, path)
-    server.call(Rubernetes::API::Request.new(method: "GET", path: path, headers: {}, identity: {"username" => "admin", "groups" => ["system:masters"]}))
+    server.call(Rubernetes::API::Request.new(method: "GET", path: path, headers: {},
+                                             identity: {"username" => "admin", "groups" => ["system:masters"]}))
   end
 
   def test_the_api_server_records_its_health_checks
@@ -26,10 +27,12 @@ class HealthcheckSLIsMetricsTest < Minitest::Test
     get(server, "/livez")
     get(server, "/readyz")
     ready = false
+
     assert_equal 500, get(server, "/readyz").status
     get(server, "/readyz/etcd")
     response = get(server, "/metrics/slis")
     text = response.body
+
     assert_equal 200, response.status
     assert_includes text, %(kubernetes_healthcheck{name="ping",type="healthz"} 1)
     assert_includes text, %(kubernetes_healthcheck{name="etcd-readiness",type="readyz"} 0)
@@ -57,6 +60,7 @@ class HealthcheckSLIsMetricsTest < Minitest::Test
     ready = true
     subject.call(request("/readyz"))
     text = subject.call(request("/metrics/slis"))[2].join
+
     assert_includes text, %(kubernetes_healthcheck{name="leaderElection",type="readyz"} 1)
     assert_includes text, %(kubernetes_healthchecks_total{name="leaderElection",status="error",type="readyz"} 1)
     assert_includes text, %(kubernetes_healthchecks_total{name="ping",status="success",type="healthz"} 1)

@@ -128,9 +128,10 @@ begin
 
   # Attack 2: a subPath that climbs out of the staged volume.
   escape_target = File.join(attack_dir, "subpath-target")
-  attempt.call("subpath_escape", [Rubernetes::Volume::PathSecurityError, Rubernetes::Volume::SecurityError, Rubernetes::Volume::ValidationError]) do
+  attempt.call("subpath_escape",
+               [Rubernetes::Volume::PathSecurityError, Rubernetes::Volume::SecurityError, Rubernetes::Volume::ValidationError]) do
     manager.node_publish(volume_id, attacker_pod, escape_target, readonly: false, token: "#{volume_id}-attack-subpath",
-                         node: node, sub_path: "../../../../etc")
+                                                                 node: node, sub_path: "../../../../etc")
   end
   publish_phase.call("subpath_escape_attack", base_expected.call([symlink_target, escape_target, "/etc"]), claims: M4AttackWorker::ATTACK_CLAIMS)
 
@@ -140,8 +141,9 @@ begin
   scoped_openat2 = Rubernetes::Platform::Linux::Openat2.new(root: scoped_root, strict: true)
   scoped_security = Rubernetes::Volume::PathSecurity.new(root: scoped_root, adapter: scoped_openat2, require_openat2: true)
   scoped_manager = M4WorkerSupport.build_manager(File.join(data_dir, "scoped-manager"), path_security: scoped_security,
-                                                 root: File.join(scoped_root, "volumes"))
-  attempt.call("host_path_escape", [Rubernetes::Volume::PathSecurityError, Rubernetes::Volume::SecurityError, Rubernetes::Volume::ValidationError]) do
+                                                                                        root: File.join(scoped_root, "volumes"))
+  attempt.call("host_path_escape",
+               [Rubernetes::Volume::PathSecurityError, Rubernetes::Volume::SecurityError, Rubernetes::Volume::ValidationError]) do
     scoped_manager.create_volume({"id" => "m4-attack-hostpath", "name" => "m4-attack-hostpath", "backend" => "hostPath",
                                   "path" => "/etc", "type" => "Directory"}, token: "m4-attack-hostpath-create")
   end
@@ -164,7 +166,11 @@ begin
   publish_phase.call("unmounted_final", {"absent" => [source, stage, target, symlink_target, escape_target]}, final: true)
   refused = result["attacks"].values.all? { |outcome| outcome["refused"] == true }
   result["passed"] = refused && result["mounts_under_root_at_exit"].empty?
-  result["error"] = {"class" => "AttackNotRefused", "message" => "attacks not refused: #{result["attacks"].reject { |_, o| o["refused"] }.keys.join(", ")}"} unless refused
+  unless refused
+    result["error"] = {"class" => "AttackNotRefused", "message" => "attacks not refused: #{result["attacks"].reject do |_, o|
+      o["refused"]
+    end.keys.join(", ")}"}
+  end
 rescue StandardError => error
   result["passed"] = false
   result["error"] = {"class" => error.class.name, "message" => error.message, "backtrace" => Array(error.backtrace).first(12)}

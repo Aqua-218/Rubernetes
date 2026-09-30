@@ -14,9 +14,9 @@ class NodeOpsAdmissionTest < Minitest::Test
     }
   end
 
-  def admission(**options)
+  def admission(**)
     Rubernetes::Node::Admission.new(
-      **{node_name: "node-a", capacity: {"cpu" => "1", "memory" => "2Gi"}, operating_system: "linux", architecture: "amd64"}.merge(options)
+      node_name: "node-a", capacity: {"cpu" => "1", "memory" => "2Gi"}, operating_system: "linux", architecture: "amd64", **
     )
   end
 
@@ -30,15 +30,20 @@ class NodeOpsAdmissionTest < Minitest::Test
   def test_rejects_wrong_node_os_arch_and_cpu_without_side_effects
     assert_equal("NodeNameMismatch", admission.admit(@pod.merge("spec" => @pod["spec"].merge("nodeName" => "node-b"))).reason)
     assert_equal("UnsupportedOS", admission.admit(@pod.merge("spec" => @pod["spec"].merge("os" => {"name" => "windows"}))).reason)
-    assert_equal("UnsupportedArchitecture", admission.admit(@pod.merge("metadata" => {"name" => "arm", "annotations" => {"kubernetes.io/arch" => "arm64"}})).reason)
-    cpu_heavy = @pod.merge("spec" => @pod["spec"].merge("containers" => [{"name" => "main", "resources" => {"requests" => {"cpu" => "2"}}}]))
+    assert_equal("UnsupportedArchitecture",
+                 admission.admit(@pod.merge("metadata" => {"name" => "arm", "annotations" => {"kubernetes.io/arch" => "arm64"}})).reason)
+    cpu_heavy = @pod.merge("spec" => @pod["spec"].merge("containers" => [{"name" => "main",
+                                                                          "resources" => {"requests" => {"cpu" => "2"}}}]))
+
     assert_equal("OutOfcpu", admission.admit(cpu_heavy).reason)
   end
 
   def test_selector_and_runtime_class_are_checked
     selected = @pod.merge("spec" => @pod["spec"].merge("nodeSelector" => {"disk" => "ssd"}))
+
     assert_equal("NodeSelectorMismatch", admission.admit(selected).reason)
     runtime = @pod.merge("spec" => @pod["spec"].merge("runtimeClassName" => "microvm"))
+
     assert_equal("RuntimeClassNotFound", admission.admit(runtime).reason)
     assert(admission(node_labels: {"disk" => "ssd"}, runtime_classes: {"microvm" => {"handler" => "x"}}).admitted?(runtime))
   end

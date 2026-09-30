@@ -18,10 +18,10 @@ require "time"
 require_relative "m1_kubernetes_oracle"
 
 module M3KubernetesWorkloadOracle
-  VERSION = "v1.36.2".freeze
-  SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467".freeze
-  KUBE_APISERVER_IMAGE = "registry.k8s.io/kube-apiserver@sha256:0535dde1a857029209d7effe681c919a1580d2eb24eda4bd122d24e9a372e1b8".freeze
-  ETCD_IMAGE = "registry.k8s.io/etcd@sha256:397189418d1a00e500c0605ad18d1baf3b541a1004d768448c367e48071622e5".freeze
+  VERSION = "v1.36.2"
+  SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467"
+  KUBE_APISERVER_IMAGE = "registry.k8s.io/kube-apiserver@sha256:0535dde1a857029209d7effe681c919a1580d2eb24eda4bd122d24e9a372e1b8"
+  ETCD_IMAGE = "registry.k8s.io/etcd@sha256:397189418d1a00e500c0605ad18d1baf3b541a1004d768448c367e48071622e5"
   START_TIMEOUT = 45.0
   POLL_INTERVAL = 0.1
   ORACLE_SOURCE = File.expand_path("../../test/conformance/kubernetes/m3_workload_oracle/runner.rb", __dir__).freeze
@@ -29,8 +29,8 @@ module M3KubernetesWorkloadOracle
   CHILD_DESCRIPTORS = {
     "deployment" => [["apps/v1", "replicasets"], ["v1", "pods"]],
     "statefulset" => [["v1", "pods"], ["apps/v1", "controllerrevisions"], ["v1", "persistentvolumeclaims"]],
-    "daemonset" => [["v1", "pods"]],
-    "job" => [["v1", "pods"]],
+    "daemonset" => [%w[v1 pods]],
+    "job" => [%w[v1 pods]],
     "cronjob" => [["batch/v1", "jobs"], ["v1", "pods"]]
   }.freeze
 
@@ -38,7 +38,8 @@ module M3KubernetesWorkloadOracle
 
   module_function
 
-  def run(input_bytes: STDIN.read, source_root: ENV["RUBERNETES_M3_KUBERNETES_SOURCE_ROOT"] || ENV["KUBERNETES_SOURCE_ROOT"], go: ENV.fetch("GO", "go"))
+  def run(input_bytes: STDIN.read, source_root: ENV["RUBERNETES_M3_KUBERNETES_SOURCE_ROOT"] || ENV.fetch("KUBERNETES_SOURCE_ROOT", nil),
+          go: ENV.fetch("GO", "go"))
     request = JSON.parse(input_bytes, max_nesting: 512)
     verify_request!(request)
     source = verify_source!(source_root)
@@ -57,7 +58,7 @@ module M3KubernetesWorkloadOracle
       end
       finished_at = Time.now.utc.iso8601(6)
       runner ||= runner_provenance(source: source, build: build, evidence: {},
-                                    started_at: started_at, finished_at: finished_at)
+                                   started_at: started_at, finished_at: finished_at)
       runner["finished_at"] = finished_at
       runner["provenance_sha256"] = provenance_digest(runner.reject { |key, _| key == "provenance_sha256" })
       response_payload = {
@@ -102,16 +103,28 @@ module M3KubernetesWorkloadOracle
     raise Error, "workload oracle request version is not pinned" unless request["kubernetes_version"] == VERSION
     raise Error, "workload oracle request source commit is not pinned" unless request["source_commit"] == SOURCE_COMMIT
     raise Error, "workload oracle stream version must be 1" unless request["stream_version"] == 1
+
     cases = request["cases"]
-    expected = %w[daemonset:delete daemonset:rollout daemonset:rollback daemonset:scale deployment:delete deployment:rollout deployment:rollback deployment:scale cronjob:delete cronjob:rollout cronjob:rollback cronjob:scale job:delete job:rollout job:rollback job:scale statefulset:delete statefulset:rollout statefulset:rollback statefulset:scale].sort
+    expected = %w[daemonset:delete daemonset:rollout daemonset:rollback daemonset:scale deployment:delete deployment:rollout
+                  deployment:rollback deployment:scale cronjob:delete cronjob:rollout cronjob:rollback cronjob:scale job:delete job:rollout job:rollback job:scale statefulset:delete statefulset:rollout statefulset:rollback statefulset:scale].sort
     raise Error, "workload oracle request must contain exactly 20 independent cases" unless cases.is_a?(Hash) && cases.keys.sort == expected
+
     cases.each do |id, entry|
       raise Error, "workload oracle case #{id.inspect} must be an object" unless entry.is_a?(Hash)
       raise Error, "workload oracle case #{id.inspect} is not independent" unless entry["independent"] == true
-      raise Error, "workload oracle case #{id.inspect} has no deadline" unless entry["deadline_seconds"].is_a?(Numeric) && entry["deadline_seconds"] > 0
+      unless entry["deadline_seconds"].is_a?(Numeric) && entry["deadline_seconds"] > 0
+        raise Error,
+              "workload oracle case #{id.inspect} has no deadline"
+      end
       raise Error, "workload oracle case #{id.inspect} has no stream" unless entry["stream"].is_a?(Array) && !entry["stream"].empty?
-      raise Error, "workload oracle case #{id.inspect} stream digest is invalid" unless entry["stream_sha256"].to_s.match?(/\A[0-9a-f]{64}\z/)
-      raise Error, "workload oracle case #{id.inspect} stream digest is not canonical" unless canonical_digest(entry.fetch("stream")) == entry.fetch("stream_sha256")
+      unless entry["stream_sha256"].to_s.match?(/\A[0-9a-f]{64}\z/)
+        raise Error,
+              "workload oracle case #{id.inspect} stream digest is invalid"
+      end
+      unless canonical_digest(entry.fetch("stream")) == entry.fetch("stream_sha256")
+        raise Error,
+              "workload oracle case #{id.inspect} stream digest is not canonical"
+      end
     end
   end
 
@@ -120,12 +133,16 @@ module M3KubernetesWorkloadOracle
 
     root = File.expand_path(source_root)
     raise Error, "Kubernetes source root is not a directory: #{root}" unless File.directory?(root)
+
     commit = command!(root, "git", "rev-parse", "HEAD").strip
     raise Error, "Kubernetes source commit is #{commit}, expected #{SOURCE_COMMIT}" unless commit == SOURCE_COMMIT
+
     tag = command!(root, "git", "describe", "--tags", "--exact-match", "HEAD").strip
     raise Error, "Kubernetes source tag is #{tag.inspect}, expected #{VERSION.inspect}" unless tag == VERSION
+
     status = command!(root, "git", "status", "--porcelain", "--untracked-files=all")
     raise Error, "Kubernetes source tree is not clean" unless status.empty?
+
     tree = command!(root, "git", "rev-parse", "HEAD^{tree}").strip
     source_inventory = command!(root, "git", "ls-tree", "-r", "--full-tree", "--name-only", "HEAD")
     {
@@ -182,7 +199,7 @@ module M3KubernetesWorkloadOracle
         "reason" => "direct source execution; no controller-manager image was used",
         "kube_apiserver" => KUBE_APISERVER_IMAGE, "etcd" => ETCD_IMAGE,
         "controller_manager" => {"used" => false, "reference" => nil, "digest" => nil,
-                                  "reason" => "controller-manager was built from the pinned source checkout"},
+                                 "reason" => "controller-manager was built from the pinned source checkout"},
         "network_isolated" => true
       },
       "cluster" => evidence
@@ -198,7 +215,13 @@ module M3KubernetesWorkloadOracle
                                   body: action["body"], headers: action.fetch("headers", {}))
         trace << {"id" => action.fetch("id"), "method" => action.fetch("method"),
                   "path" => action.fetch("path"), "status" => response.status}
-        raise Error, "#{id} #{action.fetch("id")} returned HTTP #{response.status}: #{response.body.inspect}" unless response.status.between?(200, 299)
+        unless response.status.between?(
+          200, 299
+        )
+          raise Error,
+                "#{id} #{action.fetch("id")} returned HTTP #{response.status}: #{response.body.inspect}"
+        end
+
         observed_uid = response.body.dig("metadata", "uid") if action.fetch("id") == "create-workload" && response.body.is_a?(Hash)
       elsif action["wait"]
         started = monotonic
@@ -281,7 +304,7 @@ module M3KubernetesWorkloadOracle
         refs = Array(candidate.dig("metadata", "ownerReferences"))
         owned << candidate if refs.any? do |reference|
           reference["uid"].to_s == owner_uid.to_s && reference["kind"].to_s == case_document.fetch("resource").fetch("kind") &&
-            reference["name"].to_s == case_document.fetch("resource").dig("metadata", "name").to_s
+          reference["name"].to_s == case_document.fetch("resource").dig("metadata", "name").to_s
         end
       end
     end
@@ -327,8 +350,14 @@ module M3KubernetesWorkloadOracle
       value.keys.map(&:to_s).sort.each_with_object({}) do |key, result|
         source = value.keys.find { |candidate| candidate.to_s == key }
         child = value.fetch(source)
-        child = child.sort_by { |condition| [condition.is_a?(Hash) ? condition["type"].to_s : "", condition.is_a?(Hash) ? condition["reason"].to_s : ""] } if key == "conditions" && child.is_a?(Array)
-        child = child.sub(/-[bcdfghjklmnpqrstvwxz2456789]{1,10}\z/, "-<generated>") if %w[currentRevision updateRevision].include?(key) && child.is_a?(String)
+        if key == "conditions" && child.is_a?(Array)
+          child = child.sort_by do |condition|
+            [condition.is_a?(Hash) ? condition["type"].to_s : "",
+             condition.is_a?(Hash) ? condition["reason"].to_s : ""]
+          end
+        end
+        child = child.sub(/-[bcdfghjklmnpqrstvwxz2456789]{1,10}\z/, "-<generated>") if %w[currentRevision
+                                                                                          updateRevision].include?(key) && child.is_a?(String)
         result[key] = key == "message" && child.is_a?(String) ? canonical_message(child) : canonical_dynamic(key, child)
       end
     when Array then value.map { |child| canonical(child) }
@@ -337,7 +366,8 @@ module M3KubernetesWorkloadOracle
   end
 
   def canonical_dynamic(key, value)
-    dynamic_keys = %w[uid resourceVersion creationTimestamp deletionTimestamp time eventTime firstTimestamp lastTimestamp completionTime startTime lastScheduleTime lastSuccessfulTime lastTransitionTime lastUpdateTime lastProbeTime]
+    dynamic_keys = %w[uid resourceVersion creationTimestamp deletionTimestamp time eventTime firstTimestamp lastTimestamp completionTime
+                      startTime lastScheduleTime lastSuccessfulTime lastTransitionTime lastUpdateTime lastProbeTime]
     return canonical(value) unless dynamic_keys.include?(key)
     return nil if value.nil?
     return "<uid>" if key == "uid"
@@ -353,10 +383,10 @@ module M3KubernetesWorkloadOracle
 
   def canonical_message(value)
     normalized = value.gsub(/(replica set\s+|ReplicaSet\s+")(\S+?)-[bcdfghjklmnpqrstvwxz2456789]{1,10}(?=[\s"]|\z)/) do
-      "#{$1}#{$2}-<generated>"
+      "#{::Regexp.last_match(1)}#{::Regexp.last_match(2)}-<generated>"
     end
     normalized.gsub(/((?:Created|Deleted) pod:\s+)[A-Za-z0-9._-]+/) do
-      "#{$1}workload-<generated>"
+      "#{::Regexp.last_match(1)}workload-<generated>"
     end
   end
 
@@ -364,8 +394,10 @@ module M3KubernetesWorkloadOracle
     values = Array(resources)
     event_like = values.all? { |resource| resource["kind"].to_s == "Event" || inferred_resource_kind(resource) == "Event" }
     if event_like
-      values.sort_by { |resource| [resource["firstTimestamp"].to_s, resource.dig("metadata", "creationTimestamp").to_s, resource.dig("metadata", "name").to_s] }
-           .map { |resource| canonical_resource(resource, strip_type_metadata: true) }
+      values.sort_by do |resource|
+        [resource["firstTimestamp"].to_s, resource.dig("metadata", "creationTimestamp").to_s, resource.dig("metadata", "name").to_s]
+      end
+        .map { |resource| canonical_resource(resource, strip_type_metadata: true) }
     else
       values.map { |resource| canonical_resource(resource, strip_type_metadata: true) }.sort_by do |resource|
         [resource["apiVersion"].to_s, resource["kind"].to_s,
@@ -442,17 +474,16 @@ module M3KubernetesWorkloadOracle
       spec = candidate["spec"]
       spec["template"] = semantic_template(spec["template"]) if spec.is_a?(Hash) && spec["template"].is_a?(Hash)
       selector = spec && spec["selector"]
-      selector["matchLabels"]["pod-template-hash"] = "<generated>" if selector.is_a?(Hash) && selector["matchLabels"].is_a?(Hash) && selector["matchLabels"].key?("pod-template-hash")
+      if selector.is_a?(Hash) && selector["matchLabels"].is_a?(Hash) && selector["matchLabels"].key?("pod-template-hash")
+        selector["matchLabels"]["pod-template-hash"] =
+          "<generated>"
+      end
     when "Deployment"
       spec = candidate["spec"]
-      if spec.is_a?(Hash)
-        spec["template"] = semantic_template(spec["template"]) if spec["template"].is_a?(Hash)
-      end
+      spec["template"] = semantic_template(spec["template"]) if spec.is_a?(Hash) && spec["template"].is_a?(Hash)
     when "StatefulSet"
       spec = candidate["spec"]
-      if spec.is_a?(Hash)
-        spec["template"] = semantic_template(spec["template"]) if spec["template"].is_a?(Hash)
-      end
+      spec["template"] = semantic_template(spec["template"]) if spec.is_a?(Hash) && spec["template"].is_a?(Hash)
       status = candidate["status"]
       if status.is_a?(Hash)
         status.delete("updatedReplicas")
@@ -463,9 +494,7 @@ module M3KubernetesWorkloadOracle
       end
     when "DaemonSet"
       spec = candidate["spec"]
-      if spec.is_a?(Hash)
-        spec["template"] = semantic_template(spec["template"]) if spec["template"].is_a?(Hash)
-      end
+      spec["template"] = semantic_template(spec["template"]) if spec.is_a?(Hash) && spec["template"].is_a?(Hash)
     when "Job"
       spec = candidate["spec"]
       if spec.is_a?(Hash)
@@ -479,13 +508,12 @@ module M3KubernetesWorkloadOracle
       spec = candidate["spec"]
       if spec.is_a?(Hash)
         job_spec = spec["jobTemplate"]
-        job_spec["spec"]["template"] = semantic_template(job_spec["spec"]["template"]) if job_spec.is_a?(Hash) && job_spec.dig("spec", "template").is_a?(Hash)
+        job_spec["spec"]["template"] = semantic_template(job_spec["spec"]["template"]) if job_spec.is_a?(Hash) && job_spec.dig("spec",
+                                                                                                                               "template").is_a?(Hash)
       end
     when "ControllerRevision"
       data = candidate["data"]
-      if data.is_a?(Hash) && data.dig("spec", "template").is_a?(Hash)
-        data["spec"]["template"] = semantic_template(data["spec"]["template"])
-      end
+      data["spec"]["template"] = semantic_template(data["spec"]["template"]) if data.is_a?(Hash) && data.dig("spec", "template").is_a?(Hash)
     end
     candidate
   end
@@ -526,9 +554,11 @@ module M3KubernetesWorkloadOracle
       end
       Array(spec["containers"]).each do |container|
         container["volumeMounts"] = Array(container["volumeMounts"]) if container.is_a?(Hash) && container.key?("volumeMounts")
+        next unless container.is_a?(Hash)
+
         Array(container["volumeMounts"]).each do |mount|
           mount["name"] = "kube-api-access-<generated>" if mount.is_a?(Hash) && projected_names.include?(mount["name"].to_s)
-        end if container.is_a?(Hash)
+        end
       end
     end
     status = candidate["status"]
@@ -643,8 +673,8 @@ module M3KubernetesWorkloadOracle
   end
 
   class ControllerManagerCluster < M1KubernetesOracle::DockerCluster
-    def initialize(binary:, **options)
-      super(**options)
+    def initialize(binary:, **)
+      super(**)
       @binary = binary
       @controller_pid = nil
       @controller_log = nil

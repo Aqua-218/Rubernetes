@@ -25,7 +25,7 @@ module Rubernetes
           }
         end
 
-        alias released_ledger_resources released
+        alias_method :released_ledger_resources, :released
       end
 
       Result = Report
@@ -39,7 +39,9 @@ module Rubernetes
       end
 
       def reconcile
-        ledger_resources = @ledger.resources(include_released: false).map { |resource| resource.respond_to?(:to_h) ? resource.to_h : resource }
+        ledger_resources = @ledger.resources(include_released: false).map do |resource|
+          resource.respond_to?(:to_h) ? resource.to_h : resource
+        end
         observed_resources = normalize_observed(observe)
         ledger_by_key = ledger_resources.to_h { |resource| [resource_key(resource), resource] }
         observed_by_key = observed_resources.to_h { |resource| [resource_key(resource), resource] }
@@ -130,6 +132,7 @@ module Rubernetes
       def fetch_value(hash, *keys, default: nil)
         keys.each do |key|
           return hash[key] if hash.respond_to?(:key?) && hash.key?(key)
+
           symbol = key.to_sym
           return hash[symbol] if hash.respond_to?(:key?) && hash.key?(symbol)
         end

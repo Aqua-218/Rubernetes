@@ -47,7 +47,10 @@ module Rubernetes
       def deep_freeze(value)
         case value
         when Hash
-          value.each { |key, child| deep_freeze(key); deep_freeze(child) }
+          value.each do |key, child|
+            deep_freeze(key)
+            deep_freeze(child)
+          end
         when Array
           value.each { |child| deep_freeze(child) }
         end
@@ -79,6 +82,7 @@ module Rubernetes
       def parse_capacity(value)
         if value.is_a?(Integer)
           raise CapacityError, "capacity must be positive" unless value.positive?
+
           return value
         end
 
@@ -135,14 +139,17 @@ module Rubernetes
           aliases.fetch(text) { raise ValidationError, "unsupported access mode #{mode.inspect}" }
         end.uniq
         raise ValidationError, "at least one access mode is required" if modes.empty?
-        raise ValidationError, "ReadWriteOncePod cannot be combined with another access mode" if modes.include?("ReadWriteOncePod") && modes.length > 1
+        if modes.include?("ReadWriteOncePod") && modes.length > 1
+          raise ValidationError,
+                "ReadWriteOncePod cannot be combined with another access mode"
+        end
 
         modes.freeze
       end
 
       def bool(value, default = false)
         return default if value.nil?
-        return value if value == true || value == false
+        return value if [true, false].include?(value)
 
         case value.to_s.downcase
         when "true", "1", "yes" then true
@@ -155,10 +162,11 @@ module Rubernetes
         text = String(value)
         raise ValidationError, "#{field} must not be empty" if text.empty?
         raise ValidationError, "#{field} contains an unsafe NUL" if text.include?("\0")
+
         path_sensitive = field.to_s.match?(/(?:volume|snapshot|operation|mount|device|filesystem)\s*(?:id|key)?/i)
         raise ValidationError, "#{field} contains an unsafe path separator" if path_sensitive && (text.include?("/") || text.include?("\\"))
-        raise ValidationError, "#{field} contains an unsafe path component" if text == "." || text == ".."
-        raise ValidationError, "#{field} contains a control character" if text.each_byte.any?(&:zero?) || text.match?( /[[:cntrl:]]/ )
+        raise ValidationError, "#{field} contains an unsafe path component" if [".", ".."].include?(text)
+        raise ValidationError, "#{field} contains a control character" if text.each_byte.any?(&:zero?) || text.match?(/[[:cntrl:]]/)
 
         text.freeze
       rescue TypeError
@@ -203,8 +211,10 @@ module Rubernetes
         @backend = Types.identifier(backend, "backend")
         @state = state.to_s.freeze
         raise ValidationError, "unknown volume state #{@state.inspect}" unless StateMachine::STATES.include?(@state)
+
         @generation = Integer(generation)
         raise ValidationError, "volume generation must not be negative" if @generation.negative?
+
         @attachments = Types.deep_freeze(Types.deep_copy(attachments))
         @stages = Types.deep_freeze(Types.deep_copy(stages))
         @publishes = Types.deep_freeze(Types.deep_copy(publishes))
@@ -284,8 +294,10 @@ module Rubernetes
         @used_bytes = Integer(used_bytes)
         @capacity_bytes = Integer(capacity_bytes)
         raise ValidationError, "volume stats cannot contain negative byte counts" if @used_bytes.negative? || @capacity_bytes.negative?
+
         @available_bytes = available_bytes.nil? ? [@capacity_bytes - @used_bytes, 0].max : Integer(available_bytes)
         raise ValidationError, "volume stats cannot contain negative available bytes" if @available_bytes.negative?
+
         @inodes_used = Integer(inodes_used)
         @inodes = inodes.nil? ? nil : Integer(inodes)
         @timestamp = timestamp.is_a?(Time) ? timestamp.utc : Time.parse(timestamp.to_s).utc
@@ -331,6 +343,7 @@ module Rubernetes
         value = self[key]
         return value unless value.nil?
         return args.first unless args.empty?
+
         raise KeyError, "key not found: #{key.inspect}"
       end
 

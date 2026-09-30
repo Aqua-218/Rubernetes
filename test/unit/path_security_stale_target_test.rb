@@ -30,6 +30,7 @@ class PathSecurityStaleTargetTest < Minitest::Test
     FileUtils.mkdir_p(target)
     lease = @security.acquire_target!(target, directory: false, create: true)
     lease.close if lease.respond_to?(:close)
+
     assert File.file?(target), "the stale directory became a regular file"
   end
 
@@ -39,6 +40,7 @@ class PathSecurityStaleTargetTest < Minitest::Test
     File.write(target, "")
     lease = @security.acquire_target!(target, directory: true, create: true)
     lease.close if lease.respond_to?(:close)
+
     assert File.directory?(target)
   end
 
@@ -50,7 +52,7 @@ class PathSecurityStaleTargetTest < Minitest::Test
       @security.acquire_target!(target, directory: false, create: true)
     end
     assert_match(/must be a regular file/, error.message)
-    assert File.exist?(File.join(target, "keep"))
+    assert_path_exists File.join(target, "keep")
 
     file = File.join(@root, "volume-subpaths", "app", "data", "0")
     FileUtils.mkdir_p(File.dirname(file))

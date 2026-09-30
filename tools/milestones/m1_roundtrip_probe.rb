@@ -114,22 +114,26 @@ def minimal_field_value(field, types_by_schema, depth:, ancestors:, include_zero
     )]
   when "object"
     additional = field["additional_properties"]
-    additional ? {"key" => minimal_field_value(
-      additional,
-      types_by_schema,
-      depth: depth + 1,
-      ancestors: ancestors,
-      include_zero_references: include_zero_references
-    )} : {}
+    if additional
+      {"key" => minimal_field_value(
+        additional,
+        types_by_schema,
+        depth: depth + 1,
+        ancestors: ancestors,
+        include_zero_references: include_zero_references
+      )}
+    else
+      {}
+    end
   when "string"
     case field["schema_reference"]
     when "io.k8s.apimachinery.pkg.apis.meta.v1.MicroTime"
       "1970-01-01T00:00:00.000000Z"
     else
       case field["format"]
-    when "date-time" then "1970-01-01T00:00:00Z"
-    when "byte" then Base64.strict_encode64("m1")
-    else "1"
+      when "date-time" then "1970-01-01T00:00:00Z"
+      when "byte" then Base64.strict_encode64("m1")
+      else "1"
       end
     end
   when "integer" then 1
@@ -259,7 +263,7 @@ def compare_oracle_case(registry, local, result)
   end
   expected_sha = oracle_observable_sha256(expected)
   actual_sha = oracle_observable_sha256(actual)
-  comparison = {
+  {
     "id" => result.fetch("id"),
     "go_type" => result.fetch("go_type"),
     "attempt_count" => 1,
@@ -299,7 +303,7 @@ def semantic_error_signature(errors)
       # normalize only this external REST-observable projection.
       detail = "" if error.code.to_sym == :required && detail.match?(/\Afield .* is required\z/)
       if error.code.to_sym == :enum && error.expected.is_a?(Array)
-        detail = "supported values: #{error.expected.map { |item| JSON.generate(item) }.join(', ')}"
+        detail = "supported values: #{error.expected.map { |item| JSON.generate(item) }.join(", ")}"
       end
       {
         "type" => error.respond_to?(:kubernetes_error_type) ? error.kubernetes_error_type : error.code.to_s,
@@ -454,6 +458,7 @@ def go_struct_field_metadata(source_root, go_package, go_type, cache:)
       next
     end
     next if name.nil? || name.empty?
+
     # Embedded Go fields have no separate field-name token (for example
     # `metav1.ObjectMeta `json:"metadata,omitempty"``).  The JSON tag is
     # authoritative for the wire name, so retain those fields for source
@@ -495,7 +500,6 @@ def semantic_zero_value(field, source_field)
   when "boolean" then false
   when "array", "object" then nil
   when "reference" then {}
-  else nil
   end
 end
 
@@ -537,7 +541,7 @@ def augment_semantic_fixture(value, type, types_by_schema:, go_info_by_schema:, 
         target = types_by_schema.fetch(field.fetch("reference"))
         augment_semantic_fixture(
           value[name], target, types_by_schema: types_by_schema, go_info_by_schema: go_info_by_schema,
-          source_root: source_root, cache: cache, depth: depth + 1
+                               source_root: source_root, cache: cache, depth: depth + 1
         )
       when "array"
         item = field["items"]
@@ -546,7 +550,7 @@ def augment_semantic_fixture(value, type, types_by_schema:, go_info_by_schema:, 
           value[name].each do |child|
             augment_semantic_fixture(
               child, target, types_by_schema: types_by_schema, go_info_by_schema: go_info_by_schema,
-              source_root: source_root, cache: cache, depth: depth + 1
+                             source_root: source_root, cache: cache, depth: depth + 1
             )
           end
         end
@@ -594,14 +598,14 @@ def semantic_ordered_value(value, type, types_by_schema:, go_info_by_schema:, so
                       target = types_by_schema.fetch(field.fetch("reference"))
                       semantic_ordered_value(
                         item, target, types_by_schema: types_by_schema, go_info_by_schema: go_info_by_schema,
-                        source_root: source_root, cache: cache, depth: depth + 1
+                                      source_root: source_root, cache: cache, depth: depth + 1
                       )
                     elsif field && field["type"] == "array" && item.is_a?(Array) && field.dig("items", "reference")
                       target = types_by_schema.fetch(field.dig("items", "reference"))
                       item.map do |child|
                         semantic_ordered_value(
                           child, target, types_by_schema: types_by_schema, go_info_by_schema: go_info_by_schema,
-                          source_root: source_root, cache: cache, depth: depth + 1
+                                         source_root: source_root, cache: cache, depth: depth + 1
                         )
                       end
                     elsif field && field["type"] == "object" && item.is_a?(Hash) && field["additional_properties"]
@@ -692,7 +696,9 @@ def build_validation_parent_fixture(codec:, mapping:, owner_type:, target_json:,
   fixture = mapping["fixture"].is_a?(Hash) ? mapping["fixture"] : {}
   nested = fixture.fetch("nested", {})
   nested = nested[target_schema] || nested[target_schema.to_s.split(".").last] || {}
-  nested = {"create" => nested} unless nested.empty? || nested.key?("create") || nested.key?("invalid") || nested.key?("update") || nested.key?("expectations")
+  unless nested.empty? || nested.key?("create") || nested.key?("invalid") || nested.key?("update") || nested.key?("expectations")
+    nested = {"create" => nested}
+  end
   owner_hash = apply_fixture_patch(owner_hash, fixture["create"]) if fixture["create"]
   owner_hash = apply_fixture_patch(owner_hash, nested["create"]) if nested["create"]
   owner_missing_hash = {
@@ -742,13 +748,13 @@ def build_validation_parent_fixture(codec:, mapping:, owner_type:, target_json:,
     # server-assigned metadata.uid for Job create requests.
     prepare = gvk.fetch("kind") == "Job"
     create_errors = validator.errors(owner_wire_hash, unknown_fields: :reject, operation: :create,
-                                     strategy_prepare: prepare)
+                                                      strategy_prepare: prepare)
     invalid_errors = validator.errors(owner_invalid_wire_hash, unknown_fields: :reject, operation: :create,
-                                      strategy_prepare: prepare)
+                                                               strategy_prepare: prepare)
     update_errors = validator.errors(owner_update_wire_hash, unknown_fields: :reject, operation: :update,
-                                     old: owner_wire_hash, strategy_prepare: prepare)
+                                                             old: owner_wire_hash, strategy_prepare: prepare)
     missing_errors = validator.errors(owner_missing_wire_hash, unknown_fields: :reject, operation: :create,
-                                      strategy_prepare: prepare)
+                                                               strategy_prepare: prepare)
     {
       "applicable" => true,
       "create_accepted" => create_errors.empty?,
@@ -800,7 +806,11 @@ def apply_fixture_patch(base, patch)
     elsif value.is_a?(Array) && result[key].is_a?(Array)
       result[key] = value.each_with_index.map do |item, index|
         current = result[key][index]
-        item.is_a?(Hash) ? apply_fixture_patch(current.is_a?(Hash) ? current : {}, item) : strip_fixture_markers(item)
+        if item.is_a?(Hash)
+          apply_fixture_patch(current.is_a?(Hash) ? current : {}, item)
+        else
+          strip_fixture_markers(item)
+        end
       end
     else
       result[key] = strip_fixture_markers(value)
@@ -875,7 +885,13 @@ def build_validation_handler_fixture(codec:, mapping:, owner_type:, target_json:
   nested ||= {}
   create_patch = nested.fetch("create", fixture["create"])
   invalid_patch = nested.fetch("invalid", fixture["invalid"])
-  update_patch = nested.fetch("update", fixture["update"] || (mapping.fetch("metadata_policy", "name") == "none" ? {"dryRun" => ["All"]} : {"metadata" => {"resourceVersion" => "1"}}))
+  update_patch = nested.fetch("update",
+                              fixture["update"] || (if mapping.fetch("metadata_policy",
+                                                                     "name") == "none"
+                                                      {"dryRun" => ["All"]}
+                                                    else
+                                                      {"metadata" => {"resourceVersion" => "1"}}
+                                                    end))
   # The apiserver decoder materializes every non-pointer Go struct before
   # defaulting and validation; the minimal object carries the same zero
   # values (and drops nil pointers) before the upstream-cited patches apply.
@@ -892,11 +908,13 @@ def build_validation_handler_fixture(codec:, mapping:, owner_type:, target_json:
   update_json = codec.canonical_json(update_hash, schema: definition)
   validator = definition.validator
   missing_local = augment ? augment.call(JSON.parse(missing_json), owner_type) : JSON.parse(missing_json)
-  create_accepted, create_errors = local_validation_observation(validator, JSON.parse(create_json), operation: :create, definition: definition)
-  invalid_accepted, invalid_errors = local_validation_observation(validator, JSON.parse(invalid_json), operation: :create, definition: definition)
+  create_accepted, create_errors = local_validation_observation(validator, JSON.parse(create_json), operation: :create,
+                                                                                                    definition: definition)
+  invalid_accepted, invalid_errors = local_validation_observation(validator, JSON.parse(invalid_json), operation: :create,
+                                                                                                       definition: definition)
   missing_accepted, missing_errors = local_validation_observation(validator, missing_local, operation: :create, definition: definition)
   update_accepted, update_errors = local_validation_observation(validator, JSON.parse(update_json), operation: :update,
-                                                                old: JSON.parse(create_json), definition: definition)
+                                                                                                    old: JSON.parse(create_json), definition: definition)
   {
     "owner_fixture_json" => create_json,
     "owner_invalid_fixture_json" => invalid_json,
@@ -920,7 +938,8 @@ def build_validation_list_fixture(codec:, mapping:, raw_json:, types_by_schema:,
   item_type = types_by_schema.fetch(item_schema)
   item_mapping = mapping.merge("validation_mode" => mapping.fetch("item_mode"), "target_path" => mapping.fetch("item_target_path"))
   list_value = JSON.parse(raw_json)
-  item_target = Array(list_value["items"]).first || JSON.parse(JSON.generate(minimal_required_values(item_type, types_by_schema, include_zero_references: true)))
+  item_target = Array(list_value["items"]).first || JSON.parse(JSON.generate(minimal_required_values(item_type, types_by_schema,
+                                                                                                     include_zero_references: true)))
   owner_type = types_by_schema.fetch(mapping.fetch("owner_schema"))
   inner = if mapping.fetch("item_mode") == "handler"
             build_validation_handler_fixture(codec: codec, mapping: item_mapping, owner_type: owner_type, target_json: JSON.generate(item_target),
@@ -936,7 +955,7 @@ def build_validation_list_fixture(codec:, mapping:, raw_json:, types_by_schema:,
   end
   prefix = lambda do |errors|
     Array(errors).map { |error| error.merge("field" => "items[0].#{error["field"]}") }
-                 .sort_by { |error| [error.fetch("field"), error.fetch("type"), error.fetch("detail")] }
+      .sort_by { |error| [error.fetch("field"), error.fetch("type"), error.fetch("detail")] }
   end
   validation = inner.fetch("owner_validation")
   {
@@ -1018,14 +1037,14 @@ def compact_local_validation_operation(accepted:, errors:, expected_accepted:)
   # Braces keep the operation a positional Hash; a brace-less string-keyed
   # hash is consumed as keyword arguments by a method declaring keywords.
   compact_validation_operation({
-    "completed" => true,
-    "accepted" => accepted,
-    "error" => nil,
-    "expected_accepted" => expected_accepted,
-    "expectation_matches" => accepted == expected_accepted &&
+                                 "completed" => true,
+                                 "accepted" => accepted,
+                                 "error" => nil,
+                                 "expected_accepted" => expected_accepted,
+                                 "expectation_matches" => accepted == expected_accepted &&
       (expected_accepted ? Array(errors).empty? : !Array(errors).empty?),
-    "errors" => errors
-  })
+                                 "errors" => errors
+                               })
 end
 
 def compare_direct_validation_case(local, external, mapping)
@@ -1148,21 +1167,21 @@ def compare_semantic_case(local, external, validation_override: nil)
                        {"applicable" => false, "reason" => external_defaulting.fetch("reason", "")}
                      end
   expected_defaulting = if defaulting_applicable && external_defaulting["error"].nil?
-                         {
-                           "applicable" => true,
-                           "before_sha256" => external_defaulting.fetch("before_sha256"),
-                           "after_sha256" => external_defaulting.fetch("after_sha256"),
-                           "changed" => external_defaulting.fetch("changed")
-                         }
-                       elsif defaulting_applicable
-                         {
-                           "applicable" => true,
-                           "accepted" => false,
-                           "error" => semantic_error_record(external_defaulting["error"])
-                         }
-                       else
-                         {"applicable" => false, "reason" => external_defaulting.fetch("reason", "")}
-                       end
+                          {
+                            "applicable" => true,
+                            "before_sha256" => external_defaulting.fetch("before_sha256"),
+                            "after_sha256" => external_defaulting.fetch("after_sha256"),
+                            "changed" => external_defaulting.fetch("changed")
+                          }
+                        elsif defaulting_applicable
+                          {
+                            "applicable" => true,
+                            "accepted" => false,
+                            "error" => semantic_error_record(external_defaulting["error"])
+                          }
+                        else
+                          {"applicable" => false, "reason" => external_defaulting.fetch("reason", "")}
+                        end
   defaulting_dimension = semantic_dimension(
     expected: expected_defaulting,
     actual: local_defaulting,
@@ -1203,31 +1222,31 @@ def compare_semantic_case(local, external, validation_override: nil)
                        }
                      end
   expected_validation = if validation_applicable && external_validation["error"].nil?
-                         {
-                           "applicable" => true,
-                           "accepted" => external_validation.fetch("accepted"),
-                           "errors" => semantic_error_signature(external_validation.fetch("errors")),
-                           "missing_accepted" => external_validation.fetch("missing_accepted"),
-                           "missing_errors" => semantic_error_signature(external_validation.fetch("missing_errors")),
-                           "source_paths" => external_validation.fetch("source_paths", [])
-                         }
-                       elsif validation_applicable
-                         {
-                           "applicable" => true,
-                           "accepted" => false,
-                           "errors" => [],
-                           "missing_accepted" => false,
-                           "missing_errors" => [],
-                           "source_paths" => external_validation.fetch("source_paths", []),
-                           "error" => semantic_error_record(external_validation["error"])
-                         }
-                       else
-                         {
-                           "applicable" => false,
-                           "reason" => external_validation.fetch("reason", ""),
-                           "source_paths" => external_validation.fetch("source_paths", [])
-                         }
-                       end
+                          {
+                            "applicable" => true,
+                            "accepted" => external_validation.fetch("accepted"),
+                            "errors" => semantic_error_signature(external_validation.fetch("errors")),
+                            "missing_accepted" => external_validation.fetch("missing_accepted"),
+                            "missing_errors" => semantic_error_signature(external_validation.fetch("missing_errors")),
+                            "source_paths" => external_validation.fetch("source_paths", [])
+                          }
+                        elsif validation_applicable
+                          {
+                            "applicable" => true,
+                            "accepted" => false,
+                            "errors" => [],
+                            "missing_accepted" => false,
+                            "missing_errors" => [],
+                            "source_paths" => external_validation.fetch("source_paths", []),
+                            "error" => semantic_error_record(external_validation["error"])
+                          }
+                        else
+                          {
+                            "applicable" => false,
+                            "reason" => external_validation.fetch("reason", ""),
+                            "source_paths" => external_validation.fetch("source_paths", [])
+                          }
+                        end
   validation_dimension = semantic_dimension(
     expected: expected_validation,
     actual: local_validation,
@@ -1281,7 +1300,8 @@ def compare_semantic_case(local, external, validation_override: nil)
   comparison
 end
 
-def build_semantic_case(registry:, codec:, type:, wire_case:, types_by_schema:, go_info_by_schema:, source_root:, validation_mapping:, go_metadata_cache:)
+def build_semantic_case(registry:, codec:, type:, wire_case:, types_by_schema:, go_info_by_schema:, source_root:, validation_mapping:,
+                        go_metadata_cache:)
   schema_name = type.fetch("schema")
   klass = generated_class(type)
   scalar_schema = semantic_scalar_schema?(schema_name, type)
@@ -1292,14 +1312,16 @@ def build_semantic_case(registry:, codec:, type:, wire_case:, types_by_schema:, 
   # JSON fixture.  The typed codec and validator consume the same schema AST
   # without requiring generated nested accessor classes.
   value = scalar_schema ? semantic_scalar_fixture(schema_name) : required_values
-  augment_semantic_fixture(
-    value,
-    type,
-    types_by_schema: types_by_schema,
-    go_info_by_schema: go_info_by_schema,
-    source_root: source_root,
-    cache: go_metadata_cache
-  ) unless scalar_schema
+  unless scalar_schema
+    augment_semantic_fixture(
+      value,
+      type,
+      types_by_schema: types_by_schema,
+      go_info_by_schema: go_info_by_schema,
+      source_root: source_root,
+      cache: go_metadata_cache
+    )
+  end
   unknown_value = if scalar_schema
                     value
                   else
@@ -1310,26 +1332,34 @@ def build_semantic_case(registry:, codec:, type:, wire_case:, types_by_schema:, 
   descriptor_file = registry.files.find { |file| file.package == descriptor.package }
   raise M1ProbeSupport::ProbeError, "protobuf descriptor file is missing for #{descriptor.full_name}" unless descriptor_file
 
-  raw_json = scalar_schema ? JSON.generate(value) : semantic_fixture_json(
-    value,
-    type,
-    codec: codec,
-    types_by_schema: types_by_schema,
-    go_info_by_schema: go_info_by_schema,
-    source_root: source_root,
-    cache: go_metadata_cache,
-    schema: klass.definition
-  )
-  unknown_json = scalar_schema ? raw_json : semantic_fixture_json(
-    unknown_value,
-    type,
-    codec: codec,
-    types_by_schema: types_by_schema,
-    go_info_by_schema: go_info_by_schema,
-    source_root: source_root,
-    cache: go_metadata_cache,
-    schema: klass.definition
-  )
+  raw_json = if scalar_schema
+               JSON.generate(value)
+             else
+               semantic_fixture_json(
+                 value,
+                 type,
+                 codec: codec,
+                 types_by_schema: types_by_schema,
+                 go_info_by_schema: go_info_by_schema,
+                 source_root: source_root,
+                 cache: go_metadata_cache,
+                 schema: klass.definition
+               )
+             end
+  unknown_json = if scalar_schema
+                   raw_json
+                 else
+                   semantic_fixture_json(
+                     unknown_value,
+                     type,
+                     codec: codec,
+                     types_by_schema: types_by_schema,
+                     go_info_by_schema: go_info_by_schema,
+                     source_root: source_root,
+                     cache: go_metadata_cache,
+                     schema: klass.definition
+                   )
+                 end
   missing_json = scalar_schema ? raw_json : JSON.generate(missing_value)
   invalid_value = if scalar_schema
                     value
@@ -1341,10 +1371,14 @@ def build_semantic_case(registry:, codec:, type:, wire_case:, types_by_schema:, 
                   end
   invalid_json = scalar_schema ? raw_json : JSON.generate(invalid_value)
   unknown_wire_value = scalar_schema ? value : codec.load_json(unknown_json, schema: klass.definition)
-  defaulted = scalar_schema ? value : klass.definition.defaulting.apply_hash(
-    value,
-    kubernetes_admission_defaults: false
-  )
+  defaulted = if scalar_schema
+                value
+              else
+                klass.definition.defaulting.apply_hash(
+                  value,
+                  kubernetes_admission_defaults: false
+                )
+              end
   validator = klass.definition.validator
   validation_errors = scalar_schema ? [] : validator.errors(value, unknown_fields: :reject)
   validation_missing_errors = scalar_schema ? [] : validator.errors(missing_value, unknown_fields: :reject)
@@ -1397,16 +1431,20 @@ def build_semantic_case(registry:, codec:, type:, wire_case:, types_by_schema:, 
     "json_unknown_raw" => unknown_json,
     "json_unknown_canonical_json" => unknown_json,
     "defaulting_before_json" => raw_json,
-    "defaulting_after_json" => scalar_schema ? raw_json : semantic_fixture_json(
-      defaulted,
-      type,
-      codec: codec,
-      types_by_schema: types_by_schema,
-      go_info_by_schema: go_info_by_schema,
-      source_root: source_root,
-      cache: go_metadata_cache,
-      schema: klass.definition
-    ),
+    "defaulting_after_json" => if scalar_schema
+                                 raw_json
+                               else
+                                 semantic_fixture_json(
+                                   defaulted,
+                                   type,
+                                   codec: codec,
+                                   types_by_schema: types_by_schema,
+                                   go_info_by_schema: go_info_by_schema,
+                                   source_root: source_root,
+                                   cache: go_metadata_cache,
+                                   schema: klass.definition
+                                 )
+                               end,
     "validation_accepted" => validation_errors.empty?,
     "validation_errors" => semantic_error_signature(validation_errors),
     "validation_missing_accepted" => validation_missing_errors.empty?,
@@ -1425,7 +1463,8 @@ def build_semantic_case(registry:, codec:, type:, wire_case:, types_by_schema:, 
     "invalid_fixture_json" => parent_fixture ? parent_fixture.fetch("owner_invalid_fixture_json") : invalid_json,
     "missing_fixture_json" => parent_fixture ? parent_fixture.fetch("owner_missing_fixture_json") : missing_json,
     "update_fixture_json" => parent_fixture ? parent_fixture.fetch("owner_update_fixture_json") : raw_json,
-    "validation_expectations" => validation_mapping["expectations"] || {"create" => true, "invalid" => false, "missing" => false, "update" => true}
+    "validation_expectations" => validation_mapping["expectations"] || {"create" => true, "invalid" => false, "missing" => false,
+                                                                        "update" => true}
   }
   [request, local, validation_request]
 end
@@ -1524,8 +1563,11 @@ M1ProbeSupport.run_probe("m1_roundtrip_report", pretty: false) do |_current, inp
     wire_case = wire_cases[schema_name]
     if wire_case.nil?
       wire_failure = wire_report.fetch("failures").find { |failure| failure["schema"] == schema_name }
-      errors << (wire_failure ? "concrete protobuf coverage: #{wire_failure.fetch("message")}" :
-                                "concrete protobuf coverage case is missing")
+      errors << (if wire_failure
+                   "concrete protobuf coverage: #{wire_failure.fetch("message")}"
+                 else
+                   "concrete protobuf coverage case is missing"
+                 end)
     else
       checks["protobuf_roundtrip"] = true
       protobuf_unknown_ok = wire_case.fetch("unknown_wire_preserved") == true
@@ -1544,8 +1586,6 @@ M1ProbeSupport.run_probe("m1_roundtrip_report", pretty: false) do |_current, inp
       "errors" => errors
     }
   end
-
-  validation_mappings = []
   validation_mapping_by_schema = {}
   validation_mapping_error = nil
   begin
@@ -1564,6 +1604,7 @@ M1ProbeSupport.run_probe("m1_roundtrip_report", pretty: false) do |_current, inp
   semantic_build_error = nil
   begin
     raise M1ProbeSupport::ProbeError, validation_mapping_error if validation_mapping_error
+
     go_info_by_schema = supported_types.to_h do |type|
       schema_name = type.fetch("schema")
       wire_case = wire_cases.fetch(schema_name)
@@ -1659,6 +1700,7 @@ M1ProbeSupport.run_probe("m1_roundtrip_report", pretty: false) do |_current, inp
   validation_criterion = nil
   begin
     raise M1ProbeSupport::ProbeError, validation_mapping_error if validation_mapping_error
+
     raw_validation_oracle = M1KubernetesValidationOracle.compare(
       source_root: KUBERNETES_SOURCE_ROOT,
       requests: validation_requests
@@ -1706,6 +1748,7 @@ M1ProbeSupport.run_probe("m1_roundtrip_report", pretty: false) do |_current, inp
   semantic_comparisons = []
   begin
     raise M1ProbeSupport::ProbeError, semantic_build_error if semantic_build_error
+
     raw_semantic_oracle = M1KubernetesSemanticOracle.compare(
       source_root: KUBERNETES_SOURCE_ROOT,
       requests: semantic_requests
@@ -1805,6 +1848,7 @@ M1ProbeSupport.run_probe("m1_roundtrip_report", pretty: false) do |_current, inp
     next unless dimension.is_a?(Hash)
 
     next unless dimension.dig("expected", "unknown_accepted") == true
+
     expected = dimension.dig("expected", "unknown_field_preserved")
     actual = dimension.dig("actual", "unknown_field_preserved")
     next if expected == actual
@@ -1813,7 +1857,12 @@ M1ProbeSupport.run_probe("m1_roundtrip_report", pretty: false) do |_current, inp
     actual_observation = dimension.fetch("actual_observation", {})
     {
       "id" => comparison.fetch("id"),
-      "field" => (dimension.dig("expected_errors", "strict_unknown", "field").to_s.empty? ? "m1FutureField" : dimension.dig("expected_errors", "strict_unknown", "field").to_s),
+      "field" => (if dimension.dig("expected_errors", "strict_unknown",
+                                   "field").to_s.empty?
+                    "m1FutureField"
+                  else
+                    dimension.dig("expected_errors", "strict_unknown", "field").to_s
+                  end),
       "kubernetes_preserved" => expected,
       "rubernetes_preserved" => actual,
       "raw_sha256" => actual_observation["unknown_raw_sha256"],

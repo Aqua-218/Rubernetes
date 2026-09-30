@@ -70,6 +70,7 @@ module Rubernetes
         if @instance_identity.empty? || @instance_identity.include?("\0")
           raise ArgumentError, "nftables policy instance identity is invalid"
         end
+
         super(table_name: table_name, timeout: timeout, socket_factory: socket_factory, transport: transport)
         @packet_matrix = nil
         @policy_feature_matrix = POLICY_FEATURE_MATRIX.dup.freeze
@@ -187,6 +188,7 @@ module Rubernetes
 
         entries = value["entries"] || value[:entries] || value
         raise PolicyError, "native NetworkPolicy adapter requires compiled kernel entries" unless entries.is_a?(Hash)
+
         revision = Integer(value["revision"] || value[:revision] || entries["revision"] || entries[:revision])
         kernel = entries["kernel"] || entries[:kernel]
         raise PolicyError, "native NetworkPolicy snapshot has no kernel compilation" unless kernel.is_a?(Hash)
@@ -224,7 +226,7 @@ module Rubernetes
           rule_objects << policy_drop_rule_object(target, index)
         end
         {"table" => {"name" => @table_name, "marker" => policy_marker("table", @table_name),
-                      "message" => new_table_message},
+                     "message" => new_table_message},
          "chains" => [chain], "sets" => [], "set_elements" => [], "rules" => rule_objects}.freeze
       end
 
@@ -233,6 +235,7 @@ module Rubernetes
         address = IPAddr.new(hash.fetch("ip"))
         direction = hash.fetch("direction").to_s
         raise PolicyError, "compiled NetworkPolicy target direction is invalid" unless PolicyEngine::DIRECTIONS.include?(direction)
+
         family = normalize_family(hash.fetch("family"), address, name: "compiled NetworkPolicy target")
         {"direction" => direction, "ip" => address.to_s, "family" => family}
       rescue KeyError, IPAddr::InvalidAddressError => error
@@ -244,17 +247,21 @@ module Rubernetes
         address = IPAddr.new(hash.fetch("target"))
         direction = hash.fetch("direction").to_s
         raise PolicyError, "compiled NetworkPolicy rule direction is invalid" unless PolicyEngine::DIRECTIONS.include?(direction)
+
         family = normalize_family(hash.fetch("family"), address, name: "compiled NetworkPolicy rule target")
         peer = hash.fetch("peer")
         peer = stringify_hash(peer)
         if peer["kind"] == "cidr"
           network, prefix = Support.cidr(peer.fetch("cidr"), name: "compiled policy cidr")
-          raise PolicyError, "compiled NetworkPolicy rule peer family does not match target" unless normalize_family(family, network, name: "compiled policy peer") == family
+          raise PolicyError, "compiled NetworkPolicy rule peer family does not match target" unless normalize_family(family, network,
+                                                                                                                     name: "compiled policy peer") == family
+
           peer["cidr"] = "#{network}/#{prefix}"
         elsif peer["kind"] == "pod"
           peer_address = IPAddr.new(peer.fetch("ip"))
           peer_family = normalize_family(peer.fetch("family"), peer_address, name: "compiled policy pod peer")
           raise PolicyError, "compiled NetworkPolicy rule peer family does not match target" unless peer_family == family
+
           peer["ip"] = peer_address.to_s
           peer["family"] = peer_family
         elsif peer["kind"] != "all"
@@ -262,6 +269,7 @@ module Rubernetes
         end
         protocol = hash["protocol"]&.to_s
         raise PolicyError, "compiled NetworkPolicy protocol is invalid" unless protocol.nil? || PolicyEngine::PROTOCOLS.include?(protocol)
+
         port = normalize_policy_port(hash["port"], name: "compiled NetworkPolicy port")
         end_port = normalize_policy_port(hash["end_port"], name: "compiled NetworkPolicy endPort")
         raise PolicyError, "compiled NetworkPolicy endPort requires a port" if end_port && port.nil?
@@ -278,6 +286,7 @@ module Rubernetes
       def normalize_family(value, address, name:)
         family = value.to_s
         raise PolicyError, "#{name} family is invalid" unless %w[ipv4 ipv6].include?(family)
+
         expected = address.ipv4? ? "ipv4" : "ipv6"
         raise PolicyError, "#{name} family does not match address" unless family == expected
 
@@ -299,16 +308,17 @@ module Rubernetes
           marker_value = policy_marker("rule", "ct:#{state_name}:accept:v1")
           {"chain" => "forward", "marker" => marker_value,
            "message" => new_rule_message(chain_name: "forward", marker: marker_value,
-                                            expressions: conntrack_state_expressions(state) + [accept_expression])}
+                                         expressions: conntrack_state_expressions(state) + [accept_expression])}
         end
       end
 
       def policy_allow_rule_object(rule, index)
-        identity = "allow:#{rule.fetch("direction")}:#{rule.fetch("target")}:#{index}:#{Digest::SHA256.hexdigest(JSON.generate(rule))[0, 16]}"
+        identity = "allow:#{rule.fetch("direction")}:#{rule.fetch("target")}:#{index}:#{Digest::SHA256.hexdigest(JSON.generate(rule))[0,
+                                                                                                                                      16]}"
         marker_value = policy_marker("rule", identity)
         {"chain" => "forward", "marker" => marker_value,
          "message" => new_rule_message(chain_name: "forward", marker: marker_value,
-                                          expressions: policy_match_expressions(rule) + [accept_expression])}
+                                       expressions: policy_match_expressions(rule) + [accept_expression])}
       end
 
       def policy_drop_rule_object(target, index)
@@ -316,7 +326,7 @@ module Rubernetes
         marker_value = policy_marker("rule", identity)
         {"chain" => "forward", "marker" => marker_value,
          "message" => new_rule_message(chain_name: "forward", marker: marker_value,
-                                          expressions: target_match_expressions(target) + [drop_expression])}
+                                       expressions: target_match_expressions(target) + [drop_expression])}
       end
 
       def new_policy_chain_message(name:, marker:)
@@ -333,8 +343,8 @@ module Rubernetes
         {type: NFT_MSG_NEWTABLE, flags: NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_EXCL,
          family: NFPROTO_INET,
          attributes: attributes(attribute(NFTA_TABLE_NAME, cstring(@table_name)),
-                                 attribute(NFTA_TABLE_FLAGS, u32(0)),
-                                 attribute(NFTA_TABLE_USERDATA, policy_marker("table", @table_name)))}
+                                attribute(NFTA_TABLE_FLAGS, u32(0)),
+                                attribute(NFTA_TABLE_USERDATA, policy_marker("table", @table_name)))}
       end
 
       def policy_lifecycle_messages(current, desired)
@@ -425,12 +435,12 @@ module Rubernetes
                    actual_entry = actual.fetch("rules").find { |entry| entry["marker"] == first }
                    desired_entry = desired.fetch("rules").find { |entry| entry["marker"] == first }
                    wanted = decoded_rule_expressions_from_attributes(desired_entry.fetch("message").fetch(:attributes))
-                   ", first_actual=#{JSON.generate(actual_entry.fetch('expressions'))}, first_desired=#{JSON.generate(wanted)}"
+                   ", first_actual=#{JSON.generate(actual_entry.fetch("expressions"))}, first_desired=#{JSON.generate(wanted)}"
                  else
                    ""
                  end
         "missing=#{missing.length}, extra=#{extra.length}, changed=#{changed.length}, " \
-          "actual_chains=#{actual.fetch('chains', []).length}, desired_chains=#{desired.fetch('chains', []).length}#{detail}"
+          "actual_chains=#{actual.fetch("chains", []).length}, desired_chains=#{desired.fetch("chains", []).length}#{detail}"
       rescue StandardError => error
         "difference-unavailable=#{error.class}:#{error.message}"
       end
@@ -547,11 +557,9 @@ module Rubernetes
 
       def policy_match_expressions(rule)
         expressions = target_match_expressions("direction" => rule.fetch("direction"), "ip" => rule.fetch("target"),
-                                                "family" => rule.fetch("family"))
+                                               "family" => rule.fetch("family"))
         peer = rule.fetch("peer")
-        unless peer.fetch("kind") == "all"
-          expressions.concat(address_peer_expressions(peer, direction: rule.fetch("direction")))
-        end
+        expressions.concat(address_peer_expressions(peer, direction: rule.fetch("direction"))) unless peer.fetch("kind") == "all"
         protocol = rule["protocol"]
         expressions.concat(protocol_port_expressions(protocol, rule["port"], rule["end_port"])) if protocol
         expressions
@@ -582,9 +590,9 @@ module Rubernetes
                  end
         nfproto_expression(family) +
           [expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(2)),
-                                              attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_NETWORK_HEADER)),
-                                              attribute(NFTA_PAYLOAD_OFFSET, u32(offset)),
-                                              attribute(NFTA_PAYLOAD_LEN, u32(family == NFPROTO_IPV6 ? 16 : 4)))),
+                                            attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_NETWORK_HEADER)),
+                                            attribute(NFTA_PAYLOAD_OFFSET, u32(offset)),
+                                            attribute(NFTA_PAYLOAD_LEN, u32(family == NFPROTO_IPV6 ? 16 : 4)))),
            compare_expression(2, address.hton)]
       end
 
@@ -611,19 +619,22 @@ module Rubernetes
           chunk_bytes = network_bytes.byteslice(chunk * 4, 4)
           payload_offset = offset + (chunk * 4)
           expressions << expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(2)),
-                                                              attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_NETWORK_HEADER)),
-                                                              attribute(NFTA_PAYLOAD_OFFSET, u32(payload_offset)),
-                                                              attribute(NFTA_PAYLOAD_LEN, u32(4))))
+                                                          attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_NETWORK_HEADER)),
+                                                          attribute(NFTA_PAYLOAD_OFFSET, u32(payload_offset)),
+                                                          attribute(NFTA_PAYLOAD_LEN, u32(4))))
           if chunk_prefix == 32
             expressions << compare_expression(2, chunk_bytes)
           else
             mask = cidr_mask_bytes(4, chunk_prefix)
             expressions << expression("bitwise", attributes(attribute(NFTA_BITWISE_SREG, u32(2)),
-                                                               attribute(NFTA_BITWISE_DREG, u32(2)),
-                                                               attribute(NFTA_BITWISE_LEN, u32(4)),
-                                                               attribute(NFTA_BITWISE_MASK, attribute(NFTA_DATA_VALUE, mask), nested: true),
-                                                               attribute(NFTA_BITWISE_XOR, attribute(NFTA_DATA_VALUE, "\0".b * 4), nested: true)))
-            expressions << compare_expression(2, chunk_bytes.bytes.zip(mask.bytes).map { |value, mask_byte| (value & mask_byte) }.pack("C*"))
+                                                            attribute(NFTA_BITWISE_DREG, u32(2)),
+                                                            attribute(NFTA_BITWISE_LEN, u32(4)),
+                                                            attribute(NFTA_BITWISE_MASK, attribute(NFTA_DATA_VALUE, mask), nested: true),
+                                                            attribute(NFTA_BITWISE_XOR, attribute(NFTA_DATA_VALUE, "\0".b * 4),
+                                                                      nested: true)))
+            expressions << compare_expression(2, chunk_bytes.bytes.zip(mask.bytes).map { |value, mask_byte|
+              value & mask_byte
+            }.pack("C*"))
           end
           remaining -= chunk_prefix
         end
@@ -632,7 +643,7 @@ module Rubernetes
 
       def nfproto_expression(family)
         [expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
-                                         attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO)))),
+                                       attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO)))),
          compare_expression(1, family == NFPROTO_IPV6 ? NFPROTO_IPV6 : NFPROTO_IPV4)]
       end
 
@@ -652,14 +663,14 @@ module Rubernetes
 
       def protocol_port_expressions(protocol, port, end_port)
         expressions = [expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
-                                                       attribute(NFTA_META_KEY, u32(NFT_META_L4PROTO)))),
+                                                     attribute(NFTA_META_KEY, u32(NFT_META_L4PROTO)))),
                        compare_expression(1, {"TCP" => 6, "UDP" => 17, "SCTP" => 132}.fetch(protocol))]
         return expressions if port.nil?
 
         expressions << expression("payload", attributes(attribute(NFTA_PAYLOAD_DREG, u32(1)),
-                                                           attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_TRANSPORT_HEADER)),
-                                                           attribute(NFTA_PAYLOAD_OFFSET, u32(2)),
-                                                           attribute(NFTA_PAYLOAD_LEN, u32(2))))
+                                                        attribute(NFTA_PAYLOAD_BASE, u32(NFT_PAYLOAD_TRANSPORT_HEADER)),
+                                                        attribute(NFTA_PAYLOAD_OFFSET, u32(2)),
+                                                        attribute(NFTA_PAYLOAD_LEN, u32(2))))
         if end_port
           expressions << policy_compare_expression(1, NFT_CMP_GTE, [Integer(port)].pack("n"))
           expressions << policy_compare_expression(1, NFT_CMP_LTE, [Integer(end_port)].pack("n"))
@@ -677,22 +688,22 @@ module Rubernetes
       def policy_compare_expression(register, operation, value)
         data = value.is_a?(Integer) ? data_u32(value) : value
         expression("cmp", attributes(attribute(NFTA_CMP_SREG, u32(register)),
-                                       attribute(NFTA_CMP_OP, u32(operation)),
-                                       attribute(NFTA_CMP_DATA, attribute(NFTA_DATA_VALUE, data), nested: true)))
+                                     attribute(NFTA_CMP_OP, u32(operation)),
+                                     attribute(NFTA_CMP_DATA, attribute(NFTA_DATA_VALUE, data), nested: true)))
       end
 
       def accept_expression
         verdict = attributes(attribute(NFTA_VERDICT_CODE, u32(NFT_ACCEPT)))
         expression("immediate", attributes(attribute(NFTA_IMMEDIATE_DREG, u32(0)),
-                                              attribute(NFTA_IMMEDIATE_DATA,
-                                                        attribute(NFTA_DATA_VERDICT, verdict, nested: true), nested: true)))
+                                           attribute(NFTA_IMMEDIATE_DATA,
+                                                     attribute(NFTA_DATA_VERDICT, verdict, nested: true), nested: true)))
       end
 
       def drop_expression
         verdict = attributes(attribute(NFTA_VERDICT_CODE, u32(NFT_DROP)))
         expression("immediate", attributes(attribute(NFTA_IMMEDIATE_DREG, u32(0)),
-                                              attribute(NFTA_IMMEDIATE_DATA,
-                                                        attribute(NFTA_DATA_VERDICT, verdict, nested: true), nested: true)))
+                                           attribute(NFTA_IMMEDIATE_DATA,
+                                                     attribute(NFTA_DATA_VERDICT, verdict, nested: true), nested: true)))
       end
     end
 

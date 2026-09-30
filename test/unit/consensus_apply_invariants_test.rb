@@ -49,11 +49,13 @@ class ConsensusApplyInvariantsTest < Minitest::Test
     create("k/a", 1, machine)
     create("k/b", 2, machine)
     update("k/a", 3, machine, expected: "1")
+
     assert_equal false, create("k/a", 4, machine)["ok"], "a second create is rejected"
     assert_equal true, delete("k/b", 5, machine)["ok"]
     assert_equal false, delete("k/b", 6, machine)["ok"], "deleting a deleted key is rejected"
     assert_equal({"create" => 2, "update" => 1, "delete" => 1, "rejected" => 2}, machine.effects)
     fields = machine.checkpoint!
+
     assert_equal 1, fields[:objects]
     assert_equal 1, fields[:expected_objects]
     assert_equal 6, fields[:index]
@@ -66,6 +68,7 @@ class ConsensusApplyInvariantsTest < Minitest::Test
     machine = C::KVStateMachine.new(checkpoint_interval: nil)
     first = create("k/a", 1, machine, uid: "u1")
     replay = create("k/a", 2, machine, uid: "u1")
+
     assert_equal first["object"], replay["object"]
     assert_equal 1, machine.effects["create"]
     assert_equal 1, machine.checkpoint![:objects]
@@ -80,10 +83,12 @@ class ConsensusApplyInvariantsTest < Minitest::Test
     # Something other than the log removes an object.
     machine.store.delete("k/b")
     fields = machine.checkpoint!
+
     assert_equal 1, fields[:objects]
     assert_equal 2, fields[:expected_objects]
     assert_equal 1, machine.violations
     violation = logger.named("consensus.apply_invariant_violation").first
+
     refute_nil violation
     assert_equal 2, violation[2][:index]
   end
@@ -100,12 +105,14 @@ class ConsensusApplyInvariantsTest < Minitest::Test
         end
       end
     end
+
     assert_equal replicas[0].digest, replicas[1].digest
     assert_equal 2, loggers[0].named("consensus.apply_checkpoint").length
-    assert_equal [4, 8], loggers[0].named("consensus.apply_checkpoint").map { |(_l, _e, fields)| fields[:index] }
+    assert_equal([4, 8], loggers[0].named("consensus.apply_checkpoint").map { |(_l, _e, fields)| fields[:index] })
     # A replica whose apply went differently has a different digest.
     diverged = C::KVStateMachine.new(checkpoint_interval: nil)
     10.times { |i| create("k/#{i}", i + 1, diverged) }
+
     refute_equal replicas[0].digest, diverged.digest
   end
 
@@ -115,10 +122,12 @@ class ConsensusApplyInvariantsTest < Minitest::Test
     delete("k/0", 4, machine)
     restored = C::KVStateMachine.new(checkpoint_interval: nil)
     restored.restore(machine.snapshot)
+
     assert_equal machine.effects, restored.effects
     assert_equal machine.digest, restored.digest
     assert_equal 0, restored.tap(&:checkpoint!).violations
     create("k/9", 5, restored)
+
     assert_equal 4, restored.effects["create"]
 
     legacy_document = machine.snapshot_document
@@ -126,6 +135,7 @@ class ConsensusApplyInvariantsTest < Minitest::Test
     legacy_document.delete("digest")
     legacy = C::KVStateMachine.new(checkpoint_interval: nil)
     legacy.restore(C::KVStateMachine.encode_snapshot(legacy_document))
+
     assert_equal({"create" => 2, "update" => 0, "delete" => 0, "rejected" => 0}, legacy.effects)
     assert_equal 0, legacy.tap(&:checkpoint!).violations
   end
@@ -136,8 +146,9 @@ class ConsensusApplyInvariantsTest < Minitest::Test
     create("k/a", 1, machine)
     create("k/a", 2, machine)
     traces = logger.named("consensus.trace.apply")
+
     assert_equal 2, traces.length
-    assert_equal [true, false], traces.map { |(_l, _e, fields)| fields[:ok] }
+    assert_equal([true, false], traces.map { |(_l, _e, fields)| fields[:ok] })
     assert_equal "Rubernetes::Storage::AlreadyExists", traces.last[2][:error]
     assert_equal "1", traces.first[2][:revision]
   end
@@ -163,7 +174,10 @@ class ConsensusApplyInvariantsTest < Minitest::Test
       position = Thread.current[C::Server::POSITION_KEY]
       position&.merge!(index: @index, term: 1, via: :local, node: "fake")
       # A forged acknowledgement: ok with an object, nothing applied.
-      return {"ok" => true, "object" => command["object"].merge("metadata" => command["object"]["metadata"].merge("resourceVersion" => "1"))} if @forge
+      if @forge
+        return {"ok" => true,
+                "object" => command["object"].merge("metadata" => command["object"]["metadata"].merge("resourceVersion" => "1"))}
+      end
 
       @machine.apply(@index, command)
     end
@@ -176,6 +190,7 @@ class ConsensusApplyInvariantsTest < Minitest::Test
     store = C::RaftStore.new(FakeServer.new(logger))
     store.create("k/a", {"metadata" => {"name" => "a"}})
     store.update("k/a", {"metadata" => {"name" => "a"}, "spec" => {"x" => 1}})
+
     assert_empty logger.named("consensus.ack_without_object")
   end
 
@@ -185,6 +200,7 @@ class ConsensusApplyInvariantsTest < Minitest::Test
     store = C::RaftStore.new(FakeServer.new(logger, forge: true))
     store.create("k/a", {"metadata" => {"name" => "a"}})
     violation = logger.named("consensus.ack_without_object").first
+
     refute_nil violation
     assert_equal "k/a", violation[2][:key]
     assert_equal "1", violation[2][:revision]

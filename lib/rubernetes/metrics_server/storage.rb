@@ -100,7 +100,7 @@ module Rubernetes
 
       # uint64Quantity(val, BinarySI, 0).
       def binary_quantity(bytes)
-        bytes = bytes > MAX_INT64 ? (bytes / 10) * 10 : bytes
+        bytes = (bytes / 10) * 10 if bytes > MAX_INT64
         Schema::Quantity.new(Rational(bytes), :binary_si).to_s
       end
 

@@ -124,7 +124,10 @@ class M2APISubresourceBridgeTest < Minitest::Test
       authorizer: ->(**_context) { true }
     )
     @authorization_contexts = []
-    authorizer = ->(**context) { @authorization_contexts << context; true }
+    authorizer = lambda { |**context|
+      @authorization_contexts << context
+      true
+    }
     @api = Rubernetes::API::Server.new(
       node_resolver: {"node-a" => @agent},
       authorizer: authorizer,
@@ -144,10 +147,12 @@ class M2APISubresourceBridgeTest < Minitest::Test
 
   def test_apply_then_reaches_native_runtime_for_all_four_pod_subresources
     discovery = request("GET", "/api/v1")
+
     assert_equal "200", discovery.code
     discovered = JSON.parse(discovery.body).fetch("resources")
     %w[pods/log pods/exec pods/attach pods/portforward].each do |name|
       entry = discovered.find { |resource| resource.fetch("name") == name }
+
       refute_nil entry, name
       assert_includes entry.fetch("verbs"), "get"
     end
@@ -167,6 +172,7 @@ class M2APISubresourceBridgeTest < Minitest::Test
       body: JSON.generate(manifest),
       content_type: "application/apply-patch+yaml"
     )
+
     assert_equal "201", applied.code
 
     expected = {
@@ -184,11 +190,13 @@ class M2APISubresourceBridgeTest < Minitest::Test
     }
     paths.each do |subresource, path|
       response = request("GET", path)
+
       assert_equal "200", response.code, subresource
       assert_equal expected.fetch(subresource), response.body.b, subresource
     end
 
     calls = @connector.calls
+
     assert_equal %i[exec attach port_forward], calls.map(&:first)
     calls.each do |_operation, arguments|
       assert_equal @container.id, arguments.fetch(:container).id
@@ -196,11 +204,13 @@ class M2APISubresourceBridgeTest < Minitest::Test
     end
     assert_equal 4, @authorization_contexts.length
     duplex_contexts = @authorization_contexts.reject { |context| context.fetch(:subresource) == "log" }
+
     duplex_contexts.zip(calls).each do |context, (_operation, arguments)|
       assert_equal arguments.fetch(:request_id), context.fetch(:request_id)
     end
 
     stored = request("GET", "/api/v1/namespaces/default/pods/bridge-pod")
+
     assert_equal "200", stored.code
     assert_equal manifest.fetch("spec"), JSON.parse(stored.body).fetch("spec")
   end
@@ -210,6 +220,7 @@ class M2APISubresourceBridgeTest < Minitest::Test
       "apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "closed"},
       "spec" => {"nodeName" => "node-a", "containers" => [{"name" => "app", "image" => "x"}]}
     }
+
     assert_equal "201", request(
       "PATCH", "/api/v1/namespaces/default/pods/closed?fieldManager=closed",
       body: JSON.generate(manifest), content_type: "application/apply-patch+yaml"
@@ -219,6 +230,7 @@ class M2APISubresourceBridgeTest < Minitest::Test
     no_identity_response = no_identity_api.call(
       method: "GET", path: "/api/v1/namespaces/default/pods/closed/log"
     )
+
     assert_equal 401, no_identity_response.status
 
     no_policy_api = Rubernetes::API::Server.new(
@@ -229,6 +241,7 @@ class M2APISubresourceBridgeTest < Minitest::Test
     no_policy_response = no_policy_api.call(
       method: "GET", path: "/api/v1/namespaces/default/pods/closed/log"
     )
+
     assert_equal 503, no_policy_response.status
 
     no_node_api = Rubernetes::API::Server.new(
@@ -239,6 +252,7 @@ class M2APISubresourceBridgeTest < Minitest::Test
     no_node_response = no_node_api.call(
       method: "GET", path: "/api/v1/namespaces/default/pods/closed/log"
     )
+
     assert_equal 503, no_node_response.status
 
     denied_api = Rubernetes::API::Server.new(
@@ -250,6 +264,7 @@ class M2APISubresourceBridgeTest < Minitest::Test
     denied_response = denied_api.call(
       method: "GET", path: "/api/v1/namespaces/default/pods/closed/log"
     )
+
     assert_equal 403, denied_response.status
   end
 
@@ -258,6 +273,7 @@ class M2APISubresourceBridgeTest < Minitest::Test
       "apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "bridge-pod"},
       "spec" => {"nodeName" => "node-a", "containers" => [{"name" => "app", "image" => "x"}]}
     }
+
     assert_equal "201", request(
       "PATCH", "/api/v1/namespaces/default/pods/bridge-pod?fieldManager=websocket",
       body: JSON.generate(manifest), content_type: "application/apply-patch+yaml"
@@ -277,11 +293,13 @@ class M2APISubresourceBridgeTest < Minitest::Test
     ].join("\r\n") + "\r\n"
     socket.write(request + websocket_frame("stdin\xFF".b, opcode: 0x2))
     headers = Timeout.timeout(2) { read_until(socket, "\r\n\r\n") }
-    assert_match(/HTTP\/1\.1 101 Switching Protocols/, headers)
+
+    assert_match(%r{HTTP/1\.1 101 Switching Protocols}, headers)
     assert_match(/Sec-WebSocket-Protocol: v5\.channel\.k8s\.io/i, headers)
     assert_match(/Sec-WebSocket-Accept:/i, headers)
 
     opcode, payload = Timeout.timeout(2) { read_websocket_frame(socket) }
+
     assert_equal 0x2, opcode
     assert_equal "native-exec\xFF".b, payload
 

@@ -135,7 +135,11 @@ module Rubernetes
               # wire in v1beta1, nil pointers in v1.
               spec.delete("nodeName") if spec.key?("nodeName") && spec["nodeName"].to_s.empty?
               spec.delete("allNodes") if spec.key?("allNodes") && spec["allNodes"] != true
-              spec["devices"] = Array(spec["devices"]).map { |device| direction == :up ? device_up(device) : device_down(device) } if spec.key?("devices")
+              if spec.key?("devices")
+                spec["devices"] = Array(spec["devices"]).map do |device|
+                  direction == :up ? device_up(device) : device_down(device)
+                end
+              end
             end
           end
           object

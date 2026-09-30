@@ -70,7 +70,7 @@ class ApplyBatchParallelDeleteTest < Minitest::Test
 
     Timeout.timeout(30) { adapter.apply_batch(operations) }
 
-    assert_equal [:create] * width + [:delete] * width, adapter.order
+    assert_equal ([:create] * width) + ([:delete] * width), adapter.order
   end
 
   def test_the_returned_results_keep_the_order_of_the_batch

@@ -27,10 +27,14 @@ module Rubernetes
         raise Error, "Ruby manifests require --allow-code" unless allow_code
 
         manifest_path = File.expand_path(path)
-        raise Error, "manifest must be a readable regular file: #{manifest_path}" unless File.file?(manifest_path) && File.readable?(manifest_path)
+        unless File.file?(manifest_path) && File.readable?(manifest_path)
+          raise Error,
+                "manifest must be a readable regular file: #{manifest_path}"
+        end
 
         inherited_environment = environment.to_h do |name|
           raise Error, "invalid environment variable name #{name.inspect}" unless String(name).match?(/\A[A-Z_][A-Z0-9_]*\z/)
+
           [String(name), env.fetch(String(name))]
         end
         output, error, status = run_worker(manifest_path, inherited_environment)

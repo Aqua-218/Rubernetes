@@ -26,13 +26,14 @@ class PodVolumeSubPathRetryTest < Minitest::Test
       pod = {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "p", "namespace" => "ns", "uid" => "u1"},
              "spec" => {"initContainers" => [{"name" => "configure", "volumeMounts" => [{"name" => "secrets", "mountPath" => "/init-secrets"}]}],
                         "containers" => [{"name" => "app", "volumeMounts" => [{"name" => "secrets", "mountPath" => "/srv/config/secrets.yml",
-                                                                                "subPath" => "rails-secrets/secrets.yml", "readOnly" => true}]}],
+                                                                               "subPath" => "rails-secrets/secrets.yml", "readOnly" => true}]}],
                         "volumes" => [{"name" => "secrets", "emptyDir" => {}}]}}
       handle = volumes.prepare(pod)
       mount = handle.dig("mounts", "secrets")
       # The subPath is resolved against the staged volume (the in-memory
       # adapter records the pod-level bind without a real mount).
       source = manager.fetch_record(mount["id"]).to_h.fetch("stages").keys.fetch(0)
+
       assert File.directory?(source), "prepared emptyDir stage: #{mount.inspect}"
 
       args = {volume_name: "secrets", sub_path: "rails-secrets/secrets.yml", container_name: "app", index: 0, readonly: true}
@@ -49,6 +50,7 @@ class PodVolumeSubPathRetryTest < Minitest::Test
       FileUtils.mkdir_p(File.join(source, "rails-secrets"))
       File.write(File.join(source, "rails-secrets", "secrets.yml"), "production: {}\n")
       target = volumes.sub_path(pod, handle, **args)
+
       assert File.exist?(target) || File.symlink?(target), "subPath target published at #{target}"
       assert_equal "rails-secrets/secrets.yml", mount.dig("subPaths", "app:0", "subPath")
     ensure

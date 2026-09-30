@@ -54,7 +54,7 @@ class NetworkHostPortTest < Minitest::Test
   def test_a_dnat_rule_is_installed_for_each_host_port
     runner = Runner.new
     Subject.new(runner: runner).ensure!(pod_uid: "uid-1", pod_ip: "10.0.0.5",
-                                        pod: pod([{"containerPort" => 8080, "hostPort" => 30080}]))
+                                        pod: pod([{"containerPort" => 8080, "hostPort" => 30_080}]))
     dnat = runner.calls.find { |c| c.include?("DNAT") && c.include?("-A") }
 
     refute_nil dnat, "a DNAT rule must be installed"
@@ -77,7 +77,7 @@ class NetworkHostPortTest < Minitest::Test
   def test_a_hairpin_masquerade_accompanies_the_mapping
     runner = Runner.new
     Subject.new(runner: runner).ensure!(pod_uid: "uid-1", pod_ip: "10.0.0.5",
-                                        pod: pod([{"containerPort" => 8080, "hostPort" => 30080}]))
+                                        pod: pod([{"containerPort" => 8080, "hostPort" => 30_080}]))
 
     assert runner.calls.any? { |c| c.include?("MASQUERADE") }, "hairpin traffic needs a masquerade"
   end
@@ -85,10 +85,10 @@ class NetworkHostPortTest < Minitest::Test
   def test_an_existing_rule_is_not_installed_twice
     runner = Runner.new(check_result: true)
     published = Subject.new(runner: runner).ensure!(pod_uid: "uid-1", pod_ip: "10.0.0.5",
-                                                    pod: pod([{"containerPort" => 8080, "hostPort" => 30080}]))
+                                                    pod: pod([{"containerPort" => 8080, "hostPort" => 30_080}]))
 
     assert_empty published
-    refute runner.calls.any? { |c| c.include?("-A") && c.include?("DNAT") }
+    refute(runner.calls.any? { |c| c.include?("-A") && c.include?("DNAT") })
   end
 
   def test_a_pod_with_no_host_ports_touches_nothing
@@ -102,7 +102,7 @@ class NetworkHostPortTest < Minitest::Test
   def test_a_pod_without_an_address_publishes_nothing
     runner = Runner.new
     Subject.new(runner: runner).ensure!(pod_uid: "uid-1", pod_ip: "",
-                                        pod: pod([{"containerPort" => 8080, "hostPort" => 30080}]))
+                                        pod: pod([{"containerPort" => 8080, "hostPort" => 30_080}]))
 
     assert_empty runner.calls
   end
@@ -110,17 +110,17 @@ class NetworkHostPortTest < Minitest::Test
   def test_the_chain_and_its_hooks_are_created
     runner = Runner.new
     Subject.new(runner: runner).ensure!(pod_uid: "uid-1", pod_ip: "10.0.0.5",
-                                        pod: pod([{"containerPort" => 8080, "hostPort" => 30080}]))
+                                        pod: pod([{"containerPort" => 8080, "hostPort" => 30_080}]))
 
-    assert runner.calls.any? { |c| c.include?("-N") && c.include?("KUBE-HOSTPORTS") }
-    assert runner.calls.any? { |c| c.include?("PREROUTING") }
-    assert runner.calls.any? { |c| c.include?("OUTPUT") }
+    assert(runner.calls.any? { |c| c.include?("-N") && c.include?("KUBE-HOSTPORTS") })
+    assert(runner.calls.any? { |c| c.include?("PREROUTING") })
+    assert(runner.calls.any? { |c| c.include?("OUTPUT") })
   end
 
   def test_ipv6_uses_ip6tables_and_bracketed_destinations
     runner = Runner.new
     Subject.new(runner: runner).ensure!(pod_uid: "uid-1", pod_ip: "fd00::5",
-                                        pod: pod([{"containerPort" => 8080, "hostPort" => 30080}]),
+                                        pod: pod([{"containerPort" => 8080, "hostPort" => 30_080}]),
                                         family: :ipv6)
     dnat = runner.calls.find { |c| c.include?("DNAT") && c.include?("-A") }
 

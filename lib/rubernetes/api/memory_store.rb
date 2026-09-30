@@ -3,7 +3,6 @@
 require "securerandom"
 require "base64"
 require "json"
-require "thread"
 require "time"
 
 module Rubernetes
@@ -48,8 +47,8 @@ module Rubernetes
           details["resourceVersion"] = resource_version.to_s unless resource_version.nil?
           details["compactedRevision"] = compacted_revision.to_s unless compacted_revision.nil?
           super(message, reason: "Gone", code: 410,
-                details: details.empty? ? nil : details,
-                resource_version: resource_version, compacted_revision: compacted_revision)
+                         details: details.empty? ? nil : details,
+                         resource_version: resource_version, compacted_revision: compacted_revision)
         end
       end
 
@@ -57,31 +56,31 @@ module Rubernetes
         def initialize(message = "invalid selector", field: nil)
           cause = field && [{"reason" => "FieldValueInvalid", "message" => message.to_s, "field" => field.to_s}]
           super(message, reason: "BadRequest", code: 400,
-                details: cause && {"causes" => cause})
+                         details: cause && {"causes" => cause})
         end
       end
 
       class InvalidContinueToken < Error
         def initialize(message = "invalid continue token")
           super(message, reason: "BadRequest", code: 400,
-                details: {"causes" => [{"reason" => "FieldValueInvalid", "message" => message.to_s,
-                                         "field" => "continue"}]})
+                         details: {"causes" => [{"reason" => "FieldValueInvalid", "message" => message.to_s,
+                                                 "field" => "continue"}]})
         end
       end
 
       class InvalidResourceVersion < Error
         def initialize(message = "invalid resource version")
           super(message, reason: "BadRequest", code: 400,
-                details: {"causes" => [{"reason" => "FieldValueInvalid", "message" => message.to_s,
-                                         "field" => "resourceVersion"}]})
+                         details: {"causes" => [{"reason" => "FieldValueInvalid", "message" => message.to_s,
+                                                 "field" => "resourceVersion"}]})
         end
       end
 
       class InvalidLimit < Error
         def initialize(message = "limit must be a positive integer")
           super(message, reason: "BadRequest", code: 400,
-                details: {"causes" => [{"reason" => "FieldValueInvalid", "message" => message.to_s,
-                                         "field" => "limit"}]})
+                         details: {"causes" => [{"reason" => "FieldValueInvalid", "message" => message.to_s,
+                                                 "field" => "limit"}]})
         end
       end
 
@@ -94,6 +93,7 @@ module Rubernetes
         def [](key)
           return type if key.to_s == "type"
           return object if key.to_s == "object"
+
           nil
         end
 
@@ -111,7 +111,10 @@ module Rubernetes
 
         def self.deep_freeze(value)
           case value
-          when Hash then value.each { |key, item| deep_freeze(key); deep_freeze(item) }
+          when Hash then value.each do |key, item|
+            deep_freeze(key)
+            deep_freeze(item)
+          end
           when Array then value.each { |item| deep_freeze(item) }
           end
           value.freeze
@@ -138,8 +141,8 @@ module Rubernetes
           freeze
         end
 
-        def each(&block)
-          items.each(&block)
+        def each(&)
+          items.each(&)
         end
 
         def [](index)
@@ -150,7 +153,7 @@ module Rubernetes
           items.length
         end
 
-        alias size length
+        alias_method :size, :length
 
         def to_ary
           [items, resource_version]
@@ -178,14 +181,19 @@ module Rubernetes
 
         def next(timeout: nil)
           effective_timeout = timeout.nil? ? @timeout_seconds : timeout
-          deadline = effective_timeout.nil? ? nil :
-                     Process.clock_gettime(Process::CLOCK_MONOTONIC) + effective_timeout.to_f
+          deadline = if effective_timeout.nil?
+                       nil
+                     else
+                       Process.clock_gettime(Process::CLOCK_MONOTONIC) + effective_timeout.to_f
+                     end
           @mutex.synchronize do
             loop do
               return @queue.shift unless @queue.empty?
               return nil if @closed
-              remaining = deadline && deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+              remaining = deadline && (deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC))
               return nil if remaining && remaining <= 0
+
               @condition.wait(@mutex, remaining)
             end
           end
@@ -193,11 +201,13 @@ module Rubernetes
 
         def each(timeout: :default, &block)
           return enum_for(:each, timeout: timeout) unless block
+
           effective_timeout = timeout == :default ? (@timeout_seconds || 0) : timeout
           loop do
             event = self.next(timeout: effective_timeout)
             break if event.nil?
-            block.call(event)
+
+            yield(event)
           end
           self
         end
@@ -220,6 +230,7 @@ module Rubernetes
         def close
           @mutex.synchronize do
             return if @closed
+
             @closed = true
             @condition.broadcast
           end
@@ -246,8 +257,10 @@ module Rubernetes
         @uid_generator = uid_generator
         @history_limit = Integer(history_limit)
         raise ArgumentError, "history_limit must be positive" unless @history_limit.positive?
+
         @compaction_interval = compaction_interval.nil? ? nil : Float(compaction_interval)
         raise ArgumentError, "compaction_interval must be positive" if @compaction_interval && !@compaction_interval.positive?
+
         @mutex = Mutex.new
         @revision = 0
         @objects = {}
@@ -302,10 +315,10 @@ module Rubernetes
           # position against the current snapshot, which is what clients use
           # to finish the listing.
           if continuation[:revision] && @compacted_revision.positive? && continuation[:revision] <= @compacted_revision
-            raise Gone.new("The provided continue parameter is too old to display a consistent list result. " \
+            raise(Gone.new("The provided continue parameter is too old to display a consistent list result. " \
                            "You can start a new list without the continue parameter.",
                            resource_version: continuation[:revision], compacted_revision: @compacted_revision)
-                  .tap { |error| error.details["continue"] = encode_continue_token(start) if error.details }
+              .tap { |error| error.details["continue"] = encode_continue_token(start) if error.details })
           end
           snapshot_revision = continuation[:revision] if continuation[:revision] && normalized_limit
           objects = objects.drop(start) if start.positive?
@@ -327,6 +340,7 @@ module Rubernetes
         normalized_key = key_for(key, gvr: gvr, namespace: namespace, name: name, object: object)
         @mutex.synchronize do
           raise AlreadyExists, "resource #{normalized_key.inspect} already exists" if @objects.key?(normalized_key)
+
           stored = prepare_object(object, normalized_key)
           commit(normalized_key, stored, "ADDED")
         end
@@ -338,6 +352,7 @@ module Rubernetes
         @mutex.synchronize do
           existing = @objects[normalized_key]
           raise NotFound, "resource #{normalized_key.inspect} was not found" if existing.nil?
+
           expected = resource_version || metadata_value(object, "resourceVersion")
           check_expected_version!(existing, expected)
           stored = prepare_object(object, normalized_key, existing: existing)
@@ -349,14 +364,14 @@ module Rubernetes
 
       # Optimistic update helper matching the storage contract. The caller's
       # block runs against a detached copy and may be retried after a conflict.
-      def guaranteed_update(key = nil, resource_version: nil, max_retries: 8, **options)
+      def guaranteed_update(key = nil, resource_version: nil, max_retries: 8, **)
         attempts = 0
         loop do
           attempts += 1
-          current = get(key, resource_version: resource_version, **options)
+          current = get(key, resource_version: resource_version, **)
           candidate = deep_copy(current)
           candidate = yield(candidate)
-          return update(key, candidate, resource_version: metadata_value(current, "resourceVersion"), **options)
+          return update(key, candidate, resource_version: metadata_value(current, "resourceVersion"), **)
         rescue Conflict
           raise if attempts >= Integer(max_retries)
 
@@ -369,6 +384,7 @@ module Rubernetes
         @mutex.synchronize do
           existing = @objects[normalized_key]
           raise NotFound, "resource #{normalized_key.inspect} was not found" if existing.nil?
+
           check_expected_version!(existing, resource_version)
           @objects.delete(normalized_key)
           deleted = deep_copy(existing)
@@ -404,12 +420,15 @@ module Rubernetes
           since = unset_resource_version ? @revision : Integer(resource_version)
           raise InvalidResourceVersion, "resourceVersion must be a non-negative integer" if since.negative?
           raise InvalidResourceVersion, "resourceVersion #{since} is ahead of current revision #{@revision}" if since > @revision
+
           # "Get State and Start at Any": an unset or zero resourceVersion asks
           # for the current state as synthetic ADDED events before the stream.
           initial_state = send_initial_events || unset_resource_version || since.zero?
           since = @revision if normalized_match == "NotOlderThan" || initial_state
-          raise Gone.new("resource version #{since} is older than compacted revision #{@compacted_revision}",
-                         resource_version: since, compacted_revision: @compacted_revision) if since < @compacted_revision
+          if since < @compacted_revision
+            raise Gone.new("resource version #{since} is older than compacted revision #{@compacted_revision}",
+                           resource_version: since, compacted_revision: @compacted_revision)
+          end
           normalized_gvr = gvr && gvr_key(gvr)
           normalized_prefix = prefix && prefix.to_s.sub(%r{\A/}, "")
           selector = normalize_selector(selector, label_selector: label_selector, field_selector: field_selector)
@@ -463,9 +482,7 @@ module Rubernetes
           object["apiVersion"] = resource.api_version.to_s
           object["kind"] = resource.kind.to_s
         end
-        if initial_events_end
-          object["metadata"]["annotations"] = {"k8s.io/initial-events-end" => "true"}
-        end
+        object["metadata"]["annotations"] = {"k8s.io/initial-events-end" => "true"} if initial_events_end
         object
       end
 
@@ -542,9 +559,7 @@ module Rubernetes
 
       def notify_watchers(event)
         @watchers.each_value do |watcher|
-          if event_matches?(event, watcher[:prefix], watcher[:gvr], watcher[:namespace], watcher[:selector])
-            watcher[:queue] << event
-          end
+          watcher[:queue] << event if event_matches?(event, watcher[:prefix], watcher[:gvr], watcher[:namespace], watcher[:selector])
           watcher[:condition].broadcast
         end
       end
@@ -555,6 +570,7 @@ module Rubernetes
 
       def event_matches?(event, prefix, normalized_gvr, namespace, selector)
         return false if event.type == "BOOKMARK"
+
         key = event.key || key_for_object(event.object)
         key_matches?(key, prefix, normalized_gvr, namespace) && (selector.nil? || selector.matches?(event.object))
       end
@@ -563,8 +579,10 @@ module Rubernetes
         parts = key.to_s.split("/")
         return false unless parts.length >= 4 && parts[0] == "registry"
         return false if prefix && !(key == prefix || key.start_with?("#{prefix}/"))
+
         stored_gvr = parts[1...-2].join("/")
         return false if normalized_gvr && stored_gvr != normalized_gvr
+
         expected_namespace = namespace == :cluster ? "_cluster" : namespace.to_s
         return false unless namespace == :all || namespace.nil? || parts[-2] == expected_namespace
 
@@ -573,12 +591,8 @@ module Rubernetes
 
       def key_for(key = nil, gvr: nil, namespace: nil, name: nil, object: nil)
         if key
-          if key.to_s.start_with?("/registry/") || key.to_s.start_with?("registry/")
-            return key.to_s.sub(%r{\A/}, "")
-          end
-          if key.respond_to?(:to_s) && key.to_s.count("/") == 3
-            return key.to_s.sub(%r{\A/}, "")
-          end
+          return key.to_s.sub(%r{\A/}, "") if key.to_s.start_with?("/registry/", "registry/")
+          return key.to_s.sub(%r{\A/}, "") if key.respond_to?(:to_s) && key.to_s.count("/") == 3
         end
         resource = gvr || key
         resource_key = gvr_key(resource)
@@ -600,18 +614,16 @@ module Rubernetes
 
       def gvr_key(value)
         return "" if value.nil?
+
         if value.is_a?(Hash)
           group = value[:group] || value["group"] || ""
           version = value[:version] || value["version"] || "v1"
           resource = value[:resource] || value["resource"] || value[:name] || value["name"]
           return "#{group.to_s.empty? ? version : "#{group}/#{version}"}/#{resource}" if resource
         end
-        if value.respond_to?(:gvr)
-          return gvr_key(value.gvr)
-        end
-        if value.respond_to?(:group_version) && value.respond_to?(:resource)
-          return "#{value.group_version}/#{value.resource}"
-        end
+        return gvr_key(value.gvr) if value.respond_to?(:gvr)
+        return "#{value.group_version}/#{value.resource}" if value.respond_to?(:group_version) && value.respond_to?(:resource)
+
         if value.respond_to?(:group) && value.respond_to?(:version) && value.respond_to?(:resource)
           group = value.group.to_s
           return "#{group.empty? ? value.version : "#{group}/#{value.version}"}/#{value.resource}"
@@ -621,6 +633,7 @@ module Rubernetes
 
       def prepare_object(object, key, existing: nil)
         raise ArgumentError, "resource object must be a Hash" unless object.is_a?(Hash)
+
         prepared = deep_copy(object)
         prepared.delete("_rubernetes_resource")
         metadata = prepared["metadata"] ||= {}
@@ -642,12 +655,14 @@ module Rubernetes
 
       def check_expected_version!(existing, expected)
         return if expected.nil? || expected.to_s.empty?
+
         actual = metadata_value(existing, "resourceVersion").to_s
         raise Conflict, "resourceVersion #{expected.inspect} does not match current #{actual.inspect}" unless expected.to_s == actual
       end
 
       def ensure_resource_version(value)
         return if value.nil? || value.to_s.empty?
+
         requested = Integer(value)
         raise InvalidResourceVersion, "resource version must be non-negative" if requested.negative?
         raise InvalidResourceVersion, "resource version #{requested} is newer than current #{@revision}" if requested > @revision
@@ -657,6 +672,7 @@ module Rubernetes
 
       def normalize_resource_version_match(value)
         return nil if value.nil? || value.to_s.empty?
+
         normalized = value.to_s
         return normalized if %w[Exact NotOlderThan].include?(normalized)
 
@@ -692,6 +708,7 @@ module Rubernetes
       def normalize_selector(selector, label_selector:, field_selector:)
         return selector if selector.respond_to?(:matches?)
         return nil if selector.nil? && label_selector.nil? && field_selector.nil?
+
         Selectors.new(label: selector, label_selector: label_selector, field_selector: field_selector)
       end
 
@@ -761,7 +778,10 @@ module Rubernetes
       def deep_freeze(value)
         case value
         when Hash
-          value.each { |key, item| deep_freeze(key); deep_freeze(item) }
+          value.each do |key, item|
+            deep_freeze(key)
+            deep_freeze(item)
+          end
         when Array
           value.each { |item| deep_freeze(item) }
         end

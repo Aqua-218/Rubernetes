@@ -45,7 +45,9 @@ module Rubernetes
       def convert_list(list, to_version:)
         return convert(list, to_version: to_version) unless list.is_a?(Hash) && list["items"].is_a?(Array)
 
-        list.merge("apiVersion" => to_version, "items" => list["items"].map { |item| convert(item.merge("apiVersion" => item["apiVersion"] || list["apiVersion"]), to_version: to_version) })
+        list.merge("apiVersion" => to_version, "items" => list["items"].map do |item|
+          convert(item.merge("apiVersion" => item["apiVersion"] || list["apiVersion"]), to_version: to_version)
+        end)
       end
 
       # ------------------------------------------------------------ v1 -> v2
@@ -62,9 +64,7 @@ module Rubernetes
         out_spec["minReplicas"] = spec["minReplicas"] unless spec["minReplicas"].nil?
         out_spec["maxReplicas"] = spec["maxReplicas"] if spec.key?("maxReplicas")
         metrics = nil
-        unless spec["targetCPUUtilizationPercentage"].nil?
-          metrics = [cpu_metric(spec["targetCPUUtilizationPercentage"])]
-        end
+        metrics = [cpu_metric(spec["targetCPUUtilizationPercentage"])] unless spec["targetCPUUtilizationPercentage"].nil?
         if annotations.key?(METRIC_SPECS) && (others = parse_json_array(annotations[METRIC_SPECS]))
           converted = others.map { |metric| v1_metric_spec_to_v2(metric) }
           converted << metrics.first if metrics
@@ -90,7 +90,8 @@ module Rubernetes
           out_status["currentMetrics"] = nil
           unless status["currentCPUUtilizationPercentage"].nil?
             out_status["currentMetrics"] = [{"type" => "Resource",
-                                             "resource" => {"name" => "cpu", "current" => {"averageUtilization" => status["currentCPUUtilizationPercentage"]}}}]
+                                             "resource" => {"name" => "cpu",
+                                                            "current" => {"averageUtilization" => status["currentCPUUtilizationPercentage"]}}}]
           end
           if annotations.key?(METRIC_STATUSES) && (statuses = parse_json_array(annotations[METRIC_STATUSES]))
             out_status["currentMetrics"] = statuses.map { |metric| v1_metric_status_to_v2(metric) }
@@ -114,7 +115,9 @@ module Rubernetes
         rules = deep_copy(defaults)
         return rules unless from.is_a?(Hash)
 
-        %w[selectPolicy stabilizationWindowSeconds policies tolerance].each { |key| rules[key] = deep_copy(from[key]) unless from[key].nil? }
+        %w[selectPolicy stabilizationWindowSeconds policies tolerance].each do |key|
+          rules[key] = deep_copy(from[key]) unless from[key].nil?
+        end
         rules
       end
 
@@ -151,7 +154,8 @@ module Rubernetes
         end
         if (resource = field(metric, "resource"))
           out["resource"] = {"name" => field(resource, "name").to_s,
-                             "target" => resource_target(field(resource, "targetAverageUtilization"), field(resource, "targetAverageValue"))}
+                             "target" => resource_target(field(resource, "targetAverageUtilization"),
+                                                         field(resource, "targetAverageValue"))}
         end
         if (container = field(metric, "containerResource"))
           out["containerResource"] = {"name" => field(container, "name").to_s, "container" => field(container, "container").to_s,
@@ -189,7 +193,8 @@ module Rubernetes
         end
         if (resource = field(metric, "resource"))
           out["resource"] = {"name" => field(resource, "name").to_s,
-                             "current" => resource_current(field(resource, "currentAverageUtilization"), field(resource, "currentAverageValue"))}
+                             "current" => resource_current(field(resource, "currentAverageUtilization"),
+                                                           field(resource, "currentAverageValue"))}
         end
         if (container = field(metric, "containerResource"))
           out["containerResource"] = {"name" => field(container, "name").to_s, "container" => field(container, "container").to_s,
@@ -217,7 +222,7 @@ module Rubernetes
       end
 
       def cross_reference(reference)
-        reference = reference.is_a?(Hash) ? reference : {}
+        reference = {} unless reference.is_a?(Hash)
         result = {"kind" => field(reference, "kind").to_s, "name" => field(reference, "name").to_s}
         api_version = field(reference, "apiVersion").to_s
         result["apiVersion"] = api_version unless api_version.empty?
@@ -329,13 +334,15 @@ module Rubernetes
         end
         if (resource = metric["resource"]).is_a?(Hash)
           entry = {"name" => resource["name"].to_s}
-          entry["targetAverageUtilization"] = resource.dig("target", "averageUtilization") unless resource.dig("target", "averageUtilization").nil?
+          entry["targetAverageUtilization"] = resource.dig("target", "averageUtilization") unless resource.dig("target",
+                                                                                                               "averageUtilization").nil?
           entry["targetAverageValue"] = resource.dig("target", "averageValue") unless resource.dig("target", "averageValue").nil?
           out["resource"] = entry
         end
         if (container = metric["containerResource"]).is_a?(Hash)
           entry = {"name" => container["name"].to_s}
-          entry["targetAverageUtilization"] = container.dig("target", "averageUtilization") unless container.dig("target", "averageUtilization").nil?
+          entry["targetAverageUtilization"] = container.dig("target", "averageUtilization") unless container.dig("target",
+                                                                                                                 "averageUtilization").nil?
           entry["targetAverageValue"] = container.dig("target", "averageValue") unless container.dig("target", "averageValue").nil?
           entry["container"] = container["container"].to_s
           out["containerResource"] = entry
@@ -366,13 +373,15 @@ module Rubernetes
         end
         if (resource = metric["resource"]).is_a?(Hash)
           entry = {"name" => resource["name"].to_s}
-          entry["currentAverageUtilization"] = resource.dig("current", "averageUtilization") unless resource.dig("current", "averageUtilization").nil?
+          entry["currentAverageUtilization"] = resource.dig("current", "averageUtilization") unless resource.dig("current",
+                                                                                                                 "averageUtilization").nil?
           entry["currentAverageValue"] = resource.dig("current", "averageValue") || "0"
           out["resource"] = entry
         end
         if (container = metric["containerResource"]).is_a?(Hash)
           entry = {"name" => container["name"].to_s}
-          entry["currentAverageUtilization"] = container.dig("current", "averageUtilization") unless container.dig("current", "averageUtilization").nil?
+          entry["currentAverageUtilization"] = container.dig("current", "averageUtilization") unless container.dig("current",
+                                                                                                                   "averageUtilization").nil?
           entry["currentAverageValue"] = container.dig("current", "averageValue") || "0"
           entry["container"] = container["container"].to_s
           out["containerResource"] = entry
@@ -388,7 +397,7 @@ module Rubernetes
       end
 
       def v1_cross_reference(reference)
-        reference = reference.is_a?(Hash) ? reference : {}
+        reference = {} unless reference.is_a?(Hash)
         result = {"kind" => reference["kind"].to_s, "name" => reference["name"].to_s}
         result["apiVersion"] = reference["apiVersion"].to_s unless reference["apiVersion"].to_s.empty?
         result
@@ -408,9 +417,14 @@ module Rubernetes
       def internal_rules(rules)
         return nil unless rules.is_a?(Hash)
 
-        policies = rules["policies"].nil? ? nil : Array(rules["policies"]).map do |policy|
-          {"Type" => policy["type"].to_s, "Value" => policy["value"].to_i, "PeriodSeconds" => policy["periodSeconds"].to_i}
-        end
+        policies = if rules["policies"].nil?
+                     nil
+                   else
+                     Array(rules["policies"]).map do |policy|
+                       {"Type" => policy["type"].to_s, "Value" => policy["value"].to_i,
+                        "PeriodSeconds" => policy["periodSeconds"].to_i}
+                     end
+                   end
         {"StabilizationWindowSeconds" => rules["stabilizationWindowSeconds"], "SelectPolicy" => rules["selectPolicy"],
          "Policies" => policies, "Tolerance" => rules["tolerance"]}
       end
@@ -438,7 +452,11 @@ module Rubernetes
 
       def parse_json_array(text)
         value = JSON.parse(text.to_s)
-        value.nil? ? [] : (value.is_a?(Array) ? value : nil)
+        if value.nil?
+          []
+        else
+          (value.is_a?(Array) ? value : nil)
+        end
       rescue JSON::ParserError
         nil
       end

@@ -103,26 +103,32 @@ class NodeDRALifecycleTest < Minitest::Test
 
   def test_claims_are_prepared_before_the_sandbox_and_cdi_reaches_the_container
     @lifecycle.start(pod)
+
     assert_equal :prepare, @runtime.calls.first
     assert_equal :sandbox, @runtime.calls[1], "prepared before the sandbox"
     app = @runtime.specs.fetch("app")
+
     assert_equal [{"name" => "VENDOR", "value" => "example"}, {"name" => "GPU", "value" => "gpu-0"}], app["env"]
     assert_equal [{"name" => "cdi-mount-0", "source" => @dir, "destination" => "/opt/gpu", "readonly" => true, "propagation" => "None"}],
                  app["mounts"]
     assert_empty @runtime.specs.fetch("plain")["env"], "a container that names no claim gets nothing"
 
     @lifecycle.terminate(pod)
+
     assert_equal [[:prepare, "p"], [:unprepare, "p"]], @dra.calls
   end
 
   def test_a_preparation_failure_keeps_the_pod_creating_and_is_reported
     @dra.fail_prepare = true
     result = @lifecycle.start(pod)
+
     refute_includes @runtime.calls, :sandbox
     record = @lifecycle.send(:record, "uid-p")
+
     assert_equal "Pending", record[:phase]
     assert_equal "ContainerCreating", record[:reason]
     failure = record[:events].find { |event| event["type"] == "pod.dra_prepare_failed" }
+
     assert_equal "Failed to prepare dynamic resources: DRA driver gpu.example.com is not registered", failure["message"]
     refute record[:events].any? { |event| event["type"] == "pod.failed" }, "no second, generic Failed event"
     _ = result
@@ -132,6 +138,7 @@ class NodeDRALifecycleTest < Minitest::Test
     File.delete(File.join(@dir, "cdi", "gpu.json"))
     @lifecycle.start(pod)
     record = @lifecycle.send(:record, "uid-p")
+
     assert_equal "CreateContainerError", record[:reason]
     assert_includes record[:error], "CDI device injection failed: unresolvable CDI devices example.com/gpu=gpu-0"
   end

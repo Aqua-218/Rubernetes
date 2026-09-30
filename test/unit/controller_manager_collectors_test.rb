@@ -31,16 +31,21 @@ class ControllerManagerCollectorsTest < Minitest::Test
   def test_resource_claims_by_allocation_admin_access_and_source
     claims = [{"metadata" => {"annotations" => {"resource.kubernetes.io/pod-claim-name" => "gpu"}}, "spec" => {}},
               {"metadata" => {"annotations" => {"resource.kubernetes.io/pod-claim-name" => "gpu"}}, "spec" => {}},
-              {"metadata" => {}, "spec" => {"devices" => {"requests" => [{"exactly" => {"adminAccess" => true}}]}}, "status" => {"allocation" => {}}}]
+              {"metadata" => {}, "spec" => {"devices" => {"requests" => [{"exactly" => {"adminAccess" => true}}]}},
+               "status" => {"allocation" => {}}}]
     metrics = registry
     service(%w[ResourceClaim].zip([claims]).to_h, ["resourceclaim-controller"]).send(:collect_resource_claims, metrics)
     text = metrics.render
-    assert_includes text, %(resourceclaim_controller_resource_claims{admin_access="false",allocated="false",source="resource_claim_template"} 2)
+
+    assert_includes text,
+                    %(resourceclaim_controller_resource_claims{admin_access="false",allocated="false",source="resource_claim_template"} 2)
     assert_includes text, %(resourceclaim_controller_resource_claims{admin_access="true",allocated="true",source=""} 1)
-    assert_match(/^# HELP resourceclaim_controller_resource_claims \[ALPHA\] Number of ResourceClaims, categorized by allocation status/, text)
+    assert_match(/^# HELP resourceclaim_controller_resource_claims \[ALPHA\] Number of ResourceClaims, categorized by allocation status/,
+                 text)
 
     idle = registry
     service({"ResourceClaim" => claims}, []).send(:collect_resource_claims, idle)
+
     refute_includes idle.render, "resourceclaim_controller_resource_claims"
   end
 
@@ -57,9 +62,12 @@ class ControllerManagerCollectorsTest < Minitest::Test
     metrics = registry
     service(objects, ["persistent-volume-attach-detach-controller"]).send(:collect_attach_detach_state, metrics)
     text = metrics.render
+
     assert_includes text, %(storage_count_attachable_volumes_in_use{node="a",volume_plugin="kubernetes.io/csi:d.example"} 1)
-    assert_includes text, %(attachdetach_controller_total_volumes{plugin_name="kubernetes.io/csi:d.example",state="desired_state_of_world"} 1)
-    assert_includes text, %(attachdetach_controller_total_volumes{plugin_name="kubernetes.io/csi:d.example",state="actual_state_of_world"} 1)
+    assert_includes text,
+                    %(attachdetach_controller_total_volumes{plugin_name="kubernetes.io/csi:d.example",state="desired_state_of_world"} 1)
+    assert_includes text,
+                    %(attachdetach_controller_total_volumes{plugin_name="kubernetes.io/csi:d.example",state="actual_state_of_world"} 1)
     assert_match(/^# TYPE attachdetach_controller_total_volumes gauge$/, text)
   end
 end

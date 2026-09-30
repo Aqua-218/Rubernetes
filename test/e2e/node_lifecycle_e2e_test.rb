@@ -86,13 +86,14 @@ class NodeLifecycleE2ETest < Minitest::Test
     agent.run_once(events: [{"type" => "ADDED", "object" => pod, "resourceVersion" => "1"}], resync: false)
     agent.sync_loop.instance_variable_get(:@workers).drain(timeout: 1)
 
-    assert agent.registered?
-    assert agent.ready?
+    assert_predicate agent, :registered?
+    assert_predicate agent, :ready?
     assert_equal "node-1", api.nodes.first.dig("metadata", "name")
     assert_equal "node-1", api.leases.last.dig("spec", "holderIdentity")
     assert_equal "Running", agent.lifecycle.state("pod-1")
 
     result = agent.lifecycle.terminate(pod)
+
     assert_equal "Succeeded", result.phase
   end
 end

@@ -105,7 +105,7 @@ class NativeRuntimeSecurityTest < Minitest::Test
 
     landlock.restrict_self(ruleset)
 
-    assert_equal([:create, :no_new_privs, :restrict], adapter.calls.map(&:first))
+    assert_equal(%i[create no_new_privs restrict], adapter.calls.map(&:first))
   end
 
   def test_cgroup_path_rejects_components_that_escape_hierarchy
@@ -130,9 +130,11 @@ class NativeRuntimeSecurityTest < Minitest::Test
     adapter.add(sandbox.path, main.path)
 
     cgroup.remove(main)
+
     refute_includes(adapter.deleted, File.dirname(main.path))
 
     cgroup.remove(sandbox)
+
     assert_equal([main.path, sandbox.path, File.dirname(sandbox.path)], adapter.deleted)
   end
 

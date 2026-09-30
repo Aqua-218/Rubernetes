@@ -107,7 +107,10 @@ module Rubernetes
         end
 
         def validate_name!(name)
-          raise VerityError, "invalid verity mapping name #{name.inspect}" unless name.is_a?(String) && name.match?(/\A[a-zA-Z0-9_.-]{1,64}\z/)
+          return if name.is_a?(String) && name.match?(/\A[a-zA-Z0-9_.-]{1,64}\z/)
+
+          raise VerityError,
+                "invalid verity mapping name #{name.inspect}"
         end
       end
     end

@@ -122,11 +122,12 @@ class IdempotentTeardownTest < Minitest::Test
 
   def test_teardown_operations_are_recognised_as_cleanup
     support = Volume::OperationSupport
+
     %w[delete unstage:/a unpublish:pod:/t controller-unpublish:node:1 delete-snapshot:snap].each do |operation|
-      assert(support::CLEANUP_OPERATIONS.match?(operation), "#{operation} should be a cleanup operation")
+      assert_match(support::CLEANUP_OPERATIONS, operation, "#{operation} should be a cleanup operation")
     end
     %w[create stage:/a publish:pod:/t expand snapshot].each do |operation|
-      refute(support::CLEANUP_OPERATIONS.match?(operation), "#{operation} must stay fenced")
+      refute_match(support::CLEANUP_OPERATIONS, operation, "#{operation} must stay fenced")
     end
   end
 

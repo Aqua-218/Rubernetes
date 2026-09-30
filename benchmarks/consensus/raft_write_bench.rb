@@ -49,7 +49,7 @@ end
 
 def command(key)
   {"type" => "create", "key" => key, "object" => {"metadata" => {"name" => key.split("/").last, "namespace" => "bench",
-                                                                  "labels" => {"app" => "bench"}},
+                                                                 "labels" => {"app" => "bench"}},
                                                   "spec" => {"containers" => [{"name" => "c", "image" => "pause:3.9"}]}},
    "request_uid" => nil, "leader_time" => Time.now.to_f}
 end
@@ -97,7 +97,9 @@ if options[:processes]
   servers = {"a" => local}
 else
   servers = ids.to_h do |id|
-    [id, C::Server.new(id: id, cluster_id: "bench", data_directory: File.join(root, id), bundle: bundles[id], initial_voters: ids, timing: timing)]
+    [id,
+     C::Server.new(id: id, cluster_id: "bench", data_directory: File.join(root, id), bundle: bundles[id], initial_voters: ids,
+                   timing: timing)]
   end
   servers.each_value(&:start)
   servers.each_value { |server| servers.each { |peer_id, peer| server.add_peer(peer_id, peer.address) unless peer.equal?(server) } }
@@ -132,7 +134,9 @@ phase_sums = Hash.new { |hash, key| hash[key] = Hash.new(0.0) }
   end
   latencies = Array.new(queue.length) { queue.pop }
   results[:"propose_concurrent_#{concurrency}"] = summarize(latencies).merge(throughput_per_s: (latencies.length / wall).round(0))
-  results[:"propose_concurrent_#{concurrency}"][:phases_ms] = phase_sums[concurrency].transform_values { |seconds| (seconds * 1000.0 / latencies.length).round(2) }
+  results[:"propose_concurrent_#{concurrency}"][:phases_ms] = phase_sums[concurrency].transform_values do |seconds|
+    (seconds * 1000.0 / latencies.length).round(2)
+  end
 end
 
 samples = rounds.times.map { timed { leader.read_index } }
@@ -170,6 +174,10 @@ else
   results.each do |name, stats|
     extra = stats[:throughput_per_s] ? "#{stats[:throughput_per_s]}/s" : ""
     puts format("%-36s %8.2f %8.2f %8.2f %6d %s", name, stats[:p50], stats[:p90], stats[:p99], stats[:n], extra)
-    puts format("%-36s mean phases: %s", "", stats[:phases_ms].sort_by { |_n, v| -v }.map { |n, v| "#{n}=#{v}" }.join(" ")) if stats[:phases_ms]
+    next unless stats[:phases_ms]
+
+    puts format("%-36s mean phases: %s", "", stats[:phases_ms].sort_by { |_n, v|
+      -v
+    }.map { |n, v| "#{n}=#{v}" }.join(" "))
   end
 end

@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
-
 require_relative "errors"
 require_relative "canonical"
 
@@ -30,8 +28,10 @@ module Rubernetes
         @learners = normalize_ids(learners, "learners")
         raise MembershipError, "voters must not be empty" if @voters.empty?
         raise MembershipError, "old_voters must not be empty in a joint configuration" if @old_voters && @old_voters.empty?
+
         overlap = @learners & @voters
         raise MembershipError, "learners overlap voters: #{overlap.to_a.sort.join(", ")}" unless overlap.empty?
+
         freeze
       end
 

@@ -22,13 +22,14 @@ class ProtobufEncodeCacheTest < Minitest::Test
     first = codec.encode(stored)
 
     assert_same first, codec.encode(stored)
-    assert first.frozen?
+    assert_predicate first, :frozen?
     assert_equal codec.encode(JSON.parse(JSON.generate(stored))), first
   end
 
   def test_a_store_frozen_object_is_cached_too
     stored = Rubernetes::Storage::MemoryStoreSupport.deep_freeze(pod("b"))
     codec = Codec.new
+
     assert_same codec.encode(stored), codec.encode(stored)
   end
 
@@ -42,14 +43,16 @@ class ProtobufEncodeCacheTest < Minitest::Test
 
     refute_equal first, second
     shallow = pod("d").freeze
+
     refute_same codec.encode(shallow), codec.encode(shallow)
   end
 
   def test_field_keys_and_small_varints_are_shared_and_frozen
     wire = Rubernetes::Schema::Codec::Protobuf
     key = wire.encode_key(1, 2)
+
     assert_equal "\x0a".b, key
-    assert key.frozen?
+    assert_predicate key, :frozen?
     assert_same key, wire.encode_key(1, 2)
     assert_equal "\x96\x01".b, wire.encode_varint(150)
     assert_equal "\x7f".b, wire.encode_varint(127)
@@ -57,4 +60,3 @@ class ProtobufEncodeCacheTest < Minitest::Test
     assert_equal [5, 1], wire.read_varint("\x05".b, offset: 0, max_bits: 64, strict: true)
   end
 end
-

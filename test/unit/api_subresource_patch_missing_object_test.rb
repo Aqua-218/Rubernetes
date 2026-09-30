@@ -25,7 +25,7 @@ class APISubresourcePatchMissingObjectTest < Minitest::Test
 
   def apply(path, body)
     call("PATCH", path, body, query: {"fieldManager" => "cm", "force" => "true"},
-                             headers: {"Content-Type" => "application/apply-patch+yaml"})
+                              headers: {"Content-Type" => "application/apply-patch+yaml"})
   end
 
   def test_a_status_apply_for_a_missing_namespace_is_not_found_and_creates_nothing

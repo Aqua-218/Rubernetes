@@ -91,7 +91,8 @@ module Rubernetes
           },
           {
             "name" => "apalache",
-            "command" => [apalache, "check", "--config=#{apalache_config}", "--length=#{Integer(options.fetch(:apalache_length))}", tla_source],
+            "command" => [apalache, "check", "--config=#{apalache_config}", "--length=#{Integer(options.fetch(:apalache_length))}",
+                          tla_source],
             "version_command" => apalache_version_command,
             "version" => version_string(apalache_version_command, /(\d+\.\d+\.\d+)/, "Apalache"),
             "executable_sha256" => Digest::SHA256.file(apalache).hexdigest,
@@ -102,7 +103,9 @@ module Rubernetes
         executions = verifier.send(:execute_profile_tools, tools, manifest)
         failed = executions.reject { |execution| execution["success"] == true }
         unless failed.empty?
-          detail = failed.map { |execution| "#{execution["name"]}: #{execution["status"]} #{execution["message"] || execution["stderr"].to_s[-400..]}" }
+          detail = failed.map do |execution|
+            "#{execution["name"]}: #{execution["status"]} #{execution["message"] || execution["stderr"].to_s[-400..]}"
+          end
           raise "proof tools did not pass: #{detail.join(" | ")}"
         end
         records = executions.map do |execution|
@@ -136,7 +139,8 @@ if $PROGRAM_NAME == __FILE__
     java: "/usr/bin/java",
     tlc_jar: "third_party/cache/tla2tools.jar",
     lean: ENV.fetch("LEAN", "#{Dir.home}/.elan/bin/lean"),
-    apalache: ENV.fetch("APALACHE", File.join(Rubernetes::Verification::M2ProofProfile::ROOT, "build/tools/apalache/apalache-0.62.2/bin/apalache-mc")),
+    apalache: ENV.fetch("APALACHE",
+                        File.join(Rubernetes::Verification::M2ProofProfile::ROOT, "build/tools/apalache/apalache-0.62.2/bin/apalache-mc")),
     apalache_length: 18
   }
   OptionParser.new do |parser|

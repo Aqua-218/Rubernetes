@@ -85,14 +85,10 @@ module Rubernetes
         end
 
         fields = before_separator.split(" ")
-        if fields.length < 6
-          raise MountIdentityError, "mountinfo line #{line_number || "?"} has fewer than six pre-filesystem fields"
-        end
+        raise MountIdentityError, "mountinfo line #{line_number || "?"} has fewer than six pre-filesystem fields" if fields.length < 6
 
         filesystem_fields = after_separator.split(" ", 3)
-        if filesystem_fields.length < 2
-          raise MountIdentityError, "mountinfo line #{line_number || "?"} has incomplete filesystem fields"
-        end
+        raise MountIdentityError, "mountinfo line #{line_number || "?"} has incomplete filesystem fields" if filesystem_fields.length < 2
 
         mount_id, parent_id, device_id, root, mountpoint, options = fields.first(6)
         unless mount_id.match?(/\A\d+\z/) && parent_id.match?(/\A\d+\z/)
@@ -207,7 +203,7 @@ module Rubernetes
         requested_source = requested_source_identity(source, source_handle)
         kernel_target = target_for_mount(normalized_target, target_handle)
         requested_filesystem = filesystem && String(filesystem)
-        requested_filesystem = nil if requested_filesystem&.empty?
+        requested_filesystem = nil if requested_filesystem && requested_filesystem.empty?
         option_flags, option_data, option_names = normalize_options(options, data)
         requested_flags = flags.nil? ? 0 : Integer(flags)
         bind = bind_mount?(requested_filesystem, option_flags, requested_flags)
@@ -262,13 +258,13 @@ module Rubernetes
             end
 
             observed = readback_mount!(normalized_target, requested_filesystem: requested_filesystem,
-                                       bind: bind, readonly: effective_readonly, resource_id: resource_id)
+                                                          bind: bind, readonly: effective_readonly, resource_id: resource_id)
             verify_target_handle!(target_handle, mounted: true,
-                                  mount_identity: descriptor_mount_binding? ? observed : nil)
+                                                 mount_identity: descriptor_mount_binding? ? observed : nil)
             decorate_mount(observed, requested_source: requested_source, dispatch_source: kernel_source,
-                           requested_filesystem: requested_filesystem, requested_options: options,
-                           volume_id: volume_id, stage: stage, readonly: effective_readonly, bind: bind,
-                           mount_api: mount_api)
+                                     requested_filesystem: requested_filesystem, requested_options: options,
+                                     volume_id: volume_id, stage: stage, readonly: effective_readonly, bind: bind,
+                                     mount_api: mount_api)
           rescue StandardError => error
             if mounted
               begin
@@ -294,10 +290,10 @@ module Rubernetes
 
       # Create a directory bind mount.  Linux ignores MS_RDONLY on the first
       # bind call, so mount performs the required bind-remount when needed.
-      def bind(source:, target:, readonly: false, volume_id: nil, options: {}, source_handle: nil, target_handle: nil, **kwargs)
+      def bind(source:, target:, readonly: false, volume_id: nil, options: {}, source_handle: nil, target_handle: nil, **)
         merged_options = options.respond_to?(:to_h) ? options.to_h.merge("bind" => true) : {"bind" => true}
         mount(source: source, target: target, filesystem: nil, readonly: readonly, options: merged_options,
-              volume_id: volume_id, source_handle: source_handle, target_handle: target_handle, **kwargs)
+              volume_id: volume_id, source_handle: source_handle, target_handle: target_handle, **)
       end
 
       # Unmount target with umount2(2) and verify that target disappeared from
@@ -314,7 +310,8 @@ module Rubernetes
 
           verify_identity!(observed, expected) if expected
           if mount_id && observed.fetch("mountId").to_s != mount_id.to_s
-            raise MountIdentityError, "mount id changed at #{normalized_target}: expected #{mount_id}, observed #{observed.fetch("mountId")}"
+            raise MountIdentityError,
+                  "mount id changed at #{normalized_target}: expected #{mount_id}, observed #{observed.fetch("mountId")}"
           end
 
           # Native callers hold the target inode for the complete syscall. A
@@ -323,10 +320,12 @@ module Rubernetes
           verify_target_handle!(target_handle, mounted: true, mount_identity: observed) if target_handle
           kernel_target, kernel_flags = unmount_dispatch(normalized_target, target_handle, observed, Integer(flags))
           syscall_result = unmount_syscall(kernel_target, kernel_flags, resource_id)
-          unless syscall_result == true || syscall_result == 0
+          unless [true, 0].include?(syscall_result)
             begin
               remaining = read_mounts
-              detail = if remaining.any? { |entry| entry.fetch("mountId").to_s == observed.fetch("mountId").to_s && entry.fetch("target") == normalized_target }
+              detail = if remaining.any? do |entry|
+                entry.fetch("mountId").to_s == observed.fetch("mountId").to_s && entry.fetch("target") == normalized_target
+              end
                          "adapter returned #{syscall_result.inspect}; the original mount remains present"
                        else
                          "adapter returned #{syscall_result.inspect}; post-unmount readback cannot prove the outcome"
@@ -377,7 +376,7 @@ module Rubernetes
 
       # Mount a tmpfs for Secret/projected/emptyDir memory volumes.  The
       # existing mount is returned idempotently when it is already tmpfs.
-      def ensure_tmpfs(path, size_limit: nil, volume_id: nil, target_handle: nil, **kwargs)
+      def ensure_tmpfs(path, size_limit: nil, volume_id: nil, target_handle: nil, **)
         normalized_target = normalize_target(path)
         existing = find_mount(normalized_target)
         if existing && existing.fetch("filesystem").casecmp?("tmpfs")
@@ -386,11 +385,9 @@ module Rubernetes
         end
 
         options = {}
-        unless size_limit.nil?
-          options["size"] = Rubernetes::Volume::Types.parse_capacity(size_limit)
-        end
+        options["size"] = Rubernetes::Volume::Types.parse_capacity(size_limit) unless size_limit.nil?
         mount(source: "tmpfs", target: normalized_target, filesystem: "tmpfs", options: options,
-              volume_id: volume_id, target_handle: target_handle, **kwargs)
+              volume_id: volume_id, target_handle: target_handle, **)
       end
 
       # kubelet's SetVolumeOwnership (pkg/volume/volume_linux.go): every file
@@ -539,7 +536,7 @@ module Rubernetes
       # Depth-first walk that never follows a symlink out of the volume: each
       # entry is examined with lstat and a symlink is left alone entirely,
       # which is what upstream does.
-      def walk_volume(root, &block)
+      def walk_volume(root, &)
         stat = File.lstat(root)
         yield(root, stat)
         return unless stat.directory?
@@ -552,7 +549,7 @@ module Rubernetes
             next
           end
           if child_stat.directory?
-            walk_volume(child_path, &block)
+            walk_volume(child_path, &)
           else
             yield(child_path, child_stat)
           end
@@ -565,7 +562,7 @@ module Rubernetes
         File.lchown(nil, group, entry)
         bits = mask
         bits |= (SETGID | EXEC_MASK) if stat.directory?
-        File.chmod(stat.mode & 0o7777 | bits, entry)
+        File.chmod((stat.mode & 0o7777) | bits, entry)
       rescue Errno::ENOENT
         nil
       end
@@ -574,6 +571,7 @@ module Rubernetes
         value = String(target)
         raise PathSecurityError, "mount target must not contain NUL" if value.include?("\0")
         raise PathSecurityError, "mount target must be absolute" unless value.start_with?("/")
+
         File.expand_path(value)
       rescue TypeError
         raise PathSecurityError, "mount target must be a string"
@@ -592,6 +590,7 @@ module Rubernetes
 
         value = String(source)
         raise PathSecurityError, "mount source must not contain NUL" if value.include?("\0")
+
         value
       rescue TypeError
         raise PathSecurityError, "mount source must be a string"
@@ -656,8 +655,10 @@ module Rubernetes
 
         leaf_device = "#{stat.dev_major}:#{stat.dev_minor}"
         unless leaf_device == observed.fetch("deviceId").to_s
-          raise MountIdentityError, "unmount target #{normalized_target.inspect} no longer resolves to mount #{observed.fetch("mountId")} (device #{leaf_device} != #{observed.fetch("deviceId")})"
+          raise MountIdentityError,
+                "unmount target #{normalized_target.inspect} no longer resolves to mount #{observed.fetch("mountId")} (device #{leaf_device} != #{observed.fetch("deviceId")})"
         end
+
         [dispatch_path, flags | UMOUNT_NOFOLLOW]
       rescue SystemCallError => error
         raise MountIdentityError, "unmount target #{normalized_target.inspect} could not be re-resolved: #{error.message}", cause: error
@@ -778,6 +779,7 @@ module Rubernetes
         entries.each do |raw_name, raw_value|
           name = String(raw_name)
           raise ValidationError, "mount option must not contain NUL" if name.include?("\0")
+
           value = raw_value
           normalized_name = name.downcase
           next if value == false || value.nil?
@@ -817,11 +819,13 @@ module Rubernetes
 
         validate_stable_identity!(observed, resource_id)
         if requested_filesystem && !bind && !observed.fetch("filesystem").casecmp?(requested_filesystem)
-          raise MountIdentityError, "mount(2) mounted #{observed.fetch("filesystem")} at #{target.inspect}; expected #{requested_filesystem}"
+          raise MountIdentityError,
+                "mount(2) mounted #{observed.fetch("filesystem")} at #{target.inspect}; expected #{requested_filesystem}"
         end
         if readonly && !observed.fetch("options").split(",").include?("ro")
           raise MountIdentityError, "mount(2) mounted #{target.inspect} writable although read-only was requested"
         end
+
         observed
       end
 
@@ -880,6 +884,7 @@ module Rubernetes
 
         uuid = String(value)
         raise MountIdentityError, "filesystem UUID resolver returned an empty value" if uuid.empty?
+
         uuid.freeze
       rescue TypeError => error
         raise MountIdentityError, "filesystem UUID resolver returned a non-string value", cause: error
@@ -912,7 +917,7 @@ module Rubernetes
       end
 
       def ensure_syscall_success!(result, operation, resource_id)
-        return true if result == true || result == 0
+        return true if [true, 0].include?(result)
 
         raise MountIdentityError, "#{operation} did not report success for #{resource_id}"
       end
@@ -923,12 +928,12 @@ module Rubernetes
 
       def build_cleanup_error(message, resource_id, detail)
         child = MountIdentityError.new(detail, resource_id: resource_id,
-                                       details: {"cleanupErrors" => [{"class" => MountIdentityError.name,
-                                                                       "message" => detail}]})
+                                               details: {"cleanupErrors" => [{"class" => MountIdentityError.name,
+                                                                              "message" => detail}]})
         CleanupError.new(message, resource_id: resource_id,
-                         details: {"cleanupErrors" => [{"class" => child.class.name,
-                                                         "message" => child.message}]},
-                         cleanup_errors: [child])
+                                  details: {"cleanupErrors" => [{"class" => child.class.name,
+                                                                 "message" => child.message}]},
+                                  cleanup_errors: [child])
       end
 
       def cleanup_mounted_target(target, resource_id, target_handle: nil)
@@ -936,9 +941,8 @@ module Rubernetes
         result = @mount.unmount(target: cleanup_target, flags: 0, resource_id: "#{resource_id}:cleanup")
         ensure_syscall_success!(result, "umount2(2) cleanup", "#{resource_id}:cleanup")
         remaining = mount_entry_at(normalize_target(target))
-        if remaining
-          raise MountIdentityError, "cleanup umount2 reported success but #{target.inspect} remains mounted"
-        end
+        raise MountIdentityError, "cleanup umount2 reported success but #{target.inspect} remains mounted" if remaining
+
         true
       rescue StandardError => error
         raise CleanupError.new(

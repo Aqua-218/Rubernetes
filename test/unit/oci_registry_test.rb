@@ -28,13 +28,13 @@ class OCIRegistryTest < Minitest::Test
   end
 
   class StreamingFakeTransport < FakeTransport
-    def stream(method:, uri:, headers:, body:, max_bytes:, &block)
+    def stream(method:, uri:, headers:, body:, max_bytes:, &)
       @requests << {method: method, uri: uri.to_s, headers: headers.dup, body: body, max_bytes: max_bytes}
       response = @responses.shift
       raise "unexpected registry stream request" unless response
 
       payload = response.fetch(:body).to_s.b
-      payload.scan(/.{1,5}/m) { |chunk| block.call(chunk) }
+      payload.scan(/.{1,5}/m, &)
       {status: response.fetch(:status), headers: response.fetch(:headers, {}), body: ""}
     end
   end
@@ -45,9 +45,11 @@ class OCIRegistryTest < Minitest::Test
     transport = FakeTransport.new([])
     %w[rancher/local-path-provisioner:v0.0.31 docker.io/library/redis:7 index.docker.io/library/postgres:16].each do |reference|
       client = Rubernetes::Image::RegistryClient.new(reference, transport: transport)
+
       assert_equal "https://registry-1.docker.io", client.instance_variable_get(:@endpoint).to_s, reference
     end
     other = Rubernetes::Image::RegistryClient.new("registry.k8s.io/pause:3.10", transport: transport)
+
     assert_equal "https://registry.k8s.io", other.instance_variable_get(:@endpoint).to_s
   end
 
@@ -65,15 +67,16 @@ class OCIRegistryTest < Minitest::Test
       "layers" => []
     )
     transport = FakeTransport.new([
-      {status: 200, headers: {"content-type" => "application/json"}, body: manifest},
-      {status: 200, headers: {"docker-content-digest" => config_digest}, body: config_bytes}
-    ])
+                                    {status: 200, headers: {"content-type" => "application/json"}, body: manifest},
+                                    {status: 200, headers: {"docker-content-digest" => config_digest}, body: config_bytes}
+                                  ])
     client = Rubernetes::Image::RegistryClient.new(
       "registry.example/team/app:stable",
       transport: transport
     )
 
     parsed = client.manifest
+
     assert_instance_of Rubernetes::Image::Manifest, parsed
     assert_equal config_bytes, client.fetch_blob(nil, config_digest, expected_size: config_bytes.bytesize)
     assert_equal "/v2/team/app/manifests/stable", URI.parse(transport.requests.first[:uri]).path
@@ -83,10 +86,11 @@ class OCIRegistryTest < Minitest::Test
   def test_bearer_challenge_fetches_token_then_retries_without_leaking_basic_header
     token = "signed-token"
     transport = FakeTransport.new([
-      {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://auth.example/token",service="registry.example"'}, body: ""},
-      {status: 200, headers: {}, body: JSON.generate("token" => token, "expires_in" => 60)},
-      {status: 200, headers: {}, body: "{}"}
-    ])
+                                    {status: 401,
+                                     headers: {"www-authenticate" => 'Bearer realm="https://auth.example/token",service="registry.example"'}, body: ""},
+                                    {status: 200, headers: {}, body: JSON.generate("token" => token, "expires_in" => 60)},
+                                    {status: 200, headers: {}, body: "{}"}
+                                  ])
     client = Rubernetes::Image::RegistryClient.new(
       "registry.example/team/app:stable",
       username: "user",
@@ -97,7 +101,7 @@ class OCIRegistryTest < Minitest::Test
 
     assert_raises(Rubernetes::Image::ManifestError) { client.manifest }
     assert_nil transport.requests.first[:headers]["Authorization"]
-    assert_equal "Basic #{Base64.strict_encode64('user:secret')}", transport.requests[1][:headers]["Authorization"]
+    assert_equal "Basic #{Base64.strict_encode64("user:secret")}", transport.requests[1][:headers]["Authorization"]
     assert_equal "Bearer #{token}", transport.requests[2][:headers]["Authorization"]
   end
 
@@ -110,13 +114,16 @@ class OCIRegistryTest < Minitest::Test
                              "config" => {"mediaType" => Rubernetes::Image::MediaTypes::OCI_IMAGE_CONFIG, "digest" => config_digest, "size" => 2},
                              "layers" => [])
     transport = FakeTransport.new([
-      {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://auth.docker.io/token",service="registry.docker.io"'}, body: ""},
-      {status: 200, headers: {"content-type" => "application/json"}, body: JSON.generate("token" => "anon-token")},
-      {status: 200, headers: {"content-type" => "application/json"}, body: manifest}
-    ])
+                                    {status: 401,
+                                     headers: {"www-authenticate" => 'Bearer realm="https://auth.docker.io/token",service="registry.docker.io"'}, body: ""},
+                                    {status: 200, headers: {"content-type" => "application/json"},
+                                     body: JSON.generate("token" => "anon-token")},
+                                    {status: 200, headers: {"content-type" => "application/json"}, body: manifest}
+                                  ])
     client = Rubernetes::Image::RegistryClient.new("rancher/local-path-provisioner:v0.0.31", transport: transport)
     client.manifest
     token_request = transport.requests[1]
+
     assert_equal "auth.docker.io", URI.parse(token_request[:uri]).host
     refute token_request[:headers].keys.any? { |key| key.to_s.casecmp?("authorization") }, "no credentials go to the realm"
     assert_match(/Bearer anon-token/, transport.requests[2][:headers].find { |key, _| key.to_s.casecmp?("authorization") }&.last.to_s)
@@ -124,10 +131,11 @@ class OCIRegistryTest < Minitest::Test
 
   def test_credentialed_docker_hub_pull_may_use_the_well_known_realm
     transport = FakeTransport.new([
-      {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://auth.docker.io/token",service="registry.docker.io"'}, body: ""},
-      {status: 200, headers: {"content-type" => "application/json"}, body: JSON.generate("token" => "t")},
-      {status: 404, headers: {"content-type" => "application/json"}, body: "{}"}
-    ])
+                                    {status: 401,
+                                     headers: {"www-authenticate" => 'Bearer realm="https://auth.docker.io/token",service="registry.docker.io"'}, body: ""},
+                                    {status: 200, headers: {"content-type" => "application/json"}, body: JSON.generate("token" => "t")},
+                                    {status: 404, headers: {"content-type" => "application/json"}, body: "{}"}
+                                  ])
     client = Rubernetes::Image::RegistryClient.new("docker.io/library/redis:7", username: "u", password: "p", transport: transport)
     assert_raises(Rubernetes::Image::RegistryError) { client.manifest }
     assert_equal "auth.docker.io", URI.parse(transport.requests[1][:uri]).host
@@ -135,8 +143,8 @@ class OCIRegistryTest < Minitest::Test
 
   def test_bearer_challenge_rejects_cross_origin_realm_before_sending_basic_credentials
     transport = FakeTransport.new([
-      {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://auth.example/token",service="registry.example"'}, body: ""}
-    ])
+                                    {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://auth.example/token",service="registry.example"'}, body: ""}
+                                  ])
     client = Rubernetes::Image::RegistryClient.new(
       "registry.example/team/app:stable",
       username: "user",
@@ -151,9 +159,10 @@ class OCIRegistryTest < Minitest::Test
 
   def test_authenticate_parser_rejects_duplicate_and_malformed_parameters
     transport = FakeTransport.new([
-      {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://registry.example/token",realm="https://evil.example/token"'}, body: ""},
-      {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://registry.example/token",service'}, body: ""}
-    ])
+                                    {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://registry.example/token",realm="https://evil.example/token"'},
+                                     body: ""},
+                                    {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://registry.example/token",service'}, body: ""}
+                                  ])
     client = Rubernetes::Image::RegistryClient.new(
       "registry.example/team/app:stable",
       transport: transport
@@ -175,8 +184,8 @@ class OCIRegistryTest < Minitest::Test
 
   def test_streaming_blob_requires_stream_capable_transport
     transport = FakeTransport.new([
-      {status: 200, headers: {}, body: "payload"}
-    ])
+                                    {status: 200, headers: {}, body: "payload"}
+                                  ])
     client = Rubernetes::Image::RegistryClient.new(
       "registry.example/team/app:stable",
       transport: transport
@@ -238,10 +247,10 @@ class OCIRegistryTest < Minitest::Test
       }]
     )
     transport = StreamingFakeTransport.new([
-      {status: 200, headers: {}, body: manifest},
-      {status: 200, headers: {"docker-content-digest" => config_digest}, body: config_bytes},
-      {status: 200, headers: {"docker-content-digest" => layer_digest}, body: layer_bytes}
-    ])
+                                             {status: 200, headers: {}, body: manifest},
+                                             {status: 200, headers: {"docker-content-digest" => config_digest}, body: config_bytes},
+                                             {status: 200, headers: {"docker-content-digest" => layer_digest}, body: layer_bytes}
+                                           ])
 
     Dir.mktmpdir("rubernetes-registry-store-") do |directory|
       store = Rubernetes::Image::ContentStore.new(directory)
@@ -253,15 +262,16 @@ class OCIRegistryTest < Minitest::Test
       assert_equal config_bytes, image.config
       assert_nil image.layers.fetch(0).fetch(:bytes)
       assert_equal layer_bytes, store.fetch(layer_digest)
-      assert_equal 2, transport.requests.count { |request| request.fetch(:method) == "GET" && request.fetch(:uri).include?("/blobs/") }
+      assert_equal(2, transport.requests.count { |request| request.fetch(:method) == "GET" && request.fetch(:uri).include?("/blobs/") })
     end
   end
 
   def test_bearer_token_response_rejects_duplicate_json_keys
     transport = FakeTransport.new([
-      {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://auth.example/token",service="registry.example"'}, body: ""},
-      {status: 200, headers: {}, body: '{"token":"trusted","token":"attacker"}'}
-    ])
+                                    {status: 401,
+                                     headers: {"www-authenticate" => 'Bearer realm="https://auth.example/token",service="registry.example"'}, body: ""},
+                                    {status: 200, headers: {}, body: '{"token":"trusted","token":"attacker"}'}
+                                  ])
     client = Rubernetes::Image::RegistryClient.new(
       "registry.example/team/app:stable",
       username: "user",

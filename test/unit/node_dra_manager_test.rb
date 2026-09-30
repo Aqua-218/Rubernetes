@@ -81,13 +81,13 @@ class NodeDRAManagerTest < Minitest::Test
                                  {"name" => "plain"}]}}
   end
 
-  def with_driver(**options)
+  def with_driver(**)
     Dir.mktmpdir("dra") do |dir|
       registry = File.join(dir, "plugins_registry")
       FileUtils.mkdir_p(registry)
       socket = File.join(registry, "#{DRIVER}-reg.sock")
       log = File.join(dir, "driver.log")
-      pid = serve(socket, log, **options)
+      pid = serve(socket, log, **)
       yield dir, registry, log, pid
     ensure
       GRPCFakeServer.stop(pid)
@@ -104,13 +104,16 @@ class NodeDRAManagerTest < Minitest::Test
                                              monotonic: -> { now })
       plugins = Rubernetes::Node::Plugins::Manager.new(directory: registry, handlers: {"DRAPlugin" => dra}, monotonic: -> { now })
       plugins.reconcile
+
       assert_equal [DRIVER], dra.registered_drivers
       assert_equal [{"notify" => true, "error" => ""}], log_entries(log)
 
       metrics = Rubernetes::Observability::Metrics.new(apiserver: false, process: false, component: "kubelet")
       dra.metrics = metrics
+
       assert dra.prepare_resources(pod)
       text = metrics.render
+
       assert_includes text, %(dra_operations_duration_seconds_count{is_error="false",operation_name="PrepareResources"} 1)
       assert_includes text, %(dra_grpc_operations_duration_seconds_count{driver_name="#{DRIVER}",grpc_status_code="OK",) +
                             %(method_name="/k8s.io.kubelet.pkg.apis.dra.v1.DRAPlugin/NodePrepareResources"} 1)
@@ -121,18 +124,21 @@ class NodeDRAManagerTest < Minitest::Test
                    "a claim without a request name means every device of it"
       assert_empty dra.container_cdi_devices(pod, pod["spec"]["containers"][2])
       dra.prepare_resources(pod)
+
       assert_equal 1, log_entries(log).count { |entry| entry["prepare"] }, "a prepared claim is not prepared again"
 
       # A restart restores the cache from the checkpoint; the claim is
       # prepared again on its next use.
       restarted = Rubernetes::Node::DRAManager.new(client: client, node_name: "node-1", state_directory: File.join(dir, "state"))
+
       assert restarted.pod_might_need_unprepare?("pod-uid")
       restarted.register_plugin(DRIVER, dra.plugin(DRIVER).endpoint, ["v1.DRAPlugin"])
       restarted.prepare_resources(pod)
-      assert_equal 2, log_entries(log).count { |entry| entry["prepare"] }
+
+      assert_equal(2, log_entries(log).count { |entry| entry["prepare"] })
 
       assert restarted.unprepare_resources(pod)
-      assert_equal [{"unprepare" => ["c1"]}], log_entries(log).select { |entry| entry["unprepare"] }
+      assert_equal([{"unprepare" => ["c1"]}], log_entries(log).select { |entry| entry["unprepare"] })
       refute restarted.pod_might_need_unprepare?("pod-uid")
     end
   end
@@ -153,11 +159,13 @@ class NodeDRAManagerTest < Minitest::Test
                                                             "requestMappings" => [{"containerName" => "app", "resourceName" => "example.com/gpu",
                                                                                    "requestName" => "gpu"}]}}}
       dra.prepare_resources(pod)
-      assert_equal [{"prepare" => ["p-extended-resources-abcde"]}], log_entries(log).select { |entry| entry["prepare"] }
+
+      assert_equal([{"prepare" => ["p-extended-resources-abcde"]}], log_entries(log).select { |entry| entry["prepare"] })
       assert_equal ["#{DRIVER}/gpu=gpu-0"], dra.container_cdi_devices(pod, pod["spec"]["containers"][0])
       assert_empty dra.container_cdi_devices(pod, pod["spec"]["containers"][1])
       dra.unprepare_resources(pod)
-      assert_equal [{"unprepare" => ["p-extended-resources-abcde"]}], log_entries(log).select { |entry| entry["unprepare"] }
+
+      assert_equal([{"unprepare" => ["p-extended-resources-abcde"]}], log_entries(log).select { |entry| entry["unprepare"] })
     end
   end
 
@@ -171,10 +179,12 @@ class NodeDRAManagerTest < Minitest::Test
       dra.prepare_resources(pod)
       dra.prepare_resources(pod(uid: "other-uid"))
       dra.unprepare_resources(pod)
-      assert_empty log_entries(log).select { |entry| entry["unprepare"] }
+
+      assert_empty(log_entries(log).select { |entry| entry["unprepare"] })
       # The reconcile pass unprepares for Pods that are no longer active.
       dra.reconcile
-      assert_equal [{"unprepare" => ["c1"]}], log_entries(log).select { |entry| entry["unprepare"] }
+
+      assert_equal([{"unprepare" => ["c1"]}], log_entries(log).select { |entry| entry["unprepare"] })
     end
   end
 
@@ -202,8 +212,10 @@ class NodeDRAManagerTest < Minitest::Test
       client = Client.new({})
       dra = Rubernetes::Node::DRAManager.new(client: client, node_name: "node-1", state_directory: dir, monotonic: -> { now })
       Rubernetes::Node::Plugins::Manager.new(directory: registry, handlers: {"DRAPlugin" => dra}, monotonic: -> { now }).reconcile
+
       assert_empty dra.registered_drivers
       notify = log_entries(log).find { |entry| entry.key?("notify") }
+
       refute notify["notify"]
       assert_match(/\ARegisterPlugin error -- plugin validation failed with err: none of services supported by the plugin/, notify["error"])
     end
@@ -215,9 +227,11 @@ class NodeDRAManagerTest < Minitest::Test
       dra.register_plugin(DRIVER, "/x.sock", ["v1beta1.DRAPlugin"])
       dra.deregister_plugin(DRIVER, "/x.sock")
       dra.reconcile
+
       assert_empty client.deleted
       now = 31.0
       dra.reconcile
+
       assert_equal [["DELETE", "/apis/resource.k8s.io/v1/resourceslices", {"fieldSelector" => "spec.nodeName=node-1,spec.driver=#{DRIVER}"}]],
                    client.deleted
       # Re-registering in time cancels the wipe.
@@ -226,6 +240,7 @@ class NodeDRAManagerTest < Minitest::Test
       dra.register_plugin(DRIVER, "/y.sock", ["v1.DRAPlugin"])
       now = 100.0
       dra.reconcile
+
       assert_equal 1, client.deleted.length
     end
   end
@@ -236,11 +251,13 @@ class NodeDRAManagerTest < Minitest::Test
       dra = Rubernetes::Node::DRAManager.new(client: Client.new({}), node_name: "node-1", state_directory: dir, monotonic: -> { now })
       plugins = Rubernetes::Node::Plugins::Manager.new(directory: registry, handlers: {"DRAPlugin" => dra}, monotonic: -> { now })
       plugins.reconcile
+
       assert_equal [DRIVER], dra.registered_drivers
       Process.kill("TERM", pid)
       Process.wait(pid)
       File.unlink(File.join(registry, "#{DRIVER}-reg.sock")) if File.exist?(File.join(registry, "#{DRIVER}-reg.sock"))
       plugins.reconcile
+
       assert_empty dra.registered_drivers
       assert_empty plugins.registered
     end

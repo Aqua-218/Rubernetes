@@ -29,7 +29,7 @@ class ConsensusForwardSnapshotOutcomeTest < Minitest::Test
     def stop = self
     def address = "127.0.0.1:0"
     def stats = {}
-    def on_message(&_block) = self
+    def on_message(&) = self
     def add_peer(*) = nil
   end
 

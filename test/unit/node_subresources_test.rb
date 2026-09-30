@@ -115,6 +115,7 @@ class NodeSubresourcesTest < Minitest::Test
     assert_equal("out\xFF".b, stream.read)
     assert_equal(5, stream.write("input"))
     stream.close_write
+
     assert_predicate(stream, :half_closed?)
     assert_equal([:exec, "container", ["/bin/sh", "-c", "printf x"], true], @runtime.calls.fetch(0))
   end
@@ -143,9 +144,10 @@ class NodeSubresourcesTest < Minitest::Test
 
     assert_equal("request-forward", stream.request_id)
     assert_equal([8080, 8443], @runtime.calls.fetch(0).fetch(2))
-    assert_equal(2.0, @runtime.calls.fetch(0).fetch(3))
+    assert_in_delta(2.0, @runtime.calls.fetch(0).fetch(3))
     assert_equal("forwarded".b, stream.read)
     stream.close_write
+
     assert_predicate(stream, :half_closed?)
 
     assert_raises(Rubernetes::Node::InvalidRequest) { service.port_forward("container", [0]) }
@@ -168,11 +170,13 @@ class NodeSubresourcesTest < Minitest::Test
 
     writer.write("live")
     writer.flush
+
     assert_equal("live", Timeout.timeout(1) { observed.pop })
     assert_predicate(consumer, :alive?)
 
     writer.close
     consumer.join(1)
+
     refute_predicate(consumer, :alive?)
   ensure
     writer&.close unless writer&.closed?

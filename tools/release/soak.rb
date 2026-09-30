@@ -30,7 +30,7 @@ module Release
         journal: File.join(ROOT, "artifacts/release/soak-journal.jsonl"),
         hours: Float(ENV.fetch("RUBERNETES_SOAK_HOURS", REQUIRED_HOURS)),
         interval: Float(ENV.fetch("RUBERNETES_SOAK_INTERVAL", 60)),
-        kubeconfig: ENV["RUBERNETES_SOAK_KUBECONFIG"]
+        kubeconfig: ENV.fetch("RUBERNETES_SOAK_KUBECONFIG", nil)
       }
       OptionParser.new do |parser|
         parser.on("--output PATH") { |v| options[:output] = v }
@@ -112,7 +112,11 @@ module Release
             "name" => name,
             "pid" => Integer(pid),
             "rss_kb" => File.read("/proc/#{pid}/status")[/VmRSS:\s+(\d+)/, 1].to_i,
-            "open_files" => (Dir.children("/proc/#{pid}/fd").length rescue 0)
+            "open_files" => begin
+              Dir.children("/proc/#{pid}/fd").length
+            rescue StandardError
+              0
+            end
           }
         rescue Errno::ENOENT
           nil
@@ -126,7 +130,11 @@ module Release
                                          "pods,events", "--all-namespaces", "-o", "json")
       return {"available" => false} unless status.success?
 
-      document = JSON.parse(out) rescue {"items" => []}
+      document = begin
+        JSON.parse(out)
+      rescue StandardError
+        {"items" => []}
+      end
       items = document["items"] || []
       {
         "available" => true,
@@ -155,9 +163,15 @@ module Release
       cluster = sample.fetch("cluster")
       return unless cluster["available"]
 
-      findings["stuck_queue"] << {"at" => sample.fetch("at"), "terminating" => cluster["terminating"]} if cluster["terminating"].to_i.positive?
+      if cluster["terminating"].to_i.positive?
+        findings["stuck_queue"] << {"at" => sample.fetch("at"),
+                                    "terminating" => cluster["terminating"]}
+      end
       base_rv = baseline.dig("cluster", "resource_version").to_i
-      findings["lost_commit"] << {"at" => sample.fetch("at"), "resource_version" => cluster["resource_version"]} if base_rv.positive? && cluster["resource_version"].to_i < base_rv
+      return unless base_rv.positive? && cluster["resource_version"].to_i < base_rv
+
+      findings["lost_commit"] << {"at" => sample.fetch("at"),
+                                  "resource_version" => cluster["resource_version"]}
     end
   end
 end

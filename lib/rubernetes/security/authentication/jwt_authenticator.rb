@@ -103,9 +103,7 @@ module Rubernetes
           NAME
         end
 
-        def issuer_url
-          @issuer_url
-        end
+        attr_reader :issuer_url
 
         def authenticate(context)
           token = context.bearer_token
@@ -114,7 +112,7 @@ module Rubernetes
 
         # Returns nil when the token is not for this issuer.
         def authenticate_token(token, _audiences = nil)
-          header, claims = begin
+          _, claims = begin
             JWT.parse(token).first(2)
           rescue JWT::Error
             return nil
@@ -140,7 +138,10 @@ module Rubernetes
           token_audiences = Array(claims["aud"]).map(&:to_s)
           matched = token_audiences & @audiences
           raise AuthenticationError, "jwt: audience #{token_audiences.inspect} does not match" if matched.empty?
-          raise AuthenticationError, "jwt: audience must match all configured audiences" if @match_policy == "MatchAll" && (@audiences - token_audiences).any?
+          if @match_policy == "MatchAll" && (@audiences - token_audiences).any?
+            raise AuthenticationError,
+                  "jwt: audience must match all configured audiences"
+          end
 
           validate_claims!(claims)
           user = map_user(claims)
@@ -163,14 +164,19 @@ module Rubernetes
         def validate_config!
           mappings = @config.fetch("claimMappings", {})
           username = mappings["username"] || {}
-          raise ConfigurationError, "jwt claimMappings.username needs claim or expression" if username["claim"].to_s.empty? && username["expression"].to_s.empty?
+          if username["claim"].to_s.empty? && username["expression"].to_s.empty?
+            raise ConfigurationError,
+                  "jwt claimMappings.username needs claim or expression"
+          end
           if username["claim"] && username["prefix"].nil?
             raise ConfigurationError, "jwt claimMappings.username.prefix is required when claim is set"
           end
+
           groups = mappings["groups"] || {}
           if groups["claim"] && groups["prefix"].nil?
             raise ConfigurationError, "jwt claimMappings.groups.prefix is required when claim is set"
           end
+
           needs_cel = [username, groups, mappings["uid"] || {}].any? { |mapping| mapping["expression"] } ||
                       Array(mappings["extra"]).any? ||
                       Array(@config["claimValidationRules"]).any? { |rule| rule["expression"] } ||
@@ -244,7 +250,10 @@ module Rubernetes
             if rule["claim"]
               value = claims[rule["claim"]]
               raise AuthenticationError, "jwt: claim #{rule["claim"]} is missing" if value.nil?
-              raise AuthenticationError, "jwt: claim #{rule["claim"]} does not equal the required value" unless value.to_s == rule["requiredValue"].to_s
+              unless value.to_s == rule["requiredValue"].to_s
+                raise AuthenticationError,
+                      "jwt: claim #{rule["claim"]} does not equal the required value"
+              end
             elsif rule["expression"]
               result = @cel.evaluate(rule["expression"], {"claims" => claims})
               raise AuthenticationError, "jwt: #{rule["message"] || "claim validation rule failed"}" unless result == true
@@ -271,6 +280,7 @@ module Rubernetes
           if mapping["expression"]
             value = @cel.evaluate(mapping["expression"], {"claims" => claims})
             raise AuthenticationError, "jwt: mapping expression returned no value" if required && (value.nil? || value.to_s.empty?)
+
             return value&.to_s
           end
           value = claims[mapping["claim"]]

@@ -64,7 +64,8 @@ module Rubernetes
     NativeMount = Rubernetes::Volume::NativeMount unless const_defined?(:NativeMount, false)
     NativeDevice = Rubernetes::Volume::NativeDeviceAdapter unless const_defined?(:NativeDevice, false)
     NativeDeviceAdapter = Rubernetes::Volume::NativeDeviceAdapter unless const_defined?(:NativeDeviceAdapter, false)
-    FilesystemUuidResolver = Rubernetes::Volume::NativeDeviceAdapter::FilesystemUuidResolver unless const_defined?(:FilesystemUuidResolver, false)
+    FilesystemUuidResolver = Rubernetes::Volume::NativeDeviceAdapter::FilesystemUuidResolver unless const_defined?(:FilesystemUuidResolver,
+                                                                                                                   false)
 
     module Path
       Openat2 = Rubernetes::Volume::PathSecurity unless const_defined?(:Openat2, false)

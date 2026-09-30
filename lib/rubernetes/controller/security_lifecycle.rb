@@ -38,20 +38,20 @@ module Rubernetes
         resource: "podcertificaterequests", scope: :namespaced
       )
 
-      BOOTSTRAP_SECRET_TYPE = "bootstrap.kubernetes.io/token".freeze
-      BOOTSTRAP_TOKEN_PREFIX = "bootstrap-token-".freeze
-      TOKEN_SECRET_NAMESPACE = "kube-system".freeze
-      BOOTSTRAP_TOKEN_ID_KEY = "token-id".freeze
-      BOOTSTRAP_TOKEN_SECRET_KEY = "token-secret".freeze
-      BOOTSTRAP_TOKEN_USAGE_SIGNING_KEY = "usage-bootstrap-signing".freeze
-      BOOTSTRAP_TOKEN_EXPIRATION_KEY = "expiration".freeze
-      JWS_SIGNATURE_PREFIX = "jws-kubeconfig-".freeze
-      KUBECONFIG_KEY = "kubeconfig".freeze
+      BOOTSTRAP_SECRET_TYPE = "bootstrap.kubernetes.io/token"
+      BOOTSTRAP_TOKEN_PREFIX = "bootstrap-token-"
+      TOKEN_SECRET_NAMESPACE = "kube-system"
+      BOOTSTRAP_TOKEN_ID_KEY = "token-id"
+      BOOTSTRAP_TOKEN_SECRET_KEY = "token-secret"
+      BOOTSTRAP_TOKEN_USAGE_SIGNING_KEY = "usage-bootstrap-signing"
+      BOOTSTRAP_TOKEN_EXPIRATION_KEY = "expiration"
+      JWS_SIGNATURE_PREFIX = "jws-kubeconfig-"
+      KUBECONFIG_KEY = "kubeconfig"
 
-      KUBELET_CLIENT_SIGNER = "kubernetes.io/kube-apiserver-client-kubelet".freeze
-      KUBELET_SERVING_SIGNER = "kubernetes.io/kubelet-serving".freeze
-      KUBE_APISERVER_CLIENT_SIGNER = "kubernetes.io/kube-apiserver-client".freeze
-      LEGACY_UNKNOWN_SIGNER = "kubernetes.io/legacy-unknown".freeze
+      KUBELET_CLIENT_SIGNER = "kubernetes.io/kube-apiserver-client-kubelet"
+      KUBELET_SERVING_SIGNER = "kubernetes.io/kubelet-serving"
+      KUBE_APISERVER_CLIENT_SIGNER = "kubernetes.io/kube-apiserver-client"
+      LEGACY_UNKNOWN_SIGNER = "kubernetes.io/legacy-unknown"
       SUPPORTED_SIGNERS = [KUBELET_CLIENT_SIGNER, KUBELET_SERVING_SIGNER,
                            KUBE_APISERVER_CLIENT_SIGNER, LEGACY_UNKNOWN_SIGNER].freeze
 
@@ -81,8 +81,11 @@ module Rubernetes
       end
 
       def condition_list(resource_or_status)
-        source = resource_or_status.is_a?(Hash) && Support.value(resource_or_status, "status", nil).is_a?(Hash) ?
-                   Support.status(resource_or_status) : resource_or_status
+        source = if resource_or_status.is_a?(Hash) && Support.value(resource_or_status, "status", nil).is_a?(Hash)
+                   Support.status(resource_or_status)
+                 else
+                   resource_or_status
+                 end
         Array(Support.value(source, "conditions", [])).select { |condition| condition.is_a?(Hash) }
       end
 
@@ -153,6 +156,7 @@ module Rubernetes
       # array of strings.  Preserve the bytes before handing them to OpenSSL.
       def binary_value(value)
         return value if value.is_a?(String)
+
         if value.is_a?(Array)
           return value.pack("C*") if value.all? { |item| item.is_a?(Integer) && item.between?(0, 255) }
 
@@ -216,8 +220,8 @@ module Rubernetes
                             request_extension_values(request, :uris).empty?
 
         values = Array(usages).map(&:to_s).sort
-        values == %w[client\ auth digital\ signature].sort ||
-          values == %w[client\ auth digital\ signature key\ encipherment].sort
+        values == ["client auth", "digital signature"].sort ||
+          values == ["client auth", "digital signature", "key encipherment"].sort
       end
 
       def valid_kubelet_serving_request?(request, usages)
@@ -237,15 +241,15 @@ module Rubernetes
                         request_extension_values(request, :ip_addresses).empty?
 
         values = Array(usages).map(&:to_s).sort
-        values == %w[digital\ signature server\ auth].sort ||
-          values == %w[digital\ signature key\ encipherment server\ auth].sort
+        values == ["digital signature", "server auth"].sort ||
+          values == ["digital signature", "key encipherment", "server auth"].sort
       end
 
       def valid_apiserver_client_usages?(usages)
         values = Array(usages).map(&:to_s).sort
-        values == %w[client\ auth].sort ||
-          values == %w[client\ auth digital\ signature].sort ||
-          values == %w[client\ auth digital\ signature key\ encipherment].sort
+        values == ["client auth"].sort ||
+          values == ["client auth", "digital signature"].sort ||
+          values == ["client auth", "digital signature", "key encipherment"].sort
       end
 
       def request_extension_values(request, method)
@@ -292,7 +296,7 @@ module Rubernetes
           target_tag = {dns_names: 2, ip_addresses: 7, email_addresses: 1, uris: 6}.fetch(method)
           if node.tag.to_i == target_tag
             raw = node.value.to_s
-            values << if method == :ip_addresses && raw.bytesize == 4 || method == :ip_addresses && raw.bytesize == 16
+            values << if (method == :ip_addresses && raw.bytesize == 4) || (method == :ip_addresses && raw.bytesize == 16)
                         IPAddr.ntop(raw)
                       else
                         raw
@@ -695,9 +699,7 @@ module Rubernetes
 
         since = time_value(Support.value(condition, "lastTransitionTime", nil)) || now
         wait = STALE_POD_DISRUPTION_TIMEOUT - (now - since)
-        if wait.positive?
-          return ReconcileResult.new(operations: [], controller: name, key: lifecycle_object_key(pod), requeue_after: wait)
-        end
+        return ReconcileResult.new(operations: [], controller: name, key: lifecycle_object_key(pod), requeue_after: wait) if wait.positive?
 
         stamp = now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
         updated = conditions.map do |entry|
@@ -735,7 +737,8 @@ module Rubernetes
 
         status = Support.status(csr)
         return empty_result(csr, controller: name, descriptor: CSR) if certificate_present?(status)
-        return empty_result(csr, controller: name, descriptor: CSR) if true_condition?(status, "Approved") || true_condition?(status, "Denied")
+        return empty_result(csr, controller: name, descriptor: CSR) if true_condition?(status,
+                                                                                       "Approved") || true_condition?(status, "Denied")
         return empty_result(csr, controller: name, descriptor: CSR) unless recognized_kubelet_client_csr?(csr)
 
         message = nil
@@ -851,11 +854,13 @@ module Rubernetes
         specification = Support.spec(csr)
         return empty_result(csr, controller: name, descriptor: CSR) if certificate_present?(status)
         return empty_result(csr, controller: name, descriptor: CSR) unless true_condition?(status, "Approved")
-        return empty_result(csr, controller: name, descriptor: CSR) if true_condition?(status, "Denied") || true_condition?(status, "Failed")
-        return empty_result(csr, controller: name, descriptor: CSR) unless SUPPORTED_SIGNERS.include?(Support.value(specification, "signerName", "").to_s)
+        return empty_result(csr, controller: name, descriptor: CSR) if true_condition?(status,
+                                                                                       "Denied") || true_condition?(status, "Failed")
+        return empty_result(csr, controller: name, descriptor: CSR) unless SUPPORTED_SIGNERS.include?(Support.value(specification,
+                                                                                                                    "signerName", "").to_s)
 
         request = Support.value(specification, "request", nil)
-        parsed_request = nil
+        nil
         if request && !request.to_s.empty?
           parsed_request = parse_certificate_request(request)
           return failed_result(csr, status, "SignerValidationFailure", "unable to parse certificate signing request") unless parsed_request
@@ -868,10 +873,13 @@ module Rubernetes
 
         duration = duration_for(Support.value(specification, "expirationSeconds", nil), cert_ttl_seconds)
         issued_certificate = issue_certificate(csr, signer: signer, certificate: certificate,
-                                               ca_certificate: ca_certificate, ca_key: ca_key,
-                                               duration: duration, now: now,
-                                               usages: Array(Support.value(specification, "usages", [])))
-        raise ArgumentError, "an approved CSR requires signer, certificate, or CA material" if issued_certificate.nil? || issued_certificate.to_s.empty?
+                                                    ca_certificate: ca_certificate, ca_key: ca_key,
+                                                    duration: duration, now: now,
+                                                    usages: Array(Support.value(specification, "usages", [])))
+        if issued_certificate.nil? || issued_certificate.to_s.empty?
+          raise ArgumentError,
+                "an approved CSR requires signer, certificate, or CA material"
+        end
 
         candidate_status = Support.deep_copy(status)
         candidate_status["certificate"] = issued_certificate
@@ -914,9 +922,7 @@ module Rubernetes
       def signer_material(signer_cas, signer_name, ca_certificate, ca_key)
         if signer_cas.is_a?(Hash)
           entry = signer_cas[signer_name] || signer_cas[signer_name.to_sym]
-          if entry.is_a?(Hash)
-            return [entry[:certificate] || entry["certificate"], entry[:key] || entry["key"]]
-          end
+          return [entry[:certificate] || entry["certificate"], entry[:key] || entry["key"]] if entry.is_a?(Hash)
         end
         [ca_certificate, ca_key]
       end
@@ -963,7 +969,10 @@ module Rubernetes
         not_after = duration < SHORT ? now + duration : now + duration - BACKDATE
         not_after = ca.not_after unless not_after < ca.not_after
         raise ArgumentError, "the signer has expired: NotAfter=#{ca.not_after.utc.iso8601}" unless not_before < ca.not_after
-        raise ArgumentError, "refusing to sign a certificate that expired in the past: NotAfter=#{ca.not_after.utc.iso8601}" unless now < ca.not_after
+        unless now < ca.not_after
+          raise ArgumentError,
+                "refusing to sign a certificate that expired in the past: NotAfter=#{ca.not_after.utc.iso8601}"
+        end
 
         issued = OpenSSL::X509::Certificate.new
         issued.serial = OpenSSL::BN.rand(128) # rand.Int below 2^128
@@ -984,7 +993,7 @@ module Rubernetes
         end
         san = requested_subject_alt_names(request)
         issued.add_extension(OpenSSL::X509::Extension.new("subjectAltName", san.value, san.critical?)) if san
-        issued.sign(key, OpenSSL::Digest::SHA256.new)
+        issued.sign(key, OpenSSL::Digest.new("SHA256"))
         # status.certificate is []byte: base64 on the JSON wire.
         Base64.strict_encode64(issued.to_pem)
       rescue OpenSSL::OpenSSLError, ArgumentError => error
@@ -1032,7 +1041,8 @@ module Rubernetes
       def plan(csr, now: Time.now.utc, approved_expiration: CSR_APPROVED_EXPIRATION,
                denied_expiration: CSR_DENIED_EXPIRATION, pending_expiration: CSR_PENDING_EXPIRATION, **_options)
         return empty_result(csr, controller: name, descriptor: CSR) unless Support.kind(csr) == "CertificateSigningRequest"
-        return empty_result(csr, controller: name, descriptor: CSR) unless Support.value(Support.metadata(csr), "deletionTimestamp", nil).nil?
+        return empty_result(csr, controller: name, descriptor: CSR) unless Support.value(Support.metadata(csr), "deletionTimestamp",
+                                                                                         nil).nil?
 
         status = Support.status(csr)
         creation_time = Support.creation_time(csr)
@@ -1074,6 +1084,7 @@ module Rubernetes
           encoded && OpenSSL::X509::Certificate.new(encoded)
         end
         return false unless certificate
+
         certificate.not_after < now
       rescue OpenSSL::OpenSSLError, ArgumentError
         false
@@ -1087,7 +1098,8 @@ module Rubernetes
 
       def plan(request, now: Time.now.utc, threshold_seconds: PCR_EXPIRATION, threshold: nil, **_options)
         return empty_result(request, controller: name, descriptor: PCR) unless Support.kind(request) == "PodCertificateRequest"
-        return empty_result(request, controller: name, descriptor: PCR) unless Support.value(Support.metadata(request), "deletionTimestamp", nil).nil?
+        return empty_result(request, controller: name, descriptor: PCR) unless Support.value(Support.metadata(request),
+                                                                                             "deletionTimestamp", nil).nil?
 
         threshold_seconds = threshold unless threshold.nil?
         threshold_seconds = Float(threshold_seconds)
@@ -1119,13 +1131,15 @@ module Rubernetes
         end
         candidate ||= job
         return empty_result(job, controller: name, descriptor: JOB) unless Support.kind(candidate) == "Job"
-        return empty_result(candidate, controller: name, descriptor: JOB) unless Support.value(Support.metadata(candidate), "deletionTimestamp", nil).nil?
+        return empty_result(candidate, controller: name, descriptor: JOB) unless Support.value(Support.metadata(candidate),
+                                                                                               "deletionTimestamp", nil).nil?
 
         ttl_value = Support.value(Support.spec(candidate), "ttlSecondsAfterFinished", nil)
         return empty_result(candidate, controller: name, descriptor: JOB) if ttl_value.nil?
 
         ttl = Integer(ttl_value)
         raise ArgumentError, "Job TTL must be non-negative" if ttl.negative?
+
         finished_at = job_finish_time(candidate)
         return empty_result(candidate, controller: name, descriptor: JOB) unless finished_at
         return empty_result(candidate, controller: name, descriptor: JOB) if now.to_f < finished_at.to_f + ttl
@@ -1170,7 +1184,7 @@ module Rubernetes
                token_secret_namespace: TOKEN_SECRET_NAMESPACE, secret_data_encoded: false, **_options)
         return empty_result(config_map, controller: name, descriptor: CONFIG_MAP) unless Support.kind(config_map) == "ConfigMap"
         return empty_result(config_map, controller: name, descriptor: CONFIG_MAP) unless Support.name(config_map) == config_map_name.to_s &&
-                                                                                           Support.namespace(config_map).to_s == config_map_namespace.to_s
+                                                                                         Support.namespace(config_map).to_s == config_map_namespace.to_s
 
         adapter = adapter_for(store)
         secrets ||= list_for(adapter, SECRET, namespace: token_secret_namespace)
@@ -1181,9 +1195,9 @@ module Rubernetes
         return empty_result(config_map, controller: name, descriptor: CONFIG_MAP) if content.nil?
 
         tokens = valid_tokens(secrets, now: now, namespace: token_secret_namespace,
-                              secret_data_encoded: secret_data_encoded)
+                                       secret_data_encoded: secret_data_encoded)
         desired_data = Support.deep_copy(data)
-        desired_data.keys.grep(/\A#{Regexp.escape(JWS_SIGNATURE_PREFIX)}/).each { |key| desired_data.delete(key) }
+        desired_data.keys.grep(/\A#{Regexp.escape(JWS_SIGNATURE_PREFIX)}/o).each { |key| desired_data.delete(key) }
         tokens.keys.sort.each do |token_id|
           desired_data[JWS_SIGNATURE_PREFIX + token_id] = detached_signature(content.to_s, token_id, tokens.fetch(token_id))
         end
@@ -1205,7 +1219,8 @@ module Rubernetes
         Array(secrets).sort_by { |secret| [Support.name(secret), Support.uid(secret).to_s] }.each do |secret|
           next unless Support.kind(secret) == "Secret" && Support.namespace(secret).to_s == namespace.to_s
           next unless Support.value(secret, "type", "").to_s == BOOTSTRAP_SECRET_TYPE
-          match = Support.name(secret).match(/\A#{Regexp.escape(BOOTSTRAP_TOKEN_PREFIX)}([a-z0-9]{6})\z/)
+
+          match = Support.name(secret).match(/\A#{Regexp.escape(BOOTSTRAP_TOKEN_PREFIX)}([a-z0-9]{6})\z/o)
           next unless match
 
           token_id = decode_secret_data(secret, BOOTSTRAP_TOKEN_ID_KEY, secret_data_encoded)
@@ -1217,6 +1232,7 @@ module Rubernetes
           expires_at = parse_expiration(expiration)
           next if !expiration.to_s.empty? && expires_at.nil?
           next if expires_at && now.to_f >= expires_at.to_f
+
           selected[token_id] ||= token_secret
         end
         selected
@@ -1246,9 +1262,14 @@ module Rubernetes
 
       def plan(secret, now: Time.now.utc, token_secret_namespace: TOKEN_SECRET_NAMESPACE, secret_data_encoded: false, **_options)
         return empty_result(secret, controller: name, descriptor: SECRET) unless Support.kind(secret) == "Secret"
-        return empty_result(secret, controller: name, descriptor: SECRET) unless Support.namespace(secret).to_s == token_secret_namespace.to_s
-        return empty_result(secret, controller: name, descriptor: SECRET) unless Support.value(secret, "type", "").to_s == BOOTSTRAP_SECRET_TYPE
-        return empty_result(secret, controller: name, descriptor: SECRET) unless Support.value(Support.metadata(secret), "deletionTimestamp", nil).nil?
+        unless Support.namespace(secret).to_s == token_secret_namespace.to_s
+          return empty_result(secret, controller: name,
+                                      descriptor: SECRET)
+        end
+        return empty_result(secret, controller: name, descriptor: SECRET) unless Support.value(secret, "type",
+                                                                                               "").to_s == BOOTSTRAP_SECRET_TYPE
+        return empty_result(secret, controller: name, descriptor: SECRET) unless Support.value(Support.metadata(secret),
+                                                                                               "deletionTimestamp", nil).nil?
 
         expiration = secret_data(secret, BOOTSTRAP_TOKEN_EXPIRATION_KEY)
         if secret_data_encoded
@@ -1281,7 +1302,8 @@ module Rubernetes
                node_cidr_mask_sizes: nil, node_cidr_mask_size: nil, allocator_type: :range,
                cidr_allocator: nil, cloud_allocator: nil, **_options)
         return empty_result(node, controller: name, descriptor: NODE) unless Support.kind(node) == "Node"
-        return empty_result(node, controller: name, descriptor: NODE) unless Support.value(Support.metadata(node), "deletionTimestamp", nil).nil?
+        return empty_result(node, controller: name, descriptor: NODE) unless Support.value(Support.metadata(node), "deletionTimestamp",
+                                                                                           nil).nil?
         return empty_result(node, controller: name, descriptor: NODE) unless pod_cidrs(node).empty?
 
         adapter = adapter_for(store)
@@ -1294,7 +1316,7 @@ module Rubernetes
                    else
                      allocations = []
                      allocate_from_cluster(node, nodes, cluster_cidrs: cluster_cidrs || cluster_cidr,
-                                           node_cidr_mask_sizes: node_cidr_mask_sizes || node_cidr_mask_size, allocations: allocations)
+                                                        node_cidr_mask_sizes: node_cidr_mask_sizes || node_cidr_mask_size, allocations: allocations)
                    end
         assigned = Array(assigned).filter_map { |value| value.to_s unless value.to_s.empty? }
         if assigned.empty?
@@ -1346,7 +1368,9 @@ module Rubernetes
         masks = node_cidr_mask_sizes
         existing = Array(nodes).flat_map { |candidate| pod_cidrs(candidate) }.map { |value| canonical_cidr(value) }
         occupied = existing.dup
-        unassigned = Array(nodes).reject { |candidate| !pod_cidrs(candidate).empty? || !Support.value(Support.metadata(candidate), "deletionTimestamp", nil).nil? }
+        unassigned = Array(nodes).reject do |candidate|
+          !pod_cidrs(candidate).empty? || !Support.value(Support.metadata(candidate), "deletionTimestamp", nil).nil?
+        end
         unassigned = unassigned.sort_by { |candidate| [Support.name(candidate), Support.uid(candidate).to_s] }
         position = unassigned.index do |candidate|
           Support.name(candidate) == Support.name(node) && Support.uid(candidate).to_s == Support.uid(node).to_s
@@ -1448,6 +1472,7 @@ module Rubernetes
         subnet_size = 1 << (bits - node_prefix)
         subnet_count = 1 << (node_prefix - cluster_prefix)
         raise ArgumentError, "cluster CIDR produces too many node subnets" if subnet_count > 1_048_576
+
         Array.new(subnet_count) do |index|
           family = bits == 32 ? Socket::AF_INET : Socket::AF_INET6
           network = IPAddr.new(cluster_network + (index * subnet_size), family)
@@ -1552,9 +1577,7 @@ module Rubernetes
             controller ||= mutex.synchronize { instance ||= implementation.new(definition: definition) }
             options = context[:options] || context["options"] || {}
             options = options.dup if options.is_a?(Hash)
-            if options.is_a?(Hash) && !options.key?(:store) && !options.key?("store")
-              options[:store] = context[:store] || context["store"]
-            end
+            options[:store] = context[:store] || context["store"] if options.is_a?(Hash) && !options.key?(:store) && !options.key?("store")
             controller.plan(resource, **(options.is_a?(Hash) ? options : {}))
           end
           definition = ControllerDefinition.new(
@@ -1610,8 +1633,8 @@ module Rubernetes
           return lambda do |object|
             if kind.to_s == "ConfigMap"
               Support.kind(object) == "ConfigMap" &&
-                Support.name(object) == "cluster-info" &&
-                Support.namespace(object).to_s == "kube-public"
+              Support.name(object) == "cluster-info" &&
+              Support.namespace(object).to_s == "kube-public"
             elsif kind.to_s == "Secret"
               bootstrap_token_secret?(object)
             else
@@ -1620,16 +1643,14 @@ module Rubernetes
           end
         end
 
-        if controller_name.to_s == "token-cleaner-controller"
-          return ->(object) { bootstrap_token_secret?(object) }
-        end
+        return ->(object) { bootstrap_token_secret?(object) } if controller_name.to_s == "token-cleaner-controller"
 
         if controller_name.to_s == "ttl-controller"
           return lambda do |object|
             Support.kind(object) == "Job" &&
-              Support.value(Support.metadata(object), "deletionTimestamp", nil).nil? &&
-              !Support.value(Support.spec(object), "ttlSecondsAfterFinished", nil).nil? &&
-              ttl_job_finished?(object)
+            Support.value(Support.metadata(object), "deletionTimestamp", nil).nil? &&
+            !Support.value(Support.spec(object), "ttlSecondsAfterFinished", nil).nil? &&
+            ttl_job_finished?(object)
           end
         end
 

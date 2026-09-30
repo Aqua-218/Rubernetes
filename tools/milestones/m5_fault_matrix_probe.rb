@@ -65,7 +65,11 @@ module M5FaultMatrixProbe
     # Restart the victims and check they converge to the same state.
     victims.each { |victim| cluster.start(victim.id) }
     converged = wait_for_convergence(cluster)
-    final_keys = cluster.workers.values.map { |worker| worker.request({"op" => "list", "prefix" => "k/"})["items"].map { |item| item["metadata"]["name"] }.sort }.uniq
+    final_keys = cluster.workers.values.map do |worker|
+      worker.request({"op" => "list", "prefix" => "k/"})["items"].map do |item|
+        item["metadata"]["name"]
+      end.sort
+    end.uniq
     terms = cluster.workers.values.map { |worker| worker.status["term"] }.uniq
     {
       "id" => "#{ids.length}_nodes_#{failures}_failures",
@@ -95,7 +99,11 @@ module M5FaultMatrixProbe
     %w[d e].each { |id| cluster.add_worker(id, voters: %w[a b c]) }
     %w[d e].each { |id| cluster.start(id) }
     # Start the joint change, then kill the leader before it can complete.
-    change = Thread.new { leader.request({"op" => "membership", "voters" => %w[a b c d e]}, timeout: 5) rescue nil }
+    change = Thread.new do
+      leader.request({"op" => "membership", "voters" => %w[a b c d e]}, timeout: 5)
+    rescue StandardError
+      nil
+    end
     sleep 0.05
     leader.kill!
     change.join
@@ -114,7 +122,10 @@ module M5FaultMatrixProbe
     cluster.start("a")
     converged = wait_for_convergence(cluster)
     leaders_per_term = Hash.new { |hash, key| hash[key] = [] }
-    cluster.alive.each { |worker| status = worker.status; leaders_per_term[status["term"]] << worker.id if status["role"] == "leader" }
+    cluster.alive.each do |worker|
+      status = worker.status
+      leaders_per_term[status["term"]] << worker.id if status["role"] == "leader"
+    end
     split_brain = leaders_per_term.values.any? { |ids| ids.length > 1 }
     keys = cluster.alive.map { |worker| worker.request({"op" => "list", "prefix" => "m/"})["items"].length }.uniq
     {
@@ -141,7 +152,11 @@ module M5FaultMatrixProbe
     cluster.add_worker("d", voters: %w[a b c])
     cluster.start("d")
     leader = cluster.leader
-    change = Thread.new { leader.request({"op" => "membership", "voters" => %w[a b c d]}, timeout: 30) rescue nil }
+    change = Thread.new do
+      leader.request({"op" => "membership", "voters" => %w[a b c d]}, timeout: 30)
+    rescue StandardError
+      nil
+    end
     sleep 0.2
     leader.kill!
     change.join
@@ -150,7 +165,10 @@ module M5FaultMatrixProbe
     loop do
       status = cluster.workers["d"].status
       break if status["last_applied"] >= 450 && status["snapshot_installs"].to_i.positive?
-      raise "fresh node did not receive a snapshot: #{status.slice("last_applied", "snapshot_installs")}" if M5ProbeSupport.monotonic > deadline
+      if M5ProbeSupport.monotonic > deadline
+        raise "fresh node did not receive a snapshot: #{status.slice("last_applied",
+                                                                     "snapshot_installs")}"
+      end
 
       sleep 0.1
     end

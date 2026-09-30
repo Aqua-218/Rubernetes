@@ -54,6 +54,7 @@ class APIServerCELMetricsTest < Minitest::Test
   def test_a_schema_without_rules_compiles_nothing
     Rubernetes::API::CRD::StructuralSchema.new(SCHEMA["properties"]["status"], cel: Rubernetes::Security::CEL::Evaluator.new)
     text = @metrics.render
+
     assert_equal 0, count(text, "apiserver_cel_compilation_duration_seconds")
     assert_match(/^# HELP apiserver_cel_compilation_duration_seconds \[BETA\] CEL compilation time in seconds\.$/, text)
     assert_match(/^# TYPE apiserver_cel_evaluation_duration_seconds histogram$/, text)

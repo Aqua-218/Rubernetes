@@ -31,7 +31,8 @@ class KubeletAPIAuthTest < Minitest::Test
       when "TokenReview"
         good = object.dig("spec", "token") == "good-token"
         {"status" => {"authenticated" => good,
-                      "user" => {"username" => "system:serviceaccount:ns:metrics", "uid" => "sa-uid", "groups" => ["system:serviceaccounts"]}}}
+                      "user" => {"username" => "system:serviceaccount:ns:metrics", "uid" => "sa-uid",
+                                 "groups" => ["system:serviceaccounts"]}}}
       when "SubjectAccessReview"
         attributes = object.dig("spec", "resourceAttributes")
         {"status" => {"allowed" => @allowed.include?([object.dig("spec", "user"), attributes["subresource"]])}}
@@ -80,8 +81,8 @@ class KubeletAPIAuthTest < Minitest::Test
     cert
   end
 
-  def auth(reviews, **options)
-    Auth.new(client: reviews, node_name: "worker-0", client_ca: [pki[:ca]], **options)
+  def auth(reviews, **)
+    Auth.new(client: reviews, node_name: "worker-0", client_ca: [pki[:ca]], **)
   end
 
   def test_request_attributes_follow_the_path
@@ -94,16 +95,20 @@ class KubeletAPIAuthTest < Minitest::Test
                 "/containerLogs/ns/p/c" => %w[proxy], "/podsx" => %w[proxy]}
     expected.each do |path, subresources|
       attributes = subject.request_attributes(user, Request.new(path: path, method: "GET"))
+
       assert_equal subresources, attributes.map { |attribute| attribute[:subresource] }, path
     end
     assert_equal "create", subject.request_attributes(user, Request.new(path: "/exec/a/b/c", method: "POST")).first[:verb]
     coarse = auth(Reviews.new, fine_grained: false)
-    assert_equal %w[proxy], coarse.request_attributes(user, Request.new(path: "/pods", method: "GET")).map { |a| a[:subresource] }
+
+    assert_equal(%w[proxy], coarse.request_attributes(user, Request.new(path: "/pods", method: "GET")).map { |a| a[:subresource] })
   end
 
   def test_certificates_must_chain_to_the_client_ca_and_allow_client_auth
     subject = auth(Reviews.new)
-    assert_equal "kube-apiserver-kubelet-client", subject.authenticate(Request.new(path: "/", method: "GET", client_certificate: pki[:client])).name
+
+    assert_equal "kube-apiserver-kubelet-client",
+                 subject.authenticate(Request.new(path: "/", method: "GET", client_certificate: pki[:client])).name
     assert_equal ["system:masters"], subject.authenticate(Request.new(path: "/", method: "GET", client_certificate: pki[:client])).groups
     assert_nil subject.authenticate(Request.new(path: "/", method: "GET", client_certificate: pki[:stranger]))
     assert_nil subject.authenticate(Request.new(path: "/", method: "GET", client_certificate: pki[:server_only]))
@@ -116,32 +121,39 @@ class KubeletAPIAuthTest < Minitest::Test
     now = 0.0
     subject = auth(reviews, clock: -> { now })
     request = Request.new(path: "/stats/summary", method: "GET", headers: {"authorization" => "Bearer good-token"})
+
     assert_nil subject.filter(request)
     assert_nil subject.filter(request)
     assert_equal %w[TokenReview SubjectAccessReview], reviews.calls.map(&:first)
     sar = reviews.calls.last.last
+
     assert_equal({"verb" => "get", "group" => "", "version" => "v1", "resource" => "nodes", "subresource" => "stats", "name" => "worker-0"},
                  sar["resourceAttributes"])
     assert_equal ["system:serviceaccounts"], sar["groups"]
     now += 301
     subject.filter(request)
+
     assert_equal 4, reviews.calls.length, "both caches expired (2m / 5m)"
 
     status, = subject.filter(Request.new(path: "/stats/summary", method: "GET", headers: {"authorization" => "Bearer bad"}))
+
     assert_equal 401, status
     status, = subject.filter(Request.new(path: "/stats/summary", method: "GET"))
+
     assert_equal 401, status
   end
 
   def test_denials_name_every_subresource_tried
     subject = auth(Reviews.new)
     status, _headers, body = subject.filter(Request.new(path: "/pods", method: "GET", client_certificate: pki[:client]))
+
     assert_equal 403, status
     assert_equal "Forbidden (user=kube-apiserver-kubelet-client, verb=get, resource=nodes, subresource(s)=[pods proxy])\n", body.join
   end
 
   def test_anonymous_requests_when_enabled
     reviews = Reviews.new(allowed: [["system:anonymous", "healthz"]])
+
     assert_nil auth(reviews, anonymous: true).filter(Request.new(path: "/healthz", method: "GET"))
     assert_equal 401, auth(reviews).filter(Request.new(path: "/healthz", method: "GET")).first
     assert_nil auth(Reviews.new, anonymous: true, authorization_mode: "AlwaysAllow").filter(Request.new(path: "/pods", method: "GET"))
@@ -162,7 +174,7 @@ class KubeletAPIAuthTest < Minitest::Test
         paths[name] = File.join(directory, "#{name}.key")
         File.write(paths[name], key.private_to_pem)
       end
-      reviews = Reviews.new(allowed: [["kube-apiserver-kubelet-client", "pods"]])
+      reviews = Reviews.new(allowed: [%w[kube-apiserver-kubelet-client pods]])
       server = Rubernetes::Node::StreamingServer.new(
         log_service: Object.new, lifecycle: Lifecycle.new, host: "127.0.0.1", port: 0,
         auth: auth(reviews),
@@ -172,22 +184,25 @@ class KubeletAPIAuthTest < Minitest::Test
       server.start(background: true)
       begin
         tls = Rubernetes::API::NodeEndpointResolver::KubeletClientTLS.load(cert_file: paths[:client], key_file: paths[:client_key],
-                                                                          ca_file: paths[:ca])
+                                                                           ca_file: paths[:ca])
         uri = URI("https://127.0.0.1:#{server.port}/pods")
         http = Net::HTTP.new(uri.host, uri.port)
         Rubernetes::API::NodeEndpointResolver::KubeletClientTLS.configure(http, uri, tls)
         response = http.request(Net::HTTP::Get.new(uri))
+
         assert_equal "200", response.code, response.body
         assert_equal "PodList", JSON.parse(response.body)["kind"]
 
         anonymous = Net::HTTP.new(uri.host, uri.port)
         anonymous.use_ssl = true
         anonymous.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
         assert_equal "401", anonymous.request(Net::HTTP::Get.new(uri)).code
 
         stats = URI("https://127.0.0.1:#{server.port}/stats/summary")
         denied = Net::HTTP.new(stats.host, stats.port)
         Rubernetes::API::NodeEndpointResolver::KubeletClientTLS.configure(denied, stats, tls)
+
         assert_equal "403", denied.request(Net::HTTP::Get.new(stats)).code
       ensure
         server.stop

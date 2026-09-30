@@ -37,12 +37,17 @@ module MAPValidationDifferential
     vap = D.policy(random, index)
     spec = vap["spec"]
     rules = spec["matchConstraints"]["resourceRules"]
-    rules.each { |rule| rule["operations"] = [D.pick(random, %w[CREATE UPDATE CREATE])]; rule["scope"] = "*" }
+    rules.each do |rule|
+      rule["operations"] = [D.pick(random, %w[CREATE UPDATE CREATE])]
+      rule["scope"] = "*"
+    end
     mutations = Array.new(random.rand(1..3)) do
       if D.maybe(random, 0.5)
-        {"patchType" => "ApplyConfiguration", "applyConfiguration" => {"expression" => D.maybe(random, 0.15) ? D.random_call(random) : D.pick(random, APPLY)}}
+        {"patchType" => "ApplyConfiguration",
+         "applyConfiguration" => {"expression" => D.maybe(random, 0.15) ? D.random_call(random) : D.pick(random, APPLY)}}
       else
-        {"patchType" => "JSONPatch", "jsonPatch" => {"expression" => D.maybe(random, 0.15) ? D.random_call(random) : D.pick(random, JSON_PATCH)}}
+        {"patchType" => "JSONPatch",
+         "jsonPatch" => {"expression" => D.maybe(random, 0.15) ? D.random_call(random) : D.pick(random, JSON_PATCH)}}
       end
     end
     policy_spec = {"failurePolicy" => "Fail", "reinvocationPolicy" => D.pick(random, %w[Never IfNeeded]),
@@ -51,12 +56,16 @@ module MAPValidationDifferential
     policy_spec["paramKind"] = spec["paramKind"] if spec["paramKind"]
     policy_spec["variables"] = spec["variables"] if spec["variables"]
     if D.maybe(random, 0.3)
-      policy_spec["matchConditions"] = [{"name" => "m0", "expression" => D.pick(random, ["object.metadata.name == 'a'", "'a'", "params.x == 1", "variables.v0 == 1"])}]
+      policy_spec["matchConditions"] =
+        [{"name" => "m0", "expression" => D.pick(random, ["object.metadata.name == 'a'", "'a'", "params.x == 1", "variables.v0 == 1"])}]
     end
-    {"apiVersion" => "admissionregistration.k8s.io/v1", "kind" => "MutatingAdmissionPolicy", "metadata" => {"name" => "m#{index}"}, "spec" => policy_spec}
+    {"apiVersion" => "admissionregistration.k8s.io/v1", "kind" => "MutatingAdmissionPolicy", "metadata" => {"name" => "m#{index}"},
+     "spec" => policy_spec}
   end
 
-  def cel_errors(errors) = errors.select { |error| error.match?(CEL_FIELD) && !error.include?("Syntax error") }.map { |error| error.gsub(/\b_var\d+/, "_var#") }
+  def cel_errors(errors)
+    errors.select { |error| error.match?(CEL_FIELD) && !error.include?("Syntax error") }.map { |error| error.gsub(/\b_var\d+/, "_var#") }
+  end
 
   def run_port(policy)
     KV.mutating_admission_policy_errors(policy).map do |issue|
@@ -70,7 +79,8 @@ module MAPValidationDifferential
     count = argv.include?("--cases") ? Integer(argv[argv.index("--cases") + 1]) : 300
     random = Random.new(seed)
     policies = Array.new(count) { |index| policy(random, index) }
-    oracle = CELTypeCheckingImporter.run(CELTypeCheckingImporter::VALIDATION_PACKAGE, "TestRubernetesMutatingPolicyValidationOracle", policies)
+    oracle = CELTypeCheckingImporter.run(CELTypeCheckingImporter::VALIDATION_PACKAGE, "TestRubernetesMutatingPolicyValidationOracle",
+                                         policies)
     mismatches = policies.zip(oracle).filter_map do |policy, want|
       want = cel_errors(want)
       got = cel_errors(run_port(policy))

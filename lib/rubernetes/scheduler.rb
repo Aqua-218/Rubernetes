@@ -68,8 +68,8 @@ module Rubernetes
       alias build new
       alias configure new
 
-      def scheduler(**options, &block)
-        new(**options, &block)
+      def scheduler(**, &)
+        new(**, &)
       end
 
       def default_registry
@@ -141,7 +141,7 @@ module Rubernetes
 
   # A small top-level convenience mirrors the DSL example in the normative
   # document while preserving the namespaced API for embedders.
-  def self.scheduler(**options, &block)
-    Scheduler.new(**options, &block)
+  def self.scheduler(**, &)
+    Scheduler.new(**, &)
   end
 end

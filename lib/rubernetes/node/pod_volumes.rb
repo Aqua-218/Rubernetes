@@ -192,7 +192,7 @@ module Rubernetes
               target = @volume.direct_path(id, pod: object, fs_group: fs_group)
             else
               mount(id, object, stage_path: stage_path, target: target, readonly: readonly, fs_group: fs_group,
-                    backend: backend, token: "#{token}-#{name}")
+                                backend: backend, token: "#{token}-#{name}")
             end
             mounts[name] = Mount.new(name: name, id: id, path: target, readonly: readonly,
                                      source: source_kind(entry), backend: backend,
@@ -225,7 +225,8 @@ module Rubernetes
 
         validate_sub_path!(sub_path)
         # prepare publishes (never uses directly) any volume a subPath names.
-        raise Error, "volume #{volume_name.inspect} was prepared without a publish; its subPath cannot be bound" if Helpers.key(mount, "direct", false) == true
+        raise Error, "volume #{volume_name.inspect} was prepared without a publish; its subPath cannot be bound" if Helpers.key(mount,
+                                                                                                                                "direct", false) == true
 
         target = File.join(pod_directory(object), "volume-subpaths", container_name.to_s, volume_name.to_s, index.to_s)
         # The publish creates the target itself under an openat2 resolution
@@ -236,7 +237,7 @@ module Rubernetes
         id = Helpers.key(mount, "id")
         token ||= "subpath-#{pod_uid(object)}-#{container_name}-#{volume_name}-#{index}"
         @volume.node_publish(id, object, target, readonly: readonly || Helpers.key(mount, "readonly", false) == true,
-                             token: token, node: node_argument, sub_path: sub_path)
+                                                 token: token, node: node_argument, sub_path: sub_path)
         (mount["subPaths"] ||= {})["#{container_name}:#{index}"] = {"target" => target, "subPath" => sub_path}
         target
       end
@@ -268,7 +269,9 @@ module Rubernetes
             backend.update(files: files) if backend.respond_to?(:update)
           when "projected"
             source = Helpers.key(entry, kind, {})
-            next unless Array(Helpers.key(source, "sources", [])).any? { |projection| status_dependent?(Helpers.key(Helpers.string_keys(projection), "downwardAPI", {})) }
+            next unless Array(Helpers.key(source, "sources", [])).any? do |projection|
+              status_dependent?(Helpers.key(Helpers.string_keys(projection), "downwardAPI", {}))
+            end
 
             namespace = Helpers.key(Helpers.key(object, "metadata", {}), "namespace", "default").to_s
             sources, _modes = projected_sources(source, object, namespace, pod_ip: pod_ip, host_ip: host_ip)
@@ -295,11 +298,11 @@ module Rubernetes
           name = Helpers.key(entry, "name", "").to_s
           mount = Helpers.key(mounts, name, nil)
           next if mount.nil?
-      
+
           id = Helpers.key(mount, "id")
           backend = backends[id]
           next if backend.nil? || !backend.respond_to?(:update)
-      
+
           kind = source_kind(entry)
           source = Helpers.key(entry, kind, {})
           payload = case kind
@@ -309,14 +312,14 @@ module Rubernetes
                     when "projected" then {sources: projected_sources(source, object, namespace, pod_ip: pod_ip, host_ip: host_ip).first}
                     end
           next if payload.nil?
-      
+
           signature = Digest::SHA256.hexdigest(Marshal.dump(payload))
           previous = content_signatures[id]
           content_signatures[id] = signature
           # The first pass after a start records what was projected; only a
           # later change is written.
           next if previous.nil? || previous == signature
-      
+
           backend.update(**payload)
           reapply_ownership(object, entry, mount, id)
           refreshed << name
@@ -325,7 +328,7 @@ module Rubernetes
         end
         refreshed
       end
-      
+
       # PVC resize statuses (v1.ClaimResourceStatus) and conditions.
       NODE_RESIZE_PENDING = "NodeResizePending"
       NODE_RESIZE_IN_PROGRESS = "NodeResizeInProgress"
@@ -400,7 +403,7 @@ module Rubernetes
           name = Helpers.key(entry, "name", "").to_s
           mount = Helpers.key(mounts, name, nil)
           next if mount.nil?
-      
+
           id = Helpers.key(mount, "id")
           backend = backends[id]
           if backend.respond_to?(:pod_certificate_refresh_due?) && backend.pod_certificate_refresh_due?
@@ -409,7 +412,7 @@ module Rubernetes
             rotated << name
           end
           next unless backend.respond_to?(:token_rotation_due?)
-      
+
           if backend.token_rotation_due?(now)
             @volume.rotate_token(id, now: now, token: "rotate-#{pod_uid(object)}-#{name}-#{now.to_f.to_i}")
             reapply_ownership(object, entry, mount, id)
@@ -425,7 +428,7 @@ module Rubernetes
         end
         rotated
       end
-      
+
       def reapply_ownership(pod, entry, mount, id)
         return unless @volume.respond_to?(:reapply_fs_group)
 
@@ -445,11 +448,11 @@ module Rubernetes
       def content_signatures
         @content_signatures ||= {}
       end
-      
+
       def refresh_errors
         @refresh_errors ||= {}
       end
-      
+
       def status_dependent?(source)
         Array(Helpers.key(source || {}, "items", [])).any? do |item|
           Helpers.key(Helpers.key(Helpers.string_keys(item), "fieldRef", {}) || {}, "fieldPath", "").to_s.start_with?("status.")
@@ -487,9 +490,12 @@ module Rubernetes
             end
           end
           unless Helpers.key(mount, "direct", false) == true
-            guard(errors, "unpublish #{id}") { @volume.node_unpublish(id, object, Helpers.key(mount, "path"), token: "#{token}-unpublish-#{id}") }
+            guard(errors, "unpublish #{id}") do
+              @volume.node_unpublish(id, object, Helpers.key(mount, "path"), token: "#{token}-unpublish-#{id}")
+            end
             guard(errors, "unstage #{id}") do
-              @volume.unstage(id, File.join(pod_directory(object), "stages", Helpers.key(mount, "name")), token: "#{token}-unstage-#{id}", node: node_argument)
+              @volume.unstage(id, File.join(pod_directory(object), "stages", Helpers.key(mount, "name")), token: "#{token}-unstage-#{id}",
+                                                                                                          node: node_argument)
             end
             guard(errors, "detach #{id}") { @volume.unpublish(id, @node_name, token: "#{token}-detach-#{id}") } unless @node_name.empty?
           end
@@ -513,7 +519,11 @@ module Rubernetes
               @volume.unstage(id, stage_path, token: "#{token}-unstage-#{id}", node: node_argument)
             end
           end
-          guard(errors, "detach #{id}", ignore: true) { @volume.unpublish(id, @node_name, token: "#{token}-detach-#{id}") } unless @node_name.empty?
+          unless @node_name.empty?
+            guard(errors, "detach #{id}", ignore: true) do
+              @volume.unpublish(id, @node_name, token: "#{token}-detach-#{id}")
+            end
+          end
           guard(errors, "delete #{id}") { @volume.delete_volume(id, token: "#{token}-delete-#{id}") }
         end
         @pod_certificates&.forget_pod(uid) unless keep_certificates
@@ -529,11 +539,9 @@ module Rubernetes
       private
 
       def create(spec, token:)
-        if @volume.respond_to?(:create_volume)
-          @volume.create_volume(spec, token: token)
-        else
-          raise Unsupported, "volume manager does not implement create_volume"
-        end
+        raise Unsupported, "volume manager does not implement create_volume" unless @volume.respond_to?(:create_volume)
+
+        @volume.create_volume(spec, token: token)
       end
 
       # The node itself writes the contents of a Secret, ConfigMap,
@@ -559,7 +567,7 @@ module Rubernetes
         stage_options = fs_group.nil? ? {} : {context: {"fsGroup" => fs_group}}
         @volume.stage(id, stage_path, token: "#{token}-stage", node: node_argument, readonly: stage_readonly, **stage_options)
         @volume.node_publish(id, pod, target, readonly: readonly, token: "#{token}-publish", node: node_argument,
-                             fs_group: fs_group)
+                                              fs_group: fs_group)
       end
 
       def node_argument
@@ -635,7 +643,7 @@ module Rubernetes
         File.binread("/proc/self/mountinfo").each_line.any? do |line|
           next false unless line.include?(needle)
 
-          line.split(" ")[4].to_s.gsub(/\\([0-7]{3})/) { $1.to_i(8).chr } == normalized
+          line.split(" ")[4].to_s.gsub(/\\([0-7]{3})/) { ::Regexp.last_match(1).to_i(8).chr } == normalized
         end
       rescue SystemCallError
         false
@@ -650,7 +658,7 @@ module Rubernetes
 
         prefix = "#{directory}/"
         File.foreach("/proc/self/mountinfo").any? do |line|
-          mountpoint = line.split(" ")[4].to_s.gsub(/\\([0-7]{3})/) { $1.to_i(8).chr }
+          mountpoint = line.split(" ")[4].to_s.gsub(/\\([0-7]{3})/) { ::Regexp.last_match(1).to_i(8).chr }
           mountpoint == directory || mountpoint.start_with?(prefix)
         end
       rescue SystemCallError
@@ -719,12 +727,17 @@ module Rubernetes
           spec = {"name" => name, "backend" => "projected", "sources" => sources, "modes" => modes, "pod" => pod,
                   "podUid" => pod_uid(pod), "defaultMode" => Helpers.key(source, "defaultMode", DEFAULT_MODE)}
           if sources.any? { |projection| projection.is_a?(Hash) && projection.key?("podCertificate") }
-            sources.each { |projection| projection["podCertificate"]["volumeName"] ||= name if projection.is_a?(Hash) && projection["podCertificate"] }
+            sources.each do |projection|
+              projection["podCertificate"]["volumeName"] ||= name if projection.is_a?(Hash) && projection["podCertificate"]
+            end
             spec["podCertificateProvider"] = @pod_certificates
           end
           if sources.any? { |projection| projection.is_a?(Hash) && projection.key?("serviceAccountToken") }
             rotator = @volume.respond_to?(:token_rotator_for) ? @volume.token_rotator_for(pod) : nil
-            raise MissingDependency, "projected serviceAccountToken volume #{name.inspect} needs the node's TokenRequest client" if rotator.nil?
+            if rotator.nil?
+              raise MissingDependency,
+                    "projected serviceAccountToken volume #{name.inspect} needs the node's TokenRequest client"
+            end
 
             spec["tokenRotator"] = rotator
           end
@@ -853,10 +866,11 @@ module Rubernetes
                elsif (csi = Helpers.key(pv_spec, "csi", nil))
                  # The PV's mountOptions reach NodeStage/NodePublish as mount flags.
                  mount_options = Array(Helpers.key(pv_spec, "mountOptions", []))
-                 base.merge("csi" => csi_spec(csi, namespace, pv: true)).merge(mount_options.empty? ? {} : {"mountOptions" => mount_options})
+                 base.merge("csi" => csi_spec(csi, namespace,
+                                              pv: true)).merge(mount_options.empty? ? {} : {"mountOptions" => mount_options})
                else
                  sources = pv_spec.keys - %w[accessModes capacity volumeMode storageClassName persistentVolumeReclaimPolicy
-                                            claimRef nodeAffinity mountOptions]
+                                             claimRef nodeAffinity mountOptions]
                  raise Unsupported, "persistentvolume \"#{pv_name}\" uses unsupported source #{sources.first.inspect}"
                end
         readonly ||= access_modes == ["ReadOnlyMany"]
@@ -1073,7 +1087,10 @@ module Rubernetes
           elsif (bundle = Helpers.key(entry, "clusterTrustBundle", nil))
             cluster_trust_bundle_files(bundle)
           elsif (certificate = Helpers.key(entry, "podCertificate", nil))
-            raise Unsupported, "projected podCertificate needs the PodCertificateRequest feature gate and the node's API client" if @pod_certificates.nil?
+            if @pod_certificates.nil?
+              raise Unsupported,
+                    "projected podCertificate needs the PodCertificateRequest feature gate and the node's API client"
+            end
 
             %w[credentialBundlePath keyPath certificateChainPath].each do |field|
               path = Helpers.key(certificate, field, nil)

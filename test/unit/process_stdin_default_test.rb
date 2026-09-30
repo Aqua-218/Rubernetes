@@ -23,6 +23,7 @@ class ProcessStdinDefaultTest < Minitest::Test
 
     assert_nil process[:stdin], "no stdin handle when the container did not ask for one"
     _pid, status = wait_for_exit(process[:pid], 5) || flunk("sh must exit at EOF on stdin")
+
     assert_equal 0, status.exitstatus
   ensure
     [process[:stdout], process[:stderr], process[:gate]].compact.each { |io| io.close unless io.closed? }
@@ -36,6 +37,7 @@ class ProcessStdinDefaultTest < Minitest::Test
     process[:stdin].write("exit 3\n")
     process[:stdin].close
     _pid, status = wait_for_exit(process[:pid], 5) || flunk("sh must exit once stdin closes")
+
     assert_equal 3, status.exitstatus
   ensure
     [process[:stdout], process[:stderr], process[:gate]].compact.each { |io| io.close unless io.closed? }

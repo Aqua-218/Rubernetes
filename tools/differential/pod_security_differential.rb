@@ -19,7 +19,8 @@ module PodSecurityDifferential
   ORACLE = File.join(ROOT, "test/conformance/kubernetes/podsecurity_oracle/oracle_test.go")
   SOURCE = ENV.fetch("KUBERNETES_SOURCE_ROOT", "/tmp/kubernetes-v1.36.2")
   PS = Rubernetes::Security::PodSecurity
-  VERSIONS = %w[latest v1.0 v1.8 v1.18 v1.19 v1.22 v1.23 v1.24 v1.25 v1.26 v1.27 v1.28 v1.29 v1.30 v1.31 v1.32 v1.33 v1.34 v1.35 v1.36 v1.40].freeze
+  VERSIONS = %w[latest v1.0 v1.8 v1.18 v1.19 v1.22 v1.23 v1.24 v1.25 v1.26 v1.27 v1.28 v1.29 v1.30 v1.31 v1.32 v1.33 v1.34 v1.35 v1.36
+                v1.40].freeze
 
   module_function
 
@@ -54,9 +55,7 @@ module PodSecurityDifferential
     item = {"name" => name, "image" => "img"}
     item["securityContext"] = security_context(random) if maybe(random, 0.7)
     item["ports"] = [{"containerPort" => 80, "hostPort" => pick(random, [0, 8080, 9090])}] if maybe(random, 0.2)
-    if maybe(random, 0.15)
-      item["livenessProbe"] = {"httpGet" => {"port" => 80, "host" => pick(random, ["", "1.2.3.4", "example.com"])}}
-    end
+    item["livenessProbe"] = {"httpGet" => {"port" => 80, "host" => pick(random, ["", "1.2.3.4", "example.com"])}} if maybe(random, 0.15)
     item["lifecycle"] = {"preStop" => {"tcpSocket" => {"port" => 80, "host" => pick(random, ["", "10.0.0.1"])}}} if maybe(random, 0.1)
     item
   end
@@ -72,8 +71,10 @@ module PodSecurityDifferential
     pod_context["runAsNonRoot"] = pick(random, [true, false]) if maybe(random, 0.4)
     pod_context["runAsUser"] = pick(random, [0, 1000]) if maybe(random, 0.2)
     pod_context["seccompProfile"] = {"type" => pick(random, %w[RuntimeDefault Localhost Unconfined])} if maybe(random, 0.4)
-    pod_context["sysctls"] = [{"name" => pick(random, %w[kernel.shm_rmid_forced net.ipv4.tcp_rmem kernel.msgmax net.ipv4.tcp_keepalive_time]),
-                               "value" => "1"}] if maybe(random, 0.2)
+    if maybe(random, 0.2)
+      pod_context["sysctls"] = [{"name" => pick(random, %w[kernel.shm_rmid_forced net.ipv4.tcp_rmem kernel.msgmax net.ipv4.tcp_keepalive_time]),
+                                 "value" => "1"}]
+    end
     pod_context["seLinuxOptions"] = {"type" => pick(random, %w[container_t spc_t])} if maybe(random, 0.1)
     pod_context["windowsOptions"] = {"hostProcess" => true} if maybe(random, 0.05)
     pod_context["appArmorProfile"] = {"type" => pick(random, %w[RuntimeDefault Unconfined])} if maybe(random, 0.1)
@@ -85,8 +86,11 @@ module PodSecurityDifferential
     volumes << {"name" => "img", "image" => {"reference" => "x"}} if maybe(random, 0.1)
     spec["volumes"] = volumes if volumes.any?
     annotations = {}
-    annotations["container.apparmor.security.beta.kubernetes.io/c0"] = pick(random, %w[runtime/default unconfined localhost/p]) if maybe(random, 0.1)
-    annotations["seccomp.security.alpha.kubernetes.io/pod"] = pick(random, %w[runtime/default unconfined docker/default]) if maybe(random, 0.1)
+    annotations["container.apparmor.security.beta.kubernetes.io/c0"] = pick(random, %w[runtime/default unconfined localhost/p]) if maybe(
+      random, 0.1
+    )
+    annotations["seccomp.security.alpha.kubernetes.io/pod"] = pick(random, %w[runtime/default unconfined docker/default]) if maybe(random,
+                                                                                                                                   0.1)
     annotations["container.seccomp.security.alpha.kubernetes.io/c0"] = pick(random, %w[unconfined localhost/x]) if maybe(random, 0.05)
     metadata = {"name" => "p"}
     metadata["annotations"] = annotations if annotations.any?
@@ -94,7 +98,9 @@ module PodSecurityDifferential
   end
 
   def cases(random, count)
-    Array.new(count) { {"level" => pick(random, %w[privileged baseline restricted]), "version" => pick(random, VERSIONS), "pod" => pod(random)} }
+    Array.new(count) do
+      {"level" => pick(random, %w[privileged baseline restricted]), "version" => pick(random, VERSIONS), "pod" => pod(random)}
+    end
   end
 
   def run_port(evaluator, test_case)

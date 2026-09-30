@@ -58,6 +58,7 @@ class LinuxPlatformTest < Minitest::Test
       timeout: 5.0,
       resource_id: "process:pidfd-test"
     )
+
     refute_nil(wait_result)
     assert_equal(23, wait_result.exit_status)
   ensure
@@ -140,6 +141,7 @@ class LinuxPlatformTest < Minitest::Test
     process = adapter.spawn(command: ["/bin/sh", "-c", "sleep 0.5"], security_plan: plan)
 
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
     assert(adapter.release_gate(process.fetch(:gate)))
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
 
@@ -176,6 +178,7 @@ class LinuxPlatformTest < Minitest::Test
 
       assert(adapter.release_gate(process.fetch(:gate)))
       status = adapter.wait(pid: process.fetch(:pid), timeout: 2.0)
+
       assert_predicate(status, :success?)
     ensure
       process&.values_at(:stdout, :stderr)&.compact&.each { |io| io.close unless io.closed? }
@@ -204,6 +207,7 @@ class LinuxPlatformTest < Minitest::Test
     assert_operator(process.fetch(:gate).workload_pid, :>, 0)
     assert_operator(process.fetch(:gate).workload_start_time, :>, 0)
     status = adapter.wait(pid: process.fetch(:pid), timeout: 2.0)
+
     assert_predicate(status, :success?)
   ensure
     process&.values_at(:stdout, :stderr)&.compact&.each { |io| io.close unless io.closed? }
@@ -226,6 +230,7 @@ class LinuxPlatformTest < Minitest::Test
 
     assert(adapter.release_gate(process.fetch(:gate)))
     status = adapter.wait(pid: process.fetch(:pid), timeout: 3.0)
+
     refute_nil(status, "RuntimeDefault workload spun after a denied signal-wait syscall")
     assert_predicate(status, :success?)
     assert_equal("child-ok\n", process.fetch(:stdout).read)
@@ -272,23 +277,25 @@ class LinuxPlatformTest < Minitest::Test
         request_id: sandbox_id
       )
       container = runtime.create_container(sandbox, {
-        "id" => "main",
-        "rootfs_path" => lower,
-        "command" => [
-          "/bin/busybox", "sh", "-c",
-          "(while :; do echo port-ok | /bin/busybox nc -l -p 18080; " \
-            "echo port-two | /bin/busybox nc -l -p 18081; done) & " \
-            "while :; do echo attach-ok; /bin/busybox sleep 1; done"
-        ]
-      })
+                                             "id" => "main",
+                                             "rootfs_path" => lower,
+                                             "command" => [
+                                               "/bin/busybox", "sh", "-c",
+                                               "(while :; do echo port-ok | /bin/busybox nc -l -p 18080; " \
+                                               "echo port-two | /bin/busybox nc -l -p 18081; done) & " \
+                                               "while :; do echo attach-ok; /bin/busybox sleep 1; done"
+                                             ]
+                                           })
       runtime.start_container(container)
 
       runtime.logs(container)
       attached = Rubernetes::Node::AttachService.new(runtime: runtime, trusted: true).attach(container.id)
+
       assert_includes(Timeout.timeout(5) { attached.stdout.read(16 * 1024) }, "attach-ok\n")
       attached.stdout.close
 
       executed = runtime.exec(container, ["/bin/busybox", "echo", "exec-ok"])
+
       assert_equal("exec-ok\n", Timeout.timeout(5) { executed.fetch(:stdout).read })
       assert_predicate(Timeout.timeout(5) { executed.fetch(:status).pop }, :success?)
 
@@ -298,11 +305,13 @@ class LinuxPlatformTest < Minitest::Test
         until observed.keys.sort == [0, 2]
           frame = multiplexed.fetch(:stdout).read(16 * 1024)
           break if frame.nil?
+
           channel = frame.getbyte(0)
           observed[channel] = frame.byteslice(1, frame.bytesize - 1)
         end
       end
       server_errors = runtime.logs(container, stream: :stderr).to_s
+
       assert_equal(
         {0 => "port-ok\n", 2 => "port-two\n"},
         observed.select { |channel, _| channel.even? },
@@ -317,6 +326,7 @@ class LinuxPlatformTest < Minitest::Test
       # path covered so it cannot silently return an empty HTTP stream.
       single = runtime.port_forward(container, [18_080], timeout: 5)
       single_frame = Timeout.timeout(5) { single.fetch(:stdout).read }
+
       assert_equal(0, single_frame.getbyte(0))
       assert_equal("port-ok\n", single_frame.byteslice(1, single_frame.bytesize - 1))
       assert_predicate(Timeout.timeout(5) { single.fetch(:status).fetch(0).pop }, :success?)
@@ -324,6 +334,7 @@ class LinuxPlatformTest < Minitest::Test
 
       runtime.stop_sandbox(sandbox, timeout: 2)
       runtime.remove_sandbox(sandbox)
+
       assert_empty(runtime.sandboxes)
       refute(File.directory?(File.join("/sys/fs/cgroup/rubernetes/besteffort", sandbox_id)))
     ensure

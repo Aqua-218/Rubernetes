@@ -10,7 +10,7 @@ class LifecycleMetadataVolumeRefreshTest < Minitest::Test
   class Runtime
     def run_sandbox(_pod, runtime_class: nil) = "sandbox-1"
 
-    def create_container(_sandbox, spec)
+    def create_container(_sandbox, _spec)
       @sequence = @sequence.to_i + 1
       "container-#{@sequence}"
     end
@@ -59,9 +59,11 @@ class LifecycleMetadataVolumeRefreshTest < Minitest::Test
   def test_a_label_change_refreshes_at_once
     before = @volumes.refreshes.length
     @lifecycle.reconcile(pod({"a" => "1"}))
+
     assert_equal before, @volumes.refreshes.length, "an unchanged Pod waits for the periodic sync"
 
     @lifecycle.reconcile(pod({"a" => "2"}))
+
     assert_equal before + 1, @volumes.refreshes.length
     assert_equal({"a" => "2"}, @volumes.refreshes.last)
   end

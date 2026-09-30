@@ -141,7 +141,10 @@ module Rubernetes
       def failure(stage, error)
         @last_error = error
         record("failure")
-        @logger&.warn("#{@kind}.config.reload_failed", stage: stage, error: error.class.name, message: error.message.to_s[0, 300]) if @logger.respond_to?(:warn)
+        if @logger.respond_to?(:warn)
+          @logger&.warn("#{@kind}.config.reload_failed", stage: stage, error: error.class.name,
+                                                         message: error.message.to_s[0, 300])
+        end
         false
       end
 
@@ -163,7 +166,8 @@ module Rubernetes
 
         name = @names[:info]
         unless registry.registered?(name)
-          registry.register(name, type: :gauge, help: "Information about the last applied #{@kind} configuration with hash as label, split by apiserver identity.")
+          registry.register(name, type: :gauge,
+                                  help: "Information about the last applied #{@kind} configuration with hash as label, split by apiserver identity.")
         end
         registry.delete(name, {"apiserver_id_hash" => @apiserver_id_hash, "hash" => @info_hash}) if @info_hash && @info_hash != hash
         registry.set(name, 1, {"apiserver_id_hash" => @apiserver_id_hash, "hash" => hash})

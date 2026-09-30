@@ -64,7 +64,7 @@ module Rubernetes
             method_name = underscore(gvk.fetch("kind"))
             qualified_parts = [gvk.fetch("group").split(".").first, gvk.fetch("version"), gvk.fetch("kind")]
             qualified = underscore(qualified_parts.compact.reject(&:empty?).join("_"))
-            api_version = gvk.fetch("group").empty? ? gvk.fetch("version") : "#{gvk.fetch('group')}/#{gvk.fetch('version')}"
+            api_version = gvk.fetch("group").empty? ? gvk.fetch("version") : "#{gvk.fetch("group")}/#{gvk.fetch("version")}"
             install_resource_method(methods, qualified, api_version, gvk.fetch("kind"))
             registrations[method_name] ||= []
             registrations.fetch(method_name) << [api_version, gvk.fetch("kind")]
@@ -79,7 +79,7 @@ module Rubernetes
 
       def install_resource_method(methods, method_name, api_version, kind)
         validate_method_name!(method_name)
-        return if methods.instance_methods(false).include?(method_name.to_sym)
+        return if methods.method_defined?(method_name.to_sym, false)
 
         methods.define_method(method_name) do |name, namespace: nil, **metadata, &block|
           resource(api_version: api_version, kind: kind, name: name, namespace: namespace, **metadata, &block)
@@ -89,22 +89,26 @@ module Rubernetes
       def preferred_target(targets)
         targets.min_by do |api_version, _kind|
           version = api_version.split("/").last
-          stability = version.match?(/\Av\d+\z/) ? 0 : version.include?("beta") ? 1 : 2
+          stability = if version.match?(/\Av\d+\z/)
+                        0
+                      else
+                        version.include?("beta") ? 1 : 2
+                      end
           [stability, version]
         end
       end
 
       def underscore(value)
         value.gsub(/([A-Z]+)([A-Z][a-z])/, "\\1_\\2")
-             .gsub(/([a-z\d])([A-Z])/, "\\1_\\2")
-             .tr("-.", "__")
-             .downcase
+          .gsub(/([a-z\d])([A-Z])/, "\\1_\\2")
+          .tr("-.", "__")
+          .downcase
       end
 
       def validate_method_name!(method_name)
-        unless method_name.match?(/\A[a-z_]\w*[!?=]?\z/) && !RESERVED_METHODS.include?(method_name)
-          raise DuplicateMethod, "unsafe generated manifest method #{method_name.inspect}"
-        end
+        return if method_name.match?(/\A[a-z_]\w*[!?=]?\z/) && !RESERVED_METHODS.include?(method_name)
+
+        raise DuplicateMethod, "unsafe generated manifest method #{method_name.inspect}"
       end
 
       def split_api_version(api_version)
@@ -118,7 +122,10 @@ module Rubernetes
       def deep_freeze(value)
         case value
         when Hash
-          value.each { |key, child| key.freeze; deep_freeze(child) }
+          value.each do |key, child|
+            key.freeze
+            deep_freeze(child)
+          end
         when Array
           value.each { |child| deep_freeze(child) }
         end
@@ -134,15 +141,16 @@ module Rubernetes
         @schema_name = schema_name
         @definitions = definitions
         extend(build_field_methods(schema_name))
+
         install_spec_shortcuts
       end
 
-      def field(json_name, value = :__rubernetes_missing__, **keywords, &block)
+      def field(json_name, value = :__rubernetes_missing__, **keywords, &)
         schema = schema_definition(@schema_name)
         field_schema = schema.fetch("properties", {})[String(json_name)]
         raise UnknownField, "unknown field #{json_name.inspect} in #{@schema_name}" unless field_schema
 
-        @object[String(json_name)] = build_value(field_schema, value, keywords, &block)
+        @object[String(json_name)] = build_value(field_schema, value, keywords, &)
       end
 
       private
@@ -153,7 +161,7 @@ module Rubernetes
           method_name = underscore(json_name)
           next if RESERVED_METHODS.include?(method_name)
           raise DuplicateMethod, "invalid field method #{method_name.inspect}" unless method_name.match?(/\A[a-z_]\w*\z/)
-          raise DuplicateMethod, "field method collision #{method_name}" if methods.instance_methods(false).include?(method_name.to_sym)
+          raise DuplicateMethod, "field method collision #{method_name}" if methods.method_defined?(method_name.to_sym, false)
 
           methods.define_method(method_name) do |value = :__rubernetes_missing__, **keywords, &block|
             field(json_name, value, **keywords, &block)
@@ -186,6 +194,7 @@ module Rubernetes
       def build_value(field_schema, value, keywords, &block)
         unless keywords.empty?
           raise Error, "cannot combine positional and keyword values" unless value == :__rubernetes_missing__
+
           value = keywords.transform_keys(&:to_s)
         end
         if block
@@ -227,9 +236,9 @@ module Rubernetes
 
       def underscore(value)
         value.gsub(/([A-Z]+)([A-Z][a-z])/, "\\1_\\2")
-             .gsub(/([a-z\d])([A-Z])/, "\\1_\\2")
-             .tr("-.", "__")
-             .downcase
+          .gsub(/([a-z\d])([A-Z])/, "\\1_\\2")
+          .tr("-.", "__")
+          .downcase
       end
     end
   end

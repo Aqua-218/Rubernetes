@@ -34,6 +34,7 @@ module Rubernetes
         path = request.respond_to?(:path) ? request.path.to_s : request.to_s
         segments = path.split("/").reject(&:empty?).map { |segment| URI::RFC2396_PARSER.unescape(segment) }
         return Route.new(kind: :root, operation: :root, path: path) if segments.empty?
+
         case segments
         in ["version"]
           return Route.new(kind: :version, operation: :get, path: path)
@@ -72,6 +73,7 @@ module Rubernetes
 
       def parse_api_path(segments, path, group:)
         return Route.new(kind: :unknown, operation: :unknown, path: path) if segments.empty?
+
         version = segments.shift
         return Route.new(kind: :unknown, operation: :unknown, path: path) if version.nil? || version.empty?
         return Route.new(kind: :resource_list, operation: :get, group: group, version: version, path: path) if segments.empty?
@@ -81,6 +83,7 @@ module Rubernetes
 
       def parse_apis_path(segments, path)
         return Route.new(kind: :api_groups, operation: :get, path: path) if segments.empty?
+
         group = segments.shift
         return Route.new(kind: :api_group, operation: :get, group: group, path: path) if segments.empty?
 
@@ -112,6 +115,7 @@ module Rubernetes
         end
         resource_name = segments.shift
         return Route.new(kind: :unknown, operation: :unknown, path: path) if resource_name.nil?
+
         resource = registry.find_gvr(group: group, version: version, resource: resource_name)
         name = segments.shift
         subresource = segments.shift
@@ -128,15 +132,16 @@ module Rubernetes
         # bare /autoscaling/v1/deployments collection accidentally resolve to
         # apps/v1; require the advertised child segment before accepting the
         # canonical parent resource.
-        resource ||= registry.find_subresource_parent(
-          group: group, version: version, resource: resource_name, subresource: subresource
-        ) if subresource
-        return Route.new(kind: :unknown, operation: :unknown, path: path) if resource.nil?
-        if resource.cluster_scoped? && !namespace.nil?
-          return Route.new(kind: :unknown, operation: :unknown, path: path)
+        if subresource
+          resource ||= registry.find_subresource_parent(
+            group: group, version: version, resource: resource_name, subresource: subresource
+          )
         end
+        return Route.new(kind: :unknown, operation: :unknown, path: path) if resource.nil?
+        return Route.new(kind: :unknown, operation: :unknown, path: path) if resource.cluster_scoped? && !namespace.nil?
 
         return Route.new(kind: :unknown, operation: :unknown, path: path) if subresource && resource.subresource(subresource).nil?
+
         collection = name.nil?
         operation = operation_for(collection: collection, subresource: subresource)
         Route.new(kind: :resource, operation: operation, group: group, version: version,

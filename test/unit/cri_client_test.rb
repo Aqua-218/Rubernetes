@@ -60,8 +60,10 @@ class CRIClientTest < Minitest::Test
     preloaded = defined?(::GRPC::Core)
     with_client do |client|
       version = client.runtime("Version", {"version" => "v1"})
+
       assert_equal %w[v1 fake v1], version.values_at("version", "runtime_name", "runtime_api_version")
       status = client.runtime("ContainerStatus", {"container_id" => "c1"})
+
       assert_equal "CONTAINER_RUNNING", status.dig("status", "state")
       assert_equal "busybox:1.36", client.image("ListImages").dig("images", 0, "repo_tags", 0)
       refute defined?(::GRPC::Core), "grpc stays out of the calling process" unless preloaded
@@ -73,8 +75,13 @@ class CRIClientTest < Minitest::Test
       error = assert_raises(Client::Error) { client.runtime("ContainerStatus", {"container_id" => "nope"}) }
       assert_equal Client::NOT_FOUND, error.code
       assert_includes error.message, "container nope not found"
-      results = Array.new(4) { |index| Thread.new { client.runtime("ExecSync", {"container_id" => "c1", "cmd" => ["slow", index.to_s]}) } }.map(&:value)
-      assert_equal ["slow 0", "slow 1", "slow 2", "slow 3"], results.map { |result| result["stdout"].unpack1("m") }
+      results = Array.new(4) do |index|
+        Thread.new do
+          client.runtime("ExecSync", {"container_id" => "c1", "cmd" => ["slow", index.to_s]})
+        end
+      end.map(&:value)
+
+      assert_equal(["slow 0", "slow 1", "slow 2", "slow 3"], results.map { |result| result["stdout"].unpack1("m") })
     end
   end
 
@@ -84,6 +91,7 @@ class CRIClientTest < Minitest::Test
       helper = client.instance_variable_get(:@helper)
       Process.kill(:KILL, helper[:pid])
       helper[:thread].join(5)
+
       assert_equal "fake", client.runtime("Version")["runtime_name"]
     end
   end

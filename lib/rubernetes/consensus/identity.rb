@@ -14,7 +14,7 @@ module Rubernetes
     # payload (spec 5.3.6).
     module Identity
       URI_PREFIX = "rubernetes-raft://"
-      ID_PATTERN = /\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/.freeze
+      ID_PATTERN = /\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/
 
       Bundle = Data.define(:certificate, :key, :ca_certificate)
 
@@ -40,7 +40,7 @@ module Rubernetes
         certificate.issuer = certificate.subject
         certificate.public_key = key
         certificate.not_before = Time.now - 300
-        certificate.not_after = Time.now + days * 86_400
+        certificate.not_after = Time.now + (days * 86_400)
         factory = OpenSSL::X509::ExtensionFactory.new(certificate, certificate)
         certificate.add_extension(factory.create_extension("basicConstraints", "CA:TRUE,pathlen:0", true))
         certificate.add_extension(factory.create_extension("keyUsage", "keyCertSign,cRLSign", true))
@@ -60,7 +60,7 @@ module Rubernetes
         certificate.issuer = ca_certificate.subject
         certificate.public_key = key
         certificate.not_before = Time.now - 300
-        certificate.not_after = Time.now + days * 86_400
+        certificate.not_after = Time.now + (days * 86_400)
         factory = OpenSSL::X509::ExtensionFactory.new(ca_certificate, certificate)
         certificate.add_extension(factory.create_extension("basicConstraints", "CA:FALSE", true))
         certificate.add_extension(factory.create_extension("keyUsage", "digitalSignature,keyEncipherment", true))

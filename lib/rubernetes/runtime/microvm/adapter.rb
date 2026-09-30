@@ -65,7 +65,10 @@ module Rubernetes
           @verified ||= @artifacts.verify!
           Array(config["resolved_images"]).each do |image|
             raise ArtifactError, "resolved image has no digest" unless image["digest"].to_s.match?(/\Asha256:[0-9a-f]{64}\z/)
-            raise ArtifactError, "resolved image #{image["digest"]} has no extracted rootfs" unless image["rootfs"] && File.directory?(image["rootfs"])
+            unless image["rootfs"] && File.directory?(image["rootfs"])
+              raise ArtifactError,
+                    "resolved image #{image["digest"]} has no extracted rootfs"
+            end
           end
           true
         end
@@ -132,7 +135,9 @@ module Rubernetes
             [{"error" => "#{cleanup_error.class}: #{cleanup_error.message}"}]
           end
           @mutex.synchronize { @sessions.delete(session.sandbox_id) }
-          log("session #{session.vm_id} rolled back after #{error.class}: #{error.message}; cleanup errors: #{cleanup_errors.inspect}") unless cleanup_errors.empty?
+          unless cleanup_errors.empty?
+            log("session #{session.vm_id} rolled back after #{error.class}: #{error.message}; cleanup errors: #{cleanup_errors.inspect}")
+          end
           raise error
         end
 
@@ -140,7 +145,8 @@ module Rubernetes
           session = session!(sandbox_id)
           result = session.container_create(id, spec)
           @mutex.synchronize { @containers[id] = sandbox_id }
-          {"resources" => [{"kind" => "guest_container", "id" => id, "identity" => "guest_container:#{session.vm_id}:#{id}", "metadata" => result}]}
+          {"resources" => [{"kind" => "guest_container", "id" => id, "identity" => "guest_container:#{session.vm_id}:#{id}",
+                            "metadata" => result}]}
         end
 
         # The first container start of a sandbox closes the network loop:
@@ -259,7 +265,8 @@ module Rubernetes
 
           @verified ||= @artifacts.verify!
           base_id = "base-#{@clock.call.strftime("%Y%m%dT%H%M%S")}-#{SecureRandom.hex(4)}"
-          identity = @identity_ledger.allocate(sandbox_id: "base:#{base_id}", runtime_class: runtime_class, artifact_digest: @artifacts.digest, policy_digest: "base")
+          identity = @identity_ledger.allocate(sandbox_id: "base:#{base_id}", runtime_class: runtime_class,
+                                               artifact_digest: @artifacts.digest, policy_digest: "base")
           session = VMSession.new(sandbox_id: "base:#{base_id}", identity: identity, artifacts: @artifacts, jailer: @jailer, verity: @verity, netns: @netns,
                                   disks: @disks, pool: @pool, broker: nil, clock: @clock, logger: @logger, machine: @machine,
                                   network_device: @network_device, run_root: @run_root)
@@ -360,7 +367,8 @@ module Rubernetes
 
         def injected_files(config)
           Array(config["injected_files"]).map do |entry|
-            {"path" => "/run/rubernetes/files/#{entry.fetch("name")}", "content" => entry.fetch("content"), "mode" => entry["mode"] || 0o600}
+            {"path" => "/run/rubernetes/files/#{entry.fetch("name")}", "content" => entry.fetch("content"),
+             "mode" => entry["mode"] || 0o600}
           end
         end
 

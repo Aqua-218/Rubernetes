@@ -39,6 +39,7 @@ class NodeEphemeralStatusPublishTest < Minitest::Test
 
     assert(published.any? { |names| names.include?("debugger") }, "the debug container's start was published")
     statuses = lifecycle.record(pod).fetch(:status).fetch("ephemeralContainerStatuses", [])
+
     assert(statuses.any? { |status| status["name"] == "debugger" && status.dig("state", "running") }, statuses.inspect)
   end
 end

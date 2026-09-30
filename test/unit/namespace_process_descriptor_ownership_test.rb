@@ -51,10 +51,11 @@ class NamespaceProcessDescriptorOwnershipTest < Minitest::Test
 
     run_wait
 
-    refute File.exist?("/proc/self/fd/#{fd}"), "the failure pipe must be closed when wait returns"
+    refute_path_exists "/proc/self/fd/#{fd}", "the failure pipe must be closed when wait returns"
     # And no surviving wrapper may close that number again later.
     5.times { GC.start }
-    refute File.exist?("/proc/self/fd/#{fd}"), "the descriptor must not be reopened or double-closed"
+
+    refute_path_exists "/proc/self/fd/#{fd}", "the descriptor must not be reopened or double-closed"
   end
 
   def test_a_second_descriptor_is_not_stolen_by_a_finalised_wrapper

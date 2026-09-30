@@ -43,7 +43,7 @@ class APIWatchInitialStateTest < Minitest::Test
 
     events = watch_events("watch=true&timeoutSeconds=0")
 
-    assert_includes(events, ["ADDED", "already-here"])
+    assert_includes(events, %w[ADDED already-here])
   end
 
   def test_a_watch_at_resource_version_zero_replays_the_current_state
@@ -51,7 +51,7 @@ class APIWatchInitialStateTest < Minitest::Test
 
     events = watch_events("watch=true&resourceVersion=0&timeoutSeconds=0")
 
-    assert_includes(events, ["ADDED", "already-here"])
+    assert_includes(events, %w[ADDED already-here])
   end
 
   def test_the_replayed_state_honours_the_label_selector
@@ -60,7 +60,7 @@ class APIWatchInitialStateTest < Minitest::Test
 
     events = watch_events("watch=true&labelSelector=team%3Dblue&timeoutSeconds=0")
 
-    assert_equal([["ADDED", "selected"]], events)
+    assert_equal([%w[ADDED selected]], events)
   end
 
   def test_a_watch_at_an_explicit_resource_version_replays_nothing

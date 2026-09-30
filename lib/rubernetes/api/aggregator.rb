@@ -30,7 +30,8 @@ module Rubernetes
       # system:masters, through the front-proxy client certificate.
       AGGREGATOR_IDENTITY = {"X-Remote-User" => "system:kube-aggregator", "X-Remote-Group" => "system:masters"}.freeze
 
-      Backend = Struct.new(:name, :group, :version, :priority, :service_namespace, :service_name, :port, :ca_bundle, :insecure, keyword_init: true)
+      Backend = Struct.new(:name, :group, :version, :priority, :service_namespace, :service_name, :port, :ca_bundle, :insecure,
+                           keyword_init: true)
 
       def initialize(client_certificate: nil, client_key: nil, service_resolver: nil, http_factory: nil, clock: -> { Time.now.utc })
         @client_certificate = client_certificate
@@ -97,7 +98,9 @@ module Rubernetes
       def groups
         @mutex.synchronize do
           @backends.values.group_by(&:group).map do |group, backends|
-            versions = backends.sort_by { |backend| [-backend.priority[1], backend.version] }.map { |backend| {"groupVersion" => "#{group}/#{backend.version}", "version" => backend.version} }
+            versions = backends.sort_by do |backend|
+              [-backend.priority[1], backend.version]
+            end.map { |backend| {"groupVersion" => "#{group}/#{backend.version}", "version" => backend.version} }
             {"name" => group, "versions" => versions, "preferredVersion" => versions.first}
           end
         end
@@ -115,9 +118,18 @@ module Rubernetes
 
         uri = URI.parse(resolve(backend))
         path = request.path
-        query = request.query.is_a?(Hash) && !request.query.empty? ? URI.encode_www_form(request.query.flat_map { |key, value| Array(value).map { |item| [key, item] } }) : nil
+        query = if request.query.is_a?(Hash) && !request.query.empty?
+                  URI.encode_www_form(request.query.flat_map do |key, value|
+                    Array(value).map do |item|
+                      [key, item]
+                    end
+                  end)
+                end
         http = build_http(uri, backend)
-        klass = {"GET" => Net::HTTP::Get, "POST" => Net::HTTP::Post, "PUT" => Net::HTTP::Put, "PATCH" => Net::HTTP::Patch, "DELETE" => Net::HTTP::Delete, "HEAD" => Net::HTTP::Head}.fetch(request.method) { return Response.new(status: 405, body: Status.failure(message: "method not allowed", code: 405, reason: "MethodNotAllowed")) }
+        klass = {"GET" => Net::HTTP::Get, "POST" => Net::HTTP::Post, "PUT" => Net::HTTP::Put, "PATCH" => Net::HTTP::Patch,
+                 "DELETE" => Net::HTTP::Delete, "HEAD" => Net::HTTP::Head}.fetch(request.method) do
+          return Response.new(status: 405, body: Status.failure(message: "method not allowed", code: 405, reason: "MethodNotAllowed"))
+        end
         target = query ? "#{path}?#{query}" : path
         outbound = klass.new(target)
         forwarded_headers(request).each do |name, value|
@@ -139,19 +151,27 @@ module Rubernetes
           outbound["content-type"] = "application/json" if outbound["content-type"].to_s.empty?
           outbound.body = request.body
         end
-        raise Status::Error.new(message: "request body exceeds the aggregation limit", code: 413, reason: "RequestEntityTooLarge") if request.body && request.body.bytesize > MAX_BODY_BYTES
+        if request.body && request.body.bytesize > MAX_BODY_BYTES
+          raise Status::Error.new(message: "request body exceeds the aggregation limit", code: 413,
+                                  reason: "RequestEntityTooLarge")
+        end
 
         response = http.request(outbound)
         record_x509(http)
-        log_proxy(uri, target, request.method, response, sent_content_type: outbound["content-type"], body_bytes: outbound.body.to_s.bytesize)
-        raise Status::Error.new(message: "aggregated API response exceeds the limit", code: 502, reason: "BadGateway") if response.body.to_s.bytesize > MAX_BODY_BYTES
+        log_proxy(uri, target, request.method, response, sent_content_type: outbound["content-type"],
+                                                         body_bytes: outbound.body.to_s.bytesize)
+        if response.body.to_s.bytesize > MAX_BODY_BYTES
+          raise Status::Error.new(message: "aggregated API response exceeds the limit", code: 502,
+                                  reason: "BadGateway")
+        end
 
         headers = {}
         %w[content-type cache-control warning].each { |name| headers[name] = response[name] if response[name] }
         body = response.body.to_s
         body = JSON.parse(body) if (headers["content-type"] || "").start_with?("application/json") && !body.empty?
         Response.new(status: response.code.to_i, headers: headers, body: body)
-      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, Net::HTTPFatalError, OpenSSL::SSL::SSLError, SystemCallError, SocketError, IOError => error
+      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, Net::HTTPFatalError, OpenSSL::SSL::SSLError, SystemCallError,
+             SocketError, IOError => error
         unavailable_response("Error trying to reach service: '#{error.message}'")
       rescue JSON::ParserError
         Response.new(status: 502, headers: {"content-type" => "application/json"},
@@ -184,8 +204,12 @@ module Rubernetes
         %w[apiserver_kube_aggregator_x509_missing_san_total apiserver_kube_aggregator_x509_insecure_sha1_total].each do |name|
           registry.register(name, type: :counter) unless registry.registered?(name)
         end
-        registry.increment("apiserver_kube_aggregator_x509_missing_san_total") unless Rubernetes::Observability::Metrics.certificate_has_san?(certificate)
-        registry.increment("apiserver_kube_aggregator_x509_insecure_sha1_total") if Rubernetes::Observability::Metrics.certificate_sha1?(certificate)
+        unless Rubernetes::Observability::Metrics.certificate_has_san?(certificate)
+          registry.increment("apiserver_kube_aggregator_x509_missing_san_total")
+        end
+        if Rubernetes::Observability::Metrics.certificate_sha1?(certificate)
+          registry.increment("apiserver_kube_aggregator_x509_insecure_sha1_total")
+        end
       rescue StandardError
         nil
       end
@@ -194,7 +218,10 @@ module Rubernetes
         registry = shared_metrics
         return unless registry
 
-        registry.register("aggregator_discovery_aggregation_count_total", type: :counter) unless registry.registered?("aggregator_discovery_aggregation_count_total")
+        unless registry.registered?("aggregator_discovery_aggregation_count_total")
+          registry.register("aggregator_discovery_aggregation_count_total",
+                            type: :counter)
+        end
         registry.increment("aggregator_discovery_aggregation_count_total")
       rescue StandardError
         nil
@@ -233,15 +260,18 @@ module Rubernetes
         return nil unless response.code.to_i == 200
 
         JSON.parse(response.body)
-      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, Net::HTTPFatalError, OpenSSL::SSL::SSLError, SystemCallError, SocketError, IOError, JSON::ParserError
+      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, Net::HTTPFatalError, OpenSSL::SSL::SSLError, SystemCallError,
+             SocketError, IOError, JSON::ParserError
         nil
       end
 
       def available?(backend)
         uri = URI.parse(resolve(backend))
-        response = build_http(uri, backend).get("/apis/#{backend.group}/#{backend.version}", {"accept" => "application/json"}.merge(AGGREGATOR_IDENTITY))
+        response = build_http(uri, backend).get("/apis/#{backend.group}/#{backend.version}",
+                                                {"accept" => "application/json"}.merge(AGGREGATOR_IDENTITY))
         response.code.to_i.between?(200, 299)
-      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, Net::HTTPFatalError, OpenSSL::SSL::SSLError, SystemCallError, SocketError, IOError
+      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, Net::HTTPFatalError, OpenSSL::SSL::SSLError, SystemCallError,
+             SocketError, IOError
         false
       end
 
@@ -293,7 +323,9 @@ module Rubernetes
         port_name = port["name"].to_s
         served = Array(endpoint_slices).any? do |slice|
           Array(slice["ports"]).any? { |entry| entry["name"].to_s == port_name } &&
-            Array(slice["endpoints"]).any? { |endpoint| endpoint.dig("conditions", "ready") != false && !Array(endpoint["addresses"]).empty? }
+            Array(slice["endpoints"]).any? do |endpoint|
+              endpoint.dig("conditions", "ready") != false && !Array(endpoint["addresses"]).empty?
+            end
         end
         return nil if served
 
@@ -302,11 +334,13 @@ module Rubernetes
 
       def discovery_error(backend)
         uri = URI.parse(resolve(backend))
-        response = build_http(uri, backend).get("/apis/#{backend.group}/#{backend.version}", {"accept" => "application/json"}.merge(AGGREGATOR_IDENTITY))
+        response = build_http(uri, backend).get("/apis/#{backend.group}/#{backend.version}",
+                                                {"accept" => "application/json"}.merge(AGGREGATOR_IDENTITY))
         return nil if response.code.to_i.between?(200, 299)
 
         "bad status from #{uri}/apis/#{backend.group}/#{backend.version}: #{response.code}"
-      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, Net::HTTPFatalError, OpenSSL::SSL::SSLError, SystemCallError, SocketError, IOError => error
+      rescue Net::OpenTimeout, Net::ReadTimeout, Net::ProtocolError, Net::HTTPFatalError, OpenSSL::SSL::SSLError, SystemCallError,
+             SocketError, IOError => error
         error.message
       end
 

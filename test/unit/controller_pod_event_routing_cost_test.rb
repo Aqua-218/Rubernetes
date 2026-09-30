@@ -48,7 +48,7 @@ class ControllerPodEventRoutingCostTest < Minitest::Test
 
   def test_node_lifecycle_reads_node_leases_from_a_watch
     watch = Array(Controller.build_default_registry.fetch("node-lifecycle-controller").watches)
-            .find { |candidate| candidate.resource.kind == "Lease" }
+      .find { |candidate| candidate.resource.kind == "Lease" }
     node_lease = {"apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease",
                   "metadata" => {"name" => "worker-2", "namespace" => "kube-node-lease"}}
     other = {"apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease",
@@ -106,6 +106,7 @@ class ControllerOwnerDeletionSweepTest < Minitest::Test
     assert_operator collector.expedited, :>=, 1
     queue = manager.instance_variable_get(:@queue)
     key, = queue.get(timeout: 0.1)
+
     assert_equal Controller::Manager::OWNER_DELETED_KEY, key
   end
 end

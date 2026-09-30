@@ -153,7 +153,7 @@ class NativeHostProfileSecurityTest < Minitest::Test
       )
     end
 
-    assert_match(/recording\/fake adapter/, error.message)
+    assert_match(%r{recording/fake adapter}, error.message)
     assert_empty(process.calls)
     refute(process.calls.any? { |call| call.first == :release_gate })
   end
@@ -181,7 +181,7 @@ class NativeHostProfileSecurityTest < Minitest::Test
         l3: true,
         journal: Native::MemoryJournal.new,
         security_probe: -> { complete_probe },
-        **adapters.transform_keys { |key| "#{key}_adapter".to_sym }
+        **adapters.transform_keys { |key| :"#{key}_adapter" }
       )
     end
 
@@ -196,7 +196,7 @@ class NativeHostProfileSecurityTest < Minitest::Test
         profile: :host_integration,
         journal: Native::MemoryJournal.new,
         security_probe: Native::FakeCapabilityProbe.new,
-        **adapters.transform_keys { |key| "#{key}_adapter".to_sym }
+        **adapters.transform_keys { |key| :"#{key}_adapter" }
       )
     end
 
@@ -212,7 +212,7 @@ class NativeHostProfileSecurityTest < Minitest::Test
       l3: true,
       journal: Native::MemoryJournal.new,
       security_probe: -> { complete_probe },
-      **adapters.transform_keys { |key| "#{key}_adapter".to_sym }
+      **adapters.transform_keys { |key| :"#{key}_adapter" }
     )
 
     assert_equal(:l3, runtime.profile)

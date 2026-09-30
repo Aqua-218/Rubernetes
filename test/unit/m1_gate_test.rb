@@ -99,6 +99,7 @@ class M1GateTest < Minitest::Test
       refute_predicate(status, :success?)
       assert_empty(stderr)
       errors = JSON.parse(stdout).fetch("errors")
+
       assert(errors.any? { |error| error.include?("excludes an unexpected header") })
       assert(errors.any? { |error| error.include?("hides a semantic header") })
     end
@@ -119,6 +120,7 @@ class M1GateTest < Minitest::Test
       refute_predicate(status, :success?)
       assert_empty(stderr)
       errors = JSON.parse(stdout).fetch("errors")
+
       assert(errors.any? { |error| error.include?("fields must contain exactly the API surface fields") })
       assert(errors.any? { |error| error.include?("digest does not match fields") })
     end
@@ -134,6 +136,7 @@ class M1GateTest < Minitest::Test
       refute_predicate(status, :success?)
       assert_empty(stderr)
       errors = JSON.parse(stdout).fetch("errors")
+
       assert(errors.any? { |error| error.include?("missing artifact roundtrip-report.json") })
     end
   end
@@ -181,6 +184,7 @@ class M1GateTest < Minitest::Test
       refute_predicate(status, :success?)
       assert_empty(stderr)
       errors = JSON.parse(stdout).fetch("errors")
+
       assert(errors.any? { |error| error.include?("source input must remain stable") })
       assert(errors.any? { |error| error.include?("input_capture must record a stable capture") })
     end
@@ -235,6 +239,7 @@ class M1GateTest < Minitest::Test
       refute_predicate(status, :success?)
       assert_empty(stderr)
       errors = JSON.parse(stdout).fetch("errors")
+
       assert(errors.any? { |error| error.include?("artifact api-differential.json must have a SHA-256 digest") })
       assert(errors.any? { |error| error.include?("artifact api-differential.json must have a non-negative byte count") })
     end
@@ -252,6 +257,7 @@ class M1GateTest < Minitest::Test
       refute_predicate(status, :success?)
       assert_empty(stderr)
       errors = JSON.parse(stdout).fetch("errors")
+
       assert(errors.any? { |error| error.include?("roundtrip report is not valid JSON") })
       refute_includes(stdout, "backtrace")
     end
@@ -302,6 +308,7 @@ class M1GateTest < Minitest::Test
       refute_predicate(status, :success?)
       assert_empty(stderr)
       errors = JSON.parse(stdout).fetch("errors")
+
       assert_includes(errors, "corpus report kind must be m1_corpus_coverage")
       refute(errors.any? { |error| error.include?("expected and registered item sets differ") }, "wrong kind must stop semantic parsing")
     end
@@ -324,9 +331,15 @@ class M1GateTest < Minitest::Test
 
   def test_gate_rejects_generation_roundtrip_and_api_count_spoofing
     mutations = [
-      ["generation-diff.json", ->(report) { report["runs"] = [report.fetch("runs").first] }, "generation report must record exactly two generation runs"],
-      ["roundtrip-report.json", ->(report) { report["cases"] = report.fetch("cases").first(3) }, "roundtrip case count does not match case entries"],
-      ["api-differential.json", ->(report) { report["operations"] = report.fetch("operations").first(4) }, "API operation count does not match operation entries"]
+      ["generation-diff.json", lambda { |report|
+        report["runs"] = [report.fetch("runs").first]
+      }, "generation report must record exactly two generation runs"],
+      ["roundtrip-report.json", lambda { |report|
+        report["cases"] = report.fetch("cases").first(3)
+      }, "roundtrip case count does not match case entries"],
+      ["api-differential.json", lambda { |report|
+        report["operations"] = report.fetch("operations").first(4)
+      }, "API operation count does not match operation entries"]
     ]
     mutations.each do |name, mutation, expected_error|
       Dir.mktmpdir("rubernetes-m1-gate-") do |directory|
@@ -417,6 +430,7 @@ class M1GateTest < Minitest::Test
       refute_predicate(status, :success?)
       assert_empty(stderr)
       errors = JSON.parse(stdout).fetch("errors")
+
       assert_includes(errors, "kubectl operation 0 did not pass")
       assert_includes(errors, "kubectl operation 0 must run exactly once")
     end
@@ -440,6 +454,7 @@ class M1GateTest < Minitest::Test
         assert_empty(stderr)
         label = name.start_with?("roundtrip") ? "roundtrip" : "API"
         errors = JSON.parse(stdout).fetch("errors")
+
         assert_includes(errors, "#{label} Kubernetes oracle was not executed")
         assert_includes(errors, "#{label} Kubernetes oracle missing comparison count must be zero")
       end
@@ -490,7 +505,8 @@ class M1GateTest < Minitest::Test
       "status" => "COMPLETE",
       "applicable_count" => 1,
       "not_applicable_count" => 0,
-      "ledger" => [{"id" => "schema-0", "applicable" => true, "reason" => nil, "mode" => "strategy", "source_paths" => ["test/validation.go"]}]
+      "ledger" => [{"id" => "schema-0", "applicable" => true, "reason" => nil, "mode" => "strategy",
+                    "source_paths" => ["test/validation.go"]}]
     }
     comparison = validation_oracle_evidence(["schema-0"], criterion).fetch("comparisons").fetch(0)
     comparison.fetch("operations").fetch("invalid")["accepted"] = false
@@ -557,9 +573,9 @@ class M1GateTest < Minitest::Test
       registry_document.fetch("gvrs").map { |entry| entry.fetch("identifier") }.sort,
       runtime.map { |entry| M1ProbeSupport.surface_identifier(entry) }.sort
     )
-    assert runtime.all? { |entry| entry.fetch("schema_contract_present") == true }
+    assert(runtime.all? { |entry| entry.fetch("schema_contract_present") == true })
     assert_equal registry_document.fetch("resources").length, server.registry.resources.length
-    assert server.registry.resources.all? { |resource| resource.schema.respond_to?(:validate) && resource.schema.respond_to?(:default) }
+    assert(server.registry.resources.all? { |resource| resource.schema.respond_to?(:validate) && resource.schema.respond_to?(:default) })
   end
 
   def test_gate_rejects_missing_or_different_input_m0_evidence
@@ -606,12 +622,14 @@ class M1GateTest < Minitest::Test
       }
       File.write(manifest_path, JSON.pretty_generate(manifest) << "\n")
       stdout, stderr, status = run_gate(manifest_path)
+
       assert_predicate(status, :success?, stdout)
       assert_empty(stderr)
 
       manifest["git_metadata_capture"]["finish_paths"] = []
       File.write(manifest_path, JSON.pretty_generate(manifest) << "\n")
       stdout, stderr, status = run_gate(manifest_path)
+
       refute_predicate(status, :success?)
       assert_empty(stderr)
       assert_includes JSON.parse(stdout).fetch("errors"), "git metadata changed during evidence capture"
@@ -645,6 +663,7 @@ class M1GateTest < Minitest::Test
       assert_equal(in_process_status.success?, status.success?)
       cli = JSON.parse(stdout)
       in_process = JSON.parse(in_process_stdout)
+
       %w[passed milestone error_count errors].each { |key| assert_equal(in_process.fetch(key), cli.fetch(key), key) }
     end
   end
@@ -718,41 +737,46 @@ class M1GateTest < Minitest::Test
     current_identity = Digest::SHA256.hexdigest(
       source_entries.map { |entry| "#{entry.fetch("path")}\0#{entry.fetch("sha256")}\n" }.join
     )
-    raise "M0 fixture source input changed while building" unless current_identity == input_sha256 && source_entries.length == input_file_count
+    unless current_identity == input_sha256 && source_entries.length == input_file_count
+      raise "M0 fixture source input changed while building"
+    end
 
     commands = m0_command_records(m0_directory, timestamp, source_entries)
     FileUtils.cp(current_gem_path, File.join(m0_directory, "rubernetes-0.1.0.gem"))
     write_json(m0_directory, "source-inventory.json", {
-      "schema_version" => 1, "kind" => "m0_source_inventory", "input_sha256" => input_sha256,
-      "input_file_count" => input_file_count, "entries" => source_entries
-    })
+                 "schema_version" => 1, "kind" => "m0_source_inventory", "input_sha256" => input_sha256,
+                 "input_file_count" => input_file_count, "entries" => source_entries
+               })
     write_json(m0_directory, "gem-build.json", commands.first)
 
     subjects = m0_subjects(m0_directory)
     write_json(m0_directory, "executables.json", m0_executable_report(subjects, timestamp, m0_directory))
     native_entries = source_entries.select { |entry| entry.fetch("path").match?(%r{\Aext/rubernetes_linux/.*\.(?:c|cc|h)\z}) }
     write_json(m0_directory, "native-boundary-scan.json", {
-      "schema_version" => 2,
-      "kind" => "native_boundary_scan",
-      "command" => [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output", File.join(m0_directory, "native-boundary-scan.json")],
-      "output_path" => File.join(m0_directory, "native-boundary-scan.json"),
-      "tool_path" => "tools/milestones/native_boundary_scan.rb",
-      "tool_sha256" => Digest::SHA256.file(File.join(ROOT, "tools/milestones/native_boundary_scan.rb")).hexdigest,
-      "started_at" => timestamp,
-      "finished_at" => timestamp,
-      "host" => {"sysname" => Etc.uname[:sysname], "release" => Etc.uname[:release], "machine" => Etc.uname[:machine], "ruby" => RUBY_DESCRIPTION},
-      "source_files" => native_entries,
-      "policy_branch_count" => 0,
-      "retry_count" => 0,
-      "authorization_count" => 0,
-      "state_machine_count" => 0,
-      "findings" => [],
-      "passed" => true
-    })
+                 "schema_version" => 2,
+                 "kind" => "native_boundary_scan",
+                 "command" => [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output",
+                               File.join(m0_directory, "native-boundary-scan.json")],
+                 "output_path" => File.join(m0_directory, "native-boundary-scan.json"),
+                 "tool_path" => "tools/milestones/native_boundary_scan.rb",
+                 "tool_sha256" => Digest::SHA256.file(File.join(ROOT, "tools/milestones/native_boundary_scan.rb")).hexdigest,
+                 "started_at" => timestamp,
+                 "finished_at" => timestamp,
+                 "host" => {"sysname" => Etc.uname[:sysname], "release" => Etc.uname[:release], "machine" => Etc.uname[:machine],
+                            "ruby" => RUBY_DESCRIPTION},
+                 "source_files" => native_entries,
+                 "policy_branch_count" => 0,
+                 "retry_count" => 0,
+                 "authorization_count" => 0,
+                 "state_machine_count" => 0,
+                 "findings" => [],
+                 "passed" => true
+               })
     write_json(m0_directory, "abi-probe-x86_64.json", m0_abi_probe(input_sha256, timestamp, subjects, m0_directory))
     write_m0_junit(m0_directory, commands, source_entries)
 
-    artifact_entries = %w[abi-probe-x86_64.json executables.json gem-build.json junit.xml native-boundary-scan.json source-inventory.json].sort.map do |name|
+    artifact_entries = %w[abi-probe-x86_64.json executables.json gem-build.json junit.xml native-boundary-scan.json
+                          source-inventory.json].sort.map do |name|
       path = File.join(m0_directory, name)
       {"path" => name, "sha256" => Digest::SHA256.file(path).hexdigest, "bytes" => File.size(path)}
     end
@@ -831,11 +855,13 @@ class M1GateTest < Minitest::Test
   def m0_command_records(directory, timestamp, source_entries)
     values = {
       "gem_build" => ["gem", "build", "rubernetes.gemspec", "--output", File.join(directory, "rubernetes-0.1.0.gem")],
-      "rake_test" => ["bundle", "exec", "rake", "test"],
+      "rake_test" => %w[bundle exec rake test],
       "executables" => [RbConfig.ruby, "tools/milestones/executables_probe.rb", "--output", File.join(directory, "executables.json")],
-      "native_boundary_scan" => [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output", File.join(directory, "native-boundary-scan.json")],
+      "native_boundary_scan" => [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output",
+                                 File.join(directory, "native-boundary-scan.json")],
       "rbs_validate" => ["bundle", "exec", "rbs", "-I", "sig", "-I", "generated/rbs", "validate"],
-      "kernel_probe_x86_64" => [RbConfig.ruby, "-I#{File.join(ROOT, "build/ext/rubernetes_linux")}", "tools/milestones/m0_kernel_probe.rb", "--output", File.join(directory, "abi-probe-x86_64.json")]
+      "kernel_probe_x86_64" => [RbConfig.ruby, "-I#{File.join(ROOT, "build/ext/rubernetes_linux")}", "tools/milestones/m0_kernel_probe.rb",
+                                "--output", File.join(directory, "abi-probe-x86_64.json")]
     }
     test_entries = source_entries.select { |entry| entry.fetch("path").match?(%r{\Atest/.*_test\.rb\z}) }
     test_inventory_content = test_entries.map { |entry| "#{entry.fetch("path")}\0#{entry.fetch("sha256")}\n" }.join
@@ -883,7 +909,8 @@ class M1GateTest < Minitest::Test
 
   def m0_subjects(directory)
     source_paths = M0_EXECUTABLES.map { |name| "exe/#{name}" }
-    source_paths.concat(["generated/platform/linux/abi/x86_64.json", "build/ext/rubernetes_linux/rubernetes_linux.so", "build/rubernetes-0.1.0.gem"])
+    source_paths.concat(["generated/platform/linux/abi/x86_64.json", "build/ext/rubernetes_linux/rubernetes_linux.so",
+                         "build/rubernetes-0.1.0.gem"])
     source_paths.map do |source_path|
       source = source_path == "build/rubernetes-0.1.0.gem" ? current_gem_path : File.join(ROOT, source_path)
       relative = "subjects/#{source_path == "build/rubernetes-0.1.0.gem" ? "rubernetes-0.1.0.gem" : File.basename(source_path)}"
@@ -899,7 +926,8 @@ class M1GateTest < Minitest::Test
       {
         "executable" => executable,
         "option" => option,
-        "command" => [RbConfig.ruby, "-I#{ROOT}/lib", "#{ROOT}/exe/#{executable}", "--config", "/unreadable/m0-side-effect-sentinel", option],
+        "command" => [RbConfig.ruby, "-I#{ROOT}/lib", "#{ROOT}/exe/#{executable}", "--config", "/unreadable/m0-side-effect-sentinel",
+                      option],
         "started_at" => timestamp,
         "finished_at" => timestamp,
         "exit_status" => 0,
@@ -918,7 +946,8 @@ class M1GateTest < Minitest::Test
       "tool_sha256" => Digest::SHA256.file(File.join(ROOT, "tools/milestones/executables_probe.rb")).hexdigest,
       "started_at" => timestamp,
       "finished_at" => timestamp,
-      "host" => {"sysname" => Etc.uname[:sysname], "release" => Etc.uname[:release], "machine" => Etc.uname[:machine], "ruby" => RUBY_DESCRIPTION},
+      "host" => {"sysname" => Etc.uname[:sysname], "release" => Etc.uname[:release], "machine" => Etc.uname[:machine],
+                 "ruby" => RUBY_DESCRIPTION},
       "count" => results.length,
       "failure_count" => 0,
       "results" => results
@@ -960,14 +989,16 @@ class M1GateTest < Minitest::Test
       "input_sha256" => input_sha256,
       "input_file_count" => current_source_entries.length,
       "input_stable" => true,
-      "command" => [RbConfig.ruby, "-I#{File.join(ROOT, "build/ext/rubernetes_linux")}", "tools/milestones/m0_kernel_probe.rb", "--output", File.join(directory, "abi-probe-x86_64.json")],
+      "command" => [RbConfig.ruby, "-I#{File.join(ROOT, "build/ext/rubernetes_linux")}", "tools/milestones/m0_kernel_probe.rb", "--output",
+                    File.join(directory, "abi-probe-x86_64.json")],
       "output_path" => File.join(directory, "abi-probe-x86_64.json"),
       "tool_path" => "tools/milestones/m0_kernel_probe.rb",
       "tool_sha256" => Digest::SHA256.file(File.join(ROOT, "tools/milestones/m0_kernel_probe.rb")).hexdigest,
       "started_at" => timestamp,
       "finished_at" => timestamp,
       "probe_count" => results.length,
-      "host" => {"sysname" => Etc.uname[:sysname], "release" => Etc.uname[:release], "machine" => Etc.uname[:machine], "ruby" => RUBY_DESCRIPTION},
+      "host" => {"sysname" => Etc.uname[:sysname], "release" => Etc.uname[:release], "machine" => Etc.uname[:machine],
+                 "ruby" => RUBY_DESCRIPTION},
       "native_extension" => {
         "path" => "build/ext/rubernetes_linux/rubernetes_linux.so",
         "loaded_feature" => "build/ext/rubernetes_linux/rubernetes_linux.so",
@@ -1002,7 +1033,9 @@ class M1GateTest < Minitest::Test
       "registered_testcase_inventory_count" => testcases.length,
       "executed_testcase_inventory_sha256" => Digest::SHA256.hexdigest(identity_inventory),
       "inventory_complete" => true,
-      "command_sha256" => Digest::SHA256.hexdigest(JSON.generate(commands.find { |entry| entry.fetch("name") == "rake_test" }.fetch("command"))),
+      "command_sha256" => Digest::SHA256.hexdigest(JSON.generate(commands.find do |entry|
+        entry.fetch("name") == "rake_test"
+      end.fetch("command"))),
       "test_pattern" => "test/**/*_test.rb",
       "test_inventory_sha256" => Digest::SHA256.hexdigest(test_inventory_content),
       "test_inventory_count" => test_entries.length
@@ -1020,7 +1053,9 @@ class M1GateTest < Minitest::Test
   def current_source_entries
     paths = Dir.glob(File.join(ROOT, "**/*"), File::FNM_DOTMATCH).select do |path|
       relative = path.delete_prefix("#{ROOT}/")
-      next false if relative.empty? || relative.match?(%r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/})
+      if relative.empty? || relative.match?(%r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/})
+        next false
+      end
 
       # Another test's scratch (excluded above) can vanish between glob and lstat.
       begin
@@ -1138,7 +1173,7 @@ class M1GateTest < Minitest::Test
     )
   end
 
-  def api_operation_fixture(inventory, index)
+  def api_operation_fixture(inventory, _index)
     headers = {"content-type" => "application/json", "x-kubernetes-test" => "semantic"}
     packet = {
       "status" => 200,
@@ -1226,25 +1261,25 @@ class M1GateTest < Minitest::Test
       runtime = runtime_by_gvk[id]
       schema_present = M1ProbeSupport.schema_contract_present?(registry_entry.fetch("schema"), type_index: type_index)
       fields = if runtime
-                  runtime.slice(*M1Gate::API_SURFACE_FIELDS)
-                else
-                  group, version, kind = id.split("/", 3)
-                  {
-                    "group" => group == "core" ? "" : group,
-                    "version" => version,
-                    "resource" => "",
-                    "kind" => kind,
-                    "scope" => "",
-                    "plural" => "",
-                    "singular" => "",
-                    "verbs" => [],
-                    "subresources" => [],
-                    "shortNames" => [],
-                    "categories" => [],
-                    "listKind" => "",
-                    "schema_contract_present" => schema_present
-                  }
-                end
+                 runtime.slice(*M1Gate::API_SURFACE_FIELDS)
+               else
+                 group, version, kind = id.split("/", 3)
+                 {
+                   "group" => group == "core" ? "" : group,
+                   "version" => version,
+                   "resource" => "",
+                   "kind" => kind,
+                   "scope" => "",
+                   "plural" => "",
+                   "singular" => "",
+                   "verbs" => [],
+                   "subresources" => [],
+                   "shortNames" => [],
+                   "categories" => [],
+                   "listKind" => "",
+                   "schema_contract_present" => schema_present
+                 }
+               end
       fields["group"] = registry_entry.fetch("group", "").to_s
       fields["version"] = registry_entry.fetch("version").to_s
       fields["kind"] = registry_entry.fetch("kind").to_s
@@ -1379,7 +1414,10 @@ class M1GateTest < Minitest::Test
       "unclassified_count" => 0,
       "operations" => REQUIRED_OPERATIONS.map do |operation|
         record = {"operation" => operation, "exit_status" => 0, "passed" => true, "attempt_count" => 1, "command" => ["kubectl", operation]}
-        record.merge!("exit_status" => 1, "expected_exit_status" => 1, "stderr" => "error: unknown field \"dataz\"") if operation == "apply-invalid"
+        if operation == "apply-invalid"
+          record.merge!("exit_status" => 1, "expected_exit_status" => 1,
+                        "stderr" => "error: unknown field \"dataz\"")
+        end
         record
       end
     )
@@ -1531,9 +1569,12 @@ class M1GateTest < Minitest::Test
       ["docker", "image", "inspect", kube, "--format", "{{json .RepoDigests}}", JSON.generate([kube])],
       ["docker", "image", "inspect", etcd, "--format", "{{json .RepoDigests}}", JSON.generate([etcd])],
       ["docker", "network", "create", "--label", "rubernetes.m1.oracle=true", "rubernetes-m1-oracle-net-fixture", ""],
-      ["docker", "run", "--detach", "--name", "rubernetes-m1-oracle-etcd-fixture", "--network", "rubernetes-m1-oracle-net-fixture", etcd, "--name", "m1-oracle", ""],
-      ["docker", "exec", "rubernetes-m1-oracle-etcd-fixture", "/usr/local/bin/etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health", ""],
-      ["docker", "run", "--detach", "--name", "rubernetes-m1-oracle-api-fixture", "--network", "rubernetes-m1-oracle-net-fixture", kube, "--secure-port=6443", ""],
+      ["docker", "run", "--detach", "--name", "rubernetes-m1-oracle-etcd-fixture", "--network", "rubernetes-m1-oracle-net-fixture", etcd,
+       "--name", "m1-oracle", ""],
+      ["docker", "exec", "rubernetes-m1-oracle-etcd-fixture", "/usr/local/bin/etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint",
+       "health", ""],
+      ["docker", "run", "--detach", "--name", "rubernetes-m1-oracle-api-fixture", "--network", "rubernetes-m1-oracle-net-fixture", kube,
+       "--secure-port=6443", ""],
       ["docker", "port", "rubernetes-m1-oracle-api-fixture", "6443/tcp", ""]
     ]
     commands.map.with_index do |command, index|
@@ -1763,7 +1804,6 @@ class M1GateTest < Minitest::Test
   def run_gate_cli(manifest_path)
     Open3.capture3(RbConfig.ruby, GATE, manifest_path, chdir: ROOT)
   end
-
 
   REPORT_NAMES = %w[corpus generation roundtrip api kubectl].freeze
   REQUIRED_OPERATIONS = M1Gate::REQUIRED_OPERATIONS

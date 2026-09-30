@@ -27,15 +27,23 @@ module Rubernetes
 
       # state.MemoryTable.
       MemoryTable = Struct.new(:total, :system_reserved, :allocatable, :reserved, :free, keyword_init: true) do
-        def to_h = {"total" => total, "systemReserved" => system_reserved, "allocatable" => allocatable, "reserved" => reserved, "free" => free}
-        def self.from_h(value) = new(total: value["total"].to_i, system_reserved: value["systemReserved"].to_i, allocatable: value["allocatable"].to_i,
-                                      reserved: value["reserved"].to_i, free: value["free"].to_i)
+        def to_h
+          {"total" => total, "systemReserved" => system_reserved, "allocatable" => allocatable, "reserved" => reserved, "free" => free}
+        end
+
+        def self.from_h(value)
+          new(total: value["total"].to_i, system_reserved: value["systemReserved"].to_i, allocatable: value["allocatable"].to_i,
+              reserved: value["reserved"].to_i, free: value["free"].to_i)
+        end
       end
 
       # state.NUMANodeState.
       NodeState = Struct.new(:assignments, :memory, :cells, keyword_init: true) do
         def deep_dup = NodeState.new(assignments: assignments, memory: memory.transform_values(&:dup), cells: cells.dup)
-        def to_h = {"numberOfAssignments" => assignments, "memoryMap" => memory.sort.to_h { |name, table| [name, table.to_h] }, "cells" => cells}
+
+        def to_h
+          {"numberOfAssignments" => assignments, "memoryMap" => memory.sort.to_h { |name, table| [name, table.to_h] }, "cells" => cells}
+        end
 
         def self.from_h(value)
           new(assignments: value["numberOfAssignments"].to_i, cells: Array(value["cells"]).map(&:to_i),
@@ -46,7 +54,10 @@ module Rubernetes
       # state.Block.
       Block = Struct.new(:numa_affinity, :type, :size, keyword_init: true) do
         def to_h = {"numaAffinity" => numa_affinity, "type" => type, "size" => size}
-        def self.from_h(value) = new(numa_affinity: Array(value["numaAffinity"]).map(&:to_i), type: value["type"].to_s, size: value["size"].to_i)
+
+        def self.from_h(value)
+          new(numa_affinity: Array(value["numaAffinity"]).map(&:to_i), type: value["type"].to_s, size: value["size"].to_i)
+        end
       end
 
       module_function
@@ -110,10 +121,18 @@ module Rubernetes
           changed
         end
 
-        def assignments = @mutex.synchronize { @assignments.transform_values { |containers| containers.transform_values { |blocks| blocks.map(&:dup) } } }
+        def assignments
+          @mutex.synchronize { @assignments.transform_values { |containers| containers.transform_values { |blocks| blocks.map(&:dup) } } }
+        end
 
         def assignments=(value)
-          @mutex.synchronize { @assignments = value.transform_values { |containers| containers.transform_values { |blocks| blocks.map(&:dup) } } }
+          @mutex.synchronize do
+            @assignments = value.transform_values do |containers|
+              containers.transform_values do |blocks|
+                blocks.map(&:dup)
+              end
+            end
+          end
           changed
         end
 
@@ -201,7 +220,8 @@ module Rubernetes
             raise Error, "checkpoint is corrupted: checksum #{body["checksum"]} does not match #{accepted.first}"
           end
           if body["policyName"].to_s != @policy_name
-            raise Error, "[memorymanager] configured policy \"#{@policy_name}\" differs from state checkpoint policy \"#{body["policyName"]}\""
+            raise Error,
+                  "[memorymanager] configured policy \"#{@policy_name}\" differs from state checkpoint policy \"#{body["policyName"]}\""
           end
 
           @machine = machine
@@ -391,14 +411,16 @@ module Rubernetes
                 block.numa_affinity.each do |id|
                   node = expected[id]
                   unless node
-                    raise Error, "[memorymanager] (pod: #{pod}, container: #{container}) the memory assignment uses the NUMA that does not exist"
+                    raise Error,
+                          "[memorymanager] (pod: #{pod}, container: #{container}) the memory assignment uses the NUMA that does not exist"
                   end
 
                   node.assignments += 1
                   node.cells = block.numa_affinity
                   table = node.memory[block.type]
                   unless table
-                    raise Error, "[memorymanager] (pod: #{pod}, container: #{container}) the memory assignment uses memory resource that does not exist"
+                    raise Error,
+                          "[memorymanager] (pod: #{pod}, container: #{container}) the memory assignment uses memory resource that does not exist"
                   end
                   next if remaining.zero? || table.free <= 0
 
@@ -459,7 +481,8 @@ module Rubernetes
 
             best = extended
           end
-          raise Error, "[memorymanager] preferred hint violates NUMA node allocation" if affinity_violates_allocations?(machine, best.affinity)
+          raise Error, "[memorymanager] preferred hint violates NUMA node allocation" if affinity_violates_allocations?(machine,
+                                                                                                                        best.affinity)
 
           bits = best.affinity.bits
           blocks = requests.map do |resource, size|
@@ -633,10 +656,15 @@ module Rubernetes
 
             best = extended
           end
-          raise Error, "[memorymanager] preferred hint violates NUMA node allocation" if affinity_violates_allocations?(machine, best.affinity)
+          raise Error, "[memorymanager] preferred hint violates NUMA node allocation" if affinity_violates_allocations?(machine,
+                                                                                                                        best.affinity)
 
           bits = best.affinity.bits
-          blocks_of = ->(requests) { requests.filter_map { |name, size| Block.new(numa_affinity: bits, type: name, size: size) if size.positive? } }
+          blocks_of = lambda { |requests|
+            requests.filter_map do |name, size|
+              Block.new(numa_affinity: bits, type: name, size: size) if size.positive?
+            end
+          }
           exclusive = {}
           sidecars = Hash.new(0)
           Array(pod.dig("spec", "initContainers")).each do |container|
@@ -800,7 +828,10 @@ module Rubernetes
 
         def default_hint(machine, pod, requests)
           hints = calculate_hints(machine, pod, requests)
-          raise Error, "[memorymanager] failed to get the default NUMA affinity, no NUMA nodes with enough memory is available" if hints.empty?
+          if hints.empty?
+            raise Error,
+                  "[memorymanager] failed to get the default NUMA affinity, no NUMA nodes with enough memory is available"
+          end
 
           best_hint(Array(hints[MEMORY]))
         end
@@ -934,7 +965,12 @@ module Rubernetes
         def start(active_pods: nil, sources_ready: nil)
           @active_pods = active_pods if active_pods
           @sources_ready = sources_ready if sources_ready
-          @state = @state_directory ? CheckpointState.new(directory: @state_directory, policy_name: @policy.name, pod_level: @pod_level) : MemoryState.new
+          @state = if @state_directory
+                     CheckpointState.new(directory: @state_directory, policy_name: @policy.name,
+                                         pod_level: @pod_level)
+                   else
+                     MemoryState.new
+                   end
           @policy.start(@state)
           @allocatable = @policy.allocatable_memory(@state)
           self
@@ -1028,7 +1064,10 @@ module Rubernetes
           totals = {}
           reserved_memory.each do |reservation|
             node = Integer(reservation[:numa_node] || reservation["numaNode"])
-            raise Error, "the reserved memory configuration references a NUMA node #{node} that does not exist on this machine" unless ids.include?(node)
+            unless ids.include?(node)
+              raise Error,
+                    "the reserved memory configuration references a NUMA node #{node} that does not exist on this machine"
+            end
 
             (reservation[:limits] || reservation["limits"] || {}).each do |resource, quantity|
               totals[resource.to_s] = add(totals[resource.to_s], quantity(quantity))

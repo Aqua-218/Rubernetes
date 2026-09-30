@@ -65,7 +65,8 @@ module Rubernetes
         end
 
         def record_failure(protocol, transport, stage)
-          metrics&.increment("apiserver_egress_dialer_dial_failure_count", {"protocol" => protocol, "stage" => stage, "transport" => transport})
+          metrics&.increment("apiserver_egress_dialer_dial_failure_count",
+                             {"protocol" => protocol, "stage" => stage, "transport" => transport})
         rescue StandardError
           nil
         end
@@ -104,7 +105,11 @@ module Rubernetes
           begin
             tunnel(proxy, host, port, timeout)
           rescue StandardError => error
-            proxy.close rescue nil
+            begin
+              proxy.close
+            rescue StandardError
+              nil
+            end
             Egress.record_failure(metric_protocol, @transport, "proxy")
             raise DialError, error.message
           end
@@ -221,7 +226,11 @@ module Rubernetes
           @last_communicated = nil
           on_connect
         rescue StandardError
-          s&.close rescue nil
+          begin
+            s&.close
+          rescue StandardError
+            nil
+          end
           raise
         end
       end
@@ -244,7 +253,10 @@ module Rubernetes
         def self.from_h(document)
           kind = document["kind"].to_s
           raise Error, "kind must be EgressSelectorConfiguration, got #{kind.inspect}" unless kind == "EgressSelectorConfiguration"
-          raise Error, "apiVersion #{document["apiVersion"].inspect} is not one of #{API_VERSIONS.join(", ")}" unless API_VERSIONS.include?(document["apiVersion"].to_s)
+          unless API_VERSIONS.include?(document["apiVersion"].to_s)
+            raise Error,
+                  "apiVersion #{document["apiVersion"].inspect} is not one of #{API_VERSIONS.join(", ")}"
+          end
 
           selections = document["egressSelections"]
           raise Error, "egressSelections must be a list" unless selections.is_a?(Array)
@@ -255,7 +267,10 @@ module Rubernetes
             raise Error, "#{path}: must be an object" unless selection.is_a?(Hash)
 
             name = selection["name"].to_s.downcase
-            raise Error, "#{path}.name: unrecognized service name #{selection["name"].inspect} (controlplane, etcd or cluster)" unless KINDS.include?(name)
+            unless KINDS.include?(name)
+              raise Error,
+                    "#{path}.name: unrecognized service name #{selection["name"].inspect} (controlplane, etcd or cluster)"
+            end
             raise Error, "#{path}.name: Duplicate value: #{name.inspect}" if dialers.key?(name)
 
             dialers[name] = build_dialer(selection["connection"] || {}, "#{path}.connection")
@@ -266,11 +281,17 @@ module Rubernetes
         def self.build_dialer(connection, path)
           protocol = connection["proxyProtocol"].to_s
           transport = connection["transport"] || {}
-          raise Error, "#{path}.proxyProtocol: unrecognized service connection protocol #{protocol.inspect}" unless PROTOCOLS.include?(protocol)
+          unless PROTOCOLS.include?(protocol)
+            raise Error,
+                  "#{path}.proxyProtocol: unrecognized service connection protocol #{protocol.inspect}"
+          end
 
           case protocol
           when "Direct"
-            raise Error, "#{path}.transport: must not be set for Direct" if connection.key?("transport") && !connection["transport"].nil? && !connection["transport"].empty?
+            if connection.key?("transport") && !connection["transport"].nil? && !connection["transport"].empty?
+              raise Error,
+                    "#{path}.transport: must not be set for Direct"
+            end
 
             nil
           when "GRPC"
@@ -284,12 +305,16 @@ module Rubernetes
             elsif transport["tcp"]
               tcp = transport["tcp"]
               url = URI.parse(tcp["url"].to_s)
-              raise Error, "#{path}.transport.tcp.url: invalid proxy server url #{tcp["url"].inspect}" if url.host.to_s.empty? || url.port.nil?
+              if url.host.to_s.empty? || url.port.nil?
+                raise Error,
+                      "#{path}.transport.tcp.url: invalid proxy server url #{tcp["url"].inspect}"
+              end
 
               tls_config = tcp["tlsConfig"]
               raise Error, "#{path}.transport.tcp.tlsConfig: Required value (clientKey and clientCert)" unless tls_config.is_a?(Hash)
 
-              Dialer.new(protocol: protocol, transport: "tcp", proxy_address: "#{url.host}:#{url.port}", tls: tls_settings(tls_config, path))
+              Dialer.new(protocol: protocol, transport: "tcp", proxy_address: "#{url.host}:#{url.port}",
+                         tls: tls_settings(tls_config, path))
             else
               raise Error, "#{path}.transport: Either a TCP or UDS transport must be specified"
             end

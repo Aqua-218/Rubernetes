@@ -43,7 +43,11 @@ module M5ProbeSupport
 
   def canonical(value)
     case value
-    when Hash then value.keys.map(&:to_s).sort.each_with_object({}) { |key, out| out[key] = canonical(value[value.keys.find { |k| k.to_s == key }]) }
+    when Hash then value.keys.map(&:to_s).sort.each_with_object({}) do |key, out|
+      out[key] = canonical(value[value.keys.find do |k|
+        k.to_s == key
+      end])
+    end
     when Array then value.map { |child| canonical(child) }
     when Symbol then value.to_s
     else value
@@ -57,7 +61,7 @@ module M5ProbeSupport
       "milestone" => "M5",
       "kind" => kind,
       "input_sha256" => ENV.fetch("RUBERNETES_M5_INPUT_SHA256", nil),
-      "input_file_count" => ENV["RUBERNETES_M5_INPUT_FILE_COUNT"] && Integer(ENV["RUBERNETES_M5_INPUT_FILE_COUNT"]),
+      "input_file_count" => ENV.fetch("RUBERNETES_M5_INPUT_FILE_COUNT", nil) && Integer(ENV.fetch("RUBERNETES_M5_INPUT_FILE_COUNT", nil)),
       "input_stable" => true,
       "host" => host,
       "measurement_level" => measurement_level,

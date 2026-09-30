@@ -38,7 +38,9 @@ module M6SecurityPipelineProbe
       recorder.record(stage)
       target.public_send(method_name, *arguments, **keywords, &block)
     end
-    wrapper.define_singleton_method(:method_missing) { |name, *arguments, **keywords, &block| target.public_send(name, *arguments, **keywords, &block) }
+    wrapper.define_singleton_method(:method_missing) do |name, *arguments, **keywords, &block|
+      target.public_send(name, *arguments, **keywords, &block)
+    end
     wrapper.define_singleton_method(:respond_to_missing?) { |name, include_private = false| target.respond_to?(name, include_private) }
     wrapper
   end
@@ -51,7 +53,10 @@ module M6SecurityPipelineProbe
 
     def admit(attributes)
       @recorder.record("admission.mutating")
-      attributes.object["metadata"]["labels"] = (attributes.object["metadata"]["labels"] || {}).merge("mutated" => "true") if attributes.object.is_a?(Hash)
+      return unless attributes.object.is_a?(Hash)
+
+      attributes.object["metadata"]["labels"] =
+        (attributes.object["metadata"]["labels"] || {}).merge("mutated" => "true")
     end
   end
 
@@ -63,7 +68,12 @@ module M6SecurityPipelineProbe
 
     def validate(attributes)
       @recorder.record("admission.validating")
-      raise S::Admission::Rejected.new("configmaps \"denied\" is forbidden: name denied is reserved", plugin: name) if attributes.object&.dig("metadata", "name") == "denied"
+      if attributes.object&.dig(
+        "metadata", "name"
+      ) == "denied"
+        raise S::Admission::Rejected.new("configmaps \"denied\" is forbidden: name denied is reserved",
+                                         plugin: name)
+      end
     end
   end
 
@@ -73,13 +83,13 @@ module M6SecurityPipelineProbe
       @recorder = recorder
     end
 
-    def create(*arguments, **keywords, &block)
+    def create(*, **keywords, &)
       @recorder.record("store.create")
-      @store.create(*arguments, **keywords, &block)
+      @store.create(*, **keywords, &)
     end
 
-    def method_missing(name, *arguments, **keywords, &block)
-      @store.public_send(name, *arguments, **keywords, &block)
+    def method_missing(name, *, **keywords, &)
+      @store.public_send(name, *, **keywords, &)
     end
 
     def respond_to_missing?(name, include_private = false)
@@ -108,18 +118,26 @@ module M6SecurityPipelineProbe
     tokens = S::Authentication::StaticTokenFile.new(S::Authentication::StaticTokenFile.parse("admin-token,admin,1,system:masters\nalice-token,alice,2\nbob-token,bob,3\n"))
     authenticator = observed(S::Authentication::Union.new(authenticators: [tokens]), recorder, "authentication", :authenticate)
     source = Object.new
-    roles = [{"metadata" => {"name" => "cm-writer"}, "rules" => [{"apiGroups" => [""], "resources" => %w[configmaps], "verbs" => %w[create get list]}]}]
-    bindings = [{"metadata" => {"name" => "alice"}, "roleRef" => {"kind" => "ClusterRole", "name" => "cm-writer"}, "subjects" => [{"kind" => "User", "name" => "alice"}]}]
+    roles = [{"metadata" => {"name" => "cm-writer"},
+              "rules" => [{"apiGroups" => [""], "resources" => %w[configmaps], "verbs" => %w[create get list]}]}]
+    bindings = [{"metadata" => {"name" => "alice"}, "roleRef" => {"kind" => "ClusterRole", "name" => "cm-writer"},
+                 "subjects" => [{"kind" => "User", "name" => "alice"}]}]
     source.define_singleton_method(:cluster_roles) { roles }
     source.define_singleton_method(:cluster_role_bindings) { bindings }
     source.define_singleton_method(:roles) { |_ns| [] }
     source.define_singleton_method(:role_bindings) { |_ns| [] }
-    authorizer = observed(S::Authorization::Union.new(authorizers: [S::Authorization::RBAC.new(source: source)]), recorder, "authorization", :authorize)
-    plcs = [{"metadata" => {"name" => "all"}, "spec" => {"type" => "Limited", "limited" => {"nominalConcurrencyShares" => 10, "limitResponse" => {"type" => "Queue", "queuing" => {"queues" => 8, "handSize" => 2, "queueLengthLimit" => 10}}}}}]
+    authorizer = observed(S::Authorization::Union.new(authorizers: [S::Authorization::RBAC.new(source: source)]), recorder,
+                          "authorization", :authorize)
+    plcs = [{"metadata" => {"name" => "all"},
+             "spec" => {"type" => "Limited",
+                        "limited" => {"nominalConcurrencyShares" => 10,
+                                      "limitResponse" => {"type" => "Queue",
+                                                          "queuing" => {"queues" => 8, "handSize" => 2, "queueLengthLimit" => 10}}}}}]
     schemas = [{"metadata" => {"name" => "all"}, "spec" => {"matchingPrecedence" => 1000, "priorityLevelConfiguration" => {"name" => "all"}, "distinguisherMethod" => {"type" => "ByUser"},
-                                                             "rules" => [{"subjects" => [{"kind" => "Group", "group" => {"name" => "*"}}], "resourceRules" => [{"verbs" => ["*"], "apiGroups" => ["*"], "resources" => ["*"], "namespaces" => ["*"], "clusterScope" => true}],
-                                                                          "nonResourceRules" => [{"verbs" => ["*"], "nonResourceURLs" => ["*"]}]}]}}]
-    flow = observed(S::FlowControl::Controller.new(flow_schemas: schemas, priority_level_configurations: plcs), recorder, "flow_control", :enter)
+                                                            "rules" => [{"subjects" => [{"kind" => "Group", "group" => {"name" => "*"}}], "resourceRules" => [{"verbs" => ["*"], "apiGroups" => ["*"], "resources" => ["*"], "namespaces" => ["*"], "clusterScope" => true}],
+                                                                         "nonResourceRules" => [{"verbs" => ["*"], "nonResourceURLs" => ["*"]}]}]}}]
+    flow = observed(S::FlowControl::Controller.new(flow_schemas: schemas, priority_level_configurations: plcs), recorder, "flow_control",
+                    :enter)
     sink = S::Audit::MemoryBackend.new
     policy = S::Audit::Policy.from_h({"apiVersion" => "audit.k8s.io/v1", "kind" => "Policy", "rules" => [{"level" => "RequestResponse"}]})
     admission = S::Admission::Chain.new(plugins: [OrderedMutator.new(recorder), OrderedValidator.new(recorder)])
@@ -142,7 +160,7 @@ module M6SecurityPipelineProbe
 
   def leak?(body)
     text = JSON.generate(body)
-    text.match?(/Rubernetes::|#<|\.rb:\d+|NoMethodError|undefined method|admin-token|alice-token|bob-token|\/root\//)
+    text.match?(%r{Rubernetes::|#<|\.rb:\d+|NoMethodError|undefined method|admin-token|alice-token|bob-token|/root/})
   end
 
   def run
@@ -156,7 +174,8 @@ module M6SecurityPipelineProbe
     # kube-apiserver emits the RequestReceived audit stage as soon as the
     # user is known (after authentication, before authorization); the
     # ResponseComplete stage is the final step of the pipeline.
-    expected_order = %w[authentication audit.RequestReceived authorization flow_control admission.mutating admission.validating store.create audit.ResponseComplete]
+    expected_order = %w[authentication audit.RequestReceived authorization flow_control admission.mutating admission.validating
+                        store.create audit.ResponseComplete]
     cases << {"id" => "stage_order_create", "status" => created.status, "observed" => recorder.events.dup, "expected" => expected_order,
               "mutated_label" => created.body.dig("metadata", "labels", "mutated"),
               "passed" => created.status == 201 && recorder.events == expected_order && created.body.dig("metadata", "labels", "mutated") == "true"}
@@ -188,9 +207,9 @@ module M6SecurityPipelineProbe
                           !recorder.events.include?("store.create") && denied.body["reason"] == "Forbidden" && !leak?(denied.body)}
 
     recorder.reset
-    malformed = request(server, "POST", "/api/v1/namespaces/default/configmaps", token: "alice-token", body: nil)
+    request(server, "POST", "/api/v1/namespaces/default/configmaps", token: "alice-token", body: nil)
     malformed = server.call(Rubernetes::API::Request.new(method: "POST", path: "/api/v1/namespaces/default/configmaps",
-                                                          headers: {"authorization" => "Bearer alice-token", "content-type" => "application/json"}, body: "{not json"))
+                                                         headers: {"authorization" => "Bearer alice-token", "content-type" => "application/json"}, body: "{not json"))
     cases << {"id" => "malformed_body_is_400_without_internal_detail", "status" => malformed.status, "message" => malformed.body["message"],
               "passed" => malformed.status == 400 && malformed.body["reason"] == "BadRequest" && !leak?(malformed.body) && !recorder.events.include?("store.create")}
 
@@ -198,14 +217,21 @@ module M6SecurityPipelineProbe
     audit_bodies = JSON.generate(audit_events)
     cases << {"id" => "audit_records_every_outcome_without_credentials", "events" => audit_events.length,
               "stages" => audit_events.map { |event| event["stage"] }.tally,
-              "codes" => audit_events.select { |event| event["stage"] == "ResponseComplete" }.map { |event| event.dig("responseStatus", "code") }.tally,
-              "passed" => audit_events.count { |event| event["stage"] == "ResponseComplete" } >= 6 && !audit_bodies.include?("alice-token") && !audit_bodies.include?("wrong") &&
-                          audit_events.any? { |event| event.dig("responseStatus", "code") == 401 } && audit_events.any? { |event| event.dig("responseStatus", "code") == 403 }}
+              "codes" => audit_events.select do |event|
+                event["stage"] == "ResponseComplete"
+              end.map { |event| event.dig("responseStatus", "code") }.tally,
+              "passed" => audit_events.count do |event|
+                event["stage"] == "ResponseComplete"
+              end >= 6 && !audit_bodies.include?("alice-token") && !audit_bodies.include?("wrong") &&
+                          audit_events.any? { |event| event.dig("responseStatus", "code") == 401 } && audit_events.any? do |event|
+                                                                                                        event.dig("responseStatus", "code") == 403
+                                                                                                      end}
 
     M6ProbeSupport.emit(M6ProbeSupport.report(
       kind: "m6_security_pipeline_trace", measurement_level: "integration_tested", started_at: started_at, cases: cases,
       extra: {"specified_order" => %w[tls request_id authentication authorization flow_control routing decode mutating_admission validating_admission strategy store encode audit],
-              "sources" => M5ProbeSupport.source_files(%w[lib/rubernetes/security/pipeline.rb lib/rubernetes/api/server.rb lib/rubernetes/security/admission/framework.rb])}
+              "sources" => M5ProbeSupport.source_files(%w[lib/rubernetes/security/pipeline.rb lib/rubernetes/api/server.rb
+                                                          lib/rubernetes/security/admission/framework.rb])}
     ))
   end
 end

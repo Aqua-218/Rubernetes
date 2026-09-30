@@ -90,7 +90,7 @@ class RuntimeDurableJSONTest < Minitest::Test
       assert_raises(Runtime::JournalCorruption) { Runtime::DurableWAL.new(wal_path, fsync: false) }
 
       snapshot_path = File.join(directory, "base.snapshot.json")
-      File.write(snapshot_path, ("{" + ("x" * Runtime::AtomicSnapshotStore::MAX_DOCUMENT_BYTES) + "}\n"))
+      File.write(snapshot_path, "{" + ("x" * Runtime::AtomicSnapshotStore::MAX_DOCUMENT_BYTES) + "}\n")
       assert_raises(Runtime::SnapshotCorruption) do
         Runtime::AtomicSnapshotStore.new(directory, fsync: false).read("base")
       end
@@ -140,8 +140,8 @@ class RuntimeDurableJSONTest < Minitest::Test
 
   private
 
-  def with_directory
-    Dir.mktmpdir("runtime-durable-json-") { |directory| yield directory }
+  def with_directory(&)
+    Dir.mktmpdir("runtime-durable-json-", &)
   end
 
   def valid_wal_line

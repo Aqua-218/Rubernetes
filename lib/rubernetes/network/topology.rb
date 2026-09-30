@@ -2,7 +2,6 @@
 
 require "digest"
 require "ipaddr"
-require "set"
 
 require_relative "errors"
 require_relative "netlink"
@@ -60,6 +59,7 @@ module Rubernetes
           state = @bridges[bridge]
           if state
             raise OwnershipError, "bridge #{bridge} MTU changed while referenced" unless state.fetch("mtu") == effective_mtu
+
             state.fetch("owners") << owner_id
             return snapshot(state)
           end
@@ -112,8 +112,9 @@ module Rubernetes
 
       def ensure_bridge(operation)
         if @adapter&.respond_to?(:apply)
-          result = @adapter.apply(operation, operation_id: "node-bridge:#{operation.parameters.fetch('name')}")
+          result = @adapter.apply(operation, operation_id: "node-bridge:#{operation.parameters.fetch("name")}")
           raise EffectError, "node bridge adapter rejected link_add" if result == false
+
           return true
         end
         raise EffectError, "node bridge manager requires a netlink or adapter implementation" unless @netlink
@@ -125,13 +126,14 @@ module Rubernetes
                  Integer(current.fetch("mtu")) == operation.parameters.fetch("mtu") && current.fetch("up") == true
             raise OwnershipError, "pre-existing bridge does not match the node bridge contract"
           end
+
           false
         rescue NetlinkError => error
           raise unless [Errno::ENOENT::Errno, Errno::ENODEV::Errno].include?(error.errno)
 
           @netlink.link_add(name: operation.parameters.fetch("name"), kind: "bridge",
                             mtu: operation.parameters.fetch("mtu"), up: true, stp: false,
-                            operation: "node-bridge:#{operation.parameters.fetch('name')}")
+                            operation: "node-bridge:#{operation.parameters.fetch("name")}")
           true
         end
       end
@@ -175,8 +177,10 @@ module Rubernetes
         config_hash = config.respond_to?(:to_h) ? config.to_h : config
         id = Support.string(Support.fetch(sandbox_hash, "sandbox_id", "id", default: sandbox_hash.to_s), "sandbox_id")
         host_network = Support.host_network?(config_hash)
-        return Plan.new(operations: [], mtu: @mtu, backend: "host", revision: revision,
-                        metadata: {"sandbox_id" => id, "host_network" => true}).freeze if host_network
+        if host_network
+          return Plan.new(operations: [], mtu: @mtu, backend: "host", revision: revision,
+                          metadata: {"sandbox_id" => id, "host_network" => true}).freeze
+        end
 
         pod_ifname = valid_ifname(Support.fetch(config_hash, "pod_ifname", "container_ifname", default: "eth0"))
         host_ifname = valid_ifname(Support.fetch(config_hash, "host_ifname", default: default_host_ifname(id)))
@@ -187,15 +191,14 @@ module Rubernetes
           missing = Netlink::NamespaceLease::REQUIRED_FIELDS.select do |field|
             Support.fetch(sandbox_netns, field, default: nil).nil?
           end
-          raise OwnershipError, "sandbox network namespace holder is missing #{missing.join(', ')}" unless missing.empty?
+          raise OwnershipError, "sandbox network namespace holder is missing #{missing.join(", ")}" unless missing.empty?
         elsif sandbox_netns
           raise OwnershipError, "sandbox network namespace requires a complete holder identity"
         end
         namespace_value = Support.fetch(config_hash, "netns", "network_namespace", default: nil)
         namespace_fd_value = Support.fetch(config_hash, "namespace_fd", "netns_fd", "network_namespace_fd", default: nil)
-        if sandbox_netns && namespace_fd_value.nil?
-          raise OwnershipError, "sandbox network namespace requires a verified open FD lease"
-        end
+        raise OwnershipError, "sandbox network namespace requires a verified open FD lease" if sandbox_netns && namespace_fd_value.nil?
+
         namespace, namespace_target = normalize_namespace(namespace_value, namespace_fd_value)
         namespace_options = {"namespace" => namespace, "namespace_fd" => namespace_target}.compact
         ips = normalize_ips(leases || Support.fetch(config_hash, "ips", "ip", default: []))
@@ -209,22 +212,22 @@ module Rubernetes
         # scoped, and the plan then tries to read the state of an interface it
         # has not created yet.
         operations << op("link_add", "link:#{host_ifname}", "#{host_ifname}:#{id}", "name" => host_ifname, "kind" => "veth",
-                          "peer" => pod_ifname, "peer_resource" => pod_link_resource,
-                          "mtu" => effective_mtu, **namespace_options)
+                                                                                    "peer" => pod_ifname, "peer_resource" => pod_link_resource,
+                                                                                    "mtu" => effective_mtu, **namespace_options)
         operations << op("link_set", "link:#{host_ifname}", "#{host_ifname}:#{id}", "name" => host_ifname,
-                          "master" => bridge, "up" => true)
+                                                                                    "master" => bridge, "up" => true)
         # The pod-side interface is "eth0" in every sandbox, so its ownership id
         # must carry the sandbox the way addresses and routes already do --
         # otherwise the second pod on the node claims a resource the first one
         # owns and its start fails.
         operations << op("link_set", pod_link_resource, "#{pod_ifname}:#{id}", "name" => pod_ifname,
-                          "up" => true, **namespace_options)
+                                                                               "up" => true, **namespace_options)
         ips.each_with_index do |entry, index|
           ip = entry.fetch("address")
           prefix = entry.fetch("prefix")
           operations << op("address_add", "address:#{id}:#{ip}/#{prefix}", "#{id}:#{ip}/#{prefix}", "address" => ip,
-                            "prefix" => prefix, "interface" => pod_ifname, "family" => entry.fetch("family"), **namespace_options,
-                            "index" => index)
+                                                                                                    "prefix" => prefix, "interface" => pod_ifname, "family" => entry.fetch("family"), **namespace_options,
+                                                                                                    "index" => index)
         end
         if Support.bool(Support.fetch(config_hash, "default_route", default: true))
           ips.group_by { |entry| entry.fetch("family") }.each_key do |family|
@@ -235,21 +238,22 @@ module Rubernetes
                                      "default route metric", min: 0, max: 0xffff_ffff)
             suffix = family == "ipv4" ? "" : ":#{family}"
             operations << op("route_add", "route:#{id}:default#{suffix}", "#{id}:default:#{family}",
-                              "destination" => default_destination(family), "via" => gateway,
-                              "interface" => pod_ifname, "family" => family, "table" => 254,
-                              "metric" => metric,
-                              "protocol" => Netlink::RTPROT_STATIC,
-                              "scope" => gateway ? Netlink::RT_SCOPE_UNIVERSE : Netlink::RT_SCOPE_LINK,
-                              "route_type" => Netlink::RTN_UNICAST, **namespace_options)
+                             "destination" => default_destination(family), "via" => gateway,
+                             "interface" => pod_ifname, "family" => family, "table" => 254,
+                             "metric" => metric,
+                             "protocol" => Netlink::RTPROT_STATIC,
+                             "scope" => gateway ? Netlink::RT_SCOPE_UNIVERSE : Netlink::RT_SCOPE_LINK,
+                             "route_type" => Netlink::RTN_UNICAST, **namespace_options)
           end
         end
         routes.each do |route|
-          operations << op("route_add", "route:#{id}:#{route.fetch("destination")}", "#{id}:#{route.fetch("destination")}", route.merge("interface" => pod_ifname, **namespace_options))
+          operations << op("route_add", "route:#{id}:#{route.fetch("destination")}", "#{id}:#{route.fetch("destination")}",
+                           route.merge("interface" => pod_ifname, **namespace_options))
         end
         overlay_plan = build_overlay_plan(overlay || Support.fetch(config_hash, "overlay", default: nil), config_hash, revision)
         selected_backend = overlay_backend(overlay)
         if overlay_plan
-          overlay_plan = overlay_plan.respond_to?(:to_h) ? overlay_plan.to_h : overlay_plan
+          overlay_plan = overlay_plan.to_h if overlay_plan.respond_to?(:to_h)
           selected_backend ||= Support.fetch(overlay_plan, "backend", default: nil)
           Overlay.validate_plan!(overlay_plan)
           operations.concat(Array(Support.fetch(overlay_plan, "operations", default: [])).map do |entry|
@@ -265,11 +269,11 @@ module Rubernetes
                  metadata: {"sandbox_id" => id, "bridge" => bridge, "host_ifname" => host_ifname,
                             "pod_ifname" => pod_ifname, "namespace" => namespace,
                             "namespace_fd" => namespace_target,
-                            "netns_handle" => (sandbox_netns.is_a?(Hash) && Support.fetch(sandbox_netns, "handle", default: nil)),
-                            "netns_pid" => (sandbox_netns.is_a?(Hash) && Support.fetch(sandbox_netns, "pid", default: nil)),
-                            "netns_pidfd" => (sandbox_netns.is_a?(Hash) && Support.fetch(sandbox_netns, "pidfd", default: nil)),
-                            "netns_start_time" => (sandbox_netns.is_a?(Hash) && Support.fetch(sandbox_netns, "start_time", default: nil)),
-                            "netns_inode" => (sandbox_netns.is_a?(Hash) && Support.fetch(sandbox_netns, "inode", default: nil)),
+                            "netns_handle" => sandbox_netns.is_a?(Hash) && Support.fetch(sandbox_netns, "handle", default: nil),
+                            "netns_pid" => sandbox_netns.is_a?(Hash) && Support.fetch(sandbox_netns, "pid", default: nil),
+                            "netns_pidfd" => sandbox_netns.is_a?(Hash) && Support.fetch(sandbox_netns, "pidfd", default: nil),
+                            "netns_start_time" => sandbox_netns.is_a?(Hash) && Support.fetch(sandbox_netns, "start_time", default: nil),
+                            "netns_inode" => sandbox_netns.is_a?(Hash) && Support.fetch(sandbox_netns, "inode", default: nil),
                             "options" => options}.compact).freeze
       end
 
@@ -345,6 +349,7 @@ module Rubernetes
         Array(plan.operations).reverse_each do |operation|
           inverse = inverse_operation(operation, owned_links: owned_links)
           next unless inverse
+
           begin
             execute(inverse, operation_id: operation_id)
           rescue StandardError => error
@@ -401,7 +406,7 @@ module Rubernetes
 
         params = operation.parameters
         previous = @netlink.link_state(name: params["name"], index: params["index"],
-                                        namespace: params["namespace"], namespace_fd: params["namespace_fd"])
+                                       namespace: params["namespace"], namespace_fd: params["namespace_fd"])
         Operation.new(action: operation.action, resource: operation.resource, identity: operation.identity,
                       parameters: Support.immutable(params.merge("previous_state" => previous))).freeze
       rescue StandardError => error
@@ -417,11 +422,13 @@ module Rubernetes
         if @adapter&.respond_to?(:apply)
           result = @adapter.apply(operation, operation_id: operation_id)
           raise EffectError, "network adapter rejected #{operation.action}" if result == false
+
           return result
         end
         if @adapter&.respond_to?(:call) && !@netlink
           result = @adapter.call(operation, operation_id: operation_id)
           raise EffectError, "network adapter rejected #{operation.action}" if result == false
+
           return result
         end
         raise EffectError, "network topology requires a netlink or adapter implementation" unless @netlink
@@ -481,6 +488,7 @@ module Rubernetes
 
           previous = Support.fetch(operation.parameters, "previous_state", default: nil)
           raise EffectError, "link_set rollback requires a durable previous state for #{operation.resource}" unless previous
+
           return Operation.new(action: "link_set", resource: operation.resource, identity: operation.identity,
                                parameters: Support.immutable(
                                  "name" => Support.fetch(previous, "name", default: operation.parameters["name"]),
@@ -488,7 +496,7 @@ module Rubernetes
                                  "mtu" => Support.fetch(previous, "mtu", default: operation.parameters["mtu"]),
                                  "up" => Support.fetch(previous, "up", default: operation.parameters["up"]),
                                  "master" => Support.fetch(previous, "master", default: operation.parameters["master"]),
-                                 "clear_master" => (previous["master"].nil? && !operation.parameters["master"].nil?),
+                                 "clear_master" => previous["master"].nil? && !operation.parameters["master"].nil?,
                                  "namespace" => operation.parameters["namespace"],
                                  "namespace_fd" => operation.parameters["namespace_fd"]
                                )).freeze
@@ -510,6 +518,7 @@ module Rubernetes
         if values.is_a?(Hash)
           lease_values = Support.fetch(values, "leases", default: nil)
           return normalize_ips(lease_values) if lease_values
+
           value = Support.fetch(values, "ip", "address", default: nil)
           return normalize_ips([value]) if value
         end
@@ -603,11 +612,10 @@ module Rubernetes
 
       def build_overlay_plan(source, config_hash, revision)
         return nil if source.nil?
+
         value = source.respond_to?(:to_h) ? source.to_h : source
         return value if value.is_a?(Plan) || (value.is_a?(Hash) && Support.fetch(value, "operations", default: nil))
-        unless value.is_a?(Hash)
-          raise ValidationError, "overlay configuration must be an object or Overlay plan"
-        end
+        raise ValidationError, "overlay configuration must be an object or Overlay plan" unless value.is_a?(Hash)
 
         options = value.dup
         nodes = Support.fetch(options, "nodes", default: Support.fetch(config_hash, "overlay_nodes", "nodes", default: []))
@@ -637,6 +645,7 @@ module Rubernetes
       def link_extra_parameters(params)
         params.each_with_object({}) do |(key, value), result|
           next if %w[name kind mtu master up peer namespace namespace_fd index].include?(key)
+
           result[key.to_sym] = value
         end
       end
@@ -662,6 +671,7 @@ module Rubernetes
                      underlay_mtu: 1500, family: nil, netlink: nil, adapter: nil, **_options)
         @configured_backend = backend.to_s.downcase
         raise ValidationError, "overlay backend must be auto, host-gw, or vxlan" unless %w[auto host-gw vxlan].include?(@configured_backend)
+
         @vni = Support.integer(vni, "VXLAN VNI", min: 1, max: 16_777_215)
         @dstport = Support.integer(port || dstport, "VXLAN UDP port", min: 1, max: 65_535)
         @underlay_mtu = Support.integer(underlay_mtu, "underlay MTU", min: 576, max: 65_535)
@@ -687,9 +697,8 @@ module Rubernetes
                                      "host_network", default: false) == true
 
         backend = Support.fetch(value, "backend", default: nil)&.to_s&.downcase
-        if backend && !%w[host-gw vxlan host].include?(backend)
-          raise ValidationError, "unsupported overlay backend #{backend.inspect}"
-        end
+        raise ValidationError, "unsupported overlay backend #{backend.inspect}" if backend && !%w[host-gw vxlan host].include?(backend)
+
         operations = Array(Support.fetch(value, "operations", default: []))
         overlay_operations = operations.filter_map do |entry|
           operation = entry.respond_to?(:to_h) ? entry.to_h : entry
@@ -702,21 +711,25 @@ module Rubernetes
 
           kind = Support.fetch(parameters, "kind", default: nil).to_s
           route = %w[route_add route_delete].include?(action) &&
-            !parameters.key?("interface") && !parameters.key?(:interface)
+                  !parameters.key?("interface") && !parameters.key?(:interface)
           next unless %w[fdb_add fdb_delete].include?(action) ||
-            (%w[link_add link_delete].include?(action) && kind == "vxlan") || route
+                      (%w[link_add link_delete].include?(action) && kind == "vxlan") || route
 
           [action, parameters]
         end
         return true if overlay_operations.empty?
 
-        inferred_backend = backend || if overlay_operations.any? { |action, parameters| action.start_with?("fdb_") || Support.fetch(parameters, "kind", default: nil).to_s == "vxlan" }
-          "vxlan"
-        elsif overlay_operations.any? { |_action, parameters| Support.fetch(parameters, "via", "gateway", default: nil) }
-          "host-gw"
-        else
-          "vxlan"
+        inferred_backend = backend || if overlay_operations.any? do |action, parameters|
+          action.start_with?("fdb_") || Support.fetch(parameters, "kind", default: nil).to_s == "vxlan"
         end
+                                        "vxlan"
+                                      elsif overlay_operations.any? do |_action, parameters|
+                                        Support.fetch(parameters, "via", "gateway", default: nil)
+                                      end
+                                        "host-gw"
+                                      else
+                                        "vxlan"
+                                      end
 
         case inferred_backend
         when "vxlan"
@@ -733,9 +746,8 @@ module Rubernetes
                 raise ValidationError, "VXLAN FDB requires #{field}" if Support.fetch(parameters, field, default: nil).to_s.empty?
               end
               mac = Support.fetch(parameters, "mac", default: nil).to_s
-              unless mac.match?(/\A[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\z/)
-                raise ValidationError, "VXLAN FDB MAC is invalid"
-              end
+              raise ValidationError, "VXLAN FDB MAC is invalid" unless mac.match?(/\A[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\z/)
+
               Support.ip(Support.fetch(parameters, "destination"), name: "VXLAN FDB destination")
             end
           end
@@ -761,7 +773,7 @@ module Rubernetes
         return @configured_backend unless @configured_backend == "auto"
 
         entries = Array(nodes).map { |node| normalize_node(node) }
-                              .reject { |node| local_node && node.name.to_s == local_node.to_s }
+          .reject { |node| local_node && node.name.to_s == local_node.to_s }
         reachable = entries.all? do |node|
           node.l2_reachable && node.next_hop_reachable
         end
@@ -782,11 +794,16 @@ module Rubernetes
         entries = Array(nodes).map { |node| normalize_node(node) }
         selected = backend&.to_s&.downcase || self.backend(nodes: entries, local_node: local_node)
         raise ValidationError, "unsupported overlay backend #{selected.inspect}" unless %w[host-gw vxlan].include?(selected)
+
         underlay_mtu = Support.integer(underlay_mtu, "underlay MTU", min: 576, max: 65_535)
-        if selected == "vxlan" && underlay_mtu <= IPV6_OVERHEAD
-          raise ValidationError, "underlay MTU is too small for VXLAN IPv6 overhead"
-        end
-        effective_mtu = selected == "vxlan" ? {"ipv4" => underlay_mtu - IPV4_OVERHEAD, "ipv6" => underlay_mtu - IPV6_OVERHEAD} : {"ipv4" => underlay_mtu, "ipv6" => underlay_mtu}
+        raise ValidationError, "underlay MTU is too small for VXLAN IPv6 overhead" if selected == "vxlan" && underlay_mtu <= IPV6_OVERHEAD
+
+        effective_mtu = if selected == "vxlan"
+                          {"ipv4" => underlay_mtu - IPV4_OVERHEAD,
+                           "ipv6" => underlay_mtu - IPV6_OVERHEAD}
+                        else
+                          {"ipv4" => underlay_mtu, "ipv6" => underlay_mtu}
+                        end
         operations = []
         device = valid_ifname(Support.fetch(options, "device", "dev", default: "vxlan0"))
         namespace = Support.fetch(options, "namespace", "netns", "network_namespace", default: nil)
@@ -825,17 +842,16 @@ module Rubernetes
                               "protocol" => Netlink::RTPROT_STATIC,
                               "scope" => selected == "host-gw" ? Netlink::RT_SCOPE_UNIVERSE : Netlink::RT_SCOPE_LINK,
                               "route_type" => Netlink::RTN_UNICAST}.merge(namespace_options).compact
-          if selected == "host-gw"
-            route_parameters["dev"] = underlay_dev
-          end
+          route_parameters["dev"] = underlay_dev if selected == "host-gw"
           operations << Operation.new(action: "route_add", resource: "route:#{node.name}:#{node.pod_cidr}",
                                       identity: "#{selected}:#{node.name}:#{node.revision || revision}",
                                       parameters: Support.immutable(route_parameters)).freeze
           next unless selected == "vxlan"
+
           operations << Operation.new(action: "fdb_add", resource: "fdb:#{node.name}:#{node.mac}",
                                       identity: "#{node.mac}:#{node.vtep}:#{node.revision || revision}",
                                       parameters: Support.immutable({"mac" => node.mac, "destination" => node.vtep,
-                                                                      "dev" => device}.merge(namespace_options))).freeze
+                                                                     "dev" => device}.merge(namespace_options))).freeze
         end
         Plan.new(operations: operations.freeze, mtu: effective_mtu, backend: selected, revision: revision,
                  metadata: {"vni" => @vni, "dstport" => @dstport, "device" => device,
@@ -854,8 +870,10 @@ module Rubernetes
 
       def diff(current:, desired:, revision: nil)
         {
-          "routes" => route_diff(current: Support.fetch(current, "routes", default: []), desired: Support.fetch(desired, "routes", default: []), revision: revision),
-          "fdb" => fdb_diff(current: Support.fetch(current, "fdb", default: []), desired: Support.fetch(desired, "fdb", default: []), revision: revision)
+          "routes" => route_diff(current: Support.fetch(current, "routes", default: []),
+                                 desired: Support.fetch(desired, "routes", default: []), revision: revision),
+          "fdb" => fdb_diff(current: Support.fetch(current, "fdb", default: []), desired: Support.fetch(desired, "fdb", default: []),
+                            revision: revision)
         }
       end
 
@@ -868,6 +886,7 @@ module Rubernetes
         end
         executor = @adapter || @netlink
         return plan if executor.nil?
+
         Array(plan.operations).each do |operation|
           if executor.respond_to?(:apply)
             result = executor.apply(operation, operation_id: operation_id)
@@ -900,6 +919,7 @@ module Rubernetes
         if mac && !Support.string(mac, "VTEP MAC").match?(/\A[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\z/)
           raise ValidationError, "VTEP MAC is invalid"
         end
+
         Node.new(name: Support.string(Support.fetch(hash, "name", "node"), "node name"),
                  pod_cidr: normalize_cidr(Support.fetch(hash, "pod_cidr", "podCIDR", "cidr")),
                  vtep: vtep,
@@ -914,22 +934,21 @@ module Rubernetes
 
         if backend == "host-gw"
           raise ValidationError, "host-gw overlay requires an underlay device" if underlay_dev.to_s.empty?
+
           missing = entries.select { |node| node.vtep.to_s.empty? }.map(&:name)
-          unless missing.empty?
-            raise ValidationError, "host-gw overlay requires a gateway for remote nodes: #{missing.join(', ')}"
-          end
+          raise ValidationError, "host-gw overlay requires a gateway for remote nodes: #{missing.join(", ")}" unless missing.empty?
+
           return
         end
 
         raise ValidationError, "VXLAN overlay requires an underlay device" if underlay_dev.to_s.empty?
+
         missing_vtep = entries.select { |node| node.vtep.to_s.empty? }.map(&:name)
         missing_mac = entries.select { |node| node.mac.to_s.empty? }.map(&:name)
-        unless missing_vtep.empty?
-          raise ValidationError, "VXLAN overlay requires a VTEP for remote nodes: #{missing_vtep.join(', ')}"
-        end
-        unless missing_mac.empty?
-          raise ValidationError, "VXLAN overlay requires a MAC for remote nodes: #{missing_mac.join(', ')}"
-        end
+        raise ValidationError, "VXLAN overlay requires a VTEP for remote nodes: #{missing_vtep.join(", ")}" unless missing_vtep.empty?
+        return if missing_mac.empty?
+
+        raise ValidationError, "VXLAN overlay requires a MAC for remote nodes: #{missing_mac.join(", ")}"
       end
 
       def normalize_cidr(value)

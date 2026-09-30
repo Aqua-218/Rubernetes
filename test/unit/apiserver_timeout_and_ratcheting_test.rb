@@ -24,26 +24,37 @@ class ApiserverTimeoutAndRatchetingTest < Minitest::Test
     request = server.send(:normalize_request, {method: "GET", path: "/api/v1/namespaces?timeout=200ms", headers: {}})
     route = server.instance_variable_get(:@router).route(request)
     error = assert_raises(API::Status::Error) do
-      server.send(:with_request_timeout, request, route) { sleep 5; :never }
+      server.send(:with_request_timeout, request, route) do
+        sleep 5
+        :never
+      end
     end
     assert_equal 504, error.code
     assert_equal "Timeout", error.reason
     text = server.instance_variable_get(:@metrics).render_own
+
     assert_equal "1", value(text, "apiserver_request_aborts_total", verb: "LIST", resource: "namespaces")
     assert_equal "1", value(text, "apiserver_request_post_timeout_total", source: "timeout-handler", status: "pending")
     sleep 5.2
     text = server.instance_variable_get(:@metrics).render_own
+
     assert_equal "1", value(text, "apiserver_request_post_timeout_total", source: "rest-handler", status: "ok")
   end
 
   def test_fast_requests_and_long_running_ones_pass_through
     request = server.send(:normalize_request, {method: "GET", path: "/api/v1/namespaces", headers: {}})
     route = server.instance_variable_get(:@router).route(request)
+
     assert_equal :done, server.send(:with_request_timeout, request, route) { :done }
     watch = server.send(:normalize_request, {method: "GET", path: "/api/v1/namespaces?watch=true", headers: {}})
+
     assert_nil server.send(:request_timeout_seconds, watch, server.instance_variable_get(:@router).route(watch))
-    assert_in_delta 0.2, server.send(:request_timeout_seconds, request.with(path: "/api/v1/namespaces?timeout=200ms"), route), 0.001 if request.respond_to?(:with)
-    assert_equal 60.0, server.send(:request_timeout_seconds, request, route)
+    if request.respond_to?(:with)
+      assert_in_delta 0.2, server.send(:request_timeout_seconds, request.with(path: "/api/v1/namespaces?timeout=200ms"), route),
+                      0.001
+    end
+
+    assert_in_delta(60.0, server.send(:request_timeout_seconds, request, route))
     assert_in_delta 1.5, server.send(:parse_go_duration_seconds, "1m30s") / 60.0, 0.001
   end
 
@@ -59,11 +70,12 @@ class ApiserverTimeoutAndRatchetingTest < Minitest::Test
     # size is unchanged and invalid: ratcheted; the changed name is checked.
     assert validator.validate({"spec" => {"size" => 0, "name" => "new"}}, old: old)
     error = assert_raises(API::CRD::StructuralSchema::Invalid) { validator.validate({"spec" => {"size" => 0, "name" => "toolong"}}, old: old) }
-    assert_equal ["spec.name"], error.causes.map { |cause| cause["field"] }
+    assert_equal(["spec.name"], error.causes.map { |cause| cause["field"] })
     # A changed invalid value is never ratcheted; a create validates everything.
     assert_raises(API::CRD::StructuralSchema::Invalid) { validator.validate({"spec" => {"size" => -1, "name" => "ok"}}, old: old) }
     assert_raises(API::CRD::StructuralSchema::Invalid) { validator.validate({"spec" => {"size" => 0, "name" => "ok"}}) }
     text = Rubernetes::Observability::Metrics.global.render_own
+
     assert_match(/apiextensions_apiserver_validation_ratcheting_seconds_count \d+/, text)
   end
 end

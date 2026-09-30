@@ -39,6 +39,7 @@ class AgentRestartRecoveryTest < Minitest::Test
              "metadata" => {"workload_pid" => Process.pid, "workload_start_time" => start_time(Process.pid),
                             "workload_executable_digest" => "sha256:#{digest}"}}
     entry = observe(claim).fetch(0)
+
     assert_equal true, entry.dig("metadata", "live")
     refute entry.dig("metadata", "identity_mismatch"), "the same executable, whatever the digest's prefix"
   end
@@ -47,10 +48,12 @@ class AgentRestartRecoveryTest < Minitest::Test
     links = %w[net uts].to_h { |name| [name, File.readlink("/proc/self/ns/#{name}")] }
     claim = {"kind" => "namespace", "id" => "sb", "identity" => "namespace:sb", "owner" => "op",
              "metadata" => {"kernel_identity" => {"pid" => Process.pid, "namespace_links" => links}}}
+
     assert_equal true, observe(claim).fetch(0).dig("metadata", "live")
     pid = Process.spawn("/bin/true")
     Process.wait(pid)
     gone = claim.merge("metadata" => {"kernel_identity" => {"pid" => pid, "namespace_links" => links}})
+
     assert_empty observe(gone), "its holder is gone: the namespace is gone, not unverifiable"
   end
 
@@ -60,8 +63,10 @@ class AgentRestartRecoveryTest < Minitest::Test
       claim = {"kind" => "cgroup", "id" => directory, "identity" => "cgroup:x", "owner" => "op",
                "metadata" => {"path" => directory, "inode" => stat.ino, "device" => stat.dev}}
       File.write(File.join(directory, "cgroup.events"), "populated 0\nfrozen 0\n")
+
       assert_equal false, observe(claim).fetch(0).dig("metadata", "live")
       File.write(File.join(directory, "cgroup.events"), "populated 1\nfrozen 0\n")
+
       assert_equal true, observe(claim).fetch(0).dig("metadata", "live")
     end
   end
@@ -73,12 +78,13 @@ class AgentRestartRecoveryTest < Minitest::Test
       FileUtils.mkdir_p(File.join(directory, "root"))
       workspace = Rubernetes::Runtime::Native::Filesystem::Workspace.new(id: "pod1.c", root: File.join(directory, "root"),
                                                                          upper: nil, work: nil, identity: "workspace:pod1.c", image_digest: nil)
+
       assert adapter.cleanup(workspace: workspace)
-      refute File.exist?(directory)
+      refute_path_exists directory
       elsewhere = workspace.with(id: "pod2.c", root: "/srv/elsewhere")
       FileUtils.mkdir_p(File.join(root, "pod2.c"))
       assert_raises(Adapters::EffectError) { adapter.cleanup(workspace: elsewhere) }
-      assert File.exist?(File.join(root, "pod2.c")), "a workspace whose recorded root is outside is never touched"
+      assert_path_exists File.join(root, "pod2.c"), "a workspace whose recorded root is outside is never touched"
     end
   end
 end

@@ -33,8 +33,12 @@ class ServiceAllocatorMetricsTest < Minitest::Test
     assert_equal 201, service("dynamic", {}).status
     assert_equal 201, service("static", {"clusterIP" => "10.96.0.5"}).status
     assert_equal 422, service("taken", {"clusterIP" => "10.96.0.5"}).status
-    assert_equal 201, service("nodeport", {"type" => "NodePort", "ports" => [{"port" => 80, "name" => "a", "nodePort" => 30_001}, {"port" => 81, "name" => "b"}]}).status
+    assert_equal 201,
+                 service("nodeport",
+                         {"type" => "NodePort",
+                          "ports" => [{"port" => 80, "name" => "a", "nodePort" => 30_001}, {"port" => 81, "name" => "b"}]}).status
     text = @metrics.render
+
     assert_includes text, %(kube_apiserver_clusterip_allocator_allocation_total{cidr="10.96.0.0/24",scope="dynamic"} 2)
     assert_includes text, %(kube_apiserver_clusterip_allocator_allocation_total{cidr="10.96.0.0/24",scope="static"} 1)
     assert_includes text, %(kube_apiserver_clusterip_allocator_allocation_errors_total{cidr="10.96.0.0/24",scope="static"} 1)

@@ -54,7 +54,8 @@ module Rubernetes
         end
 
         def drive(drive_id:, path_on_host:, is_root_device:, is_read_only:, io_engine: nil)
-          body = {"drive_id" => drive_id, "path_on_host" => path_on_host, "is_root_device" => is_root_device, "is_read_only" => is_read_only}
+          body = {"drive_id" => drive_id, "path_on_host" => path_on_host, "is_root_device" => is_root_device,
+                  "is_read_only" => is_read_only}
           body["io_engine"] = io_engine if io_engine
           step(:drives) { put("/drives/#{drive_id}", body) }
         end
@@ -114,7 +115,9 @@ module Rubernetes
 
         def request(method, path, body: nil)
           payload = body.nil? ? "" : JSON.generate(body)
-          raise APIError.new("request body of #{payload.bytesize} bytes exceeds #{MAX_REQUEST_BODY_BYTES}") if payload.bytesize > MAX_REQUEST_BODY_BYTES
+          if payload.bytesize > MAX_REQUEST_BODY_BYTES
+            raise APIError.new("request body of #{payload.bytesize} bytes exceeds #{MAX_REQUEST_BODY_BYTES}")
+          end
 
           header = "#{method} #{path} HTTP/1.1\r\nHost: localhost\r\nAccept: application/json\r\n"
           header += "Content-Type: application/json\r\nContent-Length: #{payload.bytesize}\r\n" unless body.nil?
@@ -124,7 +127,12 @@ module Rubernetes
           socket = UNIXSocket.new(@socket_path)
           socket.write(header + payload)
           response = read_response(socket)
-          raise APIError.new("Firecracker #{method} #{path} failed: #{fault(response)}", status: response.status) unless response.status.between?(200, 299)
+          unless response.status.between?(
+            200, 299
+          )
+            raise APIError.new("Firecracker #{method} #{path} failed: #{fault(response)}",
+                               status: response.status)
+          end
 
           response
         rescue Errno::ENOENT, Errno::ECONNREFUSED, Errno::EPIPE, Errno::ECONNRESET, IOError => error
@@ -189,6 +197,7 @@ module Rubernetes
           end
           if headers.key?("transfer-encoding")
             raise APIError.new("Content-Length combined with Transfer-Encoding") if headers.key?("content-length")
+
             raise APIError.new("chunked Firecracker responses are not accepted")
           end
           length = headers.key?("content-length") ? Integer(headers["content-length"], 10, exception: false) : 0
@@ -204,7 +213,8 @@ module Rubernetes
           end
           raise APIError.new("unrequested bytes after the Firecracker response") if body.bytesize > length
           # Anything the server sends after a complete response was not requested.
-          raise APIError.new("unrequested Firecracker response") if socket.wait_readable(0) && !(socket.read_nonblock(1, exception: false).nil?)
+          raise APIError.new("unrequested Firecracker response") if socket.wait_readable(0) && !socket.read_nonblock(1,
+                                                                                                                     exception: false).nil?
 
           Response.new(status: Integer(match[1]), headers: headers, body: body)
         end

@@ -16,7 +16,9 @@ class PodLevelResourceManagersTest < Minitest::Test
 
   def machine
     nodes = [0, 1].map do |numa|
-      cores = Array.new(4) { |index| {id: index, socket_id: numa, threads: [numa * 4 + index, numa * 4 + index + 8], uncore_caches: []} }
+      cores = Array.new(4) do |index|
+        {id: index, socket_id: numa, threads: [(numa * 4) + index, (numa * 4) + index + 8], uncore_caches: []}
+      end
       {id: numa, cores: cores, memory: 8 * GI, hugepages: [], distances: [numa.zero? ? 10 : 20, numa.zero? ? 20 : 10]}
     end
     {num_cores: 16, num_sockets: 2, topology: nodes}
@@ -30,7 +32,8 @@ class PodLevelResourceManagersTest < Minitest::Test
   end
 
   def pod(uid, pod_cpu: "4", main_cpu: "2")
-    main = {"name" => "main", "resources" => {"requests" => {"cpu" => main_cpu, "memory" => "1Gi"}, "limits" => {"cpu" => main_cpu, "memory" => "1Gi"}}}
+    main = {"name" => "main",
+            "resources" => {"requests" => {"cpu" => main_cpu, "memory" => "1Gi"}, "limits" => {"cpu" => main_cpu, "memory" => "1Gi"}}}
     {"metadata" => {"name" => "p-#{uid}", "namespace" => "ns", "uid" => uid},
      "spec" => {"resources" => {"requests" => {"cpu" => pod_cpu, "memory" => "4Gi"}, "limits" => {"cpu" => pod_cpu, "memory" => "4Gi"}},
                 "containers" => [main, {"name" => "helper"}]}}
@@ -48,28 +51,35 @@ class PodLevelResourceManagersTest < Minitest::Test
       pods = [target]
       subject = manager(dir)
       start(subject, pods)
-      assert subject.admit(target).admit?
+
+      assert_predicate subject.admit(target), :admit?
       bubble = subject.cpu_manager.state.pod_cpu_set("a")
+
       assert_equal 4, bubble.size
       main = Rubernetes::Node::CPUManager::CPUSet.parse(cpus(subject, target, "main"))
       helper = Rubernetes::Node::CPUManager::CPUSet.parse(cpus(subject, target, "helper"))
+
       assert_equal 2, main.size
       assert_equal bubble.difference(main), helper, "the rest of the bubble is the Pod's shared pool"
-      refute subject.cpu_manager.state.default_cpu_set.intersection(bubble).size.positive?, "taken from the node's shared pool"
+      refute_predicate subject.cpu_manager.state.default_cpu_set.intersection(bubble).size, :positive?, "taken from the node's shared pool"
       body = JSON.parse(File.read(File.join(dir, "cpu_manager_state")))
+
       assert_equal({"a" => {"cpuSet" => bubble.to_s}}, body["podEntries"])
 
       restarted = manager(dir)
       start(restarted, pods)
+
       assert_equal bubble, restarted.cpu_manager.state.pod_cpu_set("a"), "the checkpoint (checksum included) is read back"
 
       subject.pre_start(target, target["spec"]["containers"][0], "c-main")
       subject.pre_start(target, target["spec"]["containers"][1], "c-helper")
       subject.cpu_manager.remove_container("c-main")
+
       assert_equal bubble, subject.cpu_manager.state.pod_cpu_set("a"), "held while a container remains"
       subject.cpu_manager.remove_container("c-helper")
+
       assert_nil subject.cpu_manager.state.pod_cpu_set("a")
-      assert bubble.difference(subject.cpu_manager.state.default_cpu_set).empty?, "the whole bubble is shared again"
+      assert_empty bubble.difference(subject.cpu_manager.state.default_cpu_set), "the whole bubble is shared again"
     end
   end
 
@@ -79,7 +89,8 @@ class PodLevelResourceManagersTest < Minitest::Test
       subject = manager(dir)
       start(subject, [target])
       result = subject.admit(target)
-      refute result.admit?
+
+      refute_predicate result, :admit?
       # best-effort admits the empty hint; AllocatePod rejects it itself.
       assert_equal "EmptyPodSharedPoolError", result.reason
     end
@@ -90,7 +101,8 @@ class PodLevelResourceManagersTest < Minitest::Test
       target = pod("c")
       subject = manager(dir, pod_level: false)
       start(subject, [target])
-      assert subject.admit(target).admit?
+
+      assert_predicate subject.admit(target), :admit?
       assert_nil subject.cpu_manager.state.pod_cpu_set("c")
       assert_equal "0-15", cpus(subject, target, "main"), "the node's shared pool"
       refute JSON.parse(File.read(File.join(dir, "cpu_manager_state"))).key?("podEntries")
@@ -109,30 +121,38 @@ class PodLevelResourceManagersTest < Minitest::Test
       pods = [target]
       subject = manager(dir, memory: STATIC_MEMORY)
       start(subject, pods)
-      assert subject.admit(target).admit?
+
+      assert_predicate subject.admit(target), :admit?
       state = subject.memory_manager.state
+
       assert_equal({"memory" => 4 * GI}, memory_sizes(state.pod_memory_blocks("m")))
       assert_equal({"memory" => GI}, memory_sizes(state.memory_blocks("m", "main")))
       assert_equal({"memory" => 3 * GI}, memory_sizes(state.memory_blocks("m", "helper")), "the rest of the bubble is shared")
       node = state.pod_memory_blocks("m").first.numa_affinity
       free = state.machine_state[node.first].memory["memory"].free
-      assert_equal subject.memory_manager.state.machine_state[node.first].memory["memory"].allocatable - 4 * GI, free,
+
+      assert_equal subject.memory_manager.state.machine_state[node.first].memory["memory"].allocatable - (4 * GI), free,
                    "the node gives up the bubble once, not per container"
       body = JSON.parse(File.read(File.join(dir, "memory_manager_state")))
+
       assert_equal [{"numaAffinity" => node, "type" => "memory", "size" => 4 * GI}], body.dig("podEntries", "m", "memoryBlocks")
 
       restarted = manager(dir, memory: STATIC_MEMORY)
       start(restarted, pods)
+
       assert_equal({"memory" => 4 * GI}, memory_sizes(restarted.memory_manager.state.pod_memory_blocks("m")),
                    "the checkpoint (checksum included) is read back and validates")
 
       subject.pre_start(target, target["spec"]["containers"][0], "c-main")
       subject.pre_start(target, target["spec"]["containers"][1], "c-helper")
       subject.memory_manager.remove_container("c-main")
+
       refute_nil state.pod_memory_blocks("m"), "held while a container remains"
       subject.memory_manager.remove_container("c-helper")
+
       assert_nil state.pod_memory_blocks("m")
       table = state.machine_state[node.first].memory["memory"]
+
       assert_equal table.allocatable, table.free, "the whole bubble is free again"
     end
   end
@@ -142,7 +162,8 @@ class PodLevelResourceManagersTest < Minitest::Test
       target = pod("n")
       subject = manager(dir, pod_level: false, memory: STATIC_MEMORY)
       start(subject, [target])
-      assert subject.admit(target).admit?
+
+      assert_predicate subject.admit(target), :admit?
       assert_nil subject.memory_manager.state.memory_blocks("n", "main")
       refute JSON.parse(File.read(File.join(dir, "memory_manager_state"))).key?("podEntries")
     end

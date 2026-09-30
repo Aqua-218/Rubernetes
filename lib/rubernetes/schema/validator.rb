@@ -31,20 +31,20 @@ module Rubernetes
         return "<nil>" if path.empty?
 
         path.each_with_object(String.new) do |segment, result|
-          if segment.match?(/\A\d+\z/)
-            result << "[#{segment}]"
-          elsif segment.match?(/\A\[.*\]\z/)
-            # Map keys in the Kubernetes field package are rendered as a
-            # bracketed child rather than as a Go struct selector (for
-            # example, spec.resources[storage]).  Validators keep this
-            # marker as a path segment so callers can still compare paths
-            # without parsing the display form.
-            result << segment
-          elsif result.empty?
-            result << segment
-          else
-            result << ".#{segment}"
-          end
+          result << if segment.match?(/\A\d+\z/)
+                      "[#{segment}]"
+                    elsif segment.match?(/\A\[.*\]\z/)
+                      # Map keys in the Kubernetes field package are rendered as a
+                      # bracketed child rather than as a Go struct selector (for
+                      # example, spec.resources[storage]).  Validators keep this
+                      # marker as a path segment so callers can still compare paths
+                      # without parsing the display form.
+                      segment
+                    elsif result.empty?
+                      segment
+                    else
+                      ".#{segment}"
+                    end
         end
       end
 
@@ -106,7 +106,7 @@ module Rubernetes
       end
 
       def to_h
-        result = { path: path, code: code, message: message }
+        result = {path: path, code: code, message: message}
         result[:value] = value unless value.nil?
         result[:expected] = expected unless expected.nil?
         result.freeze
@@ -122,7 +122,7 @@ module Rubernetes
       end
 
       def to_s
-        "#{path.empty? ? '$' : path.join('.')} (#{code}): #{message}"
+        "#{path.empty? ? "$" : path.join(".")} (#{code}): #{message}"
       end
     end
 
@@ -155,23 +155,19 @@ module Rubernetes
       def initialize(definition, unknown_fields: :reject, unknown: nil)
         @definition = definition.is_a?(Definition) ? definition : Definition.new(definition)
         @unknown_fields = (unknown || unknown_fields).to_sym
-        unless UNKNOWN_MODES.include?(@unknown_fields)
-          raise ArgumentError, "unknown_fields must be :reject, :preserve, or :prune"
-        end
+        return if UNKNOWN_MODES.include?(@unknown_fields)
+
+        raise ArgumentError, "unknown_fields must be :reject, :preserve, or :prune"
       end
 
       def errors(value = nil, path: [], unknown_fields: @unknown_fields, unknown: nil,
                  operation: nil, old: nil, strategy_prepare: false, subresource: nil, **keyword_value)
         value = keyword_value if value.nil? && !keyword_value.empty?
         mode = (unknown || unknown_fields).to_sym
-        unless UNKNOWN_MODES.include?(mode)
-          raise ArgumentError, "unknown_fields must be :reject, :preserve, or :prune"
-        end
+        raise ArgumentError, "unknown_fields must be :reject, :preserve, or :prune" unless UNKNOWN_MODES.include?(mode)
 
         operation = operation&.to_sym
-        unless operation.nil? || %i[create update].include?(operation)
-          raise ArgumentError, "operation must be :create or :update"
-        end
+        raise ArgumentError, "operation must be :create or :update" unless operation.nil? || %i[create update].include?(operation)
 
         # An opaque carrier definition admits any JSON value at the root; a
         # union carrier admits its scalar alternative.
@@ -228,9 +224,7 @@ module Rubernetes
           # does not surface OpenAPI's synthetic required marker for the
           # value-typed ObjectReference when the request is the zero-value
           # semantic fixture.
-          if definition.kind == "Event"
-            issues.reject! { |existing| existing.path == ["involvedObject"] }
-          end
+          issues.reject! { |existing| existing.path == ["involvedObject"] } if definition.kind == "Event"
           if definition.kind == "EndpointSlice" && operation == :update
             # ValidateEndpointSliceUpdate does not revalidate retained
             # endpoint addresses; only addressType and object metadata are
@@ -260,17 +254,17 @@ module Rubernetes
                                  kubernetes_issues.any? { |issue| issue.path.first == "metadata" }
             spec_container = existing.path == ["spec"] &&
                              kubernetes_issues.any? { |issue| issue.path.first == "spec" }
-          # OpenAPI can require an intermediate object while the strategy
-          # validates its children directly.  The REST error stream does
-          # not include that synthetic parent (for example
-          # spec.scaleTargetRef alongside scaleTargetRef.name), so remove
-          # a generic required parent whenever a strategy child descends
-          # from it.  Keep an exact strategy issue at the same path.
-          strategy_child = existing.code == :required &&
-                           kubernetes_issues.any? do |issue|
-                             issue.path.length > existing.path.length &&
-                               issue.path[0, existing.path.length] == existing.path
-                           end
+            # OpenAPI can require an intermediate object while the strategy
+            # validates its children directly.  The REST error stream does
+            # not include that synthetic parent (for example
+            # spec.scaleTargetRef alongside scaleTargetRef.name), so remove
+            # a generic required parent whenever a strategy child descends
+            # from it.  Keep an exact strategy issue at the same path.
+            strategy_child = existing.code == :required &&
+                             kubernetes_issues.any? do |issue|
+                               issue.path.length > existing.path.length &&
+                                 issue.path[0, existing.path.length] == existing.path
+                             end
             # Some Pod helper structs are validated as a list field by the
             # upstream strategy.  Their generated child schema still marks
             # zero-value fields required (for example
@@ -283,7 +277,7 @@ module Rubernetes
                                       existing.path.last == "restartPolicy" &&
                                       kubernetes_issues.any? do |issue|
                                         issue.path.last == "resizePolicy" &&
-                                        issue.path.length < existing.path.length
+                                          issue.path.length < existing.path.length
                                       end
             controller_revision_revision = definition.kind == "ControllerRevision" &&
                                            existing.path == ["revision"] &&
@@ -314,19 +308,19 @@ module Rubernetes
         issues
       end
 
-      def validate(value = nil, **options)
-        errors(value, **options)
+      def validate(value = nil, **)
+        errors(value, **)
       end
 
-      def validate!(value = nil, **options)
-        issues = errors(value, **options)
+      def validate!(value = nil, **)
+        issues = errors(value, **)
         raise ValidationError, issues unless issues.empty?
 
         value
       end
 
-      def valid?(value = nil, **options)
-        errors(value, **options).empty?
+      def valid?(value = nil, **)
+        errors(value, **).empty?
       end
 
       alias validate? valid?
@@ -375,9 +369,11 @@ module Rubernetes
         issues = []
         object_definition.fields.each_value do |field|
           present, field_value = read_field(value, field)
-          if !present
-            issues << issue(path + [field.json_name], :required, "field #{field.json_name.inspect} is required",
-                            expected: :present) if field.required?
+          unless present
+            if field.required?
+              issues << issue(path + [field.json_name], :required, "field #{field.json_name.inspect} is required",
+                              expected: :present)
+            end
             next
           end
 
@@ -424,11 +420,11 @@ module Rubernetes
 
         if numeric_value?(value)
           if field.minimum && (field.exclusive_minimum ? value <= field.minimum : value < field.minimum)
-            issues << issue(path, :range, "value must be #{field.exclusive_minimum ? 'greater than' : 'at least'} #{field.minimum}",
+            issues << issue(path, :range, "value must be #{field.exclusive_minimum ? "greater than" : "at least"} #{field.minimum}",
                             value: value, expected: field.minimum)
           end
           if field.maximum && (field.exclusive_maximum ? value >= field.maximum : value > field.maximum)
-            issues << issue(path, :range, "value must be #{field.exclusive_maximum ? 'less than' : 'at most'} #{field.maximum}",
+            issues << issue(path, :range, "value must be #{field.exclusive_maximum ? "less than" : "at most"} #{field.maximum}",
                             value: value, expected: field.maximum)
           end
         end
@@ -436,23 +432,31 @@ module Rubernetes
         if value.is_a?(String)
           minimum_length = field.metadata[:min_length] || field.metadata[:minLength]
           maximum_length = field.metadata[:max_length] || field.metadata[:maxLength]
-          issues << issue(path, :range, "string length must be at least #{minimum_length}", value: value,
-                          expected: minimum_length) if minimum_length && value.length < minimum_length
-          issues << issue(path, :range, "string length must be at most #{maximum_length}", value: value,
-                          expected: maximum_length) if maximum_length && value.length > maximum_length
+          if minimum_length && value.length < minimum_length
+            issues << issue(path, :range, "string length must be at least #{minimum_length}", value: value,
+                                                                                              expected: minimum_length)
+          end
+          if maximum_length && value.length > maximum_length
+            issues << issue(path, :range, "string length must be at most #{maximum_length}", value: value,
+                                                                                             expected: maximum_length)
+          end
           if field.pattern && !field.pattern.match?(value)
             issues << issue(path, :pattern, "value does not match #{field.pattern.inspect}", value: value,
-                            expected: field.pattern.source)
+                                                                                             expected: field.pattern.source)
           end
         end
 
         if value.is_a?(Array)
           minimum_items = field.metadata[:min_items] || field.metadata[:minItems]
           maximum_items = field.metadata[:max_items] || field.metadata[:maxItems]
-          issues << issue(path, :range, "array must contain at least #{minimum_items} items", value: value,
-                          expected: minimum_items) if minimum_items && value.length < minimum_items
-          issues << issue(path, :range, "array must contain at most #{maximum_items} items", value: value,
-                          expected: maximum_items) if maximum_items && value.length > maximum_items
+          if minimum_items && value.length < minimum_items
+            issues << issue(path, :range, "array must contain at least #{minimum_items} items", value: value,
+                                                                                                expected: minimum_items)
+          end
+          if maximum_items && value.length > maximum_items
+            issues << issue(path, :range, "array must contain at most #{maximum_items} items", value: value,
+                                                                                               expected: maximum_items)
+          end
           value.each_with_index do |item, index|
             if item.nil? && field.items.is_a?(Field) && !field.items.nullable?
               issues << issue(path + [index.to_s], :type, "expected #{expected_type(field.items)}, got null",
@@ -466,38 +470,31 @@ module Rubernetes
           end
         end
 
-        if value.is_a?(Hash) && !field.additional_properties.nil?
-          issues.concat(validate_additional_properties(field, value, path, mode))
-        end
+        issues.concat(validate_additional_properties(field, value, path, mode)) if value.is_a?(Hash) && !field.additional_properties.nil?
 
         nested = nested_definition(field)
-        if nested && (value.is_a?(ValueObject) || value.is_a?(Hash))
-          issues.concat(validate_object(value, nested, path, mode, old))
-        end
+        issues.concat(validate_object(value, nested, path, mode, old)) if nested && (value.is_a?(ValueObject) || value.is_a?(Hash))
         issues
       end
 
       def validate_item(item, value, path, mode, old = nil)
-        return [issue(path, :type, "expected #{expected_type(item)}, got null", value: nil,
-                      expected: expected_type(item))] if value.nil?
-        if item.is_a?(Field)
-          return validate_field(item, value, path, mode, old)
+        if value.nil?
+          return [issue(path, :type, "expected #{expected_type(item)}, got null", value: nil,
+                                                                                  expected: expected_type(item))]
         end
-        if item.is_a?(Definition)
-          return validate_object(value, item, path, mode, old)
-        end
-        if item.is_a?(Reference)
-          return validate_object(value, item.resolve, path, mode, old)
-        end
+        return validate_field(item, value, path, mode, old) if item.is_a?(Field)
+        return validate_object(value, item, path, mode, old) if item.is_a?(Definition)
+        return validate_object(value, item.resolve, path, mode, old) if item.is_a?(Reference)
         return [] if type_matches_value?(item, value)
 
         [issue(path, :type, "expected #{type_name(item)}, got #{type_name(value)}", value: value,
-               expected: type_name(item))]
+                                                                                    expected: type_name(item))]
       end
 
       def read_field(value, field)
         if value.is_a?(ValueObject)
           return [true, value[field.name]] if value.present?(field.name)
+
           return [false, nil]
         end
         return [false, nil] unless value.is_a?(Hash)
@@ -560,7 +557,8 @@ module Rubernetes
       def type_matches?(field, value)
         return true if field.type == :any
         return value.is_a?(String) || value.is_a?(Integer) if field.metadata[:format] == "int-or-string"
-        return type_matches_value?(field.type, value)
+
+        type_matches_value?(field.type, value)
       end
 
       def type_matches_value?(type, value)
@@ -570,7 +568,7 @@ module Rubernetes
         return finite_numeric?(value) if type == :number
         return value.is_a?(Integer) if type == :integer
         return value.is_a?(String) if type == :string
-        return value == true || value == false if type == :boolean
+        return [true, false].include?(value) if type == :boolean
         return value.is_a?(Array) if type == :array
         return value.is_a?(Hash) || value.is_a?(ValueObject) if type == :object
         # An opaque carrier definition (apiextensions JSON, JSONSchemaPropsOr*)

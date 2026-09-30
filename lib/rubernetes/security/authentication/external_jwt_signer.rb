@@ -45,7 +45,8 @@ module Rubernetes
           end
 
           def record_request(method, code, seconds)
-            metrics&.observe("apiserver_externaljwt_request_duration_seconds", seconds, {"code" => code, "method" => "#{SERVICE}/#{method}"})
+            metrics&.observe("apiserver_externaljwt_request_duration_seconds", seconds,
+                             {"code" => code, "method" => "#{SERVICE}/#{method}"})
           rescue StandardError
             nil
           end
@@ -233,7 +234,10 @@ module Rubernetes
           raise Error, "invalid data timestamp" if response.data_timestamp.nil?
 
           keys = response.keys.map do |entry|
-            raise Error, "found invalid public key id #{entry.key_id.inspect}" if entry.key_id.to_s.empty? || entry.key_id.to_s.length > 1024
+            if entry.key_id.to_s.empty? || entry.key_id.to_s.length > 1024
+              raise Error,
+                    "found invalid public key id #{entry.key_id.inspect}"
+            end
             raise Error, "found empty public key" if entry.key.to_s.empty?
 
             parsed = begin

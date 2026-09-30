@@ -69,12 +69,13 @@ class KubeletVolumesInUseTest < Minitest::Test
       def initialize(objects) = @objects = objects
       def get(resource, name, namespace: nil) = @objects[[resource, name]]
     end.new(
-      ["persistentvolumeclaims", "data"] => {"spec" => {"volumeName" => "pv-1"}, "status" => {"phase" => "Bound"}},
-      ["persistentvolumeclaims", "pending"] => {"spec" => {}, "status" => {"phase" => "Pending"}},
-      ["persistentvolumeclaims", "web-eph"] => {"spec" => {"volumeName" => "pv-1"}, "status" => {"phase" => "Bound"}},
-      ["persistentvolumeclaims", "host"] => {"spec" => {"volumeName" => "pv-host"}, "status" => {"phase" => "Bound"}},
-      ["persistentvolumes", "pv-1"] => {"spec" => {"accessModes" => ["ReadWriteOnce"], "csi" => {"driver" => "hostpath.csi.k8s.io", "volumeHandle" => "vol-1"}}},
-      ["persistentvolumes", "pv-host"] => {"spec" => {"accessModes" => ["ReadWriteOnce"], "hostPath" => {"path" => "/data"}}}
+      %w[persistentvolumeclaims data] => {"spec" => {"volumeName" => "pv-1"}, "status" => {"phase" => "Bound"}},
+      %w[persistentvolumeclaims pending] => {"spec" => {}, "status" => {"phase" => "Pending"}},
+      %w[persistentvolumeclaims web-eph] => {"spec" => {"volumeName" => "pv-1"}, "status" => {"phase" => "Bound"}},
+      %w[persistentvolumeclaims host] => {"spec" => {"volumeName" => "pv-host"}, "status" => {"phase" => "Bound"}},
+      %w[persistentvolumes
+         pv-1] => {"spec" => {"accessModes" => ["ReadWriteOnce"], "csi" => {"driver" => "hostpath.csi.k8s.io", "volumeHandle" => "vol-1"}}},
+      %w[persistentvolumes pv-host] => {"spec" => {"accessModes" => ["ReadWriteOnce"], "hostPath" => {"path" => "/data"}}}
     )
     volumes = Rubernetes::Node::PodVolumes.new(volume: Object.new, reader: reader, root: "/tmp/fake-pods")
     spec = {"metadata" => {"name" => "web", "namespace" => "ns", "uid" => "u"},
@@ -90,6 +91,7 @@ class KubeletVolumesInUseTest < Minitest::Test
               {"name" => "inline", "csi" => {"driver" => "hostpath.csi.k8s.io"}},
               {"name" => "tmp", "emptyDir" => {}}
             ]}}
+
     assert_equal [UNIQUE], volumes.attachable_volume_names(spec)
     assert_empty volumes.attachable_volume_names({"metadata" => {"name" => "x"}, "spec" => {}})
   end
@@ -97,14 +99,18 @@ class KubeletVolumesInUseTest < Minitest::Test
   def test_volumes_are_in_use_from_admission_until_unmounted
     lifecycle = build_lifecycle
     lifecycle.start(pod("a"))
+
     assert_equal [UNIQUE], lifecycle.volumes_in_use
     assert_equal [UNIQUE], lifecycle.record("uid-a")[:attachable_volumes]
     # A second Pod on the same volume: still one entry.
     lifecycle.start(pod("b"))
+
     assert_equal [UNIQUE], lifecycle.volumes_in_use
     lifecycle.terminate(pod("a"))
+
     assert_equal [UNIQUE], lifecycle.volumes_in_use, "b still holds it"
     lifecycle.terminate(pod("b"))
+
     assert_empty lifecycle.volumes_in_use
     assert_equal %w[uid-a uid-b], @volumes.released
   end
@@ -122,6 +128,7 @@ class KubeletVolumesInUseTest < Minitest::Test
     end
     lifecycle.start(pod("a"))
     publisher.join
+
     assert_equal [UNIQUE], @seen_before_mount, "reported from the desired state, before anything was mounted"
     assert_empty @prepared_before_mark, "the mount waited for the report"
     assert_equal %w[uid-a], @volumes.prepared
@@ -134,12 +141,14 @@ class KubeletVolumesInUseTest < Minitest::Test
     spec = pod("a")
     lifecycle.start(spec)
     record = lifecycle.record("uid-a")
+
     assert_equal "FailedMount", record[:reason]
     assert_match(/Unable to attach or mount volumes: unmounted volumes=\["pv"\], unattached volumes=\["pv"\], failed to process volumes=\[\]: timed out waiting for the condition/,
                  record[:error].to_s)
     assert_empty @volumes.prepared
     # Non-attachable volumes never wait.
     lifecycle.start(pod("plain", claim: "other"))
+
     assert_equal %w[uid-plain], @volumes.prepared
   end
 
@@ -153,6 +162,7 @@ class KubeletVolumesInUseTest < Minitest::Test
     spec["spec"]["volumes"] = [{"name" => "tmp", "emptyDir" => {}}, {"name" => "h", "hostPath" => {"path" => "/data"}},
                                {"name" => "cm", "configMap" => {"name" => "c"}}]
     lifecycle.start(spec)
+
     assert_equal %w[uid-local], @volumes.prepared
     assert_equal 0, syncs
     assert_empty lifecycle.volumes_in_use
@@ -174,16 +184,22 @@ class KubeletVolumesInUseTest < Minitest::Test
     end
     lifecycle.start(pod("a"))
     ticker.join
+
     assert @patched, "the periodic sync saw volumesInUse change and patched"
     assert_equal [UNIQUE], @api.nodes.last.dig("status", "volumesInUse")
     assert_equal %w[uid-a], @volumes.prepared
   ensure
-    agent&.stop rescue nil
+    begin
+      agent&.stop
+    rescue StandardError
+      nil
+    end
   end
 
   def test_attachable_volumes_survive_a_restart_of_the_lifecycle_state
     store = Class.new do
       attr_accessor :payload
+
       def save(payload) = @payload = payload
       def load = @payload
     end.new
@@ -192,6 +208,7 @@ class KubeletVolumesInUseTest < Minitest::Test
     lifecycle.start(pod("a"))
     restored = Rubernetes::Node::Lifecycle.new(runtime: Runtime.new, reporter: Reporter.new, sleeper: ->(_) {},
                                                pod_volumes: Volumes.new, state_store: store)
+
     assert_equal [UNIQUE], restored.record("uid-a")[:attachable_volumes]
     assert_equal [UNIQUE], restored.volumes_in_use
   end
@@ -223,6 +240,7 @@ class KubeletVolumesInUseTest < Minitest::Test
     def record(_uid) = nil
     def volumes_in_use = @in_use
     def mark_volumes_reported_in_use(names) = @marked << names
+
     def volumes_in_use_observer=(observer)
       @observer = observer
     end
@@ -239,6 +257,7 @@ class KubeletVolumesInUseTest < Minitest::Test
 
   def test_node_status_is_patched_when_it_changed_and_carries_volumes_in_use
     agent = build_agent
+
     assert_equal 1, @api.nodes.length, "registration"
     refute @api.nodes.last.fetch("status").key?("volumesInUse")
     # Nothing changed: no patch, but the (empty) list is marked anyway
@@ -247,6 +266,7 @@ class KubeletVolumesInUseTest < Minitest::Test
     assert_equal 1, @api.nodes.length
     assert_equal [], @stub.marked.last
     @stub.in_use = [UNIQUE]
+
     assert agent.sync_node_status
     assert_equal 2, @api.nodes.length
     assert_equal [UNIQUE], @api.nodes.last.dig("status", "volumesInUse")
@@ -254,6 +274,7 @@ class KubeletVolumesInUseTest < Minitest::Test
     refute agent.sync_node_status, "unchanged again"
     # Gone: the key is sent as null so the merge patch removes it.
     @stub.in_use = []
+
     assert agent.sync_node_status
     assert @api.nodes.last.fetch("status").key?("volumesInUse")
     assert_nil @api.nodes.last.dig("status", "volumesInUse")
@@ -261,15 +282,24 @@ class KubeletVolumesInUseTest < Minitest::Test
     assert_respond_to @stub.observer, :call
     assert @stub.observer.call
   ensure
-    agent&.stop rescue nil
+    begin
+      agent&.stop
+    rescue StandardError
+      nil
+    end
   end
 
   def test_node_status_is_reported_at_least_every_report_frequency
     agent = build_agent(report_frequency: 0.0)
+
     assert agent.sync_node_status, "the report frequency elapsed: patched although unchanged"
     assert_equal 2, @api.nodes.length
   ensure
-    agent&.stop rescue nil
+    begin
+      agent&.stop
+    rescue StandardError
+      nil
+    end
   end
 
   def test_node_status_changed_ignores_heartbeat_times_and_condition_order
@@ -280,9 +310,12 @@ class KubeletVolumesInUseTest < Minitest::Test
     heartbeat = {"conditions" => [{"type" => "MemoryPressure", "status" => "False", "lastHeartbeatTime" => "t2"},
                                   {"type" => "Ready", "status" => "True", "lastHeartbeatTime" => "t2", "lastTransitionTime" => "t0"}],
                  "capacity" => {"cpu" => "2"}}
+
     refute changed.call(base, heartbeat)
     assert changed.call(base, heartbeat.merge("capacity" => {"cpu" => "3"}))
-    transition = {"conditions" => [base["conditions"][0].merge("lastTransitionTime" => "t9"), base["conditions"][1]], "capacity" => {"cpu" => "2"}}
+    transition = {"conditions" => [base["conditions"][0].merge("lastTransitionTime" => "t9"), base["conditions"][1]],
+                  "capacity" => {"cpu" => "2"}}
+
     assert changed.call(base, transition)
     assert changed.call(base, base.merge("volumesInUse" => [UNIQUE]))
     assert changed.call(nil, base)

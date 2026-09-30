@@ -46,6 +46,7 @@ class SecurityAuthenticationTest < Minitest::Test
     ca, cert = ca_and_client(cn: "alice", org: %w[dev ops])
     authenticator = A::X509.new(ca_certificates: [ca])
     result = authenticator.authenticate(context(certificate: cert))
+
     assert_equal "alice", result.user.name
     assert_equal %w[dev ops system:authenticated], result.user.groups
     _other_ca, foreign = ca_and_client(cn: "mallory")
@@ -60,6 +61,7 @@ class SecurityAuthenticationTest < Minitest::Test
   def test_static_token_file_and_bearer_parsing
     authenticator = A::StaticTokenFile.new(A::StaticTokenFile.parse("tok1,bob,uid-b,\"g1,g2\"\ntok2,carol,uid-c\n"))
     result = authenticator.authenticate(context(headers: {"authorization" => "Bearer tok1"}))
+
     assert_equal "bob", result.user.name
     assert_equal %w[g1 g2 system:authenticated], result.user.groups
     assert_nil authenticator.authenticate(context(headers: {"authorization" => "Bearer nope"}))
@@ -76,10 +78,12 @@ class SecurityAuthenticationTest < Minitest::Test
     reader = ->(namespace, name) { namespace == "kube-system" && name == "bootstrap-token-abcdef" ? secret : nil }
     authenticator = A::BootstrapToken.new(secret_reader: reader)
     result = authenticator.authenticate_token("abcdef.0123456789abcdef")
+
     assert_equal "system:bootstrap:abcdef", result.user.name
     assert_includes result.user.groups, "system:bootstrappers:workers"
     assert_nil authenticator.authenticate_token("abcdef.ffffffffffffffff")
     secret["data"]["expiration"] = [(Time.now.utc - 1).iso8601].pack("m0")
+
     assert_nil authenticator.authenticate_token("abcdef.0123456789abcdef")
   end
 
@@ -88,12 +92,15 @@ class SecurityAuthenticationTest < Minitest::Test
     accounts = {"default/web" => {"metadata" => {"uid" => "sa-uid"}}}
     pods = {"default/web-1" => {"metadata" => {"uid" => "pod-uid"}, "spec" => {"nodeName" => "node-a"}}}
     lookup = A::ServiceAccount::Lookup.new(service_account: ->(ns, name) { accounts["#{ns}/#{name}"] },
-                                           pod: ->(ns, name) { pods["#{ns}/#{name}"] }, secret: ->(*) { nil }, node: ->(*) { nil })
-    issuer = A::ServiceAccount.new(issuer: "https://kubernetes.default.svc", signing_key: key, api_audiences: ["https://kubernetes.default.svc"], lookup: lookup)
+                                           pod: ->(ns, name) { pods["#{ns}/#{name}"] }, secret: ->(*) {}, node: ->(*) {})
+    issuer = A::ServiceAccount.new(issuer: "https://kubernetes.default.svc", signing_key: key,
+                                   api_audiences: ["https://kubernetes.default.svc"], lookup: lookup)
     token, expires = issuer.issue(namespace: "default", service_account_name: "web", service_account_uid: "sa-uid",
                                   bound_object: {"kind" => "Pod", "name" => "web-1", "uid" => "pod-uid"})
+
     assert_operator expires, :>, Time.now
     result = issuer.authenticate(context(headers: {"authorization" => "Bearer #{token}"}))
+
     assert_equal "system:serviceaccount:default:web", result.user.name
     assert_equal %w[system:serviceaccounts system:serviceaccounts:default system:authenticated], result.user.groups
     assert_equal ["web-1"], result.user.extra["authentication.kubernetes.io/pod-name"]
@@ -103,6 +110,7 @@ class SecurityAuthenticationTest < Minitest::Test
                                bound_object: {"kind" => "Pod", "name" => "web-1", "uid" => "pod-uid",
                                               "node" => {"name" => "node-a", "uid" => "node-uid"}})
     node_result = issuer.authenticate_token(node_token)
+
     assert_equal ["node-a"], node_result.user.extra["authentication.kubernetes.io/node-name"]
     assert_equal ["node-uid"], node_result.user.extra["authentication.kubernetes.io/node-uid"]
     pods.delete("default/web-1")
@@ -118,6 +126,7 @@ class SecurityAuthenticationTest < Minitest::Test
     key = OpenSSL::PKey::EC.generate("prime256v1")
     token = A::JWT.sign({"sub" => "x"}, key: key, algorithm: "ES256", key_id: "k1")
     header, claims = A::JWT.verify(token, keys: {"k1" => key})
+
     assert_equal "ES256", header["alg"]
     assert_equal "x", claims["sub"]
     assert_raises(A::JWT::Error) { A::JWT.verify(token, keys: {"k2" => key}) }
@@ -127,6 +136,7 @@ class SecurityAuthenticationTest < Minitest::Test
     rsa_token = A::JWT.sign({"sub" => "y"}, key: rsa, algorithm: "RS256")
     assert_raises(A::JWT::Error) { A::JWT.verify(rsa_token, keys: [rsa], allowed_algorithms: ["ES256"]) }
     round = A::JWT.from_jwk(A::JWT.to_jwk(key))
+
     assert_equal key.public_to_der, round.public_to_der
   end
 
@@ -135,11 +145,16 @@ class SecurityAuthenticationTest < Minitest::Test
     authenticator = A::RequestHeader.new(ca_certificates: [ca], allowed_names: ["front-proxy-client"])
     headers = {"x-remote-user" => "eve", "x-remote-group" => "team", "x-remote-extra-scopes" => "read"}
     result = authenticator.authenticate(context(headers: headers, certificate: cert))
+
     assert_equal "eve", result.user.name
     assert_equal %w[team system:authenticated], result.user.groups
     assert_equal({"scopes" => ["read"]}, result.user.extra)
     _ca, other = ca_and_client(cn: "someone-else")
-    assert_nil A::RequestHeader.new(ca_certificates: [ca], allowed_names: ["front-proxy-client"]).authenticate(context(headers: headers, certificate: other))
+
+    assert_nil A::RequestHeader.new(ca_certificates: [ca],
+                                    allowed_names: ["front-proxy-client"]).authenticate(context(
+                                      headers: headers, certificate: other
+                                    ))
     assert_nil authenticator.authenticate(context(headers: headers))
   end
 
@@ -149,15 +164,19 @@ class SecurityAuthenticationTest < Minitest::Test
       calls += 1
       review = JSON.parse(body)
       if review["spec"]["token"] == "good"
-        [200, {"status" => {"authenticated" => true, "user" => {"username" => "hook-user", "groups" => ["g"]}, "audiences" => review["spec"]["audiences"]}}]
+        [200,
+         {"status" => {"authenticated" => true, "user" => {"username" => "hook-user", "groups" => ["g"]},
+                       "audiences" => review["spec"]["audiences"]}}]
       else
         [200, {"status" => {"authenticated" => false}}]
       end
     end
     authenticator = A::WebhookToken.new(transport: transport, api_audiences: ["api"])
     result = authenticator.authenticate_token("good", ["api"])
+
     assert_equal "hook-user", result.user.name
     authenticator.authenticate_token("good", ["api"])
+
     assert_equal 1, calls, "authenticated result is cached"
     assert_nil authenticator.authenticate_token("bad", ["api"])
     failing = A::WebhookToken.new(transport: ->(_body) { [500, "boom"] })
@@ -169,12 +188,14 @@ class SecurityAuthenticationTest < Minitest::Test
     jwks = {"keys" => [A::JWT.to_jwk(key).merge("kid" => "issuer-key")]}
     config = {"issuer" => {"url" => "https://issuer.example", "audiences" => ["client-a"]},
               "claimValidationRules" => [{"claim" => "hd", "requiredValue" => "example.com"}],
-              "claimMappings" => {"username" => {"claim" => "email", "prefix" => "oidc:"}, "groups" => {"claim" => "roles", "prefix" => "oidc:"}}}
+              "claimMappings" => {"username" => {"claim" => "email", "prefix" => "oidc:"},
+                                  "groups" => {"claim" => "roles", "prefix" => "oidc:"}}}
     authenticator = A::JWTAuthenticator.new(config: config, key_fetcher: ->(_url, _ca) { jwks })
     now = Time.now.to_i
     claims = {"iss" => "https://issuer.example", "aud" => "client-a", "exp" => now + 60, "iat" => now, "email" => "a@example.com", "hd" => "example.com", "roles" => %w[admin]}
     token = A::JWT.sign(claims, key: key, algorithm: "RS256", key_id: "issuer-key")
     result = authenticator.authenticate_token(token)
+
     assert_equal "oidc:a@example.com", result.user.name
     assert_equal %w[oidc:admin system:authenticated], result.user.groups
     wrong_aud = A::JWT.sign(claims.merge("aud" => "other"), key: key, algorithm: "RS256", key_id: "issuer-key")
@@ -184,6 +205,7 @@ class SecurityAuthenticationTest < Minitest::Test
     expired = A::JWT.sign(claims.merge("exp" => now - 1), key: key, algorithm: "RS256", key_id: "issuer-key")
     assert_raises(S::AuthenticationError) { authenticator.authenticate_token(expired) }
     other_issuer = A::JWT.sign(claims.merge("iss" => "https://other"), key: key, algorithm: "RS256", key_id: "issuer-key")
+
     assert_nil authenticator.authenticate_token(other_issuer)
     assert_raises(S::ConfigurationError) { A::JWTAuthenticator.new(config: {"issuer" => {"url" => "http://plain", "audiences" => ["a"]}, "claimMappings" => {"username" => {"claim" => "sub", "prefix" => ""}}}, key_fetcher: ->(*) { jwks }) }
   end
@@ -194,11 +216,15 @@ class SecurityAuthenticationTest < Minitest::Test
     conflicting = A::Union.new(authenticators: [first, second])
     assert_raises(S::AuthenticationError) { conflicting.authenticate(context(headers: {"authorization" => "Bearer tok"})) }
     agreeing = A::Union.new(authenticators: [first, A::StaticTokenFile.new(A::StaticTokenFile.parse("tok,alice,1\n"))])
+
     assert_equal "alice", agreeing.authenticate(context(headers: {"authorization" => "Bearer tok"})).user.name
     anonymous = A::Union.new(authenticators: [first]).authenticate(context)
-    assert anonymous.user.anonymous?
-    restricted = A::Union.new(authenticators: [first], anonymous: A::Union::Anonymous.new(enabled: true, conditions: [{"path" => "/healthz"}]))
+
+    assert_predicate anonymous.user, :anonymous?
+    restricted = A::Union.new(authenticators: [first],
+                              anonymous: A::Union::Anonymous.new(enabled: true,
+                                                                 conditions: [{"path" => "/healthz"}]))
     assert_raises(S::AuthenticationError) { restricted.authenticate(context(path: "/api")) }
-    assert restricted.authenticate(context(path: "/healthz")).user.anonymous?
+    assert_predicate restricted.authenticate(context(path: "/healthz")).user, :anonymous?
   end
 end

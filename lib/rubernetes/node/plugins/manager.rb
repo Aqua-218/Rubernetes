@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
-
 require_relative "rpc"
 
 module Rubernetes
@@ -134,15 +132,15 @@ module Rubernetes
           found
         end
 
-        def walk(directory, &block)
+        def walk(directory, &)
           Dir.each_child(directory) do |name|
             next if name.start_with?(".")
 
             path = File.join(directory, name)
             if File.directory?(path) && !File.symlink?(path)
-              walk(path, &block)
+              walk(path, &)
             else
-              block.call(path)
+              yield(path)
             end
           end
         rescue SystemCallError

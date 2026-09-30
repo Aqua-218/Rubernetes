@@ -235,7 +235,8 @@ module Rubernetes
         metadata = fetch(root, "metadata")
         metadata = {} unless metadata.is_a?(Hash)
         issues = []
-        namespaced = (registry_entry(definition) || {"scope" => (definition.kind == "Scale" ? "Namespaced" : "Cluster")}).fetch("scope", "Namespaced") == "Namespaced"
+        namespaced = (registry_entry(definition) || {"scope" => (definition.kind == "Scale" ? "Namespaced" : "Cluster")}).fetch("scope",
+                                                                                                                                "Namespaced") == "Namespaced"
 
         # core/v1 Event requests only run legacyValidateEvent; ObjectMeta is
         # validated for events.k8s.io requests (pkg/apis/core/validation/events.go).
@@ -249,9 +250,7 @@ module Rubernetes
         if name_required?(kind, operation) && blank?(fetch(metadata, "name")) && blank?(fetch(metadata, "generateName"))
           issues << issue(%w[metadata name], :required, "name or generateName is required")
         end
-        unless blank?(fetch(metadata, "name"))
-          issues.concat(kind_name_format_errors(kind, fetch(metadata, "name").to_s, root))
-        end
+        issues.concat(kind_name_format_errors(kind, fetch(metadata, "name").to_s, root)) unless blank?(fetch(metadata, "name"))
         if namespaced && namespace_required?(kind, operation) && blank?(fetch(metadata, "namespace"))
           issues << issue(%w[metadata namespace], :required, "")
         end
@@ -311,9 +310,7 @@ module Rubernetes
         return handler_request_errors(root, kind) if HANDLER_REQUEST_KINDS.include?(kind)
 
         issues = missing_root_errors(root, kind)
-        if internal_request_context_strategy?(kind)
-          issues << issue([], :internal, "could not find requestInfo in context")
-        end
+        issues << issue([], :internal, "could not find requestInfo in context") if internal_request_context_strategy?(kind)
         issues.concat(webhook_errors(root, kind, operation)) if WEBHOOK_KINDS.include?(kind)
         issues.concat(policy_binding_errors(root)) if kind == "ValidatingAdmissionPolicyBinding"
         issues.concat(resource_slice_errors(root, operation)) if kind == "ResourceSlice"
@@ -492,7 +489,8 @@ module Rubernetes
           issues << issue(%w[spec nonResourceAttributes], :invalid, "cannot be specified in combination with resourceAttributes")
         end
         if !resource.is_a?(Hash) && !non_resource.is_a?(Hash)
-          issues << issue(%w[spec resourceAttributes], :invalid, "exactly one of nonResourceAttributes or resourceAttributes must be specified")
+          issues << issue(%w[spec resourceAttributes], :invalid,
+                          "exactly one of nonResourceAttributes or resourceAttributes must be specified")
         end
         if !self_review && blank?(fetch(spec, "user")) && Array(fetch(spec, "groups")).empty?
           issues << issue(%w[spec user], :invalid, "at least one of user or group must be specified")
@@ -510,7 +508,9 @@ module Rubernetes
           issues << issue(%w[spec nonResourceAttributes], :invalid, "disallowed on this kind of request") if non_resource.is_a?(Hash)
           metadata = fetch(root, "metadata")
           metadata = {} unless metadata.is_a?(Hash)
-          extra = metadata.reject { |key, value| %w[namespace managedFields].include?(key.to_s) || blank?(value) || (value.respond_to?(:empty?) && value.empty?) }
+          extra = metadata.reject do |key, value|
+            %w[namespace managedFields].include?(key.to_s) || blank?(value) || (value.respond_to?(:empty?) && value.empty?)
+          end
           issues << issue(%w[metadata], :invalid, "must be empty except for namespace") unless extra.empty?
           if resource.is_a?(Hash) && fetch(resource, "namespace").to_s != fetch(metadata, "namespace").to_s
             issues << issue(%w[spec resourceAttributes namespace], :invalid, "must match metadata.namespace")
@@ -530,9 +530,13 @@ module Rubernetes
           path = ["spec.resourceAttributes", name]
           raw = fetch(selector, "rawSelector").to_s
           requirements = Array(fetch(selector, "requirements"))
-          issues << issue(path + ["rawSelector"], :invalid, "may not specified at the same time as requirements") if !raw.empty? && !requirements.empty?
+          if !raw.empty? && !requirements.empty?
+            issues << issue(path + ["rawSelector"], :invalid,
+                            "may not specified at the same time as requirements")
+          end
           if raw.empty? && requirements.empty?
-            issues << issue(path + ["requirements"], :required, "when #{path.join(".")} is specified, requirements or rawSelector is required")
+            issues << issue(path + ["requirements"], :required,
+                            "when #{path.join(".")} is specified, requirements or rawSelector is required")
           end
           requirements.each_with_index do |requirement, index|
             next unless requirement.is_a?(Hash)
@@ -543,9 +547,15 @@ module Rubernetes
             values = Array(fetch(requirement, "values"))
             case operator
             when "In", "NotIn"
-              issues << issue(requirement_path + ["values"], :required, "must be specified when `operator` is 'In' or 'NotIn'") if values.empty?
+              if values.empty?
+                issues << issue(requirement_path + ["values"], :required,
+                                "must be specified when `operator` is 'In' or 'NotIn'")
+              end
             when "Exists", "DoesNotExist"
-              issues << issue(requirement_path + ["values"], :forbidden, "may not be specified when `operator` is 'Exists' or 'DoesNotExist'") unless values.empty?
+              unless values.empty?
+                issues << issue(requirement_path + ["values"], :forbidden,
+                                "may not be specified when `operator` is 'Exists' or 'DoesNotExist'")
+              end
             end
             if flavor == :label && !blank?(fetch(requirement, "key"))
               issues.concat(label_key_errors(fetch(requirement, "key").to_s, requirement_path + ["key"]))
@@ -556,9 +566,12 @@ module Rubernetes
       end
 
       def label_key_errors(key, path)
-        return [] if key.match?(%r{\A(?:[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]\z}) && key.split("/").last.length <= 63
+        if key.match?(%r{\A(?:[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]\z}) && key.split("/").last.length <= 63
+          return []
+        end
 
-        [issue(path, :invalid, "name part must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character (e.g. 'MyName',  or 'my.name',  or '123-abc', regex used for validation is '([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]')")]
+        [issue(path, :invalid,
+               "name part must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character (e.g. 'MyName',  or 'my.name',  or '123-abc', regex used for validation is '([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]')")]
       end
 
       # pkg/apis/autoscaling/validation ValidateScale
@@ -727,23 +740,35 @@ module Rubernetes
           role_ref = fetch(root, "roleRef")
           role_ref = {} unless role_ref.is_a?(Hash)
           allowed = kind == "ClusterRoleBinding" ? %w[ClusterRole] : %w[Role ClusterRole]
-          issues << issue(%w[roleRef apiGroup], :unsupported, "supported values: \"rbac.authorization.k8s.io\"") if !blank?(fetch(role_ref, "apiGroup")) && fetch(role_ref, "apiGroup").to_s != "rbac.authorization.k8s.io"
-          issues << issue(%w[roleRef kind], :unsupported, "supported values: #{allowed.map { |value| "\"#{value}\"" }.join(", ")}") unless allowed.include?(fetch(role_ref, "kind").to_s)
+          issues << issue(%w[roleRef apiGroup], :unsupported, "supported values: \"rbac.authorization.k8s.io\"") if !blank?(fetch(role_ref,
+                                                                                                                                  "apiGroup")) && fetch(
+                                                                                                                                    role_ref, "apiGroup"
+                                                                                                                                  ).to_s != "rbac.authorization.k8s.io"
+          unless allowed.include?(fetch(role_ref, "kind").to_s)
+            issues << issue(%w[roleRef kind], :unsupported, "supported values: #{allowed.map do |value|
+              "\"#{value}\""
+            end.join(", ")}")
+          end
           issues << issue(%w[roleRef name], :required, "") if blank?(fetch(role_ref, "name"))
         when "VolumeAttachment"
           issues << issue(%w[spec attacher], :required, "")
-          issues << issue(%w[spec nodeName], :invalid, "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')")
+          issues << issue(%w[spec nodeName], :invalid,
+                          "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')")
           issues << issue(%w[spec source], :required, "must specify exactly one of inlineVolumeSpec and persistentVolumeName")
         when "VolumeAttributesClass"
           issues << issue(%w[driverName], :required, "") if blank?(fetch(root, "driverName"))
           parameters = fetch(root, "parameters")
-          issues << issue(%w[parameters], :required, "must contain at least one key/value pair") unless parameters.is_a?(Hash) && !parameters.empty?
+          unless parameters.is_a?(Hash) && !parameters.empty?
+            issues << issue(%w[parameters], :required,
+                            "must contain at least one key/value pair")
+          end
         when "StorageVersionMigration"
           issues << issue(%w[spec resource resource], :required, "resource is required to be set")
         when "APIService"
           issues << issue(%w[spec group], :required, "only v1 may have an empty group and it better be legacy kube")
           issues << issue(%w[spec groupPriorityMinimum], :invalid, "must be positive and less than 20000")
-          issues << issue(%w[spec version], :invalid, "a DNS-1035 label must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')")
+          issues << issue(%w[spec version], :invalid,
+                          "a DNS-1035 label must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')")
           issues << issue(%w[spec versionPriority], :invalid, "must be positive and less than 1000")
         end
         issues
@@ -775,9 +800,7 @@ module Rubernetes
 
           total += values.sum { |_key, value| value.to_s.bytesize }
         end
-        if total > MAX_SECRET_SIZE
-          issues << issue(%w[data], :invalid, "must have at most #{MAX_SECRET_SIZE} bytes")
-        end
+        issues << issue(%w[data], :invalid, "must have at most #{MAX_SECRET_SIZE} bytes") if total > MAX_SECRET_SIZE
         %w[data stringData binaryData].each do |section|
           values = fetch(root, section)
           next unless values.is_a?(Hash)
@@ -815,9 +838,7 @@ module Rubernetes
         if type == "kubernetes.io/service-account-token"
           annotations = fetch(fetch(root, "metadata"), "annotations")
           name = annotations.is_a?(Hash) ? fetch(annotations, "kubernetes.io/service-account.name") : nil
-          if blank?(name)
-            issues << issue(["metadata", "annotations", "kubernetes.io/service-account.name"], :required, "")
-          end
+          issues << issue(["metadata", "annotations", "kubernetes.io/service-account.name"], :required, "") if blank?(name)
         end
         return issues if required_keys.nil?
 
@@ -849,8 +870,10 @@ module Rubernetes
           path = ["webhooks", index.to_s]
           errors = []
           versions = fetch(webhook, "admissionReviewVersions")
-          errors << issue(path + ["admissionReviewVersions"], :required,
-                          "must specify one of v1, v1beta1") if !versions.is_a?(Array) || versions.empty?
+          if !versions.is_a?(Array) || versions.empty?
+            errors << issue(path + ["admissionReviewVersions"], :required,
+                            "must specify one of v1, v1beta1")
+          end
           if versions.is_a?(Array) && !versions.empty?
             accepted_version = versions.any? { |version| %w[v1 v1beta1].include?(version.to_s) }
             if operation == :create && !accepted_version
@@ -884,15 +907,16 @@ module Rubernetes
           allowed_side_effects = operation == :update ? %w[None NoneOnDryRun Some Unknown] : %w[None NoneOnDryRun]
           if blank?(side_effects)
             errors << issue(path + ["sideEffects"], :required,
-                            "must specify one of #{allowed_side_effects.join(', ')}")
+                            "must specify one of #{allowed_side_effects.join(", ")}")
           elsif !allowed_side_effects.include?(side_effects.to_s)
             errors << issue(path + ["sideEffects"], :unsupported,
-                            "supported values: #{allowed_side_effects.map { |value| JSON.generate(value) }.join(', ')}")
+                            "supported values: #{allowed_side_effects.map { |value| JSON.generate(value) }.join(", ")}")
           end
           conditions = fetch(webhook, "matchConditions")
           if operation != :update && conditions.is_a?(Array)
             conditions.each_with_index do |condition, condition_index|
               next unless condition.is_a?(Hash)
+
               expression = fetch(condition, "expression")
               next unless expression.is_a?(String) && !expression.strip.empty?
 
@@ -900,7 +924,7 @@ module Rubernetes
               # compiled by the strict stateless compiler (no params).
               expression_path = path + ["matchConditions", condition_index.to_s, "expression"]
               compile_issue = cel_compile_issue(expression_path, expression.strip, compiler: policy_expression_compiler,
-                                                                                    return_types: cel_return_types(:bool), has_params: false, has_authorizer: true)
+                                                                                   return_types: cel_return_types(:bool), has_params: false, has_authorizer: true)
               errors << compile_issue if compile_issue
             end
           end
@@ -946,6 +970,7 @@ module Rubernetes
 
             rules.each_with_index do |rule, index|
               next unless rule.is_a?(Hash)
+
               base = ["spec", "matchResources", collection, index.to_s]
               %w[apiGroups apiVersions operations resources].each do |field|
                 value = fetch(rule, field)
@@ -987,7 +1012,7 @@ module Rubernetes
         signer = fetch(spec, "signerName")
         if blank?(signer)
           issues << issue(%w[spec signerName], :required, "")
-        elsif !signer.to_s.match?(/\A[a-z0-9][a-z0-9.-]*\/[a-z0-9][a-z0-9.-]*\z/)
+        elsif !signer.to_s.match?(%r{\A[a-z0-9][a-z0-9.-]*/[a-z0-9][a-z0-9.-]*\z})
           issues << issue(
             %w[spec signerName], :invalid,
             "must be a fully qualified domain and path of the form 'example.com/signer-name'"
@@ -999,6 +1024,7 @@ module Rubernetes
           if conditions.is_a?(Array)
             conditions.each_with_index do |condition, index|
               next unless condition.is_a?(Hash)
+
               value = fetch(condition, "status")
               next if %w[False True Unknown].include?(value.to_s)
 
@@ -1015,6 +1041,7 @@ module Rubernetes
 
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
+
         trust_bundle = fetch(spec, "trustBundle")
         valid_pem = trust_bundle.is_a?(String) && trust_bundle.match?(/-----BEGIN CERTIFICATE-----/)
         return [] if valid_pem
@@ -1042,20 +1069,24 @@ module Rubernetes
 
       def node_errors(root, operation)
         issues = []
-        walk(root) do |value, path|
-          next unless value.is_a?(Array) && path.last.to_s == "taints"
-          value.each_with_index do |taint, index|
-            next unless taint.is_a?(Hash)
-            effect = fetch(taint, "effect")
-            next if %w[NoExecute NoSchedule PreferNoSchedule].include?(effect.to_s)
+        if %i[create update].include?(operation)
+          walk(root) do |value, path|
+            next unless value.is_a?(Array) && path.last.to_s == "taints"
 
-            count = operation == :update ? 2 : 1
-            count.times do
-              issues << issue(["metadata", "taints", index.to_s, "effect"], :unsupported,
-                              "supported values: \"NoSchedule\", \"PreferNoSchedule\", \"NoExecute\"")
+            value.each_with_index do |taint, index|
+              next unless taint.is_a?(Hash)
+
+              effect = fetch(taint, "effect")
+              next if %w[NoExecute NoSchedule PreferNoSchedule].include?(effect.to_s)
+
+              count = operation == :update ? 2 : 1
+              count.times do
+                issues << issue(["metadata", "taints", index.to_s, "effect"], :unsupported,
+                                "supported values: \"NoSchedule\", \"PreferNoSchedule\", \"NoExecute\"")
+              end
             end
           end
-        end if operation == :create || operation == :update
+        end
         return issues unless operation == :update
 
         spec = fetch(root, "spec")
@@ -1099,11 +1130,9 @@ module Rubernetes
         # the child fields (not an OpenAPI `spec.pool` parent) and treats the
         # zero count as a range error.
         pool = {} unless pool.is_a?(Hash)
-        required(pool, "name", ["spec", "pool"], issues)
+        required(pool, "name", %w[spec pool], issues)
         count = fetch(pool, "resourceSliceCount")
-        if !count.is_a?(Numeric) || count <= 0
-          issues << issue(%w[spec pool resourceSliceCount], :invalid, "must be greater than zero")
-        end
+        issues << issue(%w[spec pool resourceSliceCount], :invalid, "must be greater than zero") if !count.is_a?(Numeric) || count <= 0
         devices = fetch(spec, "devices")
         if devices.is_a?(Array)
           devices.each_with_index do |device, index|
@@ -1120,6 +1149,7 @@ module Rubernetes
             if operation != :update && taints.is_a?(Array)
               taints.each_with_index do |taint, taint_index|
                 next unless taint.is_a?(Hash)
+
                 effect = fetch(taint, "effect")
                 next if %w[NoExecute NoSchedule None].include?(effect.to_s)
 
@@ -1148,16 +1178,17 @@ module Rubernetes
             # union error when the policy is present.
             capacity_device = advanced_device
             capacities = fetch(capacity_device, "capacity")
-            if capacities.is_a?(Hash)
-              capacities.each do |name, capacity|
-                next unless capacity.is_a?(Hash)
-                policy = fetch(capacity, "requestPolicy")
-                next unless policy.is_a?(Hash)
-                next if fetch(device, "allowMultipleAllocations") == true || fetch(capacity_device, "allowMultipleAllocations") == true
+            next unless capacities.is_a?(Hash)
 
-                issues << issue(["spec", "devices", index.to_s, "capacity", "[#{name}]", "requestPolicy"], :forbidden,
-                                "allowMultipleAllocations must be true")
-              end
+            capacities.each do |name, capacity|
+              next unless capacity.is_a?(Hash)
+
+              policy = fetch(capacity, "requestPolicy")
+              next unless policy.is_a?(Hash)
+              next if fetch(device, "allowMultipleAllocations") == true || fetch(capacity_device, "allowMultipleAllocations") == true
+
+              issues << issue(["spec", "devices", index.to_s, "capacity", "[#{name}]", "requestPolicy"], :forbidden,
+                              "allowMultipleAllocations must be true")
             end
           end
         end
@@ -1167,10 +1198,13 @@ module Rubernetes
           if terms.is_a?(Array)
             terms.each_with_index do |term, term_index|
               next unless term.is_a?(Hash)
+
               expressions = fetch(term, "matchExpressions")
               next unless expressions.is_a?(Array)
+
               expressions.each_with_index do |expression, expression_index|
                 next unless expression.is_a?(Hash)
+
                 expression_path = ["spec", "nodeSelector", "nodeSelectorTerms", term_index.to_s,
                                    "matchExpressions", expression_index.to_s]
                 operator = fetch(expression, "operator")
@@ -1228,12 +1262,13 @@ module Rubernetes
         if operation == :create && (blank?(api_version) || !api_version.to_s.include?("/"))
           issues << issue(%w[spec scaleTargetRef apiVersion], :invalid, "apiVersion must specify API group")
         end
-        required(reference, "kind", ["spec", "scaleTargetRef"], issues)
-        required(reference, "name", ["spec", "scaleTargetRef"], issues)
+        required(reference, "kind", %w[spec scaleTargetRef], issues)
+        required(reference, "name", %w[spec scaleTargetRef], issues)
         metrics = fetch(spec, "metrics")
         if metrics.is_a?(Array)
           metrics.each_with_index do |metric, index|
             next unless metric.is_a?(Hash)
+
             type = fetch(metric, "type")
             path = ["spec", "metrics", index.to_s, "type"]
             if blank?(type)
@@ -1266,7 +1301,8 @@ module Rubernetes
         if window.is_a?(Integer)
           issues << issue(path + ["stabilizationWindowSeconds"], :invalid, "must be greater than or equal to zero") if window.negative?
           if window > HPA_MAX_STABILIZATION_WINDOW
-            issues << issue(path + ["stabilizationWindowSeconds"], :invalid, "must be less than or equal to #{HPA_MAX_STABILIZATION_WINDOW}")
+            issues << issue(path + ["stabilizationWindowSeconds"], :invalid,
+                            "must be less than or equal to #{HPA_MAX_STABILIZATION_WINDOW}")
           end
         end
         select = fetch(rules, "selectPolicy")
@@ -1355,9 +1391,7 @@ module Rubernetes
       def hpa_metric_target_errors(target, path, issues, required_detail:, required_field: "averageValue")
         target = {} unless target.is_a?(Hash)
         type = fetch(target, "type")
-        if blank?(type)
-          issues << issue(path + ["type"], :required, "must specify a metric target type")
-        end
+        issues << issue(path + ["type"], :required, "must specify a metric target type") if blank?(type)
         unless %w[Utilization Value AverageValue].include?(type.to_s)
           issues << issue(path + ["type"], :invalid, "must be either Utilization, Value, or AverageValue")
         end
@@ -1396,6 +1430,7 @@ module Rubernetes
         if operation == :update && conditions.is_a?(Array)
           conditions.each_with_index do |condition, index|
             next unless condition.is_a?(Hash)
+
             required(condition, "type", ["status", "conditions", index.to_s], issues)
           end
         end
@@ -1405,6 +1440,7 @@ module Rubernetes
 
         rules.each_with_index do |rule, index|
           next unless rule.is_a?(Hash)
+
           path = ["spec", "rules", index.to_s]
           subjects = fetch(rule, "subjects")
           if !subjects.is_a?(Array) || subjects.empty?
@@ -1412,6 +1448,7 @@ module Rubernetes
           else
             subjects.each_with_index do |subject, subject_index|
               next unless subject.is_a?(Hash)
+
               kind = fetch(subject, "kind")
               next if %w[Group ServiceAccount User].include?(kind.to_s)
 
@@ -1428,6 +1465,7 @@ module Rubernetes
           if resources.is_a?(Array)
             resources.each_with_index do |resource_rule, resource_index|
               next unless resource_rule.is_a?(Hash)
+
               resource_path = path + ["resourceRules", resource_index.to_s]
               namespaces = fetch(resource_rule, "namespaces")
               verbs = fetch(resource_rule, "verbs")
@@ -1442,37 +1480,38 @@ module Rubernetes
               end
             end
           end
-          if non_resources.is_a?(Array)
-            non_resources.each_with_index do |non_resource_rule, non_resource_index|
-              next unless non_resource_rule.is_a?(Hash)
-              non_resource_path = path + ["nonResourceRules", non_resource_index.to_s]
-              urls = fetch(non_resource_rule, "nonResourceURLs")
-              verbs = fetch(non_resource_rule, "verbs")
-              if urls.is_a?(Array) && !urls.empty?
-                if urls.any? { |url| url.to_s == "*" }
-                  # ValidateFlowSchemaNonResourcePolicyRule: a wildcard entry is
-                  # checked only for being the sole entry.  The per-path rules
-                  # are not applied to it -- "*" is not a path.
-                  if urls.length > 1
-                    issues << issue(non_resource_path + ["nonResourceURLs"], :invalid,
-                                    "if '*' is present, must not specify other non-resource URLs")
-                  end
-                else
-                  urls.each_with_index do |url, url_index|
-                    detail = non_resource_url_path_error(url)
-                    next if detail.nil?
+          next unless non_resources.is_a?(Array)
 
-                    issues << issue(non_resource_path + ["nonResourceURLs", url_index.to_s], :invalid, detail)
-                  end
+          non_resources.each_with_index do |non_resource_rule, non_resource_index|
+            next unless non_resource_rule.is_a?(Hash)
+
+            non_resource_path = path + ["nonResourceRules", non_resource_index.to_s]
+            urls = fetch(non_resource_rule, "nonResourceURLs")
+            verbs = fetch(non_resource_rule, "verbs")
+            if urls.is_a?(Array) && !urls.empty?
+              if urls.any? { |url| url.to_s == "*" }
+                # ValidateFlowSchemaNonResourcePolicyRule: a wildcard entry is
+                # checked only for being the sole entry.  The per-path rules
+                # are not applied to it -- "*" is not a path.
+                if urls.length > 1
+                  issues << issue(non_resource_path + ["nonResourceURLs"], :invalid,
+                                  "if '*' is present, must not specify other non-resource URLs")
                 end
               else
-                issues << issue(non_resource_path + ["nonResourceURLs"], :required, "")
+                urls.each_with_index do |url, url_index|
+                  detail = non_resource_url_path_error(url)
+                  next if detail.nil?
+
+                  issues << issue(non_resource_path + ["nonResourceURLs", url_index.to_s], :invalid, detail)
+                end
               end
-              if verbs.is_a?(Array) && !verbs.empty?
-                flowcontrol_verb_issue(verbs, non_resource_path).then { |entry| issues << entry if entry }
-              else
-                issues << issue(non_resource_path + ["verbs"], :required, "")
-              end
+            else
+              issues << issue(non_resource_path + ["nonResourceURLs"], :required, "")
+            end
+            if verbs.is_a?(Array) && !verbs.empty?
+              flowcontrol_verb_issue(verbs, non_resource_path).then { |entry| issues << entry if entry }
+            else
+              issues << issue(non_resource_path + ["verbs"], :required, "")
             end
           end
         end
@@ -1516,7 +1555,8 @@ module Rubernetes
 
         type = fetch(spec, "type")
         issues = []
-        issues << issue(%w[spec type], :unsupported, "supported values: \"Exempt\", \"Limited\"") unless %w[Exempt Limited].include?(type.to_s)
+        issues << issue(%w[spec type], :unsupported, "supported values: \"Exempt\", \"Limited\"") unless %w[Exempt
+                                                                                                            Limited].include?(type.to_s)
         # ValidatePriorityLevelConfigurationSpec: only the mandatory "exempt"
         # level is of type Exempt.
         metadata = fetch(root, "metadata")
@@ -1530,6 +1570,7 @@ module Rubernetes
           if conditions.is_a?(Array)
             conditions.each_with_index do |condition, index|
               next unless condition.is_a?(Hash)
+
               required(condition, "type", ["status", "conditions", index.to_s], issues)
             end
           end
@@ -1553,6 +1594,7 @@ module Rubernetes
         if endpoints.is_a?(Array)
           endpoints.each_with_index do |endpoint, index|
             next unless endpoint.is_a?(Hash)
+
             addresses = fetch(endpoint, "addresses")
             next if addresses.is_a?(Array) && !addresses.empty?
 
@@ -1585,6 +1627,7 @@ module Rubernetes
 
             entries.each_with_index do |address, address_index|
               next unless address.is_a?(Hash)
+
               ip = fetch(address, "ip")
               ip_path = ["subsets", index.to_s, field, address_index.to_s, "ip"]
               messages = legacy_ip_messages(ip)
@@ -1613,10 +1656,9 @@ module Rubernetes
         if selectors.is_a?(Array)
           selectors.each_with_index do |selector, index|
             next unless selector.is_a?(Hash)
+
             cel = fetch(selector, "cel")
-            unless cel.is_a?(Hash)
-              issues << issue(["spec", "selectors", index.to_s, "cel"], :required, "")
-            else
+            if cel.is_a?(Hash)
               expression = fetch(cel, "expression")
               if blank?(expression)
                 required(cel, "expression", ["spec", "selectors", index.to_s, "cel"], issues)
@@ -1624,6 +1666,8 @@ module Rubernetes
                 issues << issue(["spec", "selectors", index.to_s, "cel", "expression"], :invalid,
                                 "must evaluate to bool or the unknown type, not #{cel_result_type(expression.to_s)}")
               end
+            else
+              issues << issue(["spec", "selectors", index.to_s, "cel"], :required, "")
             end
           end
         end
@@ -1650,6 +1694,7 @@ module Rubernetes
       def storage_version_migration_errors(root)
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
+
         resource = fetch(spec, "resource")
         resource = {} unless resource.is_a?(Hash)
         value = fetch(resource, "resource")
@@ -1668,6 +1713,7 @@ module Rubernetes
           # Probe handlers in status are observed state, not PodSpec input;
           # normal resource create/update strategies do not validate them.
           next if path.include?("status")
+
           present = PROBE_HANDLERS.select { |name| !fetch(value, name).nil? }
           next if present.empty?
 
@@ -1710,7 +1756,7 @@ module Rubernetes
       # metadata.managedFields is bookkeeping no strategy validates (its
       # fieldsV1 trees spell every key "f:<name>"), yet it was most of the
       # nodes every walk visited on an updated Pod.
-      def walk(value, path = [], &block)
+      def walk(value, path = [], &)
         if value.is_a?(Hash)
           yield(value, path)
           value.each do |key, child|
@@ -1719,12 +1765,12 @@ module Rubernetes
             name = key.to_s
             next if name == "managedFields" && path.last == "metadata"
 
-            walk(child, path + [name], &block)
+            walk(child, path + [name], &)
           end
         elsif value.is_a?(Array)
           yield(value, path)
           value.each_with_index do |child, index|
-            walk(child, path + [index.to_s], &block) if child.is_a?(Hash) || child.is_a?(Array)
+            walk(child, path + [index.to_s], &) if child.is_a?(Hash) || child.is_a?(Array)
           end
         end
       end
@@ -1733,6 +1779,7 @@ module Rubernetes
         issues = []
         walk(root) do |value, path|
           next unless value.is_a?(Hash)
+
           # Status is validated by status strategies (when one exists), not
           # by the main PodSpec validator.  The generated fixture graph can
           # materialize status.containerStatuses with empty fields; applying
@@ -1750,8 +1797,10 @@ module Rubernetes
           end
           %w[appArmorProfile seccompProfile].each do |profile|
             next if in_status
+
             nested = fetch(fetch(value, "securityContext"), profile)
             next unless nested.is_a?(Hash)
+
             type = fetch(nested, "type")
             next if SUPPORTED_APPARMOR.include?(type.to_s) || SUPPORTED_SECCOMP.include?(type.to_s)
 
@@ -1774,6 +1823,7 @@ module Rubernetes
           if !in_status && containers.is_a?(Array)
             containers.each_with_index do |container, index|
               next unless container.is_a?(Hash)
+
               required(container, "image", path + ["containers", index.to_s], issues)
             end
           end
@@ -1790,7 +1840,7 @@ module Rubernetes
       ENV_FIELD_PATHS = %w[metadata.name metadata.namespace metadata.uid spec.nodeName spec.serviceAccountName
                            status.hostIP status.hostIPs status.podIP status.podIPs].freeze
       VOLUME_FIELD_PATHS = %w[metadata.name metadata.namespace metadata.uid metadata.labels metadata.annotations].freeze
-      SUBSCRIPTED_FIELD_PATH = /\A(?<path>[^\[]+)\['(?<subscript>.*)'\]\z/.freeze
+      SUBSCRIPTED_FIELD_PATH = /\A(?<path>[^\[]+)\['(?<subscript>.*)'\]\z/
 
       def object_field_selector_issues(value, path)
         issues = []
@@ -1866,7 +1916,7 @@ module Rubernetes
             allowed = %w[limits.cpu limits.ephemeral-storage limits.memory requests.cpu requests.ephemeral-storage requests.memory]
             unless allowed.include?(resource.to_s)
               issues << issue(path + ["resource"], :unsupported,
-                              "supported values: #{allowed.map { |entry| JSON.generate(entry) }.join(', ')}")
+                              "supported values: #{allowed.map { |entry| JSON.generate(entry) }.join(", ")}")
             end
           when "fieldRef"
             issues.concat(object_field_selector_issues(value, path))
@@ -1882,9 +1932,7 @@ module Rubernetes
               issues << issue(path, :invalid, "must specify one of: `configMapRef` or `secretRef`")
             end
           when "postStart", "preStop", "livenessProbe", "readinessProbe", "startupProbe"
-            if value.empty?
-              issues << issue(path, :required, "must specify a handler type")
-            end
+            issues << issue(path, :required, "must specify a handler type") if value.empty?
           when "tcpSocket"
             # Probe/LifecycleHandler one-of validation selects the first
             # populated handler and does not descend into later handlers.
@@ -1953,10 +2001,10 @@ module Rubernetes
               allowed = %w[RSA3072 RSA4096 ECDSAP256 ECDSAP384 ECDSAP521 ED25519]
               unless allowed.include?(key_type.to_s)
                 issues << issue(path + ["keyType"], :unsupported,
-                                "supported values: #{allowed.map { |entry| JSON.generate(entry) }.join(', ')}")
+                                "supported values: #{allowed.map { |entry| JSON.generate(entry) }.join(", ")}")
               end
               signer = fetch(value, "signerName")
-              unless signer.is_a?(String) && signer.match?(/\A[a-z0-9.-]+\/[a-z0-9][a-z0-9.-]*\z/)
+              unless signer.is_a?(String) && signer.match?(%r{\A[a-z0-9.-]+/[a-z0-9][a-z0-9.-]*\z})
                 issues << issue(path + ["signerName"], :invalid,
                                 "must be a fully qualified domain and path of the form 'example.com/signer-name'")
               end
@@ -1972,11 +2020,10 @@ module Rubernetes
             if value.is_a?(Array)
               value.each do |policy|
                 next unless policy.is_a?(Hash)
+
                 resource = fetch(policy, "resourceName")
                 restart = fetch(policy, "restartPolicy")
-                unless %w[cpu memory].include?(resource.to_s)
-                  issues << issue(path, :unsupported, "supported values: \"cpu\", \"memory\"")
-                end
+                issues << issue(path, :unsupported, "supported values: \"cpu\", \"memory\"") unless %w[cpu memory].include?(resource.to_s)
                 unless %w[NotRequired RestartContainer].include?(restart.to_s)
                   issues << issue(path, :unsupported, "supported values: \"NotRequired\", \"RestartContainer\"")
                 end
@@ -1986,6 +2033,7 @@ module Rubernetes
             if value.is_a?(Array)
               value.each_with_index do |rule, index|
                 next unless rule.is_a?(Hash)
+
                 rule_path = path + [index.to_s]
                 action = fetch(rule, "action")
                 unless %w[Restart RestartAllContainers].include?(action.to_s)
@@ -2008,6 +2056,7 @@ module Rubernetes
             if value.is_a?(Array)
               value.each_with_index do |entry, index|
                 next unless entry.is_a?(Hash)
+
                 name = fetch(entry, "name")
                 issues << issue(path + [index.to_s, "name"], :not_found, "") unless volume_names.include?(name.to_s)
               end
@@ -2016,6 +2065,7 @@ module Rubernetes
             if value.is_a?(Array)
               value.each_with_index do |entry, index|
                 next unless entry.is_a?(Hash)
+
                 issues.concat(ip_field_issues(path + [index.to_s, "ip"], fetch(entry, "ip")))
               end
             end
@@ -2023,12 +2073,13 @@ module Rubernetes
             if value.is_a?(Array)
               value.each_with_index do |entry, index|
                 next unless entry.is_a?(Hash)
-                if blank?(fetch(entry, "key")) && fetch(entry, "operator").to_s != "Exists"
-                  count = operation == :update ? 2 : 1
-                  count.times do
-                    issues << issue(path + [index.to_s, "operator"], :invalid,
-                                    "operator must be Exists when `key` is empty, which means \"match all values and all keys\"")
-                  end
+
+                next unless blank?(fetch(entry, "key")) && fetch(entry, "operator").to_s != "Exists"
+
+                count = operation == :update ? 2 : 1
+                count.times do
+                  issues << issue(path + [index.to_s, "operator"], :invalid,
+                                  "operator must be Exists when `key` is empty, which means \"match all values and all keys\"")
                 end
               end
             end
@@ -2036,6 +2087,7 @@ module Rubernetes
             if value.is_a?(Array)
               value.each_with_index do |entry, index|
                 next unless entry.is_a?(Hash)
+
                 unless %w[DoNotSchedule ScheduleAnyway].include?(fetch(entry, "whenUnsatisfiable").to_s)
                   issues << issue(path + [index.to_s, "whenUnsatisfiable"], :unsupported,
                                   "supported values: \"DoNotSchedule\", \"ScheduleAnyway\"")
@@ -2052,6 +2104,7 @@ module Rubernetes
             if value.is_a?(Array)
               value.each_with_index do |entry, index|
                 next unless entry.is_a?(Hash)
+
                 names = %w[resourceClaimName resourceClaimTemplateName]
                 unless names.any? { |name| !blank?(fetch(entry, name)) }
                   issues << issue(path + [index.to_s], :invalid,
@@ -2060,9 +2113,7 @@ module Rubernetes
               end
             end
           when "claims"
-            if value.is_a?(Array) && path[-2] == "resources"
-              issues.concat(resource_claim_reference_errors(root, value, path))
-            end
+            issues.concat(resource_claim_reference_errors(root, value, path)) if value.is_a?(Array) && path[-2] == "resources"
           when "ephemeralContainers"
             if value.is_a?(Array)
               issues << issue(path, :forbidden, "cannot be set on create") if operation == :create
@@ -2085,10 +2136,14 @@ module Rubernetes
             pvc_spec = fetch(value, "spec")
             pvc_spec = {} unless pvc_spec.is_a?(Hash)
             modes = fetch(pvc_spec, "accessModes")
-            issues << issue(path + %w[spec accessModes], :required, "at least 1 access mode is required") unless modes.is_a?(Array) && !modes.empty?
+            unless modes.is_a?(Array) && !modes.empty?
+              issues << issue(path + %w[spec accessModes], :required,
+                              "at least 1 access mode is required")
+            end
             resources = fetch(pvc_spec, "resources")
             requests = resources.is_a?(Hash) ? fetch(resources, "requests") : nil
-            issues << issue(path + %w[spec resources [storage]], :required, "") unless requests.is_a?(Hash) && provided?(fetch(requests, "storage"))
+            issues << issue(path + %w[spec resources [storage]], :required, "") unless requests.is_a?(Hash) && provided?(fetch(requests,
+                                                                                                                               "storage"))
           end
         end
 
@@ -2103,11 +2158,10 @@ module Rubernetes
           when "resizePolicy"
             value.each do |policy|
               next unless policy.is_a?(Hash)
+
               resource = fetch(policy, "resourceName")
               restart = fetch(policy, "restartPolicy")
-              unless %w[cpu memory].include?(resource.to_s)
-                issues << issue(path, :unsupported, "supported values: \"cpu\", \"memory\"")
-              end
+              issues << issue(path, :unsupported, "supported values: \"cpu\", \"memory\"") unless %w[cpu memory].include?(resource.to_s)
               unless %w[NotRequired RestartContainer].include?(restart.to_s)
                 issues << issue(path, :unsupported, "supported values: \"NotRequired\", \"RestartContainer\"")
               end
@@ -2115,6 +2169,7 @@ module Rubernetes
           when "restartPolicyRules"
             value.each_with_index do |rule, index|
               next unless rule.is_a?(Hash)
+
               rule_path = path + [index.to_s]
               action = fetch(rule, "action")
               unless %w[Restart RestartAllContainers].include?(action.to_s)
@@ -2135,6 +2190,7 @@ module Rubernetes
           when "volumeMounts", "volumeDevices"
             value.each_with_index do |entry, index|
               next unless entry.is_a?(Hash)
+
               name = fetch(entry, "name")
               issues << issue(path + [index.to_s, "name"], :not_found, "") unless volume_names.include?(name.to_s)
             end
@@ -2143,6 +2199,7 @@ module Rubernetes
             # attached to the list field (not to configMapRef/secretRef).
             value.each do |entry|
               next unless entry.is_a?(Hash)
+
               alternatives = %w[configMapRef secretRef]
               unless alternatives.any? { |name| fetch(entry, name).is_a?(Hash) }
                 issues << issue(path, :invalid, "must specify one of: `configMapRef` or `secretRef`")
@@ -2151,22 +2208,25 @@ module Rubernetes
           when "hostAliases"
             value.each_with_index do |entry, index|
               next unless entry.is_a?(Hash)
+
               issues.concat(ip_field_issues(path + [index.to_s, "ip"], fetch(entry, "ip")))
             end
           when "tolerations"
             value.each_with_index do |entry, index|
               next unless entry.is_a?(Hash)
-              if blank?(fetch(entry, "key")) && fetch(entry, "operator").to_s != "Exists"
-                count = operation == :update ? 2 : 1
-                count.times do
-                  issues << issue(path + [index.to_s, "operator"], :invalid,
-                                  "operator must be Exists when `key` is empty, which means \"match all values and all keys\"")
-                end
+
+              next unless blank?(fetch(entry, "key")) && fetch(entry, "operator").to_s != "Exists"
+
+              count = operation == :update ? 2 : 1
+              count.times do
+                issues << issue(path + [index.to_s, "operator"], :invalid,
+                                "operator must be Exists when `key` is empty, which means \"match all values and all keys\"")
               end
             end
           when "topologySpreadConstraints"
             value.each_with_index do |entry, index|
               next unless entry.is_a?(Hash)
+
               unless %w[DoNotSchedule ScheduleAnyway].include?(fetch(entry, "whenUnsatisfiable").to_s)
                 issues << issue(path + [index.to_s, "whenUnsatisfiable"], :unsupported,
                                 "supported values: \"DoNotSchedule\", \"ScheduleAnyway\"")
@@ -2179,6 +2239,7 @@ module Rubernetes
           when "resourceClaims"
             value.each_with_index do |entry, index|
               next unless entry.is_a?(Hash)
+
               names = %w[resourceClaimName resourceClaimTemplateName]
               unless names.any? { |name| !blank?(fetch(entry, name)) }
                 issues << issue(path + [index.to_s], :invalid,
@@ -2186,9 +2247,7 @@ module Rubernetes
               end
             end
           when "claims"
-            if path[-2] == "resources" && value.is_a?(Array)
-              issues.concat(resource_claim_reference_errors(root, value, path))
-            end
+            issues.concat(resource_claim_reference_errors(root, value, path)) if path[-2] == "resources" && value.is_a?(Array)
           when "ephemeralContainers"
             issues << issue(path, :forbidden, "cannot be set on create") if operation == :create
             value.each_with_index do |entry, index|
@@ -2232,17 +2291,23 @@ module Rubernetes
         end
         walk(root) do |value, path|
           next unless value.is_a?(Hash)
+
           selector = fetch(value, "selector")
           template = fetch(value, "template")
           if selector.is_a?(Hash) && selector.empty?
-            detail = kind == "ReplicaSet" ? "empty selector is invalid for deployment" :
-                     "empty selector is invalid for #{kind.downcase}"
+            detail = if kind == "ReplicaSet"
+                       "empty selector is invalid for deployment"
+                     else
+                       "empty selector is invalid for #{kind.downcase}"
+                     end
             issues << issue(path + ["selector"], :invalid, detail)
             next
           end
           next unless selector.is_a?(Hash) && template.is_a?(Hash)
+
           labels = fetch(fetch(template, "metadata"), "labels")
           next unless labels.is_a?(Hash)
+
           match_labels = fetch(selector, "matchLabels")
           next unless match_labels.is_a?(Hash)
           next if match_labels.all? { |key, val| labels[key.to_s] == val }
@@ -2268,6 +2333,7 @@ module Rubernetes
         issues = []
         walk(root) do |value, path|
           next unless value.is_a?(Hash)
+
           if kind == "FlowSchema" && path.last == "rules"
             # The generic schema catches shape errors; strategy-specific
             # subject/operator checks are intentionally handled below.
@@ -2305,10 +2371,11 @@ module Rubernetes
         issues = []
         walk(root) do |value, path|
           next unless value.is_a?(Hash)
+
           schedule = fetch(value, "schedule")
           if schedule.is_a?(String) && schedule.split.length != 5
             issues << issue(path + ["schedule"], :invalid,
-                            "expected exactly 5 fields, found #{schedule.split.length}: [#{schedule.split.join(", ")}]" )
+                            "expected exactly 5 fields, found #{schedule.split.length}: [#{schedule.split.join(", ")}]")
           end
           success = fetch(value, "successPolicy")
           if success.is_a?(Hash) && !success.empty? && fetch(value, "completionMode").to_s != "Indexed"
@@ -2338,7 +2405,7 @@ module Rubernetes
                    else
                      fetch(spec, "template")
                    end
-        if !template.is_a?(Hash)
+        unless template.is_a?(Hash)
           path = kind == "CronJob" ? %w[spec jobTemplate spec template spec] : %w[spec template spec]
           return [
             issue(path + ["containers"], :required, ""),
@@ -2385,8 +2452,10 @@ module Rubernetes
         if containers.is_a?(Array) && containers.first.is_a?(Hash)
           required(containers.first, "image", %w[spec template spec containers 0], issues)
         end
-        issues << issue(%w[spec template spec restartPolicy], :required,
-                        "valid values: \"OnFailure\", \"Never\"") if blank?(fetch(pod_spec, "restartPolicy"))
+        if blank?(fetch(pod_spec, "restartPolicy"))
+          issues << issue(%w[spec template spec restartPolicy], :required,
+                          "valid values: \"OnFailure\", \"Never\"")
+        end
         issues
       end
 
@@ -2425,7 +2494,12 @@ module Rubernetes
           elsif new_affinity && old_pod["affinity"].nil?
             old_pod["affinity"] = {"nodeAffinity" => new_affinity["nodeAffinity"]}.compact
           elsif new_affinity
-            new_affinity.key?("nodeAffinity") ? old_pod["affinity"]["nodeAffinity"] = new_affinity["nodeAffinity"] : old_pod["affinity"].delete("nodeAffinity")
+            if new_affinity.key?("nodeAffinity")
+              old_pod["affinity"]["nodeAffinity"] =
+                new_affinity["nodeAffinity"]
+            else
+              old_pod["affinity"].delete("nodeAffinity")
+            end
           end
           %w[nodeSelector tolerations schedulingGates].each do |field|
             new_pod.key?(field) ? old_pod[field] = new_pod[field] : old_pod.delete(field)
@@ -2452,12 +2526,20 @@ module Rubernetes
           new_containers.each_with_index do |container, index|
             next unless container.is_a?(Hash) && old_containers[index].is_a?(Hash) && container["name"] == old_containers[index]["name"]
 
-            container.key?("resources") ? old_containers[index]["resources"] = container["resources"] : old_containers[index].delete("resources")
+            if container.key?("resources")
+              old_containers[index]["resources"] =
+                container["resources"]
+            else
+              old_containers[index].delete("resources")
+            end
           end
         end
         without_template = ->(value) { value.reject { |key, _| key == "spec" } }
         issues = []
-        issues << issue(%w[spec template], :invalid, "field is immutable") unless without_template.call(template) == without_template.call(old_template)
+        unless without_template.call(template) == without_template.call(old_template)
+          issues << issue(%w[spec template], :invalid,
+                          "field is immutable")
+        end
         issues << issue(%w[spec template spec], :invalid, "field is immutable") unless semantic_value(new_pod) == semantic_value(old_pod)
         issues
       end
@@ -2493,9 +2575,7 @@ module Rubernetes
         completions = fetch(spec, "completions")
         return [] if completions == fetch(old_spec, "completions")
 
-        unless fetch(spec, "completionMode").to_s == "Indexed"
-          return [issue(%w[spec completions], :invalid, "field is immutable")]
-        end
+        return [issue(%w[spec completions], :invalid, "field is immutable")] unless fetch(spec, "completionMode").to_s == "Indexed"
         return [] if completions.nil?
         return [] if completions == fetch(spec, "parallelism")
 
@@ -2612,9 +2692,7 @@ module Rubernetes
         return [] unless %w[Secret ConfigMap].include?(kind)
 
         issues = []
-        if kind == "Secret" && fetch(root, "type").to_s != fetch(old, "type").to_s
-          issues << issue(%w[type], :invalid, "field is immutable")
-        end
+        issues << issue(%w[type], :invalid, "field is immutable") if kind == "Secret" && fetch(root, "type").to_s != fetch(old, "type").to_s
         return issues unless fetch(old, "immutable") == true
 
         issues << issue(%w[immutable], :forbidden, "field is immutable when `immutable` is set") unless fetch(root, "immutable") == true
@@ -2731,6 +2809,7 @@ module Rubernetes
       def ingress_errors(root)
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
+
         default_backend = fetch(spec, "defaultBackend")
         rules = fetch(spec, "rules")
         issues = []
@@ -2742,8 +2821,10 @@ module Rubernetes
 
         rules.each_with_index do |rule, rule_index|
           next unless rule.is_a?(Hash)
+
           http = fetch(rule, "http")
           next unless http.is_a?(Hash)
+
           paths = fetch(http, "paths")
           if !paths.is_a?(Array) || paths.empty?
             issues << issue(["spec", "rules", rule_index.to_s, "http", "paths"], :required, "")
@@ -2751,6 +2832,7 @@ module Rubernetes
           end
           paths.each_with_index do |path, path_index|
             next unless path.is_a?(Hash)
+
             path_base = ["spec", "rules", rule_index.to_s, "http", "paths", path_index.to_s]
             path_type = fetch(path, "pathType")
             if blank?(path_type)
@@ -2824,6 +2906,7 @@ module Rubernetes
       def service_errors(root)
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
+
         ports = fetch(spec, "ports")
         return [] if external_name_service?(spec) && (ports.nil? || (ports.is_a?(Array) && ports.empty?))
         return [issue(%w[spec ports], :required, "")] unless ports.is_a?(Array) && !ports.empty?
@@ -2861,7 +2944,7 @@ module Rubernetes
 
       SUPPORTED_ACCESS_MODES = %w[ReadOnlyMany ReadWriteMany ReadWriteOnce ReadWriteOncePod].freeze
 
-      def pvc_errors(root, operation = :create)
+      def pvc_errors(root, _operation = :create)
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
 
@@ -2882,9 +2965,7 @@ module Rubernetes
         end
         resources = fetch(spec, "resources")
         requests = resources.is_a?(Hash) ? fetch(resources, "requests") : nil
-        unless requests.is_a?(Hash) && provided?(fetch(requests, "storage"))
-          issues << issue(%w[spec resources [storage]], :required, "")
-        end
+        issues << issue(%w[spec resources [storage]], :required, "") unless requests.is_a?(Hash) && provided?(fetch(requests, "storage"))
         data_source = fetch(spec, "dataSource")
         data_source_ref = fetch(spec, "dataSourceRef")
         # validateDataSource / validateDataSourceRef: name and kind are
@@ -2902,8 +2983,11 @@ module Rubernetes
         if data_source_ref.is_a?(Hash) && !blank?(fetch(data_source_ref, "namespace"))
           issues << issue(%w[spec], :invalid, "may not be specified when dataSourceRef.namespace is specified") if data_source.is_a?(Hash)
         elsif data_source.is_a?(Hash) && data_source_ref.is_a?(Hash)
-          comparable = lambda { |ref| %w[apiGroup kind name].map { |key| fetch(ref, key).to_s } }
-          issues << issue(%w[spec], :invalid, "must match dataSourceRef") unless comparable.call(data_source) == comparable.call(data_source_ref)
+          comparable = ->(ref) { %w[apiGroup kind name].map { |key| fetch(ref, key).to_s } }
+          unless comparable.call(data_source) == comparable.call(data_source_ref)
+            issues << issue(%w[spec], :invalid,
+                            "must match dataSourceRef")
+          end
         end
         issues
       end
@@ -2925,7 +3009,8 @@ module Rubernetes
           if event_field(root, "series", events_group) != event_field(old, "series", events_group)
             issues.concat(event_series_errors(root, events_group))
           end
-          %w[involvedObject reason message source firstTimestamp lastTimestamp count reason type eventTime action related reportingController reportingInstance].each do |name|
+          %w[involvedObject reason message source firstTimestamp lastTimestamp count reason type eventTime action related
+             reportingController reportingInstance].each do |name|
             next if event_field(root, name, events_group) == event_field(old, name, events_group)
 
             issues << issue([name], :invalid, "field is immutable")
@@ -2955,7 +3040,11 @@ module Rubernetes
       }.freeze
 
       def event_field(root, name, events_group)
-        key = events_group ? EVENT_WIRE_FIELDS.fetch(name, name) : (name == "reportingController" ? "reportingComponent" : name)
+        key = if events_group
+                EVENT_WIRE_FIELDS.fetch(name, name)
+              else
+                (name == "reportingController" ? "reportingComponent" : name)
+              end
         fetch(root, key)
       end
 
@@ -3039,7 +3128,8 @@ module Rubernetes
         # strategy reports every absent source member (rather than only the
         # source parent) when the inline object is present.
         if inline.is_a?(Hash)
-          inline_fields = %w[accessModes awsElasticBlockStore azureDisk azureFile cephFS cinder claimRef csi fc flocker gcePersistentDisk glusterfs iscsi local nfs nodeAffinity photonPersistentDisk portworxVolume quobyte rbd scaleIO storageos vsphereVolume]
+          inline_fields = %w[accessModes awsElasticBlockStore azureDisk azureFile cephFS cinder claimRef csi fc flocker gcePersistentDisk
+                             glusterfs iscsi local nfs nodeAffinity photonPersistentDisk portworxVolume quobyte rbd scaleIO storageos vsphereVolume]
           zero_inline = inline_fields.all? do |field|
             value = fetch(inline, field)
             zero_value?(value)
@@ -3060,9 +3150,11 @@ module Rubernetes
             end
             if present_sources.length > 1
               present_sources.each do |field|
-                detail = %w[claimRef nodeAffinity].include?(field) ?
-                         "may not be specified in the context of inline volumes" :
-                         "may not specify more than 1 volume type"
+                detail = if %w[claimRef nodeAffinity].include?(field)
+                           "may not be specified in the context of inline volumes"
+                         else
+                           "may not specify more than 1 volume type"
+                         end
                 issues << issue(["spec", "source", "inlineVolumeSpec", field], :forbidden, detail)
               end
             end
@@ -3076,7 +3168,8 @@ module Rubernetes
         if kind == "PersistentVolume"
           spec = fetch(root, "spec")
           if spec.is_a?(Hash)
-            sources = %w[awsElasticBlockStore azureDisk azureFile cephfs cinder configMap csi downwardAPI emptyDir ephemeral fc flexVolume flocker gcePersistentDisk glusterfs hostPath iscsi local nfs persistentVolumeClaim photonPersistentDisk portworxVolume projected quobyte rbd scaleIO storageos vsphereVolume]
+            sources = %w[awsElasticBlockStore azureDisk azureFile cephfs cinder configMap csi downwardAPI emptyDir ephemeral fc flexVolume
+                         flocker gcePersistentDisk glusterfs hostPath iscsi local nfs persistentVolumeClaim photonPersistentDisk portworxVolume projected quobyte rbd scaleIO storageos vsphereVolume]
             present_sources = sources.select { |name| source_key_present?(spec, name) }
             if present_sources.empty?
               source_issues = [
@@ -3104,9 +3197,12 @@ module Rubernetes
         end
         walk(root) do |value, path|
           next unless value.is_a?(Hash)
-          source_names = %w[awsElasticBlockStore azureDisk azureFile cephfs cinder configMap downwardAPI emptyDir ephemeral fc flexVolume flocker gcePersistentDisk gitRepo glusterfs hostPath iscsi nfs persistentVolumeClaim portworxVolume projected quobyte rbd scaleIO storageos vsphere]
+
+          source_names = %w[awsElasticBlockStore azureDisk azureFile cephfs cinder configMap downwardAPI emptyDir ephemeral fc flexVolume
+                            flocker gcePersistentDisk gitRepo glusterfs hostPath iscsi nfs persistentVolumeClaim portworxVolume projected quobyte rbd scaleIO storageos vsphere]
           present = source_names.select { |name| source_key_present?(value, name) }
           next unless path.last == "volumes" || path.last == "volumeSource" || value.key?("persistentVolumeClaim")
+
           if present.length > 1
             issues << issue(path + [present.last], :invalid, "may not have more than one field specified at a time")
           elsif present.empty? && (path.last == "volumeSource" || value.key?("name"))
@@ -3278,7 +3374,7 @@ module Rubernetes
         [address.mask(length), length]
       end
 
-      def network_policy_errors(root, operation = :create, old = nil)
+      def network_policy_errors(root, _operation = :create, old = nil)
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
 
@@ -3299,9 +3395,12 @@ module Rubernetes
           elsif value.is_a?(Array) && path.last.to_s == "to"
             value.each_with_index do |peer, index|
               next unless peer.is_a?(Hash)
+
               sources = %w[podSelector namespaceSelector ipBlock].count { |name| fetch(peer, name).is_a?(Hash) }
-              issues << issue(path + [index.to_s], :required,
-                              "must specify a peer") if sources.zero?
+              if sources.zero?
+                issues << issue(path + [index.to_s], :required,
+                                "must specify a peer")
+              end
             end
           end
         end
@@ -3334,9 +3433,7 @@ module Rubernetes
               # non-resource URLs.  None of that was checked, so a Role could
               # be stored with rules that grant nothing and silently deny.
               verbs = fetch(rule, "verbs")
-              if !verbs.is_a?(Array) || verbs.empty?
-                issues << issue(base + ["verbs"], :required, "verbs must contain at least one value")
-              end
+              issues << issue(base + ["verbs"], :required, "verbs must contain at least one value") if !verbs.is_a?(Array) || verbs.empty?
               non_resource = fetch(rule, "nonResourceURLs")
               has_non_resource = non_resource.is_a?(Array) && !non_resource.empty?
               resources = fetch(rule, "resources")
@@ -3361,6 +3458,7 @@ module Rubernetes
           if subjects.is_a?(Array)
             subjects.each_with_index do |subject, index|
               next unless subject.is_a?(Hash)
+
               kind_value = fetch(subject, "kind")
               next if %w[Group ServiceAccount User].include?(kind_value.to_s)
 
@@ -3384,7 +3482,7 @@ module Rubernetes
           next unless limit.is_a?(Hash)
 
           type = fetch(limit, "type")
-          qualified = type.is_a?(String) && type.match?(/\A[a-z0-9]([-a-z0-9]*[a-z0-9])?\/[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?\z/)
+          qualified = type.is_a?(String) && type.match?(%r{\A[a-z0-9]([-a-z0-9]*[a-z0-9])?/[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?\z})
           next if standard.include?(type.to_s) || qualified
 
           issue(["spec", "limits", index.to_s, "type"], :invalid,
@@ -3493,6 +3591,7 @@ module Rubernetes
           if topologies.is_a?(Array)
             topologies.each_with_index do |term, index|
               next unless term.is_a?(Hash)
+
               expressions = fetch(term, "matchLabelExpressions")
               if !expressions.is_a?(Array) || expressions.empty?
                 issues << issue(["allowedTopologies", index.to_s, "matchLabelExpressions"], :duplicate, "")
@@ -3519,6 +3618,7 @@ module Rubernetes
         if expressions.is_a?(Array)
           expressions.each_with_index do |expression, index|
             next unless expression.is_a?(Hash)
+
             operator = fetch(expression, "operator")
             next if %w[In NotIn Exists DoesNotExist].include?(operator.to_s)
 
@@ -3532,6 +3632,7 @@ module Rubernetes
       def api_service_errors(root)
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
+
         issues = []
         group = fetch(spec, "group")
         version = fetch(spec, "version")
@@ -3562,11 +3663,13 @@ module Rubernetes
       def csi_node_errors(root)
         spec = fetch(root, "spec")
         return [] unless spec.is_a?(Hash)
+
         drivers = fetch(spec, "drivers")
         return [] unless drivers.is_a?(Array)
 
         drivers.each_with_index.flat_map do |driver, index|
           next [] unless driver.is_a?(Hash)
+
           issues = []
           required(driver, "name", ["spec", "drivers", index.to_s], issues)
           required(driver, "nodeID", ["spec", "drivers", index.to_s], issues)
@@ -3672,7 +3775,12 @@ module Rubernetes
           begin
             address = IPAddr.new(name)
             canonical = address.to_s
-            canonical == name || (address.ipv4? && name == canonical) ? [] : [issue(path, :invalid, "must be in canonical form (\"#{canonical}\")")]
+            if canonical == name || (address.ipv4? && name == canonical)
+              []
+            else
+              [issue(path, :invalid,
+                     "must be in canonical form (\"#{canonical}\")")]
+            end
           rescue IPAddr::Error, ArgumentError
             [issue(path, :invalid, "must be a valid IP address, (e.g. 10.9.8.7 or 2001:db8::ffff)")]
           end
@@ -3721,7 +3829,10 @@ module Rubernetes
           when "In", "NotIn"
             issues << issue(base + ["values"], :required, "must be specified when `operator` is 'In' or 'NotIn'") if values.empty?
           when "Exists", "DoesNotExist"
-            issues << issue(base + ["values"], :forbidden, "may not be specified when `operator` is 'Exists' or 'DoesNotExist'") unless values.empty?
+            unless values.empty?
+              issues << issue(base + ["values"], :forbidden,
+                              "may not be specified when `operator` is 'Exists' or 'DoesNotExist'")
+            end
           else
             issues << issue(base + ["operator"], :invalid, "not a valid selector operator")
           end
@@ -3761,7 +3872,10 @@ module Rubernetes
           issues << issue(path + ["kind"], :required, "")
         else
           messages = dns1035_label_messages(kind.downcase)
-          issues << issue(path + ["kind"], :invalid, "may have mixed case, but should otherwise match: #{messages.join(",")}") unless messages.empty?
+          unless messages.empty?
+            issues << issue(path + ["kind"], :invalid,
+                            "may have mixed case, but should otherwise match: #{messages.join(",")}")
+          end
         end
         issues
       end
@@ -3780,25 +3894,43 @@ module Rubernetes
         end
         ops = Array(fetch(rule, "operations"))
         issues << issue(path + ["operations"], :required, "") if ops.empty?
-        issues << issue(path + ["operations"], :invalid, "if '*' is present, must not specify other operations") if ops.length > 1 && ops.include?("*")
+        if ops.length > 1 && ops.include?("*")
+          issues << issue(path + ["operations"], :invalid,
+                          "if '*' is present, must not specify other operations")
+        end
         ops.each_with_index do |op, index|
-          issues << issue(path + ["operations", index.to_s], :unsupported, unsupported_detail(operations)) unless operations.include?(op.to_s)
+          unless operations.include?(op.to_s)
+            issues << issue(path + ["operations", index.to_s], :unsupported,
+                            unsupported_detail(operations))
+          end
         end
         groups = Array(fetch(rule, "apiGroups"))
         issues << issue(path + ["apiGroups"], :required, "") if groups.empty?
-        issues << issue(path + ["apiGroups"], :invalid, "if '*' is present, must not specify other API groups") if groups.length > 1 && groups.include?("*")
+        if groups.length > 1 && groups.include?("*")
+          issues << issue(path + ["apiGroups"], :invalid,
+                          "if '*' is present, must not specify other API groups")
+        end
         versions = Array(fetch(rule, "apiVersions"))
         issues << issue(path + ["apiVersions"], :required, "") if versions.empty?
-        issues << issue(path + ["apiVersions"], :invalid, "if '*' is present, must not specify other API versions") if versions.length > 1 && versions.include?("*")
-        versions.each_with_index { |version, index| issues << issue(path + ["apiVersions", index.to_s], :required, "") if version.to_s.empty? }
+        if versions.length > 1 && versions.include?("*")
+          issues << issue(path + ["apiVersions"], :invalid,
+                          "if '*' is present, must not specify other API versions")
+        end
+        versions.each_with_index do |version, index|
+          issues << issue(path + ["apiVersions", index.to_s], :required, "") if version.to_s.empty?
+        end
         resources = Array(fetch(rule, "resources"))
         issues << issue(path + ["resources"], :required, "") if resources.empty?
         resources.each_with_index do |resource, index|
           issues << issue(path + ["resources", index.to_s], :required, "") if resource.to_s.empty?
         end
-        issues << issue(path + ["resources"], :invalid, "if '*' is present, must not specify other resources") if resources.length > 1 && resources.include?("*")
+        if resources.length > 1 && resources.include?("*")
+          issues << issue(path + ["resources"], :invalid,
+                          "if '*' is present, must not specify other resources")
+        end
         scope = fetch(rule, "scope")
-        issues << issue(path + ["scope"], :unsupported, unsupported_detail(%w[* Cluster Namespaced])) if !scope.nil? && !%w[* Cluster Namespaced].include?(scope.to_s)
+        issues << issue(path + ["scope"], :unsupported, unsupported_detail(%w[* Cluster Namespaced])) if !scope.nil? && !%w[* Cluster
+                                                                                                                            Namespaced].include?(scope.to_s)
         issues
       end
 
@@ -3809,7 +3941,8 @@ module Rubernetes
 
         issues = []
         policy = fetch(match, "matchPolicy")
-        issues << issue(path + ["matchPolicy"], :unsupported, unsupported_detail(%w[Equivalent Exact])) if !policy.nil? && !%w[Equivalent Exact].include?(policy.to_s)
+        issues << issue(path + ["matchPolicy"], :unsupported, unsupported_detail(%w[Equivalent Exact])) if !policy.nil? && !%w[Equivalent
+                                                                                                                               Exact].include?(policy.to_s)
         issues.concat(label_selector_errors(fetch(match, "namespaceSelector"), path + ["namespaceSelector"]))
         issues.concat(label_selector_errors(fetch(match, "objectSelector"), path + ["objectSelector"]))
         %w[resourceRules excludeResourceRules].each do |collection|
@@ -3856,7 +3989,7 @@ module Rubernetes
             issues << issue(base + ["expression"], :required, "")
           else
             compile_issue = cel_compile_issue(base + ["expression"], trimmed, compiler: policy_expression_compiler, return_types: cel_return_types(:bool),
-                                                                          has_params: has_params, has_authorizer: true)
+                                                                              has_params: has_params, has_authorizer: true)
             issues << compile_issue if compile_issue
           end
           name = fetch(condition, "name").to_s
@@ -3898,7 +4031,8 @@ module Rubernetes
           if expression.strip.empty?
             issues << issue(base + ["expression"], :required, "expression is not specified")
           elsif compiler
-            compile_issue = cel_result_issue(base + ["expression"], compiler.compile_variable(raw_name, expression, has_params: has_params), expression)
+            compile_issue = cel_result_issue(base + ["expression"],
+                                             compiler.compile_variable(raw_name, expression, has_params: has_params), expression)
             issues << compile_issue if compile_issue
           end
         end
@@ -3910,7 +4044,8 @@ module Rubernetes
       def admission_policy_common_errors(spec, compiler = policy_compiler(spec))
         issues = []
         policy = fetch(spec, "failurePolicy")
-        issues << issue(%w[spec failurePolicy], :unsupported, unsupported_detail(%w[Fail Ignore])) if !policy.nil? && !%w[Fail Ignore].include?(policy.to_s)
+        issues << issue(%w[spec failurePolicy], :unsupported, unsupported_detail(%w[Fail Ignore])) if !policy.nil? && !%w[Fail
+                                                                                                                          Ignore].include?(policy.to_s)
         param_kind = fetch(spec, "paramKind")
         issues.concat(param_kind_errors(param_kind, %w[spec paramKind])) if param_kind.is_a?(Hash)
         constraints = fetch(spec, "matchConstraints")
@@ -3957,14 +4092,21 @@ module Rubernetes
               else
                 issues << issue(base + ["jsonPatch"], :required, "must be specified when patchType is JSONPatch")
               end
-              issues << issue(base + ["applyConfiguration"], :invalid, "must not be specified when patchType is JSONPatch") if apply_configuration.is_a?(Hash)
+              if apply_configuration.is_a?(Hash)
+                issues << issue(base + ["applyConfiguration"], :invalid,
+                                "must not be specified when patchType is JSONPatch")
+              end
             when "ApplyConfiguration"
               if apply_configuration.is_a?(Hash)
-                issues.concat(mutation_expression_errors(apply_configuration, base + %w[applyConfiguration expression], compiler, :object, has_params))
+                issues.concat(mutation_expression_errors(apply_configuration, base + %w[applyConfiguration expression], compiler, :object,
+                                                         has_params))
               else
                 issues << issue(base + ["applyConfiguration"], :required, "must be specified when patchType is ApplyConfiguration")
               end
-              issues << issue(base + ["jsonPatch"], :invalid, "must not be specified when patchType is ApplyConfiguration") if json_patch.is_a?(Hash)
+              if json_patch.is_a?(Hash)
+                issues << issue(base + ["jsonPatch"], :invalid,
+                                "must not be specified when patchType is ApplyConfiguration")
+              end
             else
               issues << issue(base + ["patchType"], :unsupported, unsupported_detail(%w[ApplyConfiguration JSONPatch]))
             end
@@ -4006,7 +4148,7 @@ module Rubernetes
             issues << issue(base + ["expression"], :required, "expression is not specified")
           else
             compile_issue = cel_compile_issue(base + ["expression"], expression, compiler: compiler, return_types: cel_return_types(:bool),
-                                                                           has_params: has_params, has_authorizer: true)
+                                                                                 has_params: has_params, has_authorizer: true)
             issues << compile_issue if compile_issue
           end
           message_expression = fetch(validation, "messageExpression").to_s
@@ -4014,7 +4156,7 @@ module Rubernetes
             issues << issue(base + ["messageExpression"], :required, "must be non-empty if specified")
           elsif !message_expression.strip.empty?
             compile_issue = cel_compile_issue(base + ["messageExpression"], message_expression, compiler: compiler,
-                                                                                   return_types: cel_return_types(:string), has_params: has_params, has_authorizer: false)
+                                                                                                return_types: cel_return_types(:string), has_params: has_params, has_authorizer: false)
             issues << compile_issue if compile_issue
           end
           message = fetch(validation, "message").to_s
@@ -4047,8 +4189,8 @@ module Rubernetes
             issues << issue(base + ["valueExpression"], :required, "must not exceed 5120 bytes in length")
           else
             compile_issue = cel_compile_issue(base + ["valueExpression"], expression.strip, value: expression, compiler: compiler,
-                                                                                return_types: cel_return_types(:string_or_null),
-                                                                                has_params: fetch(spec, "paramKind").is_a?(Hash), has_authorizer: true)
+                                                                                            return_types: cel_return_types(:string_or_null),
+                                                                                            has_params: fetch(spec, "paramKind").is_a?(Hash), has_authorizer: true)
             issues << compile_issue if compile_issue
           end
           issues << issue(base + ["key"], :duplicate, "") if seen[key]
@@ -4193,14 +4335,18 @@ module Rubernetes
           next if value.empty?
 
           messages = dns1035_label_messages(value.downcase)
-          issues << issue(path + [field], :invalid, "may have mixed case, but should otherwise match: #{messages.join(",")}") unless messages.empty?
+          unless messages.empty?
+            issues << issue(path + [field], :invalid,
+                            "may have mixed case, but should otherwise match: #{messages.join(",")}")
+          end
         end
         Array(fetch(names, "shortNames")).each_with_index do |short, index|
           messages = dns1035_label_messages(short)
           issues << issue(path + ["shortNames", index.to_s], :invalid, messages.join(",")) unless messages.empty?
         end
         kind = fetch(names, "kind").to_s
-        issues << issue(path + ["listKind"], :invalid, "kind and listKind may not be the same") if !kind.empty? && kind == fetch(names, "listKind").to_s
+        issues << issue(path + ["listKind"], :invalid, "kind and listKind may not be the same") if !kind.empty? && kind == fetch(names,
+                                                                                                                                 "listKind").to_s
         Array(fetch(names, "categories")).each_with_index do |category, index|
           messages = dns1035_label_messages(category)
           issues << issue(path + ["categories", index.to_s], :invalid, messages.join(",")) unless messages.empty?
@@ -4256,13 +4402,22 @@ module Rubernetes
         review_versions = Array(fetch(webhook, "conversionReviewVersions"))
         case strategy
         when "None"
-          issues << issue(path + ["webhookClientConfig"], :forbidden, "should not be set when strategy is not set to Webhook") if client.is_a?(Hash)
-          issues << issue(path + ["conversionReviewVersions"], :forbidden, "should not be set when strategy is not set to Webhook") unless review_versions.empty?
+          if client.is_a?(Hash)
+            issues << issue(path + ["webhookClientConfig"], :forbidden,
+                            "should not be set when strategy is not set to Webhook")
+          end
+          unless review_versions.empty?
+            issues << issue(path + ["conversionReviewVersions"], :forbidden,
+                            "should not be set when strategy is not set to Webhook")
+          end
         when "Webhook"
           if client.is_a?(Hash)
             url = fetch(client, "url")
             service = fetch(client, "service")
-            issues << issue(path + ["webhookClientConfig"], :required, "exactly one of url or service is required") if blank?(url) == !service.is_a?(Hash) ? false : (blank?(url) && !service.is_a?(Hash)) || (!blank?(url) && service.is_a?(Hash))
+            if blank?(url) == !service.is_a?(Hash) ? false : (blank?(url) && !service.is_a?(Hash)) || (!blank?(url) && service.is_a?(Hash))
+              issues << issue(path + ["webhookClientConfig"], :required,
+                              "exactly one of url or service is required")
+            end
           else
             issues << issue(path + ["webhookClientConfig"], :required, "required when strategy is set to Webhook")
           end
@@ -4502,7 +4657,13 @@ module Rubernetes
         pod_level = path == %w[spec resources claims]
         issues << issue(path, :forbidden, "claims may not be set for Resources at pod-level") if pod_level
         spec = fetch(root, "spec")
-        names = spec.is_a?(Hash) ? Array(fetch(spec, "resourceClaims")).filter_map { |entry| entry.is_a?(Hash) ? fetch(entry, "name").to_s : nil } : []
+        names = if spec.is_a?(Hash)
+                  Array(fetch(spec, "resourceClaims")).filter_map do |entry|
+                    entry.is_a?(Hash) ? fetch(entry, "name").to_s : nil
+                  end
+                else
+                  []
+                end
         claims.each_with_index do |entry, index|
           name = entry.is_a?(Hash) ? fetch(entry, "name").to_s : ""
           next if !pod_level && names.include?(name)
@@ -4547,7 +4708,9 @@ module Rubernetes
           # v1beta1 carries the exact request fields inline on the request;
           # conversion materializes Exactly when any of them is set.
           if exactly.nil?
-            inline = request.select { |key, _value| %w[deviceClassName selectors allocationMode count adminAccess tolerations capacity].include?(key.to_s) }
+            inline = request.select do |key, _value|
+              %w[deviceClassName selectors allocationMode count adminAccess tolerations capacity].include?(key.to_s)
+            end
             exactly = inline unless inline.empty?
           end
           has_first = first_available.is_a?(Array) && !first_available.empty?
@@ -4587,7 +4750,8 @@ module Rubernetes
           elsif !distinct.nil?
             issues.concat(dra_fully_qualified_name_errors(distinct, base + ["distinctAttribute"]))
           else
-            issues << issue(base, :required, "exactly one of \"matchAttribute\" or \"distinctAttribute\" is required, but multiple fields are set")
+            issues << issue(base, :required,
+                            "exactly one of \"matchAttribute\" or \"distinctAttribute\" is required, but multiple fields are set")
           end
         end
         configs = Array(fetch(devices, "config"))
@@ -4629,13 +4793,17 @@ module Rubernetes
           base = path + [index.to_s]
           segments = reference.split("/", -1)
           if segments.length > 2
-            issues << issue(base, :invalid, "must be the name of a request in the claim or the name of a request and a subrequest separated by '/'")
+            issues << issue(base, :invalid,
+                            "must be the name of a request in the claim or the name of a request and a subrequest separated by '/'")
             next
           end
           segments.each { |segment| issues.concat(dra_request_name_errors(segment, base)) }
           known = request_names.key?(segments[0]) &&
                   (segments.length == 1 || request_names.fetch(segments[0]).include?(segments[1]))
-          issues << issue(base, :invalid, "must be the name of a request in the claim or the name of a request and a subrequest separated by '/'") unless known
+          unless known
+            issues << issue(base, :invalid,
+                            "must be the name of a request in the claim or the name of a request and a subrequest separated by '/'")
+          end
           issues << issue(base, :duplicate, "") if seen[reference]
           seen[reference] = true
         end
@@ -4667,9 +4835,15 @@ module Rubernetes
         case mode.to_s
         when "", "ExactCount"
           # SetDefaults_DeviceRequest defaults allocationMode to ExactCount and count to 1.
-          issues << issue(path + ["count"], :invalid, "must be greater than zero") if mode.to_s == "ExactCount" && count.is_a?(Integer) && count <= 0
+          if mode.to_s == "ExactCount" && count.is_a?(Integer) && count <= 0
+            issues << issue(path + ["count"], :invalid,
+                            "must be greater than zero")
+          end
         when "All"
-          issues << issue(path + ["count"], :invalid, "must not be specified when allocationMode is 'All'") if count.is_a?(Integer) && count != 0
+          if count.is_a?(Integer) && count != 0
+            issues << issue(path + ["count"], :invalid,
+                            "must not be specified when allocationMode is 'All'")
+          end
         else
           issues << issue(path + ["allocationMode"], :unsupported, unsupported_detail(%w[All ExactCount]))
         end
@@ -4691,7 +4865,9 @@ module Rubernetes
             issues << issue(base + ["operator"], :unsupported, unsupported_detail(%w[Equal Exists]))
           end
           effect = fetch(toleration, "effect").to_s
-          issues << issue(base + ["effect"], :unsupported, unsupported_detail(%w[NoExecute NoSchedule None])) if !effect.empty? && !%w[NoExecute NoSchedule None].include?(effect)
+          issues << issue(base + ["effect"], :unsupported, unsupported_detail(%w[NoExecute NoSchedule None])) if !effect.empty? && !%w[
+            NoExecute NoSchedule None
+          ].include?(effect)
         end
         issues
       end
@@ -4718,7 +4894,10 @@ module Rubernetes
         return [issue(path, :required, "")] if value.empty?
 
         segments = value.split("/", -1)
-        return [issue(path, :invalid, "must be a fully qualified domain and path of the form 'example.com/signer-name'")] unless segments.length == 2
+        unless segments.length == 2
+          return [issue(path, :invalid,
+                        "must be a fully qualified domain and path of the form 'example.com/signer-name'")]
+        end
 
         issues = []
         domain, signer_path = segments
@@ -4807,12 +4986,16 @@ module Rubernetes
         case public_key
         when OpenSSL::PKey::EC
           curve = public_key.group.curve_name
-          return [issue(path, :invalid, "elliptic public keys must use curve P256, P384, or P521")] unless %w[prime256v1 secp384r1 secp521r1].include?(curve)
+          return [issue(path, :invalid, "elliptic public keys must use curve P256, P384, or P521")] unless %w[prime256v1 secp384r1
+                                                                                                              secp521r1].include?(curve)
         when OpenSSL::PKey::RSA
           bits = public_key.n.num_bits
           return [issue(path, :invalid, "RSA keys must have modulus size 3072 or 4096")] unless [3072, 4096].include?(bits)
         else
-          return [issue(path, :invalid, "unknown public key type; supported types are Ed25519, ECDSA, and RSA")] unless public_key.oid == "ED25519"
+          unless public_key.oid == "ED25519"
+            return [issue(path, :invalid,
+                          "unknown public key type; supported types are Ed25519, ECDSA, and RSA")]
+          end
         end
         request.verify(public_key) ? [] : [issue(path, :invalid, "invalid signature")]
       rescue OpenSSL::PKey::PKeyError
@@ -4839,15 +5022,20 @@ module Rubernetes
         digest = OpenSSL::Digest::SHA256.digest(pod_uid)
         verified = case public_key
                    when OpenSSL::PKey::EC
-                     return [issue(pkix_path, :invalid, "elliptic public keys must use curve P256 or P384")] unless %w[prime256v1 secp384r1 secp521r1].include?(public_key.group.curve_name)
+                     return [issue(pkix_path, :invalid, "elliptic public keys must use curve P256 or P384")] unless %w[prime256v1 secp384r1
+                                                                                                                       secp521r1].include?(public_key.group.curve_name)
 
                      public_key.dsa_verify_asn1(digest, proof_der.to_s)
                    when OpenSSL::PKey::RSA
-                     return [issue(pkix_path, :invalid, "RSA keys must have modulus size 3072 or 4096")] unless [3072, 4096].include?(public_key.n.num_bits)
+                     return [issue(pkix_path, :invalid, "RSA keys must have modulus size 3072 or 4096")] unless [3072,
+                                                                                                                 4096].include?(public_key.n.num_bits)
 
                      public_key.verify_pss("SHA256", proof_der.to_s, digest, salt_length: :auto, mgf1_hash: "SHA256")
                    else
-                     return [issue(pkix_path, :invalid, "unknown public key type; supported types are Ed25519, ECDSA, and RSA")] unless public_key.oid == "ED25519"
+                     unless public_key.oid == "ED25519"
+                       return [issue(pkix_path, :invalid,
+                                     "unknown public key type; supported types are Ed25519, ECDSA, and RSA")]
+                     end
 
                      public_key.verify(nil, proof_der.to_s, pod_uid)
                    end
@@ -4950,12 +5138,16 @@ module Rubernetes
             messages = api_version_messages(version)
             issues << issue(base + ["decodableVersions", version_index.to_s], :invalid, messages.join(",")) unless messages.empty?
           end
-          issues << issue(base + ["decodableVersions"], :invalid, "decodableVersions must include encodingVersion #{encoding}") unless decodable.include?(encoding)
+          unless decodable.include?(encoding)
+            issues << issue(base + ["decodableVersions"], :invalid,
+                            "decodableVersions must include encodingVersion #{encoding}")
+          end
           Array(fetch(entry, "servedVersions")).each_with_index do |version, version_index|
             messages = api_version_messages(version)
             issues << issue(base + ["servedVersions", version_index.to_s], :invalid, messages.join(",")) unless messages.empty?
             unless decodable.include?(version)
-              issues << issue(base + ["servedVersions", version_index.to_s], :invalid, "individual served version : #{version} must be included in decodableVersions : #{decodable.inspect.tr(",", "")}")
+              issues << issue(base + ["servedVersions", version_index.to_s], :invalid,
+                              "individual served version : #{version} must be included in decodableVersions : #{decodable.inspect.tr(",", "")}")
             end
           end
         end
@@ -4963,7 +5155,8 @@ module Rubernetes
         actual_common = encodings.empty? || encodings.uniq.length != 1 ? nil : encodings.first
         common = fetch(status, "commonEncodingVersion")
         if actual_common.nil? && !common.nil?
-          issues << issue(%w[status commonEncodingVersion], :invalid, "should be nil if servers do not agree on the same encoding version, or if there is no server reporting the supported versions yet")
+          issues << issue(%w[status commonEncodingVersion], :invalid,
+                          "should be nil if servers do not agree on the same encoding version, or if there is no server reporting the supported versions yet")
         elsif !actual_common.nil? && common.nil?
           issues << issue(%w[status commonEncodingVersion], :invalid, "the common encoding version is #{actual_common}")
         elsif !actual_common.nil? && !common.nil? && actual_common != common.to_s
@@ -4976,7 +5169,8 @@ module Rubernetes
           base = ["status", "conditions", index.to_s]
           type = fetch(condition, "type").to_s
           if seen_types.key?(type)
-            issues << issue(base + ["type"], :invalid, "the type of the condition is not unique, it also appears in conditions[#{seen_types[type]}]")
+            issues << issue(base + ["type"], :invalid,
+                            "the type of the condition is not unique, it also appears in conditions[#{seen_types[type]}]")
           end
           seen_types[type] = index
           issues.concat(invalid_messages(base + ["type"], qualified_name_messages(type)))
@@ -5012,6 +5206,7 @@ module Rubernetes
 
       def plain_object(value)
         return value if value.is_a?(Hash)
+
         value.to_h
       end
 
@@ -5080,7 +5275,7 @@ module Rubernetes
 
       def kubernetes_type_name(value)
         return "null" if value.nil?
-        return "bool" if value == true || value == false
+        return "bool" if [true, false].include?(value)
         return "string" if value.is_a?(String)
         return "int" if value.is_a?(Integer)
         return "float" if value.is_a?(Float)
@@ -5123,7 +5318,7 @@ module Rubernetes
           path = File.expand_path("../../../generated/schema/registry.json", __dir__)
           JSON.parse(File.read(path))
         rescue Errno::ENOENT, JSON::ParserError
-          { "resources" => [], "types" => [] }
+          {"resources" => [], "types" => []}
         end
       end
     end

@@ -26,7 +26,7 @@ class NativeRuntimeRollbackDependencyTest < Minitest::Test
       @external_calls << :cgroup_release
       return false if fail_remove
 
-      super(handle, force: force)
+      super
     end
   end
 
@@ -62,20 +62,23 @@ class NativeRuntimeRollbackDependencyTest < Minitest::Test
     assert_equal [:cgroup_release], state.fetch(:calls)
 
     pending = runtime.trace.reverse.find { |entry| entry["event"] == "cleanup_pending" }
+
     assert_equal({"class" => "RuntimeError", "message" => "injected rollback failure"}, pending.fetch("primary_error"))
     assert_equal "cgroup:rollback-cgroup", pending.fetch("errors").fetch(1).fetch("blocked_by")
 
     resources = runtime.ledger.resources
     namespace = resources.find { |resource| resource.fetch(:kind) == "namespace" }
     workspace = resources.find { |resource| resource.fetch(:kind) == "workspace" }
+
     assert_equal true, namespace.fetch(:metadata).fetch("cleanup_pending")
     assert_equal "cgroup:rollback-cgroup", namespace.fetch(:metadata).fetch("blocked_by")
     assert_equal true, workspace.fetch(:metadata).fetch("cleanup_pending")
     assert_equal "cgroup:rollback-cgroup", workspace.fetch(:metadata).fetch("blocked_by")
 
     state.fetch(:cgroup).fail_remove = false
+
     assert_equal true, runtime.stop_sandbox("rollback-cgroup")
-    assert_equal [:cgroup_release, :cgroup_release, :namespace_release, :workspace_release], state.fetch(:calls)
+    assert_equal %i[cgroup_release cgroup_release namespace_release workspace_release], state.fetch(:calls)
     assert_empty runtime.ledger.resources
   end
 
@@ -87,16 +90,18 @@ class NativeRuntimeRollbackDependencyTest < Minitest::Test
     error = assert_raises(RuntimeError) { runtime.run_sandbox({"id" => "rollback-namespace"}, request_id: "rollback-namespace") }
 
     assert_equal "injected rollback failure", error.message
-    assert_equal [:cgroup_release, :namespace_release], state.fetch(:calls)
-    assert_equal %w[namespace:rollback-namespace workspace:rollback-namespace],
-                 error.cleanup_errors.map { |entry| entry.fetch("resource") }
+    assert_equal %i[cgroup_release namespace_release], state.fetch(:calls)
+    assert_equal(%w[namespace:rollback-namespace workspace:rollback-namespace],
+                 error.cleanup_errors.map { |entry| entry.fetch("resource") })
     workspace_error = error.cleanup_errors.fetch(1)
+
     assert_equal "namespace:rollback-namespace", workspace_error.fetch("blocked_by")
 
     state[:namespace_failure] = false
+
     assert_equal true, runtime.stop_sandbox("rollback-namespace")
 
-    assert_equal [:cgroup_release, :namespace_release, :namespace_release, :workspace_release], state.fetch(:calls)
+    assert_equal %i[cgroup_release namespace_release namespace_release workspace_release], state.fetch(:calls)
     assert_empty runtime.ledger.resources
     assert_equal "Stopped", runtime.ledger.operation("rollback-namespace").state
   end
@@ -109,7 +114,7 @@ class NativeRuntimeRollbackDependencyTest < Minitest::Test
     error = assert_raises(RuntimeError) { runtime.run_sandbox({"id" => "rollback-success"}, request_id: "rollback-success") }
 
     assert_equal "injected rollback failure", error.message
-    assert_equal [:cgroup_release, :namespace_release, :workspace_release], state.fetch(:calls)
+    assert_equal %i[cgroup_release namespace_release workspace_release], state.fetch(:calls)
     assert_empty runtime.ledger.resources
     assert_empty runtime.sandboxes
     assert_equal "Stopped", runtime.ledger.operation("rollback-success").state
@@ -133,11 +138,13 @@ class NativeRuntimeRollbackDependencyTest < Minitest::Test
     resource = runtime.ledger.resources(include_released: true).find do |entry|
       entry.fetch(:kind) == "cgroup" && entry.fetch(:id) == "remove-container:container-1"
     end
+
     assert_equal "Owned", resource.fetch(:state)
     assert_equal true, resource.fetch(:metadata).fetch("cleanup_pending")
     assert_equal "CleanupPending", runtime.ledger.request("remove-container-request").to_h.fetch("state")
 
     cgroup.fail_container = false
+
     assert_equal true, runtime.remove_container(container, request_id: "remove-container-request")
     assert_raises(Native::Error) { runtime.container_status(container) }
     assert_equal "Released", runtime.ledger.resources(include_released: true).find { |entry|
@@ -159,13 +166,14 @@ class NativeRuntimeRollbackDependencyTest < Minitest::Test
     error = assert_raises(Native::ResourceError) do
       runtime.send(:cleanup_sandbox_resources, sandbox, operation)
     end
-    assert_equal ["container:container-1", "cgroup:child-block", "namespace:child-block", "workspace:child-block"],
-                 error.cleanup_errors.map { |entry| entry.fetch("resource") }
+    assert_equal(["container:container-1", "cgroup:child-block", "namespace:child-block", "workspace:child-block"],
+                 error.cleanup_errors.map { |entry| entry.fetch("resource") })
     assert_equal "container:container-1", error.cleanup_errors.fetch(1).fetch("blocked_by")
     assert_equal "container:container-1", error.cleanup_errors.fetch(2).fetch("blocked_by")
     assert_equal "container:container-1", error.cleanup_errors.fetch(3).fetch("blocked_by")
 
     cgroup.fail_container = false
+
     assert_equal true, runtime.stop_sandbox(sandbox_id)
     assert_empty runtime.ledger.resources
   end
@@ -179,9 +187,9 @@ class NativeRuntimeRollbackDependencyTest < Minitest::Test
     primary.define_singleton_method(:cleanup_errors) { @cleanup_errors }
 
     runtime.send(:preserve_cleanup_errors, primary, [
-      {"resource" => "old", "error" => "same"},
-      {"resource" => "new", "error" => "cleanup"}
-    ])
+                   {"resource" => "old", "error" => "same"},
+                   {"resource" => "new", "error" => "cleanup"}
+                 ])
 
     assert_equal [{"resource" => "old", "error" => "same"}, {"resource" => "new", "error" => "cleanup"}],
                  primary.cleanup_errors

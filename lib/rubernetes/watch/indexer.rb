@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
 require_relative "support"
 
 module Rubernetes
@@ -36,7 +35,7 @@ module Rubernetes
             @objects.dup
           end
           values = Hash.new { |hash, key| hash[key] = {} }
-          objects.each { |key, object| add_index_values_locked(values, key, function.call(object)) }
+          objects.each { |key, object| add_index_values_locked(values, key, yield(object)) }
           registered = @mutex.synchronize do
             raise ArgumentError, "index #{index_name.inspect} is already registered" if @indices.key?(index_name)
             next false unless @objects.keys == objects.keys && objects.all? { |key, object| @objects[key].equal?(object) }
@@ -73,12 +72,8 @@ module Rubernetes
         loop do
           index_values = build_index_values(value)
           result = @mutex.synchronize do
-            if index_values.keys.sort != @indices.keys.sort
-              nil
-            else
-              if !replace && @objects.key?(key)
-                raise KeyError, "object #{key.inspect} already exists"
-              end
+            if index_values.keys.sort == @indices.keys.sort
+              raise KeyError, "object #{key.inspect} already exists" if !replace && @objects.key?(key)
 
               remove_indexes_locked(key)
               @objects[key] = value
@@ -185,10 +180,10 @@ module Rubernetes
       alias values list
       alias objects list
 
-      def each
+      def each(&)
         return enum_for(__method__) unless block_given?
 
-        list.each { |object| yield object }
+        list.each(&)
         self
       end
 

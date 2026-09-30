@@ -58,6 +58,7 @@ class Metav1TimePrecisionTest < Minitest::Test
 
     assert_equal "2026-09-18T03:46:02.123456Z", codec.truncate_times(lease).dig("spec", "renewTime")
     out = codec.truncate_times(event)
+
     assert_equal "2026-09-18T03:46:02.123456Z", out["eventTime"]
     assert_equal "2026-09-18T03:46:02Z", out["deprecatedFirstTimestamp"]
   end

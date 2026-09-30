@@ -16,6 +16,18 @@ end
 
 task default: :test
 
+desc "RuboCop over the whole tree (.rubocop.yml; historical offenses in .rubocop_todo.yml)"
+task :lint do
+  ruby "-e", 'load Gem.bin_path("rubocop", "rubocop")', "--", "--parallel"
+end
+
+namespace :lint do
+  desc "RuboCop with safe autocorrect"
+  task :fix do
+    ruby "-e", 'load Gem.bin_path("rubocop", "rubocop")', "--", "--autocorrect"
+  end
+end
+
 namespace :test do
   desc "Full suite, one process per file, N at a time (developer fast lane; evidence uses `rake test`)"
   task :parallel do
@@ -110,12 +122,12 @@ end
 
 namespace :m2 do
   desc "Run the real-kernel M2 adapter for the x86_64 release target"
-  task :kernel => [:compile] do
+  task kernel: [:compile] do
     sh RbConfig.ruby, "-Ibuild/ext/rubernetes_linux", "tools/milestones/m2_kernel_probe.rb"
   end
 
   desc "Capture strict M2 Native Pod evidence from the five adapters"
-  task :evidence => [:compile] do
+  task evidence: [:compile] do
     command = [RbConfig.ruby, "tools/milestones/m2_evidence.rb"]
     command.concat(["--m0-manifest", ENV.fetch("RUBERNETES_M2_M0_MANIFEST")]) if ENV["RUBERNETES_M2_M0_MANIFEST"]
     command.concat(["--m1-manifest", ENV.fetch("RUBERNETES_M2_M1_MANIFEST")]) if ENV["RUBERNETES_M2_M1_MANIFEST"]
@@ -123,7 +135,7 @@ namespace :m2 do
   end
 
   desc "Run tests and the strict content-addressed M2 evidence gate"
-  task verify: [:test, :evidence]
+  task verify: %i[test evidence]
 end
 
 namespace :m3 do
@@ -137,7 +149,7 @@ namespace :m3 do
   end
 
   desc "Run tests and the strict content-addressed M3 evidence gate"
-  task verify: [:test, :evidence]
+  task verify: %i[test evidence]
 end
 
 namespace :m4 do
@@ -152,7 +164,7 @@ namespace :m4 do
   end
 
   desc "Run tests and the strict content-addressed M4 evidence gate"
-  task verify: [:test, :evidence]
+  task verify: %i[test evidence]
 end
 
 namespace :m5 do
@@ -164,7 +176,7 @@ namespace :m5 do
   end
 
   desc "Run tests and the strict content-addressed M5 evidence gate"
-  task verify: [:test, :evidence]
+  task verify: %i[test evidence]
 end
 
 namespace :m6 do
@@ -176,7 +188,7 @@ namespace :m6 do
   end
 
   desc "Run tests and the strict content-addressed M6 evidence gate"
-  task verify: [:test, :evidence]
+  task verify: %i[test evidence]
 end
 
 namespace :m9 do
@@ -212,7 +224,7 @@ namespace :m9 do
   end
 
   desc "Run tests and the strict content-addressed M9 release gate"
-  task verify: [:test, :evidence]
+  task verify: %i[test evidence]
 end
 
 namespace :m8 do
@@ -222,7 +234,10 @@ namespace :m8 do
     command.concat(["--profile", ENV["RUBERNETES_M8_PROFILE"]]) if ENV["RUBERNETES_M8_PROFILE"]
     command.concat(["--lanes", ENV["RUBERNETES_M8_LANES"]]) if ENV["RUBERNETES_M8_LANES"]
     command.concat(["--kubeconfig", ENV["RUBERNETES_CONFORMANCE_KUBECONFIG"]]) if ENV["RUBERNETES_CONFORMANCE_KUBECONFIG"]
-    command.concat(["--oracle-kubeconfig", ENV["RUBERNETES_CONFORMANCE_ORACLE_KUBECONFIG"]]) if ENV["RUBERNETES_CONFORMANCE_ORACLE_KUBECONFIG"]
+    if ENV["RUBERNETES_CONFORMANCE_ORACLE_KUBECONFIG"]
+      command.concat(["--oracle-kubeconfig",
+                      ENV["RUBERNETES_CONFORMANCE_ORACLE_KUBECONFIG"]])
+    end
     sh(*command)
   end
 
@@ -252,7 +267,7 @@ namespace :m8 do
   end
 
   desc "Run tests and the strict content-addressed M8 evidence gate"
-  task verify: [:test, :evidence]
+  task verify: %i[test evidence]
 end
 
 namespace :m7 do
@@ -264,7 +279,7 @@ namespace :m7 do
   end
 
   desc "Run tests and the strict content-addressed M7 evidence gate"
-  task verify: [:test, :evidence]
+  task verify: %i[test evidence]
 
   desc "Build the pinned guest kernel and guest artifacts and rewrite the M7 artifact lock"
   task :artifacts do

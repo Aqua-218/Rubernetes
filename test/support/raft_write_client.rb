@@ -202,14 +202,12 @@ module RaftSimulation
             return
           end
           @cluster.route(node.drain)
-          if position[:pending]
-            if request.flush_now
-              # Server#flush_overlapped: append, send, then sync locally.
-              node.flush(process.now, defer_sync: true)
-              @cluster.route(node.drain)
-              @cluster.route(node.drain) if node.sync_local!
-              position = node.proposal_position(request.request_id)
-            end
+          if position[:pending] && request.flush_now
+            # Server#flush_overlapped: append, send, then sync locally.
+            node.flush(process.now, defer_sync: true)
+            @cluster.route(node.drain)
+            @cluster.route(node.drain) if node.sync_local!
+            position = node.proposal_position(request.request_id)
           end
           if position && !position[:pending]
             request.trace << [:appended, now, position[:index], position[:term]]
@@ -360,13 +358,11 @@ module RaftSimulation
     end
 
     def dropped(request, now, local:)
-      if local
-        fail(request, :dropped, now)
-      else
-        # Server#forward rescues ProposalDropped and the propose loop retries
-        # with the same request id.
-        request.state = :retry
-      end
+      fail(request, :dropped, now) if local
+
+      # Server#forward rescues ProposalDropped and the propose loop retries
+      # with the same request id.
+      request.state = :retry
     end
 
     def finish(request)

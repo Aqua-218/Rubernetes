@@ -14,7 +14,7 @@ require "time"
 
 module M34EvidenceSupport
   ROOT = File.expand_path("../..", __dir__).freeze
-  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}.freeze
+  SOURCE_EXCLUSIONS = %r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/}
   # External observers are allowed to hand the evidence runner a path to a
   # capture, but the path is only a transport pointer.  The pointer must
   # never become part of a milestone claim: the bytes are copied into the
@@ -143,6 +143,7 @@ module M34EvidenceSupport
       destination_lstat = File.lstat(destination)
       raise "external artifact destination is not a regular file" unless destination_lstat.file? && !destination_lstat.symlink?
       raise "external artifact size changed during copy" unless bytes == source_lstat.size && destination_lstat.size == bytes
+
       {"path" => destination, "bytes" => bytes, "sha256" => Digest::SHA256.file(destination).hexdigest}
     rescue StandardError
       File.unlink(destination) if File.exist?(destination) && !File.symlink?(destination)
@@ -158,14 +159,18 @@ module M34EvidenceSupport
   def ensure_no_symlink_path!(path, root = ROOT)
     expanded_root = File.expand_path(root)
     expanded = File.expand_path(path)
-    under_root = expanded_root == File::SEPARATOR ? expanded.start_with?(File::SEPARATOR) :
-      (expanded == expanded_root || expanded.start_with?("#{expanded_root}/"))
-    unless under_root
-      raise "external artifact path escapes the evidence root"
-    end
+    under_root = if expanded_root == File::SEPARATOR
+                   expanded.start_with?(File::SEPARATOR)
+                 else
+                   expanded == expanded_root || expanded.start_with?("#{expanded_root}/")
+                 end
+    raise "external artifact path escapes the evidence root" unless under_root
 
-    relative = expanded_root == File::SEPARATOR ? expanded.delete_prefix(File::SEPARATOR) :
-      expanded.delete_prefix("#{expanded_root}/")
+    relative = if expanded_root == File::SEPARATOR
+                 expanded.delete_prefix(File::SEPARATOR)
+               else
+                 expanded.delete_prefix("#{expanded_root}/")
+               end
     current = expanded_root
     relative.split("/").reject(&:empty?).each do |component|
       current = File.join(current, component)
@@ -186,7 +191,12 @@ module M34EvidenceSupport
   def read_bundle_file(root, relative_path, max_bytes: MAX_EXTERNAL_ARTIFACT_BYTES)
     raise ArgumentError, "bundle root is required" unless root.is_a?(String) && !root.empty?
     raise ArgumentError, "bundle-relative path is required" unless relative_path.is_a?(String) && !relative_path.empty?
-    raise ArgumentError, "bundle-relative path is not normalized" if relative_path.start_with?("/") || relative_path.include?("\0") || relative_path.split("/").any? { |part| ["", ".", ".."].include?(part) }
+    if relative_path.start_with?("/") || relative_path.include?("\0") || relative_path.split("/").any? do |part|
+      ["", ".", ".."].include?(part)
+    end
+      raise ArgumentError,
+            "bundle-relative path is not normalized"
+    end
     raise ArgumentError, "bundle file byte bound is invalid" unless max_bytes.is_a?(Integer) && max_bytes.positive?
 
     components = relative_path.split("/")
@@ -204,6 +214,7 @@ module M34EvidenceSupport
         raise "bundle path component is not a directory: #{component}"
       end
       raise "bundle path crosses a filesystem boundary" unless child.stat.dev == current.stat.dev
+
       directory_fds << child
       current = child
     end
@@ -213,9 +224,7 @@ module M34EvidenceSupport
     file = File.open(final_path, File::RDONLY | File::BINARY | File::NOFOLLOW | O_NONBLOCK)
     begin
       opened = file.stat
-      unless opened.file? && !opened.symlink?
-        raise "bundle file must be a regular non-symlink file"
-      end
+      raise "bundle file must be a regular non-symlink file" unless opened.file? && !opened.symlink?
       raise "bundle file crosses a filesystem boundary" unless opened.dev == current.stat.dev
       raise "bundle file is empty" unless opened.size.positive?
       raise "bundle file exceeds #{max_bytes} bytes" if opened.size > max_bytes
@@ -225,6 +234,7 @@ module M34EvidenceSupport
       unless after.dev == opened.dev && after.ino == opened.ino && after.size == opened.size && bytes.bytesize == opened.size
         raise "bundle file changed while reading"
       end
+
       {"bytes" => bytes, "bytesize" => opened.size, "dev" => opened.dev, "ino" => opened.ino}
     ensure
       file.close unless file.closed?
@@ -243,16 +253,17 @@ module M34EvidenceSupport
     unless stat.file? && !stat.symlink? && stat.size.positive? && stat.size <= max_bytes
       raise "packet capture must be a bounded regular non-symlink file"
     end
+
     bytes = File.open(path, File::RDONLY | File::BINARY | File::NOFOLLOW | O_NONBLOCK) do |io|
       opened = io.stat
       unless opened.file? && opened.dev == stat.dev && opened.ino == stat.ino && opened.size == stat.size
         raise "packet capture changed while opening"
       end
+
       value = io.read.to_s.b
       after = io.stat
-      unless after.dev == opened.dev && after.ino == opened.ino && after.size == opened.size
-        raise "packet capture changed while reading"
-      end
+      raise "packet capture changed while reading" unless after.dev == opened.dev && after.ino == opened.ino && after.size == opened.size
+
       value
     end
     raise "packet capture changed while reading" unless bytes.bytesize == stat.size
@@ -291,6 +302,7 @@ module M34EvidenceSupport
 
     snaplen = bytes.byteslice(16, 4).unpack1(uint32)
     raise "PCAP snaplen must be positive" unless snaplen.positive?
+
     link_type = bytes.byteslice(20, 4).unpack1(uint32)
     link_minimum = packet_link_minimum(link_type)
 
@@ -307,6 +319,7 @@ module M34EvidenceSupport
       raise "PCAP packet original length must be positive" unless original_length.positive?
       raise "PCAP included length exceeds snaplen" if included_length > snaplen
       raise "PCAP included length exceeds original length" if included_length > original_length
+
       offset += 16
       raise "PCAP packet payload is truncated" if included_length > bytes.bytesize - offset
 
@@ -345,6 +358,7 @@ module M34EvidenceSupport
         major = unpack_u16(bytes.byteslice(offset + 12, 2), endian)
         minor = unpack_u16(bytes.byteslice(offset + 14, 2), endian)
         raise "unsupported PCAPNG version #{major}.#{minor}" unless major == 1 && minor == 0
+
         validate_pcapng_options!(bytes, offset + 24, total_length - 28, endian)
         section_seen = true
         interfaces = []
@@ -361,8 +375,10 @@ module M34EvidenceSupport
           link_type = unpack_u16(bytes.byteslice(offset + 8, 2), endian)
           reserved = unpack_u16(bytes.byteslice(offset + 10, 2), endian)
           raise "PCAPNG interface reserved field is non-zero" unless reserved.zero?
+
           snaplen = unpack_u32(bytes.byteslice(offset + 12, 4), endian)
           raise "PCAPNG interface snaplen must be positive" unless snaplen.positive?
+
           validate_pcapng_options!(bytes, offset + 16, total_length - 20, endian)
           interfaces << {"link_type" => link_type, "snaplen" => snaplen,
                          "minimum" => packet_link_minimum(link_type)}
@@ -374,13 +390,16 @@ module M34EvidenceSupport
           original_length = unpack_u32(bytes.byteslice(offset + 24, 4), endian)
           interface = interfaces[interface_id]
           raise "PCAPNG enhanced packet references an unknown interface" unless interface
+
           snaplen = interface.fetch("snaplen")
           raise "PCAPNG enhanced packet captured length must be positive" unless captured_length.positive?
           raise "PCAPNG enhanced packet original length must be positive" unless original_length.positive?
           raise "PCAPNG captured length exceeds snaplen" if captured_length > snaplen
           raise "PCAPNG captured length exceeds original length" if captured_length > original_length
+
           minimum_length = 32 + padded_u32_length(captured_length)
           raise "PCAPNG enhanced packet payload is truncated" if total_length < minimum_length
+
           payload = bytes.byteslice(offset + 28, captured_length)
           validate_packet_payload!(payload, interface.fetch("link_type"), interface.fetch("minimum"), "PCAPNG enhanced")
           validate_pcapng_options!(bytes, offset + minimum_length - 4, total_length - minimum_length, endian)
@@ -392,10 +411,13 @@ module M34EvidenceSupport
           original_length = unpack_u32(bytes.byteslice(offset + 8, 4), endian)
           interface = interfaces.first
           raise "PCAPNG simple packet original length must be positive" unless original_length.positive?
+
           captured_length = [original_length, interface.fetch("snaplen")].min
           raise "PCAPNG simple packet captured length must be positive" unless captured_length.positive?
+
           expected_length = 16 + padded_u32_length(captured_length)
           raise "PCAPNG simple packet block length is inconsistent" unless total_length == expected_length
+
           payload = bytes.byteslice(offset + 12, captured_length)
           validate_packet_payload!(payload, interface.fetch("link_type"), interface.fetch("minimum"), "PCAPNG simple")
           packet_count += 1
@@ -411,9 +433,7 @@ module M34EvidenceSupport
   end
 
   def validate_pcapng_block!(bytes, offset, total_length, endian, minimum:)
-    unless total_length.is_a?(Integer) && total_length >= minimum && (total_length % 4).zero?
-      raise "PCAPNG block length is invalid"
-    end
+    raise "PCAPNG block length is invalid" unless total_length.is_a?(Integer) && total_length >= minimum && (total_length % 4).zero?
     raise "PCAPNG block is truncated" if total_length > bytes.bytesize - offset
 
     trailer = unpack_u32(bytes.byteslice(offset + total_length - 4, 4), endian)
@@ -440,6 +460,7 @@ module M34EvidenceSupport
       if code.zero?
         raise "PCAPNG end-of-options length must be zero" unless option_length.zero?
         raise "PCAPNG bytes follow end-of-options" unless cursor == finish
+
         end_seen = true
       elsif end_seen
         raise "PCAPNG option follows end-of-options"
@@ -499,6 +520,7 @@ module M34EvidenceSupport
     when 228
       first = value.getbyte(0)
       raise "#{label} IPv4 link type has an invalid version" unless first && (first >> 4) == 4
+
       header_length = (first & 0x0f) * 4
       raise "#{label} IPv4 header is invalid" if header_length < 20 || header_length > value.bytesize
     when 229
@@ -534,11 +556,13 @@ module M34EvidenceSupport
 
     format = packet["format"].to_s.downcase
     raise "packet trace format must be pcap or pcapng" unless %w[pcap pcapng].include?(format)
+
     destination = File.join(bundle_directory, "#{basename}.#{format}")
     copied = copy_external_artifact(source_path, destination, max_bytes: max_bytes)
     parsed = parse_packet_capture(copied.fetch("path"))
     actual_format = parsed.fetch("format")
     raise "packet trace bytes are not a valid #{format} capture" unless actual_format == format
+
     reported_packet_count = packet["packet_count"]
     unless reported_packet_count.is_a?(Integer) && reported_packet_count.positive? &&
            reported_packet_count == parsed.fetch("packet_count")
@@ -604,7 +628,9 @@ module M34EvidenceSupport
     [record, result_path, status.success?]
   rescue SystemCallError => error
     result_path = File.join(File.dirname(manifest_path), "gate-result.json")
-    File.binwrite(result_path, JSON.generate({"schema_version" => 1, "milestone" => name.sub(/_gate\z/, ""), "passed" => false, "errors" => [error.message]}))
+    File.binwrite(result_path,
+                  JSON.generate({"schema_version" => 1, "milestone" => name.sub(/_gate\z/, ""), "passed" => false,
+                                 "errors" => [error.message]}))
     [command_record(name, [RbConfig.ruby, gate_path, manifest_path], started_at, now, 127,
                     error: "gate could not be executed: #{error.message}"), result_path, false]
   end
@@ -616,7 +642,7 @@ module M34EvidenceSupport
   # Copy a complete prior bundle, rerun its gate, and return references for all
   # milestones carried by that bundle.  The copied subtree remains immutable
   # evidence; only its freshly generated gate-result.json is added.
-  def copy_prior_bundle(source_manifest, destination, gate_path, gate_name, gate_module, commands)
+  def copy_prior_bundle(source_manifest, destination, gate_path, gate_name, _gate_module, commands)
     source_manifest = File.realpath(source_manifest)
     source_directory = File.dirname(source_manifest)
     copy_tree(source_directory, destination)
@@ -630,9 +656,9 @@ module M34EvidenceSupport
     document = json_document(copied_manifest)
     references = {}
     references[gate_name.sub(/_gate\z/, "")] = {
-      "manifest_path" => copied_manifest.delete_prefix("#{File.dirname(File.dirname(destination))}/").sub(%r{\A/}, ""),
+      "manifest_path" => copied_manifest.delete_prefix("#{File.dirname(destination, 2)}/").sub(%r{\A/}, ""),
       "manifest_sha256" => Digest::SHA256.file(copied_manifest).hexdigest,
-      "gate_result_path" => gate_result_path.delete_prefix("#{File.dirname(File.dirname(destination))}/").sub(%r{\A/}, ""),
+      "gate_result_path" => gate_result_path.delete_prefix("#{File.dirname(destination, 2)}/").sub(%r{\A/}, ""),
       "gate_result_sha256" => Digest::SHA256.file(gate_result_path).hexdigest,
       "input_sha256" => document["input_sha256"],
       "input_file_count" => document["input_file_count"],
@@ -690,8 +716,8 @@ module M34EvidenceSupport
   # An operator waiver of the M4 kernel release requirement is recorded in
   # the manifest, never inferred: it names the requirement, the reason, and
   # the host kernel so the gate and every reader see exactly what was relaxed.
-  KERNEL_WAIVER_ENV = "RUBERNETES_M4_KERNEL_WAIVER_REASON".freeze
-  KERNEL_WAIVER_REQUIREMENT = "linux>=6.12".freeze
+  KERNEL_WAIVER_ENV = "RUBERNETES_M4_KERNEL_WAIVER_REASON"
+  KERNEL_WAIVER_REQUIREMENT = "linux>=6.12"
 
   def kernel_waivers(environment = ENV)
     reason = environment[KERNEL_WAIVER_ENV].to_s.strip

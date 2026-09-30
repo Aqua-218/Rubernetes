@@ -19,7 +19,7 @@ class OCILayerSecurityTest < Minitest::Test
       extractor = Rubernetes::Image::LayerExtractor.new(root)
 
       assert_raises(Rubernetes::Image::DigestMismatch) do
-        extractor.extract(layer, digest: "sha256:#{'0' * 64}", media_type: Rubernetes::Image::MediaTypes::OCI_IMAGE_LAYER_GZIP)
+        extractor.extract(layer, digest: "sha256:#{"0" * 64}", media_type: Rubernetes::Image::MediaTypes::OCI_IMAGE_LAYER_GZIP)
       end
       assert_empty Dir.children(root)
     end
@@ -39,7 +39,7 @@ class OCILayerSecurityTest < Minitest::Test
         assert_raises(Rubernetes::Image::SecurityError) do
           extractor.extract(layer, digest: digest_for(layer), media_type: Rubernetes::Image::MediaTypes::OCI_IMAGE_LAYER_GZIP)
         end
-        refute File.exist?(File.join(directory, "escape"))
+        refute_path_exists File.join(directory, "escape")
       end
     end
   end
@@ -57,7 +57,8 @@ class OCILayerSecurityTest < Minitest::Test
       root = File.join(directory, "root")
       extractor = Rubernetes::Image::LayerExtractor.new(root)
       extractor.extract(layer, digest: digest_for(layer), media_type: Rubernetes::Image::MediaTypes::OCI_IMAGE_LAYER_GZIP)
-      assert File.exist?(File.join(root, "bin/sh"))
+
+      assert_path_exists File.join(root, "bin/sh")
     end
 
     hostile = gzip_bytes(tar_header("./", type: "0") + ("\0" * 1024))
@@ -85,6 +86,7 @@ class OCILayerSecurityTest < Minitest::Test
       root = File.join(directory, "root")
       extractor = Rubernetes::Image::LayerExtractor.new(root)
       extractor.extract(layer, digest: digest_for(layer), media_type: Rubernetes::Image::MediaTypes::OCI_IMAGE_LAYER_GZIP)
+
       assert_equal 3, extractor.skipped_special_files
       assert_equal %w[bin], Dir.children(root).sort
       assert_equal "sh\n", File.read(File.join(root, "bin/sh"))
@@ -128,8 +130,8 @@ class OCILayerSecurityTest < Minitest::Test
       extractor.extract(base, digest: digest_for(base), media_type: Rubernetes::Image::MediaTypes::OCI_IMAGE_LAYER_GZIP)
       extractor.extract(whiteout, digest: digest_for(whiteout), media_type: Rubernetes::Image::MediaTypes::OCI_IMAGE_LAYER_GZIP)
 
-      refute File.exist?(File.join(root, "etc", "config"))
-      refute File.exist?(File.join(directory, "config"))
+      refute_path_exists File.join(root, "etc", "config")
+      refute_path_exists File.join(directory, "config")
     end
   end
 
@@ -179,11 +181,11 @@ class OCILayerSecurityTest < Minitest::Test
 
         assert replaced, "race hook did not run for #{operation}"
         assert_equal "keep", File.read(File.join(outside, "sentinel"))
-        refute File.exist?(File.join(outside, "new"))
-        refute File.exist?(File.join(outside, "new-directory"))
-        refute File.exist?(File.join(outside, "link"))
-        refute File.exist?(File.join(outside, "remove"))
-        assert File.exist?(File.join(root, "parent-held"))
+        refute_path_exists File.join(outside, "new")
+        refute_path_exists File.join(outside, "new-directory")
+        refute_path_exists File.join(outside, "link")
+        refute_path_exists File.join(outside, "remove")
+        assert_path_exists File.join(root, "parent-held")
       end
     end
   end
@@ -212,8 +214,8 @@ class OCILayerSecurityTest < Minitest::Test
           filesystem.remove("victim")
         end
 
-        assert File.exist?(victim), "replacement #{kind} was deleted"
-        assert File.exist?(File.join(root, "victim-held")), "original #{kind} identity was lost"
+        assert_path_exists victim, "replacement #{kind} was deleted"
+        assert_path_exists File.join(root, "victim-held"), "original #{kind} identity was lost"
       ensure
         filesystem&.close
       end
@@ -222,9 +224,9 @@ class OCILayerSecurityTest < Minitest::Test
 
   private
 
-  def gzip_layer
+  def gzip_layer(&)
     tar_io = StringIO.new("".b)
-    Gem::Package::TarWriter.new(tar_io) { |tar| yield tar }
+    Gem::Package::TarWriter.new(tar_io, &)
     gzip_bytes(tar_io.string)
   end
 

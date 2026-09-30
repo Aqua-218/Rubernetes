@@ -27,6 +27,7 @@ class NativeDeviceAdapterTest < Minitest::Test
     zero_uuid = superblock.dup
     zero_uuid[104, 16] = ("\0" * 16).b
     zero_resolver = Resolver.new(reader: ->(_path, _offset, _length) { zero_uuid })
+
     assert_nil zero_resolver.call("filesystem" => "ext4", "source" => "/dev/loop-test")
     assert_nil resolver.call("filesystem" => "tmpfs", "source" => "/dev/loop-test")
     assert_nil resolver.call("filesystem" => "ext4")
@@ -43,6 +44,7 @@ class NativeDeviceAdapterTest < Minitest::Test
                  resolver.call("filesystem" => "xfs", "source" => "/dev/mapper/test")
 
     short = Resolver.new(reader: ->(_path, _offset, _length) { "short" })
+
     assert_nil short.call("filesystem" => "xfs", "source" => "/dev/mapper/test")
   end
 
@@ -78,22 +80,26 @@ class NativeDeviceAdapterTest < Minitest::Test
     )
 
     raw = Rubernetes::Volume::NativeMountAdapter.parse_mountinfo(mountinfo).fetch(0)
+
     assert_nil raw.fetch("filesystemUuid")
     # Observations of block filesystems are decorated so reconciliation can
     # match the UUID-bearing identity registered at mount time.
     observed = adapter.list_mounts.fetch(0)
+
     assert_equal "01234567-89ab-cdef-0123-456789abcdef", observed.fetch("filesystemUuid")
     assert observed.fetch("filesystemUuidAvailable")
     mounted = adapter.send(:decorate_mount, raw, requested_source: "/dev/loop0", dispatch_source: "/dev/loop0",
-                            requested_filesystem: "ext4", requested_options: {}, volume_id: "v", stage: true,
-                            readonly: false, bind: false, mount_api: "mount")
+                                                 requested_filesystem: "ext4", requested_options: {}, volume_id: "v", stage: true,
+                                                 readonly: false, bind: false, mount_api: "mount")
+
     assert_equal "01234567-89ab-cdef-0123-456789abcdef", mounted.fetch("filesystemUuid")
     assert mounted.fetch("filesystemUuidAvailable")
     assert_equal "/dev/loop0", mounted.fetch("kernelSource")
     refute mounted.fetch("bind")
     bound = adapter.send(:decorate_mount, raw, requested_source: "/srv/data", dispatch_source: "/proc/self/fd/9",
-                          requested_filesystem: nil, requested_options: {"bind" => true}, volume_id: "v", stage: false,
-                          readonly: false, bind: true, mount_api: "open_tree")
+                                               requested_filesystem: nil, requested_options: {"bind" => true}, volume_id: "v", stage: false,
+                                               readonly: false, bind: true, mount_api: "open_tree")
+
     assert_nil bound.fetch("filesystemUuid"), "a bind never claims the underlying filesystem UUID"
     assert_equal "/srv/data", bound.fetch("source")
     assert_equal "/dev/loop0", bound.fetch("kernelSource")

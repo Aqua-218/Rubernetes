@@ -24,10 +24,10 @@ module Conformance
     DOWNLOADS = File.join(ROOT, "build/conformance/downloads")
 
     RELEASE_URLS = {
-      "hydrophone" => ->(runner, artifact) {
+      "hydrophone" => lambda { |runner, artifact|
         "https://github.com/kubernetes-sigs/hydrophone/releases/download/#{runner.fetch("tag")}/#{artifact.fetch("name")}"
       },
-      "sonobuoy" => ->(runner, artifact) {
+      "sonobuoy" => lambda { |runner, artifact|
         "https://github.com/vmware-tanzu/sonobuoy/releases/download/#{runner.fetch("tag")}/#{artifact.fetch("name")}"
       }
     }.freeze

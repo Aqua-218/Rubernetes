@@ -25,10 +25,12 @@ class StatusMergeOperationTest < Minitest::Test
 
     adapter.apply(operation({"volumesAttached" => [{"name" => "v", "devicePath" => ""}]}))
     status = adapter.find(NODE, name: "n1")["status"]
+
     assert_equal [{"type" => "Ready", "status" => "True"}], status["conditions"], "the kubelet's fields stay"
     assert_equal [{"name" => "v", "devicePath" => ""}], status["volumesAttached"]
 
     adapter.apply(operation({"volumesAttached" => nil}))
+
     refute adapter.find(NODE, name: "n1")["status"].key?("volumesAttached"), "nil removes the field"
   end
 
@@ -58,10 +60,12 @@ class StatusMergeOperationTest < Minitest::Test
     adapter.caches = {NODE.identifier => Cache.new([node({"volumesAttached" => [{"name" => "v", "devicePath" => ""}]})])}
 
     adapter.apply(operation({"volumesAttached" => [{"name" => "v", "devicePath" => ""}]}))
+
     assert_empty client.patches, "already so: no request"
 
     adapter.apply(operation({"volumesAttached" => nil}))
     resource, body, options = client.patches.fetch(0)
+
     assert_equal "nodes", resource
     assert_equal({"status" => {"volumesAttached" => nil}}, body)
     assert_equal({type: :merge, name: "n1", subresource: "status"}, options.slice(:type, :name, :subresource))

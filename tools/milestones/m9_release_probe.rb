@@ -34,7 +34,7 @@ module M9ReleaseProbe
               "passed" => sbom["available"] == true &&
                           Array(sbom["components"]).all? { |component| component["purl"] || Array(component["hashes"]).any? },
               "unpinned" => Array(sbom["components"]).reject { |component| component["purl"] || Array(component["hashes"]).any? }
-                                                     .map { |component| component["name"] }.first(5)}
+                .map { |component| component["name"] }.first(5)}
     cases << {"id" => "rebuild_is_byte_identical",
               "passed" => repro["available"] == true && repro["same_host_identical"] == true,
               "rounds" => Array(repro["rounds"]).length,

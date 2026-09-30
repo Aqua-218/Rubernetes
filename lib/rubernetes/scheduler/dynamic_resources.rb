@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 require "securerandom"
-require "set"
-require "thread"
 require "time"
 
 require_relative "../dra"
@@ -284,16 +282,18 @@ module Rubernetes
           @api&.update_claim_status(updated)
           return nil
         end
-        if extended && !special?(extended)
-          @api&.delete_claim(extended.dig("metadata", "namespace"), extended.dig("metadata", "name"))
-        end
+        @api&.delete_claim(extended.dig("metadata", "namespace"), extended.dig("metadata", "name")) if extended && !special?(extended)
         nil
       end
 
       # ---------------------------------------------- extended resources
 
       def extended_index?(state, index) = !state.num_user.nil? && index >= state.num_user
-      def extended_claim(state) = state.num_user && state.claims && state.claims.length > state.num_user ? state.claims[state.num_user] : nil
+
+      def extended_claim(state)
+        state.num_user && state.claims && state.claims.length > state.num_user ? state.claims[state.num_user] : nil
+      end
+
       def special?(claim) = claim.dig("metadata", "name") == SPECIAL_CLAIM_NAME
 
       def resolver(context)
@@ -410,7 +410,7 @@ module Rubernetes
             elsif !Array(request["firstAvailable"]).empty?
               unless @features.prioritized_list
                 return unschedulable(state_claims: claims, message: "resource claim #{ref(claim)}, request #{request["name"]}: has subrequests, " \
-                                                                   "but the DRAPrioritizedList feature is disabled")
+                                                                    "but the DRAPrioritizedList feature is disabled")
               end
 
               request["firstAvailable"].each do |sub|
@@ -418,7 +418,8 @@ module Rubernetes
                 return State.new(rejection: rejection, claims: claims) if rejection
               end
             else
-              return unschedulable(state_claims: claims, message: "resource claim #{ref(claim)}, request #{request["name"]}: unknown request type")
+              return unschedulable(state_claims: claims,
+                                   message: "resource claim #{ref(claim)}, request #{request["name"]}: unknown request type")
             end
           end
         end
@@ -440,9 +441,7 @@ module Rubernetes
 
       # validateDeviceClass.
       def validate_class(classes, name, request_name)
-        if name.to_s.empty?
-          raise PluginError.new("request #{request_name}: unsupported request type", plugin: NAME, phase: :filter)
-        end
+        raise PluginError.new("request #{request_name}: unsupported request type", plugin: NAME, phase: :filter) if name.to_s.empty?
         return nil if classes.key?(name.to_s)
 
         Filters::Helpers.reject("request #{request_name}: device class #{name} does not exist", code: "UnschedulableAndUnresolvable")
@@ -465,7 +464,8 @@ module Rubernetes
           if must_check_owner
             owner = Array(claim.dig("metadata", "ownerReferences")).find { |reference| reference["controller"] == true }
             unless owner && owner["uid"].to_s == pod.uid
-              raise ClaimError, "ResourceClaim #{pod.namespace}/#{name} was not created for Pod #{pod.namespace}/#{pod.name} (Pod is not owner)"
+              raise ClaimError,
+                    "ResourceClaim #{pod.namespace}/#{name} was not created for Pod #{pod.namespace}/#{pod.name} (Pod is not owner)"
             end
           end
           claim
@@ -483,7 +483,8 @@ module Rubernetes
           # A nil name: the claim was not needed and is not created.
           [status["resourceClaimName"], true]
         else
-          raise ClaimError, "pod \"#{pod.namespace}/#{pod.name}\", spec.resourceClaim #{entry["name"].to_s.dump}: none of the supported fields are set"
+          raise ClaimError,
+                "pod \"#{pod.namespace}/#{pod.name}\", spec.resourceClaim #{entry["name"].to_s.dump}: none of the supported fields are set"
         end
       end
 
@@ -568,9 +569,11 @@ module Rubernetes
           allocation = if allocated?(claim)
                          claim.dig("status", "allocation")
                        else
-                         (allocations[unallocated]).tap { unallocated += 1 }
+                         allocations[unallocated].tap { unallocated += 1 }
                        end
-          allocated = Array(allocation&.dig("devices", "results")).map { |result| result["request"].to_s }.select { |name| name.include?("/") }.to_set
+          allocated = Array(allocation&.dig("devices", "results")).map do |result|
+            result["request"].to_s
+          end.select { |name| name.include?("/") }.to_set
           Array(claim.dig("spec", "devices", "requests")).each do |request|
             next if request["exactly"]
 
@@ -596,6 +599,7 @@ module Rubernetes
           node_allocation = state.node_allocations[node_name]
           # Nothing to create: this node advertises the resource itself.
           return claim if allocation.nil? || node_allocation&.extended_claim.nil?
+
           if special?(claim)
             special_uid = claim_uid(claim)
             begin
@@ -753,7 +757,10 @@ module Rubernetes
           state.claims[index] = current
           ready = claim_ready_for_binding?(current)
           next if ready
-          raise PluginError.new("device binding timeout: claim=#{current.dig("metadata", "name")}", plugin: NAME, phase: :pre_bind) if claim_timeout?(current)
+          if claim_timeout?(current)
+            raise PluginError.new("device binding timeout: claim=#{current.dig("metadata", "name")}", plugin: NAME,
+                                                                                                      phase: :pre_bind)
+          end
 
           return false
         end

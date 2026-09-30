@@ -40,6 +40,7 @@ module Rubernetes
           gid_base = Integer(values.fetch("gid_base"))
           size = Integer(values.fetch("size"))
           raise Error, "user namespace mapping size must be #{RANGE_SIZE}" unless size == RANGE_SIZE
+
           File.binwrite(File.join(base, "setgroups"), "deny\n")
           File.binwrite(File.join(base, "uid_map"), "0 #{uid_base} #{size}\n")
           File.binwrite(File.join(base, "gid_map"), "0 #{gid_base} #{size}\n")
@@ -56,6 +57,7 @@ module Rubernetes
           expected_gid = [[0, Integer(mapping.gid_base), RANGE_SIZE]]
           raise Error, "uid_map readback mismatch for #{pid}: #{uid_map.inspect}" unless uid_map == expected_uid
           raise Error, "gid_map readback mismatch for #{pid}: #{gid_map.inspect}" unless gid_map == expected_gid
+
           setgroups = File.read(File.join(base, "setgroups")).strip
           raise Error, "setgroups is not denied for #{pid}" unless setgroups == "deny"
 
@@ -85,6 +87,7 @@ module Rubernetes
             @max_id = Integer(max_id)
             raise Error, "user namespace range size must be #{RANGE_SIZE}" unless @size == RANGE_SIZE
             raise Error, "user namespace base must be a multiple of the range size" unless (@base % @size).zero?
+
             @mutex = Mutex.new
             FileUtils.mkdir_p(File.dirname(@path), mode: 0o700)
             @allocations = load
@@ -131,7 +134,8 @@ module Rubernetes
           private
 
           def mapping_for(entry)
-            Mapping.new(uid_base: Integer(entry.fetch("uid_base")), gid_base: Integer(entry.fetch("gid_base")), size: Integer(entry.fetch("size")))
+            Mapping.new(uid_base: Integer(entry.fetch("uid_base")), gid_base: Integer(entry.fetch("gid_base")),
+                        size: Integer(entry.fetch("size")))
           end
 
           def load
@@ -139,10 +143,13 @@ module Rubernetes
 
             document = JSON.parse(File.binread(@path))
             raise Error, "user namespace allocation file has an unknown schema" unless document.is_a?(Hash) && document["schema"] == SCHEMA
+
             entries = document.fetch("allocations")
             raise Error, "user namespace allocations must be an object" unless entries.is_a?(Hash)
+
             bases = entries.values.map { |entry| Integer(entry.fetch("uid_base")) }
             raise Error, "user namespace allocation file contains overlapping ranges" unless bases.uniq.length == bases.length
+
             entries.transform_values { |entry| entry.transform_keys(&:to_s) }
           rescue JSON::ParserError, KeyError, TypeError, ArgumentError => error
             raise Error, "user namespace allocation file is invalid: #{error.message}"

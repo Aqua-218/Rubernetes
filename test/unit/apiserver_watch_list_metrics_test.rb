@@ -38,16 +38,20 @@ class APIServerWatchListMetricsTest < Minitest::Test
   def test_the_initial_events_end_bookmark_is_observed
     types = read_until_bookmark("/api/v1/namespaces/dev/configmaps?watch=true&sendInitialEvents=true&allowWatchBookmarks=true" \
                                 "&resourceVersionMatch=NotOlderThan&timeoutSeconds=5")
+
     assert_equal %w[ADDED ADDED BOOKMARK], types
     text = @metrics.render
     labels = 'group="",resource="configmaps",scope="namespace",version="v1"'
+
     assert_match(/^apiserver_watch_list_duration_seconds_count\{#{labels}\} 1$/, text)
     assert_match(/^apiserver_watch_list_duration_seconds_bucket\{#{labels},le="0\.05"\} \d$/, text)
-    assert_match(/^# HELP apiserver_watch_list_duration_seconds \[BETA\] Response latency distribution in seconds for watch list requests/, text)
+    assert_match(/^# HELP apiserver_watch_list_duration_seconds \[BETA\] Response latency distribution in seconds for watch list requests/,
+                 text)
   end
 
   def test_a_plain_watch_is_not_a_watch_list
     call("GET", "/api/v1/configmaps?watch=true&timeoutSeconds=1").body.each { |_event| break }
+
     refute_match(/^apiserver_watch_list_duration_seconds_count/, @metrics.render)
   end
 end

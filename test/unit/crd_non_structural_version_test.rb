@@ -18,7 +18,9 @@ class CRDNonStructuralVersionTest < Minitest::Test
                                      openapi: @openapi)
   end
 
-  STRUCTURAL = {"openAPIV3Schema" => {"type" => "object", "properties" => {"spec" => {"type" => "object", "x-kubernetes-preserve-unknown-fields" => true}}}}.freeze
+  STRUCTURAL = {"openAPIV3Schema" => {"type" => "object",
+                                      "properties" => {"spec" => {"type" => "object",
+                                                                  "x-kubernetes-preserve-unknown-fields" => true}}}}.freeze
   NON_STRUCTURAL = {"openAPIV3Schema" => {"type" => "object", "properties" => {"spec" => {"description" => "no type"}}}}.freeze
 
   def crd(v2_schema)
@@ -34,6 +36,7 @@ class CRDNonStructuralVersionTest < Minitest::Test
   def test_nothing_is_served_until_every_version_is_structural
     conditions = @manager.sync(crd(NON_STRUCTURAL))
     established = conditions.find { |condition| condition["type"] == "Established" }
+
     assert_equal "False", established["status"]
     assert_equal "True", conditions.find { |condition| condition["type"] == "NonStructuralSchema" }&.fetch("status")
     refute served?("v1"), "the structural v1 registered before v2 failed must not stay served"
@@ -42,6 +45,7 @@ class CRDNonStructuralVersionTest < Minitest::Test
     refute @manager.serving?("example.com", "v1", "gizmos")
 
     conditions = @manager.sync(crd(STRUCTURAL))
+
     assert_equal "True", conditions.find { |condition| condition["type"] == "Established" }["status"]
     assert served?("v1")
     assert served?("v2")
@@ -50,8 +54,10 @@ class CRDNonStructuralVersionTest < Minitest::Test
 
   def test_a_served_crd_that_turns_non_structural_is_withdrawn
     @manager.sync(crd(STRUCTURAL))
+
     assert served?("v1")
     @manager.sync(crd(NON_STRUCTURAL))
+
     refute served?("v1")
     refute served?("v2")
     refute @openapi.group_version_published?(group: "example.com", version: "v1")

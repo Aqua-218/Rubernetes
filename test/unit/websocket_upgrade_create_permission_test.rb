@@ -37,6 +37,7 @@ class WebsocketUpgradeCreatePermissionTest < Minitest::Test
 
     both = Recorder.new(%w[get create])
     S::Pipeline.new(authorizer: both).send(:authorize!, attributes("get", "portforward"))
+
     assert_equal [%w[get portforward], %w[create portforward]], both.asked
   end
 
@@ -46,6 +47,7 @@ class WebsocketUpgradeCreatePermissionTest < Minitest::Test
     pipeline.send(:authorize!, attributes("create", "exec"))
     pipeline.send(:authorize!, attributes("get", "log"))
     pipeline.send(:authorize!, attributes("get", ""))
+
     assert_equal [%w[create exec], %w[get log], ["get", ""]], recorder.asked
   end
 end

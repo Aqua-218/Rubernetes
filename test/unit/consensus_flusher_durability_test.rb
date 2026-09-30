@@ -62,7 +62,8 @@ class ConsensusFlusherDurabilityTest < Minitest::Test
       leader.transfer_leadership("a")
       sleep 0.02 until servers["a"].leader? || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
     end
-    assert servers["a"].leader?, "replica a must lead"
+
+    assert_predicate servers["a"], :leader?, "replica a must lead"
     sleep 0.3
     servers
   end
@@ -85,10 +86,12 @@ class ConsensusFlusherDurabilityTest < Minitest::Test
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       leader.read_index
       elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
       assert_operator elapsed, :<, 0.15, "read_index waited behind the fsync: #{elapsed.round(3)} s"
       # A second proposal joins the next batch while the fsync runs and is
       # answered without an extra fsync cycle beyond its own.
       ControlledDevice.fsync_delay = nil
+
       assert writer.value["ok"]
       assert leader.propose(command("k/after"))["ok"]
       servers.each_value(&:stop)
@@ -120,7 +123,7 @@ class ConsensusFlusherDurabilityTest < Minitest::Test
       leader.propose(command("k/before"))
       ControlledDevice.fail_fsync = true
       error = assert_raises(C::Error) { leader.propose(command("k/doomed"), timeout: 3.0) }
-      assert leader.failed?, "the node is fail-closed after an fsync failure (#{error.class}: #{error.message})"
+      assert_predicate leader, :failed?, "the node is fail-closed after an fsync failure (#{error.class}: #{error.message})"
       assert_kind_of C::DurabilityError, leader.failure
       assert_raises(C::StorageFailed) { leader.propose(command("k/later")) }
       servers.each_value(&:stop)
@@ -138,18 +141,25 @@ class ConsensusFlusherDurabilityTest < Minitest::Test
       sleep 0.05
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       wal.append([C::WAL::TYPE_ENTRY, {"index" => 2, "term" => 1, "command" => {"type" => "noop"}}], sync: false)
+
       assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.1, "append waited for the fsync"
       syncer.join
+
       assert_equal size_before, wal.synced_size, "the first sync covers only what was written before it"
       wal.sync
+
       assert_equal wal.size, wal.synced_size
       ControlledDevice.fsync_delay = 0.1
-      closer = Thread.new { wal.append([C::WAL::TYPE_ENTRY, {"index" => 3, "term" => 1, "command" => {"type" => "noop"}}], sync: false); wal.sync }
+      closer = Thread.new do
+        wal.append([C::WAL::TYPE_ENTRY, {"index" => 3, "term" => 1, "command" => {"type" => "noop"}}], sync: false)
+        wal.sync
+      end
       sleep 0.02
       wal.close
       closer.join
       records, _report = C::WAL.read(path)
-      assert_equal [1, 2, 3], records.map { |record| record.payload["index"] }
+
+      assert_equal([1, 2, 3], records.map { |record| record.payload["index"] })
     end
   end
 end

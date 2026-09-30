@@ -32,14 +32,14 @@ class NodeSyncLoopResyncFailureTest < Minitest::Test
     source = FlakySource.new
     errors = []
     loop_ = Rubernetes::Node::SyncLoop.new(source: source, node_name: "node-1",
-                                          reconcile: ->(*_args, **_kw) {}, resync_period: 0.001,
-                                          sleeper: ->(_seconds) { sleep 0.002 },
-                                          error_handler: ->(error, *event) { errors << [error.class, event.first] })
+                                           reconcile: ->(*_args, **_kw) {}, resync_period: 0.001,
+                                           sleeper: ->(_seconds) { sleep 0.002 },
+                                           error_handler: ->(error, *event) { errors << [error.class, event.first] })
     loop_.start
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 3
     sleep 0.01 until source.list_calls >= 4 || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
 
-    assert loop_.thread_alive?, "the sync thread must outlive a failed list"
+    assert_predicate loop_, :thread_alive?, "the sync thread must outlive a failed list"
     assert_operator source.list_calls, :>=, 4
     assert_includes errors.map(&:first), IOError
   ensure

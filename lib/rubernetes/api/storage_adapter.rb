@@ -130,7 +130,7 @@ module Rubernetes
           raise
         end
 
-        def each_json_line(timeout: :default)
+        def each_json_line(timeout: :default, &)
           return enum_for(:each_json_line, timeout: timeout) unless block_given?
 
           # The stream serialises the STORED object, which for an aliased
@@ -140,9 +140,9 @@ module Rubernetes
             return self
           end
           if timeout == :default
-            @stream.each_json_line { |line| yield line }
+            @stream.each_json_line(&)
           else
-            @stream.each_json_line(timeout: timeout) { |line| yield line }
+            @stream.each_json_line(timeout: timeout, &)
           end
           self
         rescue MemoryStore::Error, Status::Error
@@ -162,18 +162,16 @@ module Rubernetes
           nil
         end
 
-        def method_missing(name, *arguments, **keywords, &block)
+        def method_missing(name, *, **keywords, &)
           return super unless @stream.respond_to?(name)
 
-          @stream.public_send(name, *arguments, **keywords, &block)
+          @stream.public_send(name, *, **keywords, &)
         end
 
         def respond_to_missing?(name, include_private = false)
           @stream.respond_to?(name, include_private) || super
         end
       end
-
-      attr_reader :metrics
 
       def metrics=(registry)
         @metrics = registry
@@ -182,7 +180,8 @@ module Rubernetes
         registry.register("etcd_request_duration_seconds", type: :histogram, buckets: STORAGE_BUCKETS,
                                                            help: "Etcd request latency in seconds for each operation and object type.")
         registry.register("etcd_requests_total", type: :counter, help: "Etcd request counts for each operation and object type.")
-        registry.register("etcd_request_errors_total", type: :counter, help: "Etcd failed request counts for each operation and object type.")
+        registry.register("etcd_request_errors_total", type: :counter,
+                                                       help: "Etcd failed request counts for each operation and object type.")
         # The store plays the watch cache and records its series.
         @store.metrics = registry if @store.respond_to?(:metrics=)
       end
@@ -191,7 +190,7 @@ module Rubernetes
         @store = store
       end
 
-      attr_reader :store
+      attr_reader :metrics, :store
 
       def get(resource:, namespace:, name:, resource_version: nil)
         convert_out(resource, invoke(:get, keywords: {gvr: storage_gvr(resource), resource: resource, namespace: namespace, name: name,
@@ -484,6 +483,7 @@ module Rubernetes
 
       def invoke_untimed(method_name, keywords:, positional: [])
         raise ArgumentError, "store does not implement ##{method_name}" unless @store.respond_to?(method_name)
+
         method = @store.method(method_name)
         parameters = method.parameters
         accepts_keywords = parameters.any? { |kind, _| %i[key keyreq keyrest].include?(kind) }
@@ -515,9 +515,11 @@ module Rubernetes
           raise MemoryStore::Conflict, error.message
         when "Gone", "Compacted"
           raise storage_status_error(error), cause: error if storage_error?(error)
+
           raise MemoryStore::Gone, error.message
         else
           raise storage_status_error(error), cause: error if storage_error?(error)
+
           raise
         end
       end
@@ -599,22 +601,22 @@ module Rubernetes
           if result.respond_to?(:items)
             MemoryStore::ListResult.new(items: result.items,
                                         resource_version: if result.respond_to?(:resource_version)
-                                                           result.resource_version
-                                                         elsif result.respond_to?(:resourceVersion)
-                                                           result.resourceVersion
-                                                         else
-                                                           0
-                                                         end,
+                                                            result.resource_version
+                                                          elsif result.respond_to?(:resourceVersion)
+                                                            result.resourceVersion
+                                                          else
+                                                            0
+                                                          end,
                                         continue_token: if result.respond_to?(:continue_token)
-                                                         result.continue_token
-                                                       elsif result.respond_to?(:continue)
-                                                         result.continue
-                                                       end,
+                                                          result.continue_token
+                                                        elsif result.respond_to?(:continue)
+                                                          result.continue
+                                                        end,
                                         remaining_item_count: if result.respond_to?(:remaining_item_count)
-                                                               result.remaining_item_count
-                                                             elsif result.respond_to?(:remainingItemCount)
-                                                               result.remainingItemCount
-                                                             end)
+                                                                result.remaining_item_count
+                                                              elsif result.respond_to?(:remainingItemCount)
+                                                                result.remainingItemCount
+                                                              end)
           elsif result.respond_to?(:to_ary)
             items, revision = result.to_ary
             MemoryStore::ListResult.new(items: items, resource_version: revision || 0)
@@ -652,6 +654,7 @@ module Rubernetes
       def prefix(resource, namespace)
         base = "registry/#{resource.respond_to?(:storage_gvr) ? resource.storage_gvr : resource.gvr}"
         return base if namespace == :all || namespace.nil?
+
         namespace = "_cluster" if namespace == :cluster
         "#{base}/#{namespace}"
       end

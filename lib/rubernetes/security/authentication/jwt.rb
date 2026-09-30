@@ -83,6 +83,7 @@ module Rubernetes
         def candidate_keys(keys, kid)
           if keys.is_a?(Hash)
             return [keys[kid]].compact if kid && keys.key?(kid)
+
             return kid ? [] : keys.values
           end
           Array(keys)
@@ -91,7 +92,8 @@ module Rubernetes
         def verify_with(key, kind, digest, signing_input, signature)
           case kind
           when :rsa then key.is_a?(OpenSSL::PKey::RSA) && key.verify(OpenSSL::Digest.new(digest), signature, signing_input)
-          when :rsa_pss then key.is_a?(OpenSSL::PKey::RSA) && key.verify_pss(digest, signature, signing_input, salt_length: :auto, mgf1_hash: digest)
+          when :rsa_pss then key.is_a?(OpenSSL::PKey::RSA) && key.verify_pss(digest, signature, signing_input, salt_length: :auto,
+                                                                                                               mgf1_hash: digest)
           when :ec then key.is_a?(OpenSSL::PKey::EC) && key.verify(OpenSSL::Digest.new(digest), raw_to_der(signature, key), signing_input)
           when :hmac then key.is_a?(String) && secure_compare(OpenSSL::HMAC.digest(digest, key, signing_input), signature)
           else false
@@ -166,11 +168,14 @@ module Rubernetes
           when "EC"
             curve = {"P-256" => "prime256v1", "P-384" => "secp384r1", "P-521" => "secp521r1"}.fetch(jwk.fetch("crv"))
             group = OpenSSL::PKey::EC::Group.new(curve)
-            point = OpenSSL::PKey::EC::Point.new(group, OpenSSL::BN.new("\x04".b + decode_segment(jwk.fetch("x")) + decode_segment(jwk.fetch("y")), 2))
+            point = OpenSSL::PKey::EC::Point.new(group,
+                                                 OpenSSL::BN.new(
+                                                   "\x04".b + decode_segment(jwk.fetch("x")) + decode_segment(jwk.fetch("y")), 2
+                                                 ))
             asn1 = OpenSSL::ASN1::Sequence.new([
-              OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::ObjectId.new("id-ecPublicKey"), OpenSSL::ASN1::ObjectId.new(curve)]),
-              OpenSSL::ASN1::BitString.new(point.to_octet_string(:uncompressed))
-            ])
+                                                 OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::ObjectId.new("id-ecPublicKey"), OpenSSL::ASN1::ObjectId.new(curve)]),
+                                                 OpenSSL::ASN1::BitString.new(point.to_octet_string(:uncompressed))
+                                               ])
             OpenSSL::PKey::EC.new(asn1.to_der)
           else
             raise Error, "jwt: unsupported JWK type #{jwk["kty"].inspect}"

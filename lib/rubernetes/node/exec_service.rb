@@ -84,7 +84,7 @@ module Rubernetes
 
       def normalize_stream_option(value, name, default:)
         value = default if value.nil?
-        return [value, value] if value == true || value == false
+        return [value, value] if [true, false].include?(value)
         return [true, value] if value.is_a?(Stream) || value.respond_to?(:read) || value.respond_to?(:write)
 
         raise InvalidRequest, "#{name} must be boolean or an IO-like stream"

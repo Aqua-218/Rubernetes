@@ -45,6 +45,7 @@ class EndpointSliceDualStackTest < Minitest::Test
 
     assert_equal %w[IPv4 IPv6], created.map { |slice| slice["addressType"] }.sort
     by_type = created.to_h { |slice| [slice["addressType"], slice["endpoints"].flat_map { |endpoint| endpoint["addresses"] }] }
+
     assert_equal ["10.240.0.2"], by_type["IPv4"]
     assert_equal ["fd00:d8::2"], by_type["IPv6"]
   end
@@ -52,8 +53,8 @@ class EndpointSliceDualStackTest < Minitest::Test
   def test_an_ipv6_only_service_in_a_dual_stack_cluster_gets_an_ipv6_slice
     created = slices(reconcile(service(families: %w[IPv6], cluster_ip: "fd00:d8:5::10"), pods: [pod("p", DUAL_POD)]))
 
-    assert_equal ["IPv6"], created.map { |slice| slice["addressType"] }
-    assert_equal ["fd00:d8::2"], created.first["endpoints"].flat_map { |endpoint| endpoint["addresses"] }
+    assert_equal(["IPv6"], created.map { |slice| slice["addressType"] })
+    assert_equal(["fd00:d8::2"], created.first["endpoints"].flat_map { |endpoint| endpoint["addresses"] })
   end
 
   def test_a_pod_without_an_address_of_a_family_is_absent_from_that_family
@@ -61,6 +62,7 @@ class EndpointSliceDualStackTest < Minitest::Test
                                pods: [pod("dual", DUAL_POD), pod("v4only", ["10.240.0.3"])]))
 
     by_type = created.to_h { |slice| [slice["addressType"], slice["endpoints"].flat_map { |endpoint| endpoint["addresses"] }.sort] }
+
     assert_equal %w[10.240.0.2 10.240.0.3], by_type["IPv4"]
     assert_equal ["fd00:d8::2"], by_type["IPv6"]
   end
@@ -68,7 +70,7 @@ class EndpointSliceDualStackTest < Minitest::Test
   def test_without_ip_families_the_cluster_ip_family_decides
     created = slices(reconcile(service(families: nil, cluster_ip: "fd00:d8:5::10"), pods: [pod("p", DUAL_POD)]))
 
-    assert_equal ["IPv6"], created.map { |slice| slice["addressType"] }
+    assert_equal(["IPv6"], created.map { |slice| slice["addressType"] })
   end
 
   def test_a_headless_service_without_ip_families_assumes_both
@@ -81,7 +83,7 @@ class EndpointSliceDualStackTest < Minitest::Test
     created = slices(reconcile(service(families: %w[IPv4 IPv6], policy: "RequireDualStack"), pods: []))
 
     assert_equal %w[IPv4 IPv6], created.map { |slice| slice["addressType"] }.sort
-    assert created.all? { |slice| Array(slice["endpoints"]).empty? && Array(slice["ports"]).empty? }
+    assert(created.all? { |slice| Array(slice["endpoints"]).empty? && Array(slice["ports"]).empty? })
   end
 
   def test_a_slice_of_a_family_the_service_dropped_is_deleted
@@ -89,7 +91,8 @@ class EndpointSliceDualStackTest < Minitest::Test
     result = reconcile(service(families: %w[IPv4]), pods: [pod("p", DUAL_POD)], slices: first)
 
     deleted = result.operations.select { |operation| operation.action == :delete }.map(&:object)
-    assert_equal ["IPv6"], deleted.map { |slice| slice["addressType"] }
+
+    assert_equal(["IPv6"], deleted.map { |slice| slice["addressType"] })
   end
 
   # pkg/controller/endpoint/endpoints_controller.go: the legacy Endpoints
@@ -98,6 +101,6 @@ class EndpointSliceDualStackTest < Minitest::Test
     result = Endpoints.new.reconcile(service(families: %w[IPv6], cluster_ip: "fd00:d8:5::10"), pods: [pod("p", DUAL_POD)], apply: false)
     endpoints = result.operations.find { |operation| operation.action == :create }.object
 
-    assert_equal ["fd00:d8::2"], endpoints["subsets"].flat_map { |subset| subset["addresses"].map { |address| address["ip"] } }
+    assert_equal(["fd00:d8::2"], endpoints["subsets"].flat_map { |subset| subset["addresses"].map { |address| address["ip"] } })
   end
 end

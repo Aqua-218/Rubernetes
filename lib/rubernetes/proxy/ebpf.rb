@@ -4,7 +4,6 @@ require "digest"
 require "etc"
 require "ipaddr"
 require "socket"
-require "thread"
 
 require_relative "../platform/linux/bpf"
 require_relative "ebpf_program"
@@ -65,7 +64,7 @@ module Rubernetes
       PROTOCOLS = {"TCP" => 6, "UDP" => 17, "SCTP" => 132}.freeze
       MAP_LAYOUT = {
         "service_rules" => {"type" => "hash", "key_size" => 40,
-                             "value_size" => EBPFProgram::WireFormat::SERVICE_VALUE_SIZE, "max_entries" => 65_536},
+                            "value_size" => EBPFProgram::WireFormat::SERVICE_VALUE_SIZE, "max_entries" => 65_536},
         "backends" => {"type" => "array_of_structs", "key_size" => EBPFProgram::WireFormat::BACKEND_KEY_SIZE,
                        "value_size" => EBPFProgram::WireFormat::BACKEND_VALUE_SIZE, "max_entries" => 1_000_000},
         "conntrack" => {"type" => "lru_hash", "key_size" => EBPFProgram::WireFormat::CONNTRACK_KEY_SIZE,
@@ -73,9 +72,9 @@ module Rubernetes
         "client_ip_affinity" => {"type" => "lru_hash", "key_size" => EBPFProgram::WireFormat::AFFINITY_KEY_SIZE,
                                  "value_size" => EBPFProgram::WireFormat::AFFINITY_VALUE_SIZE, "max_entries" => 1_000_000},
         "source_ranges" => {"type" => "lpm_trie", "key_size" => EBPFProgram::WireFormat::SOURCE_RANGE_KEY_SIZE,
-                             "value_size" => EBPFProgram::WireFormat::SOURCE_RANGE_VALUE_SIZE, "max_entries" => 65_536},
+                            "value_size" => EBPFProgram::WireFormat::SOURCE_RANGE_VALUE_SIZE, "max_entries" => 65_536},
         "sctp_crc32c" => {"type" => "array", "key_size" => 4,
-                           "value_size" => 4, "max_entries" => 256},
+                          "value_size" => 4, "max_entries" => 256},
         "snat" => {"type" => "lru_hash", "key_size" => EBPFProgram::WireFormat::SNAT_KEY_SIZE,
                    "value_size" => EBPFProgram::WireFormat::SNAT_VALUE_SIZE, "max_entries" => 1_000_000}
       }.freeze
@@ -96,7 +95,7 @@ module Rubernetes
           sequence = next_sequence
           body = String(payload).b << attributes.join
           message = [NLMSG_HEADER_SIZE + body.bytesize, Integer(type), Integer(flags), sequence, 0]
-                    .pack("L<S<S<L<L<") << body
+            .pack("L<S<S<L<L<") << body
           socket = @socket_factory.call
           socket.bind([Socket::AF_NETLINK, 0, 0, 0].pack("S<S<L<L<")) if socket.respond_to?(:bind)
           sent = socket.send(message, 0)
@@ -184,8 +183,6 @@ module Rubernetes
         end
       end
 
-      attr_reader :bpf, :netlink, :maps, :program, :links
-
       # The SCTP CRC32c rewrite is the only Service datapath feature whose
       # support boundary is expressed as a kernel release: the spec pins the
       # bpf_loop static-callback path to Linux >= 6.12.  Every other feature
@@ -199,7 +196,7 @@ module Rubernetes
       def initialize(bpf: BPF.new, netlink: TCNetlink.new, interface: nil, ifindex: nil,
                      complete_semantics: false, semantic_probe: nil,
                      program_name: DEFAULT_PROGRAM_NAME, map_layout: nil, kernel_release: nil,
-                     helper_attestation: nil, kernel_waiver: ENV[KERNEL_WAIVER_ENV])
+                     helper_attestation: nil, kernel_waiver: ENV.fetch(KERNEL_WAIVER_ENV, nil))
         @bpf = bpf
         @netlink = netlink
         @interface = interface
@@ -207,6 +204,7 @@ module Rubernetes
         @complete_semantics = !!complete_semantics
         @semantic_probe = semantic_probe
         raise ArgumentError, "semantic_probe must respond to call" if @semantic_probe && !@semantic_probe.respond_to?(:call)
+
         @program_name = normalize_name(program_name)
         @map_layout = deep_freeze(map_layout || default_map_layout)
         # The uname release is the only release that may authorize a
@@ -247,17 +245,8 @@ module Rubernetes
         @loaded_instructions = nil
       end
 
-      attr_reader :semantic_evidence
-
-      attr_reader :kernel_release
-
-      attr_reader :actual_kernel_release
-
-      def kernel_release_override
-        @kernel_release_override
-      end
-
-      attr_reader :kernel_waiver
+      attr_reader :kernel_release_override, :bpf, :netlink, :maps, :program, :links, :semantic_evidence, :kernel_release,
+                  :actual_kernel_release, :kernel_waiver
 
       def production_release_attested?
         @kernel_release_override.nil? && sctp_crc32c_kernel_supported?(release: @actual_kernel_release)
@@ -382,7 +371,11 @@ module Rubernetes
         {"accepted" => false, "kernelRelease" => @actual_kernel_release, "error" => "#{error.class}: #{error.message}"}.freeze
       ensure
         program&.close
-        maps.each_value { |map| map.close rescue nil }
+        maps.each_value do |map|
+          map.close
+        rescue StandardError
+          nil
+        end
       end
 
       # Production selection is deliberately gated by both the explicit
@@ -432,15 +425,21 @@ module Rubernetes
         return "eBPF adapter is production-capable" if gaps.empty?
 
         detail = []
-        detail << "M4 eBPF gate requires Linux >= 6.12 for SCTP CRC32c (observed #{@actual_kernel_release}); set #{KERNEL_WAIVER_ENV} to record an explicit waiver" unless production_release_attested?
+        unless production_release_attested?
+          detail << "M4 eBPF gate requires Linux >= 6.12 for SCTP CRC32c (observed #{@actual_kernel_release}); set #{KERNEL_WAIVER_ENV} to record an explicit waiver"
+        end
         detail << "SCTP CRC32c release requirement waived: #{@kernel_waiver.fetch("reason")}" if sctp_crc32c_waived?
         detail << "SCTP CRC32c requires a verified bpf_loop static callback and BPF_PSEUDO_FUNC relocation" if gaps.include?("sctp_crc32c")
         detail << "kernel verifier/load evidence is not content-bound" unless @verifier_attested
-        detail << "live kernel helper ID readback is incomplete; external helper attestation is test-only" unless @helper_live_readback_attested
+        unless @helper_live_readback_attested
+          detail << "live kernel helper ID readback is incomplete; external helper attestation is test-only"
+        end
         detail << "TC filter identity readback is incomplete" unless @tc_attach_attested
         detail << "kernel_release override is test-only and cannot authorize production" if @kernel_release_override
-        detail << "TC cannot reassemble IPv4 fragments; both datapaths use explicit fail-closed fragment handling" if gaps.include?("ipv4_fragment_reassembly")
-        "eBPF adapter is not production-capable: #{(detail + gaps).join('; ')}"
+        if gaps.include?("ipv4_fragment_reassembly")
+          detail << "TC cannot reassemble IPv4 fragments; both datapaths use explicit fail-closed fragment handling"
+        end
+        "eBPF adapter is not production-capable: #{(detail + gaps).join("; ")}"
       end
 
       # The evidence is intentionally explicit: the kernel cannot tell this
@@ -452,11 +451,11 @@ module Rubernetes
         missing = required.reject { |key| evidence.is_a?(Hash) && evidence[key] == true }
         matrix = evidence.is_a?(Hash) ? (evidence[:matrix] || evidence["matrix"]) : nil
         missing_cases = SEMANTIC_PROOF_CASES.reject { |key| matrix.is_a?(Hash) && matrix[key] == true }
-        missing << "matrix:#{missing_cases.join(',')}" unless missing_cases.empty?
-        raise ArgumentError, "packet semantics evidence is incomplete: #{missing.join(', ')}" unless missing.empty?
+        missing << "matrix:#{missing_cases.join(",")}" unless missing_cases.empty?
+        raise ArgumentError, "packet semantics evidence is incomplete: #{missing.join(", ")}" unless missing.empty?
 
         @mutex.synchronize do
-          raise RuntimeError, "eBPF adapter must be attached before packet proof" unless @attached
+          raise "eBPF adapter must be attached before packet proof" unless @attached
 
           @semantic_evidence = evidence.freeze
           @semantic_verified = true
@@ -516,7 +515,7 @@ module Rubernetes
       def attach(hook: :tc, backend: nil, map_layout: @map_layout, interface: @interface,
                  ifindex: @ifindex, program: nil, helper_attestation: nil, **_options)
         @mutex.synchronize do
-          raise RuntimeError, "eBPF adapter is already attached" if @attached
+          raise "eBPF adapter is already attached" if @attached
 
           target_ifindices = resolve_ifindices(interface: interface, ifindex: ifindex)
           target_ifindex = target_ifindices.first
@@ -576,16 +575,27 @@ module Rubernetes
             @helper_attestation = helper_attestation_for(loaded_program, helper_attestation || @helper_attestation)
             @helper_attested = !@helper_attestation.nil?
             @tc_attach_attested = tc_attach_readback_attested?(readback)
-            unless @verifier_attested && @helper_attested && @tc_attach_attested
-              raise RuntimeError, production_capability_error
-            end
+            raise production_capability_error.to_s unless @verifier_attested && @helper_attested && @tc_attach_attested
+
             @attached = true
             run_semantic_probe if @semantic_probe
             result_for(readback)
           rescue StandardError
-            attached_links.each { |link| delete_filter(link.fetch(:ifindex), link) rescue nil }
-            loaded_program&.close rescue nil
-            maps.each_value { |map| map.close rescue nil }
+            attached_links.each do |link|
+              delete_filter(link.fetch(:ifindex), link)
+            rescue StandardError
+              nil
+            end
+            begin
+              loaded_program&.close
+            rescue StandardError
+              nil
+            end
+            maps.each_value do |map|
+              map.close
+            rescue StandardError
+              nil
+            end
             @program = nil
             @maps = {}.freeze
             @links = [].freeze
@@ -624,7 +634,7 @@ module Rubernetes
 
       def update(backend:, diff:, program: nil, **_options)
         @mutex.synchronize do
-          raise RuntimeError, "eBPF adapter is not attached" unless @attached
+          raise "eBPF adapter is not attached" unless @attached
 
           rules = Array(backend.rules)
           sync_maps(@maps, rules)
@@ -657,11 +667,9 @@ module Rubernetes
 
           errors = []
           Array(@links).each do |link|
-            begin
-              delete_filter(link.fetch(:ifindex), link)
-            rescue StandardError => error
-              errors << error
-            end
+            delete_filter(link.fetch(:ifindex), link)
+          rescue StandardError => error
+            errors << error
           end
           begin
             @program&.close
@@ -669,11 +677,9 @@ module Rubernetes
             errors << error
           end
           @maps.each_value do |map|
-            begin
-              map.close
-            rescue StandardError => error
-              errors << error
-            end
+            map.close
+          rescue StandardError => error
+            errors << error
           end
           begin
             restore_accept_local!
@@ -723,8 +729,8 @@ module Rubernetes
         raise ArgumentError, "sctp_crc32c map is mandatory for every eBPF proxy layout" unless names.include?("sctp_crc32c")
         return true if sctp_crc32c_kernel_supported?
 
-        raise RuntimeError, "M4 eBPF gate requires Linux >= 6.12 for SCTP CRC32c (observed #{@kernel_release}); " \
-                            "set #{KERNEL_WAIVER_ENV} to record an explicit waiver"
+        raise "M4 eBPF gate requires Linux >= 6.12 for SCTP CRC32c (observed #{@kernel_release}); " \
+              "set #{KERNEL_WAIVER_ENV} to record an explicit waiver"
       end
 
       def normalize_kernel_waiver(value)
@@ -758,8 +764,8 @@ module Rubernetes
         missing = required.reject { |key| evidence.is_a?(Hash) && evidence[key] == true }
         matrix = evidence.is_a?(Hash) ? (evidence[:matrix] || evidence["matrix"]) : nil
         missing_cases = SEMANTIC_PROOF_CASES.reject { |key| matrix.is_a?(Hash) && matrix[key] == true }
-        missing << "matrix:#{missing_cases.join(',')}" unless missing_cases.empty?
-        raise ArgumentError, "packet semantics evidence is incomplete: #{missing.join(', ')}" unless missing.empty?
+        missing << "matrix:#{missing_cases.join(",")}" unless missing_cases.empty?
+        raise ArgumentError, "packet semantics evidence is incomplete: #{missing.join(", ")}" unless missing.empty?
 
         @semantic_evidence = evidence.freeze
         @semantic_verified = true
@@ -768,7 +774,7 @@ module Rubernetes
         @semantic_verified = false
         @semantic_evidence = nil
         @semantic_evidence_attested = false
-        raise RuntimeError, "eBPF packet semantics probe failed: #{error.message}"
+        raise "eBPF packet semantics probe failed: #{error.message}"
       end
 
       def semantic_evidence_attested?(evidence)
@@ -778,14 +784,18 @@ module Rubernetes
         trace = evidence[:packet_trace_sha256] || evidence["packet_trace_sha256"] || evidence[:packetTraceSha256] || evidence["packetTraceSha256"]
         count = evidence[:packet_count] || evidence["packet_count"] || evidence[:packetCount] || evidence["packetCount"]
         kernel = evidence[:kernel] || evidence["kernel"] || evidence[:kernel_identity] || evidence["kernelIdentity"]
-        return false unless source.to_s != "" && source.to_s != "model_only" && trace.to_s.match?(/\A[0-9a-f]{64}\z/i) && count.to_i.positive?
-        return false unless kernel.is_a?(Hash) && (kernel[:release] || kernel["release"] || kernel[:kernelRelease] || kernel["kernelRelease"]).to_s == @actual_kernel_release
+        unless source.to_s != "" && source.to_s != "model_only" && trace.to_s.match?(/\A[0-9a-f]{64}\z/i) && count.to_i.positive?
+          return false
+        end
+        unless kernel.is_a?(Hash) && (kernel[:release] || kernel["release"] || kernel[:kernelRelease] || kernel["kernelRelease"]).to_s == @actual_kernel_release
+          return false
+        end
 
         program_id = kernel[:program_id] || kernel["program_id"] || kernel[:programId] || kernel["programId"]
         filter_ids = kernel[:filter_program_ids] || kernel["filter_program_ids"] || kernel[:filterProgramIds] || kernel["filterProgramIds"]
         helpers = kernel[:helper_ids] || kernel["helper_ids"] || kernel[:helperIds] || kernel["helperIds"]
         requested_helpers = kernel[:requested_helper_ids] || kernel["requested_helper_ids"] ||
-          kernel[:requestedHelperIds] || kernel["requestedHelperIds"]
+                            kernel[:requestedHelperIds] || kernel["requestedHelperIds"]
         program_id.to_i == @program&.id && Array(filter_ids).map(&:to_i).include?(@program&.id) &&
           (Array(helpers).map(&:to_i).include?(EBPFProgram::ServiceDatapath::HELPER_BPF_LOOP) ||
            Array(requested_helpers).map(&:to_i).include?(EBPFProgram::ServiceDatapath::HELPER_BPF_LOOP))
@@ -825,7 +835,7 @@ module Rubernetes
         return nil unless document.is_a?(Hash)
 
         key = %i[helper_ids helperIds].find { |candidate| document.key?(candidate) } ||
-          %w[helper_ids helperIds].find { |candidate| document.key?(candidate) }
+              %w[helper_ids helperIds].find { |candidate| document.key?(candidate) }
         return nil unless key
 
         value = document.fetch(key)
@@ -866,9 +876,11 @@ module Rubernetes
 
         observed = readback.is_a?(Hash) ? readback[:program] || readback["program"] : nil
         return false unless observed.is_a?(Hash)
+
         observed_id = observed[:id] || observed["id"]
         observed_tag = observed[:tag] || observed["tag"]
         return false unless observed_id.to_i == program.id && observed_tag.to_s == program.tag.to_s
+
         observed_helpers = observed[:helper_ids] || observed["helper_ids"] || observed[:helperIds] || observed["helperIds"]
         Array(observed_helpers).map(&:to_i).sort == Array(program.helper_ids).map(&:to_i).sort
       rescue StandardError
@@ -1024,15 +1036,15 @@ module Rubernetes
         translated_helper_calls = Array(attestation["translatedHelperCalls"] || attestation[:translatedHelperCalls] ||
                                         attestation["translated_helper_calls"] || attestation[:translated_helper_calls]).map(&:to_i).freeze
         program_id = attestation["programId"] || attestation[:programId] ||
-          attestation["program_id"] || attestation[:program_id]
+                     attestation["program_id"] || attestation[:program_id]
         program_tag = attestation["programTag"] || attestation[:programTag] ||
-          attestation["program_tag"] || attestation[:program_tag]
+                      attestation["program_tag"] || attestation[:program_tag]
         load_digest = attestation["loadEvidenceSha256"] || attestation[:loadEvidenceSha256] ||
-          attestation["load_evidence_sha256"] || attestation[:load_evidence_sha256]
+                      attestation["load_evidence_sha256"] || attestation[:load_evidence_sha256]
         evidence_digest = attestation["attestationSha256"] || attestation[:attestationSha256] ||
-          attestation["attestation_sha256"] || attestation[:attestation_sha256] ||
-          attestation["evidenceSha256"] || attestation[:evidenceSha256] ||
-          attestation["evidence_sha256"] || attestation[:evidence_sha256]
+                          attestation["attestation_sha256"] || attestation[:attestation_sha256] ||
+                          attestation["evidenceSha256"] || attestation[:evidenceSha256] ||
+                          attestation["evidence_sha256"] || attestation[:evidence_sha256]
         document = {
           "source" => source.to_s,
           "helperIds" => helper_ids,
@@ -1128,7 +1140,15 @@ module Rubernetes
       def resolve_ifindices(interface:, ifindex:)
         interfaces = interface.is_a?(Array) ? interface : [interface]
         ifindices = ifindex.is_a?(Array) ? ifindex : [ifindex]
-        pairs = interfaces.length >= ifindices.length ? interfaces.each_with_index.map { |name, index| [name, ifindices[index]] } : ifindices.each_with_index.map { |value, index| [interfaces[index], value] }
+        pairs = if interfaces.length >= ifindices.length
+                  interfaces.each_with_index.map do |name, index|
+                    [name, ifindices[index]]
+                  end
+                else
+                  ifindices.each_with_index.map do |value, index|
+                    [interfaces[index], value]
+                  end
+                end
         resolved = pairs.map { |name, value| resolve_ifindex(interface: name, ifindex: value) }.uniq
         raise ArgumentError, "at least one TC interface is required" if resolved.empty?
 
@@ -1153,6 +1173,7 @@ module Rubernetes
 
       def normalize_map_layout(layout)
         raise ArgumentError, "eBPF map layout must be a non-empty hash" unless layout.respond_to?(:each_pair) && !layout.empty?
+
         names = layout.keys.map(&:to_s)
         raise ArgumentError, "sctp_crc32c map is mandatory for every eBPF proxy layout" unless names.include?("sctp_crc32c")
 
@@ -1170,6 +1191,7 @@ module Rubernetes
           raise ArgumentError, "map #{logical_name} key_size must be positive" unless key_size.positive?
           raise ArgumentError, "map #{logical_name} value_size must be positive" unless value_size.positive?
           raise ArgumentError, "map #{logical_name} max_entries must be positive" unless max_entries.positive?
+
           normalized[logical_name] = {name: kernel_name, type: type, key_size: key_size, value_size: value_size,
                                       max_entries: max_entries, flags: Integer(values.fetch("flags", 0))}.freeze
         end.freeze
@@ -1218,7 +1240,7 @@ module Rubernetes
             update_map_entry(maps.fetch("service_rules"), service_key, service_value, "service_rule")
             backend_candidates(rule).select { |backend| backend_family(backend) == family }.each_with_index do |backend, index|
               backend_key, backend_value = encode_backend(backend, token: service_token(rule), index: index,
-                                                          family: family)
+                                                                   family: family)
               update_map_entry(maps.fetch("backends"), backend_key, backend_value, "backend")
             end
           end
@@ -1227,6 +1249,7 @@ module Rubernetes
         if next_source_ranges.any? && !maps.key?("source_ranges")
           raise ArgumentError, "source_ranges map is required for LoadBalancer source ranges"
         end
+
         requires_snat = service_rules.any? do |rule|
           service_rule_families(rule).any? do |family|
             service_flags(rule, family) & (EBPFProgram::WireFormat::SERVICE_FLAG_MASQUERADE |
@@ -1234,15 +1257,16 @@ module Rubernetes
           end
         end
         raise ArgumentError, "snat map is required for masquerade or hairpin rules" if requires_snat && !maps.key?("snat")
-        if maps.key?("source_ranges")
-          @source_range_keys.each_value do |key|
-            next if next_source_ranges.key?(key)
 
-            delete_map_entry(maps.fetch("source_ranges"), key, "source_range")
-          end
-          next_source_ranges.each do |key, value|
-            update_map_entry(maps.fetch("source_ranges"), key, value, "source_range")
-          end
+        return unless maps.key?("source_ranges")
+
+        @source_range_keys.each_value do |key|
+          next if next_source_ranges.key?(key)
+
+          delete_map_entry(maps.fetch("source_ranges"), key, "source_range")
+        end
+        next_source_ranges.each do |key, value|
+          update_map_entry(maps.fetch("source_ranges"), key, value, "source_range")
         end
       end
 
@@ -1348,7 +1372,9 @@ module Rubernetes
         flags = 0
         node_address = node_address_for(rule, family)
         has_node_address = node_address.bytes.any?(&:positive?)
-        flags |= EBPFProgram::WireFormat::SERVICE_FLAG_MASQUERADE if external_rule?(rule) && rule.external_traffic_policy.to_s == "Cluster" && has_node_address
+        if external_rule?(rule) && rule.external_traffic_policy.to_s == "Cluster" && has_node_address
+          flags |= EBPFProgram::WireFormat::SERVICE_FLAG_MASQUERADE
+        end
         flags |= EBPFProgram::WireFormat::SERVICE_FLAG_HAIRPIN if has_node_address
         flags |= EBPFProgram::WireFormat::SERVICE_FLAG_HEALTH_CHECK if rule.health_check
         flags |= EBPFProgram::WireFormat::SERVICE_FLAG_SOURCE_RANGES if rule.kind.to_s == "LoadBalancer" && source_ranges_for(rule).any?
@@ -1427,7 +1453,11 @@ module Rubernetes
         metadata = rule.respond_to?(:metadata) ? rule.metadata : {}
         configured = metadata["serviceFamilies"] || metadata[:serviceFamilies]
         families = Array(configured).filter_map do |value|
-          value.to_s.include?("6") ? 6 : (value.to_s.include?("4") ? 4 : nil)
+          if value.to_s.include?("6")
+            6
+          else
+            (value.to_s.include?("4") ? 4 : nil)
+          end
         end
         families = rule.backends.map { |backend| backend_family(backend) }.uniq if families.empty?
         (families.empty? ? [4] : families).uniq.sort.freeze
@@ -1526,7 +1556,7 @@ module Rubernetes
       end
 
       def packed_ip(value)
-        return ("\0".b * 16) if value.nil? || value.to_s.empty?
+        return "\0".b * 16 if value.nil? || value.to_s.empty?
 
         ip = IPAddr.new(value.to_s)
         ip.ipv4? ? ("\0".b * 10) + "\xff\xff".b + ip.hton : ip.hton
@@ -1581,13 +1611,14 @@ module Rubernetes
       end
 
       def verify_kernel_state(ifindex)
-        raise RuntimeError, "program is not loaded" unless @program
+        raise "program is not loaded" unless @program
 
         program_info = @bpf.program_info(@program, resource_id: "proxy:ebpf:program:readback")
         unless program_info[:id] == @program.id && program_info[:tag].to_s == @program.tag.to_s &&
                Array(program_info[:helper_ids]).map(&:to_i).sort == Array(@program.helper_ids).map(&:to_i).sort
-          raise RuntimeError, "BPF program readback identity or helper metadata differs from the loaded program"
+          raise "BPF program readback identity or helper metadata differs from the loaded program"
         end
+
         map_info = @maps.each_with_object({}) do |(name, map), result|
           result[name] = @bpf.map_info(map, resource_id: "proxy:ebpf:map:#{name}:readback")
         end
@@ -1599,8 +1630,9 @@ module Rubernetes
           [entry[:ifindex], entry[:direction], entry[:handle]]
         end
         unless expected_ids.all? { |identity| actual_ids.include?(identity) }
-          raise RuntimeError, "TC filter readback did not contain the loaded program identity"
+          raise "TC filter readback did not contain the loaded program identity"
         end
+
         {program: program_info, maps: map_info.freeze, filters: filter_info.freeze}.freeze
       end
 
@@ -1716,9 +1748,9 @@ module Rubernetes
         # was handed to attach or the exact instruction stream the verifier
         # accepted; both identify the loaded datapath.
         program_matches = expected_program.nil? ||
-          (expected_program.is_a?(Array) &&
-           (@attached_program_spec == deep_copy_for_compare(expected_program) ||
-            (!@loaded_instructions.nil? && expected_program == @loaded_instructions)))
+                          (expected_program.is_a?(Array) &&
+                           (@attached_program_spec == deep_copy_for_compare(expected_program) ||
+                            (!@loaded_instructions.nil? && expected_program == @loaded_instructions)))
         expected_layout = expected[:map_layout] || expected["map_layout"]
         layout_matches = expected_layout.nil? || canonical_layout(expected_layout) == canonical_layout(@map_layout)
         program_matches && layout_matches
@@ -1744,7 +1776,10 @@ module Rubernetes
       def deep_freeze(value)
         case value
         when Hash
-          value.each { |key, child| deep_freeze(key); deep_freeze(child) }
+          value.each do |key, child|
+            deep_freeze(key)
+            deep_freeze(child)
+          end
         when Array
           value.each { |child| deep_freeze(child) }
         end

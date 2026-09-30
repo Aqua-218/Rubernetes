@@ -27,6 +27,7 @@ module Rubernetes
         super(message)
       end
     end
+
     class WALCorruption < CorruptionError; end
     class TornWAL < WALCorruption; end
     class SnapshotCorruption < CorruptionError; end
@@ -46,6 +47,7 @@ module Rubernetes
         super(message)
       end
     end
+
     class ProposalDropped < Error; end
     # The entry was committed and applied on this node through a snapshot
     # install, so no apply result exists here: the outcome is unknown to

@@ -9,7 +9,8 @@ require "rubernetes/node"
 class NodeParallelImagePullTest < Minitest::Test
   Lifecycle = Rubernetes::Node::Lifecycle
 
-  Resolved = Struct.new(:reference, :digest, :rootfs, :command, :env, :working_dir, :entrypoint, :cmd, :os, :architecture, :config, keyword_init: true)
+  Resolved = Struct.new(:reference, :digest, :rootfs, :command, :env, :working_dir, :entrypoint, :cmd, :os, :architecture, :config,
+                        keyword_init: true)
 
   class SlowResolver
     attr_reader :calls
@@ -42,7 +43,9 @@ class NodeParallelImagePullTest < Minitest::Test
     subject.instance_variable_set(:@image_resolver, resolver)
     subject.define_singleton_method(:event) { |*_args, **_options| nil }
     subject.define_singleton_method(:image_keyring) { |_pod| nil }
-    subject.define_singleton_method(:image_to_hash) { |resolved, reference = nil| {"image" => reference, "digest" => resolved.digest, "rootfs" => resolved.rootfs} }
+    subject.define_singleton_method(:image_to_hash) do |resolved, reference = nil|
+      {"image" => reference, "digest" => resolved.digest, "rootfs" => resolved.rootfs}
+    end
     subject
   end
 

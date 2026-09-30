@@ -42,9 +42,7 @@ module Rubernetes
             0,
             Integer(flags)
           )
-          if result.value == -1
-            raise Linux::Error.new(errno: result.errno, operation: "pidfd_send_signal", resource_id: resource_id)
-          end
+          raise Linux::Error.new(errno: result.errno, operation: "pidfd_send_signal", resource_id: resource_id) if result.value == -1
 
           true
         end

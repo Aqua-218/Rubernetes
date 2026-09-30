@@ -53,7 +53,11 @@ module Rubernetes
         operations = record_sync(service, managed_slices, desired_groups, operations)
         status = {
           "endpoints" => desired_groups.values.sum(&:length),
-          "conditions" => desired_groups.transform_values { |endpoints| endpoints.map { |endpoint| Support.deep_copy(endpoint.fetch("conditions", {})) } }
+          "conditions" => desired_groups.transform_values do |endpoints|
+            endpoints.map do |endpoint|
+              Support.deep_copy(endpoint.fetch("conditions", {}))
+            end
+          end
         }
         events = if operations.empty?
                    []
@@ -88,7 +92,9 @@ module Rubernetes
 
       def record_sync(service, existing, desired_groups, operations)
         key = "#{Support.namespace(service)}/#{Support.name(service)}"
-        endpoint_key = ->(endpoint) { [Array(Support.value(endpoint, "addresses", [])).sort, Support.value(Support.value(endpoint, "targetRef", {}), "uid", "")] }
+        endpoint_key = lambda { |endpoint|
+          [Array(Support.value(endpoint, "addresses", [])).sort, Support.value(Support.value(endpoint, "targetRef", {}), "uid", "")]
+        }
         before = existing.flat_map { |slice| Array(Support.value(slice, "endpoints", [])) }.map(&endpoint_key)
         after = desired_groups.values.flatten.map(&endpoint_key)
         ControllerMetrics.observe("endpoint_slice_controller_endpoints_added_per_sync", (after - before).length)
@@ -101,7 +107,8 @@ module Rubernetes
         traffic = Support.value(Support.spec(service), "trafficDistribution", nil)
         traffic = nil unless TRAFFIC_DISTRIBUTIONS.include?(traffic.to_s) && !hints
         SERVICE_CACHE_MUTEX.synchronize do
-          SERVICE_CACHE[key] = {endpoints: endpoints, slices: existing.length + creates - deletes, desired: [desired, 1].max, traffic: traffic}
+          SERVICE_CACHE[key] =
+            {endpoints: endpoints, slices: existing.length + creates - deletes, desired: [desired, 1].max, traffic: traffic}
           publish_cache
         end
         ControllerMetrics.observe("endpoint_slice_controller_endpointslices_changed_per_sync", operations.length,
@@ -111,7 +118,9 @@ module Rubernetes
                    elsif operation.delete? then "delete"
                    else "update"
                    end
-          operation.observed { |succeeded, _| ControllerMetrics.increment("endpoint_slice_controller_changes", {"operation" => change}) if succeeded }
+          operation.observed do |succeeded, _|
+            ControllerMetrics.increment("endpoint_slice_controller_changes", {"operation" => change}) if succeeded
+          end
         end
       end
 
@@ -129,7 +138,8 @@ module Rubernetes
         ControllerMetrics.set("endpoint_slice_controller_endpoints_desired", values.sum { |entry| entry[:endpoints] })
         Controller.metrics&.reset("endpoint_slice_controller_services_count_by_traffic_distribution")
         values.filter_map { |entry| entry[:traffic] }.tally.each do |traffic, count|
-          ControllerMetrics.set("endpoint_slice_controller_services_count_by_traffic_distribution", count, {"traffic_distribution" => traffic})
+          ControllerMetrics.set("endpoint_slice_controller_services_count_by_traffic_distribution", count,
+                                {"traffic_distribution" => traffic})
         end
       end
 
@@ -151,7 +161,12 @@ module Rubernetes
         return nil if service_name.to_s.empty?
         return nil if find_for(adapter, SERVICE, service_name, namespace: Support.namespace(resource))
 
-        operations = Support.labels(resource)[MANAGED_BY_LABEL] == MANAGED_BY ? [operation_delete(resource, descriptor: ENDPOINT_SLICE, reason: "service deleted")] : []
+        operations = if Support.labels(resource)[MANAGED_BY_LABEL] == MANAGED_BY
+                       [operation_delete(resource, descriptor: ENDPOINT_SLICE,
+                                                   reason: "service deleted")]
+                     else
+                       []
+                     end
         forget_service("#{Support.namespace(resource)}/#{service_name}")
         ReconcileResult.new(operations: operations, status: {}, events: [], controller: name,
                             key: [Support.namespace(resource), Support.name(resource)].compact.join("/"))
@@ -159,6 +174,7 @@ module Rubernetes
 
       def resolve_service(resource, adapter)
         return resource if Support.kind(resource) == "Service"
+
         service_name = Support.labels(resource)[SERVICE_LABEL]
         raise ArgumentError, "EndpointSlice reconciliation requires a Service or service-name label" if service_name.to_s.empty?
 
@@ -233,7 +249,11 @@ module Rubernetes
             groups[address_type] << endpoint
           end
         end
-        groups.each_value { |endpoints| endpoints.sort_by! { |endpoint| [endpoint.fetch("addresses").first, Support.value(endpoint.dig("targetRef"), "name", "")] } }
+        groups.each_value do |endpoints|
+          endpoints.sort_by! do |endpoint|
+            [endpoint.fetch("addresses").first, Support.value(endpoint.dig("targetRef"), "name", "")]
+          end
+        end
         groups
       end
 
@@ -242,6 +262,7 @@ module Rubernetes
           target = Support.value(port, "targetPort", nil)
           target = Support.value(port, "port", nil) if target.nil?
           next if target.nil?
+
           endpoint_port = {}
           # endpointslice util getEndpointPorts always sets Name -- to "" for
           # an unnamed Service port -- and the API server keeps it.  Leaving
@@ -316,24 +337,23 @@ module Rubernetes
             if current
               candidate = preserve_slice_metadata(current, candidate)
               update = operation_update(current, candidate, descriptor: ENDPOINT_SLICE,
-                                        reason: "service endpoint membership")
+                                                            reason: "service endpoint membership")
               operations << update if update
             else
               operations << operation_create(candidate, owner: service, descriptor: ENDPOINT_SLICE,
-                                              reason: "service endpoint membership")
+                                                        reason: "service endpoint membership")
             end
           end
           slices.drop(chunks.length).each do |slice|
             operations << operation_delete(slice, descriptor: ENDPOINT_SLICE,
-                                            reason: "stale service EndpointSlice")
+                                                  reason: "stale service EndpointSlice")
           end
         end
         existing_by_type.values.flatten.each do |slice|
           operations << operation_delete(slice, descriptor: ENDPOINT_SLICE,
-                                          reason: "empty service EndpointSlice")
+                                                reason: "empty service EndpointSlice")
         end
-        operations = add_placeholder_slice(service, existing, operations)
-        operations
+        add_placeholder_slice(service, existing, operations)
       end
 
       # "When no endpoint slices would usually exist, we need to add a
@@ -359,7 +379,11 @@ module Rubernetes
           next if operations.any? { |operation| operation.action == :create && type_of.call(operation.object) == address_type }
 
           slices = existing.select { |slice| type_of.call(slice) == address_type }
-          deletes = operations.select { |operation| operation.action == :delete && slices.any? { |slice| same_object?(operation.object, slice) } }
+          deletes = operations.select do |operation|
+            operation.action == :delete && slices.any? do |slice|
+              same_object?(operation.object, slice)
+            end
+          end
           next unless deletes.length == slices.length
 
           placeholder = endpoint_slice(service, address_type, [], [], 0)
@@ -369,7 +393,7 @@ module Rubernetes
                          operations.reject { |operation| operation.action == :delete && same_object?(operation.object, kept) }
                        else
                          operations + [operation_create(placeholder, owner: service, descriptor: ENDPOINT_SLICE,
-                                                         reason: "placeholder EndpointSlice")]
+                                                                     reason: "placeholder EndpointSlice")]
                        end
         end
         operations

@@ -38,7 +38,11 @@ class DRAResourceHealthTest < Minitest::Test
   class FakeStream
     attr_reader :endpoint, :on_event, :started, :stopped
 
-    def initialize(endpoint, on_event) = (@endpoint, @on_event = endpoint, on_event)
+    def initialize(endpoint, on_event)
+      (@endpoint = endpoint
+       @on_event = on_event)
+    end
+
     def start = (@started = true) && self
     def stop = (@stopped = true) && self
   end
@@ -56,7 +60,11 @@ class DRAResourceHealthTest < Minitest::Test
     changes = @changes = []
     dra = Rubernetes::Node::DRAManager.new(client: Client.new, node_name: "node-1", state_directory: dir, rpc: FakeRPC,
                                            resource_health: true, on_health_change: ->(uids) { changes << uids },
-                                           health_stream: ->(endpoint, on_event) { FakeStream.new(endpoint, on_event).tap { |s| @streams << s } },
+                                           health_stream: lambda { |endpoint, on_event|
+                                             FakeStream.new(endpoint, on_event).tap do |s|
+                                               @streams << s
+                                             end
+                                           },
                                            health_clock: now)
     dra.register_plugin(DRIVER, "/plugins/gpu.sock", ["v1.DRAPlugin"])
     dra
@@ -77,9 +85,11 @@ class DRAResourceHealthTest < Minitest::Test
     Dir.mktmpdir do |dir|
       dra = manager(dir)
       stream = @streams.first
+
       assert stream.started
       assert_equal "/plugins/gpu.sock", stream.endpoint
       dra.deregister_plugin(DRIVER, "/plugins/gpu.sock")
+
       assert stream.stopped
     end
   end
@@ -94,11 +104,12 @@ class DRAResourceHealthTest < Minitest::Test
                    dra.allocated_resources_status(pod, app)
       assert_equal [], dra.allocated_resources_status(pod, plain)
 
-      affected = report(@streams.first, ["pool", "gpu-0", "UNHEALTHY", "ECC errors"], ["pool", "nic-0", "HEALTHY"])
+      affected = report(@streams.first, ["pool", "gpu-0", "UNHEALTHY", "ECC errors"], %w[pool nic-0 HEALTHY])
+
       assert_equal ["pod-uid"], affected
       assert_equal [["pod-uid"]], @changes
       assert_equal [{"name" => "claim:g/gpu", "resources" => [{"resourceID" => "#{DRIVER}/gpu=gpu-0", "health" => "Unhealthy",
-                                                                "message" => "ECC errors"}]}],
+                                                               "message" => "ECC errors"}]}],
                    dra.allocated_resources_status(pod, app)
       # No request: every device of the claim; no CDI ID: driver/pool/device.
       assert_equal [{"name" => "claim:g", "resources" => [
@@ -106,7 +117,7 @@ class DRAResourceHealthTest < Minitest::Test
         {"resourceID" => "#{DRIVER}/pool/nic-0", "health" => "Healthy"}
       ]}], dra.allocated_resources_status(pod, all)
       # The same report again changes nothing.
-      assert_equal [], report(@streams.first, ["pool", "gpu-0", "UNHEALTHY", "ECC errors"], ["pool", "nic-0", "HEALTHY"])
+      assert_equal [], report(@streams.first, ["pool", "gpu-0", "UNHEALTHY", "ECC errors"], %w[pool nic-0 HEALTHY])
     end
   end
 
@@ -114,11 +125,14 @@ class DRAResourceHealthTest < Minitest::Test
     Dir.mktmpdir do |dir|
       dra = manager(dir)
       report(@streams.first, ["pool", "gpu-0", "HEALTHY", "", "10"])
+
       assert_equal "Healthy", dra.health.get(DRIVER, "pool", "gpu-0")["health"]
       @now += 11
+
       assert_equal "Unknown", dra.health.get(DRIVER, "pool", "gpu-0")["health"]
       @now -= 11
       @streams.first.on_event.call({"event" => "ended"})
+
       assert_equal "Unknown", dra.health.get(DRIVER, "pool", "gpu-0")["health"]
     end
   end
@@ -128,8 +142,10 @@ class DRAResourceHealthTest < Minitest::Test
       cache = Health::Cache.new(path: File.join(dir, "state"), clock: -> { @now })
       cache.update(DRIVER, [Health.device_from_wire({"device" => {"pool_name" => "p", "device_name" => "a"}, "health" => "HEALTHY"})])
       @now += 31
-      changed = cache.update(DRIVER, [Health.device_from_wire({"device" => {"pool_name" => "p", "device_name" => "b"}, "health" => "HEALTHY"})])
-      assert_equal %w[b a], changed.map { |device| device["device"] }
+      changed = cache.update(DRIVER,
+                             [Health.device_from_wire({"device" => {"pool_name" => "p", "device_name" => "b"}, "health" => "HEALTHY"})])
+
+      assert_equal(%w[b a], changed.map { |device| device["device"] })
       assert_equal "Unknown", changed.last["health"]
     end
   end
@@ -142,13 +158,16 @@ class DRAResourceHealthTest < Minitest::Test
                                                      "health_check_timeout_seconds" => "60", "message" => "x" * 2000})])
       document = JSON.parse(File.read(path))
       device = document.dig(DRIVER, "Devices", "p/a")
+
       assert_equal %w[DeviceName Health HealthCheckTimeout LastUpdated Message PoolName], device.keys.sort
       assert_equal 60_000_000_000, device["HealthCheckTimeout"]
       assert_equal 1024, device["Message"].length
       assert device["Message"].end_with?("...")
       restored = Health::Cache.new(path: path, clock: -> { @now + 30 })
+
       assert_equal "Unhealthy", restored.get(DRIVER, "p", "a")["health"]
       cache.clear(DRIVER)
+
       assert_equal({}, JSON.parse(File.read(path)))
     end
   end
@@ -159,6 +178,7 @@ class DRAResourceHealthTest < Minitest::Test
       dra = Rubernetes::Node::DRAManager.new(client: Client.new, node_name: "n", state_directory: dir, rpc: FakeRPC,
                                              health_stream: ->(*args) { started << args })
       dra.register_plugin(DRIVER, "/x.sock", ["v1.DRAPlugin"])
+
       assert_empty started
     end
   end

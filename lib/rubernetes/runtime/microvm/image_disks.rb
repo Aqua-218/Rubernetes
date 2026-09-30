@@ -43,6 +43,7 @@ module Rubernetes
             stat = File.stat(path)
             key = [stat.ino, stat.size, stat.mtime.to_f]
             return path if @verified[path] == key
+
             if Artifacts.file_digest(path) == recorded
               @verified[path] = key
               return path

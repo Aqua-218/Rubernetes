@@ -52,4 +52,5 @@ Gem::Specification.new do |spec|
   spec.add_dependency "base64", "~> 0.2"
   spec.add_dependency "csv", "~> 3.3"
   spec.add_dependency "fiddle", "~> 1.1", ">= 1.1.0"
+  spec.metadata["rubygems_mfa_required"] = "true"
 end

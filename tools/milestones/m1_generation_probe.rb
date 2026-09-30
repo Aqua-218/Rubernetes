@@ -84,7 +84,7 @@ M1ProbeSupport.run_probe("m1_generation_diff") do |_current, input|
     "unexpected_count" => unexpected_count,
     "failure_count" => command_failures + byte_differences.length + canonical_differences.length,
     "passed" => input.fetch("stable") && command_failures.zero? && byte_differences.empty? &&
-                run_digests.length == 2 && run_digests.uniq.length == 1 &&
-                run_digests.all? { |digest| digest == M1ProbeSupport.tree_digest(canonical) }
+      run_digests.length == 2 && run_digests.uniq.length == 1 &&
+      run_digests.all? { |digest| digest == M1ProbeSupport.tree_digest(canonical) }
   }
 end

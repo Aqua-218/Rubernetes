@@ -19,7 +19,7 @@ module M1Gate
   MANIFEST_SCHEMA_VERSION = 3
   REPORT_SCHEMA_VERSION = 1
   MAX_JSON_BYTES = 32 * 1024 * 1024
-  SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
+  SHA256_PATTERN = /\A[0-9a-f]{64}\z/
   # The transcript exercises the typed (protobuf) client paths kubectl uses
   # for create/scale/expose, strict client-side validation over the served
   # OpenAPI v2 protobuf document, and the JSON CRUD/watch paths.
@@ -50,12 +50,12 @@ module M1Gate
     componentstatus-list
     componentstatus-get
   ].freeze
-  API_REVIEW_TOKEN = "m1-review-token-6f1c0d2a".freeze
-  API_TOKEN_REVIEW_PATH = "/apis/authentication.k8s.io/v1/tokenreviews".freeze
-  API_SELF_SUBJECT_REVIEW_PATH = "/apis/authentication.k8s.io/v1/selfsubjectreviews".freeze
-  API_SELF_SUBJECT_RULES_REVIEW_PATH = "/apis/authorization.k8s.io/v1/selfsubjectrulesreviews".freeze
-  API_USER_AGENT = "rubernetes-m1-oracle-probe/1".freeze
-  API_NAMESPACE = "m1-oracle".freeze
+  API_REVIEW_TOKEN = "m1-review-token-6f1c0d2a"
+  API_TOKEN_REVIEW_PATH = "/apis/authentication.k8s.io/v1/tokenreviews"
+  API_SELF_SUBJECT_REVIEW_PATH = "/apis/authentication.k8s.io/v1/selfsubjectreviews"
+  API_SELF_SUBJECT_RULES_REVIEW_PATH = "/apis/authorization.k8s.io/v1/selfsubjectrulesreviews"
+  API_USER_AGENT = "rubernetes-m1-oracle-probe/1"
+  API_NAMESPACE = "m1-oracle"
   API_COLLECTION_PATH = "/api/v1/namespaces/#{API_NAMESPACE}/configmaps".freeze
   API_APPLY_PATH = "#{API_COLLECTION_PATH}/m1-applied".freeze
   REQUIRED_API_OPERATION_INVENTORY = [
@@ -126,7 +126,7 @@ module M1Gate
     group version resource kind scope plural singular verbs subresources
     shortNames categories listKind schema_contract_present
   ].freeze
-  DEFAULT_PROFILE = "kubernetes-v1.36.2-default".freeze
+  DEFAULT_PROFILE = "kubernetes-v1.36.2-default"
   DEFAULT_OFF_GVR_IDS = %w[
     admissionregistration.k8s.io/v1alpha1/mutatingadmissionpolicies
     admissionregistration.k8s.io/v1alpha1/mutatingadmissionpolicybindings
@@ -240,8 +240,8 @@ module M1Gate
     /apis/storagemigration.k8s.io
     /apis/storagemigration.k8s.io/v1beta1
   ].freeze
-  DEFAULT_OFF_REASON = "the pinned Kubernetes v1.36.2 default API profile does not serve this compiled API version".freeze
-  DISCOVERY_NOT_FOUND_BODY = "404 page not found\n".freeze
+  DEFAULT_OFF_REASON = "the pinned Kubernetes v1.36.2 default API profile does not serve this compiled API version"
+  DISCOVERY_NOT_FOUND_BODY = "404 page not found\n"
   ROUTER_NOT_FOUND_DISCOVERY_PATHS = %w[
     /apis/internal.apiserver.k8s.io
     /apis/internal.apiserver.k8s.io/v1alpha1
@@ -311,8 +311,8 @@ module M1Gate
   SOURCE_EXCLUDED_PATTERNS = [%r{\Aa11-generated\.[A-Za-z0-9]{6,}/}, %r{\Aapps/[^/]+/(?:log|tmp|storage)/}].freeze
   KUBERNETES_VERSION = "v1.36.2"
   KUBERNETES_SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467"
-  KUBE_APISERVER_IMAGE = "registry.k8s.io/kube-apiserver@sha256:0535dde1a857029209d7effe681c919a1580d2eb24eda4bd122d24e9a372e1b8".freeze
-  ETCD_IMAGE = "registry.k8s.io/etcd@sha256:397189418d1a00e500c0605ad18d1baf3b541a1004d768448c367e48071622e5".freeze
+  KUBE_APISERVER_IMAGE = "registry.k8s.io/kube-apiserver@sha256:0535dde1a857029209d7effe681c919a1580d2eb24eda4bd122d24e9a372e1b8"
+  ETCD_IMAGE = "registry.k8s.io/etcd@sha256:397189418d1a00e500c0605ad18d1baf3b541a1004d768448c367e48071622e5"
   KUBERNETES_PROTOBUF_ORACLE_KIND = "kubernetes_generated_protobuf"
   KUBERNETES_API_ORACLE_KIND = "kubernetes_apiserver"
   KUBERNETES_SEMANTICS_ORACLE_KIND = "kubernetes_api_semantics"
@@ -344,7 +344,8 @@ module M1Gate
     },
     "api" => {
       kind: "m1_api_differential",
-      names: %w[api-differential.json api_differential.json api-differential-result.json api-test-result.json api_test_result.json api-result.json]
+      names: %w[api-differential.json api_differential.json api-differential-result.json api-test-result.json api_test_result.json
+                api-result.json]
     },
     "kubectl" => {
       kind: "m1_kubectl_transcript",
@@ -449,11 +450,9 @@ module M1Gate
       end
 
       %w[started_at finished_at].each do |key|
-        begin
-          Time.iso8601(manifest[key].to_s)
-        rescue ArgumentError
-          errors << "#{key} must be an ISO-8601 timestamp"
-        end
+        Time.iso8601(manifest[key].to_s)
+      rescue ArgumentError
+        errors << "#{key} must be an ISO-8601 timestamp"
       end
 
       validate_capture(manifest, errors)
@@ -535,11 +534,9 @@ module M1Gate
         errors << "command #{index} must have an exit status" unless integer?(command["exit_status"])
         errors << "command #{index} did not exit zero" unless command["exit_status"] == 0
         %w[started_at finished_at].each do |key|
-          begin
-            Time.iso8601(command[key].to_s)
-          rescue ArgumentError
-            errors << "command #{index} #{key} must be an ISO-8601 timestamp"
-          end
+          Time.iso8601(command[key].to_s)
+        rescue ArgumentError
+          errors << "command #{index} #{key} must be an ISO-8601 timestamp"
         end
         begin
           started_at = Time.iso8601(command["started_at"].to_s)
@@ -580,12 +577,8 @@ module M1Gate
           errors << "#{label} escapes evidence directory #{path_value}"
           next
         end
-        unless valid_digest?(entry["sha256"])
-          errors << "#{label} #{path_value} must have a SHA-256 digest"
-        end
-        unless integer?(entry["bytes"]) && entry["bytes"] >= 0
-          errors << "#{label} #{path_value} must have a non-negative byte count"
-        end
+        errors << "#{label} #{path_value} must have a SHA-256 digest" unless valid_digest?(entry["sha256"])
+        errors << "#{label} #{path_value} must have a non-negative byte count" unless integer?(entry["bytes"]) && entry["bytes"] >= 0
         unless File.file?(path)
           errors << "missing #{label} #{path_value}"
           next
@@ -594,9 +587,7 @@ module M1Gate
         if valid_digest?(entry["sha256"]) && Digest::SHA256.file(resolved_path).hexdigest != entry["sha256"]
           errors << "#{label} digest mismatch #{path_value}"
         end
-        if integer?(entry["bytes"]) && File.size(resolved_path) != entry["bytes"]
-          errors << "#{label} byte count mismatch #{path_value}"
-        end
+        errors << "#{label} byte count mismatch #{path_value}" if integer?(entry["bytes"]) && File.size(resolved_path) != entry["bytes"]
         entry
       end
     end
@@ -637,9 +628,7 @@ module M1Gate
 
       path = evidence_path(directory, artifact["path"])
       document = parse_json(path, errors, "source inventory")
-      unless document.is_a?(Hash)
-        return nil
-      end
+      return nil unless document.is_a?(Hash)
 
       validate_common_document(document, "m1_source_inventory", manifest, errors, "source inventory")
       entries = document["entries"]
@@ -740,7 +729,11 @@ module M1Gate
       )
       errors << "M0 gate emitted stderr during cumulative validation" unless gate_stderr.empty?
       unless gate_status.success?
-        gate_errors = JSON.parse(gate_stdout).fetch("errors", []) rescue []
+        gate_errors = begin
+          JSON.parse(gate_stdout).fetch("errors", [])
+        rescue StandardError
+          []
+        end
         errors << "M0 gate does not pass: #{gate_errors.join("; ")}"
       end
     rescue SystemCallError => error
@@ -873,7 +866,9 @@ module M1Gate
       errors << "generation runs must produce the same tree digest" unless run_digests.length == 2 && run_digests.uniq.length == 1
       canonical_digest = document["canonical_tree_sha256"]
       errors << "generation report must include the canonical tree SHA-256" unless valid_digest?(canonical_digest)
-      errors << "generation output must match the canonical tree" unless valid_digest?(canonical_digest) && run_digests.all? { |digest| digest == canonical_digest }
+      errors << "generation output must match the canonical tree" unless valid_digest?(canonical_digest) && run_digests.all? do |digest|
+        digest == canonical_digest
+      end
       byte_differences = document["byte_differences"] || document["byte_diff_entries"]
       canonical_differences = document["canonical_differences"] || document["canonical_diff_entries"]
       errors << "generation byte difference entries are required" unless byte_differences.is_a?(Array)
@@ -899,9 +894,7 @@ module M1Gate
       validate_protobuf_unsupported_inventory(document, errors)
       gvks = document["gvks"] || document["types"]
       cases = document["cases"] || document["test_cases"]
-      unless gvks.is_a?(Array) && cases.is_a?(Array)
-        errors << "roundtrip gvks and cases are required"
-      else
+      if gvks.is_a?(Array) && cases.is_a?(Array)
         errors << "roundtrip GVK item count does not match gvk_count" unless gvk_count == gvks.length
         errors << "roundtrip case count does not match case entries" unless case_count == cases.length
         gvk_ids = item_ids(gvks, errors, "roundtrip GVKs")
@@ -921,6 +914,8 @@ module M1Gate
           end
           errors << "roundtrip case #{index} semantic oracle check did not pass" unless entry["semantic_oracle"] == true
         end
+      else
+        errors << "roundtrip gvks and cases are required"
       end
       check_zero(document, %w[failure_count failures], errors, "roundtrip failure count")
       check_zero(document, %w[json_roundtrip_failures json_failures], errors, "roundtrip JSON failures")
@@ -943,9 +938,7 @@ module M1Gate
       errors << "API operation count must equal #{REQUIRED_API_OPERATIONS.length}" unless operation_count == REQUIRED_API_OPERATIONS.length
       errors << "API passed count must equal operation count" unless operation_count && passed_count == operation_count
       operations = document["operations"] || document["results"]
-      unless operations.is_a?(Array)
-        errors << "API operations are required"
-      else
+      if operations.is_a?(Array)
         errors << "API operation count does not match operation entries" unless operation_count == operations.length
         operation_ids = item_ids(operations, errors, "API operations")
         errors << "API operation identifiers are duplicated" unless operation_ids.uniq.length == operation_ids.length
@@ -966,9 +959,8 @@ module M1Gate
             end
           end
           errors << "API operation #{index} request digest is invalid" unless valid_digest?(operation["request_sha256"])
-          if valid_digest?(operation["request_sha256"]) && operation["request"].is_a?(Hash)
-            errors << "API operation #{index} request digest does not match its preimage" unless
-              operation["request_sha256"] == canonical_document_digest(operation["request"])
+          if valid_digest?(operation["request_sha256"]) && operation["request"].is_a?(Hash) && !(operation["request_sha256"] == canonical_document_digest(operation["request"]))
+            errors << "API operation #{index} request digest does not match its preimage"
           end
           attempt_count = operation["attempt_count"] || operation["attempts"]
           errors << "API operation #{index} must run exactly once" unless attempt_count == 1
@@ -978,6 +970,8 @@ module M1Gate
           end
           validate_api_operation_observables(operation, errors, "API operation #{index}")
         end
+      else
+        errors << "API operations are required"
       end
       check_zero(document, %w[failure_count failures], errors, "API failure count")
       check_zero(document, %w[unexpected_skip_count unexpected_skips], errors, "API unexpected skip count")
@@ -1017,28 +1011,27 @@ module M1Gate
         if packet["headers"].is_a?(Hash)
           errors << "#{label} #{packet_name} header names must be normalized lowercase tokens" unless
             packet["headers"].keys.all? { |name| name.is_a?(String) && name == name.downcase && name.match?(/\A[a-z0-9-]+\z/) }
-          errors << "#{label} #{packet_name} header values must be strings" unless packet["headers"].values.all? { |value| value.is_a?(String) }
+          errors << "#{label} #{packet_name} header values must be strings" unless packet["headers"].values.all? do |value|
+            value.is_a?(String)
+          end
         end
-        if packet.key?("resourceVersion_causality")
-          errors << "#{label} #{packet_name} resourceVersion causality must be a measured signature" unless
-            packet["resourceVersion_causality"].is_a?(Hash)
+        if packet.key?("resourceVersion_causality") && !packet["resourceVersion_causality"].is_a?(Hash)
+          errors << "#{label} #{packet_name} resourceVersion causality must be a measured signature"
         end
       end
       validate_resource_version_observation(operation, expected, actual, errors, label)
       %w[status_matches header_matches body_matches ownership_matches status_body_matches
          resource_version_causality_matches watch_matches].each do |check|
-        errors << "#{label} #{check} must be boolean" unless operation[check] == true || operation[check] == false
+        errors << "#{label} #{check} must be boolean" unless [true, false].include?(operation[check])
       end
       %w[expected_sha256 actual_sha256].each do |key|
         errors << "#{label} #{key} must be a SHA-256 digest" unless valid_digest?(operation[key])
       end
-      if valid_digest?(operation["expected_sha256"])
-        errors << "#{label} expected digest does not match observable packet" unless
-          operation["expected_sha256"] == canonical_document_digest(expected)
+      if valid_digest?(operation["expected_sha256"]) && !(operation["expected_sha256"] == canonical_document_digest(expected))
+        errors << "#{label} expected digest does not match observable packet"
       end
-      if valid_digest?(operation["actual_sha256"])
-        errors << "#{label} actual digest does not match observable packet" unless
-          operation["actual_sha256"] == canonical_document_digest(actual)
+      if valid_digest?(operation["actual_sha256"]) && !(operation["actual_sha256"] == canonical_document_digest(actual))
+        errors << "#{label} actual digest does not match observable packet"
       end
       errors << "#{label} observable packets differ while operation is marked passed" if
         operation["passed"] == true && canonical_document_digest(expected) != canonical_document_digest(actual)
@@ -1053,31 +1046,26 @@ module M1Gate
           actual["headers"] == actual_headers
       end
 
-      if integer?(expected["status"]) && integer?(actual["status"])
-        errors << "#{label} status_matches is inconsistent with observable packets" unless
-          operation["status_matches"] == (expected["status"] == actual["status"])
+      if integer?(expected["status"]) && integer?(actual["status"]) && !(operation["status_matches"] == (expected["status"] == actual["status"]))
+        errors << "#{label} status_matches is inconsistent with observable packets"
       end
-      if expected["headers"].is_a?(Hash) && actual["headers"].is_a?(Hash)
-        errors << "#{label} header_matches is inconsistent with observable packets" unless
-          operation["header_matches"] == (expected["headers"] == actual["headers"])
+      if expected["headers"].is_a?(Hash) && actual["headers"].is_a?(Hash) && !(operation["header_matches"] == (expected["headers"] == actual["headers"]))
+        errors << "#{label} header_matches is inconsistent with observable packets"
       end
-      if expected.key?("body") && actual.key?("body")
-        errors << "#{label} body_matches is inconsistent with observable packets" unless
-          operation["body_matches"] == (expected["body"] == actual["body"])
+      if expected.key?("body") && actual.key?("body") && !(operation["body_matches"] == (expected["body"] == actual["body"]))
+        errors << "#{label} body_matches is inconsistent with observable packets"
       end
-      if expected["ownership"].is_a?(Array) && actual["ownership"].is_a?(Array)
-        errors << "#{label} ownership_matches is inconsistent with observable packets" unless
-          operation["ownership_matches"] == (expected["ownership"] == actual["ownership"])
+      if expected["ownership"].is_a?(Array) && actual["ownership"].is_a?(Array) && !(operation["ownership_matches"] == (expected["ownership"] == actual["ownership"]))
+        errors << "#{label} ownership_matches is inconsistent with observable packets"
       end
       if expected.key?("resourceVersion_causality") || actual.key?("resourceVersion_causality")
         expected_causality = expected["resourceVersion_causality"]
         actual_causality = actual["resourceVersion_causality"]
         errors << "#{label} resourceVersion causality must be recorded on both observable packets" unless
           expected.key?("resourceVersion_causality") && actual.key?("resourceVersion_causality")
-        if expected_causality.is_a?(Hash) && actual_causality.is_a?(Hash)
-          errors << "#{label} resource_version_causality_matches is inconsistent with observable packets" unless
-            operation["resource_version_causality_matches"] ==
-              (expected_causality["valid"] == true && actual_causality["valid"] == true)
+        if expected_causality.is_a?(Hash) && actual_causality.is_a?(Hash) && !(operation["resource_version_causality_matches"] ==
+            (expected_causality["valid"] == true && actual_causality["valid"] == true))
+          errors << "#{label} resource_version_causality_matches is inconsistent with observable packets"
         end
       else
         errors << "#{label} resource_version_causality_matches must be true when no causality packet is present" unless
@@ -1121,9 +1109,8 @@ module M1Gate
           next
         end
         errors << "#{label} #{source} resourceVersion trace digest is invalid" unless valid_digest?(observation[digest_key])
-        if valid_digest?(observation[digest_key])
-          errors << "#{label} #{source} resourceVersion trace digest does not match its preimage" unless
-            observation[digest_key] == canonical_document_digest(trace)
+        if valid_digest?(observation[digest_key]) && !(observation[digest_key] == canonical_document_digest(trace))
+          errors << "#{label} #{source} resourceVersion trace digest does not match its preimage"
         end
         calculated_valid = valid_resource_version_trace?(trace)
         errors << "#{label} #{source} resourceVersion trace validity is not derived from raw revisions" unless
@@ -1186,7 +1173,9 @@ module M1Gate
           "event_types" => records.map { |record| record.is_a?(Hash) ? record["type"].to_s : "" },
           "initial_events_end_index" => bookmark_indices.one? ? bookmark_indices.first : nil,
           "resourceVersions_valid" => !!(list_version && event_versions.all?),
-          "events_not_newer_than_list" => !!(list_version && event_versions.all? && event_versions.all? { |version| version <= list_version }),
+          "events_not_newer_than_list" => !!(list_version && event_versions.all? && event_versions.all? do |version|
+            version <= list_version
+          end),
           "valid" => trace["valid"] == true
         }
       when "watch"
@@ -1233,15 +1222,17 @@ module M1Gate
       end
       errors << "API semantic header exclusion allowlist must exactly match the pinned policy" unless policy == HEADER_EXCLUSION_ALLOWLIST
       policy.each do |name, metadata|
-        errors << "API semantic header exclusion name must be lowercase" unless name.is_a?(String) && name == name.downcase && name.match?(/\A[a-z0-9-]+\z/)
+        unless name.is_a?(String) && name == name.downcase && name.match?(/\A[a-z0-9-]+\z/)
+          errors << "API semantic header exclusion name must be lowercase"
+        end
         unless metadata.is_a?(Hash) && %w[dynamic hop-by-hop].include?(metadata["class"]) && non_empty_string?(metadata["reason"])
           errors << "API semantic header exclusion #{name.inspect} must have a class and machine-readable reason"
         end
       end
       digest = document["header_policy_sha256"]
       errors << "API semantic header exclusion policy digest is required" unless valid_digest?(digest)
-      if valid_digest?(digest)
-        errors << "API semantic header exclusion policy digest does not match policy" unless digest == canonical_document_digest(policy)
+      if valid_digest?(digest) && !(digest == canonical_document_digest(policy))
+        errors << "API semantic header exclusion policy digest does not match policy"
       end
 
       operations = document["operations"] || document["results"]
@@ -1265,20 +1256,31 @@ module M1Gate
         errors << "API corpus-driven surface matrix is required"
         return
       end
-      errors << "API surface registry GVK count must equal #{API_SURFACE_GVK_COUNT}" unless surface["registry_gvk_count"] == API_SURFACE_GVK_COUNT
-      errors << "API surface registry GVR count must equal #{API_SURFACE_GVR_COUNT}" unless surface["registry_gvr_count"] == API_SURFACE_GVR_COUNT
-      errors << "API surface discovery endpoint count must equal #{API_SURFACE_ENDPOINT_COUNT}" unless surface["discovery_endpoint_count"] == API_SURFACE_ENDPOINT_COUNT
-      %w[oracle_missing_count rubernetes_missing_count duplicate_count unexpected_count difference_count schema_contract_missing_count].each do |key|
+      unless surface["registry_gvk_count"] == API_SURFACE_GVK_COUNT
+        errors << "API surface registry GVK count must equal #{API_SURFACE_GVK_COUNT}"
+      end
+      unless surface["registry_gvr_count"] == API_SURFACE_GVR_COUNT
+        errors << "API surface registry GVR count must equal #{API_SURFACE_GVR_COUNT}"
+      end
+      unless surface["discovery_endpoint_count"] == API_SURFACE_ENDPOINT_COUNT
+        errors << "API surface discovery endpoint count must equal #{API_SURFACE_ENDPOINT_COUNT}"
+      end
+      %w[oracle_missing_count rubernetes_missing_count duplicate_count unexpected_count difference_count
+         schema_contract_missing_count].each do |key|
         check_zero(surface, [key], errors, "API surface #{key}")
       end
       errors << "API corpus-driven surface matrix must be marked passed" unless surface["passed"] == true
 
       registry_gvk_ids = surface["registry_gvk_ids"]
       registry_gvr_ids = surface["registry_gvr_ids"]
-      unless registry_gvk_ids.is_a?(Array) && registry_gvk_ids.length == API_SURFACE_GVK_COUNT && registry_gvk_ids.all? { |id| non_empty_string?(id) }
+      unless registry_gvk_ids.is_a?(Array) && registry_gvk_ids.length == API_SURFACE_GVK_COUNT && registry_gvk_ids.all? do |id|
+        non_empty_string?(id)
+      end
         errors << "API surface registry GVK inventory must contain exactly #{API_SURFACE_GVK_COUNT} identifiers"
       end
-      unless registry_gvr_ids.is_a?(Array) && registry_gvr_ids.length == API_SURFACE_GVR_COUNT && registry_gvr_ids.all? { |id| non_empty_string?(id) }
+      unless registry_gvr_ids.is_a?(Array) && registry_gvr_ids.length == API_SURFACE_GVR_COUNT && registry_gvr_ids.all? do |id|
+        non_empty_string?(id)
+      end
         errors << "API surface registry GVR inventory must contain exactly #{API_SURFACE_GVR_COUNT} identifiers"
       end
       generated_inventory = generated_surface_inventory(errors)
@@ -1325,9 +1327,15 @@ module M1Gate
         "StorageVersionAPI" => false
       }
       errors << "API surface feature profile default gates are invalid" unless gates == expected_gates
-      errors << "API surface feature profile default-off GVR inventory is invalid" unless profile["default_off_gvr_ids"] == DEFAULT_OFF_GVR_IDS
-      errors << "API surface feature profile default-off GVK inventory is invalid" unless profile["default_off_gvk_ids"] == DEFAULT_OFF_GVK_IDS
-      errors << "API surface feature profile default-off endpoint inventory is invalid" unless profile["default_off_discovery_paths"] == DEFAULT_OFF_DISCOVERY_PATHS
+      unless profile["default_off_gvr_ids"] == DEFAULT_OFF_GVR_IDS
+        errors << "API surface feature profile default-off GVR inventory is invalid"
+      end
+      unless profile["default_off_gvk_ids"] == DEFAULT_OFF_GVK_IDS
+        errors << "API surface feature profile default-off GVK inventory is invalid"
+      end
+      unless profile["default_off_discovery_paths"] == DEFAULT_OFF_DISCOVERY_PATHS
+        errors << "API surface feature profile default-off endpoint inventory is invalid"
+      end
       errors << "API surface feature profile reason is invalid" unless profile["reason"] == DEFAULT_OFF_REASON
     end
 
@@ -1416,20 +1424,27 @@ module M1Gate
         errors << "API surface discovery endpoint #{index} id and path must match" unless id == entry["path"]
         expected_endpoint = pinned_by_path[id]
         errors << "API surface discovery endpoint #{index} is not in the pinned v1.36.2 inventory" unless expected_endpoint
-        if expected_endpoint
-          errors << "API surface discovery endpoint #{index} source path does not match the pinned v1.36.2 file" unless
-            entry["source_path"] == expected_endpoint.fetch("source_path")
+        if expected_endpoint && !(entry["source_path"] == expected_endpoint.fetch("source_path"))
+          errors << "API surface discovery endpoint #{index} source path does not match the pinned v1.36.2 file"
         end
         errors << "API surface discovery endpoint #{index} must run exactly once" unless entry["attempt_count"] == 1
         default_off = DEFAULT_OFF_DISCOVERY_PATHS.include?(id)
         expected_availability = default_off ? "not_served_default" : "served"
-        errors << "API surface discovery endpoint #{index} availability profile is invalid" unless entry["availability"] == expected_availability
-        if default_off
-          errors << "API surface discovery endpoint #{index} default-off reason is invalid" unless entry["availability_reason"] == DEFAULT_OFF_REASON
-        else
-          errors << "API surface discovery endpoint #{index} served endpoint must not carry a default-off reason" unless entry["availability_reason"].nil?
+        unless entry["availability"] == expected_availability
+          errors << "API surface discovery endpoint #{index} availability profile is invalid"
         end
-        errors << "API surface discovery endpoint #{index} expected source is invalid" unless entry["expected_source"] == "pinned_kubernetes_discovery"
+        if default_off
+          unless entry["availability_reason"] == DEFAULT_OFF_REASON
+            errors << "API surface discovery endpoint #{index} default-off reason is invalid"
+          end
+        else
+          unless entry["availability_reason"].nil?
+            errors << "API surface discovery endpoint #{index} served endpoint must not carry a default-off reason"
+          end
+        end
+        unless entry["expected_source"] == "pinned_kubernetes_discovery"
+          errors << "API surface discovery endpoint #{index} expected source is invalid"
+        end
         errors << "API surface discovery endpoint #{index} oracle source is invalid" unless entry["oracle_source"] == "kubernetes_external"
         errors << "API surface discovery endpoint #{index} Rubernetes source is invalid" unless entry["rubernetes_source"] == "rubernetes"
         errors << "API surface discovery endpoint #{index} comparison scope is invalid" unless entry["comparison_scope"] == "full_semantic"
@@ -1439,10 +1454,11 @@ module M1Gate
         %w[expected_body oracle_body rubernetes_body].each do |key|
           valid_body = entry[key].is_a?(Hash) || (default_off && entry[key].is_a?(String))
           errors << "API surface discovery endpoint #{index} #{key} must be an object" unless valid_body
-          if valid_body && valid_digest?(entry[key.sub(/_body\z/, "_sha256")])
-            errors << "API surface discovery endpoint #{index} #{key} digest does not match the body" unless
-              entry[key.sub(/_body\z/, "_sha256")] == canonical_discovery_digest(entry[key])
-          end
+          next unless valid_body && valid_digest?(entry[key.sub(/_body\z/,
+                                                                "_sha256")]) && !(entry[key.sub(/_body\z/,
+                                                                                                "_sha256")] == canonical_discovery_digest(entry[key]))
+
+          errors << "API surface discovery endpoint #{index} #{key} digest does not match the body"
         end
         if expected_endpoint && valid_digest?(entry["expected_sha256"])
           pinned_digest = pinned_discovery_digest(expected_endpoint.fetch("source_path"), errors, path: id)
@@ -1451,15 +1467,17 @@ module M1Gate
         end
         errors << "API surface discovery endpoint #{index} must pass" unless entry["passed"] == true
         if default_off
-          errors << "API surface discovery endpoint #{index} default-off status must be 404 for both sources" unless entry["oracle_status"] == 404 && entry["rubernetes_status"] == 404
+          unless entry["oracle_status"] == 404 && entry["rubernetes_status"] == 404
+            errors << "API surface discovery endpoint #{index} default-off status must be 404 for both sources"
+          end
           errors << "API surface discovery endpoint #{index} default-off expected body differs from upstream 404 semantics" unless
             entry["expected_body"] == canonical_discovery_value(default_off_discovery_body(id))
         else
-          errors << "API surface discovery endpoint #{index} status must be 200 for both sources" unless entry["oracle_status"] == 200 && entry["rubernetes_status"] == 200
+          unless entry["oracle_status"] == 200 && entry["rubernetes_status"] == 200
+            errors << "API surface discovery endpoint #{index} status must be 200 for both sources"
+          end
         end
-        unless entry["header_matches"] == true
-          errors << "API surface discovery endpoint #{index} header comparison must pass"
-        end
+        errors << "API surface discovery endpoint #{index} header comparison must pass" unless entry["header_matches"] == true
         validate_header_observation_pair(
           entry["header_observation"], errors,
           "API surface discovery endpoint #{index}"
@@ -1477,17 +1495,17 @@ module M1Gate
       Dir.glob(File.join(discovery_root, "*.json")).filter_map do |path|
         basename = File.basename(path, ".json")
         endpoint = case basename
-        when "api"
-          "/api"
-        when "api__v1"
-          "/api/v1"
-        when "apis"
-          "/apis"
-        when /\Aapis__(.+)__(.+)\z/
-          "/apis/#{Regexp.last_match(1)}/#{Regexp.last_match(2)}"
-        when /\Aapis__(.+)\z/
-          "/apis/#{Regexp.last_match(1)}"
-        end
+                   when "api"
+                     "/api"
+                   when "api__v1"
+                     "/api/v1"
+                   when "apis"
+                     "/apis"
+                   when /\Aapis__(.+)__(.+)\z/
+                     "/apis/#{Regexp.last_match(1)}/#{Regexp.last_match(2)}"
+                   when /\Aapis__(.+)\z/
+                     "/apis/#{Regexp.last_match(1)}"
+                   end
         next unless endpoint
 
         {
@@ -1532,11 +1550,13 @@ module M1Gate
       if canonical["groups"].is_a?(Array)
         groups = canonical.fetch("groups").filter_map do |group|
           next group unless group.is_a?(Hash)
+
           name = group["name"].to_s
           versions = Array(group["versions"]).reject do |version|
             DEFAULT_OFF_DISCOVERY_PATHS.include?("/apis/#{name}/#{version["version"]}")
           end
           next nil if versions.empty?
+
           preferred = group["preferredVersion"]
           preferred = versions.first unless versions.any? { |entry| entry == preferred }
           group.merge("versions" => versions, "preferredVersion" => preferred)
@@ -1607,11 +1627,17 @@ module M1Gate
         errors << "API surface #{label} matrix entry #{index} must pass" unless entry["passed"] == true
         default_off = (label == "GVR" ? DEFAULT_OFF_GVR_IDS : DEFAULT_OFF_GVK_IDS).include?(id.to_s)
         expected_availability = default_off ? "not_served_default" : "served"
-        errors << "API surface #{label} matrix entry #{index} availability profile is invalid" unless entry["availability"] == expected_availability
+        unless entry["availability"] == expected_availability
+          errors << "API surface #{label} matrix entry #{index} availability profile is invalid"
+        end
         if default_off
-          errors << "API surface #{label} matrix entry #{index} default-off reason is invalid" unless entry["availability_reason"] == DEFAULT_OFF_REASON
+          unless entry["availability_reason"] == DEFAULT_OFF_REASON
+            errors << "API surface #{label} matrix entry #{index} default-off reason is invalid"
+          end
         else
-          errors << "API surface #{label} matrix entry #{index} served entry must not carry a default-off reason" unless entry["availability_reason"].nil?
+          unless entry["availability_reason"].nil?
+            errors << "API surface #{label} matrix entry #{index} served entry must not carry a default-off reason"
+          end
         end
         API_SURFACE_FIELDS.each do |field|
           value = entry[field]
@@ -1619,7 +1645,8 @@ module M1Gate
           when "verbs", "subresources", "shortNames", "categories"
             errors << "API surface #{label} matrix entry #{index} #{field} must be an array" unless value.is_a?(Array)
           when "schema_contract_present"
-            errors << "API surface #{label} matrix entry #{index} schema contract presence must be boolean" unless value == true || value == false
+            errors << "API surface #{label} matrix entry #{index} schema contract presence must be boolean" unless [true,
+                                                                                                                    false].include?(value)
           else
             errors << "API surface #{label} matrix entry #{index} #{field} must be a string" unless value.is_a?(String)
           end
@@ -1653,28 +1680,29 @@ module M1Gate
           if require_applicability
             errors << "API surface #{label} matrix entry #{index} expected presence differs from pinned discovery" unless
               entry["expected_present"] == !pinned_expected.nil?
-          else
-            errors << "API surface #{label} matrix entry #{index} is absent from pinned discovery" if pinned_expected.nil?
+          elsif pinned_expected.nil?
+            errors << "API surface #{label} matrix entry #{index} is absent from pinned discovery"
           end
           errors << "API surface #{label} matrix entry #{index} expected fields differ from pinned discovery" unless
             entry["expected"] == pinned_expected
         end
         if require_applicability
           applicable = entry["schema_contract_applicable"]
-          errors << "API surface #{label} matrix entry #{index} schema contract applicability must be boolean" unless applicable == true || applicable == false
-          if applicable == true
-            errors << "API surface #{label} matrix entry #{index} requires a schema contract" unless entry["schema_contract_present"] == true
+          errors << "API surface #{label} matrix entry #{index} schema contract applicability must be boolean" unless [true,
+                                                                                                                       false].include?(applicable)
+          if (applicable == true) && !(entry["schema_contract_present"] == true)
+            errors << "API surface #{label} matrix entry #{index} requires a schema contract"
           end
         else
           errors << "API surface #{label} matrix entry #{index} requires a schema contract" unless entry["schema_contract_present"] == true
         end
         %w[oracle rubernetes].each do |source|
           observation = entry[source]
-          unless observation.is_a?(Hash) && (observation["present"] == true || observation["present"] == false)
+          unless observation.is_a?(Hash) && [true, false].include?(observation["present"])
             errors << "API surface #{label} matrix entry #{index} #{source} observation must record presence"
             next
           end
-          if (!default_off && (!require_applicability || entry["expected_present"] == true)) && observation["present"] != true
+          if !default_off && (!require_applicability || entry["expected_present"] == true) && observation["present"] != true
             errors << "API surface #{label} matrix entry #{index} #{source} must be present for a discovered surface"
           end
           if observation["present"] == true
@@ -1693,8 +1721,12 @@ module M1Gate
                 observation["sha256"] == expected_digest
             end
           else
-            errors << "API surface #{label} matrix entry #{index} #{source} absent observation must not carry fields" unless observation["fields"].nil?
-            errors << "API surface #{label} matrix entry #{index} #{source} absent observation must not carry a digest" unless observation["sha256"].nil?
+            unless observation["fields"].nil?
+              errors << "API surface #{label} matrix entry #{index} #{source} absent observation must not carry fields"
+            end
+            unless observation["sha256"].nil?
+              errors << "API surface #{label} matrix entry #{index} #{source} absent observation must not carry a digest"
+            end
           end
         end
         if entry["expected"].is_a?(Hash) && entry["oracle"].is_a?(Hash) && entry["rubernetes"].is_a?(Hash) &&
@@ -1708,15 +1740,14 @@ module M1Gate
         id if non_empty_string?(id)
       end
       errors << "API surface #{label} matrix identifiers must be unique" unless ids.uniq.length == ids.length
-      if expected_ids.all? { |id| non_empty_string?(id) }
-        errors << "API surface #{label} matrix inventory differs from registry" unless ids.sort == expected_ids.sort
-      end
+      return unless expected_ids.all? { |id| non_empty_string?(id) }
+
+      errors << "API surface #{label} matrix inventory differs from registry" unless ids.sort == expected_ids.sort
     end
 
     def validate_surface_fields(fields, errors, label, allow_nil: false)
-      if fields.nil? && allow_nil
-        return
-      end
+      return if fields.nil? && allow_nil
+
       unless fields.is_a?(Hash)
         errors << "#{label} fields must be an object"
         return
@@ -1728,11 +1759,9 @@ module M1Gate
         value = fields[field]
         case field
         when "verbs", "subresources", "shortNames", "categories"
-          unless value.is_a?(Array) && value.all? { |item| item.is_a?(String) }
-            errors << "#{label} #{field} must be an array of strings"
-          end
+          errors << "#{label} #{field} must be an array of strings" unless value.is_a?(Array) && value.all? { |item| item.is_a?(String) }
         when "schema_contract_present"
-          errors << "#{label} schema contract presence must be boolean" unless value == true || value == false
+          errors << "#{label} schema contract presence must be boolean" unless [true, false].include?(value)
         else
           errors << "#{label} #{field} must be a string" unless value.is_a?(String)
         end
@@ -1749,17 +1778,13 @@ module M1Gate
       end
       expected_group = parts.fetch(0) == "core" ? "" : parts.fetch(0)
       expected_version = parts.fetch(1)
-      if fields["group"] != expected_group
-        errors << "#{label} group does not match its identifier"
-      end
-      if fields["version"] != expected_version
-        errors << "#{label} version does not match its identifier"
-      end
+      errors << "#{label} group does not match its identifier" if fields["group"] != expected_group
+      errors << "#{label} version does not match its identifier" if fields["version"] != expected_version
       expected_name = parts.fetch(2)
       field_name = matrix_label == "GVR" ? fields["resource"] : fields["kind"]
-      if field_name != expected_name
-        errors << "#{label} #{matrix_label == "GVR" ? "resource" : "kind"} does not match its identifier"
-      end
+      return unless field_name != expected_name
+
+      errors << "#{label} #{matrix_label == "GVR" ? "resource" : "kind"} does not match its identifier"
     end
 
     def validate_header_observation_pair(observation, errors, label, compare: true)
@@ -1779,13 +1804,11 @@ module M1Gate
         %w[all_sha256 compared_sha256].each do |digest_key|
           errors << "#{label} #{source} header observation #{digest_key} is invalid" unless valid_digest?(source_observation[digest_key])
         end
-        if valid_digest?(source_observation["all_sha256"])
-          errors << "#{label} #{source} all-header digest does not match its preimage" unless
-            source_observation["all_sha256"] == canonical_document_digest(all_headers)
+        if valid_digest?(source_observation["all_sha256"]) && !(source_observation["all_sha256"] == canonical_document_digest(all_headers))
+          errors << "#{label} #{source} all-header digest does not match its preimage"
         end
-        if valid_digest?(source_observation["compared_sha256"])
-          errors << "#{label} #{source} compared-header digest does not match its preimage" unless
-            source_observation["compared_sha256"] == canonical_document_digest(compared_headers)
+        if valid_digest?(source_observation["compared_sha256"]) && !(source_observation["compared_sha256"] == canonical_document_digest(compared_headers))
+          errors << "#{label} #{source} compared-header digest does not match its preimage"
         end
         unless all_headers.keys.all? { |name| name.is_a?(String) && name == name.downcase && name.match?(/\A[a-z0-9-]+\z/) }
           errors << "#{label} #{source} header observation names must be normalized lowercase tokens"
@@ -1802,9 +1825,9 @@ module M1Gate
       end
       expected_headers = observation.dig("expected", "compared")
       actual_headers = observation.dig("actual", "compared")
-      if compare && expected_headers.is_a?(Hash) && actual_headers.is_a?(Hash)
-        errors << "#{label} semantic header comparison differs" unless expected_headers == actual_headers
-      end
+      return unless compare && expected_headers.is_a?(Hash) && actual_headers.is_a?(Hash)
+
+      errors << "#{label} semantic header comparison differs" unless expected_headers == actual_headers
     end
 
     def validate_oracle(document, expected_count, expected_items, errors, label)
@@ -1816,9 +1839,7 @@ module M1Gate
       expected_kind = label == "roundtrip" ? KUBERNETES_PROTOBUF_ORACLE_KIND : KUBERNETES_API_ORACLE_KIND
       validate_oracle_provenance(oracle, errors, "#{label} Kubernetes oracle", expected_kind: expected_kind)
       errors << "#{label} Kubernetes oracle was not executed" unless oracle["executed"] == true
-      unless oracle["kubernetes_version"] == KUBERNETES_VERSION
-        errors << "#{label} Kubernetes oracle version must be #{KUBERNETES_VERSION}"
-      end
+      errors << "#{label} Kubernetes oracle version must be #{KUBERNETES_VERSION}" unless oracle["kubernetes_version"] == KUBERNETES_VERSION
       unless oracle["source_commit"] == KUBERNETES_SOURCE_COMMIT
         errors << "#{label} Kubernetes oracle source commit must be #{KUBERNETES_SOURCE_COMMIT}"
       end
@@ -1827,9 +1848,7 @@ module M1Gate
         errors << "#{label} Kubernetes oracle comparison count must match the report inventory"
       end
       missing_count = oracle["missing_comparison_count"]
-      unless integer?(missing_count) && missing_count.zero?
-        errors << "#{label} Kubernetes oracle missing comparison count must be zero"
-      end
+      errors << "#{label} Kubernetes oracle missing comparison count must be zero" unless integer?(missing_count) && missing_count.zero?
       errors << "#{label} Kubernetes oracle runner SHA-256 is required" unless valid_digest?(oracle["runner_sha256"])
       errors << "#{label} Kubernetes oracle request seed SHA-256 is required" unless valid_digest?(oracle["request_seed_sha256"])
       validate_api_execution_evidence(oracle, expected_items, errors) if label == "API"
@@ -1860,8 +1879,12 @@ module M1Gate
         errors << "#{label} Kubernetes oracle comparison #{index} must run exactly once" unless attempts == 1
         expected_digest = comparison["expected_sha256"]
         actual_digest = comparison["actual_sha256"]
-        errors << "#{label} Kubernetes oracle comparison #{index} expected source must be external Kubernetes" unless comparison["expected_source"] == "kubernetes_external"
-        errors << "#{label} Kubernetes oracle comparison #{index} actual source must be Rubernetes" unless comparison["actual_source"] == "rubernetes"
+        unless comparison["expected_source"] == "kubernetes_external"
+          errors << "#{label} Kubernetes oracle comparison #{index} expected source must be external Kubernetes"
+        end
+        unless comparison["actual_source"] == "rubernetes"
+          errors << "#{label} Kubernetes oracle comparison #{index} actual source must be Rubernetes"
+        end
         unless valid_digest?(expected_digest) && valid_digest?(actual_digest)
           errors << "#{label} Kubernetes oracle comparison #{index} must record both observable SHA-256 digests"
         end
@@ -1877,9 +1900,9 @@ module M1Gate
         end
         identifier if non_empty_string?(identifier)
       end
-      unless comparison_ids.uniq.length == comparison_ids.length && comparison_ids.sort == expected_ids.sort
-        errors << "#{label} Kubernetes oracle comparison inventory differs from the report inventory"
-      end
+      return if comparison_ids.uniq.length == comparison_ids.length && comparison_ids.sort == expected_ids.sort
+
+      errors << "#{label} Kubernetes oracle comparison inventory differs from the report inventory"
     end
 
     def validate_api_execution_evidence(oracle, operations, errors)
@@ -1947,8 +1970,12 @@ module M1Gate
       errors << "API Kubernetes oracle request stream differs from the exact probe inventory" unless stream == expected_stream
       stream_digest = canonical_document_digest(stream)
       errors << "API Kubernetes oracle request stream SHA-256 is invalid" unless valid_digest?(oracle["request_stream_sha256"])
-      errors << "API Kubernetes oracle request stream digest does not match its preimage" unless oracle["request_stream_sha256"] == stream_digest
-      errors << "API Kubernetes oracle request seed is not the exact request stream digest" unless oracle["request_seed_sha256"] == stream_digest
+      unless oracle["request_stream_sha256"] == stream_digest
+        errors << "API Kubernetes oracle request stream digest does not match its preimage"
+      end
+      unless oracle["request_seed_sha256"] == stream_digest
+        errors << "API Kubernetes oracle request seed is not the exact request stream digest"
+      end
     rescue Errno::ENOENT => error
       errors << "API Kubernetes oracle runner source is unavailable: #{error.message}"
     end
@@ -2064,12 +2091,20 @@ module M1Gate
       validate_oracle_provenance(oracle, errors, label, expected_kind: KUBERNETES_SEMANTICS_ORACLE_KIND)
       errors << "#{label} was not executed" unless oracle["executed"] == true
       errors << "#{label} Kubernetes version must be #{KUBERNETES_VERSION}" unless oracle["kubernetes_version"] == KUBERNETES_VERSION
-      errors << "#{label} Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}" unless oracle["source_commit"] == KUBERNETES_SOURCE_COMMIT
+      unless oracle["source_commit"] == KUBERNETES_SOURCE_COMMIT
+        errors << "#{label} Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}"
+      end
       source_identity = oracle.dig("provenance", "source")
-      errors << "#{label} source root must match provenance" unless non_empty_string?(oracle["source_root"]) && source_identity.is_a?(Hash) && oracle["source_root"] == source_identity["root"]
+      unless non_empty_string?(oracle["source_root"]) && source_identity.is_a?(Hash) && oracle["source_root"] == source_identity["root"]
+        errors << "#{label} source root must match provenance"
+      end
       errors << "#{label} source checkout must be clean" unless oracle["source_tree_clean"] == true
-      errors << "#{label} comparison count must match the report inventory" unless integer?(oracle["comparison_count"]) && oracle["comparison_count"] == expected_count
-      errors << "#{label} missing comparison count must be zero" unless integer?(oracle["missing_comparison_count"]) && oracle["missing_comparison_count"].zero?
+      unless integer?(oracle["comparison_count"]) && oracle["comparison_count"] == expected_count
+        errors << "#{label} comparison count must match the report inventory"
+      end
+      unless integer?(oracle["missing_comparison_count"]) && oracle["missing_comparison_count"].zero?
+        errors << "#{label} missing comparison count must be zero"
+      end
       errors << "#{label} runner SHA-256 is required" unless valid_digest?(oracle["runner_sha256"])
       errors << "#{label} request seed SHA-256 is required" unless valid_digest?(oracle["request_seed_sha256"])
       validate_semantic_validation_criterion(oracle, expected_count, expected_items, errors, label)
@@ -2095,8 +2130,12 @@ module M1Gate
         errors << "#{label} comparison #{index} must run exactly once" unless attempts == 1
         json_expected_digest = comparison["json_expected_sha256"]
         json_actual_digest = comparison["json_actual_sha256"]
-        errors << "#{label} comparison #{index} JSON expected source must be external Kubernetes" unless comparison["json_expected_source"] == "kubernetes_external"
-        errors << "#{label} comparison #{index} JSON actual source must be Rubernetes" unless comparison["json_actual_source"] == "rubernetes"
+        unless comparison["json_expected_source"] == "kubernetes_external"
+          errors << "#{label} comparison #{index} JSON expected source must be external Kubernetes"
+        end
+        unless comparison["json_actual_source"] == "rubernetes"
+          errors << "#{label} comparison #{index} JSON actual source must be Rubernetes"
+        end
         unless valid_digest?(json_expected_digest) && valid_digest?(json_actual_digest)
           errors << "#{label} comparison #{index} JSON must record expected and actual SHA-256 digests"
         end
@@ -2104,9 +2143,7 @@ module M1Gate
           errors << "#{label} comparison #{index} JSON observable digests differ"
         end
         json_dimension = comparison["json"]
-        unless json_dimension.is_a?(Hash)
-          errors << "#{label} comparison #{index} JSON dimension is required"
-        else
+        if json_dimension.is_a?(Hash)
           validate_semantic_dimension(json_dimension, errors, "#{label} comparison #{index} JSON", require_applicability: true)
           errors << "#{label} comparison #{index} JSON top-level digest/source fields do not match the dimension record" unless
             comparison["json_expected_sha256"] == json_dimension["expected_sha256"] &&
@@ -2116,14 +2153,22 @@ module M1Gate
           %w[raw_sha256 canonical_sha256 unknown_raw_sha256 unknown_canonical_sha256].each do |digest_name|
             expected_observation = json_dimension.dig("expected_observation", digest_name)
             actual_observation = json_dimension.dig("actual_observation", digest_name)
-            errors << "#{label} comparison #{index} JSON #{digest_name} must record external and local digests" unless valid_digest?(expected_observation) && valid_digest?(actual_observation)
+            unless valid_digest?(expected_observation) && valid_digest?(actual_observation)
+              errors << "#{label} comparison #{index} JSON #{digest_name} must record external and local digests"
+            end
           end
+        else
+          errors << "#{label} comparison #{index} JSON dimension is required"
         end
         %w[defaulting validation].each do |dimension|
           expected_digest = comparison["#{dimension}_expected_sha256"]
           actual_digest = comparison["#{dimension}_actual_sha256"]
-          errors << "#{label} comparison #{index} #{dimension} expected source must be external Kubernetes" unless comparison["#{dimension}_expected_source"] == "kubernetes_external"
-          errors << "#{label} comparison #{index} #{dimension} actual source must be Rubernetes" unless comparison["#{dimension}_actual_source"] == "rubernetes"
+          unless comparison["#{dimension}_expected_source"] == "kubernetes_external"
+            errors << "#{label} comparison #{index} #{dimension} expected source must be external Kubernetes"
+          end
+          unless comparison["#{dimension}_actual_source"] == "rubernetes"
+            errors << "#{label} comparison #{index} #{dimension} actual source must be Rubernetes"
+          end
           unless valid_digest?(expected_digest) && valid_digest?(actual_digest)
             errors << "#{label} comparison #{index} #{dimension} must record expected and actual SHA-256 digests"
           end
@@ -2132,9 +2177,7 @@ module M1Gate
           end
           applicable = comparison["#{dimension}_applicable"]
           dimension_record = comparison[dimension]
-          unless dimension_record.is_a?(Hash)
-            errors << "#{label} comparison #{index} #{dimension} dimension is required"
-          else
+          if dimension_record.is_a?(Hash)
             validate_semantic_dimension(dimension_record, errors, "#{label} comparison #{index} #{dimension}", require_applicability: true)
             errors << "#{label} comparison #{index} #{dimension} top-level digest/source fields do not match the dimension record" unless
               comparison["#{dimension}_expected_sha256"] == dimension_record["expected_sha256"] &&
@@ -2144,25 +2187,32 @@ module M1Gate
             if dimension == "defaulting" && applicable == true
               expected_observation = dimension_record["expected_observation"]
               actual_observation = dimension_record["actual_observation"]
-              errors << "#{label} comparison #{index} defaulting observations are required" unless expected_observation.is_a?(Hash) && actual_observation.is_a?(Hash)
+              unless expected_observation.is_a?(Hash) && actual_observation.is_a?(Hash)
+                errors << "#{label} comparison #{index} defaulting observations are required"
+              end
               if expected_observation.is_a?(Hash) && actual_observation.is_a?(Hash)
-                errors << "#{label} comparison #{index} defaulting scheme registration must be recorded" unless expected_observation["scheme_registered"] == true || expected_observation["scheme_registered"] == false
+                errors << "#{label} comparison #{index} defaulting scheme registration must be recorded" unless [true,
+                                                                                                                 false].include?(expected_observation["scheme_registered"])
                 %w[before_sha256 after_sha256].each do |digest_name|
-                  errors << "#{label} comparison #{index} defaulting #{digest_name} must be recorded for both sources" unless valid_digest?(expected_observation[digest_name]) && valid_digest?(actual_observation[digest_name])
+                  unless valid_digest?(expected_observation[digest_name]) && valid_digest?(actual_observation[digest_name])
+                    errors << "#{label} comparison #{index} defaulting #{digest_name} must be recorded for both sources"
+                  end
                 end
               end
             end
+          else
+            errors << "#{label} comparison #{index} #{dimension} dimension is required"
           end
-          errors << "#{label} comparison #{index} #{dimension} applicability must be boolean" unless applicable == true || applicable == false
-          if applicable == false
-            errors << "#{label} comparison #{index} #{dimension} N/A reason is required" unless non_empty_string?(dimension_record && dimension_record["reason"])
+          errors << "#{label} comparison #{index} #{dimension} applicability must be boolean" unless [true, false].include?(applicable)
+          if (applicable == false) && !non_empty_string?(dimension_record && dimension_record["reason"])
+            errors << "#{label} comparison #{index} #{dimension} N/A reason is required"
           end
         end
         identifier if non_empty_string?(identifier)
       end
-      unless comparison_ids.uniq.length == comparison_ids.length && comparison_ids.sort == expected_ids.sort
-        errors << "#{label} comparison inventory differs from the report inventory"
-      end
+      return if comparison_ids.uniq.length == comparison_ids.length && comparison_ids.sort == expected_ids.sort
+
+      errors << "#{label} comparison inventory differs from the report inventory"
     end
 
     VALIDATION_LEDGER_MODES = %w[strategy constructor handler list rest_endpoint response].freeze
@@ -2179,7 +2229,9 @@ module M1Gate
 
         errors << "#{label} ledger entry #{index} must be applicable" unless entry["applicable"] == true
         mode = entry["mode"]
-        errors << "#{label} ledger entry #{index} mode #{mode.inspect} is not an executable validation path" unless VALIDATION_LEDGER_MODES.include?(mode)
+        unless VALIDATION_LEDGER_MODES.include?(mode)
+          errors << "#{label} ledger entry #{index} mode #{mode.inspect} is not an executable validation path"
+        end
         collaborators = entry["collaborators"]
         if mode == "constructor" && collaborators.is_a?(Array) && !collaborators.empty?
           collaborators.each do |collaborator|
@@ -2202,7 +2254,9 @@ module M1Gate
         end
         operations.each do |operation|
           record = differential[operation]
-          errors << "#{label} ledger entry #{index} (#{entry["id"]}) references API differential operation #{operation.inspect}, which was not executed or did not pass" unless record.is_a?(Hash) && record["passed"] == true
+          unless record.is_a?(Hash) && record["passed"] == true
+            errors << "#{label} ledger entry #{index} (#{entry["id"]}) references API differential operation #{operation.inspect}, which was not executed or did not pass"
+          end
         end
       end
     end
@@ -2227,7 +2281,9 @@ module M1Gate
       end
       operations.each do |operation|
         record = differential[operation]
-        errors << "#{label} references API differential operation #{operation.inspect}, which was not executed or did not pass" unless record.is_a?(Hash) && record["passed"] == true
+        unless record.is_a?(Hash) && record["passed"] == true
+          errors << "#{label} references API differential operation #{operation.inspect}, which was not executed or did not pass"
+        end
       end
     end
 
@@ -2235,7 +2291,9 @@ module M1Gate
       return @api_differential_operations if defined?(@api_differential_operations) && !@api_differential_operations.nil?
       return nil unless defined?(@evidence_directory) && @evidence_directory
 
-      path = REPORTS.fetch("api", {}).fetch(:names, %w[api-differential.json]).map { |name| ::File.join(@evidence_directory, name) }.find { |candidate| ::File.file?(candidate) }
+      path = REPORTS.fetch("api", {}).fetch(:names, %w[api-differential.json]).map do |name|
+        ::File.join(@evidence_directory, name)
+      end.find { |candidate| ::File.file?(candidate) }
       return nil unless path
 
       document = JSON.parse(::File.binread(path), max_nesting: 256)
@@ -2300,23 +2358,28 @@ module M1Gate
         id = entry["id"] || entry["name"]
         errors << "#{label} validation applicability ledger entry #{index} has no identifier" unless non_empty_string?(id)
         applicable = entry["applicable"]
-        errors << "#{label} validation applicability ledger entry #{index} applicability must be boolean" unless applicable == true || applicable == false
-        if applicable == false
-          errors << "#{label} validation applicability ledger entry #{index} N/A reason is required" unless non_empty_string?(entry["reason"])
+        errors << "#{label} validation applicability ledger entry #{index} applicability must be boolean" unless [true,
+                                                                                                                  false].include?(applicable)
+        if (applicable == false) && !non_empty_string?(entry["reason"])
+          errors << "#{label} validation applicability ledger entry #{index} N/A reason is required"
         end
         comparison = comparison_by_id[id]
         if comparison
-          errors << "#{label} validation applicability ledger entry #{index} does not match its comparison applicability" unless comparison["validation_applicable"] == applicable
-          errors << "#{label} validation applicability ledger entry #{index} reason does not match its comparison" unless entry["reason"] == comparison.dig("validation", "reason")
+          unless comparison["validation_applicable"] == applicable
+            errors << "#{label} validation applicability ledger entry #{index} does not match its comparison applicability"
+          end
+          errors << "#{label} validation applicability ledger entry #{index} reason does not match its comparison" unless entry["reason"] == comparison.dig(
+            "validation", "reason"
+          )
         end
         source_paths = entry["source_paths"]
         errors << "#{label} validation applicability ledger entry #{index} source paths must be a non-empty array" unless
           source_paths.is_a?(Array) && !source_paths.empty? && source_paths.all? { |path| non_empty_string?(path) }
         id if non_empty_string?(id)
       end
-      unless ledger_ids.uniq.length == ledger_ids.length && ledger_ids.sort == expected_ids.sort
-        errors << "#{label} validation applicability ledger inventory differs from the report inventory"
-      end
+      return if ledger_ids.uniq.length == ledger_ids.length && ledger_ids.sort == expected_ids.sort
+
+      errors << "#{label} validation applicability ledger inventory differs from the report inventory"
     end
 
     def validate_validation_oracle(document, expected_count, expected_items, errors)
@@ -2329,20 +2392,26 @@ module M1Gate
       validate_oracle_provenance(oracle, errors, label, expected_kind: KUBERNETES_SEMANTICS_ORACLE_KIND)
       errors << "#{label} was not executed" unless oracle["executed"] == true
       errors << "#{label} Kubernetes version must be #{KUBERNETES_VERSION}" unless oracle["kubernetes_version"] == KUBERNETES_VERSION
-      errors << "#{label} Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}" unless oracle["source_commit"] == KUBERNETES_SOURCE_COMMIT
-      errors << "#{label} source root must match provenance" unless non_empty_string?(oracle["source_root"]) && oracle.dig("provenance", "source", "root") == oracle["source_root"]
+      unless oracle["source_commit"] == KUBERNETES_SOURCE_COMMIT
+        errors << "#{label} Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}"
+      end
+      errors << "#{label} source root must match provenance" unless non_empty_string?(oracle["source_root"]) && oracle.dig("provenance",
+                                                                                                                           "source", "root") == oracle["source_root"]
       errors << "#{label} source checkout must be clean" unless oracle["source_tree_clean"] == true
-      errors << "#{label} comparison count must match the report inventory" unless integer?(oracle["comparison_count"]) && oracle["comparison_count"] == expected_count
-      errors << "#{label} missing comparison count must be zero" unless integer?(oracle["missing_comparison_count"]) && oracle["missing_comparison_count"].zero?
+      unless integer?(oracle["comparison_count"]) && oracle["comparison_count"] == expected_count
+        errors << "#{label} comparison count must match the report inventory"
+      end
+      unless integer?(oracle["missing_comparison_count"]) && oracle["missing_comparison_count"].zero?
+        errors << "#{label} missing comparison count must be zero"
+      end
       errors << "#{label} runner SHA-256 is required" unless valid_digest?(oracle["runner_sha256"])
       errors << "#{label} request seed SHA-256 is required" unless valid_digest?(oracle["request_seed_sha256"])
       errors << "#{label} validation criterion digest is required" unless valid_digest?(oracle["validation_criterion_sha256"])
 
       semantic = document["semantic_oracle"]
       criterion = semantic.is_a?(Hash) ? semantic["validation_criterion"] : nil
-      if criterion.is_a?(Hash) && valid_digest?(oracle["validation_criterion_sha256"])
-        errors << "#{label} validation criterion digest does not match semantic evidence" unless
-          oracle["validation_criterion_sha256"] == canonical_document_digest(criterion)
+      if criterion.is_a?(Hash) && valid_digest?(oracle["validation_criterion_sha256"]) && !(oracle["validation_criterion_sha256"] == canonical_document_digest(criterion))
+        errors << "#{label} validation criterion digest does not match semantic evidence"
       end
 
       comparisons = oracle["comparisons"]
@@ -2360,12 +2429,14 @@ module M1Gate
         errors << "#{label} comparison #{index} has no identifier" unless non_empty_string?(id)
         errors << "#{label} comparison #{index} did not complete" unless comparison["passed"] == true
         applicable = comparison["applicable"]
-        errors << "#{label} comparison #{index} applicability must be boolean" unless applicable == true || applicable == false
+        errors << "#{label} comparison #{index} applicability must be boolean" unless [true, false].include?(applicable)
         if applicable == true
           errors << "#{label} comparison #{index} owner schema is required" unless non_empty_string?(comparison["owner_schema"])
           path = comparison["target_path"]
           errors << "#{label} comparison #{index} target path must be an array" unless path.is_a?(Array)
-          errors << "#{label} comparison #{index} operation observation digest is required" unless valid_digest?(comparison["operation_observation_sha256"])
+          unless valid_digest?(comparison["operation_observation_sha256"])
+            errors << "#{label} comparison #{index} operation observation digest is required"
+          end
           if api_differential_evidenced?(comparison)
             # Request/response types the apiserver never validates on
             # create/update are proven by the API differential operations
@@ -2383,7 +2454,9 @@ module M1Gate
           source_paths.is_a?(Array) && !source_paths.empty? && source_paths.all? { |path| non_empty_string?(path) }
         id if non_empty_string?(id)
       end
-      errors << "#{label} comparison inventory differs from the report inventory" unless comparison_ids.uniq.length == comparison_ids.length && comparison_ids.sort == expected_ids.sort
+      unless comparison_ids.uniq.length == comparison_ids.length && comparison_ids.sort == expected_ids.sort
+        errors << "#{label} comparison inventory differs from the report inventory"
+      end
 
       catalog = oracle["error_catalog"]
       unless catalog.is_a?(Hash) && catalog.all? do |digest, entries|
@@ -2395,7 +2468,7 @@ module M1Gate
       end
       if catalog.is_a?(Hash)
         referenced_catalog = {}
-        comparisons.each_with_index do |comparison, index|
+        comparisons.each_with_index do |comparison, _index|
           next unless comparison.is_a?(Hash) && comparison["applicable"] == true
 
           operations = comparison["operations"]
@@ -2420,14 +2493,14 @@ module M1Gate
         end
       end
       ruby_catalog = oracle["rubernetes_error_catalog"]
-      if ruby_catalog
-        unless ruby_catalog.is_a?(Hash) && ruby_catalog.all? do |digest, entries|
-                 valid_digest?(digest) && entries.is_a?(Array) && entries.all? do |entry|
-                   entry.is_a?(Hash) && %w[type field detail].all? { |key| entry[key].is_a?(String) }
-                 end
+      return unless ruby_catalog
+
+      unless ruby_catalog.is_a?(Hash) && ruby_catalog.all? do |digest, entries|
+               valid_digest?(digest) && entries.is_a?(Array) && entries.all? do |entry|
+                 entry.is_a?(Hash) && %w[type field detail].all? { |key| entry[key].is_a?(String) }
                end
-          errors << "#{label} Rubernetes error catalog must contain digest-keyed error records"
-        end
+             end
+        errors << "#{label} Rubernetes error catalog must contain digest-keyed error records"
       end
     end
 
@@ -2438,7 +2511,7 @@ module M1Gate
         return
       end
       unless operations.keys.map(&:to_s).sort == REQUIRED_VALIDATION_OPERATIONS.sort
-        errors << "#{label} operations must contain exactly #{REQUIRED_VALIDATION_OPERATIONS.join(', ')}"
+        errors << "#{label} operations must contain exactly #{REQUIRED_VALIDATION_OPERATIONS.join(", ")}"
       end
 
       observations = []
@@ -2472,19 +2545,17 @@ module M1Gate
         accepted completed error expected_accepted expectation_matches errors
         error_count errors_sha256 field_paths
       ]
-      unless operation.keys.map(&:to_s).sort == expected_keys.sort
-        errors << "#{label} has an unexpected operation shape"
-      end
+      errors << "#{label} has an unexpected operation shape" unless operation.keys.map(&:to_s).sort == expected_keys.sort
       errors << "#{label} did not complete" unless operation["completed"] == true
-      errors << "#{label} accepted must be boolean" unless operation["accepted"] == true || operation["accepted"] == false
-      errors << "#{label} expected_accepted must be boolean" unless operation["expected_accepted"] == true || operation["expected_accepted"] == false
-      errors << "#{label} expectation_matches must be boolean" unless operation["expectation_matches"] == true || operation["expectation_matches"] == false
+      errors << "#{label} accepted must be boolean" unless [true, false].include?(operation["accepted"])
+      errors << "#{label} expected_accepted must be boolean" unless [true, false].include?(operation["expected_accepted"])
+      errors << "#{label} expectation_matches must be boolean" unless [true, false].include?(operation["expectation_matches"])
       errors << "#{label} error must be null or a string" unless operation["error"].nil? || operation["error"].is_a?(String)
 
       entries = operation["errors"]
       unless entries.is_a?(Array) && entries.all? do |entry|
                entry.is_a?(Hash) && entry.keys.map(&:to_s).sort == %w[detail field type] &&
-                 %w[type field detail].all? { |key| entry[key].is_a?(String) }
+               %w[type field detail].all? { |key| entry[key].is_a?(String) }
              end
         errors << "#{label} errors must contain only typed field error records"
         entries = []
@@ -2541,14 +2612,16 @@ module M1Gate
         errors << "#{label} mismatch entry #{index} has no identifier" unless non_empty_string?(id)
         errors << "#{label} mismatch entry #{index} field is required" unless non_empty_string?(entry["field"])
         %w[kubernetes_preserved rubernetes_preserved].each do |key|
-          errors << "#{label} mismatch entry #{index} #{key} must be boolean" unless entry[key] == true || entry[key] == false
+          errors << "#{label} mismatch entry #{index} #{key} must be boolean" unless [true, false].include?(entry[key])
         end
         %w[raw_sha256 kubernetes_canonical_sha256 rubernetes_canonical_sha256].each do |key|
           errors << "#{label} mismatch entry #{index} #{key} must be a digest" unless valid_digest?(entry[key])
         end
         id if non_empty_string?(id)
       end
-      errors << "#{label} mismatch inventory contains duplicate or unknown identifiers" unless mismatch_ids.uniq.length == mismatch_ids.length && (mismatch_ids - expected_ids).empty?
+      unless mismatch_ids.uniq.length == mismatch_ids.length && (mismatch_ids - expected_ids).empty?
+        errors << "#{label} mismatch inventory contains duplicate or unknown identifiers"
+      end
 
       non_comparable = packet["non_comparable_by_type"]
       unless non_comparable.is_a?(Array) && non_comparable.length == non_comparable_count
@@ -2572,18 +2645,22 @@ module M1Gate
       groups = packet["groups"]
       errors << "#{label} groups must be an array" unless groups.is_a?(Array)
       fix = packet["production_codec_fix_packet"]
-      unless fix.is_a?(Hash) && fix["not_applied"] == true && fix["target_files"].is_a?(Array) && fix["target_files"].all? { |path| non_empty_string?(path) }
+      unless fix.is_a?(Hash) && fix["not_applied"] == true && fix["target_files"].is_a?(Array) && fix["target_files"].all? do |path|
+        non_empty_string?(path)
+      end
         errors << "#{label} production codec fix packet must be explicit and not applied"
       end
-      if integer?(mismatch_count) && mismatch_count.positive?
-        errors << "#{label} must mark the production codec fix REQUIRED while mismatches remain" unless fix.is_a?(Hash) && fix["status"] == "REQUIRED"
-      end
+      return unless integer?(mismatch_count) && mismatch_count.positive?
+
+      return if fix.is_a?(Hash) && fix["status"] == "REQUIRED"
+
+      errors << "#{label} must mark the production codec fix REQUIRED while mismatches remain"
     end
 
     def validate_semantic_dimension(dimension, errors, label, require_applicability: false)
       if require_applicability
         applicable = dimension["applicable"]
-        errors << "#{label} applicability must be boolean" unless applicable == true || applicable == false
+        errors << "#{label} applicability must be boolean" unless [true, false].include?(applicable)
       end
       errors << "#{label} expected source must be external Kubernetes" unless dimension["expected_source"] == "kubernetes_external"
       errors << "#{label} actual source must be Rubernetes" unless dimension["actual_source"] == "rubernetes"
@@ -2599,15 +2676,15 @@ module M1Gate
       unless dimension["expected"].is_a?(Hash) && dimension["actual"].is_a?(Hash)
         errors << "#{label} expected and actual observations are required"
       end
-      if dimension["applicable"] == false
-        reason = dimension["reason"]
-        errors << "#{label} N/A reason is required" unless non_empty_string?(reason)
-        expected = dimension["expected"]
-        actual = dimension["actual"]
-        unless expected.is_a?(Hash) && expected["applicable"] == false &&
-               actual.is_a?(Hash) && actual["applicable"] == false
-          errors << "#{label} N/A observations must be marked not applicable"
-        end
+      return unless dimension["applicable"] == false
+
+      reason = dimension["reason"]
+      errors << "#{label} N/A reason is required" unless non_empty_string?(reason)
+      expected = dimension["expected"]
+      actual = dimension["actual"]
+      unless expected.is_a?(Hash) && expected["applicable"] == false &&
+             actual.is_a?(Hash) && actual["applicable"] == false
+        errors << "#{label} N/A observations must be marked not applicable"
       end
     end
 
@@ -2627,7 +2704,9 @@ module M1Gate
         return
       end
       errors << "#{label} provenance Kubernetes version must be #{KUBERNETES_VERSION}" unless source["version"] == KUBERNETES_VERSION
-      errors << "#{label} provenance Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}" unless source["commit"] == KUBERNETES_SOURCE_COMMIT
+      unless source["commit"] == KUBERNETES_SOURCE_COMMIT
+        errors << "#{label} provenance Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}"
+      end
       errors << "#{label} provenance Kubernetes source tag must be #{KUBERNETES_VERSION}" unless source["tag"] == KUBERNETES_VERSION
       if [KUBERNETES_PROTOBUF_ORACLE_KIND, KUBERNETES_SEMANTICS_ORACLE_KIND].include?(expected_kind)
         errors << "#{label} provenance source root is required" unless non_empty_string?(source["root"])
@@ -2637,13 +2716,17 @@ module M1Gate
         errors << "#{label} provenance etcd image identity is required" unless non_empty_string?(source["etcd_image"])
         errors << "#{label} provenance network isolation must be true" unless source["network_isolated"] == true
       end
-      errors << "#{label} provenance runner SHA-256 must match oracle" unless valid_digest?(provenance["runner_sha256"]) && provenance["runner_sha256"] == oracle["runner_sha256"]
-      errors << "#{label} provenance request seed SHA-256 must match oracle" unless valid_digest?(provenance["request_seed_sha256"]) && provenance["request_seed_sha256"] == oracle["request_seed_sha256"]
-      errors << "#{label} provenance SHA-256 is required" unless valid_digest?(provenance["provenance_sha256"])
-      if valid_digest?(provenance["provenance_sha256"])
-        expected = canonical_document_digest(provenance, excluded_keys: ["provenance_sha256"])
-        errors << "#{label} provenance SHA-256 does not match canonical content" unless provenance["provenance_sha256"] == expected
+      unless valid_digest?(provenance["runner_sha256"]) && provenance["runner_sha256"] == oracle["runner_sha256"]
+        errors << "#{label} provenance runner SHA-256 must match oracle"
       end
+      unless valid_digest?(provenance["request_seed_sha256"]) && provenance["request_seed_sha256"] == oracle["request_seed_sha256"]
+        errors << "#{label} provenance request seed SHA-256 must match oracle"
+      end
+      errors << "#{label} provenance SHA-256 is required" unless valid_digest?(provenance["provenance_sha256"])
+      return unless valid_digest?(provenance["provenance_sha256"])
+
+      expected = canonical_document_digest(provenance, excluded_keys: ["provenance_sha256"])
+      errors << "#{label} provenance SHA-256 does not match canonical content" unless provenance["provenance_sha256"] == expected
     end
 
     def validate_protobuf_unsupported_inventory(document, errors)
@@ -2675,7 +2758,9 @@ module M1Gate
       REQUIRED_OPERATIONS.each do |required_operation|
         errors << "kubectl #{required_operation} operation is missing" unless names.count(required_operation) == 1
       end
-      errors << "kubectl transcript contains an unknown or duplicate operation" unless names.all? { |name| non_empty_string?(name) } && names.sort == REQUIRED_OPERATIONS.sort
+      errors << "kubectl transcript contains an unknown or duplicate operation" unless names.all? do |name|
+        non_empty_string?(name)
+      end && names.sort == REQUIRED_OPERATIONS.sort
       operations.each_with_index do |operation, index|
         unless operation.is_a?(Hash)
           errors << "kubectl operation #{index} must be an object"
@@ -2686,9 +2771,13 @@ module M1Gate
         name = operation["operation"] || operation["name"]
         command = Array(operation["command"])
         if name == "apply"
-          errors << "kubectl apply must run strict client-side validation" if command.include?("--validate=false") || command.any? { |part| part.to_s.start_with?("--validate=") && part != "--validate=strict" }
+          errors << "kubectl apply must run strict client-side validation" if command.include?("--validate=false") || command.any? do |part|
+            part.to_s.start_with?("--validate=") && part != "--validate=strict"
+          end
         elsif name == "apply-invalid"
-          errors << "kubectl apply-invalid must be rejected by client-side validation" unless expected_exit == 1 && operation["stderr"].to_s.include?("unknown field")
+          unless expected_exit == 1 && operation["stderr"].to_s.include?("unknown field")
+            errors << "kubectl apply-invalid must be rejected by client-side validation"
+          end
         end
         errors << "kubectl operation #{index} has no name" unless non_empty_string?(operation["operation"] || operation["name"])
         attempt_count = operation["attempt_count"] || operation["attempts"]
@@ -2712,9 +2801,7 @@ module M1Gate
         "source_files" => manifest["input_file_count"]
       }
       expected_counts.each do |key, expected|
-        unless integer?(counts[key])
-          errors << "result_counts #{key} is missing or invalid"
-        end
+        errors << "result_counts #{key} is missing or invalid" unless integer?(counts[key])
         errors << "result_counts #{key} is incorrect" if integer?(counts[key]) && counts[key] != expected
       end
     end
@@ -2723,17 +2810,15 @@ module M1Gate
       present = keys.select { |key| document.key?(key) }
       candidate = present.empty? ? nil : document[present.first]
       errors << "#{label} is missing or invalid" unless integer?(candidate) && candidate >= 0
-      unless present.all? { |key| document[key] == candidate }
-        errors << "#{label} aliases disagree"
-      end
+      errors << "#{label} aliases disagree" unless present.all? { |key| document[key] == candidate }
       candidate if integer?(candidate) && candidate >= 0
     end
 
     def check_zero(document, keys, errors, label)
       present = keys.select { |key| document.key?(key) }
-      unless !present.empty? && present.all? { |key| integer?(document[key]) && document[key].zero? }
-        errors << "#{label} must be zero"
-      end
+      return if !present.empty? && present.all? { |key| integer?(document[key]) && document[key].zero? }
+
+      errors << "#{label} must be zero"
     end
 
     def value(document, keys)

@@ -59,16 +59,19 @@ class CRDPrinterColumnsTest < Minitest::Test
     created = call("POST", "/apis/example.com/v1/namespaces/team/widgets",
                    body: {"apiVersion" => "example.com/v1", "kind" => "Widget", "metadata" => {"name" => "w"},
                           "spec" => {"replicas" => 3, "items" => [{"name" => "alpha"}]}, "status" => {"phase" => "Ready"}})
+
     assert_equal 201, created.status, created.body.inspect
 
     v1 = call("GET", "/apis/example.com/v1/namespaces/team/widgets", headers: {"accept" => TABLE}).body
-    assert_equal %w[Name Replicas Phase First], v1["columnDefinitions"].map { |column| column["name"] }
-    assert_equal [0, 0, 1, 0], v1["columnDefinitions"].map { |column| column["priority"] }
+
+    assert_equal(%w[Name Replicas Phase First], v1["columnDefinitions"].map { |column| column["name"] })
+    assert_equal([0, 0, 1, 0], v1["columnDefinitions"].map { |column| column["priority"] })
     assert_equal "first item", v1["columnDefinitions"].last["description"]
     assert_equal ["w", 3, "Ready", "alpha"], v1["rows"].first["cells"]
 
     v2 = call("GET", "/apis/example.com/v2/namespaces/team/widgets/w", headers: {"accept" => TABLE}).body
-    assert_equal %w[Name Age], v2["columnDefinitions"].map { |column| column["name"] }
+
+    assert_equal(%w[Name Age], v2["columnDefinitions"].map { |column| column["name"] })
     assert_equal "date", v2["columnDefinitions"].last["type"]
   end
 end

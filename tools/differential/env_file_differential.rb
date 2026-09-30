@@ -83,7 +83,7 @@ module EnvFileDifferential
     end
   end
 
-  def normalise(result) = result.merge("error" => result["error"]&.gsub(/"[^"]*\/env"/, '"ENV"')).compact
+  def normalise(result) = result.merge("error" => result["error"]&.gsub(%r{"[^"]*/env"}, '"ENV"')).compact
 
   def main(argv)
     seed = argv.include?("--seed") ? Integer(argv[argv.index("--seed") + 1]) : 20_260_924

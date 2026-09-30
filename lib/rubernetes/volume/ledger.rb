@@ -50,10 +50,9 @@ module Rubernetes
           if token_use && (token_use["operation"] != operation || token_use["fingerprint"] != fingerprint)
             raise OperationTokenConflict, "operation token #{token.inspect} was already used for a different volume request"
           end
+
           if existing
-            if existing.token != token && existing.status == "succeeded" && existing.fingerprint == fingerprint
-              return immutable(existing)
-            end
+            return immutable(existing) if existing.token != token && existing.status == "succeeded" && existing.fingerprint == fingerprint
             unless existing.token == token && existing.fingerprint == fingerprint
               raise OperationTokenConflict, "operation #{operation} for #{key} was replayed with a different token or payload"
             end
@@ -135,10 +134,10 @@ module Rubernetes
 
       def update!(key:, operation:, token:, status:, result:, error:)
         @mutex.synchronize do
-          entry = @entries.fetch([String(key), String(operation)]) { raise OperationUnknown, "operation #{operation} for #{key} is not recorded" }
-          unless entry.token == String(token)
-            raise OperationTokenConflict, "operation token does not match the durable operation entry"
+          entry = @entries.fetch([String(key), String(operation)]) do
+            raise OperationUnknown, "operation #{operation} for #{key} is not recorded"
           end
+          raise OperationTokenConflict, "operation token does not match the durable operation entry" unless entry.token == String(token)
 
           entry.status = status
           entry.result = Types.deep_copy(result)
@@ -196,9 +195,7 @@ module Rubernetes
 
       def error_payload(error)
         payload = {"class" => error.class.name, "message" => error.message.to_s}
-        if error.respond_to?(:details) && error.details
-          payload["details"] = Types.deep_copy(error.details)
-        end
+        payload["details"] = Types.deep_copy(error.details) if error.respond_to?(:details) && error.details
         payload
       end
 
@@ -382,6 +379,7 @@ module Rubernetes
           if expected && !identity_matches?(mount, expected)
             raise MountIdentityError, "refusing to remove mount #{identity}: stable identity changed"
           end
+
           @mounts.delete(mount.identity)
           persist!(removed: [mount.identity])
           true
@@ -490,11 +488,13 @@ module Rubernetes
 
         if strict
           return nil if source_identity.nil?
+
           source_identity = canonical_source_identity(source_identity)
           root = canonical_root(root) unless root.nil?
           availability = true if availability.nil?
           return nil if !filesystem_uuid.nil? && filesystem_uuid.to_s.empty?
           return nil if !filesystem_uuid.nil? && availability == false
+
           if filesystem_uuid.nil?
             return nil unless availability_present && availability == false && !root.nil?
             return nil unless kernel_mount_id?(mount_id) && kernel_device_id?(device_id)
@@ -546,8 +546,8 @@ module Rubernetes
       end
 
       def build_mount(volume_id:, source:, target:, mount_id:, filesystem_uuid:, device_id:, owner:, stage_path:,
-                       generation:, secret:, root:, source_identity:, filesystem_uuid_available:, filesystem:,
-                       bind: false)
+                      generation:, secret:, root:, source_identity:, filesystem_uuid_available:, filesystem:,
+                      bind: false)
         volume_id = Types.identifier(volume_id, "volume id")
         bind = bind == true
         source = text_value(source, "mount source")
@@ -567,7 +567,9 @@ module Rubernetes
           availability = availability_supplied ? boolean_value(filesystem_uuid_available) : nil
           availability = true if availability.nil? && !filesystem_uuid.nil?
           if filesystem_uuid.nil?
-            raise_mount_error("filesystem UUID availability must be false when UUID is absent") unless availability_supplied && availability == false
+            unless availability_supplied && availability == false
+              raise_mount_error("filesystem UUID availability must be false when UUID is absent")
+            end
             raise_mount_error("mount root is required when filesystem UUID is absent") if root.nil?
             raise_mount_error("mount source identity is required when filesystem UUID is absent") unless source_identity_supplied
             raise_mount_error("mount source identity is required when filesystem UUID is absent") if source_identity.empty?
@@ -671,9 +673,7 @@ module Rubernetes
         actual = mount.to_h
         fields.all? do |field, snake_key|
           present = hash.key?(field) || hash.key?(snake_key)
-          if field == "sourceIdentity" && !present
-            present = hash.key?("source") || hash.key?(:source)
-          end
+          present = hash.key?("source") || hash.key?(:source) if field == "sourceIdentity" && !present
           next true unless present
 
           expected_value = if hash.key?(field)
@@ -712,6 +712,7 @@ module Rubernetes
           if (conflict = conflicting_mount(mount)) && conflict.identity != mount.identity
             raise JournalError, "mount identity ledger contains a double attachment for #{mount.volume_id}"
           end
+
           @mounts[mount.identity] = mount
         end
         @files.migrate!(@mounts.transform_values(&:to_h)) if legacy
@@ -727,6 +728,7 @@ module Rubernetes
 
           legacy_identity = legacy_identity_for(hash)
           return @mounts[legacy_identity] if legacy_identity
+
           return nil
         end
 
@@ -780,16 +782,18 @@ module Rubernetes
       def canonical_source_identity(value)
         text = text_value(value, "mount source identity")
         return File.expand_path(text).freeze if text.start_with?("/")
-        return text.freeze if text.match?(/\Acsi:\/\/[A-Za-z0-9][A-Za-z0-9._:-]*\z/)
+        return text.freeze if text.match?(%r{\Acsi://[A-Za-z0-9][A-Za-z0-9._:-]*\z})
 
         components = text.split("/")
-        raise_mount_error("mount source identity must be canonical") if components.any? { |component| component.empty? || component == "." || component == ".." }
+        raise_mount_error("mount source identity must be canonical") if components.any? do |component|
+          component.empty? || component == "." || component == ".."
+        end
 
         text
       end
 
       def boolean_value(value)
-        return value if value == true || value == false
+        return value if [true, false].include?(value)
 
         raise_mount_error("filesystem UUID availability must be boolean")
       end

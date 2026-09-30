@@ -50,7 +50,8 @@ module Rubernetes
           # (the guest init keeps PID 1 as a plain orphan reaper and runs the
           # supervisor as its child so the Native backend's waitpid calls are
           # never raced by a generic reaper).
-          def initialize(state_root: "/var/lib/rubernetes", log: $stdout, native_factory: nil, images_root: nil, prepare_filesystem: Process.pid == 1, reap: false)
+          def initialize(state_root: "/var/lib/rubernetes", log: $stdout, native_factory: nil, images_root: nil,
+                         prepare_filesystem: Process.pid == 1, reap: false)
             @state_root = state_root
             @images_root = images_root || File.join(state_root, "images")
             @log = log
@@ -122,13 +123,11 @@ module Rubernetes
             loop do
               client, = listener.accept
               Thread.new(client) do |connection|
-                begin
-                  Server.new(connection, method(:handle)).serve
-                rescue StandardError => error
-                  log("control connection error: #{error.class}: #{error.message}")
-                ensure
-                  connection.close unless connection.closed?
-                end
+                Server.new(connection, method(:handle)).serve
+              rescue StandardError => error
+                log("control connection error: #{error.class}: #{error.message}")
+              ensure
+                connection.close unless connection.closed?
               end
             end
           end
@@ -138,19 +137,17 @@ module Rubernetes
             loop do
               client, = listener.accept
               Thread.new(client) do |connection|
-                begin
-                  hello = Framing.read_frame(connection, timeout: 10)
-                  stream = @mutex.synchronize { @streams.delete(hello.is_a?(Hash) ? hello["token"] : nil) }
-                  if stream.nil?
-                    Framing.write_frame(connection, {"error" => "unknown stream token"})
-                  else
-                    pump_stream(connection, stream)
-                  end
-                rescue StandardError => error
-                  log("stream error: #{error.class}: #{error.message}")
-                ensure
-                  connection.close unless connection.closed?
+                hello = Framing.read_frame(connection, timeout: 10)
+                stream = @mutex.synchronize { @streams.delete(hello.is_a?(Hash) ? hello["token"] : nil) }
+                if stream.nil?
+                  Framing.write_frame(connection, {"error" => "unknown stream token"})
+                else
+                  pump_stream(connection, stream)
                 end
+              rescue StandardError => error
+                log("stream error: #{error.class}: #{error.message}")
+              ensure
+                connection.close unless connection.closed?
               end
             end
           end
@@ -370,7 +367,8 @@ module Rubernetes
           def container_stop(params)
             @mutex.synchronize do
               container = native.stop_container(params["id"], timeout: (params["timeout"] || 5).to_f, request_id: params["request_id"])
-              {"id" => container.respond_to?(:id) ? container.id : params["id"], "state" => container.respond_to?(:state) ? container.state.to_s : "stopped"}
+              {"id" => container.respond_to?(:id) ? container.id : params["id"],
+               "state" => container.respond_to?(:state) ? container.state.to_s : "stopped"}
             end
           end
 
@@ -396,7 +394,8 @@ module Rubernetes
           end
 
           def logs(params)
-            content = native.logs(params["id"], follow: false, since: params["since"], tail: params["tail"], stream: (params["stream"] || "stdout").to_sym)
+            content = native.logs(params["id"], follow: false, since: params["since"], tail: params["tail"],
+                                                stream: (params["stream"] || "stdout").to_sym)
             content = content.respond_to?(:read) ? content.read : content.to_s
             {"id" => params["id"], "bytes" => Base64.strict_encode64(content.b[0, Framing::MAX_FRAME_BYTES - 4096])}
           end
@@ -408,9 +407,12 @@ module Rubernetes
                      when "exec"
                        raise GateError, "workload gate is closed" unless @state.gate == "open"
 
-                       native.exec(params["id"], Array(params["cmd"]), tty: params["tty"] == true, stdin: params["stdin"] == true, stdout: true, stderr: params["tty"] != true)
-                     when "attach" then native.attach(params["id"], tty: params["tty"] == true, stdin: params["stdin"] == true, stdout: true, stderr: params["tty"] != true)
-                     when "logs" then native.logs(params["id"], follow: true, since: params["since"], tail: params["tail"], stream: (params["stream"] || "stdout").to_sym)
+                       native.exec(params["id"], Array(params["cmd"]), tty: params["tty"] == true, stdin: params["stdin"] == true,
+                                                                       stdout: true, stderr: params["tty"] != true)
+                     when "attach" then native.attach(params["id"], tty: params["tty"] == true, stdin: params["stdin"] == true,
+                                                                    stdout: true, stderr: params["tty"] != true)
+                     when "logs" then native.logs(params["id"], follow: true, since: params["since"], tail: params["tail"],
+                                                                stream: (params["stream"] || "stdout").to_sym)
                      else raise ProtocolError, "unknown stream kind #{kind}"
                      end
             @mutex.synchronize { @streams[token] = {"kind" => kind, "stream" => stream, "id" => params["id"]} }
@@ -442,8 +444,14 @@ module Rubernetes
           def attack_matrix(params)
             targets = require_hash(params, "targets")
             results = {}
-            results["rootfs_write"] = attempt { File.write("/etc/rubernetes-attack", "x"); "wrote" }
-            results["raw_block_write"] = attempt { File.open("/dev/vda", "wb") { |io| io.write("x") }; "wrote" }
+            results["rootfs_write"] = attempt do
+              File.write("/etc/rubernetes-attack", "x")
+              "wrote"
+            end
+            results["raw_block_write"] = attempt do
+              File.binwrite("/dev/vda", "x")
+              "wrote"
+            end
             # Host paths that exist on the host but never inside the guest
             # image; and the mount table must show only the guest's own
             # block devices and pseudo filesystems (no shared host filesystem).
@@ -454,8 +462,13 @@ module Rubernetes
               "readable: #{readable.join(", ")}"
             end
             shared = File.read("/proc/mounts").lines.map(&:split).select { |fields| %w[9p virtiofs nfs nfs4 cifs fuse].include?(fields[2]) }
-            results["shared_host_mounts"] = {"outcome" => shared.empty? ? "denied" : "allowed", "detail" => shared.map { |fields| fields.first(3).join(" ") }.join("; ")}
-            results["jailer_root"] = attempt { File.read("/proc/1/root/firecracker.pid"); "read" }
+            results["shared_host_mounts"] = {"outcome" => shared.empty? ? "denied" : "allowed", "detail" => shared.map do |fields|
+              fields.first(3).join(" ")
+            end.join("; ")}
+            results["jailer_root"] = attempt do
+              File.read("/proc/1/root/firecracker.pid")
+              "read"
+            end
             results["other_vm_vsock"] = attempt do
               socket = Socket.new(Socket::AF_VSOCK, Socket::SOCK_STREAM, 0)
               socket.connect([Socket::AF_VSOCK, 0, CONTROL_PORT, Integer(targets["other_cid"] || 99), 0].pack("SSLLL"))
@@ -466,14 +479,18 @@ module Rubernetes
               socket.connect([Socket::AF_VSOCK, 0, Integer(targets["unlisted_port"] || 9999), HOST_CID, 0].pack("SSLLL"))
               "connected"
             end
-            results["other_tenant_network"] = attempt do
-              Socket.tcp(targets.fetch("other_tenant_ip"), Integer(targets.fetch("other_tenant_port", 80)), connect_timeout: 1.0).close
-              "connected"
-            end if targets["other_tenant_ip"]
-            results["host_network"] = attempt do
-              Socket.tcp(targets.fetch("host_ip"), Integer(targets.fetch("host_port", 22)), connect_timeout: 1.0).close
-              "connected"
-            end if targets["host_ip"]
+            if targets["other_tenant_ip"]
+              results["other_tenant_network"] = attempt do
+                Socket.tcp(targets.fetch("other_tenant_ip"), Integer(targets.fetch("other_tenant_port", 80)), connect_timeout: 1.0).close
+                "connected"
+              end
+            end
+            if targets["host_ip"]
+              results["host_network"] = attempt do
+                Socket.tcp(targets.fetch("host_ip"), Integer(targets.fetch("host_port", 22)), connect_timeout: 1.0).close
+                "connected"
+              end
+            end
             results["network_interfaces"] = Dir.children("/sys/class/net").sort
             results
           end
@@ -488,25 +505,27 @@ module Rubernetes
             loop do
               client = server.accept
               Thread.new(client) do |connection|
-                begin
-                  request_line = connection.gets
-                  headers = {}
-                  while (line = connection.gets) && line != "\r\n"
-                    key, value = line.split(":", 2)
-                    headers[key.to_s.strip.downcase] = value.to_s.strip
-                  end
-                  body = headers["content-length"] ? connection.read(headers["content-length"].to_i) : ""
-                  document = body.empty? ? {} : JSON.parse(body)
-                  operation = document["operation"] || request_line.to_s.split[1].to_s.delete_prefix("/")
-                  result = broker_call(operation, document["params"] || {})
-                  payload = JSON.generate(result)
-                  connection.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
-                rescue StandardError => error
-                  payload = JSON.generate({"error" => "#{error.class}: #{error.message}"})
-                  connection.write("HTTP/1.1 502 Bad Gateway\r\nContent-Type: application/json\r\nContent-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}") rescue nil
-                ensure
-                  connection.close unless connection.closed?
+                request_line = connection.gets
+                headers = {}
+                while (line = connection.gets) && line != "\r\n"
+                  key, value = line.split(":", 2)
+                  headers[key.to_s.strip.downcase] = value.to_s.strip
                 end
+                body = headers["content-length"] ? connection.read(headers["content-length"].to_i) : ""
+                document = body.empty? ? {} : JSON.parse(body)
+                operation = document["operation"] || request_line.to_s.split[1].to_s.delete_prefix("/")
+                result = broker_call(operation, document["params"] || {})
+                payload = JSON.generate(result)
+                connection.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+              rescue StandardError => error
+                payload = JSON.generate({"error" => "#{error.class}: #{error.message}"})
+                begin
+                  connection.write("HTTP/1.1 502 Bad Gateway\r\nContent-Type: application/json\r\nContent-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+                rescue StandardError
+                  nil
+                end
+              ensure
+                connection.close unless connection.closed?
               end
             end
           rescue StandardError => error
@@ -560,22 +579,18 @@ module Rubernetes
 
           def discard_identity!
             @sandboxes.each_value do |id|
-              begin
-                native.stop_sandbox(id, timeout: 2.0)
-                native.remove_sandbox(id)
-              rescue StandardError => error
-                log("discard sandbox #{id}: #{error.message}")
-              end
+              native.stop_sandbox(id, timeout: 2.0)
+              native.remove_sandbox(id)
+            rescue StandardError => error
+              log("discard sandbox #{id}: #{error.message}")
             end
             @sandboxes.clear
             @streams.clear
             Dir.glob(File.join("/run/rubernetes/files", "**", "*")).select { |path| File.file?(path) }.each { |path| File.delete(path) }
             @mounted.reverse_each do |target|
-              begin
-                mount_adapter.unmount(target: target, flags: 2) # MNT_DETACH
-              rescue StandardError => error
-                log("umount #{target}: #{error.message}")
-              end
+              mount_adapter.unmount(target: target, flags: 2) # MNT_DETACH
+            rescue StandardError => error
+              log("umount #{target}: #{error.message}")
             end
             @mounted.clear
             File.delete("/run/machine-id") if File.exist?("/run/machine-id")
@@ -635,7 +650,10 @@ module Rubernetes
           def write_files(files)
             files.each do |entry|
               path = require_string(entry, "path")
-              raise ProtocolError, "injected file path must be under /run/rubernetes/files" unless path.start_with?("/run/rubernetes/files/")
+              unless path.start_with?("/run/rubernetes/files/")
+                raise ProtocolError,
+                      "injected file path must be under /run/rubernetes/files"
+              end
 
               FileUtils.mkdir_p(File.dirname(path))
               File.binwrite(path, Base64.strict_decode64(entry["content"].to_s))
@@ -653,7 +671,11 @@ module Rubernetes
             Array(translated["resolved_images"]).each do |image|
               image["rootfs"] = image_mount_path(image.fetch("digest")) if image["digest"]
             end
-            translated["lowerdirs"] = Array(translated["resolved_images"]).map { |image| image["rootfs"] }.compact if translated["resolved_images"]
+            if translated["resolved_images"]
+              translated["lowerdirs"] = Array(translated["resolved_images"]).map do |image|
+                image["rootfs"]
+              end.compact
+            end
             translated
           end
 
@@ -677,7 +699,8 @@ module Rubernetes
             detect_isolation_profile
             instrument_namespace_adapter
             @image_verifier = Rubernetes::Image::PinnedImageVerifier.new
-            count = Rubernetes::Platform::Linux::NativeAdapters::NamespaceAdapter.prespawn_exec_supervisors(PRESPAWNED_SUPERVISORS, ruby_library_root: "/opt/rubernetes/lib")
+            count = Rubernetes::Platform::Linux::NativeAdapters::NamespaceAdapter.prespawn_exec_supervisors(PRESPAWNED_SUPERVISORS,
+                                                                                                            ruby_library_root: "/opt/rubernetes/lib")
             # The Native backend itself is built in the base VM: its adapters
             # keep paths, not descriptors, so the workspace mounted later at
             # the state root becomes the sandbox/log root transparently.  Its
@@ -717,7 +740,8 @@ module Rubernetes
             require "rubernetes/platform/linux/native_adapters"
             profile = detect_isolation_profile == "l3" ? :l3 : :kernel_isolation
             sandbox_root = File.join(@state_root, "sandboxes")
-            adapters = Rubernetes::Platform::Linux::NativeAdapters.for_profile(profile: profile, sandbox_root: sandbox_root, cgroup_root: "/sys/fs/cgroup")
+            adapters = Rubernetes::Platform::Linux::NativeAdapters.for_profile(profile: profile, sandbox_root: sandbox_root,
+                                                                               cgroup_root: "/sys/fs/cgroup")
             adapters = adapters.merge(image: @image_verifier) if @image_verifier
             FileUtils.mkdir_p("/run/rubernetes")
             Rubernetes::Runtime::Native.new(profile: profile, l3: profile == :l3, adapters: adapters, sandbox_root: sandbox_root,
@@ -757,10 +781,26 @@ module Rubernetes
           end
 
           def guest_capabilities
-            {"landlock" => detect_isolation_profile == "l3", "cgroup_controllers" => (File.read("/sys/fs/cgroup/cgroup.controllers").split rescue []),
-             "seccomp_actions" => (File.read("/proc/sys/kernel/seccomp/actions_avail").split rescue []),
-             "filesystems" => (File.read("/proc/filesystems").split.reject { |word| word == "nodev" } rescue []),
-             "interfaces" => (Dir.children("/sys/class/net").sort rescue [])}
+            {"landlock" => detect_isolation_profile == "l3", "cgroup_controllers" => begin
+              File.read("/sys/fs/cgroup/cgroup.controllers").split
+            rescue StandardError
+              []
+            end,
+             "seccomp_actions" => begin
+               File.read("/proc/sys/kernel/seccomp/actions_avail").split
+             rescue StandardError
+               []
+             end,
+             "filesystems" => begin
+               File.read("/proc/filesystems").split.reject { |word| word == "nodev" }
+             rescue StandardError
+               []
+             end,
+             "interfaces" => begin
+               Dir.children("/sys/class/net").sort
+             rescue StandardError
+               []
+             end}
           end
 
           def netlink
@@ -776,7 +816,10 @@ module Rubernetes
             ip = require_string(network, "ip")
             prefix = Integer(network["prefix_length"] || 24)
             interface = network["interface"] || "eth0"
-            raise NetworkError, "guest has no #{interface} (restricted runtime class?)" unless File.directory?("/sys/class/net/#{interface}")
+            unless File.directory?("/sys/class/net/#{interface}")
+              raise NetworkError,
+                    "guest has no #{interface} (restricted runtime class?)"
+            end
 
             begin
               if network["mac_address"]
@@ -792,7 +835,11 @@ module Rubernetes
             rescue StandardError => error
               raise NetworkError, "network configuration failed: #{error.class}: #{error.message}"
             end
-            File.write("/run/resolv.conf", Array(network["dns"]).map { |server| "nameserver #{server}" }.join("\n") + "\n") if network["dns"]
+            if network["dns"]
+              File.write("/run/resolv.conf", Array(network["dns"]).map do |server|
+                "nameserver #{server}"
+              end.join("\n") + "\n")
+            end
             File.write("/proc/sys/net/ipv4/ip_forward", "0") rescue nil # rubocop:disable Style/RescueModifier
           end
 
@@ -803,7 +850,8 @@ module Rubernetes
           end
 
           def clock_settime_function
-            @clock_settime_function ||= Fiddle::Function.new(Fiddle.dlopen(nil)["syscall"], [Fiddle::TYPE_LONG, Fiddle::TYPE_INT, Fiddle::TYPE_VOIDP], Fiddle::TYPE_LONG)
+            @clock_settime_function ||= Fiddle::Function.new(Fiddle.dlopen(nil)["syscall"],
+                                                             [Fiddle::TYPE_LONG, Fiddle::TYPE_INT, Fiddle::TYPE_VOIDP], Fiddle::TYPE_LONG)
           end
 
           def sync_function
@@ -825,7 +873,11 @@ module Rubernetes
               io.ioctl(RNDADDENTROPY, payload)
             end
           rescue StandardError => error
-            File.binwrite("/dev/urandom", [hex].pack("H*")) rescue nil
+            begin
+              File.binwrite("/dev/urandom", [hex].pack("H*"))
+            rescue StandardError
+              nil
+            end
             log("entropy: #{error.message}")
           end
 
@@ -911,6 +963,7 @@ module Rubernetes
 
             length = header.unpack1("N")
             raise FramingError, "stream frame too large" if length > Framing::MAX_FRAME_BYTES
+
             body = connection.read(length)
             return nil if body.nil?
 
@@ -937,7 +990,7 @@ module Rubernetes
           end
 
           def shell!(*arguments)
-            output = IO.popen(arguments, err: [:child, :out], &:read)
+            output = IO.popen(arguments, err: %i[child out], &:read)
             raise NetworkError, "#{arguments.join(" ")} failed: #{output.to_s.strip}" unless $?.success?
           rescue SystemCallError => error
             raise NetworkError, "#{arguments.join(" ")} could not run: #{error.message}"
@@ -951,13 +1004,11 @@ module Rubernetes
 
           def reap_loop
             loop do
-              begin
-                Process.wait(-1)
-              rescue Errno::ECHILD
-                sleep 0.2
-              rescue StandardError
-                sleep 0.2
-              end
+              Process.wait(-1)
+            rescue Errno::ECHILD
+              sleep 0.2
+            rescue StandardError
+              sleep 0.2
             end
           end
 

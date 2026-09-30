@@ -14,6 +14,7 @@ class NodeAdmissionNullAnnotationsTest < Minitest::Test
            "metadata" => {"name" => "p", "namespace" => "ns", "uid" => "u1", "annotations" => nil, "labels" => nil},
            "spec" => {"nodeName" => "n1", "containers" => [{"name" => "c", "image" => "img"}]}}
     decision = admission.admit(pod)
-    assert decision.success?, decision.respond_to?(:message) ? decision.message.to_s : decision.inspect
+
+    assert_predicate decision, :success?, decision.respond_to?(:message) ? decision.message.to_s : decision.inspect
   end
 end

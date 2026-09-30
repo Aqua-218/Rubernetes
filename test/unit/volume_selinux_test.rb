@@ -47,6 +47,7 @@ class VolumeSELinuxTest < Minitest::Test
                                         "volumeMounts" => [{"name" => "data", "mountPath" => "/d"}, {"name" => "cfg", "mountPath" => "/c"}]},
                                        {"name" => "b", "volumeMounts" => []}]}}
     contexts = SELinux.container_contexts(pod)
+
     assert_equal [options("s0:c1,c2"), options("s0:c3,c4")], contexts["data"]
     assert_equal [options("s0:c3,c4")], contexts["cfg"]
     assert_empty contexts["none"]
@@ -67,15 +68,17 @@ class VolumeSELinuxTest < Minitest::Test
     refute SELinux.plugin_supports_context_mount?(pv_spec(csi: nil), csi_driver: nil)
     assert_equal "kubernetes.io/csi:driver.example.com", SELinux.plugin_label(pv_spec)
     assert_equal "kubernetes.io/host-path", SELinux.plugin_label(pv_spec(csi: nil))
-    assert_equal 'context="system_u:object_r:container_file_t:s0:c1,c2"', SELinux.mount_option("system_u:object_r:container_file_t:s0:c1,c2")
+    assert_equal 'context="system_u:object_r:container_file_t:s0:c1,c2"',
+                 SELinux.mount_option("system_u:object_r:container_file_t:s0:c1,c2")
   end
 
   def test_fake_translator_builds_file_labels
     fake = SELinux::FakeTranslator.new
+
     assert_equal "system_u:object_r:container_t:s0:c1,c2", fake.file_label(options("s0:c1,c2"))
     assert_equal "", fake.file_label(nil)
     assert_equal "", fake.file_label({"type" => "container_t"}), "the fake needs a level"
-    refute SELinux::FakeTranslator.new(enabled: false).enabled?
+    refute_predicate SELinux::FakeTranslator.new(enabled: false), :enabled?
   end
 
   def test_real_translator_applies_user_and_level_over_the_file_context
@@ -87,46 +90,59 @@ class VolumeSELinuxTest < Minitest::Test
       random = Object.new
       random.define_singleton_method(:random_number) { |_max| 5 }
       translator = SELinux::Translator.new(selinuxfs: File.join(dir, "fs"), config: config, random: random)
-      assert translator.enabled?
+
+      assert_predicate translator, :enabled?
       assert_equal "system_u:object_r:container_file_t:s0:c1,c2", translator.file_label(options("s0:c1,c2"))
       assert_equal "unconfined_u:object_r:container_file_t:s0:c1,c2", translator.file_label(options("s0:c1,c2", user: "unconfined_u"))
       assert_equal "system_u:object_r:container_file_t:s0:c5,c6", translator.file_label({"type" => "spc_t"}), "no level: a unique MCS pair"
       assert_equal "", translator.file_label({})
       File.write(config, "SELINUX=disabled\n")
-      refute translator.enabled?
+
+      refute_predicate translator, :enabled?
       assert_equal "", translator.file_label(options("s0:c1,c2"))
     end
-    refute SELinux::Translator.new(selinuxfs: "/nonexistent/selinux").enabled?
+    refute_predicate SELinux::Translator.new(selinuxfs: "/nonexistent/selinux"), :enabled?
   end
 
   def test_admitted_volume_is_mounted_with_its_label
     subject = tracker
     label = subject.admit(pod_uid: "p1", volume_name: "data", spec: pv_spec, contexts: [options("s0:c1,c2"), options("s0:c1,c2")])
+
     assert_equal "system_u:object_r:container_t:s0:c1,c2", label
-    assert_match(/volume_manager_selinux_volumes_admitted_total\{access_mode="RWOP",volume_plugin="kubernetes.io\/csi:driver.example.com"\} 1/, render)
+    assert_match(
+      %r{volume_manager_selinux_volumes_admitted_total\{access_mode="RWOP",volume_plugin="kubernetes.io/csi:driver.example.com"\} 1}, render
+    )
     # Same Pod again (a retry) and a second Pod with the same label: fine.
     assert_equal label, subject.admit(pod_uid: "p1", volume_name: "data", spec: pv_spec, contexts: [options("s0:c1,c2")])
     assert_equal label, subject.admit(pod_uid: "p2", volume_name: "data", spec: pv_spec, contexts: [options("s0:c1,c2")])
     assert_equal %w[p1 p2], subject.volumes.fetch("pv/pv-1")[:pods].sort
     subject.forget(pod_uid: "p1", volume_name: "data", spec: pv_spec)
+
     assert_equal %w[p2], subject.volumes.fetch("pv/pv-1")[:pods]
     subject.forget(pod_uid: "p2", volume_name: "data", spec: pv_spec)
+
     assert_empty subject.volumes
   end
 
   def test_unsupported_access_mode_and_unsupported_driver_mount_without_context
     subject = tracker
+
     assert_nil subject.admit(pod_uid: "p1", volume_name: "data", spec: pv_spec(modes: %w[ReadWriteOnce]), contexts: [options("s0:c1,c2")]),
                "RWO without SELinuxMount: label recorded, mount without -o context"
-    assert_match(/volumes_admitted_total\{access_mode="RWO",volume_plugin="kubernetes.io\/csi:driver.example.com"\} 1/, render)
+    assert_match(%r{volumes_admitted_total\{access_mode="RWO",volume_plugin="kubernetes.io/csi:driver.example.com"\} 1}, render)
     no_mount = tracker(selinux_mount: false)
+
     assert_nil no_mount.admit(pod_uid: "p1", volume_name: "data", spec: pv_spec, contexts: [options("s0:c1,c2")])
-    assert_nil tracker(translator: SELinux::FakeTranslator.new(enabled: false)).admit(pod_uid: "p1", volume_name: "data", spec: pv_spec, contexts: [options("s0:c1,c2")])
+    assert_nil tracker(translator: SELinux::FakeTranslator.new(enabled: false)).admit(pod_uid: "p1", volume_name: "data", spec: pv_spec,
+                                                                                      contexts: [options("s0:c1,c2")])
     recursive = pv_spec.merge("pod" => {"spec" => {"securityContext" => {"seLinuxChangePolicy" => "Recursive"}}})
-    assert_nil tracker.admit(pod_uid: "p1", volume_name: "data", spec: recursive, contexts: [options("s0:c1,c2")]), "Recursive opts out of -o context"
+
+    assert_nil tracker.admit(pod_uid: "p1", volume_name: "data", spec: recursive, contexts: [options("s0:c1,c2")]),
+               "Recursive opts out of -o context"
     inline = {"name" => "scratch", "backend" => "emptyDir"}
+
     assert_nil tracker.admit(pod_uid: "p1", volume_name: "scratch", spec: inline, contexts: [options("s0:c1,c2")])
-    assert_match(/volumes_admitted_total\{access_mode="inline",volume_plugin="kubernetes.io\/empty-dir"\} 1/, render)
+    assert_match(%r{volumes_admitted_total\{access_mode="inline",volume_plugin="kubernetes.io/empty-dir"\} 1}, render)
   end
 
   def test_pod_context_mismatch_is_an_error_for_rwop_and_a_warning_otherwise
@@ -136,7 +152,8 @@ class VolumeSELinuxTest < Minitest::Test
     end
     assert_match(/more than one SELinux label/, error.message)
     assert_match(/volume_manager_selinux_pod_context_mismatch_errors_total\{access_mode="RWOP"\} 1/, render)
-    assert_nil subject.admit(pod_uid: "p1", volume_name: "data", spec: pv_spec(modes: %w[ReadWriteMany]), contexts: [options("s0:c1,c2"), options("s0:c3,c4")])
+    assert_nil subject.admit(pod_uid: "p1", volume_name: "data", spec: pv_spec(modes: %w[ReadWriteMany]),
+                             contexts: [options("s0:c1,c2"), options("s0:c3,c4")])
     assert_match(/volume_manager_selinux_pod_context_mismatch_warnings_total\{access_mode="RWX"\} 1/, render)
     assert_equal "volume.selinux_pod_context_mismatch", @logger_events.last.first
   end
@@ -148,15 +165,21 @@ class VolumeSELinuxTest < Minitest::Test
       subject.admit(pod_uid: "p2", volume_name: "data", spec: pv_spec, contexts: [options("s0:c9,c9")])
     end
     assert_match(/conflicting SELinux labels of volume data/, error.message)
-    assert_match(/volume_manager_selinux_volume_context_mismatch_errors_total\{access_mode="RWOP",volume_plugin="kubernetes.io\/csi:driver.example.com"\} 1/, render)
+    assert_match(
+      %r{volume_manager_selinux_volume_context_mismatch_errors_total\{access_mode="RWOP",volume_plugin="kubernetes.io/csi:driver.example.com"\} 1}, render
+    )
 
     rwx = pv_spec(name: "pv-shared", modes: %w[ReadWriteMany])
     subject.admit(pod_uid: "p1", volume_name: "shared", spec: rwx, contexts: [options("s0:c1,c2")])
+
     assert_nil subject.admit(pod_uid: "p2", volume_name: "shared", spec: rwx, contexts: [options("s0:c9,c9")])
-    assert_match(/volume_manager_selinux_volume_context_mismatch_warnings_total\{access_mode="RWX",volume_plugin="kubernetes.io\/csi:driver.example.com"\} 1/, render)
+    assert_match(
+      %r{volume_manager_selinux_volume_context_mismatch_warnings_total\{access_mode="RWX",volume_plugin="kubernetes.io/csi:driver.example.com"\} 1}, render
+    )
     # A driver without seLinuxMount never compares labels.
     plain = tracker(selinux_mount: false)
     plain.admit(pod_uid: "p1", volume_name: "data", spec: pv_spec, contexts: [options("s0:c1,c2")])
+
     assert_nil plain.admit(pod_uid: "p2", volume_name: "data", spec: pv_spec, contexts: [options("s0:c9,c9")])
     refute_match(/volume_context_mismatch_errors_total\{[^}]*\} 2/, render)
   end
@@ -165,7 +188,9 @@ class VolumeSELinuxTest < Minitest::Test
     broken = Object.new
     broken.define_singleton_method(:enabled?) { true }
     broken.define_singleton_method(:file_label) { |_options| raise SELinux::TranslationError, "bad option" }
-    subject = SELinux::Tracker.new(translator: broken, metrics: @metrics, logger: @logger, csi_driver_reader: ->(_) { {"spec" => {"seLinuxMount" => true}} })
+    subject = SELinux::Tracker.new(translator: broken, metrics: @metrics, logger: @logger, csi_driver_reader: lambda { |_|
+      {"spec" => {"seLinuxMount" => true}}
+    })
     assert_raises(SELinux::TranslationError) { subject.admit(pod_uid: "p1", volume_name: "data", spec: pv_spec, contexts: [options("s0:c1,c2")]) }
     assert_match(/volume_manager_selinux_container_errors_total\{access_mode="RWOP"\} 1/, render)
     assert_nil subject.admit(pod_uid: "p1", volume_name: "data", spec: pv_spec(modes: %w[ReadWriteOnce]), contexts: [options("s0:c1,c2")])
@@ -195,11 +220,16 @@ class VolumeSELinuxTest < Minitest::Test
       manager = Rubernetes::Volume::Manager.new(data_dir: dir, fsync: false, path_security: security)
       volumes = Node::PodVolumes.new(volume: manager, root: File.join(dir, "pods"), node_name: "worker-0")
       volumes.instance_variable_set(:@reader, Reader.new({
-        ["persistentvolumeclaims", "claim"] => {"metadata" => {"name" => "claim"}, "spec" => {"volumeName" => "pv-1"}, "status" => {"phase" => "Bound"}},
-        ["persistentvolumes", "pv-1"] => {"metadata" => {"name" => "pv-1"}, "spec" => {"accessModes" => modes, "capacity" => {"storage" => "1Gi"}, "hostPath" => {"path" => host_path}}}
-      }))
+                                                           %w[persistentvolumeclaims
+                                                              claim] => {"metadata" => {"name" => "claim"},
+                                                                         "spec" => {"volumeName" => "pv-1"}, "status" => {"phase" => "Bound"}},
+                                                           %w[persistentvolumes
+                                                              pv-1] => {"metadata" => {"name" => "pv-1"},
+                                                                        "spec" => {"accessModes" => modes,
+                                                                                   "capacity" => {"storage" => "1Gi"}, "hostPath" => {"path" => host_path}}}
+                                                         }))
       volumes.selinux_tracker = SELinux::Tracker.new(translator: SELinux::FakeTranslator.new, metrics: @metrics, logger: @logger,
-                                                     csi_driver_reader: ->(_) { nil })
+                                                     csi_driver_reader: ->(_) {})
       yield volumes
     end
   end
@@ -210,13 +240,15 @@ class VolumeSELinuxTest < Minitest::Test
     with_pod_volumes do |volumes|
       first = pod("u1", "s0:c1,c2")
       handle = volumes.prepare(first)
+
       assert_equal "pv/pv-1", handle.dig("mounts", "data", "selinuxVolume")
       assert_equal ["u1"], volumes.selinux_tracker.volumes.fetch("pv/pv-1")[:pods]
-      assert_match(/volumes_admitted_total\{access_mode="RWOP",volume_plugin="kubernetes.io\/host-path"\} 1/, render)
+      assert_match(%r{volumes_admitted_total\{access_mode="RWOP",volume_plugin="kubernetes.io/host-path"\} 1}, render)
       # hostPath has no -o context support: labels are recorded but never compared.
       second = volumes.prepare(pod("u2", "s0:c9,c9"))
       volumes.release(pod("u2", "s0:c9,c9"), second)
       volumes.release(first, handle)
+
       assert_empty volumes.selinux_tracker.volumes
     end
   end
@@ -225,7 +257,8 @@ class VolumeSELinuxTest < Minitest::Test
     with_pod_volumes do |volumes|
       conflicting = {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "p", "namespace" => "ns", "uid" => "u3"},
                      "spec" => {"containers" => [{"name" => "a", "securityContext" => {"seLinuxOptions" => options("s0:c1,c2")}, "volumeMounts" => [{"name" => "data", "mountPath" => "/a"}]},
-                                                 {"name" => "b", "securityContext" => {"seLinuxOptions" => options("s0:c3,c4")}, "volumeMounts" => [{"name" => "data", "mountPath" => "/b"}]}],
+                                                 {"name" => "b", "securityContext" => {"seLinuxOptions" => options("s0:c3,c4")},
+                                                  "volumeMounts" => [{"name" => "data", "mountPath" => "/b"}]}],
                                 "volumes" => [{"name" => "data", "persistentVolumeClaim" => {"claimName" => "claim"}}]}}
       error = assert_raises(Node::PodVolumes::SELinuxConflict) { volumes.prepare(conflicting) }
       assert_match(/more than one SELinux label/, error.message)
@@ -235,7 +268,8 @@ class VolumeSELinuxTest < Minitest::Test
   end
 
   def test_csi_mount_options_carry_the_context_flag
-    spec = {"csi" => {"driver" => "d", "volumeHandle" => "h"}, "mountOptions" => ["noatime"], "selinuxMountLabel" => "system_u:object_r:container_file_t:s0:c1,c2"}
+    spec = {"csi" => {"driver" => "d", "volumeHandle" => "h"}, "mountOptions" => ["noatime"],
+            "selinuxMountLabel" => "system_u:object_r:container_file_t:s0:c1,c2"}
     record = Struct.new(:spec).new(spec)
     backend = Rubernetes::Volume::RemoteBackend.allocate
     backend.instance_variable_set(:@spec, spec)
@@ -243,6 +277,7 @@ class VolumeSELinuxTest < Minitest::Test
     csi.define_singleton_method(:pod_context?) { true }
     backend.instance_variable_set(:@csi, csi)
     context = backend.send(:kubelet_csi_context, {})
+
     assert_equal ["noatime", 'context="system_u:object_r:container_file_t:s0:c1,c2"'], context["mountOptions"]
     _ = record
   end

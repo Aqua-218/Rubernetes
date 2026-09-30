@@ -76,7 +76,8 @@ class PodUpdateImmutabilityTest < Minitest::Test
     refute_empty errors(pod("ephemeralContainers" => [{"name" => "d", "image" => "busybox"}]), pod)
     new_pod = pod("ephemeralContainers" => [{"name" => "d", "image" => "busybox"}])
     issues = Validator.send(:cross_field_errors, new_pod, "Pod", :update, pod, false, nil, "ephemeralcontainers")
-    assert_empty issues.select { |issue| issue.path == ["spec"] && issue.code == :forbidden }
+
+    assert_empty(issues.select { |issue| issue.path == ["spec"] && issue.code == :forbidden })
   end
 
   def test_a_create_is_never_restricted

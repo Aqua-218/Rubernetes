@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
 require "monitor"
 require_relative "batch"
 require_relative "metrics"
@@ -74,7 +73,7 @@ module Rubernetes
 
       # +nominated_node+ (NominatingInfo): nil leaves the Pod's
       # status.nominatedNodeName alone, "" clears it, a name sets it.
-      def initialize(status:, pod:, node: nil, filtered: {}, scores: [], victims: [], trace:, error: nil,
+      def initialize(status:, pod:, trace:, node: nil, filtered: {}, scores: [], victims: [], error: nil,
                      reason: nil, reservation: nil, gated: false, nominated_node: nil)
         @status = status.to_sym
         @nominated_node = nominated_node&.to_s&.freeze
@@ -361,8 +360,6 @@ module Rubernetes
         ["ImageLocality", 1, Scores::ImageLocality.new]
       ].freeze
 
-      attr_reader :plugins, :queue, :preemption, :dynamic_resources, :volume_binding
-
       # +overrides+: plugin name => implementation, for the stateful plugins
       # built per Framework (DynamicResources).
       def self.default_registry(overrides = {}, feature_gates: {})
@@ -380,24 +377,20 @@ module Rubernetes
             elsif phase == :post_filter && active.respond_to?(:post_filter)
               active.post_filter(pod, Thread.current[:rubernetes_scheduler_plugin_context])
             elsif phase == :queue_sort
-              unless active.respond_to?(:compare)
-                raise PluginError, "default queue sort #{spec.fetch(:name)} has no comparator"
-              end
+              raise PluginError, "default queue sort #{spec.fetch(:name)} has no comparator" unless active.respond_to?(:compare)
 
               active.compare(pod, node)
             elsif phase == :post_filter
               evaluator = Thread.current[:rubernetes_scheduler_preemption] || active
               context = Thread.current[:rubernetes_scheduler_plugin_context]
-              unless evaluator && context
-                raise PreemptionError, "default preemption requires a scheduling context"
-              end
+              raise PreemptionError, "default preemption requires a scheduling context" unless evaluator && context
 
               filter = Thread.current[:rubernetes_scheduler_filter]
               if evaluator.respond_to?(:call)
                 evaluator.call(pod, nil, context)
               elsif evaluator.respond_to?(:find)
                 evaluator.find(pod, nodes: context.nodes, pods: context.pods,
-                               filter: filter || ->(_candidate_node, _remaining_pods) { true })
+                                    filter: filter || ->(_candidate_node, _remaining_pods) { true })
               else
                 raise PreemptionError, "default preemption evaluator has no #call or #find"
               end
@@ -470,9 +463,7 @@ module Rubernetes
         @preemption_observer = preemption_observer
         @waiting_pods = {}
         @cycle = 0
-        @batch = if opportunistic_batching
-                   OpportunisticBatch.new(plugin_names: (filter_plugins + score_plugins).map(&:name))
-                 end
+        @batch = (OpportunisticBatch.new(plugin_names: (filter_plugins + score_plugins).map(&:name)) if opportunistic_batching)
         @batch.metrics = @metrics if @batch.respond_to?(:metrics=)
         @queue.metrics = @metrics if @queue.respond_to?(:metrics=)
         @metrics.queue = @queue if @metrics.respond_to?(:queue=)
@@ -481,7 +472,7 @@ module Rubernetes
         configure_queue_sort!
       end
 
-      attr_reader :batch, :metrics
+      attr_reader :plugins, :queue, :preemption, :dynamic_resources, :volume_binding, :batch, :metrics
 
       # The node this Pod is nominated to, as far as this scheduler knows.
       def nominated_node_for(pod)
@@ -573,7 +564,7 @@ module Rubernetes
             reason = "waiting for the preemption for this pod to be finished"
             queue.enqueue_unschedulable(typed_pod, reason: reason)
             return ScheduleResult.new(status: :unschedulable, pod: typed_pod, filtered: {},
-                                       scores: [], victims: [], trace: trace, reason: reason, gated: true)
+                                      scores: [], victims: [], trace: trace, reason: reason, gated: true)
           end
 
           Thread.current[:rubernetes_scheduler_sample_plugins] = @metrics.sample_plugins?
@@ -585,7 +576,7 @@ module Rubernetes
             reason = gate_result.fetch("reason", "pod is not ready for scheduling")
             queue.enqueue_unschedulable(typed_pod, reason: reason, gated: true, plugins: [gate_result["plugin"]].compact)
             return ScheduleResult.new(status: :unschedulable, pod: typed_pod, filtered: {},
-                                       scores: [], victims: [], trace: trace, reason: reason, gated: true)
+                                      scores: [], victims: [], trace: trace, reason: reason, gated: true)
           end
 
           algorithm_started = monotonic
@@ -636,8 +627,8 @@ module Rubernetes
                 @batch&.failed(cycle)
                 status = requeue_after_failure(typed_pod, error)
                 return ScheduleResult.new(status: status, pod: typed_pod, filtered: filtered,
-                                           scores: [], victims: [], trace: trace, error: error,
-                                           reason: "preemption evaluation failed")
+                                          scores: [], victims: [], trace: trace, error: error,
+                                          reason: "preemption evaluation failed")
               end
             end
             if preemption
@@ -647,8 +638,8 @@ module Rubernetes
                 @batch&.failed(cycle)
                 status = requeue_after_failure(typed_pod, error)
                 return ScheduleResult.new(status: status, pod: typed_pod, filtered: filtered,
-                                           scores: [], victims: preemption.victims, trace: trace,
-                                           error: error, reason: "preemption failed")
+                                          scores: [], victims: preemption.victims, trace: trace,
+                                          error: error, reason: "preemption failed")
               end
               # The Pod waits for its victims to go: it is nominated to the
               # node and retried when they are deleted.
@@ -658,8 +649,8 @@ module Rubernetes
               queue.enqueue_unschedulable(typed_pod, reason: reason, plugins: rejecting_plugins(filtered))
               @batch&.failed(cycle)
               return ScheduleResult.new(status: :unschedulable, pod: typed_pod, filtered: filtered,
-                                         scores: [], victims: preemption.victims, trace: trace, reason: reason,
-                                         nominated_node: node_name)
+                                        scores: [], victims: preemption.victims, trace: trace, reason: reason,
+                                        nominated_node: node_name)
             end
             # Preemption found no candidate: an old nomination is void.
             if eligible && !nominated_name.empty?
@@ -674,8 +665,8 @@ module Rubernetes
             @batch&.failed(cycle)
             @metrics.algorithm(monotonic - algorithm_started)
             return ScheduleResult.new(status: :unschedulable, pod: typed_pod, filtered: filtered,
-                                       scores: [], victims: [], trace: trace, reason: reason,
-                                       nominated_node: cleared ? "" : nil)
+                                      scores: [], victims: [], trace: trace, reason: reason,
+                                      nominated_node: cleared ? "" : nil)
           end
 
           victims = []
@@ -692,8 +683,8 @@ module Rubernetes
           @metrics.algorithm(monotonic - algorithm_started)
           if @batch
             ranked = breakdowns.reject { |breakdown| breakdown.equal?(selected) }
-                               .sort_by { |breakdown| [-breakdown.total, breakdown.node.name] }
-                               .map { |breakdown| breakdown.node.name }
+              .sort_by { |breakdown| [-breakdown.total, breakdown.node.name] }
+              .map { |breakdown| breakdown.node.name }
             @batch.store(signature, hint, selected.node.name, ranked, cycle)
           end
 
@@ -865,16 +856,23 @@ module Rubernetes
           candidate.namespace == pod.namespace && candidate.scheduling_group == group_name && candidate.node_name.empty? &&
             candidate.uid != pod.uid && queue.respond_to?(:pop_specific) && queue.pop_specific(candidate)
         end
-        members.sort_by! { |member| [-member.priority.to_i, queue.respond_to?(:seconds_since_first_attempt) ? -(queue.seconds_since_first_attempt(member) || 0.0) : 0.0] }
+        members.sort_by! do |member|
+          [-member.priority.to_i,
+           queue.respond_to?(:seconds_since_first_attempt) ? -(queue.seconds_since_first_attempt(member) || 0.0) : 0.0]
+        end
         assumed = []
         results = []
         failure = nil
         algorithm_started = monotonic
         members.each do |member|
           placed = assumed.map { |entry| entry.pod.with("spec" => entry.pod.spec.to_h.merge("nodeName" => entry.node.name)) }
-          result = schedule(member, node_objects, pods: existing.reject { |candidate| placed.any? { |item| item.uid == candidate.uid } } + placed,
-                                    namespace_labels: namespace_labels, volume_data: volume_data, workload_selectors: workload_selectors,
-                                    pod_groups: pod_groups, assume_only: true)
+          result = schedule(member, node_objects, pods: existing.reject do |candidate|
+            placed.any? do |item|
+              item.uid == candidate.uid
+            end
+          end + placed,
+                                                  namespace_labels: namespace_labels, volume_data: volume_data, workload_selectors: workload_selectors,
+                                                  pod_groups: pod_groups, assume_only: true)
           results << result
           unless result.assumed?
             failure = result
@@ -944,8 +942,10 @@ module Rubernetes
 
         condition = case outcome
                     when "scheduled" then {"type" => "PodGroupScheduled", "status" => "True", "reason" => "Scheduled", "message" => ""}
-                    when "unschedulable" then {"type" => "PodGroupScheduled", "status" => "False", "reason" => "Unschedulable", "message" => failure&.reason.to_s}
-                    else {"type" => "PodGroupScheduled", "status" => "False", "reason" => "SchedulerError", "message" => failure&.error&.message.to_s}
+                    when "unschedulable" then {"type" => "PodGroupScheduled", "status" => "False", "reason" => "Unschedulable",
+                                               "message" => failure&.reason.to_s}
+                    else {"type" => "PodGroupScheduled", "status" => "False", "reason" => "SchedulerError",
+                          "message" => failure&.error&.message.to_s}
                     end
         @pod_group_status_handler.call(namespace, name, condition)
       rescue StandardError
@@ -961,7 +961,12 @@ module Rubernetes
 
       # A cluster event: the unschedulable Pods it may help are moved.
       def requeue_on_event(event, old_object: nil, new_object: nil)
-        moved = queue.respond_to?(:move_on_event) ? queue.move_on_event(event, old_object: old_object, new_object: new_object) : queue.promote_unschedulable
+        moved = if queue.respond_to?(:move_on_event)
+                  queue.move_on_event(event, old_object: old_object,
+                                             new_object: new_object)
+                else
+                  queue.promote_unschedulable
+                end
         record_in_flight_events
         moved
       end
@@ -975,9 +980,10 @@ module Rubernetes
       end
       private :record_in_flight_events
 
-      def schedule!(pod, nodes = nil, **options)
-        result = schedule(pod, nodes, **options)
-        raise result.error if result.failed? || result.requeued? && result.error
+      def schedule!(pod, nodes = nil, **)
+        result = schedule(pod, nodes, **)
+        raise result.error if result.failed? || (result.requeued? && result.error)
+
         result
       end
 
@@ -986,12 +992,8 @@ module Rubernetes
       def configure_queue_sort!
         registered = queue_sort_plugins
         return if registered.empty?
-        if registered.length != 1
-          raise ValidationError, "scheduler must register exactly one queue sort plugin"
-        end
-        unless @queue.respond_to?(:configure_sort)
-          raise ValidationError, "scheduler queue does not support registry-backed queue sorting"
-        end
+        raise ValidationError, "scheduler must register exactly one queue sort plugin" if registered.length != 1
+        raise ValidationError, "scheduler queue does not support registry-backed queue sorting" unless @queue.respond_to?(:configure_sort)
 
         plugin = registered.first
         comparator = lambda do |left, right|
@@ -1039,7 +1041,10 @@ module Rubernetes
         list = nodes.is_a?(Hash) ? nodes.values : Array(nodes)
         normalized = list.map { |node| node.is_a?(Node) ? node : Node.new(node) }
         names = normalized.map(&:name)
-        raise ValidationError, "scheduler nodes must have unique non-empty names" if names.any?(&:empty?) || names.uniq.length != names.length
+        if names.any?(&:empty?) || names.uniq.length != names.length
+          raise ValidationError,
+                "scheduler nodes must have unique non-empty names"
+        end
 
         normalized.sort_by(&:name)
       end
@@ -1162,7 +1167,7 @@ module Rubernetes
       # prepareCandidate(Async): evict the victims -- from a thread of its own
       # with SchedulerAsyncPreemption, the Pod gated meanwhile -- and clear
       # the nominations of lower-priority Pods nominated to the same node.
-      def start_preemption!(result, pod, context, nominated)
+      def start_preemption!(result, pod, _context, nominated)
         raise PreemptionError, "preemption requires a delete handler" unless @delete_pod_handler
 
         # A victim already being deleted needs no second call; with none left
@@ -1272,11 +1277,11 @@ module Rubernetes
           @metrics.plugin_evaluated(:filter, plugin.name)
           output = invoke_plugin(plugin, pod, node, context, phase: :filter)
           result = normalize_filter_result(output, plugin)
-          trace.record(plugin: plugin.name, phase: :filter, weight: plugin.weight,
-                       input: input, output: result.to_h) if trace
-          unless result.accepted?
-            return result.to_h.merge("plugin" => plugin.name)
+          if trace
+            trace.record(plugin: plugin.name, phase: :filter, weight: plugin.weight,
+                         input: input, output: result.to_h)
           end
+          return result.to_h.merge("plugin" => plugin.name) unless result.accepted?
         end
         true
       end
@@ -1362,8 +1367,10 @@ module Rubernetes
                        invoke_plugin(plugin, pod, node, context, phase: :score)
                      end
             score = normalize_score(output, plugin)
-            trace.record(plugin: plugin.name, phase: :score, weight: plugin.weight,
-                         input: input, output: score) if trace
+            if trace
+              trace.record(plugin: plugin.name, phase: :score, weight: plugin.weight,
+                           input: input, output: score)
+            end
             weighted = score * plugin.weight
             total += weighted
             details << {"plugin" => plugin.name, "score" => score, "weight" => plugin.weight, "weighted" => weighted}
@@ -1535,9 +1542,7 @@ module Rubernetes
       def bind!(original, pod, node, context: nil, trace: nil)
         initial_name = pod.node_name
         current_name = Support.value(Support.object_hash(Support.value(original, "spec", {})), "nodeName", "").to_s if original
-        if current_name && !current_name.empty? && current_name != initial_name
-          raise BindError, "pod changed while scheduling"
-        end
+        raise BindError, "pod changed while scheduling" if current_name && !current_name.empty? && current_name != initial_name
 
         bind_context = context || CycleContext.new(nodes: [node], pods: [])
         if @nominate_handler && pre_bind_work?(pod, node, bind_context)
@@ -1581,10 +1586,10 @@ module Rubernetes
         if @bind_handler
           result = invoke_handler(@bind_handler, :bind, pod, node)
           raise BindError, "bind handler rejected #{pod.name}" if result == false
+
           observed_name = Support.value(Support.object_hash(Support.value(original, "spec", {})), "nodeName", "").to_s if original
-          if observed_name && !observed_name.empty? && observed_name != node.name
-            raise BindError, "pod nodeName changed during bind"
-          end
+          raise BindError, "pod nodeName changed during bind" if observed_name && !observed_name.empty? && observed_name != node.name
+
           bound = if result.is_a?(Pod)
                     result
                   elsif result.is_a?(Hash) || (result.respond_to?(:to_h) && !result.is_a?(TrueClass))
@@ -1592,9 +1597,7 @@ module Rubernetes
                   else
                     pod
                   end
-          unless same_pod?(bound, pod)
-            raise BindError, "bind handler returned a different pod"
-          end
+          raise BindError, "bind handler returned a different pod" unless same_pod?(bound, pod)
           if !bound.node_name.empty? && bound.node_name != node.name
             raise BindError, "bind handler returned a pod bound to #{bound.node_name.inspect}"
           end
@@ -1627,9 +1630,7 @@ module Rubernetes
         bound["spec"]["nodeName"] = node.name
         if original.is_a?(Hash) && !original.frozen?
           original_spec = original["spec"] || original[:spec] || {}
-          if original_spec.is_a?(Hash) && !original_spec.frozen?
-            original_spec["nodeName"] = node.name
-          end
+          original_spec["nodeName"] = node.name if original_spec.is_a?(Hash) && !original_spec.frozen?
         end
         Pod.new(bound)
       rescue BindError
@@ -1710,13 +1711,11 @@ module Rubernetes
           end
         end
         plugins.phase_plugins(:unreserve).each do |plugin|
-          begin
-            output = invoke_plugin(plugin, pod, node, context || CycleContext.new(nodes: [node], pods: []), phase: :unreserve)
-            trace&.record(plugin: plugin.name, phase: :unreserve, weight: plugin.weight,
-                          input: {"pod" => pod.to_h, "node" => node.to_h}, output: output == true ? true : output)
-          rescue StandardError => cleanup_error
-            error.instance_variable_set(:@cleanup_error, cleanup_error)
-          end
+          output = invoke_plugin(plugin, pod, node, context || CycleContext.new(nodes: [node], pods: []), phase: :unreserve)
+          trace&.record(plugin: plugin.name, phase: :unreserve, weight: plugin.weight,
+                        input: {"pod" => pod.to_h, "node" => node.to_h}, output: output == true ? true : output)
+        rescue StandardError => cleanup_error
+          error.instance_variable_set(:@cleanup_error, cleanup_error)
         end
         begin
           invoke_handler(@rollback_handler, :rollback, pod, node, error) if @rollback_handler
@@ -1735,6 +1734,7 @@ module Rubernetes
 
       def invoke_handler(handler, method_name, *arguments)
         return nil unless handler
+
         callable = if handler.respond_to?(:call)
                      handler
                    elsif handler.respond_to?(method_name)
@@ -1819,7 +1819,6 @@ module Rubernetes
           @pod_locks.delete(key) if entry[:users].zero? && @pod_locks[key].equal?(entry)
         end
       end
-
     end
 
     SchedulerFramework = Framework unless const_defined?(:SchedulerFramework, false)

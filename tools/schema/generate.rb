@@ -81,7 +81,7 @@ module RubernetesSchemaGenerator
       sources_path = corpus_directory.join("sources.json")
       required = [swagger_path, discovery_path, core_discovery_path, sources_path]
       missing = required.reject(&:file?)
-      raise Error, "missing canonical corpus files: #{missing.join(', ')}" unless missing.empty?
+      raise Error, "missing canonical corpus files: #{missing.join(", ")}" unless missing.empty?
 
       swagger = parse_object(swagger_path)
       discovery = parse_object(discovery_path)
@@ -136,13 +136,14 @@ module RubernetesSchemaGenerator
         unless required.all? { |field_name| field_name.is_a?(String) && properties.key?(field_name) }
           raise Error, "OpenAPI schema #{schema_name} has invalid required fields"
         end
+
         gvks = Array(schema["x-kubernetes-group-version-kind"]).map do |gvk|
           {"group" => gvk.fetch("group"), "version" => gvk.fetch("version"), "kind" => gvk.fetch("kind")}
         end.sort_by { |gvk| [gvk.fetch("group"), gvk.fetch("version"), gvk.fetch("kind")] }
         field_definitions = fields.to_h do |field_name|
           context = "#{schema_name}.properties.#{field_name}"
           [field_name, normalize_field_schema(properties.fetch(field_name), required: required.include?(field_name), context: context,
-                                                definitions: definitions)]
+                                                                            definitions: definitions)]
         end
         normalized = {
           "schema" => schema_name,
@@ -172,6 +173,7 @@ module RubernetesSchemaGenerator
       description = schema["description"].to_s
       return true if schema["type"].nil? && description.match?(/\AJSON represents any valid JSON value\./)
       return true if schema["type"] == "object" && description.match?(/\bin JSON format\b|\braw JSON\b/i)
+
       false
     end
 
@@ -271,22 +273,23 @@ module RubernetesSchemaGenerator
         unless required.all? { |field_name| field_name.is_a?(String) && properties.key?(field_name) }
           raise Error, "OpenAPI field #{context} has invalid required fields"
         end
+
         normalized["properties"] = properties.keys.sort.to_h do |field_name|
           [field_name, normalize_field_schema(properties.fetch(field_name), required: required.include?(field_name),
-                                                context: "#{context}.properties.#{field_name}", definitions: definitions)]
+                                                                            context: "#{context}.properties.#{field_name}", definitions: definitions)]
         end
       end
       if type == "object" && schema.key?("additionalProperties")
         additional = schema.fetch("additionalProperties")
-        normalized["additional_properties"] = if additional == true || additional == false
-                                                   additional
-                                                 elsif additional.is_a?(Hash)
-                                                   normalize_field_schema(additional, required: false,
-                                                                                       context: "#{context}.additionalProperties",
-                                                                                       definitions: definitions)
-                                                 else
-                                                   raise Error, "OpenAPI field #{context}.additionalProperties must be a schema or boolean"
-                                                 end
+        normalized["additional_properties"] = if [true, false].include?(additional)
+                                                additional
+                                              elsif additional.is_a?(Hash)
+                                                normalize_field_schema(additional, required: false,
+                                                                                   context: "#{context}.additionalProperties",
+                                                                                   definitions: definitions)
+                                              else
+                                                raise Error, "OpenAPI field #{context}.additionalProperties must be a schema or boolean"
+                                              end
       end
       normalized
     end
@@ -365,7 +368,7 @@ module RubernetesSchemaGenerator
 
     def verify_unique!(types, resources)
       constants = types.group_by { |type| type.fetch("ruby_constant") }.select { |_key, values| values.length > 1 }
-      raise Error, "generated Ruby constant collisions: #{constants.keys.sort.join(', ')}" unless constants.empty?
+      raise Error, "generated Ruby constant collisions: #{constants.keys.sort.join(", ")}" unless constants.empty?
 
       gvks = types.flat_map { |type| type.fetch("gvks").map { |gvk| [gvk, type.fetch("schema")] } }
       duplicate_gvks = gvks.group_by(&:first).select { |_key, values| values.length > 1 }
@@ -386,7 +389,12 @@ module RubernetesSchemaGenerator
       end
       resources.map do |resource|
         schema_name = type_by_gvk[[resource.fetch("group"), resource.fetch("version"), resource.fetch("kind")]]
-        metadata = schema_name ? patch_metadata(definitions, schema_name) : {"merge_keys" => {}, "patch_strategies" => {}, "field_paths" => []}
+        metadata = if schema_name
+                     patch_metadata(definitions,
+                                    schema_name)
+                   else
+                     {"merge_keys" => {}, "patch_strategies" => {}, "field_paths" => []}
+                   end
         resource.merge("schema" => schema_name).merge(metadata)
       end
     end
@@ -463,7 +471,7 @@ module RubernetesSchemaGenerator
     end
 
     def gvk_identifier(group, version, kind)
-      "#{group.to_s.empty? ? 'core' : group}/#{version}/#{kind}"
+      "#{group.to_s.empty? ? "core" : group}/#{version}/#{kind}"
     end
 
     def patch_metadata(definitions, root_schema)
@@ -539,7 +547,11 @@ module RubernetesSchemaGenerator
         "type_gvk_count" => types.sum { |type| type.fetch("gvks").length },
         "gvr_count" => gvrs.length,
         "route_gvr_count" => resources.length + resources.sum { |resource| resource.fetch("subresources").length },
-        "methods" => types.to_h { |type| [type.fetch("schema"), type.fetch("fields").filter_map { |field| RubernetesSchemaGenerator.ruby_method(field) }] },
+        "methods" => types.to_h do |type|
+          [type.fetch("schema"), type.fetch("fields").filter_map do |field|
+            RubernetesSchemaGenerator.ruby_method(field)
+          end]
+        end,
         "artifacts" => artifact_digests
       }
       artifacts["manifest.json"] = RubernetesSchemaGenerator.canonical_json(manifest) << "\n"
@@ -556,7 +568,7 @@ module RubernetesSchemaGenerator
         "",
         "module Rubernetes",
         "  module Generated",
-        "    SCHEMA_CONSTANTS = #{ruby_literal(types.to_h { |type| [type.fetch('schema'), type.fetch('ruby_constant')] })}.freeze",
+        "    SCHEMA_CONSTANTS = #{ruby_literal(types.to_h { |type| [type.fetch("schema"), type.fetch("ruby_constant")] })}.freeze",
         "",
         "    def self.definition_for(schema_name)",
         "      constant_name = SCHEMA_CONSTANTS.fetch(schema_name)",
@@ -565,23 +577,23 @@ module RubernetesSchemaGenerator
       ]
       types.each do |type|
         identity = definition_identity(type)
-        lines << "    class #{type.fetch('ruby_constant')} < Rubernetes::Schema::ValueObject"
-        lines << "      SCHEMA_NAME = #{type.fetch('schema').dump}.freeze"
-        lines << "      FIELDS = #{type.fetch('fields').inspect}.freeze"
-        lines << "      REQUIRED_FIELDS = #{type.fetch('required').inspect}.freeze"
-        lines << "      FIELD_DEFINITIONS = Rubernetes::Schema::DeepFreeze.call(#{render_field_map(type.fetch('field_definitions'))})"
+        lines << "    class #{type.fetch("ruby_constant")} < Rubernetes::Schema::ValueObject"
+        lines << "      SCHEMA_NAME = #{type.fetch("schema").dump}.freeze"
+        lines << "      FIELDS = #{type.fetch("fields").inspect}.freeze"
+        lines << "      REQUIRED_FIELDS = #{type.fetch("required").inspect}.freeze"
+        lines << "      FIELD_DEFINITIONS = Rubernetes::Schema::DeepFreeze.call(#{render_field_map(type.fetch("field_definitions"))})"
         lines << "      DEFINITION = Rubernetes::Schema::Definition.new("
-        lines << "        name: SCHEMA_NAME, group: #{identity.fetch('group').dump}, version: #{identity.fetch('version').dump},"
+        lines << "        name: SCHEMA_NAME, group: #{identity.fetch("group").dump}, version: #{identity.fetch("version").dump},"
         preserve = type.fetch("preserve_unknown_fields", false)
         union = type["union_object_schema"]
         if preserve
-          lines << "        kind: #{identity.fetch('kind').dump}, fields: FIELD_DEFINITIONS, required: REQUIRED_FIELDS,"
+          lines << "        kind: #{identity.fetch("kind").dump}, fields: FIELD_DEFINITIONS, required: REQUIRED_FIELDS,"
           lines << "        preserve_unknown_fields: true"
         elsif union
-          lines << "        kind: #{identity.fetch('kind').dump}, fields: FIELD_DEFINITIONS, required: REQUIRED_FIELDS,"
-          lines << "        union_object_schema: #{union.dump}, union_scalar_types: #{type.fetch('union_scalar_types').inspect}"
+          lines << "        kind: #{identity.fetch("kind").dump}, fields: FIELD_DEFINITIONS, required: REQUIRED_FIELDS,"
+          lines << "        union_object_schema: #{union.dump}, union_scalar_types: #{type.fetch("union_scalar_types").inspect}"
         else
-          lines << "        kind: #{identity.fetch('kind').dump}, fields: FIELD_DEFINITIONS, required: REQUIRED_FIELDS"
+          lines << "        kind: #{identity.fetch("kind").dump}, fields: FIELD_DEFINITIONS, required: REQUIRED_FIELDS"
         end
         lines << "      )"
         type.fetch("fields").each do |field|
@@ -623,7 +635,7 @@ module RubernetesSchemaGenerator
         reference = options.fetch("reference")
         pairs << "type: Rubernetes::Schema::Reference.new(#{reference.dump}) { Rubernetes::Generated.definition_for(#{reference.dump}) }"
       else
-        pairs << "type: :#{options.fetch('type')}"
+        pairs << "type: :#{options.fetch("type")}"
       end
       options.keys.sort.each do |key|
         next if %w[type reference].include?(key)
@@ -670,7 +682,7 @@ module RubernetesSchemaGenerator
         "    def self.definition_for: (String schema_name) -> Rubernetes::Schema::Definition"
       ]
       types.each do |type|
-        lines << "    class #{type.fetch('ruby_constant')} < Rubernetes::Schema::ValueObject"
+        lines << "    class #{type.fetch("ruby_constant")} < Rubernetes::Schema::ValueObject"
         lines << "      SCHEMA_NAME: String"
         lines << "      FIELDS: Array[String]"
         lines << "      REQUIRED_FIELDS: Array[String]"
@@ -720,7 +732,7 @@ module RubernetesSchemaGenerator
         selected_definitions = schema_closure(definitions, (roots + referenced.select { |name| definitions.key?(name) }).uniq)
         document = {
           "openapi" => "3.0.0",
-          "info" => {"title" => "Rubernetes Kubernetes #{group.empty? ? 'core' : group}/#{version}", "version" => "v1.36.2"},
+          "info" => {"title" => "Rubernetes Kubernetes #{group.empty? ? "core" : group}/#{version}", "version" => "v1.36.2"},
           "paths" => paths,
           "components" => {"schemas" => deep_transform_refs(selected_definitions)}
         }
@@ -779,7 +791,12 @@ module RubernetesSchemaGenerator
       case value
       when Hash
         value.to_h do |key, child|
-          transformed = key == "$ref" && child.is_a?(String) ? child.sub("#/definitions/", "#/components/schemas/") : deep_transform_refs(child)
+          transformed = if key == "$ref" && child.is_a?(String)
+                          child.sub("#/definitions/",
+                                    "#/components/schemas/")
+                        else
+                          deep_transform_refs(child)
+                        end
           [key, transformed]
         end
       when Array

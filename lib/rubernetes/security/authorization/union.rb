@@ -43,9 +43,8 @@ module Rubernetes
 
         def authorize(attributes)
           user = attributes.user
-          if user && (user.groups & @privileged_groups).any?
-            return Decision.allow("privileged group", authorizer: "PrivilegedGroups")
-          end
+          return Decision.allow("privileged group", authorizer: "PrivilegedGroups") if user && (user.groups & @privileged_groups).any?
+
           @authorizers.each do |authorizer|
             decision = authorizer.authorize(attributes)
             return decision unless decision.no_opinion?

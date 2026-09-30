@@ -5,7 +5,7 @@ require "open3"
 require "rbconfig"
 
 class ProxyEBPFKernelTest < Minitest::Test
-  KERNEL_SCRIPT = <<~'RUBY'.freeze
+  KERNEL_SCRIPT = <<~'RUBY'
     require "open3"
     require "rubernetes/network"
     require "rubernetes/platform/linux"
@@ -620,13 +620,12 @@ class ProxyEBPFKernelTest < Minitest::Test
     output, error, status = Open3.capture3(
       environment, "unshare", "-n", "--", RbConfig.ruby, "-Ilib", "-e", KERNEL_SCRIPT
     )
-    if status.exitstatus == 77 && error.start_with?("SKIP:")
-      skip error.strip
-    end
+    skip error.strip if status.exitstatus == 77 && error.start_with?("SKIP:")
     if !status.success? && error.match?(/Operation not permitted|Permission denied/i)
       skip "missing CAP_SYS_ADMIN/CAP_NET_ADMIN/CAP_BPF for isolated eBPF test: #{error.strip}"
     end
-    assert status.success?, "isolated eBPF kernel script failed: #{error.empty? ? output : error}"
+
+    assert_predicate status, :success?, "isolated eBPF kernel script failed: #{error.empty? ? output : error}"
   rescue Errno::ENOENT => exception
     flunk "unshare is required for the isolated eBPF integration test: #{exception.message}"
   end

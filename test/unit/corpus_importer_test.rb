@@ -69,7 +69,7 @@ class CorpusImporterTest < Minitest::Test
     end
 
     assert_match(/not present in the corpus/, error.message)
-    assert_match(/missing\/generated\.proto/, error.message)
+    assert_match(%r{missing/generated\.proto}, error.message)
   end
 
   def test_protobuf_closure_allows_standard_descriptor_imports

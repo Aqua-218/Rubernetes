@@ -41,9 +41,7 @@ module Rubernetes
           parts = []
           parts << %("manager":#{Value.json_string(manager.to_s)}) unless manager.to_s.empty?
           parts << %("operation":#{Value.json_string(operation.to_s)}) unless operation.to_s.empty?
-          if operation.to_s != "Apply" && !api_version.to_s.empty?
-            parts << %("apiVersion":#{Value.json_string(api_version.to_s)})
-          end
+          parts << %("apiVersion":#{Value.json_string(api_version.to_s)}) if operation.to_s != "Apply" && !api_version.to_s.empty?
           parts << %("subresource":#{Value.json_string(subresource.to_s)}) unless subresource.to_s.empty?
           "{#{parts.join(",")}}"
         end
@@ -338,7 +336,13 @@ module Rubernetes
         end
 
         def decode_live_or_new(live, new_object)
-          live_managed = -> { Entries.decode(metadata(live)["managedFields"]) rescue Managed.empty }
+          live_managed = lambda {
+            begin
+              Entries.decode(metadata(live)["managedFields"])
+            rescue StandardError
+              Managed.empty
+            end
+          }
           return live_managed.call if subresource?
 
           provided = metadata(new_object)["managedFields"]
@@ -376,7 +380,8 @@ module Rubernetes
           current = managed.fields.delete(CURRENT_OPERATION)
           if current
             previous = managed.fields[id]
-            managed.fields[id] = previous ? VersionedSet.new(current.set.union(previous.set), current.api_version, current.applied) : current
+            managed.fields[id] =
+              previous ? VersionedSet.new(current.set.union(previous.set), current.api_version, current.applied) : current
             managed.times[id] = timestamp
           end
           managed
@@ -410,9 +415,7 @@ module Rubernetes
         # lastAppliedUpdater.
         def last_applied_update(live, config, managed, manager, force)
           object, managed = last_applied_manager(live, config, managed, manager, force)
-          if manager == "kubectl" && last_applied?(object)
-            object = set_last_applied(object, build_last_applied(config))
-          end
+          object = set_last_applied(object, build_last_applied(config)) if manager == "kubectl" && last_applied?(object)
           [object, managed]
         end
 
@@ -493,9 +496,8 @@ module Rubernetes
 
           config_typed = typed(config, typed: false)
           errors = config_typed.validate
-          unless errors.empty?
-            raise Error, "failed to create typed patch object (#{object_gvknn(config)}): #{validation_message(errors)}"
-          end
+          raise Error, "failed to create typed patch object (#{object_gvknn(config)}): #{validation_message(errors)}" unless errors.empty?
+
           live_typed = typed(live)
           merged, fields = @updater.apply(live_typed, config_typed, @api_version, managed.fields, id, force)
           [merged&.value, Managed.new(fields, managed.times)]
@@ -567,9 +569,7 @@ module Rubernetes
               first_by_version[version] = id
               next
             end
-            unless managed.fields.key?(bucket)
-              managed.fields[bucket] = managed.fields.delete(first)
-            end
+            managed.fields[bucket] = managed.fields.delete(first) unless managed.fields.key?(bucket)
             managed.fields[bucket] = VersionedSet.new(entry.set.union(managed.fields[bucket].set), entry.api_version, entry.applied)
             managed.fields.delete(id)
             length -= 1

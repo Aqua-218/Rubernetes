@@ -38,7 +38,7 @@ class KubeletVolumeExpansionTest < Minitest::Test
       @calls = []
     end
 
-    def node_expand_in_use(id, pod, path, capacity_bytes:, token:)
+    def node_expand_in_use(id, _pod, path, capacity_bytes:, token:)
       @calls << [id, path, capacity_bytes]
       raise @result if @result.is_a?(Exception)
 
@@ -61,7 +61,7 @@ class KubeletVolumeExpansionTest < Minitest::Test
                                            {"type" => "ModifyingVolume", "status" => "True"}]}.compact}
     pv = {"metadata" => {"name" => "pv-1"},
           "spec" => {"capacity" => {"storage" => pv_size}}.merge(csi ? {"csi" => {"driver" => "d", "volumeHandle" => "h"}} : {})}
-    {["persistentvolumeclaims", "claim"] => claim, ["persistentvolumes", "pv-1"] => pv}
+    {%w[persistentvolumeclaims claim] => claim, %w[persistentvolumes pv-1] => pv}
   end
 
   def subject(reader, volume)
@@ -71,15 +71,18 @@ class KubeletVolumeExpansionTest < Minitest::Test
 
   def test_a_node_resize_pending_claim_is_expanded_and_its_status_recorded
     reader = Reader.new(objects)
-    volume = Volume.new({"capacityBytes" => 2 * 1024**3})
+    volume = Volume.new({"capacityBytes" => 2 * (1024**3)})
     results = subject(reader, volume).expand_in_use(POD, HANDLE)
+
     assert_equal [["data", :resized, 'MountVolume.NodeExpandVolume succeeded for volume "pv-1" n1']], results
-    assert_equal [["vol-1", "/pods/u1/volumes/data", 2 * 1024**3]], volume.calls
+    assert_equal [["vol-1", "/pods/u1/volumes/data", 2 * (1024**3)]], volume.calls
     assert_equal 2, reader.patches.length
     in_progress = reader.patches.first.last
+
     assert_equal({"storage" => "NodeResizeInProgress"}, in_progress.dig("status", "allocatedResourceStatuses"))
     assert_equal "7", in_progress.dig("metadata", "resourceVersion")
     finished = reader.patches.last.last["status"]
+
     assert_equal({"storage" => "2Gi"}, finished["capacity"])
     assert_nil finished["allocatedResourceStatuses"]
     assert_equal [{"type" => "ModifyingVolume", "status" => "True"}], finished["conditions"]
@@ -90,6 +93,7 @@ class KubeletVolumeExpansionTest < Minitest::Test
      {csi: false}].each do |options|
       reader = Reader.new(objects(**options))
       volume = Volume.new({})
+
       assert_empty subject(reader, volume).expand_in_use(POD, HANDLE), options.inspect
       assert_empty volume.calls
       assert_empty reader.patches
@@ -99,6 +103,7 @@ class KubeletVolumeExpansionTest < Minitest::Test
   def test_an_in_progress_claim_is_not_marked_again
     reader = Reader.new(objects(resize_status: "NodeResizeInProgress"))
     subject(reader, Volume.new({})).expand_in_use(POD, HANDLE)
+
     assert_equal 1, reader.patches.length
     assert_equal({"storage" => "2Gi"}, reader.patches.last.last.dig("status", "capacity"))
   end
@@ -107,27 +112,32 @@ class KubeletVolumeExpansionTest < Minitest::Test
     reader = Reader.new(objects)
     volume = Volume.new(Rubernetes::Volume::CSIError.new("out of space"))
     results = subject(reader, volume).expand_in_use(POD, HANDLE)
+
     assert_equal :failed, results.first[1]
     assert_match(/out of space/, results.first[2])
     conditions = reader.patches.last.last.dig("status", "conditions")
     error = conditions.find { |condition| condition["type"] == "NodeResizeError" }
+
     assert_equal "failed to expand pvc with out of space", error["message"]
 
     reader = Reader.new(objects)
     volume = Volume.new(Rubernetes::Volume::CSIError.new("timeout", ambiguous: true))
     subject(reader, volume).expand_in_use(POD, HANDLE)
+
     assert_equal 1, reader.patches.length, "an ambiguous error only leaves the claim in progress"
   end
 
   def test_a_driver_without_expand_volume_fails_without_touching_capacity
     reader = Reader.new(objects)
     results = subject(reader, Volume.new(:unsupported)).expand_in_use(POD, HANDLE)
+
     assert_equal :failed, results.first[1]
     assert_equal 1, reader.patches.length
   end
 
   def test_the_resize_events_carry_the_kubelet_reasons
     reasons = Rubernetes::Node::KubeletEventPublisher::REASONS
+
     assert_equal %w[Normal FileSystemResizeSuccessful], reasons.fetch("volume.fs_resized").first(2)
     assert_equal %w[Warning FileSystemResizeFailed], reasons.fetch("volume.fs_resize_failed").first(2)
   end

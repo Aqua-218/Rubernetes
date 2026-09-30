@@ -13,6 +13,7 @@ class FieldSelectorEmptyTermsTest < Minitest::Test
   def test_field_selector_skips_empty_terms
     %w[,type!=helm.sh/release.v1 type!=helm.sh/release.v1, ,,type!=helm.sh/release.v1,,].each do |value|
       selector = Selectors.new(field_selector: value).field
+
       assert_equal 1, selector.requirements.length, value
       assert selector.matches?({"type" => "Opaque"}), value
       refute selector.matches?({"type" => "helm.sh/release.v1"}), value

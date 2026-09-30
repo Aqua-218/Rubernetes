@@ -4,7 +4,6 @@ require_relative "../resource_helpers"
 
 require "digest"
 require "json"
-require "rational"
 require "time"
 
 module Rubernetes
@@ -69,9 +68,7 @@ module Rubernetes
       def normalize_hash(source)
         source.each_with_object({}) do |(key, child), result|
           canonical_key = key.to_s
-          if result.key?(canonical_key)
-            raise ArgumentError, "duplicate scheduler field #{canonical_key.inspect}"
-          end
+          raise ArgumentError, "duplicate scheduler field #{canonical_key.inspect}" if result.key?(canonical_key)
 
           result[canonical_key] = normalize(child)
         end
@@ -256,7 +253,7 @@ module Rubernetes
         Digest::SHA256.hexdigest(canonical_json(value))
       end
 
-      def quantity(value, resource = nil)
+      def quantity(value, _resource = nil)
         result = if value.is_a?(Rational)
                    value
                  elsif value.is_a?(Integer)

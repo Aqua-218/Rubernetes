@@ -16,7 +16,8 @@ class PodSecurityAdmissionUpstreamTest < Minitest::Test
 
   def setup
     @context = SecurityAdmissionFakeContext.new
-    @context.put("namespaces", nil, "locked", {"metadata" => {"name" => "locked", "labels" => {"pod-security.kubernetes.io/enforce" => "restricted"}}})
+    @context.put("namespaces", nil, "locked",
+                 {"metadata" => {"name" => "locked", "labels" => {"pod-security.kubernetes.io/enforce" => "restricted"}}})
     @context.put("namespaces", nil, "open", {"metadata" => {"name" => "open"}})
   end
 
@@ -46,10 +47,13 @@ class PodSecurityAdmissionUpstreamTest < Minitest::Test
                '(container "app" must set securityContext.capabilities.drop=["ALL"]), runAsNonRoot != true (pod or container "app" ' \
                'must set securityContext.runAsNonRoot=true), seccompProfile (pod or container "app" must set ' \
                'securityContext.seccompProfile.type to "RuntimeDefault" or "Localhost")'
+
     assert_equal expected, error.message
     assert_equal 403, error.code
     text = @metrics.render
-    assert_includes text, %(pod_security_evaluations_total{decision="deny",mode="enforce",policy_level="restricted",policy_version="latest",request_operation="create",resource="pod",subresource=""} 1)
+
+    assert_includes text,
+                    %(pod_security_evaluations_total{decision="deny",mode="enforce",policy_level="restricted",policy_version="latest",request_operation="create",resource="pod",subresource=""} 1)
   end
 
   def test_invalid_labels_are_refused_on_create
@@ -62,13 +66,16 @@ class PodSecurityAdmissionUpstreamTest < Minitest::Test
   end
 
   def test_tightening_enforce_warns_about_existing_pods
-    @context.put("pods", "open", "a", pod("a", {"hostNetwork" => true, "containers" => [{"name" => "c"}]}).merge("metadata" => {"name" => "a"}))
-    @context.put("pods", "open", "b", pod("b", {"hostNetwork" => true, "containers" => [{"name" => "c"}]}).merge("metadata" => {"name" => "b"}))
+    @context.put("pods", "open", "a",
+                 pod("a", {"hostNetwork" => true, "containers" => [{"name" => "c"}]}).merge("metadata" => {"name" => "a"}))
+    @context.put("pods", "open", "b",
+                 pod("b", {"hostNetwork" => true, "containers" => [{"name" => "c"}]}).merge("metadata" => {"name" => "b"}))
     admission = plugin
     old = {"metadata" => {"name" => "open"}}
     updated = {"metadata" => {"name" => "open", "labels" => {"pod-security.kubernetes.io/enforce" => "baseline"}}}
     attrs = attributes("UPDATE", resource: "namespaces", object: updated, old: old, namespace: "open")
     admission.validate(attrs)
+
     assert_equal ["existing pods in namespace \"open\" violate the new PodSecurity enforce level \"baseline:latest\"",
                   "a (and 1 other pod): host namespaces"], attrs.warnings
   end
@@ -78,22 +85,25 @@ class PodSecurityAdmissionUpstreamTest < Minitest::Test
     bad = pod("web", {"containers" => [{"name" => "app", "image" => "i"}]})
     attrs = attributes("CREATE", resource: "pods", object: bad, user: "system:admin")
     admission.validate(attrs)
+
     assert_equal({"pod-security.kubernetes.io/exempt" => "user"}, attrs.annotations)
     kata = pod("kata", {"runtimeClassName" => "kata", "containers" => [{"name" => "app", "image" => "i"}]})
     admission.validate(attributes("CREATE", resource: "pods", object: kata))
     relabelled = bad.merge("metadata" => bad["metadata"].merge("labels" => {"a" => "b"}))
     admission.validate(attributes("UPDATE", resource: "pods", object: relabelled, old: bad))
+
     assert_includes @metrics.render, %(pod_security_exemptions_total{request_operation="create",resource="pod",subresource=""} 2)
   end
 
   def test_workloads_warn_and_audit_but_are_not_enforced
     @context.put("namespaces", nil, "watched", {"metadata" => {"name" => "watched", "labels" => {"pod-security.kubernetes.io/enforce" => "restricted",
-                                                                                                  "pod-security.kubernetes.io/audit" => "baseline"}}})
+                                                                                                 "pod-security.kubernetes.io/audit" => "baseline"}}})
     admission = plugin
     deployment = {"metadata" => {"name" => "d"},
                   "spec" => {"template" => {"metadata" => {}, "spec" => {"hostPID" => true, "containers" => [{"name" => "c"}]}}}}
     attrs = attributes("CREATE", resource: "deployments", group: "apps", object: deployment, namespace: "watched")
     admission.validate(attrs)
+
     assert_equal 1, attrs.warnings.length
     assert_match(/\Awould violate PodSecurity "restricted:latest": host namespaces \(hostPID=true\), /, attrs.warnings.first)
     assert_equal "would violate PodSecurity \"baseline:latest\": host namespaces (hostPID=true)",

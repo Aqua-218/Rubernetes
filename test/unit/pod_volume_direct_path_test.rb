@@ -37,7 +37,10 @@ class PodVolumeDirectPathTest < Minitest::Test
   def test_a_configmap_volume_is_used_from_its_backend_directory
     with_volumes do |manager, volumes|
       stages = []
-      manager.define_singleton_method(:stage) { |*args, **options| stages << args; super(*args, **options) }
+      manager.define_singleton_method(:stage) do |*args, **options|
+        stages << args
+        super(*args, **options)
+      end
       subject = pod({"name" => "cm", "mountPath" => "/etc/cm"})
       handle = volumes.prepare(subject)
       mount = handle.dig("mounts", "cm")
@@ -50,7 +53,8 @@ class PodVolumeDirectPathTest < Minitest::Test
       assert_empty stages, "nothing is staged"
 
       volumes.release(subject, handle)
-      refute File.exist?(mount["path"])
+
+      refute_path_exists mount["path"]
       assert_raises(Rubernetes::Volume::NotFoundError) { manager.volume(mount["id"]) }
     end
   end

@@ -31,14 +31,17 @@ class DeviceCgroupKernelTest < Minitest::Test
 
   def test_default_program_loads_attaches_and_detaches
     attacher = DeviceCgroup::Attacher.new
+
     assert attacher.validate!
     with_cgroup do |path|
       assert_empty attacher.attached(path)
       id = attacher.attach(path, DeviceCgroup.rules_for)
+
       assert_equal [id], attacher.attached(path)
       fd = attacher.bpf.prog_get_fd_by_id(id)
       begin
         info = attacher.bpf.program_info(fd)
+
         assert_equal DeviceCgroup::PROGRAM_NAME, info.fetch(:name)
         assert_equal Rubernetes::Platform::Linux::BPF::BPF_PROG_TYPE_CGROUP_DEVICE, info.fetch(:type)
       ensure
@@ -61,6 +64,7 @@ class DeviceCgroupKernelTest < Minitest::Test
       writer.close
       output = reader.read
       Process.wait(pid)
+
       assert_predicate $?, :success?
       assert_equal "00000000", output
 
@@ -82,6 +86,7 @@ class DeviceCgroupKernelTest < Minitest::Test
           attacher.bpf.prog_attach(target_fd: directory.fileno, program: foreign, attach_type: Rubernetes::Platform::Linux::BPF::BPF_CGROUP_DEVICE,
                                    flags: Rubernetes::Platform::Linux::BPF::BPF_F_ALLOW_MULTI)
         end
+
         assert_equal [ours, foreign.id], attacher.attached(path)
         assert_equal [ours], attacher.detach(path)
         assert_equal [foreign.id], attacher.attached(path)
@@ -92,6 +97,7 @@ class DeviceCgroupKernelTest < Minitest::Test
         foreign.close
       end
     end
+
     assert_empty attacher.detach("/sys/fs/cgroup/rubernetes-test-devcg-gone-#{SecureRandom.hex(4)}")
   end
 
@@ -104,6 +110,7 @@ class DeviceCgroupKernelTest < Minitest::Test
       id = attacher.attach(path, DeviceCgroup.rules_for)
       with_cgroup do |other|
         attacher.attach(other, DeviceCgroup.rules_for(privileged: true))
+
         assert_equal 1, attacher.cached_rule_sets
         assert_equal [id], attacher.detach(path)
         assert_empty attacher.attached(path)
@@ -184,16 +191,20 @@ class NativeRuntimeDeviceFilterTest < Minitest::Test
 
   def test_container_devices_are_filtered_and_dev_is_nodev
     with_runtime do |runtime, sandbox, lower|
-      container = runtime.create_container(sandbox, {"id" => "main", "rootfs_path" => lower, "command" => ["/bin/busybox", "sh", "-c", SCRIPT]})
+      container = runtime.create_container(sandbox,
+                                           {"id" => "main", "rootfs_path" => lower, "command" => ["/bin/busybox", "sh", "-c", SCRIPT]})
       cgroup = container.cgroup.path
       attacher = DeviceCgroup::Attacher.new
       ids = attacher.attached(cgroup)
+
       assert_equal 1, ids.length, "one device program on the container cgroup"
       fd = attacher.bpf.prog_get_fd_by_id(ids.first)
       begin
         info = attacher.bpf.program_info(fd)
+
         assert_equal DeviceCgroup::PROGRAM_NAME, info.fetch(:name)
         expected, = DeviceCgroup.compile(DeviceCgroup.rules_for)
+
         assert_equal expected.length, info.fetch(:xlated_instructions).length
       ensure
         IO.for_fd(fd).close
@@ -202,6 +213,7 @@ class NativeRuntimeDeviceFilterTest < Minitest::Test
       runtime.start_container(container)
       mountinfo, null, zero, urandom, listing = output_lines(runtime, container, 5)
       options = mountinfo.split[5].split(",")
+
       assert_includes options, "nodev", mountinfo
       assert_includes options, "nosuid", mountinfo
       assert_equal "null-ok", null
@@ -211,8 +223,10 @@ class NativeRuntimeDeviceFilterTest < Minitest::Test
 
       runtime.stop_container(container, timeout: 2)
       runtime.remove_container(container)
+
       refute File.directory?(cgroup)
       detached = runtime.trace.find { |event| event.to_s.include?("device_filter_detached") }
+
       refute_nil detached
     end
   end
@@ -223,20 +237,28 @@ class NativeRuntimeDeviceFilterTest < Minitest::Test
                                                      "security_context" => {"privileged" => true, "allow_privilege_escalation" => true}})
       attacher = DeviceCgroup::Attacher.new
       ids = attacher.attached(container.cgroup.path)
+
       assert_equal 1, ids.length
       fd = attacher.bpf.prog_get_fd_by_id(ids.first)
       begin
         expected, = DeviceCgroup.compile(DeviceCgroup.rules_for(privileged: true))
+
         assert_equal expected.length, attacher.bpf.program_info(fd).fetch(:xlated_instructions).length
       ensure
         IO.for_fd(fd).close
       end
       runtime.start_container(container)
       mountinfo, null, _zero, _urandom, listing = output_lines(runtime, container, 5)
+
       assert_includes mountinfo.split[5].split(","), "nodev"
       assert_equal "null-ok", null
-      host_nodes = Dir.children("/dev").select { |name| File.stat(File.join("/dev", name)).chardev? rescue false }
+      host_nodes = Dir.children("/dev").select do |name|
+        File.stat(File.join("/dev", name)).chardev?
+      rescue StandardError
+        false
+      end
       host_nodes -= %w[console ptmx fd stdin stdout stderr]
+
       assert_operator (listing.split & host_nodes).length, :>, 8, "host device nodes visible: #{listing}"
       runtime.stop_container(container, timeout: 2)
       runtime.remove_container(container)

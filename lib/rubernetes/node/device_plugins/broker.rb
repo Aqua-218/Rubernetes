@@ -158,9 +158,21 @@ module Rubernetes
           end
           return self unless pid
 
-          @stdin&.close rescue nil
-          Process.kill(:TERM, pid) rescue nil
-          Process.wait(pid) rescue nil
+          begin
+            @stdin&.close
+          rescue StandardError
+            nil
+          end
+          begin
+            Process.kill(:TERM, pid)
+          rescue StandardError
+            nil
+          end
+          begin
+            Process.wait(pid)
+          rescue StandardError
+            nil
+          end
           self
         end
 

@@ -30,7 +30,7 @@ module Rubernetes
         DECIMAL_SUFFIXES = {"n" => Rational(1, 10**9), "u" => Rational(1, 10**6), "m" => Rational(1, 1000), "" => Rational(1),
                             "k" => Rational(1000), "M" => Rational(10**6), "G" => Rational(10**9), "T" => Rational(10**12),
                             "P" => Rational(10**15), "E" => Rational(10**18)}.freeze
-        QUANTITY_PATTERN = /\A([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+))(?:([eE])([+-]?[0-9]+))?(Ki|Mi|Gi|Ti|Pi|Ei|n|u|m|k|M|G|T|P|E)?\z/.freeze
+        QUANTITY_PATTERN = /\A([+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+))(?:([eE])([+-]?[0-9]+))?(Ki|Mi|Gi|Ti|Pi|Ei|n|u|m|k|M|G|T|P|E)?\z/
 
         module_function
 
@@ -93,7 +93,7 @@ module Rubernetes
           return 1 if shares == 0
           return 10_000 if shares >= MAX_SHARES
 
-          1 + ((shares - 2) * 9999) / 262_142
+          1 + (((shares - 2) * 9999) / 262_142)
         end
 
         def cpu_weight(milli_request)
@@ -220,7 +220,7 @@ module Rubernetes
             end
             # memory.high reads the container's own limit, not the Pod's.
             if memory_request != own_memory_limit && own_memory_limit.positive?
-              high = ((memory_request + (own_memory_limit - memory_request) * DEFAULT_MEMORY_THROTTLING_FACTOR) / DEFAULT_PAGE_SIZE).floor * DEFAULT_PAGE_SIZE
+              high = ((memory_request + ((own_memory_limit - memory_request) * DEFAULT_MEMORY_THROTTLING_FACTOR)) / DEFAULT_PAGE_SIZE).floor * DEFAULT_PAGE_SIZE
               result["memory.high"] = high.to_s if high.positive? && high > memory_request
             end
           end

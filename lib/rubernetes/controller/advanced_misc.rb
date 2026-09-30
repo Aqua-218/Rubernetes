@@ -43,19 +43,19 @@ module Rubernetes
         resource: "storageversionmigrations", scope: :cluster
       )
 
-      RESOURCE_CLAIM_FINALIZER = "resource.kubernetes.io/delete-protection".freeze
-      SERVICE_ACCOUNT_TOKEN_TYPE = "kubernetes.io/service-account-token".freeze
-      TRACKING_CONFIG_MAP = "kube-apiserver-legacy-service-account-token-tracking".freeze
-      TRACKING_NAMESPACE = "kube-system".freeze
-      LAST_USED_LABEL = "kubernetes.io/legacy-token-last-used".freeze
-      INVALID_SINCE_LABEL = "kubernetes.io/legacy-token-invalid-since".freeze
-      SERVICE_CIDR_FINALIZER = "networking.k8s.io/service-cidr-finalizer".freeze
+      RESOURCE_CLAIM_FINALIZER = "resource.kubernetes.io/delete-protection"
+      SERVICE_ACCOUNT_TOKEN_TYPE = "kubernetes.io/service-account-token"
+      TRACKING_CONFIG_MAP = "kube-apiserver-legacy-service-account-token-tracking"
+      TRACKING_NAMESPACE = "kube-system"
+      LAST_USED_LABEL = "kubernetes.io/legacy-token-last-used"
+      INVALID_SINCE_LABEL = "kubernetes.io/legacy-token-invalid-since"
+      SERVICE_CIDR_FINALIZER = "networking.k8s.io/service-cidr-finalizer"
       # The reason kube-apiserver stamps on the default ServiceCIDR's Ready
       # condition when it publishes --service-cluster-ip-range (see
       # Api::ServiceAllocator#bootstrap!).  The controller must agree with it:
       # a metav1.Condition requires a reason, and a controller that reconciles
       # towards a different one rewrites the status on every pass forever.
-      SERVICE_CIDR_READY_REASON = "KubernetesServiceCIDRIsReady".freeze
+      SERVICE_CIDR_READY_REASON = "KubernetesServiceCIDRIsReady"
 
       module_function
 
@@ -77,8 +77,11 @@ module Rubernetes
       end
 
       def condition_list(resource_or_status)
-        source = resource_or_status.is_a?(Hash) && Support.value(resource_or_status, "status", nil).is_a?(Hash) ?
-                 Support.status(resource_or_status) : resource_or_status
+        source = if resource_or_status.is_a?(Hash) && Support.value(resource_or_status, "status", nil).is_a?(Hash)
+                   Support.status(resource_or_status)
+                 else
+                   resource_or_status
+                 end
         Array(Support.value(source, "conditions", [])).select { |condition| condition.is_a?(Hash) }
       end
 
@@ -160,17 +163,17 @@ module Rubernetes
       # or look-alikes.
       NAME_ALPHABET = "bcdfghjklmnpqrstvwxz2456789"
 
-      def initialize(*arguments, random: Random.new, **options)
-        super(*arguments, **options)
+      def initialize(*, random: Random.new, **)
+        super(*, **)
         @random = random
       end
 
-      def plan(object, pods: nil, deleted_pod_uids: [], authoritative_pods: nil, now: nil, store: nil, **options)
+      def plan(object, pods: nil, deleted_pod_uids: [], authoritative_pods: nil, now: nil, store: nil, **)
         return result(object, operations: [], controller: name, descriptor: RESOURCE_CLAIM) unless object.is_a?(Hash)
 
         case Support.kind(object).to_s
-        when "Pod" then plan_pod(object, store: store, **options)
-        when "ResourceClaimTemplate" then plan_template(object, store: store, **options)
+        when "Pod" then plan_pod(object, store: store, **)
+        when "ResourceClaimTemplate" then plan_template(object, store: store, **)
         else
           claim_result = plan_claim(object, pods: pods, deleted_pod_uids: deleted_pod_uids,
                                             authoritative_pods: authoritative_pods, store: store)
@@ -179,7 +182,7 @@ module Rubernetes
           pod = (adapter = adapter_for(store)) && find_for(adapter, POD, Support.name(object), namespace: Support.namespace(object))
           return claim_result unless pod
 
-          pod_result = plan_pod(pod, store: store, **options)
+          pod_result = plan_pod(pod, store: store, **)
           ReconcileResult.new(operations: claim_result.operations + pod_result.operations,
                               events: Array(claim_result.events) + Array(pod_result.events),
                               status: claim_result.status, controller: name, key: claim_result.key)
@@ -207,7 +210,8 @@ module Rubernetes
                  elsif !annotations["resource.kubernetes.io/pod-claim-name"].to_s.empty? then "resource_claim_template"
                  else ""
                  end
-        {"allocated" => claim.dig("status", "allocation").nil? ? "false" : "true", "admin_access" => admin_access_label(claim), "source" => source}
+        {"allocated" => claim.dig("status", "allocation").nil? ? "false" : "true", "admin_access" => admin_access_label(claim),
+         "source" => source}
       end
 
       def self.pod_queue_keys(pod)
@@ -215,7 +219,10 @@ module Rubernetes
         keys = [[namespace, Support.name(pod)].compact.join("/")]
         claims = Array(Support.value(Support.spec(pod), "resourceClaims", []))
         extended = Support.value(Support.status(pod), "extendedResourceClaimStatus", nil)
-        keys << [namespace, extended["resourceClaimName"]].compact.join("/") if extended.is_a?(Hash) && !extended["resourceClaimName"].to_s.empty?
+        if extended.is_a?(Hash) && !extended["resourceClaimName"].to_s.empty?
+          keys << [namespace,
+                   extended["resourceClaimName"]].compact.join("/")
+        end
         return keys.uniq if claims.empty?
 
         statuses = Array(Support.value(Support.status(pod), "resourceClaimStatuses", []))
@@ -269,9 +276,10 @@ module Rubernetes
         unless new_statuses.empty?
           statuses = new_statuses.map { |pod_claim_name, claim_name| {"name" => pod_claim_name, "resourceClaimName" => claim_name} }
           operations << operation_status(pod, {"resourceClaimStatuses" => statuses}, descriptor: POD,
-                                         reason: "record ResourceClaims created for the Pod", force: true)
+                                                                                     reason: "record ResourceClaims created for the Pod", force: true)
         end
-        return result(pod, operations: operations, events: events, controller: name, descriptor: POD) if value_at(Support.spec(pod), "nodeName").to_s.empty?
+        return result(pod, operations: operations, events: events, controller: name, descriptor: POD) if value_at(Support.spec(pod),
+                                                                                                                  "nodeName").to_s.empty?
 
         # A scheduled Pod reserves its allocated claims (a Pod bound without
         # the scheduler); a claim created just now is not allocated yet.
@@ -289,20 +297,21 @@ module Rubernetes
           next if value_at(Support.status(claim), "allocation").nil? || reserved_for?(claim, pod)
 
           status = Support.deep_copy(Support.status(claim))
-          status["reservedFor"] = Array(status["reservedFor"]) + [{"resource" => "pods", "name" => Support.name(pod), "uid" => Support.uid(pod)}]
+          status["reservedFor"] =
+            Array(status["reservedFor"]) + [{"resource" => "pods", "name" => Support.name(pod), "uid" => Support.uid(pod)}]
           operations << operation_status(claim, status, descriptor: RESOURCE_CLAIM, reason: "reserve claim for scheduled Pod")
         end
         result(pod, operations: operations, events: events, controller: name, descriptor: POD)
       end
 
-      def plan_template(template, store: nil, **options)
+      def plan_template(template, store: nil, **)
         adapter = adapter_for(store)
         return result(template, operations: [], controller: name, descriptor: TEMPLATE) unless adapter
 
         pods = list_for(adapter, POD, namespace: Support.namespace(template)).select do |pod|
           Array(value_at(Support.spec(pod), "resourceClaims")).any? { |entry| entry["resourceClaimTemplateName"] == Support.name(template) }
         end
-        operations = pods.flat_map { |pod| plan_pod(pod, store: store, **options).operations }
+        operations = pods.flat_map { |pod| plan_pod(pod, store: store, **).operations }
         result(template, operations: operations, controller: name, descriptor: TEMPLATE)
       end
 
@@ -332,7 +341,8 @@ module Rubernetes
 
         template = templates.find { |candidate| Support.name(candidate) == template_name }
         unless template
-          raise ClaimFailure, "resource claim template \"#{template_name}\": resourceclaimtemplate.resource.k8s.io \"#{template_name}\" not found"
+          raise ClaimFailure,
+                "resource claim template \"#{template_name}\": resourceclaimtemplate.resource.k8s.io \"#{template_name}\" not found"
         end
 
         spec = Support.spec(template)
@@ -414,9 +424,7 @@ module Rubernetes
             deallocated = true
           end
           operations << operation_status(claim, next_status, descriptor: RESOURCE_CLAIM, reason: "remove stale ResourceClaim reservations")
-          if has_finalizer && next_status["allocation"].nil?
-            operations << remove_finalizer(claim, next_status)
-          end
+          operations << remove_finalizer(claim, next_status) if has_finalizer && next_status["allocation"].nil?
         elsif has_finalizer && deleting && remaining.empty?
           if next_status["allocation"]
             next_status = Support.deep_copy(status)
@@ -427,7 +435,8 @@ module Rubernetes
           operations << remove_finalizer(claim, next_status)
         end
         if deallocated
-          events << {"type" => "Normal", "reason" => "ResourceClaimAllocated", "message" => "ResourceClaim #{object_name(claim)} allocation released"}
+          events << {"type" => "Normal", "reason" => "ResourceClaimAllocated",
+                     "message" => "ResourceClaim #{object_name(claim)} allocation released"}
         end
 
         # Generated claims are deleted once their Pod was replaced or is done.
@@ -495,7 +504,8 @@ module Rubernetes
 
       def plan(request, resource_slices: nil, resource_claims: nil, now: nil, limit: nil, store: nil, **_options)
         return result(request, operations: [], controller: name, descriptor: RESOURCE_POOL_STATUS_REQUEST) unless request.is_a?(Hash)
-        return result(request, operations: [], controller: name, descriptor: RESOURCE_POOL_STATUS_REQUEST) unless Support.value(request, "status", nil).nil?
+        return result(request, operations: [], controller: name, descriptor: RESOURCE_POOL_STATUS_REQUEST) unless Support.value(request,
+                                                                                                                                "status", nil).nil?
 
         adapter = adapter_for(store)
         resource_slices = list_for(adapter, RESOURCE_SLICE, namespace: :all) if resource_slices.nil? && adapter
@@ -504,7 +514,7 @@ module Rubernetes
         resource_claims ||= []
         timestamp = normalize_time(now || Time.now.utc)
         desired_status = calculate_status(request, resource_slices: resource_slices, resource_claims: resource_claims,
-                                          now: timestamp, limit: limit)
+                                                   now: timestamp, limit: limit)
         incomplete = Array(Support.value(desired_status, "pools", [])).any? do |pool|
           !Support.value(pool, "validationError", nil).to_s.empty?
         end
@@ -513,15 +523,15 @@ module Rubernetes
                      "message" => "one or more resource pools are incomplete; retrying",
                      "retryable" => true, "maxRetries" => MAX_RETRIES}]
           return result(request, operations: [], events: events, status: desired_status,
-                        controller: name, descriptor: RESOURCE_POOL_STATUS_REQUEST)
+                                 controller: name, descriptor: RESOURCE_POOL_STATUS_REQUEST)
         end
 
         operation = operation_status(request, desired_status, descriptor: RESOURCE_POOL_STATUS_REQUEST,
-                                     reason: "calculate ResourcePoolStatusRequest status")
+                                                              reason: "calculate ResourcePoolStatusRequest status")
         events = [{"type" => "Normal", "reason" => "ResourcePoolStatusUpdated",
                    "message" => "calculated ResourcePoolStatusRequest status"}]
         result(request, operations: [operation].compact, events: events, status: desired_status,
-               controller: name, descriptor: RESOURCE_POOL_STATUS_REQUEST)
+                        controller: name, descriptor: RESOURCE_POOL_STATUS_REQUEST)
       end
 
       # The upstream controller's periodic cleanup is exposed as a pure
@@ -535,17 +545,19 @@ module Rubernetes
                              completed_condition = Array(Support.value(status, "conditions", [])).find do |condition|
                                %w[Complete Failed MigrationSucceeded MigrationFailed].include?(Support.value(condition, "type", "").to_s)
                              end
-                             Support.parse_time(Support.value(completed_condition || {}, "lastTransitionTime", nil)) || Support.creation_time(request)
+                             Support.parse_time(Support.value(completed_condition || {}, "lastTransitionTime",
+                                                              nil)) || Support.creation_time(request)
                            else
                              Support.creation_time(request)
                            end
           age = timestamp.to_f - reference_time.to_f
           next if age <= 0
+
           ttl = status.nil? ? pending_ttl.to_f : completed_ttl.to_f
           next unless age > ttl
 
           operation_delete(request, descriptor: RESOURCE_POOL_STATUS_REQUEST,
-                           reason: "delete expired ResourcePoolStatusRequest")
+                                    reason: "delete expired ResourcePoolStatusRequest")
         end
       end
 
@@ -658,7 +670,7 @@ module Rubernetes
       include AdvancedMiscSupport
       include SecondarySupport
 
-      DATE_FORMAT = "%Y-%m-%d".freeze
+      DATE_FORMAT = "%Y-%m-%d"
       DEFAULT_CLEANUP_PERIOD = 30 * 24 * 60 * 60
 
       def plan(secret, service_accounts: nil, pods: nil, tracking_config_map: nil, tracked_since: nil,
@@ -678,6 +690,7 @@ module Rubernetes
 
         since = tracked_since || tracking_since_from(tracking_config_map)
         return result(secret, operations: [], controller: name, descriptor: SECRET) unless since
+
         since_time = parse_date(since)
         return result(secret, operations: [], controller: name, descriptor: SECRET) unless since_time
         return result(secret, operations: [], controller: name, descriptor: SECRET) if timestamp < since_time + 86_400 + cleanup_period.to_f
@@ -685,6 +698,7 @@ module Rubernetes
         cutoff = timestamp - cleanup_period.to_f
         creation_time = Support.creation_time(secret)
         return result(secret, operations: [], controller: name, descriptor: SECRET) unless creation_time && creation_time < cutoff
+
         labels = Support.deep_copy(Support.labels(secret))
         last_used = labels[LAST_USED_LABEL] || labels[LAST_USED_LABEL.to_sym]
         if last_used
@@ -695,7 +709,9 @@ module Rubernetes
 
         service_account = linked_service_account(secret, service_accounts)
         return result(secret, operations: [], controller: name, descriptor: SECRET) unless service_account
-        return result(secret, operations: [], controller: name, descriptor: SECRET) unless service_account_references_secret?(service_account, secret)
+        return result(secret, operations: [], controller: name, descriptor: SECRET) unless service_account_references_secret?(
+          service_account, secret
+        )
         return result(secret, operations: [], controller: name, descriptor: SECRET) if mounted_by_pod?(secret, pods)
 
         invalid_since = labels[INVALID_SINCE_LABEL] || labels[INVALID_SINCE_LABEL.to_sym]
@@ -706,21 +722,21 @@ module Rubernetes
           candidate["metadata"] = Support.deep_copy(Support.metadata(secret))
           candidate["metadata"]["labels"] = labels
           operation = operation_update(secret, candidate, descriptor: SECRET,
-                                       reason: "mark legacy service-account token invalid")
+                                                          reason: "mark legacy service-account token invalid")
           return result(secret, operations: [operation].compact,
-                        events: [{"type" => "Normal", "reason" => "LegacyTokenCleaned",
-                                  "message" => "marked unused legacy service-account token #{object_name(secret)} invalid"}],
-                        controller: name, descriptor: SECRET)
+                                events: [{"type" => "Normal", "reason" => "LegacyTokenCleaned",
+                                          "message" => "marked unused legacy service-account token #{object_name(secret)} invalid"}],
+                                controller: name, descriptor: SECRET)
         end
 
         return result(secret, operations: [], controller: name, descriptor: SECRET) if parsed_invalid_since >= date_floor(cutoff)
 
         operation = operation_delete(secret, descriptor: SECRET,
-                                     reason: "delete unused legacy service-account token")
+                                             reason: "delete unused legacy service-account token")
         result(secret, operations: [operation],
-               events: [{"type" => "Normal", "reason" => "LegacyTokenCleaned",
-                         "message" => "deleted unused legacy service-account token #{object_name(secret)}"}],
-               controller: name, descriptor: SECRET)
+                       events: [{"type" => "Normal", "reason" => "LegacyTokenCleaned",
+                                 "message" => "deleted unused legacy service-account token #{object_name(secret)}"}],
+                       controller: name, descriptor: SECRET)
       end
 
       private
@@ -733,6 +749,7 @@ module Rubernetes
 
       def tracking_since_from(config_map)
         return nil unless config_map.is_a?(Hash)
+
         data = Support.value(config_map, "data", {})
         value_at(data, "since", "trackedSince", "tracked_since")
       end
@@ -798,6 +815,7 @@ module Rubernetes
           provider_refs = %w[azureFile cephfs cinder flexVolume rbd scaleIO iscsi storageos].any? do |provider|
             provider_value = value_at(volume, provider)
             next false unless provider_value.is_a?(Hash)
+
             value = value_at(provider_value, "secretName") || value_at(value_at(provider_value, "secretRef") || {}, "name")
             value.to_s == secret_name
           end
@@ -805,7 +823,7 @@ module Rubernetes
           csi_ref = csi.is_a?(Hash) && value_at(value_at(csi, "nodePublishSecretRef") || {}, "name").to_s == secret_name
           direct || projected_ref || provider_refs || csi_ref
         end
-        image_pull || volume_reference || Array(value_at(spec, "containers")) .concat(Array(value_at(spec, "initContainers")))
+        image_pull || volume_reference || Array(value_at(spec, "containers")).concat(Array(value_at(spec, "initContainers")))
           .concat(Array(value_at(spec, "ephemeralContainers"))).any? do |container|
             env_ref = Array(value_at(container, "env")).any? do |env|
               ref = value_at(env, "valueFrom")
@@ -844,7 +862,7 @@ module Rubernetes
         # TypeChecking().WithExpressionWarnings(): an empty list is omitted.
         desired_status["typeChecking"] = normalized_warnings.empty? ? {} : {"expressionWarnings" => normalized_warnings}
         operation = operation_status(policy, desired_status, descriptor: VAP,
-                                     reason: "update ValidatingAdmissionPolicy type-check status")
+                                                             reason: "update ValidatingAdmissionPolicy type-check status")
         result(policy, operations: [operation].compact, status: desired_status, controller: name, descriptor: VAP)
       end
 
@@ -866,8 +884,16 @@ module Rubernetes
           return {"fieldRef" => field_ref.to_s, "warning" => message.to_s}
         end
 
-        field_ref = warning.respond_to?(:field_ref) ? warning.field_ref : warning.respond_to?(:FieldRef) ? warning.FieldRef : nil
-        message = warning.respond_to?(:warning) ? warning.warning : warning.respond_to?(:Warning) ? warning.Warning : warning.to_s
+        field_ref = if warning.respond_to?(:field_ref)
+                      warning.field_ref
+                    else
+                      warning.respond_to?(:FieldRef) ? warning.FieldRef : nil
+                    end
+        message = if warning.respond_to?(:warning)
+                    warning.warning
+                  else
+                    warning.respond_to?(:Warning) ? warning.Warning : warning.to_s
+                  end
         {"fieldRef" => field_ref.to_s, "warning" => message.to_s}
       end
     end
@@ -902,11 +928,11 @@ module Rubernetes
                                                    "There are still IPAddresses referencing the ServiceCIDR, please remove them or create a new ServiceCIDR",
                                                    timestamp)
             operation = operation_status(service_cidr, desired_status, descriptor: SERVICE_CIDR,
-                                         reason: "report ServiceCIDR deletion blocked")
+                                                                       reason: "report ServiceCIDR deletion blocked")
             events << {"type" => "Warning", "reason" => "ServiceCIDRUpdated",
                        "message" => "ServiceCIDR deletion is blocked by an owned IPAddress"}
             return result(service_cidr, operations: [operation].compact, events: events, status: desired_status,
-                          controller: name, descriptor: SERVICE_CIDR)
+                                        controller: name, descriptor: SERVICE_CIDR)
           end
 
           deletion_time = Support.parse_time(metadata_value(service_cidr, "deletionTimestamp", nil))
@@ -921,12 +947,12 @@ module Rubernetes
             candidate["metadata"] = Support.deep_copy(Support.metadata(service_cidr))
             candidate["metadata"]["finalizers"] = finalizers.reject { |value| value == SERVICE_CIDR_FINALIZER }
             operations << operation_update(service_cidr, candidate, descriptor: SERVICE_CIDR,
-                                           reason: "remove ServiceCIDR protection finalizer")
+                                                                    reason: "remove ServiceCIDR protection finalizer")
             events << {"type" => "Normal", "reason" => "ServiceCIDRUpdated",
                        "message" => "removed ServiceCIDR protection finalizer"}
           end
           return result(service_cidr, operations: operations, events: events,
-                        controller: name, descriptor: SERVICE_CIDR)
+                                      controller: name, descriptor: SERVICE_CIDR)
         end
 
         unless finalizers.include?(SERVICE_CIDR_FINALIZER)
@@ -934,18 +960,20 @@ module Rubernetes
           candidate["metadata"] = Support.deep_copy(Support.metadata(service_cidr))
           candidate["metadata"]["finalizers"] = finalizers + [SERVICE_CIDR_FINALIZER]
           operations << operation_update(service_cidr, candidate, descriptor: SERVICE_CIDR,
-                                         reason: "add ServiceCIDR protection finalizer")
+                                                                  reason: "add ServiceCIDR protection finalizer")
         end
 
         desired_status = status_with_condition(service_cidr, "True", SERVICE_CIDR_READY_REASON,
                                                "Kubernetes Service CIDR is ready", timestamp)
         operation = operation_status(service_cidr, desired_status, descriptor: SERVICE_CIDR,
-                                     reason: "update ServiceCIDR ready status")
+                                                                   reason: "update ServiceCIDR ready status")
         operations << operation if operation
-        events << {"type" => "Normal", "reason" => "ServiceCIDRUpdated",
-                   "message" => "ServiceCIDR is ready"} if operations.any?
+        if operations.any?
+          events << {"type" => "Normal", "reason" => "ServiceCIDRUpdated",
+                     "message" => "ServiceCIDR is ready"}
+        end
         result(service_cidr, operations: operations, events: events, status: desired_status,
-               controller: name, descriptor: SERVICE_CIDR)
+                             controller: name, descriptor: SERVICE_CIDR)
       end
 
       private
@@ -958,8 +986,9 @@ module Rubernetes
            Support.value(current, "message", nil).to_s == message.to_s
           return status
         end
+
         status["conditions"] = upsert_condition(Support.value(status, "conditions", []), "Ready", condition_status,
-                                                 reason, message: message, now: now)
+                                                reason, message: message, now: now)
         status
       end
 
@@ -971,6 +1000,7 @@ module Rubernetes
         text = value.to_s
         address, prefix = text.split("/", 2)
         return nil if prefix.nil?
+
         parsed_address = IPAddr.new(address)
         prefix_i = Integer(prefix)
         bits = parsed_address.ipv4? ? 32 : 128
@@ -985,6 +1015,7 @@ module Rubernetes
         parent_parsed = parse_prefix(parent)
         child_parsed = parse_prefix(child)
         return false unless parent_parsed && child_parsed
+
         parent_network, parent_length, parent_bits = parent_parsed
         child_network, child_length, child_bits = child_parsed
         return false unless parent_bits == child_bits && parent_length <= child_length
@@ -1002,11 +1033,14 @@ module Rubernetes
 
       def can_delete?(service_cidr, service_cidrs, ip_addresses)
         candidates = Array(service_cidrs)
-        candidates = candidates + [service_cidr] unless candidates.any? { |candidate| Support.uid(candidate) == Support.uid(service_cidr) || Support.name(candidate) == Support.name(service_cidr) }
+        candidates += [service_cidr] unless candidates.any? do |candidate|
+          Support.uid(candidate) == Support.uid(service_cidr) || Support.name(candidate) == Support.name(service_cidr)
+        end
         own_cidrs = cidr_strings(service_cidr)
         has_parent = own_cidrs.all? do |own_cidr|
           candidates.any? do |candidate|
             next false if Support.name(candidate) == Support.name(service_cidr)
+
             cidr_strings(candidate).any? { |other| contains_prefix?(other, own_cidr) }
           end
         end
@@ -1022,6 +1056,7 @@ module Rubernetes
             managed_by = value_at(Support.metadata(ip_address), "labels")
             managed_by = value_at(managed_by, "ipaddress.kubernetes.io/managed-by") if managed_by.is_a?(Hash)
             next false if managed_by && !managed_by.to_s.empty? && managed_by.to_s != "ipallocator.k8s.io"
+
             begin
               parent_ref = value_at(Support.spec(ip_address), "parentRef", "parent_ref")
               if parent_ref.is_a?(Hash)
@@ -1050,9 +1085,9 @@ module Rubernetes
       include AdvancedMiscSupport
       include SecondarySupport
 
-      SUCCESS_REASON = "StorageVersionMigrationSucceeded".freeze
-      RUNNING_REASON = "StorageVersionMigrationInProgress".freeze
-      FAILED_REASON = "StorageVersionMigrationFailed".freeze
+      SUCCESS_REASON = "StorageVersionMigrationSucceeded"
+      RUNNING_REASON = "StorageVersionMigrationInProgress"
+      FAILED_REASON = "StorageVersionMigrationFailed"
 
       def plan(migration, resources: nil, patch_results: {}, now: nil, gc_resource_version: nil,
                resource_descriptor: nil, target_api_version: nil, target_kind: nil, store: nil, **_options)
@@ -1063,18 +1098,19 @@ module Rubernetes
         checkpoint = Support.value(status, "resourceVersion", nil).to_s
         if checkpoint.empty?
           return result(migration, operations: [], events: [{"type" => "Normal", "reason" => "MigrationRunning",
-                                                            "message" => "waiting for the storage version checkpoint"}],
-                        controller: name, descriptor: STORAGE_VERSION_MIGRATION)
+                                                             "message" => "waiting for the storage version checkpoint"}],
+                                   controller: name, descriptor: STORAGE_VERSION_MIGRATION)
         end
 
         unless valid_resource_version?(checkpoint)
           return failed_result(migration, "invalid migration checkpoint resourceVersion #{checkpoint.inspect}", now)
         end
-        if gc_resource_version && valid_resource_version?(gc_resource_version.to_s) && compare_resource_version(gc_resource_version.to_s, checkpoint) == -1
+        if gc_resource_version && valid_resource_version?(gc_resource_version.to_s) && compare_resource_version(gc_resource_version.to_s,
+                                                                                                                checkpoint) == -1
           return result(migration, operations: [], events: [{"type" => "Normal", "reason" => "MigrationRunning",
                                                              "message" => "garbage-collector cache is behind the migration checkpoint",
                                                              "retryable" => true}],
-                        controller: name, descriptor: STORAGE_VERSION_MIGRATION)
+                                   controller: name, descriptor: STORAGE_VERSION_MIGRATION)
         end
         if gc_resource_version && !valid_resource_version?(gc_resource_version.to_s)
           return failed_result(migration, "invalid garbage-collector resourceVersion #{gc_resource_version.inspect}", now)
@@ -1082,10 +1118,10 @@ module Rubernetes
 
         target_spec = Support.value(Support.spec(migration), "resource", {})
         target_resource = if target_spec.is_a?(Hash)
-                           value_at(target_spec, "resource", "name")
-                         else
-                           target_spec
-                         end
+                            value_at(target_spec, "resource", "name")
+                          else
+                            target_spec
+                          end
         target_resource = target_resource.to_s
         if resources.nil? && (adapter = adapter_for(store))
           target_group = value_at(target_spec, "group", "apiGroup").to_s if target_spec.is_a?(Hash)
@@ -1141,18 +1177,20 @@ module Rubernetes
           end
         end
 
-        return result(migration, operations: operations, events: [retry_event].compact,
-                      controller: name, descriptor: STORAGE_VERSION_MIGRATION) if retry_event
+        if retry_event
+          return result(migration, operations: operations, events: [retry_event].compact,
+                                   controller: name, descriptor: STORAGE_VERSION_MIGRATION)
+        end
         return failed_result(migration, permanent_error, now, operations: operations) if permanent_error
 
         desired_status = with_migration_condition(status, "MigrationSucceeded", "True", SUCCESS_REASON, "", now)
         status_operation = operation_status(migration, desired_status, descriptor: STORAGE_VERSION_MIGRATION,
-                                            reason: "mark storage version migration succeeded")
+                                                                       reason: "mark storage version migration succeeded")
         operations << status_operation if status_operation
         result(migration, operations: operations,
-               events: [{"type" => "Normal", "reason" => "MigrationSucceeded",
-                         "message" => "storage version migration completed"}],
-               status: desired_status, controller: name, descriptor: STORAGE_VERSION_MIGRATION)
+                          events: [{"type" => "Normal", "reason" => "MigrationSucceeded",
+                                    "message" => "storage version migration completed"}],
+                          status: desired_status, controller: name, descriptor: STORAGE_VERSION_MIGRATION)
       end
 
       private
@@ -1179,12 +1217,14 @@ module Rubernetes
 
       def patch_outcome(results, resource, key)
         return nil unless results.is_a?(Hash)
+
         results[key] || results[[Support.namespace(resource), Support.name(resource)]] || results[Support.name(resource)]
       end
 
       def retriable_outcome?(outcome)
         return true if outcome.is_a?(Hash) && (value_at(outcome, "retryable", "retriable") == true)
         return true if outcome.respond_to?(:status) && [408, 429, 500, 502, 503, 504].include?(outcome.status.to_i)
+
         outcome.to_s.match?(/timeout|too many requests|unavailable|internal|connection|temporary|retry/i)
       end
 
@@ -1205,6 +1245,7 @@ module Rubernetes
         return next_status if current && Support.value(current, "status", "").to_s == state.to_s &&
                               Support.value(current, "reason", "").to_s == reason.to_s &&
                               Support.value(current, "message", "").to_s == message.to_s
+
         desired = current || {"type" => type}
         desired["status"] = state
         desired["reason"] = reason
@@ -1219,10 +1260,10 @@ module Rubernetes
         desired_status = with_migration_condition(Support.status(migration), "MigrationFailed", "True", FAILED_REASON,
                                                   message.to_s, now)
         operation = operation_status(migration, desired_status, descriptor: STORAGE_VERSION_MIGRATION,
-                                     reason: "mark storage version migration failed")
+                                                                reason: "mark storage version migration failed")
         result(migration, operations: operations + [operation].compact,
-               events: [{"type" => "Warning", "reason" => "MigrationFailed", "message" => message.to_s}],
-               status: desired_status, controller: name, descriptor: STORAGE_VERSION_MIGRATION)
+                          events: [{"type" => "Warning", "reason" => "MigrationFailed", "message" => message.to_s}],
+                          status: desired_status, controller: name, descriptor: STORAGE_VERSION_MIGRATION)
       end
     end
 
@@ -1240,7 +1281,7 @@ module Rubernetes
           pods = list_for(adapter, POD, namespace: :all)
         end
         snapshot = Array(pods)
-        snapshot = snapshot + [pod] unless snapshot.any? { |candidate| pod_key(candidate) == pod_key(pod) }
+        snapshot += [pod] unless snapshot.any? { |candidate| pod_key(candidate) == pod_key(pod) }
         snapshot = snapshot.select do |candidate|
           (Support.kind(candidate).empty? || Support.kind(candidate) == "Pod") &&
             !%w[Succeeded Failed].include?(Support.value(Support.status(candidate), "phase", "").to_s)
@@ -1269,11 +1310,13 @@ module Rubernetes
         # entries; preserve deterministic first-seen ordering.
         events = events.each_with_object([]) do |event, unique|
           key = [event["pod"], event["otherPod"], event["reason"], event["message"]]
-          unique << event unless unique.any? { |existing| [existing["pod"], existing["otherPod"], existing["reason"], existing["message"]] == key }
+          unique << event unless unique.any? do |existing|
+            [existing["pod"], existing["otherPod"], existing["reason"], existing["message"]] == key
+          end
         end
         record_conflict_metrics(pod, events)
         result(pod, operations: [], events: events, status: Support.status(pod),
-               controller: name, descriptor: POD)
+                    controller: name, descriptor: POD)
       end
 
       CONFLICT_METRIC = "selinux_warning_controller_selinux_volume_conflict"
@@ -1329,8 +1372,10 @@ module Rubernetes
 
       def unique_volume_identity(pod, volume)
         return volume.to_s unless volume.is_a?(Hash)
+
         direct = value_at(volume, "uniqueVolumeName", "unique_volume_name", "volumeName", "volume_name")
         return direct.to_s unless direct.to_s.empty?
+
         pvc = value_at(volume, "persistentVolumeClaim")
         if pvc.is_a?(Hash)
           claim = value_at(pvc, "claimName", "name").to_s
@@ -1362,10 +1407,13 @@ module Rubernetes
       def effective_label(pod, volume)
         direct = value_at(volume, "seLinuxLabel", "selinuxLabel")
         return direct.to_s unless direct.nil?
+
         security_context = Support.value(Support.spec(pod), "securityContext", {})
         options = value_at(volume, "seLinuxOptions") || value_at(security_context, "seLinuxOptions", "selinuxOptions")
         if options.is_a?(Hash)
-          [value_at(options, "user"), value_at(options, "role"), value_at(options, "type"), value_at(options, "level")].map { |part| part.to_s }.join(":").then { |label| label == ":::" ? "" : label }
+          [value_at(options, "user"), value_at(options, "role"), value_at(options, "type"), value_at(options, "level")].map do |part|
+            part.to_s
+          end.join(":").then { |label| label == ":::" ? "" : label }
         else
           value_at(pod, "seLinuxLabel", "selinuxLabel").to_s
         end
@@ -1416,7 +1464,7 @@ module Rubernetes
     # The parent controller entrypoint can register these definitions in one
     # atomic operation once all parallel implementation batches are loaded.
     module AdvancedMiscControllerFactory
-      VERSION = "v1.36.2".freeze
+      VERSION = "v1.36.2"
       NAMES = %w[
         resourceclaim-controller
         resourcepoolstatusrequest-controller
@@ -1484,7 +1532,9 @@ module Rubernetes
       end
 
       def entries
-        NAMES.map { |controller_name| BuiltinControllerCorpus.fetch(controller_name) || raise(ValidationError, "missing pinned corpus entry #{controller_name.inspect}") }
+        NAMES.map do |controller_name|
+          BuiltinControllerCorpus.fetch(controller_name) || raise(ValidationError, "missing pinned corpus entry #{controller_name.inspect}")
+        end
       end
 
       def definitions(registry: nil)
@@ -1512,14 +1562,13 @@ module Rubernetes
           options[:store] = context[:store] || context["store"] if options.is_a?(Hash) && !options.key?(:store) && !options.key?("store")
           controller.plan(resource, **(options.is_a?(Hash) ? options : {}))
         end
-        definition = ControllerDefinition.new(
+        ControllerDefinition.new(
           name: controller_name, kind: kind_descriptor, owns: [],
           watches: watch_specs(controller_name, registry: registry), reconcile_block: reconcile,
           feature_gates: metadata.fetch(:feature_gates), startup_conditions: metadata.fetch(:startup_conditions),
           sync_targets: metadata.fetch(:sync_targets), status_fields: metadata.fetch(:status_fields),
           events: metadata.fetch(:events), implementation: implementation
         )
-        definition
       end
 
       def register!(registry)

@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
 require "json"
 require "ipaddr"
 require "net/http"
@@ -199,9 +198,7 @@ module Rubernetes
       # memory. The returned response contains status and headers; successful body bytes are
       # delivered only to the block. Error responses are bounded and raised as APIError.
       def stream(method, path, body: nil, headers: {}, query: nil, &block)
-        unless block
-          return enum_for(__method__, method, path, body: body, headers: headers, query: query)
-        end
+        return enum_for(__method__, method, path, body: body, headers: headers, query: query) unless block
 
         normalized_method = normalize_method(method)
         uri = build_uri(path, query)
@@ -231,7 +228,7 @@ module Rubernetes
           begin
             call_http_stream(normalized_method, uri, request_body, request_headers) do |chunk|
               counted.call(200)
-              block.call(chunk)
+              yield(chunk)
             end
           rescue APIError => error
             counted.call(error.status)
@@ -255,9 +252,17 @@ module Rubernetes
       # tlsConfigKey: what the TLS transport is keyed by (loadTLSFiles reads
       # the files first); the server is not part of it.
       def tls_cache_key
-        read = ->(path) { path ? (File.binread(path) rescue path.to_s) : nil }
+        read = lambda { |path|
+          if path
+            begin
+              File.binread(path)
+            rescue StandardError
+              path.to_s
+            end
+          end
+        }
         [context_value(:ca_data) || context_value(:certificate_authority_data) ||
-           read.call(context_value(:ca_file) || context_value(:certificate_authority_file)),
+          read.call(context_value(:ca_file) || context_value(:certificate_authority_file)),
          context_value(:client_certificate_data) || read.call(context_value(:client_certificate_file)),
          context_value(:client_key_data) || read.call(context_value(:client_key_file)),
          context_value(:insecure_skip_tls_verify) == true].hash
@@ -372,7 +377,7 @@ module Rubernetes
         detail = detail.to_s unless detail.nil?
         detail = redact_bearer_token(detail) unless detail.nil?
         operation = [method, path].compact.join(" ")
-        message = "Kubernetes API request#{operation.empty? ? "" : " #{operation}"} failed with HTTP #{response.status}"
+        message = "Kubernetes API request#{" #{operation}" unless operation.empty?} failed with HTTP #{response.status}"
         message = "#{message}: #{detail}" unless detail.nil? || detail.empty?
         raise APIError.new(message, response: response, status_object: status_object)
       end
@@ -395,12 +400,10 @@ module Rubernetes
       def validate_bearer_token!
         token = context_value(:bearer_token) || context_value(:token)
         return if token.nil?
-        unless token.is_a?(String) && !token.empty?
-          raise ConfigurationError, "Kubernetes bearer token must be a non-empty string"
-        end
-        unless token.b.match?(/\A[!-~]+\z/n)
-          raise ConfigurationError, "Kubernetes bearer token must contain only printable ASCII without whitespace"
-        end
+        raise ConfigurationError, "Kubernetes bearer token must be a non-empty string" unless token.is_a?(String) && !token.empty?
+        return if token.b.match?(/\A[!-~]+\z/n)
+
+        raise ConfigurationError, "Kubernetes bearer token must contain only printable ASCII without whitespace"
       end
 
       def redact_bearer_token(value)
@@ -449,9 +452,7 @@ module Rubernetes
 
       def normalize_method(method)
         normalized = method.to_s.upcase
-        unless normalized.match?(/\A[A-Z][A-Z0-9-]*\z/)
-          raise UsageError, "HTTP method must contain only ASCII token characters"
-        end
+        raise UsageError, "HTTP method must contain only ASCII token characters" unless normalized.match?(/\A[A-Z][A-Z0-9-]*\z/)
 
         normalized
       end
@@ -459,21 +460,18 @@ module Rubernetes
       def build_uri(path, query)
         path_value = path.to_s
         raise UsageError, "REST path must be a non-empty relative API path" if path_value.empty?
-        if path_value.match?(/[\x00-\x1f\x7f]/)
-          raise UsageError, "REST path must not contain control characters"
-        end
-        if path_value.include?("\\")
-          raise UsageError, "REST path must not contain backslashes"
-        end
-        if path_value.match?(%r{\A(?:[a-z][a-z0-9+.-]*:)?//}i) || path_value.match?(%r{\A[a-z][a-z0-9+.-]*:}i)
+        raise UsageError, "REST path must not contain control characters" if path_value.match?(/[\x00-\x1f\x7f]/)
+        raise UsageError, "REST path must not contain backslashes" if path_value.include?("\\")
+        if path_value.match?(%r{\A(?:[a-z][a-z0-9+.-]*:)?//}i) || path_value.match?(/\A[a-z][a-z0-9+.-]*:/i)
           raise UsageError, "REST path must not contain an absolute URL"
         end
 
         path_uri = URI.parse(path_value.start_with?("/") ? path_value : "/#{path_value}")
         raise UsageError, "REST path must not contain a fragment" if path_uri.fragment
+
         base_path = @base_uri.path.to_s
         base_path = "" if base_path == "/"
-        joined_path = "#{base_path}/#{path_uri.path}".gsub(%r{/+}, "/")
+        joined_path = "#{base_path}/#{path_uri.path}".squeeze("/")
         joined_path = "/" if joined_path.empty?
         query_values = merge_query_values(path_uri.query, query)
         query_string = query_values.empty? ? nil : query_values.join("&")
@@ -494,14 +492,13 @@ module Rubernetes
 
       def encode_query(query)
         return nil if query.nil?
+
         if query.is_a?(String)
           raise UsageError, "REST query must not contain control characters" if query.match?(/[\x00-\x1f\x7f]/)
 
           return query
         end
-        unless query.respond_to?(:to_hash)
-          raise UsageError, "REST query must be a mapping or encoded query string"
-        end
+        raise UsageError, "REST query must be a mapping or encoded query string" unless query.respond_to?(:to_hash)
 
         URI.encode_www_form(query.to_hash.flat_map do |key, value|
           value.is_a?(Array) ? value.map { |item| [key, item] } : [[key, value]]
@@ -529,27 +526,20 @@ module Rubernetes
       end
 
       def build_headers(headers, body)
-        unless headers.respond_to?(:to_hash)
-          raise UsageError, "HTTP headers must be a mapping"
-        end
+        raise UsageError, "HTTP headers must be a mapping" unless headers.respond_to?(:to_hash)
 
         result = {}
         headers.to_hash.each do |key, value|
           name = key.to_s
           header_value = value.to_s
-          unless name.match?(/\A[!#$%&'*+\-.^_`|~0-9A-Za-z]+\z/)
-            raise UsageError, "HTTP header names must use ASCII token characters"
-          end
-          if header_value.match?(/[\x00-\x1f\x7f]/)
-            raise UsageError, "HTTP headers must not contain control characters"
-          end
+          raise UsageError, "HTTP header names must use ASCII token characters" unless name.match?(/\A[!#$%&'*+\-.^_`|~0-9A-Za-z]+\z/)
+          raise UsageError, "HTTP headers must not contain control characters" if header_value.match?(/[\x00-\x1f\x7f]/)
+
           result[name] = header_value
         end
         result["Accept"] = "application/json" unless result.keys.any? { |key| key.casecmp?("Accept") }
         result["User-Agent"] = @user_agent unless @user_agent.empty? || result.keys.any? { |key| key.casecmp?("User-Agent") }
-        if body && !result.keys.any? { |key| key.casecmp?("Content-Type") }
-          result["Content-Type"] = "application/json"
-        end
+        result["Content-Type"] = "application/json" if body && !result.keys.any? { |key| key.casecmp?("Content-Type") }
         unless result.keys.any? { |key| key.casecmp?("Authorization") }
           token = context_value(:bearer_token) || context_value(:token)
           result["Authorization"] = "Bearer #{token}" if token && !token.to_s.empty?
@@ -722,7 +712,7 @@ module Rubernetes
         nil
       end
 
-      def call_http_stream(method, uri, body, headers, &block)
+      def call_http_stream(method, uri, body, headers, &)
         http = nil
         session = nil
         http, session = open_http_stream(uri)
@@ -733,7 +723,7 @@ module Rubernetes
         yielded_response = false
         consume = lambda do |raw_response|
           yielded_response = true
-          streamed_response = consume_http_stream(raw_response, method, uri.request_uri, &block)
+          streamed_response = consume_http_stream(raw_response, method, uri.request_uri, &)
         end
 
         raw_response = if http.respond_to?(:request)
@@ -745,7 +735,7 @@ module Rubernetes
                        end
         return streamed_response if yielded_response
 
-        consume_http_stream(raw_response, method, uri.request_uri, &block)
+        consume_http_stream(raw_response, method, uri.request_uri, &)
       ensure
         unregister_stream(session) if session
       end
@@ -789,6 +779,7 @@ module Rubernetes
       def close_stream_session(session)
         @stream_mutex.synchronize do
           return [] if session.close_succeeded
+
           if session.close_in_progress
             @stream_condition.wait(@stream_mutex) while session.close_in_progress
             return [] if session.close_succeeded
@@ -864,7 +855,7 @@ module Rubernetes
         nil
       end
 
-      def consume_http_stream(raw_response, method, path, &block)
+      def consume_http_stream(raw_response, method, path, &)
         status = response_status(raw_response)
         headers = response_headers(raw_response)
         response = Response.new(status: status, headers: headers.freeze, body: "")
@@ -880,21 +871,22 @@ module Rubernetes
           raise_for_status!(response, method, path)
         end
 
-        each_raw_response_chunk(raw_response, &block)
+        each_raw_response_chunk(raw_response, &)
         response
       end
 
-      def each_raw_response_chunk(raw_response, &block)
+      def each_raw_response_chunk(raw_response, &)
         if raw_response.respond_to?(:read_body)
-          raw_response.read_body { |chunk| block.call(String(chunk)) }
+          raw_response.read_body { |chunk| yield(String(chunk)) }
         else
           body = raw_response.respond_to?(:body) ? raw_response.body : ""
-          each_stream_body_chunk(body, &block)
+          each_stream_body_chunk(body, &)
         end
       end
 
       def each_stream_body_chunk(body)
         return if body.nil? || body == ""
+
         if body.is_a?(String)
           yield body
         elsif body.respond_to?(:each)
@@ -940,10 +932,12 @@ module Rubernetes
         unless insecure_value.nil? || insecure_value == true || insecure_value == false
           raise ConfigurationError, "insecure TLS verification setting must be a boolean"
         end
+
         unless ssl_enabled
           if insecure_value == true || ca_file || ca_data || client_certificate || client_key
             raise ConfigurationError, "TLS credentials and options require an https Kubernetes API server"
           end
+
           return http
         end
 
@@ -951,6 +945,7 @@ module Rubernetes
         if insecure && (ca_data || ca_file)
           raise ConfigurationError, "certificate authority data cannot be combined with insecure TLS verification"
         end
+
         http.verify_mode = insecure ? OpenSSL::SSL::VERIFY_NONE : OpenSSL::SSL::VERIFY_PEER if http.respond_to?(:verify_mode=)
         if ca_data
           configure_ca_store(http, ca_data)
@@ -1034,6 +1029,7 @@ module Rubernetes
 
       def read_file(path, label, sensitive: false)
         return nil if path.nil?
+
         reject_symlink_components(path, label)
 
         flags = File::RDONLY
@@ -1048,7 +1044,10 @@ module Rubernetes
           end
 
           content = file.read(MAX_CREDENTIAL_FILE_BYTES + 1)
-          raise ConfigurationError, "#{label} file exceeds #{MAX_CREDENTIAL_FILE_BYTES} bytes: #{path}" if content.bytesize > MAX_CREDENTIAL_FILE_BYTES
+          if content.bytesize > MAX_CREDENTIAL_FILE_BYTES
+            raise ConfigurationError,
+                  "#{label} file exceeds #{MAX_CREDENTIAL_FILE_BYTES} bytes: #{path}"
+          end
           raise ConfigurationError, "#{label} file is empty: #{path}" if content.empty?
 
           content
@@ -1065,16 +1064,14 @@ module Rubernetes
           next if component.empty?
 
           current = File.join(current, component)
-          if File.symlink?(current)
-            raise ConfigurationError, "#{label} file must not contain symlinks: #{path}"
-          end
+          raise ConfigurationError, "#{label} file must not contain symlinks: #{path}" if File.symlink?(current)
         end
       end
 
       def build_request(method, uri, body, headers)
         request_class = net_http_request_class(method)
         request = if request_class
-                  request_class.new(uri.request_uri, headers)
+                    request_class.new(uri.request_uri, headers)
                   else
                     Net::HTTPGenericRequest.new(method, !body.nil?, true, uri.request_uri, headers)
                   end
@@ -1096,6 +1093,7 @@ module Rubernetes
 
       def normalize_response(response)
         return response if response.is_a?(Response)
+
         status = response_status(response)
         headers = response_headers(response)
         raw_body = response.respond_to?(:body) ? response.body : ""

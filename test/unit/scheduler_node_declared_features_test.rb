@@ -13,33 +13,41 @@ class SchedulerNodeDeclaredFeaturesTest < Minitest::Test
   def test_pod_with_requirement_lands_only_on_declaring_node
     result = Scheduler.new.schedule(pod("needs", rules: RESTART_ALL),
                                     [node("old", declared: nil), node("new", declared: %w[RestartAllContainersOnContainerExits])])
+
     assert_predicate result, :scheduled?
     assert_equal "new", result.node_name
     rejection = result.filtered.fetch("old")
+
     assert_equal "node(s) didn't match Pod's required features", rejection.fetch("reason")
     assert_equal "UnschedulableAndUnresolvable", rejection.fetch("code")
   end
 
   def test_no_declaring_node_is_unschedulable
     result = Scheduler.new.schedule(pod("needs", rules: RESTART_ALL), [node("old", declared: %w[ExtendWebSocketsToKubelet])])
+
     refute_predicate result, :scheduled?
   end
 
   def test_pod_without_requirement_ignores_declared_features
     result = Scheduler.new.schedule(pod("plain", rules: [{"action" => "Restart", "exitCodes" => {"operator" => "In", "values" => [1]}}]),
                                     [node("old", declared: nil)])
+
     assert_equal "old", result.node_name
   end
 
   def test_unknown_declared_features_are_ignored
     filter = Scheduler::Filters::NodeDeclaredFeatures.new
     typed_pod = Scheduler::Pod.new(pod("needs", rules: RESTART_ALL))
-    assert_equal true, filter.call(typed_pod, Scheduler::Node.new(node("n", declared: %w[AFeatureFromTheFuture RestartAllContainersOnContainerExits])))
+
+    assert_equal true,
+                 filter.call(typed_pod,
+                             Scheduler::Node.new(node("n", declared: %w[AFeatureFromTheFuture RestartAllContainersOnContainerExits])))
     refute_equal true, filter.call(typed_pod, Scheduler::Node.new(node("n", declared: %w[AFeatureFromTheFuture])))
   end
 
   def test_disabled_plugin_filters_nothing
     filter = Scheduler::Filters::NodeDeclaredFeatures.new(enabled: false)
+
     assert_equal true, filter.call(Scheduler::Pod.new(pod("needs", rules: RESTART_ALL)), Scheduler::Node.new(node("n", declared: nil)))
   end
 
@@ -48,6 +56,7 @@ class SchedulerNodeDeclaredFeaturesTest < Minitest::Test
     spec_pod["spec"]["hostNetwork"] = true
     spec_pod["spec"]["hostUsers"] = false
     result = Scheduler.new.schedule(spec_pod, [node("n", declared: %w[RestartAllContainersOnContainerExits])])
+
     refute_predicate result, :scheduled?
   end
 

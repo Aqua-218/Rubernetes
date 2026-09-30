@@ -21,13 +21,12 @@ module Rubernetes
         "kubeproxy_iptables_ct_state_invalid_dropped_packets_total" => Iptables::CT_STATE_INVALID_COUNTER,
         "kubeproxy_iptables_localhost_nodeports_accepted_packets_total" => Iptables::LOCALHOST_NODEPORTS_COUNTER
       }.freeze
-      NFTABLES_FAMILIES = %w[kubeproxy_sync_proxy_rules_nftables_sync_failures_total kubeproxy_sync_proxy_rules_nftables_cleanup_failures_total].freeze
+      NFTABLES_FAMILIES = %w[kubeproxy_sync_proxy_rules_nftables_sync_failures_total
+                             kubeproxy_sync_proxy_rules_nftables_cleanup_failures_total].freeze
       # EndpointSlice annotation the network programming latency starts from.
       LAST_CHANGE_TRIGGER_TIME = "endpoints.kubernetes.io/last-change-trigger-time"
 
-      attr_reader :registry
-
-      attr_reader :mode
+      attr_reader :registry, :mode
       # ->() { {counter_name => [packets, bytes]} }: the iptables backend's nfacct reader.
       attr_accessor :nfacct_counters
 
@@ -86,7 +85,8 @@ module Rubernetes
         families.each do |family|
           labels = {"ip_family" => family}
           observe("kubeproxy_sync_proxy_rules_duration_seconds", seconds, labels)
-          observe(full ? "kubeproxy_sync_full_proxy_rules_duration_seconds" : "kubeproxy_sync_partial_proxy_rules_duration_seconds", seconds, labels)
+          observe(full ? "kubeproxy_sync_full_proxy_rules_duration_seconds" : "kubeproxy_sync_partial_proxy_rules_duration_seconds",
+                  seconds, labels)
           set("kubeproxy_sync_proxy_rules_last_timestamp_seconds", now, labels)
           pending_triggers.each do |trigger|
             latency = now - trigger
@@ -175,13 +175,16 @@ module Rubernetes
 
       def collect(registry)
         collect_nfacct(registry) if @mode == :iptables && @nfacct_counters
-        services, endpoints, no_local = @mutex.synchronize { [@service_changes_pending, @endpoint_changes_pending, @no_local_endpoints.dup] }
+        services, endpoints, no_local = @mutex.synchronize do
+          [@service_changes_pending, @endpoint_changes_pending, @no_local_endpoints.dup]
+        end
         registry.set("kubeproxy_sync_proxy_rules_service_changes_pending", services)
         registry.set("kubeproxy_sync_proxy_rules_endpoint_changes_pending", endpoints)
         registry.reset("kubeproxy_sync_proxy_rules_no_local_endpoints_total")
         FAMILIES.each do |family|
           %w[internal external].each do |policy|
-            registry.set("kubeproxy_sync_proxy_rules_no_local_endpoints_total", no_local[[family, policy]], {"ip_family" => family, "traffic_policy" => policy})
+            registry.set("kubeproxy_sync_proxy_rules_no_local_endpoints_total", no_local[[family, policy]],
+                         {"ip_family" => family, "traffic_policy" => policy})
           end
         end
       end

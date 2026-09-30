@@ -74,7 +74,7 @@ module Rubernetes
       end
 
       def to_h
-        payload = { status: status, headers: headers, body: body }
+        payload = {status: status, headers: headers, body: body}
         payload[:stream] = stream? if stream?
         payload[:upgrade] = upgrade if upgrade?
         payload

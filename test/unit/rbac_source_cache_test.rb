@@ -21,9 +21,9 @@ class RBACSourceCacheTest < Minitest::Test
       @lists = Hash.new(0)
     end
 
-    def list(prefix = "", **options)
+    def list(prefix = "", **)
       @lists[prefix] += 1
-      __getobj__.list(prefix, **options)
+      __getobj__.list(prefix, **)
     end
   end
 
@@ -54,15 +54,16 @@ class RBACSourceCacheTest < Minitest::Test
   def setup
     @memory = Rubernetes::Storage::MemoryStore.new
     @memory.create("registry/clusterroles/_cluster/pod-reader", role("pod-reader"))
-    @memory.create("registry/clusterrolebindings/_cluster/alice-reads", binding("alice-reads", role_kind: "ClusterRole", role_name: "pod-reader", user: "alice"))
+    @memory.create("registry/clusterrolebindings/_cluster/alice-reads",
+                   binding("alice-reads", role_kind: "ClusterRole", role_name: "pod-reader", user: "alice"))
     @store = CountingStore.new(@memory)
     @source = A::StoreRBACSource.new(@store, key_for: KEY_FOR)
     @rbac = A::RBAC.new(source: @source)
   end
 
   def test_repeated_authorizations_list_the_store_once
-    3.times { assert @rbac.authorize(attributes("alice")).allowed? }
-    3.times { refute @rbac.authorize(attributes("bob")).allowed? }
+    3.times { assert_predicate @rbac.authorize(attributes("alice")), :allowed? }
+    3.times { refute_predicate @rbac.authorize(attributes("bob")), :allowed? }
     assert_equal 1, @store.lists["registry/clusterroles/"]
     assert_equal 1, @store.lists["registry/clusterrolebindings/"]
     assert_equal 1, @store.lists["registry/roles/ns/"]
@@ -70,22 +71,26 @@ class RBACSourceCacheTest < Minitest::Test
   end
 
   def test_a_new_binding_is_seen_at_once
-    refute @rbac.authorize(attributes("bob")).allowed?
-    @memory.create("registry/rolebindings/ns/bob-reads", binding("bob-reads", role_kind: "ClusterRole", role_name: "pod-reader", user: "bob", namespace: "ns"))
-    assert @rbac.authorize(attributes("bob")).allowed?
-    refute @rbac.authorize(attributes("bob", namespace: "other")).allowed?, "a RoleBinding grants in its namespace only"
+    refute_predicate @rbac.authorize(attributes("bob")), :allowed?
+    @memory.create("registry/rolebindings/ns/bob-reads",
+                   binding("bob-reads", role_kind: "ClusterRole", role_name: "pod-reader", user: "bob", namespace: "ns"))
+
+    assert_predicate @rbac.authorize(attributes("bob")), :allowed?
+    refute_predicate @rbac.authorize(attributes("bob", namespace: "other")), :allowed?, "a RoleBinding grants in its namespace only"
   end
 
   def test_a_deleted_binding_stops_granting_at_once
-    assert @rbac.authorize(attributes("alice")).allowed?
+    assert_predicate @rbac.authorize(attributes("alice")), :allowed?
     @memory.delete("registry/clusterrolebindings/_cluster/alice-reads")
-    refute @rbac.authorize(attributes("alice")).allowed?
+
+    refute_predicate @rbac.authorize(attributes("alice")), :allowed?
   end
 
   def test_writes_to_other_resources_do_not_invalidate
     @rbac.authorize(attributes("alice"))
     20.times { |index| @memory.create("registry/pods/ns/p#{index}", {"metadata" => {"name" => "p#{index}", "namespace" => "ns"}}) }
     @rbac.authorize(attributes("alice"))
+
     assert_equal 1, @store.lists["registry/clusterroles/"]
   end
 
@@ -93,9 +98,13 @@ class RBACSourceCacheTest < Minitest::Test
     plain = Object.new
     lists = Hash.new(0)
     memory = @memory
-    plain.define_singleton_method(:list) { |prefix = "", **options| lists[prefix] += 1; memory.list(prefix, **options) }
+    plain.define_singleton_method(:list) do |prefix = "", **options|
+      lists[prefix] += 1
+      memory.list(prefix, **options)
+    end
     rbac = A::RBAC.new(source: A::StoreRBACSource.new(plain, key_for: KEY_FOR))
-    2.times { assert rbac.authorize(attributes("alice")).allowed? }
+
+    2.times { assert_predicate rbac.authorize(attributes("alice")), :allowed? }
     assert_equal 2, lists["registry/clusterroles/"]
   end
 end
@@ -103,9 +112,11 @@ end
 class RBACSourceCacheScopeTest < RBACSourceCacheTest
   def test_a_namespaced_binding_write_keeps_the_cluster_cache
     # bob has no cluster grant, so his check walks the namespaced lists too.
-    refute @rbac.authorize(attributes("bob")).allowed?
-    @memory.create("registry/rolebindings/other/x", binding("x", role_kind: "ClusterRole", role_name: "pod-reader", user: "carol", namespace: "other"))
-    refute @rbac.authorize(attributes("bob")).allowed?
+    refute_predicate @rbac.authorize(attributes("bob")), :allowed?
+    @memory.create("registry/rolebindings/other/x",
+                   binding("x", role_kind: "ClusterRole", role_name: "pod-reader", user: "carol", namespace: "other"))
+
+    refute_predicate @rbac.authorize(attributes("bob")), :allowed?
     assert_equal 1, @store.lists["registry/clusterroles/"], "a RoleBinding write must not re-list ClusterRoles"
     assert_equal 2, @store.lists["registry/rolebindings/ns/"], "but the namespaced lists are refreshed"
   end

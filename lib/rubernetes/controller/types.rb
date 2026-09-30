@@ -102,9 +102,9 @@ module Rubernetes
         end
 
         known = KNOWN[text]
-        return new(group: group || known&.[](0), version: version || known&.[](1),
-                   kind: kind || text, resource: resource || known&.[](2),
-                   scope: scope || known&.[](3), allow_unknown: true)
+        new(group: group || known&.[](0), version: version || known&.[](1),
+            kind: kind || text, resource: resource || known&.[](2),
+            scope: scope || known&.[](3), allow_unknown: true)
       end
 
       def self.split_api_version(api_version)
@@ -115,7 +115,7 @@ module Rubernetes
         text.split("/", 2)
       end
 
-      def initialize(group: nil, version: nil, kind:, resource: nil, scope: nil, allow_unknown: false)
+      def initialize(kind:, group: nil, version: nil, resource: nil, scope: nil, allow_unknown: false)
         kind = kind.to_s
         raise UnknownGVKError, "resource kind must not be empty" if kind.empty?
 
@@ -130,6 +130,7 @@ module Rubernetes
         @kind = kind
         raise UnknownGVKError, "unknown GVK #{identifier}" if !allow_unknown && known.nil?
         raise UnknownGVKError, "resource version must not be empty" if @version.empty?
+
         freeze
       end
 
@@ -407,6 +408,7 @@ module Rubernetes
         raise ValidationError, "controller name must not contain surrounding whitespace" unless name == name.strip
         raise ValidationError, "controller kind must be a ResourceDescriptor" unless kind.is_a?(ResourceDescriptor)
         raise ValidationError, "controller owner must match controller kind" unless owner == kind
+
         validate_reconcile_block!
         validate_metadata!
         validate_ownership!
@@ -470,9 +472,7 @@ module Rubernetes
       private
 
       def validate_reconcile_block!
-        unless reconcile_block.respond_to?(:call)
-          raise MissingReconcileError, "controller #{name} has no callable reconcile block"
-        end
+        raise MissingReconcileError, "controller #{name} has no callable reconcile block" unless reconcile_block.respond_to?(:call)
 
         return if reconcile_block.arity.negative? || [1, 2].include?(reconcile_block.arity)
 
@@ -488,7 +488,7 @@ module Rubernetes
         errors = implementation_contract_errors
         return if errors.empty?
 
-        raise ValidationError, "controller #{name} concrete implementation contract is invalid: #{errors.join('; ')}"
+        raise ValidationError, "controller #{name} concrete implementation contract is invalid: #{errors.join("; ")}"
       end
 
       def implementation_contract_errors
@@ -496,15 +496,9 @@ module Rubernetes
 
         klass = implementation.is_a?(Class) ? implementation : implementation.class
         errors = []
-        unless implementation.is_a?(Class) || implementation.respond_to?(:plan)
-          errors << "implementation must be a class or expose #plan"
-        end
-        unless klass.public_instance_methods(true).include?(:plan) || klass.protected_instance_methods(true).include?(:plan)
-          errors << "implementation must expose #plan"
-        end
-        if defined?(BaseController) && klass == BaseController
-          errors << "BaseController is abstract"
-        end
+        errors << "implementation must be a class or expose #plan" unless implementation.is_a?(Class) || implementation.respond_to?(:plan)
+        errors << "implementation must expose #plan" unless klass.public_method_defined?(:plan) || klass.protected_method_defined?(:plan)
+        errors << "BaseController is abstract" if defined?(BaseController) && klass == BaseController
         errors
       end
 
@@ -514,27 +508,19 @@ module Rubernetes
           unless values.all? { |value| value.is_a?(String) && !value.empty? && value == value.strip }
             raise ValidationError, "controller #{name} #{field} must contain non-empty strings"
           end
-          unless values.length == values.uniq.length
-            raise ValidationError, "controller #{name} #{field} must not contain duplicates"
-          end
+          raise ValidationError, "controller #{name} #{field} must not contain duplicates" unless values.length == values.uniq.length
         end
       end
 
       def validate_ownership!
         seen = {}
         owns.each do |edge|
-          unless edge.is_a?(OwnershipEdge)
-            raise ValidationError, "controller #{name} owns must contain OwnershipEdge instances"
-          end
+          raise ValidationError, "controller #{name} owns must contain OwnershipEdge instances" unless edge.is_a?(OwnershipEdge)
           unless edge.owner.is_a?(ResourceDescriptor) && edge.dependent.is_a?(ResourceDescriptor)
             raise ValidationError, "controller #{name} ownership edges must use ResourceDescriptor values"
           end
-          unless edge.owner == kind
-            raise ValidationError, "controller #{name} may only declare ownership from #{kind.identifier}"
-          end
-          if edge.owner == edge.dependent
-            raise OwnershipCycleError, "controller #{name} cannot own itself (#{edge.owner.identifier})"
-          end
+          raise ValidationError, "controller #{name} may only declare ownership from #{kind.identifier}" unless edge.owner == kind
+          raise OwnershipCycleError, "controller #{name} cannot own itself (#{edge.owner.identifier})" if edge.owner == edge.dependent
 
           key = [edge.owner.gvk, edge.dependent.gvk, edge.controller, edge.block_owner_deletion]
           raise ValidationError, "controller #{name} declares duplicate ownership edge" if seen[key]
@@ -546,15 +532,11 @@ module Rubernetes
       def validate_watches!
         seen = {}
         watches.each do |watch|
-          unless watch.is_a?(WatchSpec)
-            raise ValidationError, "controller #{name} watches must contain WatchSpec instances"
-          end
+          raise ValidationError, "controller #{name} watches must contain WatchSpec instances" unless watch.is_a?(WatchSpec)
           unless watch.resource.is_a?(ResourceDescriptor)
             raise ValidationError, "controller #{name} watch resource must be a ResourceDescriptor"
           end
-          unless WATCH_RELATIONSHIPS.include?(watch.via)
-            raise InvalidWatchError, "unsupported watch relationship #{watch.via.inspect}"
-          end
+          raise InvalidWatchError, "unsupported watch relationship #{watch.via.inspect}" unless WATCH_RELATIONSHIPS.include?(watch.via)
           if watch.scope && watch.scope != watch.resource.scope
             raise ScopeMismatchError, "watch scope #{watch.scope.inspect} conflicts with #{watch.resource.identifier}"
           end

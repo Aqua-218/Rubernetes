@@ -17,6 +17,7 @@ class ConsensusNodeSimulationTest < Minitest::Test
   def test_three_nodes_elect_one_leader_and_replicate
     cluster = RaftSimulation::Cluster.new(%w[n1 n2 n3], seed: 3)
     cluster.run(1.0)
+
     assert_equal 1, cluster.leader.length
     leader = cluster.leader.first
     propose(leader, cluster, 5, 0)
@@ -38,18 +39,25 @@ class ConsensusNodeSimulationTest < Minitest::Test
     committed = leader.commit_index
     # Partition the leader away; it must not commit anything new.
     others = %w[n1 n2 n3] - [leader.id]
-    others.each { |other| cluster.network.cut(leader.id, other); cluster.network.cut(other, leader.id) }
+    others.each do |other|
+      cluster.network.cut(leader.id, other)
+      cluster.network.cut(other, leader.id)
+    end
     propose(leader, cluster, 2, 10)
     cluster.run(1.0)
+
     assert_equal committed, leader.commit_index
     new_leader = cluster.leader.find { |candidate| candidate.id != leader.id }
+
     refute_nil new_leader
     propose(new_leader, cluster, 2, 20)
     cluster.run(0.3)
     cluster.network.heal
     cluster.run(1.0)
+
     assert_equal 1, cluster.leader.length
     ids = cluster.processes.values.map { |p| p.state_machine.store.list("k/").items.map { |o| o["metadata"]["name"] }.sort }.uniq
+
     assert_equal 1, ids.length
     assert_includes ids.first, "o20"
     refute_includes ids.first, "o10", "entries proposed by the partitioned leader were never committed"
@@ -71,6 +79,7 @@ class ConsensusNodeSimulationTest < Minitest::Test
     cluster.restart(victim)
     cluster.run(1.5)
     node = cluster.node(victim)
+
     assert_equal leader.commit_index, node.commit_index
     assert_equal 60, cluster.processes[victim].state_machine.store.list("k/").items.length
     assert_operator node.status["snapshot_index"], :>, 0
@@ -92,11 +101,13 @@ class ConsensusNodeSimulationTest < Minitest::Test
     cluster.restart(leader.id)
     cluster.run(1.0)
     leaders = cluster.leader
+
     assert_equal 1, leaders.length
     assert_equal({"voters" => %w[n1 n2 n3 n4 n5], "learners" => []}, leaders.first.membership.to_h)
     leaders.first.propose_membership(%w[n3 n4 n5])
     cluster.run(2.0)
     final = cluster.leader.first
+
     assert_includes %w[n3 n4 n5], final.id
     assert_equal({"voters" => %w[n3 n4 n5], "learners" => []}, final.membership.to_h)
   ensure
@@ -111,19 +122,19 @@ class ConsensusNodeSimulationTest < Minitest::Test
       leader = cluster.leader.first
       propose(leader, cluster, 2, round * 2) if leader
       cluster.processes["n2"].clock_offset += 3.0 if round == 5
-      if round == 10
-        cluster.network.cut("n1", "n3")
-      end
+      cluster.network.cut("n1", "n3") if round == 10
       cluster.network.heal if round == 20
       cluster.run(0.2)
       cluster.leader.each do |candidate|
         previous = leaders_by_term[candidate.current_term]
+
         assert(previous.nil? || previous == candidate.id, "two leaders in term #{candidate.current_term}")
         leaders_by_term[candidate.current_term] = candidate.id
       end
     end
     cluster.run(1.0)
     applied = cluster.processes.values.map { |p| p.node.last_applied }.uniq
+
     assert_equal 1, applied.length
   ensure
     cluster.cleanup

@@ -131,6 +131,7 @@ class NodeAgentServiceTest < Minitest::Test
     lifecycle = @logger.events.map { |event| event.fetch(1) }.select do |name|
       %w[process.ready process.stopped].include?(name)
     end
+
     assert_equal(%w[process.ready process.stopped], lifecycle)
   end
 
@@ -165,6 +166,7 @@ class NodeAgentServiceTest < Minitest::Test
     service.start
     assert_raises(RuntimeError) { service.start }
     service.stop(reason: "TERM")
+
     assert_same(service, service.stop(reason: "TERM"))
   end
 
@@ -179,7 +181,7 @@ class NodeAgentServiceTest < Minitest::Test
     service.stop(reason: "TERM")
 
     assert_equal [:close], api_adapter.events
-    assert_equal [[:loop_stop, "TERM"]], @events.grep(Array).select { |event| event.first == :loop_stop }
+    assert_equal([[:loop_stop, "TERM"]], @events.grep(Array).select { |event| event.first == :loop_stop })
   end
 
   def test_bootstrap_assembler_uses_the_native_agent_service

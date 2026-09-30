@@ -33,9 +33,7 @@ module Rubernetes
 
       def string(value, name, allow_empty: false)
         result = String(value)
-        if !allow_empty && result.empty?
-          raise ValidationError, "#{name} must not be empty"
-        end
+        raise ValidationError, "#{name} must not be empty" if !allow_empty && result.empty?
         raise ValidationError, "#{name} contains a NUL byte" if result.include?("\0")
 
         result
@@ -55,7 +53,7 @@ module Rubernetes
 
       def bool(value, default: false)
         return default if value.nil?
-        return value if value == true || value == false
+        return value if [true, false].include?(value)
         return true if %w[true 1 yes on].include?(value.to_s.downcase)
         return false if %w[false 0 no off].include?(value.to_s.downcase)
 
@@ -156,7 +154,10 @@ module Rubernetes
       def freeze_deeply(value)
         case value
         when Hash
-          value.each { |key, child| freeze_deeply(key); freeze_deeply(child) }
+          value.each do |key, child|
+            freeze_deeply(key)
+            freeze_deeply(child)
+          end
         when Array
           value.each { |child| freeze_deeply(child) }
         end
@@ -176,8 +177,7 @@ module Rubernetes
       end
 
       def ip(value, name: "ip")
-        address = value.is_a?(IPAddr) ? value : IPAddr.new(string(value, name))
-        address
+        value.is_a?(IPAddr) ? value : IPAddr.new(string(value, name))
       rescue IPAddr::InvalidAddressError => error
         raise ValidationError, "#{name} is not a valid IP address: #{error.message}"
       end
@@ -185,7 +185,11 @@ module Rubernetes
       def cidr(value, name: "cidr")
         text = string(value, name)
         address = IPAddr.new(text)
-        prefix = text.include?("/") ? Integer(text.split("/", 2).last) : (address.ipv4? ? 32 : 128)
+        prefix = if text.include?("/")
+                   Integer(text.split("/", 2).last)
+                 else
+                   (address.ipv4? ? 32 : 128)
+                 end
         max = address.ipv4? ? 32 : 128
         raise ValidationError, "#{name} prefix must be between 0 and #{max}" unless (0..max).cover?(prefix)
 
@@ -225,7 +229,7 @@ module Rubernetes
         return bool(direct) unless direct.nil?
 
         spec = fetch(hash, "spec", default: nil)
-        spec = spec.respond_to?(:to_h) ? spec.to_h : spec
+        spec = spec.to_h if spec.respond_to?(:to_h)
         return false unless spec.is_a?(Hash)
 
         bool(fetch(spec, "hostNetwork", "host_network", default: false))

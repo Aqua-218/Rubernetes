@@ -27,6 +27,7 @@ class HPABehaviorValidationTest < Minitest::Test
     bad = rules(stabilizationWindowSeconds: 4000, selectPolicy: "Most", tolerance: "-0.1",
                 policies: [{"type" => "Nodes", "value" => 0, "periodSeconds" => 2000}])
     found = errors({"scaleUp" => bad, "scaleDown" => rules(policies: [])})
+
     assert_includes found, "spec.behavior.scaleUp.stabilizationWindowSeconds: must be less than or equal to 3600"
     assert_includes found, "spec.behavior.scaleUp.selectPolicy: supported values: \"Disabled\", \"Max\", \"Min\""
     assert_includes found, "spec.behavior.scaleUp.tolerance: must be greater than or equal to 0"

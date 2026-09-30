@@ -14,7 +14,7 @@ require "time"
 
 module M4ObserverSupport
   ROOT = File.expand_path("../../../..", __dir__).freeze
-  SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
+  SHA256_PATTERN = /\A[0-9a-f]{64}\z/
   STRACE_SYSCALLS = %w[mount umount2 openat2 open_tree move_mount mount_setattr fsopen fsconfig fsmount].freeze
   # include/uapi/linux/magic.h
   STATFS_MAGIC = {0xEF53 => "ext4", 0x58465342 => "xfs", 0x01021994 => "tmpfs", 0x9fa0 => "proc"}.freeze
@@ -202,7 +202,7 @@ module M4ObserverSupport
   # Runs a reader inside the observed process's mount namespace.  nsenter
   # execs the command in place, so the reported pid is the reader itself.
   def read_in_namespace(pid, paths)
-    script = <<~'SH'
+    script = <<~SH
       ns=$(stat -Lc %i /proc/self/ns/mnt)
       printf '{"pid":%s,"mount_namespace_inode":%s,"files":[' "$$" "$ns"
       first=1
@@ -272,8 +272,8 @@ module M4ObserverSupport
     end
   end
 
-  STRACE_LINE = /\A(?:(?<pid>\d+)\s+)?(?<ts>\d+\.\d+)\s+(?<name>[a-z_0-9]+)\((?<args>.*)\)\s+=\s+(?<ret>-?\d+|0x[0-9a-fA-F]+|\?)(?:\s+(?<errno>E[A-Z0-9]+)\s+\((?<errmsg>[^)]*)\))?/.freeze
-  STRACE_RESUMED = /\A(?:(?<pid>\d+)\s+)?(?<ts>\d+\.\d+)\s+<\.\.\.\s+(?<name>[a-z_0-9]+)\s+resumed>\s*(?<args>.*)\)\s+=\s+(?<ret>-?\d+|0x[0-9a-fA-F]+|\?)(?:\s+(?<errno>E[A-Z0-9]+)\s+\((?<errmsg>[^)]*)\))?/.freeze
+  STRACE_LINE = /\A(?:(?<pid>\d+)\s+)?(?<ts>\d+\.\d+)\s+(?<name>[a-z_0-9]+)\((?<args>.*)\)\s+=\s+(?<ret>-?\d+|0x[0-9a-fA-F]+|\?)(?:\s+(?<errno>E[A-Z0-9]+)\s+\((?<errmsg>[^)]*)\))?/
+  STRACE_RESUMED = /\A(?:(?<pid>\d+)\s+)?(?<ts>\d+\.\d+)\s+<\.\.\.\s+(?<name>[a-z_0-9]+)\s+resumed>\s*(?<args>.*)\)\s+=\s+(?<ret>-?\d+|0x[0-9a-fA-F]+|\?)(?:\s+(?<errno>E[A-Z0-9]+)\s+\((?<errmsg>[^)]*)\))?/
 
   def parse_strace(text)
     unfinished = {}
@@ -298,15 +298,27 @@ module M4ObserverSupport
 
   def strace_record(match, args, line)
     ret = match[:ret]
-    value = ret.start_with?("0x") ? ret.hex : (ret == "?" ? nil : ret.to_i)
+    value = if ret.start_with?("0x")
+              ret.hex
+            else
+              (ret == "?" ? nil : ret.to_i)
+            end
     {
       "name" => match[:name], "pid" => match[:pid]&.to_i, "timestamp" => Float(match[:ts]),
       "args" => args.to_s, "return" => value, "errno" => match[:errno], "line" => line,
-      "return_class" => (match[:errno] ? "-1 #{match[:errno]}" : (value.nil? ? "unknown" : (value.negative? ? "error" : "success")))
+      "return_class" => (if match[:errno]
+                           "-1 #{match[:errno]}"
+                         else
+                           (if value.nil?
+                              "unknown"
+                            else
+                              (value.negative? ? "error" : "success")
+                            end)
+                         end)
     }
   end
 
-  def runner_provenance(runner_path, implementation:, mode: "external", started_at:, finished_at: iso8601_now)
+  def runner_provenance(runner_path, implementation:, started_at:, mode: "external", finished_at: iso8601_now)
     {
       "runner_sha256" => Digest::SHA256.file(runner_path).hexdigest,
       "command" => [RbConfig.ruby] + [runner_path.delete_prefix("#{ROOT}/")] + ARGV,
@@ -330,8 +342,8 @@ module M4ObserverSupport
   # namespace, then writes phase-NNN.release so the worker continues.  The
   # worker never sees the observation; it only claims, the kernel confirms.
   class PhaseObserver
-    MARKER_PATTERN = /\Aphase-(\d{3})\.json\z/.freeze
-    READER_SCRIPT = <<~'RUBY_READER'.freeze
+    MARKER_PATTERN = /\Aphase-(\d{3})\.json\z/
+    READER_SCRIPT = <<~'RUBY_READER'
       require "digest"
       require "json"
       root = ARGV.shift
@@ -492,8 +504,10 @@ module M4ObserverSupport
         # An absent mount is still bound to kernel content: the mountinfo line
         # of the mount that covers the target (longest matching prefix) is the
         # line that proves nothing more specific is mounted there.
-        covering = entry || entries.select { |candidate| target.to_s == candidate.fetch("target") || target.to_s.start_with?(candidate.fetch("target").chomp("/") + "/") }
-                                    .max_by { |candidate| candidate.fetch("target").length }
+        covering = entry || entries.select do |candidate|
+          target.to_s == candidate.fetch("target") || target.to_s.start_with?(candidate.fetch("target").chomp("/") + "/")
+        end
+          .max_by { |candidate| candidate.fetch("target").length }
         line = covering ? covering.fetch("line") : ""
         record = M4ObserverSupport.comparison("absent:#{number}:#{target}", {"target" => target.to_s, "mounted" => false},
                                               entry ? M4ObserverSupport.stable_identity(entry) : {"target" => target.to_s, "mounted" => false},
@@ -521,7 +535,8 @@ module M4ObserverSupport
         rescue StandardError => error
           {"path" => claim["path"].to_s, "error" => error.class.name}
         end
-        record = M4ObserverSupport.comparison("statfs:#{number}:#{claim["path"]}", claim, actual, "phase" => number, "kernel_backed" => true)
+        record = M4ObserverSupport.comparison("statfs:#{number}:#{claim["path"]}", claim, actual, "phase" => number,
+                                                                                                  "kernel_backed" => true)
         @errors << "phase #{number}: statfs of #{claim["path"]} differs from the claim" unless record["passed"]
         @statfs << record
       end
@@ -533,7 +548,8 @@ module M4ObserverSupport
                  else
                    {"path" => claim["path"], "present" => false}
                  end
-        record = M4ObserverSupport.comparison("device:#{number}:#{claim["path"]}", claim, actual, "phase" => number, "kernel_backed" => true)
+        record = M4ObserverSupport.comparison("device:#{number}:#{claim["path"]}", claim, actual, "phase" => number,
+                                                                                                  "kernel_backed" => true)
         @errors << "phase #{number}: device #{claim["path"]} differs from sysfs" unless record["passed"]
         @devices << record
       end

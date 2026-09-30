@@ -20,12 +20,14 @@ class MemoryStoreRequestMemoryRetentionTest < Minitest::Test
     now = Time.at(1_000_000)
     store = Store.new(history_seconds: 60.0, clock: -> { now })
     first = store.create("registry/things/ns/a", object("a"), request_uid: "req-a")
+
     assert_same first, store.create("registry/things/ns/a", object("a"), request_uid: "req-a"), "a retry replays"
     assert_equal 1, store.export_state["requests"].length
 
     now += 61
     store.create("registry/things/ns/b", object("b"), request_uid: "req-b")
     remembered = store.export_state["requests"].keys
+
     refute_includes remembered, "req-a", "an entry older than the retention window is gone"
     assert_includes remembered, "req-b"
     # Without its replay memory the old request is an ordinary create again.
@@ -35,7 +37,12 @@ class MemoryStoreRequestMemoryRetentionTest < Minitest::Test
   def test_a_per_key_compaction_keeps_replay_memory
     store = Store.new(history_revisions: 2, history_seconds: nil)
     store.create("registry/things/ns/a", object("a"), request_uid: "req-a")
-    5.times { |index| store.guaranteed_update("registry/things/ns/a", request_uid: "upd-#{index}") { |current| current.merge("n" => index) } }
+    5.times do |index|
+      store.guaranteed_update("registry/things/ns/a", request_uid: "upd-#{index}") do |current|
+        current.merge("n" => index)
+      end
+    end
+
     assert_includes store.export_state["requests"].keys, "req-a"
   end
 end

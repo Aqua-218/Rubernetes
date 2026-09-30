@@ -15,8 +15,10 @@ class GCExpeditedSweepTest < Minitest::Test
 
   def test_the_normal_interval_applies_without_a_foreground_owner
     subject = controller
+
     assert subject.send(:sweep_due?)
     subject.instance_variable_set(:@last_sweep_at, Process.clock_gettime(Process::CLOCK_MONOTONIC) - 2.0)
+
     refute subject.send(:sweep_due?), "two seconds after a sweep is too early normally"
   end
 
@@ -24,6 +26,7 @@ class GCExpeditedSweepTest < Minitest::Test
     subject = controller
     subject.send(:expedite_sweeps!)
     subject.instance_variable_set(:@last_sweep_at, Process.clock_gettime(Process::CLOCK_MONOTONIC) - 1.5)
+
     assert subject.send(:sweep_due?)
   end
 
@@ -32,8 +35,10 @@ class GCExpeditedSweepTest < Minitest::Test
     owner = {"apiVersion" => "v1", "kind" => "ReplicationController",
              "metadata" => {"name" => "rc", "namespace" => "ns", "uid" => "u",
                             "deletionTimestamp" => "2026-09-23T00:00:00Z", "finalizers" => ["foregroundDeletion"]}}
+
     assert subject.send(:foreground_owner?, owner)
     subject.send(:expedite_sweeps!) if subject.send(:foreground_owner?, owner)
+
     refute_nil subject.instance_variable_get(:@expedite_until)
   end
 end

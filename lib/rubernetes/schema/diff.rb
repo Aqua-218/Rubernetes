@@ -6,7 +6,7 @@ module Rubernetes
     class DiffChange
       attr_reader :path, :before, :after, :operation, :category
 
-      def initialize(path:, before: nil, after: nil, operation:, category:)
+      def initialize(path:, operation:, category:, before: nil, after: nil)
         @path = Array(path).map(&:to_s).freeze
         @before = before
         @after = after
@@ -128,8 +128,8 @@ module Rubernetes
     class Diff
       attr_reader :definition
 
-      def self.diff(left, right, definition: nil, **options)
-        new(definition).call(left, right, **options)
+      def self.diff(left, right, definition: nil, **)
+        new(definition).call(left, right, **)
       end
 
       class << self
@@ -156,28 +156,28 @@ module Rubernetes
       alias compare call
       alias semantic call
 
-      def structural(left, right, **options)
-        call(left, right, default_aware: false, **options)
+      def structural(left, right, **)
+        call(left, right, default_aware: false, **)
       end
 
-      def spec(left, right, **options)
-        call(left, right, **options).spec
+      def spec(left, right, **)
+        call(left, right, **).spec
       end
 
-      def status(left, right, **options)
-        call(left, right, **options).status
+      def status(left, right, **)
+        call(left, right, **).status
       end
 
-      def semantic_equal?(left, right, **options)
-        call(left, right, **options).empty?
+      def semantic_equal?(left, right, **)
+        call(left, right, **).empty?
       end
 
-      def self.call(left, right, definition: nil, **options)
-        new(definition).call(left, right, **options)
+      def self.call(left, right, definition: nil, **)
+        new(definition).call(left, right, **)
       end
 
-      def self.semantic_equal?(left, right, definition: nil, **options)
-        new(definition).semantic_equal?(left, right, **options)
+      def self.semantic_equal?(left, right, definition: nil, **)
+        new(definition).semantic_equal?(left, right, **)
       end
 
       private
@@ -244,9 +244,7 @@ module Rubernetes
         return :status if path.include?("status")
         return :unknown if path.first == "unknown" || options.fetch(:unknown_paths, []).include?(path)
         return inherited unless inherited == :root
-        if definition && path.first && !definition.has_field?(path.first) && path.first != "metadata"
-          return :unknown
-        end
+        return :unknown if definition && path.first && !definition.has_field?(path.first) && path.first != "metadata"
         return :metadata if path.first == "metadata"
 
         :metadata

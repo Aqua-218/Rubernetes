@@ -37,12 +37,17 @@ class LifecycleDevicePluginsTest < Minitest::Test
   def pod = {"metadata" => {"name" => "p", "namespace" => "ns", "uid" => "u"}, "spec" => {"containers" => [{"name" => "gpu"}]}}
 
   def test_the_allocation_reaches_the_container_spec
-    spec = subject(Plugins.new).send(:apply_device_plugin_allocation, {uid: "u"}, {"env" => [{"name" => "A", "value" => "1"}]}, {"name" => "gpu"})
+    spec = subject(Plugins.new).send(:apply_device_plugin_allocation, {uid: "u"}, {"env" => [{"name" => "A", "value" => "1"}]},
+                                     {"name" => "gpu"})
+
     assert_equal [{"name" => "A", "value" => "1"}, {"name" => "VISIBLE", "value" => "d1"}], spec["env"]
-    assert_includes spec["mounts"], {"name" => "device-plugin-mount-0", "source" => "/tmp", "destination" => "/opt/drv", "readonly" => true, "propagation" => "None"}
+    assert_includes spec["mounts"],
+                    {"name" => "device-plugin-mount-0", "source" => "/tmp", "destination" => "/opt/drv", "readonly" => true,
+                     "propagation" => "None"}
     assert_includes spec["mounts"], {"name" => "device-plugin-device-0", "source" => "/dev/null", "destination" => "/dev/fake0", "readonly" => false,
                                      "propagation" => "None", "device" => true}
     untouched = {"env" => []}
+
     assert_same untouched, subject(Plugins.new).send(:apply_device_plugin_allocation, {uid: "u"}, untouched, {"name" => "other"})
   end
 

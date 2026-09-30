@@ -86,7 +86,7 @@ module M4NetworkKernelProbe
       pcap_path = File.join(directory, "network.pcap")
       capture_log = File.join(directory, "tcpdump.log")
       capture_filter = pod_ips.flatten.flat_map.with_index { |address, index| [index.zero? ? "host" : "or host", address] }
-                                  .join(" ")
+        .join(" ")
       # A Linux bridge master does not consistently expose forwarded frames
       # to packet sockets on every kernel/offload combination. Capture on the
       # host's aggregate packet socket and restrict it to the exact probe IPs.
@@ -97,7 +97,7 @@ module M4NetworkKernelProbe
 
       packet_results = {
         "pod_to_pod" => command_success?(namespace_command(contexts.fetch(0), "ping", "-c", "1", "-W", "2", second_v4)) &&
-          command_success?(namespace_command(contexts.fetch(0), "ping", "-6", "-c", "1", "-W", "2", second_v6)),
+                        command_success?(namespace_command(contexts.fetch(0), "ping", "-6", "-c", "1", "-W", "2", second_v6)),
         "ingress" => command_success?(namespace_command(contexts.fetch(1), "ping", "-c", "1", "-W", "2", first_v4)),
         "egress" => command_success?(namespace_command(contexts.fetch(0), "ping", "-c", "1", "-W", "2", gateway.fetch("ipv4")))
       }
@@ -119,13 +119,21 @@ module M4NetworkKernelProbe
       families = %w[ipv4 ipv6 dual_stack].map do |family|
         matched = case family
                   when "ipv4"
-                    namespace_resources.all? { |entries| entries.any? { |entry| entry["kind"] == "address" && entry.dig("metadata", "family") == "ipv4" } }
+                    namespace_resources.all? do |entries|
+                      entries.any? do |entry|
+                        entry["kind"] == "address" && entry.dig("metadata", "family") == "ipv4"
+                      end
+                    end
                   when "ipv6"
-                    namespace_resources.all? { |entries| entries.any? { |entry| entry["kind"] == "address" && entry.dig("metadata", "family") == "ipv6" } }
+                    namespace_resources.all? do |entries|
+                      entries.any? do |entry|
+                        entry["kind"] == "address" && entry.dig("metadata", "family") == "ipv6"
+                      end
+                    end
                   else
                     namespace_resources.all? do |entries|
                       families = entries.select { |entry| entry["kind"] == "address" }
-                                        .map { |entry| entry.dig("metadata", "family") }.uniq
+                        .map { |entry| entry.dig("metadata", "family") }.uniq
                       (families & %w[ipv4 ipv6]).sort == %w[ipv4 ipv6]
                     end
                   end
@@ -140,8 +148,8 @@ module M4NetworkKernelProbe
          "packet_trace_sha256" => Digest::SHA256.file(pcap_path).hexdigest,
          "packet_trace_source" => "kernel_capture"}
       end
-      families.each { |entry| errors << "network family #{entry.fetch('id')} kernel measurement failed" unless entry["passed"] }
-      cases.each { |entry| errors << "network case #{entry.fetch('id')} packet measurement failed" unless entry["passed"] }
+      families.each { |entry| errors << "network family #{entry.fetch("id")} kernel measurement failed" unless entry["passed"] }
+      cases.each { |entry| errors << "network case #{entry.fetch("id")} packet measurement failed" unless entry["passed"] }
 
       {
         # The production network adapters (adapter_classes) performed the
@@ -171,11 +179,9 @@ module M4NetworkKernelProbe
       servers.each { |pid| terminate_process(pid) }
       if network
         contexts.first(results.length).reverse_each do |context|
-          begin
-            network.delete(context, stopped: true)
-          rescue StandardError => error
-            errors << "isolated network cleanup failed: #{error.class}: #{error.message}"
-          end
+          network.delete(context, stopped: true)
+        rescue StandardError => error
+          errors << "isolated network cleanup failed: #{error.class}: #{error.message}"
         end
       end
       begin
@@ -207,6 +213,7 @@ module M4NetworkKernelProbe
     host_inode = File.stat("/proc/self/ns/net").ino
     200.times do
       return pid if File.exist?(path) && File.stat(path).ino != host_inode
+
       Process.waitpid(pid, Process::WNOHANG)
       sleep(0.01)
     end
@@ -226,12 +233,14 @@ module M4NetworkKernelProbe
   end
 
   def namespace_command(context, *command)
-    ["nsenter", "--net=#{context.dig('netns', 'path')}", "--", *command]
+    ["nsenter", "--net=#{context.dig("netns", "path")}", "--", *command]
   end
 
   def command_success?(command)
     output, error, status = Open3.capture3("timeout", "10", *command)
-    warn("m4 network packet command failed: #{command.inspect}\n#{output}#{error}") if !status.success? && ENV["RUBERNETES_M4_NETWORK_DEBUG"] == "1"
+    if !status.success? && ENV["RUBERNETES_M4_NETWORK_DEBUG"] == "1"
+      warn("m4 network packet command failed: #{command.inspect}\n#{output}#{error}")
+    end
     status.success?
   end
 
@@ -329,6 +338,7 @@ module M4NetworkKernelProbe
 
     100.times do
       return if Process.waitpid(pid, Process::WNOHANG)
+
       sleep(0.01)
     end
     terminate_process(pid)
@@ -342,6 +352,7 @@ module M4NetworkKernelProbe
     Process.kill("TERM", pid)
     100.times do
       return if Process.waitpid(pid, Process::WNOHANG)
+
       sleep(0.01)
     end
     Process.kill("KILL", pid)

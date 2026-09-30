@@ -150,7 +150,8 @@ module Rubernetes
         end
         position = requests.keys.map(&:to_s).sort.index(resource) || 0
         name = "container-#{index}-request-#{position}"
-        request = {"name" => name, "exactly" => {"deviceClassName" => class_name, "allocationMode" => "ExactCount", "count" => wanted - sum}}
+        request = {"name" => name,
+                   "exactly" => {"deviceClassName" => class_name, "allocationMode" => "ExactCount", "count" => wanted - sum}}
         mappings << {"containerName" => container["name"].to_s, "resourceName" => resource, "requestName" => name}
         [request, mappings]
       end

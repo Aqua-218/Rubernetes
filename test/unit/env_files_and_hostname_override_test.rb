@@ -43,6 +43,7 @@ class EnvFilesAndHostnameOverrideTest < Minitest::Test
   def test_a_file_key_ref_reads_the_variable_from_the_volume
     File.write(File.join(@volume, "vars.env"), "# written by the init container\nDB_HOST='db.internal'\nMOTD='two\nlines' # note\n")
     env = environment([file_ref("DB_HOST"), file_ref("MOTD")])
+
     assert_equal "db.internal", env["DB_HOST"]
     assert_equal "two\nlines", env["MOTD"]
   end
@@ -56,9 +57,12 @@ class EnvFilesAndHostnameOverrideTest < Minitest::Test
 
   def test_a_malformed_or_missing_file_and_an_unknown_volume_fail
     File.write(File.join(@volume, "vars.env"), "KEY = 'spaced'\n")
+
     assert_equal "couldn't parse env file", assert_raises(Node::ContainerSpec::ConfigError) { environment([file_ref("KEY")]) }.message
     assert_equal "couldn't parse env file",
-                 assert_raises(Node::ContainerSpec::ConfigError) { environment([file_ref("KEY", path: "nope.env", optional: true)]) }.message
+                 assert_raises(Node::ContainerSpec::ConfigError) {
+                   environment([file_ref("KEY", path: "nope.env", optional: true)])
+                 }.message
     error = assert_raises(Node::ContainerSpec::ConfigError) { environment([file_ref("KEY", volume: "other")]) }
     assert_equal %(cannot find the volume "other" referenced by FileKeyRef), error.message
   end
@@ -67,6 +71,7 @@ class EnvFilesAndHostnameOverrideTest < Minitest::Test
     File.write(File.join(@dir, "secret.env"), "KEY='outside'\n")
     File.symlink("/../secret.env", File.join(@volume, "link.env"))
     File.write(File.join(@volume, "secret.env"), "KEY='inside'\n")
+
     assert_equal "inside", environment([file_ref("KEY", path: "../secret.env")])["KEY"]
     assert_equal "inside", environment([file_ref("KEY", path: "link.env")])["KEY"], "an absolute link resolves inside the volume"
   end
@@ -79,6 +84,7 @@ class EnvFilesAndHostnameOverrideTest < Minitest::Test
     built = @spec.build(pod: pod("hostname" => "h", "subdomain" => "svc"), container: container, category: :application,
                         volumes: {"mounts" => {"config" => {"path" => @volume}}})
     env = Array(built["env"]).to_h { |entry| [entry["name"], entry["value"]] }
+
     assert_equal "h", env["HOSTNAME"], "the sandbox hostname wins, as containerd appends it last"
   end
 
@@ -92,22 +98,26 @@ class EnvFilesAndHostnameOverrideTest < Minitest::Test
       container = {"name" => "app", "image" => "x", "command" => ["/bin/sh"], "securityContext" => {"runAsUser" => 1000}}
       env = @spec.build(pod: pod, container: container, category: :application, resolved_image: image,
                         volumes: {"mounts" => {"config" => {"path" => @volume}}})["env"].to_h { |e| [e["name"], e["value"]] }
+
       assert_equal "/var/opt/gitlab", env["HOME"]
 
       container["securityContext"] = {"runAsUser" => 4242}
       env = @spec.build(pod: pod, container: container, category: :application, resolved_image: image,
                         volumes: {"mounts" => {"config" => {"path" => @volume}}})["env"].to_h { |e| [e["name"], e["value"]] }
+
       assert_equal "/", env["HOME"], "no passwd entry"
 
       container["env"] = [{"name" => "HOME", "value" => "/custom"}]
       env = @spec.build(pod: pod, container: container, category: :application, resolved_image: image,
                         volumes: {"mounts" => {"config" => {"path" => @volume}}})["env"].to_h { |e| [e["name"], e["value"]] }
+
       assert_equal "/custom", env["HOME"]
 
       image["env"] = {"HOME" => "/from-image"}
       container.delete("env")
       env = @spec.build(pod: pod, container: container, category: :application, resolved_image: image,
                         volumes: {"mounts" => {"config" => {"path" => @volume}}})["env"].to_h { |e| [e["name"], e["value"]] }
+
       assert_equal "/from-image", env["HOME"]
     end
   end
@@ -115,19 +125,24 @@ class EnvFilesAndHostnameOverrideTest < Minitest::Test
   def test_hostname_override_replaces_the_name_and_domain
     files = Node::PodFiles.new(cluster_domain: "cluster.local")
     subdomained = pod("hostname" => "h", "subdomain" => "svc")
+
     assert_equal ["h", "svc.ns.svc.cluster.local"], Node::PodHostname.generate(subdomained, cluster_domain: "cluster.local")
     overridden = pod("hostname" => "h", "subdomain" => "svc", "hostnameOverride" => "custom.example")
+
     assert_equal ["custom.example", ""], Node::PodHostname.generate(overridden, cluster_domain: "cluster.local")
     assert_equal "custom.example", @spec.pod_hostname(overridden)
     hosts = files.hosts_content(overridden, pod_ips: ["10.0.0.5"], host_network: false)
+
     assert_includes hosts, "10.0.0.5\tcustom.example\n"
   end
 
   def test_set_hostname_as_fqdn_sets_the_uts_name_and_limits_it
     fqdn = pod("hostname" => "h", "subdomain" => "svc", "setHostnameAsFQDN" => true)
+
     assert_equal "h.svc.ns.svc.cluster.local", @spec.pod_hostname(fqdn)
     hosts = Node::PodFiles.new(cluster_domain: "cluster.local").hosts_content(fqdn, pod_ips: ["10.0.0.5"], host_network: false,
-                                                                               hostname: @spec.pod_hostname(fqdn))
+                                                                                    hostname: @spec.pod_hostname(fqdn))
+
     assert_includes hosts, "10.0.0.5\th.svc.ns.svc.cluster.local\th\n", "/etc/hosts keeps the short name"
     long = pod("hostname" => "h" * 40, "subdomain" => "svc", "setHostnameAsFQDN" => true)
     error = assert_raises(Node::PodHostname::Error) { @spec.pod_hostname(long) }
@@ -136,6 +151,7 @@ class EnvFilesAndHostnameOverrideTest < Minitest::Test
 
   def test_a_long_name_is_truncated_without_a_trailing_dash
     name = "#{"a" * 62}-b"
+
     assert_equal "a" * 62, Node::PodHostname.truncate("p", name)
   end
 end

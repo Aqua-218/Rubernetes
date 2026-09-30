@@ -15,11 +15,12 @@ class ResourceClaimStatusValidationTest < Minitest::Test
      "spec" => {"devices" => {"requests" => [{"name" => "gpu", "exactly" => {"deviceClassName" => "gpu.example"}}]}}, "status" => status}
   end
 
-  ALLOCATION = {"devices" => {"results" => [{"request" => "gpu", "driver" => "gpu.example", "pool" => "node-1", "device" => "gpu-0"}]}}.freeze
+  ALLOCATION = {"devices" => {"results" => [{"request" => "gpu", "driver" => "gpu.example", "pool" => "node-1",
+                                             "device" => "gpu-0"}]}}.freeze
 
   def errors(status, old_status: {}, deleted: false)
     definition.validator.errors(claim(status, deleted: deleted), operation: :update, old: claim(old_status), subresource: "status")
-              .map { |issue| "#{issue.kubernetes_field}: #{issue.kubernetes_type}: #{issue.message}" }
+      .map { |issue| "#{issue.kubernetes_field}: #{issue.kubernetes_type}: #{issue.message}" }
   end
 
   def device(**overrides)
@@ -36,9 +37,12 @@ class ResourceClaimStatusValidationTest < Minitest::Test
 
   def test_device_status_rules
     found = errors({"allocation" => ALLOCATION, "devices" => [device(device: "gpu-9"), device, device,
-                                                                device(pool: "node-1", networkData: {"ips" => ["10.0.0.5"]}, conditions: [{"type" => "Ready", "status" => "Maybe"}])]},
+                                                              device(pool: "node-1", networkData: {"ips" => ["10.0.0.5"]}, conditions: [{"type" => "Ready", "status" => "Maybe"}])]},
                    old_status: {"allocation" => ALLOCATION})
-    assert(found.any? { |message| message.include?("status.devices[0]: Invalid value") && message.include?("must be an allocated device in the claim") })
+
+    assert(found.any? do |message|
+      message.include?("status.devices[0]: Invalid value") && message.include?("must be an allocated device in the claim")
+    end)
     assert(found.any? { |message| message.start_with?("status.devices[2]: Duplicate value") })
     assert(found.any? { |message| message.include?("networkData.ips[0]") && message.include?("must be a valid address in CIDR form") })
     assert(found.any? { |message| message.include?("conditions[0].status: Unsupported value") })
@@ -48,14 +52,21 @@ class ResourceClaimStatusValidationTest < Minitest::Test
 
   def test_reserved_for_and_allocation_rules
     consumer = {"resource" => "pods", "name" => "p", "uid" => "pod-1"}
+
     assert_includes errors({"reservedFor" => [consumer]}), "status.reservedFor: Forbidden: may not be specified when `allocated` is not set"
     assert_includes errors({"allocation" => ALLOCATION, "reservedFor" => [consumer, consumer]}), "status.reservedFor[1]: Duplicate value: "
-    assert_includes errors({"allocation" => ALLOCATION, "reservedFor" => [{"resource" => "pods"}]}), "status.reservedFor[0].uid: Required value: "
+    assert_includes errors({"allocation" => ALLOCATION, "reservedFor" => [{"resource" => "pods"}]}),
+                    "status.reservedFor[0].uid: Required value: "
     changed = {"devices" => {"results" => [ALLOCATION["devices"]["results"][0].merge("device" => "gpu-1")]}}
-    assert_includes errors({"allocation" => changed}, old_status: {"allocation" => ALLOCATION}), "status.allocation: Invalid value: field is immutable"
+
+    assert_includes errors({"allocation" => changed}, old_status: {"allocation" => ALLOCATION}),
+                    "status.allocation: Invalid value: field is immutable"
     bad = {"devices" => {"results" => [{"request" => "nope", "driver" => "Bad_Driver", "pool" => "node-1", "device" => "gpu-0"}]}}
     found = errors({"allocation" => bad})
-    assert(found.any? { |message| message.include?("results[0].request") && message.include?("must be the name of a request in the claim") })
+
+    assert(found.any? do |message|
+      message.include?("results[0].request") && message.include?("must be the name of a request in the claim")
+    end)
     assert(found.any? { |message| message.include?("results[0].driver") })
     assert_includes errors({"allocation" => ALLOCATION, "reservedFor" => [consumer]}, old_status: {"allocation" => ALLOCATION}, deleted: true),
                     "status.reservedFor: Forbidden: new entries may not be added while `deallocationRequested` or `deletionTimestamp` are set"

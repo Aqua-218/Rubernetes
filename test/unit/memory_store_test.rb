@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
 require_relative "../test_helper"
 require "rubernetes/storage/memory_store"
 require "rubernetes/api"
@@ -41,6 +40,7 @@ class MemoryStoreTest < Minitest::Test
       @store.delete("pods/a", prec: created.dig("metadata", "resourceVersion"))
     end
     deleted = @store.delete("pods/a", prec: updated.dig("metadata", "resourceVersion"))
+
     assert_equal("a", deleted.dig("metadata", "name"))
     assert_equal("3", deleted.dig("metadata", "resourceVersion"))
     assert_raises(Rubernetes::Storage::NotFound) { @store.get("pods/a") }
@@ -97,6 +97,7 @@ class MemoryStoreTest < Minitest::Test
     added = watcher.next
     modified = watcher.next
     deleted = watcher.next
+
     assert_equal("ADDED", added.type)
     assert_equal(created.dig("metadata", "resourceVersion").to_i, added.revision)
     assert_equal("MODIFIED", modified.type)
@@ -128,6 +129,7 @@ class MemoryStoreTest < Minitest::Test
     assert_raises(Gone) { store.watch("pods/", since: 1) }
     watcher = store.watch("pods/", since: 2)
     store.create("pods/4", object(name: "4"))
+
     assert_equal("ADDED", watcher.next.type)
   ensure
     watcher&.close
@@ -160,6 +162,7 @@ class MemoryStoreTest < Minitest::Test
       candidate,
       resource_version: created.dig("metadata", "resourceVersion")
     )
+
     assert_equal("1", candidate.dig("metadata", "resourceVersion"))
     assert_equal("2", updated.dig("metadata", "resourceVersion"))
     assert_predicate(updated, :frozen?)
@@ -169,6 +172,7 @@ class MemoryStoreTest < Minitest::Test
     replacement = Rubernetes::Storage::MemoryStoreSupport.deep_dup(updated)
     replacement["spec"]["value"] = "replaced"
     replaced = @store.replace("pods/replace", replacement, resource_version: "2")
+
     assert_equal("3", replaced.dig("metadata", "resourceVersion"))
     assert_equal("replaced", replaced.dig("spec", "value"))
   end
@@ -194,6 +198,7 @@ class MemoryStoreTest < Minitest::Test
     @store.create("pods/a", object(name: "a", labels: {"app" => "web"}))
     @store.create("pods/b", object(name: "b", labels: {"app" => "worker"}))
     result = @store.list("pods/", field_selector: "metadata.name=a")
+
     assert_equal(["a"], result.items.map { |item| item.dig("metadata", "name") })
 
     watcher = @store.watch("pods/", since: 0, label_selector: "app=web")
@@ -201,6 +206,7 @@ class MemoryStoreTest < Minitest::Test
       current["metadata"]["labels"]["app"] = "web"
       current
     end
+
     assert_equal("ADDED", watcher.next.type)
     assert_equal("ADDED", watcher.next.type)
 
@@ -208,6 +214,7 @@ class MemoryStoreTest < Minitest::Test
       current["metadata"]["labels"]["app"] = "worker"
       current
     end
+
     assert_equal("DELETED", watcher.next.type)
   ensure
     watcher&.close
@@ -315,6 +322,7 @@ class MemoryStoreTest < Minitest::Test
 
     watcher = @store.watch("pods/", since: list_revision)
     event = watcher.next
+
     assert_equal("ADDED", event.type)
     assert_equal("raced", event.object.dig("metadata", "name"))
     assert_equal(list_revision + 1, event.revision)
@@ -331,6 +339,7 @@ class MemoryStoreTest < Minitest::Test
     @store.create("pods/next", object(name: "next"))
 
     first = watcher.next
+
     assert_equal("ADDED", first.type)
     assert_equal("base", first.object.dig("metadata", "name"))
     assert_equal("next", watcher.next.object.dig("metadata", "name"))
@@ -345,6 +354,7 @@ class MemoryStoreTest < Minitest::Test
     watcher = @store.watch("pods/", resource_version: "0")
 
     first = watcher.next
+
     assert_equal("ADDED", first.type)
     assert_equal("two", first.object.dig("metadata", "labels", "round"))
     assert_nil(watcher.next(timeout: 0))
@@ -371,18 +381,21 @@ class MemoryStoreTest < Minitest::Test
       current["metadata"]["labels"]["app"] = "web"
       current
     end
+
     assert_equal("ADDED", watcher.next.type)
 
     @store.guaranteed_update("pods/a") do |current|
       current["status"] = {"phase" => "Running"}
       current
     end
+
     assert_equal("MODIFIED", watcher.next.type)
 
     @store.guaranteed_update("pods/a") do |current|
       current["metadata"]["labels"]["app"] = "blue"
       current
     end
+
     assert_equal("DELETED", watcher.next.type)
   ensure
     watcher&.close
@@ -436,12 +449,14 @@ class MemoryStoreTest < Minitest::Test
     store = Store.new(history_revisions: 100_000, history_seconds: 300, clock: -> { now })
     5.times { |index| store.create("pods/#{index}", object(name: index.to_s)) }
     page = store.list("pods/", limit: 2)
+
     assert_equal(0, store.compacted_revision, "nothing is older than the window yet")
 
     6.times do |round|
       now += 200
       store.create("pods/z#{round}", object(name: "z#{round}"))
     end
+
     assert_operator(store.compacted_revision, :>, 5, "history older than the window must be compacted")
     assert_raises(Gone) { store.list("pods/", limit: 2, continue: page.continue_token) }
   end
@@ -454,6 +469,7 @@ class MemoryStoreTest < Minitest::Test
   def test_a_compacted_continue_token_comes_back_with_an_inconsistent_continue
     10.times { |index| @store.create("pods/%02d" % index, object(name: "%02d" % index)) }
     first_page = @store.list("pods/", limit: 3)
+
     assert_equal(3, first_page.items.length)
 
     @store.create("pods/10", object(name: "10"))
@@ -461,6 +477,7 @@ class MemoryStoreTest < Minitest::Test
 
     error = assert_raises(Gone) { @store.list("pods/", limit: 3, continue: first_page.continue_token) }
     resumed = error.details["continue"]
+
     refute_nil(resumed, "410 must carry a continue token the client can resume from")
 
     seen = first_page.items.length
@@ -470,6 +487,7 @@ class MemoryStoreTest < Minitest::Test
       seen += page.items.length
       token = page.continue_token
     end
+
     assert_equal(11, seen, "every object is listed exactly once across the resumed pages")
   end
 
@@ -523,6 +541,7 @@ class MemoryStoreTest < Minitest::Test
     assert_equal(8, sleeps.length)
     sleeps.each_with_index do |duration, index|
       ceiling = [0.005 * (2**index), 0.640].min
+
       assert_operator(duration, :>=, 0.0)
       assert_operator(duration, :<=, ceiling)
     end
@@ -532,17 +551,17 @@ class MemoryStoreTest < Minitest::Test
     store = Store.new(history_revisions: nil, history_seconds: nil)
     server = api_server(store)
     first = api_call(server, "POST", "/api/v1/namespaces/dev/configmaps", {
-      "metadata" => {"name" => "first", "labels" => {"app" => "web"}},
-      "data" => {"value" => "one"}
-    })
+                       "metadata" => {"name" => "first", "labels" => {"app" => "web"}},
+                       "data" => {"value" => "one"}
+                     })
     second = api_call(server, "POST", "/api/v1/namespaces/dev/configmaps", {
-      "metadata" => {"name" => "second", "labels" => {"app" => "worker"}},
-      "data" => {"value" => "two"}
-    })
+                        "metadata" => {"name" => "second", "labels" => {"app" => "worker"}},
+                        "data" => {"value" => "two"}
+                      })
     third = api_call(server, "POST", "/api/v1/namespaces/dev/configmaps", {
-      "metadata" => {"name" => "third", "labels" => {"app" => "web"}},
-      "data" => {"value" => "three"}
-    })
+                       "metadata" => {"name" => "third", "labels" => {"app" => "web"}},
+                       "data" => {"value" => "three"}
+                     })
 
     assert_equal(201, first.status)
     assert_equal("1", first.body.dig("metadata", "resourceVersion"))
@@ -556,6 +575,7 @@ class MemoryStoreTest < Minitest::Test
       "/api/v1/namespaces/dev/configmaps",
       query: {"labelSelector" => "app=web"}
     )
+
     assert_equal(%w[first third], selected.body.fetch("items").map { |item| item.dig("metadata", "name") })
 
     page = api_call(
@@ -565,6 +585,7 @@ class MemoryStoreTest < Minitest::Test
       query: {"limit" => "1", "labelSelector" => "app=web"}
     )
     continue_token = page.body.dig("metadata", "continue")
+
     refute_nil(continue_token)
     next_page = api_call(
       server,
@@ -572,24 +593,28 @@ class MemoryStoreTest < Minitest::Test
       "/api/v1/namespaces/dev/configmaps",
       query: {"limit" => "1", "labelSelector" => "app=web", "continue" => continue_token}
     )
+
     assert_equal(["third"], next_page.body.fetch("items").map { |item| item.dig("metadata", "name") })
     assert_equal(page.body.dig("metadata", "resourceVersion"), next_page.body.dig("metadata", "resourceVersion"))
 
     updated = api_call(server, "PUT", "/api/v1/namespaces/dev/configmaps/first", {
-      "metadata" => {"name" => "first", "resourceVersion" => "1"},
-      "data" => {"value" => "updated"}
-    })
+                         "metadata" => {"name" => "first", "resourceVersion" => "1"},
+                         "data" => {"value" => "updated"}
+                       })
+
     assert_equal(200, updated.status)
     assert_equal("4", updated.body.dig("metadata", "resourceVersion"))
     assert_equal("updated", updated.body.dig("data", "value"))
 
     stale = api_call(server, "PUT", "/api/v1/namespaces/dev/configmaps/first", {
-      "metadata" => {"name" => "first", "resourceVersion" => "1"},
-      "data" => {"value" => "stale"}
-    })
+                       "metadata" => {"name" => "first", "resourceVersion" => "1"},
+                       "data" => {"value" => "stale"}
+                     })
+
     assert_equal(409, stale.status)
 
     deleted = api_call(server, "DELETE", "/api/v1/namespaces/dev/configmaps/first")
+
     assert_equal(200, deleted.status)
     assert_equal("Status", deleted.body.fetch("kind"))
     assert_equal("Success", deleted.body.fetch("status"))
@@ -627,8 +652,8 @@ class MemoryStoreTest < Minitest::Test
     store = Store.new(history_revisions: nil, history_seconds: nil)
     server = api_server(store)
     api_call(server, "POST", "/api/v1/namespaces/dev/configmaps", {
-      "metadata" => {"name" => "base", "labels" => {"app" => "web"}}
-    })
+               "metadata" => {"name" => "base", "labels" => {"app" => "web"}}
+             })
     watch_response = api_call(
       server,
       "GET",
@@ -637,15 +662,15 @@ class MemoryStoreTest < Minitest::Test
     )
     stream = watch_response.body
     api_call(server, "POST", "/api/v1/namespaces/dev/configmaps", {
-      "metadata" => {"name" => "ignored", "labels" => {"app" => "worker"}}
-    })
+               "metadata" => {"name" => "ignored", "labels" => {"app" => "worker"}}
+             })
     api_call(server, "POST", "/api/v1/namespaces/dev/configmaps", {
-      "metadata" => {"name" => "followed", "labels" => {"app" => "web"}}
-    })
+               "metadata" => {"name" => "followed", "labels" => {"app" => "web"}}
+             })
 
     assert_equal(200, watch_response.status)
     assert_equal(
-      [["ADDED", "base"], ["ADDED", "followed"]],
+      [%w[ADDED base], %w[ADDED followed]],
       stream.to_a.map { |event| [event.type, event.object.dig("metadata", "name")] }
     )
     assert_respond_to(stream, :each_json_line)
@@ -663,6 +688,7 @@ class MemoryStoreTest < Minitest::Test
       "/api/v1/namespaces/dev/configmaps",
       query: {"limit" => "1", "continue" => token}
     )
+
     assert_operator(snapshot_revision, :<, store.compacted_revision)
     assert_equal(410, expired_page.status)
     expired_watch = api_call(
@@ -671,6 +697,7 @@ class MemoryStoreTest < Minitest::Test
       "/api/v1/namespaces/dev/configmaps",
       query: {"watch" => "true", "resourceVersion" => snapshot_revision.to_s}
     )
+
     assert_equal(410, expired_watch.status)
   ensure
     stream&.close
@@ -709,14 +736,14 @@ class MemoryStoreTest < Minitest::Test
     store = Store.new(history_revisions: nil, history_seconds: nil)
     server = api_server(store)
     api_call(server, "POST", "/api/v1/namespaces/dev/configmaps", {
-      "metadata" => {"name" => "selected", "labels" => {"track" => "yes"}}
-    })
+               "metadata" => {"name" => "selected", "labels" => {"track" => "yes"}}
+             })
     api_call(server, "POST", "/api/v1/namespaces/dev/configmaps", {
-      "metadata" => {"name" => "filtered", "labels" => {"track" => "no"}}
-    })
+               "metadata" => {"name" => "filtered", "labels" => {"track" => "no"}}
+             })
     api_call(server, "POST", "/api/v1/namespaces/other/configmaps", {
-      "metadata" => {"name" => "wrong-namespace", "labels" => {"track" => "yes"}}
-    })
+               "metadata" => {"name" => "wrong-namespace", "labels" => {"track" => "yes"}}
+             })
 
     response = api_call(
       server,

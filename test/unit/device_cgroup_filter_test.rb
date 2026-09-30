@@ -30,6 +30,7 @@ class DeviceCgroupFilterTest < Minitest::Test
         assert_equal vector["error"], error.message, vector["name"]
       else
         instructions, license = compile(vector["rules"])
+
         assert_equal vector["instructions"], instructions, vector["name"]
         assert_equal vector["license"], license, vector["name"]
       end
@@ -38,21 +39,26 @@ class DeviceCgroupFilterTest < Minitest::Test
 
   def test_default_rules_are_the_containerd_cri_default_list
     vector = fixture.find { |entry| entry["name"] == "containerd-cri-default" }
+
     assert_equal vector["rules"], DeviceCgroup.rules_for.map(&:to_h)
     privileged = fixture.find { |entry| entry["name"] == "containerd-cri-privileged" }
+
     assert_equal privileged["rules"], DeviceCgroup.rules_for(privileged: true).map(&:to_h)
     with_devices = fixture.find { |entry| entry["name"] == "containerd-cri-with-devices" }
     devices = [{"type" => "c", "major" => 195, "minor" => 0, "access" => "rw", "allow" => true},
                {"type" => "c", "major" => 195, "minor" => 255, "access" => "rwm", "allow" => true},
                {"type" => "b", "major" => 259, "minor" => -1, "access" => "r", "allow" => true}]
+
     assert_equal with_devices["rules"], DeviceCgroup.rules_for(devices: devices).map(&:to_h)
   end
 
   def test_privileged_program_is_allow_all_and_default_program_denies_by_default
     instructions, = compile(DeviceCgroup.rules_for(privileged: true))
+
     assert_equal %w[b400000001000000 9500000000000000], instructions.last(2)
     assert_equal 8, instructions.length
     instructions, = compile(DeviceCgroup.rules_for)
+
     assert_equal %w[b400000000000000 9500000000000000], instructions.last(2)
     # The allow blocks: c*:* m, b*:* m, and the nine standard devices.
     assert_equal 11, instructions.count("b400000001000000")
@@ -63,8 +69,10 @@ class DeviceCgroupFilterTest < Minitest::Test
     emulator.apply(DeviceCgroup::DENY_ALL)
     emulator.apply("type" => "c", "major" => 1, "minor" => 3, "access" => "r", "allow" => true)
     emulator.apply("type" => "c", "major" => 1, "minor" => 3, "access" => "mw", "allow" => true)
+
     assert_equal ["c 1:3 rwm"], emulator.rules.map(&:cgroup_string)
     emulator.apply("type" => "c", "major" => 1, "minor" => 3, "access" => "w", "allow" => false)
+
     assert_equal ["c 1:3 rm"], emulator.rules.map(&:cgroup_string)
     emulator.apply("type" => "b", "major" => 8, "minor" => -1, "access" => "rw", "allow" => true)
     error = assert_raises(DeviceCgroup::Error) do
@@ -74,14 +82,17 @@ class DeviceCgroupFilterTest < Minitest::Test
                  "(cannot punch hole in existing wildcard rule [{98 8 -1} rw])", error.message
     # Removing a permission the wildcard does not hold is a no-op, not an error.
     emulator.apply("type" => "b", "major" => 8, "minor" => 1, "access" => "m", "allow" => false)
+
     assert_equal ["c 1:3 rm", "b 8:* rw"], emulator.rules.map(&:cgroup_string)
     emulator.apply(DeviceCgroup::ALLOW_ALL)
+
     assert_predicate emulator, :allow_all?
     assert_equal ["a *:* rwm"], emulator.rules.map(&:cgroup_string)
   end
 
   def test_permission_set_operations_canonicalise_order
     permissions = DeviceCgroup::Permissions
+
     assert_equal "rwm", permissions.union("mw", "r")
     assert_equal "rm", permissions.difference("mrw", "w")
     assert_equal "w", permissions.intersection("wm", "rw")
@@ -102,7 +113,9 @@ class DeviceCgroupFilterTest < Minitest::Test
     assert_equal "cannot add rule [config.Rule{Type:112, Major:1, Minor:3, Permissions:\"rw\", Allow:true}] with non-cgroup type 'p'",
                  error.message
     # A major in [2^31, 2^32) is encoded with its bits intact (Go int32 conversion).
-    instructions, = compile([DeviceCgroup::DENY_ALL, {"type" => "b", "major" => 2**32 - 1, "minor" => 0, "access" => "rwm", "allow" => true}])
+    instructions, = compile([DeviceCgroup::DENY_ALL,
+                             {"type" => "b", "major" => (2**32) - 1, "minor" => 0, "access" => "rwm", "allow" => true}])
+
     assert_includes instructions, "55040300ffffffff"
   end
 
@@ -111,6 +124,7 @@ class DeviceCgroupFilterTest < Minitest::Test
     # an exception without any access, which the emulator drops.
     default, = compile(DeviceCgroup.rules_for)
     with_empty, = compile(DeviceCgroup.rules_for(devices: [{"type" => "c", "major" => 4, "minor" => 1, "access" => "", "allow" => true}]))
+
     assert_equal default, with_empty
   end
 end
@@ -151,10 +165,14 @@ class DeviceCgroupAttacherCacheTest < Minitest::Test
     attacher = DeviceCgroup::Attacher.new(bpf: bpf, cache_limit: 2)
     Dir.mktmpdir("devcg-cache-") do |directory|
       default = DeviceCgroup.rules_for
+
       assert_equal 1, attacher.attach(directory, default)
       assert_equal 1, attacher.attach(directory, DeviceCgroup.rules_for.map(&:to_h))
       assert_equal 2, attacher.attach(directory, DeviceCgroup.rules_for(privileged: true))
-      assert_equal 3, attacher.attach(directory, DeviceCgroup.rules_for(devices: [{"type" => "c", "major" => 195, "minor" => 0, "access" => "rw", "allow" => true}]))
+      assert_equal 3,
+                   attacher.attach(directory,
+                                   DeviceCgroup.rules_for(devices: [{"type" => "c", "major" => 195, "minor" => 0, "access" => "rw",
+                                                                     "allow" => true}]))
       assert_equal 3, bpf.loaded.length
       assert_equal 3, bpf.loaded.uniq.length
       assert_equal [[1, 2], [1, 2], [2, 2], [3, 2]], bpf.attached
@@ -170,7 +188,10 @@ class DeviceCgroupAttacherCacheTest < Minitest::Test
     skip "no microvm guest kernel config built" if configs.empty?
     configs.each do |config|
       text = File.read(config)
-      %w[CONFIG_BPF_SYSCALL=y CONFIG_CGROUP_BPF=y CONFIG_CGROUPS=y].each { |option| assert_includes text.lines.map(&:chomp), option, config }
+
+      %w[CONFIG_BPF_SYSCALL=y CONFIG_CGROUP_BPF=y CONFIG_CGROUPS=y].each do |option|
+        assert_includes text.lines.map(&:chomp), option, config
+      end
     end
   end
 end

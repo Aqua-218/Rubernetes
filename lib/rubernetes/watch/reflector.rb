@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "json"
-require "thread"
 require_relative "support"
 
 module Rubernetes
@@ -55,6 +54,7 @@ module Rubernetes
         @max_backoff = Float(max_backoff)
         raise ArgumentError, "max_backoff must be at least min_backoff" if @max_backoff < @min_backoff
         raise ArgumentError, "max_backoff must be finite" unless @max_backoff.finite?
+
         @key_func = key_func
         @mutex = Mutex.new
         @call_mutex = Mutex.new
@@ -125,6 +125,7 @@ module Rubernetes
           true
         end
         return self unless should_run
+
         attempts = 0
         backoff = @min_backoff
         while running? && (limit.nil? || attempts < limit)
@@ -154,16 +155,17 @@ module Rubernetes
         set_running(false)
       end
 
-      def start(thread: true, **options)
-        return run(**options) unless thread
+      def start(thread: true, **)
+        return run(**) unless thread
 
         @mutex.synchronize do
           return self if @running
+
           @stopping = false
           @running = true
           begin
             @thread = Thread.new do
-              run(**options)
+              run(**)
             rescue StandardError => error
               record_error(error)
               set_running(false)
@@ -289,9 +291,9 @@ module Rubernetes
         versions.max_by { |version| Support.numeric_version(version) || -1 }
       end
 
-      def each_event(stream)
+      def each_event(stream, &)
         if stream.respond_to?(:each)
-          stream.each { |event| yield event }
+          stream.each(&)
         elsif stream.respond_to?(:next)
           loop do
             event = stream.next
@@ -337,22 +339,21 @@ module Rubernetes
       end
 
       def parse_event(event)
-        parsed = if event.is_a?(String)
-                   JSON.parse(event)
-                 elsif event.is_a?(Hash)
-                   event
-                 elsif event.respond_to?(:to_h)
-                   value = event.to_h
-                   version = Support.resource_version(event)
-                   if version && value.is_a?(Hash) && Support.resource_version(value).nil?
-                     value.merge("resourceVersion" => version)
-                   else
-                     value
-                   end
-                 else
-                   event
-                 end
-        parsed
+        if event.is_a?(String)
+          JSON.parse(event)
+        elsif event.is_a?(Hash)
+          event
+        elsif event.respond_to?(:to_h)
+          value = event.to_h
+          version = Support.resource_version(event)
+          if version && value.is_a?(Hash) && Support.resource_version(value).nil?
+            value.merge("resourceVersion" => version)
+          else
+            value
+          end
+        else
+          event
+        end
       rescue JSON::ParserError => error
         raise ArgumentError, "watch event is not valid JSON: #{error.message}"
       end

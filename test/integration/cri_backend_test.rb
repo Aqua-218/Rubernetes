@@ -63,15 +63,27 @@ class CRIBackendIntegrationTest < Minitest::Test
     end
     @backend&.client&.close
     if @pid
-      Process.kill(:TERM, -@pid) rescue nil
-      Process.wait(@pid) rescue nil
+      begin
+        Process.kill(:TERM, -@pid)
+      rescue StandardError
+        nil
+      end
+      begin
+        Process.wait(@pid)
+      rescue StandardError
+        nil
+      end
     end
     if @dir
       File.readlines("/proc/self/mounts").map { |line| line.split[1] }.select { |mount| mount.start_with?(@dir) }
-          .sort_by(&:length).reverse_each { |mount| system("umount", "-l", mount, err: File::NULL) }
+        .sort_by(&:length).reverse_each { |mount| system("umount", "-l", mount, err: File::NULL) }
       FileUtils.rm_rf(@dir)
     end
-    Dir.rmdir("/sys/fs/cgroup/rbn-cri-test") if Dir.exist?("/sys/fs/cgroup/rbn-cri-test") rescue nil
+    begin
+      Dir.rmdir("/sys/fs/cgroup/rbn-cri-test") if Dir.exist?("/sys/fs/cgroup/rbn-cri-test")
+    rescue StandardError
+      nil
+    end
   end
 
   def pod(name, host_network:)
@@ -84,21 +96,26 @@ class CRIBackendIntegrationTest < Minitest::Test
     sandbox = @backend.run_sandbox(pod("cri-a", host_network: false))
     @sandboxes << sandbox
     context = @backend.network_sandbox_context(sandbox)
+
     refute_equal File.stat("/proc/self/ns/net").ino, context.dig("netns", "inode"), "the sandbox has its own network namespace"
 
     container = @backend.create_container(sandbox, {"name" => "main", "image" => IMAGE,
                                                     "command" => ["sh", "-c", "echo hello; sleep 0.3; echo oops >&2; sleep 300"],
                                                     "env" => [{"name" => "GREETING", "value" => "hi"}]})
     @backend.start_container(container)
+
     assert_equal "running", @backend.container_status(container)["state"]
     Timeout.timeout(20) { sleep 0.2 until @backend.logs(container).include?("oops") }
+
     assert_equal "hello\noops\n", @backend.logs(container)
     result = @backend.exec_sync(container, ["sh", "-c", "echo $GREETING; exit 3"])
+
     assert_equal ["hi\n", 3], result.values_at("stdout", "exitCode")
     assert_match %r{\Ahttp://127\.0\.0\.1:\d+/exec/}, @backend.exec_url(container, ["true"])
 
     @backend.stop_container(container, timeout: 2)
     status = @backend.container_status(container)
+
     assert_equal "terminated", status["state"]
     assert_includes [137, 143], status["exitCode"], "SIGTERM, or SIGKILL after the grace period"
     @backend.remove_container(container)
@@ -125,8 +142,10 @@ class CRIBackendIntegrationTest < Minitest::Test
     record = lifecycle.send(:record, "uid-cri-c")
     @sandboxes << record[:sandbox_id]
     container = record[:containers].first[:id]
+
     assert_equal "running", runtime.container_status(container)["state"], record[:error].to_s
     Timeout.timeout(20) { sleep 0.2 until runtime.logs(container).include?("from-node") }
+
     assert_equal "from-node lifecycle\n", runtime.logs(container)
     lifecycle.terminate(pod)
     assert_raises(CRI::Client::Error) { @backend.container_status(container) }
@@ -143,7 +162,7 @@ class CRIBackendIntegrationTest < Minitest::Test
     require "rubernetes/transport/websocket"
     sandbox = @backend.run_sandbox(pod("cri-d", host_network: false))
     @sandboxes << sandbox
-    container = @backend.create_container(sandbox, {"name" => "main", "image" => IMAGE, "command" => ["sleep", "300"]})
+    container = @backend.create_container(sandbox, {"name" => "main", "image" => IMAGE, "command" => %w[sleep 300]})
     @backend.start_container(container)
     url = @backend.streaming_url(:exec, container, command: ["sh", "-c", "echo streamed; exit 5"], stdout: true, stderr: true)
     headers = Rubernetes::Transport::Headers.new
@@ -155,6 +174,7 @@ class CRIBackendIntegrationTest < Minitest::Test
     request = Rubernetes::Transport::Request.new(method: "GET", target: "/exec/devx-cri/cri-d/main", headers: headers)
     response = Rubernetes::Node::StreamProxy.response(url, request)
     flunk "refused: #{response.inspect}" if response.is_a?(Array)
+
     assert_equal 101, response.status
     assert_equal "v4.channel.k8s.io", response.headers["sec-websocket-protocol"]
     client, peer = UNIXSocket.pair
@@ -171,6 +191,7 @@ class CRIBackendIntegrationTest < Minitest::Test
         break if status
       end
     end
+
     assert_equal "streamed\n", output
     assert_equal "Failure", status["status"]
     assert_equal "5", status.dig("details", "causes").find { |cause| cause["reason"] == "ExitCode" }["message"]
@@ -181,6 +202,7 @@ class CRIBackendIntegrationTest < Minitest::Test
   def test_a_host_network_sandbox_shares_the_node_namespace
     sandbox = @backend.run_sandbox(pod("cri-b", host_network: true))
     @sandboxes << sandbox
+
     assert_equal File.stat("/proc/1/ns/net").ino, @backend.network_sandbox_context(sandbox).dig("netns", "inode")
   end
 end

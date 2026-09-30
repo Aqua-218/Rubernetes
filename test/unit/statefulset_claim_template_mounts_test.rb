@@ -32,6 +32,7 @@ class StatefulSetClaimTemplateMountsTest < Minitest::Test
 
   def test_a_mount_of_an_unknown_name_is_still_rejected
     causes = mount_causes(stateful_set(mount_name: "missing"))
+
     assert_equal ["spec.template.spec.containers[0].volumeMounts[0].name"], causes.map(&:field)
     assert_equal "FieldValueNotFound", causes.first.reason
   end
@@ -39,6 +40,7 @@ class StatefulSetClaimTemplateMountsTest < Minitest::Test
   def test_a_deployment_does_not_get_claim_template_names
     object = stateful_set(mount_name: "data").merge("kind" => "Deployment")
     causes = Validation.validate("Deployment", object).select { |cause| cause.field.to_s.include?("volumeMounts") }
+
     assert_equal 1, causes.length
   end
 end

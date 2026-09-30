@@ -40,7 +40,11 @@ module NodeShutdownDifferential
   def cases(random, count)
     Array.new(count) do |index|
       grace = duration_nanos(random)
-      critical = random.rand < 0.2 ? 0 : [duration_nanos(random), grace + (random.rand < 0.1 ? 1_000_000_000 : 0)].min
+      critical = if random.rand < 0.2
+                   0
+                 else
+                   [duration_nanos(random), grace + (random.rand < 0.1 ? 1_000_000_000 : 0)].min
+                 end
       by_priority = if random.rand < 0.4
                       PRIORITIES.sample(random.rand(0..5), random: random).map do |priority|
                         {"priority" => priority, "shutdown_grace_period_seconds" => random.rand(0..60)}

@@ -60,7 +60,7 @@ module Rubernetes
       def skip_event?(object, old_object, type = nil)
         kind = Support.kind(object)
         if kind != "ResourceQuota"
-          return false if type == :delete || type == :sync
+          return false if %i[delete sync].include?(type)
           return false if kind == "Pod" && became_terminal?(object, old_object)
 
           return true
@@ -71,8 +71,10 @@ module Rubernetes
       end
 
       def became_terminal?(object, old_object)
-        terminal = ->(pod) { pod && (%w[Succeeded Failed].include?(Support.value(Support.status(pod), "phase", "").to_s) ||
-                                     !Support.value(Support.metadata(pod), "deletionTimestamp", nil).nil?) }
+        terminal = lambda { |pod|
+          pod && (%w[Succeeded Failed].include?(Support.value(Support.status(pod), "phase", "").to_s) ||
+                          !Support.value(Support.metadata(pod), "deletionTimestamp", nil).nil?)
+        }
         terminal.call(object) && !terminal.call(old_object)
       end
 
@@ -131,8 +133,8 @@ module Rubernetes
       def counted_kind(name)
         case name
         when *POD_COMPUTE_RESOURCES, "pods", /\A(requests|limits)\.(?!storage\z)/ then "Pod"
-        when "requests.storage", /#{Regexp.escape(STORAGE_CLASS_SUFFIX)}/ then "PersistentVolumeClaim"
-        when /#{Regexp.escape(Rubernetes::ClaimQuotaUsage::PER_CLASS_SUFFIX)}\z/ then "ResourceClaim"
+        when "requests.storage", /#{Regexp.escape(STORAGE_CLASS_SUFFIX)}/o then "PersistentVolumeClaim"
+        when /#{Regexp.escape(Rubernetes::ClaimQuotaUsage::PER_CLASS_SUFFIX)}\z/o then "ResourceClaim"
         when /\Aservices/ then "Service"
         when %r{\Acount/} then resource_kind(name.sub(%r{\Acount/}, "").split(".").first)
         else resource_kind(name)
@@ -214,7 +216,7 @@ module Rubernetes
            Array(Support.value(terms, "preferredDuringSchedulingIgnoredDuringExecution", []))).any? do |term|
             inner = Support.value(term, "podAffinityTerm", term) || term
             !Array(Support.value(inner, "namespaces", [])).empty? ||
-              !(Support.value(inner, "namespaceSelector", nil)).nil?
+              !Support.value(inner, "namespaceSelector", nil).nil?
           end
         end
       end
@@ -236,10 +238,10 @@ module Rubernetes
           pod_usage(objects, "requests", name)
         when "requests.storage"
           Array(objects).select { |object| Support.kind(object) == "PersistentVolumeClaim" }
-                        .sum { |claim| claim_storage_request(claim) }
+            .sum { |claim| claim_storage_request(claim) }
         when /\A(requests|limits)\.(.+)\z/
           pod_usage(objects, Regexp.last_match(1), Regexp.last_match(2))
-        when /\A(.+)#{Regexp.escape(STORAGE_CLASS_SUFFIX)}(persistentvolumeclaims|requests\.storage)\z/
+        when /\A(.+)#{Regexp.escape(STORAGE_CLASS_SUFFIX)}(persistentvolumeclaims|requests\.storage)\z/o
           # <class>.storageclass.storage.k8s.io/...: the claims of that class.
           storage_class = Regexp.last_match(1)
           claims = Array(objects).select do |object|
@@ -253,12 +255,14 @@ module Rubernetes
           # that allocates them, whether or not a nodePort has been assigned
           # yet.  Counting assigned ones charged a brand-new Service zero.
           Array(objects).select { |object| Support.kind(object) == "Service" }
-                        .sum { |service| service_node_port_usage(Support.spec(service)) }
+            .sum { |service| service_node_port_usage(Support.spec(service)) }
         when "services.loadbalancers"
-          Array(objects).count { |object| Support.kind(object) == "Service" && Support.value(Support.spec(object), "type", "") == "LoadBalancer" }
-        when /#{Regexp.escape(Rubernetes::ClaimQuotaUsage::PER_CLASS_SUFFIX)}\z/
+          Array(objects).count do |object|
+            Support.kind(object) == "Service" && Support.value(Support.spec(object), "type", "") == "LoadBalancer"
+          end
+        when /#{Regexp.escape(Rubernetes::ClaimQuotaUsage::PER_CLASS_SUFFIX)}\z/o
           Array(objects).select { |object| Support.kind(object) == "ResourceClaim" }
-                        .sum { |claim| Rubernetes::ClaimQuotaUsage.usage(claim)[name] }
+            .sum { |claim| Rubernetes::ClaimQuotaUsage.usage(claim)[name] }
         else
           countable_resource(name, objects)
         end
@@ -277,14 +281,15 @@ module Rubernetes
         now = Time.at(now) if now.is_a?(Numeric)
         Array(objects).select { |object| Support.kind(object) == "Pod" }.each_with_object({}) do |pod, totals|
           Rubernetes::PodQuotaUsage.quantities(Support.deep_copy(pod), now: now).each do |name, quantity|
-            totals[name] = totals.key?(name) ? Rubernetes::Schema::Quantity.new(totals[name].value + quantity.value, totals[name].format) : quantity
+            totals[name] =
+              totals.key?(name) ? Rubernetes::Schema::Quantity.new(totals[name].value + quantity.value, totals[name].format) : quantity
           end
         end
       end
 
       def pod_usage(objects, metric, resource)
         Array(objects).select { |object| Support.kind(object) == "Pod" && !terminal_pod?(object) }
-                      .sum { |pod| pod_resource_usage(pod, metric, resource) }
+          .sum { |pod| pod_resource_usage(pod, metric, resource) }
       end
 
       def claim_storage_request(claim)
@@ -292,7 +297,7 @@ module Rubernetes
       end
 
       def countable_resource(resource_name, objects)
-        normalized = resource_name.sub(/\Acount\//, "")
+        normalized = resource_name.sub(%r{\Acount/}, "")
         normalized = normalized.split(".").first
         kind = if normalized.include?("/")
                  normalized.split("/").last

@@ -33,12 +33,12 @@ module Rubernetes
       def testcase_inventory_digest
         content = @test_results.map do |result|
           status = if result.skipped?
-                      "skipped"
-                    elsif result.failure
-                      "failure"
-                    else
-                      "passed"
-                    end
+                     "skipped"
+                   elsif result.failure
+                     "failure"
+                   else
+                     "passed"
+                   end
           "#{result.class_name}\0#{result.name}\0#{status}\n"
         end.sort.join
         Digest::SHA256.hexdigest(content)
@@ -83,10 +83,10 @@ module Rubernetes
           "registered_testcase_inventory_count" => registered.length,
           "executed_testcase_inventory_sha256" => identity_digest(executed),
           "inventory_complete" => registered == executed,
-          "command_sha256" => ENV["RUBERNETES_JUNIT_COMMAND_SHA256"],
-          "test_pattern" => ENV["RUBERNETES_JUNIT_TEST_PATTERN"],
-          "test_inventory_sha256" => ENV["RUBERNETES_JUNIT_TEST_INVENTORY_SHA256"],
-          "test_inventory_count" => ENV["RUBERNETES_JUNIT_TEST_INVENTORY_COUNT"]
+          "command_sha256" => ENV.fetch("RUBERNETES_JUNIT_COMMAND_SHA256", nil),
+          "test_pattern" => ENV.fetch("RUBERNETES_JUNIT_TEST_PATTERN", nil),
+          "test_inventory_sha256" => ENV.fetch("RUBERNETES_JUNIT_TEST_INVENTORY_SHA256", nil),
+          "test_inventory_count" => ENV.fetch("RUBERNETES_JUNIT_TEST_INVENTORY_COUNT", nil)
         }.compact.map { |key, value| %(#{key}="#{escape(value)}") }.join(" ")
         %(<?xml version="1.0" encoding="UTF-8"?>\n) +
           %(<testsuite #{attributes}>#{cases}</testsuite>\n)
@@ -101,7 +101,8 @@ module Rubernetes
                else
                  ""
                end
-        %(<testcase classname="#{escape(result.class_name)}" name="#{escape(result.name)}" time="#{format("%.6f", result.time)}">#{body}</testcase>)
+        %(<testcase classname="#{escape(result.class_name)}" name="#{escape(result.name)}" time="#{format("%.6f",
+                                                                                                          result.time)}">#{body}</testcase>)
       end
 
       def escape(value)

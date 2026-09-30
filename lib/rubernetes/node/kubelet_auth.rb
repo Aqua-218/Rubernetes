@@ -123,7 +123,7 @@ module Rubernetes
                        when nil then []
                        when String
                          File.read(source).scan(/-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----/m)
-                             .map { |pem| OpenSSL::X509::Certificate.new(pem) }
+                           .map { |pem| OpenSSL::X509::Certificate.new(pem) }
                        else Array(source)
                        end
         return nil if certificates.empty?
@@ -142,7 +142,9 @@ module Rubernetes
         return nil unless @client_ca.verify(certificate, intermediates)
 
         usage = certificate.extensions.find { |extension| extension.oid == "extendedKeyUsage" }
-        return nil if usage && !usage.value.split(/,\s*/).any? { |value| ["TLS Web Client Authentication", "Any Extended Key Usage"].include?(value) }
+        return nil if usage && !usage.value.split(/,\s*/).any? do |value|
+          ["TLS Web Client Authentication", "Any Extended Key Usage"].include?(value)
+        end
 
         subject = certificate.subject.to_a
         name = subject.find { |entry| entry[0] == "CN" }&.fetch(1, nil).to_s
@@ -170,7 +172,8 @@ module Rubernetes
         return cached[:user] if cached && now < cached[:expires]
 
         review = {"apiVersion" => "authentication.k8s.io/v1", "kind" => "TokenReview", "spec" => {"token" => token}}
-        status = (@client.create(review, api_version: "authentication.k8s.io/v1", path: "/apis/authentication.k8s.io/v1/tokenreviews") || {})["status"] || {}
+        status = (@client.create(review, api_version: "authentication.k8s.io/v1",
+                                         path: "/apis/authentication.k8s.io/v1/tokenreviews") || {})["status"] || {}
         user = if status["authenticated"] == true
                  info = status["user"] || {}
                  User.new(name: info["username"].to_s, uid: info["uid"].to_s, groups: Array(info["groups"]),
@@ -198,7 +201,8 @@ module Rubernetes
                              "resourceAttributes" => {"verb" => attribute[:verb], "group" => "", "version" => "v1",
                                                       "resource" => "nodes", "subresource" => attribute[:subresource],
                                                       "name" => @node_name}}}
-        status = (@client.create(review, api_version: "authorization.k8s.io/v1", path: "/apis/authorization.k8s.io/v1/subjectaccessreviews") || {})["status"] || {}
+        status = (@client.create(review, api_version: "authorization.k8s.io/v1",
+                                         path: "/apis/authorization.k8s.io/v1/subjectaccessreviews") || {})["status"] || {}
         allowed = status["allowed"] == true
         @mutex.synchronize do
           @decision_cache[key] = {allowed: allowed, expires: now + (allowed ? @authorized_ttl : @unauthorized_ttl)}

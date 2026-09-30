@@ -87,7 +87,8 @@ module Promql
 
       ast = expression.is_a?(String) ? Promql::Parser.parse(expression) : expression
       context = Context.new(self, start_ms: start_ms, end_ms: end_ms, step_ms: step_ms)
-      raise EvalError, "invalid expression type #{ast.type} for range query, must be Scalar or instant Vector" unless %i[scalar vector].include?(ast.type)
+      raise EvalError, "invalid expression type #{ast.type} for range query, must be Scalar or instant Vector" unless %i[scalar
+                                                                                                                         vector].include?(ast.type)
 
       series_by_sig = {}
       order = []
@@ -309,7 +310,17 @@ module Promql
       "+" => ->(a, b) { a + b },
       "-" => ->(a, b) { a - b },
       "*" => ->(a, b) { a * b },
-      "/" => ->(a, b) { b.zero? ? (a.zero? || a.nan? ? Float::NAN : (a.positive? ? Float::INFINITY : -Float::INFINITY)) : a / b },
+      "/" => lambda { |a, b|
+        if b.zero?
+          if a.zero? || a.nan?
+            Float::NAN
+          else
+            (a.positive? ? Float::INFINITY : -Float::INFINITY)
+          end
+        else
+          a / b
+        end
+      },
       "%" => nil, # handled by go_mod
       "^" => ->(a, b) { a**b },
       "atan2" => ->(a, b) { Math.atan2(a, b) }
@@ -338,19 +349,16 @@ module Promql
       return Float::NAN if b.zero? || a.infinite? || b.nan? || a.nan?
       return a if b.infinite?
 
-      a - b * (a / b).truncate
+      a - (b * (a / b).truncate)
     end
 
     def eval_binary(node, t, context)
       lhs = eval_node(node.lhs, t, context)
       rhs = eval_node(node.rhs, t, context)
       op = node.op
-      if %w[and or unless].include?(op)
-        return set_operation(op, lhs, rhs, node.matching)
-      end
-      if lhs.is_a?(Numeric) && rhs.is_a?(Numeric)
-        return scalar_op(op, lhs.to_f, rhs.to_f)
-      end
+      return set_operation(op, lhs, rhs, node.matching) if %w[and or unless].include?(op)
+      return scalar_op(op, lhs.to_f, rhs.to_f) if lhs.is_a?(Numeric) && rhs.is_a?(Numeric)
+
       if lhs.is_a?(Numeric) || rhs.is_a?(Numeric)
         vector = lhs.is_a?(Numeric) ? rhs : lhs
         scalar = (lhs.is_a?(Numeric) ? lhs : rhs).to_f
@@ -390,7 +398,8 @@ module Promql
       rhs.each do |series|
         sig = match_signature(series, matching)
         if right_by_sig.key?(sig) && matching.card == :one_to_one
-          raise EvalError, "found duplicate series for the match group #{sig_labels(series, matching)} on the right hand-side of the operation"
+          raise EvalError,
+                "found duplicate series for the match group #{sig_labels(series, matching)} on the right hand-side of the operation"
         end
         raise EvalError, "found duplicate series for the match group on the right hand-side of the operation" if right_by_sig.key?(sig)
 
@@ -406,7 +415,6 @@ module Promql
         a = swapped ? other.point[1] : series.point[1]
         b = swapped ? series.point[1] : other.point[1]
         value = scalar_op(op, a, b)
-        keep = true
         if COMPARISON.key?(op)
           keep = value == 1.0
           value = swapped ? other.point[1] : series.point[1] unless node.return_bool
@@ -418,6 +426,7 @@ module Promql
           if seen_left.key?(sig)
             raise EvalError, "multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)"
           end
+
           seen_left[sig] = true
         elsif seen_left.key?(key)
           raise EvalError, "multiple matches for labels: grouping labels must ensure unique matches"
@@ -551,7 +560,7 @@ module Promql
       lower = rank.floor
       upper = [lower + 1, n - 1].min.to_i
       weight = rank - lower
-      sorted[lower] * (1 - weight) + sorted[upper] * weight
+      (sorted[lower] * (1 - weight)) + (sorted[upper] * weight)
     end
 
     # ------------------------------------------------------------- functions
@@ -574,7 +583,12 @@ module Promql
         vector.empty? ? [Series.new(metric: absent_labels(args[0]), point: [t, 1.0])] : []
       when "absent_over_time"
         matrix = eval_node(args[0], t, context)
-        matrix.series.empty? ? [Series.new(metric: absent_labels(args[0].is_a?(AST::MatrixSelector) ? args[0].selector : nil), point: [t, 1.0])] : []
+        if matrix.series.empty?
+          [Series.new(metric: absent_labels(args[0].is_a?(AST::MatrixSelector) ? args[0].selector : nil),
+                      point: [t, 1.0])]
+        else
+          []
+        end
       when "rate", "increase", "delta", "irate", "idelta", "deriv", "changes", "resets",
            "avg_over_time", "sum_over_time", "min_over_time", "max_over_time", "count_over_time", "last_over_time",
            "stddev_over_time", "stdvar_over_time", "present_over_time", "mad_over_time"
@@ -597,7 +611,7 @@ module Promql
           next if s.points.length < 2
 
           slope, intercept = linear_regression(s.points, t)
-          Series.new(metric: drop_name(s.metric), point: [t, slope * seconds + intercept])
+          Series.new(metric: drop_name(s.metric), point: [t, (slope * seconds) + intercept])
         end
       when "holt_winters", "double_exponential_smoothing"
         matrix = eval_node(args[0], t, context)
@@ -627,7 +641,11 @@ module Promql
           if match
             expanded = replacement.gsub(/\$(\d+|\{\d+\}|\{[a-zA-Z_]\w*\})/) do
               ref = Regexp.last_match(1).delete("{}")
-              ref.match?(/\A\d+\z/) ? match[ref.to_i].to_s : (match.names.include?(ref) ? match[ref].to_s : "")
+              if ref.match?(/\A\d+\z/)
+                match[ref.to_i].to_s
+              else
+                (match.names.include?(ref) ? match[ref].to_s : "")
+              end
             end
             expanded.empty? ? metric.delete(dst) : metric[dst] = expanded
           end
@@ -687,10 +705,38 @@ module Promql
       "floor" => ->(v) { v.finite? ? v.floor.to_f : v },
       "exp" => ->(v) { Math.exp(v) },
       "sqrt" => ->(v) { v.negative? ? Float::NAN : Math.sqrt(v) },
-      "ln" => ->(v) { v.negative? ? Float::NAN : (v.zero? ? -Float::INFINITY : Math.log(v)) },
-      "log2" => ->(v) { v.negative? ? Float::NAN : (v.zero? ? -Float::INFINITY : Math.log2(v)) },
-      "log10" => ->(v) { v.negative? ? Float::NAN : (v.zero? ? -Float::INFINITY : Math.log10(v)) },
-      "sgn" => ->(v) { v.nan? ? v : (v.positive? ? 1.0 : (v.negative? ? -1.0 : 0.0)) },
+      "ln" => lambda { |v|
+        if v.negative?
+          Float::NAN
+        else
+          (v.zero? ? -Float::INFINITY : Math.log(v))
+        end
+      },
+      "log2" => lambda { |v|
+        if v.negative?
+          Float::NAN
+        else
+          (v.zero? ? -Float::INFINITY : Math.log2(v))
+        end
+      },
+      "log10" => lambda { |v|
+        if v.negative?
+          Float::NAN
+        else
+          (v.zero? ? -Float::INFINITY : Math.log10(v))
+        end
+      },
+      "sgn" => lambda { |v|
+        if v.nan?
+          v
+        else
+          (if v.positive?
+             1.0
+           else
+             (v.negative? ? -1.0 : 0.0)
+           end)
+        end
+      },
       "deg" => ->(v) { v * 180 / Math::PI },
       "rad" => ->(v) { v * Math::PI / 180 },
       "sin" => ->(v) { Math.sin(v) }, "cos" => ->(v) { Math.cos(v) }, "tan" => ->(v) { Math.tan(v) },
@@ -698,7 +744,17 @@ module Promql
       "atan" => ->(v) { Math.atan(v) },
       "sinh" => ->(v) { Math.sinh(v) }, "cosh" => ->(v) { Math.cosh(v) }, "tanh" => ->(v) { Math.tanh(v) },
       "asinh" => ->(v) { Math.asinh(v) }, "acosh" => ->(v) { v < 1 ? Float::NAN : Math.acosh(v) },
-      "atanh" => ->(v) { v.abs > 1 ? Float::NAN : (v.abs == 1 ? (v.positive? ? Float::INFINITY : -Float::INFINITY) : Math.atanh(v)) }
+      "atanh" => lambda { |v|
+        if v.abs > 1
+          Float::NAN
+        else
+          (if v.abs == 1
+             v.positive? ? Float::INFINITY : -Float::INFINITY
+           else
+             Math.atanh(v)
+           end)
+        end
+      }
     }.freeze
 
     def sort_key(value)
@@ -709,7 +765,7 @@ module Promql
       return value unless value.finite?
 
       to_nearest_inverse = 1.0 / nearest
-      (value * to_nearest_inverse + 0.5).floor / to_nearest_inverse
+      ((value * to_nearest_inverse) + 0.5).floor / to_nearest_inverse
     end
 
     def drop_name(metric)
@@ -833,17 +889,13 @@ module Promql
       average_interval = sampled_interval / (points.length - 1)
       extrapolation_threshold = average_interval * 1.1
       extrapolate_to_interval = sampled_interval
-      if duration_to_start >= extrapolation_threshold
-        duration_to_start = average_interval / 2
-      end
+      duration_to_start = average_interval / 2 if duration_to_start >= extrapolation_threshold
       if counter && result.positive? && first[1] >= 0
         duration_to_zero = sampled_interval * (first[1] / result)
         duration_to_start = duration_to_zero if duration_to_zero < duration_to_start
       end
       extrapolate_to_interval += duration_to_start
-      if duration_to_end >= extrapolation_threshold
-        duration_to_end = average_interval / 2
-      end
+      duration_to_end = average_interval / 2 if duration_to_end >= extrapolation_threshold
       extrapolate_to_interval += duration_to_end
       factor = extrapolate_to_interval / sampled_interval
       factor /= (range_ms / 1000.0) if rate
@@ -861,10 +913,10 @@ module Promql
         sum_xy += x * value
         sum_x2 += x * x
       end
-      cov = sum_xy - sum_x * sum_y / n
-      var = sum_x2 - sum_x * sum_x / n
+      cov = sum_xy - (sum_x * sum_y / n)
+      var = sum_x2 - (sum_x * sum_x / n)
       slope = var.zero? ? 0.0 : cov / var
-      intercept = sum_y / n - slope * sum_x / n
+      intercept = (sum_y / n) - (slope * sum_x / n)
       [slope, intercept]
     end
 
@@ -876,8 +928,8 @@ module Promql
         next if i.zero?
 
         s_prev = s1
-        s1 = sf * x + (1 - sf) * (s_prev + b)
-        b = tf * (s1 - s_prev) + (1 - tf) * b
+        s1 = (sf * x) + ((1 - sf) * (s_prev + b))
+        b = (tf * (s1 - s_prev)) + ((1 - tf) * b)
       end
       s1
     end
@@ -894,7 +946,7 @@ module Promql
         upper = parse_le(le)
         next if upper.nil?
 
-        metric = series.metric.reject { |k, _| k == "le" || k == "__name__" }
+        metric = series.metric.reject { |k, _| %w[le __name__].include?(k) }
         key = metric.sort.to_s
         unless groups.key?(key)
           groups[key] = {metric: metric, buckets: []}
@@ -929,7 +981,10 @@ module Promql
       # Ensure monotonicity: counts may be slightly non-monotonic after
       # scrapes of a moving histogram.
       running = -Float::INFINITY
-      buckets = buckets.map { |upper, count| running = [running, count].max; [upper, running] }
+      buckets = buckets.map do |upper, count|
+        running = [running, count].max
+        [upper, running]
+      end
       observations = buckets.last[1]
       return Float::NAN if observations.zero?
 
@@ -945,7 +1000,7 @@ module Promql
       rank -= count_before
       return upper_bound if count.zero?
 
-      lower_bound + (upper_bound - lower_bound) * (rank / count)
+      lower_bound + ((upper_bound - lower_bound) * (rank / count))
     end
   end
 end

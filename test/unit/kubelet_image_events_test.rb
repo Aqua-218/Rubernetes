@@ -24,6 +24,7 @@ class KubeletImageEventsTest < Minitest::Test
       if pull_policy == "Never" && !present
         raise Rubernetes::Image::NeverPullError, "Container image #{reference.inspect} is not present with pull policy of Never"
       end
+
       unless present
         on_pull&.call(:start)
         if @fail.include?(reference)
@@ -65,25 +66,32 @@ class KubeletImageEventsTest < Minitest::Test
     subject.start(pod([{"name" => "a", "image" => "new:1", "imagePullPolicy" => "IfNotPresent"},
                        {"name" => "b", "image" => "cached:1", "imagePullPolicy" => "IfNotPresent"}],
                       init: [{"name" => "i", "image" => "new:1", "imagePullPolicy" => "IfNotPresent"}]))
+
     assert_equal [["i", "Pulling", 'Pulling image "new:1"'],
                   ["i", "Pulled", 'Successfully pulled image "new:1" in 1.234s (1.234s including waiting). Image size: 42000000 bytes.'],
                   ["a", "Pulled", 'Container image "new:1" already present on machine and can be accessed by the pod'],
                   ["b", "Pulled", 'Container image "cached:1" already present on machine and can be accessed by the pod']], messages
     text = @metrics.registry.render
+
     assert_includes text, %(kubelet_image_pull_duration_seconds_count{image_size_in_bytes="10MB-100MB"} 1)
-    assert_includes text, %(kubelet_image_manager_ensure_image_requests_total{present_locally="false",pull_policy="ifnotpresent",pull_required="true"} 1)
-    assert_includes text, %(kubelet_image_manager_ensure_image_requests_total{present_locally="true",pull_policy="ifnotpresent",pull_required="false"} 2)
+    assert_includes text,
+                    %(kubelet_image_manager_ensure_image_requests_total{present_locally="false",pull_policy="ifnotpresent",pull_required="true"} 1)
+    assert_includes text,
+                    %(kubelet_image_manager_ensure_image_requests_total{present_locally="true",pull_policy="ifnotpresent",pull_required="false"} 2)
   end
 
   def test_a_failed_pull_and_a_never_policy
     subject = lifecycle(Resolver.new(fail: ["gone:1"]))
     subject.start(pod([{"name" => "a", "image" => "gone:1", "imagePullPolicy" => "Always"}]))
+
     assert_equal [["a", "Pulling", 'Pulling image "gone:1"'], ["a", "Failed", 'Failed to pull image "gone:1": manifest unknown']], messages
     failed = @entries.find { |entry| entry["type"] == "pod.failed" }
+
     assert_equal "Error: ErrImagePull", Rubernetes::Node::KubeletEventPublisher::REASONS.fetch("pod.failed")[2].call(failed, {})
 
     subject = lifecycle(Resolver.new)
     subject.start(pod([{"name" => "a", "image" => "local:1", "imagePullPolicy" => "Never"}]))
+
     assert_equal [["a", "ErrImageNeverPull", 'Container image "local:1" is not present with pull policy of Never']], messages
     assert_includes @metrics.registry.render,
                     %(kubelet_image_manager_ensure_image_requests_total{present_locally="false",pull_policy="never",pull_required="unknown"} 1)
@@ -91,8 +99,11 @@ class KubeletImageEventsTest < Minitest::Test
 
   def test_the_size_buckets_and_go_durations
     bucket = Rubernetes::Node::KubeletMetrics.method(:image_size_bucket)
-    assert_equal ["N/A", "0-10MB", "0-10MB", "10MB-100MB", "GT100GB"],
-                 [0, 1, 10 << 20, (10 << 20) + 1, (100 << 30) + 1].map { |size| bucket.call(size) }
-    assert_equal %w[0s 567ms 1.5s 1m2.345s 1h2m3.4s], [0, 0.567, 1.5, 62.345, 3723.4].map { |value| Rubernetes::Node::Helpers.go_duration(value) }
+
+    assert_equal(["N/A", "0-10MB", "0-10MB", "10MB-100MB", "GT100GB"],
+                 [0, 1, 10 << 20, (10 << 20) + 1, (100 << 30) + 1].map { |size| bucket.call(size) })
+    assert_equal(%w[0s 567ms 1.5s 1m2.345s 1h2m3.4s], [0, 0.567, 1.5, 62.345, 3723.4].map do |value|
+      Rubernetes::Node::Helpers.go_duration(value)
+    end)
   end
 end

@@ -42,8 +42,8 @@ class SchemaUnknownFieldsTest < Minitest::Test
 
     assert_equal 771, observations.length
     assert_equal 3, OPAQUE_TYPE_COUNT
-    assert_empty observations.reject { |item| item.fetch("preserved") == item.fetch("expected_preserved") }
-    assert observations.all? { |item| item.fetch("explicit_preserved") }
+    assert_empty(observations.reject { |item| item.fetch("preserved") == item.fetch("expected_preserved") })
+    assert(observations.all? { |item| item.fetch("explicit_preserved") })
     assert(observations.all? do |item|
       item.fetch("rejected") == !item.fetch("expected_preserved")
     end)

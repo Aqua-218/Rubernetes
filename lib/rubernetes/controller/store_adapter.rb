@@ -36,11 +36,7 @@ module Rubernetes
         candidates.select! { |object| matches_descriptor?(object, descriptor) }
         unless namespace == :all || namespace.nil?
           candidates.select! do |object|
-            if descriptor.cluster_scoped?
-              true
-            else
-              Support.namespace(object).to_s == namespace.to_s
-            end
+            descriptor.cluster_scoped? || Support.namespace(object).to_s == namespace.to_s
           end
         end
         candidates.select! { |object| Support.selector_matches?(selector, object) } if selector
@@ -76,7 +72,7 @@ module Rubernetes
           rescue ArgumentError, NotImplementedError
             nil
           rescue StandardError => error
-            raise unless error.class.name.to_s.end_with?("NotFound") || error.class.name.to_s.end_with?("Gone")
+            raise unless error.class.name.to_s.end_with?("NotFound", "Gone")
           end
         end
         list(descriptor, namespace: namespace || :all).find do |object|
@@ -86,7 +82,11 @@ module Rubernetes
 
       # Same key layout as key_for, addressed by name rather than by object.
       def key_for_name(descriptor, name:, namespace:)
-        scope = descriptor.cluster_scoped? ? "_cluster" : (namespace.nil? || namespace == :all ? nil : namespace.to_s)
+        scope = if descriptor.cluster_scoped?
+                  "_cluster"
+                else
+                  (namespace.nil? || namespace == :all ? nil : namespace.to_s)
+                end
         raise ArgumentError, "namespaced lookup requires a namespace" if scope.nil?
 
         "registry/#{descriptor.api_version}/#{descriptor.resource}/#{scope}/#{name}"
@@ -106,7 +106,10 @@ module Rubernetes
         record_effect!(descriptor: descriptor, object: object, action: :create, response: result)
         result
       rescue ArgumentError => error
-        return call_create_fallback(object, descriptor, error, fence: fence) if error.message.include?("wrong number") || error.message.include?("keyword")
+        if error.message.include?("wrong number") || error.message.include?("keyword")
+          return call_create_fallback(object, descriptor, error,
+                                      fence: fence)
+        end
 
         raise
       end
@@ -121,10 +124,12 @@ module Rubernetes
         current = existing || find(descriptor, name: Support.name(object), namespace: Support.namespace(object))
         ensure_uid_matches!(current, object)
         return current if current && current == object
+
         key = key_for(descriptor, object)
         if @store.respond_to?(:update)
           fence&.call
-          result = @store.update(key, Support.deep_copy(object), resource_version: Support.value(Support.metadata(current || {}), "resourceVersion", nil))
+          result = @store.update(key, Support.deep_copy(object),
+                                 resource_version: Support.value(Support.metadata(current || {}), "resourceVersion", nil))
           record_effect!(descriptor: descriptor, object: object, action: effect_action, response: result)
           result
         elsif @store.respond_to?(:replace)
@@ -136,7 +141,10 @@ module Rubernetes
           raise StoreError, "store does not implement update or replace"
         end
       rescue ArgumentError => error
-        return call_update_fallback(object, descriptor, current, error, fence: fence, effect_action: effect_action) if error.message.include?("wrong number") || error.message.include?("keyword") || error.message.include?("unknown update")
+        if error.message.include?("wrong number") || error.message.include?("keyword") || error.message.include?("unknown update")
+          return call_update_fallback(object, descriptor, current, error, fence: fence,
+                                                                          effect_action: effect_action)
+        end
 
         raise
       end
@@ -146,9 +154,10 @@ module Rubernetes
           object = object_or_descriptor
           descriptor ||= self.class.descriptor(object)
           ensure_descriptor_matches!(object, descriptor)
-          key = key_for(descriptor, object)
+          key_for(descriptor, object)
           existing = find(descriptor, name: Support.name(object), namespace: Support.namespace(object))
           return nil unless existing
+
           ensure_uid_matches!(existing, object)
           key = key_for(descriptor, existing)
           expected = Support.value(Support.metadata(existing), "resourceVersion", nil)
@@ -156,6 +165,7 @@ module Rubernetes
           descriptor ||= self.class.descriptor(object_or_descriptor)
           object = find(descriptor, name: name, namespace: namespace)
           return nil unless object
+
           key = key_for(descriptor, object)
           expected = Support.value(Support.metadata(object), "resourceVersion", nil)
         end
@@ -164,7 +174,10 @@ module Rubernetes
         record_effect!(descriptor: descriptor, object: object, action: :delete, response: result)
         result
       rescue ArgumentError => error
-        return call_delete_fallback(key, expected, error, fence: fence) if error.message.include?("wrong number") || error.message.include?("keyword") || error.message.include?("unknown delete")
+        if error.message.include?("wrong number") || error.message.include?("keyword") || error.message.include?("unknown delete")
+          return call_delete_fallback(key, expected, error,
+                                      fence: fence)
+        end
 
         raise
       end
@@ -255,7 +268,7 @@ module Rubernetes
                 end
         Array(items).map { |item| Support.deep_copy(item) }
       rescue StandardError => error
-        raise unless error.class.name.to_s.end_with?("NotFound") || error.class.name.to_s.end_with?("Gone")
+        raise unless error.class.name.to_s.end_with?("NotFound", "Gone")
 
         []
       end
@@ -263,6 +276,7 @@ module Rubernetes
       def matches_descriptor?(object, descriptor)
         kind = Support.kind(object)
         return false unless kind == descriptor.kind
+
         raw_api = Support.api_version(object)
         return true if raw_api.nil? || raw_api.to_s.empty?
 
@@ -275,14 +289,12 @@ module Rubernetes
       end
 
       def call_create_fallback(object, descriptor, original_error, fence: nil)
-        if @store.method(:create).arity.abs >= 2
-          fence&.call
-          result = @store.create(key_for(descriptor, object), Support.deep_copy(object))
-          record_effect!(descriptor: descriptor, object: object, action: :create, response: result)
-          result
-        else
-          raise original_error
-        end
+        raise original_error unless @store.method(:create).arity.abs >= 2
+
+        fence&.call
+        result = @store.create(key_for(descriptor, object), Support.deep_copy(object))
+        record_effect!(descriptor: descriptor, object: object, action: :create, response: result)
+        result
       end
 
       def call_update_fallback(object, descriptor, current, original_error, fence: nil, effect_action: :update)
@@ -305,21 +317,19 @@ module Rubernetes
       end
 
       def call_delete_fallback(key, expected, original_error, fence: nil)
+        fence&.call
+        result = @store.delete(key, prec: expected)
+        record_effect!(descriptor: descriptor_for_key(key), object: nil, action: :delete, response: result,
+                       reconcile_key: key)
+        result
+      rescue ArgumentError
         begin
           fence&.call
-          result = @store.delete(key, prec: expected)
-          record_effect!(descriptor: descriptor_for_key(key), object: nil, action: :delete, response: result,
-                         reconcile_key: key)
+          result = @store.delete(key)
+          record_effect!(descriptor: nil, object: nil, action: :delete, response: result, reconcile_key: key)
           result
-        rescue ArgumentError
-          begin
-            fence&.call
-            result = @store.delete(key)
-            record_effect!(descriptor: nil, object: nil, action: :delete, response: result, reconcile_key: key)
-            result
-          rescue StandardError
-            raise original_error
-          end
+        rescue StandardError
+          raise original_error
         end
       end
 
@@ -335,12 +345,15 @@ module Rubernetes
         existing = find(operation.resource, name: Support.name(operation.object), namespace: Support.namespace(operation.object))
         ensure_uid_matches!(existing, operation.object)
         return existing if existing && existing == operation.object
+
         update(operation.object, descriptor: operation.resource, existing: existing, fence: fence)
       end
 
       def apply_patch(operation, fence: nil)
-        existing = find(operation.resource, name: Support.name(operation.object || {}), namespace: Support.namespace(operation.object || {}))
+        existing = find(operation.resource, name: Support.name(operation.object || {}),
+                                            namespace: Support.namespace(operation.object || {}))
         raise StoreError, "patch target not found" unless existing
+
         candidate = Support.merge_hash(existing, operation.patch || {})
         update(candidate, descriptor: operation.resource, existing: existing, fence: fence)
       end
@@ -348,6 +361,7 @@ module Rubernetes
       def apply_status(operation, fence: nil)
         existing = find(operation.resource, name: Support.name(operation.object), namespace: Support.namespace(operation.object))
         return nil unless existing
+
         candidate = Support.deep_copy(existing)
         candidate["status"] = Support.deep_copy(operation.patch || operation.object["status"] || {})
         update(candidate, descriptor: operation.resource, existing: existing, fence: fence, effect_action: :status_update)
@@ -369,6 +383,7 @@ module Rubernetes
       def apply_delete(operation, fence: nil)
         object = find(operation.resource, name: Support.name(operation.object || {}), namespace: Support.namespace(operation.object || {}))
         return nil unless object
+
         ensure_uid_matches!(object, operation.object)
         if operation.patch && method(:delete).parameters.any? { |_, name| name == :options }
           return delete(object, descriptor: operation.resource, fence: fence, options: operation.patch)

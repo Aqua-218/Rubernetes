@@ -15,11 +15,16 @@ require_relative "m3_evidence_support"
 
 ROOT = M34EvidenceSupport::ROOT
 REPORT_SPECS = {
-  "network" => {filename: "network-matrix.json", kind: "m4_network_matrix", default: [RbConfig.ruby, "tools/milestones/m4_network_probe.rb"]},
-  "policy" => {filename: "policy-differential.json", kind: "m4_policy_differential", default: [RbConfig.ruby, "tools/milestones/m4_policy_probe.rb"]},
-  "proxy" => {filename: "proxy-backend-parity.json", kind: "m4_proxy_backend_parity", default: [RbConfig.ruby, "tools/milestones/m4_proxy_probe.rb"]},
-  "volume" => {filename: "volume-lifecycle-trace.json", kind: "m4_volume_lifecycle_trace", default: [RbConfig.ruby, "tools/milestones/m4_volume_probe.rb"]},
-  "mount_attack" => {filename: "mount-attack-corpus.json", kind: "m4_mount_attack_corpus", default: [RbConfig.ruby, "tools/milestones/m4_mount_attack_probe.rb"]}
+  "network" => {filename: "network-matrix.json", kind: "m4_network_matrix",
+                default: [RbConfig.ruby, "tools/milestones/m4_network_probe.rb"]},
+  "policy" => {filename: "policy-differential.json", kind: "m4_policy_differential",
+               default: [RbConfig.ruby, "tools/milestones/m4_policy_probe.rb"]},
+  "proxy" => {filename: "proxy-backend-parity.json", kind: "m4_proxy_backend_parity",
+              default: [RbConfig.ruby, "tools/milestones/m4_proxy_probe.rb"]},
+  "volume" => {filename: "volume-lifecycle-trace.json", kind: "m4_volume_lifecycle_trace",
+               default: [RbConfig.ruby, "tools/milestones/m4_volume_probe.rb"]},
+  "mount_attack" => {filename: "mount-attack-corpus.json", kind: "m4_mount_attack_corpus",
+                     default: [RbConfig.ruby, "tools/milestones/m4_mount_attack_probe.rb"]}
 }.freeze
 
 def materialize_m4_artifacts(report_name, report_path, bundle_directory)
@@ -38,10 +43,10 @@ end
 options = {
   run_id: Time.now.utc.strftime("%Y%m%dT%H%M%S.%6NZ"),
   output_root: File.join(ROOT, "artifacts/milestones/M4"),
-  m0_manifest: ENV["RUBERNETES_M4_M0_MANIFEST"],
-  m1_manifest: ENV["RUBERNETES_M4_M1_MANIFEST"],
-  m2_manifest: ENV["RUBERNETES_M4_M2_MANIFEST"],
-  m3_manifest: ENV["RUBERNETES_M4_M3_MANIFEST"],
+  m0_manifest: ENV.fetch("RUBERNETES_M4_M0_MANIFEST", nil),
+  m1_manifest: ENV.fetch("RUBERNETES_M4_M1_MANIFEST", nil),
+  m2_manifest: ENV.fetch("RUBERNETES_M4_M2_MANIFEST", nil),
+  m3_manifest: ENV.fetch("RUBERNETES_M4_M3_MANIFEST", nil),
   reports: {},
   commands: {}
 }
@@ -53,11 +58,17 @@ OptionParser.new do |parser|
   parser.on("--m0-manifest PATH", "copy and verify COMPLETE M0 evidence") { |value| options[:m0_manifest] = File.expand_path(value) }
   parser.on("--m1-manifest PATH", "copy and verify COMPLETE M1 evidence") { |value| options[:m1_manifest] = File.expand_path(value) }
   parser.on("--m2-manifest PATH", "copy and verify COMPLETE M2 evidence") { |value| options[:m2_manifest] = File.expand_path(value) }
-  parser.on("--m3-manifest PATH", "copy and verify COMPLETE M3 evidence for the same input") { |value| options[:m3_manifest] = File.expand_path(value) }
+  parser.on("--m3-manifest PATH", "copy and verify COMPLETE M3 evidence for the same input") do |value|
+    options[:m3_manifest] = File.expand_path(value)
+  end
   REPORT_SPECS.each_key do |name|
     cli_name = name.tr("_", "-")
-    parser.on("--#{name}-report PATH", "--#{cli_name}-report PATH", "copy a machine-readable #{name} report") { |value| options[:reports][name] = File.expand_path(value) }
-    parser.on("--#{name}-command COMMAND", "--#{cli_name}-command COMMAND", "run the #{name} adapter and read JSON from stdout") { |value| options[:commands][name] = value }
+    parser.on("--#{name}-report PATH", "--#{cli_name}-report PATH", "copy a machine-readable #{name} report") do |value|
+      options[:reports][name] = File.expand_path(value)
+    end
+    parser.on("--#{name}-command COMMAND", "--#{cli_name}-command COMMAND", "run the #{name} adapter and read JSON from stdout") do |value|
+      options[:commands][name] = value
+    end
   end
 end.parse!(ARGV)
 
@@ -65,7 +76,10 @@ REPORT_SPECS.each_key do |name|
   command_key = "RUBERNETES_M4_#{name.upcase}_COMMAND"
   report_key = "RUBERNETES_M4_#{name.upcase}_REPORT"
   options[:commands][name] = ENV.fetch(command_key) if ENV.key?(command_key) && !options[:commands].key?(name)
-  options[:reports][name] = File.expand_path(ENV.fetch(report_key)) if ENV.key?(report_key) && !options[:commands].key?(name) && !options[:reports].key?(name)
+  if ENV.key?(report_key) && !options[:commands].key?(name) && !options[:reports].key?(name)
+    options[:reports][name] =
+      File.expand_path(ENV.fetch(report_key))
+  end
 end
 
 abort "run ID may contain only letters, digits, dot, underscore, and hyphen" unless options[:run_id].to_s.match?(/\A[0-9A-Za-z._-]+\z/)
@@ -108,8 +122,8 @@ def copy_m4_prior_manifest(source, destination, gate_path, gate_name, commands, 
   [document, reference]
 rescue StandardError => error
   commands << M34EvidenceSupport.command_record(gate_name, [RbConfig.ruby, gate_path, source.to_s],
-                                                 started || M34EvidenceSupport.now, M34EvidenceSupport.now, 1,
-                                                 error: "prior evidence could not be copied or gated: #{error.class}: #{error.message}")
+                                                started || M34EvidenceSupport.now, M34EvidenceSupport.now, 1,
+                                                error: "prior evidence could not be copied or gated: #{error.class}: #{error.message}")
   [nil, nil]
 end
 
@@ -132,8 +146,8 @@ if options[:m3_manifest]
   end
 else
   commands << M34EvidenceSupport.command_record("m3_gate", ["<missing M3 manifest: set RUBERNETES_M4_M3_MANIFEST or --m3-manifest>"],
-                                                 M34EvidenceSupport.now, M34EvidenceSupport.now, 127,
-                                                 error: "M4 requires COMPLETE M3 evidence from the same source input")
+                                                M34EvidenceSupport.now, M34EvidenceSupport.now, 127,
+                                                error: "M4 requires COMPLETE M3 evidence from the same source input")
 end
 
 # Direct lower-milestone options are retained for diagnostics when a caller is
@@ -156,7 +170,7 @@ unless prior_milestones.key?("M2")
     end
   else
     commands << M34EvidenceSupport.command_record("m2_gate", ["<missing M2 prerequisite>"], M34EvidenceSupport.now, M34EvidenceSupport.now, 127,
-                                                   error: "M4 requires the cumulative M2 evidence chain")
+                                                  error: "M4 requires the cumulative M2 evidence chain")
   end
 end
 
@@ -184,13 +198,13 @@ REPORT_SPECS.each do |name, specification|
     }
     M34EvidenceSupport.write_json(destination, report)
     commands << M34EvidenceSupport.command_record("m4_#{name}", ["<not run: incomplete M0 -> M3 prerequisite chain>"],
-                                                   M34EvidenceSupport.now, M34EvidenceSupport.now, 127,
-                                                   error: report.fetch("errors").first)
+                                                  M34EvidenceSupport.now, M34EvidenceSupport.now, 127,
+                                                  error: report.fetch("errors").first)
   elsif options[:commands].key?(name)
     command = M34EvidenceSupport.command_words(options[:commands].fetch(name))
     commands << if command.empty?
                   M34EvidenceSupport.command_record("m4_#{name}", ["<empty adapter command>"], M34EvidenceSupport.now, M34EvidenceSupport.now, 127,
-                                                     error: "adapter command is empty")
+                                                    error: "adapter command is empty")
                 else
                   M34EvidenceSupport.run_command("m4_#{name}", command, destination, starting_input, env_prefix: "RUBERNETES_M4")
                 end
@@ -198,13 +212,15 @@ REPORT_SPECS.each do |name, specification|
     started = M34EvidenceSupport.now
     begin
       M34EvidenceSupport.copy_report(options[:reports].fetch(name), destination)
-      commands << M34EvidenceSupport.command_record("m4_#{name}_report_copy", ["copy", options[:reports].fetch(name)], started, M34EvidenceSupport.now, 0)
+      commands << M34EvidenceSupport.command_record("m4_#{name}_report_copy", ["copy", options[:reports].fetch(name)], started,
+                                                    M34EvidenceSupport.now, 0)
     rescue StandardError => error
       commands << M34EvidenceSupport.command_record("m4_#{name}_report_copy", ["copy", options[:reports].fetch(name)], started, M34EvidenceSupport.now, 1,
-                                                     error: error.message)
+                                                    error: error.message)
     end
   else
-    commands << M34EvidenceSupport.run_command("m4_#{name}", specification.fetch(:default), destination, starting_input, env_prefix: "RUBERNETES_M4")
+    commands << M34EvidenceSupport.run_command("m4_#{name}", specification.fetch(:default), destination, starting_input,
+                                               env_prefix: "RUBERNETES_M4")
   end
 
   begin
@@ -283,7 +299,12 @@ manifest = {
   "subjects" => []
 }
 
-manifest["status"] = "COMPLETE" if chain_ready && input_stable && starting_git_metadata == finished_git_metadata && commands.all? { |command| command["exit_status"] == 0 }
+if chain_ready && input_stable && starting_git_metadata == finished_git_metadata && commands.all? do |command|
+  command["exit_status"] == 0
+end
+  manifest["status"] =
+    "COMPLETE"
+end
 manifest_path = File.join(directory, "manifest.json")
 M34EvidenceSupport.write_json(manifest_path, manifest)
 
@@ -293,7 +314,8 @@ $stderr.write(stderr)
 unless status.success?
   manifest["status"] = "INCOMPLETE"
   M34EvidenceSupport.write_json(manifest_path, manifest)
-  final_stdout, final_stderr, final_status = Open3.capture3(RbConfig.ruby, File.join(ROOT, "tools/milestones/m4_gate.rb"), manifest_path, chdir: ROOT)
+  final_stdout, final_stderr, final_status = Open3.capture3(RbConfig.ruby, File.join(ROOT, "tools/milestones/m4_gate.rb"), manifest_path,
+                                                            chdir: ROOT)
   $stdout.write(final_stdout) unless final_stdout == stdout
   $stderr.write(final_stderr) unless final_stderr == stderr
   exit(final_status.exitstatus || 1)

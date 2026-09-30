@@ -25,9 +25,18 @@ OptionParser.new do |parser|
   parser.on("--cluster ID") { |value| options[:cluster] = value }
   parser.on("--data DIR") { |value| options[:data] = value }
   parser.on("--pki DIR") { |value| options[:pki] = value }
-  parser.on("--listen HOST:PORT") { |value| host, port = value.rpartition(":").values_at(0, 2); options[:host] = host; options[:port] = Integer(port) }
+  parser.on("--listen HOST:PORT") do |value|
+    host, port = value.rpartition(":").values_at(0, 2)
+    options[:host] = host
+    options[:port] = Integer(port)
+  end
   parser.on("--voters LIST") { |value| options[:voters] = value.split(",") }
-  parser.on("--peers LIST") { |value| value.split(",").each { |pair| id, address = pair.split("=", 2); options[:peers][id] = address } }
+  parser.on("--peers LIST") do |value|
+    value.split(",").each do |pair|
+      id, address = pair.split("=", 2)
+      options[:peers][id] = address
+    end
+  end
   parser.on("--control PATH") { |value| options[:control] = value }
   parser.on("--journal PATH") { |value| options[:journal] = value }
   parser.on("--timing JSON") { |value| options[:timing] = JSON.parse(value) }
@@ -55,7 +64,8 @@ def handle(request, server, store, journal)
   when "create"
     {"ok" => true, "object" => store.create(request.fetch("key"), request.fetch("object"), request_uid: request["request_uid"])}
   when "update"
-    object = store.guaranteed_update(request.fetch("key"), prec: request["expected_version"], request_uid: request["request_uid"]) do |current|
+    object = store.guaranteed_update(request.fetch("key"), prec: request["expected_version"],
+                                                           request_uid: request["request_uid"]) do |current|
       current.merge(request.fetch("object"))
     end
     {"ok" => true, "object" => object}
@@ -68,13 +78,16 @@ def handle(request, server, store, journal)
     {"ok" => true, "items" => result.items, "resource_version" => result.resource_version}
   when "snapshot" then {"ok" => true, "snapshot" => server.snapshot!(force: true)&.to_h}
   when "membership" then {"ok" => true, "membership" => server.propose_membership(request.fetch("voters"))}
-  when "transfer" then server.transfer_leadership(request.fetch("target")); {"ok" => true}
-  when "add_peer" then server.add_peer(request.fetch("id"), request.fetch("address")); {"ok" => true}
+  when "transfer" then server.transfer_leadership(request.fetch("target"))
+                       {"ok" => true}
+  when "add_peer" then server.add_peer(request.fetch("id"), request.fetch("address"))
+                       {"ok" => true}
   when "pending" then {"ok" => true, "pending" => journal ? journal.pending : []}
   when "resolve"
     journal&.record_resolution(request_id: request.fetch("request_id"), discovered: request.fetch("discovered"))
     {"ok" => true}
-  when "stop" then server.stop; {"ok" => true, "stopped" => true}
+  when "stop" then server.stop
+                   {"ok" => true, "stopped" => true}
   else {"ok" => false, "error" => "unknown op #{request["op"].inspect}"}
   end
 rescue Rubernetes::Storage::Error, C::Error => error

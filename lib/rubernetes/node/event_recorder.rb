@@ -7,7 +7,6 @@
 require "digest"
 require "json"
 require "securerandom"
-require "thread"
 require "time"
 
 require_relative "registration"
@@ -22,7 +21,7 @@ module Rubernetes
       end
 
       DEFAULT_AGGREGATION_WINDOW_SECONDS = 600
-      EVENT_RESOURCE = "v1/events".freeze
+      EVENT_RESOURCE = "v1/events"
 
       def initialize(client: nil, sink: nil, component: "rubernetes-node-agent", reporting_component: nil,
                      reporting_instance: nil, source: nil, clock: -> { Time.now.utc },
@@ -43,6 +42,7 @@ module Rubernetes
         @uid_generator = uid_generator
         @aggregation_window_seconds = Float(aggregation_window_seconds)
         raise ArgumentError, "aggregation_window_seconds must not be negative" if @aggregation_window_seconds.negative?
+
         @default_namespace = String(namespace)
         @publish = !!publish
         @mutex = Mutex.new
@@ -70,6 +70,7 @@ module Rubernetes
         raise ArgumentError, "event count must be positive" unless count.positive?
         raise ArgumentError, "event reason must not be empty" if reason.empty?
         raise ArgumentError, "event message must not be empty" if message.empty?
+
         type = String(type)
         raise ArgumentError, "event type must be Normal or Warning" unless %w[Normal Warning].include?(type)
 
@@ -90,8 +91,8 @@ module Rubernetes
           existing = @records[key]
           if existing && within_window?(existing.event, timestamp)
             event = merge_event(existing.event, object: object, reason: reason, message: message, type: type,
-                                action: action, increment: count, timestamp: timestamp, annotations: annotations,
-                                related: related)
+                                                action: action, increment: count, timestamp: timestamp, annotations: annotations,
+                                                related: related)
           else
             key = unique_key(key, timestamp) if existing
             event = new_event(object: object, reason: reason, message: message, type: type,
@@ -133,7 +134,10 @@ module Rubernetes
       AGGREGATE_MESSAGE_PREFIX = "(combined from similar events): "
 
       def get(key)
-        @mutex.synchronize { record = @records[key.to_s]; record && Support.deep_copy(record.event) }
+        @mutex.synchronize do
+          record = @records[key.to_s]
+          record && Support.deep_copy(record.event)
+        end
       end
 
       def events
@@ -147,7 +151,7 @@ module Rubernetes
         current.each do |record|
           event = record.fetch("event")
           publish_event(event, namespace: Support.value(event, "metadata", {})["namespace"] || @default_namespace,
-                        created: record.fetch("created"))
+                               created: record.fetch("created"))
         end
         current.length
       end
@@ -185,7 +189,7 @@ module Rubernetes
                Support.value(object, "name", ""), Support.value(object, "uid", ""), Support.value(object, "apiVersion", "")].join("|")
         @mutex.synchronize do
           bucket = (@spam_buckets[key] ||= {tokens: SPAM_BURST.to_f, at: now})
-          bucket[:tokens] = [SPAM_BURST.to_f, bucket[:tokens] + (now - bucket[:at]) * SPAM_QPS].min
+          bucket[:tokens] = [SPAM_BURST.to_f, bucket[:tokens] + ((now - bucket[:at]) * SPAM_QPS)].min
           bucket[:at] = now
           next true if bucket[:tokens] < 1
 
@@ -206,12 +210,14 @@ module Rubernetes
           "fieldPath" => Support.value(value, "fieldPath")
         }.compact
         raise ArgumentError, "involved object name is required" if result["name"].to_s.empty?
+
         result
       end
 
       def new_event(object:, reason:, message:, type:, action:, count:, timestamp:, annotations:, related:, key: "")
         count = Integer(count)
         raise ArgumentError, "event count must be positive" unless count.positive?
+
         # client-go names an Event "<name>.<unix nanos hex>"; two distinct
         # events of one object in the same instant must not share a name, or
         # the second's create conflicts and the sink's count/message patch
@@ -256,9 +262,7 @@ module Rubernetes
         event["involvedObject"] = Support.deep_copy(object)
         event["series"] = {"count" => event["count"], "lastObservedTime" => timestamp}
         event["metadata"] ||= {}
-        if annotations
-          event["metadata"]["annotations"] = Support.merge_hashes(event["metadata"]["annotations"], annotations)
-        end
+        event["metadata"]["annotations"] = Support.merge_hashes(event["metadata"]["annotations"], annotations) if annotations
         event["related"] = Support.deep_copy(related) if related
         event
       end
@@ -302,19 +306,17 @@ module Rubernetes
 
       def publish_event(event, namespace:, created:)
         return event unless @client
-        if @client.respond_to?(:record_event)
-          return @client.record_event(event)
-        end
+        return @client.record_event(event) if @client.respond_to?(:record_event)
         if @client.respond_to?(:upsert)
           return Support.invoke(@client, :upsert, resource: EVENT_RESOURCE, namespace: namespace,
-                                 name: Support.value(Support.metadata(event), "name"), object: event)
+                                                  name: Support.value(Support.metadata(event), "name"), object: event)
         end
         method_name = created ? :create : :update
         method_name = :create unless @client.respond_to?(method_name)
         return event unless @client.respond_to?(method_name)
 
         Support.invoke(@client, method_name, resource: EVENT_RESOURCE, namespace: namespace,
-                       name: Support.value(Support.metadata(event), "name"), object: event) || event
+                                             name: Support.value(Support.metadata(event), "name"), object: event) || event
       end
     end
 

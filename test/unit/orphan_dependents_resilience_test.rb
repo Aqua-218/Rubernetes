@@ -40,9 +40,7 @@ class OrphanDependentsResilienceTest < Minitest::Test
     end
 
     def update(resource:, namespace:, name:, object:, resource_version: nil)
-      if @conflict_on.delete(name)
-        raise Store::Conflict, name
-      end
+      raise Store::Conflict, name if @conflict_on.delete(name)
 
       @updated << name
       object
@@ -100,7 +98,7 @@ class OrphanDependentsResilienceTest < Minitest::Test
 
     orphan_each(store, [item])
 
-    assert_equal ["other"], Array(written.dig("metadata", "ownerReferences")).map { |r| r["uid"] }
+    assert_equal(["other"], Array(written.dig("metadata", "ownerReferences")).map { |r| r["uid"] })
   end
 
   def test_a_dependent_that_vanished_is_not_an_error

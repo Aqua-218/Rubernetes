@@ -25,6 +25,7 @@ class PodSchedulingGatedConditionTest < Minitest::Test
   def test_a_gated_pod_is_created_with_the_scheduling_gated_condition
     created = create(server, "schedulingGates" => [{"name" => "example.com/wait"}])
     condition = Array(created.dig("status", "conditions")).find { |entry| entry["type"] == "PodScheduled" }
+
     assert_equal "False", condition["status"]
     assert_equal "SchedulingGated", condition["reason"]
     assert_equal "Scheduling is blocked due to non-empty scheduling gates", condition["message"]
@@ -32,6 +33,7 @@ class PodSchedulingGatedConditionTest < Minitest::Test
 
   def test_an_ungated_pod_has_no_condition
     created = create(server, {})
+
     assert_nil created.dig("status", "conditions")
   end
 
@@ -40,9 +42,10 @@ class PodSchedulingGatedConditionTest < Minitest::Test
     pod = {"metadata" => {"name" => "g", "namespace" => "dev", "uid" => "u"},
            "spec" => {"schedulingGates" => [{"name" => "x"}], "containers" => [{"name" => "c", "image" => "i"}]}}
     node = {"metadata" => {"name" => "n"}, "status" => {"allocatable" => {"cpu" => "4", "memory" => "8Gi", "pods" => "110"},
-                                                         "conditions" => [{"type" => "Ready", "status" => "True"}]}}
+                                                        "conditions" => [{"type" => "Ready", "status" => "True"}]}}
     result = framework.schedule(pod, [node])
-    assert result.unschedulable?
-    assert result.gated?
+
+    assert_predicate result, :unschedulable?
+    assert_predicate result, :gated?
   end
 end

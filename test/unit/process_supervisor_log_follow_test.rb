@@ -28,6 +28,7 @@ class ProcessSupervisorLogFollowTest < Minitest::Test
       # Append, the way a container writes: rewriting the file whole would
       # look like a rotation to the follower.
       File.open(path, "ab") { |file| file.write("second\n") }
+
       assert_equal "second\n", chunks.pop
 
       stream.close

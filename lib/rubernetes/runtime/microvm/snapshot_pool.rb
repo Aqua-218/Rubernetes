@@ -107,7 +107,10 @@ module Rubernetes
           raise SnapshotCorruption, "base snapshot #{id} has no manifest" unless File.file?(manifest_path)
 
           manifest = JSON.parse(File.read(manifest_path))
-          raise SnapshotCorruption, "base snapshot #{id} manifest is malformed" unless manifest.is_a?(Hash) && manifest["schema_version"] == 1 && manifest["files"].is_a?(Hash)
+          unless manifest.is_a?(Hash) && manifest["schema_version"] == 1 && manifest["files"].is_a?(Hash)
+            raise SnapshotCorruption,
+                  "base snapshot #{id} manifest is malformed"
+          end
 
           Base.new(id: id, runtime_class: runtime_class, directory: directory, manifest: manifest)
         rescue JSON::ParserError => error
@@ -122,16 +125,24 @@ module Rubernetes
         # mtime are unchanged since is not re-hashed (any write, even in
         # place, moves mtime); pass force: true to re-hash anyway.
         def verify!(base, artifact_digest:, force: false)
-          raise SnapshotCorruption, "base snapshot #{base.id} was built from artifacts #{base.artifact_digest}, current #{artifact_digest}" unless base.artifact_digest == artifact_digest
+          unless base.artifact_digest == artifact_digest
+            raise SnapshotCorruption,
+                  "base snapshot #{base.id} was built from artifacts #{base.artifact_digest}, current #{artifact_digest}"
+          end
 
           @verified ||= {}
           [MEM, VMSTATE].each do |name|
             path = File.join(base.directory, name)
-            record = base.manifest.fetch("files").fetch(name) { raise SnapshotCorruption, "base snapshot #{base.id} manifest lacks #{name}" }
+            record = base.manifest.fetch("files").fetch(name) do
+              raise SnapshotCorruption, "base snapshot #{base.id} manifest lacks #{name}"
+            end
             raise SnapshotCorruption, "base snapshot #{base.id} #{name} is missing" unless File.file?(path)
 
             stat = File.stat(path)
-            raise SnapshotCorruption, "base snapshot #{base.id} #{name} size #{stat.size} differs from manifest #{record["bytes"]}" unless stat.size == record["bytes"]
+            unless stat.size == record["bytes"]
+              raise SnapshotCorruption,
+                    "base snapshot #{base.id} #{name} size #{stat.size} differs from manifest #{record["bytes"]}"
+            end
 
             # ctime changes when the file is hard-linked into a jail, so the
             # key is inode + size + mtime (any write to the data moves mtime).
@@ -139,7 +150,10 @@ module Rubernetes
             next if !force && @verified[path] == key
 
             digest = self.class.file_digest(path)
-            raise SnapshotCorruption, "base snapshot #{base.id} #{name} digest #{digest} differs from manifest #{record["sha256"]}" unless digest == record["sha256"]
+            unless digest == record["sha256"]
+              raise SnapshotCorruption,
+                    "base snapshot #{base.id} #{name} digest #{digest} differs from manifest #{record["sha256"]}"
+            end
 
             @verified[path] = key
           end

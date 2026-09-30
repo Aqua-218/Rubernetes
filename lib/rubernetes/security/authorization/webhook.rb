@@ -15,7 +15,9 @@ module Rubernetes
         NAME = "Webhook"
 
         # transport.call(body_json) -> [status_code, body_json]
-        def initialize(transport:, authorized_ttl: 300, unauthorized_ttl: 30, clock: -> { Time.now.utc }, failure_policy: "NoOpinion", version: "v1",
+        def initialize(transport:, authorized_ttl: 300, unauthorized_ttl: 30, clock: lambda {
+          Time.now.utc
+        }, failure_policy: "NoOpinion", version: "v1",
                        name: NAME, match_conditions: nil)
           @transport = transport
           @name = name.to_s.empty? ? NAME : name.to_s
@@ -44,10 +46,14 @@ module Rubernetes
             metrics = registry
             return unless metrics
 
-            %w[apiserver_authorization_webhook_evaluations_total apiserver_authorization_webhook_evaluations_fail_open_total].each do |metric|
+            %w[apiserver_authorization_webhook_evaluations_total
+               apiserver_authorization_webhook_evaluations_fail_open_total].each do |metric|
               metrics.register(metric, type: :counter) unless metrics.registered?(metric)
             end
-            metrics.register("apiserver_authorization_webhook_duration_seconds", type: :histogram) unless metrics.registered?("apiserver_authorization_webhook_duration_seconds")
+            unless metrics.registered?("apiserver_authorization_webhook_duration_seconds")
+              metrics.register("apiserver_authorization_webhook_duration_seconds",
+                               type: :histogram)
+            end
             metrics.increment("apiserver_authorization_webhook_evaluations_total", {"name" => name.to_s, "result" => result})
             metrics.observe("apiserver_authorization_webhook_duration_seconds", seconds, {"name" => name.to_s, "result" => result})
           rescue StandardError
@@ -58,18 +64,17 @@ module Rubernetes
             metrics = registry
             return unless metrics
 
-            metrics.register("apiserver_authorization_webhook_evaluations_fail_open_total", type: :counter) unless metrics.registered?("apiserver_authorization_webhook_evaluations_fail_open_total")
+            unless metrics.registered?("apiserver_authorization_webhook_evaluations_fail_open_total")
+              metrics.register("apiserver_authorization_webhook_evaluations_fail_open_total",
+                               type: :counter)
+            end
             metrics.increment("apiserver_authorization_webhook_evaluations_fail_open_total", {"name" => name.to_s, "result" => result})
           rescue StandardError
             nil
           end
         end
 
-        def name
-          @name
-        end
-
-        attr_reader :match_conditions
+        attr_reader :name, :match_conditions
 
         def authorize(attributes)
           key = attributes.to_h
@@ -78,7 +83,9 @@ module Rubernetes
           if @match_conditions && !@match_conditions.empty?
             outcome = @match_conditions.evaluate(key)
             if outcome.error
-              return @failure_policy == "Deny" ? Decision.deny("Webhook: #{outcome.error.message}", authorizer: name) : Decision.no_opinion("Webhook: #{outcome.error.message}", authorizer: name)
+              return @failure_policy == "Deny" ? Decision.deny("Webhook: #{outcome.error.message}",
+                                                               authorizer: name) : Decision.no_opinion("Webhook: #{outcome.error.message}",
+                                                                                                       authorizer: name)
             end
             return Decision.no_opinion("Webhook: match conditions excluded the request", authorizer: name) unless outcome.matches
           end
@@ -106,7 +113,12 @@ module Rubernetes
             result = error.is_a?(Errno::ETIMEDOUT) || error.message.to_s.match?(/timed? ?out/i) ? "timeout" : "error"
             fail_open = @failure_policy != "Deny"
             self.class.record_fail_open(name, result) if fail_open
-            fail_open ? Decision.no_opinion("Webhook: #{error.message}", authorizer: name) : Decision.deny("Webhook: #{error.message}", authorizer: name)
+            if fail_open
+              Decision.no_opinion("Webhook: #{error.message}",
+                                  authorizer: name)
+            else
+              Decision.deny("Webhook: #{error.message}", authorizer: name)
+            end
           end
           self.class.record_evaluation(name, result, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
           ttl = decision.allowed? ? @authorized_ttl : @unauthorized_ttl

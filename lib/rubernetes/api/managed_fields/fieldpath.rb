@@ -20,7 +20,7 @@ module Rubernetes
           VALUE = 2
           INDEX = 3
 
-          attr_reader :kind, :data
+          attr_reader :kind, :data, :hash
 
           def self.field(name) = new(FIELD, name.to_s.dup.freeze)
           def self.value(value) = new(VALUE, canonical(value))
@@ -30,7 +30,7 @@ module Rubernetes
           # FieldList.Sort.
           def self.key(pairs)
             sorted = pairs.map { |name, value| [name.to_s.dup.freeze, canonical(value)].freeze }
-                          .each_with_index.sort_by { |(name, _), index| [name, index] }.map(&:first)
+              .each_with_index.sort_by { |(name, _), index| [name, index] }.map(&:first)
             new(KEY, sorted.freeze)
           end
 
@@ -68,7 +68,6 @@ module Rubernetes
 
           def eql?(other) = other.is_a?(PathElement) && other.kind == @kind && other.data.eql?(@data)
           alias == eql?
-          attr_reader :hash
 
           # PathElement.String.
           def to_s

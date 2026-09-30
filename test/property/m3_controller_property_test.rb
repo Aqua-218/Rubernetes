@@ -13,8 +13,8 @@ class M3ControllerPropertyTest < Minitest::Test
   class ConfigMapController < Controller::BaseController
     attr_reader :calls
 
-    def initialize(**options)
-      super(name: "configmap-controller", **options)
+    def initialize(**)
+      super(name: "configmap-controller", **)
       @calls = []
     end
 
@@ -60,7 +60,7 @@ class M3ControllerPropertyTest < Minitest::Test
       persisted_after_status = adapter.find(descriptor, name: Controller::Support.name(replica_set), namespace: "default")
       third = controller.reconcile(persisted_after_status, store: store, apply: true)
 
-      assert first.changed?, "initial reconciliation must converge rs-#{index}"
+      assert_predicate first, :changed?, "initial reconciliation must converge rs-#{index}"
       assert_empty second.creates, "status convergence must not recreate pods for rs-#{index}"
       assert_empty second.deletes, "status convergence must not delete pods for rs-#{index}"
       assert_empty third.operations, "reconcile must be diff-only for rs-#{index}"
@@ -75,8 +75,9 @@ class M3ControllerPropertyTest < Minitest::Test
     120.times do |index|
       replicas = random.rand(501..1_000)
       result = controller.plan(replica_set("large-#{index}", replicas), pods: [])
+
       assert_equal 500, result.creates.length
-      assert_operator result.creates.map { |operation| operation.object.dig("metadata", "name") }.uniq.length, :==, 500
+      assert_equal 500, result.creates.map { |operation| operation.object.dig("metadata", "name") }.uniq.length
     end
   end
 
@@ -125,25 +126,31 @@ class M3ControllerPropertyTest < Minitest::Test
     first.register_informer("configmap-controller", informer)
     informer.sync(config)
     first_step = first.step
+
     assert_equal :acquired, first_step.fetch(:election)
     assert_equal 1, first_step.fetch(:reconciled)
     assert_equal ["watched"], first_controller.calls
 
     now += 5
+
     assert_equal :renewed, first.step.fetch(:election)
-    assert_equal "manager-a", adapter.find("Lease", name: "rubernetes-controller-manager", namespace: "kube-system").dig("spec", "holderIdentity")
+    assert_equal "manager-a",
+                 adapter.find("Lease", name: "rubernetes-controller-manager", namespace: "kube-system").dig("spec", "holderIdentity")
 
     # Once the second manager takes the expired Lease, the former leader must
     # not execute queued work or mutate the store.
     now += 11
     first.enqueue("default/watched")
+
     assert_equal true, second.step.fetch(:election) == :acquired
     revision_before_follower_step = store.revision
+
     assert_equal :follower, first.step.fetch(:election)
     assert_equal 1, first_controller.calls.length
     assert_equal revision_before_follower_step, store.revision
 
     second.enqueue("default/watched")
+
     assert_equal 1, second.step.fetch(:reconciled)
     assert_equal ["watched"], second_controller.calls
   end
@@ -159,8 +166,8 @@ class M3ControllerPropertyTest < Minitest::Test
     {"apiVersion" => "apps/v1", "kind" => "ReplicaSet",
      "metadata" => {"name" => name, "namespace" => "default", "uid" => "uid-#{name}"},
      "spec" => {"replicas" => replicas,
-                 "selector" => {"matchLabels" => {"app" => name}},
-                 "template" => {"metadata" => {"labels" => {"app" => name}},
-                                 "spec" => {"containers" => [{"name" => "app", "image" => "example/app:1"}]}}}}
+                "selector" => {"matchLabels" => {"app" => name}},
+                "template" => {"metadata" => {"labels" => {"app" => name}},
+                               "spec" => {"containers" => [{"name" => "app", "image" => "example/app:1"}]}}}}
   end
 end

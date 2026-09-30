@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
 require "time"
 
 require_relative "../resource_helpers"
@@ -394,7 +393,11 @@ module Rubernetes
           @stop = true
           @thread
         end
-        thread&.wakeup rescue nil
+        begin
+          thread&.wakeup
+        rescue StandardError
+          nil
+        end
         thread&.join(5) unless thread == Thread.current
         self
       end
@@ -493,7 +496,7 @@ module Rubernetes
           image_fs = @dedicated_image_fs.respond_to?(:call) ? @dedicated_image_fs.call : @dedicated_image_fs
           @dedicated_image_fs = image_fs ? true : false
           @thresholds = self.class.update_container_fs_thresholds(@configured_thresholds, image_fs: @dedicated_image_fs,
-                                                                                         split_container_fs: @split_container_fs)
+                                                                                          split_container_fs: @split_container_fs)
         end
       end
 
@@ -658,7 +661,8 @@ module Rubernetes
       def memory_cmp(stats)
         lambda do |left, right|
           with_stats(stats, left, right) do |left_stats, right_stats|
-            (memory_usage(right_stats) - request_quantity(right, "memory")) <=> (memory_usage(left_stats) - request_quantity(left, "memory"))
+            (memory_usage(right_stats) - request_quantity(right,
+                                                          "memory")) <=> (memory_usage(left_stats) - request_quantity(left, "memory"))
           end
         end
       end
@@ -803,7 +807,15 @@ module Rubernetes
           next unless container
 
           request = container.dig("resources", "requests", resource)
-          request_value = request.nil? ? 0 : (Quantity.from_json(request).value rescue 0)
+          request_value = if request.nil?
+                            0
+                          else
+                            begin
+                              Quantity.from_json(request).value
+                            rescue StandardError
+                              0
+                            end
+                          end
           usage = case resource
                   when "ephemeral-storage"
                     rootfs = container_stats.dig("rootfs", "usedBytes")

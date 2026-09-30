@@ -20,6 +20,7 @@ class M4NetworkSecurityTest < Minitest::Test
     ipam.commit(lease)
     assert_raises(Rubernetes::Network::LeaseStateError) { ipam.release(lease) }
     other = ipam.reserve(node: "node-a", pod_uid: "pod-b", sandbox_id: "sandbox-b", families: ["ipv4"])
+
     refute_equal lease.ip, other.ip
   end
 

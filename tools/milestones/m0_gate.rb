@@ -18,12 +18,13 @@ module M0Gate
   MAX_EVIDENCE_AGE_SECONDS = 24 * 60 * 60
   MAX_CAPTURE_DURATION_SECONDS = 6 * 60 * 60
   MAX_FUTURE_SKEW_SECONDS = 5 * 60
-  SHA256 = /\A[0-9a-f]{64}\z/.freeze
+  SHA256 = /\A[0-9a-f]{64}\z/
   EXECUTABLES = %w[rubectl rubernetes-apiserver rubernetes-controller-manager rubernetes-scheduler rubernetes-agent rubernetes-proxy].freeze
   OPTIONS = %w[--help --version].freeze
   COMMANDS = %w[gem_build rake_test executables native_boundary_scan rbs_validate kernel_probe_x86_64].freeze
   ARTIFACTS = %w[abi-probe-x86_64.json executables.json gem-build.json junit.xml native-boundary-scan.json source-inventory.json].freeze
-  ABI_PROBES = %w[abi_manifest clone3_pid_namespace_mount_proc_pidfd_wait netlink_ack bpf_verifier kvm_capability errno_clone3 errno_pidfd errno_mount errno_netlink errno_bpf errno_kvm errno_namespace_exec source_input_stability].freeze
+  ABI_PROBES = %w[abi_manifest clone3_pid_namespace_mount_proc_pidfd_wait netlink_ack bpf_verifier kvm_capability errno_clone3 errno_pidfd
+                  errno_mount errno_netlink errno_bpf errno_kvm errno_namespace_exec source_input_stability].freeze
   ERRNO_PROBES = {
     "errno_clone3" => ["clone3", "intentional:clone3"],
     "errno_pidfd" => ["pidfd_open", "intentional:pidfd"],
@@ -40,8 +41,8 @@ module M0Gate
     "state_machine" => /\bstate[_ ]?machine\b/i,
     "orchestration_policy" => /\b(?:reconcile|scheduler|admission|policy_decision)\b/i
   }.freeze
-  JUNIT_REPORTER_PATH = "test/support/junit_reporter.rb".freeze
-  MINITEST_INVENTORY_TOOL = "tools/milestones/m0_test_inventory.rb".freeze
+  JUNIT_REPORTER_PATH = "test/support/junit_reporter.rb"
+  MINITEST_INVENTORY_TOOL = "tools/milestones/m0_test_inventory.rb"
 
   class DuplicateJSONKeyError < StandardError; end
 
@@ -72,8 +73,10 @@ module M0Gate
       validate_inventory(inventory, manifest, errors)
       validate_gem_build(artifact_json(directory, artifact_index, "gem-build.json", errors), manifest, subjects, directory, errors)
       validate_executables(artifact_json(directory, artifact_index, "executables.json", errors), subjects, manifest, directory, errors)
-      validate_native_scan(artifact_json(directory, artifact_index, "native-boundary-scan.json", errors), inventory, manifest, directory, errors)
-      validate_abi(artifact_json(directory, artifact_index, "abi-probe-x86_64.json", errors), manifest, subjects, inventory, directory, errors)
+      validate_native_scan(artifact_json(directory, artifact_index, "native-boundary-scan.json", errors), inventory, manifest, directory,
+                           errors)
+      validate_abi(artifact_json(directory, artifact_index, "abi-probe-x86_64.json", errors), manifest, subjects, inventory, directory,
+                   errors)
       validate_junit(directory, artifact_index, manifest, inventory, errors)
       validate_subjects(subjects, errors)
       validate_result_counts(manifest, artifacts, subjects, errors)
@@ -132,7 +135,9 @@ module M0Gate
       if manifest_started && manifest_finished
         errors << "evidence capture duration exceeds the M0 bound" if manifest_finished - manifest_started > MAX_CAPTURE_DURATION_SECONDS
         errors << "evidence capture is stale" if now - manifest_finished > MAX_EVIDENCE_AGE_SECONDS
-        errors << "evidence capture is in the future" if manifest_started > now + MAX_FUTURE_SKEW_SECONDS || manifest_finished > now + MAX_FUTURE_SKEW_SECONDS
+        if manifest_started > now + MAX_FUTURE_SKEW_SECONDS || manifest_finished > now + MAX_FUTURE_SKEW_SECONDS
+          errors << "evidence capture is in the future"
+        end
       end
 
       capture = manifest["input_capture"]
@@ -156,12 +161,16 @@ module M0Gate
           next
         end
         errors << "command #{command["name"].inspect} must exit zero" unless command["exit_status"] == 0
-        errors << "command #{command["name"].inspect} argv must be non-empty" unless command["command"].is_a?(Array) && command["command"].all? { |value| nonempty?(value) }
+        errors << "command #{command["name"].inspect} argv must be non-empty" unless command["command"].is_a?(Array) && command["command"].all? do |value|
+          nonempty?(value)
+        end
         validate_time(command["started_at"], errors, "command #{command["name"]} started_at")
         validate_time(command["finished_at"], errors, "command #{command["name"]} finished_at")
         command_started = parse_time(command["started_at"])
         command_finished = parse_time(command["finished_at"])
-        errors << "command #{command["name"].inspect} time interval is invalid" if command_started && command_finished && command_finished < command_started
+        if command_started && command_finished && command_finished < command_started
+          errors << "command #{command["name"].inspect} time interval is invalid"
+        end
         if previous_finished && command_started && command_started < previous_finished
           errors << "command #{command["name"].inspect} starts before the previous command finished"
         end
@@ -191,11 +200,13 @@ module M0Gate
       end
       expected = {
         "gem_build" => ["gem", "build", "rubernetes.gemspec", "--output", output_path.call("gem_build")],
-        "rake_test" => ["bundle", "exec", "rake", "test"],
+        "rake_test" => %w[bundle exec rake test],
         "executables" => [RbConfig.ruby, "tools/milestones/executables_probe.rb", "--output", File.join(captured, "executables.json")],
-        "native_boundary_scan" => [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output", File.join(captured, "native-boundary-scan.json")],
+        "native_boundary_scan" => [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output",
+                                   File.join(captured, "native-boundary-scan.json")],
         "rbs_validate" => ["bundle", "exec", "rbs", "-I", "sig", "-I", "generated/rbs", "validate"],
-        "kernel_probe_x86_64" => [RbConfig.ruby, "-I#{File.join(ROOT, "build/ext/rubernetes_linux")}", "tools/milestones/m0_kernel_probe.rb", "--output", File.join(captured, "abi-probe-x86_64.json")]
+        "kernel_probe_x86_64" => [RbConfig.ruby, "-I#{File.join(ROOT, "build/ext/rubernetes_linux")}",
+                                  "tools/milestones/m0_kernel_probe.rb", "--output", File.join(captured, "abi-probe-x86_64.json")]
       }
       expected.each do |name, argv|
         actual = Array(index.dig(name, "command"))
@@ -205,7 +216,8 @@ module M0Gate
       end
 
       rake = index["rake_test"]
-      unless rake.is_a?(Hash) && rake["environment"].is_a?(Hash) && rake.dig("environment", "RUBERNETES_JUNIT") == File.join(captured, "junit.xml")
+      unless rake.is_a?(Hash) && rake["environment"].is_a?(Hash) && rake.dig("environment",
+                                                                             "RUBERNETES_JUNIT") == File.join(captured, "junit.xml")
         errors << "rake_test must bind RUBERNETES_JUNIT to the captured junit.xml"
       end
 
@@ -231,7 +243,7 @@ module M0Gate
       index = commands.filter { |entry| entry.is_a?(Hash) }.to_h { |entry| [entry["name"], Array(entry["command"])] }
       expected_tokens = {
         "gem_build" => ["gem", "build", "rubernetes.gemspec", "--output"],
-        "rake_test" => ["bundle", "exec", "rake", "test"],
+        "rake_test" => %w[bundle exec rake test],
         "executables" => ["tools/milestones/executables_probe.rb", "--output"],
         "native_boundary_scan" => ["tools/milestones/native_boundary_scan.rb", "--output"],
         "rbs_validate" => ["bundle", "exec", "rbs", "-I", "sig", "-I", "generated/rbs", "validate"],
@@ -277,6 +289,7 @@ module M0Gate
 
     def safe_file(directory, relative)
       return nil unless relative.is_a?(String) && !relative.empty? && !relative.start_with?("/")
+
       parts = relative.split("/")
       return nil if parts.any? { |part| part.empty? || part == "." || part == ".." }
       return nil if relative.include?("\0")
@@ -397,15 +410,19 @@ module M0Gate
         errors << "source inventory contains duplicate path #{entry["path"]}" if paths.include?(entry["path"])
         paths << entry["path"]
       end
-      canonical = entries.sort_by { |entry| entry.fetch("path", "") }.map { |entry| "#{entry.fetch("path", "")}\0#{entry.fetch("sha256", "")}\n" }.join
+      canonical = entries.sort_by do |entry|
+        entry.fetch("path", "")
+      end.map { |entry| "#{entry.fetch("path", "")}\0#{entry.fetch("sha256", "")}\n" }.join
       computed = Digest::SHA256.hexdigest(canonical)
       errors << "source inventory digest differs from manifest" unless computed == manifest["input_sha256"]
-      errors << "source inventory self identity differs" unless document["input_sha256"] == computed && document["input_file_count"] == entries.length
+      unless document["input_sha256"] == computed && document["input_file_count"] == entries.length
+        errors << "source inventory self identity differs"
+      end
 
       current = current_source_inventory
-      unless current && current["entries"] == entries
-        errors << "source inventory does not match the current source tree"
-      end
+      return if current && current["entries"] == entries
+
+      errors << "source inventory does not match the current source tree"
     end
 
     def current_source_inventory
@@ -453,11 +470,14 @@ module M0Gate
       expected_filename = "rubernetes-#{expected_spec.version}.gem"
       errors << "gem_build output filename is invalid" unless File.basename(gem_path) == expected_filename
       stdout_lines = command["stdout"].to_s.lines.map(&:strip).reject(&:empty?)
-      expected_stdout = ["Successfully built RubyGem", "Name: rubernetes", "Version: #{expected_spec.version}", "File: #{expected_filename}"]
+      expected_stdout = ["Successfully built RubyGem", "Name: rubernetes", "Version: #{expected_spec.version}",
+                         "File: #{expected_filename}"]
       errors << "gem_build stdout does not prove the built gem identity" unless stdout_lines == expected_stdout
       errors << "gem_build stderr must be empty" unless command["stderr"] == ""
 
-      gem_subjects = subjects.select { |entry| entry["source_path"].to_s.match?(%r{(?:\A|/)rubernetes-#{Regexp.escape(expected_spec.version.to_s)}\.gem\z}) }
+      gem_subjects = subjects.select do |entry|
+        entry["source_path"].to_s.match?(%r{(?:\A|/)rubernetes-#{Regexp.escape(expected_spec.version.to_s)}\.gem\z})
+      end
       unless gem_subjects.length == 1 && gem_subjects.first["sha256"] == Digest::SHA256.file(gem_path).hexdigest && gem_subjects.first["bytes"] == File.size(gem_path)
         errors << "gem_build output is not linked to the captured gem subject"
       end
@@ -486,14 +506,17 @@ module M0Gate
 
       payload = gem_payload_entries(gem_path)
       expected_files = expected_spec.files.sort
-      errors << "built gem file inventory differs from the current gemspec" unless actual_spec.files.sort == expected_files && package.contents.sort == expected_files && payload.keys.sort == expected_files
+      unless actual_spec.files.sort == expected_files && package.contents.sort == expected_files && payload.keys.sort == expected_files
+        errors << "built gem file inventory differs from the current gemspec"
+      end
       expected_files.each do |relative|
         source = File.join(ROOT, relative)
         entry = payload[relative]
-        unless safe_source_path?(relative) && safe_component_chain?(ROOT, source) && File.file?(source) && !File.symlink?(source) && entry &&
-               entry["sha256"] == Digest::SHA256.file(source).hexdigest && entry["bytes"] == File.size(source)
-          errors << "built gem payload differs from current source #{relative}"
-        end
+        next if safe_source_path?(relative) && safe_component_chain?(ROOT,
+                                                                     source) && File.file?(source) && !File.symlink?(source) && entry &&
+                entry["sha256"] == Digest::SHA256.file(source).hexdigest && entry["bytes"] == File.size(source)
+
+        errors << "built gem payload differs from current source #{relative}"
       end
     rescue Gem::Package::Error, Gem::Exception, Zlib::Error, IOError, EOFError, ArgumentError => error
       errors << "built gem is invalid: #{error.class}: #{error.message}"
@@ -533,7 +556,9 @@ module M0Gate
       end
       expected_output = File.join(capture_directory(manifest) || directory, "executables.json")
       expected_command = [RbConfig.ruby, "tools/milestones/executables_probe.rb", "--output", expected_output]
-      errors << "executable report command identity is invalid" unless Array(document["command"]) == expected_command && document["output_path"] == expected_output
+      unless Array(document["command"]) == expected_command && document["output_path"] == expected_output
+        errors << "executable report command identity is invalid"
+      end
       tool = File.join(ROOT, "tools/milestones/executables_probe.rb")
       unless document["tool_path"] == "tools/milestones/executables_probe.rb" && digest?(document["tool_sha256"]) && File.file?(tool) && document["tool_sha256"] == Digest::SHA256.file(tool).hexdigest
         errors << "executable report is not bound to the current probe tool"
@@ -549,8 +574,12 @@ module M0Gate
       command_finished = parse_time(command && command["finished_at"])
       if report_started && report_finished
         errors << "executable report time interval is invalid" if report_finished < report_started
-        errors << "executable report is outside the evidence capture" if manifest_started && report_started < manifest_started || manifest_finished && report_finished > manifest_finished
-        errors << "executable report is outside the executables command interval" unless command_started && command_finished && report_started >= command_started && report_finished <= command_finished
+        if (manifest_started && report_started < manifest_started) || (manifest_finished && report_finished > manifest_finished)
+          errors << "executable report is outside the evidence capture"
+        end
+        unless command_started && command_finished && report_started >= command_started && report_finished <= command_finished
+          errors << "executable report is outside the executables command interval"
+        end
       end
       host = document["host"]
       current = Etc.uname
@@ -564,20 +593,30 @@ module M0Gate
       end
       identities = results.filter_map { |entry| [entry["executable"], entry["option"]] if entry.is_a?(Hash) }
       expected = EXECUTABLES.product(OPTIONS)
-      errors << "all 6 executable help/version identities must appear exactly once" unless identities.sort == expected.sort && identities.uniq.length == identities.length
-      errors << "executable aggregate count is invalid" unless document["count"] == results.length && document["failure_count"] == results.count { |entry| entry["passed"] != true }
+      unless identities.sort == expected.sort && identities.uniq.length == identities.length
+        errors << "all 6 executable help/version identities must appear exactly once"
+      end
+      errors << "executable aggregate count is invalid" unless document["count"] == results.length && document["failure_count"] == results.count do |entry|
+        entry["passed"] != true
+      end
       subject_index = subjects.to_h { |entry| [entry["source_path"], entry] }
       results.each do |entry|
         next unless entry.is_a?(Hash)
+
         executable = entry["executable"]
         option = entry["option"]
         argv = Array(entry["command"])
-        errors << "executable #{executable} #{option} did not pass cleanly" unless entry["passed"] == true && entry["exit_status"] == 0 && entry["stderr"] == "" && nonempty?(entry["stdout"])
-        expected_command = [RbConfig.ruby, "-I#{File.join(ROOT, "lib")}", File.join(ROOT, "exe", executable), "--config", "/unreadable/m0-side-effect-sentinel", option]
+        unless entry["passed"] == true && entry["exit_status"] == 0 && entry["stderr"] == "" && nonempty?(entry["stdout"])
+          errors << "executable #{executable} #{option} did not pass cleanly"
+        end
+        expected_command = [RbConfig.ruby, "-I#{File.join(ROOT, "lib")}", File.join(ROOT, "exe", executable), "--config",
+                            "/unreadable/m0-side-effect-sentinel", option]
         errors << "executable #{executable} #{option} command identity is invalid" unless argv == expected_command
         subject = subject_index["exe/#{executable}"]
         errors << "executable #{executable} binary digest is invalid" unless digest?(entry["binary_sha256"])
-        errors << "executable #{executable} is not linked to its captured binary" unless subject && subject["sha256"] == entry["binary_sha256"]
+        unless subject && subject["sha256"] == entry["binary_sha256"]
+          errors << "executable #{executable} is not linked to its captured binary"
+        end
         validate_time(entry["started_at"], errors, "executable #{executable} started_at")
         validate_time(entry["finished_at"], errors, "executable #{executable} finished_at")
         result_started = parse_time(entry["started_at"])
@@ -594,13 +633,21 @@ module M0Gate
         return
       end
       source_files = document["source_files"]
-      expected = Array(inventory&.fetch("entries", nil)).select { |entry| entry["path"].match?(%r{\Aext/rubernetes_linux/.*\.(?:c|cc|h)\z}) }
-      errors << "native boundary scan source inventory differs" unless source_files.is_a?(Array) && source_files.sort_by { |entry| entry["path"] } == expected.sort_by { |entry| entry["path"] }
+      expected = Array(inventory&.fetch("entries", nil)).select do |entry|
+        entry["path"].match?(%r{\Aext/rubernetes_linux/.*\.(?:c|cc|h)\z})
+      end
+      errors << "native boundary scan source inventory differs" unless source_files.is_a?(Array) && source_files.sort_by do |entry|
+        entry["path"]
+      end == expected.sort_by do |entry|
+               entry["path"]
+             end
       expected_command = [RbConfig.ruby, "tools/milestones/native_boundary_scan.rb", "--output"]
       actual_command = Array(document["command"])
       output_path = document["output_path"]
       output_file = safe_evidence_path(directory, rebase_evidence_path(output_path, manifest, directory))
-      errors << "native boundary scan command identity is invalid" unless actual_command.length == 4 && actual_command.first(3) == expected_command && nonempty?(output_path) && actual_command.last == output_path && output_file && File.file?(output_file)
+      unless actual_command.length == 4 && actual_command.first(3) == expected_command && nonempty?(output_path) && actual_command.last == output_path && output_file && File.file?(output_file)
+        errors << "native boundary scan command identity is invalid"
+      end
       expected_tool = File.join(ROOT, "tools/milestones/native_boundary_scan.rb")
       unless document["tool_path"] == "tools/milestones/native_boundary_scan.rb" && digest?(document["tool_sha256"]) && File.file?(expected_tool) && document["tool_sha256"] == Digest::SHA256.file(expected_tool).hexdigest
         errors << "native boundary scan is not bound to the current scanner"
@@ -616,8 +663,12 @@ module M0Gate
       command_finished = parse_time(command && command["finished_at"])
       if scan_started && scan_finished
         errors << "native boundary scan time interval is invalid" if scan_finished < scan_started
-        errors << "native boundary scan is outside the evidence capture" if manifest_started && scan_started < manifest_started || manifest_finished && scan_finished > manifest_finished
-        errors << "native boundary scan is outside its command interval" unless command_started && command_finished && scan_started >= command_started && scan_finished <= command_finished
+        if (manifest_started && scan_started < manifest_started) || (manifest_finished && scan_finished > manifest_finished)
+          errors << "native boundary scan is outside the evidence capture"
+        end
+        unless command_started && command_finished && scan_started >= command_started && scan_finished <= command_finished
+          errors << "native boundary scan is outside its command interval"
+        end
       end
       host = document["host"]
       current = Etc.uname
@@ -628,7 +679,8 @@ module M0Gate
         next unless entry.is_a?(Hash) && nonempty?(entry["path"])
 
         source = File.join(ROOT, entry["path"])
-        unless safe_component_chain?(ROOT, source) && File.file?(source) && !File.symlink?(source) && Digest::SHA256.file(source).hexdigest == entry["sha256"] && File.size(source) == entry["bytes"]
+        unless safe_component_chain?(ROOT,
+                                     source) && File.file?(source) && !File.symlink?(source) && Digest::SHA256.file(source).hexdigest == entry["sha256"] && File.size(source) == entry["bytes"]
           errors << "native boundary scan source is stale or unsafe #{entry["path"]}"
         end
       end
@@ -670,10 +722,15 @@ module M0Gate
         return
       end
       errors << "one x86_64 ABI probe is required" unless document["architecture"] == "x86_64"
-      errors << "ABI probe input differs from manifest" unless document["input_sha256"] == manifest["input_sha256"] && document["input_file_count"] == manifest["input_file_count"] && document["input_stable"] == true
+      unless document["input_sha256"] == manifest["input_sha256"] && document["input_file_count"] == manifest["input_file_count"] && document["input_stable"] == true
+        errors << "ABI probe input differs from manifest"
+      end
       captured = capture_directory(manifest) || directory
-      expected_command = [RbConfig.ruby, "-I#{File.join(ROOT, "build/ext/rubernetes_linux")}", "tools/milestones/m0_kernel_probe.rb", "--output", File.join(captured, "abi-probe-x86_64.json")]
-      errors << "ABI probe command identity is invalid" unless Array(document["command"]) == expected_command && document["output_path"] == File.join(captured, "abi-probe-x86_64.json")
+      expected_command = [RbConfig.ruby, "-I#{File.join(ROOT, "build/ext/rubernetes_linux")}", "tools/milestones/m0_kernel_probe.rb",
+                          "--output", File.join(captured, "abi-probe-x86_64.json")]
+      errors << "ABI probe command identity is invalid" unless Array(document["command"]) == expected_command && document["output_path"] == File.join(
+        captured, "abi-probe-x86_64.json"
+      )
       tool_path = File.join(ROOT, "tools/milestones/m0_kernel_probe.rb")
       unless document["tool_path"] == "tools/milestones/m0_kernel_probe.rb" && digest?(document["tool_sha256"]) && File.file?(tool_path) && document["tool_sha256"] == Digest::SHA256.file(tool_path).hexdigest
         errors << "ABI probe is not bound to the current kernel probe tool"
@@ -689,8 +746,12 @@ module M0Gate
       command_finished = parse_time(command && command["finished_at"])
       if probe_started && probe_finished
         errors << "ABI probe time interval is invalid" if probe_finished < probe_started
-        errors << "ABI probe is outside the evidence capture" if manifest_started && probe_started < manifest_started || manifest_finished && probe_finished > manifest_finished
-        errors << "ABI probe is outside its command interval" unless command_started && command_finished && probe_started >= command_started && probe_finished <= command_finished
+        if (manifest_started && probe_started < manifest_started) || (manifest_finished && probe_finished > manifest_finished)
+          errors << "ABI probe is outside the evidence capture"
+        end
+        unless command_started && command_finished && probe_started >= command_started && probe_finished <= command_finished
+          errors << "ABI probe is outside its command interval"
+        end
       end
       host = document["host"]
       current = Etc.uname
@@ -705,8 +766,12 @@ module M0Gate
       end
       names = results.filter_map { |entry| entry["name"] if entry.is_a?(Hash) }
       errors << "ABI probe inventory differs" unless names.sort == ABI_PROBES.sort && names.uniq.length == names.length
-      errors << "ABI probe aggregates are invalid" unless document["probe_count"] == results.length && document["failure_count"] == results.count { |entry| entry["passed"] != true }
-      errors << "ABI probes must have zero failures" unless document["failure_count"] == 0 && results.all? { |entry| entry["passed"] == true }
+      errors << "ABI probe aggregates are invalid" unless document["probe_count"] == results.length && document["failure_count"] == results.count do |entry|
+        entry["passed"] != true
+      end
+      errors << "ABI probes must have zero failures" unless document["failure_count"] == 0 && results.all? do |entry|
+        entry["passed"] == true
+      end
       results.each do |entry|
         unless entry.is_a?(Hash) && nonempty?(entry["name"]) && entry["passed"] == true && entry["result"].is_a?(Hash)
           errors << "ABI probe result has an invalid payload"
@@ -750,7 +815,8 @@ module M0Gate
         return
       end
       header = File.binread(current_path, 20)
-      unless header.start_with?("\x7FELF".b) && header.getbyte(4) == 2 && header.getbyte(5) == 1 && header.byteslice(18, 2).unpack1("v") == 62
+      unless header.start_with?("\x7FELF".b) && header.getbyte(4) == 2 && header.getbyte(5) == 1 && header.byteslice(18,
+                                                                                                                     2).unpack1("v") == 62
         errors << "native extension is not an x86_64 little-endian ELF shared object"
       end
 
@@ -778,7 +844,9 @@ module M0Gate
           errors << "clone3 namespace payload does not prove pid namespace and pidfd wait semantics"
         end
       when "netlink_ack"
-        unless value["sequence"] == 60_000 && value["message_types"].is_a?(Array) && !value["message_types"].empty? && value["message_types"].all? { |type| type.is_a?(Integer) && type >= 0 }
+        unless value["sequence"] == 60_000 && value["message_types"].is_a?(Array) && !value["message_types"].empty? && value["message_types"].all? do |type|
+          type.is_a?(Integer) && type >= 0
+        end
           errors << "netlink payload does not prove the requested ACK sequence"
         end
       when "bpf_verifier"
@@ -787,7 +855,10 @@ module M0Gate
         end
       when "kvm_capability"
         capabilities = value["capabilities"]
-        unless value["api_version"] == 12 && capabilities.is_a?(Hash) && capabilities.keys.map(&:to_s).sort == %w[3 9] && capabilities.values.all? { |entry| entry.is_a?(Integer) }
+        unless value["api_version"] == 12 && capabilities.is_a?(Hash) && capabilities.keys.map(&:to_s).sort == %w[3
+                                                                                                                  9] && capabilities.values.all? do |entry|
+                                                                                                                          entry.is_a?(Integer)
+                                                                                                                        end
           errors << "KVM payload does not prove API and capability readback"
         end
       when *ERRNO_PROBES.keys
@@ -796,9 +867,7 @@ module M0Gate
         end
       when "source_input_stability"
         expected = {"sha256" => manifest["input_sha256"], "file_count" => manifest["input_file_count"]}
-        unless value == expected
-          errors << "source_input_stability payload does not bind the manifest input"
-        end
+        errors << "source_input_stability payload does not bind the manifest input" unless value == expected
       else
         errors << "unknown ABI probe payload #{name.inspect}"
       end
@@ -822,14 +891,14 @@ module M0Gate
         classname = testcase.attributes["classname"].to_s
         name = testcase.attributes["name"].to_s
         status = if testcase.elements["skipped"]
-                    "skipped"
-                  elsif testcase.elements["failure"]
-                    "failure"
-                  elsif testcase.elements["error"]
-                    "error"
-                  else
-                    "passed"
-                  end
+                   "skipped"
+                 elsif testcase.elements["failure"]
+                   "failure"
+                 elsif testcase.elements["error"]
+                   "error"
+                 else
+                   "passed"
+                 end
         errors << "JUnit testcase identity is invalid" if classname.empty? || name.empty?
         [classname, name, status]
       end
@@ -839,7 +908,9 @@ module M0Gate
         [item["classname"].to_s, item["name"].to_s] if item.is_a?(Hash)
       end.sort
       observed_identities = identities.map { |classname, name, _status| [classname, name] }.sort
-      errors << "JUnit does not contain the complete current Minitest runnable inventory" unless !expected_identities.empty? && observed_identities == expected_identities
+      unless !expected_identities.empty? && observed_identities == expected_identities
+        errors << "JUnit does not contain the complete current Minitest runnable inventory"
+      end
       identity_content = observed_identities.map { |classname, name| "#{classname}\0#{name}\n" }.join
       identity_digest = Digest::SHA256.hexdigest(identity_content)
       unless root.attributes["inventory_complete"].to_s == "true" &&
@@ -867,7 +938,9 @@ module M0Gate
       end
       rake = Array(manifest["commands"]).find { |command| command.is_a?(Hash) && command["name"] == "rake_test" }
       expected_command_digest = rake && Digest::SHA256.hexdigest(JSON.generate(Array(rake["command"])))
-      errors << "JUnit is not bound to the captured rake command" unless expected_command_digest && root.attributes["command_sha256"].to_s == expected_command_digest
+      unless expected_command_digest && root.attributes["command_sha256"].to_s == expected_command_digest
+        errors << "JUnit is not bound to the captured rake command"
+      end
       summary = rake && rake["stdout"].to_s.match(/(\d+)\s+runs?,\s+(\d+)\s+assertions?,\s+(\d+)\s+failures?,\s+(\d+)\s+errors?/)
       unless summary && root.attributes["tests"].to_i == summary[1].to_i &&
              root.attributes["failures"].to_i == summary[3].to_i &&
@@ -875,7 +948,9 @@ module M0Gate
         errors << "JUnit aggregate is not bound to the captured test runner summary"
       end
       test_entries = Array(inventory&.fetch("entries", nil)).select { |entry| entry["path"].match?(%r{\Atest/.*_test\.rb\z}) }
-      test_inventory_content = test_entries.sort_by { |entry| entry.fetch("path") }.map { |entry| "#{entry.fetch("path")}\0#{entry.fetch("sha256")}\n" }.join
+      test_inventory_content = test_entries.sort_by do |entry|
+        entry.fetch("path")
+      end.map { |entry| "#{entry.fetch("path")}\0#{entry.fetch("sha256")}\n" }.join
       expected_inventory_digest = Digest::SHA256.hexdigest(test_inventory_content)
       unless root.attributes["test_pattern"].to_s == "test/**/*_test.rb" &&
              root.attributes["test_inventory_sha256"].to_s == expected_inventory_digest &&
@@ -942,7 +1017,9 @@ module M0Gate
 
     def validate_subjects(subjects, errors)
       source_paths = subjects.filter_map { |entry| entry["source_path"] }
-      required = EXECUTABLES.map { |name| "exe/#{name}" } + ["generated/platform/linux/abi/x86_64.json", "build/ext/rubernetes_linux/rubernetes_linux.so"]
+      required = EXECUTABLES.map do |name|
+        "exe/#{name}"
+      end + ["generated/platform/linux/abi/x86_64.json", "build/ext/rubernetes_linux/rubernetes_linux.so"]
       required.each { |path| errors << "required subject #{path} is missing" unless source_paths.count(path) == 1 }
       gems = source_paths.grep(%r{(?:\A|/)rubernetes-[0-9][^/]*\.gem\z})
       errors << "exactly one built Rubernetes gem subject is required" unless gems.length == 1
@@ -979,6 +1056,7 @@ module M0Gate
 
     def safe_source_path?(value)
       return false unless nonempty?(value) && !value.start_with?("/")
+
       parts = value.split("/")
       !parts.any? { |part| part.empty? || part == "." || part == ".." } && !M0SourceInventory.excluded?(value)
     end

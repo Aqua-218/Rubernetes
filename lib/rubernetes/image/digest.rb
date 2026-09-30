@@ -7,7 +7,7 @@ module Rubernetes
     # A validated OCI content digest. M2 intentionally accepts only SHA-256 because
     # runtime image pinning and the node specification require SHA-256 everywhere.
     class Digest
-      SHA256_PATTERN = /\Asha256:([0-9a-f]{64})\z/.freeze
+      SHA256_PATTERN = /\Asha256:([0-9a-f]{64})\z/
 
       attr_reader :algorithm, :hex
 
@@ -39,9 +39,8 @@ module Rubernetes
       def initialize(algorithm, hex)
         @algorithm = algorithm.to_s
         @hex = hex.to_s
-        unless @algorithm == "sha256" && @hex.match?(/\A[0-9a-f]{64}\z/)
-          raise DigestError, "unsupported or malformed image digest"
-        end
+        raise DigestError, "unsupported or malformed image digest" unless @algorithm == "sha256" && @hex.match?(/\A[0-9a-f]{64}\z/)
+
         freeze
       end
 
@@ -75,9 +74,8 @@ module Rubernetes
         while (chunk = io.read(1024 * 1024))
           chunk = chunk.to_s.b
           bytes += chunk.bytesize
-          if max_bytes && bytes > Integer(max_bytes)
-            raise LimitError, "content exceeds the configured byte limit"
-          end
+          raise LimitError, "content exceeds the configured byte limit" if max_bytes && bytes > Integer(max_bytes)
+
           digest.update(chunk)
         end
         actual = digest.hexdigest

@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "json"
-require "thread"
 
 require_relative "../cleanup"
 require_relative "status"
@@ -42,16 +41,20 @@ module Rubernetes
                      removed: nil, auto_start: false, &block)
         @source = source || api || source_value
         raise ArgumentError, "source or api is required" unless @source
+
         @reconcile = reconcile || block
         # Told at once, from the watch thread, when a Pod leaves the API --
         # before its worker gets to the DELETED (it may be busy killing it).
         @removed = removed
         raise ArgumentError, "reconcile callback or worker_pool is required" unless @reconcile || worker_pool || workers
+
         @node_name = node_name&.to_s
         @resync_period = Float(resync_period)
         raise ArgumentError, "resync_period must be positive" unless @resync_period.positive?
+
         @housekeeping_period = Float(housekeeping_period)
         raise ArgumentError, "housekeeping_period must be positive" unless @housekeeping_period.positive?
+
         @watch_timeout = Float(watch_timeout)
         @clock = clock
         @sleeper = sleeper
@@ -79,7 +82,7 @@ module Rubernetes
       def start
         @mutex.synchronize do
           return self if @running
-          raise RuntimeError, "SyncLoop is stopped" if @stopping
+          raise "SyncLoop is stopped" if @stopping
 
           @running = true
           @started = true
@@ -378,6 +381,7 @@ module Rubernetes
 
       def consume_watcher(watcher)
         return if watcher.nil?
+
         if watcher.respond_to?(:next)
           loop do
             break unless running?
@@ -423,8 +427,14 @@ module Rubernetes
       end
 
       def open_watcher
-        return @source.watch(node_name: @node_name, resource_version: @resource_version, timeout: @watch_timeout) if @source.respond_to?(:watch)
-        return @source.watch_pods(node_name: @node_name, resource_version: @resource_version, timeout: @watch_timeout) if @source.respond_to?(:watch_pods)
+        if @source.respond_to?(:watch)
+          return @source.watch(node_name: @node_name, resource_version: @resource_version,
+                               timeout: @watch_timeout)
+        end
+        if @source.respond_to?(:watch_pods)
+          return @source.watch_pods(node_name: @node_name, resource_version: @resource_version,
+                                    timeout: @watch_timeout)
+        end
 
         nil
       rescue ArgumentError => error
@@ -434,13 +444,11 @@ module Rubernetes
       end
 
       def next_watch_event(watcher)
-        begin
-          watcher.next(timeout: @watch_timeout)
-        rescue ArgumentError => error
-          raise unless error.message.include?("wrong number") || error.message.include?("unknown keyword")
+        watcher.next(timeout: @watch_timeout)
+      rescue ArgumentError => error
+        raise unless error.message.include?("wrong number") || error.message.include?("unknown keyword")
 
-          watcher.next
-        end
+        watcher.next
       end
 
       def list_pods
@@ -460,20 +468,18 @@ module Rubernetes
         if result.respond_to?(:items)
           [result.items, result.respond_to?(:resource_version) ? result.resource_version : nil]
         elsif result.is_a?(Hash)
-          [Helpers.key(result, "items", []), Helpers.key(Helpers.key(result, "metadata", {}), "resourceVersion", Helpers.key(result, "resourceVersion", nil))]
+          [Helpers.key(result, "items", []),
+           Helpers.key(Helpers.key(result, "metadata", {}), "resourceVersion", Helpers.key(result, "resourceVersion", nil))]
         else
           [Array(result), nil]
         end
       end
 
       def normalize_event(event)
-        if event.is_a?(Event)
-          return event
-        end
+        return event if event.is_a?(Event)
+
         raw = event
-        if event.is_a?(String)
-          raw = JSON.parse(event)
-        end
+        raw = JSON.parse(event) if event.is_a?(String)
         if event.respond_to?(:type) && event.respond_to?(:object)
           type = event.type
           object = event.object

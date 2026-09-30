@@ -96,7 +96,11 @@ module Release
     # Pinned upstream inputs: tools, images and corpora the release depends on.
     def locked_components
       Dir.glob(File.join(LOCK_DIR, "*.json")).sort.flat_map do |path|
-        document = JSON.parse(File.read(path)) rescue nil
+        document = begin
+          JSON.parse(File.read(path))
+        rescue StandardError
+          nil
+        end
         next [] unless document.is_a?(Hash)
 
         flatten_lock(document, File.basename(path))

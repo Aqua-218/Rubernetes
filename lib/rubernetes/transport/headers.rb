@@ -11,7 +11,7 @@ module Rubernetes
     class Headers
       include Enumerable
 
-      TOKEN_PATTERN = /\A[!#$%&'*+\-.^_`|~0-9A-Za-z]+\z/.freeze
+      TOKEN_PATTERN = /\A[!#$%&'*+\-.^_`|~0-9A-Za-z]+\z/
       MISSING = Object.new.freeze
 
       def initialize(source = nil)
@@ -22,7 +22,7 @@ module Rubernetes
       def add(name, value)
         field_name = validate_name(name)
         field_value = validate_value(value)
-        entry = (@fields[field_name.downcase] ||= { name: field_name, values: [] })
+        entry = (@fields[field_name.downcase] ||= {name: field_name, values: []})
         entry[:values] << field_value
         self
       end
@@ -58,7 +58,7 @@ module Rubernetes
 
       def fetch(name, default = MISSING, &block)
         return self[name] if include?(name)
-        return block.call(name) if block
+        return yield(name) if block
         return default unless default.equal?(MISSING)
 
         raise KeyError, "key not found: #{name.inspect}"
@@ -79,8 +79,8 @@ module Rubernetes
         self
       end
 
-      def each_pair(&block)
-        each(&block)
+      def each_pair(&)
+        each(&)
       end
 
       def size
@@ -121,14 +121,13 @@ module Rubernetes
         when Hash
           source.each { |name, value| Array(value).each { |entry| add(name, entry) } }
         else
-          unless source.respond_to?(:each)
-            raise ArgumentError, "headers must be a Hash or Enumerable"
-          end
+          raise ArgumentError, "headers must be a Hash or Enumerable" unless source.respond_to?(:each)
 
           source.each do |entry|
             unless entry.respond_to?(:to_ary) && entry.to_ary.length == 2
               raise ArgumentError, "header entries must contain a name and value"
             end
+
             name, value = entry.to_ary
             Array(value).each { |item| add(name, item) }
           end
@@ -144,7 +143,9 @@ module Rubernetes
 
       def validate_value(value)
         field_value = String(value)
-        if field_value.include?("\r") || field_value.include?("\n") || field_value.each_byte.any? { |byte| (byte < 0x20 && byte != 0x09) || byte == 0x7f }
+        if field_value.include?("\r") || field_value.include?("\n") || field_value.each_byte.any? do |byte|
+          (byte < 0x20 && byte != 0x09) || byte == 0x7f
+        end
           raise ArgumentError, "invalid HTTP header value"
         end
 

@@ -24,7 +24,7 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
   # The child is intentionally self-contained: it uses the repository's
   # rtnetlink implementation rather than ip(8), and speaks a tiny line
   # protocol to the parent so namespace setup is deterministic.
-  POD_SCRIPT = <<~'RUBY'.freeze
+  POD_SCRIPT = <<~'RUBY'
     require "rubernetes/network"
     require "socket"
     require "timeout"
@@ -316,13 +316,10 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
 
     def run
       @sctp_available = sctp_socket_available?
-      unless @sctp_available
-        add_blocker("sctp_kernel_protocol_unavailable", "protocol 132 cannot be opened")
-      end
+      add_blocker("sctp_kernel_protocol_unavailable", "protocol 132 cannot be opened") unless @sctp_available
       Rubernetes::Network::NftablesPolicyAdapter::POLICY_PACKET_CASES.each do |cell|
-        if cell == "sctp" && !@sctp_available
-          next
-        end
+        next if cell == "sctp" && !@sctp_available
+
         run_cell(cell)
       end
       gate = Rubernetes::Network::NftablesPolicyAdapter.new(
@@ -366,9 +363,15 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
                when "default_deny_egress"
                  run_default_deny(direction: "Egress", source: "client", expected: :denied)
                when "selector_ingress"
-                 with_fixture { apply([ingress_policy("selector-ingress", from: pod_peer("client"), port: 29_081)]) && probe("client", "ipv4", "TCP", 29_081) == :allowed }
+                 with_fixture do
+                   apply([ingress_policy("selector-ingress", from: pod_peer("client"),
+                                                             port: 29_081)]) && probe("client", "ipv4", "TCP", 29_081) == :allowed
+                 end
                when "selector_egress"
-                 with_fixture { apply([egress_policy("selector-egress", to: pod_peer("server"), port: 29_081)]) && probe("client", "ipv4", "TCP", 29_081) == :allowed }
+                 with_fixture do
+                   apply([egress_policy("selector-egress", to: pod_peer("server"),
+                                                           port: 29_081)]) && probe("client", "ipv4", "TCP", 29_081) == :allowed
+                 end
                when "namespace_selector"
                  with_fixture do
                    peer = {"namespaceSelector" => {"matchLabels" => {"team" => "client"}},
@@ -392,6 +395,7 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
                        alternate = probe("client", "ipv4", "TCP", 29_081, alternate: true)
                        base = probe("client", "ipv4", "TCP", 29_081)
                        raise "ipBlock IPv4 results alternate=#{alternate} base=#{base}" unless alternate == :allowed && base == :denied
+
                        true
                      end
                  end
@@ -403,6 +407,7 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
                        alternate = probe("client", "ipv6", "TCP", 29_081, alternate: true)
                        base = probe("client", "ipv6", "TCP", 29_081)
                        raise "ipBlock IPv6 results alternate=#{alternate} base=#{base}" unless alternate == :allowed && base == :denied
+
                        true
                      end
                  end
@@ -429,7 +434,10 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
                      probe("client", "ipv4", "TCP", 29_083) == :denied
                  end
                when "tcp"
-                 with_fixture { apply([ingress_policy("tcp", from: pod_peer("client"), port: 29_081, protocol: "TCP")]) && probe("client", "ipv4", "TCP", 29_081) == :allowed }
+                 with_fixture do
+                   apply([ingress_policy("tcp", from: pod_peer("client"), port: 29_081,
+                                                protocol: "TCP")]) && probe("client", "ipv4", "TCP", 29_081) == :allowed
+                 end
                when "udp"
                  with_fixture do
                    apply([ingress_policy("udp", from: pod_peer("client"), port: 29_084, protocol: "UDP")]) &&
@@ -449,6 +457,7 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
                        v4 = probe("client", "ipv4", "TCP", 29_081)
                        v6 = probe("client", "ipv6", "TCP", 29_081)
                        raise "dual-stack results ipv4=#{v4} ipv6=#{v6}" unless v4 == :allowed && v6 == :allowed
+
                        true
                      end
                  end
@@ -460,6 +469,7 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
                    established = command(@children.fetch("client"), "send-open ipv4 TCP 29081")
                    command(@children.fetch("client"), "close ipv4 TCP 29081")
                    raise "established result=#{established} nft=#{nft_dump}" unless established == "established=allowed"
+
                    true
                  end
                when "atomic_readback"
@@ -478,12 +488,12 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
                      ingress_policy("server-in", from: pod_peer("client"), port: 29_081),
                      egress_policy("client-out", to: pod_peer("server"), port: 29_081),
                      ingress_policy("client-in", from: pod_peer("server"), port: 29_081,
-                                    selector: {"app" => "client"}),
+                                                 selector: {"app" => "client"}),
                      egress_policy("server-out", to: pod_peer("client"), port: 29_081,
-                                   selector: {"app" => "server"})
+                                                 selector: {"app" => "server"})
                    ]
                    apply(policies.first(2))
-                   readback = @adapter.readback(snapshot: @engine.snapshot.to_h)
+                   @adapter.readback(snapshot: @engine.snapshot.to_h)
                    forward = probe("client", "ipv4", "TCP", 29_081) == :allowed
                    forward_detail = @last_probe_line
                    apply(policies.last(2))
@@ -491,8 +501,13 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
                    reverse = probe("server", "ipv4", "TCP", 29_081) == :allowed
                    reverse_detail = @last_probe_line
                    rule_count = @engine.snapshot.entries.dig("kernel", "rules").length
-                   rule_summary = @engine.snapshot.entries.dig("kernel", "rules").map { |rule| [rule.fetch("direction"), rule.fetch("target"), rule.dig("peer", "ip")] }
-                   raise "multi-interface readback=#{readback.fetch("verified")} rules=#{rule_count} summary=#{rule_summary.inspect} forward=#{forward}(#{forward_detail}) reverse=#{reverse}(#{reverse_detail})" unless readback.fetch("verified") && readback.fetch("chains").any? && forward && reverse
+                   rule_summary = @engine.snapshot.entries.dig("kernel", "rules").map do |rule|
+                     [rule.fetch("direction"), rule.fetch("target"), rule.dig("peer", "ip")]
+                   end
+                   unless readback.fetch("verified") && readback.fetch("chains").any? && forward && reverse
+                     raise "multi-interface readback=#{readback.fetch("verified")} rules=#{rule_count} summary=#{rule_summary.inspect} forward=#{forward}(#{forward_detail}) reverse=#{reverse}(#{reverse_detail})"
+                   end
+
                    true
                  end
                else
@@ -514,6 +529,7 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
         diagnostics = command(@children.fetch(source), "diag")
         baseline_v6 = probe(source, "ipv6", "TCP", 29_081)
         raise "IPv6 baseline path=#{baseline_v6} detail=#{@last_probe_line} #{diagnostics}" unless baseline_v6 == :allowed
+
         policy = direction == "Ingress" ? ingress_policy("default-deny-ingress", from: nil) : egress_policy("default-deny-egress", to: nil)
         apply([policy]) &&
           probe(source, "ipv4", "TCP", 29_081) == expected &&
@@ -567,30 +583,44 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
     end
 
     def teardown_fixture
-      @adapter&.detach rescue nil
+      begin
+        @adapter&.detach
+      rescue StandardError
+        nil
+      end
       @children&.each_value do |child|
+        child[:stdin].write("quit\n") unless child[:stdin].closed?
+        child[:stdin].close unless child[:stdin].closed?
+      rescue IOError, Errno::EPIPE
+        nil
+      end
+      @children&.each_value do |child|
+        Process.kill("TERM", child[:thread].pid) if child[:thread].alive?
+      rescue Errno::ESRCH
+        nil
+      ensure
+        child[:thread].join(1)
         begin
-          child[:stdin].write("quit\n") unless child[:stdin].closed?
-          child[:stdin].close unless child[:stdin].closed?
-        rescue IOError, Errno::EPIPE
+          child[:stdout].close
+        rescue StandardError
+          nil
+        end
+        begin
+          child[:stderr].close
+        rescue StandardError
           nil
         end
       end
-      @children&.each_value do |child|
-        begin
-          if child[:thread].alive?
-            Process.kill("TERM", child[:thread].pid)
-          end
-        rescue Errno::ESRCH
-          nil
-        ensure
-          child[:thread].join(1)
-          child[:stdout].close rescue nil
-          child[:stderr].close rescue nil
-        end
+      @host_links&.each do |name|
+        @netlink.link_delete(name: name)
+      rescue StandardError
+        nil
       end
-      @host_links&.each { |name| @netlink.link_delete(name: name) rescue nil }
-      @sysctl_values&.each { |path, value| File.write(path, value) rescue nil }
+      @sysctl_values&.each do |path, value|
+        File.write(path, value)
+      rescue StandardError
+        nil
+      end
       @children = nil
       @adapter = nil
       @engine = nil
@@ -636,7 +666,8 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
       begin
         before_links = Socket.getifaddrs.map(&:name).uniq
         @netlink.link_set(name: peer_name, namespace_fd: namespace, up: false)
-        child[:move_debug] = "before=#{before_links.join(",")};after=#{Socket.getifaddrs.map(&:name).uniq.join(",")};child_ns=#{File.readlink("/proc/#{thread.pid}/ns/net")}"
+        child[:move_debug] =
+          "before=#{before_links.join(",")};after=#{Socket.getifaddrs.map(&:name).uniq.join(",")};child_ns=#{File.readlink("/proc/#{thread.pid}/ns/net")}"
       ensure
         namespace.close
       end
@@ -682,7 +713,7 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
     end
 
     def probe(role, family, protocol, port, alternate: false)
-      line = command(@children.fetch(role), "probe #{family} #{protocol} #{port}#{alternate ? " alt" : ""}")
+      line = command(@children.fetch(role), "probe #{family} #{protocol} #{port}#{" alt" if alternate}")
       @last_probe_line = line
       return :allowed if line == "probe=allowed"
       return :denied if line.start_with?("probe=denied:")
@@ -760,12 +791,12 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
     def run
       with_fixture do
         apply([
-          ingress_policy("reverse-key-ingress", from: pod_peer("client"), port: 29_081),
-          # The reverse response targets the client's fixed source port. A
-          # reverse-flow hit must bypass this non-matching egress rule.
-          egress_policy("reverse-key-egress", to: pod_peer("client"), port: 29_081,
-                        selector: {"app" => "server"})
-        ])
+                ingress_policy("reverse-key-ingress", from: pod_peer("client"), port: 29_081),
+                # The reverse response targets the client's fixed source port. A
+                # reverse-flow hit must bypass this non-matching egress rule.
+                egress_policy("reverse-key-egress", to: pod_peer("client"), port: 29_081,
+                                                    selector: {"app" => "server"})
+              ])
         open_flow("client", "ipv4", 29_081, source_port: FIXED_SOURCE_PORT)
         true
       end
@@ -800,13 +831,15 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
         environment, "unshare", (Process.euid.zero? ? "-n" : "-Urn"), "--", RbConfig.ruby, "-Itest", "-Ilib", __FILE__,
         "--name", "test_native_nftables_policy_packet_matrix_in_self_contained_namespace"
       )
-      assert status.success?, "isolated packet matrix failed\n#{output}\n#{error}"
+
+      assert_predicate status, :success?, "isolated packet matrix failed\n#{output}\n#{error}"
       assert_match(/0 failures, 0 errors, 0 skips/, output)
-      return
+      skip
     end
 
     result = NativePacketMatrixRunner.new.run
     puts "NETWORK_POLICY_NATIVE_MATRIX=#{JSON.generate(result)}"
+
     assert_empty result.fetch("blockers"), result.fetch("blockers").inspect
     assert_empty result.fetch("failures"), result.fetch("failures").inspect
     assert_equal result.fetch("cells").keys.sort, result.fetch("passed_cells").sort
@@ -822,20 +855,20 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
         environment, "unshare", (Process.euid.zero? ? "-n" : "-Urn"), "--", RbConfig.ruby, "-Itest", "-Ilib", __FILE__,
         "--name", "test_ebpf_policy_reverse_conntrack_key_on_kernel_veth"
       )
-      if status.exitstatus == 77 && error.start_with?("SKIP:")
-        skip error.strip
-      end
+      skip error.strip if status.exitstatus == 77 && error.start_with?("SKIP:")
       failure_output = "#{output}\n#{error}"
       if !status.success? && failure_output.match?(/Operation not permitted|Permission denied/i)
         skip "missing namespace or eBPF capability: #{failure_output.lines.last(8).join.strip}"
       end
-      assert status.success?, "isolated eBPF NetworkPolicy test failed: #{error.empty? ? output : error}"
+
+      assert_predicate status, :success?, "isolated eBPF NetworkPolicy test failed: #{error.empty? ? output : error}"
       assert_match(/1 runs, \d+ assertions, 0 failures, 0 errors, 0 skips/, output)
-      return
+      skip
     end
 
     result = EBPFReverseConntrackKernelRunner.new.run
     puts "NETWORK_POLICY_EBPF_REVERSE=#{result}"
+
     assert_equal true, result
   rescue CapabilityBlocker => error
     warn "SKIP: #{error.code}: #{error.message}"

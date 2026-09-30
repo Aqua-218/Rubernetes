@@ -60,7 +60,8 @@ module Rubernetes
         def credential_bundle
           case @state
           when :fresh, :wait_refresh then [@private_key_pem, @cert_chain_pem]
-          when :denied then raise NotReady, "PodCertificateRequest was permanently denied: reason=#{@reason.inspect} message=#{@message.inspect}"
+          when :denied then raise NotReady,
+                                  "PodCertificateRequest was permanently denied: reason=#{@reason.inspect} message=#{@message.inspect}"
           when :failed then raise NotReady, "PodCertificateRequest failed: reason=#{@reason.inspect} message=#{@message.inspect}"
           else raise NotReady, "credential bundle is not issued yet"
           end
@@ -253,7 +254,10 @@ module Rubernetes
                      "stubPKCS10Request" => Base64.strict_encode64(stub)}
         }
         manifest["spec"]["maxExpirationSeconds"] = source["maxExpirationSeconds"] if source["maxExpirationSeconds"]
-        manifest["spec"]["unverifiedUserAnnotations"] = source["userAnnotations"] if source["userAnnotations"].is_a?(Hash) && !source["userAnnotations"].empty?
+        if source["userAnnotations"].is_a?(Hash) && !source["userAnnotations"].empty?
+          manifest["spec"]["unverifiedUserAnnotations"] =
+            source["userAnnotations"]
+        end
         created = @client.create(manifest, namespace: key.namespace, api_version: API_VERSION)
         raise Error, "while creating PodCertificateRequest: empty response" unless created.is_a?(Hash)
 
@@ -281,7 +285,8 @@ module Rubernetes
             record.state = condition["type"] == "Denied" ? :denied : :failed
             record.reason = condition["reason"].to_s
             record.message = condition["message"].to_s
-            event(record.pod, "Warning", condition["type"], "PodCertificateRequest #{key.namespace}/#{pcr.dig("metadata", "name")} #{condition["type"] == "Denied" ? "was denied" : "failed"}, reason=#{record.reason.inspect}, message=#{record.message.inspect}")
+            event(record.pod, "Warning", condition["type"],
+                  "PodCertificateRequest #{key.namespace}/#{pcr.dig("metadata", "name")} #{condition["type"] == "Denied" ? "was denied" : "failed"}, reason=#{record.reason.inspect}, message=#{record.message.inspect}")
             return true
           when "Issued"
             record.private_key_pem = private_key_pem

@@ -69,29 +69,34 @@ class ServingCertificateManagerTest < Minitest::Test
       request = @created.last.dig("spec", "request").unpack1("m0")
       cert = @issuer.call(request)
       {"metadata" => {"name" => name}, "status" => {"conditions" => [{"type" => "Approved", "status" => "True"}],
-                                                   "certificate" => [cert.to_pem].pack("m0")}}
+                                                    "certificate" => [cert.to_pem].pack("m0")}}
     end
   end
 
   def test_requests_a_kubelet_serving_certificate_with_sans_and_stores_the_pair
     Dir.mktmpdir do |dir|
-      manager = Node::ServingCertificateManager.new(node_name: "worker-0", cert_dir: dir, addresses: -> { ["10.240.0.5", "worker-0.internal"] },
+      manager = Node::ServingCertificateManager.new(node_name: "worker-0", cert_dir: dir, addresses: lambda {
+        ["10.240.0.5", "worker-0.internal"]
+      },
                                                     sleeper: ->(_) {})
       client = FakeClient.new(method(:issue))
+
       assert_nil manager.current_certificate
       certificate = manager.rotate!(client)
       spec = client.created.first["spec"]
+
       assert_equal "kubernetes.io/kubelet-serving", spec["signerName"]
       assert_equal ["digital signature", "key encipherment", "server auth"], spec["usages"]
       assert_equal "/O=system:nodes/CN=system:node:worker-0", certificate.subject.to_s
       san = certificate.extensions.find { |ext| ext.oid == "subjectAltName" }
+
       assert_includes san.value, "DNS:worker-0"
       assert_includes san.value, "IP Address:10.240.0.5"
       assert_includes san.value, "DNS:worker-0.internal"
       assert_equal certificate.to_pem, manager.current_certificate.to_pem
-      assert manager.current_private_key.private?
-      assert manager.valid?
-      assert File.exist?(File.join(dir, "kubelet-server-current.pem"))
+      assert_predicate manager.current_private_key, :private?
+      assert_predicate manager, :valid?
+      assert_path_exists File.join(dir, "kubelet-server-current.pem")
     end
   end
 
@@ -101,15 +106,18 @@ class ServingCertificateManagerTest < Minitest::Test
       metrics = Node::KubeletMetrics.new(node_name: "worker-0")
       metrics.server_certificate_source = -> { manager.current_certificate }
       text = metrics.registry.render
+
       assert_includes text, "kubelet_certificate_manager_server_ttl_seconds +Inf"
       assert_includes text, "kubelet_server_expiration_renew_errors 0"
       first = manager.rotate!(FakeClient.new(->(pem) { issue(pem, lifetime: 7200) }))
       text = metrics.registry.render
       ttl = text[/kubelet_certificate_manager_server_ttl_seconds ([0-9.e+]+)/, 1].to_f
+
       assert_in_delta 7200, ttl, 30
       metrics.server_certificate_rotated(first)
       metrics.server_certificate_renew_failed
       text = metrics.registry.render
+
       assert_match(/kubelet_certificate_manager_server_rotation_seconds_count 1/, text)
       assert_includes text, "kubelet_server_expiration_renew_errors 1"
     end
@@ -127,7 +135,7 @@ class ServingCertificateManagerTest < Minitest::Test
       File.write(File.join(dir, "tls.crt"), first.to_pem)
       File.write(File.join(dir, "tls.key"), key.to_pem)
       server = Rubernetes::Transport::HTTPServer.new(->(_request) { [200, {}, ["ok"]] }, host: "127.0.0.1", port: 0,
-                                                     cert_file: File.join(dir, "tls.crt"), key_file: File.join(dir, "tls.key"))
+                                                                                         cert_file: File.join(dir, "tls.crt"), key_file: File.join(dir, "tls.key"))
       server.start(background: true)
       begin
         request.subject = OpenSSL::X509::Name.parse("/CN=second")
@@ -139,6 +147,7 @@ class ServingCertificateManagerTest < Minitest::Test
         context.verify_mode = OpenSSL::SSL::VERIFY_NONE
         tls = OpenSSL::SSL::SSLSocket.new(socket, context)
         tls.connect
+
         assert_equal "/CN=second", tls.peer_cert.subject.to_s
         tls.close
       ensure

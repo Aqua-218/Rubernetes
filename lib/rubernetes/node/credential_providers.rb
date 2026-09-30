@@ -163,7 +163,7 @@ module Rubernetes
         if attributes["requireServiceAccount"] == false && !required.empty?
           errors << "#{path}.requiredServiceAccountAnnotationKeys: Forbidden: requireServiceAccount cannot be false when requiredServiceAccountAnnotationKeys is set"
         end
-        { "requiredServiceAccountAnnotationKeys" => required, "optionalServiceAccountAnnotationKeys" => optional }.each do |field, keys|
+        {"requiredServiceAccountAnnotationKeys" => required, "optionalServiceAccountAnnotationKeys" => optional}.each do |field, keys|
           keys.each_with_index do |key, index|
             errors << %(#{path}.#{field}: Invalid value: #{key.inspect}: must be a qualified name) unless qualified_name?(key.downcase)
             errors << %(#{path}.#{field}: Duplicate value: #{key.inspect}) if keys[0...index].include?(key)
@@ -183,7 +183,9 @@ module Rubernetes
 
       def self.qualified_name?(key)
         prefix, name = key.include?("/") ? key.split("/", 2) : [nil, key]
-        return false if prefix && (prefix.empty? || prefix.length > 253 || !prefix.match?(/\A[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*\z/))
+        if prefix && (prefix.empty? || prefix.length > 253 || !prefix.match?(/\A[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*\z/))
+          return false
+        end
 
         !name.to_s.empty? && name.length <= 63 && name.match?(/\A([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]\z/)
       end
@@ -369,12 +371,12 @@ module Rubernetes
                  when "Global" then GLOBAL_CACHE_KEY
                  else raise PluginError, "credential provider plugin did not return a valid cacheKeyType: #{response["cacheKeyType"]}"
                  end
-          config = auth.to_h { |pattern, entry| [pattern.to_s, {"username" => entry["username"].to_s, "password" => entry["password"].to_s}] }
+          config = auth.to_h do |pattern, entry|
+            [pattern.to_s, {"username" => entry["username"].to_s, "password" => entry["password"].to_s}]
+          end
           duration = response.key?("cacheDuration") && !response["cacheDuration"].nil? ? CredentialProviders.parse_duration(response["cacheDuration"]) : nil
           ttl = duration.nil? ? @default_cache : duration
-          if ttl&.positive?
-            @mutex.synchronize { @cache[JSON.generate([base, sa_key])] = [config, @clock.call + ttl] }
-          end
+          @mutex.synchronize { @cache[JSON.generate([base, sa_key])] = [config, @clock.call + ttl] } if ttl&.positive?
           [config, account]
         end
 
@@ -443,7 +445,11 @@ module Rubernetes
               stdin.close
               readers = [Thread.new { out.read }, Thread.new { err.read }]
               unless wait.join(EXEC_TIMEOUT)
-                Process.kill("KILL", wait.pid) rescue nil
+                begin
+                  Process.kill("KILL", wait.pid)
+                rescue StandardError
+                  nil
+                end
                 plugin_failed
                 raise PluginError, "error execing credential provider plugin #{@name} for image #{image}: context deadline exceeded"
               end

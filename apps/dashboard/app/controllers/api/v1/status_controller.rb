@@ -25,9 +25,7 @@ module Api
       # GET /api/v1/rules
       def rules
         data = runtime.rules.to_api
-        if params[:type].present?
-          data["groups"].each { |g| g["rules"] = g["rules"].select { |r| r["type"] == params[:type] } }
-        end
+        data["groups"].each { |g| g["rules"] = g["rules"].select { |r| r["type"] == params[:type] } } if params[:type].present?
         success(data)
       end
 
@@ -61,11 +59,11 @@ module Api
 
       def config_status
         success({"yaml" => {"global" => {"scrape_interval" => "#{Dashboard::Config.scrape_interval_seconds.to_i}s",
-                                        "scrape_timeout" => "#{Dashboard::Config.scrape_timeout_seconds.to_i}s",
-                                        "evaluation_interval" => "#{Dashboard::Config.evaluation_interval_seconds.to_i}s"},
-                           "rule_files" => [Dashboard::Config.rules_path],
-                           "storage" => {"retention" => ENV.fetch("DASHBOARD_RETENTION", "15d"), "path" => Dashboard::Config.data_dir},
-                           "kubeconfig" => Dashboard::Config.kubeconfig_path}.to_yaml})
+                                         "scrape_timeout" => "#{Dashboard::Config.scrape_timeout_seconds.to_i}s",
+                                         "evaluation_interval" => "#{Dashboard::Config.evaluation_interval_seconds.to_i}s"},
+                            "rule_files" => [Dashboard::Config.rules_path],
+                            "storage" => {"retention" => ENV.fetch("DASHBOARD_RETENTION", "15d"), "path" => Dashboard::Config.data_dir},
+                            "kubeconfig" => Dashboard::Config.kubeconfig_path}.to_yaml})
       end
 
       private

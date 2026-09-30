@@ -45,6 +45,8 @@ class RelaxedServiceNameValidationTest < Minitest::Test
     assert(backend_messages({"name" => "svc", "port" => {"name" => "1234"}}).any? { |message| message.include?("at least one letter") })
     assert(backend_messages({"name" => "svc", "port" => {"number" => 70_000}}).any? { |message| message.include?("between 1 and 65535") })
     assert(backend_messages({"name" => "svc", "port" => {}}).any? { |message| message.include?("port name or number is required") })
-    assert(backend_messages({"port" => {"number" => 80}}).any? { |message| message.include?("service.name") || message.include?("Required") })
+    assert(backend_messages({"port" => {"number" => 80}}).any? do |message|
+      message.include?("service.name") || message.include?("Required")
+    end)
   end
 end

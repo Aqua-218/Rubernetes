@@ -39,7 +39,10 @@ module Rubernetes
 
       # Pod streaming subresource bridge contract: {user, verb, resource, ...} hash.
       def call(context)
-        return authorize(context[:identity] || context["identity"], context[:spec] || context["spec"]) if context.is_a?(Hash) && (context.key?(:spec) || context.key?("spec"))
+        if context.is_a?(Hash) && (context.key?(:spec) || context.key?("spec"))
+          return authorize(context[:identity] || context["identity"],
+                           context[:spec] || context["spec"])
+        end
 
         authorize(context, {})
       end

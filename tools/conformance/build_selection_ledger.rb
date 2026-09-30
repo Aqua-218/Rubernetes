@@ -89,7 +89,7 @@ module Conformance
 
     def load_specs(path)
       JSON.parse(File.read(path)).flat_map { |suite| suite["SpecReports"] || [] }
-          .select { |spec| spec["LeafNodeType"] == "It" }
+        .select { |spec| spec["LeafNodeType"] == "It" }
     end
 
     def spec_name(spec)

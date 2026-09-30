@@ -16,11 +16,15 @@ class AttachDetachControllerUpstreamTest < Minitest::Test
      "status" => {"volumesInUse" => in_use}}
   end
 
-  def pv(modes = ["ReadWriteOnce"]) = {"apiVersion" => "v1", "kind" => "PersistentVolume", "metadata" => {"name" => "pv1", "uid" => "pvu"},
-                                       "spec" => {"accessModes" => modes, "csi" => {"driver" => "csi.example.com", "volumeHandle" => "h1"}}}
+  def pv(modes = ["ReadWriteOnce"])
+    {"apiVersion" => "v1", "kind" => "PersistentVolume", "metadata" => {"name" => "pv1", "uid" => "pvu"},
+     "spec" => {"accessModes" => modes, "csi" => {"driver" => "csi.example.com", "volumeHandle" => "h1"}}}
+  end
 
-  def claim(name = "c1") = {"apiVersion" => "v1", "kind" => "PersistentVolumeClaim", "metadata" => {"name" => name, "namespace" => "ns"},
-                            "spec" => {"volumeName" => "pv1"}}
+  def claim(name = "c1")
+    {"apiVersion" => "v1", "kind" => "PersistentVolumeClaim", "metadata" => {"name" => name, "namespace" => "ns"},
+     "spec" => {"volumeName" => "pv1"}}
+  end
 
   def pod(name, node_name, namespace: "ns", phase: "Running")
     {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => name, "namespace" => namespace, "uid" => "u-#{name}"},
@@ -52,19 +56,27 @@ class AttachDetachControllerUpstreamTest < Minitest::Test
 
   def test_attached_volumes_are_reported_on_the_node_status
     result = plan(pods: [pod("p", "n1")], attachments: [attachment("n1")])
+
     assert_equal({"n1" => [{"name" => "kubernetes.io/csi/csi.example.com^h1", "devicePath" => ""}]}, reports(result))
 
-    reported = node("n1").tap { |item| item["status"]["volumesAttached"] = [{"name" => "kubernetes.io/csi/csi.example.com^h1", "devicePath" => ""}] }
+    reported = node("n1").tap do |item|
+      item["status"]["volumesAttached"] = [{"name" => "kubernetes.io/csi/csi.example.com^h1", "devicePath" => ""}]
+    end
+
     assert_empty reports(plan(pods: [pod("p", "n1")], nodes: [reported], attachments: [attachment("n1")])), "already reported: no write"
   end
 
   def test_a_volume_leaves_the_report_when_its_detach_starts_or_it_is_not_attached_yet
-    reported = node("n1").tap { |item| item["status"]["volumesAttached"] = [{"name" => "kubernetes.io/csi/csi.example.com^h1", "devicePath" => ""}] }
+    reported = node("n1").tap do |item|
+      item["status"]["volumesAttached"] = [{"name" => "kubernetes.io/csi/csi.example.com^h1", "devicePath" => ""}]
+    end
     detaching = plan(nodes: [reported], attachments: [attachment("n1")])
-    assert_equal [:delete, :status_merge], detaching.operations.map(&:action)
+
+    assert_equal %i[delete status_merge], detaching.operations.map(&:action)
     assert_equal({"n1" => nil}, reports(detaching), "the report is cleared together with the detach")
 
     pending = plan(pods: [pod("p", "n1")], attachments: [attachment("n1", attached: false)])
+
     assert_empty reports(pending), "not attached yet: nothing to report"
     assert_empty reports(plan(pods: [pod("p", "n1")], nodes: [node("n1", managed: false)], attachments: [attachment("n1")])),
                  "an unmanaged node's status is the kubelet's"
@@ -73,9 +85,11 @@ class AttachDetachControllerUpstreamTest < Minitest::Test
   def test_a_scheduled_pod_on_a_managed_node_gets_a_volume_attachment
     result = plan(pods: [pod("p", "n1")])
     create = result.operations.first
+
     assert_equal :create, create.action
     assert_equal "csi-#{Digest::SHA256.hexdigest("h1csi.example.comn1")}", create.object.dig("metadata", "name")
-    assert_equal({"attacher" => "csi.example.com", "nodeName" => "n1", "source" => {"persistentVolumeName" => "pv1"}}, create.object["spec"])
+    assert_equal({"attacher" => "csi.example.com", "nodeName" => "n1", "source" => {"persistentVolumeName" => "pv1"}},
+                 create.object["spec"])
   end
 
   def test_nothing_is_attached_for_unmanaged_nodes_terminated_pods_or_attach_free_drivers
@@ -83,6 +97,7 @@ class AttachDetachControllerUpstreamTest < Minitest::Test
     assert_empty plan(pods: [pod("p", "n1", phase: "Succeeded")]).operations
     driver = {"apiVersion" => "storage.k8s.io/v1", "kind" => "CSIDriver", "metadata" => {"name" => "csi.example.com"},
               "spec" => {"attachRequired" => false}}
+
     assert_empty plan(pods: [pod("p", "n1")], drivers: [driver]).operations
   end
 
@@ -91,36 +106,44 @@ class AttachDetachControllerUpstreamTest < Minitest::Test
     controller = ADC.new(clock: -> { now })
     in_use = [node("n1", in_use: ["kubernetes.io/csi/csi.example.com^h1"])]
     waiting = plan(controller, nodes: in_use, attachments: [attachment("n1")])
+
     assert_empty volume_operations(waiting)
     assert waiting.requeue_after
     now += 361
     forced = plan(controller, nodes: in_use, attachments: [attachment("n1")])
+
     assert_equal [:delete], volume_operations(forced).map(&:action), "maxWaitForUnmountDuration passed: force detach"
-    assert_equal [:delete], volume_operations(plan(nodes: [node("n1")], attachments: [attachment("n1")])).map(&:action), "unmounted: detach now"
+    assert_equal [:delete], volume_operations(plan(nodes: [node("n1")], attachments: [attachment("n1")])).map(&:action),
+                 "unmounted: detach now"
   end
 
   def test_attach_outcomes_are_reported_once_on_the_pods
     controller = ADC.new
     first = plan(controller, pods: [pod("p", "n1")], attachments: [attachment("n1")])
-    assert_equal [["SuccessfulAttachVolume", "AttachVolume.Attach succeeded for volume \"pv1\" ", "p"]],
-                 first.events.map { |event| [event["reason"], event["message"], event.dig("involvedObject", "name")] }
+
+    assert_equal([["SuccessfulAttachVolume", "AttachVolume.Attach succeeded for volume \"pv1\" ", "p"]],
+                 first.events.map { |event| [event["reason"], event["message"], event.dig("involvedObject", "name")] })
     assert_empty plan(controller, pods: [pod("p", "n1")], attachments: [attachment("n1")]).events
 
     failed = plan(ADC.new, pods: [pod("p", "n1")], attachments: [attachment("n1", attached: false, error: "rpc error: busy")])
-    assert_equal ["AttachVolume.Attach failed for volume \"pv1\" : rpc error: busy"], failed.events.map { |event| event["message"] }
+
+    assert_equal(["AttachVolume.Attach failed for volume \"pv1\" : rpc error: busy"], failed.events.map { |event| event["message"] })
   end
 
   def test_multi_attach_errors_name_the_blocking_pods
     nodes = [node("n1"), node("n2")]
     pods = [pod("user", "n1"), pod("other", "n1", namespace: "elsewhere"), pod("new", "n2")]
-    result = plan(pods: pods, nodes: nodes, attachments: [attachment("n1")], claims: [claim, claim.merge("metadata" => {"name" => "c1", "namespace" => "elsewhere"})])
+    result = plan(pods: pods, nodes: nodes, attachments: [attachment("n1")],
+                  claims: [claim, claim.merge("metadata" => {"name" => "c1", "namespace" => "elsewhere"})])
     events = result.events.select { |event| event["reason"] == "FailedAttachVolume" }
-    assert_equal ["Multi-Attach error for volume \"pv1\" Volume is already used by pod(s) user and 1 pod(s) in different namespaces"],
-                 events.map { |event| event["message"] }
-    assert_empty result.operations.select { |operation| operation.action == :create }
+
+    assert_equal(["Multi-Attach error for volume \"pv1\" Volume is already used by pod(s) user and 1 pod(s) in different namespaces"],
+                 events.map { |event| event["message"] })
+    assert_empty(result.operations.select { |operation| operation.action == :create })
 
     rwx = plan(pods: pods, nodes: nodes, attachments: [attachment("n1")], volume: pv(["ReadWriteMany"]),
                claims: [claim, claim.merge("metadata" => {"name" => "c1", "namespace" => "elsewhere"})])
+
     assert_equal [:create], volume_operations(rwx).map(&:action), "an RWX volume attaches to the second node"
   end
 end

@@ -15,20 +15,25 @@ class IndexerSortedListMemoTest < Minitest::Test
     indexer.upsert(object("a"))
 
     first = indexer.list
+
     assert_same first, indexer.list, "no mutation, same array"
-    assert_equal %w[a b], first.map { |o| o.dig("metadata", "name") }
-    assert first.frozen?
+    assert_equal(%w[a b], first.map { |o| o.dig("metadata", "name") })
+    assert_predicate first, :frozen?
 
     indexer.upsert(object("c"))
     second = indexer.list
+
     refute_same first, second
-    assert_equal %w[a b c], second.map { |o| o.dig("metadata", "name") }
+    assert_equal(%w[a b c], second.map { |o| o.dig("metadata", "name") })
 
     indexer.delete("ns/a")
-    assert_equal %w[b c], indexer.list.map { |o| o.dig("metadata", "name") }
+
+    assert_equal(%w[b c], indexer.list.map { |o| o.dig("metadata", "name") })
     indexer.replace_all([object("z")])
-    assert_equal %w[z], indexer.list.map { |o| o.dig("metadata", "name") }
+
+    assert_equal(%w[z], indexer.list.map { |o| o.dig("metadata", "name") })
     indexer.clear
+
     assert_empty indexer.list
   end
 end

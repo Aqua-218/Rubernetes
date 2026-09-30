@@ -57,7 +57,11 @@ class NodeShutdownPrivateBusTest < Minitest::Test
   end
 
   def teardown
-    @agent&.stop rescue nil
+    begin
+      @agent&.stop
+    rescue StandardError
+      nil
+    end
     @service&.stop
     @daemon&.stop
     SM::Logind.config_directory = nil
@@ -108,16 +112,18 @@ class NodeShutdownPrivateBusTest < Minitest::Test
     # The inhibit delay is raised with the drop-in and a logind reload, and a
     # delay lock is held.
     lock = wait_for("the inhibitor lock") { kubelet_inhibitors.first }
+
     assert_equal ["shutdown", "kubelet", "Kubelet needs time to handle node shutdown", "delay"], lock.to_a.first(4)
     assert_equal "# Kubelet logind override\n[Login]\nInhibitDelayMaxSec=30\n", File.read(File.join(@conf_dir, "99-kubelet.conf"))
     assert_equal 30_000_000, @service.inhibit_delay_usec
     assert_equal 1, @service.reloads
-    assert_equal ["True", "KubeletReady"], ready_condition.values_at("status", "reason")
+    assert_equal %w[True KubeletReady], ready_condition.values_at("status", "reason")
 
     # What `systemd-inhibit --list` asks logind, from another client.
     client = DBus::Connection.system
     rows = client.call(destination: PrivateLogind::LOGIN1, path: PrivateLogind::LOGIN1_PATH, interface: PrivateLogind::MANAGER,
                        member: "ListInhibitors").first
+
     assert_includes rows.map { |row| row.first(4) }, ["shutdown", "kubelet", "Kubelet needs time to handle node shutdown", "delay"]
     assert_equal 30_000_000, client.get_property(destination: PrivateLogind::LOGIN1, path: PrivateLogind::LOGIN1_PATH,
                                                  interface: PrivateLogind::MANAGER, name: "InhibitDelayMaxUSec")
@@ -129,27 +135,33 @@ class NodeShutdownPrivateBusTest < Minitest::Test
     # Non-critical Pods first, each within min(20s, its own grace); the
     # critical group after them within 10s.
     order = @runtime.stopped.map(&:first)
+
     assert_equal %w[app low quick], order.first(3).sort
     assert_equal "critical", order.last
     assert_equal({"app" => 20, "low" => 20, "quick" => 3, "critical" => 10}, stops_by_container)
     failed = @reporter.statuses.select { |status| status["phase"] == "Failed" }
+
     assert_equal 4, failed.length
     failed.each do |status|
       assert_equal "Terminated", status["reason"]
       assert_equal SM::SHUTDOWN_MESSAGE, status["message"]
       target = status["conditions"].find { |entry| entry["type"] == "DisruptionTarget" }
+
       assert_equal ["True", "TerminationByKubelet", SM::SHUTDOWN_MESSAGE], target.values_at("status", "reason", "message")
     end
 
     # NotReady, published at once; new Pods refused.
     wait_for("Ready=False") { ready_condition["status"] == "False" }
+
     assert_equal ["False", "KubeletNotReady", "node is shutting down"], ready_condition.values_at("status", "reason", "message")
     decision = @agent.instance_variable_get(:@admission).admit(pod("late"))
+
     refute decision.accepted
     assert_equal ["NodeShutdown", "Pod was rejected as the node is shutting down."], [decision.reason, decision.message]
 
     # The start and end times are recorded (state file and gauges).
     state = JSON.parse(File.read(File.join(@dir, "kubelet", SM::STATE_FILE)))
+
     refute_equal "0001-01-01T00:00:00Z", state["startTime"]
     refute_equal "0001-01-01T00:00:00Z", state["endTime"]
     assert_operator Time.parse(state["endTime"]), :>=, Time.parse(state["startTime"])
@@ -157,17 +169,20 @@ class NodeShutdownPrivateBusTest < Minitest::Test
     # A cancelled shutdown takes the lock again and the node is Ready again.
     @service.prepare_for_shutdown(false)
     wait_for("the lock after the cancellation") { kubelet_inhibitors.length == 1 }
+
     assert_nil @agent.shutdown_manager.shutdown_status
     ready = @agent.send(:build_node, ready: true).dig("status", "conditions").find { |entry| entry["type"] == "Ready" }
+
     assert_equal "True", ready["status"]
 
     # Stopping the agent releases the lock and removes the drop-in (and the
     # directory it created), and logind is reloaded back to its own delay.
     @agent.stop
     @agent = nil
+
     assert_empty kubelet_inhibitors
-    refute File.exist?(File.join(@conf_dir, "99-kubelet.conf"))
-    refute File.exist?(@conf_dir)
+    refute_path_exists File.join(@conf_dir, "99-kubelet.conf")
+    refute_path_exists @conf_dir
     assert_equal 2, @service.reloads
     assert_equal 5_000_000, @service.inhibit_delay_usec
   end
@@ -181,11 +196,13 @@ class NodeShutdownPrivateBusTest < Minitest::Test
             pod("p-low", priority: 0), pod("p-between", priority: 5_000)]
     start_agent({"grace_period_by_pod_priority" => by_priority}, pods)
     wait_for("the inhibitor lock") { kubelet_inhibitors.first }
+
     assert_equal 10_000_000, @service.inhibit_delay_usec, "sum of the groups' periods"
 
     @service.prepare_for_shutdown(true)
     wait_for("the lock release after the kills") { kubelet_inhibitors.empty? }
     order = @runtime.stopped.map(&:first)
+
     assert_equal "p-low", order.first
     assert_equal %w[p-between p-medium], order[1, 2].sort, "5000 falls in the 1000 group"
     assert_equal %w[p-high p-critical], order.last(2)
@@ -206,6 +223,7 @@ class NodeShutdownPrivateBusTest < Minitest::Test
 
     @service.prepare_for_shutdown(true)
     wait_for("the lock release after the kills") { kubelet_inhibitors.empty? }
+
     assert_equal({"app" => 20}, stops_by_container)
   end
 
@@ -215,18 +233,23 @@ class NodeShutdownPrivateBusTest < Minitest::Test
       SM::Logind.stub(:new, ->(*) { flunk "the shutdown manager contacted logind with #{shutdown.inspect}" }) do
         agent = Node::Agent.new(node_name: "node-s", api: API.new, lifecycle: @lifecycle, sync_loop: Loop.new, sleeper: ->(_) {},
                                 capacity: {"cpu" => "4", "memory" => "8Gi", "pods" => "110"}, shutdown: shutdown)
+
         assert_nil agent.shutdown_manager, "upstream default shutdownGracePeriod 0 = no manager (#{shutdown.inspect})"
         agent.start
         agent.stop
       end
     end
-    assert_nil Node::Agent.new(node_name: "node-s", api: API.new, lifecycle: @lifecycle, sync_loop: Loop.new, sleeper: ->(_) {}).shutdown_manager
+
+    assert_nil Node::Agent.new(node_name: "node-s", api: API.new, lifecycle: @lifecycle, sync_loop: Loop.new, sleeper: lambda { |_|
+    }).shutdown_manager
     assert_empty @service.inhibitors
-    refute File.exist?(@conf_dir)
+    refute_path_exists @conf_dir
     calls = []
     calls << @service.calls.pop until @service.calls.empty?
+
     assert_empty calls, "nothing reached the (private) logind"
   end
+
   # Ubuntu's unattended-upgrades ships logind.conf.d/unattended-upgrades-
   # logind-maxdelay.conf (InhibitDelayMaxSec=30); drop-ins apply in name
   # order, so it overrides 99-kubelet.conf and the delay never rises.  As
@@ -244,19 +267,22 @@ class NodeShutdownPrivateBusTest < Minitest::Test
                              shutdown: {"grace_period" => "45s", "grace_period_critical_pods" => "15s"},
                              error_handler: ->(error, during) { errors << [error.message, during] })
     @agent.start
+
     assert_equal false, @agent.shutdown_manager.start
-    assert_equal [["Failed to start node shutdown manager: node shutdown manager was timed out after 5 attempts waiting for " \
+    assert_equal([["Failed to start node shutdown manager: node shutdown manager was timed out after 5 attempts waiting for " \
                    "logind InhibitDelayMaxSec to update to 45s (ShutdownGracePeriod), current value is 30s", :shutdown_manager]],
-                 errors.select { |_, during| during == :shutdown_manager }
+                 errors.select { |_, during| during == :shutdown_manager })
     assert File.file?(File.join(@conf_dir, "99-kubelet.conf"))
     sleep 1.5
+
     assert_equal 2, @service.reloads, "the test's own reload and the manager's one -- no retry"
     assert_empty kubelet_inhibitors
     assert_equal "True", ready_condition["status"]
 
     @agent.stop
     @agent = nil
-    refute File.exist?(File.join(@conf_dir, "99-kubelet.conf"))
+
+    refute_path_exists File.join(@conf_dir, "99-kubelet.conf")
     assert File.file?(File.join(@conf_dir, "unattended-upgrades-logind-maxdelay.conf"))
     assert_equal 3, @service.reloads
   end

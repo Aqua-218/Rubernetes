@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
-
 require_relative "status"
 
 module Rubernetes
@@ -23,6 +21,7 @@ module Rubernetes
                      error_handler: nil, auto_start: true, idle_timeout: DEFAULT_IDLE_TIMEOUT, on_idle: nil, &block)
         @pod_uid = (identifier || pod_uid || key).to_s
         raise ArgumentError, "pod_uid is required" if @pod_uid.empty?
+
         @reconcile = reconcile || block
         raise ArgumentError, "reconcile callback is required" unless @reconcile
 
@@ -30,6 +29,7 @@ module Rubernetes
         @error_handler = error_handler
         @idle_timeout = idle_timeout.nil? ? nil : Float(idle_timeout)
         raise ArgumentError, "idle_timeout must be positive" if @idle_timeout && !@idle_timeout.positive?
+
         @on_idle = on_idle
         @queue = Queue.new
         @mutex = Mutex.new
@@ -51,20 +51,20 @@ module Rubernetes
       def start
         @mutex.synchronize do
           return self if @thread&.alive?
-          raise RuntimeError, "PodWorker is stopping" if @stopping
+          raise "PodWorker is stopping" if @stopping
 
           @thread = Thread.new { run_loop }
         end
         self
       end
 
-      def enqueue(pod, action: nil, request_id: nil, **options)
+      def enqueue(pod, action: nil, request_id: nil, **_options)
         task = Task.new(
           pod: Helpers.immutable(pod),
           action: action || Helpers.key(pod, "event", "SYNC"),
           request_id: request_id || Helpers.key(Helpers.key(pod, "metadata", {}), "resourceVersion", nil)
         ).freeze
-        @mutex.synchronize { raise RuntimeError, "PodWorker is stopped" if @stopping }
+        @mutex.synchronize { raise "PodWorker is stopped" if @stopping }
         # kubelet's pod worker keeps ONE pending update per Pod and replaces it
         # with the newest one (pkg/kubelet/pod_workers.go pendingUpdate): a
         # sync that arrives while the previous one is still running describes
@@ -148,11 +148,12 @@ module Rubernetes
       end
 
       def drain(timeout: nil)
-        deadline = timeout && Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout.to_f
+        deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout.to_f)
         @mutex.synchronize do
           loop do
             break if @queue.empty? && @pending.nil? && !@active
-            remaining = deadline && deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+            remaining = deadline && (deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC))
             return false if remaining && remaining <= 0
 
             @condition.wait(@mutex, remaining)
@@ -162,7 +163,7 @@ module Rubernetes
       end
 
       def running?
-        @mutex.synchronize { !!(@thread&.alive?) }
+        @mutex.synchronize { !!@thread&.alive? }
       end
 
       def busy?
@@ -255,13 +256,11 @@ module Rubernetes
       end
 
       def invoke_reconcile(task)
-        begin
-          @reconcile.call(task.pod, action: task.action, request_id: task.request_id)
-        rescue ArgumentError => error
-          raise unless error.message.include?("wrong number") || error.message.include?("unknown keyword")
+        @reconcile.call(task.pod, action: task.action, request_id: task.request_id)
+      rescue ArgumentError => error
+        raise unless error.message.include?("wrong number") || error.message.include?("unknown keyword")
 
-          @reconcile.call(task.pod)
-        end
+        @reconcile.call(task.pod)
       end
 
       def drain_queue
@@ -284,6 +283,7 @@ module Rubernetes
                      auto_start: true, idle_timeout: PodWorker::DEFAULT_IDLE_TIMEOUT, &block)
         @reconcile = reconcile || block
         raise ArgumentError, "reconcile callback is required" unless @reconcile || worker_factory
+
         @worker_factory = worker_factory
         @error_handler = error_handler
         @auto_start = auto_start
@@ -333,7 +333,7 @@ module Rubernetes
 
       def drain(timeout: nil)
         workers = @mutex.synchronize { @workers.values.dup }
-        deadline = timeout && Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout.to_f
+        deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout.to_f)
         workers.all? do |worker|
           remaining = deadline && [deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC), 0].max
           worker.drain(timeout: remaining)

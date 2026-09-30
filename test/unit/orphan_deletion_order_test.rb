@@ -32,17 +32,17 @@ class OrphanDeletionOrderTest < Minitest::Test
     # The mechanism does not depend on the owner's kind; the minimal registry
     # serves ConfigMaps, so one stands in for the ReplicationController.
     owner = call("POST", "/api/v1/namespaces/dev/configmaps", {
-      "apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "owner"}
-    }).body
+                   "apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "owner"}
+                 }).body
     @owner_uid = owner.dig("metadata", "uid")
     2.times do |index|
       call("POST", "/api/v1/namespaces/dev/pods", {
-        "apiVersion" => "v1", "kind" => "Pod",
-        "metadata" => {"name" => "p#{index}", "labels" => {"app" => "a"},
-                       "ownerReferences" => [{"apiVersion" => "v1", "kind" => "ConfigMap",
-                                              "name" => "owner", "uid" => @owner_uid, "controller" => true}]},
-        "spec" => {"containers" => [{"name" => "c", "image" => "i"}]}
-      })
+             "apiVersion" => "v1", "kind" => "Pod",
+             "metadata" => {"name" => "p#{index}", "labels" => {"app" => "a"},
+                            "ownerReferences" => [{"apiVersion" => "v1", "kind" => "ConfigMap",
+                                                   "name" => "owner", "uid" => @owner_uid, "controller" => true}]},
+             "spec" => {"containers" => [{"name" => "c", "image" => "i"}]}
+           })
     end
     @store.writes&.clear
   end
@@ -62,6 +62,7 @@ class OrphanDeletionOrderTest < Minitest::Test
     assert_includes [200, 202], response.status
     owner_mark = @store.writes.index { |kind, _name, deleting, _refs| kind == "ConfigMap" && deleting }
     first_release = @store.writes.index { |kind, _name, _deleting, refs| kind == "Pod" && refs.zero? }
+
     refute_nil owner_mark, "the owner must be marked as being deleted"
     refute_nil first_release, "the dependents must be released"
     assert_operator owner_mark, :<, first_release, "the owner is marked first, so adoption guards refuse"
@@ -92,6 +93,7 @@ class OrphanDeletionOrderTest < Minitest::Test
     orphan_delete
 
     pods = call("GET", "/api/v1/namespaces/dev/pods").body.fetch("items")
+
     assert_equal %w[p0 p1], pods.map { |pod| pod.dig("metadata", "name") }.sort
     assert(pods.all? { |pod| Array(pod.dig("metadata", "ownerReferences")).empty? })
     assert_equal 404, call("GET", "/api/v1/namespaces/dev/configmaps/owner").status

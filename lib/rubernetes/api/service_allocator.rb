@@ -20,7 +20,7 @@ module Rubernetes
     # the Services themselves under one allocator lock.
     class ServiceAllocator
       DEFAULT_SERVICE_CIDRS = ["10.96.0.0/12"].freeze
-      DEFAULT_NODE_PORT_RANGE = (30_000..32_767).freeze
+      DEFAULT_NODE_PORT_RANGE = (30_000..32_767)
       MANAGED_BY_LABEL = "ipaddress.kubernetes.io/managed-by"
       MANAGED_BY = "ipallocator.kubernetes.io"
       DEFAULT_SERVICE_CIDR_NAME = "kubernetes"
@@ -41,7 +41,13 @@ module Rubernetes
         @service_cidrs = Array(service_cidrs).map { |cidr| IPAddr.new(String(cidr)) }.freeze
         raise ArgumentError, "at least one service CIDR is required" if @service_cidrs.empty?
 
-        @node_port_range = node_port_range.is_a?(Range) ? node_port_range : Range.new(*Array(node_port_range).map { |value| Integer(value) })
+        @node_port_range = if node_port_range.is_a?(Range)
+                             node_port_range
+                           else
+                             Range.new(*Array(node_port_range).map do |value|
+                               Integer(value)
+                             end)
+                           end
         @clock = clock
         @mutex = Mutex.new
       end
@@ -176,7 +182,13 @@ module Rubernetes
       end
 
       def collect_allocation_gauges(metrics)
-        addresses = ipaddress_resource ? Array(@store.list(resource: ipaddress_resource, namespace: :cluster, selectors: nil).then { |r| r.respond_to?(:items) ? r.items : r }) : []
+        addresses = if ipaddress_resource
+                      Array(@store.list(resource: ipaddress_resource, namespace: :cluster, selectors: nil).then do |r|
+                              r.respond_to?(:items) ? r.items : r
+                            end)
+                    else
+                      []
+                    end
         @service_cidrs.each do |cidr|
           used = addresses.count do |address|
             IPAddr.new(address.dig("metadata", "name").to_s).then { |ip| cidr.include?(ip) }
@@ -255,7 +267,9 @@ module Rubernetes
         preserve_allocations(service, existing)
         drop_type_dependent_fields(service, existing)
         allocate_cluster_ips!(service) if needs_cluster_ip?(service) && Array(service.dig("spec", "clusterIPs")).empty?
-        release_cluster_ips!(existing) if !needs_cluster_ip?(service) && needs_cluster_ip?(existing) && headless?(service) == false && external_name?(service)
+        if !needs_cluster_ip?(service) && needs_cluster_ip?(existing) && headless?(service) == false && external_name?(service)
+          release_cluster_ips!(existing)
+        end
         allocate_node_ports!(service, existing: existing)
         service
       end
@@ -546,7 +560,9 @@ module Rubernetes
         # usable address (the network address + 1).
         first = cidr.to_i + 1 + offset
         last = cidr.to_i + size - (cidr.ipv4? ? 2 : 1)
-        raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.clusterIPs: Invalid value: []: failed to allocate a serviceIP: range is full") if last < first
+        if last < first
+          raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.clusterIPs: Invalid value: []: failed to allocate a serviceIP: range is full")
+        end
 
         span = last - first + 1
         start = SecureRandom.random_number(span)
@@ -640,7 +656,8 @@ module Rubernetes
           if spec["type"] == "LoadBalancer" && spec["externalTrafficPolicy"] == "Local"
             if spec["healthCheckNodePort"].to_i.zero?
               spec["healthCheckNodePort"] = next_free_port(used, service)
-            elsif used.include?(spec["healthCheckNodePort"].to_i) && spec["healthCheckNodePort"].to_i != (existing && existing.dig("spec", "healthCheckNodePort")).to_i
+            elsif used.include?(spec["healthCheckNodePort"].to_i) && spec["healthCheckNodePort"].to_i != (existing && existing.dig("spec",
+                                                                                                                                   "healthCheckNodePort")).to_i
               raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.healthCheckNodePort: Invalid value: #{spec["healthCheckNodePort"]}: provided port is already allocated",
                                         details: {"kind" => "Service", "name" => name_of(service)})
             end

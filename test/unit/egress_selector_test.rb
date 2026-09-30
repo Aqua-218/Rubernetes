@@ -21,7 +21,10 @@ class EgressSelectorTest < Minitest::Test
         client = server.accept
         Thread.new(client) do |io|
           request_line = io.gets
-          loop { line = io.gets; break if line.nil? || line.strip.empty? }
+          loop do
+            line = io.gets
+            break if line.nil? || line.strip.empty?
+          end
           body = "origin saw #{request_line.to_s.split.first(2).join(" ")}"
           io.write("HTTP/1.1 200 OK\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
           io.close
@@ -42,7 +45,10 @@ class EgressSelectorTest < Minitest::Test
         client = listener.accept
         Thread.new(client) do |io|
           request_line = io.gets
-          loop { line = io.gets; break if line.nil? || line.strip.empty? }
+          loop do
+            line = io.gets
+            break if line.nil? || line.strip.empty?
+          end
           target = request_line.to_s.split[1].to_s
           seen << target
           host, port = target.rpartition(":").values_at(0, 2)
@@ -59,17 +65,33 @@ class EgressSelectorTest < Minitest::Test
           rescue StandardError
             nil
           ensure
-            io.shutdown(Socket::SHUT_WR) rescue nil
+            begin
+              io.shutdown(Socket::SHUT_WR)
+            rescue StandardError
+              nil
+            end
           end
           begin
             loop { upstream.write(io.readpartial(65_536)) }
           rescue StandardError
             nil
           end
-          upstream.shutdown(Socket::SHUT_WR) rescue nil
+          begin
+            upstream.shutdown(Socket::SHUT_WR)
+          rescue StandardError
+            nil
+          end
           pump.join(2)
-          upstream.close rescue nil
-          io.close rescue nil
+          begin
+            upstream.close
+          rescue StandardError
+            nil
+          end
+          begin
+            io.close
+          rescue StandardError
+            nil
+          end
         end
       end
     rescue IOError, Errno::EBADF
@@ -106,24 +128,31 @@ class EgressSelectorTest < Minitest::Test
       uds = Egress::Dialer.new(protocol: "HTTPConnect", transport: "uds", uds_name: uds_path)
       socket = uds.dial("127.0.0.1", origin_port)
       socket.write("GET /via-uds HTTP/1.1\r\nHost: x\r\n\r\n")
-      assert_match(/origin saw GET \/via-uds/, socket.read)
+
+      assert_match(%r{origin saw GET /via-uds}, socket.read)
       socket.close
+
       assert_equal ["127.0.0.1:#{origin_port}"], uds_seen
 
       selector = Egress::Selector.from_h({"apiVersion" => "apiserver.k8s.io/v1beta1", "kind" => "EgressSelectorConfiguration",
                                           "egressSelections" => [{"name" => "cluster", "connection" => {"proxyProtocol" => "HTTPConnect", "transport" => {"uds" => {"udsName" => uds_path}}}},
-                                                                 {"name" => "controlplane", "connection" => {"proxyProtocol" => "Direct"}}]})
+                                                                 {"name" => "controlplane",
+                                                                  "connection" => {"proxyProtocol" => "Direct"}}]})
       Egress.selector = selector
+
       assert_nil Egress.dialer("controlplane")
       assert_nil Egress.dialer("etcd")
       http = Egress.http(URI("http://127.0.0.1:#{origin_port}/x"), "cluster")
+
       assert_kind_of Egress::ProxiedHTTP, http
       response = http.start { |connection| connection.get("/through-selector") }
+
       assert_equal "200", response.code
-      assert_match(/origin saw GET \/through-selector/, response.body)
+      assert_match(%r{origin saw GET /through-selector}, response.body)
       assert_kind_of Net::HTTP, Egress.http(URI("http://127.0.0.1:#{origin_port}/x"), "controlplane")
       refute_kind_of Egress::ProxiedHTTP, Egress.http(URI("http://127.0.0.1:#{origin_port}/x"), "controlplane")
       raw = Egress.tcp_socket("127.0.0.1", origin_port, "cluster")
+
       assert_equal Socket::AF_UNIX, raw.local_address.afamily, "the tunnel is the proxy connection"
       raw.close
 
@@ -131,8 +160,10 @@ class EgressSelectorTest < Minitest::Test
       tcp = Egress::Dialer.new(protocol: "HTTPConnect", transport: "tcp", proxy_address: "127.0.0.1:#{tcp_listener.addr[1]}")
       socket = tcp.dial("127.0.0.1", origin_port)
       socket.write("GET /via-tcp HTTP/1.1\r\nHost: x\r\n\r\n")
-      assert_match(/origin saw GET \/via-tcp/, socket.read)
+
+      assert_match(%r{origin saw GET /via-tcp}, socket.read)
       socket.close
+
       assert_equal ["127.0.0.1:#{origin_port}"], tcp_seen
 
       # Failure stages: the proxy refusing (proxy) and no proxy at all (connect).
@@ -142,13 +173,18 @@ class EgressSelectorTest < Minitest::Test
       assert_raises(Egress::DialError) { gone.dial("127.0.0.1", origin_port) }
 
       text = @metrics.render_own
+
       assert_match(/apiserver_egress_dialer_dial_start_total\{protocol="http-connect",transport="uds"\} 5/, text)
       assert_match(/apiserver_egress_dialer_dial_start_total\{protocol="http-connect",transport="tcp"\} 1/, text)
       assert_match(/apiserver_egress_dialer_dial_duration_seconds_count\{protocol="http-connect",transport="uds"\} 3/, text)
       assert_match(/apiserver_egress_dialer_dial_failure_count\{protocol="http-connect",stage="proxy",transport="uds"\} 1/, text)
       assert_match(/apiserver_egress_dialer_dial_failure_count\{protocol="http-connect",stage="connect",transport="uds"\} 1/, text)
     ensure
-      [origin, uds_listener, tcp_listener].compact.each { |listener| listener.close rescue nil }
+      [origin, uds_listener, tcp_listener].compact.each do |listener|
+        listener.close
+      rescue StandardError
+        nil
+      end
       [origin_thread, uds_thread, tcp_thread].compact.each { |thread| thread.kill }
     end
   end
@@ -160,14 +196,28 @@ class EgressSelectorTest < Minitest::Test
     end
     base = {"apiVersion" => "apiserver.k8s.io/v1beta1", "kind" => "EgressSelectorConfiguration"}
     invalid.call(base.merge("kind" => "Other", "egressSelections" => []), /kind must be EgressSelectorConfiguration/)
-    invalid.call(base.merge("egressSelections" => [{"name" => "kubelet", "connection" => {"proxyProtocol" => "Direct"}}]), /unrecognized service name/)
+    invalid.call(base.merge("egressSelections" => [{"name" => "kubelet", "connection" => {"proxyProtocol" => "Direct"}}]),
+                 /unrecognized service name/)
     invalid.call(base.merge("egressSelections" => [{"name" => "cluster", "connection" => {"proxyProtocol" => "Direct"}},
-                                                    {"name" => "cluster", "connection" => {"proxyProtocol" => "Direct"}}]), /Duplicate value/)
-    invalid.call(base.merge("egressSelections" => [{"name" => "cluster", "connection" => {"proxyProtocol" => "Magic"}}]), /unrecognized service connection protocol/)
-    invalid.call(base.merge("egressSelections" => [{"name" => "cluster", "connection" => {"proxyProtocol" => "HTTPConnect"}}]), /Either a TCP or UDS transport/)
-    invalid.call(base.merge("egressSelections" => [{"name" => "cluster", "connection" => {"proxyProtocol" => "HTTPConnect", "transport" => {"tcp" => {"url" => "https://proxy:8131"}}}}]), /tlsConfig: Required value/)
-    invalid.call(base.merge("egressSelections" => [{"name" => "cluster", "connection" => {"proxyProtocol" => "GRPC", "transport" => {"uds" => {"udsName" => "/run/k.sock"}}}}]), /GRPC.*not supported/)
-    direct = Egress::Selector.from_h(base.merge("egressSelections" => [{"name" => "cluster", "connection" => {"proxyProtocol" => "Direct"}}]))
+                                                   {"name" => "cluster",
+                                                    "connection" => {"proxyProtocol" => "Direct"}}]), /Duplicate value/)
+    invalid.call(base.merge("egressSelections" => [{"name" => "cluster", "connection" => {"proxyProtocol" => "Magic"}}]),
+                 /unrecognized service connection protocol/)
+    invalid.call(base.merge("egressSelections" => [{"name" => "cluster", "connection" => {"proxyProtocol" => "HTTPConnect"}}]),
+                 /Either a TCP or UDS transport/)
+    invalid.call(
+      base.merge("egressSelections" => [{"name" => "cluster",
+                                         "connection" => {"proxyProtocol" => "HTTPConnect",
+                                                          "transport" => {"tcp" => {"url" => "https://proxy:8131"}}}}]), /tlsConfig: Required value/
+    )
+    invalid.call(
+      base.merge("egressSelections" => [{"name" => "cluster",
+                                         "connection" => {"proxyProtocol" => "GRPC",
+                                                          "transport" => {"uds" => {"udsName" => "/run/k.sock"}}}}]), /GRPC.*not supported/
+    )
+    direct = Egress::Selector.from_h(base.merge("egressSelections" => [{"name" => "cluster",
+                                                                        "connection" => {"proxyProtocol" => "Direct"}}]))
+
     assert_nil direct.dialer("cluster")
     Dir.mktmpdir do |dir|
       key = OpenSSL::PKey::RSA.new(2048)
@@ -184,8 +234,12 @@ class EgressSelectorTest < Minitest::Test
       File.write(File.join(dir, "ca.crt"), cert.to_pem)
       selector = Egress::Selector.from_h(base.merge("egressSelections" => [{"name" => "cluster", "connection" => {"proxyProtocol" => "HTTPConnect",
                                                                                                                   "transport" => {"tcp" => {"url" => "https://proxy.example:8131",
-                                                                                                                                            "tlsConfig" => {"caBundle" => File.join(dir, "ca.crt"), "clientCert" => File.join(dir, "c.crt"), "clientKey" => File.join(dir, "c.key"), "tlsServerName" => "proxy"}}}}}]))
+                                                                                                                                            "tlsConfig" => {
+                                                                                                                                              "caBundle" => File.join(dir,
+                                                                                                                                                                      "ca.crt"), "clientCert" => File.join(dir, "c.crt"), "clientKey" => File.join(dir, "c.key"), "tlsServerName" => "proxy"
+                                                                                                                                            }}}}}]))
       dialer = selector.dialer("cluster")
+
       assert_equal "proxy.example:8131", dialer.proxy_address
       assert_equal "tcp", dialer.transport
       assert_equal "http-connect", dialer.metric_protocol

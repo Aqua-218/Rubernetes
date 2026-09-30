@@ -12,11 +12,13 @@ class PodsController < ApplicationController
   def show
     @pod = client.get("pods", params[:id], namespace: @namespace)
     @events = Array(client.get("events", namespace: @namespace,
-                               query: {"fieldSelector" => "involvedObject.name=#{params[:id]},involvedObject.kind=Pod"})["items"])
-              .sort_by { |e| e["lastTimestamp"] || "" }.reverse
+                                         query: {"fieldSelector" => "involvedObject.name=#{params[:id]},involvedObject.kind=Pod"})["items"])
+      .sort_by { |e| e["lastTimestamp"] || "" }.reverse
     @containers = Array(@pod.dig("spec", "initContainers")).map { |c| c.merge("_kind" => "init") } +
                   Array(@pod.dig("spec", "containers")).map { |c| c.merge("_kind" => "app") }
-    @statuses = (Array(@pod.dig("status", "initContainerStatuses")) + Array(@pod.dig("status", "containerStatuses"))).to_h { |s| [s["name"], s] }
+    @statuses = (Array(@pod.dig("status", "initContainerStatuses")) + Array(@pod.dig("status", "containerStatuses"))).to_h do |s|
+      [s["name"], s]
+    end
     @yaml = @pod.to_yaml
     @usage = container_usage
   end

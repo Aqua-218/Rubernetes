@@ -72,6 +72,7 @@ class VAPCreateValidationTest < Minitest::Test
       cause = issue.to_cause(mutating)
       "#{cause["field"]}: #{cause["message"]}"
     end
+
     assert_equal ["spec.mutations[1].applyConfiguration.expression: Invalid value: \"{'a': 1}\": must evaluate to Object but got map(string, int)",
                   "spec.mutations[2].jsonPatch.expression: Invalid value: \"[JSONPatch{op: 1, path: '/a'}]\": compilation failed: ERROR: <input>:1:14: " \
                   "expected type of field 'op' is 'string' but provided type is 'int'\n | [JSONPatch{op: 1, path: '/a'}]\n | .............^",

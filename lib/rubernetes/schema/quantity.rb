@@ -57,9 +57,7 @@ module Rubernetes
         base, exponent, format = interpret_suffix(suffix)
         digits = num + denom
         scale = -denom.length
-        if base == 10
-          scale += exponent
-        end
+        scale += exponent if base == 10
         magnitude = Integer(digits, 10)
         rational = Rational(magnitude, 1) * (10r**scale)
         rational *= (2r**exponent) if base == 2
@@ -124,12 +122,12 @@ module Rubernetes
         @original || canonical
       end
 
-      def to_json(*args)
-        to_s.to_json(*args)
+      def to_json(*)
+        to_s.to_json(*)
       end
 
       def inspect
-        "#<Rubernetes::Schema::Quantity #{to_s}>"
+        "#<Rubernetes::Schema::Quantity #{self}>"
       end
 
       # Quantity.CanonicalizeBytes: number and suffix of the canonical form.
@@ -271,7 +269,7 @@ module Rubernetes
 
         # ParseQuantity keeps the caller's spelling only on its int64 fast
         # path and only when that spelling is already canonical.
-        def keep_original?(positive, num, denom, base, exponent, format, magnitude, digits)
+        def keep_original?(_positive, num, denom, base, exponent, format, magnitude, digits)
           precision = if format == :binary_si
                         exponent >= 0 && denom.empty? ? 15 - num.length - (exponent * 3 / 10) - 1 : -1
                       else

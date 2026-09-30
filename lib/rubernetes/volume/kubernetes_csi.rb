@@ -118,6 +118,7 @@ module Rubernetes
           if status["attached"] == true
             return {"volumeId" => id.to_s, "node" => node.to_s, "publishContext" => (status["attachmentMetadata"] || {}).to_h}
           end
+
           error = status.dig("attachError", "message")
           if @clock.call >= deadline
             detail = error ? ": #{error}" : ""
@@ -128,7 +129,7 @@ module Rubernetes
         end
       end
 
-      def unpublish(id, node, token: nil, context: {})
+      def unpublish(_id, _node, token: nil, context: {})
         {}
       end
 
@@ -308,7 +309,8 @@ module Rubernetes
           audience = request["audience"].to_s
           body = {"apiVersion" => "authentication.k8s.io/v1", "kind" => "TokenRequest",
                   "spec" => {"audiences" => audience.empty? ? [] : [audience],
-                             "boundObjectRef" => {"apiVersion" => "v1", "kind" => "Pod", "name" => metadata["name"], "uid" => metadata["uid"]}}}
+                             "boundObjectRef" => {"apiVersion" => "v1", "kind" => "Pod", "name" => metadata["name"],
+                                                  "uid" => metadata["uid"]}}}
           body["spec"]["expirationSeconds"] = Integer(request["expirationSeconds"]) if request["expirationSeconds"]
           status = (@api.create_token(metadata["namespace"].to_s, service_account(pod), body) || {})["status"] || {}
           [audience, {"token" => status["token"].to_s, "expirationTimestamp" => status["expirationTimestamp"].to_s}]

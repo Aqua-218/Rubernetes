@@ -56,11 +56,11 @@ module M7KVMProbe
       "stop_errors" => errors, "residue" => residue,
       "sandbox_state" => S.operation_state(runtime, pod["sandbox"]), "container_final_state" => S.operation_state(runtime, pod["container"]),
       "passed" => status["state"] == "Running" && logs.include?("m7-ready") && exec_output.include?("exec-ok") && stream.exit_code == 7 &&
-                  stats.is_a?(Hash) && !stats["stats"].nil? && reachable && errors.empty? && S.residue_clean?(residue) &&
-                  confinement["cap_eff"].to_i(16).zero? && confinement["seccomp"] == "2" && confinement["no_new_privs"] == "1" &&
-                  confinement["root_inode"] == confinement["chroot_inode"] && confinement["nspid"].last == "1" &&
-                  hello["isolation_profile"] == "l3" && (!expect_base || !session.base.nil?) &&
-                  S.operation_state(runtime, pod["sandbox"]) == "Removed" && S.operation_state(runtime, pod["container"]) == "Removed"
+        stats.is_a?(Hash) && !stats["stats"].nil? && reachable && errors.empty? && S.residue_clean?(residue) &&
+        confinement["cap_eff"].to_i(16).zero? && confinement["seccomp"] == "2" && confinement["no_new_privs"] == "1" &&
+        confinement["root_inode"] == confinement["chroot_inode"] && confinement["nspid"].last == "1" &&
+        hello["isolation_profile"] == "l3" && (!expect_base || !session.base.nil?) &&
+        S.operation_state(runtime, pod["sandbox"]) == "Removed" && S.operation_state(runtime, pod["container"]) == "Removed"
     }
   end
 
@@ -71,7 +71,9 @@ module M7KVMProbe
     mux = Rubernetes::Runtime::Multiplexer.new(backends: {"rubernetes-native" => native, "rubernetes-firecracker" => runtime})
     resolver = ->(pod) { Rubernetes::Runtime::MicroVMRuntimeClasses.handler_table.fetch(pod.dig("spec", "runtimeClassName")) }
     net = Object.new
-    net.define_singleton_method(:add) { |sandbox, _pod| network.attach(runtime, sandbox.is_a?(Hash) ? sandbox["sandbox_id"] : sandbox.to_s) }
+    net.define_singleton_method(:add) do |sandbox, _pod|
+      network.attach(runtime, sandbox.is_a?(Hash) ? sandbox["sandbox_id"] : sandbox.to_s)
+    end
     net.define_singleton_method(:delete) { |sandbox| network.detach(sandbox.is_a?(Hash) ? sandbox["sandbox_id"] : sandbox.to_s) }
     volume = Object.new
     volume.define_singleton_method(:prepare) { |_pod| "volume-m7" }
@@ -81,7 +83,7 @@ module M7KVMProbe
                                                 sleeper: ->(_seconds) {})
     pod = {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "m7-node-lifecycle", "namespace" => "default", "uid" => "m7-node-lifecycle"},
            "spec" => {"runtimeClassName" => "microvm", "containers" => [{"name" => "app", "image" => image.reference,
-                                                                          "command" => ["/bin/busybox", "sh", "-c", "echo node-lifecycle-ok; while :; do /bin/busybox sleep 1; done"]}]}}
+                                                                         "command" => ["/bin/busybox", "sh", "-c", "echo node-lifecycle-ok; while :; do /bin/busybox sleep 1; done"]}]}}
     started = lifecycle.start(pod)
     record_state = started.respond_to?(:phase) ? started.phase : started.to_s
     finished = lifecycle.terminate(pod)
@@ -89,7 +91,8 @@ module M7KVMProbe
      "runtime_handler" => "rubernetes-firecracker", "lifecycle_class" => lifecycle.class.name, "multiplexer_handlers" => mux.handlers,
      "passed" => record_state == "Running" && finished.state == "Removed"}
   rescue StandardError => error
-    {"id" => "node_lifecycle_contract", "error" => "#{error.class}: #{error.message}", "backtrace" => error.backtrace.first(6), "passed" => false}
+    {"id" => "node_lifecycle_contract", "error" => "#{error.class}: #{error.message}", "backtrace" => error.backtrace.first(6),
+     "passed" => false}
   end
 
   def fault_jailer_kill(runtime, network)
@@ -166,7 +169,8 @@ module M7KVMProbe
   end
 
   def fault_vsock_disconnect(runtime, network)
-    pod = S.start_pod(runtime, network, "fault-vsock", command: ["/bin/busybox", "sh", "-c", "trap '' TERM; while :; do /bin/busybox sleep 1; done"])
+    pod = S.start_pod(runtime, network, "fault-vsock",
+                      command: ["/bin/busybox", "sh", "-c", "trap '' TERM; while :; do /bin/busybox sleep 1; done"])
     session = pod["session"]
     # Drop the guest vsock connection, then issue a stop that must observe
     # the disconnect (the guest ignores SIGTERM, so the RPC is what fails).
@@ -195,10 +199,13 @@ module M7KVMProbe
   def fault_pause_ack_loss(runtime)
     adapter = runtime.adapter
     ledger = runtime.identity_ledger
-    identity = ledger.allocate(sandbox_id: "pause-loss", runtime_class: runtime.runtime_class, artifact_digest: S.artifacts.digest, policy_digest: "probe")
+    identity = ledger.allocate(sandbox_id: "pause-loss", runtime_class: runtime.runtime_class, artifact_digest: S.artifacts.digest,
+                               policy_digest: "probe")
     session = M::VMSession.new(sandbox_id: "pause-loss", identity: identity, artifacts: S.artifacts, jailer: adapter.instance_variable_get(:@jailer),
                                verity: adapter.instance_variable_get(:@verity), netns: adapter.instance_variable_get(:@netns), disks: adapter.instance_variable_get(:@disks),
-                               pool: runtime.snapshot_pool, broker: nil, clock: -> { Time.now.utc }, machine: {"vcpu_count" => 1, "mem_size_mib" => 256},
+                               pool: runtime.snapshot_pool, broker: nil, clock: lambda {
+                                                                           Time.now.utc
+                                                                         }, machine: {"vcpu_count" => 1, "mem_size_mib" => 256},
                                network_device: true, run_root: adapter.instance_variable_get(:@run_root))
     session.allocate_workspace(images: [], workspace_mib: 16)
     session.create_isolation(base: nil)
@@ -228,7 +235,9 @@ module M7KVMProbe
     S.require_root!
     cases = []
     verification = S.artifacts.verify!
-    cases << {"id" => "artifact_verification", "files" => verification.map { |entry| entry.slice("name", "sha256", "uid", "mode") }, "artifact_digest" => S.artifacts.digest,
+    cases << {"id" => "artifact_verification", "files" => verification.map do |entry|
+      entry.slice("name", "sha256", "uid", "mode")
+    end, "artifact_digest" => S.artifacts.digest,
               "firecracker_version" => S.artifacts.firecracker_version, "verity_root_hash" => S.artifacts.verity_root_hash, "passed" => verification.length >= 7}
     runtime, root = S.build_runtime("kvm", use_base_snapshot: false)
     network = S::ProbeNetwork.new(1)
@@ -250,8 +259,11 @@ module M7KVMProbe
       cases << fault_pause_ack_loss(runtime)
       cases << {"id" => "identity_reuse_after_faults", "report" => runtime.identity_ledger.reuse_report,
                 "live_identities" => runtime.identity_ledger.live.length,
-                "passed" => runtime.identity_ledger.reuse_report.values.sum { |entry| entry["reused"] }.zero? && runtime.identity_ledger.live.empty?}
-      cases << {"id" => "host_inventory_after_cleanup", "resources" => runtime.adapter.list_resources, "passed" => runtime.adapter.list_resources.empty?}
+                "passed" => runtime.identity_ledger.reuse_report.values.sum do |entry|
+                  entry["reused"]
+                end.zero? && runtime.identity_ledger.live.empty?}
+      cases << {"id" => "host_inventory_after_cleanup", "resources" => runtime.adapter.list_resources,
+                "passed" => runtime.adapter.list_resources.empty?}
     ensure
       network.detach_all
       S.cleanup_runtime_root(root)

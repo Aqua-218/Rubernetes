@@ -64,9 +64,14 @@ class NativeLateBindVisibilityTest < Minitest::Test
           runtime.start_container(container)
           text = +""
           Timeout.timeout(15) { text = runtime.logs(container).to_s until text.include?("\n") || (sleep(0.1) && false) }
+
           assert_equal "production: ok", text.strip, "the container read the late subPath bind, not the empty placeholder"
         ensure
-          mount.unmount(target: target, resource_id: "test:subpath-unbind") rescue nil
+          begin
+            mount.unmount(target: target, resource_id: "test:subpath-unbind")
+          rescue StandardError
+            nil
+          end
         end
       ensure
         begin

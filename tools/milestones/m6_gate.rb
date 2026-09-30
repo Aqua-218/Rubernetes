@@ -100,10 +100,15 @@ module M6Gate
       errors << "schema_version must be #{MANIFEST_SCHEMA_VERSION}" unless manifest["schema_version"] == MANIFEST_SCHEMA_VERSION
       errors << "milestone must be M6" unless manifest["milestone"] == "M6"
       errors << "input_sha256 must be a SHA-256 digest" unless valid_digest?(manifest["input_sha256"])
-      errors << "input_file_count must be positive" unless manifest["input_file_count"].is_a?(Integer) && manifest["input_file_count"].positive?
+      unless manifest["input_file_count"].is_a?(Integer) && manifest["input_file_count"].positive?
+        errors << "input_file_count must be positive"
+      end
       errors << "source input must remain stable during evidence capture" unless manifest["input_stable"] == true
       host = manifest["host"]
-      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel ruby].all? { |key| non_empty_string?(host[key]) }
+      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel
+                                                                                                             ruby].all? do |key|
+        non_empty_string?(host[key])
+      end
       errors << "M6 evidence must be captured on x86_64" unless host.is_a?(Hash) && host["architecture"] == "x86_64"
       %w[started_at finished_at].each { |key| errors << "#{key} must be an ISO-8601 timestamp" unless iso8601?(manifest[key]) }
       M4Gate.send(:validate_input_capture, manifest, errors)
@@ -141,7 +146,9 @@ module M6Gate
       valid.each do |entry|
         path = File.expand_path(entry.fetch("path"), PROJECT_ROOT)
         errors << "source inventory entry #{entry.fetch("path")} is missing" unless File.file?(path)
-        errors << "source inventory digest mismatch #{entry.fetch("path")}" if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+        if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+          errors << "source inventory digest mismatch #{entry.fetch("path")}"
+        end
       end
     end
 
@@ -210,7 +217,9 @@ module M6Gate
         end
         path = File.join(PROJECT_ROOT, entry["path"])
         errors << "#{name} source #{entry["path"]} is missing" unless File.file?(path)
-        errors << "#{name} source #{entry["path"]} digest does not match the source tree" if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+        if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+          errors << "#{name} source #{entry["path"]} digest does not match the source tree"
+        end
       end
     end
 
@@ -223,8 +232,12 @@ module M6Gate
       ORACLE_FIELDS.each { |field| errors << "#{name} oracle record is missing #{field}" if oracle[field].nil? }
       errors << "#{name} oracle must have executed" unless oracle["executed"] == true
       errors << "#{name} oracle must be the pinned v1.36.2 kube-apiserver" unless oracle["kubernetes_version"].to_s.start_with?("v1.36.2")
-      errors << "#{name} oracle must pin images by digest" unless %w[kube_apiserver_image etcd_image].all? { |key| oracle[key].to_s.include?("@sha256:") }
-      errors << "#{name} oracle must record container execution" unless oracle["container_execution"].is_a?(Array) && !oracle["container_execution"].empty?
+      errors << "#{name} oracle must pin images by digest" unless %w[kube_apiserver_image etcd_image].all? do |key|
+        oracle[key].to_s.include?("@sha256:")
+      end
+      return if oracle["container_execution"].is_a?(Array) && !oracle["container_execution"].empty?
+
+      errors << "#{name} oracle must record container execution"
     end
 
     def validate_differential_cases(name, cases, required, errors)
@@ -242,7 +255,9 @@ module M6Gate
       ids = cases.map { |entry| entry["id"] }
       API_COVERAGE_REQUIRED.each { |id| errors << "API coverage ledger is missing case #{id}" unless ids.include?(id) }
       discovery = cases.count { |entry| entry["id"].to_s.start_with?("discovery:") }
-      errors << "API coverage ledger must compare at least #{MIN_DISCOVERY_DOCUMENTS} discovery documents" unless discovery >= MIN_DISCOVERY_DOCUMENTS
+      unless discovery >= MIN_DISCOVERY_DOCUMENTS
+        errors << "API coverage ledger must compare at least #{MIN_DISCOVERY_DOCUMENTS} discovery documents"
+      end
       %w[discovery_missing_resources discovery_missing_verbs_or_fields].each do |id|
         entry = cases.find { |candidate| candidate["id"] == id }
         errors << "#{id} must list zero missing items" unless entry && Array(entry["missing"]).empty?
@@ -250,11 +265,17 @@ module M6Gate
       extra = cases.find { |entry| entry["id"] == "discovery_extra_resources" }
       errors << "discovery_extra_resources must list zero extra resources" unless extra && Array(extra["extra"]).empty?
       openapi = cases.find { |entry| entry["id"] == "openapi_operations" }
-      errors << "openapi_operations must cover at least #{MIN_UPSTREAM_OPENAPI_PATHS} upstream paths" unless openapi && openapi["upstream_paths"].to_i >= MIN_UPSTREAM_OPENAPI_PATHS
-      errors << "openapi_operations must report zero missing operations" unless openapi && openapi["missing_count"] == 0 && Array(openapi["missing"]).empty?
+      unless openapi && openapi["upstream_paths"].to_i >= MIN_UPSTREAM_OPENAPI_PATHS
+        errors << "openapi_operations must cover at least #{MIN_UPSTREAM_OPENAPI_PATHS} upstream paths"
+      end
+      unless openapi && openapi["missing_count"] == 0 && Array(openapi["missing"]).empty?
+        errors << "openapi_operations must report zero missing operations"
+      end
       protobuf = cases.find { |entry| entry["id"] == "protobuf_descriptors" }
       errors << "protobuf_descriptors must count the corpus messages" unless protobuf && protobuf["descriptor_messages"].to_i.positive?
-      errors << "API coverage ledger must record the upstream group/version count" unless document["upstream_group_versions"].to_i >= MIN_DISCOVERY_DOCUMENTS
+      return if document["upstream_group_versions"].to_i >= MIN_DISCOVERY_DOCUMENTS
+
+      errors << "API coverage ledger must record the upstream group/version count"
     end
 
     def validate_feature_gate(document, cases, errors)
@@ -268,9 +289,14 @@ module M6Gate
         errors << "#{id} must compare discovery documents" unless entry["documents_compared"].to_i >= MIN_DISCOVERY_DOCUMENTS
       end
       corpus = cases.find { |entry| entry["id"] == "gate_corpus" }
-      errors << "feature-gate matrix must record at least #{MIN_FEATURE_GATES} corpus gates" unless corpus && corpus["gate_count"].to_i >= MIN_FEATURE_GATES
+      unless corpus && corpus["gate_count"].to_i >= MIN_FEATURE_GATES
+        errors << "feature-gate matrix must record at least #{MIN_FEATURE_GATES} corpus gates"
+      end
       profiles = document["profiles"]
-      errors << "feature-gate matrix must describe the default, all-beta and alpha-apis profiles" unless profiles.is_a?(Hash) && %w[default all-beta alpha-apis].all? { |key| profiles.key?(key) }
+      errors << "feature-gate matrix must describe the default, all-beta and alpha-apis profiles" unless profiles.is_a?(Hash) && %w[default
+                                                                                                                                    all-beta alpha-apis].all? do |key|
+        profiles.key?(key)
+      end
     end
 
     def validate_crd(document, cases, errors)
@@ -279,18 +305,28 @@ module M6Gate
       validate_differential_cases("CRD/aggregation", cases, CRD_REQUIRED, errors)
       established = cases.find { |entry| entry["id"] == "get_crd_conditions" }
       conditions = established && established.dig("rubernetes", "conditions")
-      errors << "CRD differential must observe an Established CRD" unless conditions.is_a?(Array) && conditions.any? { |condition| condition["type"] == "Established" && condition["status"] == "True" }
+      errors << "CRD differential must observe an Established CRD" unless conditions.is_a?(Array) && conditions.any? do |condition|
+        condition["type"] == "Established" && condition["status"] == "True"
+      end
       unavailable = cases.find { |entry| entry["id"] == "aggregated_unavailable" }
-      errors << "aggregated_unavailable must observe 503 from both servers" unless unavailable && unavailable.dig("rubernetes", "status") == 503 && unavailable.dig("oracle", "status") == 503
+      errors << "aggregated_unavailable must observe 503 from both servers" unless unavailable && unavailable.dig("rubernetes",
+                                                                                                                  "status") == 503 && unavailable.dig(
+                                                                                                                    "oracle", "status"
+                                                                                                                  ) == 503
     end
 
     def validate_webhook(document, cases, errors)
       errors << "webhook differential must be differentially tested" unless document["measurement_level"] == "differentially_tested"
       validate_oracle("webhook", document, errors)
       validate_differential_cases("webhook", cases, WEBHOOK_REQUIRED, errors)
-      errors << "webhook differential must record the docker gateway used by the oracle" unless non_empty_string?(document["docker_gateway"])
+      unless non_empty_string?(document["docker_gateway"])
+        errors << "webhook differential must record the docker gateway used by the oracle"
+      end
       timeout = cases.find { |entry| entry["id"] == "timeout_fail_policy" }
-      errors << "timeout_fail_policy must observe a 500 InternalError on both servers" unless timeout && timeout.dig("rubernetes", "status") == 500 && timeout.dig("rubernetes", "reason") == "InternalError"
+      errors << "timeout_fail_policy must observe a 500 InternalError on both servers" unless timeout && timeout.dig("rubernetes",
+                                                                                                                     "status") == 500 && timeout.dig(
+                                                                                                                       "rubernetes", "reason"
+                                                                                                                     ) == "InternalError"
       ignore = cases.find { |entry| entry["id"] == "timeout_ignore_policy" }
       errors << "timeout_ignore_policy must observe a successful create" unless ignore && ignore.dig("rubernetes", "status") == 201
       reinvoke = cases.find { |entry| entry["id"] == "reinvocation_if_needed" }
@@ -302,9 +338,13 @@ module M6Gate
       ids = cases.map { |entry| entry["id"] }
       SECURITY_REQUIRED.each { |id| errors << "security pipeline trace is missing case #{id}" unless ids.include?(id) }
       order = cases.find { |entry| entry["id"] == "stage_order_create" }
-      errors << "stage_order_create must observe the specified stage order" unless order && order["observed"] == SECURITY_STAGE_ORDER && order["expected"] == SECURITY_STAGE_ORDER
+      unless order && order["observed"] == SECURITY_STAGE_ORDER && order["expected"] == SECURITY_STAGE_ORDER
+        errors << "stage_order_create must observe the specified stage order"
+      end
       unauthorized = cases.find { |entry| entry["id"] == "invalid_credentials_stop_at_authentication" }
-      errors << "invalid credentials must yield 401 with WWW-Authenticate" unless unauthorized && unauthorized["status"] == 401 && unauthorized["www_authenticate"] == "Bearer"
+      unless unauthorized && unauthorized["status"] == 401 && unauthorized["www_authenticate"] == "Bearer"
+        errors << "invalid credentials must yield 401 with WWW-Authenticate"
+      end
       forbidden = cases.find { |entry| entry["id"] == "unauthorized_user_stops_before_admission_and_store" }
       errors << "unauthorized principals must yield 403 before admission" unless forbidden && forbidden["status"] == 403
       hidden = cases.find { |entry| entry["id"] == "forbidden_before_not_found" }

@@ -47,7 +47,8 @@ module EndpointSliceFamilyDifferential
     spec = {"selector" => {"app" => "web"}, "ports" => [{"port" => 80}]}
     spec["ipFamilies"] = test_case["ipFamilies"] unless test_case["ipFamilies"].empty?
     spec["clusterIP"] = test_case["clusterIP"] unless test_case["clusterIP"].empty?
-    service = {"apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => test_case["name"], "namespace" => "ns", "uid" => "u"}, "spec" => spec}
+    service = {"apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => test_case["name"], "namespace" => "ns", "uid" => "u"},
+               "spec" => spec}
     pod = {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "p", "namespace" => "ns", "uid" => "p-u", "labels" => {"app" => "web"}},
            "spec" => {"nodeName" => "n"},
            "status" => {"podIP" => test_case["podIPs"].first, "podIPs" => test_case["podIPs"].map { |ip| {"ip" => ip} },

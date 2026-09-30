@@ -39,12 +39,14 @@ class NodeSystemLogsAndZPagesTest < Minitest::Test
 
   def test_the_directory_is_listed_and_files_served_as_http_file_server_does
     status, headers, listing = logs.call("")
+
     assert_equal 200, status
     assert_equal "text/html; charset=utf-8", headers["content-type"]
     assert_equal "<!doctype html>\n<meta name=\"viewport\" content=\"width=device-width\">\n<pre>\n" \
                  "<a href=\"kube-proxy.log\">kube-proxy.log</a>\n<a href=\"odd%20name%3F.log\">odd name?.log</a>\n" \
                  "<a href=\"pods/\">pods/</a>\n<a href=\"syslog\">syslog</a>\n</pre>\n", listing.join
     file = logs.call("syslog")
+
     assert_equal 200, file.status
     assert_equal "line one\nline two\n", body(file)
     assert_equal [301, "pods/"], logs.call("pods").values_at(0).push(logs.call("pods")[1]["location"])
@@ -58,7 +60,8 @@ class NodeSystemLogsAndZPagesTest < Minitest::Test
 
   def test_a_service_query_reads_the_journal_or_the_heuristic_file
     response = logs(query_enabled: true, units: "kubelet.service\nsshd.service\n")
-                 .call("", params: {"query" => ["kubelet"], "tailLines" => ["5"], "sinceTime" => ["2026-09-24T01:02:03Z"]})
+      .call("", params: {"query" => ["kubelet"], "tailLines" => ["5"], "sinceTime" => ["2026-09-24T01:02:03Z"]})
+
     assert_equal 200, response[0]
     assert_equal "journal lines\n", response[2].join
     assert_equal ["journalctl", "--utc", "--no-pager", "--output=short-precise", "--since=2026-9-24 1:2:3", "--pager-end", "--lines=5",
@@ -71,9 +74,13 @@ class NodeSystemLogsAndZPagesTest < Minitest::Test
 
   def test_query_validation_matches_upstream
     enabled = logs(query_enabled: true)
-    assert_equal [406, "path not allowed in query mode\n"], enabled.call("syslog", params: {"query" => ["kubelet"]}).values_at(0, 2).then { |s, b| [s, b.join] }
+
+    assert_equal([406, "path not allowed in query mode\n"], enabled.call("syslog", params: {"query" => ["kubelet"]}).values_at(0, 2).then do |s, b|
+      [s, b.join]
+    end)
     assert_equal 400, enabled.call("", params: {"tailLines" => ["x"]})[0]
     status, _, message = enabled.call("", params: {"query" => ["a", "b/c"]})
+
     assert_equal 406, status
     assert_equal %(query: Invalid value: "[b/c], [a]": cannot specify a file and service\n), message.join
     assert_equal "line one\nline two\n", body(enabled.call("", params: {"query" => ["/syslog"]})), "a file query serves that file"
@@ -84,6 +91,7 @@ class NodeSystemLogsAndZPagesTest < Minitest::Test
     status, headers, text = ZPages.statusz(component: "kubelet", start_time: Time.utc(2026, 9, 24, 1, 0, 0), now: Time.utc(2026, 9, 24, 2, 1, 5),
                                            binary_version: "1.36.2", emulation_version: "1.36", paths: %w[/pods /healthz /api/v1],
                                            random: Random.new(3))
+
     assert_equal [200, "text/plain; charset=utf-8"], [status, headers["content-type"]]
     assert_match(/\A\nkubelet statusz\nWarning: This endpoint is not meant to be machine parseable/, text)
     assert_match(/^Up.* 1 hr 01 min 05 sec$/, text)
@@ -91,11 +99,14 @@ class NodeSystemLogsAndZPagesTest < Minitest::Test
     _, headers, json = ZPages.statusz(component: "kubelet", start_time: Time.utc(2026, 9, 24), binary_version: "1.36.2",
                                       accept: "application/json;g=config.k8s.io;v=v1beta1;as=Statusz")
     object = JSON.parse(json)
-    assert_equal %w[Statusz config.k8s.io/v1beta1 kubelet 2026-09-24T00:00:00Z], [object["kind"], object["apiVersion"], object.dig("metadata", "name"), object["startTime"]]
+
+    assert_equal %w[Statusz config.k8s.io/v1beta1 kubelet 2026-09-24T00:00:00Z],
+                 [object["kind"], object["apiVersion"], object.dig("metadata", "name"), object["startTime"]]
     assert_nil headers["warning"]
     assert_equal 406, ZPages.statusz(component: "k", start_time: Time.now, binary_version: "1", accept: "application/json")[0]
     _, _, flags = ZPages.flagz(component: "k", flags: ZPages.flags_from(arguments: ["--config=/etc/x.yml", "-v"], config: {"port" => 1, "tls" => {"token" => "t"}}),
                                accept: "application/yaml;g=config.k8s.io;v=v1alpha1;as=Flagz")
+
     assert_includes flags, "config: \"/etc/x.yml\""
     assert_includes flags, "tls.token: \"<redacted>\""
   end
@@ -103,13 +114,16 @@ class NodeSystemLogsAndZPagesTest < Minitest::Test
   def test_the_kubelet_and_the_api_server_serve_them
     server = Node::StreamingServer.new(log_service: Object.new, port: 0, system_logs: logs, flags: {"node_name" => "n1"})
     request = ->(path) { Rubernetes::Transport::Request.new(method: "GET", target: path, headers: Rubernetes::Transport::Headers.new) }
+
     assert_equal 200, server.call(request.call("/statusz"))[0]
     assert_match(/node_name(: |:|=| )n1/, server.call(request.call("/flagz"))[2].join)
     assert_equal 200, server.call(request.call("/logs/syslog")).status
     disabled = Node::StreamingServer.new(log_service: Object.new, port: 0)
+
     assert_equal [405, ["logs endpoint is disabled.\n"]], disabled.call(request.call("/logs/")).values_at(0, 2)
     api = Rubernetes::API::Server.new
     response = api.call(Rubernetes::API::Request.new(method: "GET", path: "/statusz"))
+
     assert_equal 200, response.status
     assert_match(/kube-apiserver statusz/, response.body)
   end

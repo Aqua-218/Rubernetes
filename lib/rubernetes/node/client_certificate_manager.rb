@@ -177,7 +177,7 @@ module Rubernetes
         object = {"apiVersion" => "certificates.k8s.io/v1", "kind" => "CertificateSigningRequest",
                   "metadata" => {"generateName" => "csr-"}, "spec" => spec}
         created = client.create(object, api_version: "certificates.k8s.io/v1",
-                                         path: "/apis/certificates.k8s.io/v1/certificatesigningrequests")
+                                        path: "/apis/certificates.k8s.io/v1/certificatesigningrequests")
         name = created.to_h.dig("metadata", "name").to_s
         raise Error, "the CertificateSigningRequest was created without a name" if name.empty?
 
@@ -196,6 +196,7 @@ module Rubernetes
           if (denied = conditions.find { |condition| %w[Denied Failed].include?(condition["type"]) && condition["status"] != "False" })
             raise Error, "certificate signing request #{name} is #{denied["type"].downcase}: #{denied["reason"]} #{denied["message"]}".strip
           end
+
           certificate = object.dig("status", "certificate").to_s
           approved = conditions.any? { |condition| condition["type"] == "Approved" && condition["status"] != "False" }
           return certificate.unpack1("m") if approved && !certificate.empty?
@@ -223,7 +224,7 @@ module Rubernetes
       end
 
       def kubeconfig_valid?(path)
-        document = YAML.safe_load(File.read(path)) || {}
+        document = YAML.safe_load_file(path) || {}
         user = Array(document["users"]).first&.dig("user") || {}
         file = user["client-certificate"]
         return false if file.to_s.empty? || !File.exist?(file)

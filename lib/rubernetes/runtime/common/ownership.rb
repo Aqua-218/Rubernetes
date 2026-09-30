@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "securerandom"
-require "thread"
 require "time"
 
 require_relative "canonical"
@@ -15,8 +14,8 @@ module Rubernetes
     # is changed, so replay never invents an ownership result.
     class ResourceLedger
       Operation = Struct.new(:id, :request_id, :action, :target_id, :owner,
-                            :config_digest, :state, :resources, :result,
-                            :error, :cleanup_errors, :metadata, keyword_init: true) do
+                             :config_digest, :state, :resources, :result,
+                             :error, :cleanup_errors, :metadata, keyword_init: true) do
         def to_h
           {
             "id" => id,
@@ -37,7 +36,7 @@ module Rubernetes
 
       Resource = Struct.new(:kind, :id, :identity, :owner, :state, :metadata, :sequence,
                             keyword_init: true) do
-        alias stable_identity identity
+        alias_method :stable_identity, :identity
 
         def [](key)
           return identity if key.to_s == "stable_identity"
@@ -45,10 +44,10 @@ module Rubernetes
           to_h.fetch(key.to_s)
         end
 
-        def fetch(key, *arguments)
+        def fetch(key, *)
           return identity if key.to_s == "stable_identity"
 
-          to_h.fetch(key.to_s, *arguments)
+          to_h.fetch(key.to_s, *)
         end
 
         def to_h
@@ -70,6 +69,7 @@ module Rubernetes
       def initialize(wal: nil, journal: nil, clock: -> { Time.now.utc })
         @wal = wal || journal
         raise ArgumentError, "resource ledger requires a durable WAL" unless @wal
+
         @clock = clock
         @mutex = Mutex.new
         @operations = {}
@@ -80,7 +80,7 @@ module Rubernetes
 
       attr_reader :wal
 
-      def begin_operation(operation_id: nil, request_id: nil, action: "unknown", owner:, config_digest:, target_id: nil, metadata: {})
+      def begin_operation(owner:, config_digest:, operation_id: nil, request_id: nil, action: "unknown", target_id: nil, metadata: {})
         operation_id ||= request_id || SecureRandom.uuid
         request_id ||= operation_id
         request_id = identifier(request_id, "request_id")
@@ -91,12 +91,10 @@ module Rubernetes
           if existing_id
             existing = @operations.fetch(existing_id)
             ensure_same_request!(existing, action: action, owner: owner,
-                                 config_digest: config_digest, target_id: target_id)
+                                           config_digest: config_digest, target_id: target_id)
             return immutable_operation(existing)
           end
-          if @operations.key?(operation_id)
-            raise OwnershipConflict, "operation #{operation_id} is already present"
-          end
+          raise OwnershipConflict, "operation #{operation_id} is already present" if @operations.key?(operation_id)
 
           operation = Operation.new(
             id: operation_id,
@@ -151,7 +149,10 @@ module Rubernetes
           from ||= operation.state
           from = String(from)
           to = String(to)
-          raise InvalidTransition, "transition source #{from.inspect} does not match #{operation.state.inspect}" unless from == operation.state
+          unless from == operation.state
+            raise InvalidTransition,
+                  "transition source #{from.inspect} does not match #{operation.state.inspect}"
+          end
 
           if from == to
             raise InvalidTransition, "workload gate can only be released once" if to == "Running"
@@ -160,23 +161,22 @@ module Rubernetes
           end
 
           StateMachine.validate!(from, to)
-          if state && String(state) != to
-            raise InvalidTransition, "state #{state.inspect} disagrees with transition target #{to.inspect}"
-          end
+          raise InvalidTransition, "state #{state.inspect} disagrees with transition target #{to.inspect}" if state && String(state) != to
+
           resource_keys = resources ? Array(resources).map { |resource| key_for(resource) } : operation.resources
           resource_keys.each do |resource_key|
             raise OwnershipConflict, "resource #{resource_key} is not owned" unless @resources.key?(resource_key)
           end
           updated = update_operation(operation, state: to, resources: resource_keys,
-                                     config_digest: config_digest || operation.config_digest)
+                                                config_digest: config_digest || operation.config_digest)
           append!(operation.id, "state_transition", {
-            "from" => from,
-            "to" => to,
-            "operation" => updated.to_h,
-            "owned_resources" => resource_keys,
-            "operation_id" => operation.id,
-            "config_digest" => updated.config_digest
-          })
+                    "from" => from,
+                    "to" => to,
+                    "operation" => updated.to_h,
+                    "owned_resources" => resource_keys,
+                    "operation_id" => operation.id,
+                    "config_digest" => updated.config_digest
+                  })
           @operations[operation.id] = updated
           immutable_operation(updated)
         end
@@ -192,12 +192,11 @@ module Rubernetes
           resource_key = key_for(resource_kind, resource_id)
           existing = @resources[resource_key]
           if existing
-            if existing.identity != resource_identity
-              raise IdentityMismatch, "resource #{resource_key} identity changed"
-            end
+            raise IdentityMismatch, "resource #{resource_key} identity changed" if existing.identity != resource_identity
             if existing.owner != operation.owner || existing.state == "Released"
               raise OwnershipConflict, "resource #{resource_key} cannot be reused after release"
             end
+
             return immutable_resource(existing)
           end
 
@@ -255,6 +254,7 @@ module Rubernetes
           resource_key = key_for(kind, id)
           resource = @resources[resource_key]
           return resource if resource && resource.state == "Released"
+
           unless resource
             raise OwnershipConflict, "resource #{resource_key} is not owned" unless force
 
@@ -269,7 +269,7 @@ module Rubernetes
             raise InvalidTransition, "cannot release #{resource_key} while operation is #{operation.state}"
           end
 
-          released = Resource.new(**resource.to_h.transform_keys(&:to_sym).merge(state: "Released"))
+          released = Resource.new(**resource.to_h.transform_keys(&:to_sym), state: "Released")
           append!(operation.id, "resource_released", released.to_h)
           @resources[resource_key] = released
           immutable_resource(released)
@@ -299,7 +299,7 @@ module Rubernetes
       def recovery_candidates
         @mutex.synchronize do
           @operations.values.select { |operation| StateMachine.cleanup_state?(operation.state) }
-                               .map { |operation| immutable_operation(operation) }.freeze
+            .map { |operation| immutable_operation(operation) }.freeze
         end
       end
 
@@ -368,7 +368,10 @@ module Rubernetes
       def validate_replayed_ownership!
         @operations.each_value do |operation|
           operation.resources.each do |resource_key|
-            raise JournalCorruption, "operation #{operation.id} references unknown resource #{resource_key}" unless @resources.key?(resource_key)
+            unless @resources.key?(resource_key)
+              raise JournalCorruption,
+                    "operation #{operation.id} references unknown resource #{resource_key}"
+            end
           end
         end
       end
@@ -383,12 +386,12 @@ module Rubernetes
 
       def ensure_same_request!(existing, action:, owner:, config_digest:, target_id:)
         fields_match = existing.action == String(action) && existing.owner == String(owner) &&
-          existing.config_digest == String(config_digest) && existing.target_id == (target_id && String(target_id))
+                       existing.config_digest == String(config_digest) && existing.target_id == (target_id && String(target_id))
         raise OwnershipConflict, "request #{existing.request_id} was replayed with different intent" unless fields_match
       end
 
       def update_operation(operation, **changes)
-        Operation.new(**operation.to_h.transform_keys(&:to_sym).merge(changes))
+        Operation.new(**operation.to_h.transform_keys(&:to_sym), **changes)
       end
 
       def operation_from(value)
@@ -413,16 +416,16 @@ module Rubernetes
       end
 
       def immutable_operation(operation)
-        Operation.new(**operation.to_h.transform_keys(&:to_sym).merge(
-          resources: operation.resources.dup.freeze,
-          result: Canonical.immutable(operation.result),
-          cleanup_errors: operation.cleanup_errors.map { |entry| Canonical.immutable(entry) }.freeze,
-          metadata: Canonical.immutable(operation.metadata)
-        )).freeze
+        Operation.new(**operation.to_h.transform_keys(&:to_sym), resources: operation.resources.dup.freeze,
+                                                                 result: Canonical.immutable(operation.result),
+                                                                 cleanup_errors: operation.cleanup_errors.map do |entry|
+                                                                   Canonical.immutable(entry)
+                                                                 end.freeze,
+                                                                 metadata: Canonical.immutable(operation.metadata)).freeze
       end
 
       def immutable_resource(resource)
-        Resource.new(**resource.to_h.transform_keys(&:to_sym).merge(metadata: Canonical.immutable(resource.metadata))).freeze
+        Resource.new(**resource.to_h.transform_keys(&:to_sym), metadata: Canonical.immutable(resource.metadata)).freeze
       end
 
       def key_for(kind_or_resource, id = nil)

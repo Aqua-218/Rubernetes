@@ -21,7 +21,7 @@ class BootstrapProcessServicesTest < Minitest::Test
   end
 
   class API
-    attr_reader :patches
+    attr_reader :patches, :applied, :updated
 
     def initialize(objects = {})
       @objects = objects
@@ -60,14 +60,10 @@ class BootstrapProcessServicesTest < Minitest::Test
       value
     end
 
-    attr_reader :applied
-
     def apply(object, namespace:, field_manager:, **_options)
       (@applied ||= []) << deep_copy(object)
       create(object, namespace: namespace, api_version: object["apiVersion"])
     end
-
-    attr_reader :updated
 
     # Mirrors Client::KubernetesClient#update: a PUT of the whole object.
     def update(object, namespace: nil, **_options)
@@ -171,6 +167,7 @@ class BootstrapProcessServicesTest < Minitest::Test
     )
 
     service.start
+
     assert_predicate(service, :ready?)
     assert_equal(registry.size, service.manager.controllers.size)
     refute_empty(service.informers)
@@ -183,7 +180,7 @@ class BootstrapProcessServicesTest < Minitest::Test
     client = API.new(
       "nodes" => [{"apiVersion" => "v1", "kind" => "Node", "metadata" => {"name" => "node-a"},
                    "status" => {"conditions" => [{"type" => "Ready", "status" => "True"}],
-                                 "allocatable" => {"cpu" => "2"}}}],
+                                "allocatable" => {"cpu" => "2"}}}],
       "pods" => [{"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "pod-a", "namespace" => "default"},
                   "spec" => {"containers" => []}}]
     )
@@ -193,6 +190,7 @@ class BootstrapProcessServicesTest < Minitest::Test
     Timeout.timeout(2) do
       sleep(0.01) until client.patches.any?
     end
+
     assert_predicate(service, :ready?)
     assert_instance_of(Rubernetes::Controller::LeaseElector, service.elector)
     assert_predicate(service.elector, :leader?)
@@ -253,6 +251,7 @@ class BootstrapProcessServicesTest < Minitest::Test
 
     assert_empty client.patches
     body = client.updated.fetch(0)
+
     assert_equal "Lease", body["kind"]
     assert_equal "7", body.dig("metadata", "resourceVersion")
     assert_equal "worker-a", body.dig("spec", "holderIdentity")
@@ -287,6 +286,7 @@ class BootstrapProcessServicesTest < Minitest::Test
 
     assert_nil client.applied, "an update must not be a server-side apply"
     applied = client.updated.fetch(0)
+
     assert_equal "7", applied.dig("metadata", "resourceVersion"),
                  "an update carries the resourceVersion it was planned from as its precondition"
     refute applied.fetch("metadata").key?("managedFields"), "managedFields is owned by the server"
@@ -367,7 +367,7 @@ class BootstrapProcessServicesTest < Minitest::Test
     candidate["spec"]["taints"] = [{"key" => "k", "effect" => "NoSchedule"}]
 
     assert_raises(Rubernetes::Client::APIError) { adapter.update(candidate, descriptor: descriptor, existing: existing) }
-    assert_equal ["n"], deleted.map { |object| object.dig("metadata", "name") }
+    assert_equal(["n"], deleted.map { |object| object.dig("metadata", "name") })
   end
 
   def test_remote_status_write_distinguishes_absent_and_empty_status
@@ -405,22 +405,23 @@ class BootstrapProcessServicesTest < Minitest::Test
     client = API.new(
       "services" => [{"apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => "web", "namespace" => "default"},
                       "spec" => {"clusterIP" => "10.0.0.1", "ports" => [{"port" => 80, "targetPort" => 8080}],
-                                  "selector" => {"app" => "web"}}}],
+                                 "selector" => {"app" => "web"}}}],
       "endpointslices" => [{"apiVersion" => "discovery.k8s.io/v1", "kind" => "EndpointSlice",
-                             "metadata" => {"name" => "web-1", "namespace" => "default",
-                                             "labels" => {"kubernetes.io/service-name" => "web"}},
-                             "addressType" => "IPv4", "ports" => [{"port" => 8080}],
-                             "endpoints" => [{"addresses" => ["10.1.0.2"], "conditions" => {"ready" => true}}]}]
+                            "metadata" => {"name" => "web-1", "namespace" => "default",
+                                           "labels" => {"kubernetes.io/service-name" => "web"}},
+                            "addressType" => "IPv4", "ports" => [{"port" => 8080}],
+                            "endpoints" => [{"addresses" => ["10.1.0.2"], "conditions" => {"ready" => true}}]}]
     )
     service = Rubernetes::Bootstrap::ProxyService.new(
       config: {"node_name" => "node-a", "backend" => "memory"}, logger: @logger, client: client
     )
 
     service.start
+
     assert_predicate(service, :ready?)
     assert_equal(["default/web"], service.proxy.services.map(&:key))
     assert_equal(2, service.subscriptions.length)
-    assert(service.proxy.backend.ready?)
+    assert_predicate(service.proxy.backend, :ready?)
   ensure
     service&.stop(reason: "test")
   end
@@ -440,6 +441,7 @@ class BootstrapProcessServicesTest < Minitest::Test
                  when "rubernetes-scheduler" then Rubernetes::Bootstrap::SchedulerService
                  else Rubernetes::Bootstrap::ProxyService
                  end
+
       assert_instance_of(expected, assembly.service)
     end
   end

@@ -10,9 +10,7 @@ module Rubernetes
       module JSONCodec
         class DuplicateCheckingHash < Hash
           def []=(key, value)
-            if key?(key)
-              raise Codec::DuplicateKeyError, "duplicate JSON object key #{key.inspect}"
-            end
+            raise Codec::DuplicateKeyError, "duplicate JSON object key #{key.inspect}" if key?(key)
 
             super
           end
@@ -94,9 +92,8 @@ module Rubernetes
                 [normalized_key, child]
               end
               duplicate_keys = entries.group_by(&:first).select { |_key, pair| pair.length > 1 }.keys
-              unless duplicate_keys.empty?
-                raise Codec::DuplicateKeyError, "object contains duplicate key #{duplicate_keys.first.inspect}"
-              end
+              raise Codec::DuplicateKeyError, "object contains duplicate key #{duplicate_keys.first.inspect}" unless duplicate_keys.empty?
+
               entries.sort_by! { |key, _child| key.encode(Encoding::UTF_8).bytes }
               body = entries.map do |key, child|
                 "#{::JSON.generate(key)}:#{canonical_encode(child, max_depth: max_depth, depth: depth + 1, stack: stack)}"

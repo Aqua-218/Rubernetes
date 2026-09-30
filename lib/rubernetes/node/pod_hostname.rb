@@ -42,7 +42,11 @@ module Rubernetes
         fqdn
       end
 
-      def key(hash, name) = hash.is_a?(Hash) ? (hash.key?(name) ? hash[name] : hash[name.to_sym]) : nil
+      def key(hash, name)
+        return unless hash.is_a?(Hash)
+
+        hash.key?(name) ? hash[name] : hash[name.to_sym]
+      end
 
       # truncatePodHostnameIfNeeded: 63 characters, no trailing '-' or '.'.
       def truncate(pod_name, hostname)

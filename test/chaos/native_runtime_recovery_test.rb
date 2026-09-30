@@ -17,9 +17,12 @@ class NativeRuntimeRecoveryTest < Minitest::Test
 
       restarted = Native.new(journal: Native::RollbackJournal.new(File.join(directory, "ledger.jsonl"), fsync: false))
       cleaned = []
-      report = restarted.recover(observer: -> { observed }, cleaner: ->(resource) { cleaned << resource.fetch("kind"); true })
+      report = restarted.recover(observer: -> { observed }, cleaner: lambda { |resource|
+        cleaned << resource.fetch("kind")
+        true
+      })
 
-      assert_equal ["cgroup", "namespace", "workspace"], cleaned
+      assert_equal %w[cgroup namespace workspace], cleaned
       assert_equal ["cgroup:#{sandbox_id}", "namespace:#{sandbox_id}", "workspace:#{sandbox_id}"].sort,
                    report.to_h.fetch("released").sort
       assert_empty restarted.ledger.resources
@@ -41,9 +44,12 @@ class NativeRuntimeRecoveryTest < Minitest::Test
       "metadata" => {"managed_by" => "rubernetes-native", "live" => false}
     }
     cleaned = []
-    report = runtime.recover(observer: -> { [mismatch, live_unknown, dead_unknown] }, cleaner: ->(resource) { cleaned << resource; true })
+    report = runtime.recover(observer: -> { [mismatch, live_unknown, dead_unknown] }, cleaner: lambda { |resource|
+      cleaned << resource
+      true
+    })
 
-    assert_equal ["workspace:#{sandbox_id}"], report.to_h.fetch("identity_mismatch").map { |entry| entry.fetch("resource") }
+    assert_equal(["workspace:#{sandbox_id}"], report.to_h.fetch("identity_mismatch").map { |entry| entry.fetch("resource") })
     assert_empty report.to_h.fetch("cleaned_orphans")
     assert_includes report.to_h.fetch("kernel_only"), "workspace:untracked"
     assert_empty cleaned
@@ -59,7 +65,10 @@ class NativeRuntimeRecoveryTest < Minitest::Test
       runtime.ledger.transition(operation_id: sandbox_id, to: "RollingBack")
       observed = runtime.resource_inventory.map { |entry| entry.merge("metadata" => entry.fetch("metadata").merge("live" => false)) }
 
-      report = runtime.recover(observer: -> { observed }, cleaner: ->(_resource) { raise Rubernetes::Runtime::RecoveryRequired, "effect point" })
+      report = runtime.recover(observer: -> { observed }, cleaner: lambda { |_resource|
+        raise Rubernetes::Runtime::RecoveryRequired, "effect point"
+      })
+
       refute_empty report.to_h.fetch("errors")
       assert_equal "CleanupPending", runtime.ledger.operation(sandbox_id).state
     end

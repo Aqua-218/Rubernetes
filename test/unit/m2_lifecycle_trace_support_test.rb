@@ -58,16 +58,20 @@ class M2LifecycleTraceSupportTest < Minitest::Test
   def test_replayed_trace_satisfies_the_runtime_trace_verifier
     trace = M2LifecycleTraceSupport.trace_from_journal(journal("sb"), facets: facets("sb"))
     report = Rubernetes::Verification::M2RuntimeTraceVerifier.new({"trace" => trace}).verify
+
     assert_equal [], report["violations"]
     assert report["success"]
     running = trace.find { |event| event["to"] == "Running" }
     kinds = running["after"]["owned_resources"].map { |key| key.split(":", 2).first }.uniq.sort
+
     assert_equal %w[cgroup mount ns pidfd process temp], kinds
     assert_equal true, running["after"]["live_process"]
     stopping = trace.find { |event| event["to"] == "Stopping" }
+
     assert_equal false, stopping["after"]["live_process"]
     assert_equal false, stopping["after"]["result"]
     removed = trace.find { |event| event["to"] == "Removed" }
+
     assert_equal [], removed["after"]["owned_resources"]
     assert_equal removed["before"]["released"], removed["after"]["released"]
     assert_equal running["after"]["claim_order"].reverse, removed["after"]["released"]
@@ -75,6 +79,7 @@ class M2LifecycleTraceSupportTest < Minitest::Test
 
   def test_facets_attach_to_the_owning_ledger_claim
     mapped = facets("sb")
+
     assert_equal %w[temp:sb:root temp:sb:upper temp:sb:work], mapped["temp:sb"]
     assert_equal %w[mount:sb:77 ns:sb:mnt ns:sb:pid pidfd:sb:namespace], mapped["ns:sb"]
     assert_equal %w[pidfd:sb:workload], mapped["process:sb:main"]
@@ -89,6 +94,7 @@ class M2LifecycleTraceSupportTest < Minitest::Test
     records.insert(early, release)
     trace = M2LifecycleTraceSupport.trace_from_journal(records, facets: facets(id))
     report = Rubernetes::Verification::M2RuntimeTraceVerifier.new({"trace" => trace}).verify
+
     refute report["success"]
     assert_includes report["violations"].map { |entry| entry["code"] }, "cleanup_before_stop"
   end

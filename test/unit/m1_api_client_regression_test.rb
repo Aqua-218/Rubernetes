@@ -15,18 +15,18 @@ class M1APIClientRegressionTest < Minitest::Test
       method: "PATCH",
       path: "/api/v1/namespaces/dev/configmaps/settings",
       body: {"apiVersion" => "apps/v1", "kind" => "Deployment",
-              "metadata" => {"name" => "settings"}},
+             "metadata" => {"name" => "settings"}},
       query: {"fieldManager" => "regression"},
       headers: {"Content-Type" => "application/apply-patch+yaml"}
     )
 
     assert_equal 422, response.status
     assert_equal "Invalid", response.body["reason"]
-    assert_equal %w[apiVersion kind], response.body.dig("details", "causes").map { |cause| cause["field"] }
+    assert_equal(%w[apiVersion kind], response.body.dig("details", "causes").map { |cause| cause["field"] })
   end
 
   def test_generate_name_retries_a_collision
-    suffixes = ["aaaaa", "bbbbb"].each
+    suffixes = %w[aaaaa bbbbb].each
     server = Rubernetes::API::Server.new(name_generator: ->(_prefix) { suffixes.next })
     server.call(method: "POST", path: "/api/v1/namespaces/dev/configmaps",
                 body: {"metadata" => {"name" => "job-aaaaa"}})
@@ -87,8 +87,9 @@ class M1APIClientRegressionTest < Minitest::Test
 
     assert_equal %w[ADDED BOOKMARK], response.body.to_a.map(&:type)
     watcher = store.watch("registry/v1/configmaps/dev", resource_version: store.resource_version,
-                          timeout_seconds: 0.01)
+                                                        timeout_seconds: 0.01)
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
     assert_nil watcher.next
     assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :>=, 0.005
   ensure
@@ -103,6 +104,7 @@ class M1APIClientRegressionTest < Minitest::Test
       server.call(method: "POST", path: "/api/v1/namespaces/dev/configmaps",
                   body: {"metadata" => {"name" => index.to_s}})
     end
+
     assert_operator store.compacted_revision, :>, 0
 
     response = server.call(
@@ -145,11 +147,13 @@ class M1APIClientRegressionTest < Minitest::Test
     )
     discovery = server.call(method: "GET", path: "/apis/apps/v1")
     scale = discovery.body.fetch("resources").find { |entry| entry.fetch("name") == "deployments/scale" }
+
     assert_equal "autoscaling", scale.fetch("group")
     assert_equal "v1", scale.fetch("version")
     assert_equal "Scale", scale.fetch("kind")
 
     route = server.router.route("/apis/autoscaling/v1/namespaces/dev/deployments/demo/scale")
+
     assert_equal :resource, route.kind
     assert_equal resource, route.resource
     assert_equal "scale", route.subresource
@@ -158,6 +162,7 @@ class M1APIClientRegressionTest < Minitest::Test
     client = Rubernetes::Client::KubernetesClient.new(rest_client: rest, context: {namespace: "dev"})
     client.patch("deployments/scale", {"spec" => {"replicas" => 2}},
                  api_version: "autoscaling/v1", name: "demo")
+
     assert_equal "/apis/autoscaling/v1/namespaces/dev/deployments/demo/scale", rest.calls.last[:path]
   end
 
@@ -167,7 +172,7 @@ class M1APIClientRegressionTest < Minitest::Test
 
     events = client.watch_each("pods", max_reconnects: 1).to_a
 
-    assert_equal %w[ADDED BOOKMARK], events.map { |event| event["type"] }
+    assert_equal(%w[ADDED BOOKMARK], events.map { |event| event["type"] })
     assert_equal "1", rest.queries[1]["resourceVersion"]
   end
 
@@ -202,8 +207,8 @@ class M1APIClientRegressionTest < Minitest::Test
                 when "/api/v1" then {"resources" => []}
                 when "/apis"
                   {"groups" => [{"name" => "example.test",
-                                  "versions" => [{"groupVersion" => "example.test/v1", "version" => "v1"}],
-                                  "preferredVersion" => {"groupVersion" => "example.test/v1", "version" => "v1"}}]}
+                                 "versions" => [{"groupVersion" => "example.test/v1", "version" => "v1"}],
+                                 "preferredVersion" => {"groupVersion" => "example.test/v1", "version" => "v1"}}]}
                 when "/apis/example.test/v1"
                   {"resources" => [
                     {"name" => "people", "namespaced" => false, "kind" => "Person",
@@ -229,10 +234,12 @@ class M1APIClientRegressionTest < Minitest::Test
     def stream(_method, _path, query:)
       @queries << query
       @attempt += 1
-      return Enumerator.new do |output|
-        output << "#{JSON.generate("type" => "ADDED", "object" => {"metadata" => {"resourceVersion" => "1"}})}\n"
-        raise EOFError, "simulated disconnect"
-      end if @attempt == 1
+      if @attempt == 1
+        return Enumerator.new do |output|
+          output << "#{JSON.generate("type" => "ADDED", "object" => {"metadata" => {"resourceVersion" => "1"}})}\n"
+          raise EOFError, "simulated disconnect"
+        end
+      end
 
       Enumerator.new do |output|
         output << "#{JSON.generate("type" => "BOOKMARK", "object" => {"metadata" => {"resourceVersion" => "2"}})}\n"
@@ -254,8 +261,8 @@ class M1APIClientRegressionTest < Minitest::Test
                 when "/api/v1" then {"resources" => []}
                 when "/apis"
                   {"groups" => [{"name" => "apps",
-                                  "versions" => [{"groupVersion" => "apps/v1", "version" => "v1"}],
-                                  "preferredVersion" => {"groupVersion" => "apps/v1", "version" => "v1"}}]}
+                                 "versions" => [{"groupVersion" => "apps/v1", "version" => "v1"}],
+                                 "preferredVersion" => {"groupVersion" => "apps/v1", "version" => "v1"}}]}
                 when "/apis/apps/v1"
                   {"resources" => [
                     {"name" => "deployments", "namespaced" => true, "kind" => "Deployment",

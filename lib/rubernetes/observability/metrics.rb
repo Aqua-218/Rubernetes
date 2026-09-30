@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "json"
-require "thread"
 require_relative "../version"
 
 module Rubernetes
@@ -53,7 +52,13 @@ module Rubernetes
           metrics = JSON.parse(File.read(UPSTREAM_PATH)).fetch("metrics")
           # Bucket bounds are floats (an inventory imported before the
           # importer converted them held "1e-05" as a string).
-          metrics.each_value { |entry| entry["buckets"] = entry["buckets"].map { |bound| bound.is_a?(String) ? Float(bound) : bound } if entry["buckets"] }
+          metrics.each_value do |entry|
+            next unless entry["buckets"]
+
+            entry["buckets"] = entry["buckets"].map do |bound|
+              bound.is_a?(String) ? Float(bound) : bound
+            end
+          end
           metrics.freeze
         rescue SystemCallError, JSON::ParserError
           {}.freeze
@@ -241,16 +246,14 @@ module Rubernetes
           "watch_cache_capacity" => no_ring,
           "watch_cache_capacity_increase_total" => no_ring,
           "watch_cache_capacity_decrease_total" => no_ring,
-          "apiserver_watch_cache_initializations_total" => "the local replica is built once for all resources, never initialized per resource",
+          "apiserver_watch_cache_initializations_total" => "the local replica is built once for all resources, never initialized per resource"
         }.freeze,
-        "kube-controller-manager" => {
-        }.freeze,
-        "kube-scheduler" => {
-        }.freeze,
+        "kube-controller-manager" => {}.freeze,
+        "kube-scheduler" => {}.freeze,
         "kubelet" => {
           "kubelet_started_host_process_containers_total" => windows_only,
-          "kubelet_started_host_process_containers_errors_total" => windows_only,
-        }.freeze,
+          "kubelet_started_host_process_containers_errors_total" => windows_only
+        }.freeze
       }.freeze
 
       # client-go families every component would serve but that measure
@@ -281,6 +284,7 @@ module Rubernetes
         self.class.upstream.each do |name, entry|
           next unless entry["components"].include?(component)
           next unless Array(entry.dig("endpoints", component)).include?(endpoint)
+
           if ALWAYS_PRESENT_EMPTY.key?(name)
             type = UPSTREAM_TYPES[entry["type"]]
             next unless type && !@mutex.synchronize { @metrics.key?(name) }
@@ -317,8 +321,9 @@ module Rubernetes
           @metrics[name].help = "#{self.class.annotated_help(entry)} (not implemented in Rubernetes, always empty: #{reason})"
           @unimplemented_reasons[name] = reason
         end
+        # debug: --check-config shares stdout between the log and its JSON report.
         logger = self.class.logger
-        logger.info("metrics.unimplemented", component: component, metric: name, reason: reason) if logger.respond_to?(:info)
+        logger.debug("metrics.unimplemented", component: component, metric: name, reason: reason) if logger.respond_to?(:debug)
         self
       end
 
@@ -570,7 +575,7 @@ module Rubernetes
       # As MonitorRequest: the response size of GET and LIST only, and the
       # SLO/SLI latency (less the admission webhooks' time) for everything
       # but a watch and a dry run.
-      def record_request(verb:, resource:, group: "", version: "", scope: "cluster", code:, duration: nil, subresource: nil,
+      def record_request(verb:, resource:, code:, group: "", version: "", scope: "cluster", duration: nil, subresource: nil,
                          dry_run: "", response_size: nil, webhook_seconds: 0.0)
         labels = self.class.request_labels(verb: verb, resource: resource, group: group, version: version, scope: scope,
                                            subresource: subresource)
@@ -619,27 +624,27 @@ module Rubernetes
 
       def register_apiserver_defaults
         register("apiserver_request_total", type: :counter,
-                 help: "Counter of apiserver requests broken out for each verb, group, version, resource, scope and HTTP response code.")
+                                            help: "Counter of apiserver requests broken out for each verb, group, version, resource, scope and HTTP response code.")
         register("apiserver_request_duration_seconds", type: :histogram, buckets: REQUEST_DURATION_BUCKETS,
-                 help: "Response latency distribution in seconds for each verb, group, version, resource and scope.")
+                                                       help: "Response latency distribution in seconds for each verb, group, version, resource and scope.")
         register("apiserver_response_sizes", type: :histogram, buckets: RESPONSE_SIZE_BUCKETS,
-                 help: "Response size distribution in bytes for each group, version, verb, resource, subresource, scope and component.")
+                                             help: "Response size distribution in bytes for each group, version, verb, resource, subresource, scope and component.")
         register("apiserver_current_inflight_requests", type: :gauge,
-                 help: "Maximal number of currently used inflight request limit of this apiserver per request kind in last second.")
+                                                        help: "Maximal number of currently used inflight request limit of this apiserver per request kind in last second.")
         register("apiserver_longrunning_requests", type: :gauge,
-                 help: "Gauge of all active long-running apiserver requests broken out by verb, group, version, resource, scope and " \
-                       "component. Not all requests are tracked this way.")
+                                                   help: "Gauge of all active long-running apiserver requests broken out by verb, group, version, resource, scope and " \
+                                                         "component. Not all requests are tracked this way.")
         latency = "Response latency distribution (not counting webhook duration and priority & fairness queue wait times) in " \
                   "seconds for each verb, group, version, resource, subresource, scope and component."
         register("apiserver_request_sli_duration_seconds", type: :histogram, buckets: SLO_DURATION_BUCKETS, help: latency)
         register("apiserver_watch_events_total", type: :counter, help: "Number of events sent in watch clients")
         register("apiserver_watch_events_sizes", type: :histogram, buckets: WATCH_EVENT_SIZE_BUCKETS,
-                 help: "Watch event size distribution in bytes")
+                                                 help: "Watch event size distribution in bytes")
         register("apiserver_storage_objects", type: :gauge,
-                 help: "[DEPRECATED, consider using apiserver_resource_objects instead] Number of stored objects at the time of " \
-                       "last check split by kind. In case of a fetching error, the value will be -1.")
+                                              help: "[DEPRECATED, consider using apiserver_resource_objects instead] Number of stored objects at the time of " \
+                                                    "last check split by kind. In case of a fetching error, the value will be -1.")
         register("apiserver_resource_objects", type: :gauge,
-                 help: "Number of stored objects at the time of last check split by kind. In case of a fetching error, the value will be -1.")
+                                               help: "Number of stored objects at the time of last check split by kind. In case of a fetching error, the value will be -1.")
       end
 
       def register_process_defaults
@@ -705,7 +710,7 @@ module Rubernetes
         stat = File.read("/proc/self/stat")
         ticks = Integer(stat[stat.rindex(")") + 2..].split.fetch(19))
         boot = File.foreach("/proc/stat").find { |line| line.start_with?("btime ") }
-        Integer(boot.split[1]) + ticks.to_f / CLOCK_TICKS
+        Integer(boot.split[1]) + (ticks.to_f / CLOCK_TICKS)
       rescue SystemCallError, ArgumentError, IndexError, NoMethodError
         nil
       end

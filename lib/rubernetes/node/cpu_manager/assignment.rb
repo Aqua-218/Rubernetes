@@ -72,8 +72,8 @@ module Rubernetes
           end
 
           # accumulator.sort: by free CPU count, then id.
-          def sorted(ids, &cpus)
-            ids.to_a.sort_by { |id| [cpus.call(id).size, id] }
+          def sorted(ids, &)
+            ids.to_a.sort_by { |id| [yield(id).size, id] }
           end
 
           def sort_available_numa_nodes
@@ -199,19 +199,19 @@ module Rubernetes
             numa_count = @topology.cpu_details.numa_nodes.size
             available_numa = @details.numa_nodes.size
             cpu_count = @topology.cpu_details.cpus.size
-            groups = (cpu_count - 1) / group_size + 1
-            groups_per_numa = (groups - 1) / numa_count + 1
-            groups_needed = (@needed - 1) / group_size + 1
-            [(groups_needed - 1) / groups_per_numa + 1, [groups_needed, available_numa].min]
+            groups = ((cpu_count - 1) / group_size) + 1
+            groups_per_numa = ((groups - 1) / numa_count) + 1
+            groups_needed = ((@needed - 1) / group_size) + 1
+            [((groups_needed - 1) / groups_per_numa) + 1, [groups_needed, available_numa].min]
           end
 
           # iterateCombinations: every k-combination of +items+ in order; the
           # block returns :break to stop.  Combinations are GoSlices.
-          def iterate_combinations(items, k, &block)
+          def iterate_combinations(items, k, &)
             return if k < 1
 
             helper = lambda do |remaining, start, accum|
-              return block.call(accum) if remaining.zero?
+              return yield(accum) if remaining.zero?
 
               i = start
               while i <= items.length - remaining
@@ -243,9 +243,7 @@ module Rubernetes
         def take_by_topology_numa_packed(topology, available, count, strategy: PACKED, prefer_align_by_uncore_cache: false)
           acc = Accumulator.new(topology, available, count, strategy)
           return acc.result if acc.satisfied?
-          if acc.failed?
-            raise Error, "not enough cpus available to satisfy request: requested=#{count}, available=#{available.size}"
-          end
+          raise Error, "not enough cpus available to satisfy request: requested=#{count}, available=#{available.size}" if acc.failed?
 
           acc.take_full_first_level
           return acc.result if acc.satisfied?
@@ -280,9 +278,7 @@ module Rubernetes
 
           acc = Accumulator.new(topology, available, count, strategy)
           return acc.result if acc.satisfied?
-          if acc.failed?
-            raise Error, "not enough cpus available to satisfy request: requested=#{count}, available=#{available.size}"
-          end
+          raise Error, "not enough cpus available to satisfy request: requested=#{count}, available=#{available.size}" if acc.failed?
 
           numas = acc.sort_available_numa_nodes
           min_numas, max_numas = acc.numa_range(group_size)
@@ -304,7 +300,7 @@ module Rubernetes
 
               after = numas.to_h { |numa| [numa, acc.details.cpus_in_numa_nodes(numa).size] }
               combo.each { |numa| after[numa] -= distribution }
-              remainder = count - distribution * combo.length
+              remainder = count - (distribution * combo.length)
               remainder_combo = combo.select { |numa| after[numa] >= group_size }
 
               best_local_balance = Float::INFINITY
@@ -359,7 +355,7 @@ module Rubernetes
             chosen.each do |numa|
               acc.take(packed_or_empty(topology, acc.details.cpus_in_numa_nodes(numa), distribution, strategy))
             end
-            remainder = count - distribution * chosen.length
+            remainder = count - (distribution * chosen.length)
             remainder_numas = best_remainder ? best_remainder.to_a : []
             while remainder.positive?
               progressed = false

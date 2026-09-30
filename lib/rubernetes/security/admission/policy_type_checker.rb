@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "json"
-require "set"
 require_relative "../cel/check/validators"
 
 module Rubernetes
@@ -40,7 +39,7 @@ module Rubernetes
                 [function["name"], overloads]
               end
               idents = document.fetch("variables").reject { |name, _| %w[object oldObject params variables].include?(name) }
-                               .transform_values { |type| C.type_from_json(type) }
+                .transform_values { |type| C.type_from_json(type) }
               document.fetch("type_idents").each { |name, type| idents[name] ||= C::Type.type_type(C.type_from_json(type)) }
               structs = document.fetch("structs").transform_values do |fields|
                 fields.to_h { |field| [field["name"], C.type_from_json(field["type"])] }
@@ -126,7 +125,9 @@ module Rubernetes
         # (raises or returns [] when unknown).  discovery_schema:
         # [group, version, kind] -> OpenAPI v3 components document of that
         # group version (ClientDiscoveryResolver), or nil.
-        def initialize(rest_mapper:, discovery_document: nil, type_name_suffix: -> { Process.clock_gettime(Process::CLOCK_REALTIME, :nanosecond) % 1_000_000_000 })
+        def initialize(rest_mapper:, discovery_document: nil, type_name_suffix: lambda {
+          Process.clock_gettime(Process::CLOCK_REALTIME, :nanosecond) % 1_000_000_000
+        })
           @rest_mapper = rest_mapper
           @discovery_document = discovery_document
           @type_name_suffix = type_name_suffix
@@ -378,7 +379,7 @@ module Rubernetes
 
         # PopulateRefs: $ref (directly or inside allOf) replaced by the
         # referenced schema; a cycle becomes {type: object}.
-        def populate_refs(schema, visited, &lookup)
+        def populate_refs(schema, visited, &)
           raise KeyError, "missing schema" if schema.nil?
 
           result = schema
@@ -388,26 +389,26 @@ module Rubernetes
 
             visited << ref
             begin
-              resolved = lookup.call(ref)
+              resolved = yield(ref)
               raise KeyError, "cannot resolve #{ref}" if resolved.nil?
 
-              return expand_children(resolved, visited, &lookup)
+              return expand_children(resolved, visited, &)
             ensure
               visited.delete(ref)
             end
           end
-          expand_children(result, visited, &lookup)
+          expand_children(result, visited, &)
         end
 
-        def expand_children(schema, visited, &lookup)
+        def expand_children(schema, visited, &)
           result = schema.dup
           if schema["properties"].is_a?(Hash)
-            result["properties"] = schema["properties"].transform_values { |property| populate_refs(property, visited, &lookup) }
+            result["properties"] = schema["properties"].transform_values { |property| populate_refs(property, visited, &) }
           end
           if schema["additionalProperties"].is_a?(Hash)
-            result["additionalProperties"] = populate_refs(schema["additionalProperties"], visited, &lookup)
+            result["additionalProperties"] = populate_refs(schema["additionalProperties"], visited, &)
           end
-          result["items"] = populate_refs(schema["items"], visited, &lookup) if schema["items"].is_a?(Hash)
+          result["items"] = populate_refs(schema["items"], visited, &) if schema["items"].is_a?(Hash)
           result
         end
 

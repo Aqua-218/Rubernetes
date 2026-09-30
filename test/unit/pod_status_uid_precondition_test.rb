@@ -27,7 +27,8 @@ class PodStatusUidPreconditionTest < Minitest::Test
     response = status_patch("00000000-dead-beef-0000-000000000000")
 
     assert_equal 409, response.status
-    assert_equal "Pending", @server.call(method: "GET", path: "/api/v1/namespaces/dev/pods/ss-0").body.dig("status", "phase"), "the stale Failed report must not land"
+    assert_equal "Pending", @server.call(method: "GET", path: "/api/v1/namespaces/dev/pods/ss-0").body.dig("status", "phase"),
+                 "the stale Failed report must not land"
   end
 
   def test_a_report_naming_the_current_uid_is_applied
@@ -56,6 +57,7 @@ class PodStatusUidPreconditionTest < Minitest::Test
     adapter.report(pod, {"phase" => "Running"})
 
     _path, body, _type = client.calls.first
+
     assert_equal({"uid" => "abc"}, body["metadata"])
     assert_equal "Running", body.dig("status", "phase")
   end

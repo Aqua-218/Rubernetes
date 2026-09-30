@@ -29,12 +29,14 @@ class NetworkSupersedeObservationTest < Minitest::Test
 
   def test_a_link_is_looked_up_by_name
     observer = Observer.new
+
     refute interface(observer).send(:observed_identity?, "link:abc", kind: "link", link_name: "veth1")
     assert_equal [{kinds: ["link"], link_name: "veth1"}], observer.calls
   end
 
   def test_an_address_reads_the_address_table_only
     observer = Observer.new(present: [{"identity" => "address:x"}])
+
     assert interface(observer).send(:observed_identity?, "address:x", kind: "address")
     assert_equal [{kinds: ["address"], link_name: nil}], observer.calls
   end
@@ -42,6 +44,7 @@ class NetworkSupersedeObservationTest < Minitest::Test
   def test_an_unknown_kind_still_reads_everything
     observer = Observer.new
     interface(observer).send(:observed_identity?, "veth:x", kind: "veth")
+
     assert_equal [{kinds: nil, link_name: nil}], observer.calls
   end
 end

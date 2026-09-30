@@ -46,7 +46,9 @@ class APIServerConversionWebhookMetricsTest < Minitest::Test
     Rubernetes::API::CRD.metrics = @previous
   end
 
-  def widget(version, name = "w") = {"apiVersion" => "example.com/#{version}", "kind" => "Widget", "metadata" => {"name" => name, "uid" => name}}
+  def widget(version, name = "w")
+    {"apiVersion" => "example.com/#{version}", "kind" => "Widget", "metadata" => {"name" => name, "uid" => name}}
+  end
 
   def value(line) = @metrics.render[/^#{Regexp.escape(line)} (\S+)$/, 1].to_f
 
@@ -55,22 +57,27 @@ class APIServerConversionWebhookMetricsTest < Minitest::Test
     @converter.convert([widget("v1", "a"), widget("v2", "b")], to_version: "v2", list: true)
     # Nothing to convert still counts as a successful call.
     @converter.convert([widget("v2")], to_version: "v2")
-    {refused: "call", bad_uid: "malformed_response", partial: "partial_response", wrong_version: "invalid_converted_object"}.each do |mode, _|
+    {refused: "call", bad_uid: "malformed_response", partial: "partial_response",
+     wrong_version: "invalid_converted_object"}.each do |mode, _|
       @hook.mode = mode
       assert_raises(Rubernetes::API::CRD::Manager::ConversionError) { @converter.convert([widget("v1"), widget("v1", "x")], to_version: "v2") }
     end
 
     assert_equal 3, value('apiserver_conversion_webhook_request_total{failure_type="",result="success"}')
     %w[call malformed_response partial_response invalid_converted_object].each do |kind|
-      assert_equal 1, value(%(apiserver_conversion_webhook_request_total{failure_type="conversion_webhook_#{kind}_failure",result="failure"}))
-      assert_equal 1, value(%(apiserver_conversion_webhook_duration_seconds_count{failure_type="conversion_webhook_#{kind}_failure",result="failure"}))
+      assert_equal 1,
+                   value(%(apiserver_conversion_webhook_request_total{failure_type="conversion_webhook_#{kind}_failure",result="failure"}))
+      assert_equal 1,
+                   value(%(apiserver_conversion_webhook_duration_seconds_count{failure_type="conversion_webhook_#{kind}_failure",result="failure"}))
     end
     crd = 'crd_name="widgets.example.com",from_version="v1"'
     # The single-object conversion; the list and the no-op are not observed.
     assert_equal 1, value("apiserver_crd_conversion_webhook_duration_seconds_count{#{crd},succeeded=\"true\",to_version=\"v2\"}")
     assert_equal 4, value("apiserver_crd_conversion_webhook_duration_seconds_count{#{crd},succeeded=\"false\",to_version=\"v2\"}")
     text = @metrics.render
-    assert_match(/^apiserver_crd_conversion_webhook_duration_seconds_bucket\{#{crd},succeeded="true",to_version="v2",le="16\.384"\} 1$/, text)
+
+    assert_match(/^apiserver_crd_conversion_webhook_duration_seconds_bucket\{#{crd},succeeded="true",to_version="v2",le="16\.384"\} 1$/,
+                 text)
     assert_match(/^apiserver_conversion_webhook_duration_seconds_bucket\{failure_type="",result="success",le="45"\} 3$/, text)
   end
 
@@ -78,6 +85,7 @@ class APIServerConversionWebhookMetricsTest < Minitest::Test
     converter = Rubernetes::API::CRD::Manager::Converter.new(crd: CRD_OBJECT.merge("spec" => {"group" => "example.com"}), storage_version: "v1",
                                                              webhook_client: nil, clock: -> { Time.now.utc })
     converter.convert([widget("v1")], to_version: "v2")
+
     refute_match(/^apiserver_conversion_webhook_request_total/, @metrics.render)
   end
 end

@@ -19,24 +19,25 @@ module Rubernetes
       def initialize(value = {})
         hash = value.respond_to?(:to_h) ? value.to_h : value
         raise PolicyError, "selector must be an object" unless hash.is_a?(Hash)
+
         @requirements = []
         labels = Support.fetch(hash, "matchLabels", "match_labels", default: {})
         raise PolicyError, "matchLabels must be an object" unless labels.is_a?(Hash)
+
         labels.each { |key, label| @requirements << Requirement.new(key: valid_key(key), operator: "In", values: [String(label)]) }
         expressions = Support.fetch(hash, "matchExpressions", "match_expressions", default: [])
         raise PolicyError, "matchExpressions must be an array" unless expressions.is_a?(Array)
+
         expressions.each do |expression|
           entry = expression.respond_to?(:to_h) ? expression.to_h : expression
           operator = String(Support.fetch(entry, "operator"))
           raise PolicyError, "unsupported selector operator #{operator.inspect}" unless OPERATORS.include?(operator)
+
           key = valid_key(Support.fetch(entry, "key"))
           values = Array(Support.fetch(entry, "values", default: [])).map(&:to_s)
-          if %w[In NotIn].include?(operator) && values.empty?
-            raise PolicyError, "selector #{operator} requires at least one value"
-          end
-          if %w[Exists DoesNotExist].include?(operator) && !values.empty?
-            raise PolicyError, "selector #{operator} must not include values"
-          end
+          raise PolicyError, "selector #{operator} requires at least one value" if %w[In NotIn].include?(operator) && values.empty?
+          raise PolicyError, "selector #{operator} must not include values" if %w[Exists DoesNotExist].include?(operator) && !values.empty?
+
           @requirements << Requirement.new(key: key, operator: operator, values: values.freeze)
         end
         @requirements.freeze
@@ -64,7 +65,9 @@ module Rubernetes
       end
 
       def to_h
-        {"requirements" => @requirements.map { |requirement| {"key" => requirement.key, "operator" => requirement.operator, "values" => requirement.values} }}
+        {"requirements" => @requirements.map do |requirement|
+          {"key" => requirement.key, "operator" => requirement.operator, "values" => requirement.values}
+        end}
       end
 
       private
@@ -72,7 +75,10 @@ module Rubernetes
       def valid_key(value)
         key = Support.string(value, "selector key")
         raise PolicyError, "selector key is too long" if key.bytesize > 253
-        raise PolicyError, "selector key contains invalid characters" unless key.match?(%r{\A[a-zA-Z0-9](?:[a-zA-Z0-9_.\-/]*[a-zA-Z0-9])?\z})
+        unless key.match?(%r{\A[a-zA-Z0-9](?:[a-zA-Z0-9_.\-/]*[a-zA-Z0-9])?\z})
+          raise PolicyError,
+                "selector key contains invalid characters"
+        end
 
         key
       end
@@ -91,6 +97,7 @@ module Rubernetes
         @except = Array(Support.fetch(hash, "except", default: [])).map do |entry|
           except_network, except_prefix = Support.cidr(entry, name: "ipBlock except")
           raise PolicyError, "ipBlock except family does not match cidr" unless except_network.ipv4? == network.ipv4?
+
           bits = network.ipv4? ? 32 : 128
           network_last = network.to_i + (1 << (bits - prefix)) - 1
           except_last = except_network.to_i + (1 << (bits - except_prefix)) - 1
@@ -197,7 +204,11 @@ module Rubernetes
         candidate_policies = policy_values.map { |policy| normalize_policy(policy) }
         candidate_revision = revision.nil? ? @revision + 1 : Support.integer(revision, "policy revision", min: 1)
         @mutex.synchronize do
-          raise PolicyRevisionError, "policy revision #{candidate_revision} is not newer than #{@revision}" if candidate_revision <= @revision
+          if candidate_revision <= @revision
+            raise PolicyRevisionError,
+                  "policy revision #{candidate_revision} is not newer than #{@revision}"
+          end
+
           labels = namespace_labels ? normalize_namespace_labels(namespace_labels) : @namespace_labels
           index = pod_index.nil? ? @pod_index : pod_index
           entries = compile_entries(candidate_policies, labels: labels, pod_index: index, revision: candidate_revision)
@@ -221,10 +232,13 @@ module Rubernetes
       def sync_pods(pod_index, revision: nil)
         candidate_revision = revision.nil? ? @revision + 1 : Support.integer(revision, "policy revision", min: 1)
         @mutex.synchronize do
-          raise PolicyRevisionError, "policy revision #{candidate_revision} is not newer than #{@revision}" if candidate_revision <= @revision
+          if candidate_revision <= @revision
+            raise PolicyRevisionError,
+                  "policy revision #{candidate_revision} is not newer than #{@revision}"
+          end
 
           entries = compile_entries(@policies, labels: @namespace_labels, pod_index: pod_index,
-                                                revision: candidate_revision)
+                                               revision: candidate_revision)
           candidate = PolicySnapshot.new(revision: candidate_revision, policies: @policies.dup.freeze,
                                          entries: Support.immutable(entries),
                                          created_at: Support.now(@clock).iso8601(6))
@@ -241,18 +255,18 @@ module Rubernetes
 
       alias replace_pod_index sync_pods
 
-      def add(policy, revision: nil, **options)
+      def add(policy, revision: nil, **)
         current = @mutex.synchronize { @policies.dup }
-        apply(current + [policy], revision: revision, **options)
+        apply(current + [policy], revision: revision, **)
       end
 
-      def remove(name:, namespace: nil, revision: nil, **options)
+      def remove(name:, namespace: nil, revision: nil, **)
         target_name = String(name)
         target_namespace = namespace && String(namespace)
         remaining = @mutex.synchronize do
           @policies.reject { |policy| policy.name == target_name && (target_namespace.nil? || policy.namespace == target_namespace) }
         end
-        apply(remaining, revision: revision, **options)
+        apply(remaining, revision: revision, **)
       end
 
       def allowed?(source:, destination:, direction:, protocol: "TCP", port: nil, end_port: nil,
@@ -279,8 +293,8 @@ module Rubernetes
 
           rules.any? do |policy, rule|
             peer_match?(rule.peers, peer, policy_namespace: policy.namespace,
-                        namespace_labels: namespace_labels || @namespace_labels,
-                        pod_index: pod_index.nil? ? @pod_index : pod_index) &&
+                                          namespace_labels: namespace_labels || @namespace_labels,
+                                          pod_index: pod_index.nil? ? @pod_index : pod_index) &&
               port_match?(rule.ports, destination_hash, protocol_name, port, end_port)
           end
         end
@@ -295,9 +309,8 @@ module Rubernetes
       # tests and lets an eBPF/nftables adapter inspect the exact atomic map.
       def identity_set(revision: nil)
         current = snapshot
-        if revision && Integer(revision) != current.revision
-          raise PolicyRevisionError, "unknown policy revision #{revision}"
-        end
+        raise PolicyRevisionError, "unknown policy revision #{revision}" if revision && Integer(revision) != current.revision
+
         current.entries
       end
 
@@ -305,6 +318,7 @@ module Rubernetes
 
       def publish!(snapshot)
         return true unless @adapter
+
         result = if @adapter.respond_to?(:atomic_swap)
                    @adapter.atomic_swap(snapshot.to_h)
                  elsif @adapter.respond_to?(:swap)
@@ -329,8 +343,13 @@ module Rubernetes
         hash = policy.respond_to?(:to_h) ? policy.to_h : policy
         spec = Support.fetch(hash, "spec", default: hash)
         metadata = Support.fetch(hash, "metadata", default: {})
-        namespace = Support.string(Support.fetch(metadata, "namespace", default: nil) || Support.fetch(spec, "namespace", default: "default"), "policy namespace")
-        name = Support.string(Support.fetch(metadata, "name", default: nil) || Support.fetch(spec, "name", default: "policy-#{Support.digest(hash)[0, 12]}"), "policy name")
+        namespace = Support.string(
+          Support.fetch(metadata, "namespace", default: nil) || Support.fetch(spec, "namespace", default: "default"), "policy namespace"
+        )
+        name = Support.string(
+          Support.fetch(metadata, "name",
+                        default: nil) || Support.fetch(spec, "name", default: "policy-#{Support.digest(hash)[0, 12]}"), "policy name"
+        )
         selector = Selector.new(Support.fetch(spec, "podSelector", "pod_selector", default: {}))
         policy_types = Array(Support.fetch(spec, "policyTypes", "policy_types", default: nil))
         policy_types = [] if policy_types.nil?
@@ -344,6 +363,7 @@ module Rubernetes
         end
         policy_types = policy_types.map { |type| normalize_direction(type) }
         raise PolicyError, "network policy must select ingress or egress" if policy_types.empty?
+
         PolicyRecord.new(name: name, namespace: namespace, pod_selector: selector,
                          policy_types: policy_types.freeze,
                          ingress: ingress_rules.map { |rule| normalize_rule(rule, direction: "ingress") }.freeze,
@@ -372,6 +392,7 @@ module Rubernetes
         end
         if (block = Support.fetch(hash, "ipBlock", "ip_block", default: nil))
           raise PolicyError, "peer cannot combine ipBlock with selectors" if result.any?
+
           result["ip_block"] = IPBlock.new(block)
         end
         result["all"] = true if result.empty?
@@ -384,12 +405,18 @@ module Rubernetes
         value = Support.fetch(hash, "port", default: nil)
         end_port = Support.fetch(hash, "endPort", "end_port", default: nil)
         raise PolicyError, "network policy port is required" if value.nil?
-        if end_port && !numeric_port?(value)
-          raise PolicyError, "endPort requires a numeric port"
-        end
-        start = numeric_port?(value) ? Support.integer(value, "network policy port", min: 1, max: 65_535) : Support.string(value, "named network policy port")
+        raise PolicyError, "endPort requires a numeric port" if end_port && !numeric_port?(value)
+
+        start = if numeric_port?(value)
+                  Support.integer(value, "network policy port", min: 1,
+                                                                max: 65_535)
+                else
+                  Support.string(value,
+                                 "named network policy port")
+                end
         finish = end_port.nil? ? nil : Support.integer(end_port, "network policy endPort", min: 1, max: 65_535)
         raise PolicyError, "endPort must be greater than or equal to port" if finish && start.is_a?(Integer) && finish < start
+
         {"protocol" => protocol, "port" => start, "end_port" => finish}.freeze
       end
 
@@ -398,9 +425,11 @@ module Rubernetes
         entries = {"revision" => revision, "default_deny" => {"ingress" => [], "egress" => []}, "identities" => [],
                    "pods" => pods, "kernel" => compile_kernel_entries(policies, labels: labels, pods: pods)}
         policies.each do |policy|
-          policy.policy_types.each { |type| entries.fetch("default_deny").fetch(type) << {"namespace" => policy.namespace, "selector" => policy.pod_selector.to_h} }
+          policy.policy_types.each do |type|
+            entries.fetch("default_deny").fetch(type) << {"namespace" => policy.namespace, "selector" => policy.pod_selector.to_h}
+          end
           entries.fetch("identities") << {"namespace" => policy.namespace, "name" => policy.name, "selector" => policy.pod_selector.to_h,
-                                           "ingress" => policy.ingress.map(&:to_h), "egress" => policy.egress.map(&:to_h)}
+                                          "ingress" => policy.ingress.map(&:to_h), "egress" => policy.egress.map(&:to_h)}
         end
         entries["default_deny"].each_value(&:freeze)
         Support.canonical(entries)
@@ -427,7 +456,7 @@ module Rubernetes
               policy_rules = direction == "ingress" ? policy.ingress : policy.egress
               policy_rules.each do |rule|
                 peer_specs = compile_peer_specs(rule.peers, policy_namespace: policy.namespace,
-                                                 namespace_labels: labels, pods: pods)
+                                                            namespace_labels: labels, pods: pods)
                 target.fetch("ips").each do |address|
                   family = Support.address_family(address)
                   family_peers = peer_specs.select do |peer_spec|
@@ -435,7 +464,7 @@ module Rubernetes
                     peer_family.nil? || peer_family == family
                   end
                   port_specs = compile_port_specs(rule.ports, direction: direction, target: target,
-                                                  peer_specs: family_peers, pods: pods)
+                                                              peer_specs: family_peers, pods: pods)
                   family_peers.each do |peer_spec|
                     port_specs.each do |port_spec|
                       rules << {"direction" => direction, "target" => address,
@@ -472,8 +501,11 @@ module Rubernetes
           next [{"kind" => "all"}] if peer["all"]
 
           if (block = peer["ip_block"])
-            block.except.empty? ? [{"kind" => "cidr", "cidr" => block.cidr}] :
+            if block.except.empty?
+              [{"kind" => "cidr", "cidr" => block.cidr}]
+            else
               cidr_difference(block.cidr, block.except).map { |cidr| {"kind" => "cidr", "cidr" => cidr} }
+            end
           else
             selected = pods.select do |pod|
               namespace_selector = peer["namespace_selector"]
@@ -548,9 +580,9 @@ module Rubernetes
         output = []
         subtract_cidr_node(network.to_i, prefix, bits, excluded, output)
         if bits == 32
-          output.map { |base, length| "#{IPAddr.new(base, Socket::AF_INET).to_s}/#{length}" }
+          output.map { |base, length| "#{IPAddr.new(base, Socket::AF_INET)}/#{length}" }
         else
-          output.map { |base, length| "#{IPAddr.new(base, Socket::AF_INET6).to_s}/#{length}" }
+          output.map { |base, length| "#{IPAddr.new(base, Socket::AF_INET6)}/#{length}" }
         end
       end
 
@@ -654,6 +686,7 @@ module Rubernetes
 
       def peer_match?(peers, peer, policy_namespace:, namespace_labels:, pod_index:)
         return true if peers.empty?
+
         peers.any? do |entry|
           if (block = entry["ip_block"])
             peer.fetch("ip", nil) && block.include?(peer.fetch("ip"))
@@ -680,8 +713,9 @@ module Rubernetes
         selector.matches?(labels)
       end
 
-      def port_match?(ports, destination, protocol, port, end_port)
+      def port_match?(ports, destination, protocol, port, _end_port)
         return true if ports.empty?
+
         destination_ports = normalize_destination_ports(destination.fetch("ports", {}))
         actual_port = if port.nil?
                         nil
@@ -692,8 +726,10 @@ module Rubernetes
                       end
         ports.any? do |rule|
           next false unless rule.fetch("protocol") == protocol
+
           if rule.fetch("port").is_a?(Integer)
             next false if actual_port.nil? || !numeric_port?(actual_port)
+
             value = Integer(actual_port)
             upper = rule.fetch("end_port") || rule.fetch("port")
             next value.between?(rule.fetch("port"), upper)
@@ -701,12 +737,17 @@ module Rubernetes
           named_value = destination_ports[rule.fetch("port")]
           next false if named_value.nil? || actual_port.nil?
           next false if actual_port && actual_port.to_i != named_value.to_i && actual_port.to_s != rule.fetch("port")
+
           true
         end
       end
 
       def normalize_destination_ports(value)
-        hash = value.is_a?(Array) ? value : (value.respond_to?(:to_h) ? value.to_h : value)
+        hash = if value.is_a?(Array)
+                 value
+               else
+                 (value.respond_to?(:to_h) ? value.to_h : value)
+               end
         if hash.is_a?(Array)
           hash.each_with_object({}) do |entry, result|
             port = entry.respond_to?(:to_h) ? entry.to_h : entry
@@ -732,13 +773,16 @@ module Rubernetes
 
       def normalize_namespace_labels(value)
         hash = value.respond_to?(:to_h) ? value.to_h : value
-        hash.each_with_object({}) { |(namespace, labels), result| result[String(namespace)] = labels.respond_to?(:to_h) ? labels.to_h.transform_keys(&:to_s) : {} }.freeze
+        hash.each_with_object({}) do |(namespace, labels), result|
+          result[String(namespace)] = labels.respond_to?(:to_h) ? labels.to_h.transform_keys(&:to_s) : {}
+        end.freeze
       end
 
       def normalize_direction(value)
         value.to_s.downcase.then do |normalized|
           return "ingress" if %w[ingress in].include?(normalized)
           return "egress" if %w[egress out].include?(normalized)
+
           raise PolicyError, "unsupported NetworkPolicy direction #{value.inspect}"
         end
       end

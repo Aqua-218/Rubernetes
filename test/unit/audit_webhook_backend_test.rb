@@ -18,10 +18,15 @@ class AuditWebhookBackendTest < Minitest::Test
   def test_batch_mode_posts_an_event_list
     bodies = []
     backend = Audit::WebhookBackend.new(url: "http://audit.example.test/", mode: "batch", batch_max_size: 2, batch_max_wait: 60,
-                                        http: ->(body) { bodies << JSON.parse(body); 200 })
+                                        http: lambda { |body|
+                                          bodies << JSON.parse(body)
+                                          200
+                                        })
+
     assert backend.process(event)
     assert backend.process(event("ResponseComplete"))
     backend.flush
+
     refute_empty bodies
     assert_equal "EventList", bodies.first["kind"]
     assert_equal 2, bodies.flat_map { |list| list["items"] }.length
@@ -32,13 +37,18 @@ class AuditWebhookBackendTest < Minitest::Test
     metrics = Rubernetes::Observability::Metrics.new
     blocking = Audit::WebhookBackend.new(url: "http://audit.example.test/", mode: "blocking", http: ->(_body) { 503 })
     blocking.metrics = metrics
+
     assert_equal false, blocking.process(event)
     text = metrics.render_own
+
     assert_match(/apiserver_audit_error_total\{plugin="webhook"\} 1/, text)
 
-    strict = Audit::WebhookBackend.new(url: "http://audit.example.test/", mode: "blocking-strict", http: ->(_body) { raise IOError, "down" })
+    strict = Audit::WebhookBackend.new(url: "http://audit.example.test/", mode: "blocking-strict", http: lambda { |_body|
+      raise IOError, "down"
+    })
     strict.metrics = metrics
-    assert strict.strict?
+
+    assert_predicate strict, :strict?
     assert_raises(Audit::RejectedError) { strict.process(event) }
     assert_equal false, strict.process(event("ResponseComplete")), "only RequestReceived fails the request"
   end
@@ -47,7 +57,8 @@ class AuditWebhookBackendTest < Minitest::Test
     memory = Audit::MemoryBackend.new
     strict = Audit::WebhookBackend.new(url: "http://audit.example.test/", mode: "blocking-strict", http: ->(_body) { 500 })
     union = Audit::UnionBackend.new(memory, strict)
-    assert union.strict?
+
+    assert_predicate union, :strict?
     assert_raises(Audit::RejectedError) { union.process(event) }
     assert_equal 1, memory.events.length
   end

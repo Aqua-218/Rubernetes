@@ -34,7 +34,7 @@ module Rubernetes
                             kubernetes.io/gce-pd kubernetes.io/portworx-volume kubernetes.io/vsphere-volume].freeze
       STORAGE_VERSION = "storage.k8s.io/v1"
       CONFLICT_RETRIES = 5
-      MAX_INT32 = 2**31 - 1
+      MAX_INT32 = (2**31) - 1
 
       class Error < StandardError; end
 
@@ -180,7 +180,8 @@ module Rubernetes
       def highest_supported_version(name, versions)
         candidates = Array(versions).map(&:to_s).select { |version| version.sub(/\Av/, "").split(".").first == "1" }
         if candidates.empty?
-          raise Error, "RegisterPlugin error -- none of the versions specified #{Array(versions).inspect} are supported by CSI driver #{name}; supported: 1.x"
+          raise Error,
+                "RegisterPlugin error -- none of the versions specified #{Array(versions).inspect} are supported by CSI driver #{name}; supported: 1.x"
         end
 
         candidates.max { |left, right| compare_versions(left, right) }

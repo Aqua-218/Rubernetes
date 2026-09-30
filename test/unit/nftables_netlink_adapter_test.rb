@@ -48,15 +48,15 @@ class NftablesNetlinkAdapterTest < Minitest::Test
     adapter = backend.instance_variable_get(:@syscall_adapter)
 
     assert_instance_of Adapter, adapter
-    refute adapter.production_capable?
-    refute backend.available?
+    refute_predicate adapter, :production_capable?
+    refute_predicate backend, :available?
     assert_match(/packet semantics|readback/, adapter.production_capability_error)
   end
 
   def test_missing_service_contract_is_explicit_and_stable
     adapter = Adapter.new(table_name: "rubernetes_contract_test")
 
-    refute adapter.production_capable?
+    refute_predicate adapter, :production_capable?
     assert_equal Adapter::MISSING_SERVICE_CONTRACT, adapter.missing_service_contract
     assert_empty adapter.missing_service_contract
     assert_match(/packet semantics|readback/, adapter.production_capability_error)
@@ -109,16 +109,17 @@ class NftablesNetlinkAdapterTest < Minitest::Test
     service = Rubernetes::Proxy::Service.new(
       "metadata" => {"name" => "health", "namespace" => "tests"},
       "spec" => {"type" => "NodePort", "clusterIP" => "10.96.0.3", "externalTrafficPolicy" => "Local",
-                  "healthCheckNodePort" => 30099,
-                  "ports" => [{"port" => 80, "targetPort" => 8080, "nodePort" => 30080}]}
+                 "healthCheckNodePort" => 30_099,
+                 "ports" => [{"port" => 80, "targetPort" => 8080, "nodePort" => 30_080}]}
     )
     endpoint = Rubernetes::Proxy::Endpoint.new(address: "10.1.0.3", port: 8080, node_name: "node-a")
     rules = Rubernetes::Proxy::RuleCompiler.new(local_node: "node-a").compile(service, endpoints: [endpoint]).rules
     objects = adapter.send(:desired_objects, rules)
     health = objects.fetch("rules").find { |entry| entry["action"] == "node_local_responder" }
+
     assert health
     refute health.fetch("dnat")
-    assert_equal 2, objects.fetch("rules").count { |entry| entry["action"] == "drop_fragment" }
+    assert_equal(2, objects.fetch("rules").count { |entry| entry["action"] == "drop_fragment" })
     assert_includes objects.fetch("chains").map { |entry| entry.fetch("name") }, "fragment_guard"
   end
 
@@ -143,10 +144,13 @@ class NftablesNetlinkAdapterTest < Minitest::Test
       backend.apply(compiled)
 
       result = adapter.send_messages([], backend: backend)
+
       assert_equal true, result.fetch("verified")
       transaction = result.fetch("transaction")
+
       assert_equal transaction.fetch("messageCount"), transaction.fetch("acknowledgedSequences").length
       readback = adapter.readback(backend: backend)
+
       assert_equal true, readback.fetch("verified")
       assert_equal 5, readback.fetch("chains").length
       assert_equal 1, readback.fetch("sets").length
@@ -189,8 +193,10 @@ class NftablesNetlinkAdapterTest < Minitest::Test
         client.close
       end
       client = TCPSocket.new("127.0.0.1", 80)
+
       assert_equal "dnat-ok\n", client.read(8)
       client.close
+
       assert_equal true, result.fetch("verified")
       assert_equal true, adapter.readback(backend: backend).fetch("verified")
       worker.join

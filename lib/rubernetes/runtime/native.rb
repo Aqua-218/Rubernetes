@@ -7,7 +7,6 @@
 require "digest"
 require "json"
 require "securerandom"
-require "thread"
 require "time"
 
 # The native ownership implementation predates the common Runtime contract and
@@ -104,7 +103,7 @@ module Rubernetes
               event: String(event),
               payload: deep_copy(payload),
               timestamp: (timestamp || @clock.call).utc,
-              previous_digest: @records.last&.digest || "0" * 64,
+              previous_digest: @records.last&.digest || ("0" * 64),
               digest: Digest::SHA256.hexdigest([sequence, operation_id, event, JSON.generate(payload)].join("\0"))
             )
             @records << record
@@ -139,8 +138,6 @@ module Rubernetes
           end
         end
       end
-
-      attr_reader :config, :ledger, :namespace, :filesystem, :security, :process_supervisor, :events
 
       # An attach client borrows the supervisor-owned stdio descriptors. Its
       # HTTP/WebSocket lifecycle must never close the sole read end and send
@@ -287,11 +284,7 @@ module Rubernetes
         config.l3
       end
 
-      def capability_probe
-        @capability_probe
-      end
-
-      attr_reader :image_resolver
+      attr_reader :capability_probe, :config, :ledger, :namespace, :filesystem, :security, :process_supervisor, :events, :image_resolver
 
       def validate_config!
         config.validate!
@@ -313,6 +306,7 @@ module Rubernetes
             if %i[cleanup_pending state_unknown rolling_back stopping].include?(existing.state)
               raise RecoveryRequired, "request #{request} is waiting for durable recovery (#{existing.state})"
             end
+
             return existing_id
           end
         end
@@ -324,26 +318,25 @@ module Rubernetes
         input["qos"] = normalize_qos(input)
         validate_sandbox_input!(input)
         durable = if @ledger.respond_to?(:operation_for_request)
-                     @ledger.operation_for_request(request)
-                   else
-                     @ledger.operations.find do |operation|
-                       ledger_value(operation, :request_id).to_s == request
-                     end
-                   end
+                    @ledger.operation_for_request(request)
+                  else
+                    @ledger.operations.find do |operation|
+                      ledger_value(operation, :request_id).to_s == request
+                    end
+                  end
         if durable
           durable_config_digest = ledger_value(durable, :config_digest)
           raise OwnershipConflict, "request #{request} was replayed with different intent" unless durable_config_digest == digest(input)
 
           durable_result = ledger_value(durable, :result)
-          durable_id = if durable_result.is_a?(Hash)
-                         durable_result["sandbox_id"] || durable_result[:sandbox_id]
-                       end
+          durable_id = (durable_result["sandbox_id"] || durable_result[:sandbox_id] if durable_result.is_a?(Hash))
           durable_id ||= ledger_value(durable, :target_id)
           durable_id ||= ledger_value(durable, :id)
           durable_state = ledger_value(durable, :state)
-          if durable_state == "StateUnknown" || durable_state == "CleanupPending"
+          if %w[StateUnknown CleanupPending].include?(durable_state)
             raise RecoveryRequired, "request #{request} is waiting for durable recovery (#{durable_state})"
           end
+
           if durable_id && %w[WorkloadStopped Running Stopping Stopped Removed].include?(durable_state)
             @mutex.synchronize { @requests[request] = durable_id }
             return durable_id
@@ -373,7 +366,7 @@ module Rubernetes
         workspace = @filesystem.prepare(id: sandbox_id, image_digest: image_digest, lowerdirs: input["lowerdirs"] || input[:lowerdirs] || [],
                                         read_only: input["read_only_root_filesystem"] == true, owner: workspace_owner)
         claim(operation, kind: "workspace", id: sandbox_id, identity: workspace.identity,
-              metadata: workspace_metadata(workspace))
+                         metadata: workspace_metadata(workspace))
         sandbox.set_resources(workspace: workspace)
         advance(sandbox, operation, :workspace_allocated)
 
@@ -386,7 +379,7 @@ module Rubernetes
         # target, and filesystem from the holder namespace before we persist
         # the workspace as owned.
         claim(operation, kind: "workspace", id: sandbox_id, identity: workspace.identity,
-              metadata: workspace_metadata(workspace))
+                         metadata: workspace_metadata(workspace))
         security_plan, = security_plan_for(input["security_context"] || input[:security_context] || config.security_context)
         sandbox.set_resources(security_plan: security_plan)
         record(:isolation_created, sandbox_id: sandbox_id, namespace: namespace.to_h, security_steps: security_plan.step_names.map(&:to_s))
@@ -408,7 +401,7 @@ module Rubernetes
                                 limits: (limits.nil? || limits.empty? ? nil : limits),
                                 pod_limits: (initial_pod_limits.empty? ? nil : initial_pod_limits))
         claim(operation, kind: "cgroup", id: sandbox_id, identity: cgroup.identity,
-              metadata: cgroup.to_h.merge("pod_limits" => pod_limits, "qos" => normalize_qos(input)))
+                         metadata: cgroup.to_h.merge("pod_limits" => pod_limits, "qos" => normalize_qos(input)))
         sandbox.set_resources(cgroup: cgroup)
         record(:resources_attached, sandbox_id: sandbox_id, cgroup: cgroup.to_h)
         advance(sandbox, operation, :resources_attached)
@@ -417,10 +410,10 @@ module Rubernetes
         record(:workload_gate_closed, sandbox_id: sandbox_id)
         if @ledger.respond_to?(:set_result)
           @ledger.set_result(operation.id, {
-            "sandbox_id" => sandbox_id,
-            "identity" => identity,
-            "runtime_class" => runtime_class
-          })
+                               "sandbox_id" => sandbox_id,
+                               "identity" => identity,
+                               "runtime_class" => runtime_class
+                             })
         end
         sandbox_id
       rescue StandardError => error
@@ -542,6 +535,7 @@ module Rubernetes
         unless %i[workload_stopped running].include?(sandbox.state)
           raise InvalidState, "container creation requires a WorkloadStopped or Running sandbox"
         end
+
         input = resolve_container_spec(normalize_hash(spec), sandbox: sandbox)
         command = input["command"] || input[:command] || input["argv"] || input[:argv]
         validate_command!(command) if command
@@ -558,8 +552,8 @@ module Rubernetes
         container_id = String(id || input["id"] || input[:id] || sandbox.next_container_id)
         request = request_id || input["request_id"] || input[:request_id] || "create:#{sandbox.id}:#{container_id}"
         request_state = begin_native_request(request, operation: "container.create", input: {
-          "sandbox_id" => sandbox.id, "container_id" => container_id, "spec" => input
-        })
+                                               "sandbox_id" => sandbox.id, "container_id" => container_id, "spec" => input
+                                             })
         if request_state&.state == "Completed"
           recorded_id = request_state.result.is_a?(Hash) ? (request_state.result["container_id"] || request_state.result[:container_id]) : nil
           return sandbox.container(recorded_id || container_id)
@@ -575,7 +569,11 @@ module Rubernetes
           # bootstrap; see #apply_deferred_memory_limits.
           deferred_memory = limits.select { |name, _| DEFERRED_LIMIT_FILES.include?(name.to_s) }
           initial_limits = limits.reject { |name, _| DEFERRED_LIMIT_FILES.include?(name.to_s) }
-          @mutex.synchronize { @deferred_memory_limits[container_resource_id(sandbox, container)] = deferred_memory } unless deferred_memory.empty?
+          unless deferred_memory.empty?
+            @mutex.synchronize do
+              @deferred_memory_limits[container_resource_id(sandbox, container)] = deferred_memory
+            end
+          end
           # The leaf drops the sandbox prefix the container id repeats: the
           # Pod directory above it already names the sandbox (and the Pod
           # UID), and a leaf that matched the same UID search made the Pod
@@ -596,18 +594,18 @@ module Rubernetes
           record(:container_created, sandbox_id: sandbox.id, container_id: result.id, qos: qos, limits: limits)
           operation = @ledger.operation(sandbox.id)
           claim(operation, kind: "cgroup", id: container_resource_id(sandbox, result), identity: cgroup.identity,
-                # The spec is what startup reconstruction rebuilds the
-                # container from; the security plan is derived from it again
-                # there (reconstruct_one_sandbox!), so only its digest is
-                # recorded: the plan itself (the whole capability probe) was
-                # 22 KB per claim and most of the journal.
-                metadata: result.cgroup.to_h.merge(
-                  "container_id" => result.id,
-                  "limits" => limits,
-                  "spec" => result.spec,
-                  "security_context" => container_security_context(result.spec),
-                  "security_plan_digest" => plan_digest
-                ))
+                           # The spec is what startup reconstruction rebuilds the
+                           # container from; the security plan is derived from it again
+                           # there (reconstruct_one_sandbox!), so only its digest is
+                           # recorded: the plan itself (the whole capability probe) was
+                           # 22 KB per claim and most of the journal.
+                           metadata: result.cgroup.to_h.merge(
+                             "container_id" => result.id,
+                             "limits" => limits,
+                             "spec" => result.spec,
+                             "security_context" => container_security_context(result.spec),
+                             "security_plan_digest" => plan_digest
+                           ))
           complete_native_request(request, state: "Completed", result: {"container_id" => result.id})
           result
         rescue StandardError => error
@@ -616,7 +614,7 @@ module Rubernetes
             @cgroup.remove(cgroup, force: true) if cgroup
           rescue StandardError => cleanup_error
             record(:container_create_cleanup_error, sandbox_id: sandbox.id, container_id: container_id,
-                   error: "#{cleanup_error.class}: #{cleanup_error.message}")
+                                                    error: "#{cleanup_error.class}: #{cleanup_error.message}")
           end
           begin
             sandbox.remove_container(container) if container && container.state != :running
@@ -632,7 +630,7 @@ module Rubernetes
             end
           rescue StandardError => ledger_error
             record(:container_create_ledger_cleanup_error, sandbox_id: sandbox.id, container_id: container_id,
-                   error: "#{ledger_error.class}: #{ledger_error.message}")
+                                                           error: "#{ledger_error.class}: #{ledger_error.message}")
           end
           complete_native_request(request, state: "Failed", error: error_payload(error)) unless error.is_a?(RecoveryRequired)
           raise
@@ -644,11 +642,10 @@ module Rubernetes
         spec = container.spec
         request = request_id || spec["request_id"] || "start:#{sandbox.id}:#{container.id}"
         request_state = begin_native_request(request, operation: "container.start", input: {
-          "sandbox_id" => sandbox.id, "container_id" => container.id, "spec" => spec
-        })
-        if request_state&.state == "Completed"
-          return sandbox.container(container.id)
-        end
+                                               "sandbox_id" => sandbox.id, "container_id" => container.id, "spec" => spec
+                                             })
+        return sandbox.container(container.id) if request_state&.state == "Completed"
+
         unless container.state == :created
           error = InvalidState.new("container #{container.id} is not startable")
           complete_native_request(request, state: "Failed", error: error_payload(error))
@@ -659,6 +656,7 @@ module Rubernetes
           if config.host_profile? || spec["image"] || spec["resolved_image"]
             raise FailClosed, "container image config did not provide an executable command"
           end
+
           command = ["/bin/true"]
         end
         process = nil
@@ -703,7 +701,10 @@ module Rubernetes
           @cgroup.attach(container.cgroup, pid: process.pid) if process.respond_to?(:pid) && container.cgroup
           apply_oom_score_adj(process, spec)
           record_oom_baseline(sandbox, container)
-          @security.apply(container.security_plan, probe: @security_probe) unless @process_supervisor.respond_to?(:security_applied_in_child?) && @process_supervisor.security_applied_in_child?
+          unless @process_supervisor.respond_to?(:security_applied_in_child?) && @process_supervisor.security_applied_in_child?
+            @security.apply(container.security_plan,
+                            probe: @security_probe)
+          end
           if hook_plan && !hooks_in_child
             run_hooks(hooks, Hooks::RUNTIME_CREATE + Hooks::IN_CONTAINER, hook_plan, pid: process.respond_to?(:pid) ? process.pid : nil)
           end
@@ -719,18 +720,21 @@ module Rubernetes
           process_hash = started.respond_to?(:to_h) ? started.to_h : {}
           process_identity = process_identity_for(sandbox, container, process_hash)
           claim(operation, kind: "process", id: container_resource_id(sandbox, container), identity: process_identity,
-                metadata: process_hash.merge("managed_by" => "rubernetes-native", "live" => true))
+                           metadata: process_hash.merge("managed_by" => "rubernetes-native", "live" => true))
           if sandbox.state == :workload_stopped
             sandbox.transition(:running)
             @ledger.transition(operation_id: sandbox.id, to: "Running") if operation&.state == "WorkloadStopped"
           end
           complete_native_request(request, state: "Completed", result: {
-            "container_id" => running.id, "process_id" => process_identity
-          })
+                                    "container_id" => running.id, "process_id" => process_identity
+                                  })
           record(:container_started, sandbox_id: sandbox.id, container_id: running.id,
-                 pid: process_hash["workload_pid"] || process_hash["pid"],
-                 wrapper_pid: process_hash["pid"])
-          run_post_hooks(sandbox, running, hooks, hook_plan, "poststart", pid: process_hash["workload_pid"] || process_hash["pid"]) if hook_plan
+                                     pid: process_hash["workload_pid"] || process_hash["pid"],
+                                     wrapper_pid: process_hash["pid"])
+          if hook_plan
+            run_post_hooks(sandbox, running, hooks, hook_plan, "poststart",
+                           pid: process_hash["workload_pid"] || process_hash["pid"])
+          end
           running
         rescue StandardError => error
           @process_supervisor.stop(process, timeout: 1.0) if process
@@ -743,7 +747,7 @@ module Rubernetes
             end
           rescue StandardError => ledger_error
             record(:container_start_ledger_cleanup_error, sandbox_id: sandbox.id, container_id: container.id,
-                   error: "#{ledger_error.class}: #{ledger_error.message}")
+                                                          error: "#{ledger_error.class}: #{ledger_error.message}")
           end
           complete_native_request(request, state: "Failed", error: error_payload(error)) unless error.is_a?(RecoveryRequired)
           raise FailClosed, "container start failed before workload gate release: #{error.message}"
@@ -772,9 +776,10 @@ module Rubernetes
         sandbox, container = find_container(value)
         request = request_id || "stop:#{sandbox.id}:#{container.id}"
         request_state = begin_native_request(request, operation: "container.stop", input: {
-          "sandbox_id" => sandbox.id, "container_id" => container.id, "timeout" => timeout
-        })
+                                               "sandbox_id" => sandbox.id, "container_id" => container.id, "timeout" => timeout
+                                             })
         return sandbox.container(container.id) if request_state&.state == "Completed"
+
         if container.state == :stopped
           complete_native_request(request, state: "Completed", result: {"container_id" => container.id, "state" => "stopped"})
           return container
@@ -807,7 +812,8 @@ module Rubernetes
           stopped = sandbox.update_container(container, state: :stopped)
           operation = @ledger.operation(sandbox.id)
           release_process_resource(operation, sandbox, stopped, process_hash) if release_process
-          complete_native_request(request, state: "Completed", result: {"container_id" => stopped.id, "state" => "stopped", "reason" => oom_reason}.compact)
+          complete_native_request(request, state: "Completed",
+                                           result: {"container_id" => stopped.id, "state" => "stopped", "reason" => oom_reason}.compact)
           record(:container_stopped, sandbox_id: sandbox.id, container_id: stopped.id, reason: oom_reason)
           stopped
         rescue StandardError => error
@@ -830,9 +836,10 @@ module Rubernetes
         end
         request = request_id || "remove:#{sandbox.id}:#{container.id}"
         request_state = begin_native_request(request, operation: "container.remove", input: {
-          "sandbox_id" => sandbox.id, "container_id" => container.id
-        })
+                                               "sandbox_id" => sandbox.id, "container_id" => container.id
+                                             })
         return true if request_state&.state == "Completed"
+
         begin
           stop_container(container, request_id: "#{request}:stop") if container.state == :running
           process_hash = container.process.respond_to?(:to_h) ? container.process.to_h : {}
@@ -871,7 +878,9 @@ module Rubernetes
         status = container.to_h.merge("oom_killed" => @mutex.synchronize { @oom_reported.key?(container_resource_id(sandbox, container)) })
         if container.state == :stopped && container.process.respond_to?(:exit_status)
           exit_code = container.process.exit_status
-          exit_code = 128 + Integer(container.process.term_signal) if exit_code.nil? && container.process.respond_to?(:term_signal) && container.process.term_signal
+          if exit_code.nil? && container.process.respond_to?(:term_signal) && container.process.term_signal
+            exit_code = 128 + Integer(container.process.term_signal)
+          end
           status["exitCode"] = exit_code
           status["terminated"] = {"exitCode" => exit_code, "signal" => container.process.respond_to?(:term_signal) ? container.process.term_signal : nil,
                                   "reason" => status["oom_killed"] ? "OOMKilled" : nil}.compact
@@ -879,7 +888,7 @@ module Rubernetes
         status
       end
 
-      def reap_exited(sandbox, container)
+      def reap_exited(_sandbox, container)
         return unless container.state == :running && container.process
 
         wait_container(container.id, timeout: 0)
@@ -902,9 +911,11 @@ module Rubernetes
       def exec(value, command, tty: false, **options)
         sandbox, container = find_container(value)
         raise InvalidState, "exec requires a running container" unless container.state == :running
+
         command = validate_command!(command)
         adapter = @adapters[:exec]
         raise CapabilityError, "exec adapter is not configured" unless adapter
+
         result = invoke(adapter, :exec, sandbox: sandbox, container: container, command: command, tty: tty, **options)
         validate_duplex_result!(result, operation: :exec, options: options)
         result
@@ -916,26 +927,29 @@ module Rubernetes
       def attach(value, tty: false, **options)
         sandbox, container = find_container(value)
         raise InvalidState, "attach requires a running container" unless container.state == :running
-        if (adapter = @adapters[:attach])
-          result = invoke(adapter, :attach, sandbox: sandbox, container: container, tty: tty, **options)
-        else
-          result = attach_process_streams(container, tty: tty, **options)
-        end
+
+        result = if (adapter = @adapters[:attach])
+                   invoke(adapter, :attach, sandbox: sandbox, container: container, tty: tty, **options)
+                 else
+                   attach_process_streams(container, tty: tty, **options)
+                 end
         validate_duplex_result!(result, operation: :attach, options: options)
         result
       end
 
       # Port-forward requires a connector because the runtime owns the target
       # network namespace.  It never falls back to a host socket.
-      def port_forward(value, ports, timeout: 30.0, stream: nil, **options)
+      def port_forward(value, ports, timeout: 30.0, stream: nil, **)
         sandbox, container = find_container(value)
         raise InvalidState, "port-forward requires a running container" unless container.state == :running
+
         normalized_ports = normalize_ports(ports)
         timeout = normalize_timeout(timeout)
         adapter = @adapters[:port_forward]
         raise CapabilityError, "port-forward connector is not configured" unless adapter
+
         result = invoke(adapter, :port_forward, sandbox: sandbox, container: container,
-                        ports: normalized_ports, timeout: timeout, stream: stream, **options)
+                                                ports: normalized_ports, timeout: timeout, stream: stream, **)
         validate_duplex_result!(result, operation: :port_forward, options: {stdin: true, stdout: true})
         result
       end
@@ -956,41 +970,49 @@ module Rubernetes
       # Probe effects are explicit runtime capabilities.  ProbeManager may use
       # these methods when no external client was injected, but an unavailable
       # connector remains an observable failure.
-      def http_get(value, definition, timeout: 1.0, **options)
+      def http_get(value, definition, timeout: 1.0, **)
         sandbox, container = find_container(value)
         raise InvalidState, "HTTP probe requires a running container" unless container.state == :running
+
         adapter = @adapters[:http_probe]
         raise CapabilityError, "HTTP probe connector is not configured" unless adapter
+
         invoke(adapter, :http_get, sandbox: sandbox, container: container,
-               definition: normalize_hash(definition), timeout: normalize_timeout(timeout), **options)
+                                   definition: normalize_hash(definition), timeout: normalize_timeout(timeout), **)
       end
 
       # gRPC health probes join the Pod's network namespace through the same
       # connector as HTTP probes; the agent's own namespace cannot reach a
       # Pod's loopback (or, on this host, its IP at all).
-      def grpc_check(value, definition, timeout: 1.0, **options)
+      def grpc_check(value, definition, timeout: 1.0, **)
         sandbox, container = find_container(value)
         raise InvalidState, "gRPC probe requires a running container" unless container.state == :running
+
         adapter = @adapters[:http_probe]
         raise CapabilityError, "gRPC probe connector is not configured" unless adapter.respond_to?(:grpc_check)
+
         invoke(adapter, :grpc_check, sandbox: sandbox, container: container,
-               definition: normalize_hash(definition), timeout: normalize_timeout(timeout), **options)
+                                     definition: normalize_hash(definition), timeout: normalize_timeout(timeout), **)
       end
 
-      def tcp_socket(value, definition, timeout: 1.0, **options)
+      def tcp_socket(value, definition, timeout: 1.0, **)
         sandbox, container = find_container(value)
         raise InvalidState, "TCP probe requires a running container" unless container.state == :running
+
         adapter = @adapters[:tcp_probe]
         raise CapabilityError, "TCP probe connector is not configured" unless adapter
+
         invoke(adapter, :tcp_socket, sandbox: sandbox, container: container,
-               definition: normalize_hash(definition), timeout: normalize_timeout(timeout), **options)
+                                     definition: normalize_hash(definition), timeout: normalize_timeout(timeout), **)
       end
 
       def wait_container(value, timeout: nil)
         sandbox, container = find_container(value)
         raise InvalidState, "wait requires a running container" unless container.state == :running
+
         process = container.process
         raise InvalidState, "container #{container.id} has no process handle" unless process
+
         result = @process_supervisor.wait(process, timeout: timeout, resource_id: "process:#{sandbox.id}:#{container.id}")
         return {"state" => "running", "exitCode" => nil}.freeze unless result
 
@@ -1032,13 +1054,15 @@ module Rubernetes
         # released; kubelet serves that log until the container is removed.
         handle = container.process || (container.state == :stopped ? "process-#{sandbox.id}-#{container.id}" : nil)
         raise InvalidState, "logs require a started container" unless handle
+
         @process_supervisor.logs(handle, follow: follow, since: since, tail: tail, stream: stream,
-                                                    timestamps: timestamps)
+                                         timestamps: timestamps)
       end
 
       def stats(value)
         _sandbox, container = find_container(value)
         raise InvalidState, "stats require a started container" unless container.process
+
         @process_supervisor.stats(container.process)
       end
 
@@ -1056,19 +1080,21 @@ module Rubernetes
             owner = sandbox.identity
             live = sandbox.state != :removed
             add_inventory_resource(resources, "workspace", sandbox.workspace, owner: owner,
-                                    live: live, parent: sandbox.id)
+                                                                              live: live, parent: sandbox.id)
             add_inventory_resource(resources, "namespace", sandbox.namespace, owner: owner,
-                                    live: live, parent: sandbox.id)
+                                                                              live: live, parent: sandbox.id)
             add_inventory_resource(resources, "cgroup", sandbox.cgroup, owner: owner,
-                                    live: live, parent: sandbox.id)
+                                                                        live: live, parent: sandbox.id)
             sandbox.containers.each do |container_hash|
               if container_hash["workspace"]
                 add_inventory_resource(resources, "workspace", container_hash["workspace"], owner: owner,
-                                        live: live, parent: sandbox.id)
+                                                                                            live: live, parent: sandbox.id)
               end
               container = sandbox.container(container_hash.fetch("id"))
-              add_inventory_resource(resources, "cgroup", container.cgroup, owner: owner,
-                                      live: container.state == :running, parent: sandbox.id) if container.cgroup
+              if container.cgroup
+                add_inventory_resource(resources, "cgroup", container.cgroup, owner: owner,
+                                                                              live: container.state == :running, parent: sandbox.id)
+              end
               next unless container.process
 
               process = container.process.respond_to?(:to_h) ? container.process.to_h : container.process
@@ -1120,7 +1146,9 @@ module Rubernetes
         kind = value.fetch("kind")
         case kind
         when "workspace"
-          handle = @filesystem.workspaces.find { |entry| entry["id"].to_s == value.fetch("id") && entry["identity"] == value.fetch("identity") }
+          handle = @filesystem.workspaces.find do |entry|
+            entry["id"].to_s == value.fetch("id") && entry["identity"] == value.fetch("identity")
+          end
           workspace = if handle
                         @filesystem.workspaces.find { |entry| entry["id"].to_s == value.fetch("id") }
                       else
@@ -1134,7 +1162,10 @@ module Rubernetes
           @filesystem.cleanup(Native::Filesystem::Workspace.new(**workspace.transform_keys(&:to_sym)))
         when "namespace"
           handle = @namespace.lookup(value.fetch("id"))
-          raise Native::Namespace::Error, "namespace #{resource_key(value)} identity changed" unless handle.identity == value.fetch("identity")
+          unless handle.identity == value.fetch("identity")
+            raise Native::Namespace::Error,
+                  "namespace #{resource_key(value)} identity changed"
+          end
 
           @namespace.destroy(handle)
         when "cgroup"
@@ -1143,11 +1174,18 @@ module Rubernetes
           rescue Platform::Linux::CgroupV2::Error
             orphan_cgroup(value, metadata) || raise
           end
-          raise Platform::Linux::CgroupV2::Error, "cgroup #{resource_key(value)} identity changed" unless handle.identity == value.fetch("identity")
+          unless handle.identity == value.fetch("identity")
+            raise Platform::Linux::CgroupV2::Error,
+                  "cgroup #{resource_key(value)} identity changed"
+          end
+
           expected_inode = metadata["cgroup_inode"] || metadata["cgroup_id"]
           if expected_inode && handle.respond_to?(:path)
             actual_inode = File.stat(handle.path).ino
-            raise Platform::Linux::CgroupV2::Error, "cgroup #{resource_key(value)} kernel identity changed" unless actual_inode == Integer(expected_inode)
+            unless actual_inode == Integer(expected_inode)
+              raise Platform::Linux::CgroupV2::Error,
+                    "cgroup #{resource_key(value)} kernel identity changed"
+            end
           end
 
           @cgroup.remove(handle, force: true)
@@ -1163,15 +1201,18 @@ module Rubernetes
             candidate_start = observed["workload_start_time"]
             candidate_digest = observed["workload_executable_digest"] || observed["executable_digest"]
             candidate_identity = if candidate_pid
-              "process:#{metadata["parent"]}:#{metadata["container_id"]}:#{candidate_pid}:#{candidate_start || "unknown"}:#{candidate_digest || "unknown"}"
-            end
+                                   "process:#{metadata["parent"]}:#{metadata["container_id"]}:#{candidate_pid}:#{candidate_start || "unknown"}:#{candidate_digest || "unknown"}"
+                                 end
             candidate_identity == expected &&
               (metadata_pid.nil? || candidate_pid.to_i == metadata_pid.to_i) &&
               (metadata_start.nil? || candidate_start.to_i == metadata_start.to_i)
           end
           raise RecoveryRequired, "process #{resource_key(value)} is not present in this runtime" unless handle
 
-          @process_supervisor.stop(handle, timeout: 1.0, resource_id: value.fetch("identity")) if handle.running? || handle.state == :created
+          if handle.running? || handle.state == :created
+            @process_supervisor.stop(handle, timeout: 1.0,
+                                             resource_id: value.fetch("identity"))
+          end
           @process_supervisor.close(handle)
         else
           raise CapabilityError, "native cleanup does not support resource kind #{kind.inspect}"
@@ -1286,7 +1327,8 @@ module Rubernetes
 
       def userns_allocator
         @userns_allocator ||= if config.pure_profile?
-                                Platform::Linux::UserNamespace::Allocator.new(path: File.join(Dir.tmpdir, "rubernetes-pure-userns-#{Process.pid}.json"))
+                                Platform::Linux::UserNamespace::Allocator.new(path: File.join(Dir.tmpdir,
+                                                                                              "rubernetes-pure-userns-#{Process.pid}.json"))
                               else
                                 Platform::Linux::UserNamespace::Allocator.new(path: config.userns_allocation_path)
                               end
@@ -1345,8 +1387,8 @@ module Rubernetes
       def container_cgroup_limits(input, qos:, pod: nil)
         pod_spec = pod && (pod["spec"] || pod[:spec])
         derived = Resources.container_cgroup_limits(input, qos: qos, memory_qos: config.memory_qos,
-                                                    pids_limit: input["pids_limit"] || input[:pids_limit] || config.pod_pids_limit,
-                                                    pod: pod_spec.is_a?(Hash) ? pod_spec : nil)
+                                                           pids_limit: input["pids_limit"] || input[:pids_limit] || config.pod_pids_limit,
+                                                           pod: pod_spec.is_a?(Hash) ? pod_spec : nil)
         explicit = input["limits"] || input[:limits] || {}
         derived.merge(normalize_hash(explicit))
       end
@@ -1444,7 +1486,7 @@ module Rubernetes
         annotations = spec["annotations"].is_a?(Hash) ? spec["annotations"].transform_values(&:to_s) : {}
         env = (spec["env"] || {}).to_h.reject { |_name, value| value.nil? }.map { |name, value| "#{name}=#{value}" }
         Hooks.write_bundle(directory, root: rootfs || "/", process: {"args" => Array(command), "env" => env, "cwd" => spec["cwd"] || "/"},
-                           mounts: Array(spec["mounts"]), annotations: annotations, hooks: hooks)
+                                      mounts: Array(spec["mounts"]), annotations: annotations, hooks: hooks)
         {directory: directory, id: container.id, annotations: annotations,
          state: Hooks.state(id: container.id, status: "creating", pid: nil, bundle: directory, annotations: annotations)}
       end
@@ -1494,6 +1536,7 @@ module Rubernetes
         unless root && File.directory?(root) && !File.symlink?(root)
           raise FailClosed, "resolved image rootfs is unavailable at workload start"
         end
+
         root
       end
 
@@ -1503,10 +1546,10 @@ module Rubernetes
       def workspace_metadata(workspace)
         metadata = workspace.respond_to?(:to_h) ? workspace.to_h : {}
         extra = if @filesystem.respond_to?(:resource_metadata)
-          @filesystem.resource_metadata(workspace)
-        else
-          {}
-        end
+                  @filesystem.resource_metadata(workspace)
+                else
+                  {}
+                end
         metadata.merge(extra || {})
       end
 
@@ -1525,6 +1568,7 @@ module Rubernetes
 
           sandbox_id = String(operation.fetch("id") { operation[:id] })
           next if @mutex.synchronize { @sandboxes.key?(sandbox_id) }
+
           owner = String(operation.fetch("owner") { operation[:owner] })
           resources = @ledger.resources(owner: owner, include_released: false).map { |resource| normalize_hash(resource) }
           sandbox_resources = resources.select do |resource|
@@ -1586,21 +1630,18 @@ module Rubernetes
           container_metadata = resource.fetch("metadata", {})
           persisted_spec = container_metadata["spec"]
           raise RecoveryRequired, "container #{sandbox_id}:#{container_id} has no durable spec" unless persisted_spec.respond_to?(:to_h)
+
           spec = persisted_spec.to_h.transform_keys(&:to_s).merge("id" => container_id)
-          if process_metadata && process_metadata["command"]
-            spec["command"] = Array(process_metadata["command"])
-          end
+          spec["command"] = Array(process_metadata["command"]) if process_metadata && process_metadata["command"]
           container = sandbox.create_container(spec: spec, id: container_id)
           container_cgroup = adopt_cgroup(resource)
           security_context = container_security_context(spec)
           security_plan, = security_plan_for(security_context)
-          process = if process_metadata
-            @process_supervisor.adopt(metadata: process_metadata, cgroup: container_cgroup)
-          end
+          process = (@process_supervisor.adopt(metadata: process_metadata, cgroup: container_cgroup) if process_metadata)
           sandbox.update_container(container, cgroup: container_cgroup,
-                                   process: process,
-                                   security_plan: security_plan,
-                                   state: process ? :running : :created)
+                                              process: process,
+                                              security_plan: security_plan,
+                                              state: process ? :running : :created)
         end
         restore_sandbox_state!(sandbox, String(operation.fetch("state") { operation[:state] }))
         @mutex.synchronize { @sandboxes[sandbox_id] = sandbox }
@@ -1610,11 +1651,18 @@ module Rubernetes
         metadata = resource.fetch("metadata")
         path = metadata.fetch("path")
         handle = @cgroup.lookup(path)
-        raise RecoveryRequired, "cgroup #{resource_key(resource)} identity changed during adoption" unless handle.identity == resource.fetch("identity")
+        unless handle.identity == resource.fetch("identity")
+          raise RecoveryRequired,
+                "cgroup #{resource_key(resource)} identity changed during adoption"
+        end
+
         expected_inode = metadata["cgroup_inode"] || metadata["cgroup_id"]
         if expected_inode && handle.respond_to?(:path)
           actual_inode = File.stat(handle.path).ino
-          raise RecoveryRequired, "cgroup #{resource_key(resource)} kernel identity changed during adoption" unless actual_inode == Integer(expected_inode)
+          unless actual_inode == Integer(expected_inode)
+            raise RecoveryRequired,
+                  "cgroup #{resource_key(resource)} kernel identity changed during adoption"
+          end
         end
 
         handle
@@ -1623,6 +1671,7 @@ module Rubernetes
       def restore_sandbox_state!(sandbox, state)
         target = state.to_s.downcase.to_sym
         return if target == :new
+
         if target == :state_unknown
           sandbox.transition(:state_unknown)
           return
@@ -1638,6 +1687,7 @@ module Rubernetes
           break if step == target
         end
         return if sandbox.state == target
+
         if target == :running
           sandbox.transition(:running)
         elsif target == :stopping
@@ -1683,17 +1733,21 @@ module Rubernetes
           unless existing_digest == config_digest && existing_operation.to_s == operation.to_s
             raise OwnershipConflict, "request #{request} was replayed with different intent"
           end
+
           state = ledger_value(existing, :state).to_s
           return existing if state == "Completed"
+
           if state == "Failed"
             error = ledger_value(existing, :error)
-            raise FailClosed, "request #{request} previously failed: #{error.is_a?(Hash) ? error.fetch("message", "unknown failure") : error}"
+            raise FailClosed,
+                  "request #{request} previously failed: #{error.is_a?(Hash) ? error.fetch("message", "unknown failure") : error}"
           end
           # A cleanup request remains replayable after a transient cleanup
           # failure. The resource and its durable ownership record stay live
           # until a later attempt confirms cleanup, so retrying the same
           # request is safe and does not repeat an already-confirmed removal.
           return nil if state == "CleanupPending"
+
           raise RecoveryRequired, "request #{request} is pending durable reconciliation"
         end
         owner = input["sandbox_id"] || input[:sandbox_id]
@@ -1708,7 +1762,9 @@ module Rubernetes
       def ledger_requests_take_owner?
         return @ledger_requests_take_owner unless @ledger_requests_take_owner.nil?
 
-        @ledger_requests_take_owner = @ledger.method(:begin_request).parameters.any? { |kind, name| %i[key keyreq].include?(kind) && name == :owner }
+        @ledger_requests_take_owner = @ledger.method(:begin_request).parameters.any? do |kind, name|
+          %i[key keyreq].include?(kind) && name == :owner
+        end
       end
 
       def complete_native_request(request_id, state:, result: nil, error: nil)
@@ -1731,7 +1787,7 @@ module Rubernetes
         pid = process["workload_pid"] || process[:workload_pid] || process["pid"] || process[:pid]
         start_time = process["workload_start_time"] || process[:workload_start_time]
         executable_digest = process["workload_executable_digest"] || process[:workload_executable_digest] ||
-          process["executable_digest"] || process[:executable_digest]
+                            process["executable_digest"] || process[:executable_digest]
         "process:#{sandbox.id}:#{container.id}:#{pid}:#{start_time || "unknown"}:#{executable_digest || "unknown"}"
       end
 
@@ -1791,6 +1847,7 @@ module Rubernetes
       def attach_process_streams(container, tty:, stdin: false, stdout: true, stderr: false, **_options)
         process = container.process
         raise CapabilityError, "container process does not expose attach streams" unless process
+
         input = stream_requested?(stdin) ? borrow_process_stream(process_stream(process, :stdin)) : nil
         output = stream_requested?(stdout) ? follow_log_stream(process, :stdout) : nil
         error = !tty && stream_requested?(stderr) ? follow_log_stream(process, :stderr) : nil
@@ -1838,6 +1895,7 @@ module Rubernetes
           raise CapabilityError, "#{operation} adapter returned no stdin stream" if stdin_required && input.nil?
           raise CapabilityError, "#{operation} adapter returned no stdout stream" if stdout_required && output.nil?
           raise CapabilityError, "#{operation} adapter returned no stderr stream" if stderr_required && error.nil?
+
           return result
         end
 
@@ -1924,7 +1982,10 @@ module Rubernetes
           raise RecoveryRequired, "observed native resource #{kind.inspect} has no stable id" if id.nil?
 
           identity = hash["identity"] || hash[:identity] || hash["stable_identity"] || hash[:stable_identity]
-          raise RecoveryRequired, "observed native resource #{kind}:#{id} has no stable identity" if identity.nil? || String(identity).empty?
+          if identity.nil? || String(identity).empty?
+            raise RecoveryRequired,
+                  "observed native resource #{kind}:#{id} has no stable identity"
+          end
 
           metadata = hash["metadata"] || hash[:metadata] || {}
           metadata = metadata.to_h.transform_keys(&:to_s)
@@ -1932,7 +1993,7 @@ module Rubernetes
           # (pid/start time, namespace links, mount ID, cgroup inode). Carry
           # them into the canonical metadata map so restart adoption sees the
           # same proof material as the durable ledger claim.
-        %w[pid workload_pid wrapper_pid start_time workload_start_time
+          %w[pid workload_pid wrapper_pid start_time workload_start_time
              pidfd workload_pidfd executable_digest workload_executable_digest
              namespace_links kernel_identity supervisor_pid mount_identity cgroup_inode cgroup_id
              command path plan].each do |field|
@@ -2047,8 +2108,8 @@ module Rubernetes
       def owner_for_resource(kind, id)
         resource = @ledger.resources(include_released: false).find do |entry|
           hash = entry.respond_to?(:to_h) ? entry.to_h : entry
-          hash["kind"].to_s == String(kind) && hash["id"].to_s == String(id) ||
-            hash[:kind].to_s == String(kind) && hash[:id].to_s == String(id)
+          (hash["kind"].to_s == String(kind) && hash["id"].to_s == String(id)) ||
+            (hash[:kind].to_s == String(kind) && hash[:id].to_s == String(id))
         end
         owner = if resource
                   hash = resource.respond_to?(:to_h) ? resource.to_h : resource
@@ -2071,7 +2132,7 @@ module Rubernetes
         if source.is_a?(Proc) || source.is_a?(Method)
           parameters = source.parameters
           keyword_resource = parameters.any? { |kind, name| %i[key keyreq].include?(kind) && name == :resource } ||
-            parameters.any? { |kind, _name| kind == :keyrest }
+                             parameters.any? { |kind, _name| kind == :keyrest }
           return keyword_resource ? source.call(resource: resource) : source.call(resource)
         end
         return source.cleanup_resource(resource) if source.respond_to?(:cleanup_resource)
@@ -2116,6 +2177,7 @@ module Rubernetes
 
       def build_namespace
         return @adapters[:namespace] if @adapters[:namespace].is_a?(Namespace)
+
         adapter = @adapters[:namespace] || Namespace::RecordingAdapter.new
         Namespace.new(adapter: adapter, profile: config.profile)
       end
@@ -2159,7 +2221,9 @@ module Rubernetes
         rules = Platform::Linux::DeviceCgroup.rules_for(privileged: privileged, devices: devices)
         program_id = @device_filter.attach(cgroup.path, rules)
         record(:device_filter_attached, sandbox_id: sandbox.id, container_id: container.id, cgroup: cgroup.path,
-               program_id: program_id, privileged: privileged, devices: devices.map { |rule| rule.respond_to?(:to_h) ? rule.to_h : rule })
+                                        program_id: program_id, privileged: privileged, devices: devices.map do |rule|
+                                                                                          rule.respond_to?(:to_h) ? rule.to_h : rule
+                                                                                        end)
         program_id
       rescue Platform::Linux::DeviceCgroup::Error => error
         raise ResourceError, "container #{container.id}: #{error.message}"
@@ -2233,13 +2297,13 @@ module Rubernetes
           return @adapters[:security]
         end
         @security_probe = if config.pure_profile?
-          FakeCapabilityProbe.new(architecture: config.architecture).call
-        elsif @adapters[:security_probe]
-          probe = @adapters[:security_probe]
-          probe.respond_to?(:call) ? probe.call : probe.probe
-        else
-          Platform::Linux::Security::CapabilityProbe.new(architecture: config.architecture).call
-        end
+                            FakeCapabilityProbe.new(architecture: config.architecture).call
+                          elsif @adapters[:security_probe]
+                            probe = @adapters[:security_probe]
+                            probe.respond_to?(:call) ? probe.call : probe.probe
+                          else
+                            Platform::Linux::Security::CapabilityProbe.new(architecture: config.architecture).call
+                          end
         security = Platform::Linux::Security.new(
           capability_probe: @adapters[:security_probe] || -> { @security_probe },
           adapter: @adapters[:security_adapter] || Platform::Linux::Security::RecordingAdapter.new,
@@ -2253,6 +2317,7 @@ module Rubernetes
 
       def build_process_supervisor
         return @adapters[:process_supervisor] if @adapters[:process_supervisor]
+
         process_adapter = @adapters[:process_adapter] || (config.pure_profile? ? FakeProcessAdapter.new : Platform::Linux::ProcessSupervisor::ForkAdapter.new)
         # Without a pidfd every signal is addressed by pid, and a recycled pid
         # makes "stop this container" land on an unrelated process -- including
@@ -2266,7 +2331,7 @@ module Rubernetes
             nil
           end
         end
-        supervisor = Platform::Linux::ProcessSupervisor.new(
+        Platform::Linux::ProcessSupervisor.new(
           process_adapter: process_adapter,
           pidfd_adapter: pidfd_adapter,
           cgroup: @cgroup,
@@ -2275,7 +2340,6 @@ module Rubernetes
           max_log_files: config.max_log_files,
           clock: @clock
         )
-        supervisor
       end
 
       def validate_profile_capabilities!
@@ -2295,30 +2359,40 @@ module Rubernetes
       end
 
       def validate_runtime_class!(value)
-        raise ConfigurationError, "Native backend received unsupported runtime class #{value.inspect}" unless String(value) == config.runtime_class
+        return if String(value) == config.runtime_class
+
+        raise ConfigurationError,
+              "Native backend received unsupported runtime class #{value.inspect}"
       end
 
       def validate_sandbox_input!(input)
-        if input["runtime_class"] || input[:runtime_class]
-          validate_runtime_class!(input["runtime_class"] || input[:runtime_class])
-        end
+        validate_runtime_class!(input["runtime_class"] || input[:runtime_class]) if input["runtime_class"] || input[:runtime_class]
         digest = input["image_digest"] || input[:image_digest] || config.image["digest"]
         validate_rootfs_path!(input["rootfs_path"]) if input["rootfs_path"]
         Array(input["lowerdirs"] || input[:lowerdirs]).each { |path| validate_rootfs_path!(path) }
         if input["rootfs_entries"]
-          input["rootfs_entries"].each { |entry| Filesystem.new.validate_entry!(entry.fetch("path") { entry.fetch(:path) }, type: entry["type"] || entry[:type] || :file, link_target: entry["link_target"] || entry[:link_target]) }
+          input["rootfs_entries"].each do |entry|
+            Filesystem.new.validate_entry!(entry.fetch("path") do
+              entry.fetch(:path)
+            end, type: entry["type"] || entry[:type] || :file, link_target: entry["link_target"] || entry[:link_target])
+          end
         end
         if digest && !String(digest).match?(/\Asha256:[0-9a-fA-F]{64}\z/)
           raise Filesystem::DigestMismatch, "image digest must be sha256:<64 hex characters>"
         end
+
         true
       end
 
       def validate_rootfs_path!(path)
         value = String(path)
         raise Filesystem::UnsafeEntry, "rootfs path contains NUL" if value.include?("\0")
+
         expanded = File.expand_path(value)
-        raise Filesystem::UnsafeEntry, "rootfs path must be a regular directory" unless File.directory?(expanded) && !File.symlink?(expanded)
+        unless File.directory?(expanded) && !File.symlink?(expanded)
+          raise Filesystem::UnsafeEntry,
+                "rootfs path must be a regular directory"
+        end
 
         expanded
       end
@@ -2342,12 +2416,12 @@ module Rubernetes
 
           resolved = references.map do |reference|
             value = if @image_resolver.respond_to?(:resolve)
-              @image_resolver.resolve(reference)
-            elsif @image_resolver.respond_to?(:call)
-              @image_resolver.call(reference)
-            else
-              raise CapabilityError, "image resolver must implement resolve or call"
-            end
+                      @image_resolver.resolve(reference)
+                    elsif @image_resolver.respond_to?(:call)
+                      @image_resolver.call(reference)
+                    else
+                      raise CapabilityError, "image resolver must implement resolve or call"
+                    end
             normalize_resolved_image(value, reference)
           end
         else
@@ -2365,9 +2439,8 @@ module Rubernetes
       def normalize_resolved_image(value, reference = nil)
         image = normalize_hash(value)
         digest = image["digest"]
-        unless digest.to_s.match?(/\Asha256:[0-9a-fA-F]{64}\z/)
-          raise FailClosed, "image resolver returned an invalid pinned digest"
-        end
+        raise FailClosed, "image resolver returned an invalid pinned digest" unless digest.to_s.match?(/\Asha256:[0-9a-fA-F]{64}\z/)
+
         image["digest"] = digest.to_s.downcase
         unless reference.nil?
           image["reference"] ||= reference.to_s
@@ -2390,9 +2463,7 @@ module Rubernetes
           end
           resolved ||= candidates.fetch(0) if candidates.length == 1
         end
-        if input["image"] && resolved.nil?
-          raise FailClosed, "container image was not resolved before container creation"
-        end
+        raise FailClosed, "container image was not resolved before container creation" if input["image"] && resolved.nil?
         return input unless resolved
 
         resolved = normalize_resolved_image(resolved, input["image"])
@@ -2402,12 +2473,12 @@ module Rubernetes
         image_entrypoint = Array(resolved["entrypoint"])
         image_command = Array(resolved["cmd"])
         command = if input.key?("command") || input.key?("argv")
-          input["command"] || input["argv"]
-        elsif input.key?("args")
-          image_entrypoint + normalize_argv(input["args"], "container args")
-        else
-          resolved["command"] || (image_entrypoint + image_command)
-        end
+                    input["command"] || input["argv"]
+                  elsif input.key?("args")
+                    image_entrypoint + normalize_argv(input["args"], "container args")
+                  else
+                    resolved["command"] || (image_entrypoint + image_command)
+                  end
         input["command"] = command unless command.nil?
         input["env"] = merge_environment(resolved["env"], input["env"])
         input["cwd"] = input["workingDir"] || resolved["working_dir"] if input["workingDir"] || resolved["working_dir"]
@@ -2479,7 +2550,10 @@ module Rubernetes
           source = mount["source"] || mount["host_path"] || mount["hostPath"]
           destination = mount["destination"] || mount["container_path"] || mount["containerPath"] || mount["mountPath"]
           raise ConfigurationError, "mount #{index} requires an absolute source path" unless source.is_a?(String) && source.start_with?("/")
-          raise ConfigurationError, "mount #{index} requires an absolute destination path" unless destination.is_a?(String) && destination.start_with?("/")
+          unless destination.is_a?(String) && destination.start_with?("/")
+            raise ConfigurationError,
+                  "mount #{index} requires an absolute destination path"
+          end
           raise ConfigurationError, "mount #{index} path contains NUL" if source.include?("\0") || destination.include?("\0")
 
           propagation = (mount["propagation"] || mount["mount_propagation"] || mount["mountPropagation"] || "None").to_s
@@ -2512,6 +2586,7 @@ module Rubernetes
       def normalize_argv(value, label)
         values = Array(value)
         raise ConfigurationError, "#{label} must be an array" unless value.is_a?(Array)
+
         values.map do |argument|
           text = String(argument)
           raise ConfigurationError, "#{label} contains NUL" if text.include?("\0")
@@ -2550,6 +2625,7 @@ module Rubernetes
         value.each_with_object({}) do |(name, content), result|
           key = name.to_s
           raise ConfigurationError, "image environment variable name is invalid" unless key.match?(/\A[^=\0]+\z/)
+
           result[key] = content.to_s
         end
       end
@@ -2562,7 +2638,11 @@ module Rubernetes
         image_adapter ||= default_image_verifier if config.host_profile? && bytes.nil? && Array(input["resolved_images"]).any?
         if image_adapter
           result = invoke(image_adapter, :verify, image: input, digest: digest, bytes: bytes)
-          raise FailClosed, "image adapter did not confirm digest verification" unless result == true || result == digest || result == digest&.downcase
+          unless result == true || result == digest || result == digest&.downcase
+            raise FailClosed,
+                  "image adapter did not confirm digest verification"
+          end
+
           verified = true
         end
         if bytes && digest
@@ -2572,6 +2652,7 @@ module Rubernetes
         if config.host_profile? && !verified
           raise FailClosed, "production Native runtime requires image bytes or an adapter-verified OCI identity"
         end
+
         if digest
           String(digest).downcase
         elsif config.host_profile? || input["image"] || input["resolved_images"]
@@ -2608,8 +2689,10 @@ module Rubernetes
         value = input["qos"] || input[:qos] || input["qos_class"] || input[:qos_class]
         value ||= (input["spec"] || input[:spec]).is_a?(Hash) ? Resources.qos_class(input) : "besteffort"
         normalized = String(value).downcase
-        normalized = {"Guaranteed" => "guaranteed", "Burstable" => "burstable", "BestEffort" => "besteffort"}.fetch(String(value), normalized)
-        raise ConfigurationError, "qos must be Guaranteed, Burstable, or BestEffort" unless %w[guaranteed burstable besteffort].include?(normalized)
+        normalized = {"Guaranteed" => "guaranteed", "Burstable" => "burstable", "BestEffort" => "besteffort"}.fetch(String(value),
+                                                                                                                    normalized)
+        raise ConfigurationError, "qos must be Guaranteed, Burstable, or BestEffort" unless %w[guaranteed burstable
+                                                                                               besteffort].include?(normalized)
 
         normalized
       end
@@ -2621,6 +2704,7 @@ module Rubernetes
         raise ConfigurationError, "container command must not be empty" if values.empty?
         raise ConfigurationError, "container executable must not be empty" if values.first.empty?
         raise ConfigurationError, "container command must not contain NUL" if values.any? { |value| value.include?("\0") }
+
         values
       end
 
@@ -2696,7 +2780,7 @@ module Rubernetes
       def rollback_sandbox(sandbox, operation, original_error:)
         primary_error = error_payload(original_error)
         record(:rollback_started, sandbox_id: sandbox.id, error: "#{original_error.class}: #{original_error.message}",
-               primary_error: primary_error)
+                                  primary_error: primary_error)
         cleanup_failed = false
         begin
           sandbox.transition(:rolling_back) unless %i[rolling_back stopped removed].include?(sandbox.state)
@@ -2744,14 +2828,12 @@ module Rubernetes
         cleanup_errors = []
         blocked_by = nil
         sandbox.containers.reverse_each do |container_hash|
-          begin
-            remove_container(container_hash.fetch("id"))
-          rescue StandardError => error
-            cleanup_errors << cleanup_error_entry(
-              resource: "container:#{container_hash.fetch("id")}", error: error
-            )
-            blocked_by ||= "container:#{container_hash.fetch("id")}"
-          end
+          remove_container(container_hash.fetch("id"))
+        rescue StandardError => error
+          cleanup_errors << cleanup_error_entry(
+            resource: "container:#{container_hash.fetch("id")}", error: error
+          )
+          blocked_by ||= "container:#{container_hash.fetch("id")}"
         end
 
         # Sandbox acquisition is workspace -> namespace -> cgroup.  Rollback
@@ -2780,12 +2862,12 @@ module Rubernetes
 
           begin
             result = if component.equal?(@cgroup)
-              component.public_send(operation_name, resource, force: true)
-            elsif component.equal?(@namespace)
-              component.public_send(operation_name, resource)
-            else
-              component.public_send(operation_name, resource)
-            end
+                       component.public_send(operation_name, resource, force: true)
+                     elsif component.equal?(@namespace)
+                       component.public_send(operation_name, resource)
+                     else
+                       component.public_send(operation_name, resource)
+                     end
             raise ResourceError, "#{resource_kind} cleanup returned false" if result == false
 
             release_user_namespace_range(sandbox) if resource_kind == "namespace"
@@ -2822,7 +2904,7 @@ module Rubernetes
         return true unless resource && ledger_value(resource, :state).to_s != "Released"
 
         released = @ledger.release(operation_id: operation.id, kind: kind, id: id,
-                                    identity: ledger_value(resource, :identity), force: true)
+                                   identity: ledger_value(resource, :identity), force: true)
         raise ResourceError, "ledger #{kind} release returned false" if released == false
 
         true
@@ -2909,13 +2991,13 @@ module Rubernetes
         cleanup_errors = []
         mark_resource_cleanup_pending(
           operation, "cgroup", container_resource_id(sandbox, container), blocked_by: nil,
-          cleanup_errors: cleanup_errors
+                                                                          cleanup_errors: cleanup_errors
         )
         record(:container_cleanup_pending, sandbox_id: sandbox.id, container_id: container.id,
-               error: "#{error.class}: #{error.message}", cleanup_errors: cleanup_errors.freeze)
+                                           error: "#{error.class}: #{error.message}", cleanup_errors: cleanup_errors.freeze)
       rescue StandardError => cleanup_error
         record(:container_cleanup_pending_error, sandbox_id: sandbox.id, container_id: container.id,
-               error: "#{cleanup_error.class}: #{cleanup_error.message}")
+                                                 error: "#{cleanup_error.class}: #{cleanup_error.message}")
       end
 
       def cleanup_error_entry(resource:, error:, blocked_by: nil)
@@ -2974,7 +3056,7 @@ module Rubernetes
           sandbox.transition(:cleanup_pending) if %i[rolling_back stopped].include?(sandbox.state)
         rescue Sandbox::Error => transition_error
           record(:cleanup_pending_transition_error, sandbox_id: sandbox.id,
-                 error: "#{transition_error.class}: #{transition_error.message}")
+                                                    error: "#{transition_error.class}: #{transition_error.message}")
         end
         current = @ledger.operation(operation.id)
         begin
@@ -2993,9 +3075,7 @@ module Rubernetes
             @ledger.transition(operation_id: operation.id, to: "RollingBack")
             current = @ledger.operation(operation.id)
           end
-          if current && %w[RollingBack Stopped].include?(current.state)
-            @ledger.transition(operation_id: operation.id, to: "CleanupPending")
-          end
+          @ledger.transition(operation_id: operation.id, to: "CleanupPending") if current && %w[RollingBack Stopped].include?(current.state)
           cleanup_errors = if error.respond_to?(:cleanup_errors) && !error.cleanup_errors.empty?
                              error.cleanup_errors
                            else
@@ -3015,7 +3095,7 @@ module Rubernetes
           end
         rescue StandardError => ledger_error
           record(:cleanup_pending_ledger_error, sandbox_id: sandbox.id,
-                 error: "#{ledger_error.class}: #{ledger_error.message}")
+                                                error: "#{ledger_error.class}: #{ledger_error.message}")
         end
       end
 
@@ -3199,12 +3279,18 @@ module Rubernetes
     %i[RollbackJournal OwnershipLedger ResourceLedger Recovery StartupReconciler].each do |name|
       support_class = Native::Support.const_get(name, false)
       support_errors.each do |error_name|
-        support_class.const_set(error_name, Native::Support.const_get(error_name, false)) unless support_class.const_defined?(error_name, false)
+        support_class.const_set(error_name, Native::Support.const_get(error_name, false)) unless support_class.const_defined?(error_name,
+                                                                                                                              false)
       end
     end
     %i[Error JournalCorruption OwnershipConflict InvalidTransition RecoveryRequired
        RollbackJournal OwnershipLedger ResourceLedger Recovery StartupReconciler].each do |name|
-      remove_const(name) if const_defined?(name, false) && Native::Support.const_defined?(name, false) && const_get(name, false).equal?(Native::Support.const_get(name, false))
+      remove_const(name) if const_defined?(name,
+                                           false) && Native::Support.const_defined?(name,
+                                                                                    false) && const_get(name,
+                                                                                                        false).equal?(Native::Support.const_get(
+                                                                                                          name, false
+                                                                                                        ))
     end
 
     NativeRuntime = Native unless const_defined?(:NativeRuntime, false)

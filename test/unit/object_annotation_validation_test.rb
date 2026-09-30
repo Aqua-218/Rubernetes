@@ -31,6 +31,7 @@ class ObjectAnnotationValidationTest < Minitest::Test
 
   def test_the_total_size_is_capped
     big = "x" * (128 * 1024)
+
     assert_empty errors("a" => big)
     refute_empty errors("a" => big, "b" => big, "c" => "overflow")
   end

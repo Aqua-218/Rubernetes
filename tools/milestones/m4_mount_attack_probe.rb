@@ -156,23 +156,22 @@ def m4_native_crash_child!
         "mountinfo" => m4_read_mountinfo(Process.pid)
       }
       m4_write_marker(@marker_path, {
-        "volume_id" => "m4-crash-volume",
-        "state" => "Attached",
-        "operation" => "NodeStageVolume",
-        "measurement_source" => "native_mount_namespace",
-        "mount_adapter_class" => self.class.superclass.name,
-        "backend_adapter_class" => filesystem_adapter.class.name,
-        "observation" => observation,
-        "observation_sha256" => M4ProbeSupport.digest(observation),
-        "effect_boundary_sha256" => M4ProbeSupport.digest(effect_boundary),
-        "child_identity_sha256" => M4ProbeSupport.digest(child),
-        "target_identity_sha256" => M4ProbeSupport.digest(target_identity),
-        "mountinfo_sha256" => Digest::SHA256.hexdigest(observation.fetch("mountinfo").join("\n"))
-      })
+                        "volume_id" => "m4-crash-volume",
+                        "state" => "Attached",
+                        "operation" => "NodeStageVolume",
+                        "measurement_source" => "native_mount_namespace",
+                        "mount_adapter_class" => self.class.superclass.name,
+                        "backend_adapter_class" => filesystem_adapter.class.name,
+                        "observation" => observation,
+                        "observation_sha256" => M4ProbeSupport.digest(observation),
+                        "effect_boundary_sha256" => M4ProbeSupport.digest(effect_boundary),
+                        "child_identity_sha256" => M4ProbeSupport.digest(child),
+                        "target_identity_sha256" => M4ProbeSupport.digest(target_identity),
+                        "mountinfo_sha256" => Digest::SHA256.hexdigest(observation.fetch("mountinfo").join("\n"))
+                      })
       m4_wait_for_parent_release!(@release_path)
       m4_native_bind_result(result, kwargs.fetch(:source))
     end
-
   end
   native_adapter = boundary_class.new(marker_path: marker_path, release_path: release_path)
   manager = m4_native_manager(data_dir, filesystem_adapter, native_adapter)
@@ -191,6 +190,7 @@ def m4_native_restart_child!
   linux_mount_class = M4ProbeSupport.constant("Rubernetes::Platform::Linux::Mount")
   raise "production FilesystemAdapter is unavailable" unless filesystem_class.is_a?(Class)
   raise "production NativeMountAdapter is unavailable" unless native_class.is_a?(Class)
+
   linux_mount_class.new.make_private(target: "/", recursive: true, resource_id: "m4-native-restart:private")
   filesystem_adapter = filesystem_class.new(root: File.join(data_dir, "mounts"), fsync: true)
   restart_adapter_class = Class.new(native_class) do
@@ -211,7 +211,6 @@ def m4_native_restart_child!
         source ? entry.merge("sourceIdentity" => source, "bindSource" => source) : entry
       end
     end
-
   end
   native_adapter = restart_adapter_class.new
   manager = m4_native_manager(data_dir, filesystem_adapter, native_adapter)
@@ -225,11 +224,12 @@ def m4_native_restart_child!
   publish = manager.volume("m4-crash-volume").publishes.values.find { |entry| entry["target"] == publish_path }
   raise "native restart child did not persist stage identity" unless stage.is_a?(Hash)
   raise "native restart child did not persist publish identity" unless publish.is_a?(Hash)
+
   observation = {
     "operation" => %w[NodeStageVolume NodePublishVolume],
     "child" => {"pid" => Process.pid, "start_time_ticks" => m4_proc_start_time_ticks(Process.pid),
-                 "mount_namespace_inode" => m4_mount_namespace_inode(Process.pid),
-                 "path" => "/proc/#{Process.pid}/ns/mnt"},
+                "mount_namespace_inode" => m4_mount_namespace_inode(Process.pid),
+                "path" => "/proc/#{Process.pid}/ns/mnt"},
     "stage_target" => m4_native_target_identity(Process.pid, stage_path, stage),
     "publish_target" => m4_native_target_identity(Process.pid, publish_path, publish),
     "mountinfo" => m4_read_mountinfo(Process.pid),
@@ -238,17 +238,17 @@ def m4_native_restart_child!
   marker_path = File.join(data_dir, "restart-child-ready.json")
   release_path = File.join(data_dir, "restart-child-release")
   m4_write_marker(marker_path, {
-    "passed" => recovery.unknown.empty?,
-    "measurement_source" => "native_mount_namespace",
-    "operations" => observation.fetch("operation"),
-    "observation" => observation,
-    "observation_sha256" => M4ProbeSupport.digest(observation),
-    "child_identity_sha256" => M4ProbeSupport.digest(observation.fetch("child")),
-    "mountinfo_sha256" => Digest::SHA256.hexdigest(observation.fetch("mountinfo").join("\n"))
-  })
+                    "passed" => recovery.unknown.empty?,
+                    "measurement_source" => "native_mount_namespace",
+                    "operations" => observation.fetch("operation"),
+                    "observation" => observation,
+                    "observation_sha256" => M4ProbeSupport.digest(observation),
+                    "child_identity_sha256" => M4ProbeSupport.digest(observation.fetch("child")),
+                    "mountinfo_sha256" => Digest::SHA256.hexdigest(observation.fetch("mountinfo").join("\n"))
+                  })
   m4_wait_for_parent_release!(release_path)
   manager.node_unpublish("m4-crash-volume", {"metadata" => {"uid" => "m4-crash-pod"}}, publish_path,
-                          token: "m4-crash-restart-unpublish")
+                         token: "m4-crash-restart-unpublish")
   manager.unstage("m4-crash-volume", stage_path, token: "m4-crash-restart-unstage", node: "m4-crash-node")
   manager.unpublish("m4-crash-volume", "m4-crash-node", token: "m4-crash-restart-detach")
   manager.delete_volume("m4-crash-volume", token: "m4-crash-restart-delete")
@@ -350,7 +350,7 @@ def m4_run_native_crash_recovery!(root, errors)
   stdin = stdout = stderr = wait_thr = nil
   restart_stdin = restart_stdout = restart_stderr = restart_wait = nil
   marker = nil
-  child_status = nil
+  nil
   begin
     stdin, stdout, stderr, wait_thr = Open3.popen3(*command, chdir: M3ProbeSupport::ROOT, pgroup: true)
     stdin.close
@@ -375,6 +375,7 @@ def m4_run_native_crash_recovery!(root, errors)
     killed = m4_kill_child!(child_identity)
     child_status = m4_wait_for_process_exit!(wait_thr)
     raise "native crash child did not exit after SIGKILL" unless child_status
+
     child_stdout = stdout.read.to_s
     child_stderr = stderr.read.to_s
     child_killed = killed && !m4_process_alive_with_identity?(child_identity)
@@ -391,9 +392,7 @@ def m4_run_native_crash_recovery!(root, errors)
     restart_stdin, restart_stdout, restart_stderr, restart_wait = Open3.popen3(*restart_command, chdir: M3ProbeSupport::ROOT, pgroup: true)
     restart_stdin.close
     restart_marker = m4_wait_for_json_marker(restart_marker_path, restart_wait)
-    restart_status = nil
-    restart_stdout_text = ""
-    restart_stderr_text = ""
+    nil
     restart_passed = false
     restart_child_live = false
     if restart_marker.is_a?(Hash)
@@ -409,6 +408,7 @@ def m4_run_native_crash_recovery!(root, errors)
     end
     restart_status = m4_wait_for_process_exit!(restart_wait)
     raise "native restart child did not exit" unless restart_status
+
     restart_stdout_text = restart_stdout.read.to_s
     restart_stderr_text = restart_stderr.read.to_s
     restart_passed = restart_status.success? && restart_marker.is_a?(Hash) && restart_marker["passed"] == true &&
@@ -421,7 +421,7 @@ def m4_run_native_crash_recovery!(root, errors)
     errors << "native mount crash recovery left durable volume ownership behind" unless cleanup_passed
     {
       "passed" => child_killed && recovery_report.unknown.empty? && durable_after_recovery["state"] == "Attached" &&
-                  restart_passed && cleanup_passed,
+        restart_passed && cleanup_passed,
       "available" => true,
       "measurement_source" => "native_mount_namespace",
       "mode" => "native_mount_namespace",
@@ -514,16 +514,14 @@ M4ProbeSupport.run_report(kind: "m4_mount_attack_corpus", adapter_name: "mount-a
     manager = manager_class.new(data_dir: File.join(temporary, "manager"), root: File.join(temporary, "volumes"),
                                 adapter: adapter, mount_adapter: adapter)
     volume_id = manager.create_volume({"id" => "m4-race-volume", "backend" => "emptyDir",
-                                      "accessModes" => ["ReadWriteOnce"]}, token: "m4-race-create")
+                                       "accessModes" => ["ReadWriteOnce"]}, token: "m4-race-create")
     race_results = Queue.new
     threads = %w[m4-node-a m4-node-b].map do |node|
       Thread.new do
-        begin
-          manager.publish(volume_id, node, token: "m4-race-#{node}")
-          race_results << [node, :attached]
-        rescue StandardError => error
-          race_results << [node, :blocked, error.class.name]
-        end
+        manager.publish(volume_id, node, token: "m4-race-#{node}")
+        race_results << [node, :attached]
+      rescue StandardError => error
+        race_results << [node, :blocked, error.class.name]
       end
     end
     threads.each(&:join)

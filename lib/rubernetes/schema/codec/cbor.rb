@@ -61,15 +61,13 @@ module Rubernetes
             when Array then encode_array(value, depth: depth)
             when Hash then encode_map(value, depth: depth)
             else
-              if value.respond_to?(:to_h)
-                hash = value.to_h
-                unless hash.is_a?(Hash)
-                  raise Codec::UnsupportedTypeError, "to_h for #{value.class} must return a Hash"
-                end
-                encode_map(hash, depth: depth)
-              else
-                raise Codec::UnsupportedTypeError, "unsupported CBOR value #{value.class}"
-              end
+              raise Codec::UnsupportedTypeError, "unsupported CBOR value #{value.class}" unless value.respond_to?(:to_h)
+
+              hash = value.to_h
+              raise Codec::UnsupportedTypeError, "to_h for #{value.class} must return a Hash" unless hash.is_a?(Hash)
+
+              encode_map(hash, depth: depth)
+
             end
           end
 
@@ -101,9 +99,8 @@ module Rubernetes
               header(2, string.bytesize) + string.b
             else
               string = string.dup.force_encoding(Encoding::UTF_8)
-              unless string.valid_encoding?
-                raise Codec::EncodeError, "CBOR text strings must be valid UTF-8"
-              end
+              raise Codec::EncodeError, "CBOR text strings must be valid UTF-8" unless string.valid_encoding?
+
               header(3, string.bytesize) + string.b
             end
           end
@@ -121,21 +118,16 @@ module Rubernetes
                 [encoded_key, encode(child, depth: depth + 1)]
               end
               duplicate = encoded_entries.group_by(&:first).find { |_encoded, entries| entries.length > 1 }
-              if duplicate
-                raise Codec::DuplicateKeyError, "CBOR map contains duplicate encoded key"
-              end
-              if @canonical
-                encoded_entries.sort_by! { |encoded_key, _encoded_value| [encoded_key.bytesize, encoded_key] }
-              end
+              raise Codec::DuplicateKeyError, "CBOR map contains duplicate encoded key" if duplicate
+
+              encoded_entries.sort_by! { |encoded_key, _encoded_value| [encoded_key.bytesize, encoded_key] } if @canonical
               header(5, encoded_entries.length) + encoded_entries.map { |key, child| key + child }.join
             end
           end
 
           def with_cycle_guard(value)
             object_id = value.object_id
-            if @stack.key?(object_id)
-              raise Codec::UnsupportedTypeError, "cyclic CBOR value graph is not supported"
-            end
+            raise Codec::UnsupportedTypeError, "cyclic CBOR value graph is not supported" if @stack.key?(object_id)
 
             @stack[object_id] = true
             yield
@@ -222,7 +214,7 @@ module Rubernetes
             elsif exponent == 0x1f
               sign_value * Float::INFINITY
             else
-              sign_value * (1.0 + fraction.to_f / (1 << 10)) * (2.0**(exponent - 15))
+              sign_value * (1.0 + (fraction.to_f / (1 << 10))) * (2.0**(exponent - 15))
             end
           end
         end
@@ -284,9 +276,8 @@ module Rubernetes
                     when 8 then bytes.unpack1("Q>")
                     else raise Codec::ParseError, "invalid CBOR integer width #{size}"
                     end
-            if @strict && minimum && value < minimum
-              raise Codec::ParseError, "non-canonical CBOR integer/length encoding"
-            end
+            raise Codec::ParseError, "non-canonical CBOR integer/length encoding" if @strict && minimum && value < minimum
+
             value
           end
 
@@ -317,11 +308,11 @@ module Rubernetes
               if @strict && previous_key && compare_keys(previous_key, key_encoding) >= 0
                 raise Codec::ParseError, "CBOR map keys are not in canonical order"
               end
+
               previous_key = key_encoding
               raise Codec::ParseError, "CBOR map key is not hashable" unless key.hash
-              if result.key?(key)
-                raise Codec::DuplicateKeyError, "CBOR map contains duplicate key"
-              end
+              raise Codec::DuplicateKeyError, "CBOR map contains duplicate key" if result.key?(key)
+
               result[key] = read_item(depth + 1)
             end
             result
@@ -351,18 +342,16 @@ module Rubernetes
           def read_float32
             value = read_bytes_raw(4, "CBOR float32").unpack1("g")
             reject_nonfinite!(value)
-            if @strict && exact_half?(value)
-              raise Codec::ParseError, "non-canonical CBOR float width"
-            end
+            raise Codec::ParseError, "non-canonical CBOR float width" if @strict && exact_half?(value)
+
             value
           end
 
           def read_float64
             value = read_bytes_raw(8, "CBOR float64").unpack1("G")
             reject_nonfinite!(value)
-            if @strict && (exact_half?(value) || exact_single?(value))
-              raise Codec::ParseError, "non-canonical CBOR float width"
-            end
+            raise Codec::ParseError, "non-canonical CBOR float width" if @strict && (exact_half?(value) || exact_single?(value))
+
             value
           end
 
@@ -424,7 +413,7 @@ module Rubernetes
             elsif exponent == 0x1f
               sign_value * Float::INFINITY
             else
-              sign_value * (1.0 + fraction.to_f / (1 << 10)) * (2.0**(exponent - 15))
+              sign_value * (1.0 + (fraction.to_f / (1 << 10))) * (2.0**(exponent - 15))
             end
           end
 

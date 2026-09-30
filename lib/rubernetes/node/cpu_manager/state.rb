@@ -55,7 +55,13 @@ module Rubernetes
         end
 
         def assignments=(value)
-          @mutex.synchronize { @assignments = value.to_h { |pod, containers| [pod.to_s, containers.to_h { |name, cpus| [name.to_s, cpus] }] } }
+          @mutex.synchronize do
+            @assignments = value.to_h do |pod, containers|
+              [pod.to_s, containers.to_h do |name, cpus|
+                [name.to_s, cpus]
+              end]
+            end
+          end
           changed
         end
 

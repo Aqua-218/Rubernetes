@@ -41,6 +41,7 @@ class ExecutablesTest < Minitest::Test
           option,
           chdir: ROOT
         )
+
         assert_predicate(status, :success?, "#{executable} #{option}: #{stderr}")
         assert_empty(stderr, "#{executable} #{option}")
         refute_empty(stdout, "#{executable} #{option}")
@@ -52,8 +53,14 @@ class ExecutablesTest < Minitest::Test
     # The default streaming port is the well-known kubelet port, which is
     # routinely taken on a host that already runs a cluster.  The daemon's
     # bootstrap is what this test is about, so it gets a port of its own.
-    port = Socket.open(:INET, :STREAM) { |socket| socket.bind(Addrinfo.tcp("127.0.0.1", 0)); socket.local_address.ip_port }
-    api_port = Socket.open(:INET, :STREAM) { |socket| socket.bind(Addrinfo.tcp("127.0.0.1", 0)); socket.local_address.ip_port }
+    port = Socket.open(:INET, :STREAM) do |socket|
+      socket.bind(Addrinfo.tcp("127.0.0.1", 0))
+      socket.local_address.ip_port
+    end
+    api_port = Socket.open(:INET, :STREAM) do |socket|
+      socket.bind(Addrinfo.tcp("127.0.0.1", 0))
+      socket.local_address.ip_port
+    end
     config = File.join(@directory, "agent.yml")
     File.write(config, <<~YAML)
       ---
@@ -92,11 +99,13 @@ class ExecutablesTest < Minitest::Test
       end
     end
     ready = Timeout.timeout(DAEMON_START_TIMEOUT) { next_process_event.call }
+
     assert_equal("process.ready", ready&.fetch("event"))
 
     Process.kill("TERM", thread.pid)
     status = Timeout.timeout(DAEMON_START_TIMEOUT) { thread.value }
     stopped = next_process_event.call
+
     assert_predicate(status, :success?)
     assert_equal("process.stopped", stopped.fetch("event"))
     assert_equal("TERM", stopped.fetch("reason"))

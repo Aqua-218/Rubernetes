@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
-
 require_relative "durable_state"
 require_relative "errors"
 require_relative "ipam"
@@ -113,11 +111,15 @@ module Rubernetes
         if @require_observer && (@observer.nil? || !@observer.respond_to?(:external_observer?) || !@observer.external_observer?)
           raise OwnershipError, "native network interface requires an external kernel observer"
         end
+
         @ledger = ledger
         @policy_engine = policy_engine
         @sysctl_manager = sysctl_manager
         @journal = journal
-        @store = state_store || store || (state_path || path ? DurableState.new(state_path || path, default: default_state, fsync: fsync) : nil)
+        @store = state_store || store || (if state_path || path
+                                            DurableState.new(state_path || path, default: default_state,
+                                                                                 fsync: fsync)
+                                          end)
         @state = @store ? normalize_state(@store.read) : default_state
         @durable_state = Support.copy(@state)
         @ipam = ipam
@@ -176,14 +178,16 @@ module Rubernetes
       end
 
       # Interface contract: add(sandbox, config) -> IP/route result.
-      def add(sandbox, config = nil, **options)
-        @transaction_mutex.synchronize(:add) { add_transaction(sandbox, config, **options) }
+      def add(sandbox, config = nil, **)
+        @transaction_mutex.synchronize(:add) { add_transaction(sandbox, config, **) }
       end
 
       def add_transaction(sandbox, config = nil, **options)
         sandbox_hash, config_hash = normalize_request(sandbox, config, options)
         sandbox_id = sandbox_hash.fetch("sandbox_id")
-        request_id = Support.identifier(Support.fetch(config_hash, "network_operation_id", "operation_id", "request_id", default: "add:#{sandbox_id}"), "request_id")
+        request_id = Support.identifier(
+          Support.fetch(config_hash, "network_operation_id", "operation_id", "request_id", default: "add:#{sandbox_id}"), "request_id"
+        )
         operation_id = Support.identifier(Support.fetch(config_hash, "operation_id", default: request_id), "operation_id")
         digest = Support.digest(config_hash)
         owner = "network:#{sandbox_id}"
@@ -224,10 +228,14 @@ module Rubernetes
             # node, other subnets.
             gateways = node_gateways(node: Support.fetch(config_hash, "node", "node_name", default: "local"),
                                      families: leases.map { |lease| lease.to_h.fetch("family") })
-            config_hash = config_hash.merge("gateway" => gateways.transform_values { |entry| entry.fetch("address") }) unless gateways.empty?
+            unless gateways.empty?
+              config_hash = config_hash.merge("gateway" => gateways.transform_values do |entry|
+                entry.fetch("address")
+              end)
+            end
           end
           desired_plan = @topology.desired(sandbox_hash, config_hash, leases: leases,
-                                           revision: Support.fetch(config_hash, "revision", default: nil))
+                                                                      revision: Support.fetch(config_hash, "revision", default: nil))
           # Keep plan nil until preparation succeeds; if state capture fails
           # before any effect, rescue must not attempt to roll back an
           # unapplied desired plan.
@@ -237,9 +245,9 @@ module Rubernetes
           # durable evidence instead of guessing the old MTU/master/up state.
           plan = @topology.respond_to?(:prepare) ? @topology.prepare(desired_plan) : desired_plan
           update_operation(operation_id, "state" => "applying", "plan" => plan.to_h,
-                           "effect_cursor" => nil, "applied_count" => 0)
+                                         "effect_cursor" => nil, "applied_count" => 0)
           ledger_operation_id = begin_resource_operation(operation_id, digest: digest, owner: owner,
-                                                         request_id: request_id, sandbox_id: sandbox_id)
+                                                                       request_id: request_id, sandbox_id: sandbox_id)
           apply_started = true
           if @topology.respond_to?(:acquire_bridge)
             @topology.acquire_bridge(plan, owner: sandbox_id)
@@ -297,7 +305,7 @@ module Rubernetes
           end
           result = build_result(operation_id, sandbox_id, leases, plan)
           update_operation(operation_id, "state" => "committed", "resources" => resources,
-                           "effect_intent" => nil, "result" => result)
+                                         "effect_intent" => nil, "result" => result)
           result
         rescue StandardError => error
           rollback_errors = []
@@ -343,10 +351,10 @@ module Rubernetes
       # Deletion is intentionally fail-closed: the caller must prove the
       # process/VM stopped before an IP or interface identity can be released.
       def delete(sandbox, config = nil, stopped: nil, process_stopped: nil,
-                 confirm_stopped: nil, force: false, **options)
+                 confirm_stopped: nil, force: false, **)
         @transaction_mutex.synchronize(:delete) do
           delete_transaction(sandbox, config, stopped: stopped, process_stopped: process_stopped,
-                             confirm_stopped: confirm_stopped, force: force, **options)
+                                              confirm_stopped: confirm_stopped, force: force, **)
         end
       end
 
@@ -356,10 +364,12 @@ module Rubernetes
         sandbox_id = sandbox_hash.fetch("sandbox_id")
         confirmed = [stopped, process_stopped, confirm_stopped].compact.any? { |value| value == true }
         raise OwnershipError, "network delete requires explicit process-stop confirmation" unless confirmed
+
         operation_id = @mutex.synchronize do
           operation = find_operation(request_id: nil, sandbox_id: sandbox_id)
           return {"sandbox_id" => sandbox_id, "state" => "removed", "idempotent" => true}.freeze unless operation
           return operation_result(operation) if operation.fetch("state") == "removed"
+
           operation.fetch("id")
         end
         namespace_lease, = bind_namespace_request(sandbox_hash, config_hash)
@@ -411,6 +421,7 @@ module Rubernetes
         sandbox_id = sandbox_hash.fetch("sandbox_id")
         operation = @mutex.synchronize { find_operation(request_id: nil, sandbox_id: sandbox_id) }
         return false unless operation && operation.fetch("state") == "committed"
+
         namespace_lease, = bind_namespace_request(sandbox_hash, config_hash)
         if @adapter&.respond_to?(:check)
           !!@adapter.check(sandbox_hash)
@@ -433,10 +444,14 @@ module Rubernetes
         source = observer || kernel_observer || @observer
         records = @mutex.synchronize { Support.copy(@state.fetch("operations").values) }
         plan_operations = records.select { |operation| ACTIVE_STATES.include?(operation.fetch("state")) }
-                                 .flat_map { |operation| plan_from_record(operation.fetch("plan")).operations }
+          .flat_map { |operation| plan_from_record(operation.fetch("plan")).operations }
         observed = normalize_observed(source, operations: plan_operations)
         expected_before_recovery = records.select { |operation| ACTIVE_STATES.include?(operation.fetch("state")) }
-                                          .flat_map { |operation| Array(operation.fetch("resources", [])).map { |resource| resource.fetch("identity") } }
+          .flat_map do |operation|
+          Array(operation.fetch("resources", [])).map do |resource|
+            resource.fetch("identity")
+          end
+        end
         kernel_only_before_recovery = (observed.keys - expected_before_recovery).sort
         compensated, compensation_audit, compensation_errors = compensate_effect_orphans(
           records, observed, source, candidates: kernel_only_before_recovery
@@ -456,13 +471,14 @@ module Rubernetes
           audit = compensation_audit
           @state.fetch("operations").each_value do |operation|
             next unless ACTIVE_STATES.include?(operation.fetch("state"))
+
             expected = operation.fetch("resources", []).map { |resource| resource.fetch("identity") }
             missing = expected - reconciled_observed.keys
-            unless missing.empty?
-              @state.fetch("operations")[operation.fetch("id")] = operation.merge("state" => "unknown")
-              ledger_only.concat(missing)
-              audit << {"kind" => "ledger_only", "operation_id" => operation.fetch("id"), "resources" => missing}
-            end
+            next if missing.empty?
+
+            @state.fetch("operations")[operation.fetch("id")] = operation.merge("state" => "unknown")
+            ledger_only.concat(missing)
+            audit << {"kind" => "ledger_only", "operation_id" => operation.fetch("id"), "resources" => missing}
           end
           if @adapter&.respond_to?(:recover)
             begin
@@ -472,7 +488,7 @@ module Rubernetes
             end
           end
           persist!("network_recovered", "ledger_only" => ledger_only, "kernel_only" => kernel_only,
-                   "identity_mismatch" => identity_mismatch)
+                                        "identity_mismatch" => identity_mismatch)
           RecoveryReport.new(operations: Support.copy(@state.fetch("operations").values), ipam: ipam_report,
                              kernel_only: kernel_only.freeze, ledger_only: ledger_only.freeze,
                              identity_mismatch: Support.immutable(identity_mismatch), errors: Support.immutable(errors),
@@ -545,8 +561,8 @@ module Rubernetes
 
       def plan_addresses(plan)
         Array(plan.operations).select { |operation| operation.action == "address_add" }
-                              .filter_map { |operation| Support.fetch(operation.parameters, "address", default: nil) }
-                              .uniq
+          .filter_map { |operation| Support.fetch(operation.parameters, "address", default: nil) }
+          .uniq
       end
 
       # Node-owned bridge addresses are not sandbox resources: they live as
@@ -557,21 +573,24 @@ module Rubernetes
         return false unless netlink.respond_to?(:address_add)
 
         gateways.each do |family, entry|
-          begin
-            netlink.address_add(address: entry.fetch("address"), prefix: entry.fetch("prefix"), name: bridge,
-                                family: family, operation: "node-bridge-address:#{bridge}:#{family}")
-          rescue NetlinkError => error
-            raise unless error.errno == Errno::EEXIST::Errno
-          end
+          netlink.address_add(address: entry.fetch("address"), prefix: entry.fetch("prefix"), name: bridge,
+                              family: family, operation: "node-bridge-address:#{bridge}:#{family}")
+        rescue NetlinkError => error
+          raise unless error.errno == Errno::EEXIST::Errno
         end
         true
       end
 
       def normalize_request(sandbox, config, options)
-        sandbox_hash = sandbox.respond_to?(:to_h) ? sandbox.to_h : (sandbox.is_a?(Hash) ? sandbox : {"sandbox_id" => sandbox})
+        sandbox_hash = if sandbox.respond_to?(:to_h)
+                         sandbox.to_h
+                       else
+                         (sandbox.is_a?(Hash) ? sandbox : {"sandbox_id" => sandbox})
+                       end
         sandbox_hash = Support.canonical(sandbox_hash)
         sandbox_id = Support.fetch(sandbox_hash, "sandbox_id", "id", "uid", default: nil)
         raise ValidationError, "sandbox ID is required" if sandbox_id.nil?
+
         sandbox_hash["sandbox_id"] = Support.identifier(sandbox_id, "sandbox_id")
         config_hash = Support.canonical((config.respond_to?(:to_h) ? config.to_h : (config || {})).merge(options))
         netns = Support.fetch(sandbox_hash, "netns", "network_namespace", default: nil)
@@ -600,7 +619,7 @@ module Rubernetes
         {"id" => operation_id, "request_id" => request_id, "sandbox_id" => sandbox_id,
          "owner" => owner, "config_digest" => config_digest, "state" => state,
          "result" => nil, "error" => nil, "resources" => [], "plan" => {"operations" => [], "mtu" => nil,
-         "backend" => nil, "revision" => nil, "metadata" => {}}, "created_at" => Support.now(@clock).iso8601(6)}
+                                                                        "backend" => nil, "revision" => nil, "metadata" => {}}, "created_at" => Support.now(@clock).iso8601(6)}
       end
 
       def bind_namespace_request(sandbox_hash, config_hash)
@@ -678,6 +697,7 @@ module Rubernetes
 
       def begin_resource_operation(operation_id, digest:, owner:, request_id:, sandbox_id:)
         return operation_id unless @ledger
+
         begin
           ledger_operation = @ledger.begin_operation(operation_id: operation_id, request_id: request_id,
                                                      action: "network_add", owner: owner,
@@ -709,9 +729,7 @@ module Rubernetes
           # described is proven gone: a live one is genuine reuse and must stay
           # fatal.
           decision = supersede_decision(operation_id, resource)
-          unless decision == :superseded
-            raise Runtime::OwnershipConflict, "#{conflict.message} [supersede declined: #{decision}]"
-          end
+          raise Runtime::OwnershipConflict, "#{conflict.message} [supersede declined: #{decision}]" unless decision == :superseded
 
           result = @ledger.claim(operation_id: operation_id, kind: resource.fetch("kind"), id: resource.fetch("id"),
                                  identity: resource.fetch("identity"), metadata: resource.fetch("metadata", {}))
@@ -720,7 +738,7 @@ module Rubernetes
 
         resource
       rescue StandardError => error
-        raise OwnershipError, "network ownership claim failed for #{resource.fetch('id')}: #{error.message}"
+        raise OwnershipError, "network ownership claim failed for #{resource.fetch("id")}: #{error.message}"
       end
 
       # :superseded when a stale same-owner claim was released and the caller may
@@ -729,7 +747,7 @@ module Rubernetes
         # The ledger's Resource is a Data object, so to_h yields *symbol* keys;
         # reading it with string keys silently finds nothing.
         held = Array(@ledger.resources(include_released: false)).map { |candidate| ledger_entry(candidate) }
-                                                                .find do |entry|
+          .find do |entry|
           entry["kind"].to_s == resource.fetch("kind").to_s && entry["id"].to_s == resource.fetch("id").to_s
         end
         return :no_held_claim unless held
@@ -737,6 +755,7 @@ module Rubernetes
         owner = resource["owner"]
         return :owner_differs unless owner && held["owner"].to_s == owner.to_s
         return :identity_matches if held["identity"].to_s == resource.fetch("identity").to_s
+
         held_name = (held["metadata"] || {})["name"] if held["kind"].to_s == "link"
         return :held_object_still_present if observed_identity?(held["identity"], kind: held["kind"], link_name: held_name)
 
@@ -787,7 +806,11 @@ module Rubernetes
         return unless @ledger && @ledger.respond_to?(:finish)
 
         current = @ledger.respond_to?(:operation) ? @ledger.operation(operation_id) : nil
-        state = current.respond_to?(:state) ? current.state.to_s : (current.is_a?(Hash) ? (current["state"] || current[:state]).to_s : "")
+        state = if current.respond_to?(:state)
+                  current.state.to_s
+                else
+                  (current.is_a?(Hash) ? (current["state"] || current[:state]).to_s : "")
+                end
         return if state == "Removed"
 
         path = case state
@@ -801,21 +824,23 @@ module Rubernetes
         path.each { |to| @ledger.transition(operation_id: operation_id, to: to) }
         @ledger.finish(operation_id: operation_id)
       rescue StandardError => error
-        @logger&.warn("network.ledger_finish_skipped", operation_id: operation_id, error: "#{error.class}: #{error.message}") if @logger.respond_to?(:warn)
+        if @logger.respond_to?(:warn)
+          @logger&.warn("network.ledger_finish_skipped", operation_id: operation_id,
+                                                         error: "#{error.class}: #{error.message}")
+        end
         nil
       end
 
       def release_resources(operation, force:, errors:)
         return unless @ledger
+
         resources = Array(operation.fetch("resources", []))
         resources.each do |resource|
-          begin
-            @ledger.release(operation_id: operation.fetch("id"), kind: resource.fetch("kind"), id: resource.fetch("id"),
-                            identity: resource.fetch("identity"), force: force)
-          rescue StandardError => error
-            entry = {"component" => "ledger", "resource" => resource.fetch("id"), "error" => "#{error.class}: #{error.message}"}
-            errors << (errors.first.is_a?(String) ? "#{entry.fetch('component')}: #{entry.fetch('resource')}: #{entry.fetch('error')}" : entry)
-          end
+          @ledger.release(operation_id: operation.fetch("id"), kind: resource.fetch("kind"), id: resource.fetch("id"),
+                          identity: resource.fetch("identity"), force: force)
+        rescue StandardError => error
+          entry = {"component" => "ledger", "resource" => resource.fetch("id"), "error" => "#{error.class}: #{error.message}"}
+          errors << (errors.first.is_a?(String) ? "#{entry.fetch("component")}: #{entry.fetch("resource")}: #{entry.fetch("error")}" : entry)
         end
       end
 
@@ -843,9 +868,8 @@ module Rubernetes
 
           sleep(@readback_interval)
         end
-        if @require_observer && proofs.empty?
-          raise OwnershipError, "kernel observer did not read back #{operation.resource}"
-        end
+        raise OwnershipError, "kernel observer did not read back #{operation.resource}" if @require_observer && proofs.empty?
+
         # A readback that needed more than one look is the node waiting on the
         # kernel, and it is the most expensive part of attaching a Pod.  Only
         # the waits are recorded: a first-look hit is the normal case and
@@ -862,6 +886,7 @@ module Rubernetes
           if @require_observer && identity.to_s.empty?
             raise OwnershipError, "kernel observer returned an empty identity for #{operation.resource}"
           end
+
           proof_id = Support.fetch(hash, "id", default: nil)
           resource_id = index.zero? ? operation.resource : proof_id
           resource_id ||= "#{operation.resource}:#{index}"
@@ -886,13 +911,14 @@ module Rubernetes
         errors = []
         Array(records).each do |record|
           next unless %w[applying unknown].include?(record.fetch("state"))
+
           intent = record["effect_intent"]
           next unless intent
 
           operation = operation_from_value(intent)
           orphan_resources = Array(source.resources_for(operation)).each_with_index.filter_map do |proof, index|
             resource = resource_from_proof(operation, proof, owner: record.fetch("owner"),
-                                           sandbox_id: record.fetch("sandbox_id"), index: index)
+                                                             sandbox_id: record.fetch("sandbox_id"), index: index)
             identity = resource.fetch("identity")
             resource if candidates.include?(identity) && observed.key?(identity)
           end
@@ -924,7 +950,7 @@ module Rubernetes
                         "resource" => identity}
             end
             update_operation(record.fetch("id"), "resources" => resources, "state" => "unknown",
-                             "effect_intent" => nil)
+                                                 "effect_intent" => nil)
           rescue StandardError => error
             orphan_resources.each do |resource|
               identity = resource.fetch("identity")
@@ -985,6 +1011,7 @@ module Rubernetes
 
       def operation_result(operation)
         return Support.immutable(operation.fetch("result")) if operation.fetch("result")
+
         raise RecoveryRequired, "network operation #{operation.fetch("id")} has no durable result"
       end
 
@@ -1034,13 +1061,11 @@ module Rubernetes
             Support.fetch(parameters, "namespace_fd", "namespace", default: nil)
           end.uniq
           targets.each do |target|
-            begin
-              values = Array(values) + Array(source.resources(namespace_fd: target))
-            rescue ArgumentError
-              # Observers without a scoped signature have already supplied
-              # their complete inventory in the unscoped call above.
-              next
-            end
+            values = Array(values) + Array(source.resources(namespace_fd: target))
+          rescue ArgumentError
+            # Observers without a scoped signature have already supplied
+            # their complete inventory in the unscoped call above.
+            next
           end
         end
         Array(values).each_with_object({}) do |value, result|
@@ -1075,7 +1100,7 @@ module Rubernetes
         return unless @journal
 
         parameters = @journal.method(:append).parameters
-        requires_operation = parameters.any? { |kind, name| [:key, :keyreq].include?(kind) && name == :operation_id }
+        requires_operation = parameters.any? { |kind, name| %i[key keyreq].include?(kind) && name == :operation_id }
         if requires_operation
           @journal.append(operation_id: "network:interface", event: event, payload: payload)
         else

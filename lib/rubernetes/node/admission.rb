@@ -26,14 +26,14 @@ module Rubernetes
           accepted
         end
 
-        alias accepted? allowed?
-        alias ok? allowed?
+        alias_method :accepted?, :allowed?
+        alias_method :ok?, :allowed?
         # Helpers.success_result? asks #success?; without it every Decision --
         # rejections included -- read as success, so the lifecycle never
         # refused a Pod the node's own admission turned down.
-        alias success? allowed?
+        alias_method :success?, :allowed?
 
-        alias admitted? allowed?
+        alias_method :admitted?, :allowed?
 
         def rejected?
           !accepted
@@ -76,7 +76,7 @@ module Rubernetes
         net.ipv4.tcp_fin_timeout net.ipv4.tcp_keepalive_intvl net.ipv4.tcp_keepalive_probes net.ipv4.tcp_rmem
         net.ipv4.tcp_wmem
       ].freeze
-      SYSCTL_NAME = /\A[a-z0-9_.\-\/]+\z/i.freeze
+      SYSCTL_NAME = %r{\A[a-z0-9_.\-/]+\z}i
 
       def initialize(node_name:, resource_manager: nil, capacity: {}, allocatable: nil, node_labels: {},
                      operating_system: DEFAULT_OS, architecture: DEFAULT_ARCH, runtime_classes: {},
@@ -157,7 +157,7 @@ module Rubernetes
         end
         @resource_manager.reserve(pod_hash, requests: resource_requests) if reserve
         accepted(pod_hash, requested: resource_requests || @resource_manager.request_for(pod_hash),
-                 available: @resource_manager.available)
+                           available: @resource_manager.available)
       rescue ResourceManager::InsufficientResources => error
         rejected(pod_hash, "OutOfresource", error.message, requested: error.requested, available: error.available)
       ensure
@@ -204,8 +204,8 @@ module Rubernetes
       alias check admit
       alias validate admit
 
-      def admit!(pod, **options)
-        decision = admit(pod, **options)
+      def admit!(pod, **)
+        decision = admit(pod, **)
         raise Rejected, decision unless decision.accepted
 
         decision
@@ -213,8 +213,8 @@ module Rubernetes
 
       alias validate! admit!
 
-      def admitted?(pod, **options)
-        admit(pod, **options).accepted
+      def admitted?(pod, **)
+        admit(pod, **).accepted
       end
 
       def available
@@ -280,15 +280,15 @@ module Rubernetes
         metadata = Support.metadata(pod)
         annotations = Support.object_hash(Support.value(metadata, "annotations", {}))
         requested = Support.value(Support.value(pod, "spec", {}), "architecture") ||
-          annotations["kubernetes.io/arch"] || annotations["kubernetes.io/architecture"]
+                    annotations["kubernetes.io/arch"] || annotations["kubernetes.io/architecture"]
         return nil if requested.nil? || requested.to_s.empty? || normalize_architecture(requested) == @architecture
 
         rejected(pod, "UnsupportedArchitecture", "pod requires architecture #{requested.inspect}, node provides #{@architecture.inspect}",
                  details: {"requestedArchitecture" => requested, "nodeArchitecture" => @architecture})
       end
 
-      def check_selector(pod, **options)
-        with_fresh_labels { check_selector_once(pod, **options) }
+      def check_selector(pod, **)
+        with_fresh_labels { check_selector_once(pod, **) }
       end
 
       def check_selector_once(pod, **_options)
@@ -303,8 +303,8 @@ module Rubernetes
         nil
       end
 
-      def check_affinity(pod, **options)
-        with_fresh_labels { check_affinity_once(pod, **options) }
+      def check_affinity(pod, **)
+        with_fresh_labels { check_affinity_once(pod, **) }
       end
 
       def check_affinity_once(pod, **_options)
@@ -346,7 +346,10 @@ module Rubernetes
         host_ipc = Support.value(spec, "hostIPC", false) == true
         sysctls.each do |entry|
           name = Support.value(entry, "name", "").to_s.tr("/", ".")
-          return rejected(pod, "SysctlForbidden", "forbidden sysctl: #{name.inspect} is not a valid sysctl name") unless name.match?(SYSCTL_NAME)
+          unless name.match?(SYSCTL_NAME)
+            return rejected(pod, "SysctlForbidden",
+                            "forbidden sysctl: #{name.inspect} is not a valid sysctl name")
+          end
           unless SAFE_SYSCTLS.include?(name) || unsafe_allowed?(name)
             return rejected(pod, "SysctlForbidden", "forbidden sysctl: #{name.inspect} not allowlisted")
           end
@@ -376,12 +379,19 @@ module Rubernetes
         missing = requested.each_with_object({}) do |(resource, amount), output|
           requested_value = @resource_manager.parse_quantity(amount, resource)
           available_value = @resource_manager.parse_quantity(Support.value(available, resource, 0), resource)
-          output[resource] = @resource_manager.format_quantity(requested_value - available_value, resource) if requested_value > available_value
+          if requested_value > available_value
+            output[resource] =
+              @resource_manager.format_quantity(requested_value - available_value, resource)
+          end
         end
         resource = missing.keys.first || "resource"
-        reason = resource == "cpu" ? "OutOfcpu" : (resource == "memory" ? "OutOfmemory" : "OutOfresource")
+        reason = if resource == "cpu"
+                   "OutOfcpu"
+                 else
+                   (resource == "memory" ? "OutOfmemory" : "OutOfresource")
+                 end
         rejected(pod, reason, "node has insufficient #{resource} capacity", requested: requested, available: available,
-                 details: {"missing" => missing})
+                                                                            details: {"missing" => missing})
       end
 
       # pkg/kubelet/lifecycle/handlers.go declaredFeaturesAdmitHandler.
@@ -451,9 +461,7 @@ module Rubernetes
           !uid.nil? && uid == Support.value(Support.metadata(pod), "uid", nil)
         end
         allowed = allocatable["pods"]
-        if allowed && others.length + 1 > allowed
-          return insufficient(pod, "pods", 1, others.length, allowed.to_i)
-        end
+        return insufficient(pod, "pods", 1, others.length, allowed.to_i) if allowed && others.length + 1 > allowed
 
         requested = fit_requests(pod, allocatable)
         used = others.each_with_object(Hash.new(0r)) do |other, total|
@@ -499,7 +507,9 @@ module Rubernetes
 
       def affinity_term_matches?(term)
         term = Support.object_hash(term)
-        expressions_match = Array(Support.value(term, "matchExpressions", [])).all? { |requirement| selector_requirement_matches?(requirement) }
+        expressions_match = Array(Support.value(term, "matchExpressions", [])).all? do |requirement|
+          selector_requirement_matches?(requirement)
+        end
         fields_match = Array(Support.value(term, "matchFields", [])).all? { |requirement| field_requirement_matches?(requirement) }
         expressions_match && fields_match
       end
@@ -537,8 +547,8 @@ module Rubernetes
 
       def node_label(key)
         return @node_name if key.to_s == "metadata.name"
-        return @operating_system if key.to_s == "kubernetes.io/os" || key.to_s == "beta.kubernetes.io/os"
-        return @architecture if key.to_s == "kubernetes.io/arch" || key.to_s == "beta.kubernetes.io/arch"
+        return @operating_system if ["kubernetes.io/os", "beta.kubernetes.io/os"].include?(key.to_s)
+        return @architecture if ["kubernetes.io/arch", "beta.kubernetes.io/arch"].include?(key.to_s)
 
         current_node_labels[key.to_s]
       end
@@ -573,6 +583,7 @@ module Rubernetes
 
       def stringify_quantities(values)
         return {} if values.nil?
+
         Support.object_hash(values).each_with_object({}) do |(resource, value), output|
           output[resource.to_s] = if value.is_a?(String)
                                     value

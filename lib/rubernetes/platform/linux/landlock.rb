@@ -127,18 +127,20 @@ module Rubernetes
 
         def probe(required_abi: nil, resource_id: "landlock:probe")
           version = if @adapter.respond_to?(:probe)
-            @adapter.probe
-          elsif @adapter.respond_to?(:version)
-            @adapter.version
-          elsif @adapter.respond_to?(:call)
-            @adapter.call(operation: :probe, resource_id: resource_id)
-          else
-            @adapter.create_ruleset(handled_access_fs: 0, handled_access_net: 0, flags: LANDLOCK_CREATE_RULESET_VERSION, resource_id: resource_id)
-          end
+                      @adapter.probe
+                    elsif @adapter.respond_to?(:version)
+                      @adapter.version
+                    elsif @adapter.respond_to?(:call)
+                      @adapter.call(operation: :probe, resource_id: resource_id)
+                    else
+                      @adapter.create_ruleset(handled_access_fs: 0, handled_access_net: 0, flags: LANDLOCK_CREATE_RULESET_VERSION,
+                                              resource_id: resource_id)
+                    end
           version = version.to_h.fetch(:abi_version) { version.to_h.fetch("abi_version") } if version.respond_to?(:to_h)
           version = Integer(version)
           if required_abi && version < Integer(required_abi)
-            return Probe.new(available: false, abi_version: version, reason: "Landlock ABI #{version} is below required #{required_abi}", details: {}.freeze)
+            return Probe.new(available: false, abi_version: version, reason: "Landlock ABI #{version} is below required #{required_abi}",
+                             details: {}.freeze)
           end
 
           Probe.new(available: version.positive?, abi_version: version, reason: nil, details: {"architecture" => architecture}.freeze)
@@ -163,12 +165,13 @@ module Rubernetes
           raise ArgumentError, "Landlock filesystem rights must be non-negative" if fs_rights.negative? || net_rights.negative?
 
           fd = if @adapter.respond_to?(:create_ruleset)
-            @adapter.create_ruleset(handled_access_fs: fs_rights, handled_access_net: net_rights, flags: 0, resource_id: resource_id)
-          elsif @adapter.respond_to?(:call)
-            @adapter.call(operation: :create_ruleset, handled_access_fs: fs_rights, handled_access_net: net_rights, resource_id: resource_id)
-          else
-            raise Unsupported, "Landlock adapter does not expose create_ruleset"
-          end
+                 @adapter.create_ruleset(handled_access_fs: fs_rights, handled_access_net: net_rights, flags: 0, resource_id: resource_id)
+               elsif @adapter.respond_to?(:call)
+                 @adapter.call(operation: :create_ruleset, handled_access_fs: fs_rights, handled_access_net: net_rights,
+                               resource_id: resource_id)
+               else
+                 raise Unsupported, "Landlock adapter does not expose create_ruleset"
+               end
           Ruleset.new(fd: Integer(fd), handled_access_fs: fs_rights, handled_access_net: net_rights, identity: String(identity).freeze)
         end
 
@@ -179,13 +182,15 @@ module Rubernetes
           end
 
           result = if @adapter.respond_to?(:add_path_rule)
-            @adapter.add_path_rule(ruleset_fd: ruleset.fd, path_fd: Integer(path_fd), allowed_access: rights, resource_id: resource_id)
-          elsif @adapter.respond_to?(:call)
-            @adapter.call(operation: :add_path_rule, ruleset_fd: ruleset.fd, path_fd: Integer(path_fd), allowed_access: rights, resource_id: resource_id)
-          else
-            raise Unsupported, "Landlock adapter does not expose add_path_rule"
-          end
-          result == true || result == 0
+                     @adapter.add_path_rule(ruleset_fd: ruleset.fd, path_fd: Integer(path_fd), allowed_access: rights,
+                                            resource_id: resource_id)
+                   elsif @adapter.respond_to?(:call)
+                     @adapter.call(operation: :add_path_rule, ruleset_fd: ruleset.fd, path_fd: Integer(path_fd), allowed_access: rights,
+                                   resource_id: resource_id)
+                   else
+                     raise Unsupported, "Landlock adapter does not expose add_path_rule"
+                   end
+          [true, 0].include?(result)
         end
 
         def restrict_self(ruleset, resource_id: "landlock:restrict")
@@ -201,13 +206,13 @@ module Rubernetes
             @adapter.set_no_new_privs(resource_id: resource_id)
           end
           result = if @adapter.respond_to?(:restrict_self)
-            @adapter.restrict_self(ruleset_fd: ruleset.fd, resource_id: resource_id)
-          elsif @adapter.respond_to?(:call)
-            @adapter.call(operation: :restrict_self, ruleset_fd: ruleset.fd, resource_id: resource_id)
-          else
-            raise Unsupported, "Landlock adapter does not expose restrict_self"
-          end
-          result == true || result == 0
+                     @adapter.restrict_self(ruleset_fd: ruleset.fd, resource_id: resource_id)
+                   elsif @adapter.respond_to?(:call)
+                     @adapter.call(operation: :restrict_self, ruleset_fd: ruleset.fd, resource_id: resource_id)
+                   else
+                     raise Unsupported, "Landlock adapter does not expose restrict_self"
+                   end
+          [true, 0].include?(result)
         end
 
         def apply(ruleset, paths:, openat2:, read_only: false, resource_id: "landlock:apply")

@@ -51,9 +51,11 @@ module MetricsInventoryDifferential
   # builds them (checked, so a rename shows up as unwired).
   DYNAMIC = {
     "kube_apiserver_clusterip_allocator_allocation_total" => ["api/service_allocator.rb", "kube_apiserver_clusterip_allocator_allocation"],
-    "kube_apiserver_clusterip_allocator_allocation_errors_total" => ["api/service_allocator.rb", "kube_apiserver_clusterip_allocator_allocation"],
+    "kube_apiserver_clusterip_allocator_allocation_errors_total" => ["api/service_allocator.rb",
+                                                                     "kube_apiserver_clusterip_allocator_allocation"],
     "kube_apiserver_nodeport_allocator_allocation_total" => ["api/service_allocator.rb", "kube_apiserver_nodeport_allocator_allocation"],
-    "kube_apiserver_nodeport_allocator_allocation_errors_total" => ["api/service_allocator.rb", "kube_apiserver_nodeport_allocator_allocation"],
+    "kube_apiserver_nodeport_allocator_allocation_errors_total" => ["api/service_allocator.rb",
+                                                                    "kube_apiserver_nodeport_allocator_allocation"],
     "authentication_duration_seconds" => ["security/pipeline.rb", "\#{kind}_duration_seconds"],
     "authorization_duration_seconds" => ["security/pipeline.rb", "\#{kind}_duration_seconds"],
     "storage_count_attachable_volumes_in_use" => ["bootstrap/control_plane_services.rb", "storage_count_attachable_volumes_in_use"],
@@ -185,7 +187,9 @@ module MetricsInventoryDifferential
 
   # +scrapes+: [[component, endpoint, location]].
   def scrape_report(scrapes, insecure:, token:)
-    inputs = scrapes.map { |component, _endpoint, location| {"component" => component, "body" => fetch(location, insecure: insecure, token: token)} }
+    inputs = scrapes.map do |component, _endpoint, location|
+      {"component" => component, "body" => fetch(location, insecure: insecure, token: token)}
+    end
     total_failures = 0
     run_oracle(inputs).zip(scrapes).each do |result, (component, endpoint, _location)|
       puts "== #{component} #{endpoint}: #{result["families"].length} families parsed by expfmt"

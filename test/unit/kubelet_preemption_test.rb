@@ -117,13 +117,14 @@ class KubeletPreemptionTest < Minitest::Test
   # TestAdmissionRequirementsSubtract.
   def test_subtract
     to_h = ->(list) { list.to_h { |item| [item.resource, item.quantity] } }
+
     assert_equal({}, to_h.call(P.subtract(requirements(0, 0, 0), [all_pods["burstable"]])))
     # A Pod always covers 1 of "pods".
-    assert_equal({"cpu" => 100, "memory" => 100 * 1024**2},
+    assert_equal({"cpu" => 100, "memory" => 100 * (1024**2)},
                  to_h.call(P.subtract(requirements(100, 100, 1), [all_pods["bestEffort"]])))
     assert_equal({}, to_h.call(P.subtract(requirements(100, 100, 1), [all_pods["burstable"]])))
     assert_equal({}, to_h.call(P.subtract(requirements(50, 50, 0), [all_pods["burstable"]])))
-    assert_equal({"cpu" => 100, "memory" => 100 * 1024**2},
+    assert_equal({"cpu" => 100, "memory" => 100 * (1024**2)},
                  to_h.call(P.subtract(requirements(200, 200, 0), [all_pods["burstable"]])))
     assert_equal({}, to_h.call(P.subtract(requirements(0, 0, 1), [all_pods["burstable"]])))
   end
@@ -134,6 +135,7 @@ class KubeletPreemptionTest < Minitest::Test
     low = pod("low-memory", requests: {"memory" => "50Mi", "cpu" => "100m"})
     high = pod("high-memory", requests: {"memory" => "200Mi", "cpu" => "100m"})
     high_cpu = pod("high-cpu", requests: {"memory" => "50Mi", "cpu" => "200m"})
+
     refute P.smaller_resource_request?(low, none), "some requests vs no requests should return false"
     assert P.smaller_resource_request?(low, high), "lower memory should return true"
     refute P.smaller_resource_request?(high, high_cpu), "memory priority over CPU"
@@ -158,16 +160,19 @@ class KubeletPreemptionTest < Minitest::Test
   def test_resource_request_follows_get_resource_request
     with_overhead = pod("o", requests: {"cpu" => "100m", "memory" => "100Mi"})
     with_overhead["spec"]["overhead"] = {"cpu" => "50m", "memory" => "10Mi"}
+
     assert_equal 150, P.resource_request(with_overhead, "cpu")
-    assert_equal 110 * 1024**2, P.resource_request(with_overhead, "memory")
+    assert_equal 110 * (1024**2), P.resource_request(with_overhead, "memory")
     # The overhead is not added to a request of zero.
     none = pod("n")
     none["spec"]["overhead"] = {"cpu" => "50m"}
+
     assert_equal 0, P.resource_request(none, "cpu")
     assert_equal 1, P.resource_request(none, "pods")
     # Pod-level requests replace the containers' sum.
     level = pod("l", requests: {"cpu" => "100m"})
     level["spec"]["resources"] = {"requests" => {"cpu" => "250m"}}
+
     assert_equal 250, P.resource_request(level, "cpu")
   end
 
@@ -205,25 +210,29 @@ class KubeletPreemptionTest < Minitest::Test
     assert_raises(P::Error) { handler(%w[bestEffort]).handle_admission_failure(all_pods["cluster-critical"], decision("memory", 1, 0, 0)) }
     # multiple pods evicted
     h = handler(%w[cluster-critical bestEffort burstable high-request-burstable guaranteed high-request-guaranteed])
-    assert h.handle_admission_failure(all_pods["cluster-critical"], decision("memory", 550 * 1024**2, 0, 0))
+
+    assert h.handle_admission_failure(all_pods["cluster-critical"], decision("memory", 550 * (1024**2), 0, 0))
     assert_equal %w[high-request-burstable high-request-guaranteed], @killed.map(&:first)
     assert_equal ["Preempted in order to admit critical pod"], @killed.map { |item| item[1] }.uniq
     assert_equal ["Preempting"], @killed.map(&:last).uniq
     condition = @killed.first[2]
+
     assert_equal({"type" => "DisruptionTarget", "status" => "True", "reason" => "TerminationByKubelet",
                   "message" => "Pod was preempted by Kubelet to accommodate a critical pod."}, condition)
-    assert_equal %w[Preempting Preempting], @recorder.events.map { |event| event[:reason] }
+    assert_equal(%w[Preempting Preempting], @recorder.events.map { |event| event[:reason] })
     assert_equal "Warning", @recorder.events.first[:type]
     assert_equal "high-request-burstable", @recorder.events.first[:involved_object]["name"]
     assert_equal({"memory" => 2}, @metrics.counts)
     # multiple pods with eviction error: no error, nothing counted
     h = handler(%w[cluster-critical bestEffort burstable high-request-burstable guaranteed high-request-guaranteed], kill_error: true)
-    assert h.handle_admission_failure(all_pods["cluster-critical"], decision("memory", 550 * 1024**2, 0, 0))
+
+    assert h.handle_admission_failure(all_pods["cluster-critical"], decision("memory", 550 * (1024**2), 0, 0))
     assert_empty @killed
     assert_equal({}, @metrics.counts)
     # a refusal that is not an insufficient resource stands
     other = Rubernetes::Node::Admission::Decision.new(accepted: false, reason: "UnsupportedOS", message: "x", requested: {},
-                                                       available: {}, pod: nil, details: {})
+                                                      available: {}, pod: nil, details: {})
+
     refute handler(%w[burstable]).handle_admission_failure(all_pods["cluster-critical"], other)
   end
 
@@ -231,6 +240,7 @@ class KubeletPreemptionTest < Minitest::Test
     admission = Rubernetes::Node::Admission.new(node_name: "n", capacity: {"cpu" => "2", "memory" => "4Gi", "pods" => "10"})
     refused = admission.admit(pod("new", requests: {"cpu" => "1500m"}), other_pods: [pod("a", requests: {"cpu" => "1"})])
     requirement = P.requirement_for(refused)
+
     assert_equal "cpu", requirement.resource
     # GetInsufficientAmount: requested - (capacity - used) = 1500 - (2000 - 1000).
     assert_equal 500, requirement.quantity
@@ -256,7 +266,9 @@ class KubeletPreemptionTest < Minitest::Test
                          lifecycle.request_eviction(victim.dig("metadata", "uid"), message: message, condition: condition, reason: reason)
                        })
     lifecycle = Rubernetes::Node::Lifecycle.new(runtime: FakeRuntime.new, admission: admission, preemption: preemption)
-    admitted.each { |item| lifecycle.instance_variable_get(:@records)[item.dig("metadata", "uid")] = lifecycle.send(:new_record, item).merge!(state: "Running") }
+    admitted.each do |item|
+      lifecycle.instance_variable_get(:@records)[item.dig("metadata", "uid")] = lifecycle.send(:new_record, item).merge!(state: "Running")
+    end
     [lifecycle, killed]
   end
 
@@ -265,6 +277,7 @@ class KubeletPreemptionTest < Minitest::Test
     lifecycle, killed = lifecycle_with([running])
     critical = pod("crit", requests: {"cpu" => "1"}, priority: SYSTEM_CRITICAL, namespace: "kube-system")
     record = lifecycle.send(:new_record, critical)
+
     assert lifecycle.send(:admit!, critical, record)
     assert_equal %w[victim], killed
     # The victim is being killed: it no longer counts as active.
@@ -283,7 +296,8 @@ class KubeletPreemptionTest < Minitest::Test
     record = lifecycle.send(:new_record, critical)
     error = assert_raises(Rubernetes::Node::Lifecycle::LifecycleError) { lifecycle.send(:admit!, critical, record) }
     assert_equal "UnexpectedAdmissionError", record[:admission_reason]
-    assert_match(/Unexpected error while attempting to recover from admission failure: preemption: error finding a set of pods to preempt/, error.message)
+    assert_match(/Unexpected error while attempting to recover from admission failure: preemption: error finding a set of pods to preempt/,
+                 error.message)
     assert_empty killed
   end
 end

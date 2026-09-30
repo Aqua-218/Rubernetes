@@ -26,7 +26,9 @@ module Rubernetes
             versions = Array(rule["apiVersions"])
             resources = Array(rule["resources"])
             scope = rule["scope"] || "*"
-            return false unless scope == "*" || (scope == "Namespaced" && !attributes.namespace.empty?) || (scope == "Cluster" && attributes.namespace.empty?)
+            unless scope == "*" || (scope == "Namespaced" && !attributes.namespace.empty?) || (scope == "Cluster" && attributes.namespace.empty?)
+              return false
+            end
             return false unless groups.include?("*") || groups.include?(attributes.group)
             return false unless versions.include?("*") || versions.include?(attributes.version)
 
@@ -76,7 +78,9 @@ module Rubernetes
           def object_selector_matches?(selector, attributes)
             return true if selector.nil? || selector.empty?
 
-            [attributes.object, attributes.old_object].compact.any? { |object| label_selector_matches?(selector, object.dig("metadata", "labels")) }
+            [attributes.object, attributes.old_object].compact.any? do |object|
+              label_selector_matches?(selector, object.dig("metadata", "labels"))
+            end
           end
 
           # matchConditions: every expression must be true; an evaluation error
@@ -93,7 +97,10 @@ module Rubernetes
               end
             rescue CEL::Error => error
               record_match_condition(name, attributes, "apiserver_admission_match_condition_evaluation_errors_total")
-              raise Rejected.new("failed matchConditions: #{name}: #{condition["name"]}: #{error.message}", plugin: self.name) if failure_policy == "Fail"
+              if failure_policy == "Fail"
+                raise Rejected.new("failed matchConditions: #{name}: #{condition["name"]}: #{error.message}",
+                                   plugin: self.name)
+              end
 
               return false
             end
@@ -118,7 +125,11 @@ module Rubernetes
           end
 
           def cel
-            @cel ||= @context.respond_to?(:cel) && @context.cel ? @context.cel : CEL::Evaluator.new(library: CEL::Library.new(authorizer: (@context.respond_to?(:authorizer) ? @context.authorizer : nil)))
+            @cel ||= if @context.respond_to?(:cel) && @context.cel
+                       @context.cel
+                     else
+                       CEL::Evaluator.new(library: CEL::Library.new(authorizer: (@context.respond_to?(:authorizer) ? @context.authorizer : nil)))
+                     end
           end
 
           def cel_variables(attributes, params: nil, namespace_object: nil)
@@ -128,7 +139,8 @@ module Rubernetes
               "request" => admission_request_document(attributes),
               "params" => params,
               "namespaceObject" => namespace_object || (attributes.namespace.empty? ? nil : @context.namespace(attributes.namespace)),
-              "authorizer" => CEL::Library::Authorizer.new(@context.respond_to?(:authorizer) ? @context.authorizer : nil, attributes.user, nil),
+              "authorizer" => CEL::Library::Authorizer.new(@context.respond_to?(:authorizer) ? @context.authorizer : nil, attributes.user,
+                                                           nil),
               "variables" => {}
             }
           end
@@ -202,22 +214,22 @@ module Rubernetes
               # resolved again on retry.
               http.open_timeout = [[CONNECT_TIMEOUT, remaining].min, 0.1].max
               http.read_timeout = [remaining, 0.1].max
-            if http.use_ssl?
-              http.verify_mode = OpenSSL::SSL::VERIFY_PEER
-              bundle = client_config["caBundle"]
-              if bundle
-                store = OpenSSL::X509::Store.new
-                OpenSSL::X509::Certificate.load(bundle.unpack1("m0")).each { |certificate| store.add_cert(certificate) }
-                http.cert_store = store
+              if http.use_ssl?
+                http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+                bundle = client_config["caBundle"]
+                if bundle
+                  store = OpenSSL::X509::Store.new
+                  OpenSSL::X509::Certificate.load(bundle.unpack1("m0")).each { |certificate| store.add_cert(certificate) }
+                  http.cert_store = store
+                end
+                http.cert = @client_certificate if @client_certificate
+                http.key = @client_key if @client_key
               end
-              http.cert = @client_certificate if @client_certificate
-              http.key = @client_key if @client_key
-            end
-            # client-go appends the per-request timeout to the webhook URL.
-            target = "#{uri.request_uri}#{uri.query ? "&" : "?"}timeout=#{timeout}s"
+              # client-go appends the per-request timeout to the webhook URL.
+              target = "#{uri.request_uri}#{uri.query ? "&" : "?"}timeout=#{timeout}s"
               response = http.post(target, payload, {"content-type" => "application/json", "accept" => "application/json"})
               record_x509(http)
-            rescue Net::OpenTimeout, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH => error
+            rescue Net::OpenTimeout, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH
               raise if Process.clock_gettime(Process::CLOCK_MONOTONIC) + CONNECT_TIMEOUT >= deadline || attempt >= MAX_CONNECT_ATTEMPTS
 
               sleep(CONNECT_RETRY_DELAY)
@@ -229,7 +241,8 @@ module Rubernetes
           rescue JSON::ParserError => error
             raise Error, "webhook returned invalid JSON: #{error.message}"
           rescue Net::OpenTimeout, Net::ReadTimeout
-            raise WebhookTimeout, "failed to call webhook: Post #{"#{url}#{uri.query ? "&" : "?"}timeout=#{timeout}s".inspect}: context deadline exceeded"
+            raise WebhookTimeout,
+                  "failed to call webhook: Post #{"#{url}#{uri.query ? "&" : "?"}timeout=#{timeout}s".inspect}: context deadline exceeded"
           rescue OpenSSL::SSL::SSLError, SystemCallError, SocketError, IOError, Net::ProtocolError, Net::HTTPFatalError => error
             raise Error, "failed to call webhook: Post #{"#{url}#{uri.query ? "&" : "?"}timeout=#{timeout}s".inspect}: #{error.message}"
           ensure
@@ -304,11 +317,12 @@ module Rubernetes
           def initialize(name, context:, config:)
             super
             @client = config["client"] || WebhookClient.new(client_certificate: config["client_certificate"], client_key: config["client_key"],
-                                                             service_resolver: config["service_resolver"])
+                                                            service_resolver: config["service_resolver"])
           end
 
           def handles?(attributes)
-            !(attributes.group == CONFIGURATION_GROUP && %w[mutatingwebhookconfigurations validatingwebhookconfigurations].include?(attributes.resource))
+            !(attributes.group == CONFIGURATION_GROUP && %w[mutatingwebhookconfigurations
+                                                            validatingwebhookconfigurations].include?(attributes.resource))
           end
 
           def reinvokable?
@@ -329,7 +343,8 @@ module Rubernetes
               next false unless object_selector_matches?(hook["objectSelector"], attributes)
               next false if attributes.dry_run && !%w[None NoneOnDryRun].include?(hook["sideEffects"])
 
-              match_conditions_pass?(hook["matchConditions"], attributes, failure_policy: hook["failurePolicy"] || "Fail", name: hook["name"])
+              match_conditions_pass?(hook["matchConditions"], attributes, failure_policy: hook["failurePolicy"] || "Fail",
+                                                                          name: hook["name"])
             end
           end
 
@@ -353,8 +368,12 @@ module Rubernetes
             certificate = http.respond_to?(:peer_cert) ? http.peer_cert : nil
             return unless registry && certificate
 
-            registry.increment("apiserver_webhooks_x509_missing_san_total") unless ::Rubernetes::Observability::Metrics.certificate_has_san?(certificate)
-            registry.increment("apiserver_webhooks_x509_insecure_sha1_total") if ::Rubernetes::Observability::Metrics.certificate_sha1?(certificate)
+            unless ::Rubernetes::Observability::Metrics.certificate_has_san?(certificate)
+              registry.increment("apiserver_webhooks_x509_missing_san_total")
+            end
+            if ::Rubernetes::Observability::Metrics.certificate_sha1?(certificate)
+              registry.increment("apiserver_webhooks_x509_insecure_sha1_total")
+            end
           rescue StandardError
             nil
           end
@@ -373,12 +392,15 @@ module Rubernetes
               registry.increment("apiserver_admission_webhook_rejection_count",
                                  base.merge("error_type" => error_type, "rejection_code" => [rejection_code.to_i, 600].min.to_s))
             end
-            registry.increment("apiserver_admission_webhook_fail_open_count", {"name" => hook["name"].to_s, "type" => webhook_type}) if fail_open
+            if fail_open
+              registry.increment("apiserver_admission_webhook_fail_open_count",
+                                 {"name" => hook["name"].to_s, "type" => webhook_type})
+            end
           rescue StandardError
             nil
           end
 
-          def call_hook(hook, attributes, configuration_name)
+          def call_hook(hook, attributes, _configuration_name)
             started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             code = 0
             version = review_version(hook)
@@ -389,15 +411,26 @@ module Rubernetes
             raise Error, "webhook #{hook["name"]} returned no response" unless body.is_a?(Hash) && body["response"].is_a?(Hash)
 
             response = body["response"]
-            raise Error, "webhook #{hook["name"]} response UID #{response["uid"].inspect} does not match request UID" unless response["uid"] == request["uid"]
+            unless response["uid"] == request["uid"]
+              raise Error,
+                    "webhook #{hook["name"]} response UID #{response["uid"].inspect} does not match request UID"
+            end
 
             Array(response["warnings"]).each { |warning| attributes.warn(warning.to_s) }
             (response["auditAnnotations"] || {}).each { |key, value| attributes.annotate("#{hook["name"]}/#{key}", value) }
             allowed = response["allowed"] == true
-            status = response["result"].is_a?(Hash) ? response["result"] : (response["status"].is_a?(Hash) ? response["status"] : {})
+            status = if response["result"].is_a?(Hash)
+                       response["result"]
+                     else
+                       (response["status"].is_a?(Hash) ? response["status"] : {})
+                     end
             record_webhook(hook, attributes, started, code: code, rejected: !allowed,
                                                       error_type: allowed ? nil : "no_error",
-                                                      rejection_code: allowed ? nil : (status["code"].is_a?(Integer) && status["code"] >= 400 ? status["code"] : 0))
+                                                      rejection_code: if allowed
+                                                                        nil
+                                                                      else
+                                                                        (status["code"].is_a?(Integer) && status["code"] >= 400 ? status["code"] : 0)
+                                                                      end)
             response
           rescue Error => error
             failure_policy = hook["failurePolicy"] || "Fail"
@@ -408,13 +441,18 @@ module Rubernetes
               attributes.annotate("failed-open.#{name.downcase}.admission.k8s.io/#{hook["name"]}", "true")
               return nil
             end
-            raise Rejected.new("Internal error occurred: failed calling webhook \"#{hook["name"]}\": #{error.message}", code: 500, reason: "InternalError", plugin: name)
+            raise Rejected.new("Internal error occurred: failed calling webhook \"#{hook["name"]}\": #{error.message}", code: 500,
+                                                                                                                        reason: "InternalError", plugin: name)
           end
 
           def reject_from_response!(hook, response)
             # AdmissionResponse.Result is a *metav1.Status carried as "result";
             # reading "status" always found nil -> "denied ... without explanation".
-            status = response["result"].is_a?(Hash) ? response["result"] : (response["status"].is_a?(Hash) ? response["status"] : {})
+            status = if response["result"].is_a?(Hash)
+                       response["result"]
+                     else
+                       (response["status"].is_a?(Hash) ? response["status"] : {})
+                     end
             # k8s.io/apiserver/pkg/admission/plugin/webhook/errors ToStatusErr:
             # the Status' reason stands in for an absent message, and the
             # "without explanation" wording replaces the whole explanation
@@ -433,7 +471,9 @@ module Rubernetes
           def admit(attributes)
             state = attributes.reinvocation_value(name) || attributes.set_reinvocation_value(name, ReinvokeState.new)
             state.require_reinvoking_previously_invoked if attributes.reinvocation? && state.output_changed?(attributes.object)
-            configurations("mutatingwebhookconfigurations").sort_by { |configuration| configuration.dig("metadata", "name").to_s }.each do |configuration|
+            configurations("mutatingwebhookconfigurations").sort_by do |configuration|
+              configuration.dig("metadata", "name").to_s
+            end.each do |configuration|
               configuration_name = configuration.dig("metadata", "name").to_s
               seen = Hash.new(0)
               uids = Array(configuration["webhooks"]).to_h do |hook|
@@ -472,19 +512,27 @@ module Rubernetes
           def apply_patch(hook, attributes, response)
             patch = response["patch"]
             return if patch.nil?
-            raise Rejected.new("admission webhook \"#{hook["name"]}\" returned an unsupported patch type", code: 500, reason: "InternalError", plugin: name) unless response["patchType"] == "JSONPatch"
+            unless response["patchType"] == "JSONPatch"
+              raise Rejected.new("admission webhook \"#{hook["name"]}\" returned an unsupported patch type", code: 500,
+                                                                                                             reason: "InternalError", plugin: name)
+            end
 
             operations = JSON.parse(patch.unpack1("m0"))
             attributes.object = API::Patch.apply(attributes.object, operations, type: :json, resource: nil)
           rescue JSON::ParserError, ArgumentError => error
-            raise Rejected.new("admission webhook \"#{hook["name"]}\" returned an invalid patch: #{error.message}", code: 500, reason: "InternalError", plugin: name)
+            raise Rejected.new("admission webhook \"#{hook["name"]}\" returned an invalid patch: #{error.message}", code: 500,
+                                                                                                                    reason: "InternalError", plugin: name)
           end
         end
-        Registry.register("MutatingAdmissionWebhook") { |context, config| MutatingAdmissionWebhook.new("MutatingAdmissionWebhook", context: context, config: config) }
+        Registry.register("MutatingAdmissionWebhook") do |context, config|
+          MutatingAdmissionWebhook.new("MutatingAdmissionWebhook", context: context, config: config)
+        end
 
         class ValidatingAdmissionWebhook < AdmissionWebhook
           def validate(attributes)
-            configurations("validatingwebhookconfigurations").sort_by { |configuration| configuration.dig("metadata", "name").to_s }.each do |configuration|
+            configurations("validatingwebhookconfigurations").sort_by do |configuration|
+              configuration.dig("metadata", "name").to_s
+            end.each do |configuration|
               applicable_hooks(configuration, attributes).each do |hook|
                 response = call_hook(hook, attributes, configuration.dig("metadata", "name"))
                 next if response.nil?
@@ -494,7 +542,9 @@ module Rubernetes
             end
           end
         end
-        Registry.register("ValidatingAdmissionWebhook") { |context, config| ValidatingAdmissionWebhook.new("ValidatingAdmissionWebhook", context: context, config: config) }
+        Registry.register("ValidatingAdmissionWebhook") do |context, config|
+          ValidatingAdmissionWebhook.new("ValidatingAdmissionWebhook", context: context, config: config)
+        end
 
         # ValidatingAdmissionPolicy / MutatingAdmissionPolicy with bindings,
         # paramRef resolution, matchResources, variables, validations with
@@ -511,7 +561,9 @@ module Rubernetes
 
             match_policy = match["matchPolicy"] || "Equivalent"
             resource_rules = Array(match["resourceRules"])
-            return false if !resource_rules.empty? && resource_rules.none? { |rule| rule_matches?(rule, attributes, match_policy: match_policy) }
+            return false if !resource_rules.empty? && resource_rules.none? do |rule|
+              rule_matches?(rule, attributes, match_policy: match_policy)
+            end
             return false if Array(match["excludeResourceRules"]).any? { |rule| rule_matches?(rule, attributes, match_policy: match_policy) }
             return false unless namespace_selector_matches?(match["namespaceSelector"], attributes)
 
@@ -526,15 +578,25 @@ module Rubernetes
             api_version = param_kind["apiVersion"].to_s
             group = api_version.include?("/") ? api_version.split("/").first : ""
             version = api_version.split("/").last
-            resource = @context.respond_to?(:resource_for_kind) ? @context.resource_for_kind(group, param_kind["kind"]) : "#{param_kind["kind"].to_s.downcase}s"
+            resource = if @context.respond_to?(:resource_for_kind)
+                         @context.resource_for_kind(group,
+                                                    param_kind["kind"])
+                       else
+                         "#{param_kind["kind"].to_s.downcase}s"
+                       end
             namespace = param_ref["namespace"] || attributes.namespace
             params = if param_ref["name"]
                        [@context.get(resource, namespace, param_ref["name"], group: group, version: version)].compact
                      else
-                       @context.list(resource, namespace, group: group, version: version).select { |object| label_selector_matches?(param_ref["selector"], object.dig("metadata", "labels")) }
+                       @context.list(resource, namespace, group: group, version: version).select do |object|
+                         label_selector_matches?(param_ref["selector"], object.dig("metadata", "labels"))
+                       end
                      end
             if params.empty?
-              raise Rejected.new("failed to configure binding: no params found for policy binding with `Deny` parameterNotFoundAction", plugin: name) if (param_ref["parameterNotFoundAction"] || "Deny") == "Deny"
+              if (param_ref["parameterNotFoundAction"] || "Deny") == "Deny"
+                raise Rejected.new("failed to configure binding: no params found for policy binding with `Deny` parameterNotFoundAction",
+                                   plugin: name)
+              end
 
               return []
             end
@@ -625,7 +687,12 @@ module Rubernetes
             api_version = param_kind["apiVersion"].to_s
             group = api_version.include?("/") ? api_version.split("/").first : ""
             version = api_version.split("/").last
-            resource = @context.respond_to?(:resource_for_kind) ? @context.resource_for_kind(group, param_kind["kind"]) : "#{param_kind["kind"].to_s.downcase}s"
+            resource = if @context.respond_to?(:resource_for_kind)
+                         @context.resource_for_kind(group,
+                                                    param_kind["kind"])
+                       else
+                         "#{param_kind["kind"].to_s.downcase}s"
+                       end
             cluster_scoped = @context.respond_to?(:cluster_scoped?) && @context.cluster_scoped?(group, resource)
             namespace = nil
             unless cluster_scoped
@@ -637,19 +704,21 @@ module Rubernetes
             if !param_ref["namespace"].to_s.empty? && cluster_scoped
               raise ConfigurationError, "paramRef.namespace must not be provided for a cluster-scoped `paramKind`"
             end
+
             params = if !param_ref["name"].to_s.empty?
                        raise ConfigurationError, "paramRef.name and paramRef.selector are mutually exclusive" if param_ref["selector"]
 
                        [@context.get(resource, namespace, param_ref["name"], group: group, version: version)].compact
                      elsif param_ref["selector"]
                        @context.list(resource, namespace, group: group, version: version)
-                               .select { |object| label_selector_matches?(param_ref["selector"], object.dig("metadata", "labels")) }
+                         .select { |object| label_selector_matches?(param_ref["selector"], object.dig("metadata", "labels")) }
                      else
                        raise ConfigurationError, "one of name or selector must be provided"
                      end
             if params.empty? && param_ref["parameterNotFoundAction"] == "Deny"
               raise ConfigurationError, "no params found for policy binding with `Deny` parameterNotFoundAction"
             end
+
             params
           end
 
@@ -726,7 +795,12 @@ module Rubernetes
             case value
             when String
               text = value.strip
-              text.empty? ? AuditAnnotation.new(:exclude, annotation["key"], nil, nil, elapsed) : AuditAnnotation.new(:publish, annotation["key"], text, nil, elapsed)
+              if text.empty?
+                AuditAnnotation.new(:exclude, annotation["key"], nil, nil,
+                                    elapsed)
+              else
+                AuditAnnotation.new(:publish, annotation["key"], text, nil, elapsed)
+              end
             when nil then AuditAnnotation.new(:exclude, annotation["key"], nil, nil, elapsed)
             else
               AuditAnnotation.new(:error, annotation["key"], nil,
@@ -825,7 +899,8 @@ module Rubernetes
           def denial_error(attributes, denial)
             policy_name = denial.policy.dig("metadata", "name")
             message = if denial.binding
-                        "ValidatingAdmissionPolicy '#{policy_name}' with binding '#{denial.binding.dig("metadata", "name")}' denied request: #{denial.decision.message}"
+                        "ValidatingAdmissionPolicy '#{policy_name}' with binding '#{denial.binding.dig("metadata",
+                                                                                                       "name")}' denied request: #{denial.decision.message}"
                       else
                         "ValidatingAdmissionPolicy '#{policy_name}' denied request: #{denial.decision.message}"
                       end
@@ -833,12 +908,16 @@ module Rubernetes
             code = {"Forbidden" => 403, "Unauthorized" => 401, "RequestEntityTooLarge" => 413, "Invalid" => 422}.fetch(reason, 422)
             resource = attributes.group.empty? ? attributes.resource : "#{attributes.resource}.#{attributes.group}"
             Rejected.new("#{resource} #{attributes.name.inspect} is forbidden: #{message}", code: code, reason: reason,
-                         details: {"name" => attributes.name, "group" => attributes.group, "kind" => attributes.resource,
-                                   "causes" => [{"message" => message}]}.reject { |key, value| key == "group" && value.to_s.empty? },
-                         plugin: name)
+                                                                                            details: {"name" => attributes.name, "group" => attributes.group, "kind" => attributes.resource,
+                                                                                                      "causes" => [{"message" => message}]}.reject do |key, value|
+                                                                                              key == "group" && value.to_s.empty?
+                                                                                            end,
+                                                                                            plugin: name)
           end
         end
-        Registry.register("ValidatingAdmissionPolicy") { |context, config| ValidatingAdmissionPolicy.new("ValidatingAdmissionPolicy", context: context, config: config) }
+        Registry.register("ValidatingAdmissionPolicy") do |context, config|
+          ValidatingAdmissionPolicy.new("ValidatingAdmissionPolicy", context: context, config: config)
+        end
 
         # MutatingAdmissionPolicy (admission/plugin/policy/mutating and the
         # generic policy dispatcher, v1.36.2): each matching binding's
@@ -870,7 +949,9 @@ module Rubernetes
                 begin
                   resolve_params(policy, binding, attributes).each { |param| invocations << [policy, binding, param] }
                 rescue Rejected => error
-                  errors << PolicyError.new(policy, binding, error.message.delete_prefix("failed to configure binding: ").then { |m| "failed to configure binding: #{m}" }, nil)
+                  errors << PolicyError.new(policy, binding, error.message.delete_prefix("failed to configure binding: ").then { |m|
+                    "failed to configure binding: #{m}"
+                  }, nil)
                 end
               end
             end
@@ -962,10 +1043,16 @@ module Rubernetes
               begin
                 mutated = mutate(policy, mutation, attributes, param)
                 observe_mutation(policy, binding, "no_error", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
-                attributes.object = @context.respond_to?(:default_object) ? @context.default_object(attributes.group, attributes.version, attributes.kind, mutated) : mutated
+                attributes.object = if @context.respond_to?(:default_object)
+                                      @context.default_object(attributes.group, attributes.version,
+                                                              attributes.kind, mutated)
+                                    else
+                                      mutated
+                                    end
                 applied = true
               rescue Rejected => error
-                observe_mutation(policy, binding, mutation_error_type(error.message), Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+                observe_mutation(policy, binding, mutation_error_type(error.message),
+                                 Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
                 raise
               rescue MutationError, CEL::Error => error
                 message = error.is_a?(CEL::Error) ? cel_error_message(error) : error.message
@@ -1007,6 +1094,7 @@ module Rubernetes
               unless result.is_a?(CEL::Values::ObjectVal)
                 raise MutationError, "unsupported return type from ApplyConfiguration expression: #{cel_type_name(result)}"
               end
+
               mismatches = result.type_name_errors
               raise MutationError, "type mismatch: #{mismatches.join("\n")}" if mismatches.any?
 
@@ -1078,7 +1166,8 @@ module Rubernetes
 
             atomics = find_atomics([], model, type_ref, patch)
             if atomics.any?
-              raise MutationError, "error applying patch: invalid ApplyConfiguration: may not mutate atomic arrays, maps or structs: #{atomics.join(", ")}"
+              raise MutationError,
+                    "error applying patch: invalid ApplyConfiguration: may not mutate atomic arrays, maps or structs: #{atomics.join(", ")}"
             end
 
             live = MF::TypedValue.new(attributes.object, model, type_ref, typed: false)
@@ -1129,7 +1218,9 @@ module Rubernetes
           # <message>"), its reason when it has one, every error a cause.
           def refusal(attributes, errors)
             messages = errors.map do |error|
-              "policy '#{error.policy.dig("metadata", "name")}' with binding '#{error.binding.dig("metadata", "name")}' denied request: #{error.message}"
+              "policy '#{error.policy.dig("metadata",
+                                          "name")}' with binding '#{error.binding.dig("metadata",
+                                                                                      "name")}' denied request: #{error.message}"
             end
             details = {"name" => attributes.name, "group" => attributes.group, "kind" => attributes.resource,
                        "causes" => messages.map { |message| {"message" => message} }}
@@ -1137,7 +1228,9 @@ module Rubernetes
             Rejected.new(messages.first, code: 403, reason: errors.first.reason || "Forbidden", details: details, plugin: name)
           end
         end
-        Registry.register("MutatingAdmissionPolicy") { |context, config| MutatingAdmissionPolicy.new("MutatingAdmissionPolicy", context: context, config: config) }
+        Registry.register("MutatingAdmissionPolicy") do |context, config|
+          MutatingAdmissionPolicy.new("MutatingAdmissionPolicy", context: context, config: config)
+        end
       end
     end
   end

@@ -86,7 +86,9 @@ module Rubernetes
             when :map
               node[1].each_with_object({}) do |(key_node, value_node), hash|
                 key = eval(key_node)
-                raise EvaluationError, "map key must be int, uint, bool or string" unless [Integer, Values::UInt, TrueClass, FalseClass, String].any? { |type| key.is_a?(type) }
+                unless [Integer, Values::UInt, TrueClass, FalseClass, String].any? { |type| key.is_a?(type) }
+                  raise EvaluationError, "map key must be int, uint, bool or string"
+                end
                 raise EvaluationError, "duplicate map key #{key.inspect}" if hash.key?(key)
 
                 hash[key] = eval(value_node)
@@ -95,7 +97,7 @@ module Rubernetes
             when :binary then eval_binary(node)
             when :conditional
               condition = eval(node[1])
-              raise TypeMismatch, "conditional requires a bool" unless condition == true || condition == false
+              raise TypeMismatch, "conditional requires a bool" unless [true, false].include?(condition)
 
               condition ? eval(node[2]) : eval(node[3])
             when :call then eval_call(node)
@@ -167,6 +169,7 @@ module Rubernetes
             case target
             when Array
               raise TypeMismatch, "list index must be int" unless index.is_a?(Integer) || index.is_a?(Values::UInt)
+
               position = index.to_i
               if position.between?(0, target.length - 1)
                 optional ? Values::Optional.of(target[position]) : target[position]
@@ -196,7 +199,7 @@ module Rubernetes
             operand = eval(operand_node)
             case operator
             when "!"
-              raise TypeMismatch, "! requires a bool" unless operand == true || operand == false
+              raise TypeMismatch, "! requires a bool" unless [true, false].include?(operand)
 
               !operand
             when "-"

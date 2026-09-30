@@ -49,6 +49,7 @@ class NodeOpsResourceManagerTest < Minitest::Test
     manager.reserve(first)
     assert_raises(Rubernetes::Node::ResourceManager::InsufficientResources) { manager.reserve(second) }
     manager.release(first)
+
     assert(manager.fits?(manager.request_for(second)))
   end
 end

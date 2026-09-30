@@ -17,6 +17,7 @@ class StrategicMergeOrderTest < Minitest::Test
 
   def test_a_new_patch_item_precedes_server_only_items
     merged = merge([{"name" => "agnhost", "image" => "a"}], [{"name" => "test-rs", "image" => "pause"}])
+
     assert_equal %w[test-rs agnhost], names(merged)
     assert_equal "pause", merged.dig("spec", "containers", 0, "image")
   end
@@ -32,6 +33,7 @@ class StrategicMergeOrderTest < Minitest::Test
     live = %w[a b c].map { |name| {"name" => name} }
     merged = merge(live, [{"name" => "b", "$patch" => "delete"}],
                    "$setElementOrder/containers" => [{"name" => "c"}, {"name" => "a"}])
+
     assert_equal %w[c a], names(merged)
     refute merged["spec"].key?("$setElementOrder/containers")
   end

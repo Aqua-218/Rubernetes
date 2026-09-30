@@ -24,6 +24,7 @@ class ResourceQuotaValidationTest < Minitest::Test
         cause = issue.to_cause(entry["new"])
         "#{cause["field"]}: #{cause["message"]}"
       end
+
       assert_equal (expected.fetch(entry["name"]) || []), rendered.sort, entry["name"]
     end
   end

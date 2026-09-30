@@ -26,7 +26,7 @@ class NodeHelpersDeepFreezeTest < Minitest::Test
 
     assert_equal walks, value.walks
     assert Helpers.deep_frozen?(value)
-    assert value.dig("spec", "containers", 0, "name").frozen?
+    assert_predicate value.dig("spec", "containers", 0, "name"), :frozen?
   end
 
   def test_a_merely_frozen_value_is_still_frozen_all_the_way_down
@@ -34,8 +34,8 @@ class NodeHelpersDeepFreezeTest < Minitest::Test
     value = {"containers" => [inner]}.freeze
     Helpers.deep_freeze(value)
 
-    assert inner.frozen?
-    assert inner["name"].frozen?
+    assert_predicate inner, :frozen?
+    assert_predicate inner["name"], :frozen?
   end
 end
 
@@ -49,7 +49,7 @@ class NodeHelpersImmutableTest < Minitest::Test
     first = Helpers.immutable(source)
 
     assert_equal({"metadata" => {"name" => "p"}, "spec" => {"containers" => [{"name" => "c"}]}}, first)
-    assert first.frozen?
+    assert_predicate first, :frozen?
     refute_same source, first
     assert_same first, Helpers.immutable(first)
     assert Helpers.immutable?(first)

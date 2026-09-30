@@ -63,12 +63,12 @@ class StreamingSubresourceAdmissionTest < Minitest::Test
   # The e2e webhook is registered for Operations: [CONNECT]; a CREATE matched
   # no rule and the attach went ahead.
   def test_a_streaming_request_is_admitted_as_connect
-    assert_equal [[:mutating, :connect], [:validating, :connect]], admitted_for("POST")
+    assert_equal [%i[mutating connect], %i[validating connect]], admitted_for("POST")
   end
 
   # kubectl 1.36 opens exec and attach over a WebSocket, which is a GET.
   def test_a_websocket_get_is_admitted_too
-    assert_equal [[:mutating, :connect], [:validating, :connect]], admitted_for("GET")
+    assert_equal [%i[mutating connect], %i[validating connect]], admitted_for("GET")
   end
 
   def test_a_non_streaming_subresource_is_not_admitted_as_a_stream

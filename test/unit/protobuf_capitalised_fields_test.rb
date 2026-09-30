@@ -54,6 +54,7 @@ class ProtobufCapitalisedFieldsTest < Minitest::Test
             "status" => {"daemonEndpoints" => {"kubeletEndpoint" => {"Port" => 21_250}}}}
 
     endpoint = roundtrip(node).dig("status", "daemonEndpoints", "kubeletEndpoint")
+
     assert_equal({"Port" => 21_250}, endpoint)
   end
 end

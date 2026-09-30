@@ -76,12 +76,12 @@ module Rubernetes
 
       private
 
-      def invoke(binary, *arguments)
-        @runner.call(binary, *arguments)
+      def invoke(binary, *)
+        @runner.call(binary, *)
       end
 
-      def run_command(binary, *arguments)
-        _out, _err, status = Open3.capture3(binary, *arguments)
+      def run_command(binary, *)
+        _out, _err, status = Open3.capture3(binary, *)
         status.success?
       rescue Errno::ENOENT, Errno::EACCES
         false

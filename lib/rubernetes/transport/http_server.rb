@@ -122,7 +122,7 @@ module Rubernetes
         cert ||= tls_options.delete(:cert)
         key ||= tls_options.delete(:key)
         tls_enabled = tls.nil? ? (cert_file || key_file || cert || key) : tls
-        if tls_enabled && !(cert_file || cert) || tls_enabled && !(key_file || key)
+        if (tls_enabled && !(cert_file || cert)) || (tls_enabled && !(key_file || key))
           raise ConfigurationError, "TLS requires both certificate and private key"
         end
         if (cert_file || cert || key_file || key) && tls == false
@@ -142,21 +142,31 @@ module Rubernetes
         @logger = logger
         @request_class = request_class
         @request_factory = request_factory
-        unless @request_factory.nil? || @request_factory.respond_to?(:call)
-          raise ConfigurationError, "request_factory must respond to call"
-        end
+        raise ConfigurationError, "request_factory must respond to call" unless @request_factory.nil? || @request_factory.respond_to?(:call)
+
         @backlog = integer_option(option(options, :backlog, DEFAULT_BACKLOG), "backlog", min: 1)
-        @max_header_bytes = integer_option(option(options, :max_header_bytes, option(options, :header_limit, DEFAULT_MAX_HEADER_BYTES)), "max_header_bytes", min: 1)
+        @max_header_bytes = integer_option(option(options, :max_header_bytes, option(options, :header_limit, DEFAULT_MAX_HEADER_BYTES)),
+                                           "max_header_bytes", min: 1)
         @max_header_count = integer_option(option(options, :max_header_count, DEFAULT_MAX_HEADER_COUNT), "max_header_count", min: 1)
-        @max_body_bytes = integer_option(option(options, :max_body_bytes, option(options, :body_limit, DEFAULT_MAX_BODY_BYTES)), "max_body_bytes", min: 0)
-        @max_response_bytes = integer_option(option(options, :max_response_bytes, option(options, :response_limit, DEFAULT_MAX_RESPONSE_BYTES)), "max_response_bytes", min: 0)
-        @max_response_header_bytes = integer_option(option(options, :max_response_header_bytes, option(options, :response_header_limit, [@max_header_bytes, DEFAULT_MAX_HEADER_BYTES].max)), "max_response_header_bytes", min: 1)
+        @max_body_bytes = integer_option(option(options, :max_body_bytes, option(options, :body_limit, DEFAULT_MAX_BODY_BYTES)),
+                                         "max_body_bytes", min: 0)
+        @max_response_bytes = integer_option(
+          option(options, :max_response_bytes, option(options, :response_limit, DEFAULT_MAX_RESPONSE_BYTES)), "max_response_bytes", min: 0
+        )
+        @max_response_header_bytes = integer_option(
+          option(options, :max_response_header_bytes,
+                 option(options, :response_header_limit, [@max_header_bytes, DEFAULT_MAX_HEADER_BYTES].max)), "max_response_header_bytes", min: 1
+        )
         common_timeout = options.delete(:timeout)
-        @read_timeout = float_option(option(options, :read_timeout, option(options, :request_timeout, common_timeout || DEFAULT_READ_TIMEOUT)), "read_timeout", min: 0.001)
+        @read_timeout = float_option(
+          option(options, :read_timeout,
+                 option(options, :request_timeout, common_timeout || DEFAULT_READ_TIMEOUT)), "read_timeout", min: 0.001
+        )
         @write_timeout = float_option(option(options, :write_timeout, common_timeout || DEFAULT_WRITE_TIMEOUT), "write_timeout", min: 0.001)
         # HTTP/2 over TLS (ALPN h2), on by default like Go servers.
         @http2 = option(options, :http2, true) ? true : false
-        @max_requests_per_connection = integer_option(option(options, :max_requests_per_connection, DEFAULT_MAX_REQUESTS_PER_CONNECTION), "max_requests_per_connection", min: 1)
+        @max_requests_per_connection = integer_option(option(options, :max_requests_per_connection, DEFAULT_MAX_REQUESTS_PER_CONNECTION),
+                                                      "max_requests_per_connection", min: 1)
         @max_connections = integer_option(
           option(options, :max_connections,
                  option(options, :max_concurrent_connections,
@@ -441,6 +451,7 @@ module Rubernetes
 
           client = accept_client
           break unless client
+
           if stopping?
             close_socket(client)
             break
@@ -595,9 +606,9 @@ module Rubernetes
         # diagnosed from a running cluster's logs.  Carry the message and a
         # bounded backtrace: the response body stays generic.
         log(:error, "HTTP handler failed", error: error.class.name, message: error.message,
-                    method: request.respond_to?(:method) ? request.method : nil,
-                    path: request.respond_to?(:path) ? request.path : nil,
-                    backtrace: Array(error.backtrace).first(12))
+                                           method: request.respond_to?(:method) ? request.method : nil,
+                                           path: request.respond_to?(:path) ? request.path : nil,
+                                           backtrace: Array(error.backtrace).first(12))
         error_response(error)
       end
 
@@ -665,6 +676,7 @@ module Rubernetes
 
         headers = Headers.new
         raise HeaderTooLarge if lines.length > @max_header_count
+
         lines.each do |line|
           raise BadRequest, "header line is malformed" if line.empty? || line.start_with?(" ", "\t")
 
@@ -768,12 +780,14 @@ module Rubernetes
         loop do
           line = read_line(socket, buffer, @max_header_bytes)
           raise BadRequest, "chunk trailer is missing" if line.nil?
+
           trailer_bytes += line.bytesize + CRLF.bytesize
           raise HeaderTooLarge if trailer_bytes > @max_header_bytes
           return true if line.empty?
 
           trailer_count += 1
           raise HeaderTooLarge if trailer_count > @max_header_count
+
           name, value = line.split(":", 2)
           raise BadRequest, "chunk trailer is malformed" if value.nil? || !Headers::TOKEN_PATTERN.match?(name)
           raise BadRequest, "forbidden chunk trailer" if FORBIDDEN_TRAILER_NAMES.include?(name.downcase)
@@ -867,7 +881,7 @@ module Rubernetes
       end
 
       def bws_byte?(byte)
-        byte == 0x20 || byte == 0x09
+        [0x20, 0x09].include?(byte)
       end
 
       def quoted_byte?(byte)
@@ -961,17 +975,15 @@ module Rubernetes
 
       def read_from_socket(socket, length, deadline:)
         loop do
-          begin
-            wait_for_io(socket, readable: true, deadline: deadline)
-            data = socket.readpartial(length)
-            return data.b
-          rescue IO::WaitReadable
-            next
-          rescue IO::WaitWritable
-            wait_for_io(socket, readable: false, deadline: deadline)
-          rescue EOFError
-            return nil
-          end
+          wait_for_io(socket, readable: true, deadline: deadline)
+          data = socket.readpartial(length)
+          return data.b
+        rescue IO::WaitReadable
+          next
+        rescue IO::WaitWritable
+          wait_for_io(socket, readable: false, deadline: deadline)
+        rescue EOFError
+          return nil
         end
       end
 
@@ -995,6 +1007,7 @@ module Rubernetes
           route = @handler[request.path] || @handler[request.target] || @handler[:default] || @handler["default"]
           return invoke_callable(route, handler_request, keyword_source: request) if route.respond_to?(:call)
           return route unless route.nil?
+
           return Response.json(status_payload(404, "NotFound", "route not found"), status: 404)
         end
 
@@ -1017,7 +1030,9 @@ module Rubernetes
           query: request.query,
           body: request.body
         }
-        if klass.instance_method(:initialize).parameters.any? { |kind, name| kind == :keyrest || (%i[key keyreq].include?(kind) && name == :client_certificate) }
+        if klass.instance_method(:initialize).parameters.any? do |kind, name|
+          kind == :keyrest || (%i[key keyreq].include?(kind) && name == :client_certificate)
+        end
           attributes[:client_certificate] = request.respond_to?(:client_certificate) ? request.client_certificate : nil
           attributes[:client_chain] = request.respond_to?(:client_chain) ? request.client_chain : []
           attributes[:remote_address] = request.remote_address
@@ -1045,6 +1060,7 @@ module Rubernetes
                        callable.method(:call).parameters
                      end
         return callable.call if parameters.empty?
+
         keyword_parameters = parameters.select { |kind, _| %i[key keyreq keyrest].include?(kind) }
         unless keyword_parameters.empty?
           names = request_hash(keyword_source).merge(request: request)
@@ -1116,9 +1132,7 @@ module Rubernetes
                               upgrade: response.upgrade, unbounded: response.unbounded?)
         end
 
-        if response.stream? && !headers.include?("content-type")
-          headers.set("Content-Type", "application/json; charset=utf-8")
-        end
+        headers.set("Content-Type", "application/json; charset=utf-8") if response.stream? && !headers.include?("content-type")
         Response.new(status: response.status, headers: headers, body: body, stream: response.stream?,
                      upgrade: response.upgrade, unbounded: response.unbounded?)
       rescue JSON::GeneratorError, ResponseError, ArgumentError, TypeError => error
@@ -1134,6 +1148,7 @@ module Rubernetes
       def response_field(value, *keys)
         keys.each do |key|
           return value[key] if value.key?(key)
+
           string_key = key.to_s
           return value[string_key] if value.key?(string_key)
         end
@@ -1220,7 +1235,10 @@ module Rubernetes
           end
         end
         header_data << CRLF
-        raise ResponseTooLarge, "response headers exceed #{@max_response_header_bytes} bytes" if header_data.bytesize > @max_response_header_bytes
+        if header_data.bytesize > @max_response_header_bytes
+          raise ResponseTooLarge,
+                "response headers exceed #{@max_response_header_bytes} bytes"
+        end
 
         if !no_body && !stream && body_bytes && !body_bytes.empty? && body_bytes.bytesize <= COALESCED_BODY_BYTES
           # One write for head and body: one TLS record, one segment, and
@@ -1234,7 +1252,7 @@ module Rubernetes
 
         if stream
           write_stream(socket, body, request: request,
-                       unbounded: response.respond_to?(:unbounded?) && response.unbounded?)
+                                     unbounded: response.respond_to?(:unbounded?) && response.unbounded?)
         elsif body_bytes && !body_bytes.empty?
           write_all(socket, body_bytes, deadline: monotonic_time + @write_timeout, timeout_error: ResponseTimeout)
         end
@@ -1242,7 +1260,7 @@ module Rubernetes
 
       # Bodies up to this size are sent in the same write as the head.  A TLS
       # record holds 16 KiB, so a small response then fits one record.
-      COALESCED_BODY_BYTES = 16 * 1024 - 1024
+      COALESCED_BODY_BYTES = (16 * 1024) - 1024
 
       # kube-apiserver's compression threshold (128 KiB is the upstream
       # DefaultCompressionThreshold... it uses 128 * 1024).
@@ -1253,7 +1271,7 @@ module Rubernetes
 
         request.header("accept-encoding").to_s.downcase.split(",").any? do |value|
           token, _, quality = value.strip.partition(";")
-          next false unless token == "gzip" || token == "*"
+          next false unless ["gzip", "*"].include?(token)
 
           quality.strip != "q=0"
         end
@@ -1288,7 +1306,10 @@ module Rubernetes
           headers.raw_values(name).each { |value| header_data << "#{name}: #{value}\r\n" }
         end
         header_data << CRLF
-        raise ResponseTooLarge, "response headers exceed #{@max_response_header_bytes} bytes" if header_data.bytesize > @max_response_header_bytes
+        if header_data.bytesize > @max_response_header_bytes
+          raise ResponseTooLarge,
+                "response headers exceed #{@max_response_header_bytes} bytes"
+        end
 
         write_all(socket, header_data.b, deadline: monotonic_time + @write_timeout, timeout_error: ResponseTimeout)
         initial_data = request.respond_to?(:initial_data) ? request.initial_data : ""
@@ -1329,18 +1350,18 @@ module Rubernetes
         close_stream_body(monitor, body)
       end
 
-      def each_stream_piece(body, &block)
+      def each_stream_piece(body, &)
         parameters = body.method(:each).parameters
         accepts_timeout = parameters.any? do |kind, name|
           (kind == :key && name == :timeout) || (kind == :keyreq && name == :timeout) || kind == :keyrest
         end
         if accepts_timeout
-          body.each(timeout: nil, &block)
+          body.each(timeout: nil, &)
         else
-          body.each(&block)
+          body.each(&)
         end
       rescue NameError
-        body.each(&block)
+        body.each(&)
       end
 
       # A watch enumerable can block waiting for its next event. A separate
@@ -1351,7 +1372,7 @@ module Rubernetes
         return nil unless body.respond_to?(:close) && mode
 
         mutex = Mutex.new
-        state = { stopped: false, closed: false, peer_disconnected: false, mutex: mutex }
+        state = {stopped: false, closed: false, peer_disconnected: false, mutex: mutex}
         close_body = lambda do |peer_disconnected = false|
           should_close = mutex.synchronize do
             state[:peer_disconnected] ||= peer_disconnected
@@ -1484,6 +1505,7 @@ module Rubernetes
         return piece.b if piece.is_a?(String)
         return "" if piece.nil?
         return "#{JSON.generate(piece)}\n" if piece.is_a?(Hash) || piece.is_a?(Array)
+
         if piece.respond_to?(:to_h)
           hash = piece.to_h
           return "#{JSON.generate(hash)}\n" if hash.is_a?(Hash)
@@ -1538,7 +1560,7 @@ module Rubernetes
                   end
         Response.json(status_payload(status, code, message), status: status)
       rescue StandardError
-        Response.new(status: 500, headers: { "Content-Type" => "application/json" }, body: "{\"status\":\"Failure\"}")
+        Response.new(status: 500, headers: {"Content-Type" => "application/json"}, body: "{\"status\":\"Failure\"}")
       end
 
       def write_error(socket, error, request: nil)
@@ -1621,6 +1643,7 @@ module Rubernetes
 
       def join_thread(thread, timeout:, except: nil)
         return if thread.nil? || thread == except || !thread.respond_to?(:join)
+
         thread.join(timeout)
       rescue ThreadError
         nil
@@ -1661,6 +1684,7 @@ module Rubernetes
         def read(length = nil)
           return @socket.read(length) if @prefix.empty?
           return @prefix.tap { @prefix = "".b } if length.nil?
+
           length = Integer(length)
           return "".b if length.zero?
 
@@ -1691,8 +1715,8 @@ module Rubernetes
           @socket.write(data)
         end
 
-        def write_nonblock(*args, **kwargs)
-          @socket.write_nonblock(*args, **kwargs)
+        def write_nonblock(*, **)
+          @socket.write_nonblock(*, **)
         end
 
         def to_io

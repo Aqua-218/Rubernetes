@@ -37,6 +37,7 @@ class SchedulerTieBreakTest < Minitest::Test
     count.times do |index|
       nodes = NODES.map { |name| node(name) }
       result = framework.schedule(pod("p#{index}"), nodes, pods: bound.dup)
+
       assert_equal(:scheduled, result.status, "pod p#{index} was not scheduled")
       placed[result.node.name] += 1
       scheduled = pod("p#{index}")

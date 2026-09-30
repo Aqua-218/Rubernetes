@@ -6,7 +6,7 @@ require "rbconfig"
 require "tmpdir"
 
 class NativeVolumeMountAdapterIntegrationTest < Minitest::Test
-  KERNEL_SCRIPT = <<~'RUBY'.freeze
+  KERNEL_SCRIPT = <<~'RUBY'
     require "fileutils"
     require "rubernetes/volume"
 
@@ -67,7 +67,8 @@ class NativeVolumeMountAdapterIntegrationTest < Minitest::Test
       if !status.success? && error.match?(/Operation not permitted|Permission denied/i)
         skip "missing CAP_SYS_ADMIN for isolated mount namespace: #{error.strip}"
       end
-      assert status.success?, "isolated native mount script failed: #{error.empty? ? output : error}"
+
+      assert_predicate status, :success?, "isolated native mount script failed: #{error.empty? ? output : error}"
     end
   rescue Errno::ENOENT => error
     flunk "unshare is required for the isolated mount integration test: #{error.message}"

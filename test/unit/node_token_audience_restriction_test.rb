@@ -16,6 +16,7 @@ class NodeTokenAudienceRestrictionTest < Minitest::Test
 
   class Authorizer
     def initialize(allowed) = @allowed = allowed
+
     def authorize(attributes)
       ok = attributes.verb == "request-serviceaccounts-token-audience" && @allowed.include?([attributes.resource, attributes.name])
       ok ? S::Authorization::Decision.allow : S::Authorization::Decision.no_opinion
@@ -30,16 +31,20 @@ class NodeTokenAudienceRestrictionTest < Minitest::Test
                {"name" => "inline", "csi" => {"driver" => "secrets.csi.example"}},
                {"name" => "data", "persistentVolumeClaim" => {"claimName" => "data"}}]
     @context.put("pods", "team", "p", {"metadata" => {"name" => "p", "namespace" => "team", "uid" => "pu"},
-                                        "spec" => {"nodeName" => "n1", "serviceAccountName" => "default", "volumes" => volumes}})
-    @context.put("csidrivers", nil, "secrets.csi.example", {"spec" => {"tokenRequests" => [{"audience" => "csi-aud"}]}}, group: "storage.k8s.io")
-    @context.put("csidrivers", nil, "disk.csi.example", {"spec" => {"tokenRequests" => [{"audience" => "disk-aud"}]}}, group: "storage.k8s.io")
+                                       "spec" => {"nodeName" => "n1", "serviceAccountName" => "default", "volumes" => volumes}})
+    @context.put("csidrivers", nil, "secrets.csi.example", {"spec" => {"tokenRequests" => [{"audience" => "csi-aud"}]}},
+                 group: "storage.k8s.io")
+    @context.put("csidrivers", nil, "disk.csi.example", {"spec" => {"tokenRequests" => [{"audience" => "disk-aud"}]}},
+                 group: "storage.k8s.io")
     @context.put("persistentvolumeclaims", "team", "data", {"spec" => {"volumeName" => "pv-1"}})
     @context.put("persistentvolumes", nil, "pv-1", {"spec" => {"csi" => {"driver" => "disk.csi.example"}}})
     @plugin = A::Registry.factories.fetch("NodeRestriction").call(@context, {})
   end
 
   def request(audiences)
-    object = {"kind" => "TokenRequest", "spec" => {"audiences" => audiences, "boundObjectRef" => {"apiVersion" => "v1", "kind" => "Pod", "name" => "p", "uid" => "pu"}}}
+    object = {"kind" => "TokenRequest",
+              "spec" => {"audiences" => audiences,
+                         "boundObjectRef" => {"apiVersion" => "v1", "kind" => "Pod", "name" => "p", "uid" => "pu"}}}
     A::Attributes.new(operation: "CREATE", user: @kubelet, group: "", version: "v1", resource: "serviceaccounts", kind: "TokenRequest",
                       namespace: "team", name: "default", object: object, old_object: nil, subresource: "token")
   end
@@ -69,15 +74,24 @@ class NodeTokenAudienceRestrictionTest < Minitest::Test
                                          service_account_issuer: S::Authentication::ServiceAccount.new(
                                            issuer: "https://kubernetes.default.svc", signing_key: OpenSSL::PKey::RSA.new(2048),
                                            api_audiences: ["https://kubernetes.default.svc"],
-                                           lookup: S::Authentication::ServiceAccount::Lookup.new(service_account: ->(*) {}, pod: ->(*) {}, secret: ->(*) {}, node: ->(*) {})
+                                           lookup: S::Authentication::ServiceAccount::Lookup.new(service_account: lambda { |*|
+                                           }, pod: lambda { |*|
+                                              }, secret: lambda { |*|
+                                                 }, node: lambda { |*|
+                                                    })
                                          ))
     call = ->(method, path, body = nil) { server.call(Rubernetes::API::Request.new(method: method, path: path, headers: {"content-type" => "application/json"}, body: body && JSON.generate(body))) }
     call.call("POST", "/api/v1/namespaces", {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "team"}})
-    account = call.call("POST", "/api/v1/namespaces/team/serviceaccounts", {"apiVersion" => "v1", "kind" => "ServiceAccount", "metadata" => {"name" => "robot"}}).body
+    account = call.call("POST", "/api/v1/namespaces/team/serviceaccounts",
+                        {"apiVersion" => "v1", "kind" => "ServiceAccount", "metadata" => {"name" => "robot"}}).body
     path = "/api/v1/namespaces/team/serviceaccounts/robot/token"
-    ok = call.call("POST", path, {"kind" => "TokenRequest", "apiVersion" => "authentication.k8s.io/v1", "metadata" => {"uid" => account.dig("metadata", "uid")}, "spec" => {}})
+    ok = call.call("POST", path,
+                   {"kind" => "TokenRequest", "apiVersion" => "authentication.k8s.io/v1", "metadata" => {"uid" => account.dig("metadata", "uid")}, "spec" => {}})
+
     assert_equal 201, ok.status, ok.body.inspect
-    stale = call.call("POST", path, {"kind" => "TokenRequest", "apiVersion" => "authentication.k8s.io/v1", "metadata" => {"uid" => "stale"}, "spec" => {}})
+    stale = call.call("POST", path,
+                      {"kind" => "TokenRequest", "apiVersion" => "authentication.k8s.io/v1", "metadata" => {"uid" => "stale"}, "spec" => {}})
+
     assert_equal 409, stale.status
     assert_equal %(Operation cannot be fulfilled on TokenRequest.authentication.k8s.io "robot": the UID in the token request (stale) ) +
                  %(does not match the UID of the service account (#{account.dig("metadata", "uid")})), stale.body["message"]

@@ -56,7 +56,7 @@ class StoreAdapterDeleteNotFoundTest < Minitest::Test
     adapter.caches = {descriptor.identifier => cache}
 
     assert_nil adapter.delete(pod, descriptor: Rubernetes::Controller::ResourceDescriptor.parse("Pod"))
-    assert_equal [["pods", "p", "ns"]], adapter.client.deletes
+    assert_equal [%w[pods p ns]], adapter.client.deletes
     assert_equal ["p"], cache.deleted, "the cache entry goes, exactly as after a successful immediate delete"
   end
 

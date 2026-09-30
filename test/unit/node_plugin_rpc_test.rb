@@ -45,10 +45,10 @@ class NodePluginRPCTest < Minitest::Test
     RUBY
   end
 
-  def with_server(**options)
+  def with_server(**)
     Dir.mktmpdir("plugin-rpc") do |dir|
       socket = File.join(dir, "plugin.sock")
-      pid = self.class.serve(socket, **options)
+      pid = self.class.serve(socket, **)
       yield socket, dir
     ensure
       GRPCFakeServer.stop(pid)
@@ -60,12 +60,14 @@ class NodePluginRPCTest < Minitest::Test
     info = {type: "DRAPlugin", name: "gpu.example.com", endpoint: "/plugins/gpu/dra.sock", supported_versions: ["v1.DRAPlugin"]}
     with_server(info: info) do |socket, dir|
       got = RPC.call(socket: socket, service: "pluginregistration.Registration", method: "GetInfo")
+
       assert_equal({"type" => "DRAPlugin", "name" => "gpu.example.com", "endpoint" => "/plugins/gpu/dra.sock",
                     "supported_versions" => ["v1.DRAPlugin"]}, got)
 
       prepared = RPC.call(socket: socket, service: "k8s.io.kubelet.pkg.apis.dra.v1.DRAPlugin", method: "NodePrepareResources",
                           request: {"claims" => [{"namespace" => "ns", "uid" => "claim-uid", "name" => "claim"}]})
       device = prepared.dig("claims", "claim-uid", "devices", 0)
+
       assert_equal ["example.com/gpu=gpu-0"], device["cdi_device_ids"]
       assert_equal "gpu-0", device["device_name"]
       refute defined?(::GRPC), "grpc stays out of the calling process" unless preloaded

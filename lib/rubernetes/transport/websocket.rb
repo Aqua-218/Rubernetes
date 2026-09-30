@@ -3,7 +3,6 @@
 require "base64"
 require "digest/sha1"
 require "securerandom"
-require "thread"
 
 module Rubernetes
   module Transport
@@ -33,6 +32,7 @@ module Rubernetes
 
       class Error < StandardError; end
       class ProtocolError < Error; end
+
       class Closed < Error
         attr_reader :code, :reason
 
@@ -145,11 +145,13 @@ module Rubernetes
               return nil
             when OPCODE_TEXT, OPCODE_BINARY
               raise ProtocolError, "unexpected new data frame inside a fragmented message" if opcode
+
               opcode = frame[:opcode]
               buffer << frame[:payload]
               return Message.new(opcode, buffer) if frame[:fin]
             when OPCODE_CONTINUATION
               raise ProtocolError, "continuation frame without a message" unless opcode
+
               buffer << frame[:payload]
               raise ProtocolError, "websocket message exceeds #{@max_message_bytes} bytes" if buffer.bytesize > @max_message_bytes
               return Message.new(opcode, buffer) if frame[:fin]
@@ -227,6 +229,7 @@ module Rubernetes
           first, second = read_exact(2).bytes
           fin = (first & 0x80) != 0
           raise ProtocolError, "reserved websocket bits set" if (first & 0x70) != 0
+
           opcode = first & 0x0f
           masked = (second & 0x80) != 0
           length = second & 0x7f
@@ -252,7 +255,7 @@ module Rubernetes
           mask_word = mask.unpack1("N")
           words = payload.bytesize / 4
           result = payload.byteslice(0, words * 4).unpack("N*").map! { |word| word ^ mask_word }.pack("N*")
-          tail = payload.byteslice(words * 4, payload.bytesize - words * 4)
+          tail = payload.byteslice(words * 4, payload.bytesize - (words * 4))
           tail.bytes.each_with_index { |byte, index| result << (byte ^ mask.getbyte(index)).chr } if tail && !tail.empty?
           result
         end

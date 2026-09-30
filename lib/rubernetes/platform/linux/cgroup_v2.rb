@@ -61,8 +61,8 @@ module Rubernetes
           end
         end
 
-        DEFAULT_ROOT = "/sys/fs/cgroup".freeze
-        HIERARCHY_PREFIX = "rubernetes".freeze
+        DEFAULT_ROOT = "/sys/fs/cgroup"
+        HIERARCHY_PREFIX = "rubernetes"
         QOS_CLASSES = %w[guaranteed burstable besteffort].freeze
         CONTROLLERS = %w[cpu cpuset io memory pids].freeze
         # Controllers that must be delegated down the rubernetes hierarchy.
@@ -88,7 +88,8 @@ module Rubernetes
         }.freeze
         # Files read back after configuration so a caller can prove the
         # kernel accepted exactly the requested limits.
-        READBACK_FILES = %w[cpu.max cpu.weight memory.min memory.low memory.high memory.max memory.swap.max memory.oom.group pids.max].freeze
+        READBACK_FILES = %w[cpu.max cpu.weight memory.min memory.low memory.high memory.max memory.swap.max memory.oom.group
+                            pids.max].freeze
         STAT_FILES = {
           cpu: "cpu.stat",
           memory: "memory.stat",
@@ -417,9 +418,7 @@ module Rubernetes
               break if Integer(populated).zero? && Integer(current).zero?
             end
           end
-          if !force && (Integer(populated).positive? || Integer(current).positive?)
-            raise Busy, "cannot remove populated cgroup #{target}"
-          end
+          raise Busy, "cannot remove populated cgroup #{target}" if !force && (Integer(populated).positive? || Integer(current).positive?)
 
           @adapter.delete(target)
           remove_empty_pod_parent(target)
@@ -438,9 +437,7 @@ module Rubernetes
         # is read directly and identities are derived from the immutable path
         # components.
         def resources
-          if @adapter.respond_to?(:list_cgroups)
-            return Array(@adapter.list_cgroups(root: @root, hierarchy: @hierarchy)).freeze
-          end
+          return Array(@adapter.list_cgroups(root: @root, hierarchy: @hierarchy)).freeze if @adapter.respond_to?(:list_cgroups)
           return [].freeze unless @adapter.is_a?(FileAdapter)
 
           base = File.join(@root, @hierarchy)
@@ -457,6 +454,7 @@ module Rubernetes
 
               Dir.children(pod_path).sort.each do |container_id|
                 next unless container_id.match?(/\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\z/)
+
                 target = File.join(pod_path, container_id)
                 next unless File.directory?(target)
 
@@ -483,10 +481,10 @@ module Rubernetes
         def cgroup_population(target)
           populated = parse_key_values(read_file(File.join(target, "cgroup.events"))).fetch("populated", 0)
           current = if @adapter.exists?(File.join(target, "pids.current"))
-            parse_scalar(read_file(File.join(target, "pids.current")))
-          else
-            0
-          end
+                      parse_scalar(read_file(File.join(target, "pids.current")))
+                    else
+                      0
+                    end
           [populated, current]
         end
 
@@ -520,7 +518,9 @@ module Rubernetes
         def ensure_controllers!(leaf_parent)
           base = File.join(@root, @hierarchy)
           target = File.expand_path(String(leaf_parent))
-          raise InvalidPath, "cgroup parent escapes configured hierarchy" unless target == base || target.start_with?(base + File::SEPARATOR)
+          unless target == base || target.start_with?(base + File::SEPARATOR)
+            raise InvalidPath, "cgroup parent escapes configured hierarchy"
+          end
 
           chain = [base]
           relative = target.delete_prefix(base).split(File::SEPARATOR).reject(&:empty?)
@@ -534,6 +534,7 @@ module Rubernetes
             unless missing_required.empty?
               raise Unsupported, "cgroup #{parent} does not offer required controllers: #{missing_required.join(", ")}"
             end
+
             wanted = (REQUIRED_CONTROLLERS + OPTIONAL_CONTROLLERS).select { |name| controllers.include?(name) && !enabled.include?(name) }
             next if wanted.empty?
 
@@ -541,7 +542,11 @@ module Rubernetes
             # controller with required ones as a whole, so optional
             # controllers are enabled one at a time after the required set.
             required_now = wanted & REQUIRED_CONTROLLERS
-            write_file(File.join(parent, "cgroup.subtree_control"), required_now.map { |name| "+#{name}" }.join(" ")) unless required_now.empty?
+            unless required_now.empty?
+              write_file(File.join(parent, "cgroup.subtree_control"), required_now.map do |name|
+                "+#{name}"
+              end.join(" "))
+            end
             (wanted & OPTIONAL_CONTROLLERS).each do |name|
               write_file(File.join(parent, "cgroup.subtree_control"), "+#{name}")
             end
@@ -569,11 +574,9 @@ module Rubernetes
         def rollback_created(created, error)
           cleanup_errors = []
           created.reverse_each do |directory|
-            begin
-              @adapter.delete(directory) if @adapter.directory?(directory)
-            rescue SystemCallError => cleanup_error
-              cleanup_errors << "#{directory}: #{cleanup_error.class}: #{cleanup_error.message}"
-            end
+            @adapter.delete(directory) if @adapter.directory?(directory)
+          rescue SystemCallError => cleanup_error
+            cleanup_errors << "#{directory}: #{cleanup_error.class}: #{cleanup_error.message}"
           end
           return if cleanup_errors.empty?
 
@@ -616,9 +619,7 @@ module Rubernetes
         end
 
         def normalize_limits(limits)
-          unless limits.respond_to?(:to_h)
-            raise ArgumentError, "cgroup limits must be a hash"
-          end
+          raise ArgumentError, "cgroup limits must be a hash" unless limits.respond_to?(:to_h)
 
           limits.to_h.each_with_object({}) do |(key, value), normalized|
             name = String(key)
@@ -650,7 +651,10 @@ module Rubernetes
             token
           when :cpuset_cpus, :cpuset_mems
             token = String(value).strip
-            raise ArgumentError, "cpuset list must be a comma separated list of ranges" unless token.match?(/\A(?:[0-9]+(?:-[0-9]+)?)(?:,[0-9]+(?:-[0-9]+)?)*\z/) || token.empty?
+            unless token.match?(/\A(?:[0-9]+(?:-[0-9]+)?)(?:,[0-9]+(?:-[0-9]+)?)*\z/) || token.empty?
+              raise ArgumentError,
+                    "cpuset list must be a comma separated list of ranges"
+            end
 
             token
           else
@@ -697,12 +701,12 @@ module Rubernetes
 
             key = tokens.shift
             values[key] = if tokens.empty?
-              0
-            elsif tokens.length == 1 && tokens.first.match?(/\A-?[0-9]+\z/)
-              Integer(tokens.first)
-            else
-              tokens.map { |token| token.match?(/\A-?[0-9]+\z/) ? Integer(token) : token }
-            end
+                            0
+                          elsif tokens.length == 1 && tokens.first.match?(/\A-?[0-9]+\z/)
+                            Integer(tokens.first)
+                          else
+                            tokens.map { |token| token.match?(/\A-?[0-9]+\z/) ? Integer(token) : token }
+                          end
           end
         end
       end

@@ -44,7 +44,7 @@ module Rubernetes
         raise Error, "unsupported streaming URL #{url}" unless %w[http].include?(uri.scheme)
 
         socket = Socket.tcp(uri.host, uri.port, connect_timeout: timeout)
-        head = +"#{request.method} #{uri.request_uri} HTTP/1.1\r\nHost: #{uri.host}:#{uri.port}\r\n"
+        head = "#{request.method} #{uri.request_uri} HTTP/1.1\r\nHost: #{uri.host}:#{uri.port}\r\n"
         FORWARDED.each do |name|
           Array(request.headers.raw_values(name)).each { |value| head << "#{name}: #{value}\r\n" }
         end
@@ -72,9 +72,7 @@ module Rubernetes
       def read_body(socket, headers, leftover)
         length = Integer(headers["content-length"] || 0, exception: false) || 0
         body = leftover.dup
-        while body.bytesize < length && socket.wait_readable(5)
-          body << socket.readpartial(CHUNK)
-        end
+        body << socket.readpartial(CHUNK) while body.bytesize < length && socket.wait_readable(5)
         body.byteslice(0, length.positive? ? length : body.bytesize)
       rescue EOFError, IOError, SystemCallError
         body.to_s

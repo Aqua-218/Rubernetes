@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "find"
-require "thread"
 
 require_relative "../image/reference"
 
@@ -88,7 +87,7 @@ module Rubernetes
         usage_percent = 100 - (available * 100 / capacity)
         return freed_keys if usage_percent < @high
 
-        amount = capacity * (100 - @low) / 100 - available
+        amount = (capacity * (100 - @low) / 100) - available
         deleted, freed = free_space(amount, free_time, images)
         freed_keys += deleted
         if freed < amount
@@ -131,7 +130,11 @@ module Rubernetes
           @stop = true
           @thread
         end
-        thread&.wakeup rescue nil
+        begin
+          thread&.wakeup
+        rescue StandardError
+          nil
+        end
         thread&.join(5) unless thread == Thread.current
         self
       end
@@ -153,7 +156,7 @@ module Rubernetes
             record.size ||= image_size(image)
           end
           @records.reject { |key, _| in_use.include?(reference_of(key)) }
-                  .sort_by { |key, record| [record.last_used || -Float::INFINITY, record.first_detected, key] }
+            .sort_by { |key, record| [record.last_used || -Float::INFINITY, record.first_detected, key] }
         end
       end
 
@@ -255,9 +258,9 @@ module Rubernetes
         size = bytes.to_f
         if size < kib then "#{bytes.to_i} B"
         elsif size < kib**2 then format("%.1f KiB", size / kib)
-        elsif size < kib**3 then format("%.1f MiB", size / kib**2)
-        elsif size < kib**4 then format("%.1f GiB", size / kib**3)
-        else format("%.1f TiB", size / kib**4)
+        elsif size < kib**3 then format("%.1f MiB", size / (kib**2))
+        elsif size < kib**4 then format("%.1f GiB", size / (kib**3))
+        else format("%.1f TiB", size / (kib**4))
         end
       end
     end

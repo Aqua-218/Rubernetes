@@ -25,7 +25,7 @@ class LegacyServiceAccountTokenTest < Minitest::Test
     lookup = A::ServiceAccount::Lookup.new(
       service_account: ->(_ns, name) { @objects[name == "builder" ? "sa" : name] },
       secret: ->(_ns, name) { @objects["secret:#{name}"] },
-      pod: ->(_ns, _name) { nil }, node: ->(_ns, _name) { nil }
+      pod: ->(_ns, _name) {}, node: ->(_ns, _name) {}
     )
     @authenticator = A::ServiceAccount.new(issuer: "https://kubernetes.default.svc", signing_key: @key, api_audiences: ["https://kubernetes.default.svc"],
                                            lookup: lookup, clock: -> { @now },
@@ -53,22 +53,27 @@ class LegacyServiceAccountTokenTest < Minitest::Test
   def test_a_controller_signed_token_authenticates_while_its_secret_holds_it
     token = controller_token("builder-token")
     header, claims = A::JWT.parse(token).first(2)
+
     assert_equal "RS256", header["alg"]
     assert_equal "kubernetes/serviceaccount", claims["iss"]
     assert_equal "builder-token", claims["kubernetes.io/serviceaccount/secret.name"]
     legacy_secret("builder-token", token)
     result = @authenticator.authenticate_token(token)
+
     assert_equal "system:serviceaccount:ns:builder", result.user.name
     assert_equal [["ns", "builder-token", {"kubernetes.io/legacy-token-last-used" => "2026-09-25"}]], @writes
     legacy_secret("builder-token", token, labels: {"kubernetes.io/legacy-token-last-used" => "2026-09-25"})
     @authenticator.authenticate_token(token)
+
     assert_equal 1, @writes.length, "at most one last-used write a day"
 
     text = @metrics.render
+
     assert_includes text, "serviceaccount_legacy_tokens_total 2"
     assert_includes text, "serviceaccount_legacy_manual_token_uses_total 2"
     @objects["sa"]["secrets"] = [{"name" => "builder-token"}]
     @authenticator.authenticate_token(token)
+
     assert_includes @metrics.render, "serviceaccount_legacy_auto_token_uses_total 1"
   end
 
@@ -94,9 +99,11 @@ class LegacyServiceAccountTokenTest < Minitest::Test
   def test_projected_tokens_count_as_valid_or_stale_by_warnafter
     token, = @authenticator.issue(namespace: "ns", service_account_name: "builder", service_account_uid: "sa-uid", expiration_seconds: 7200)
     @authenticator.authenticate_token(token)
+
     assert_includes @metrics.render, "serviceaccount_valid_tokens_total 1"
     @now += 3601
     @authenticator.authenticate_token(token)
+
     assert_includes @metrics.render, "serviceaccount_stale_tokens_total 1"
   end
 
@@ -106,7 +113,9 @@ class LegacyServiceAccountTokenTest < Minitest::Test
                                "annotations" => {"kubernetes.io/service-account.name" => "builder"}},
                 "type" => "kubernetes.io/service-account-token", "data" => {"token" => ["kept"].pack("m0")}}
     result = controller.plan(@objects["sa"], secrets: [existing], token_provider: ->(_account, _name) { "fresh" })
-    update = result.operations.find { |operation| operation.object["kind"] == "Secret" || operation.object.dig("metadata", "name") == "builder-token" }
+    update = result.operations.find do |operation|
+      operation.object["kind"] == "Secret" || operation.object.dig("metadata", "name") == "builder-token"
+    end
     assert_equal "kept", update.object.dig("data", "token").unpack1("m") if update
   end
 end

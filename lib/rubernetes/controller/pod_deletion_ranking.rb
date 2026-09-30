@@ -96,9 +96,7 @@ module Rubernetes
         return a.cost < b.cost if a.cost != b.cost
         return left.rank > right.rank if left.rank != right.rank
 
-        if a.ready && b.ready && a.ready_time != b.ready_time
-          return logarithmic_less(a.ready_time, b.ready_time, a.uid, b.uid, now)
-        end
+        return logarithmic_less(a.ready_time, b.ready_time, a.uid, b.uid, now) if a.ready && b.ready && a.ready_time != b.ready_time
         return a.restarts > b.restarts if a.restarts != b.restarts
         return a.sidecar_restarts > b.sidecar_restarts if a.sidecar_restarts != b.sidecar_restarts
         return logarithmic_less(a.created, b.created, a.uid, b.uid, now) if a.created != b.created
@@ -150,9 +148,11 @@ module Rubernetes
 
       def max_container_restarts(pod)
         regular = Array(dig(pod, "status", "containerStatuses")).map { |status| status["restartCount"].to_i }.max || 0
-        sidecars = Array(dig(pod, "spec", "initContainers")).select { |container| container["restartPolicy"] == "Always" }.map { |c| c["name"] }
+        sidecars = Array(dig(pod, "spec", "initContainers")).select do |container|
+          container["restartPolicy"] == "Always"
+        end.map { |c| c["name"] }
         sidecar = Array(dig(pod, "status", "initContainerStatuses")).select { |status| sidecars.include?(status["name"]) }
-                                                                    .map { |status| status["restartCount"].to_i }.max || 0
+          .map { |status| status["restartCount"].to_i }.max || 0
         [[regular, 0].max, [sidecar, 0].max]
       end
 

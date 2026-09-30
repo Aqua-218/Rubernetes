@@ -12,6 +12,7 @@ module Rubernetes
       class ArtifactError < Error; end
       class FramingError < Error; end
       class ProtocolError < Error; end
+
       class APIError < Error
         attr_reader :status
 
@@ -20,6 +21,7 @@ module Rubernetes
           @status = status
         end
       end
+
       class JailerError < Error; end
       class VsockError < Error; end
       class IdentityError < Error; end

@@ -28,6 +28,7 @@ module Rubernetes
     class SecurityError < Error; end
     class PathSecurityError < SecurityError; end
     class MountIdentityError < SecurityError; end
+
     # A cleanup response that is false, raises, or cannot be verified leaves
     # the resource ownership ambiguous. Callers must fence the volume and let
     # recovery reconcile the effect instead of treating the original error as
@@ -35,8 +36,8 @@ module Rubernetes
     class CleanupError < MountIdentityError
       attr_reader :cleanup_errors
 
-      def initialize(message = nil, cleanup_errors: [], **kwargs)
-        super(message, **kwargs)
+      def initialize(message = nil, cleanup_errors: [], **)
+        super(message, **)
         @cleanup_errors = Array(cleanup_errors).freeze
       end
 
@@ -44,6 +45,7 @@ module Rubernetes
         true
       end
     end
+
     class SecretPersistenceError < SecurityError; end
     # A projected podCertificate whose PodCertificateRequest is not issued yet.
     class PodCertificateNotReadyError < Error; end
@@ -51,11 +53,12 @@ module Rubernetes
     # snapshot was taken.  Restoring them would present corrupted data as a
     # faithful copy, so the restore must fail before any file is written.
     class SnapshotIntegrityError < SecurityError; end
+
     class CSIError < Error
       attr_reader :ambiguous
 
-      def initialize(message = nil, ambiguous: false, **kwargs)
-        super(message, **kwargs)
+      def initialize(message = nil, ambiguous: false, **)
+        super(message, **)
         @ambiguous = ambiguous == true
       end
 
@@ -63,6 +66,7 @@ module Rubernetes
         ambiguous
       end
     end
+
     class CSIUnavailable < UnsupportedError; end
     class JournalError < Error; end
   end

@@ -73,14 +73,18 @@ module DRAAllocatorDifferential
 
   def cases
     list = []
-    add = ->(name, **fields) { list << {"name" => name, "node" => node, "classes" => [GPU], "slices" => [], "claims" => [], "allocatedClaims" => []}.merge(fields.transform_keys(&:to_s)) }
+    add = lambda { |name, **fields|
+      list << {"name" => name, "node" => node, "classes" => [GPU], "slices" => [], "claims" => [],
+               "allocatedClaims" => []}.merge(fields.transform_keys(&:to_s))
+    }
 
     add.call("count-2", slices: [slice("s1", gpus(3))], claims: [claim("c", [request("r", count: 2)])])
     add.call("not-enough", slices: [slice("s1", gpus(1))], claims: [claim("c", [request("r", count: 2)])])
     add.call("other-node", slices: [slice("s1", gpus(2), node_name: "node-2", pool: "node-2")], claims: [claim("c", [request("r")])])
     add.call("missing-class", slices: [slice("s1", gpus(1))], claims: [claim("c", [request("r", klass: "nope")])])
     add.call("all-mode", slices: [slice("s1", gpus(3))], claims: [claim("c", [request("r", mode: "All")])])
-    add.call("all-mode-none", slices: [slice("s1", [device("x")], driver: "other.example.com")], claims: [claim("c", [request("r", mode: "All")])])
+    add.call("all-mode-none", slices: [slice("s1", [device("x")], driver: "other.example.com")],
+                              claims: [claim("c", [request("r", mode: "All")])])
     add.call("request-selector", slices: [slice("s1", gpus(4))],
                                  claims: [claim("c", [request("r", count: 2, selectors: ["device.attributes[\"#{DRIVER}\"].index >= 2"])])])
     add.call("selector-runtime-error", slices: [slice("s1", gpus(2))],
@@ -91,8 +95,10 @@ module DRAAllocatorDifferential
     add.call("unknown-domain", slices: [slice("s1", gpus(2))],
                                claims: [claim("c", [request("r", selectors: ["device.attributes[\"other.example.com\"].index == 1"])])])
     add.call("string-and-version", slices: [slice("s1", [device("a", attributes: {"model" => {"string" => "a100"}, "driverVersion" => {"version" => "1.2.3"}}),
-                                                         device("b", attributes: {"model" => {"string" => "h100"}, "driverVersion" => {"version" => "2.0.0-rc.1"}})])],
-                                    claims: [claim("c", [request("r", selectors: ["device.attributes[\"#{DRIVER}\"].driverVersion.isGreaterThan(semver(\"1.5.0\"))"])])])
+                                                         device("b",
+                                                                attributes: {"model" => {"string" => "h100"},
+                                                                             "driverVersion" => {"version" => "2.0.0-rc.1"}})])],
+                                   claims: [claim("c", [request("r", selectors: ["device.attributes[\"#{DRIVER}\"].driverVersion.isGreaterThan(semver(\"1.5.0\"))"])])])
     add.call("capacity-selector", slices: [slice("s1", [device("a", capacity: {"memory" => "16Gi"}), device("b", capacity: {"memory" => "80Gi"})])],
                                   claims: [claim("c", [request("r", selectors: ["device.capacity[\"#{DRIVER}\"].memory.compareTo(quantity(\"40Gi\")) >= 0"])])])
     add.call("cel-bind", slices: [slice("s1", gpus(3))],
@@ -101,15 +107,20 @@ module DRAAllocatorDifferential
                                slices: [slice("s1", gpus(2))], claims: [claim("c", [request("r", klass: "big")])])
     add.call("allocated-elsewhere", slices: [slice("s1", gpus(2))], claims: [claim("c", [request("r")])],
                                     allocatedClaims: [claim("old", [request("r")], allocation: {"devices" => {"results" => [
-                                      {"request" => "r", "driver" => DRIVER, "pool" => "node-1", "device" => "gpu-0"}]}})])
+                                                              {"request" => "r", "driver" => DRIVER, "pool" => "node-1", "device" => "gpu-0"}
+                                                            ]}})])
     add.call("all-allocated", slices: [slice("s1", gpus(1))], claims: [claim("c", [request("r")])],
                               allocatedClaims: [claim("old", [request("r")], allocation: {"devices" => {"results" => [
-                                {"request" => "r", "driver" => DRIVER, "pool" => "node-1", "device" => "gpu-0"}]}})])
+                                                        {"request" => "r", "driver" => DRIVER, "pool" => "node-1", "device" => "gpu-0"}
+                                                      ]}})])
     add.call("admin-access", slices: [slice("s1", gpus(1))], claims: [claim("c", [request("r", adminAccess: true)])],
                              allocatedClaims: [claim("old", [request("r")], allocation: {"devices" => {"results" => [
-                               {"request" => "r", "driver" => DRIVER, "pool" => "node-1", "device" => "gpu-0"}]}})])
-    add.call("two-claims", slices: [slice("s1", gpus(3))], claims: [claim("a", [request("r", count: 2)]), claim("b", [request("r", count: 1)])])
-    add.call("two-claims-too-many", slices: [slice("s1", gpus(2))], claims: [claim("a", [request("r", count: 2)]), claim("b", [request("r")])])
+                                                       {"request" => "r", "driver" => DRIVER, "pool" => "node-1", "device" => "gpu-0"}
+                                                     ]}})])
+    add.call("two-claims", slices: [slice("s1", gpus(3))],
+                           claims: [claim("a", [request("r", count: 2)]), claim("b", [request("r", count: 1)])])
+    add.call("two-claims-too-many", slices: [slice("s1", gpus(2))],
+                                    claims: [claim("a", [request("r", count: 2)]), claim("b", [request("r")])])
     add.call("two-requests", slices: [slice("s1", gpus(3))], claims: [claim("c", [request("a"), request("b", count: 2)])])
     add.call("match-attribute", slices: [slice("s1", [device("a", attributes: {"numa" => {"int" => 0}}), device("b", attributes: {"numa" => {"int" => 1}}),
                                                       device("c", attributes: {"numa" => {"int" => 1}})])],
@@ -125,17 +136,22 @@ module DRAAllocatorDifferential
     add.call("first-available", classes: [GPU, klass("small", selectors: ["device.attributes[\"#{DRIVER}\"].index == 5"])],
                                 slices: [slice("s1", gpus(2))],
                                 claims: [claim("c", [{"name" => "r", "firstAvailable" => [
-                                  {"name" => "big", "deviceClassName" => "small", "allocationMode" => "ExactCount", "count" => 1},
-                                  {"name" => "any", "deviceClassName" => "gpu", "allocationMode" => "ExactCount", "count" => 2}
-                                ]}])])
+                                                 {"name" => "big", "deviceClassName" => "small", "allocationMode" => "ExactCount",
+                                                  "count" => 1},
+                                                 {"name" => "any", "deviceClassName" => "gpu", "allocationMode" => "ExactCount",
+                                                  "count" => 2}
+                                               ]}])])
     add.call("first-available-config", classes: [GPU],
                                        slices: [slice("s1", gpus(2))],
                                        claims: [claim("c", [{"name" => "r", "firstAvailable" => [
-                                         {"name" => "one", "deviceClassName" => "gpu", "allocationMode" => "ExactCount", "count" => 3},
-                                         {"name" => "two", "deviceClassName" => "gpu", "allocationMode" => "ExactCount", "count" => 1}
-                                       ]}], config: [{"requests" => ["r/two"], "opaque" => {"driver" => DRIVER, "parameters" => {"a" => 1}}},
-                                                     {"requests" => ["r/one"], "opaque" => {"driver" => DRIVER, "parameters" => {"a" => 2}}},
-                                                     {"opaque" => {"driver" => DRIVER, "parameters" => {"all" => true}}}])])
+                                                        {"name" => "one", "deviceClassName" => "gpu", "allocationMode" => "ExactCount",
+                                                         "count" => 3},
+                                                        {"name" => "two", "deviceClassName" => "gpu", "allocationMode" => "ExactCount",
+                                                         "count" => 1}
+                                                      ]}], config: [{"requests" => ["r/two"], "opaque" => {"driver" => DRIVER, "parameters" => {"a" => 1}}},
+                                                                    {"requests" => ["r/one"],
+                                                                     "opaque" => {"driver" => DRIVER, "parameters" => {"a" => 2}}},
+                                                                    {"opaque" => {"driver" => DRIVER, "parameters" => {"all" => true}}}])])
     add.call("class-and-claim-config", classes: [klass("gpu", selectors: ["device.driver == \"#{DRIVER}\""],
                                                               config: [{"opaque" => {"driver" => DRIVER, "parameters" => {"from" => "class"}}}])],
                                        slices: [slice("s1", gpus(3))],
@@ -148,12 +164,13 @@ module DRAAllocatorDifferential
                                  claims: [claim("c", [request("r")])])
     add.call("duplicate-device", slices: [slice("s1", [device("a")], count: 2), slice("s2", [device("a")], count: 2)],
                                  claims: [claim("c", [request("r")])])
-    add.call("all-nodes", slices: [slice("s1", gpus(1), node_name: nil, pool: "shared", allNodes: true)], claims: [claim("c", [request("r")])])
+    add.call("all-nodes", slices: [slice("s1", gpus(1), node_name: nil, pool: "shared", allNodes: true)],
+                          claims: [claim("c", [request("r")])])
     add.call("node-selector-slice", slices: [slice("s1", gpus(1), node_name: nil, pool: "zone-a",
-                                                   nodeSelector: {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone", "operator" => "In", "values" => ["a"]}]}]})],
+                                                                  nodeSelector: {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone", "operator" => "In", "values" => ["a"]}]}]})],
                                     claims: [claim("c", [request("r")])])
     add.call("node-selector-no-match", slices: [slice("s1", gpus(1), node_name: nil, pool: "zone-b",
-                                                      nodeSelector: {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone", "operator" => "In", "values" => ["b"]}]}]})],
+                                                                     nodeSelector: {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone", "operator" => "In", "values" => ["b"]}]}]})],
                                        claims: [claim("c", [request("r")])])
     add.call("per-device-node-selection", slices: [slice("s1", [device("a", nodeName: "node-2"), device("b", nodeName: "node-1"), device("c", allNodes: true)],
                                                          node_name: nil, pool: "pd", perDeviceNodeSelection: true)],
@@ -162,7 +179,8 @@ module DRAAllocatorDifferential
                                   claims: [claim("c", [request("r")])])
     add.call("taint-tolerated", slices: [slice("s1", [device("a", taints: [{"key" => "broken", "value" => "yes", "effect" => "NoExecute"}])])],
                                 claims: [claim("c", [request("r", tolerations: [{"key" => "broken", "operator" => "Equal", "value" => "yes", "effect" => "NoExecute"}])])])
-    add.call("taint-none-effect", slices: [slice("s1", [device("a", taints: [{"key" => "x", "effect" => "None"}])])], claims: [claim("c", [request("r")])])
+    add.call("taint-none-effect", slices: [slice("s1", [device("a", taints: [{"key" => "x", "effect" => "None"}])])],
+                                  claims: [claim("c", [request("r")])])
     add.call("binding-conditions-last", slices: [slice("s1", [device("bound", bindingConditions: ["ready"], bindingFailureConditions: ["failed"])], pool: "a-pool"),
                                                  slice("s2", [device("plain")], pool: "b-pool")],
                                         claims: [claim("c", [request("r")])])
@@ -170,18 +188,30 @@ module DRAAllocatorDifferential
                                              node_name: nil, pool: "shared", allNodes: true)],
                               claims: [claim("c", [request("r")])])
     counters = [{"name" => "gpu-0-counters", "counters" => {"memory" => {"value" => "40Gi"}}}]
-    partition = ->(name, memory) { device(name, consumesCounters: [{"counterSet" => "gpu-0-counters", "counters" => {"memory" => {"value" => memory}}}]) }
-    add.call("partitionable", slices: [slice("counters", [], count: 2, sharedCounters: counters).tap { |entry| entry["spec"].delete("devices") },
-                                       slice("devices", [partition.call("half-a", "20Gi"), partition.call("half-b", "20Gi"), partition.call("full", "40Gi")], count: 2)],
+    partition = lambda { |name, memory|
+      device(name, consumesCounters: [{"counterSet" => "gpu-0-counters", "counters" => {"memory" => {"value" => memory}}}])
+    }
+    add.call("partitionable", slices: [slice("counters", [], count: 2, sharedCounters: counters).tap do |entry|
+      entry["spec"].delete("devices")
+    end,
+                                       slice("devices",
+                                             [partition.call("half-a", "20Gi"), partition.call("half-b", "20Gi"), partition.call("full", "40Gi")], count: 2)],
                               claims: [claim("c", [request("r", count: 2)])])
-    add.call("partitionable-exhausted", slices: [slice("counters", [], count: 2, sharedCounters: counters).tap { |entry| entry["spec"].delete("devices") },
-                                                 slice("devices", [partition.call("full", "40Gi"), partition.call("half", "20Gi")], count: 2)],
+    add.call("partitionable-exhausted", slices: [slice("counters", [], count: 2, sharedCounters: counters).tap do |entry|
+      entry["spec"].delete("devices")
+    end,
+                                                 slice("devices", [partition.call("full", "40Gi"), partition.call("half", "20Gi")],
+                                                       count: 2)],
                                         claims: [claim("c", [request("r", count: 2)])])
-    add.call("partitionable-allocated", slices: [slice("counters", [], count: 2, sharedCounters: counters).tap { |entry| entry["spec"].delete("devices") },
-                                                 slice("devices", [partition.call("full", "40Gi"), partition.call("half", "20Gi")], count: 2)],
+    add.call("partitionable-allocated", slices: [slice("counters", [], count: 2, sharedCounters: counters).tap do |entry|
+      entry["spec"].delete("devices")
+    end,
+                                                 slice("devices", [partition.call("full", "40Gi"), partition.call("half", "20Gi")],
+                                                       count: 2)],
                                         claims: [claim("c", [request("r")])],
                                         allocatedClaims: [claim("old", [request("r")], allocation: {"devices" => {"results" => [
-                                          {"request" => "r", "driver" => DRIVER, "pool" => "node-1", "device" => "half"}]}})])
+                                                                  {"request" => "r", "driver" => DRIVER, "pool" => "node-1", "device" => "half"}
+                                                                ]}})])
     add.call("unknown-counter-set", slices: [slice("devices", [partition.call("x", "1Gi")])], claims: [claim("c", [request("r")])])
     shared = ->(name, **capacity) { device(name, allowMultipleAllocations: true, capacity: capacity) }
     add.call("consumable-capacity", slices: [slice("s1", [shared.call("nic", bandwidth: "10G")])],
@@ -193,10 +223,14 @@ module DRAAllocatorDifferential
     add.call("consumable-default-is-full", slices: [slice("s1", [shared.call("nic", bandwidth: "10G")])],
                                            claims: [claim("a", [request("r")]), claim("b", [request("r")])])
     add.call("consumable-policy-step", slices: [slice("s1", [shared.call("mem", memory: {"value" => "8Gi", "requestPolicy" => {"default" => "1Gi",
-                                                                                                                           "validRange" => {"min" => "1Gi", "step" => "1Gi"}}})])],
+                                                                                                                               "validRange" => {
+                                                                                                                                 "min" => "1Gi", "step" => "1Gi"
+                                                                                                                               }}})])],
                                        claims: [claim("a", [request("r", capacity: {"requests" => {"memory" => "1500Mi"}})]), claim("b", [request("r")])])
     add.call("consumable-policy-values", slices: [slice("s1", [shared.call("mem", memory: {"value" => "8Gi", "requestPolicy" => {"default" => "2Gi",
-                                                                                                                             "validValues" => ["2Gi", "4Gi"]}})])],
+                                                                                                                                 "validValues" => %w[
+                                                                                                                                   2Gi 4Gi
+                                                                                                                                 ]}})])],
                                          claims: [claim("a", [request("r", capacity: {"requests" => {"memory" => "3Gi"}})])])
     add.call("consumable-policy-max", slices: [slice("s1", [shared.call("mem", memory: {"value" => "8Gi", "requestPolicy" => {"validRange" => {"min" => "1Gi", "max" => "2Gi"}}})])],
                                       claims: [claim("a", [request("r", capacity: {"requests" => {"memory" => "3Gi"}})])])
@@ -205,12 +239,17 @@ module DRAAllocatorDifferential
     add.call("consumable-already-used", slices: [slice("s1", [shared.call("nic", bandwidth: "10G")])],
                                         claims: [claim("b", [request("r", capacity: {"requests" => {"bandwidth" => "5G"}})])],
                                         allocatedClaims: [claim("a", [request("r")], allocation: {"devices" => {"results" => [
-                                          {"request" => "r", "driver" => DRIVER, "pool" => "node-1", "device" => "nic", "shareID" => "11111111-1111-1111-1111-111111111111",
-                                           "consumedCapacity" => {"bandwidth" => "6G"}}]}})])
+                                                                  {"request" => "r", "driver" => DRIVER, "pool" => "node-1", "device" => "nic", "shareID" => "11111111-1111-1111-1111-111111111111",
+                                                                   "consumedCapacity" => {"bandwidth" => "6G"}}
+                                                                ]}})])
     add.call("allow-multiple-selector", slices: [slice("s1", [shared.call("nic", bandwidth: "10G"), device("plain")])],
                                         claims: [claim("a", [request("r", selectors: ["device.allowMultipleAllocations"])])])
-    add.call("max-size", slices: [slice("s1", (0...40).map { |index| device("d#{index}") })], claims: [claim("c", [request("r", count: 33)])])
-    add.call("all-mode-max", slices: [slice("s1", (0...33).map { |index| device("d#{index}") })], claims: [claim("c", [request("r", mode: "All")])])
+    add.call("max-size", slices: [slice("s1", (0...40).map do |index|
+      device("d#{index}")
+    end)], claims: [claim("c", [request("r", count: 33)])])
+    add.call("all-mode-max", slices: [slice("s1", (0...33).map do |index|
+      device("d#{index}")
+    end)], claims: [claim("c", [request("r", mode: "All")])])
     add.call("multi-driver-order", slices: [slice("z", [device("z0")], driver: "b.example.com", pool: "p"), slice("a", [device("a0")], driver: "a.example.com", pool: "p")],
                                    classes: [klass("any")], claims: [claim("c", [request("r", klass: "any", count: 2)])])
     list

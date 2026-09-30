@@ -17,6 +17,7 @@ class NodeLifecyclePropertyTest < Minitest::Test
         clock += random.rand(0..30)
         observed << manager.record_exit("container-#{seed}", policy: "Always", exit_code: 1, at: clock).delay_seconds
       end
+
       observed.each_cons(2) { |previous, current| assert_operator current, :>=, previous, "seed=#{seed}" }
       assert_equal 300, observed.last, "seed=#{seed}"
 

@@ -26,7 +26,7 @@ class M3ControllerRuntimeRegressionTest < Minitest::Test
       daemon_set, pods: [healthy, stale], nodes: [eligible, ineligible]
     )
 
-    assert_equal ["daemon-b"], result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+    assert_equal(["daemon-b"], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
     assert_empty result.creates
   end
 
@@ -40,11 +40,11 @@ class M3ControllerRuntimeRegressionTest < Minitest::Test
 
     result = Controller::DaemonSetController.new.plan(daemon_set, pods: [], nodes: nodes)
 
-    assert result.creates.all? { |operation| operation.object.dig("spec", "nodeName").nil? }
-    assert_equal ["node-a"], result.creates.map { |operation|
+    assert(result.creates.all? { |operation| operation.object.dig("spec", "nodeName").nil? })
+    assert_equal(["node-a"], result.creates.map do |operation|
       operation.object.dig("spec", "affinity", "nodeAffinity", "requiredDuringSchedulingIgnoredDuringExecution",
                            "nodeSelectorTerms", 0, "matchFields", 0, "values", 0)
-    }
+    end)
     assert_equal 1, result.status.fetch("desiredNumberScheduled")
   end
 
@@ -114,7 +114,7 @@ class M3ControllerRuntimeRegressionTest < Minitest::Test
         @calls = []
       end
 
-      def ensure_load_balancer(service, nodes)
+      def ensure_load_balancer(service, _nodes)
         @calls << service.fetch("metadata").fetch("name")
         {"ingress" => [{"hostname" => "lb.example.test"}]}
       end
@@ -149,11 +149,11 @@ class M3ControllerRuntimeRegressionTest < Minitest::Test
     controller_class = Class.new(Controller::BaseController) do
       attr_reader :calls, :reconciled_keys
 
-      def initialize(**options)
+      def initialize(**)
         @calls = 0
         @reconciled_keys = []
         @failed_retry = false
-        super(**options)
+        super
       end
 
       def resource_descriptor
@@ -180,6 +180,7 @@ class M3ControllerRuntimeRegressionTest < Minitest::Test
     manager.enqueue("default/healthy", controller: "retry-controller")
 
     first = manager.step
+
     assert_equal 1, first.fetch(:reconciled)
     assert_equal 2, controller.calls
     assert_instance_of RuntimeError, manager.last_error
@@ -188,6 +189,7 @@ class M3ControllerRuntimeRegressionTest < Minitest::Test
 
     now += 0.01
     second = manager.step
+
     assert_equal 1, second.fetch(:reconciled)
     assert_equal 3, controller.calls
     assert_equal 0, queue.num_requeues("default/retry")
@@ -221,21 +223,25 @@ class M3ControllerRuntimeRegressionTest < Minitest::Test
     manager.register(controller)
 
     pod["metadata"]["ownerReferences"] = [{"apiVersion" => "apps/v1beta1", "kind" => "ReplicaSet",
-                                             "name" => "rs", "uid" => "rs-current", "controller" => true}]
+                                           "name" => "rs", "uid" => "rs-current", "controller" => true}]
     manager.send(:enqueue_for, definition.name, pod)
+
     assert_empty manager.queue.keys
     assert_empty manager.instance_variable_get(:@queue_routes)
 
     pod["metadata"]["ownerReferences"] = [{"apiVersion" => "apps/v1", "kind" => "ReplicaSet",
-                                             "name" => "rs", "uid" => "rs-stale", "controller" => true}]
+                                           "name" => "rs", "uid" => "rs-stale", "controller" => true}]
     manager.send(:enqueue_for, definition.name, pod)
+
     assert_empty manager.queue.keys
 
     pod["metadata"]["ownerReferences"] = [{"apiVersion" => "apps/v1", "kind" => "ReplicaSet",
-                                             "name" => "rs", "uid" => "rs-current", "controller" => true}]
+                                           "name" => "rs", "uid" => "rs-current", "controller" => true}]
     manager.send(:enqueue_for, definition.name, pod)
+
     assert_equal ["default/rs"], manager.queue.keys
     result = manager.step
+
     assert_equal 1, result.fetch(:reconciled)
     assert_empty manager.instance_variable_get(:@queue_routes)
   end
@@ -247,6 +253,7 @@ class M3ControllerRuntimeRegressionTest < Minitest::Test
     orphan = pod_value("orphan", labels: {"app" => "web"}, owners: [])
     adoption = Controller::ReplicaSetController.new.plan(replica_set, pods: [orphan])
     adoption_update = adoption.updates.find { |operation| operation.reason == "replicaset pod adoption" }
+
     refute_nil adoption_update
     assert_equal "rs-current", adoption_update.object.dig("metadata", "ownerReferences", 0, "uid")
     assert_empty adoption.creates
@@ -255,10 +262,11 @@ class M3ControllerRuntimeRegressionTest < Minitest::Test
     foreign = pod_value("web-0", labels: {"app" => "web"}, owners: [foreign_owner])
     collision = Controller::ReplicaSetController.new.plan(replica_set, pods: [foreign])
     created_names = collision.creates.map { |operation| operation.object.dig("metadata", "name") }
+
     assert_equal 1, created_names.length
     assert_match(/\Aweb-[bcdfghjklmnpqrstvwxz2456789]{5}\z/, created_names.first)
     refute_equal "web-0", created_names.first
-    refute collision.updates.any? { |operation| operation.reason == "replicaset pod adoption" }
+    refute(collision.updates.any? { |operation| operation.reason == "replicaset pod adoption" })
   end
 
   class NullLogger
@@ -282,17 +290,17 @@ class M3ControllerRuntimeRegressionTest < Minitest::Test
   def daemon_set_value
     value = object("DaemonSet", "daemon", uid: "daemon-current")
     value["spec"] = {"selector" => {"matchLabels" => {"role" => "worker"}},
-                      "template" => {"metadata" => {"labels" => {"role" => "worker"}},
-                                     "spec" => {"nodeSelector" => {"role" => "worker"},
-                                                "containers" => [{"name" => "daemon", "image" => "example/daemon:1"}]}}}
+                     "template" => {"metadata" => {"labels" => {"role" => "worker"}},
+                                    "spec" => {"nodeSelector" => {"role" => "worker"},
+                                               "containers" => [{"name" => "daemon", "image" => "example/daemon:1"}]}}}
     value
   end
 
   def replica_set_value(name, replicas: 1, uid: "rs-current")
     value = object("ReplicaSet", name, uid: uid)
     value["spec"] = {"replicas" => replicas, "selector" => {"matchLabels" => {"app" => "web"}},
-                      "template" => {"metadata" => {"labels" => {"app" => "web"}},
-                                     "spec" => {"containers" => [{"name" => "web", "image" => "example/web:1"}]}}}
+                     "template" => {"metadata" => {"labels" => {"app" => "web"}},
+                                    "spec" => {"containers" => [{"name" => "web", "image" => "example/web:1"}]}}}
     value
   end
 

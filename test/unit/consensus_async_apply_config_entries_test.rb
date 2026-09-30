@@ -33,11 +33,15 @@ class ConsensusAsyncApplyConfigEntriesTest < Minitest::Test
   def test_apply_pending_returns_only_configuration_entries
     Dir.mktmpdir("async-apply") do |root|
       node, machine, storage = single_node(root)
-      assert node.leader?
-      node.propose({"type" => "create", "key" => "k/a", "object" => {"metadata" => {"name" => "a"}}, "leader_time" => 0.0}, request_id: "r1")
+
+      assert_predicate node, :leader?
+      node.propose({"type" => "create", "key" => "k/a", "object" => {"metadata" => {"name" => "a"}}, "leader_time" => 0.0},
+                   request_id: "r1")
       node.flush(1.0)
+
       assert_operator node.commit_index, :>=, node.last_applied + 1, "committed but not yet applied (async)"
       applied, configuration_entries = node.apply_pending!
+
       assert applied
       assert_empty configuration_entries, "a create is not a configuration entry"
       assert_equal "a", machine.store.get("k/a")["metadata"]["name"]
@@ -61,10 +65,12 @@ class ConsensusAsyncApplyConfigEntriesTest < Minitest::Test
       latencies = 10.times.map do |i|
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         result = server.propose({"type" => "create", "key" => "k/#{i}", "object" => {"metadata" => {"name" => "x"}}, "leader_time" => 0.0})
+
         assert result["ok"]
         Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
       end
-      assert_empty logger.events.select { |(level, _event, _fields)| level == "error" }.map { |event| event[1..] }
+
+      assert_empty(logger.events.select { |(level, _event, _fields)| level == "error" }.map { |event| event[1..] })
       assert_operator latencies.min, :<, 0.008, "no 10 ms error-path sleep in the apply loop: #{latencies.map { |l| (l * 1000).round(1) }}"
       server.stop
     end

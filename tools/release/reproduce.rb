@@ -65,17 +65,21 @@ module Release
           "LC_ALL" => "C",
           "GEM_HOME" => File.join(directory, "gem")
         }
-        stdout, stderr, status = Open3.capture3(env, "gem", "build", File.basename(gemspec),
-                                                "--output", File.join(directory, "rubernetes.gem"), chdir: ROOT)
+        _, stderr, status = Open3.capture3(env, "gem", "build", File.basename(gemspec),
+                                           "--output", File.join(directory, "rubernetes.gem"), chdir: ROOT)
         built = status.success? && File.file?(File.join(directory, "rubernetes.gem"))
         {
           "round" => index,
           "built" => built,
           "exit_status" => status.exitstatus,
           "stderr" => built ? nil : stderr.lines.last(3).join.strip,
-          "artifacts" => built ? [{"name" => "rubernetes.gem",
-                                   "sha256" => Digest::SHA256.file(File.join(directory, "rubernetes.gem")).hexdigest,
-                                   "bytes" => File.size(File.join(directory, "rubernetes.gem"))}] : []
+          "artifacts" => if built
+                           [{"name" => "rubernetes.gem",
+                             "sha256" => Digest::SHA256.file(File.join(directory, "rubernetes.gem")).hexdigest,
+                             "bytes" => File.size(File.join(directory, "rubernetes.gem"))}]
+                         else
+                           []
+                         end
         }
       end
     end

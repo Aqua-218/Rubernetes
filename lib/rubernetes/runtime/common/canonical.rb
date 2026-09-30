@@ -57,7 +57,10 @@ module Rubernetes
       def deep_freeze(value)
         case value
         when Hash
-          value.each { |key, child| deep_freeze(key); deep_freeze(child) }
+          value.each do |key, child|
+            deep_freeze(key)
+            deep_freeze(child)
+          end
         when Array
           value.each { |child| deep_freeze(child) }
         end

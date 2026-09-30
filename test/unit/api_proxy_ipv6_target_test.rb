@@ -17,10 +17,12 @@ class APIProxyIPv6TargetTest < Minitest::Test
     listener = TCPServer.new("::1", 0)
     port = listener.addr[1]
     uri = URI("http://#{server.send(:format_proxy_host, "::1")}:#{port}/healthz")
+
     assert_equal "[::1]", uri.host, "URI keeps the brackets the proxy URL needs"
 
     socket = server.send(:open_proxy_socket, uri)
     accepted = listener.accept
+
     assert_equal "::1", accepted.remote_address.ip_address
   ensure
     socket&.close
@@ -33,6 +35,7 @@ class APIProxyIPv6TargetTest < Minitest::Test
     uri = URI("http://#{server.send(:format_proxy_host, "127.0.0.1")}:#{listener.addr[1]}/")
     socket = server.send(:open_proxy_socket, uri)
     accepted = listener.accept
+
     assert_equal "127.0.0.1", accepted.remote_address.ip_address
   ensure
     socket&.close

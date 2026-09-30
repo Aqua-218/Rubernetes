@@ -152,8 +152,8 @@ module Rubernetes
         to_preempt.each do |pod|
           record_event(pod)
           @logger&.call(:info, "preemption.evict", pod: "#{pod.dig("metadata", "namespace")}/#{pod.dig("metadata", "name")}",
-                                                    insufficient: self.class.requirements_to_s(requirements),
-                                                    requesting: "#{admit_pod.dig("metadata", "namespace")}/#{admit_pod.dig("metadata", "name")}")
+                                                   insufficient: self.class.requirements_to_s(requirements),
+                                                   requesting: "#{admit_pod.dig("metadata", "namespace")}/#{admit_pod.dig("metadata", "name")}")
           condition = {"type" => "DisruptionTarget", "status" => "True", "reason" => "TerminationByKubelet",
                        "message" => DISRUPTION_MESSAGE, "observedGeneration" => pod.dig("metadata", "generation")}.compact
           begin

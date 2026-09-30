@@ -24,9 +24,9 @@ class RuntimeRecoveryChaosTest < Minitest::Test
       cleaner: ->(resource) { cleaned << resource }
     ).reconcile
 
-    assert_equal ["namespace:orphan"], report.to_h.fetch("orphans").map { |resource| "#{resource.fetch("kind")}:#{resource.fetch("id")}" }
-    assert_equal ["#{first.kind}:#{first.id}"], report.to_h.fetch("identity_mismatch").map { |entry| entry.fetch("resource") }
-    assert_equal ["namespace:orphan"], cleaned.map { |resource| "#{resource.fetch("kind")}:#{resource.fetch("id")}" }
+    assert_equal(["namespace:orphan"], report.to_h.fetch("orphans").map { |resource| "#{resource.fetch("kind")}:#{resource.fetch("id")}" })
+    assert_equal(["#{first.kind}:#{first.id}"], report.to_h.fetch("identity_mismatch").map { |entry| entry.fetch("resource") })
+    assert_equal(["namespace:orphan"], cleaned.map { |resource| "#{resource.fetch("kind")}:#{resource.fetch("id")}" })
     refute_includes report.to_h.fetch("released"), "#{first.kind}:#{first.id}"
     assert_equal sandbox, runtime.ledger.operation_for_request("recover-sandbox").result.fetch("sandbox_id")
   end

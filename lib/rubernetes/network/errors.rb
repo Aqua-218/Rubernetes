@@ -14,6 +14,7 @@ module Rubernetes
     class LeaseUnavailable < LeaseError; end
     class LeaseStateError < LeaseError; end
     class RecoveryRequired < Error; end
+
     class NetlinkError < Error
       attr_reader :errno, :operation, :sequence
 

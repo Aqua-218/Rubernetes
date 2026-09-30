@@ -45,9 +45,7 @@ module Rubernetes
           @impersonation_constraint = constraint.to_s
         end
 
-        def request_object=(object)
-          @request_object = object
-        end
+        attr_writer :request_object
 
         def request_received
           emit("RequestReceived")

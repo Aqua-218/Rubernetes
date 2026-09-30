@@ -30,18 +30,18 @@ module Rubernetes
         @backends.fetch(handler.to_s) { raise ArgumentError, "runtime class handler #{handler.inspect} is not provided by this node" }
       end
 
-      def run_sandbox(config, runtime_class: nil, **options)
+      def run_sandbox(config, runtime_class: nil, **)
         handler = runtime_class || config["runtime_class"] || config[:runtime_class] || @default
         backend = backend_for(handler)
-        id = backend.run_sandbox(config, runtime_class: handler, **options)
+        id = backend.run_sandbox(config, runtime_class: handler, **)
         key = id.respond_to?(:id) ? id.id : id.to_s
         @mutex.synchronize { @sandbox_owner[key] = backend }
         id
       end
 
-      def create_container(sandbox, spec, **options)
+      def create_container(sandbox, spec, **)
         backend = owner_of_sandbox(sandbox)
-        container = backend.create_container(sandbox, spec, **options)
+        container = backend.create_container(sandbox, spec, **)
         key = container.respond_to?(:id) ? container.id : container.to_s
         @mutex.synchronize { @container_owner[key] = backend }
         container
@@ -56,7 +56,8 @@ module Rubernetes
         end
       end
 
-      %i[start_container stop_container remove_container container_status exec attach logs stats wait_container port_forward http_get tcp_socket].each do |name|
+      %i[start_container stop_container remove_container container_status exec attach logs stats wait_container port_forward http_get
+         tcp_socket].each do |name|
         define_method(name) do |container, *arguments, **options, &block|
           backend = owner_of_container(container)
           result = backend.public_send(name, container, *arguments, **options, &block)
@@ -74,9 +75,9 @@ module Rubernetes
         end
       end
 
-      def update_container_resources(container, *arguments, **options)
+      def update_container_resources(container, *, **)
         backend = owner_of_container(container)
-        backend.respond_to?(:update_container_resources) ? backend.update_container_resources(container, *arguments, **options) : nil
+        backend.respond_to?(:update_container_resources) ? backend.update_container_resources(container, *, **) : nil
       end
 
       def update_container_cpuset(container, cpus)
@@ -87,9 +88,9 @@ module Rubernetes
       # A backend that streams through its own server (a CRI runtime)
       # answers the URL the node relays exec / attach / port-forward to;
       # nil for the others, which stream through the node itself.
-      def streaming_url(operation, container, **options)
+      def streaming_url(operation, container, **)
         backend = owner_of_container(container)
-        backend.respond_to?(:streaming_url) ? backend.streaming_url(operation, container, **options) : nil
+        backend.respond_to?(:streaming_url) ? backend.streaming_url(operation, container, **) : nil
       end
 
       def streaming_backends? = @backends.values.any? { |backend| backend.respond_to?(:streaming_url) }
@@ -99,14 +100,15 @@ module Rubernetes
       def checkpoint_container(container, location:, timeout: nil)
         backend = owner_of_container(container)
         unless backend.respond_to?(:checkpoint_container)
-          raise CheckpointUnsupported, "checkpoint/restore support not available: the runtime handling this container cannot checkpoint containers"
+          raise CheckpointUnsupported,
+                "checkpoint/restore support not available: the runtime handling this container cannot checkpoint containers"
         end
 
         backend.checkpoint_container(container, location: location, timeout: timeout)
       end
 
-      def recover(**options)
-        @backends.transform_values { |backend| backend.respond_to?(:recover) ? backend.recover(**options) : nil }
+      def recover(**)
+        @backends.transform_values { |backend| backend.respond_to?(:recover) ? backend.recover(**) : nil }
       end
 
       def profile
@@ -117,9 +119,9 @@ module Rubernetes
         backend_for(@default).respond_to?(name, include_private) || super
       end
 
-      def method_missing(name, *arguments, **options, &block)
+      def method_missing(name, ...)
         backend = backend_for(@default)
-        return backend.public_send(name, *arguments, **options, &block) if backend.respond_to?(name)
+        return backend.public_send(name, ...) if backend.respond_to?(name)
 
         super
       end

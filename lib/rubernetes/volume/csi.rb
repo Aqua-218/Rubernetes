@@ -59,10 +59,10 @@ module Rubernetes
 
       def capabilities
         value = @capabilities || if @client.respond_to?(:capabilities)
-                                  @client.capabilities
-                                else
-                                  invoke("GetPluginCapabilities", {})
-                                end
+                                   @client.capabilities
+                                 else
+                                   invoke("GetPluginCapabilities", {})
+                                 end
         AdapterSupport.result_hash(value)
       end
 
@@ -170,14 +170,13 @@ module Rubernetes
       def supports?(capability)
         caps = capabilities
         values = caps["capabilities"] || caps["rpc"] || caps["supports"] || caps.values.flatten
-        values.map { |value| value.respond_to?(:to_h) ? value.to_h.values : value }.flatten.any? { |value| value.to_s.casecmp?(capability.to_s) }
+        values.map do |value|
+          value.respond_to?(:to_h) ? value.to_h.values : value
+        end.flatten.any? { |value| value.to_s.casecmp?(capability.to_s) }
       end
-
-      private
 
       # ->(driver_name, method_name, grpc_status_code, seconds) for
       # csi_operations_seconds; the driver's name as registered.
-      public
 
       attr_accessor :metrics_observer, :driver_name
 
@@ -208,6 +207,7 @@ module Rubernetes
 
       def invoke_without_metrics(operation, request, token: nil)
         raise CSIUnavailable, "CSI client is not configured" unless @client
+
         request = Types.deep_copy(request)
         value = if @client.respond_to?(:invoke)
                   @client.invoke(operation, request, token: token, timeout: @timeout)
@@ -224,20 +224,16 @@ module Rubernetes
       end
 
       def normalize_response(operation, value)
-        if value.nil?
-          raise CSIError.new("CSI #{operation} returned no response; outcome is unknown", operation: operation, ambiguous: true)
-        end
+        raise CSIError.new("CSI #{operation} returned no response; outcome is unknown", operation: operation, ambiguous: true) if value.nil?
+
         hash = AdapterSupport.result_hash(value)
-        unless value.respond_to?(:to_h)
-          raise CSIError.new("CSI #{operation} returned a non-map response", operation: operation)
-        end
-        if hash["error"] || hash["code"] && hash["code"].to_i != 0
+        raise CSIError.new("CSI #{operation} returned a non-map response", operation: operation) unless value.respond_to?(:to_h)
+        if hash["error"] || (hash["code"] && hash["code"].to_i != 0)
           raise CSIError.new("CSI #{operation} returned an error: #{hash["message"] || hash["error"]}", operation: operation,
-                             details: hash)
+                                                                                                        details: hash)
         end
         hash
       end
-
     end
 
     CSI = CSIBridge unless const_defined?(:CSI, false)

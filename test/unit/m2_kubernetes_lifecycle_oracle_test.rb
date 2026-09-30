@@ -48,6 +48,7 @@ class M2KubernetesLifecycleOracleTest < Minitest::Test
 
     assert_equal true, status.fetch("available"), status.fetch("errors").inspect
     lock = status.fetch("lock")
+
     assert_equal "kindnetd", lock.fetch("plugin")
     assert_equal lock.fetch("image_digest"), lock.fetch("image_reference").split("@sha256:").last
     assert_equal M2KubernetesLifecycleOracle.canonical_digest(lock, excluded_keys: ["lock_sha256"]), lock.fetch("lock_sha256")
@@ -82,6 +83,7 @@ class M2KubernetesLifecycleOracleTest < Minitest::Test
     assert_equal 1, status.exitstatus
     assert_empty stderr
     document = JSON.parse(stdout)
+
     assert_equal "INCOMPLETE", document.fetch("status")
     assert_equal false, document.fetch("executed")
     refute_equal "BLOCKED", document.fetch("status")
@@ -121,7 +123,7 @@ class M2KubernetesLifecycleOracleTest < Minitest::Test
   def test_executed_oracle_with_a_real_difference_is_a_fail_not_incomplete
     request, actual_cases, document, lock = valid_external_report_fixture
     actual_cases["graceful_termination_oracle"]["observed"] =
-      actual_cases["graceful_termination_oracle"]["observed"].merge("events" => ["Killing", "FailedPreStopHook"])
+      actual_cases["graceful_termination_oracle"]["observed"].merge("events" => %w[Killing FailedPreStopHook])
 
     report = normalize_fixture(document, request, actual_cases, lock)
 
@@ -129,8 +131,10 @@ class M2KubernetesLifecycleOracleTest < Minitest::Test
     assert_equal "FAIL", report.fetch("status")
     assert_equal false, report.fetch("passed")
     assert_equal 1, report.fetch("difference_count")
-    assert_includes report.fetch("errors"), "external lifecycle oracle case graceful_termination_oracle differs from Rubernetes production semantics"
+    assert_includes report.fetch("errors"),
+                    "external lifecycle oracle case graceful_termination_oracle differs from Rubernetes production semantics"
     comparison = report.fetch("comparisons").find { |entry| entry.fetch("id") == "graceful_termination_oracle" }
+
     refute_equal comparison.fetch("expected_sha256"), comparison.fetch("actual_sha256")
   end
 
@@ -139,7 +143,9 @@ class M2KubernetesLifecycleOracleTest < Minitest::Test
       input: {"sha256" => "c" * 64, "file_count" => 3}
     )
 
-    assert_equal M2KubernetesLifecycleOracle.canonical_digest(request.reject { |key, _| key == "request_seed_sha256" }), request.fetch("request_seed_sha256")
+    assert_equal M2KubernetesLifecycleOracle.canonical_digest(request.reject { |key, _|
+      key == "request_seed_sha256"
+    }), request.fetch("request_seed_sha256")
     assert_equal M2KubernetesLifecycleOracle.canonical_digest(request.fetch("cases")), request.fetch("fixture_sha256")
     assert_equal M2KubernetesLifecycleOracle.canonical_digest(request.fetch("timeline")), request.fetch("timeline_sha256")
   end
@@ -153,7 +159,8 @@ class M2KubernetesLifecycleOracleTest < Minitest::Test
       [name, {"observed" => fields, "actual_provenance" => semantics_provenance(name)}]
     end
     runtime = {
-      "containerd" => {"path" => RbConfig.ruby, "version" => "containerd 2.2.1", "binary_sha256" => Digest::SHA256.file(RbConfig.ruby).hexdigest, "identity_method" => "realpath+version+binary_sha256"},
+      "containerd" => {"path" => RbConfig.ruby, "version" => "containerd 2.2.1",
+                       "binary_sha256" => Digest::SHA256.file(RbConfig.ruby).hexdigest, "identity_method" => "realpath+version+binary_sha256"},
       "runc" => {"path" => RbConfig.ruby, "version" => "runc 1.3.4", "binary_sha256" => Digest::SHA256.file(RbConfig.ruby).hexdigest, "identity_method" => "realpath+version+binary_sha256"}
     }
     cni = {
@@ -192,7 +199,7 @@ class M2KubernetesLifecycleOracleTest < Minitest::Test
       "trace" => [{"event" => "running"}],
       "observations" => actual_cases,
       "runner" => {"runner_sha256" => M2KubernetesLifecycleOracle.runner_digest,
-                    "command" => M2KubernetesLifecycleOracle.built_in_command}
+                   "command" => M2KubernetesLifecycleOracle.built_in_command}
     }
     report = M2KubernetesLifecycleOracle.normalize_external_report(
       document,
@@ -240,7 +247,7 @@ class M2KubernetesLifecycleOracleTest < Minitest::Test
           "runc" => {"version" => "runc", "binary_sha256" => "2" * 64, "identity_method" => "test"}
         },
         "cni" => {"plugin" => "pinned-cni", "version" => "1", "source_commit" => "3" * 40,
-                 "image_reference" => "example/cni", "image_digest" => "4" * 64, "config_sha256" => "5" * 64},
+                  "image_reference" => "example/cni", "image_digest" => "4" * 64, "config_sha256" => "5" * 64},
         "trace" => [{"event" => "running"}],
         "observations" => actual_cases.transform_values { |value| value.fetch("observed") },
         "runner" => {"runner_sha256" => "9" * 64}
@@ -310,10 +317,12 @@ class M2KubernetesLifecycleOracleTest < Minitest::Test
     assert_equal M2Gate::REQUIRED_LIFECYCLE_SEMANTICS.sort, matrix.map { |entry| entry.fetch("name") }.sort
     matrix.each do |entry|
       provenance = entry.fetch("actual_provenance")
+
       assert_equal M2Gate::LIFECYCLE_SEMANTICS_ACTUAL_SOURCE, provenance.fetch("source")
       assert_equal "in_process", provenance.fetch("execution_mode")
       assert_equal false, provenance.fetch("native_effects_executed")
-      assert_equal M2Gate::LIFECYCLE_SEMANTICS_PROVENANCE.fetch(entry.fetch("name"))["production_classes"], provenance.fetch("production_classes")
+      assert_equal M2Gate::LIFECYCLE_SEMANTICS_PROVENANCE.fetch(entry.fetch("name"))["production_classes"],
+                   provenance.fetch("production_classes")
       assert_equal true, entry.fetch("passed")
     end
   end
@@ -342,7 +351,8 @@ class M2KubernetesLifecycleOracleTest < Minitest::Test
     end
     runtime_path = RbConfig.ruby
     runtime = {
-      "containerd" => {"path" => runtime_path, "version" => "containerd", "binary_sha256" => Digest::SHA256.file(runtime_path).hexdigest, "identity_method" => "realpath+version+binary_sha256"},
+      "containerd" => {"path" => runtime_path, "version" => "containerd", "binary_sha256" => Digest::SHA256.file(runtime_path).hexdigest,
+                       "identity_method" => "realpath+version+binary_sha256"},
       "runc" => {"path" => runtime_path, "version" => "runc", "binary_sha256" => Digest::SHA256.file(runtime_path).hexdigest, "identity_method" => "realpath+version+binary_sha256"}
     }
     cni = {

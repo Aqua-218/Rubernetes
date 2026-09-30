@@ -125,9 +125,11 @@ class M1KubernetesOracleTest < Minitest::Test
 
     assert_equal(%w[apiVersion code details kind message reason status], M1KubernetesOracle.status_signature(status).keys)
     ownership = M1KubernetesOracle.ownership_signature(object)
+
     assert_equal(["data", "data.owned"], ownership.first.fetch("fields"))
     assert_equal("<timestamp>", ownership.first.fetch("time"))
     watch = M1KubernetesOracle.watch_signature({"type" => "MODIFIED", "object" => object})
+
     assert_equal("MODIFIED", watch.first.fetch("type"))
     assert_equal("<positive-integer>", watch.first.dig("object", "metadata", "resourceVersion"))
     assert_equal(ownership, watch.first.fetch("ownership"))

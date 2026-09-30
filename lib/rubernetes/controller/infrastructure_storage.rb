@@ -179,7 +179,7 @@ module Rubernetes
 
       def volume_attachment_descriptor
         descriptor_from("VolumeAttachment", api_version: "storage.k8s.io/v1",
-                        resource: "volumeattachments", scope: :cluster)
+                                            resource: "volumeattachments", scope: :cluster)
       end
 
       def name_key(object)
@@ -197,14 +197,14 @@ module Rubernetes
       # what the histogram holds.
       def self.go_duration_times_second(seconds)
         value = (seconds * 1_000_000_000).to_i * 1_000_000_000
-        value = ((value + 2**63) % 2**64) - 2**63
+        value = ((value + (2**63)) % (2**64)) - (2**63)
         value.to_f
       end
 
       NODE = ResourceDescriptor.parse("Node")
       POD = ResourceDescriptor.parse("Pod")
 
-      def initialize(clock: nil, **options)
+      def initialize(clock: nil, **)
         @clock = clock || -> { Time.now.utc }
         # When a taint carries no timeAdded (kubectl taint sets none), the
         # toleration clock starts when this controller first saw the taint,
@@ -213,7 +213,7 @@ module Rubernetes
         # already elapsed and each tolerating Pod was evicted at once.
         @taint_first_seen = {}
         @taint_mutex = Mutex.new
-        super(**options)
+        super(**)
       end
 
       def plan(node, store: nil, pods: nil, now: nil, **_options)
@@ -237,7 +237,7 @@ module Rubernetes
           # deletePodHandler counts each delete that went through.
           fired = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           operations.concat(disruption_and_delete(pod, timestamp, reason: "DeletionByTaintManager",
-                                                              message: "Taint manager: deleting due to NoExecute taint").map do |operation|
+                                                                  message: "Taint manager: deleting due to NoExecute taint").map do |operation|
             next operation unless operation.delete?
 
             operation.observed do |succeeded, _|
@@ -419,8 +419,8 @@ module Rubernetes
           # taint's effect became active (a Pod already gone is not).
           effective = device_eviction_time(pod, due_taint, node) || timestamp
           operations.concat(disruption_and_delete(pod, timestamp, reason: "DeletionByDeviceTaintManager",
-                                                              message: "Device Taint manager: deleting due to NoExecute taint",
-                                                              uid_precondition: true).map do |operation|
+                                                                  message: "Device Taint manager: deleting due to NoExecute taint",
+                                                                  uid_precondition: true).map do |operation|
             next operation unless operation.delete?
 
             operation.observed do |succeeded, _|
@@ -463,9 +463,15 @@ module Rubernetes
                    Support.parse_time(Support.value(Support.condition(node || {}, "Ready") || {}, "lastTransitionTime", nil))
         return nil unless added_at
 
-        seconds = Array(Support.value(Support.spec(pod), "tolerations", [])).select { |toleration| device_toleration_matches?(toleration, taint) }
-                                                                            .filter_map { |toleration| Support.integer(Support.value(toleration, "tolerationSeconds", nil), -1) }
-                                                                            .select(&:positive?).max
+        seconds = Array(Support.value(Support.spec(pod), "tolerations", [])).select do |toleration|
+          device_toleration_matches?(toleration, taint)
+        end
+          .filter_map do |toleration|
+          Support.integer(
+            Support.value(toleration, "tolerationSeconds", nil), -1
+          )
+        end
+          .select(&:positive?).max
         added_at + seconds.to_i
       rescue StandardError
         nil
@@ -483,6 +489,7 @@ module Rubernetes
           parsed if parsed >= 0
         end.max
         return false unless seconds
+
         added_at = Support.parse_time(Support.value(taint, "timeAdded", nil)) ||
                    Support.parse_time(Support.value(Support.condition(node || {}, "Ready") || {}, "lastTransitionTime", nil))
         return seconds.zero? unless added_at
@@ -512,9 +519,9 @@ module Rubernetes
       SERVICE = ResourceDescriptor.parse("Service")
       NODE = ResourceDescriptor.parse("Node")
 
-      def initialize(cloud_provider: nil, provider: nil, cloud: nil, **options)
+      def initialize(cloud_provider: nil, provider: nil, cloud: nil, **)
         @cloud_provider = cloud_provider || provider || cloud
-        super(**options)
+        super(**)
       end
 
       def plan(service, store: nil, nodes: nil, provider: nil, cloud_provider: nil, cloud: nil, **_options)
@@ -532,7 +539,7 @@ module Rubernetes
         load_balancer["ingress"] = Support.deep_copy(ingress) unless ingress.empty?
         candidate_status["loadBalancer"] = load_balancer unless load_balancer.empty?
         update = operation_status(service, candidate_status, descriptor: SERVICE,
-                                  reason: ingress.empty? ? "ensuring load balancer" : "load balancer ensured")
+                                                             reason: ingress.empty? ? "ensuring load balancer" : "load balancer ensured")
         events = if update.nil?
                    []
                  elsif ingress.empty?
@@ -548,7 +555,7 @@ module Rubernetes
 
       def delete(service, provider: nil, cloud_provider: nil, cloud: nil, **_options)
         call_provider(provider_from(provider || cloud_provider || cloud), %i[delete_load_balancer deleteLoadBalancer], positional: [service],
-                      keywords: {service: service})
+                                                                                                                       keywords: {service: service})
         ReconcileResult.new(operations: [], status: Support.status(service),
                             events: [{"type" => "Normal", "reason" => "DeletingLoadBalancer",
                                       "message" => "deleting load balancer for service #{name_key(service)}"}],
@@ -580,9 +587,9 @@ module Rubernetes
       NODE = ResourceDescriptor.parse("Node")
       MANAGED_BY = InfrastructureStorageSupport::MANAGED_ROUTE_CONTROLLER
 
-      def initialize(cloud_provider: nil, provider: nil, cloud: nil, **options)
+      def initialize(cloud_provider: nil, provider: nil, cloud: nil, **)
         @cloud_provider = cloud_provider || provider || cloud
-        super(**options)
+        super(**)
       end
 
       def plan(node, store: nil, routes: nil, provider: nil, cloud_provider: nil, cloud: nil, **_options)
@@ -593,7 +600,7 @@ module Rubernetes
         events = []
         desired.each do |route|
           call_provider(cloud, %i[ensure_route create_route], positional: [node, route],
-                        keywords: {node: node, route: route, destination: route["destination"]})
+                                                              keywords: {node: node, route: route, destination: route["destination"]})
           unless existing.any? { |candidate| route_identity(candidate) == route_identity(route) }
             events << {"type" => "Normal", "reason" => "RouteCreated",
                        "message" => "route #{route.fetch("destination")} assigned to node #{Support.name(node)}"}
@@ -605,7 +612,7 @@ module Rubernetes
         end
         stale.each do |route|
           call_provider(cloud, %i[delete_route remove_route], positional: [node, route],
-                        keywords: {node: node, route: route, destination: Support.value(route, "destination", "")})
+                                                              keywords: {node: node, route: route, destination: Support.value(route, "destination", "")})
           events << {"type" => "Normal", "reason" => "RouteDeleted",
                      "message" => "route #{Support.value(route, "destination", "")} removed from node #{Support.name(node)}"}
         end
@@ -623,7 +630,7 @@ module Rubernetes
         cloud = provider_from(provider || cloud_provider || cloud)
         Array(routes || Support.value(Support.status(node), "routes", [])).select { |route| managed_route?(route) }.each do |route|
           call_provider(cloud, %i[delete_route remove_route], positional: [node, route],
-                        keywords: {node: node, route: route, destination: Support.value(route, "destination", "")})
+                                                              keywords: {node: node, route: route, destination: Support.value(route, "destination", "")})
         end
         ReconcileResult.new(operations: [], status: Support.status(node), controller: name,
                             key: Support.name(node))
@@ -661,9 +668,9 @@ module Rubernetes
 
       NODE = ResourceDescriptor.parse("Node")
 
-      def initialize(cloud_provider: nil, provider: nil, cloud: nil, **options)
+      def initialize(cloud_provider: nil, provider: nil, cloud: nil, **)
         @cloud_provider = cloud_provider || provider || cloud
-        super(**options)
+        super(**)
       end
 
       def plan(node, provider: nil, cloud_provider: nil, cloud: nil, **_options)
@@ -671,23 +678,29 @@ module Rubernetes
 
         cloud = provider_from(provider || cloud_provider || cloud)
         provider_id = Support.value(Support.spec(node), "providerID", "").to_s
-        if cloud&.respond_to?(:instance_exists_by_provider_id)
-          result = call_provider(cloud, [:instance_exists_by_provider_id], positional: [provider_id],
-                                 keywords: {node: node, provider_id: provider_id})
-        else
-          result = call_provider(cloud, %i[instance_exists? instance_exists node_exists? node_exists],
+        result = if cloud&.respond_to?(:instance_exists_by_provider_id)
+                   call_provider(cloud, [:instance_exists_by_provider_id], positional: [provider_id],
+                                                                           keywords: {node: node, provider_id: provider_id})
+                 else
+                   call_provider(cloud, %i[instance_exists? instance_exists node_exists? node_exists],
                                  positional: [node], keywords: {node: node, provider_id: provider_id})
+                 end
+        if result.nil?
+          raise ProviderUnavailableError,
+                "cloud provider for #{name} returned no instance-existence result"
         end
-        raise ProviderUnavailableError,
-              "cloud provider for #{name} returned no instance-existence result" if result.nil?
         return deletion_result(node) if result == false || Support.value(hash_value(result), "exists", true) == false
 
         candidate_status = Support.deep_copy(Support.status(node))
         candidate_status["conditions"] = upsert_condition(candidate_status["conditions"], "CloudNodeReady", "True", "CloudNodeExists")
         update = operation_status(node, candidate_status, descriptor: NODE, reason: "cloud node lifecycle")
         ReconcileResult.new(operations: [update].compact, status: candidate_status,
-                            events: update ? [{"type" => "Normal", "reason" => "CloudNodeReady",
-                                               "message" => "cloud instance for node #{Support.name(node)} exists"}] : [],
+                            events: if update
+                                      [{"type" => "Normal", "reason" => "CloudNodeReady",
+                                        "message" => "cloud instance for node #{Support.name(node)} exists"}]
+                                    else
+                                      []
+                                    end,
                             controller: name, key: Support.name(node))
       end
 
@@ -757,12 +770,15 @@ module Rubernetes
       # 15 s resync).
       RECHECK_SECONDS = 5.0
 
-      def initialize(*arguments, host_path_deleter: nil, **options)
-        super(*arguments, **options)
+      def initialize(*, host_path_deleter: nil, **)
+        super(*, **)
         # hostPathDeleter.Delete: only under /tmp (anchored here, which the
         # upstream regexp is not: this controller runs as root on the host).
         @host_path_deleter = host_path_deleter || lambda do |path|
-          raise ArgumentError, "host_path deleter only supports /tmp/.+ but received provided #{path}" unless path.to_s.match?(%r{\A/tmp/.+})
+          unless path.to_s.match?(%r{\A/tmp/.+})
+            raise ArgumentError,
+                  "host_path deleter only supports /tmp/.+ but received provided #{path}"
+          end
 
           FileUtils.rm_rf(path)
         end
@@ -876,7 +892,8 @@ module Rubernetes
 
       # checkVolumeSatisfyClaim.
       def volume_satisfy_error(volume, claim)
-        return "the volume is marked for deletion #{Support.name(volume).dump}" unless Support.value(Support.metadata(volume), "deletionTimestamp", nil).nil?
+        return "the volume is marked for deletion #{Support.name(volume).dump}" unless Support.value(Support.metadata(volume),
+                                                                                                     "deletionTimestamp", nil).nil?
         return "requested PV is too small" if storage(volume_capacity(volume)) < storage(claim_request(claim))
         return "storageClassName does not match" if volume_class(volume) != claim_class(claim)
         return "volumeAttributesClassName does not match" if vac(claim) != vac(volume)
@@ -901,8 +918,10 @@ module Rubernetes
       end
 
       def emit_delay_binding_event(claim, context)
-        names = pods_using(claim, context).reject { |pod| pod_terminated?(pod) }.select { |pod| Support.value(Support.spec(pod), "nodeName", "").to_s.empty? }
-                                          .map { |pod| Support.name(pod) }
+        names = pods_using(claim, context).reject do |pod|
+          pod_terminated?(pod)
+        end.select { |pod| Support.value(Support.spec(pod), "nodeName", "").to_s.empty? }
+          .map { |pod| Support.name(pod) }
         if names.empty?
           event(context, "Normal", "WaitForFirstConsumer", "waiting for first consumer to be created before binding")
         elsif names.length == 1
@@ -952,10 +971,15 @@ module Rubernetes
         annotations = Support.value(Support.metadata(claim), "annotations", {}) || {}
         unless annotations[ANN_STORAGE_PROVISIONER] == provisioner && annotations[ANN_BETA_STORAGE_PROVISIONER] == provisioner
           updated = Support.deep_copy(claim)
-          updated["metadata"]["annotations"] = annotations.merge(ANN_STORAGE_PROVISIONER => provisioner, ANN_BETA_STORAGE_PROVISIONER => provisioner)
-          annotate = operation_update(claim, updated, descriptor: PVC, reason: "set the claim's external provisioner")&.observed do |succeeded, _|
+          updated["metadata"]["annotations"] =
+            annotations.merge(ANN_STORAGE_PROVISIONER => provisioner, ANN_BETA_STORAGE_PROVISIONER => provisioner)
+          annotate = operation_update(claim, updated, descriptor: PVC,
+                                                      reason: "set the claim's external provisioner")&.observed do |succeeded, _|
             # provisionClaimOperationExternal failed: RecordMetric's error.
-            ControllerMetrics.increment("volume_operation_errors_total", {"plugin_name" => provisioner, "operation_name" => "provision"}) unless succeeded
+            unless succeeded
+              ControllerMetrics.increment("volume_operation_errors_total",
+                                          {"plugin_name" => provisioner, "operation_name" => "provision"})
+            end
           end
           context[:operations] << annotate if annotate
         end
@@ -1007,8 +1031,8 @@ module Rubernetes
                Support.value(reference, "namespace", "") == Support.namespace(claim) &&
                Support.value(reference, "uid", "").to_s == Support.uid(claim).to_s
           (updated_volume["spec"] ||= {})["claimRef"] = {"kind" => "PersistentVolumeClaim", "namespace" => Support.namespace(claim),
-                                                          "name" => Support.name(claim), "uid" => Support.uid(claim), "apiVersion" => "v1",
-                                                          "resourceVersion" => Support.value(Support.metadata(claim), "resourceVersion", nil)}.compact
+                                                         "name" => Support.name(claim), "uid" => Support.uid(claim), "apiVersion" => "v1",
+                                                         "resourceVersion" => Support.value(Support.metadata(claim), "resourceVersion", nil)}.compact
         end
         if !bound_to_claim?(volume, claim) && !annotation?(updated_volume, ANN_BOUND_BY_CONTROLLER)
           set_annotation(updated_volume, ANN_BOUND_BY_CONTROLLER, "yes")
@@ -1239,7 +1263,8 @@ module Rubernetes
       end
 
       def record_volume_operation_error(plugin, operation)
-        ControllerMetrics.increment("volume_operation_errors_total", {"plugin_name" => plugin.to_s.empty? ? "N/A" : plugin, "operation_name" => operation})
+        ControllerMetrics.increment("volume_operation_errors_total",
+                                    {"plugin_name" => plugin.to_s.empty? ? "N/A" : plugin, "operation_name" => operation})
       end
 
       # findDeletablePlugin: [:host_path | nil, error message | nil].
@@ -1278,7 +1303,7 @@ module Rubernetes
 
         reference = claim_ref(volume)
         users = pods_by_claim(context, Support.value(reference, "namespace", ""), Support.value(reference, "name", ""))
-                .reject { |pod| pod_terminated?(pod) }.map { |pod| "#{Support.namespace(pod)}/#{Support.name(pod)}" }.sort
+          .reject { |pod| pod_terminated?(pod) }.map { |pod| "#{Support.namespace(pod)}/#{Support.name(pod)}" }.sort
         cached = find_claim(context, Support.value(reference, "namespace", ""), Support.value(reference, "name", ""))
         if !users.empty? && cached.nil?
           event(context, "Normal", "VolumeFailedRecycle", "Volume is used by pods: #{users.join(",")}")
@@ -1287,7 +1312,8 @@ module Rubernetes
 
         source = recycler_source(volume)
         if source.nil?
-          update_volume_phase_with_event(volume, "Failed", context, "Warning", "VolumeFailedRecycle", "No recycler plugin found for the volume!")
+          update_volume_phase_with_event(volume, "Failed", context, "Warning", "VolumeFailedRecycle",
+                                         "No recycler plugin found for the volume!")
           return
         end
 
@@ -1295,7 +1321,7 @@ module Rubernetes
         pod = context[:adapter] && context[:adapter].find(POD, name: pod_name, namespace: "default")
         if pod.nil?
           context[:operations] << operation_create(recycler_pod(pod_name, volume, source), descriptor: POD,
-                                                   reason: "start the volume recycler")
+                                                                                           reason: "start the volume recycler")
           context[:requeue] = RECHECK_SECONDS
           return
         end
@@ -1344,7 +1370,7 @@ module Rubernetes
         requested = access_modes(claim)
         groups = Array(volumes).group_by { |volume| mode_key(access_modes(volume)) }
         groups.keys.select { |key| access_modes_contain?(key.split(","), requested) }
-              .sort_by { |key| [key.split(",").length, key] }.each do |key|
+          .sort_by { |key| [key.split(",").length, key] }.each do |key|
           best = find_matching_volume(claim, groups[key], delay)
           return best if best
         end
@@ -1446,8 +1472,11 @@ module Rubernetes
 
       def find_claim(context, namespace, claim_name)
         if context[:claims]
-          return Array(context[:claims]).find { |claim| Support.namespace(claim) == namespace.to_s && Support.name(claim) == claim_name.to_s }
+          return Array(context[:claims]).find do |claim|
+            Support.namespace(claim) == namespace.to_s && Support.name(claim) == claim_name.to_s
+          end
         end
+
         context[:adapter]&.find(PVC, name: claim_name.to_s, namespace: namespace.to_s)
       end
 
@@ -1519,14 +1548,14 @@ module Rubernetes
       CSI_DRIVER = ResourceDescriptor.parse({"apiVersion" => "storage.k8s.io/v1", "kind" => "CSIDriver"},
                                             resource: "csidrivers", scope: :cluster)
       VOLUME_ATTACHMENT = ResourceDescriptor.parse({"apiVersion" => "storage.k8s.io/v1", "kind" => "VolumeAttachment"},
-                                                    resource: "volumeattachments", scope: :cluster)
+                                                   resource: "volumeattachments", scope: :cluster)
       MANAGED_ANNOTATION = "volumes.kubernetes.io/controller-managed-attach-detach"
       CSI_PLUGIN = "kubernetes.io/csi"
       MAX_WAIT_FOR_UNMOUNT = 6 * 60
       RECHECK_SECONDS = 1.0
 
-      def initialize(*arguments, clock: -> { Time.now.utc }, **options)
-        super(*arguments, **options)
+      def initialize(*, clock: -> { Time.now.utc }, **)
+        super(*, **)
         @clock = clock
         @detach_requested = {}
         @reported = {}
@@ -1574,7 +1603,10 @@ module Rubernetes
           # Still mounted after maxWaitForUnmountDuration: a forced detach.
           if detach && volume_in_use?(nodes, node_name, unique_name)
             detach = detach.observed do |succeeded, _|
-              ControllerMetrics.increment("attach_detach_controller_attachdetach_controller_forced_detaches", {"reason" => "timeout"}) if succeeded
+              if succeeded
+                ControllerMetrics.increment("attach_detach_controller_attachdetach_controller_forced_detaches",
+                                            {"reason" => "timeout"})
+              end
             end
           end
           context[:operations] << detach if detach
@@ -1596,7 +1628,7 @@ module Rubernetes
           end
 
           context[:operations] << operation_create(volume_attachment(volume, driver, handle, node_name), descriptor: VOLUME_ATTACHMENT,
-                                                   reason: "AttachVolume.Attach")
+                                                                                                         reason: "AttachVolume.Attach")
           attached_nodes << node_name
           context[:requeue] = RECHECK_SECONDS
         end
@@ -1624,8 +1656,10 @@ module Rubernetes
       def self.state_counts(pods:, claims:, volumes:, nodes:, attachments:, drivers:)
         pv_by_name = Array(volumes).to_h { |pv| [Support.name(pv), pv] }
         claim_by_key = Array(claims).to_h { |claim| [[Support.namespace(claim).to_s, Support.name(claim).to_s], claim] }
-        managed = Array(nodes).select { |node| (Support.value(Support.metadata(node), "annotations", {}) || {})[MANAGED_ANNOTATION] == "true" }
-                              .to_h { |node| [Support.name(node), true] }
+        managed = Array(nodes).select do |node|
+          (Support.value(Support.metadata(node), "annotations", {}) || {})[MANAGED_ANNOTATION] == "true"
+        end
+          .to_h { |node| [Support.name(node), true] }
         planner = allocate
         in_use = Hash.new(0)
         desired = {}
@@ -1683,7 +1717,9 @@ module Rubernetes
         volumes ||= list_storage_objects(adapter, PV, namespace: :all)
         by_name = Array(volumes).to_h { |pv| [Support.name(pv), pv] }
         by_name[Support.name(volume)] = volume
-        managed = Array(nodes).select { |node| (Support.value(Support.metadata(node), "annotations", {}) || {})[MANAGED_ANNOTATION] == "true" }
+        managed = Array(nodes).select do |node|
+          (Support.value(Support.metadata(node), "annotations", {}) || {})[MANAGED_ANNOTATION] == "true"
+        end
         desired = Hash.new { |hash, key| hash[key] = [] }
         Array(attachments).each do |attachment|
           next if deleting?(attachment) || context[:detaching].include?(Support.name(attachment))
@@ -1703,7 +1739,7 @@ module Rubernetes
           next if current == wanted
 
           context[:operations] << operation_status_merge(node, {"volumesAttached" => wanted.empty? ? nil : wanted}, descriptor: NODE,
-                                                                                                        reason: "node volumesAttached")
+                                                                                                                    reason: "node volumesAttached")
         end
       end
 
@@ -1727,7 +1763,7 @@ module Rubernetes
           (Support.value(Support.metadata(node), "annotations", {}) || {})[MANAGED_ANNOTATION] == "true"
         end.map { |node| Support.name(node) }
         claim_keys = Array(claims).select { |claim| Support.value(Support.spec(claim), "volumeName", "").to_s == Support.name(volume) }
-                                  .map { |claim| [Support.namespace(claim).to_s, Support.name(claim).to_s] }
+          .map { |claim| [Support.namespace(claim).to_s, Support.name(claim).to_s] }
         result = Hash.new { |hash, key| hash[key] = [] }
         Array(pods).each do |pod|
           node_name = Support.value(Support.spec(pod), "nodeName", "").to_s
@@ -1748,7 +1784,9 @@ module Rubernetes
         return true if %w[Succeeded Failed].include?(phase)
         return false if Support.value(Support.metadata(pod), "deletionTimestamp", nil).nil?
 
-        Array(Support.value(Support.status(pod), "containerStatuses", [])).none? { |status| (Support.value(status, "state", {}) || {}).key?("running") }
+        Array(Support.value(Support.status(pod), "containerStatuses", [])).none? do |status|
+          (Support.value(status, "state", {}) || {}).key?("running")
+        end
       end
 
       # util.IsMultiAttachAllowed: an RWX/ROX volume, or one with no modes.
@@ -1807,7 +1845,10 @@ module Rubernetes
       def report_multi_attach_error(volume, pods, blocking, context)
         prefix = "Multi-Attach error for volume #{Support.name(volume).dump}"
         if blocking.empty?
-          pods.each { |pod| context[:events] << pod_event(pod, "Warning", "FailedAttachVolume", "#{prefix} Volume is already exclusively attached to one node and can't be attached to another") }
+          pods.each do |pod|
+            context[:events] << pod_event(pod, "Warning", "FailedAttachVolume",
+                                          "#{prefix} Volume is already exclusively attached to one node and can't be attached to another")
+          end
           return
         end
 
@@ -1858,7 +1899,11 @@ module Rubernetes
         class_object = storage_class
         if class_object.nil? && adapter
           class_name = Support.value(Support.spec(claim), "storageClassName", nil).to_s
-          class_object = list_storage_objects(adapter, STORAGE_CLASS, namespace: :all).find { |candidate| Support.name(candidate) == class_name } unless class_name.empty?
+          unless class_name.empty?
+            class_object = list_storage_objects(adapter, STORAGE_CLASS, namespace: :all).find do |candidate|
+              Support.name(candidate) == class_name
+            end
+          end
         end
         expansion_allowed = if allow_volume_expansion.nil?
                               class_spec = Support.spec(class_object || {})
@@ -1873,14 +1918,13 @@ module Rubernetes
         pv_capacity = quantity_base(pv_capacity_value)
         if pv_capacity < requested
           expanded = call_provider(provider_from(provider || cloud_provider || cloud), %i[expand_volume expand], positional: [pv, claim],
-                                   keywords: {volume: pv, claim: claim, requested_capacity: requested})
+                                                                                                                 keywords: {volume: pv, claim: claim, requested_capacity: requested})
           pv_capacity_value = provider_capacity(expanded) || pv_capacity_value
           pv_capacity = quantity_base(pv_capacity_value)
         end
         return resizing_result(claim, requested) if pv_capacity < requested
 
         operations = []
-        candidate_pv = pv
         if provider_capacity_candidate?(pv, pv_capacity_value)
           candidate_pv = Support.deep_copy(pv)
           candidate_pv["spec"] ||= {}
@@ -1895,11 +1939,11 @@ module Rubernetes
         candidate_status["capacity"]["storage"] = pv_capacity_value
         conditions = remove_conditions(candidate_status["conditions"], "Resizing", "ResizeStarted", "ResizeFailed")
         filesystem = Support.value(Support.spec(pv), "volumeMode", "Filesystem").to_s != "Block"
-        if filesystem && !node_expanded
-          conditions = upsert_condition(conditions, "FileSystemResizePending", "True", "ControllerResizeInProgress")
-        else
-          conditions = remove_conditions(conditions, "FileSystemResizePending")
-        end
+        conditions = if filesystem && !node_expanded
+                       upsert_condition(conditions, "FileSystemResizePending", "True", "ControllerResizeInProgress")
+                     else
+                       remove_conditions(conditions, "FileSystemResizePending")
+                     end
         candidate_status["conditions"] = conditions
         status_operation = operation_status(claim, candidate_status, descriptor: PVC, reason: "persistent volume expansion")
         operations << status_operation if status_operation
@@ -1929,7 +1973,7 @@ module Rubernetes
       def resizing_result(claim, requested)
         status = Support.deep_copy(Support.status(claim))
         status["conditions"] = upsert_condition(status["conditions"], "Resizing", "True", "ExternalExpanding",
-                                                 message: "waiting for volume capacity #{requested}")
+                                                message: "waiting for volume capacity #{requested}")
         operation = operation_status(claim, status, descriptor: PVC, reason: "persistent volume expansion pending")
         ReconcileResult.new(operations: [operation].compact, status: status,
                             events: [{"type" => "Normal", "reason" => "VolumeResizeSuccessful",
@@ -1998,8 +2042,12 @@ module Rubernetes
         candidate = Support.deep_copy(target)
         candidate["rules"] = rules
         update = operation_update(target, candidate, descriptor: CLUSTER_ROLE, reason: "cluster role aggregation")
-        events = update ? [{"type" => "Normal", "reason" => "ClusterRoleAggregated",
-                            "message" => "cluster role #{Support.name(target)} aggregated #{rules.length} rule(s)"}] : []
+        events = if update
+                   [{"type" => "Normal", "reason" => "ClusterRoleAggregated",
+                     "message" => "cluster role #{Support.name(target)} aggregated #{rules.length} rule(s)"}]
+                 else
+                   []
+                 end
         ReconcileResult.new(operations: [update].compact, status: Support.status(target), events: events,
                             controller: name, key: Support.name(target))
       end
@@ -2050,12 +2098,12 @@ module Rubernetes
         },
         "service-lb-controller" => {
           kind: "Service", feature_gates: [], startup_conditions: ["cloud provider configured"],
-          sync_targets: ["Service", "Node", "LoadBalancer"], status_fields: ["loadBalancer"],
+          sync_targets: %w[Service Node LoadBalancer], status_fields: ["loadBalancer"],
           events: %w[EnsuringLoadBalancer EnsuredLoadBalancer DeletingLoadBalancer]
         },
         "node-route-controller" => {
           kind: "Node", feature_gates: [], startup_conditions: ["cloud provider configured"],
-          sync_targets: ["Node", "Route"], status_fields: ["routes"],
+          sync_targets: %w[Node Route], status_fields: ["routes"],
           events: %w[RouteCreated RouteDeleted]
         },
         "cloud-node-lifecycle-controller" => {
@@ -2142,19 +2190,16 @@ module Rubernetes
           end
           options = context[:options] || context["options"] || {}
           options = options.dup if options.is_a?(Hash)
-          if options.is_a?(Hash) && !options.key?(:store) && !options.key?("store")
-            options[:store] = context[:store] || context["store"]
-          end
+          options[:store] = context[:store] || context["store"] if options.is_a?(Hash) && !options.key?(:store) && !options.key?("store")
           controller.plan(resource, **(options.is_a?(Hash) ? options : {}))
         end
-        definition = ControllerDefinition.new(
+        ControllerDefinition.new(
           name: name, kind: kind, owns: [], watches: watch_specs(name, registry: registry),
           reconcile_block: reconcile, feature_gates: metadata.fetch(:feature_gates),
           startup_conditions: metadata.fetch(:startup_conditions), sync_targets: metadata.fetch(:sync_targets),
           status_fields: metadata.fetch(:status_fields), events: metadata.fetch(:events),
           implementation: implementation
         )
-        definition
       end
 
       def register!(registry)

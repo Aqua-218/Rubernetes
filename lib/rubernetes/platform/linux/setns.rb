@@ -101,7 +101,10 @@ module Rubernetes
 
         def unshare(flags:, resource_id: "unshare")
           result = Syscall.call(@numbers.fetch(:unshare), Integer(flags))
-          raise Linux::Error.new(errno: result.errno, operation: "unshare(0x#{Integer(flags).to_s(16)})", resource_id: resource_id) if result.value == -1
+          if result.value == -1
+            raise Linux::Error.new(errno: result.errno, operation: "unshare(0x#{Integer(flags).to_s(16)})",
+                                   resource_id: resource_id)
+          end
 
           true
         end

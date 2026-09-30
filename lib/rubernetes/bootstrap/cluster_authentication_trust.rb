@@ -51,7 +51,11 @@ module Rubernetes
 
       def stop
         @mutex.synchronize { @stopping = true }
-        @thread&.wakeup rescue nil
+        begin
+          @thread&.wakeup
+        rescue StandardError
+          nil
+        end
         @thread&.join(2)
         self
       end
@@ -67,7 +71,8 @@ module Rubernetes
         if existing
           put("#{PATH}/#{NAME}", existing.merge("data" => data))
         else
-          create(PATH, {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => NAME, "namespace" => NAMESPACE}, "data" => data})
+          create(PATH,
+                 {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => NAME, "namespace" => NAMESPACE}, "data" => data})
         end
         data
       end
@@ -146,7 +151,8 @@ module Rubernetes
 
       def request(method, path, object = nil)
         headers = object ? {"content-type" => "application/json"} : {}
-        @api_server.call(API::Request.new(method: method, path: path, headers: headers, body: object && JSON.generate(object), identity: IDENTITY))
+        @api_server.call(API::Request.new(method: method, path: path, headers: headers, body: object && JSON.generate(object),
+                                          identity: IDENTITY))
       end
 
       def get(path)

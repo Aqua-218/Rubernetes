@@ -55,7 +55,8 @@ module Rubernetes
             key = unescape(header_name[prefix.length..])
             extra[key] = (extra[key] || []) + values.map(&:to_s)
           end
-          user = UserInfo.new(name: username, uid: uid.to_s.empty? ? nil : uid, groups: groups + [UserInfo::ALL_AUTHENTICATED], extra: extra)
+          user = UserInfo.new(name: username, uid: uid.to_s.empty? ? nil : uid, groups: groups + [UserInfo::ALL_AUTHENTICATED],
+                              extra: extra)
           AuthenticationResult.new(user: user, authenticator: NAME)
         end
 

@@ -9,7 +9,11 @@ require "rubernetes/observability/metrics"
 # controller manager's informer caches at scrape time.
 class PVCollectorMetricsTest < Minitest::Test
   class Store
-    def initialize(volumes, claims) = (@volumes, @claims = volumes, claims)
+    def initialize(volumes, claims)
+      (@volumes = volumes
+       @claims = claims)
+    end
+
     def list(kind, namespace: :all) = kind == "PersistentVolume" ? @volumes : @claims
   end
 
@@ -23,6 +27,7 @@ class PVCollectorMetricsTest < Minitest::Test
     registry = Rubernetes::Observability::Metrics.new(apiserver: false, process: false, component: "kube-controller-manager")
     service.send(:collect_persistent_volumes, registry)
     text = registry.render
+
     assert_includes text, %(pv_collector_bound_pv_count{storage_class="fast"} 1)
     assert_includes text, %(pv_collector_unbound_pv_count{storage_class=""} 1)
     assert_includes text, %(pv_collector_total_pv_count{plugin_name="kubernetes.io/csi:d.example",volume_mode="Block"} 1)
@@ -31,6 +36,7 @@ class PVCollectorMetricsTest < Minitest::Test
                     "the beta annotation wins over spec.storageClassName"
     service.instance_variable_set(:@store, Store.new([], []))
     service.send(:collect_persistent_volumes, registry)
+
     refute_includes registry.render, "pv_collector_bound_pv_count{"
   end
 end

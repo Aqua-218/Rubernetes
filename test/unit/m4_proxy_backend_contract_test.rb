@@ -59,6 +59,7 @@ class M4ProxyBackendContractTest < Minitest::Test
     right = Rubernetes::Proxy::MemoryBackend.new
 
     result = Rubernetes::Proxy::BackendParity.compare(left, right)
+
     assert_equal true, result.fetch("passed")
     assert_equal "model_only", result.fetch("measurementSource")
     refute result.fetch("productionCapable")
@@ -67,6 +68,7 @@ class M4ProxyBackendContractTest < Minitest::Test
     missing = Rubernetes::Proxy::BackendParity.production_compare(
       left, right, packet_corpus: {"passed" => true}, kernel_readback: {}
     )
+
     refute missing.fetch("productionCapable")
     refute missing.fetch("productionVerified")
 
@@ -76,6 +78,7 @@ class M4ProxyBackendContractTest < Minitest::Test
       kernel_readback: {"ebpf" => {"readback" => true, "rules" => [{}]},
                         "nftables" => {"readback" => true, "rules" => [{}]}}
     )
+
     refute forged.fetch("productionCapable")
     refute forged.fetch("productionVerified")
 
@@ -116,6 +119,7 @@ class M4ProxyBackendContractTest < Minitest::Test
     verified = Rubernetes::Proxy::BackendParity.production_compare(
       left, right, packet_corpus: packet_corpus, kernel_readback: kernel_readback
     )
+
     refute verified.fetch("productionCapable")
     refute verified.fetch("productionVerified")
     assert_includes verified.fetch("evidenceErrors").join(";"), "production-capable external adapter"
@@ -126,7 +130,7 @@ class M4ProxyBackendContractTest < Minitest::Test
   def test_transport_backed_readback_cannot_claim_live_nftables_capability
     adapter = Rubernetes::Proxy::NftablesNetlinkAdapter.new(table_name: "model_transport", transport: Object.new)
 
-    refute adapter.production_capable?
+    refute_predicate adapter, :production_capable?
     assert_match(/live NETLINK_NETFILTER/, adapter.production_capability_error)
   end
 
@@ -184,6 +188,7 @@ class M4ProxyBackendContractTest < Minitest::Test
     auto.attach
 
     measurement = auto.switch!(target: "nftables", reason: "external probe")
+
     assert_equal "ebpf", measurement.from_backend
     assert_equal "nftables", measurement.to_backend
     assert_equal 7, measurement.active_connections
@@ -206,6 +211,7 @@ class M4ProxyBackendContractTest < Minitest::Test
     auto.attach
 
     measurement = auto.switch!(target: "nftables", reason: "external tracker")
+
     assert_equal 2, measurement.active_connections
     assert_equal 1, measurement.lost_connections
     assert_equal "external_probe", measurement.measurement_source

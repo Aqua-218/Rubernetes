@@ -9,7 +9,9 @@ module ApplicationHelper
     waiting = statuses.find { |c| c.dig("state", "waiting", "reason") }
     return waiting.dig("state", "waiting", "reason") if waiting
 
-    terminated = Array(status["containerStatuses"]).find { |c| c.dig("state", "terminated", "reason") && c.dig("state", "terminated", "reason") != "Completed" }
+    terminated = Array(status["containerStatuses"]).find do |c|
+      c.dig("state", "terminated", "reason") && c.dig("state", "terminated", "reason") != "Completed"
+    end
     return terminated.dig("state", "terminated", "reason") if terminated && status["phase"] != "Succeeded"
 
     inits = Array(status["initContainerStatuses"])

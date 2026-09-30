@@ -39,7 +39,7 @@ module Rubernetes
 
         # +external_signer+: an ExternalJWTSigner that signs the tokens and
         # serves the verification keys instead of +signing_key+.
-        def initialize(issuer:, signing_key: nil, verification_keys: nil, api_audiences:, lookup:, clock: -> { Time.now.utc },
+        def initialize(issuer:, api_audiences:, lookup:, signing_key: nil, verification_keys: nil, clock: -> { Time.now.utc },
                        max_expiration_seconds: nil, extend_expiration: true, secret_writer: nil, external_signer: nil)
           @issuer = String(issuer)
           @external_signer = external_signer
@@ -168,7 +168,10 @@ module Rubernetes
 
           token_audiences = Array(claims["aud"]).map(&:to_s)
           matched = token_audiences & Array(audiences).map(&:to_s)
-          raise AuthenticationError, "serviceaccount: token audiences #{token_audiences.inspect} are invalid" if matched.empty? && !token_audiences.empty?
+          if matched.empty? && !token_audiences.empty?
+            raise AuthenticationError,
+                  "serviceaccount: token audiences #{token_audiences.inspect} are invalid"
+          end
 
           private_claims = claims[PRIVATE_CLAIM]
           raise AuthenticationError, "serviceaccount: token is missing the #{PRIVATE_CLAIM} claim" unless private_claims.is_a?(Hash)
@@ -199,7 +202,8 @@ module Rubernetes
 
             object = resolve(kind.to_sym, namespace, binding["name"].to_s)
             raise AuthenticationError, "serviceaccount: bound #{kind} #{binding["name"]} does not exist" if object.nil?
-            raise AuthenticationError, "serviceaccount: bound #{kind} UID mismatch" unless object.dig("metadata", "uid").to_s == binding["uid"].to_s
+            raise AuthenticationError, "serviceaccount: bound #{kind} UID mismatch" unless object.dig("metadata",
+                                                                                                      "uid").to_s == binding["uid"].to_s
 
             extra["authentication.kubernetes.io/#{kind}-name"] = [binding["name"].to_s]
             extra["authentication.kubernetes.io/#{kind}-uid"] = [binding["uid"].to_s]
@@ -247,7 +251,9 @@ module Rubernetes
 
           account = resolve(:service_account, namespace, sa_name)
           raise AuthenticationError, "serviceaccounts \"#{sa_name}\" not found" if account.nil?
-          raise AuthenticationError, "ServiceAccount #{namespace}/#{sa_name} has been deleted" if account.dig("metadata", "deletionTimestamp")
+          raise AuthenticationError, "ServiceAccount #{namespace}/#{sa_name} has been deleted" if account.dig("metadata",
+                                                                                                              "deletionTimestamp")
+
           uid = account.dig("metadata", "uid").to_s
           raise AuthenticationError, "ServiceAccount UID (#{uid}) does not match claim (#{sa_uid})" unless uid == sa_uid
 

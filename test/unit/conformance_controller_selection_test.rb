@@ -20,6 +20,7 @@ class ConformanceControllerSelectionTest < Minitest::Test
 
   def marker_kinds
     match = @source[/CONTROLLER_ONLY_KINDS\s*=\s*%w\[([^\]]*)\]/, 1]
+
     refute_nil(match, "cluster.rb no longer declares CONTROLLER_ONLY_KINDS")
     match.split
   end
@@ -32,6 +33,7 @@ class ConformanceControllerSelectionTest < Minitest::Test
   # protects nothing and the controller is dropped again.
   def test_every_marker_kind_names_a_corpus_entry
     kinds = Rubernetes::Controller::BuiltinControllerCorpus::ENTRIES.map(&:kind).uniq
+
     marker_kinds.each { |kind| assert_includes(kinds, kind) }
   end
 

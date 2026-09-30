@@ -6,6 +6,8 @@ module Rubernetes
 
     # Immutable runtime representation of a schema-defined API object.
     class ValueObject
+      # fetch's "no default given" marker (nil is a legitimate default).
+      NO_DEFAULT = Object.new.freeze
       class << self
         def for(definition)
           raise ArgumentError, "value class requires a Schema::Definition" unless definition.is_a?(Definition)
@@ -30,8 +32,6 @@ module Rubernetes
             const_get(:DEFINITION)
           elsif const_defined?(:FIELDS, false)
             @generated_definition ||= generated_definition
-          else
-            nil
           end
         end
 
@@ -70,18 +70,19 @@ module Rubernetes
           definition.fields.each_value do |field|
             ruby_name = field.ruby_name
             if seen.key?(ruby_name)
-              raise GenerationError, "fields #{seen.fetch(ruby_name).json_name.inspect} and #{field.json_name.inspect} collide with accessor #{ruby_name.inspect}"
+              raise GenerationError,
+                    "fields #{seen.fetch(ruby_name).json_name.inspect} and #{field.json_name.inspect} collide with accessor #{ruby_name.inspect}"
             end
 
             seen[ruby_name] = field
-            if instance_methods.include?(ruby_name.to_sym) || private_instance_methods.include?(ruby_name.to_sym) ||
-               protected_instance_methods.include?(ruby_name.to_sym) || seen.values[0...-1].any? { |item| item.ruby_name == ruby_name }
+            if method_defined?(ruby_name.to_sym) || private_method_defined?(ruby_name.to_sym) ||
+               protected_method_defined?(ruby_name.to_sym) || seen.values[0...-1].any? { |item| item.ruby_name == ruby_name }
               raise GenerationError, "field #{field.json_name.inspect} collides with generated accessor #{ruby_name.inspect}"
             end
 
             klass.define_method(ruby_name) { self[field.json_name] }
             presence_name = "#{ruby_name}?"
-            unless instance_methods.include?(presence_name.to_sym) || private_instance_methods.include?(presence_name.to_sym)
+            unless method_defined?(presence_name.to_sym) || private_method_defined?(presence_name.to_sym)
               klass.define_method(presence_name) { present?(field.json_name) }
             end
           end
@@ -99,18 +100,14 @@ module Rubernetes
         end
       end
 
-      attr_reader :presence
+      attr_reader :presence, :unknown_fields
 
       def initialize(values = {}, **keywords)
         values = normalize_input(values, keywords)
-        unless values.respond_to?(:each_pair)
-          raise ArgumentError, "schema object values must be a Hash or another ValueObject"
-        end
+        raise ArgumentError, "schema object values must be a Hash or another ValueObject" unless values.respond_to?(:each_pair)
 
         definition = self.class.definition
-        unless definition
-          raise ArgumentError, "ValueObject subclasses must declare a schema Definition"
-        end
+        raise ArgumentError, "ValueObject subclasses must declare a schema Definition" unless definition
 
         known = {}
         unknown = {}
@@ -164,12 +161,14 @@ module Rubernetes
         nil
       end
 
-      def fetch(name, default = (missing = true; nil), &block)
+      def fetch(name, default = NO_DEFAULT, &block)
+        missing = default.equal?(NO_DEFAULT)
+        default = nil if missing
         canonical = canonical_field_name(name)
         return @values[canonical] if canonical && @presence.key?(canonical)
         return @unknown_fields[name.to_s] if canonical.nil? && @unknown_fields.key?(name.to_s)
         return default unless missing
-        return block.call(name) if block
+        return yield(name) if block
 
         raise KeyError, "key #{name.inspect} is not present in #{definition.kind}"
       end
@@ -199,10 +198,6 @@ module Rubernetes
 
       def raw_values
         @values
-      end
-
-      def unknown_fields
-        @unknown_fields
       end
 
       def unknown_field?(name)
@@ -246,9 +241,7 @@ module Rubernetes
       end
 
       def with(values = nil, **changes)
-        if values && !values.respond_to?(:each_pair)
-          raise ArgumentError, "copy-with values must be a Hash"
-        end
+        raise ArgumentError, "copy-with values must be a Hash" if values && !values.respond_to?(:each_pair)
 
         updates = (values || {}).to_h.merge(changes)
         known = @values.dup
@@ -302,19 +295,21 @@ module Rubernetes
       end
 
       def inspect
-        "#<#{self.class.name || 'Rubernetes::Schema::ValueObject'} #{to_h.inspect}>"
+        "#<#{self.class.name || "Rubernetes::Schema::ValueObject"} #{to_h.inspect}>"
       end
 
       protected
 
       def field_for_key(definition, key)
         return nil if key.nil?
+
         name = key.to_s
         definition.fields[name] || definition.fields.values.find { |field| field.ruby_name == name || field.json_name == name }
       end
 
       def canonical_field_name(name)
         return nil if name.nil?
+
         field = find_field(name)
         field&.name
       end
@@ -333,9 +328,8 @@ module Rubernetes
                  end
         return source if keywords.empty?
 
-        unless source.respond_to?(:each_pair)
-          raise ArgumentError, "keyword fields require a Hash or another ValueObject"
-        end
+        raise ArgumentError, "keyword fields require a Hash or another ValueObject" unless source.respond_to?(:each_pair)
+
         source.to_h.merge(keywords)
       end
 
@@ -358,9 +352,7 @@ module Rubernetes
           end
         end
 
-        if type == :object && value.is_a?(Hash) && field.properties.empty?
-          return deep_copy(value)
-        end
+        return deep_copy(value) if type == :object && value.is_a?(Hash) && field.properties.empty?
 
         deep_copy(value)
       end
@@ -368,17 +360,12 @@ module Rubernetes
       def normalize_item(item, value)
         return deep_copy(value) if item.nil?
         return value if value.nil?
-        if item.is_a?(Field)
-          return normalize_value(item, value)
-        end
-        if item.is_a?(Definition)
-          return item.value_class.new(value)
-        end
-        if item.is_a?(Reference)
-          return item.resolve.value_class.new(value)
-        end
+        return normalize_value(item, value) if item.is_a?(Field)
+        return item.value_class.new(value) if item.is_a?(Definition)
+        return item.resolve.value_class.new(value) if item.is_a?(Reference)
         return deep_copy(value) if item == :any
         return deep_copy(value) if item.is_a?(Class) && value.is_a?(item)
+
         deep_copy(value)
       end
 
@@ -435,7 +422,11 @@ module Rubernetes
         return serialize_value(value, field: item, unknown_fields: unknown_fields) if item.is_a?(Field)
         return value.to_h_for_codec(unknown_fields: unknown_fields) if value.is_a?(ValueObject)
         return value.map { |child| serialize_item(child, item, unknown_fields) }.freeze if value.is_a?(Array)
-        return value.each_with_object({}) { |(key, child), result| result[key] = serialize_item(child, item, unknown_fields) }.freeze if value.is_a?(Hash)
+        if value.is_a?(Hash)
+          return value.each_with_object({}) do |(key, child), result|
+            result[key] = serialize_item(child, item, unknown_fields)
+          end.freeze
+        end
 
         value
       end

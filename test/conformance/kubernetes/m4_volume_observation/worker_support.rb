@@ -37,7 +37,7 @@ module M4WorkerSupport
   end
 
   def wait_for_file(path, timeout: nil, interval: 0.02)
-    deadline = timeout && Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+    deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout)
     until File.file?(path)
       return false if deadline && Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
 

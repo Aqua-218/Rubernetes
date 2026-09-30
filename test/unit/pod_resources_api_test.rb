@@ -37,8 +37,10 @@ class PodResourcesAPITest < Minitest::Test
 
   def test_list_reports_each_running_container
     containers = subject.list.fetch("pod_resources").first.fetch("containers")
+
     assert_equal %w[side app], containers.map { |c| c["name"] }, "sidecars run for the Pod's lifetime; a finished init container does not"
     app = containers.last
+
     assert_equal [{"resource_name" => "example.com/gpu", "device_ids" => %w[d1]}], app["devices"]
     assert_equal [2, 3], app["cpu_ids"]
     assert_equal [{"memory_type" => "memory", "size" => 512, "topology" => {"nodes" => [{"ID" => 0}]}}], app["memory"]
@@ -49,6 +51,7 @@ class PodResourcesAPITest < Minitest::Test
     error = assert_raises(ArgumentError) { subject.get("x", "ns") }
     assert_equal "pod x in namespace ns not found", error.message
     allocatable = subject.allocatable
+
     assert_equal [2, 3, 4, 5], allocatable["cpu_ids"]
     assert_equal [{"resource_name" => "example.com/gpu", "device_ids" => %w[d1 d2]}], allocatable["devices"]
     assert_equal 1024, allocatable["memory"].first["size"]
@@ -65,7 +68,9 @@ class PodResourcesAPITest < Minitest::Test
     assert_raises(ArgumentError) { server.get("x", "ns") }
     server.allocatable
     text = registry.render
-    {"requests_total" => 4, "requests_list" => 1, "requests_get" => 2, "errors_get" => 1, "requests_get_allocatable" => 1}.each do |name, count|
+
+    {"requests_total" => 4, "requests_list" => 1, "requests_get" => 2, "errors_get" => 1,
+     "requests_get_allocatable" => 1}.each do |name, count|
       assert_includes text, %(kubelet_pod_resources_endpoint_#{name}{server_api_version="v1"} #{count})
     end
   end
@@ -76,16 +81,18 @@ class DRAContainerClaimsTest < Minitest::Test
     manager = Rubernetes::Node::DRAManager.allocate
     manager.instance_variable_set(:@mutex, Mutex.new)
     manager.instance_variable_set(:@claims, {"ns/gpu-claim" => {
-      "claim_name" => "gpu-claim", "namespace" => "ns",
-      "driver_state" => {"gpu.example.com" => {"devices" => [
-        {"pool_name" => "pool", "device_name" => "gpu-0", "request_names" => ["gpu"], "cdi_device_ids" => ["gpu.example.com/gpu=0"]},
-        {"pool_name" => "pool", "device_name" => "nic-0", "request_names" => ["nic"], "cdi_device_ids" => []}
-      ]}}
-    }})
+                                    "claim_name" => "gpu-claim", "namespace" => "ns",
+                                    "driver_state" => {"gpu.example.com" => {"devices" => [
+                                      {"pool_name" => "pool", "device_name" => "gpu-0", "request_names" => ["gpu"],
+                                       "cdi_device_ids" => ["gpu.example.com/gpu=0"]},
+                                      {"pool_name" => "pool", "device_name" => "nic-0", "request_names" => ["nic"], "cdi_device_ids" => []}
+                                    ]}}
+                                  }})
     pod = {"metadata" => {"namespace" => "ns", "name" => "p"},
            "spec" => {"resourceClaims" => [{"name" => "c", "resourceClaimName" => "gpu-claim"}]},
            "status" => {}}
     container = {"name" => "app", "resources" => {"claims" => [{"name" => "c", "request" => "gpu"}]}}
+
     assert_equal [{"claim_name" => "gpu-claim", "claim_namespace" => "ns",
                    "claim_resources" => [{"driver_name" => "gpu.example.com", "pool_name" => "pool", "device_name" => "gpu-0",
                                           "cdi_devices" => [{"name" => "gpu.example.com/gpu=0"}]}]}],

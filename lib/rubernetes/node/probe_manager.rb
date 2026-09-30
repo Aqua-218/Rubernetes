@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
 require "timeout"
 require "uri"
 require "time"
@@ -77,7 +76,7 @@ module Rubernetes
             registry.register("prober_probe_total", type: :counter,
                                                     help: "Cumulative number of a liveness, readiness or startup probe for a container by result.")
             registry.register("prober_probe_duration_seconds", type: :histogram, help: "Duration in seconds for a probe response.",
-                                                                buckets: DURATION_BUCKETS)
+                                                               buckets: DURATION_BUCKETS)
           end
         end
       end
@@ -115,7 +114,7 @@ module Rubernetes
       # the action body itself.  The explicit type takes precedence.
       def check(container_id, probe_value = nil, probe: nil, type: nil, kind: nil, now: nil, context: {}, **options)
         identifier = normalize_id(container_id)
-        probe = probe.nil? ? probe_value : probe
+        probe = probe_value if probe.nil?
         probe_type = normalize_type(type || kind || infer_type(probe, options))
         definition = extract_probe(probe, probe_type, options)
         ensure_registered(identifier, probe_type, definition, now)
@@ -158,16 +157,16 @@ module Rubernetes
       # become healthy before liveness/readiness are allowed to run.
       def evaluate(container_id, probes_value = nil, probes: nil, context: {}, now: nil)
         identifier = normalize_id(container_id)
-        probes = probes.nil? ? probes_value : probes
+        probes = probes_value if probes.nil?
         definitions = Helpers.string_keys(probes || {})
         startup = check(identifier, probe: definitions["startupProbe"], type: "startup",
-                        context: context, now: now)
+                                    context: context, now: now)
         return {"startup" => startup, "liveness" => nil, "readiness" => nil} unless startup_ready?(identifier)
 
         liveness = check(identifier, probe: definitions["livenessProbe"], type: "liveness",
-                         context: context, now: now)
+                                     context: context, now: now)
         readiness = check(identifier, probe: definitions["readinessProbe"], type: "readiness",
-                          context: context, now: now)
+                                      context: context, now: now)
         {"startup" => startup, "liveness" => liveness, "readiness" => readiness}
       end
 
@@ -232,14 +231,14 @@ module Rubernetes
         probes.transform_values do |state|
           state.each_with_object({}) do |(key, value), result|
             result[key.to_s] = if value.nil?
-                                nil
-                              elsif value.is_a?(Time)
-                                value.utc.iso8601(6)
-                              elsif value.respond_to?(:to_h)
-                                value.to_h
-                              else
-                                value
-                              end
+                                 nil
+                               elsif value.is_a?(Time)
+                                 value.utc.iso8601(6)
+                               elsif value.respond_to?(:to_h)
+                                 value.to_h
+                               else
+                                 value
+                               end
           end
         end.freeze
       end
@@ -354,6 +353,7 @@ module Rubernetes
           end
           command = Array(Helpers.key(Helpers.key(definition, "exec", Helpers.key(definition, "Exec", {})), "command", command))
           raise ArgumentError, "exec probe command must not be empty" if command.empty?
+
           result = resolve_exec_result(invoke_exec(container_id, command, timeout_seconds(definition)), timeout_seconds(definition))
           [probe_success?(result, action: "exec"), result_message(result), "exec"]
         when "httpGet"
@@ -447,18 +447,15 @@ module Rubernetes
 
       def invoke_exec(container_id, command, timeout)
         raise ArgumentError, "runtime is required for exec probes" unless @runtime
-        if @runtime.respond_to?(:exec)
-          invoke_with_timeout(timeout) do
-            begin
-              @runtime.exec(container_id, command, tty: false, timeout: timeout)
-            rescue ArgumentError => error
-              raise unless signature_error?(error)
 
-              @runtime.exec(container_id, command, tty: false)
-            end
-          end
-        else
-          raise ArgumentError, "runtime does not implement exec"
+        raise ArgumentError, "runtime does not implement exec" unless @runtime.respond_to?(:exec)
+
+        invoke_with_timeout(timeout) do
+          @runtime.exec(container_id, command, tty: false, timeout: timeout)
+        rescue ArgumentError => error
+          raise unless signature_error?(error)
+
+          @runtime.exec(container_id, command, tty: false)
         end
       end
 
@@ -481,25 +478,22 @@ module Rubernetes
           # such as "healthcheck" failed every probe and restarted the container).
           resolved = definition.merge("port" => port)
           return invoke_with_timeout(timeout) do
-            begin
-              @runtime.http_get(container_id, resolved, timeout: timeout, context: context)
-            rescue ArgumentError => error
-              raise unless signature_error?(error)
+            @runtime.http_get(container_id, resolved, timeout: timeout, context: context)
+          rescue ArgumentError => error
+            raise unless signature_error?(error)
 
-              @runtime.http_get(container_id, resolved, timeout: timeout)
-            end
+            @runtime.http_get(container_id, resolved, timeout: timeout)
           end
         end
         raise ArgumentError, "http_client is required for httpGet probes" unless @http_client
+
         if @http_client.respond_to?(:get)
           invoke_with_timeout(timeout) do
-            begin
-              @http_client.get(uri, headers: headers, timeout: timeout, container_id: container_id)
-            rescue ArgumentError => error
-              raise unless signature_error?(error)
+            @http_client.get(uri, headers: headers, timeout: timeout, container_id: container_id)
+          rescue ArgumentError => error
+            raise unless signature_error?(error)
 
-              @http_client.get(uri, headers: headers, timeout: timeout)
-            end
+            @http_client.get(uri, headers: headers, timeout: timeout)
           end
         elsif @http_client.respond_to?(:request)
           invoke_with_timeout(timeout) do
@@ -516,25 +510,22 @@ module Rubernetes
         raise ArgumentError, "tcpSocket probe port is required" if port.nil?
         if @tcp_client.nil? && @runtime&.respond_to?(:tcp_socket)
           return invoke_with_timeout(timeout) do
-            begin
-              @runtime.tcp_socket(container_id, definition.merge("port" => port), timeout: timeout, context: context)
-            rescue ArgumentError => error
-              raise unless signature_error?(error)
+            @runtime.tcp_socket(container_id, definition.merge("port" => port), timeout: timeout, context: context)
+          rescue ArgumentError => error
+            raise unless signature_error?(error)
 
-              @runtime.tcp_socket(container_id, definition.merge("port" => port), timeout: timeout)
-            end
+            @runtime.tcp_socket(container_id, definition.merge("port" => port), timeout: timeout)
           end
         end
         raise ArgumentError, "tcp_client is required for tcpSocket probes" unless @tcp_client
+
         if @tcp_client.respond_to?(:connect)
           invoke_with_timeout(timeout) do
-            begin
-              @tcp_client.connect(host, port, timeout: timeout, container_id: container_id)
-            rescue ArgumentError => error
-              raise unless signature_error?(error)
+            @tcp_client.connect(host, port, timeout: timeout, container_id: container_id)
+          rescue ArgumentError => error
+            raise unless signature_error?(error)
 
-              @tcp_client.connect(host, port, timeout: timeout)
-            end
+            @tcp_client.connect(host, port, timeout: timeout)
           end
         elsif @tcp_client.respond_to?(:check)
           invoke_with_timeout(timeout) do
@@ -568,18 +559,24 @@ module Rubernetes
 
       def resolve_port(value, context)
         return value if value.is_a?(Numeric)
+
         value = value.to_s
         return value.to_i if value.match?(/\A\d+\z/)
+
         ports = Helpers.key(context, "ports", {})
-        ports = ports.each_with_object({}) { |entry, result| result[Helpers.key(entry, "name", "")] = Helpers.key(entry, "containerPort", nil) } if ports.is_a?(Array)
+        if ports.is_a?(Array)
+          ports = ports.each_with_object({}) do |entry, result|
+            result[Helpers.key(entry, "name", "")] = Helpers.key(entry, "containerPort", nil)
+          end
+        end
         resolved = Helpers.key(ports, value, nil)
         raise ArgumentError, "named probe port #{value.inspect} is not defined" if resolved.nil?
 
         resolved
       end
 
-      def invoke_with_timeout(seconds)
-        Timeout.timeout(seconds, Timeout::Error) { yield }
+      def invoke_with_timeout(seconds, &)
+        Timeout.timeout(seconds, Timeout::Error, &)
       end
 
       def signature_error?(error)
@@ -588,15 +585,14 @@ module Rubernetes
       end
 
       def probe_success?(result, action:)
-        return result if result == true || result == false
+        return result if [true, false].include?(result)
         return result.to_i.zero? if action == "exec" && result.is_a?(Numeric)
+
         if result.is_a?(Numeric)
           return result.to_i.between?(200, 399) if action == "httpGet"
           return result.to_i.zero? if action == "tcpSocket"
         end
-        if result.respond_to?(:status) && !result.is_a?(Hash)
-          return result.status.to_i.between?(200, 399) if action == "httpGet"
-        end
+        return result.status.to_i.between?(200, 399) if result.respond_to?(:status) && !result.is_a?(Hash) && (action == "httpGet")
 
         Helpers.success_result?(result)
       end
@@ -659,11 +655,11 @@ module Rubernetes
         end
       end
 
-      def success_threshold(state, result_definition:)
+      def success_threshold(_state, result_definition:)
         integer_value(result_definition || {}, "successThreshold", DEFAULT_SUCCESS_THRESHOLD)
       end
 
-      def failure_threshold(state, result_definition:)
+      def failure_threshold(_state, result_definition:)
         integer_value(result_definition || {}, "failureThreshold", DEFAULT_FAILURE_THRESHOLD)
       end
 

@@ -27,7 +27,7 @@ class M2ProbeSupportTest < Minitest::Test
       @condition = ConditionVariable.new
     end
 
-    def each_json_line(timeout: nil)
+    def each_json_line(timeout: nil, &)
       if @blocked
         @mutex.synchronize do
           @started = true
@@ -35,7 +35,7 @@ class M2ProbeSupportTest < Minitest::Test
           @condition.wait(@mutex) until @closed
         end
       else
-        @lines.each { |line| yield line }
+        @lines.each(&)
       end
       self
     end
@@ -134,6 +134,7 @@ class M2ProbeSupportTest < Minitest::Test
     body = transport.request("GET", "/watch").body
 
     body.each { break }
+
     assert_equal 0, transport.active_watch_count
     assert_equal 1, stream.close_calls
   end
@@ -161,8 +162,9 @@ class M2ProbeSupportTest < Minitest::Test
 
     closer.join(2)
     consumer.join(2)
-    refute closer.alive?, "concurrent close must complete"
-    refute consumer.alive?, "watch consumer must terminate after close"
+
+    refute_predicate closer, :alive?, "concurrent close must complete"
+    refute_predicate consumer, :alive?, "watch consumer must terminate after close"
     assert_empty delivered
     assert_equal 0, transport.active_watch_count
     assert_equal 1, stream.close_calls
@@ -197,12 +199,13 @@ class M2ProbeSupportTest < Minitest::Test
     end
 
     Timeout.timeout(1) { close_started.pop }
-    assert close_finished.empty?, "close must wait for the reserved observer delivery"
+
+    assert_empty close_finished, "close must wait for the reserved observer delivery"
     release_observer << true
     Timeout.timeout(1) { close_finished.pop }
     consumer.join(1)
 
-    refute consumer.alive?
+    refute_predicate consumer, :alive?
     assert_empty delivered, "close linearized before consumer reservation"
     assert_equal 0, transport.active_watch_count
   ensure
@@ -222,6 +225,7 @@ class M2ProbeSupportTest < Minitest::Test
     assert_equal 1, transport.active_watch_count
     stream.instance_variable_set(:@close_error, nil)
     body.close
+
     assert_equal 0, transport.active_watch_count
   end
 
@@ -237,6 +241,7 @@ class M2ProbeSupportTest < Minitest::Test
     assert_equal 1, transport.active_watch_count
 
     stream.instance_variable_set(:@close_error, nil)
+
     assert_same body, body.close
     assert_equal 0, transport.active_watch_count
   end
@@ -260,6 +265,7 @@ class M2ProbeSupportTest < Minitest::Test
     first.instance_variable_set(:@close_error, nil)
     second.instance_variable_set(:@close_error, nil)
     transport.close
+
     assert_equal 0, transport.active_watch_count
   end
 
@@ -287,7 +293,8 @@ class M2ProbeSupportTest < Minitest::Test
     end
 
     Timeout.timeout(2) { sync_loop.stop }
-    refute sync_loop.thread_alive?
+
+    refute_predicate sync_loop, :thread_alive?
     assert_equal 0, transport.active_watch_count
     assert_equal 1, stream.close_calls
   ensure
@@ -373,7 +380,7 @@ class M2ProbeSupportTest < Minitest::Test
     server.define_singleton_method(:call) do |**options|
       query = options[:query].to_h
       value = if response_body
-                response_body.call(query: query)
+                yield(query: query)
               elsif query["watch"] == "true" || options[:path] == "/watch"
                 stream
               else
@@ -381,7 +388,6 @@ class M2ProbeSupportTest < Minitest::Test
               end
       Rubernetes::API::Response.new(status: 200, headers: {}, body: value)
     end
-    transport = M2ProbeSupport::NativeAPITransport.new(server)
-    transport
+    M2ProbeSupport::NativeAPITransport.new(server)
   end
 end

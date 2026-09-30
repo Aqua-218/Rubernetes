@@ -126,17 +126,15 @@ module Rubernetes
         def verify_descriptor_identity!
           unless @leaf_released
             verify_identity_match!(stat_identity(handle), identity,
-                                    "held volume target descriptor identity changed")
+                                   "held volume target descriptor identity changed")
           end
           verify_identity_match!(stat_identity(parent_handle), @parent_identity,
-                                  "held volume target parent descriptor identity changed")
+                                 "held volume target parent descriptor identity changed")
         end
 
         def verify_mounted_target!(mount_identity)
           observed = mount_identity.respond_to?(:to_h) ? mount_identity.to_h.transform_keys(&:to_s) : mount_identity
-          unless observed.respond_to?(:fetch)
-            raise PathSecurityError, "mounted volume target identity is unavailable"
-          end
+          raise PathSecurityError, "mounted volume target identity is unavailable" unless observed.respond_to?(:fetch)
 
           observed_target = observed["target"] || observed["mountpoint"]
           observed_mount_id = observed["mountId"] || observed["mount_id"]
@@ -166,6 +164,7 @@ module Rubernetes
                  visible_identity.fetch("inode") == held_identity.fetch("inode")
             raise PathSecurityError, "volume target directory was replaced after mount readback"
           end
+
           true
         end
 
@@ -175,6 +174,7 @@ module Rubernetes
                  observed.fetch("mountId").to_s == expected.fetch("mountId").to_s
             raise PathSecurityError, message
           end
+
           true
         end
 
@@ -245,6 +245,7 @@ module Rubernetes
         def initialize(root:, adapter: nil, require_openat2: true)
           @root = File.expand_path(String(root))
           raise PathSecurityError, "configured path-security root must not be a symlink" if File.symlink?(@root)
+
           @adapter = adapter
           @require_openat2 = require_openat2 == true
         end
@@ -263,9 +264,11 @@ module Rubernetes
 
           components = value.split("/")
           raise PathSecurityError, "path contains parent traversal" if components.include?("..")
+
           empty_components = value.start_with?("/") ? components.drop(1) : components
           raise PathSecurityError, "path contains an empty component" if empty_components.any?(&:empty?)
           raise PathSecurityError, "path contains a current-directory component" if components.include?(".")
+
           value
         rescue TypeError
           raise PathSecurityError, "path must be a string"
@@ -412,11 +415,11 @@ module Rubernetes
                              0x10000
                            end
           parent = open(parent_relative, flags: path_flag | directory_flag,
-                        resource_id: "volume-stage-parent:#{path}")
+                                         resource_id: "volume-stage-parent:#{path}")
           begin
             open_relative(parent, leaf, flags: flags || (path_flag | directory_flag),
-                          resolve: target_resolve_flags(nil),
-                          resource_id: resource_id || "volume-stage:#{path}")
+                                        resolve: target_resolve_flags(nil),
+                                        resource_id: resource_id || "volume-stage:#{path}")
           ensure
             parent.close if parent.respond_to?(:close)
           end
@@ -463,7 +466,7 @@ module Rubernetes
                              0x10000
                            end
           parent = open(parent_relative, flags: path_flag | directory_flag,
-                         resource_id: "volume-target-parent:#{path}")
+                                         resource_id: "volume-target-parent:#{path}")
           parent_fd = descriptor_number(parent.fd)
           anchored_target = "/proc/self/fd/#{parent_fd}/#{leaf}"
           stat = begin
@@ -475,7 +478,8 @@ module Rubernetes
           # yet) can leave an empty target of the wrong kind; the retry needs
           # the right kind.  Only an empty, unmounted leaf is replaced --
           # anything with content or a mount on it is a real conflict.
-          if stat && create && !directory.nil? && stat.directory? != directory && replaceable_stale_target?(anchored_target, stat, parent_fd)
+          if stat && create && !directory.nil? && stat.directory? != directory && replaceable_stale_target?(anchored_target, stat,
+                                                                                                            parent_fd)
             stat.directory? ? Dir.rmdir(anchored_target) : File.unlink(anchored_target)
             stat = nil
           end
@@ -493,12 +497,8 @@ module Rubernetes
             stat = File.lstat(anchored_target)
           end
           raise PathSecurityError, "CSI target #{path.inspect} is a symlink" if stat.symlink?
-          if directory == true && !stat.directory?
-            raise PathSecurityError, "CSI target #{path.inspect} must be a directory"
-          end
-          if directory == false && !stat.file?
-            raise PathSecurityError, "CSI block target #{path.inspect} must be a regular file"
-          end
+          raise PathSecurityError, "CSI target #{path.inspect} must be a directory" if directory == true && !stat.directory?
+          raise PathSecurityError, "CSI block target #{path.inspect} must be a regular file" if directory == false && !stat.file?
 
           open_flags = File::RDONLY | File::NOFOLLOW
           open_flags |= directory_flag if directory == true
@@ -507,13 +507,13 @@ module Rubernetes
           # rename/replacement between these two operations would otherwise
           # hand CSI a different inode than the one just checked.
           target = open_relative(parent, leaf, flags: open_flags,
-                                 # The final component may already be a CSI
-                                 # mount. RESOLVE_NO_XDEV would reject the
-                                 # legitimate lookup with EXDEV; the parent
-                                 # descriptor, BENEATH, and no-symlink flags
-                                 # continue to bind the target safely.
-                                 resolve: target_resolve_flags(nil),
-                                 resource_id: "volume-target:#{path}")
+                                               # The final component may already be a CSI
+                                               # mount. RESOLVE_NO_XDEV would reject the
+                                               # legitimate lookup with EXDEV; the parent
+                                               # descriptor, BENEATH, and no-symlink flags
+                                               # continue to bind the target safely.
+                                               resolve: target_resolve_flags(nil),
+                                               resource_id: "volume-target:#{path}")
           target_fd = descriptor_number(target.fd)
           dispatch = "/proc/#{Process.pid}/fd/#{target_fd}"
           TargetLease.new(original_path: File.expand_path(path.to_s), dispatch_path: dispatch,
@@ -530,9 +530,10 @@ module Rubernetes
 
         def open_relative(parent_handle, path, flags: nil, mode: 0, resolve: nil, resource_id: nil)
           value = validate!(path)
-          unless @adapter && ( @adapter.respond_to?(:open_relative) || @adapter.respond_to?(:resolve_relative) || @adapter.respond_to?(:openat2_relative) )
+          unless @adapter && (@adapter.respond_to?(:open_relative) || @adapter.respond_to?(:resolve_relative) || @adapter.respond_to?(:openat2_relative))
             raise PathSecurityError, "openat2 adapter must expose descriptor-relative subPath resolution"
           end
+
           method_name = if @adapter.respond_to?(:open_relative)
                           :open_relative
                         elsif @adapter.respond_to?(:resolve_relative)
@@ -545,8 +546,8 @@ module Rubernetes
           # same O_PATH default #open uses, not a nil that the adapter rejects
           # as "flags, mode, and resolve must be integers".
           raw = @adapter.public_send(method_name, parent: parent_handle, path: value,
-                                     flags: flags || default_open_flags, mode: mode || 0,
-                                     resolve: resolve || secure_resolve_flags(nil), resource_id: resource_id)
+                                                  flags: flags || default_open_flags, mode: mode || 0,
+                                                  resolve: resolve || secure_resolve_flags(nil), resource_id: resource_id)
           normalize_handle(raw, value)
         rescue PathSecurityError
           raise
@@ -554,8 +555,8 @@ module Rubernetes
           raise PathSecurityError, "descriptor-relative subPath resolution failed: #{error.message}", cause: error
         end
 
-        def with_open(path, **options)
-          handle = open(path, **options)
+        def with_open(path, **)
+          handle = open(path, **)
           yield handle
         ensure
           handle&.close
@@ -622,6 +623,7 @@ module Rubernetes
           if raw.is_a?(Handle)
             raise PathSecurityError, "openat2 returned a handle without a descriptor" if @require_openat2 && raw.fd.nil?
             raise PathSecurityError, "openat2 returned an absolute path" if raw.path.to_s.start_with?("/")
+
             validate!(raw.path)
             return raw
           end
@@ -631,6 +633,7 @@ module Rubernetes
           if raw.respond_to?(:fd)
             descriptor = raw.fd
             raise PathSecurityError, "openat2 returned no descriptor" if @require_openat2 && descriptor.nil?
+
             return Handle.new(fd: descriptor, path: relative_path, root: @root, identity: identity_for(raw, relative_path))
           end
 
@@ -676,6 +679,7 @@ module Rubernetes
       def initialize(root:, resolver: nil, adapter: nil, require_openat2: true)
         @root = File.expand_path(String(root))
         raise PathSecurityError, "configured path-security root must not be a symlink" if File.symlink?(@root)
+
         @resolver = resolver || Resolver.new(root: @root, adapter: adapter, require_openat2: require_openat2)
       end
 
@@ -685,16 +689,16 @@ module Rubernetes
         resolver.respond_to?(:descriptor_capable?) && resolver.descriptor_capable?
       end
 
-      def validate!(path, **options)
-        resolver.validate!(path, **options)
+      def validate!(path, **)
+        resolver.validate!(path, **)
       end
 
-      def open(path, **options)
-        resolver.open(path, **options)
+      def open(path, **)
+        resolver.open(path, **)
       end
 
-      def open_mount_point(path, **options)
-        resolver.open_mount_point(path, **options)
+      def open_mount_point(path, **)
+        resolver.open_mount_point(path, **)
       end
 
       # See Resolver#allow_mount_boundary!.
@@ -707,8 +711,8 @@ module Rubernetes
       alias resolve open
       alias resolve_fd open
 
-      def validate_host_path!(path, **options)
-        open(path, **options)
+      def validate_host_path!(path, **)
+        open(path, **)
       end
 
       def validate_target!(path)
@@ -723,12 +727,10 @@ module Rubernetes
         end
       end
 
-      def acquire_target!(path, **options)
-        unless resolver.respond_to?(:acquire_target!)
-          raise PathSecurityError, "path resolver does not expose descriptor target leases"
-        end
+      def acquire_target!(path, **)
+        raise PathSecurityError, "path resolver does not expose descriptor target leases" unless resolver.respond_to?(:acquire_target!)
 
-        resolver.acquire_target!(path, **options)
+        resolver.acquire_target!(path, **)
       end
 
       def validate_sub_path!(root_handle, sub_path, create: false, mode: nil, **options)

@@ -16,6 +16,7 @@ class M9GateTest < Minitest::Test
 
   def test_missing_manifest_fails_closed
     result = M9Gate.evaluate(File.join(Dir.tmpdir, "rubernetes-m9-missing-#{Process.pid}.json"))
+
     refute result.fetch("passed")
   end
 
@@ -32,6 +33,7 @@ class M9GateTest < Minitest::Test
       {"id" => "clean_host_reproduction", "passed" => true}
     ]
     M9Gate.send(:validate_operations, report("m9_operations", cases), cases, errors)
+
     assert errors.any? { |error| error.include?("the criterion is 72 h") }, errors.inspect
   end
 
@@ -46,6 +48,7 @@ class M9GateTest < Minitest::Test
       {"id" => "clean_host_reproduction", "passed" => true}
     ]
     M9Gate.send(:validate_operations, report("m9_operations", cases), cases, errors)
+
     assert errors.any? { |error| error.include?("2 unexpected_process_exits") }, errors.inspect
     assert errors.any? { |error| error.include?("3 lost_commits") }, errors.inspect
   end
@@ -62,6 +65,7 @@ class M9GateTest < Minitest::Test
       {"id" => "ruby_ratio_at_least_85_percent", "passed" => false, "ruby_ratio" => 0.71}
     ]
     M9Gate.send(:validate_release, report("m9_release_artifacts", cases), cases, errors)
+
     assert errors.any? { |error| error.include?("bind a source input digest") }, errors.inspect
     assert errors.any? { |error| error.include?("SBOM components must all be pinned") }, errors.inspect
     assert errors.any? { |error| error.include?("byte-identical") }, errors.inspect
@@ -80,6 +84,7 @@ class M9GateTest < Minitest::Test
       {"id" => "every_claim_states_its_level", "passed" => true}
     ]
     M9Gate.send(:validate_formal, report("m9_formal_verification", cases), cases, errors)
+
     assert errors.any? { |error| error.include?("no sorry/admit/native_decide") }, errors.inspect
   end
 
@@ -91,6 +96,7 @@ class M9GateTest < Minitest::Test
       {"id" => "no_critical_or_high_findings", "passed" => false, "critical_or_high" => 2}
     ]
     M9Gate.send(:validate_supply_chain, report("m9_supply_chain", cases), cases, errors)
+
     assert errors.any? { |error| error.include?("zero critical or high") }, errors.inspect
     assert errors.any? { |error| error.include?("security-dependency_audit did not pass") }, errors.inspect
   end
@@ -106,6 +112,7 @@ class M9GateTest < Minitest::Test
       {"id" => "clean_host_reproduction", "passed" => true}
     ]
     M9Gate.send(:validate_operations, report("m9_operations", cases), cases, errors)
+
     assert_empty errors, errors.inspect
   end
 end

@@ -32,9 +32,7 @@ module Rubernetes
         max_bytes = positive_integer(max_bytes, "max_bytes")
         max_depth = positive_integer(max_depth, "max_depth")
         raise LimitError, "JSON document exceeds #{max_bytes} bytes" if input.bytesize > max_bytes
-        if require_newline && !input.end_with?("\n")
-          raise ParseError, "JSON document is not newline terminated"
-        end
+        raise ParseError, "JSON document is not newline terminated" if require_newline && !input.end_with?("\n")
 
         utf8 = input.dup.force_encoding(Encoding::UTF_8)
         raise ParseError, "JSON input is not valid UTF-8" unless utf8.valid_encoding?

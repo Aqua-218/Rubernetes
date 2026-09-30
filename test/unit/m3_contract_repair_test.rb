@@ -16,7 +16,7 @@ class M3ContractRepairTest < Minitest::Test
       kind: kind,
       owns: [Controller::OwnershipEdge.new(owner: pod, dependent: kind)],
       watches: [Controller::WatchSpec.new(resource: pod, via: :unsupported)],
-      reconcile_block: ->(_resource) { nil }
+      reconcile_block: ->(_resource) {}
     )
 
     error = assert_raises(Controller::ValidationError) { definition.validate! }
@@ -29,7 +29,7 @@ class M3ContractRepairTest < Minitest::Test
     definition = Controller::ControllerDefinition.new(
       name: entry.name,
       kind: kind,
-      reconcile_block: ->(_resource) { nil },
+      reconcile_block: ->(_resource) {},
       startup_conditions: entry.startup_conditions,
       feature_gates: entry.feature_gates,
       sync_targets: entry.sync_targets,
@@ -37,7 +37,8 @@ class M3ContractRepairTest < Minitest::Test
       events: entry.events,
       implementation: Class.new
     )
-    assert definition.implemented?
+
+    assert_predicate definition, :implemented?
     assert_raises(Controller::ValidationError) do
       definition.validate!(corpus_entry: entry)
     end
@@ -91,8 +92,8 @@ class M3ContractRepairTest < Minitest::Test
     assert_predicate result, :scheduled?
     assert_equal "available", result.node_name
     assert_equal "node is unschedulable", result.filtered.fetch("blocked").fetch("reason")
-    assert result.trace.events.any? { |event| event["plugin"] == "NodeUnschedulable" }
-    assert result.scores.all? { |score| score.plugins.all? { |plugin| plugin.fetch("weight").is_a?(Integer) } }
+    assert(result.trace.events.any? { |event| event["plugin"] == "NodeUnschedulable" })
+    assert(result.scores.all? { |score| score.plugins.all? { |plugin| plugin.fetch("weight").is_a?(Integer) } })
   end
 
   private

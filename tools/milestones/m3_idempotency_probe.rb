@@ -137,16 +137,16 @@ class M3IdempotencyJournal
     @journal = Rubernetes::Controller::EffectJournal.new(path: @path, component: "controller-manager", identity: controller)
   end
 
-  def record(*args, **kwargs)
-    @journal.record(*args, **kwargs)
+  def record(*, **)
+    @journal.record(*, **)
   end
 
-  def record_controller_event(*args, **kwargs)
-    @journal.record_controller_event(*args, **kwargs)
+  def record_controller_event(*, **)
+    @journal.record_controller_event(*, **)
   end
 
-  def record_provider(*args, **kwargs)
-    @journal.record_provider(*args, **kwargs)
+  def record_provider(*, **)
+    @journal.record_provider(*, **)
   end
 
   def entries
@@ -264,7 +264,8 @@ module M3IdempotencyMeasurement
         "minReplicas" => 1,
         "maxReplicas" => 3,
         "scaleTargetRef" => {"apiVersion" => "apps/v1", "kind" => "Deployment", "name" => "m3-target-#{name.sub(/\Am3-/, "")}"},
-        "metrics" => [{"type" => "Resource", "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 80}}}]
+        "metrics" => [{"type" => "Resource",
+                       "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 80}}}]
       }
     elsif descriptor.kind == "StorageVersionMigration"
       object["spec"] = {"resource" => {"group" => "", "resource" => "pods"}}
@@ -310,7 +311,7 @@ module M3IdempotencyMeasurement
       "step_error_class" => step_error&.class&.name,
       "step_error_message" => step_error&.message,
       "pending_retry" => [retry_count, queue_depth, queue_length].any? { |value| value.is_a?(Numeric) && value.positive? } ||
-                         queued == true || dirty == true || processing == true,
+        queued == true || dirty == true || processing == true,
       "follower_noop" => follower == true && Integer(reconciled).zero?,
       "queue_retry_count" => retry_count,
       "queue_depth" => queue_depth,
@@ -337,8 +338,11 @@ module M3IdempotencyMeasurement
 
   def store_observable(adapter)
     adapter.all.reject { |object| object["kind"].to_s == "Lease" }
-           .map { |object| runtime_neutral(object) }
-           .sort_by { |object| [object["apiVersion"].to_s, object["kind"].to_s, object.dig("metadata", "namespace").to_s, object.dig("metadata", "name").to_s] }
+      .map { |object| runtime_neutral(object) }
+      .sort_by do |object|
+      [object["apiVersion"].to_s, object["kind"].to_s, object.dig("metadata", "namespace").to_s,
+       object.dig("metadata", "name").to_s]
+    end
   end
 
   def key_for(object)
@@ -400,12 +404,14 @@ M3ProbeSupport.run_report(kind: "m3_reconcile_idempotency", adapter_name: "recon
       raise "CorpusController fallback is not accepted for #{name}"
     end
     raise "concrete implementation is missing for #{name}" unless implementation_present
+
     primary_name = "m3-#{name}"
     primary = M3IdempotencyMeasurement.primary_object(definition, primary_name)
     watched, options = M3IdempotencyFixtures.for(name, definition.kind.kind.to_s)
     journal = M3IdempotencyJournal.new(controller: name)
     store = M3TransientMemoryStore.new(clock: -> { M3IdempotencyFixtures::FIXED_NOW }, sleeper: ->(_seconds) {})
-    adapter = Rubernetes::Controller::StoreAdapter.new(store, effect_journal: journal, component: "controller-manager", identity: "m3-idempotency-#{name}")
+    adapter = Rubernetes::Controller::StoreAdapter.new(store, effect_journal: journal, component: "controller-manager",
+                                                              identity: "m3-idempotency-#{name}")
     adapter.create(primary, descriptor: definition.kind)
     # Secondary watched resources are real StoreAdapter objects.  This keeps
     # special controllers (Service/EndpointSlice and Endpoints mirroring)
@@ -414,9 +420,9 @@ M3ProbeSupport.run_report(kind: "m3_reconcile_idempotency", adapter_name: "recon
     adapter.create(watched) if watched.is_a?(Hash) && watched["kind"].to_s != definition.kind.kind.to_s
     foreign = M3IdempotencyMeasurement.primary_object(definition, "m3-foreign-#{name}")
     foreign["metadata"]["ownerReferences"] = [{"apiVersion" => definition.kind.api_version,
-                                                  "kind" => definition.kind.kind,
-                                                  "name" => "foreign-owner", "uid" => "foreign-uid",
-                                                  "controller" => true}]
+                                               "kind" => definition.kind.kind,
+                                               "name" => "foreign-owner", "uid" => "foreign-uid",
+                                               "controller" => true}]
     adapter.create(foreign, descriptor: definition.kind)
     if name == "garbage-collector-controller"
       # For the garbage collector a "foreign" dependent is one owned by a
@@ -453,13 +459,8 @@ M3ProbeSupport.run_report(kind: "m3_reconcile_idempotency", adapter_name: "recon
       first_step, manager: manager, key: key, controller: name, error_before: first_error_before
     )
     queue_retry_observed = store.fault_injections == 1
-    first_success_step = first_step
     first_success_observable = first_attempt_observable
-    unless queue_retry_observed
-      # Controllers whose fixture has no update operation complete on the first
-      # step.  Do not manufacture a second empty step and call it execution.
-      first_success_queue = M3IdempotencyMeasurement.queue_snapshot(manager.queue, key)
-    else
+    if queue_retry_observed
       # WorkQueue backoff is deliberately allowed to elapse. The retry below
       # is the production queue retry after the injected Conflict.
       sleep(0.01)
@@ -468,6 +469,10 @@ M3ProbeSupport.run_report(kind: "m3_reconcile_idempotency", adapter_name: "recon
       first_success_observable = M3IdempotencyMeasurement.step_observable(
         first_success_step, manager: manager, key: key, controller: name, error_before: retry_error_before
       )
+      first_success_queue = M3IdempotencyMeasurement.queue_snapshot(manager.queue, key)
+    else
+      # Controllers whose fixture has no update operation complete on the first
+      # step.  Do not manufacture a second empty step and call it execution.
       first_success_queue = M3IdempotencyMeasurement.queue_snapshot(manager.queue, key)
     end
     after_first = M3IdempotencyMeasurement.store_observable(adapter)

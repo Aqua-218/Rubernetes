@@ -57,8 +57,16 @@ class DRAHealthStreamIntegrationTest < Minitest::Test
       yield socket
     ensure
       if pid
-        Process.kill("TERM", pid) rescue nil
-        Process.wait(pid) rescue nil
+        begin
+          Process.kill("TERM", pid)
+        rescue StandardError
+          nil
+        end
+        begin
+          Process.wait(pid)
+        rescue StandardError
+          nil
+        end
       end
     end
   end
@@ -78,10 +86,12 @@ class DRAHealthStreamIntegrationTest < Minitest::Test
     with_driver(health: true) do |socket|
       seen = collect(socket, until_count: 50) { |events| events.count { |event| event["event"] == "started" } >= 2 }
       devices = seen.select { |event| event["event"] == "devices" }.map { |event| event["devices"].first }
-      assert_equal %w[HEALTHY UNHEALTHY], devices.first(2).map { |device| device["health"] }
+
+      assert_equal(%w[HEALTHY UNHEALTHY], devices.first(2).map { |device| device["health"] })
       assert_equal({"pool_name" => "pool", "device_name" => "gpu-0"}, devices.first["device"])
       assert_equal "XID 79", devices[1]["message"]
       parsed = Rubernetes::Node::DRAHealth.device_from_wire(devices[1])
+
       assert_equal({"pool" => "pool", "device" => "gpu-0", "health" => "Unhealthy", "timeout" => 45.0, "message" => "XID 79"}, parsed)
       assert(seen.any? { |event| event["event"] == "ended" }, "the finished stream was reported")
     end
@@ -91,6 +101,7 @@ class DRAHealthStreamIntegrationTest < Minitest::Test
     with_driver(health: false) do |socket|
       seen = collect(socket, until_count: 10) { |events| events.any? { |event| event["event"] == "ended" } }
       ended = seen.find { |event| event["event"] == "ended" }
+
       assert_equal 12, ended["code"] # GRPC::Core::StatusCodes::UNIMPLEMENTED
     end
   end

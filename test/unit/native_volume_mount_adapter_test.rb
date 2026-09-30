@@ -25,7 +25,7 @@ class NativeVolumeMountAdapterTest < Minitest::Test
       @unmount_calls << kwargs
       raise unmount_error if unmount_error
 
-      unmount_result.nil? ? true : unmount_result
+      unmount_result.nil? || unmount_result
     end
   end
 
@@ -70,7 +70,7 @@ class NativeVolumeMountAdapterTest < Minitest::Test
         adapter.mount(source: "tmpfs", target: File.join(directory, "target"), filesystem: "tmpfs")
       end
 
-      assert error.ambiguous?
+      assert_predicate error, :ambiguous?
       assert_match(/cleanup failed/, error.message)
       assert_equal 1, mount.unmount_calls.length
     end
@@ -86,8 +86,8 @@ class NativeVolumeMountAdapterTest < Minitest::Test
         adapter.mount(source: "tmpfs", target: File.join(directory, "target"), filesystem: "tmpfs")
       end
 
-      assert error.ambiguous?
-      assert_match(/simulated cleanup I\/O error/, error.message)
+      assert_predicate error, :ambiguous?
+      assert_match(%r{simulated cleanup I/O error}, error.message)
       assert_equal 1, mount.unmount_calls.length
     end
   end

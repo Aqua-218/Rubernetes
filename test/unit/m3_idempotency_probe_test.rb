@@ -25,14 +25,14 @@ class M3IdempotencyProbeTest < Minitest::Test
     stdout, stderr, process = Open3.capture3(RbConfig.ruby, "-Ilib", PROBE, chdir: ROOT)
     report = JSON.parse(stdout)
 
-    assert process.success?, "idempotency probe failed: #{stderr}\n#{report.fetch("errors", []).join("; ")}"
+    assert_predicate process, :success?, "idempotency probe failed: #{stderr}\n#{report.fetch("errors", []).join("; ")}"
     assert_equal "PASS", report.fetch("status")
     assert_equal true, report.fetch("passed")
     assert_equal 52, report.fetch("cases").length
     assert_equal 0, report.fetch("failure_count")
     assert_equal 0, report.fetch("difference_count")
     assert_equal 0, report.fetch("non_idempotent_count")
-    assert report.fetch("cases").all? { |entry| entry.fetch("passed") == true }
+    assert(report.fetch("cases").all? { |entry| entry.fetch("passed") == true })
     assert(
       report.fetch("cases").all? do |entry|
         first = entry.fetch("first_effect_observable")
@@ -68,7 +68,7 @@ class M3IdempotencyProbeTest < Minitest::Test
     errors = []
     M3Gate.send(:validate_idempotency_effect_inventory, first, second, errors, 0)
 
-    assert errors.any? { |error| error.include?("duplicate controller event") }
+    assert(errors.any? { |error| error.include?("duplicate controller event") })
   end
 
   # Requirement: provider calls are first-class durable effects and duplicate
@@ -87,7 +87,7 @@ class M3IdempotencyProbeTest < Minitest::Test
     errors = []
     M3Gate.send(:validate_idempotency_effect_inventory, first, second, errors, 0)
 
-    assert errors.any? { |error| error.include?("duplicate provider call") }
+    assert(errors.any? { |error| error.include?("duplicate provider call") })
   end
 
   private
@@ -116,11 +116,10 @@ class M3IdempotencyProbeTest < Minitest::Test
     snapshot["raw_entry_count"] = raw_entries.length
     snapshot["raw_sha256"] = M3Gate.canonical_document_digest(raw_entries)
     %w[effect_ids effect_id_counts effect_signature_counts api_effect_key_counts api_mutation_count event_count provider_call_count
-        event_effect_key_counts provider_effect_key_counts event_signatures event_signature_counts
-        provider_call_signatures provider_call_signature_counts].each do |key|
+       event_effect_key_counts provider_effect_key_counts event_signatures event_signature_counts
+       provider_call_signatures provider_call_signature_counts].each do |key|
       snapshot[key] = inventory.fetch(key)
     end
     snapshot["inventory"] = inventory
   end
-
 end

@@ -72,7 +72,7 @@ module M5OwnershipProbe
       # --- request loss: intent journaled, crash before the proposal reached the cluster.
       journal = C::OperationJournal.new(journal_path, component: "probe")
       journal.record_request(request_id: "#{request_id}-rl", effect: effect, key: key, command: {"type" => effect, "key" => key})
-      journal = nil # crash
+      nil # crash
       reloaded = C::OperationJournal.new(journal_path, component: "probe")
       request_loss = reloaded.classification("#{request_id}-rl")
       store = C::RaftStore.new(servers["b"], journal: reloaded)
@@ -89,7 +89,7 @@ module M5OwnershipProbe
       journal.record_request(request_id: "#{request_id}-resp", effect: effect, key: key2, command: {"type" => effect, "key" => key2})
       applied_once = execute(C::RaftStore.new(servers["c"]), effect, key2, command, "#{request_id}-resp")
       journal.record_outcome(request_id: "#{request_id}-resp", state: "unknown", error: C::Timeout.new("response lost"))
-      journal = nil # crash
+      nil # crash
       reloaded2 = C::OperationJournal.new(journal_path, component: "probe")
       response_loss = reloaded2.classification("#{request_id}-resp")
       store2 = C::RaftStore.new(servers["a"], journal: reloaded2)
@@ -131,7 +131,7 @@ module M5OwnershipProbe
     ledger = Rubernetes::Runtime::OwnershipLedger.new(journal: Rubernetes::Runtime::RollbackJournal.new(path))
     # Request loss: request started, crash before any effect.
     ledger.begin_request(request_id: "sandbox-1", operation: "run_sandbox", config_digest: "d1")
-    ledger = nil
+    nil
     reloaded = Rubernetes::Runtime::OwnershipLedger.new(journal: Rubernetes::Runtime::RollbackJournal.new(path))
     request_state = reloaded.request("sandbox-1")&.state
     # Re-execution with the same intent is accepted; different intent is rejected.
@@ -146,7 +146,7 @@ module M5OwnershipProbe
     reloaded.begin_operation(operation_id: "op-1", owner: "sandbox-1", config_digest: "d1", request_id: "sandbox-1")
     reloaded.claim(operation_id: "op-1", kind: "workspace", id: "ws-1", identity: {"path" => "/tmp/ws-1"})
     reloaded.complete_request(request_id: "sandbox-1", state: "Completed", result: {"sandbox_id" => "sandbox-1"})
-    reloaded = nil
+    nil
     again = Rubernetes::Runtime::OwnershipLedger.new(journal: Rubernetes::Runtime::RollbackJournal.new(path))
     completed = again.request("sandbox-1")
     owned = again.owned?(kind: "workspace", id: "ws-1", identity: {"path" => "/tmp/ws-1"})
@@ -162,7 +162,7 @@ module M5OwnershipProbe
       "resource_still_owned" => owned,
       "measurement_level" => "L2",
       "passed" => request_state == "Pending" && replay.state == "Pending" && conflict && completed&.state == "Completed" &&
-                  retry_result.result == {"sandbox_id" => "sandbox-1"} && owned
+        retry_result.result == {"sandbox_id" => "sandbox-1"} && owned
     }
   end
 
@@ -170,7 +170,7 @@ module M5OwnershipProbe
     path = File.join(root, "effect-journal.jsonl")
     journal = Rubernetes::Controller::EffectJournal.new(path: path, component: "deployment", identity: "probe")
     first = journal.record(effect_type: "create_replicaset", reconcile_key: "default/web", action: "create", object: {"a" => 1})
-    journal = nil
+    nil
     reloaded = Rubernetes::Controller::EffectJournal.read(path)
     # The effect id is deterministic per (generation, reconcile key, effect type),
     # so a retry after a lost response reuses the identity and the API server
@@ -192,11 +192,11 @@ module M5OwnershipProbe
     path = File.join(root, "volume-ledger.json")
     ledger = Rubernetes::Volume::OperationLedger.new(path: path)
     ledger.begin!(key: "pv-1", operation: "attach", token: "t1", fingerprint: "f1")
-    ledger = nil
+    nil
     reloaded = Rubernetes::Volume::OperationLedger.new(path: path)
     request_loss = reloaded.fetch(key: "pv-1", operation: "attach")&.status
     reloaded.effecting!(key: "pv-1", operation: "attach", token: "t1")
-    reloaded = nil
+    nil
     again = Rubernetes::Volume::OperationLedger.new(path: path)
     response_loss = again.fetch(key: "pv-1", operation: "attach")&.status
     again.unknown!(key: "pv-1", operation: "attach", token: "t1")
@@ -226,7 +226,7 @@ module M5OwnershipProbe
     path = File.join(root, "network-journal.jsonl")
     journal = Rubernetes::Network::EventJournal.new(path)
     journal.append(event: "lease_requested", payload: {"pod" => "p1", "ip" => "10.0.0.5"})
-    journal = nil
+    nil
     reloaded = Rubernetes::Network::EventJournal.new(path)
     pending = reloaded.events.select { |event| event["event"] == "lease_requested" } -
               reloaded.events.select { |event| event["event"] == "lease_committed" }
@@ -254,7 +254,9 @@ module M5OwnershipProbe
       cases << volume_case(root)
       cases << network_case(root)
     end
-    covered = cases.select { |entry| entry["passed"] }.map { |entry| [entry["component"], entry["effect"] || entry["id"].split("_", 2).last] }
+    cases.select do |entry|
+      entry["passed"]
+    end.map { |entry| [entry["component"], entry["effect"] || entry["id"].split("_", 2).last] }
     M5ProbeSupport.emit(M5ProbeSupport.report(
       kind: "m5_resource_ownership_ledger", measurement_level: "integration_tested", started_at: started_at, cases: cases,
       extra: {"effect_points" => EFFECT_POINTS,

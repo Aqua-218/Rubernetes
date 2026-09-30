@@ -51,15 +51,17 @@ class NodeProbeRestartTest < Minitest::Test
     manager.register("container-1", probes: probes)
 
     first = manager.evaluate("container-1", probes: probes)
-    assert first.fetch("startup").failed?
+
+    assert_predicate first.fetch("startup"), :failed?
     assert_nil first.fetch("liveness")
     assert_nil first.fetch("readiness")
 
     runtime.exit_code = 0
     second = manager.evaluate("container-1", probes: probes)
-    assert second.fetch("startup").success?
-    assert second.fetch("liveness").success?
-    assert second.fetch("readiness").success?
+
+    assert_predicate second.fetch("startup"), :success?
+    assert_predicate second.fetch("liveness"), :success?
+    assert_predicate second.fetch("readiness"), :success?
     assert manager.ready?("container-1")
   end
 
@@ -69,12 +71,13 @@ class NodeProbeRestartTest < Minitest::Test
     tcp = TCP.new(true)
     manager = Rubernetes::Node::ProbeManager.new(runtime: runtime, http_client: http, tcp_client: tcp)
 
-    assert manager.check("exec", {"exec" => {"command" => ["true"]}}).success?
-    assert manager.check("http", {"httpGet" => {"host" => "127.0.0.1", "port" => 8080, "path" => "/health"}}).success?
-    assert manager.check("tcp", {"tcpSocket" => {"host" => "127.0.0.1", "port" => 8080}}).success?
+    assert_predicate manager.check("exec", {"exec" => {"command" => ["true"]}}), :success?
+    assert_predicate manager.check("http", {"httpGet" => {"host" => "127.0.0.1", "port" => 8080, "path" => "/health"}}), :success?
+    assert_predicate manager.check("tcp", {"tcpSocket" => {"host" => "127.0.0.1", "port" => 8080}}), :success?
 
     http.status = 500
-    refute manager.check("http", {"httpGet" => {"port" => 8080}}).success?
+
+    refute_predicate manager.check("http", {"httpGet" => {"port" => 8080}}), :success?
   end
 
   def test_probe_failure_threshold_controls_liveness_failure
@@ -83,9 +86,10 @@ class NodeProbeRestartTest < Minitest::Test
     probe = {"exec" => {"command" => ["false"]}, "failureThreshold" => 2}
     manager.register("c", probes: {"livenessProbe" => probe})
 
-    refute manager.check("c", probe: probe, type: "liveness").nil?
+    refute_nil manager.check("c", probe: probe, type: "liveness")
     refute manager.liveness_failed?("c")
     manager.check("c", probe: probe, type: "liveness")
+
     assert manager.liveness_failed?("c")
   end
 
@@ -109,6 +113,7 @@ class NodeProbeRestartTest < Minitest::Test
     manager.record_start("c", at: clock)
     clock = 600
     reset = manager.record_exit("c", policy: "Always", exit_code: 1, at: clock)
+
     assert_equal 1, reset.failure_count
     assert_equal 0, reset.delay_seconds
     refute manager.crash_loop_backoff?("c")

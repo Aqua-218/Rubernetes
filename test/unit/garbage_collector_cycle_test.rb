@@ -33,7 +33,7 @@ class GarbageCollectorCycleTest < Minitest::Test
     right["metadata"]["ownerReferences"] = [{"apiVersion" => "v1", "kind" => "ConfigMap",
                                              "name" => "left", "uid" => "left"}]
     orphan = object("EndpointSlice", "slice", uid: "slice",
-                    owners: [{"kind" => "Service", "metadata" => {"name" => "gone", "uid" => "gone-uid"}}])
+                                              owners: [{"kind" => "Service", "metadata" => {"name" => "gone", "uid" => "gone-uid"}}])
 
     result = collector.plan([left, right, orphan])
 

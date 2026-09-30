@@ -73,7 +73,7 @@ module Rubernetes
         if terminating
           deletable.each do |object|
             operations << operation_delete(object, descriptor: ResourceDescriptor.parse(object),
-                                            reason: "namespace content deletion")
+                                                   reason: "namespace content deletion")
           end
         end
 
@@ -92,12 +92,10 @@ module Rubernetes
           spec_candidate = Support.deep_copy(namespace)
           spec_candidate["spec"] = Support.deep_copy(candidate["spec"])
           operations << operation_update(namespace, spec_candidate, descriptor: NAMESPACE,
-                                         reason: "namespace finalizer removal")
+                                                                    reason: "namespace finalizer removal")
         end
         status = Support.deep_copy(candidate.fetch("status"))
-        if terminating && observed
-          status["conditions"] = deletion_conditions(status["conditions"], contents)
-        end
+        status["conditions"] = deletion_conditions(status["conditions"], contents) if terminating && observed
         events = if terminating && !contents.empty?
                    [{"type" => "Warning", "reason" => "NamespaceDeletionContentFailure",
                      "message" => "#{contents.length} namespaced resource(s) remain"}]
@@ -119,12 +117,12 @@ module Rubernetes
         return values if contents.empty?
 
         remaining = contents.group_by { |object| Support.kind(object).to_s }
-                            .map { |kind, items| "#{kind} has #{items.length} resource instances" }
-                            .sort
+          .map { |kind, items| "#{kind} has #{items.length} resource instances" }
+          .sort
         values = upsert_condition(values, "NamespaceContentRemaining", "True", "SomeResourcesRemain",
                                   "Some resources are remaining: #{remaining.join(", ")}")
         finalizers = contents.flat_map { |object| Array(Support.value(Support.metadata(object), "finalizers", [])) }
-                             .map(&:to_s).tally
+          .map(&:to_s).tally
         return values if finalizers.empty?
 
         described = finalizers.map { |finalizer, count| "#{finalizer} in #{count} resource instances" }.sort

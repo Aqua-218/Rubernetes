@@ -18,7 +18,7 @@ module Rubernetes
         "ns" => NANOSECOND, "us" => MICROSECOND, "µs" => MICROSECOND, "μs" => MICROSECOND,
         "ms" => MILLISECOND, "s" => SECOND, "m" => MINUTE, "h" => HOUR
       }.freeze
-      TOKEN = /\A([0-9]*)(?:\.([0-9]*))?(ns|us|µs|μs|ms|s|m|h)/.freeze
+      TOKEN = /\A([0-9]*)(?:\.([0-9]*))?(ns|us|µs|μs|ms|s|m|h)/
 
       module_function
 
@@ -44,7 +44,7 @@ module Rubernetes
             if whole_seconds < 60
               "#{seconds_text}s"
             else
-              seconds_only = fraction(remaining - (whole_seconds - (whole_seconds % 60)) * SECOND, 9)
+              seconds_only = fraction(remaining - ((whole_seconds - (whole_seconds % 60)) * SECOND), 9)
               minutes = whole_seconds / 60
               text = "#{seconds_only}s"
               text = "#{minutes % 60}m#{text}"
@@ -72,9 +72,7 @@ module Rubernetes
         until remaining.empty?
           match = TOKEN.match(remaining)
           if match.nil?
-            if remaining.match?(/\A[0-9.]+\z/)
-              raise ParseError, "time: missing unit in duration #{text.inspect}"
-            end
+            raise ParseError, "time: missing unit in duration #{text.inspect}" if remaining.match?(/\A[0-9.]+\z/)
 
             raise ParseError, "time: invalid duration #{text.inspect}"
           end

@@ -23,7 +23,7 @@ module Rubernetes
       end
 
       def install!
-        raise RuntimeError, "signal handlers are already installed" if @installed
+        raise "signal handlers are already installed" if @installed
 
         %w[INT TERM].each do |signal|
           @previous_handlers[signal] = Signal.trap(signal) { notify(signal) }

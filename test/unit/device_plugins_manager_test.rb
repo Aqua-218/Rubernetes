@@ -70,12 +70,14 @@ class DevicePluginsManagerTest < Minitest::Test
     register
     @manager.allocate_pod(pod("u1", [container("app", 1)]))
     text = registry.render
+
     assert_includes text, %(kubelet_device_plugin_registration_total{resource_name="example.com/gpu"} 1)
     assert_includes text, %(kubelet_device_plugin_alloc_duration_seconds_count{resource_name="example.com/gpu"} 1)
   end
 
   def test_capacity_counts_every_device_and_allocatable_the_healthy_ones
     register
+
     assert_equal [{"example.com/gpu" => 3}, {"example.com/gpu" => 2}], @manager.capacity
     assert_equal 2, @changes
   end
@@ -84,14 +86,16 @@ class DevicePluginsManagerTest < Minitest::Test
     register("pre_start_required" => true)
     @manager.allocate_pod(pod("u1", [container("app", 2)]))
     allocation = @manager.container_allocation("u1", "app")
+
     assert_equal({"GPUS" => "d1,d2"}, allocation["envs"])
     assert_equal "/dev/fake0", allocation["devices"].first["container_path"]
-    assert_equal %w[PreStartContainer Allocate], @broker.calls.map { |call| call[1] }
+    assert_equal(%w[PreStartContainer Allocate], @broker.calls.map { |call| call[1] })
     assert_equal [{"name" => "example.com/gpu", "resources" => [{"resourceID" => "d1", "health" => "Healthy"},
-                                                                  {"resourceID" => "d2", "health" => "Healthy"}]}],
+                                                                {"resourceID" => "d2", "health" => "Healthy"}]}],
                  @manager.allocated_resources_status("u1", "app")
     @manager.handle_event("event" => "devices", "resource" => "example.com/gpu",
                           "devices" => [{"ID" => "d1", "health" => "Unhealthy"}, {"ID" => "d2", "health" => "Healthy"}])
+
     assert_equal "Unhealthy", @manager.allocated_resources_status("u1", "app").first["resources"].first["health"]
   end
 
@@ -102,6 +106,7 @@ class DevicePluginsManagerTest < Minitest::Test
     assert_equal "requested number of devices unavailable for example.com/gpu. Requested: 2, Available: 1", error.message
     @manager.remove_stale(%w[u2])
     @manager.allocate_pod(pod("u2", [container("app", 2)]))
+
     assert_equal 2, @manager.container_allocation("u2", "app")["envs"]["GPUS"].split(",").length
   end
 
@@ -109,6 +114,7 @@ class DevicePluginsManagerTest < Minitest::Test
     register("get_preferred_allocation_available" => true)
     @broker.preferred = %w[d2]
     @manager.allocate_pod(pod("u1", [container("app", 1)], init: [container("init", 1)]))
+
     assert_equal "d2", @manager.container_allocation("u1", "init")["envs"]["GPUS"]
     assert_equal "d2", @manager.container_allocation("u1", "app")["envs"]["GPUS"], "the init container's device goes to the app container"
   end
@@ -117,10 +123,13 @@ class DevicePluginsManagerTest < Minitest::Test
     register
     @manager.allocate_pod(pod("u1", [container("app", 1)]))
     @manager.handle_event("event" => "disconnected", "resource" => "example.com/gpu")
+
     assert_equal [{"example.com/gpu" => 3}, {"example.com/gpu" => 0}], @manager.capacity
     restarted = DP::Manager.new(directory: @dir, broker: FakeBroker.new, clock: -> { @now })
+
     assert_equal "d1", restarted.container_allocation("u1", "app")["envs"]["GPUS"], "kubelet_internal_checkpoint"
     @now += DP::Manager::STOP_GRACE_PERIOD + 1
+
     assert_equal [{}, {}], @manager.capacity
     error = assert_raises(DP::Manager::Error) { restarted.allocate_pod(pod("u9", [container("app", 1)])) }
     assert_match(/no healthy devices present|cannot allocate unregistered device/, error.message)

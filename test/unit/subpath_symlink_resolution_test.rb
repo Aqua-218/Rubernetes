@@ -20,8 +20,8 @@ require "rubernetes/platform/linux/openat2"
 class SubPathSymlinkResolutionTest < Minitest::Test
   Openat2 = Rubernetes::Platform::Linux::Openat2
 
-  def validate(resolve, **options)
-    Openat2.allocate.send(:validate_resolve!, resolve, **options)
+  def validate(resolve, **)
+    Openat2.allocate.send(:validate_resolve!, resolve, **)
   end
 
   def test_the_strict_walk_is_still_accepted

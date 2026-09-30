@@ -66,9 +66,7 @@ module Rubernetes
             how_pointer = Fiddle::Pointer[how.to_binary]
             number = SYS_OPENAT2.fetch(RbConfig::CONFIG.fetch("host_cpu"))
             result = @syscall.call(number, Integer(dirfd), path_pointer, how_pointer, OPEN_HOW_SIZE)
-            if result.value == -1
-              raise Linux::Error.new(errno: result.errno, operation: "openat2", resource_id: resource_id)
-            end
+            raise Linux::Error.new(errno: result.errno, operation: "openat2", resource_id: resource_id) if result.value == -1
 
             Integer(result.value)
           end
@@ -94,7 +92,9 @@ module Rubernetes
           components = value.split("/")
           raise UnsafePath, "path contains a parent traversal component" if components.include?("..")
           raise UnsafePath, "path contains an empty component" if components.any?(&:empty?)
-          raise UnsafePath, "path contains an invalid component" if components.any? { |component| component == "." && component != components.first }
+          raise UnsafePath, "path contains an invalid component" if components.any? do |component|
+            component == "." && component != components.first
+          end
 
           value
         end
@@ -129,15 +129,15 @@ module Rubernetes
           raise UnsafePath, "openat2 flags, mode, and resolve must be integers"
         rescue SystemCallError => error
           raise Linux::Error.wrap(error, operation: "openat2-relative",
-                                  resource_id: resource_id || "openat2-relative:#{relative}"), cause: error
+                                         resource_id: resource_id || "openat2-relative:#{relative}"), cause: error
         end
 
         alias open_file open
         alias resolve open
         alias resolve_path open
 
-        def with_open(path, **options)
-          handle = open(path, **options)
+        def with_open(path, **)
+          handle = open(path, **)
           yield handle
         ensure
           handle&.close
@@ -201,9 +201,7 @@ module Rubernetes
             @opened_root.fileno
           end
         rescue SystemCallError => error
-          if @strict
-            raise Linux::Error.wrap(error, operation: "open(root)", resource_id: "openat2-root:#{@root}"), cause: error
-          end
+          raise Linux::Error.wrap(error, operation: "open(root)", resource_id: "openat2-root:#{@root}"), cause: error if @strict
 
           raise Unsupported, "configured root #{@root} cannot be opened securely: #{error.message}"
         end

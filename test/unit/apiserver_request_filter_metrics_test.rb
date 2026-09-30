@@ -23,9 +23,9 @@ class APIServerRequestFilterMetricsTest < Minitest::Test
     end
   end
 
-  def server(**options)
+  def server(**)
     @metrics = Rubernetes::Observability::Metrics.new
-    pipeline = Rubernetes::Security::Pipeline.new(authorizer: Authorizer.new, **options)
+    pipeline = Rubernetes::Security::Pipeline.new(authorizer: Authorizer.new, **)
     Rubernetes::API::Server.new(store: Rubernetes::Storage::MemoryStore.new(history_revisions: nil, history_seconds: nil),
                                 security: pipeline, metrics: @metrics)
   end
@@ -51,14 +51,19 @@ class APIServerRequestFilterMetricsTest < Minitest::Test
     # No flow control configured: the max-in-flight filter is not tracked.
     assert_equal 0, count("priorityandfairness")
     text = @metrics.render
+
     assert_match(/^apiserver_request_filter_duration_seconds_bucket\{filter="audit",le="0\.0001"\} \d+$/, text)
-    assert_match(/^# HELP apiserver_request_filter_duration_seconds \[ALPHA\] Request filter latency distribution in seconds, for each filter type$/, text)
+    assert_match(
+      /^# HELP apiserver_request_filter_duration_seconds \[ALPHA\] Request filter latency distribution in seconds, for each filter type$/, text
+    )
   end
 
   def test_flow_control_is_the_priorityandfairness_filter
-    bootstrap = ->(name) { JSON.parse(File.read(File.expand_path("../../schema/kubernetes/v1.36.2-defaults/bootstrap/#{name}.json", __dir__)))["items"] }
+    bootstrap = lambda { |name|
+      JSON.parse(File.read(File.expand_path("../../schema/kubernetes/v1.36.2-defaults/bootstrap/#{name}.json", __dir__)))["items"]
+    }
     flow_control = Rubernetes::Security::FlowControl::Controller.new(flow_schemas: bootstrap.call("flowschemas"),
-                                                                    priority_level_configurations: bootstrap.call("prioritylevelconfigurations"))
+                                                                     priority_level_configurations: bootstrap.call("prioritylevelconfigurations"))
     api = server(flow_control: flow_control)
     get(api, "alice")
     get(api, "mallory")
@@ -69,6 +74,7 @@ class APIServerRequestFilterMetricsTest < Minitest::Test
   def test_the_legacy_impersonation_filter_without_constrained_impersonation
     api = server(constrained_impersonation: false)
     get(api, "alice")
+
     assert_equal 1, count("impersonation")
     assert_equal 0, count("constrainedimpersonation")
   end

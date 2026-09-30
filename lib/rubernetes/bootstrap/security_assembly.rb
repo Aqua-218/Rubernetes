@@ -63,7 +63,8 @@ module Rubernetes
       end
 
       def self.bootstrap_documents
-        %w[clusterroles clusterrolebindings roles rolebindings flowschemas prioritylevelconfigurations namespaces].each_with_object({}) do |name, documents|
+        %w[clusterroles clusterrolebindings roles rolebindings flowschemas prioritylevelconfigurations
+           namespaces].each_with_object({}) do |name, documents|
           path = File.join(BOOTSTRAP_ROOT, "#{name}.json")
           next unless File.file?(path)
 
@@ -117,7 +118,11 @@ module Rubernetes
         # --authentication-token-cache-ttl: bearer-token authenticators are
         # wrapped in tokencache with a 10 s success TTL (no failure caching).
         token_ttl = authn.fetch("token_success_cache_ttl", Security::Authentication::TokenCache::DEFAULT_SUCCESS_TTL)
-        cache_token = ->(authenticator) { Security::Authentication::TokenCache.new(authenticator, success_ttl: token_ttl, clock: @monotonic_clock || -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }) }
+        cache_token = lambda { |authenticator|
+          Security::Authentication::TokenCache.new(authenticator, success_ttl: token_ttl, clock: @monotonic_clock || lambda {
+            Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          })
+        }
         authenticators << cache_token.call(Security::Authentication::StaticTokenFile.load(authn["token_file"])) if authn["token_file"]
         if authn["service_account"]
           sa = authn["service_account"]
@@ -152,16 +157,20 @@ module Rubernetes
           authenticators << cache_token.call(@service_account_issuer)
         end
         if authn["bootstrap_tokens"] == true
-          authenticators << cache_token.call(Security::Authentication::BootstrapToken.new(secret_reader: ->(namespace, name) { read_object("secrets", namespace, name) }, clock: @clock))
+          authenticators << cache_token.call(Security::Authentication::BootstrapToken.new(secret_reader: lambda { |namespace, name|
+            read_object("secrets", namespace, name)
+          }, clock: @clock))
         end
         Array(authn["jwt"]).each do |jwt_config|
-          authenticators << cache_token.call(Security::Authentication::JWTAuthenticator.new(config: jwt_config, cel: cel_evaluator, clock: @clock))
+          authenticators << cache_token.call(Security::Authentication::JWTAuthenticator.new(config: jwt_config, cel: cel_evaluator,
+                                                                                            clock: @clock))
         end
         file_configuration = nil
         file_authenticators = []
         if authn["config_file"]
           file_bytes = File.binread(authn["config_file"])
-          file_configuration = Security::Authentication::Configuration.from_bytes(file_bytes, disallowed_issuers: service_account_issuers(authn))
+          file_configuration = Security::Authentication::Configuration.from_bytes(file_bytes,
+                                                                                  disallowed_issuers: service_account_issuers(authn))
           file_authenticators = build_file_jwt_authenticators(file_configuration, cache_token)
           authenticators.concat(file_authenticators)
         end
@@ -178,7 +187,9 @@ module Rubernetes
         end
         anonymous = authn["anonymous"] || file_configuration&.anonymous || {"enabled" => true}
         union = Security::Authentication::Union.new(authenticators: authenticators,
-                                                    anonymous: Security::Authentication::Union::Anonymous.new(enabled: anonymous["enabled"] != false, conditions: anonymous["conditions"]))
+                                                    anonymous: Security::Authentication::Union::Anonymous.new(
+                                                      enabled: anonymous["enabled"] != false, conditions: anonymous["conditions"]
+                                                    ))
         if file_configuration
           original_anonymous = file_configuration.anonymous
           current = file_authenticators
@@ -189,7 +200,9 @@ module Rubernetes
             load: lambda do |bytes|
               configuration = Security::Authentication::Configuration.from_bytes(bytes, disallowed_issuers: issuers)
               # The anonymous settings are read once; a change is refused (field.Forbidden).
-              raise Security::Authentication::Configuration::InvalidError, "anonymous: Forbidden: changed from initial configuration file" unless configuration.anonymous == original_anonymous
+              unless configuration.anonymous == original_anonymous
+                raise Security::Authentication::Configuration::InvalidError, "anonymous: Forbidden: changed from initial configuration file"
+              end
 
               configuration
             end,
@@ -249,7 +262,9 @@ module Rubernetes
         @reload_controllers << Security::ConfigReloadController.new(
           kind: "authorization", path: path, apiserver_id: @apiserver_id, logger: @logger,
           initial_bytes: bytes, initial_config: configuration,
-          load: ->(data) { Security::Authorization::Configuration.from_bytes(data, cel: cel_evaluator, require_non_webhook_types: fixed_types) },
+          load: lambda { |data|
+            Security::Authorization::Configuration.from_bytes(data, cel: cel_evaluator, require_non_webhook_types: fixed_types)
+          },
           apply: ->(new_configuration) { union.reload(new_configuration.build(authorizer_factory)) }
         )
         union
@@ -282,7 +297,10 @@ module Rubernetes
           host = ENV.fetch("KUBERNETES_SERVICE_HOST", "")
           port = ENV.fetch("KUBERNETES_SERVICE_PORT", "")
           token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-          raise Config::Error, "authorization webhook connectionInfo.type InClusterConfig: unable to load in-cluster configuration (KUBERNETES_SERVICE_HOST and the service account token must be present)" if host.empty? || port.empty? || !File.file?(token_file)
+          if host.empty? || port.empty? || !File.file?(token_file)
+            raise Config::Error,
+                  "authorization webhook connectionInfo.type InClusterConfig: unable to load in-cluster configuration (KUBERNETES_SERVICE_HOST and the service account token must be present)"
+          end
 
           address = host.include?(":") ? "[#{host}]" : host
           http_transport(url: "https://#{address}:#{port}/apis/authorization.k8s.io/v1/subjectaccessreviews",
@@ -301,7 +319,13 @@ module Rubernetes
       end
 
       def http_transport(url:, ca_pem: nil, cert_pem: nil, key_pem: nil, token: nil, insecure: false, timeout: 30)
-        ca = ca_pem ? ca_pem.to_s.scan(/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/m).map { |pem| OpenSSL::X509::Certificate.new(pem) } : []
+        ca = if ca_pem
+               ca_pem.to_s.scan(/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/m).map do |pem|
+                 OpenSSL::X509::Certificate.new(pem)
+               end
+             else
+               []
+             end
         client_cert = cert_pem ? OpenSSL::X509::Certificate.new(cert_pem) : nil
         client_key = key_pem ? OpenSSL::PKey.read(key_pem) : nil
         lambda do |body|
@@ -348,13 +372,16 @@ module Rubernetes
       end
 
       def rbac_source
-        Security::Authorization::StoreRBACSource.new(@store, key_for: ->(resource, namespace) { @key_for.call("rbac.authorization.k8s.io", "v1", resource, namespace, nil) })
+        Security::Authorization::StoreRBACSource.new(@store, key_for: lambda { |resource, namespace|
+          @key_for.call("rbac.authorization.k8s.io", "v1", resource, namespace, nil)
+        })
       end
 
       # The node authorizer's graph: fed by the store's watches when the
       # store has them (the API server), read live otherwise (tests, tools).
       def node_graph
         return @node_graph if @node_graph
+
         if @store.respond_to?(:watch)
           graph = Security::Authorization::NodeGraph.new
           @node_graph_populator = Security::Authorization::NodeGraph::Populator.new(graph: graph, store: @store, logger: @logger)
@@ -370,7 +397,9 @@ module Rubernetes
         graph.define_singleton_method(:pods_on_node) do |node_name|
           assembly.send(:list_objects, "pods", nil).select { |pod| pod.dig("spec", "nodeName") == node_name }
         end
-        graph.define_singleton_method(:persistent_volume_claim) { |namespace, name| assembly.send(:read_object, "persistentvolumeclaims", namespace, name) }
+        graph.define_singleton_method(:persistent_volume_claim) do |namespace, name|
+          assembly.send(:read_object, "persistentvolumeclaims", namespace, name)
+        end
         graph.define_singleton_method(:persistent_volume) { |name| assembly.send(:read_object, "persistentvolumes", nil, name) }
         graph.define_singleton_method(:volume_attachment) do |name|
           assembly.send(:read_object, "volumeattachments", nil, name, group: "storage.k8s.io", version: "v1")
@@ -389,9 +418,14 @@ module Rubernetes
       def build_audit(audit)
         return [nil, nil] unless audit
 
-        policy = Security::Audit::Policy.from_h(YAML.safe_load(File.read(audit.fetch("policy_file")), permitted_classes: [], aliases: false))
+        policy = Security::Audit::Policy.from_h(YAML.safe_load_file(audit.fetch("policy_file"), permitted_classes: [],
+                                                                                                aliases: false))
         backends = []
-        backends << Security::Audit::LogBackend.new(path: audit["log_path"], max_queue: audit.fetch("max_queue", 10_000)) if audit["log_path"]
+        if audit["log_path"]
+          backends << Security::Audit::LogBackend.new(path: audit["log_path"],
+                                                      max_queue: audit.fetch("max_queue",
+                                                                             10_000))
+        end
         if (webhook = audit["webhook"])
           token = webhook["token_file"] ? File.read(webhook["token_file"]).strip : webhook["token"]
           backends << Security::Audit::WebhookBackend.new(url: webhook.fetch("url"), mode: webhook.fetch("mode", "batch"),

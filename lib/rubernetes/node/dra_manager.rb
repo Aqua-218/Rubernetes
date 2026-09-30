@@ -2,8 +2,6 @@
 
 require "fileutils"
 require "json"
-require "set"
-require "thread"
 
 require_relative "plugins/rpc"
 require_relative "dra_health"
@@ -88,7 +86,7 @@ module Rubernetes
 
       # ------------------------------------------------ plugin handler
 
-      def validate_plugin(driver, _endpoint, versions)
+      def validate_plugin(_driver, _endpoint, versions)
         choose_service(versions)
         true
       end
@@ -97,7 +95,9 @@ module Rubernetes
         service = choose_service(versions)
         @mutex.synchronize do
           plugins = @plugins[driver.to_s]
-          raise Error, "endpoint #{endpoint} already registered for DRA driver plugin #{driver}" if plugins.any? { |plugin| plugin.endpoint == endpoint }
+          raise Error, "endpoint #{endpoint} already registered for DRA driver plugin #{driver}" if plugins.any? do |plugin|
+            plugin.endpoint == endpoint
+          end
 
           plugins << Plugin.new(driver: driver.to_s, endpoint: endpoint.to_s, service: service)
           @pending_wipes.delete(driver.to_s)
@@ -188,11 +188,16 @@ module Rubernetes
 
           claim = fetch_claim(namespace, name)
           if must_check_owner && !owned_by?(claim, pod)
-            raise Error, "ResourceClaim #{namespace}/#{name} was not created for Pod #{namespace}/#{pod.dig("metadata", "name")} (Pod is not owner)"
+            raise Error,
+                  "ResourceClaim #{namespace}/#{name} was not created for Pod #{namespace}/#{pod.dig("metadata",
+                                                                                                     "name")} (Pod is not owner)"
           end
           unless Array(claim.dig("status", "reservedFor")).any? { |entry| entry["uid"].to_s == pod_uid }
-            raise Error, "pod #{pod.dig("metadata", "name")} (#{pod_uid}) is not allowed to use ResourceClaim #{name} (#{claim.dig("metadata", "uid")})"
+            raise Error,
+                  "pod #{pod.dig("metadata",
+                                 "name")} (#{pod_uid}) is not allowed to use ResourceClaim #{name} (#{claim.dig("metadata", "uid")})"
           end
+
           allocation = claim.dig("status", "allocation")
           raise Error, "ResourceClaim #{name}: not allocated" if allocation.nil?
 
@@ -235,11 +240,17 @@ module Rubernetes
           results.each do |claim_uid, result|
             request = requests.find { |candidate| candidate["uid"] == claim_uid }
             raise Error, "NodePrepareResources returned result for unknown claim UID #{claim_uid}" unless request
-            raise Error, "NodePrepareResources failed for ResourceClaim #{request["name"]}: #{result["error"]}" unless result["error"].to_s.empty?
+            unless result["error"].to_s.empty?
+              raise Error,
+                    "NodePrepareResources failed for ResourceClaim #{request["name"]}: #{result["error"]}"
+            end
 
             @mutex.synchronize do
               entry = @claims[to_prepare.fetch(claim_uid)]
-              raise Error, "internal error: unable to get claim info for ResourceClaim #{request["name"]} in namespace #{request["namespace"]}" unless entry
+              unless entry
+                raise Error,
+                      "internal error: unable to get claim info for ResourceClaim #{request["name"]} in namespace #{request["namespace"]}"
+              end
 
               driver_state = (entry["driver_state"][target.driver] ||= {"devices" => []})
               Array(result["devices"]).each do |device|
@@ -549,7 +560,10 @@ module Rubernetes
           results.each do |claim_uid, result|
             request = requests.find { |candidate| candidate["uid"] == claim_uid }
             raise Error, "NodeUnprepareResources returned result for unknown claim UID #{claim_uid}" unless request
-            raise Error, "NodeUnprepareResources failed for ResourceClaim #{request["name"]}: #{result["error"]}" unless result["error"].to_s.empty?
+            unless result["error"].to_s.empty?
+              raise Error,
+                    "NodeUnprepareResources failed for ResourceClaim #{request["name"]}: #{result["error"]}"
+            end
           end
           unfinished = requests.length - results.length
           raise Error, "NodeUnprepareResources skipped #{unfinished} ResourceClaims" unless unfinished.zero?
@@ -592,7 +606,8 @@ module Rubernetes
         chosen = Array(versions).find { |version| SERVICES.key?(version.to_s) }
         return chosen.to_s if chosen
 
-        raise Error, "none of services supported by the plugin (#{Array(versions).inspect}) are supported by the kubelet (#{SERVICES.keys.inspect})"
+        raise Error,
+              "none of services supported by the plugin (#{Array(versions).inspect}) are supported by the kubelet (#{SERVICES.keys.inspect})"
       end
 
       # cdiDevicesAsList.
@@ -626,7 +641,10 @@ module Rubernetes
           [pod_claim["resourceClaimName"].to_s, false]
         elsif pod_claim["resourceClaimTemplateName"]
           status = Array(pod.dig("status", "resourceClaimStatuses")).find { |entry| entry["name"] == pod_claim["name"] }
-          raise Error, "pod \"#{pod.dig("metadata", "namespace")}/#{pod.dig("metadata", "name")}\": ResourceClaim not created yet" unless status
+          unless status
+            raise Error,
+                  "pod \"#{pod.dig("metadata", "namespace")}/#{pod.dig("metadata", "name")}\": ResourceClaim not created yet"
+          end
 
           [status["resourceClaimName"], true]
         else

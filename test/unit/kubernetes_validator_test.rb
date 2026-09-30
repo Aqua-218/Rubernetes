@@ -18,7 +18,9 @@ class KubernetesValidatorTest < Minitest::Test
     # is true); coordination.k8s.io Lease does not and requires the version.
     refute_includes(update.map(&:kubernetes_field), "metadata.resourceVersion")
     lease = Rubernetes::Generated.definition_for("io.k8s.api.coordination.v1.Lease")
-    lease_update = lease.validator.errors({"apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease", "metadata" => {}, "spec" => {}}, operation: :update)
+    lease_update = lease.validator.errors({"apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease", "metadata" => {}, "spec" => {}},
+                                          operation: :update)
+
     assert_includes(lease_update.map(&:kubernetes_field), "metadata.resourceVersion")
     assert_equal("Invalid value", lease_update.find { |issue| issue.kubernetes_field == "metadata.resourceVersion" }.kubernetes_error_type)
   end
@@ -61,6 +63,7 @@ class KubernetesValidatorTest < Minitest::Test
 
     errors = definition.validator.errors(object, operation: :create)
     fields = errors.map(&:kubernetes_field)
+
     assert_includes(fields, "spec.template.spec.containers[0].readinessProbe.exec.command")
     assert_includes(fields, "spec.template.spec.containers[0].readinessProbe.httpGet")
     assert_includes(fields, "spec.template.spec.containers[0].readinessProbe.tcpSocket")

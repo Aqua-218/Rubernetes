@@ -63,9 +63,11 @@ module Rubernetes
       # device/FIFO/socket entries skipped (see apply_entry).
       attr_reader :ignored_xattrs, :skipped_special_files
 
-      def initialize(root, limits: nil, max_compressed_bytes: nil, max_uncompressed_bytes: nil, max_entries: nil, max_path_bytes: nil, max_metadata_bytes: nil, filesystem: nil)
+      def initialize(root, limits: nil, max_compressed_bytes: nil, max_uncompressed_bytes: nil, max_entries: nil, max_path_bytes: nil,
+                     max_metadata_bytes: nil, filesystem: nil)
         @root = File.expand_path(root.to_s)
         raise LayerError, "layer extraction root must be a non-empty path" if root.to_s.empty?
+
         ensure_root_directory!(@root, create: true)
         @filesystem = filesystem || secure_filesystem(@root)
         @limits = limits || LayerLimits.new(
@@ -90,6 +92,7 @@ module Rubernetes
       def extract(source, digest: nil, expected_digest: nil, media_type: nil, expected_size: nil)
         expected = digest || expected_digest
         raise DigestError, "layer digest is required before extraction" if expected.nil?
+
         expected_digest_object = Digest.parse(expected)
         temporary = Tempfile.new(["rubernetes-layer", ".blob"])
         temporary.binmode
@@ -101,6 +104,7 @@ module Rubernetes
 
         type = normalize_media_type(media_type, temporary)
         raise UnsupportedMediaType, "zstd layer decompression is unavailable in Ruby stdlib" if MediaTypes.zstd_layer?(type)
+
         gzip = if type.nil?
                  temporary.rewind
                  temporary.read(2) == "\x1f\x8b".b
@@ -139,6 +143,7 @@ module Rubernetes
             chunk = chunk.to_s.b
             compressed_bytes += chunk.bytesize
             raise LimitError, "compressed layer exceeds the configured byte limit" if compressed_bytes > limits.max_compressed_bytes
+
             digest.update(chunk)
             destination.write(chunk)
           end
@@ -148,10 +153,12 @@ module Rubernetes
         if expected_size && compressed_bytes != Integer(expected_size)
           raise LayerError, "compressed layer size does not match the descriptor"
         end
+
         actual = digest.hexdigest
         unless secure_compare(actual, expected.hex)
           raise DigestMismatch, "layer digest mismatch: expected #{expected}, got sha256:#{actual}"
         end
+
         compressed_bytes
       rescue ArgumentError, TypeError => error
         raise LayerError.new("invalid compressed layer size: #{error.message}", cause: error), cause: error
@@ -171,15 +178,16 @@ module Rubernetes
         raise LayerError.new("cannot open OCI layer source: #{error.message}", cause: error), cause: error
       end
 
-      def normalize_media_type(media_type, io)
+      def normalize_media_type(media_type, _io)
         return nil if media_type.nil? || media_type.to_s.empty?
+
         type = media_type.to_s.split(";", 2).first.strip
         raise UnsupportedMediaType, "unsupported OCI layer media type: #{type}" unless MediaTypes.layer?(type)
 
         type
       end
 
-      def gzip_reader(io, media_type)
+      def gzip_reader(io, _media_type)
         io.rewind
         Zlib::GzipReader.new(io)
       rescue Zlib::Error => error
@@ -196,12 +204,15 @@ module Rubernetes
         loop do
           header = read_exact(io, TAR_BLOCK_BYTES, allow_eof: true)
           raise LayerError, "truncated tar header" if header.nil?
+
           if header.bytes.all?(&:zero?)
             state[:zero_blocks] += 1
             break if state[:zero_blocks] >= 2
+
             next
           end
           raise LayerError, "tar data follows an incomplete end marker" if state[:zero_blocks].positive?
+
           verify_tar_checksum!(header)
 
           typeflag = header.byteslice(156, 1).to_s.b
@@ -209,8 +220,10 @@ module Rubernetes
           prefix = tar_field(header, 345, 155, "prefix")
           name = "#{prefix}/#{name}" unless prefix.empty?
           size = parse_tar_number(header.byteslice(124, 12), "size")
-          raise LimitError, "tar metadata exceeds the configured limit" if size > limits.max_metadata_bytes && ["x", "g", "L", "K"].include?(typeflag)
-          payload = nil
+          raise LimitError, "tar metadata exceeds the configured limit" if size > limits.max_metadata_bytes && %w[x g L
+                                                                                                                  K].include?(typeflag)
+
+          nil
 
           case typeflag
           when "x", "g"
@@ -251,6 +264,7 @@ module Rubernetes
       def apply_entry(typeflag, raw_name, raw_link, size, header, xattrs: nil, pax: {})
         increment_entry_count!
         raise LimitError, "tar file exceeds the configured uncompressed byte limit" if size > limits.max_uncompressed_bytes
+
         # A layer tar routinely carries an entry for its own root ("./" or
         # "."), which is a directory that already exists.  It names nothing to
         # create, so it is skipped rather than rejected -- but only as a
@@ -340,9 +354,11 @@ module Rubernetes
           while remaining.positive?
             chunk = read_exact(@current_reader, [remaining, MAX_READ_BYTES].min)
             raise LayerError, "truncated tar file payload" if chunk.nil?
+
             file.write(chunk)
             @extracted_bytes += chunk.bytesize
             raise LimitError, "layer exceeds the configured uncompressed byte limit" if @extracted_bytes > limits.max_uncompressed_bytes
+
             remaining -= chunk.bytesize
           end
         end
@@ -383,7 +399,11 @@ module Rubernetes
           return
         end
         target_name = marker.delete_prefix(".wh.")
-        raise SecurityError, "whiteout target is invalid" if target_name.empty? || target_name == "." || target_name == ".." || target_name.include?("/")
+        if target_name.empty? || target_name == "." || target_name == ".." || target_name.include?("/")
+          raise SecurityError,
+                "whiteout target is invalid"
+        end
+
         target = [parent_name, target_name].reject(&:empty?).join("/")
         @filesystem.remove(target)
       rescue ::Rubernetes::Platform::Linux::SecureRootfs::Error => error
@@ -404,6 +424,7 @@ module Rubernetes
         while remaining.positive?
           chunk = read_exact(@current_reader, [remaining, MAX_READ_BYTES].min)
           raise LayerError, "truncated tar whiteout payload" if chunk.nil?
+
           remaining -= chunk.bytesize
         end
       end
@@ -423,14 +444,20 @@ module Rubernetes
       def safe_entry_path(raw, allow_root: false)
         bytes = raw.to_s.b
         raise SecurityError, "tar path contains NUL" if bytes.include?("\0")
-        raise SecurityError, "tar path is absolute" if bytes.start_with?("/") || bytes.start_with?("\\") || bytes.match?(/\A[A-Za-z]:[\\\/]/)
+        if bytes.start_with?("/", "\\") || bytes.match?(%r{\A[A-Za-z]:[\\/]})
+          raise SecurityError,
+                "tar path is absolute"
+        end
         raise SecurityError, "tar path exceeds the configured length limit" if bytes.bytesize > limits.max_path_bytes
+
         components = bytes.split("/")
         raise SecurityError, "tar path is empty" if components.empty? || components.all?(&:empty?)
+
         normalized = []
         components.each do |component|
           next if component.empty? || component == "."
           raise SecurityError, "tar path contains a parent traversal component" if component == ".."
+
           normalized << component
         end
         if normalized.empty?
@@ -449,7 +476,7 @@ module Rubernetes
         raise SecurityError, "tar link contains NUL" if bytes.include?("\0")
         raise SecurityError, "tar link is empty" if bytes.empty?
         # A Windows-style link is never valid in an OCI layer.
-        raise SecurityError, "tar link is absolute" if bytes.start_with?("\\") || bytes.match?(/\A[A-Za-z]:[\\\/]/)
+        raise SecurityError, "tar link is absolute" if bytes.start_with?("\\") || bytes.match?(%r{\A[A-Za-z]:[\\/]})
 
         # A POSIX absolute target is normal in real images ("/lib" -> "/usr/lib",
         # "/bin/sh" -> "/bin/dash") and is not an escape: it is resolved inside
@@ -461,8 +488,10 @@ module Rubernetes
         normalized = base.dup
         bytes.split("/").each do |component|
           next if component.empty? || component == "."
+
           if component == ".."
             raise SecurityError, "tar link escapes the rootfs" if normalized.empty?
+
             normalized.pop
           else
             normalized << component
@@ -470,7 +499,10 @@ module Rubernetes
         end
         result = normalized.join("/")
         raise SecurityError, "tar link escapes the rootfs" if result.empty?
-        raise SecurityError, "tar link exceeds the configured length limit" if bytes.bytesize > limits.max_path_bytes || result.bytesize > limits.max_path_bytes
+        if bytes.bytesize > limits.max_path_bytes || result.bytesize > limits.max_path_bytes
+          raise SecurityError,
+                "tar link exceeds the configured length limit"
+        end
 
         result
       end
@@ -482,9 +514,7 @@ module Rubernetes
       end
 
       def secure_filesystem(path)
-        unless RUBY_PLATFORM.include?("linux")
-          raise LayerError, "secure OCI layer extraction requires a Linux openat2 backend"
-        end
+        raise LayerError, "secure OCI layer extraction requires a Linux openat2 backend" unless RUBY_PLATFORM.include?("linux")
 
         ::Rubernetes::Platform::Linux::SecureRootfs.new(root: path)
       rescue ::Rubernetes::Platform::Linux::SecureRootfs::Error, ::Rubernetes::Platform::Linux::Error => error
@@ -500,6 +530,7 @@ module Rubernetes
       def increment_entry_count!
         @entry_count = (@entry_count || 0) + 1
         raise LimitError, "layer exceeds the configured entry limit" if @entry_count > limits.max_entries
+
         @extracted_bytes ||= 0
       end
 
@@ -507,9 +538,8 @@ module Rubernetes
         bytes = field.to_s.b
         text = bytes.delete("\0 ").strip
         return 0 if text.empty?
-        unless text.match?(/\A[0-7]+\z/)
-          raise SecurityError, "tar #{label} field is not valid octal"
-        end
+        raise SecurityError, "tar #{label} field is not valid octal" unless text.match?(/\A[0-7]+\z/)
+
         Integer(text, 8)
       rescue ArgumentError => error
         raise SecurityError.new("tar #{label} field is invalid: #{error.message}", cause: error), cause: error
@@ -521,15 +551,19 @@ module Rubernetes
         while offset < payload.bytesize
           separator = payload.index(" ", offset)
           raise SecurityError, "PAX record has no length separator" unless separator
+
           length_text = payload.byteslice(offset, separator - offset)
           length = Integer(length_text, 10)
           raise SecurityError, "PAX record length is invalid" if length <= 0 || offset + length > payload.bytesize
+
           record = payload.byteslice(offset, length)
           raise SecurityError, "PAX record does not match its declared length" unless record.end_with?("\n")
+
           body_offset = separator - offset + 1
           body = record.byteslice(body_offset, length - body_offset - 1)
           key, value = body.split("=", 2)
           raise SecurityError, "PAX record is invalid" if key.to_s.empty? || value.nil? || values.key?(key)
+
           values[key] = value
           offset += length
         end
@@ -553,6 +587,7 @@ module Rubernetes
         if nul && field.byteslice((nul + 1)..).to_s.bytes.any? { |byte| byte != 0 }
           raise SecurityError, "tar #{label} field contains data after NUL"
         end
+
         value = nul ? field.byteslice(0, nul) : field
         value.to_s.b.delete_suffix(" ".b)
       end
@@ -560,6 +595,7 @@ module Rubernetes
       def verify_tar_checksum!(header)
         expected_text = header.byteslice(148, 8).to_s.b.delete("\0 ").strip
         raise SecurityError, "tar checksum field is invalid" unless expected_text.match?(/\A[0-7]+\z/)
+
         expected = Integer(expected_text, 8)
         # Every byte of the header with the checksum field counted as eight
         # spaces.  String#sum adds the bytes in C; the per-byte Ruby loop it
@@ -572,6 +608,7 @@ module Rubernetes
 
       def read_payload(io, size)
         raise LimitError, "tar metadata exceeds the configured uncompressed byte limit" if size > limits.max_metadata_bytes
+
         payload = read_exact(io, size)
         raise LayerError, "truncated tar metadata payload" if payload.nil? || payload.bytesize != size
 
@@ -581,6 +618,7 @@ module Rubernetes
       def discard_padding(io, size)
         remaining = (TAR_BLOCK_BYTES - (size % TAR_BLOCK_BYTES)) % TAR_BLOCK_BYTES
         return if remaining.zero?
+
         padding = read_exact(io, remaining)
         raise LayerError, "truncated tar padding" if padding.nil? || padding.bytesize != remaining
       end
@@ -597,15 +635,18 @@ module Rubernetes
 
       def read_exact(io, bytes, allow_eof: false)
         return "".b if bytes.zero?
+
         output = String.new(encoding: Encoding::BINARY)
         while output.bytesize < bytes
           chunk = io.read([bytes - output.bytesize, MAX_READ_BYTES].min)
           if chunk.nil? || chunk.empty?
             return nil if output.empty? && allow_eof
+
             break
           end
           @stream_bytes += chunk.bytesize
           raise LimitError, "layer exceeds the configured uncompressed byte limit" if @stream_bytes > limits.max_uncompressed_bytes
+
           output << chunk.to_s.b
         end
         output.bytesize == bytes ? output : nil
@@ -613,9 +654,7 @@ module Rubernetes
 
       # Tar payload reads are routed through this accessor so every regular file
       # and whiteout consumes exactly the bytes declared by its header.
-      def current_reader
-        @current_reader
-      end
+      attr_reader :current_reader
 
       class LimitedReader
         def initialize(io, limit)
@@ -627,6 +666,7 @@ module Rubernetes
         def read(length = nil)
           chunk = length.nil? ? @io.read : @io.read(length)
           return chunk if chunk.nil? || chunk.empty?
+
           @bytes += chunk.bytesize
           raise LimitError, "layer exceeds the configured uncompressed byte limit" if @bytes > @limit
 
@@ -653,6 +693,7 @@ module Rubernetes
       def drain_trailing_archive(io)
         while (chunk = io.read(MAX_READ_BYTES))
           next if chunk.empty?
+
           @stream_bytes += chunk.bytesize
           raise LimitError, "layer exceeds the configured uncompressed byte limit" if @stream_bytes > limits.max_uncompressed_bytes
           raise SecurityError, "tar archive contains non-zero data after its end marker" if chunk.to_s.b.bytes.any?(&:positive?)

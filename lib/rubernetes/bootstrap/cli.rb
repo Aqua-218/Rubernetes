@@ -26,9 +26,7 @@ module Rubernetes
 
       def run(argv)
         Config.validate_process_name!(@process_name)
-        if @process_name == "rubectl" && !argv.include?("--check-config")
-          return run_rubectl(argv)
-        end
+        return run_rubectl(argv) if @process_name == "rubectl" && !argv.include?("--check-config")
 
         options = {config_path: nil, check_config: false}
         parser = option_parser(options)

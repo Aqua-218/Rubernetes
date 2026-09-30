@@ -38,6 +38,7 @@ class ServiceIPFamilyDefaultingTest < Minitest::Test
 
   def test_headless_selectorless_defaults_to_dual_stack_on_a_dual_stack_cluster
     status, spec, = create(server(DUAL), "hl", {"clusterIP" => "None"})
+
     assert_equal 201, status
     assert_equal "RequireDualStack", spec["ipFamilyPolicy"]
     assert_equal %w[IPv4 IPv6], spec["ipFamilies"]
@@ -46,6 +47,7 @@ class ServiceIPFamilyDefaultingTest < Minitest::Test
 
   def test_headless_selectorless_carries_both_families_even_on_a_single_stack_cluster
     status, spec, = create(server(SINGLE), "hl", {"clusterIP" => "None"})
+
     assert_equal 201, status
     assert_equal "RequireDualStack", spec["ipFamilyPolicy"]
     assert_equal %w[IPv4 IPv6], spec["ipFamilies"]
@@ -53,25 +55,30 @@ class ServiceIPFamilyDefaultingTest < Minitest::Test
 
   def test_headless_selectorless_single_stack_when_asked
     status, spec, = create(server(DUAL), "hl", {"clusterIP" => "None", "ipFamilyPolicy" => "SingleStack"})
+
     assert_equal 201, status
     assert_equal ["IPv4"], spec["ipFamilies"]
     status, spec, = create(server(DUAL), "hl6", {"clusterIP" => "None", "ipFamilies" => ["IPv6"]})
+
     assert_equal 201, status
     assert_equal %w[IPv6 IPv4], spec["ipFamilies"]
   end
 
   def test_headless_with_selector_defaults_to_single_stack_primary
     status, spec, = create(server(DUAL), "hl", SELECTOR.merge("clusterIP" => "None"))
+
     assert_equal 201, status
     assert_equal "SingleStack", spec["ipFamilyPolicy"]
     assert_equal ["IPv4"], spec["ipFamilies"]
     status, spec, = create(server(DUAL), "hlp", SELECTOR.merge("clusterIP" => "None", "ipFamilyPolicy" => "PreferDualStack"))
+
     assert_equal 201, status
     assert_equal %w[IPv4 IPv6], spec["ipFamilies"]
   end
 
   def test_headless_with_selector_require_dual_stack_needs_a_dual_stack_cluster
     status, _, message = create(server(SINGLE), "hl", SELECTOR.merge("clusterIP" => "None", "ipFamilyPolicy" => "RequireDualStack"))
+
     assert_equal 422, status
     assert_includes message, "this cluster is not configured for dual-stack services"
   end
@@ -79,31 +86,37 @@ class ServiceIPFamilyDefaultingTest < Minitest::Test
   def test_headfull_defaults_and_completion
     dual = server(DUAL)
     status, spec, = create(dual, "plain", SELECTOR)
+
     assert_equal 201, status
     assert_equal ["SingleStack", ["IPv4"], 1], [spec["ipFamilyPolicy"], spec["ipFamilies"], spec["clusterIPs"].length]
     status, spec, = create(dual, "prefer", SELECTOR.merge("ipFamilyPolicy" => "PreferDualStack"))
+
     assert_equal 201, status
     assert_equal [%w[IPv4 IPv6], 2], [spec["ipFamilies"], spec["clusterIPs"].length]
     status, spec, = create(dual, "v6-require", SELECTOR.merge("ipFamilies" => ["IPv6"], "ipFamilyPolicy" => "RequireDualStack"))
+
     assert_equal 201, status
     assert_equal %w[IPv6 IPv4], spec["ipFamilies"]
-    assert spec["clusterIPs"].first.include?(":"), "the primary cluster IP follows the first family"
+    assert_includes spec["clusterIPs"].first, ":", "the primary cluster IP follows the first family"
   end
 
   def test_single_stack_cluster_keeps_single_family_under_prefer_dual_stack
     status, spec, = create(server(SINGLE), "prefer", SELECTOR.merge("ipFamilyPolicy" => "PreferDualStack"))
+
     assert_equal 201, status
     assert_equal ["PreferDualStack", ["IPv4"]], [spec["ipFamilyPolicy"], spec["ipFamilies"]]
   end
 
   def test_two_families_without_a_policy_are_rejected
     status, _, message = create(server(DUAL), "both", SELECTOR.merge("ipFamilies" => %w[IPv4 IPv6]))
+
     assert_equal 422, status
     assert_includes message, "must be 'RequireDualStack' or 'PreferDualStack' when multiple IP families are specified"
   end
 
   def test_cluster_ips_without_cluster_ip_are_rejected
     status, _, message = create(server(DUAL), "ips", SELECTOR.merge("clusterIPs" => ["10.96.0.77", "fd00:d8:5::78"]))
+
     assert_equal 422, status
     assert_includes message, "must be empty when `clusterIP` is not specified"
   end
@@ -111,10 +124,12 @@ class ServiceIPFamilyDefaultingTest < Minitest::Test
   def test_family_fields_are_forbidden_on_external_name
     status, _, message = create(server(DUAL), "ext", {"type" => "ExternalName", "externalName" => "example.com",
                                                       "ipFamilies" => ["IPv4"], "ipFamilyPolicy" => "SingleStack"})
+
     assert_equal 422, status
     assert_includes message, "spec.ipFamilies: Forbidden: may not be set for ExternalName services"
     assert_includes message, "spec.ipFamilyPolicy: Forbidden: may not be set for ExternalName services"
     status, spec, = create(server(DUAL), "ext-ok", {"type" => "ExternalName", "externalName" => "example.com"})
+
     assert_equal 201, status
     assert_nil spec["ipFamilies"]
   end

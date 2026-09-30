@@ -13,7 +13,12 @@ class NetworkTransactionPriorityTest < Minitest::Test
     lock = Lock.new
     order = Queue.new
     release_first = Queue.new
-    first = Thread.new { lock.synchronize(:delete) { order << :delete0; release_first.pop } }
+    first = Thread.new do
+      lock.synchronize(:delete) do
+        order << :delete0
+        release_first.pop
+      end
+    end
     sleep 0.05
     deletes = Array.new(3) { |index| Thread.new { lock.synchronize(:delete) { order << :"delete#{index + 1}" } } }
     sleep 0.05
@@ -36,7 +41,10 @@ class NetworkTransactionPriorityTest < Minitest::Test
     threads = Array.new(12) do |index|
       Thread.new do
         lock.synchronize(index.even? ? :add : :delete) do
-          guard.synchronize { active += 1; peak = [peak, active].max }
+          guard.synchronize do
+            active += 1
+            peak = [peak, active].max
+          end
           sleep 0.005
           guard.synchronize { active -= 1 }
         end

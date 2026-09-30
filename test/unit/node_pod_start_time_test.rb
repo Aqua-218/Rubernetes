@@ -31,8 +31,8 @@ class NodePodStartTimeTest < Minitest::Test
     state
   end
 
-  def aggregate(pod_object, state, **options)
-    @aggregator.aggregate(pod: pod_object, state: state, **options)
+  def aggregate(pod_object, state, **)
+    @aggregator.aggregate(pod: pod_object, state: state, **)
   end
 
   def test_a_pod_without_an_observed_start_is_stamped_with_the_current_time
@@ -73,14 +73,14 @@ class NodePodStartTimeTest < Minitest::Test
 
   def test_a_pod_with_no_observed_container_is_not_ready_to_start_containers
     conditions = aggregate(pod, {"containers" => {}, "initContainers" => {}})
-                 .conditions.to_h { |entry| [entry.type, entry.status] }
+      .conditions.to_h { |entry| [entry.type, entry.status] }
 
     assert_equal("False", conditions.fetch("PodReadyToStartContainers"))
   end
 
   def test_a_running_pod_without_an_address_is_not_ready_to_start_containers
     conditions = aggregate(pod, running_state(pod_ip: nil))
-                 .conditions.to_h { |entry| [entry.type, entry.status] }
+      .conditions.to_h { |entry| [entry.type, entry.status] }
 
     assert_equal("False", conditions.fetch("PodReadyToStartContainers"))
   end
@@ -88,7 +88,7 @@ class NodePodStartTimeTest < Minitest::Test
   # A host-network Pod never gets a sandbox address of its own.
   def test_a_host_network_pod_is_ready_to_start_containers_without_an_address
     conditions = aggregate(pod(host_network: true), running_state(pod_ip: nil))
-                 .conditions.to_h { |entry| [entry.type, entry.status] }
+      .conditions.to_h { |entry| [entry.type, entry.status] }
 
     assert_equal("True", conditions.fetch("PodReadyToStartContainers"))
   end

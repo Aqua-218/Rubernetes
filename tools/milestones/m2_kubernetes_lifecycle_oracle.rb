@@ -25,13 +25,13 @@ module M2KubernetesLifecycleOracle
   CONTRACT_PATH = File.join(ROOT, "test/conformance/kubernetes/m2_lifecycle_oracle/runner_contract.json").freeze
   FIXTURE_PATH = File.join(ROOT, "test/conformance/kubernetes/m2_lifecycle_oracle/fixtures/lifecycle.json").freeze
   KUBERNETES_LOCK_PATH = File.join(ROOT, "third_party/locks/kubernetes-v1.36.2.json").freeze
-  CNI_LOCK_RELATIVE_PATH = "third_party/locks/m2-lifecycle-cni.json".freeze
+  CNI_LOCK_RELATIVE_PATH = "third_party/locks/m2-lifecycle-cni.json"
   CNI_LOCK_PATH = File.join(ROOT, CNI_LOCK_RELATIVE_PATH).freeze
   RUNNER_PATH = File.join(ROOT, "test/conformance/kubernetes/m2_lifecycle_oracle/runner.rb").freeze
-  RUNNER_LOCK_RELATIVE_PATH = "third_party/locks/m2-lifecycle-oracle-runner.json".freeze
+  RUNNER_LOCK_RELATIVE_PATH = "third_party/locks/m2-lifecycle-oracle-runner.json"
   RUNNER_LOCK_PATH = File.join(ROOT, RUNNER_LOCK_RELATIVE_PATH).freeze
-  KUBERNETES_VERSION = "v1.36.2".freeze
-  KUBERNETES_SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467".freeze
+  KUBERNETES_VERSION = "v1.36.2"
+  KUBERNETES_SOURCE_COMMIT = "24e2b02af5543d7910c2bb074c7264df5a8f0467"
   REQUIRED_CASES = %w[
     init_sidecar_app_order
     startup_liveness_readiness_thresholds
@@ -45,9 +45,9 @@ module M2KubernetesLifecycleOracle
     "graceful_termination_oracle" => %w[operations events]
   }.freeze
   ACTUAL_SOURCE = M2Gate::LIFECYCLE_SEMANTICS_ACTUAL_SOURCE
-  SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
-  COMMIT_PATTERN = /\A[0-9a-f]{40}\z/.freeze
-  DIGEST_PINNED_IMAGE_PATTERN = /\A[^@\s]+@sha256:[0-9a-f]{64}\z/.freeze
+  SHA256_PATTERN = /\A[0-9a-f]{64}\z/
+  COMMIT_PATTERN = /\A[0-9a-f]{40}\z/
+  DIGEST_PINNED_IMAGE_PATTERN = /\A[^@\s]+@sha256:[0-9a-f]{64}\z/
   CNI_LOCK_BLOCKER = M2Gate::LIFECYCLE_CNI_LOCK_BLOCKER
 
   class OracleError < StandardError; end
@@ -97,6 +97,7 @@ module M2KubernetesLifecycleOracle
     document = parse_json(path)
     raise OracleError, "lifecycle oracle runner contract must be an object" unless document.is_a?(Hash)
     raise OracleError, "lifecycle oracle runner contract schema_version must be 1" unless document["schema_version"] == 1
+
     document
   end
 
@@ -107,12 +108,15 @@ module M2KubernetesLifecycleOracle
            document["source_commit"] == KUBERNETES_SOURCE_COMMIT
       raise OracleError, "lifecycle oracle fixture is not pinned to Kubernetes #{KUBERNETES_VERSION} at #{KUBERNETES_SOURCE_COMMIT}"
     end
+
     timeline = document["timeline"]
     cases = document["cases"]
     raise OracleError, "lifecycle oracle fixture timeline must be a non-empty array" unless timeline.is_a?(Array) && !timeline.empty?
     raise OracleError, "lifecycle oracle fixture cases must be an object" unless cases.is_a?(Hash)
+
     missing = REQUIRED_CASES - cases.keys.map(&:to_s)
     raise OracleError, "lifecycle oracle fixture is missing cases: #{missing.join(", ")}" unless missing.empty?
+
     validate_fixture_images!(cases)
     document
   end
@@ -130,7 +134,11 @@ module M2KubernetesLifecycleOracle
     busybox = lock.dig("runner_support_images", "busybox")
     expected_reference = busybox.is_a?(Hash) ? busybox["reference"].to_s : ""
     expected_digest = busybox.is_a?(Hash) ? busybox.dig("platforms", "linux/amd64").to_s.delete_prefix("sha256:") : ""
-    raise OracleError, "Kubernetes lock does not provide an amd64 busybox image digest" unless expected_reference.match?(/\A[^:]+:[^:]+\z/) && valid_digest?(expected_digest)
+    unless expected_reference.match?(/\A[^:]+:[^:]+\z/) && valid_digest?(expected_digest)
+      raise OracleError,
+            "Kubernetes lock does not provide an amd64 busybox image digest"
+    end
+
     expected_image = expected_reference.sub(/:[^:]+\z/, "@sha256:#{expected_digest}")
     images = []
     walk = lambda do |value|
@@ -144,8 +152,10 @@ module M2KubernetesLifecycleOracle
     end
     walk.call(cases)
     raise OracleError, "lifecycle oracle fixture must include at least one pinned workload image" if images.empty?
+
     invalid = images.uniq.reject { |image| image == expected_image }
     raise OracleError, "lifecycle oracle fixture image is not the locked amd64 busybox digest: #{invalid.join(", ")}" unless invalid.empty?
+
     true
   end
 
@@ -155,6 +165,7 @@ module M2KubernetesLifecycleOracle
     file_count = hash["file_count"] || hash[:file_count]
     raise OracleError, "source input SHA-256 is required" unless valid_digest?(sha256)
     raise OracleError, "source input file count must be positive" unless file_count.is_a?(Integer) && file_count.positive?
+
     {"sha256" => sha256, "file_count" => file_count}
   end
 
@@ -198,23 +209,25 @@ module M2KubernetesLifecycleOracle
     unless document.is_a?(Hash)
       return {"available" => false, "path" => relative_path, "errors" => ["CNI lock #{relative_path} must be an object"]}
     end
+
     missing = required_fields.reject { |field| document[field].is_a?(String) && !document[field].empty? }
     errors = missing.map { |field| "CNI lock #{relative_path} is missing #{field}" }
     errors << "CNI lock #{relative_path} source_commit must be a 40-character commit" unless valid_commit?(document["source_commit"])
     errors << "CNI lock #{relative_path} image_digest must be a SHA-256 digest" unless valid_digest?(document["image_digest"])
     errors << "CNI lock #{relative_path} config_sha256 must be a SHA-256 digest" unless valid_digest?(document["config_sha256"])
     image_reference = document["image_reference"]
-    unless digest_pinned_image?(image_reference)
-      errors << "CNI lock #{relative_path} image_reference must be digest-pinned"
-    else
+    if digest_pinned_image?(image_reference)
       expected_digest = image_reference.split("@sha256:", 2).last
-      errors << "CNI lock #{relative_path} image_reference digest must match image_digest" unless expected_digest == document["image_digest"]
+      unless expected_digest == document["image_digest"]
+        errors << "CNI lock #{relative_path} image_reference digest must match image_digest"
+      end
+    else
+      errors << "CNI lock #{relative_path} image_reference must be digest-pinned"
     end
     if document.key?("lock_sha256")
       errors << "CNI lock #{relative_path} lock_sha256 must be a SHA-256 digest" unless valid_digest?(document["lock_sha256"])
-      if valid_digest?(document["lock_sha256"])
-        errors << "CNI lock #{relative_path} lock_sha256 does not match canonical content" unless
-          document["lock_sha256"] == canonical_digest(document, excluded_keys: ["lock_sha256"])
+      if valid_digest?(document["lock_sha256"]) && !(document["lock_sha256"] == canonical_digest(document, excluded_keys: ["lock_sha256"]))
+        errors << "CNI lock #{relative_path} lock_sha256 does not match canonical content"
       end
     end
     {
@@ -261,7 +274,11 @@ module M2KubernetesLifecycleOracle
     end
 
     lock = runner_lock_document
-    raise OracleError, "external lifecycle oracle command is not the built-in pinned runner and no immutable runner lock is present" unless lock
+    unless lock
+      raise OracleError,
+            "external lifecycle oracle command is not the built-in pinned runner and no immutable runner lock is present"
+    end
+
     validate_runner_lock!(lock, words)
     runner_path = immutable_file_identity(lock.fetch("runner_path"), "locked lifecycle oracle runner")
     executable_path = immutable_file_identity(lock.fetch("executable_path"), "locked lifecycle oracle executable")
@@ -283,6 +300,7 @@ module M2KubernetesLifecycleOracle
     value = path.to_s
     raise OracleError, "#{label} path is required" if value.empty?
     raise OracleError, "#{label} path must not contain NUL" if value.include?("\0")
+
     expanded = File.expand_path(value, ROOT)
     raise OracleError, "#{label} path must not be a symlink" if File.symlink?(expanded)
 
@@ -299,6 +317,7 @@ module M2KubernetesLifecycleOracle
 
     document = parse_json(RUNNER_LOCK_PATH)
     raise OracleError, "lifecycle oracle runner lock must be an object" unless document.is_a?(Hash)
+
     document
   rescue Errno::ENOENT
     nil
@@ -306,10 +325,12 @@ module M2KubernetesLifecycleOracle
 
   def validate_runner_lock!(lock, command)
     raise OracleError, "lifecycle oracle runner lock schema_version must be 1" unless lock["schema_version"] == 1
+
     locked_command = lock["command"]
     raise OracleError, "lifecycle oracle runner lock command must be an exact argv" unless
       locked_command.is_a?(Array) && !locked_command.empty? && locked_command.all? { |part| part.is_a?(String) && !part.empty? }
     raise OracleError, "lifecycle oracle command does not match the immutable runner lock" unless command == locked_command
+
     %w[runner_path executable_path].each do |key|
       raise OracleError, "lifecycle oracle runner lock #{key} is required" unless lock[key].is_a?(String) && !lock[key].empty?
     end
@@ -321,16 +342,22 @@ module M2KubernetesLifecycleOracle
 
     runner = immutable_file_identity(lock.fetch("runner_path"), "locked lifecycle oracle runner")
     executable = immutable_file_identity(lock.fetch("executable_path"), "locked lifecycle oracle executable")
-    raise OracleError, "lifecycle oracle runner lock runner SHA-256 does not match the real file" unless runner["sha256"] == lock["runner_sha256"]
-    raise OracleError, "lifecycle oracle runner lock executable SHA-256 does not match the real file" unless executable["sha256"] == lock["executable_sha256"]
+    unless runner["sha256"] == lock["runner_sha256"]
+      raise OracleError,
+            "lifecycle oracle runner lock runner SHA-256 does not match the real file"
+    end
+    unless executable["sha256"] == lock["executable_sha256"]
+      raise OracleError,
+            "lifecycle oracle runner lock executable SHA-256 does not match the real file"
+    end
+
     command_runner = command.find do |part|
-      begin
-        File.realpath(part, ROOT) == runner["path"]
-      rescue Errno::ENOENT, Errno::EACCES
-        false
-      end
+      File.realpath(part, ROOT) == runner["path"]
+    rescue Errno::ENOENT, Errno::EACCES
+      false
     end
     raise OracleError, "lifecycle oracle runner lock does not bind the runner path into argv" unless command_runner
+
     true
   end
 
@@ -520,8 +547,10 @@ module M2KubernetesLifecycleOracle
     }
   end
 
-  def normalize_external_report(document, request:, actual_cases:, lock_status:, contract_document:, command:, raw_trace_sha256:, runner_identity: nil)
+  def normalize_external_report(document, request:, actual_cases:, lock_status:, contract_document:, command:, raw_trace_sha256:,
+                                runner_identity: nil)
     raise OracleError, "external lifecycle oracle output must be an object" unless document.is_a?(Hash)
+
     errors = []
     external_status = document["status"]
     external_passed = document["passed"]
@@ -546,7 +575,9 @@ module M2KubernetesLifecycleOracle
     if document["timeline_sha256"] && document["timeline_sha256"] != request["timeline_sha256"]
       errors << "external lifecycle oracle timeline SHA-256 does not match the request"
     end
-    errors << "external lifecycle oracle must echo request_seed_sha256" unless document["request_seed_sha256"] == request["request_seed_sha256"]
+    unless document["request_seed_sha256"] == request["request_seed_sha256"]
+      errors << "external lifecycle oracle must echo request_seed_sha256"
+    end
 
     trace = document["trace"]
     errors << "external lifecycle oracle trace is required" unless trace.is_a?(Array) && !trace.empty?
@@ -593,7 +624,9 @@ module M2KubernetesLifecycleOracle
       errors << "external lifecycle oracle case #{name} is missing" if expected.nil?
       errors << "Rubernetes lifecycle case #{name} is missing" if actual.nil?
       REQUIRED_OBSERVABLE_FIELDS.fetch(name).each do |field|
-        errors << "external lifecycle oracle case #{name} is missing observable field #{field}" unless expected.is_a?(Hash) && expected.key?(field)
+        unless expected.is_a?(Hash) && expected.key?(field)
+          errors << "external lifecycle oracle case #{name} is missing observable field #{field}"
+        end
         errors << "Rubernetes lifecycle case #{name} is missing observable field #{field}" unless actual.is_a?(Hash) && actual.key?(field)
       end
       errors << "Rubernetes lifecycle case #{name} actual provenance is missing" unless actual_provenance.is_a?(Hash)
@@ -619,7 +652,9 @@ module M2KubernetesLifecycleOracle
     identity_errors = errors.dup
     comparisons.each do |comparison|
       errors << "external lifecycle oracle case #{comparison.fetch("id")} must run exactly once" unless comparison["attempt_count"] == 1
-      errors << "external lifecycle oracle case #{comparison.fetch("id")} differs from Rubernetes production semantics" unless comparison["passed"] == true
+      unless comparison["passed"] == true
+        errors << "external lifecycle oracle case #{comparison.fetch("id")} differs from Rubernetes production semantics"
+      end
     end
 
     provenance_source = source.is_a?(Hash) ? source.dup : {}
@@ -639,8 +674,10 @@ module M2KubernetesLifecycleOracle
       runner_identity: expected_runner
     )
     external_provenance = document["provenance"]
-    if external_provenance.is_a?(Hash) && external_provenance["provenance_sha256"]
-      errors << "external lifecycle oracle provenance SHA-256 does not match canonical content" unless external_provenance["provenance_sha256"] == canonical_digest(external_provenance, excluded_keys: ["provenance_sha256"])
+    if external_provenance.is_a?(Hash) && external_provenance["provenance_sha256"] && !(external_provenance["provenance_sha256"] == canonical_digest(
+      external_provenance, excluded_keys: ["provenance_sha256"]
+    ))
+      errors << "external lifecycle oracle provenance SHA-256 does not match canonical content"
     end
 
     difference_count = comparisons.count { |comparison| comparison["passed"] != true }
@@ -651,7 +688,11 @@ module M2KubernetesLifecycleOracle
     {
       "schema_version" => 1,
       "executed" => executed,
-      "status" => passed ? "PASS" : (executed ? "FAIL" : "INCOMPLETE"),
+      "status" => if passed
+                    "PASS"
+                  else
+                    (executed ? "FAIL" : "INCOMPLETE")
+                  end,
       "passed" => passed,
       "difference_count" => difference_count,
       "external_status" => external_status,
@@ -731,9 +772,7 @@ module M2KubernetesLifecycleOracle
       errors << "external lifecycle oracle #{key} identity must be digest-pinned" unless digest_pinned_image?(source[key])
     end
     errors << "external lifecycle oracle network isolation must be true" unless source["network_isolated"] == true
-    unless runtime.is_a?(Hash)
-      errors << "external lifecycle oracle runtime identity is required"
-    else
+    if runtime.is_a?(Hash)
       %w[containerd runc].each do |name|
         identity = runtime[name]
         unless identity.is_a?(Hash) && identity["version"].is_a?(String) && !identity["version"].empty? &&
@@ -752,10 +791,10 @@ module M2KubernetesLifecycleOracle
           errors << "external lifecycle oracle #{name} executable path could not be verified: #{error.message}"
         end
       end
-    end
-    unless cni.is_a?(Hash)
-      errors << "external lifecycle oracle CNI identity is required"
     else
+      errors << "external lifecycle oracle runtime identity is required"
+    end
+    if cni.is_a?(Hash)
       %w[plugin version source_commit image_reference image_digest config_sha256].each do |key|
         errors << "external lifecycle oracle CNI #{key} is required" unless cni[key].is_a?(String) && !cni[key].empty?
       end
@@ -763,16 +802,19 @@ module M2KubernetesLifecycleOracle
       errors << "external lifecycle oracle CNI image_digest must be a SHA-256 digest" unless valid_digest?(cni["image_digest"])
       errors << "external lifecycle oracle CNI config_sha256 must be a SHA-256 digest" unless valid_digest?(cni["config_sha256"])
       errors << "external lifecycle oracle CNI image_reference must be digest-pinned" unless digest_pinned_image?(cni["image_reference"])
-      if digest_pinned_image?(cni["image_reference"])
-        errors << "external lifecycle oracle CNI image_reference digest must match image_digest" unless
-          cni["image_reference"].split("@sha256:", 2).last == cni["image_digest"]
+      if digest_pinned_image?(cni["image_reference"]) && !(cni["image_reference"].split("@sha256:", 2).last == cni["image_digest"])
+        errors << "external lifecycle oracle CNI image_reference digest must match image_digest"
       end
       if cni_lock.is_a?(Hash)
         locked_identity = cni_lock.slice("plugin", "version", "source_commit", "image_reference", "image_digest", "config_sha256")
-        errors << "external lifecycle oracle CNI identity does not match the repository lock" unless cni.slice(*locked_identity.keys) == locked_identity
+        unless cni.slice(*locked_identity.keys) == locked_identity
+          errors << "external lifecycle oracle CNI identity does not match the repository lock"
+        end
       else
         errors << "external lifecycle oracle CNI repository lock identity is required"
       end
+    else
+      errors << "external lifecycle oracle CNI identity is required"
     end
   end
 
@@ -820,7 +862,7 @@ if $PROGRAM_NAME == __FILE__
     "file_count" => Integer(ENV.fetch("RUBERNETES_M2_INPUT_FILE_COUNT", "1"), 10)
   }
   actual_index = ARGV.index("--actual")
-  actual_path = actual_index ? ARGV[actual_index + 1] : ENV["RUBERNETES_M2_LIFECYCLE_ACTUAL_CASES"]
+  actual_path = actual_index ? ARGV[actual_index + 1] : ENV.fetch("RUBERNETES_M2_LIFECYCLE_ACTUAL_CASES", nil)
   actual_cases = if actual_path.to_s.empty?
                    []
                  else

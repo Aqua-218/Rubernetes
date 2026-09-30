@@ -17,16 +17,19 @@ class SchemaCatalogTest < Minitest::Test
       assert_equal 7, catalog.gvr_count
 
       orphan = catalog.find_gvk("apps/v1/Orphan")
+
       assert_equal "io.example.v1.Orphan", orphan.schema_name
       protocol_gvk = catalog.find_gvk("core/v1/PodExecOptions")
+
       assert_instance_of Catalog::GVKEntry, protocol_gvk
-      assert protocol_gvk.protocol_only?
+      assert_predicate protocol_gvk, :protocol_only?
       assert_nil protocol_gvk.schema_name
       assert_nil protocol_gvk.openapi_schema
       assert_nil catalog.find_gvr(group: "apps", version: "v1", resource: "orphans")
 
       deployment = catalog.find_gvk(group: "apps", version: "v1beta1", kind: "Deployment")
       resource = catalog.find_gvr(group: "apps", version: "v1", resource: "deployments")
+
       assert_same resource, catalog.find_gvr("apps/v1/deployments")
       assert_same deployment.type, catalog.type(gvr: resource.gvr)
       assert_same deployment.type, catalog.type("apps/v1beta1/Deployment")
@@ -42,22 +45,24 @@ class SchemaCatalogTest < Minitest::Test
       assert_equal ["spec"], resource.patch_set
       assert_equal :namespaced, resource.scope
       assert_equal({"spec.containers" => "name"}, resource.merge_keys)
-      assert_equal ["get", "list"], resource.verbs
+      assert_equal %w[get list], resource.verbs
 
       deployment_status = catalog.find_gvr(group: "apps", version: "v1", resource: "deployments/status")
+
       assert_instance_of Catalog::GVR, deployment_status
-      refute deployment_status.primary?
-      assert deployment_status.subresource?
+      refute_predicate deployment_status, :primary?
+      assert_predicate deployment_status, :subresource?
       assert_equal "Deployment", deployment_status.kind
       assert_same resource.type, deployment_status.type
-      assert_equal ["get", "patch"], deployment_status.verbs
+      assert_equal %w[get patch], deployment_status.verbs
 
       autoscaling_scales = %w[deployments replicasets statefulsets].map do |parent|
         catalog.find_gvr(group: "autoscaling", version: "v1", resource: "#{parent}/scale")
       end
+
       assert_equal 3, autoscaling_scales.compact.length
       assert_equal 3, autoscaling_scales.map(&:gvr).uniq.length
-      assert autoscaling_scales.all? { |entry| entry.primary_resource.nil? }
+      assert(autoscaling_scales.all? { |entry| entry.primary_resource.nil? })
       refute_equal autoscaling_scales.first.gvr, catalog.find_gvr(
         group: "apps", version: "v1", resource: "deployments/scale"
       ).gvr
@@ -151,8 +156,9 @@ class SchemaCatalogTest < Minitest::Test
     assert_predicate(catalog.gvk_index, :frozen?)
     assert catalog.find_gvk(group: "", version: "v1", kind: "Pod")
     protocol_gvk = catalog.find_gvk(group: "", version: "v1", kind: "NodeProxyOptions")
+
     assert_instance_of Catalog::GVKEntry, protocol_gvk
-    assert protocol_gvk.protocol_only?
+    assert_predicate protocol_gvk, :protocol_only?
     assert catalog.find_gvr(group: "", version: "v1", resource: "pods")
   end
 

@@ -129,7 +129,10 @@ module Rubernetes
         result["evictionSoft"] = stringify(eviction["soft"]) if eviction["soft"]
         result["evictionSoftGracePeriod"] = stringify(eviction["soft_grace_period"]) if eviction["soft_grace_period"]
         result["evictionMinimumReclaim"] = stringify(eviction["minimum_reclaim"]) if eviction["minimum_reclaim"]
-        result["evictionPressureTransitionPeriod"] = duration(eviction["pressure_transition_period"]) if eviction["pressure_transition_period"]
+        if eviction["pressure_transition_period"]
+          result["evictionPressureTransitionPeriod"] =
+            duration(eviction["pressure_transition_period"])
+        end
         result["evictionMaxPodGracePeriod"] = Integer(eviction["max_pod_grace_period_seconds"]) if eviction["max_pod_grace_period_seconds"]
       end
 
@@ -142,7 +145,10 @@ module Rubernetes
 
       def apply_shutdown(result, shutdown)
         result["shutdownGracePeriod"] = duration(shutdown["grace_period"]) if shutdown["grace_period"]
-        result["shutdownGracePeriodCriticalPods"] = duration(shutdown["grace_period_critical_pods"]) if shutdown["grace_period_critical_pods"]
+        if shutdown["grace_period_critical_pods"]
+          result["shutdownGracePeriodCriticalPods"] =
+            duration(shutdown["grace_period_critical_pods"])
+        end
         return unless shutdown["grace_period_by_pod_priority"]
 
         result["shutdownGracePeriodByPodPriority"] = Array(shutdown["grace_period_by_pod_priority"]).map do |entry|
@@ -152,7 +158,11 @@ module Rubernetes
       end
 
       def stringify(value)
-        value.respond_to?(:to_h) ? value.to_h.to_h { |key, child| [key.to_s, child.is_a?(Numeric) ? child.to_s : child] } : value
+        if value.respond_to?(:to_h)
+          value.to_h.to_h { |key, child| [key.to_s, child.is_a?(Numeric) ? child.to_s : child] }
+        else
+          value
+        end
       end
 
       # metav1.Duration's String form (time.Duration.String): 1m0s, 30s, 1h0m0s.

@@ -25,7 +25,11 @@ module M8IntegrityProbe
     cases << {"id" => "k0_input_integrity",
               "passed" => k0.any? { |lane| lane["passed"] == true },
               "runs" => k0.length,
-              "failed_checks" => k0.flat_map { |lane| Array(lane["cases"]).reject { |entry| entry["passed"] }.map { |entry| entry["id"] } }.uniq}
+              "failed_checks" => k0.flat_map do |lane|
+                Array(lane["cases"]).reject do |entry|
+                  entry["passed"]
+                end.map { |entry| entry["id"] }
+              end.uniq}
 
     argv_violations = manifests.flat_map do |manifest|
       Array(manifest["lanes"]).flat_map do |lane|
@@ -33,7 +37,11 @@ module M8IntegrityProbe
           path = File.join(S::ROOT, artifact.fetch("path"))
           next unless File.file?(path) && path.end_with?("command.json")
 
-          document = JSON.parse(File.read(path)) rescue nil
+          document = begin
+            JSON.parse(File.read(path))
+          rescue StandardError
+            nil
+          end
           argv = Array(document && document["command"]).join(" ")
           bad = FORBIDDEN_ARGS.select { |flag| argv.include?(flag) }
           bad.empty? ? nil : {"lane" => lane["lane"], "path" => artifact.fetch("path"), "flags" => bad}

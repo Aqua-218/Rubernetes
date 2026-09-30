@@ -74,11 +74,18 @@ module Rubernetes
           metrics = self.class.registry
           return unless metrics
 
-          metrics.register("apiserver_authorization_match_condition_evaluation_seconds", type: :histogram) unless metrics.registered?("apiserver_authorization_match_condition_evaluation_seconds")
-          metrics.observe("apiserver_authorization_match_condition_evaluation_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, labels)
+          unless metrics.registered?("apiserver_authorization_match_condition_evaluation_seconds")
+            metrics.register("apiserver_authorization_match_condition_evaluation_seconds",
+                             type: :histogram)
+          end
+          metrics.observe("apiserver_authorization_match_condition_evaluation_seconds",
+                          Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, labels)
           return if errors.empty?
 
-          metrics.register("apiserver_authorization_match_condition_evaluation_errors_total", type: :counter) unless metrics.registered?("apiserver_authorization_match_condition_evaluation_errors_total")
+          unless metrics.registered?("apiserver_authorization_match_condition_evaluation_errors_total")
+            metrics.register("apiserver_authorization_match_condition_evaluation_errors_total",
+                             type: :counter)
+          end
           metrics.increment("apiserver_authorization_match_condition_evaluation_errors_total", labels)
         rescue StandardError
           nil
@@ -88,7 +95,10 @@ module Rubernetes
           metrics = self.class.registry
           return unless metrics
 
-          metrics.register("apiserver_authorization_match_condition_exclusions_total", type: :counter) unless metrics.registered?("apiserver_authorization_match_condition_exclusions_total")
+          unless metrics.registered?("apiserver_authorization_match_condition_exclusions_total")
+            metrics.register("apiserver_authorization_match_condition_exclusions_total",
+                             type: :counter)
+          end
           metrics.increment("apiserver_authorization_match_condition_exclusions_total", labels)
         rescue StandardError
           nil
@@ -167,7 +177,9 @@ module Rubernetes
           if require_non_webhook_types
             present = @authorizers.map(&:type).reject { |type| type == "Webhook" }.to_set
             wanted = require_non_webhook_types.to_set
-            errors << "authorizers: non-webhook authorizer types must not change on reload (want #{wanted.to_a.sort.join(", ")}, got #{present.to_a.sort.join(", ")})" unless present == wanted
+            unless present == wanted
+              errors << "authorizers: non-webhook authorizer types must not change on reload (want #{wanted.to_a.sort.join(", ")}, got #{present.to_a.sort.join(", ")})"
+            end
           end
           raise InvalidError, errors.join("; ") unless errors.empty?
 
@@ -261,7 +273,9 @@ module Rubernetes
           conditions = Array(raw["matchConditions"])
           mc_version = raw["matchConditionSubjectAccessReviewVersion"].to_s
           if mc_version.empty?
-            errors << "#{path}.matchConditionSubjectAccessReviewVersion: Required value: required if match conditions are specified" unless conditions.empty?
+            unless conditions.empty?
+              errors << "#{path}.matchConditionSubjectAccessReviewVersion: Required value: required if match conditions are specified"
+            end
           elsif mc_version != "v1"
             errors << "#{path}.matchConditionSubjectAccessReviewVersion: Unsupported value: #{mc_version.inspect}: supported values: v1"
           end
@@ -277,7 +291,9 @@ module Rubernetes
           case connection_type
           when "" then errors << "#{path}.connectionInfo.type: Required value"
           when "InClusterConfig"
-            errors << "#{path}.connectionInfo.kubeConfigFile: Invalid value: can only be set when type=KubeConfigFile" unless kubeconfig_file.nil?
+            unless kubeconfig_file.nil?
+              errors << "#{path}.connectionInfo.kubeConfigFile: Invalid value: can only be set when type=KubeConfigFile"
+            end
           when "KubeConfigFile"
             if kubeconfig_file.to_s.empty?
               errors << "#{path}.connectionInfo.kubeConfigFile: Required value"

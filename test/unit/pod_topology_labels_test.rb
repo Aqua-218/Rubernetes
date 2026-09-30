@@ -34,12 +34,15 @@ class PodTopologyLabelsTest < Minitest::Test
 
   def test_a_binding_and_a_pod_created_on_a_node_get_the_topology_labels
     binding = admit({"metadata" => {"name" => "p"}, "target" => {"kind" => "Node", "name" => "n1"}}, subresource: "binding")
+
     assert_equal({"topology.kubernetes.io/zone" => "z1", "topology.kubernetes.io/region" => "r1"}, binding.dig("metadata", "labels"))
     pod = admit({"metadata" => {"name" => "p", "labels" => {"topology.kubernetes.io/zone" => "stale", "app" => "x"}},
                  "spec" => {"nodeName" => "n1"}})
+
     assert_equal({"topology.kubernetes.io/zone" => "z1", "app" => "x", "topology.kubernetes.io/region" => "r1"}, pod.dig("metadata", "labels"),
                  "overwritten, and only zone and region")
     unbound = admit({"metadata" => {"name" => "p"}, "spec" => {}})
+
     assert_nil unbound.dig("metadata", "labels")
   end
 
@@ -50,13 +53,16 @@ class PodTopologyLabelsTest < Minitest::Test
     created = call.call("POST", "/api/v1/namespaces/ns/pods",
                         {"metadata" => {"name" => "p", "labels" => {"app" => "x", "topology.kubernetes.io/zone" => "old"}},
                          "spec" => {"containers" => [{"name" => "c", "image" => "i"}]}})
+
     assert_equal 201, created.status
     call.call("PATCH", "/api/v1/namespaces/ns/pods/p/status", {"status" => {"nominatedNodeName" => "n1"}})
     bound = call.call("POST", "/api/v1/namespaces/ns/pods/p/binding",
                       {"apiVersion" => "v1", "kind" => "Binding", "metadata" => {"name" => "p", "labels" => {"topology.kubernetes.io/zone" => "z1"}},
                        "target" => {"kind" => "Node", "name" => "n1"}})
+
     assert_equal 201, bound.status, bound.body.inspect
     pod = call.call("GET", "/api/v1/namespaces/ns/pods/p", nil).body
+
     assert_equal({"app" => "x", "topology.kubernetes.io/zone" => "z1"}, pod.dig("metadata", "labels"))
     assert_nil pod.dig("status", "nominatedNodeName")
   end

@@ -33,7 +33,7 @@ module Rubernetes
         # is told of a placeholder (loopback) one: the Pod's real addresses
         # are the node network's, never the runtime's report.
         CNI_NETWORK_NAME = "rubernetes-node-network"
-        CNI_PLUGIN = <<~'SH'
+        CNI_PLUGIN = <<~SH
           #!/bin/sh
           # CNI plugin that attaches nothing: rubernetes wires the sandbox's
           # network namespace itself.  ADD answers a placeholder eth0.
@@ -289,7 +289,8 @@ module Rubernetes
         def exec_sync(container, command, timeout: 10)
           response = @client.runtime("ExecSync", {"container_id" => key(container), "cmd" => Array(command).map(&:to_s),
                                                   "timeout" => Integer(timeout)}, timeout: Integer(timeout) + 10)
-          {"stdout" => decode(response["stdout"]), "stderr" => decode(response["stderr"]), "exitCode" => Integer(response["exit_code"] || 0)}
+          {"stdout" => decode(response["stdout"]), "stderr" => decode(response["stderr"]),
+           "exitCode" => Integer(response["exit_code"] || 0)}
         end
 
         ExecStatus = Struct.new(:exit_status, :term_signal)
@@ -327,7 +328,9 @@ module Rubernetes
         end
 
         def port_forward_url(sandbox, ports)
-          @client.runtime("PortForward", {"pod_sandbox_id" => key(sandbox), "port" => Array(ports).map { |port| Integer(port) }}).fetch("url")
+          @client.runtime("PortForward", {"pod_sandbox_id" => key(sandbox), "port" => Array(ports).map do |port|
+            Integer(port)
+          end}).fetch("url")
         end
 
         # Multiplexer#streaming_url: where the node relays a stream to.
@@ -344,7 +347,7 @@ module Rubernetes
           return entry[:sandbox] if entry
 
           @client.runtime("ContainerStatus", {"container_id" => key(container), "verbose" => true})
-                 .dig("status", "labels", "io.kubernetes.pod.sandbox") || key(container)
+            .dig("status", "labels", "io.kubernetes.pod.sandbox") || key(container)
         end
 
         def update_container_resources(container, resources, **_options)
@@ -454,7 +457,7 @@ module Rubernetes
           limits = ResourceHelpers.pod_limits(pod)
           cpu_request = requests["cpu"] ? (value_of(requests["cpu"]) * 1000).ceil : 0
           shares = cpu_request.zero? ? 2 : [[(cpu_request * 1024) / 1000, 2].max, 262_144].min
-          settings = {"cpu.weight" => (1 + ((shares - 2) * 9999) / 262_142).to_s}
+          settings = {"cpu.weight" => (1 + (((shares - 2) * 9999) / 262_142)).to_s}
           if qos == "Guaranteed" || declared_for_all?(pod, "cpu")
             quota = limits["cpu"] ? [(value_of(limits["cpu"]) * 100_000).ceil, 1000].max : nil
             settings["cpu.max"] = "#{quota} 100000" if quota
@@ -508,8 +511,19 @@ module Rubernetes
 
         def cgroup_usage(relative)
           directory = File.join(@cgroup_root, relative)
-          read = ->(name) { File.read(File.join(directory, name)) rescue nil }
-          key_values = ->(text) { text&.lines.to_h { |line| name, value = line.split; [name, Integer(value, exception: false) || value] } }
+          read = lambda { |name|
+            begin
+              File.read(File.join(directory, name))
+            rescue StandardError
+              nil
+            end
+          }
+          key_values = lambda { |text|
+            text&.lines.to_h do |line|
+              name, value = line.split
+              [name, Integer(value, exception: false) || value]
+            end
+          }
           scalar = ->(text) { text && Integer(text.strip, exception: false) }
           {"cpu" => key_values.call(read.call("cpu.stat")), "memory" => key_values.call(read.call("memory.stat")),
            "memory.current" => scalar.call(read.call("memory.current")), "pids.current" => scalar.call(read.call("pids.current"))}
@@ -625,7 +639,8 @@ module Rubernetes
             "port_mappings" => port_mappings(spec),
             "linux" => {
               "security_context" => {
-                "namespace_options" => {"network" => host_network ? "NODE" : "POD", "pid" => pid_mode(spec), "ipc" => spec["hostIPC"] == true ? "NODE" : "POD"},
+                "namespace_options" => {"network" => host_network ? "NODE" : "POD", "pid" => pid_mode(spec),
+                                        "ipc" => spec["hostIPC"] == true ? "NODE" : "POD"},
                 "privileged" => Array(spec["containers"]).any? { |container| container.dig("securityContext", "privileged") == true }
               },
               "sysctls" => Array(spec.dig("securityContext", "sysctls")).to_h { |sysctl| [sysctl["name"].to_s, sysctl["value"].to_s] }
@@ -659,7 +674,9 @@ module Rubernetes
           return nil if config.empty?
 
           {"servers" => Array(config["nameservers"]), "searches" => Array(config["searches"]),
-           "options" => Array(config["options"]).map { |option| option["value"] ? "#{option["name"]}:#{option["value"]}" : option["name"].to_s }}
+           "options" => Array(config["options"]).map do |option|
+             option["value"] ? "#{option["name"]}:#{option["value"]}" : option["name"].to_s
+           end}
         end
 
         # kuberuntime generateContainerConfig from the node's built spec:
@@ -681,7 +698,7 @@ module Rubernetes
             "envs" => env,
             "mounts" => Array(spec["mounts"]).filter_map { |mount| mount_for(mount) },
             "labels" => sandbox["labels"].slice("io.kubernetes.pod.name", "io.kubernetes.pod.namespace", "io.kubernetes.pod.uid")
-                                         .merge("io.kubernetes.container.name" => name),
+              .merge("io.kubernetes.container.name" => name),
             "annotations" => {},
             "log_path" => "#{name}/#{attempt}.log",
             "stdin" => spec["stdin"] == true,

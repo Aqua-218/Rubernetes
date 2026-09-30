@@ -140,6 +140,7 @@ module Rubernetes
             if length > max_record_bytes
               raise WALCorruption.new("WAL record length #{length} exceeds #{max_record_bytes}", path: path, offset: offset)
             end
+
             if remaining < RECORD_HEADER_BYTES + length
               torn_offset = offset
               break
@@ -171,7 +172,13 @@ module Rubernetes
         end
 
         def encode_record(type, payload, version: FORMAT_VERSION)
-          type_code = type.is_a?(Integer) ? type : TYPE_CODES.fetch(type.to_s) { raise ArgumentError, "unknown WAL record type #{type.inspect}" }
+          type_code = if type.is_a?(Integer)
+                        type
+                      else
+                        TYPE_CODES.fetch(type.to_s) do
+                          raise ArgumentError, "unknown WAL record type #{type.inspect}"
+                        end
+                      end
           encoded = Canonical.encode(payload)
           raise ArgumentError, "WAL record exceeds #{MAX_RECORD_BYTES} bytes" if encoded.bytesize > MAX_RECORD_BYTES
 
@@ -292,7 +299,9 @@ module Rubernetes
       def append(entries, sync: true)
         entries = [entries] if entries.is_a?(Array) && entries.length == 2 && !entries[0].is_a?(Array)
         raise ArgumentError, "append requires at least one [type, payload] pair" if !entries.is_a?(Array) || entries.empty?
-        raise ArgumentError, "each WAL record must be a [type, payload] pair" unless entries.all? { |pair| pair.is_a?(Array) && pair.length == 2 }
+        raise ArgumentError, "each WAL record must be a [type, payload] pair" unless entries.all? do |pair|
+          pair.is_a?(Array) && pair.length == 2
+        end
 
         frames = entries.map { |(type, payload)| self.class.encode_record(type, payload, version: @version) }
         bytes = frames.join
@@ -383,6 +392,7 @@ module Rubernetes
           # now on disk; refuse to continue instead of appending after it.
           raise ShortWrite, "WAL short write: #{written} of #{bytes.bytesize} bytes"
         end
+
         written
       end
 

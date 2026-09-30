@@ -26,6 +26,7 @@ class APIStrategyHooksTest < Minitest::Test
   def test_create_on_update_kinds
     %w[leases endpoints limitranges services].each do |resource|
       group = resource == "leases" ? "coordination.k8s.io" : ""
+
       assert server.send(:allow_create_on_update?, descriptor(group, "v1", resource)),
              "#{resource} must be creatable through PUT"
     end
@@ -36,6 +37,7 @@ class APIStrategyHooksTest < Minitest::Test
   def test_other_kinds_are_not_creatable_through_update
     %w[pods configmaps secrets deployments].each do |resource|
       group = resource == "deployments" ? "apps" : ""
+
       refute server.send(:allow_create_on_update?, descriptor(group, "v1", resource))
     end
   end

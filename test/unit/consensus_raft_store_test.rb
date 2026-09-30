@@ -19,7 +19,11 @@ class ConsensusRaftStoreTest < Minitest::Test
   end
 
   def teardown
-    @servers.each_value { |server| server.stop rescue nil }
+    @servers.each_value do |server|
+      server.stop
+    rescue StandardError
+      nil
+    end
     FileUtils.rm_rf(@root)
   end
 
@@ -48,24 +52,32 @@ class ConsensusRaftStoreTest < Minitest::Test
   def test_crud_is_replicated_and_linearizable_through_followers
     store = C::RaftStore.new(follower)
     created = store.create("pods/a", {"metadata" => {"name" => "a"}, "spec" => {"v" => 1}}, request_uid: "c1")
+
     assert_equal "1", created.dig("metadata", "resourceVersion")
-    updated = store.guaranteed_update("pods/a", prec: "1") { |current| current["spec"] = {"v" => 2}; current }
+    updated = store.guaranteed_update("pods/a", prec: "1") do |current|
+      current["spec"] = {"v" => 2}
+      current
+    end
+
     assert_equal "2", updated.dig("metadata", "resourceVersion")
     assert_equal({"v" => 2}, store.get("pods/a")["spec"])
     assert_raises(Rubernetes::Storage::Conflict) { store.update("pods/a", {"metadata" => {"name" => "a"}}, prec: "1") }
     assert_raises(Rubernetes::Storage::AlreadyExists) { store.create("pods/a", {"metadata" => {"name" => "a"}}) }
     assert_raises(Rubernetes::Storage::NotFound) { store.delete("pods/missing") }
     deleted = store.delete("pods/a", prec: "2")
+
     assert_equal "3", deleted.dig("metadata", "resourceVersion")
     # Every replica applied the same sequence.
     sleep 0.2
-    assert_equal [3, 3, 3], @servers.values.map { |server| server.store.revision }
+
+    assert_equal([3, 3, 3], @servers.values.map { |server| server.store.revision })
   end
 
   def test_request_uid_replay_returns_the_stored_result_without_a_second_effect
     store = C::RaftStore.new(@servers.values.find(&:leader?))
     first = store.create("cm/x", {"metadata" => {"name" => "x"}}, request_uid: "same-uid")
     second = store.create("cm/x", {"metadata" => {"name" => "x"}}, request_uid: "same-uid")
+
     assert_equal first, second
     assert_equal 1, store.revision
     assert_raises(Rubernetes::Storage::RequestUIDConflict) { store.create("cm/y", {"metadata" => {"name" => "y"}}, request_uid: "same-uid") }
@@ -76,6 +88,7 @@ class ConsensusRaftStoreTest < Minitest::Test
     watcher = follower.store.watch("pods/", since: 0)
     leader_store.create("pods/w", {"metadata" => {"name" => "w"}})
     event = watcher.next(timeout: 5)
+
     assert_equal "ADDED", event.type.to_s.upcase
     assert_equal "w", event.object.dig("metadata", "name")
   ensure
@@ -90,6 +103,7 @@ class ConsensusRaftStoreTest < Minitest::Test
     survivor = @servers.values.reject { |server| server.equal?(leader) }.first
     survivor_store = C::RaftStore.new(survivor)
     survivor_store.create("pods/after", {"metadata" => {"name" => "after"}})
+
     assert_equal 11, survivor_store.list("pods/").items.length
     # Restart the old leader from its WAL; it catches up.
     restarted = build_server(leader.id)
@@ -98,6 +112,7 @@ class ConsensusRaftStoreTest < Minitest::Test
     connect_all
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
     sleep 0.05 while restarted.store.revision < 11 && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+
     assert_equal 11, restarted.store.revision
   end
 
@@ -109,10 +124,12 @@ class ConsensusRaftStoreTest < Minitest::Test
     leader.stop
     backup = File.join(@root, "backup")
     manifest = C::Backup.create(leader.data_directory, backup)
+
     assert_operator manifest["last_index"], :>=, 5
     restored = File.join(@root, "restored")
     C::Backup.restore(backup, restored)
     storage = C::Storage.new(restored)
+
     assert_equal manifest["last_index"], storage.log.last_index
     storage.close
   end

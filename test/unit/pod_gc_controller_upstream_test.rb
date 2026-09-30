@@ -29,6 +29,7 @@ class PodGCControllerUpstreamTest < Minitest::Test
     pods = [pod("a", phase: "Succeeded", created: 1), pod("b", phase: "Failed", created: 2, reason: "Evicted"),
             pod("c", phase: "Failed", created: 0), pod("d")]
     result = GC.new.plan(pods: pods, nodes: [node("n1")], threshold: 1)
+
     assert_equal %w[b c], deletes(result)
     assert(result.operations.select(&:delete?).all? { |operation| operation.patch == {"gracePeriodSeconds" => 0} }, "force deleted")
     assert_empty result.operations.reject(&:delete?), "terminal Pods are not re-marked"
@@ -38,10 +39,12 @@ class PodGCControllerUpstreamTest < Minitest::Test
     now = Time.utc(2026, 1, 1, 0, 1)
     gc = GC.new(clock: -> { now })
     pods = [pod("orphan", node: "gone")]
+
     assert_empty gc.plan(pods: pods, nodes: [node("n1")]).operations, "the node may be coming back"
     now += 41
     result = gc.plan(pods: pods, nodes: [node("n1")])
     status = result.operations.find { |operation| operation.action == :status_update }.patch
+
     assert_equal "Failed", status["phase"]
     assert_equal({"type" => "DisruptionTarget", "status" => "True", "reason" => "DeletionByPodGC", "message" => "PodGC: node no longer exists"},
                  status["conditions"].first.slice("type", "status", "reason", "message"))
@@ -52,9 +55,11 @@ class PodGCControllerUpstreamTest < Minitest::Test
     tainted = node("down", ready: false, taints: [{"key" => "node.kubernetes.io/out-of-service", "effect" => "NoExecute"}])
     pods = [pod("stuck", node: "down", deleting: true), pod("fine", node: "n1", deleting: true), pod("never", node: "", deleting: true)]
     result = GC.new.plan(pods: pods, nodes: [tainted, node("n1")])
+
     assert_equal %w[stuck never], deletes(result)
     assert_equal 2, result.operations.count { |operation| operation.action == :status_update }, "both are marked Failed first"
   end
+
   # metrics.DeletingPodsTotal / DeletingPodsErrorTotal by namespace and reason.
   def test_force_delete_metrics
     registry = Rubernetes::Observability::Metrics.new(apiserver: false, process: false, component: "kube-controller-manager")
@@ -64,6 +69,7 @@ class PodGCControllerUpstreamTest < Minitest::Test
                          nodes: [node("n1"), tainted], threshold: 1)
     result.operations.each { |operation| operation.notify(operation.object.dig("metadata", "name") != "stuck" || operation.delete?) }
     text = registry.render
+
     assert_includes text, %(pod_gc_collector_force_delete_pods_total{namespace="ns",reason="terminated"} 1)
     assert_includes text, %(pod_gc_collector_force_delete_pods_total{namespace="ns",reason="out-of-service"} 1)
     assert_includes text, %(pod_gc_collector_force_delete_pod_errors_total{namespace="ns",reason="out-of-service"} 1)

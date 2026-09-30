@@ -16,11 +16,11 @@ module Rubernetes
       end
 
       def read(length = nil, timeout: @timeout)
-        super(length, timeout: timeout)
+        super
       end
 
       def write(value, timeout: @timeout)
-        super(value, timeout: timeout)
+        super
       end
 
       def with_request_id(value)

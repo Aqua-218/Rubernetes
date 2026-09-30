@@ -37,9 +37,7 @@ module Rubernetes
         if operation == :update
           old_scopes = Array(fetch(fetch(old, "spec"), "scopes")).map(&:to_s).uniq.sort
           new_scopes = spec.is_a?(Hash) ? Array(fetch(spec, "scopes")) : []
-          unless old_scopes == new_scopes.map(&:to_s).uniq.sort
-            issues << valued_issue(%w[spec scopes], new_scopes, "field is immutable")
-          end
+          issues << valued_issue(%w[spec scopes], new_scopes, "field is immutable") unless old_scopes == new_scopes.map(&:to_s).uniq.sort
         else
           issues.concat(resource_quota_status_errors(root))
         end
@@ -157,7 +155,8 @@ module Rubernetes
           case operator.to_s
           when "In", "NotIn"
             if !values.is_a?(Array) || values.empty?
-              issues << issue(base + ["values"], :required, "must be at least one value when `operator` is 'In' or 'NotIn' for scope selector")
+              issues << issue(base + ["values"], :required,
+                              "must be at least one value when `operator` is 'In' or 'NotIn' for scope selector")
             end
           when "Exists", "DoesNotExist"
             if values.is_a?(Array) && !values.empty?
@@ -173,7 +172,10 @@ module Rubernetes
         end
         scopes = fetch(spec, "scopes")
         CONFLICTING_SCOPES.each do |pair|
-          issues << valued_issue(base, scopes.is_a?(Array) && !scopes.empty? ? scopes : NIL_SLICE, "conflicting scopes") if (pair - seen).empty?
+          if (pair - seen).empty?
+            issues << valued_issue(base, scopes.is_a?(Array) && !scopes.empty? ? scopes : NIL_SLICE,
+                                   "conflicting scopes")
+          end
         end
         issues
       end

@@ -2,7 +2,6 @@
 
 require "digest"
 require "rbconfig"
-require "thread"
 require "time"
 require "tmpdir"
 
@@ -95,6 +94,7 @@ module Rubernetes
                      node_status_update_frequency: NODE_STATUS_UPDATE_FREQUENCY_SECONDS,
                      node_status_report_frequency: NODE_STATUS_REPORT_FREQUENCY_SECONDS)
         raise ArgumentError, "node_name must not be empty" if node_name.to_s.empty?
+
         @node_status_update_frequency = Float(node_status_update_frequency)
         @node_status_report_frequency = Float(node_status_report_frequency)
         @last_reported_status = nil
@@ -113,12 +113,16 @@ module Rubernetes
         @lease_duration_seconds = Integer(lease_duration_seconds)
         @lease_renew_fraction = Float(lease_renew_fraction)
         raise ArgumentError, "lease_duration_seconds must be positive" unless @lease_duration_seconds.positive?
-        raise ArgumentError, "lease_renew_fraction must be between 0 and 1" unless @lease_renew_fraction.positive? && @lease_renew_fraction <= 1
+        unless @lease_renew_fraction.positive? && @lease_renew_fraction <= 1
+          raise ArgumentError,
+                "lease_renew_fraction must be between 0 and 1"
+        end
+
         @lease_renew_interval = @lease_duration_seconds * @lease_renew_fraction
         # enableControllerAttachDetach (default true): the kubelet leaves
         # attach/detach to the controller manager and says so on the Node.
         @node_annotations = {"volumes.kubernetes.io/controller-managed-attach-detach" => "true"}
-                            .merge(Helpers.string_keys(node_annotations)).freeze
+          .merge(Helpers.string_keys(node_annotations)).freeze
         @streaming_port = streaming_port
         detected = {}
         # A real node reports what the host has (kubelet: cAdvisor machine
@@ -252,35 +256,35 @@ module Rubernetes
         # --image-credential-provider-config / -bin-dir.
         @credential_providers = build_credential_providers(image_credential_provider, api)
         @lifecycle ||= Lifecycle.new(
-            credential_providers: @credential_providers,
-            restart_manager: restart_manager,
-            device_plugins: @device_plugins,
-            runtime: runtime,
-            volume: volume,
-            network: network,
-            admission: admission,
-            event_sink: publisher,
-            status: @status,
-            clock: clock,
-            sleeper: sleeper,
-            reporter: reporter,
-            endpoint_manager: endpoint_manager,
-            state_store: state_store,
-            runtime_class_resolver: runtime_class_resolver,
-            probe_manager: probe_manager,
-            pod_root: pod_root,
-            resource_reader: resource_reader,
-            node_name: @node_name,
-            host_ip: host_ip,
-            node_allocatable: @allocatable,
-            cluster_domain: cluster_domain,
-            pod_files: pod_files,
-            pod_deleter: pod_deleter_for(api),
-            dra_manager: @dra_manager,
-            cdi_spec_dirs: cdi_spec_dirs,
-            container_manager: @container_manager,
-            preemption: build_preemption
-          )
+          credential_providers: @credential_providers,
+          restart_manager: restart_manager,
+          device_plugins: @device_plugins,
+          runtime: runtime,
+          volume: volume,
+          network: network,
+          admission: admission,
+          event_sink: publisher,
+          status: @status,
+          clock: clock,
+          sleeper: sleeper,
+          reporter: reporter,
+          endpoint_manager: endpoint_manager,
+          state_store: state_store,
+          runtime_class_resolver: runtime_class_resolver,
+          probe_manager: probe_manager,
+          pod_root: pod_root,
+          resource_reader: resource_reader,
+          node_name: @node_name,
+          host_ip: host_ip,
+          node_allocatable: @allocatable,
+          cluster_domain: cluster_domain,
+          pod_files: pod_files,
+          pod_deleter: pod_deleter_for(api),
+          dra_manager: @dra_manager,
+          cdi_spec_dirs: cdi_spec_dirs,
+          container_manager: @container_manager,
+          preemption: build_preemption
+        )
         publisher.lifecycle = @lifecycle if publisher
         # A new attachable volume in the desired state: report it in use now,
         # the mount waits for the report.
@@ -298,11 +302,11 @@ module Rubernetes
         end
         if @csi_plugins.respond_to?(:metrics_observer=)
           kubelet_metrics = @kubelet_metrics
-          @csi_plugins.metrics_observer = ->(driver, method_name, code, seconds) { kubelet_metrics.csi_operation(driver, method_name, code, seconds) }
+          @csi_plugins.metrics_observer = lambda { |driver, method_name, code, seconds|
+            kubelet_metrics.csi_operation(driver, method_name, code, seconds)
+          }
         end
-        if @container_manager.respond_to?(:metrics=) && !@container_manager.frozen?
-          @container_manager.metrics = @kubelet_metrics.registry
-        end
+        @container_manager.metrics = @kubelet_metrics.registry if @container_manager.respond_to?(:metrics=) && !@container_manager.frozen?
         start_container_manager if @container_manager
         # Node allocatable and QoS cgroup weights (kubelet cm), for a node
         # that runs Pods in the host's cgroups.
@@ -342,7 +346,13 @@ module Rubernetes
         )
         if @lifecycle.respond_to?(:wakeup=) && @sync_loop.respond_to?(:enqueue_pod)
           @wakeups = WakeupTimer.new do |uid|
-            current = @sync_loop.respond_to?(:cache) ? (@sync_loop.cache[uid] rescue nil) : nil
+            current = if @sync_loop.respond_to?(:cache)
+                        begin
+                          @sync_loop.cache[uid]
+                        rescue StandardError
+                          nil
+                        end
+                      end
             @sync_loop.enqueue_pod(current, action: "MODIFIED") if current
           end
           @lifecycle.wakeup = ->(uid, delay) { @wakeups.schedule(uid, delay + BACKOFF_WAKEUP_SLACK) }
@@ -350,9 +360,7 @@ module Rubernetes
         # The Summary API (/stats/summary, /metrics/resource) and the eviction
         # manager reading it: on a real node, or when injected.
         @stats_provider = stats_provider
-        image_root = if image_resolver.respond_to?(:staging_root)
-                       image_resolver.staging_root || Dir.tmpdir
-                     end
+        image_root = (image_resolver.staging_root || Dir.tmpdir if image_resolver.respond_to?(:staging_root))
         if @stats_provider.nil? && detect_host_resources
           @stats_provider = StatsProvider.new(node_name: @node_name, lifecycle: @lifecycle, runtime: @runtime, pod_root: pod_root,
                                               image_root: image_root, allocatable_memory: quantity_bytes(@allocatable["memory"]),
@@ -456,12 +464,8 @@ module Rubernetes
         @recovery_report = nil
         @recovered = false
       end
-
       attr_reader :declared_features, :stats_provider, :eviction_manager, :image_gc_manager, :dra_manager, :plugin_manager, :csi_plugins,
-                  :kubelet_metrics,
-                  :container_manager, :shutdown_manager, :capacity, :allocatable
-      attr_reader :node_name, :api, :runtime, :lifecycle, :sync_loop, :status,
-                  :lease_duration_seconds, :node_namespace, :startup_error, :recovery_report
+                  :kubelet_metrics, :container_manager, :shutdown_manager, :capacity, :allocatable, :node_name, :api, :runtime, :lifecycle, :sync_loop, :status, :lease_duration_seconds, :node_namespace, :startup_error, :recovery_report
 
       def registered?
         @mutex.synchronize { @registered }
@@ -545,9 +549,7 @@ module Rubernetes
             # Registration is a readiness boundary. The sync loop must not
             # accept Pods while the node is absent from the API server; the
             # lease thread retries registration without opening the worker.
-            unless @error_handler
-              raise
-            end
+            raise unless @error_handler
           end
         end
         unless registered?
@@ -672,7 +674,7 @@ module Rubernetes
         # lifecycle (retry_pending_cleanups); it does not keep the node down.
         blocked.each do |uid|
           detail = Array(pod_errors[uid]).join("; ")
-          @error_handler&.call(Runtime::RecoveryRequired.new("Pod #{uid} recovery is pending#{detail.empty? ? "" : ": #{detail}"}"),
+          @error_handler&.call(Runtime::RecoveryRequired.new("Pod #{uid} recovery is pending#{": #{detail}" unless detail.empty?}"),
                                :pod_recovery_pending, uid)
         end
         @mutex.synchronize do
@@ -732,11 +734,10 @@ module Rubernetes
             # An injected API without DeleteOptions support still gets the
             # grace period, which is the half that removes the object.
             api.delete("pods", name, namespace: namespace, api_version: "v1",
-                       query: {"gracePeriodSeconds" => "0"})
+                                     query: {"gracePeriodSeconds" => "0"})
           end
         end
       end
-
 
       def ensure_recovered!
         return if @mutex.synchronize { @recovered }
@@ -804,7 +805,9 @@ module Rubernetes
         # Device plugin resources are this agent's own (allocatable = the
         # healthy devices); only the others are carried over from capacity.
         managed = @device_plugins ? @device_plugins.resource_names : []
-        extended = capacity.select { |name, _| ResourceManager.extended_resource?(name) && !@capacity.key?(name.to_s) && !managed.include?(name.to_s) }
+        extended = capacity.select do |name, _|
+          ResourceManager.extended_resource?(name) && !@capacity.key?(name.to_s) && !managed.include?(name.to_s)
+        end
         patch = extended.reject { |name, value| allocatable[name] == value }
         allocatable.each_key do |name|
           next if managed.include?(name.to_s)
@@ -995,7 +998,7 @@ module Rubernetes
                      "spec" => {"audiences" => [audience],
                                 "boundObjectRef" => {"apiVersion" => "v1", "kind" => "Pod", "name" => pod_name, "uid" => pod_uid}}}
           response = client.raw("POST", "/api/v1/namespaces/#{namespace}/serviceaccounts/#{name}/token", body: JSON.generate(request),
-                                                                                                           headers: {"Content-Type" => "application/json"})
+                                                                                                         headers: {"Content-Type" => "application/json"})
           JSON.parse(response.body.to_s).dig("status", "token").to_s
         end
         reader = lambda do |namespace, name|
@@ -1046,7 +1049,11 @@ module Rubernetes
 
         handler = error_handler
         Object.new.tap do |logger|
-          logger.define_singleton_method(:warn) { |event, **fields| handler.call(RuntimeError.new("#{event} #{fields}")) rescue nil }
+          logger.define_singleton_method(:warn) do |event, **fields|
+            handler.call(RuntimeError.new("#{event} #{fields}"))
+          rescue StandardError
+            nil
+          end
         end
       end
 
@@ -1172,12 +1179,12 @@ module Rubernetes
       # PIDPressureCondition: from the eviction manager's node conditions,
       # lastTransitionTime moving only when the status does.
       PRESSURE_CONDITIONS = {
-        "MemoryPressure" => [%w[KubeletHasInsufficientMemory kubelet\ has\ insufficient\ memory\ available],
-                             %w[KubeletHasSufficientMemory kubelet\ has\ sufficient\ memory\ available]],
-        "DiskPressure" => [%w[KubeletHasDiskPressure kubelet\ has\ disk\ pressure],
-                           %w[KubeletHasNoDiskPressure kubelet\ has\ no\ disk\ pressure]],
-        "PIDPressure" => [%w[KubeletHasInsufficientPID kubelet\ has\ insufficient\ PID\ available],
-                          %w[KubeletHasSufficientPID kubelet\ has\ sufficient\ PID\ available]]
+        "MemoryPressure" => [["KubeletHasInsufficientMemory", "kubelet has insufficient memory available"],
+                             ["KubeletHasSufficientMemory", "kubelet has sufficient memory available"]],
+        "DiskPressure" => [["KubeletHasDiskPressure", "kubelet has disk pressure"],
+                           ["KubeletHasNoDiskPressure", "kubelet has no disk pressure"]],
+        "PIDPressure" => [["KubeletHasInsufficientPID", "kubelet has insufficient PID available"],
+                          ["KubeletHasSufficientPID", "kubelet has sufficient PID available"]]
       }.freeze
 
       def pressure_conditions(timestamp)
@@ -1282,8 +1289,16 @@ module Rubernetes
         clients.map do |client|
           source = Runtime::CRI::ImageGCSource.new(client: client, in_use: lambda {
             Array(pods.call).flat_map do |pod|
-              %w[initContainers containers ephemeralContainers].flat_map { |field| Array(pod.dig("spec", field)).map { |container| container["image"] } }
-            end.compact.map { |image| Image::Reference.parse(image.to_s).to_s rescue image.to_s }.to_set
+              %w[initContainers containers ephemeralContainers].flat_map do |field|
+                Array(pod.dig("spec", field)).map do |container|
+                  container["image"]
+                end
+              end
+            end.compact.map do |image|
+              Image::Reference.parse(image.to_s).to_s
+            rescue StandardError
+              image.to_s
+            end.to_set
           })
           ImageGCManager.new(
             resolver: source, fs_stats: -> { source.fs_stats }, pods: pods,
@@ -1347,9 +1362,16 @@ module Rubernetes
         @container_manager.start(
           active_pods: -> { lifecycle.respond_to?(:admitted_pods) ? lifecycle.admitted_pods : [] },
           container_statuses: lambda { |pod|
-            lifecycle.respond_to?(:container_states) ? lifecycle.container_states(Helpers.key(Helpers.key(pod, "metadata", {}), "uid", "")) : []
+            if lifecycle.respond_to?(:container_states)
+              lifecycle.container_states(Helpers.key(Helpers.key(pod, "metadata", {}), "uid",
+                                                     ""))
+            else
+              []
+            end
           },
-          update_cpuset: ->(container_id, cpus) { runtime.update_container_cpuset(container_id, cpus) if runtime.respond_to?(:update_container_cpuset) },
+          update_cpuset: lambda { |container_id, cpus|
+            runtime.update_container_cpuset(container_id, cpus) if runtime.respond_to?(:update_container_cpuset)
+          },
           sources_ready: -> { @recovered }
         )
       end
@@ -1396,7 +1418,13 @@ module Rubernetes
         if @lifecycle.respond_to?(:request_eviction) && @sync_loop.respond_to?(:enqueue_pod)
           @lifecycle.request_eviction(uid, message: message, grace_period_seconds: grace_period_seconds, condition: condition,
                                            reason: reason)
-          current = @sync_loop.respond_to?(:cache) ? (@sync_loop.cache[uid] rescue nil) : nil
+          current = if @sync_loop.respond_to?(:cache)
+                      begin
+                        @sync_loop.cache[uid]
+                      rescue StandardError
+                        nil
+                      end
+                    end
           @sync_loop.enqueue_pod(current || pod, action: "MODIFIED")
         elsif @lifecycle.respond_to?(:evict)
           @lifecycle.evict(pod, message: message, grace_period_seconds: grace_period_seconds, condition: condition, reason: reason)
@@ -1418,7 +1446,7 @@ module Rubernetes
           nil
         end
         pod_volumes.selinux_tracker = Volume::SELinux::Tracker.new(metrics: @kubelet_metrics, feature_gates: @feature_gates,
-                                                                    csi_driver_reader: csi_driver_reader, logger: @logger)
+                                                                   csi_driver_reader: csi_driver_reader, logger: @logger)
       end
 
       # PodCertificateRequest (feature gate, off by default): projected
@@ -1578,7 +1606,9 @@ module Rubernetes
 
         strip = lambda do |status|
           copy = JSON.parse(JSON.generate(status))
-          conditions = Array(copy.delete("conditions")).map { |condition| condition.is_a?(Hash) ? condition.except("lastHeartbeatTime") : condition }
+          conditions = Array(copy.delete("conditions")).map do |condition|
+            condition.is_a?(Hash) ? condition.except("lastHeartbeatTime") : condition
+          end
           [copy, conditions.sort_by { |condition| condition.is_a?(Hash) ? condition["type"].to_s : "" }]
         end
         strip.call(previous) != strip.call(current)

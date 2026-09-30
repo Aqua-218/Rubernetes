@@ -47,7 +47,7 @@ module Rubernetes
 
         def read_exact(io, length, timeout: nil, allow_eof: false)
           buffer = String.new(encoding: Encoding::BINARY)
-          deadline = timeout && Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+          deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout)
           while buffer.bytesize < length
             if deadline
               remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)

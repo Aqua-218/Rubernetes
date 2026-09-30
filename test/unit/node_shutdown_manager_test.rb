@@ -17,6 +17,7 @@ class NodeShutdownManagerTest < Minitest::Test
     bytes = DBus.encode(type: DBus::METHOD_CALL, serial: 9, fields: {DBus::FIELD_PATH => "/o", DBus::FIELD_MEMBER => "M"},
                         body_signature: "suaya{sv}(ys)b", body: body)
     message, used = DBus.decode(bytes)
+
     assert_equal bytes.bytesize, used
     assert_equal 9, message.serial
     assert_equal "/o", message.path
@@ -103,9 +104,9 @@ class NodeShutdownManagerTest < Minitest::Test
     end
   end
 
-  def with_bus(**options)
+  def with_bus(**)
     client, server = UNIXSocket.pair
-    bus = FakeBus.new(server, **options)
+    bus = FakeBus.new(server, **)
     connection = DBus::Connection.new(client)
     yield SM::Logind.new(connection: connection, config_directory: Dir.mktmpdir("logind")), bus
   ensure
@@ -115,21 +116,25 @@ class NodeShutdownManagerTest < Minitest::Test
 
   def test_logind_inhibits_and_reports_prepare_for_shutdown
     with_bus do |logind, bus|
-      assert_equal 30.0, logind.current_inhibit_delay
+      assert_in_delta(30.0, logind.current_inhibit_delay)
       lock = logind.inhibit_shutdown
+
       assert_equal ["org.freedesktop.login1.Manager", "Inhibit", ["shutdown", "kubelet", "Kubelet needs time to handle node shutdown", "delay"]],
                    bus.calls.last
-      refute lock.closed?
+      refute_predicate lock, :closed?
       events = []
       thread = Thread.new { logind.monitor_shutdown { |value| events << value } }
       sleep 0.05 until bus.calls.any? { |call| call[1] == "AddMatch" }
+
       assert_equal "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForShutdown',path='/org/freedesktop/login1'",
                    bus.calls.find { |call| call[1] == "AddMatch" }[2].first
       bus.emit_prepare_for_shutdown(true)
       sleep 0.05 until events.any?
+
       assert_equal [true], events
 
       logind.release_inhibit_lock(lock)
+
       assert_nil bus.lock_reader.read_nonblock(1, exception: false), "closing the lock is what releases the inhibitor"
       bus.close
       thread.join(2)
@@ -140,8 +145,10 @@ class NodeShutdownManagerTest < Minitest::Test
     with_bus(inhibit_delay_usec: 5_000_000) do |logind, bus|
       logind.override_inhibit_delay(90)
       path = File.join(logind.instance_variable_get(:@config_directory), "99-kubelet.conf")
+
       assert_equal "# Kubelet logind override\n[Login]\nInhibitDelayMaxSec=90\n", File.read(path)
       logind.reload_logind_conf
+
       assert_equal ["org.freedesktop.systemd1.Manager", "KillUnit", ["systemd-logind.service", "all", 1]], bus.calls.last
     end
   end
@@ -209,26 +216,35 @@ class NodeShutdownManagerTest < Minitest::Test
                        pod_terminated: ->(target) { terminated[target["metadata"]["name"]] },
                        sync_node_status: -> { status_synced << true }, state_directory: dir, inhibiter: -> { inhibiter },
                        sleeper: ->(_) { Thread.pass })
+
       assert_nil manager.admit(pods.first)
       thread = Thread.new { manager.watch }
       Thread.pass until inhibiter.calls.include?([:inhibit])
+
       refute(inhibiter.calls.any? { |call| call[0] == :override }, "30s fits in logind's 60s")
 
       inhibiter.events << true
       status_synced.pop
       Thread.pass until inhibiter.calls.include?([:release, "lock-1"])
+
       assert_equal "node is shutting down", manager.shutdown_status
       assert_equal ["NodeShutdown", "Pod was rejected as the node is shutting down."], manager.admit(pod("new"))
       groups = killed.map { |name, grace, *| [name, grace] }
-      assert_equal [["app", 20], ["low", 20], ["quick", 3]].sort, groups.first(3).sort, "the default group first, lowest priority pods in it"
+
+      assert_equal [["app", 20], ["low", 20], ["quick", 3]].sort, groups.first(3).sort,
+                   "the default group first, lowest priority pods in it"
       assert_equal ["critical", 10], groups.last
-      assert(killed.all? { |_, _, reason, message, condition| reason == "Terminated" && condition == "TerminationByKubelet" &&
-                                                        message == "Pod was terminated in response to imminent node shutdown." })
+      assert(killed.all? do |_, _, reason, message, condition|
+        reason == "Terminated" && condition == "TerminationByKubelet" &&
+                                                 message == "Pod was terminated in response to imminent node shutdown."
+      end)
       state = JSON.parse(File.read(File.join(dir, "graceful_node_shutdown_state")))
+
       refute_equal "0001-01-01T00:00:00Z", state["endTime"]
 
       inhibiter.events << false
       Thread.pass until inhibiter.calls.count { |call| call == [:inhibit] } == 2
+
       assert_nil manager.shutdown_status, "a cancelled shutdown takes the lock again"
       inhibiter.events << :end
       thread.join(2)
@@ -244,6 +260,7 @@ class NodeShutdownManagerTest < Minitest::Test
                  "(ShutdownGracePeriod), current value is 5s", error.message
     assert_equal [[:override, 30], [:reload]], inhibiter.calls
   end
+
   def test_the_system_bus_address_comes_from_the_environment_as_for_godbus
     Dir.mktmpdir do |dir|
       path = File.join(dir, "bus socket")
@@ -254,6 +271,7 @@ class NodeShutdownManagerTest < Minitest::Test
       ENV[DBus::SYSTEM_BUS_ADDRESS_ENV] = "tcp:host=localhost,port=1;unix:path=#{path.gsub(" ", "%20")}"
       connection = DBus::Connection.system
       acceptor.join
+
       assert_equal ":1.42", connection.unique_name
       connection.close
     ensure
@@ -291,6 +309,7 @@ class NodeShutdownManagerTest < Minitest::Test
                        inhibiter: -> { inhibiter }, sleeper: ->(_) {})
       thread = Thread.new { manager.watch }
       Thread.pass until inhibiter.calls.include?([:inhibit])
+
       assert File.file?(File.join(conf, "99-kubelet.conf"))
 
       stopper = Thread.new { manager.stop }
@@ -298,8 +317,9 @@ class NodeShutdownManagerTest < Minitest::Test
       inhibiter.events << :end
       stopper.join(2)
       thread.join(2)
+
       assert_equal [[:override, 30], [:reload], [:inhibit], [:release, "lock-1"], [:remove, 30], [:reload]], inhibiter.calls
-      refute File.exist?(conf), "the drop-in and the directory it needed are gone"
+      refute_path_exists conf, "the drop-in and the directory it needed are gone"
     end
   end
 
@@ -309,12 +329,14 @@ class NodeShutdownManagerTest < Minitest::Test
       logind.instance_variable_set(:@config_directory, dir)
       path = File.join(dir, "99-kubelet.conf")
       File.write(path, "[Login]\nInhibitDelayMaxSec=600\n")
+
       refute logind.remove_inhibit_delay_override(30)
       assert File.file?(path)
       logind.override_inhibit_delay(30)
       File.write(File.join(dir, "10-site.conf"), "[Login]\n")
+
       assert logind.remove_inhibit_delay_override(30)
-      refute File.exist?(path)
+      refute_path_exists path
       assert File.directory?(dir), "a directory with other drop-ins stays"
     end
   end
@@ -328,8 +350,10 @@ class NodeShutdownManagerTest < Minitest::Test
     manager.stop
     inhibiter.events << :end
     thread.join(2)
+
     assert_equal [[:inhibit], [:release, "lock-1"]], inhibiter.calls
   end
+
   # Start as managerImpl.Start: the first connection's failure is reported
   # once and nothing is retried (no lock, logind not reloaded again).
   def test_a_failed_first_start_is_reported_and_not_retried
@@ -337,10 +361,12 @@ class NodeShutdownManagerTest < Minitest::Test
     errors = []
     manager = SM.new(periods: SM.periods(grace_period: 45), active_pods: -> { [] }, kill_pod: nil, pod_terminated: nil,
                      inhibiter: -> { inhibiter }, sleeper: ->(_) {}, error_handler: ->(error, during) { errors << [error.message, during] })
+
     assert_equal false, manager.start
     assert_equal [["Failed to start node shutdown manager: node shutdown manager was timed out after 5 attempts waiting for " \
                    "logind InhibitDelayMaxSec to update to 45s (ShutdownGracePeriod), current value is 30s", :shutdown_manager]], errors
     sleep 0.05
+
     assert_equal [[:override, 45], [:reload]], inhibiter.calls, "one reload, no lock, no retry"
     assert_nil manager.instance_variable_get(:@thread)
   end
@@ -351,17 +377,21 @@ class NodeShutdownManagerTest < Minitest::Test
     buses = [first, second]
     manager = SM.new(periods: SM.periods(grace_period: 30), active_pods: -> { [] }, kill_pod: nil, pod_terminated: nil,
                      inhibiter: -> { buses.shift || flunk("a third connection") }, sleeper: ->(_) { Thread.pass })
+
     assert_same manager, manager.start
     assert_equal [[:inhibit]], first.calls
     first.events << :end
     Thread.pass until second.calls.include?([:inhibit])
+
     assert_equal [[:inhibit], [:release, "lock-1"]], first.calls, "the old connection's lock is let go"
     stopper = Thread.new { manager.stop }
     Thread.pass until second.calls.include?([:release, "lock-1"])
     second.events << :end
     stopper.join(2)
-    refute manager.instance_variable_get(:@thread).alive?
+
+    refute_predicate manager.instance_variable_get(:@thread), :alive?
   end
+
   # A PrepareForShutdown sent the moment the lock is taken must not be lost:
   # the bus routes a signal only to connections whose match rule is already
   # installed, so AddMatch has to precede Inhibit.
@@ -371,10 +401,12 @@ class NodeShutdownManagerTest < Minitest::Test
                        inhibiter: -> { logind }, sleeper: ->(_) {})
       manager.connect
       members = bus.calls.map { |call| call[1] }
+
       assert_operator members.index("AddMatch"), :<, members.index("Inhibit")
       assert_equal 1, members.count("AddMatch")
       thread = Thread.new { logind.monitor_shutdown { |_| } }
       sleep 0.05
+
       assert_equal 1, bus.calls.count { |call| call[1] == "AddMatch" }, "monitoring does not subscribe twice"
       bus.close
       thread.join(2)

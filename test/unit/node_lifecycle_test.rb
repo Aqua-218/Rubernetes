@@ -192,6 +192,7 @@ class NodeLifecycleTest < Minitest::Test
     changed = Marshal.load(Marshal.dump(resync))
     changed.fetch("spec").fetch("containers").fetch(0)["command"] = ["/bin/changed"]
     lifecycle.reconcile(changed)
+
     assert_operator runtime.calls.count { |call| call.first == :sandbox }, :>, 1
     assert_includes runtime.calls.map(&:first), :stop
   end
@@ -238,6 +239,7 @@ class NodeLifecycleTest < Minitest::Test
         "pid" => 4242
       }
     }
+
     assert_includes calls, [:network_add, expected]
     assert_includes calls, [:network_delete, expected]
   end

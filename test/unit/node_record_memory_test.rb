@@ -19,7 +19,7 @@ class NodeRecordMemoryTest < Minitest::Test
   def lifecycle(deleted = [])
     Node::Lifecycle.new(
       runtime: Object.new,
-      pod_deleter: lambda { |namespace:, name:, uid: nil| deleted << [namespace, name, uid] }
+      pod_deleter: ->(namespace:, name:, uid: nil) { deleted << [namespace, name, uid] }
     )
   end
 

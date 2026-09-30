@@ -19,12 +19,16 @@ class AdmissionWebhookMetricsTest < Minitest::Test
       uid = review["request"]["uid"]
       case config["url"]
       when "https://allow.example/" then [200, {"response" => {"uid" => uid, "allowed" => true}}]
-      when "https://deny.example/" then [200, {"response" => {"uid" => uid, "allowed" => false, "status" => {"message" => "no", "code" => 422}}}]
+      when "https://deny.example/" then [200,
+                                         {"response" => {"uid" => uid, "allowed" => false, "status" => {"message" => "no", "code" => 422}}}]
       else raise A::Plugins::WebhookTimeout, "timed out"
       end
     end
     rule = {"apiGroups" => ["apps"], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["deployments"]}
-    hook = ->(name, url, policy) { {"name" => name, "clientConfig" => {"url" => url}, "rules" => [rule], "sideEffects" => "None", "admissionReviewVersions" => ["v1"], "failurePolicy" => policy} }
+    hook = lambda { |name, url, policy|
+      {"name" => name, "clientConfig" => {"url" => url}, "rules" => [rule], "sideEffects" => "None", "admissionReviewVersions" => ["v1"],
+       "failurePolicy" => policy}
+    }
     @context.put("validatingwebhookconfigurations", nil, "v",
                  {"metadata" => {"name" => "v"}, "webhooks" => [hook.call("allow.example", "https://allow.example/", "Fail"),
                                                                 hook.call("broken.example", "https://broken.example/", "Ignore"),
@@ -35,12 +39,19 @@ class AdmissionWebhookMetricsTest < Minitest::Test
     chain.metrics = registry
     assert_raises(A::Rejected) { chain.validate(attributes("CREATE", object: deployment(replicas: 1))) }
     text = registry.render
-    assert_includes text, 'apiserver_admission_webhook_request_total{code="200",name="allow.example",operation="CREATE",rejected="false",type="validating"} 1'
-    assert_includes text, 'apiserver_admission_webhook_request_total{code="200",name="deny.example",operation="CREATE",rejected="true",type="validating"} 1'
-    assert_includes text, 'apiserver_admission_webhook_rejection_count{error_type="no_error",name="deny.example",operation="CREATE",rejection_code="422",type="validating"} 1'
-    assert_includes text, 'apiserver_admission_webhook_rejection_count{error_type="calling_webhook_error",name="broken.example",operation="CREATE",rejection_code="0",type="validating"} 1'
+
+    assert_includes text,
+                    'apiserver_admission_webhook_request_total{code="200",name="allow.example",operation="CREATE",rejected="false",type="validating"} 1'
+    assert_includes text,
+                    'apiserver_admission_webhook_request_total{code="200",name="deny.example",operation="CREATE",rejected="true",type="validating"} 1'
+    assert_includes text,
+                    'apiserver_admission_webhook_rejection_count{error_type="no_error",name="deny.example",operation="CREATE",rejection_code="422",type="validating"} 1'
+    assert_includes text,
+                    'apiserver_admission_webhook_rejection_count{error_type="calling_webhook_error",name="broken.example",operation="CREATE",rejection_code="0",type="validating"} 1'
     assert_includes text, 'apiserver_admission_webhook_fail_open_count{name="broken.example",type="validating"} 1'
-    assert_includes text, 'apiserver_admission_webhook_admission_duration_seconds_count{name="allow.example",operation="CREATE",rejected="false",type="validating"} 1'
-    assert_includes text, 'apiserver_admission_controller_admission_duration_seconds_count{name="ValidatingAdmissionWebhook",operation="CREATE",rejected="true",type="validate"} 1'
+    assert_includes text,
+                    'apiserver_admission_webhook_admission_duration_seconds_count{name="allow.example",operation="CREATE",rejected="false",type="validating"} 1'
+    assert_includes text,
+                    'apiserver_admission_controller_admission_duration_seconds_count{name="ValidatingAdmissionWebhook",operation="CREATE",rejected="true",type="validate"} 1'
   end
 end

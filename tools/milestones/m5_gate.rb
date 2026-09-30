@@ -94,10 +94,15 @@ module M5Gate
       errors << "schema_version must be #{MANIFEST_SCHEMA_VERSION}" unless manifest["schema_version"] == MANIFEST_SCHEMA_VERSION
       errors << "milestone must be M5" unless manifest["milestone"] == "M5"
       errors << "input_sha256 must be a SHA-256 digest" unless valid_digest?(manifest["input_sha256"])
-      errors << "input_file_count must be positive" unless manifest["input_file_count"].is_a?(Integer) && manifest["input_file_count"].positive?
+      unless manifest["input_file_count"].is_a?(Integer) && manifest["input_file_count"].positive?
+        errors << "input_file_count must be positive"
+      end
       errors << "source input must remain stable during evidence capture" unless manifest["input_stable"] == true
       host = manifest["host"]
-      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel ruby].all? { |key| non_empty_string?(host[key]) }
+      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel
+                                                                                                             ruby].all? do |key|
+        non_empty_string?(host[key])
+      end
       errors << "M5 evidence must be captured on x86_64" unless host.is_a?(Hash) && host["architecture"] == "x86_64"
       %w[started_at finished_at].each { |key| errors << "#{key} must be an ISO-8601 timestamp" unless iso8601?(manifest[key]) }
       M4Gate.send(:validate_input_capture, manifest, errors)
@@ -135,7 +140,9 @@ module M5Gate
       valid.each do |entry|
         path = File.expand_path(entry.fetch("path"), PROJECT_ROOT)
         errors << "source inventory entry #{entry.fetch("path")} is missing" unless File.file?(path)
-        errors << "source inventory digest mismatch #{entry.fetch("path")}" if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+        if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
+          errors << "source inventory digest mismatch #{entry.fetch("path")}"
+        end
       end
       # The formal sources are part of the input and must be exactly the
       # files the model-checking sources are pinned against.
@@ -191,46 +198,60 @@ module M5Gate
       send(:"validate_#{name}", document, cases, errors)
     end
 
-    def validate_linearizability(document, cases, errors)
+    def validate_linearizability(_document, cases, errors)
       histories = cases.select { |entry| entry["id"].to_s.start_with?("history-") }
       errors << "linearizability report needs at least 10 histories" unless histories.length >= 10
       oracle = cases.find { |entry| entry["id"] == "lean_sequential_oracle" }
       errors << "linearizability report must include the Lean sequential oracle differential" unless oracle
-      errors << "Lean oracle differential must compare at least 100 operations with 0 mismatches" unless oracle && oracle["compared_operations"].to_i >= 100 && oracle["mismatches"] == 0
+      unless oracle && oracle["compared_operations"].to_i >= 100 && oracle["mismatches"] == 0
+        errors << "Lean oracle differential must compare at least 100 operations with 0 mismatches"
+      end
       coverage = cases.find { |entry| entry["id"] == "fault_coverage" }
       errors << "linearizability report must record fault coverage" unless coverage
       if coverage
         faults = coverage["faults"] || {}
-        LINEARIZABILITY_FAULTS.each { |fault| errors << "linearizability histories never exercised #{fault}" unless faults[fault].to_i.positive? }
+        LINEARIZABILITY_FAULTS.each do |fault|
+          errors << "linearizability histories never exercised #{fault}" unless faults[fault].to_i.positive?
+        end
       end
       histories.each do |entry|
         errors << "history #{entry["id"]} is not linearizable" unless entry["linearizable"] == true
         events = entry["events"] || {}
         errors << "history #{entry["id"]} has too few completed operations" unless events["ok"].to_i >= 10
-        errors << "history #{entry["id"]} must include its raw events" unless entry["history"].is_a?(Array) && entry["history"].length == events.values.sum
-        errors << "history #{entry["id"]} digest mismatch" if entry["history"].is_a?(Array) && M34EvidenceSupport.canonical_document_digest(entry["history"]) != entry["history_sha256"]
+        unless entry["history"].is_a?(Array) && entry["history"].length == events.values.sum
+          errors << "history #{entry["id"]} must include its raw events"
+        end
+        if entry["history"].is_a?(Array) && M34EvidenceSupport.canonical_document_digest(entry["history"]) != entry["history_sha256"]
+          errors << "history #{entry["id"]} digest mismatch"
+        end
       end
     end
 
-    def validate_fault_matrix(document, cases, errors)
+    def validate_fault_matrix(_document, cases, errors)
       ids = cases.map { |entry| entry["id"] }
       FAULT_MATRIX_REQUIRED.each { |id| errors << "fault matrix is missing case #{id}" unless ids.include?(id) }
       cases.each do |entry|
-        errors << "fault case #{entry["id"]} must come from real processes under SIGKILL" unless entry["measurement_source"] == "real_processes_sigkill"
+        unless entry["measurement_source"] == "real_processes_sigkill"
+          errors << "fault case #{entry["id"]} must come from real processes under SIGKILL"
+        end
         next unless entry["id"].to_s.end_with?("_failures")
 
         errors << "fault case #{entry["id"]} must acknowledge writes before the fault" unless entry["acknowledged_writes"].to_i >= 100
         errors << "fault case #{entry["id"]} lost acknowledged writes" unless entry["lost_acknowledged_writes"] == 0
-        errors << "fault case #{entry["id"]} exceeded the #{RTO_LIMIT_SECONDS}s recovery bound" unless entry["rto_seconds"].is_a?(Numeric) && entry["rto_seconds"] < RTO_LIMIT_SECONDS
+        unless entry["rto_seconds"].is_a?(Numeric) && entry["rto_seconds"] < RTO_LIMIT_SECONDS
+          errors << "fault case #{entry["id"]} exceeded the #{RTO_LIMIT_SECONDS}s recovery bound"
+        end
         errors << "fault case #{entry["id"]} replicas diverged" unless entry["replica_state_identical"] == true
       end
       membership = cases.find { |entry| entry["id"] == "membership_change_leader_loss" }
       errors << "membership case must observe zero split brain" unless membership && membership["split_brain"] == false
       snapshot = cases.find { |entry| entry["id"] == "snapshot_install_leader_loss" }
-      errors << "snapshot case must observe a real snapshot install" unless snapshot && snapshot["snapshot_installs_on_new_node"].to_i.positive?
+      return if snapshot && snapshot["snapshot_installs_on_new_node"].to_i.positive?
+
+      errors << "snapshot case must observe a real snapshot install"
     end
 
-    def validate_corruption(document, cases, errors)
+    def validate_corruption(_document, cases, errors)
       ids = cases.map { |entry| entry["id"] }
       CORRUPTION_REQUIRED.each { |id| errors << "corruption corpus is missing case #{id}" unless ids.include?(id) }
       cases.each do |entry|
@@ -240,17 +261,23 @@ module M5Gate
         errors << "corruption case #{entry["id"]} must name its error class" unless non_empty_string?(entry["error"])
       end
       disk_full = cases.find { |entry| entry["id"] == "wal_disk_full_tmpfs" }
-      errors << "disk-full case must be measured on a real size-limited tmpfs (L2)" unless disk_full && disk_full["measurement_level"] == "L2" && disk_full["tmpfs_size"]
-      errors << "disk-full case lost acknowledged entries" unless disk_full && disk_full["durable_entries_after_reopen"] == disk_full["acknowledged_entries"]
+      unless disk_full && disk_full["measurement_level"] == "L2" && disk_full["tmpfs_size"]
+        errors << "disk-full case must be measured on a real size-limited tmpfs (L2)"
+      end
+      return if disk_full && disk_full["durable_entries_after_reopen"] == disk_full["acknowledged_entries"]
+
+      errors << "disk-full case lost acknowledged entries"
     end
 
-    def validate_rto_rpo(document, cases, errors)
+    def validate_rto_rpo(_document, cases, errors)
       main = cases.find { |entry| entry["id"] == "quorum_loss_two_of_three_apiservers" }
       unless main
         errors << "RTO/RPO report must contain quorum_loss_two_of_three_apiservers"
         return
       end
-      errors << "RTO/RPO case must run real apiserver and controller-manager processes" unless main["measurement_source"] == "real_apiserver_and_controller_manager_processes"
+      unless main["measurement_source"] == "real_apiserver_and_controller_manager_processes"
+        errors << "RTO/RPO case must run real apiserver and controller-manager processes"
+      end
       errors << "RPO must be 0 objects" unless main["rpo_objects"] == 0 && main["lost_acknowledged_writes"] == 0
       %w[read_resumed_seconds write_resumed_seconds control_loop_resumed_seconds].each do |key|
         errors << "#{key} must be below #{RTO_LIMIT_SECONDS}s" unless main[key].is_a?(Numeric) && main[key] < RTO_LIMIT_SECONDS
@@ -260,19 +287,31 @@ module M5Gate
       errors << "control loop must have reconciled before the fault" unless main["control_loop_reconciled_before_fault"] == true
       errors << "at least 20 writes must be acknowledged before the fault" unless main["acknowledged_before_fault"].to_i >= 20
       counts = main["replica_object_counts"]
-      errors << "replicas must hold the same object count after recovery" unless counts.is_a?(Array) && counts.length == 3 && counts.uniq.length == 1
+      return if counts.is_a?(Array) && counts.length == 3 && counts.uniq.length == 1
+
+      errors << "replicas must hold the same object count after recovery"
     end
 
     def validate_ownership(document, cases, errors)
       components = cases.map { |entry| entry["component"] }.uniq
-      OWNERSHIP_REQUIRED_COMPONENTS.each { |component| errors << "ownership ledger is missing component #{component}" unless components.include?(component) }
+      OWNERSHIP_REQUIRED_COMPONENTS.each do |component|
+        errors << "ownership ledger is missing component #{component}" unless components.include?(component)
+      end
       raft_effects = cases.select { |entry| entry["component"] == "raft_store" }.map { |entry| entry["effect"] }
-      OWNERSHIP_REQUIRED_RAFT_EFFECTS.each { |effect| errors << "ownership ledger is missing raft_store #{effect}" unless raft_effects.include?(effect) }
+      OWNERSHIP_REQUIRED_RAFT_EFFECTS.each do |effect|
+        errors << "ownership ledger is missing raft_store #{effect}" unless raft_effects.include?(effect)
+      end
       cases.select { |entry| entry["component"] == "raft_store" }.each do |entry|
         errors << "raft_store #{entry["effect"]} must classify request loss" unless entry["request_loss_classification"] == "request_loss"
-        errors << "raft_store #{entry["effect"]} must classify response loss" unless entry["response_loss_classification"] == "response_loss"
-        errors << "raft_store #{entry["effect"]} re-execution must apply exactly once" unless entry["request_loss_effect_count"] == 1 && entry["response_loss_retry_effect_count"] == 0
-        errors << "raft_store #{entry["effect"]} must be measured on a real TLS cluster" unless entry["measurement_source"] == "real_raft_cluster_tls"
+        unless entry["response_loss_classification"] == "response_loss"
+          errors << "raft_store #{entry["effect"]} must classify response loss"
+        end
+        unless entry["request_loss_effect_count"] == 1 && entry["response_loss_retry_effect_count"] == 0
+          errors << "raft_store #{entry["effect"]} re-execution must apply exactly once"
+        end
+        unless entry["measurement_source"] == "real_raft_cluster_tls"
+          errors << "raft_store #{entry["effect"]} must be measured on a real TLS cluster"
+        end
       end
       points = document["effect_points"]
       errors << "ownership ledger must enumerate its effect points" unless points.is_a?(Array) && points.length >= 7

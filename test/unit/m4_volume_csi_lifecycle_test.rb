@@ -104,17 +104,17 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
       super
     end
 
-    def expand(id, capacity, token:, secrets: {}, volume_capability: nil)
+    def expand(_id, capacity, token:, secrets: {}, volume_capability: nil)
       fault_if!(:expand, fault_path)
       {"capacityBytes" => capacity, "nodeExpansionRequired" => true}
     end
 
-    def expand_node(id, path, token:, capacity_bytes: nil, volume_capability: nil, secrets: {})
+    def expand_node(_id, path, token:, capacity_bytes: nil, volume_capability: nil, secrets: {})
       fault_if!(:expand_node, path)
       {"capacityBytes" => capacity_bytes}
     end
 
-    def stats(id, path:)
+    def stats(_id, path:)
       fault_if!(:stats, path)
       {"capacityBytes" => 1, "usedBytes" => 0, "availableBytes" => 1}
     end
@@ -387,8 +387,8 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
       @values[id.to_s] = value
     end
 
-    def fetch(id, &fallback)
-      @values.fetch(id.to_s, &fallback)
+    def fetch(id, &)
+      @values.fetch(id.to_s, &)
     end
 
     def delete(id)
@@ -449,6 +449,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     manager = Rubernetes::Volume::Manager.new(data_dir: @directory, csi: csi, secret_resolver: resolver, fsync: true)
     manager.node.stage(id, File.join(@directory, "stage-a"), token: "stage-a", node: "node-a")
     stage_context = csi.calls.reverse.find { |call| call.first == :stage }.fetch(5)
+
     assert_equal({"device" => "pci-1", "fsType" => "ext4"}, stage_context.fetch("volumeContext"))
     assert_equal({"handle" => "h1"}, stage_context.fetch("publishContext"))
     assert_equal({"token" => "secret"}, stage_context.fetch("secrets"))
@@ -461,6 +462,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     manager.controller.publish(id, "node-a", token: "attach-a-2")
     manager.node.stage(id, File.join(@directory, "stage-b"), token: "stage-b", node: "node-a")
     second_context = csi.calls.reverse.find { |call| call.first == :stage }.fetch(5)
+
     assert_equal({"handle" => "h2"}, second_context.fetch("publishContext"))
     refute_equal "h1", second_context.fetch("publishContext").fetch("handle")
   end
@@ -472,11 +474,14 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     first = Rubernetes::Volume::Manager.new(data_dir: @directory, csi: csi, fsync: true)
     volume_id = first.create_volume({"name" => "remote", "csi" => {"driver" => "example.csi"}}, token: "create")
     snapshot_id = first.create_snapshot(volume_id, token: "snapshot")
+
     assert_equal snapshot_id, first.list_snapshots.first.id
 
     restarted = Rubernetes::Volume::Manager.new(data_dir: @directory, csi: csi, fsync: true)
+
     assert_equal snapshot_id, restarted.list_snapshots.first.id
     report = restarted.recover
+
     assert_includes report.unknown.map { |entry| entry["id"] }, snapshot_id
     assert_raises(Rubernetes::Volume::StateUnknownError) do
       restarted.restore(snapshot_id, spec: {"name" => "restore", "csi" => {"driver" => "example.csi"}}, token: "restore")
@@ -491,15 +496,18 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     volume_id = first.create_volume({"name" => "scratch", "emptyDir" => {}}, token: "create-local")
     snapshot_id = first.create_snapshot(volume_id, token: "snapshot-local")
 
-    refute csi.calls.any? { |call| call.first == :snapshot }
+    refute(csi.calls.any? { |call| call.first == :snapshot })
     snapshot = first.list_snapshots.find { |candidate| candidate.id == snapshot_id }
+
     assert_equal false, snapshot.metadata.fetch("remote")
     assert_equal "emptyDir", snapshot.metadata.fetch("backend")
 
     restarted = Rubernetes::Volume::Manager.new(data_dir: @directory, csi: csi, fsync: true)
     report = restarted.recover
+
     refute_includes report.unknown.map { |entry| entry["id"] }, snapshot_id
     restored = restarted.list_snapshots.find { |candidate| candidate.id == snapshot_id }
+
     assert restored.ready_to_use
     refute_equal "Unknown", restored.metadata["state"]
   end
@@ -523,9 +531,11 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     snapshot_id = manager.create_snapshot(source_id, token: "snapshot")
     restored = manager.restore(snapshot_id, spec: {"name" => "restored", "csi" => {"driver" => "example.csi"}}, token: "restore")
     cloned = manager.clone(source_id, spec: {"name" => "clone", "csi" => {"driver" => "example.csi"}}, token: "clone")
+
     refute_equal source_id, restored
     refute_equal source_id, cloned
     creates = csi.calls.select { |call| call.first == :create }
+
     assert_equal "snap-1", creates[-2][1].fetch("sourceSnapshotId")
     assert_equal "remote-volume", creates[-1][1].fetch("cloneSourceId")
   end
@@ -538,6 +548,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     id = manager.create_volume({"name" => "remote", "csi" => {"driver" => "example.csi"}}, token: "create")
 
     restarted = Rubernetes::Volume::Manager.new(data_dir: @directory, fsync: true)
+
     assert_equal "Unknown", restarted.fetch_record(id).state
     assert_raises(Rubernetes::Volume::StateUnknownError) { restarted.delete_volume(id, token: "delete") }
   end
@@ -556,6 +567,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
       manager.node.stage(id, stage, token: "stage-fault", node: "node-a")
     end
     stage_call = csi.mutations.find { |call| call.first == :stage }
+
     assert_equal stage, stage_call.fetch(1)
     assert_equal File.realpath(File.dirname(stage)).then { |parent| File.join(parent, File.basename(stage)) }, stage_call.fetch(2)
     assert_equal "Unknown", manager.fetch_record(id).state
@@ -565,6 +577,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
       data_dir: File.join(@directory, "stage"), csi: csi, adapter: readback,
       mount_adapter: readback, require_real_readback: true, fsync: true
     )
+
     assert_equal "Unknown", restarted.fetch_record(id).state
     assert_raises(Rubernetes::Volume::StateUnknownError) do
       restarted.node.stage(id, stage, token: "stage-after-restart", node: "node-a")
@@ -583,6 +596,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     token = "stage-interrupted"
     first.operations.begin!(key: id, operation: operation, token: token, fingerprint: Rubernetes::Volume::Types.digest({"rpc" => "sent"}))
     first.operations.effecting!(key: id, operation: operation, token: token)
+
     assert_equal "Attached", first.fetch_record(id).state
 
     restarted = Rubernetes::Volume::Manager.new(data_dir: @directory, csi: csi, fsync: true)
@@ -591,6 +605,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     assert_equal "failed", restarted.operations.fetch(key: id, operation: operation).status
     assert_equal "Attached", restarted.fetch_record(id).state
     result = restarted.node.stage(id, File.join(@directory, "new-stage"), token: "retry", node: "node-a")
+
     assert_equal File.join(@directory, "new-stage"), result.fetch("target")
   end
 
@@ -630,6 +645,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
       end
       assert_equal "Unknown", manager.fetch_record(id).state, operation.to_s
       entry = manager.operations.entries.find { |candidate| candidate.operation.start_with?("#{operation}:") }
+
       refute_nil entry, "#{operation}: #{manager.operations.entries.map(&:operation).inspect}"
       assert_equal "unknown", entry.status, operation.to_s
     end
@@ -646,9 +662,11 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
           manager.node.stage(id, path, token: "stage", node: "node-a")
         end
         manager.recover
+
         assert_equal "Staged", manager.fetch_record(id).state
         assert_equal "succeeded", manager.operations.entries.find { |entry| entry.operation.start_with?("stage:") }.status
         manager.node.unstage(id, path, token: "unstage-after-recovery", node: "node-a")
+
         assert_equal "Attached", manager.fetch_record(id).state
       end,
       publish: lambda do |manager, id, csi, root|
@@ -661,6 +679,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
                                readonly: false, token: "publish", node: "node-a")
         end
         manager.recover
+
         assert_equal "Published", manager.fetch_record(id).state
         assert_equal target, manager.fetch_record(id).publishes.values.first.fetch("target")
       end,
@@ -675,6 +694,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
           manager.node.unpublish(id, pod, target, token: "unpublish")
         end
         manager.recover
+
         assert_equal "Staged", manager.fetch_record(id).state
         assert_empty manager.fetch_record(id).publishes
       end,
@@ -686,6 +706,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
           manager.node.unstage(id, stage, token: "unstage", node: "node-a")
         end
         manager.recover
+
         assert_equal "Attached", manager.fetch_record(id).state
         assert_empty manager.fetch_record(id).stages
       end
@@ -713,9 +734,11 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
         local_id = manager.volume_id_for(manager.normalize_spec(
           {"name" => "lost-create", "capacityBytes" => 64, "csi" => {"driver" => "example.csi"}}
         ))
+
         assert_match(/ambiguous result/, error.message)
         assert_equal "Unknown", manager.fetch_record(local_id).state
         manager.recover
+
         assert_equal "Provisioned", manager.fetch_record(local_id).state
       end,
       delete_volume: lambda do |manager, csi, id|
@@ -730,14 +753,17 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
         assert_raises(Rubernetes::Volume::OperationUnknown) { manager.controller.publish(id, "node-a", token: "attach") }
         assert_equal "Unknown", manager.fetch_record(id).state
         manager.recover
+
         assert_equal "Attached", manager.fetch_record(id).state
-        assert_equal "driver-remote@node-a", manager.fetch_record(id).attachments.fetch("node-a").fetch("publishContext").fetch("attachment")
+        assert_equal "driver-remote@node-a",
+                     manager.fetch_record(id).attachments.fetch("node-a").fetch("publishContext").fetch("attachment")
       end,
       unpublish: lambda do |manager, csi, id|
         manager.controller.publish(id, "node-a", token: "attach")
         csi.lose_next_response(:unpublish)
         assert_raises(Rubernetes::Volume::OperationUnknown) { manager.controller.unpublish(id, "node-a", token: "detach") }
         manager.recover
+
         assert_equal "Detached", manager.fetch_record(id).state
         assert_empty manager.fetch_record(id).attachments
       end,
@@ -747,6 +773,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
           manager.create_snapshot(id, token: "snapshot", name: "lost-snapshot")
         end
         manager.recover
+
         assert_equal "Provisioned", manager.fetch_record(id).state
         assert_equal "driver-lost-snapshot", manager.list_snapshots.first.id
       end,
@@ -754,6 +781,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
         csi.lose_next_response(:expand)
         assert_raises(Rubernetes::Volume::OperationUnknown) { manager.expand(id, 128, token: "expand") }
         manager.recover
+
         assert_equal "Provisioned", manager.fetch_record(id).state
         assert_equal 128, manager.fetch_record(id).capacity_bytes
       end,
@@ -764,6 +792,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
           manager.delete_snapshot(snapshot_id, token: "delete-snapshot")
         end
         manager.recover
+
         assert_empty manager.list_snapshots
       end
     }
@@ -808,8 +837,9 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     assert_equal 128, restarted.volume(id).capacity_bytes
     expand_calls = csi.mutations.select { |call| call.first == :expand_node }
     # The plugin receives canonical paths; the leased inode is verified by the manager.
-    assert expand_calls.all? { |call| [stage, target].include?(call.fetch(2)) }
+    assert(expand_calls.all? { |call| [stage, target].include?(call.fetch(2)) })
     expanded_paths = expand_calls.map { |call| call.fetch(5) }
+
     assert_includes expanded_paths, stage
     assert_includes expanded_paths, target
     assert_equal "succeeded", restarted.operations.fetch(key: id, operation: "expand").status
@@ -839,7 +869,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
         assert_raises(Rubernetes::Volume::OperationUnknown) do
           manager.node.publish(id, "pod-a", target, readonly: false, token: "publish-fault", node: "node-a")
         end
-        path = target
+        target
       end,
       unpublish: lambda do |manager, id, csi, path|
         manager.node.stage(id, path, token: "stage", node: "node-a")
@@ -849,7 +879,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
         assert_raises(Rubernetes::Volume::OperationUnknown) do
           manager.node.unpublish(id, "pod-a", target, token: "unpublish-fault")
         end
-        path = target
+        target
       end,
       expand: lambda do |manager, id, csi, path|
         manager.node.stage(id, path, token: "stage", node: "node-a")
@@ -877,9 +907,11 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
       path = File.join(root, "stage")
       scenario.call(manager, id, csi, path)
 
-      changed_path = operation == :publish || operation == :unpublish ? "#{path}-target" : path
+      changed_path = %i[publish unpublish].include?(operation) ? "#{path}-target" : path
+
       assert File.symlink?(changed_path), operation.to_s
       expected_state = operation == :stats ? "Staged" : "Unknown"
+
       assert_equal expected_state, manager.volume(id).state, operation.to_s
     end
   end
@@ -918,11 +950,12 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     assert_raises(Rubernetes::Volume::JournalError) do
       manager.create_snapshot(id, token: "snapshot-first", name: "backup-first")
     end
-    assert_equal 1, csi.calls.count { |call| call.first == :delete_snapshot }
+    assert_equal(1, csi.calls.count { |call| call.first == :delete_snapshot })
     assert_empty manager.list_snapshots
     assert_equal "Provisioned", manager.fetch_record(id).state
 
     snapshot_id = manager.create_snapshot(id, token: "snapshot-retry", name: "backup-retry")
+
     assert_equal "driver-backup-retry", snapshot_id
     assert_equal 1, csi.max_snapshots
     assert_equal [snapshot_id], manager.list_snapshots.map(&:id)
@@ -940,12 +973,14 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
 
     manager.recover
     unknown = manager.list_snapshots.first
+
     assert_equal "Unknown", unknown.metadata.fetch("state")
     refute unknown.ready_to_use
 
     csi.create_snapshot("driver-remote", token: "external-recreate", name: "recoverable")
     manager.recover
     restored = manager.list_snapshots.first
+
     assert restored.ready_to_use
     refute_equal "Unknown", restored.metadata["state"]
   end
@@ -958,7 +993,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
       manager.create_volume({"name" => "wrong", "csi" => {"driver" => "other.csi"}}, token: "create")
     end
     assert_match(/driver mismatch/, error.message)
-    refute csi.calls.any? { |call| call.first == :create_volume }
+    refute(csi.calls.any? { |call| call.first == :create_volume })
   end
 
   def test_inline_csi_secrets_are_memory_only_and_restart_fails_closed_without_resolver
@@ -971,13 +1006,16 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
       {"name" => "inline-secret", "csi" => {"driver" => "example.csi"},
        "secrets" => {"credential" => secret}}, token: "create"
     )
+
     assert_equal secret, csi.calls.find { |call| call.first == :create }.fetch(1).fetch("secrets").fetch("credential")
     manager.controller.publish(id, "node-a", token: "attach")
     publish_context = csi.calls.reverse.find { |call| call.first == :publish }.fetch(5)
+
     assert_equal secret, publish_context.fetch("secrets").fetch("credential")
     manager.controller.unpublish(id, "node-a", token: "detach")
 
     persisted = Dir.glob(File.join(root, "**", "*.json")).map { |path| File.binread(path) }.join("\n")
+
     refute_includes persisted, secret
     refute_includes persisted, "\"credential\""
 
@@ -1010,7 +1048,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     assert_equal mutation_count, csi.calls.length
     assert_equal "Unknown", manager.volume(local_id).state
     assert_equal "unknown", manager.operations.fetch(key: local_id, operation: "create").status
-    assert report.errors.any? { |entry| entry["kind"] == "csi-list-volumes" }
+    assert(report.errors.any? { |entry| entry["kind"] == "csi-list-volumes" })
   end
 
   def test_paginated_list_volumes_failure_keeps_unknown_create_fenced
@@ -1035,10 +1073,10 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     report = manager.recover
 
     assert_equal [nil, "page-2"], tokens
-    assert_equal create_calls, csi.calls.count { |entry| entry.first == :create_volume }
+    assert_equal(create_calls, csi.calls.count { |entry| entry.first == :create_volume })
     assert_equal "Unknown", manager.volume(local_id).state
     assert_equal "unknown", manager.operations.fetch(key: local_id, operation: "create").status
-    assert report.errors.any? { |entry| entry["kind"] == "csi-list-volumes" }
+    assert(report.errors.any? { |entry| entry["kind"] == "csi-list-volumes" })
   end
 
   def test_paginated_list_volumes_observes_delete_target_before_unfencing
@@ -1057,7 +1095,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
         {"entries" => [{"volumeId" => "unrelated"}], "nextToken" => "page-2"}
       else
         {"entries" => [{"volume" => {"volumeId" => "driver-remote"},
-                         "status" => {"publishedNodeIds" => []}}],
+                        "status" => {"publishedNodeIds" => []}}],
          "nextToken" => ""}
       end
     end
@@ -1066,7 +1104,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
 
     assert_empty report.errors
     assert_equal [nil, "page-2"], tokens
-    assert_equal delete_calls, csi.calls.count { |entry| entry.first == :delete_volume }
+    assert_equal(delete_calls, csi.calls.count { |entry| entry.first == :delete_volume })
     assert_equal "Provisioned", manager.volume(id).state
     assert_equal "failed", manager.operations.fetch(key: id, operation: "delete").status
   end
@@ -1091,10 +1129,10 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     report = manager.recover
 
     assert_equal [nil, "page-2"], tokens
-    assert_equal delete_calls, csi.calls.count { |entry| entry.first == :delete_volume }
+    assert_equal(delete_calls, csi.calls.count { |entry| entry.first == :delete_volume })
     assert_equal "Unknown", manager.volume(id).state
     assert_equal "unknown", manager.operations.fetch(key: id, operation: "delete").status
-    assert report.errors.any? { |entry| entry["kind"] == "csi-list-volumes" }
+    assert(report.errors.any? { |entry| entry["kind"] == "csi-list-volumes" })
   end
 
   def test_malformed_list_volumes_response_keeps_unknown_delete_fenced
@@ -1110,7 +1148,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
 
     report = manager.recover
 
-    assert_equal delete_calls, csi.calls.count { |entry| entry.first == :delete_volume }
+    assert_equal(delete_calls, csi.calls.count { |entry| entry.first == :delete_volume })
     assert_equal "Unknown", manager.volume(id).state
     assert_equal "unknown", manager.operations.fetch(key: id, operation: "delete").status
     assert(report.errors.any? do |entry|
@@ -1138,7 +1176,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     report = manager.recover
 
     assert_equal [nil, "loop"], volume_tokens
-    assert_equal create_calls, csi.calls.count { |entry| entry.first == :create_volume }
+    assert_equal(create_calls, csi.calls.count { |entry| entry.first == :create_volume })
     assert_equal "Unknown", manager.volume(local_id).state
     assert(report.errors.any? do |entry|
       entry["kind"] == "csi-list-volumes" && entry["error"].include?("repeated token")
@@ -1163,7 +1201,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     report = manager.recover
 
     assert_equal [nil, "loop"], snapshot_tokens
-    assert_equal snapshot_calls, csi.calls.count { |entry| entry.first == :create_snapshot }
+    assert_equal(snapshot_calls, csi.calls.count { |entry| entry.first == :create_snapshot })
     assert(report.errors.any? do |entry|
       entry["kind"] == "snapshot-reconcile" && entry["error"].include?("repeated token")
     end)
@@ -1183,6 +1221,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
 
     persisted = manager.persisted_spec(normalized)
     json = JSON.generate(persisted)
+
     refute_includes json, "DISK-SECRET"
     refute_includes json, "JWT-SECRET"
     assert_equal "credentials", persisted.dig("sources", 0, "wrapper", "secret", "name")
@@ -1236,7 +1275,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     report = restarted.recover
 
     refute_includes JSON.generate(report.to_h), secret
-    assert report.errors.any? { |entry| entry["kind"] == "csi-list-volumes" && entry["error"].include?("[REDACTED]") }
+    assert(report.errors.any? { |entry| entry["kind"] == "csi-list-volumes" && entry["error"].include?("[REDACTED]") })
     assert_equal "Provisioned", restarted.volume(id).state
   end
 
@@ -1256,6 +1295,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
 
       report = manager.recover
       snapshot = manager.list_snapshots.find { |entry| entry.id == snapshot_id }
+
       assert_equal "Unknown", snapshot.metadata.fetch("state"), source_volume_id.inspect
       assert_equal snapshot_calls, csi.calls.count { |entry| entry.first == :create_snapshot }, source_volume_id.inspect
       assert(report.errors.any? do |entry|
@@ -1287,6 +1327,7 @@ class M4VolumeCsiLifecycleTest < Minitest::Test
     refute_includes error.message, secret
     assert_includes error.message, "[REDACTED]"
     snapshot = manager.list_snapshots.find { |entry| entry.id == snapshot_id }
+
     refute_includes snapshot.metadata.fetch("reason"), secret
     refute_includes persisted, secret
   end

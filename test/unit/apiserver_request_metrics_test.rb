@@ -40,6 +40,7 @@ class APIServerRequestMetricsTest < Minitest::Test
     encoded = Rubernetes::Transport::HTTPServer.allocate.send(:normalize_response, listed)
     call("GET", "/api/v1/configmaps")
     call("GET", "/api/v1/namespaces/dev/configmaps/a")
+
     assert value("apiserver_request_total", verb: "POST", resource: "configmaps", scope: "resource", code: "201")
     assert value("apiserver_request_total", verb: "LIST", resource: "configmaps", scope: "namespace", code: "200")
     assert value("apiserver_request_total", verb: "LIST", resource: "configmaps", scope: "cluster", code: "200")
@@ -54,6 +55,7 @@ class APIServerRequestMetricsTest < Minitest::Test
 
   def test_a_watch_is_long_running_until_it_ends
     response = call("GET", "/api/v1/namespaces/dev/configmaps?watch=true&timeoutSeconds=2")
+
     assert_kind_of API::LongRunningBody, response.body
     events = Queue.new
     reader = Thread.new do
@@ -64,11 +66,13 @@ class APIServerRequestMetricsTest < Minitest::Test
       end
     end
     call("POST", "/api/v1/namespaces/dev/configmaps", {"metadata" => {"name" => "w"}})
+
     assert_equal "ADDED", events.pop["type"]
     reader.join(5)
-    assert_equal 0.0, value("apiserver_longrunning_requests", verb: "WATCH", resource: "configmaps")
-    assert_equal 1.0, value("apiserver_watch_events_total", resource: "configmaps", version: "v1")
-    assert_equal 1.0, value("apiserver_watch_events_sizes_bucket", resource: "configmaps", le: "2048")
+
+    assert_in_delta(0.0, value("apiserver_longrunning_requests", verb: "WATCH", resource: "configmaps"))
+    assert_in_delta(1.0, value("apiserver_watch_events_total", resource: "configmaps", version: "v1"))
+    assert_in_delta(1.0, value("apiserver_watch_events_sizes_bucket", resource: "configmaps", le: "2048"))
     assert value("apiserver_request_total", verb: "WATCH", resource: "configmaps", code: "200"), "recorded when the stream ended"
     refute sample("apiserver_request_slo_duration_seconds_count", verb: "WATCH"), "a watch has no SLO latency"
   end
@@ -86,19 +90,22 @@ class APIServerRequestMetricsTest < Minitest::Test
     end
     call("POST", "/api/v1/namespaces/dev/configmaps", {"metadata" => {"name" => "g"}})
     started.pop
-    assert_equal 1.0, value("apiserver_longrunning_requests", verb: "WATCH", resource: "configmaps", scope: "namespace")
+
+    assert_in_delta(1.0, value("apiserver_longrunning_requests", verb: "WATCH", resource: "configmaps", scope: "namespace"))
     refute value("apiserver_request_total", verb: "WATCH"), "not recorded before it ends"
     finish << true
     reader.join(5)
-    assert_equal 0.0, value("apiserver_longrunning_requests", verb: "WATCH", resource: "configmaps")
+
+    assert_in_delta(0.0, value("apiserver_longrunning_requests", verb: "WATCH", resource: "configmaps"))
   end
 
   def test_stored_objects_are_counted_per_resource
     call("POST", "/api/v1/namespaces/dev/configmaps", {"metadata" => {"name" => "a"}})
     call("POST", "/api/v1/namespaces/dev/configmaps", {"metadata" => {"name" => "b"}})
-    assert_equal 2.0, value("apiserver_storage_objects", resource: "configmaps")
-    assert_equal 2.0, value("apiserver_resource_objects", group: "", resource: "configmaps")
-    assert_equal 1.0, value("apiserver_resource_objects", group: "", resource: "namespaces")
-    assert_equal 0.0, value("apiserver_resource_objects", group: "", resource: "pods")
+
+    assert_in_delta(2.0, value("apiserver_storage_objects", resource: "configmaps"))
+    assert_in_delta(2.0, value("apiserver_resource_objects", group: "", resource: "configmaps"))
+    assert_in_delta(1.0, value("apiserver_resource_objects", group: "", resource: "namespaces"))
+    assert_in_delta(0.0, value("apiserver_resource_objects", group: "", resource: "pods"))
   end
 end

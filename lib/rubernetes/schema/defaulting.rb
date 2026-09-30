@@ -26,9 +26,9 @@ module Rubernetes
       def initialize(definition, unknown_fields: :preserve, unknown: nil)
         @definition = definition.is_a?(Definition) ? definition : Definition.new(definition)
         @unknown_fields = (unknown || unknown_fields).to_sym
-        unless UNKNOWN_MODES.include?(@unknown_fields)
-          raise ArgumentError, "unknown_fields must be :preserve, :prune, or :reject"
-        end
+        return if UNKNOWN_MODES.include?(@unknown_fields)
+
+        raise ArgumentError, "unknown_fields must be :preserve, :prune, or :reject"
       end
 
       # Hash input remains a frozen wire-format Hash; ValueObject input remains typed.
@@ -41,9 +41,7 @@ module Rubernetes
         value = keyword_value if value.nil? && !keyword_value.empty?
         value ||= {}
         mode = (unknown || unknown_fields).to_sym
-        unless UNKNOWN_MODES.include?(mode)
-          raise ArgumentError, "unknown_fields must be :preserve, :prune, or :reject"
-        end
+        raise ArgumentError, "unknown_fields must be :preserve, :prune, or :reject" unless UNKNOWN_MODES.include?(mode)
 
         output_as = as || (value.is_a?(ValueObject) ? :value : :hash)
         case output_as.to_sym
@@ -70,17 +68,17 @@ module Rubernetes
 
       alias call apply
 
-      def apply_value(value = nil, **options)
-        apply(value, as: :value, **options)
+      def apply_value(value = nil, **)
+        apply(value, as: :value, **)
       end
 
-      def apply_hash(value = nil, **options)
-        apply(value, as: :hash, **options)
+      def apply_hash(value = nil, **)
+        apply(value, as: :hash, **)
       end
 
-      def changed?(value = nil, **options)
+      def changed?(value = nil, **)
         before = value.is_a?(ValueObject) ? value.to_h : value
-        after = apply(value, **options)
+        after = apply(value, **)
         after_hash = after.is_a?(ValueObject) ? after.to_h : after
         before != after_hash
       end
@@ -109,11 +107,10 @@ module Rubernetes
         if union_target && value.respond_to?(:each_pair)
           return apply_object_hash(value, union_target, path, mode, kubernetes_admission_defaults, old)
         end
+
         old = nil unless old.is_a?(Hash)
 
-        unless value.respond_to?(:each_pair)
-          raise DefaultingError, "expected an object at #{display_path(path)}, got #{value.class}"
-        end
+        raise DefaultingError, "expected an object at #{display_path(path)}, got #{value.class}" unless value.respond_to?(:each_pair)
 
         result = {}
         supplied = {}
@@ -143,6 +140,7 @@ module Rubernetes
             if mode == :reject && !object_definition.preserve_unknown_fields
               raise DefaultingError, "unknown field #{path_for(path, key)} is not allowed"
             end
+
             result[key] = deep_copy(item) if mode == :preserve || object_definition.preserve_unknown_fields
           end
         end
@@ -172,12 +170,12 @@ module Rubernetes
       # same behavior applies to a root object, a nested value, and list
       # items, without encoding per-fixture or per-resource exceptions.
       def apply_kubernetes_defaults(result, object_definition, kubernetes_admission_defaults: false)
-        if object_definition.kind == "ServiceReference" && object_definition.name.start_with?("io.k8s.")
+        if object_definition.kind == "ServiceReference" && object_definition.name.start_with?("io.k8s.") && !(result.key?("port") && !result["port"].nil?)
           # Admissionregistration, apiextensions, and kube-aggregator all
           # register this upstream default for their versioned ServiceReference
           # value.  A nil pointer is defaulted; an explicitly supplied port is
           # retained, including zero, just as Scheme.Default does.
-          result["port"] = 443 unless result.key?("port") && !result["port"].nil?
+          result["port"] = 443
         end
 
         apply_kubernetes_admission_defaults(result, object_definition) if kubernetes_admission_defaults
@@ -232,13 +230,9 @@ module Rubernetes
           # created after the first such one was unreachable.
           result["protocol"] = "TCP" if result["protocol"].to_s.empty?
           target = result["targetPort"]
-          if (target.nil? || target == 0 || target == "") && !result["port"].nil?
-            result["targetPort"] = result["port"]
-          end
+          result["targetPort"] = result["port"] if (target.nil? || target == 0 || target == "") && !result["port"].nil?
         when "/Volume"
-          unless VOLUME_SOURCE_FIELDS.any? { |name| !result[name].nil? }
-            result["emptyDir"] = {}
-          end
+          result["emptyDir"] = {} unless VOLUME_SOURCE_FIELDS.any? { |name| !result[name].nil? }
           image = result["image"]
           if image.is_a?(Hash) && image["pullPolicy"].to_s.empty?
             copy = deep_copy(image)
@@ -284,9 +278,7 @@ module Rubernetes
         when "/NamespaceStatus"
           result["phase"] = "Active" if result["phase"].to_s.empty?
         when "/NodeStatus"
-          if result["allocatable"].nil? && result["capacity"].is_a?(Hash)
-            result["allocatable"] = deep_copy(result["capacity"])
-          end
+          result["allocatable"] = deep_copy(result["capacity"]) if result["allocatable"].nil? && result["capacity"].is_a?(Hash)
         when "/LimitRangeItem"
           apply_limit_range_item_defaults(result)
         when "/Namespace"
@@ -480,7 +472,7 @@ module Rubernetes
 
         metadata = result["metadata"].is_a?(Hash) ? deep_copy(result["metadata"]) : {}
         metadata["labels"] = (labels.is_a?(Hash) ? deep_copy(labels) : {})
-                             .merge("kubernetes.io/metadata.name" => name)
+          .merge("kubernetes.io/metadata.name" => name)
         result["metadata"] = metadata
       end
 
@@ -688,7 +680,9 @@ module Rubernetes
         rules = deep_copy(defaults)
         return rules unless from.is_a?(Hash)
 
-        %w[selectPolicy stabilizationWindowSeconds policies tolerance].each { |key| rules[key] = deep_copy(from[key]) unless from[key].nil? }
+        %w[selectPolicy stabilizationWindowSeconds policies tolerance].each do |key|
+          rules[key] = deep_copy(from[key]) unless from[key].nil?
+        end
         rules
       end
 
@@ -715,9 +709,7 @@ module Rubernetes
               storage_version = versions.find do |version|
                 version.is_a?(Hash) && version["storage"] == true
               end
-              if storage_version && !storage_version["name"].nil?
-                status["storedVersions"] = [storage_version["name"]]
-              end
+              status["storedVersions"] = [storage_version["name"]] if storage_version && !storage_version["name"].nil?
             end
             result["spec"] = spec
             result["status"] = status
@@ -738,9 +730,8 @@ module Rubernetes
         return nil if value.nil?
 
         if field.array?
-          unless value.is_a?(Array)
-            raise DefaultingError, "expected an array at #{display_path(path)}, got #{value.class}"
-          end
+          raise DefaultingError, "expected an array at #{display_path(path)}, got #{value.class}" unless value.is_a?(Array)
+
           old = nil unless old.is_a?(Array)
           return value.each_with_index.map do |item, index|
             prior = old && old[index]
@@ -751,9 +742,7 @@ module Rubernetes
         end
 
         nested = nested_definition(field)
-        if nested && value.respond_to?(:each_pair)
-          return apply_object_hash(value, nested, path, mode, kubernetes_admission_defaults, old)
-        end
+        return apply_object_hash(value, nested, path, mode, kubernetes_admission_defaults, old) if nested && value.respond_to?(:each_pair)
         if value.respond_to?(:each_pair) && field.additional_properties && field.additional_properties != true
           return value.each_pair.to_h do |key, item|
             [
@@ -796,9 +785,7 @@ module Rubernetes
 
       def apply_item(value, item, path, mode, kubernetes_admission_defaults, old = nil)
         return nil if value.nil?
-        if item.is_a?(Field)
-          return apply_field(value, item, path, mode, kubernetes_admission_defaults, old)
-        end
+        return apply_field(value, item, path, mode, kubernetes_admission_defaults, old) if item.is_a?(Field)
         if item.is_a?(Definition) && value.respond_to?(:each_pair)
           return apply_object_hash(value, item, path, mode, kubernetes_admission_defaults, old)
         end

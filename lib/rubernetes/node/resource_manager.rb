@@ -7,15 +7,13 @@ require_relative "../resource_helpers"
 # make a pod fit on a full node.  The public snapshot keeps Kubernetes quantity
 # strings for status and diagnostics.
 
-require "rational"
-require "thread"
-
 require_relative "registration"
 
 module Rubernetes
   module Node
     class ResourceManager
       class Error < StandardError; end
+
       class InsufficientResources < Error
         attr_reader :requested, :available
 
@@ -199,7 +197,7 @@ module Rubernetes
               output[resource] = deficit if deficit.positive?
             end
             raise InsufficientResources.new("pod #{key} does not fit on the node", requested: format_map(requested),
-                                            available: format_map(available.merge(missing)))
+                                                                                   available: format_map(available.merge(missing)))
           end
           reservation = Reservation.new(key: key, requests: requested.freeze, qos_class: qos_class(pod_hash), pod: pod_hash.freeze)
           @reservations[key] = reservation
@@ -256,7 +254,7 @@ module Rubernetes
 
       def fits?(requests, available: nil)
         requested = normalize_quantities(requests || {})
-        available = available ? normalize_quantities(available) : normalize_quantities(self.available)
+        available = normalize_quantities(available || self.available)
         requested.all? { |resource, amount| amount <= available.fetch(resource, Rational(0)) }
       end
 
@@ -284,6 +282,7 @@ module Rubernetes
       def reservation_key(pod)
         uid = Support.uid(pod)
         return "uid:#{uid}" unless uid.to_s.empty?
+
         namespace = Support.namespace(pod, "default")
         name = Support.name(pod)
         raise ArgumentError, "pod identity is required for resource reservation" if name.to_s.empty?
@@ -329,13 +328,14 @@ module Rubernetes
         end
       end
 
-      def quantity_value(value, resource = nil)
+      def quantity_value(value, _resource = nil)
         return value if value.is_a?(Rational)
         return Rational(value, 1) if value.is_a?(Integer)
         return value.to_r if value.is_a?(Float)
 
         string = String(value).strip
         raise ArgumentError, "invalid resource quantity #{value.inspect}" if string.empty?
+
         match = /\A([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)([A-Za-z]*)\z/.match(string)
         raise ArgumentError, "invalid resource quantity #{value.inspect}" unless match
 
@@ -371,8 +371,10 @@ module Rubernetes
         rational = quantity_value(value, resource)
         if resource.to_s == "cpu"
           return rational.to_i.to_s if rational.denominator == 1
+
           milli = rational * 1000
           return "#{milli.to_i}m" if milli.denominator == 1
+
           return rational.to_f.to_s
         end
         if %w[memory ephemeral-storage].include?(resource.to_s) && rational.denominator == 1

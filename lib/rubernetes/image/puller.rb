@@ -40,7 +40,8 @@ module Rubernetes
 
       def pull(reference, platform: nil, os: nil, architecture: nil, arch: nil, variant: nil, rootfs: nil, unpack: !rootfs.nil?)
         image_reference = Reference.parse(reference)
-        resolved_manifest = registry_client.manifest(image_reference, platform: platform, os: os, architecture: architecture, arch: arch, variant: variant)
+        resolved_manifest = registry_client.manifest(image_reference, platform: platform, os: os, architecture: architecture, arch: arch,
+                                                                      variant: variant)
         pinned_reference = image_reference.with_digest(resolved_manifest.digest)
         config_bytes, config_path = fetch_config(pinned_reference, resolved_manifest.config)
         config = parse_config(config_bytes)
@@ -141,9 +142,7 @@ module Rubernetes
       private
 
       def fetch_config(reference, descriptor)
-        if descriptor.size > DEFAULT_MAX_CONFIG_BYTES
-          raise LimitError, "image config exceeds the configured byte limit"
-        end
+        raise LimitError, "image config exceeds the configured byte limit" if descriptor.size > DEFAULT_MAX_CONFIG_BYTES
 
         temporary = download_to_temp(reference, descriptor)
         config_path = nil
@@ -191,6 +190,7 @@ module Rubernetes
 
       def parse_config(bytes)
         raise LimitError, "image config exceeds the configured byte limit" if bytes.bytesize > DEFAULT_MAX_CONFIG_BYTES
+
         parsed = StrictJSON.parse(bytes, max_bytes: DEFAULT_MAX_CONFIG_BYTES)
         raise ManifestError, "image config must be a JSON object" unless parsed.is_a?(Hash)
 
@@ -202,6 +202,7 @@ module Rubernetes
       def unpack_layers(layers, destination)
         destination = File.expand_path(destination.to_s)
         raise LayerError, "rootfs destination must be a non-empty path" if destination.empty?
+
         parent = File.dirname(destination)
         FileUtils.mkdir_p(parent, mode: 0o700)
         staging = File.join(parent, ".#{File.basename(destination)}.#{Process.pid}.#{SecureRandom.hex(12)}.staging")
@@ -218,6 +219,7 @@ module Rubernetes
             stat = File.lstat(destination)
             raise LayerError, "rootfs destination must be a regular directory" unless stat.directory? && !stat.symlink?
             raise LayerError, "rootfs destination is not empty" unless Dir.empty?(destination)
+
             Dir.rmdir(destination)
           end
           File.rename(staging, destination)
@@ -249,7 +251,10 @@ module Rubernetes
       def deep_freeze(value)
         case value
         when Hash
-          value.each { |key, item| deep_freeze(key); deep_freeze(item) }
+          value.each do |key, item|
+            deep_freeze(key)
+            deep_freeze(item)
+          end
         when Array
           value.each { |item| deep_freeze(item) }
         end

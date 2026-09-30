@@ -82,9 +82,7 @@ module Rubernetes
         path = options.fetch(:path, path)
         env = options.fetch(:env, env)
         configured_path = path || env["KUBECONFIG"]
-        if configured_path && !configured_path.is_a?(String)
-          raise ConfigurationError, "kubeconfig path must be a string"
-        end
+        raise ConfigurationError, "kubeconfig path must be a string" if configured_path && !configured_path.is_a?(String)
 
         paths = configured_path ? configured_path.split(File::PATH_SEPARATOR) : [File.expand_path("~/.kube/config")]
         paths = paths.reject(&:empty?).map do |entry|
@@ -152,7 +150,7 @@ module Rubernetes
         namespace = context.fetch("namespace", DEFAULT_NAMESPACE)
         namespace = validate_namespace(namespace, context_name)
         insecure_skip_tls_verify = cluster.fetch("insecure-skip-tls-verify", false)
-        unless insecure_skip_tls_verify == true || insecure_skip_tls_verify == false
+        unless [true, false].include?(insecure_skip_tls_verify)
           raise ConfigurationError, "cluster #{cluster_name.inspect} insecure-skip-tls-verify must be a boolean"
         end
         if insecure_skip_tls_verify && (cluster.key?("certificate-authority") || cluster.key?("certificate-authority-data"))
@@ -198,11 +196,10 @@ module Rubernetes
           file.binmode
           stat = file.stat
           raise ConfigurationError, "#{label} must be a regular file: #{path}" unless stat.file?
+
           mode = stat.mode & 0o777
           raise ConfigurationError, "#{label} has no read permission: #{path}" if (mode & 0o444).zero?
-          if (mode & 0o077).positive?
-            raise ConfigurationError, "#{label} must not grant permissions to group or other users: #{path}"
-          end
+          raise ConfigurationError, "#{label} must not grant permissions to group or other users: #{path}" if (mode & 0o077).positive?
 
           content = file.read(limit + 1)
           raise ConfigurationError, "#{label} exceeds #{limit} bytes: #{path}" if content.bytesize > limit
@@ -239,14 +236,14 @@ module Rubernetes
         right.each do |key, value|
           if %w[clusters users contexts].include?(key)
             merged[key] ||= []
-            unless value.is_a?(Array)
-              raise ConfigurationError, "kubeconfig #{key} must be a list: #{source_path}"
-            end
+            raise ConfigurationError, "kubeconfig #{key} must be a list: #{source_path}" unless value.is_a?(Array)
+
             value.each do |entry|
               name = entry.is_a?(Hash) ? entry["name"] : nil
               if merged[key].any? { |existing| existing.is_a?(Hash) && existing["name"] == name }
                 raise ConfigurationError, "duplicate kubeconfig #{key} entry: #{name.inspect}"
               end
+
               merged[key] << deep_dup(entry)
             end
           elsif merged.key?(key) && merged[key] != value
@@ -288,12 +285,10 @@ module Rubernetes
       end
 
       def self.validate_source_path(path, label)
-        unless path.is_a?(String) && !path.empty?
-          raise ConfigurationError, "#{label} path must be a non-empty string"
-        end
-        if path.match?(/[\x00-\x1f\x7f]/)
-          raise ConfigurationError, "#{label} path must not contain control characters"
-        end
+        raise ConfigurationError, "#{label} path must be a non-empty string" unless path.is_a?(String) && !path.empty?
+        return unless path.match?(/[\x00-\x1f\x7f]/)
+
+        raise ConfigurationError, "#{label} path must not contain control characters"
       end
 
       def self.reject_symlink_components(path, label)
@@ -302,9 +297,7 @@ module Rubernetes
           next if component.empty?
 
           current = File.join(current, component)
-          if File.symlink?(current)
-            raise ConfigurationError, "#{label} path must not contain symlinks: #{path}"
-          end
+          raise ConfigurationError, "#{label} path must not contain symlinks: #{path}" if File.symlink?(current)
         end
       end
 
@@ -316,9 +309,8 @@ module Rubernetes
           seen = {}
           node.children.each_slice(2) do |key_node, value_node|
             key = key_node.is_a?(Psych::Nodes::Scalar) ? key_node.value : nil
-            if key && seen.key?(key)
-              raise ConfigurationError, "duplicate kubeconfig key #{key.inspect}: #{filename}"
-            end
+            raise ConfigurationError, "duplicate kubeconfig key #{key.inspect}: #{filename}" if key && seen.key?(key)
+
             seen[key] = true if key
             reject_duplicate_yaml_keys(key_node, filename)
             reject_duplicate_yaml_keys(value_node, filename)
@@ -344,8 +336,13 @@ module Rubernetes
 
           names = value.map do |entry|
             raise ConfigurationError, "kubeconfig #{collection} entries must be mappings" unless entry.is_a?(Hash)
+
             name = entry["name"]
-            raise ConfigurationError, "kubeconfig #{collection} entry name must be a non-empty string" unless name.is_a?(String) && !name.empty?
+            unless name.is_a?(String) && !name.empty?
+              raise ConfigurationError,
+                    "kubeconfig #{collection} entry name must be a non-empty string"
+            end
+
             name
           end
           duplicates = names.tally.select { |_name, count| count > 1 }.keys
@@ -384,10 +381,12 @@ module Rubernetes
 
       def resolve_credentials(user, context_name)
         if user.key?("exec")
-          raise UnsupportedCredentialError, "context #{context_name.inspect} uses exec credentials; explicit isolated exec support is required"
+          raise UnsupportedCredentialError,
+                "context #{context_name.inspect} uses exec credentials; explicit isolated exec support is required"
         end
         if user.key?("auth-provider")
-          raise UnsupportedCredentialError, "context #{context_name.inspect} uses auth-provider credentials; configure a bearer token or client certificate"
+          raise UnsupportedCredentialError,
+                "context #{context_name.inspect} uses auth-provider credentials; configure a bearer token or client certificate"
         end
 
         token = user["token"]
@@ -396,7 +395,8 @@ module Rubernetes
 
         unsupported = user.keys & %w[username password]
         unless unsupported.empty?
-          raise UnsupportedCredentialError, "context #{context_name.inspect} uses basic-auth credentials; use a bearer token or client certificate"
+          raise UnsupportedCredentialError,
+                "context #{context_name.inspect} uses basic-auth credentials; use a bearer token or client certificate"
         end
 
         {
@@ -441,9 +441,7 @@ module Rubernetes
 
       def decode_data(value, field)
         return nil if value.nil?
-        unless value.is_a?(String) && !value.empty?
-          raise ConfigurationError, "kubeconfig #{field} must be a non-empty base64 string"
-        end
+        raise ConfigurationError, "kubeconfig #{field} must be a non-empty base64 string" unless value.is_a?(String) && !value.empty?
 
         Base64.strict_decode64(value)
       rescue ArgumentError => error
@@ -452,16 +450,10 @@ module Rubernetes
 
       def resolve_path(value, field)
         return nil if value.nil?
-        unless value.is_a?(String) && !value.empty?
-          raise ConfigurationError, "kubeconfig #{field} must be a non-empty path"
-        end
+        raise ConfigurationError, "kubeconfig #{field} must be a non-empty path" unless value.is_a?(String) && !value.empty?
 
-        if value.match?(/[\x00-\x1f\x7f]/)
-          raise ConfigurationError, "kubeconfig #{field} path must not contain control characters"
-        end
-        if value.split(%r{[/\\]}).include?("..")
-          raise ConfigurationError, "kubeconfig #{field} path traversal is not allowed"
-        end
+        raise ConfigurationError, "kubeconfig #{field} path must not contain control characters" if value.match?(/[\x00-\x1f\x7f]/)
+        raise ConfigurationError, "kubeconfig #{field} path traversal is not allowed" if value.split(%r{[/\\]}).include?("..")
 
         base_directory = @path == "<memory>" ? Dir.pwd : File.dirname(File.expand_path(@path))
         resolved_path = File.expand_path(value, base_directory)
@@ -480,18 +472,16 @@ module Rubernetes
 
           mode = stat.mode & 0o777
           raise ConfigurationError, "kubeconfig #{field} has no read permission" if (mode & 0o444).zero?
-          if (mode & 0o077).positive?
-            raise ConfigurationError, "kubeconfig #{field} must not be readable by group or other users"
-          end
+          raise ConfigurationError, "kubeconfig #{field} must not be readable by group or other users" if (mode & 0o077).positive?
 
           value = file.read(MAX_TOKEN_FILE_BYTES + 1)
-          if value.bytesize > MAX_TOKEN_FILE_BYTES
-            raise ConfigurationError, "kubeconfig #{field} exceeds #{MAX_TOKEN_FILE_BYTES} bytes"
-          end
+          raise ConfigurationError, "kubeconfig #{field} exceeds #{MAX_TOKEN_FILE_BYTES} bytes" if value.bytesize > MAX_TOKEN_FILE_BYTES
+
           value
         end
         token = content.strip
         raise ConfigurationError, "kubeconfig #{field} is empty" if token.empty?
+
         validate_bearer_token(token, "kubeconfig #{field}")
 
         token
@@ -502,15 +492,11 @@ module Rubernetes
       end
 
       def validate_bearer_token(token, context)
-        unless token.is_a?(String) && !token.empty?
-          raise ConfigurationError, "#{context} token must be a non-empty string"
-        end
-        if token.bytesize > MAX_TOKEN_FILE_BYTES
-          raise ConfigurationError, "#{context} token exceeds #{MAX_TOKEN_FILE_BYTES} bytes"
-        end
-        unless token.b.match?(/\A[!-~]+\z/n)
-          raise ConfigurationError, "#{context} token must contain only printable ASCII without whitespace"
-        end
+        raise ConfigurationError, "#{context} token must be a non-empty string" unless token.is_a?(String) && !token.empty?
+        raise ConfigurationError, "#{context} token exceeds #{MAX_TOKEN_FILE_BYTES} bytes" if token.bytesize > MAX_TOKEN_FILE_BYTES
+        return if token.b.match?(/\A[!-~]+\z/n)
+
+        raise ConfigurationError, "#{context} token must contain only printable ASCII without whitespace"
       end
 
       def reject_symlink_components!(path, field)
@@ -519,16 +505,17 @@ module Rubernetes
           next if component.empty?
 
           current = File.join(current, component)
-          if File.symlink?(current)
-            raise ConfigurationError, "kubeconfig #{field} path must not contain symlinks"
-          end
+          raise ConfigurationError, "kubeconfig #{field} path must not contain symlinks" if File.symlink?(current)
         end
       end
 
       def deep_freeze(value)
         case value
         when Hash
-          value.each { |key, child| key.freeze; deep_freeze(child) }
+          value.each do |key, child|
+            key.freeze
+            deep_freeze(child)
+          end
         when Array
           value.each { |child| deep_freeze(child) }
         end

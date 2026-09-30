@@ -54,10 +54,13 @@ module PrivateLogind
       config = File.join(@directory, "bus.conf")
       File.write(config, format(CONFIG, socket: @socket_path))
       @pid = Process.spawn("dbus-daemon", "--config-file=#{config}", "--nofork", "--nosyslog",
-                           out: File.join(@directory, "dbus.log"), err: [:child, :out])
+                           out: File.join(@directory, "dbus.log"), err: %i[child out])
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
       until File.socket?(@socket_path)
-        raise "dbus-daemon did not start: #{File.read(File.join(@directory, "dbus.log"))}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+        if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+          raise "dbus-daemon did not start: #{File.read(File.join(@directory,
+                                                                  "dbus.log"))}"
+        end
 
         sleep 0.02
       end

@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "thread"
-
 require_relative "../security/cel"
 
 module Rubernetes
@@ -83,7 +81,7 @@ module Rubernetes
       def device_matches(result, driver:, attributes: {}, capacity: {}, allow_multiple_allocations: nil)
         variables = {"device" => device_value(driver, attributes, capacity, allow_multiple_allocations)}
         value = @evaluator.run(result.program, variables)
-        unless value == true || value == false
+        unless [true, false].include?(value)
           raise Error, "CEL result of type #{SecurityCEL::Values.type_of(value)} could not be converted to bool: " \
                        "unsupported type conversion from '#{SecurityCEL::Values.type_of(value)}' to bool"
         end
@@ -124,6 +122,7 @@ module Rubernetes
         return Integer(attribute["int"]) if attribute.key?("int")
         return attribute["bool"] == true if attribute.key?("bool")
         return attribute["string"].to_s if attribute.key?("string")
+
         if attribute.key?("version")
           begin
             return SecurityCEL::Library::SemVer.parse(attribute["version"].to_s)

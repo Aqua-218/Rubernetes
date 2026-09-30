@@ -17,7 +17,7 @@ module M6APICoverageProbe
     documents = {}
     Dir.glob(File.join(M6ProbeSupport::CORPUS, "discovery", "*.json")).each do |path|
       name = File.basename(path, ".json")
-      next if name == "aggregated_v2" || name == "api" || name == "apis"
+      next if %w[aggregated_v2 api apis].include?(name)
 
       documents[name.gsub("__", "/")] = JSON.parse(File.read(path))
     end
@@ -68,7 +68,8 @@ module M6APICoverageProbe
         %w[namespaced kind singularName shortNames categories].each do |field|
           next if resource[field] == candidate[field] || (Array(resource[field]).empty? && Array(candidate[field]).empty?)
 
-          missing_verbs << {"groupVersion" => group_version, "resource" => resource["name"], "field" => field, "expected" => resource[field], "actual" => candidate[field]}
+          missing_verbs << {"groupVersion" => group_version, "resource" => resource["name"], "field" => field,
+                            "expected" => resource[field], "actual" => candidate[field]}
         end
       end
       extra = served_by_name.keys - document["resources"].map { |resource| resource["name"] }
@@ -99,7 +100,8 @@ module M6APICoverageProbe
     cases << {"id" => "openapi_operations", "upstream_paths" => upstream_openapi["paths"].length, "served_paths" => served_paths.length,
               "missing" => missing_operations.first(50), "missing_count" => missing_operations.length, "passed" => missing_operations.empty?}
     served_openapi = M6ProbeSupport.request(service, "GET", "/openapi/v3", token: "admin-token")
-    cases << {"id" => "openapi_v3_index_served", "status" => served_openapi.status, "passed" => served_openapi.status == 200 && served_openapi.body["paths"].length.positive?}
+    cases << {"id" => "openapi_v3_index_served", "status" => served_openapi.status,
+              "passed" => served_openapi.status == 200 && served_openapi.body["paths"].length.positive?}
 
     # Protobuf: descriptor message coverage from the generated codec.
     descriptor_count = Dir.glob(File.join(M6ProbeSupport::CORPUS, "protobuf", "**", "*.proto")).sum { |path| File.read(path).scan(/^message\s+\w+/).length }

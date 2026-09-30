@@ -16,20 +16,20 @@ require "uri"
 
 module KubernetesCorpusImporter
   ROOT = File.expand_path("../..", __dir__).freeze
-  LOCK_RELATIVE_PATH = "third_party/locks/kubernetes-v1.36.2.json".freeze
-  CORPUS_RELATIVE_PATH = "schema/kubernetes/v1.36.2".freeze
-  EXPECTED_TAG = "v1.36.2".freeze
-  OFFICIAL_REPOSITORY = "https://github.com/kubernetes/kubernetes.git".freeze
-  RAW_HOST = "raw.githubusercontent.com".freeze
-  API_HOST = "api.github.com".freeze
+  LOCK_RELATIVE_PATH = "third_party/locks/kubernetes-v1.36.2.json"
+  CORPUS_RELATIVE_PATH = "schema/kubernetes/v1.36.2"
+  EXPECTED_TAG = "v1.36.2"
+  OFFICIAL_REPOSITORY = "https://github.com/kubernetes/kubernetes.git"
+  RAW_HOST = "raw.githubusercontent.com"
+  API_HOST = "api.github.com"
   RAW_BASE_URL = "https://#{RAW_HOST}/kubernetes/kubernetes".freeze
   API_BASE_URL = "https://#{API_HOST}/repos/kubernetes/kubernetes/contents".freeze
   MAX_JSON_BYTES = 64 * 1024 * 1024
   MAX_PROTO_BYTES = 8 * 1024 * 1024
   MAX_API_BYTES = 4 * 1024 * 1024
-  SHA256_PATTERN = /\A[0-9a-f]{64}\z/.freeze
-  COMMIT_PATTERN = /\A[0-9a-f]{40}\z/.freeze
-  PROTO_IMPORT_PATTERN = /\bimport\s+(?:(?:public|weak)\s+)?"([^"]+)"\s*;/.freeze
+  SHA256_PATTERN = /\A[0-9a-f]{64}\z/
+  COMMIT_PATTERN = /\A[0-9a-f]{40}\z/
+  PROTO_IMPORT_PATTERN = /\bimport\s+(?:(?:public|weak)\s+)?"([^"]+)"\s*;/
   STANDARD_DESCRIPTOR_PREFIXES = %w[google/protobuf/ google/type/].freeze
   KUBERNETES_PROTO_PREFIXES = %w[
     k8s.io/api/
@@ -54,8 +54,8 @@ module KubernetesCorpusImporter
     max_bytes: MAX_JSON_BYTES
   }.freeze
 
-  DISCOVERY_DIRECTORY = "api/discovery".freeze
-  PROTO_API_DIRECTORY = "staging/src/k8s.io/api".freeze
+  DISCOVERY_DIRECTORY = "api/discovery"
+  PROTO_API_DIRECTORY = "staging/src/k8s.io/api"
   PROTO_SUPPORT_PATHS = [
     "staging/src/k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1/generated.proto",
     "staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto",
@@ -99,7 +99,7 @@ module KubernetesCorpusImporter
   # Small HTTPS client used for both raw files and GitHub contents listings.
   # Redirects are rejected so a pinned URL cannot silently change origin.
   class HttpSourceFetcher
-    USER_AGENT = "rubernetes-kubernetes-corpus-importer/1".freeze
+    USER_AGENT = "rubernetes-kubernetes-corpus-importer/1"
 
     def initialize(open_timeout: 20, read_timeout: 120)
       @open_timeout = open_timeout
@@ -133,13 +133,10 @@ module KubernetesCorpusImporter
       end
 
       content_length = response["content-length"]
-      if content_length && content_length.to_i > max_bytes
-        raise Error, "upstream response for #{url} exceeds #{max_bytes} bytes"
-      end
+      raise Error, "upstream response for #{url} exceeds #{max_bytes} bytes" if content_length && content_length.to_i > max_bytes
+
       body = response.body.to_s.b
-      if body.bytesize > max_bytes
-        raise Error, "upstream response for #{url} exceeds #{max_bytes} bytes"
-      end
+      raise Error, "upstream response for #{url} exceeds #{max_bytes} bytes" if body.bytesize > max_bytes
       raise Error, "upstream response for #{url} is empty" if body.empty?
 
       body
@@ -163,9 +160,8 @@ module KubernetesCorpusImporter
       url = "#{API_BASE_URL}/#{encoded_path}?ref=#{commit}&per_page=100"
       body = @fetcher.fetch(url, max_bytes: MAX_API_BYTES, accept: "application/vnd.github+json")
       entries = JSON.parse(body)
-      unless entries.is_a?(Array)
-        raise ValidationError, "GitHub contents API returned a non-array for #{path}"
-      end
+      raise ValidationError, "GitHub contents API returned a non-array for #{path}" unless entries.is_a?(Array)
+
       entries.each { |entry| validate_entry!(entry, commit, path) }
       entries
     rescue JSON::ParserError => error
@@ -181,19 +177,21 @@ module KubernetesCorpusImporter
     end
 
     def validate_repo_path!(path)
-      unless path.is_a?(String) && path.match?(%r{\A[a-zA-Z0-9._/-]+\z}) && !path.include?("..")
-        raise ValidationError, "invalid GitHub repository path: #{path.inspect}"
-      end
+      return if path.is_a?(String) && path.match?(%r{\A[a-zA-Z0-9._/-]+\z}) && !path.include?("..")
+
+      raise ValidationError, "invalid GitHub repository path: #{path.inspect}"
     end
 
     def validate_entry!(entry, commit, parent_path)
       unless entry.is_a?(Hash) && %w[file dir].include?(entry["type"])
         raise ValidationError, "unexpected GitHub contents entry under #{parent_path}"
       end
+
       path = entry["path"]
       unless path.is_a?(String) && path.start_with?("#{parent_path}/") && !path.include?("..")
         raise ValidationError, "GitHub contents entry escaped #{parent_path}: #{path.inspect}"
       end
+
       sha = entry["sha"]
       unless sha.is_a?(String) && sha.match?(COMMIT_PATTERN)
         raise ValidationError, "GitHub contents entry has invalid blob/tree SHA: #{path}"
@@ -201,9 +199,9 @@ module KubernetesCorpusImporter
       return unless entry["type"] == "file"
 
       expected_url = raw_url(commit, path)
-      unless entry["download_url"] == expected_url
-        raise ValidationError, "GitHub contents entry download URL is not the pinned raw URL: #{path}"
-      end
+      return if entry["download_url"] == expected_url
+
+      raise ValidationError, "GitHub contents entry download URL is not the pinned raw URL: #{path}"
     end
 
     def raw_url(commit, path)
@@ -239,13 +237,13 @@ module KubernetesCorpusImporter
       unless source.is_a?(Hash) && source["repository"] == OFFICIAL_REPOSITORY
         raise ValidationError, "Kubernetes lock must pin #{OFFICIAL_REPOSITORY}"
       end
-      unless source["tag"] == EXPECTED_TAG
-        raise ValidationError, "Kubernetes lock tag must be #{EXPECTED_TAG.inspect}"
-      end
+      raise ValidationError, "Kubernetes lock tag must be #{EXPECTED_TAG.inspect}" unless source["tag"] == EXPECTED_TAG
+
       commit = source["commit"]
       unless commit.is_a?(String) && commit.match?(COMMIT_PATTERN) && commit == commit.downcase
         raise ValidationError, "Kubernetes lock source.commit must be a lowercase 40-character SHA"
       end
+
       data
     rescue Errno::ENOENT => error
       raise Error, "Kubernetes lock file is missing: #{@lock_path}: #{error.message}"
@@ -288,7 +286,9 @@ module KubernetesCorpusImporter
       end
 
       discovery_documents = fetched_sources.select { |source| source.id.start_with?("discovery:") }
-      coverage = validate_corpus!(openapi.parsed, discovery_documents, protobuf_sources: fetched_sources.select { |source| source.kind == "protobuf" })
+      coverage = validate_corpus!(openapi.parsed, discovery_documents, protobuf_sources: fetched_sources.select do |source|
+        source.kind == "protobuf"
+      end)
       manifest = build_manifest(context, fetched_sources, coverage)
       write_sources(fetched_sources, manifest)
       puts "Imported #{fetched_sources.length} pinned Kubernetes corpus files into #{@corpus_root}"
@@ -304,36 +304,30 @@ module KubernetesCorpusImporter
       unless source_records.is_a?(Array) && source_records.all? { |record| record.is_a?(Hash) }
         raise ValidationError, "sources.json must contain a sources array"
       end
+
       expected_paths = source_records.map { |record| record.fetch("path") }
-      if expected_paths.uniq.length != expected_paths.length
-        raise ValidationError, "sources.json contains duplicate source paths"
-      end
+      raise ValidationError, "sources.json contains duplicate source paths" if expected_paths.uniq.length != expected_paths.length
+
       source_ids = source_records.map { |record| record.fetch("id") }
-      if source_ids.uniq.length != source_ids.length
-        raise ValidationError, "sources.json contains duplicate source IDs"
-      end
+      raise ValidationError, "sources.json contains duplicate source IDs" if source_ids.uniq.length != source_ids.length
 
       sources_by_kind = {}
       source_records.each do |record|
         validate_source_record!(record, context.fetch("commit"))
         path = safe_corpus_path(record.fetch("path"))
-        if File.symlink?(path)
-          raise ValidationError, "corpus source must not be a symlink: #{record.fetch("path")}"
-        end
+        raise ValidationError, "corpus source must not be a symlink: #{record.fetch("path")}" if File.symlink?(path)
+
         bytes = File.binread(path)
         if Digest::SHA256.hexdigest(bytes) != record.fetch("sha256")
           raise ValidationError, "corpus digest mismatch for #{record.fetch("path")}; rerun importer"
         end
-        if bytes.bytesize != record.fetch("bytes")
-          raise ValidationError, "corpus size mismatch for #{record.fetch("path")}; rerun importer"
-        end
+        raise ValidationError, "corpus size mismatch for #{record.fetch("path")}; rerun importer" if bytes.bytesize != record.fetch("bytes")
+
         if record.fetch("kind") == "json"
           parse_canonical_bytes!(bytes, record.fetch("path"))
         elsif record.fetch("kind") == "protobuf"
           canonical = canonical_proto(bytes)
-          unless canonical == bytes
-            raise ValidationError, "#{record.fetch("path")} is not canonical protobuf text; rerun importer"
-          end
+          raise ValidationError, "#{record.fetch("path")} is not canonical protobuf text; rerun importer" unless canonical == bytes
         else
           raise ValidationError, "unsupported corpus source kind for #{record.fetch("path")}: #{record.fetch("kind").inspect}"
         end
@@ -345,9 +339,8 @@ module KubernetesCorpusImporter
       openapi_record, openapi_bytes = source_records
         .filter_map { |record| [record, sources_by_kind[record["id"]]&.last] if record["id"] == "openapi" }
         .first
-      unless openapi_record && openapi_bytes
-        raise ValidationError, "sources.json does not contain the OpenAPI source"
-      end
+      raise ValidationError, "sources.json does not contain the OpenAPI source" unless openapi_record && openapi_bytes
+
       openapi = JSON.parse(openapi_bytes)
       discovery_documents = source_records.filter_map do |record|
         next unless record["id"].to_s.start_with?("discovery:")
@@ -365,12 +358,8 @@ module KubernetesCorpusImporter
         )
       end
       coverage = validate_corpus!(openapi, discovery_documents, protobuf_sources: protobuf_sources)
-      unless manifest.fetch("coverage") == coverage
-        raise ValidationError, "sources.json coverage does not match the pinned corpus"
-      end
-      unless manifest.fetch("source_count") == source_records.length
-        raise ValidationError, "sources.json source_count is incorrect"
-      end
+      raise ValidationError, "sources.json coverage does not match the pinned corpus" unless manifest.fetch("coverage") == coverage
+      raise ValidationError, "sources.json source_count is incorrect" unless manifest.fetch("source_count") == source_records.length
 
       expected_file_paths = source_records.map { |record| File.expand_path(record.fetch("path"), @corpus_root) }
       expected_file_paths << manifest_path
@@ -397,6 +386,7 @@ module KubernetesCorpusImporter
       unless files.length == entries.length && files.all? { |entry| entry["name"].match?(/\A[a-zA-Z0-9._-]+\.json\z/) }
         raise ValidationError, "api/discovery contents contains an unexpected entry"
       end
+
       files.sort_by { |entry| entry.fetch("path") }
     end
 
@@ -427,9 +417,8 @@ module KubernetesCorpusImporter
         parent = path.delete_suffix("/generated.proto")
         entries = @contents_client.list(parent, commit)
         generated = entries.find { |entry| entry["type"] == "file" && entry["name"] == "generated.proto" }
-        unless generated && generated["path"] == path
-          raise ValidationError, "pinned support protobuf is missing: #{path}"
-        end
+        raise ValidationError, "pinned support protobuf is missing: #{path}" unless generated && generated["path"] == path
+
         paths << path
       end
       paths = paths.uniq.sort
@@ -509,15 +498,14 @@ module KubernetesCorpusImporter
           openapi_keys_by_kind.key?(kind)
         end
       end.sort
-      unless missing.empty?
-        raise ValidationError, "discovery GVKs missing from OpenAPI: #{missing.join(", ")}"
-      end
+      raise ValidationError, "discovery GVKs missing from OpenAPI: #{missing.join(", ")}" unless missing.empty?
       unless openapi_gvks.fetch(:duplicates).empty?
         raise ValidationError, "duplicate OpenAPI GVKs: #{openapi_gvks.fetch(:duplicates).join(", ")}"
       end
       unless discovery.fetch(:duplicate_gvrs).empty?
         raise ValidationError, "duplicate discovery GVRs: #{discovery.fetch(:duplicate_gvrs).join(", ")}"
       end
+
       served_gvr_coverage = validate_served_gvr_openapi_coverage!(discovery, openapi_gvks)
       protobuf_closure = validate_protobuf_closure!(protobuf_sources)
 
@@ -567,9 +555,8 @@ module KubernetesCorpusImporter
         end
       end
 
-      unless missing.empty?
-        raise ValidationError, "served discovery GVRs missing from OpenAPI: #{missing.sort.join(", ")}"
-      end
+      raise ValidationError, "served discovery GVRs missing from OpenAPI: #{missing.sort.join(", ")}" unless missing.empty?
+
       unless ambiguous.empty?
         values = ambiguous.sort_by { |entry| entry.fetch("gvr") }.map { |entry| entry.fetch("gvr") }
         raise ValidationError, "served discovery GVRs have ambiguous OpenAPI GVKs: #{values.join(", ")}"
@@ -643,9 +630,8 @@ module KubernetesCorpusImporter
                import_path.match?(%r{\A[a-zA-Z0-9._/-]+\.proto\z}) && !import_path.split("/").include?("..")
           raise ValidationError, "invalid protobuf source path for import closure: #{source.upstream_path}"
         end
-        if sources_by_import_path.key?(import_path)
-          raise ValidationError, "duplicate protobuf source path in corpus: #{import_path}"
-        end
+        raise ValidationError, "duplicate protobuf source path in corpus: #{import_path}" if sources_by_import_path.key?(import_path)
+
         sources_by_import_path[import_path] = source
       end
 
@@ -704,9 +690,7 @@ module KubernetesCorpusImporter
         formatted = unresolved_imports.map { |entry| "#{entry.fetch("source")} -> #{entry.fetch("import")}" }
         raise ValidationError, "protobuf imports are not present in the corpus: #{formatted.join(", ")}"
       end
-      unless cycles.empty?
-        raise ValidationError, "protobuf import cycle detected: #{cycles.first.join(" -> ")}"
-      end
+      raise ValidationError, "protobuf import cycle detected: #{cycles.first.join(" -> ")}" unless cycles.empty?
 
       {
         "source_count" => protobuf_sources.length,
@@ -723,9 +707,8 @@ module KubernetesCorpusImporter
     end
 
     def extract_proto_imports(text, source_id)
-      unless text.valid_encoding?
-        raise ValidationError, "protobuf source is not valid UTF-8 for import closure: #{source_id}"
-      end
+      raise ValidationError, "protobuf source is not valid UTF-8 for import closure: #{source_id}" unless text.valid_encoding?
+
       uncommented = text.gsub(%r{/\*.*?\*/}m, " ").gsub(%r{//[^\n]*}, "")
       imports = uncommented.scan(PROTO_IMPORT_PATTERN).flatten
       imports.each do |import_path|
@@ -745,6 +728,7 @@ module KubernetesCorpusImporter
       unless openapi.is_a?(Hash) && openapi["swagger"] == "2.0" && openapi["definitions"].is_a?(Hash)
         raise ValidationError, "OpenAPI source must be a Swagger v2 document with definitions"
       end
+
       keys = []
       duplicates = []
       openapi.fetch("definitions").each do |definition_name, definition|
@@ -753,10 +737,12 @@ module KubernetesCorpusImporter
         unless extension.is_a?(Array) && !extension.empty?
           raise ValidationError, "OpenAPI #{definition_name} has an invalid x-kubernetes-group-version-kind"
         end
+
         extension.each do |record|
           unless record.is_a?(Hash) && %w[group version kind].all? { |field| record[field].is_a?(String) }
             raise ValidationError, "OpenAPI #{definition_name} has an invalid GVK extension"
           end
+
           key = gvk_key(record["group"], record["version"], record["kind"])
           duplicates << key if keys.include?(key)
           keys << key
@@ -775,6 +761,7 @@ module KubernetesCorpusImporter
       documents.sort_by(&:id).each do |document|
         parsed = document.parsed
         next if parsed.nil?
+
         if parsed["kind"] == "APIGroupDiscoveryList"
           extract_aggregated_records(parsed).each do |record|
             records << record.merge("document_id" => document.id)
@@ -798,34 +785,37 @@ module KubernetesCorpusImporter
 
     def extract_aggregated_records(document)
       items = document["items"]
-      unless items.is_a?(Array)
-        raise ValidationError, "aggregated discovery document must contain items"
-      end
+      raise ValidationError, "aggregated discovery document must contain items" unless items.is_a?(Array)
+
       records = []
       items.each do |item|
         group = item.dig("metadata", "name")
         raise ValidationError, "aggregated discovery item has no group name" unless group.is_a?(String)
+
         versions = item["versions"]
         raise ValidationError, "aggregated discovery group #{group} has no versions" unless versions.is_a?(Array)
+
         versions.each do |version_entry|
           version = version_entry["version"]
           resources = version_entry["resources"]
           unless version.is_a?(String) && resources.is_a?(Array)
             raise ValidationError, "aggregated discovery group #{group} has an invalid version"
           end
+
           resources.each do |resource|
-            unless resource.is_a?(Hash)
-              raise ValidationError, "aggregated discovery group #{group}/#{version} contains an invalid resource"
-            end
+            raise ValidationError, "aggregated discovery group #{group}/#{version} contains an invalid resource" unless resource.is_a?(Hash)
+
             records << aggregated_record(group, version, resource, nil)
             subresources = resource["subresources"]
             unless subresources.nil? || subresources.is_a?(Array)
               raise ValidationError, "aggregated discovery resource #{resource["resource"]} has invalid subresources"
             end
+
             subresources.to_a.each do |subresource|
               unless subresource.is_a?(Hash)
                 raise ValidationError, "aggregated discovery resource #{resource["resource"]} has an invalid subresource"
               end
+
               records << aggregated_record(group, version, resource, subresource)
             end
           end
@@ -836,15 +826,17 @@ module KubernetesCorpusImporter
 
     def aggregated_record(group, version, resource, subresource)
       name = subresource ? "#{resource.fetch("resource")}/#{subresource.fetch("subresource")}" : resource.fetch("resource")
-      response_kind = (subresource ? subresource : resource).fetch("responseKind")
+      response_kind = (subresource || resource).fetch("responseKind")
       unless response_kind.is_a?(Hash) && response_kind["kind"].is_a?(String)
         raise ValidationError, "aggregated discovery resource #{name} has an invalid responseKind"
       end
+
       scope = resource.fetch("scope")
-      verbs = (subresource ? subresource : resource).fetch("verbs")
+      verbs = (subresource || resource).fetch("verbs")
       unless %w[Cluster Namespaced].include?(scope) && verbs.is_a?(Array) && verbs.all? { |verb| verb.is_a?(String) }
         raise ValidationError, "aggregated discovery resource #{name} has invalid scope or verbs"
       end
+
       kind_group = response_kind["group"].to_s
       kind_version = response_kind["version"].to_s
       {
@@ -868,6 +860,7 @@ module KubernetesCorpusImporter
       unless group_version.is_a?(String) && resources.is_a?(Array)
         raise ValidationError, "APIResourceList must contain groupVersion and resources"
       end
+
       parts = group_version.split("/", 2)
       group, version = parts.length == 2 ? parts : ["", parts.fetch(0)]
       resources.map do |resource|
@@ -876,6 +869,7 @@ module KubernetesCorpusImporter
                resource["verbs"].all? { |verb| verb.is_a?(String) }
           raise ValidationError, "APIResourceList #{group_version} contains an invalid resource"
         end
+
         {
           "group" => group,
           "version" => version,
@@ -907,12 +901,11 @@ module KubernetesCorpusImporter
       if gvrs.key?(gvr) && gvrs.fetch(gvr).fetch("kind") != record.fetch("kind")
         raise ValidationError, "discovery GVR #{gvr} maps to conflicting kinds"
       end
+
       # Aggregated discovery and APIResourceList are two representations of
       # the same endpoint. Duplicate GVRs are errors only within one document;
       # cross-document copies must agree and are intentionally deduplicated.
-      if gvrs.key?(gvr) && gvrs.fetch(gvr).fetch("document") == record.fetch("document")
-        duplicate_gvrs << gvr
-      end
+      duplicate_gvrs << gvr if gvrs.key?(gvr) && gvrs.fetch(gvr).fetch("document") == record.fetch("document")
       gvrs[gvr] ||= record.merge("document_id" => document_id)
       gvks[gvk] ||= record.merge("document_id" => document_id)
     rescue KeyError => error
@@ -964,21 +957,20 @@ module KubernetesCorpusImporter
     end
 
     def validate_manifest_header!(manifest, context)
-      unless manifest["schema_version"] == 1 && manifest["source"] == context.fetch("source")
-        raise ValidationError, "sources.json source header does not match the Kubernetes lock"
-      end
+      return if manifest["schema_version"] == 1 && manifest["source"] == context.fetch("source")
+
+      raise ValidationError, "sources.json source header does not match the Kubernetes lock"
     end
 
     def validate_source_record!(record, commit)
       required = %w[id kind path upstream_path url source_commit source_sha256 source_bytes sha256 bytes]
       missing = required.reject { |key| record.key?(key) }
       raise ValidationError, "sources.json source record is missing #{missing.join(", ")}" unless missing.empty?
-      unless record["source_commit"] == commit
-        raise ValidationError, "source commit mismatch for #{record["path"]}"
-      end
+      raise ValidationError, "source commit mismatch for #{record["path"]}" unless record["source_commit"] == commit
       unless record["url"] == raw_url(commit, record.fetch("upstream_path"))
         raise ValidationError, "source URL is not pinned to the lock commit for #{record["path"]}"
       end
+
       validate_raw_url!(record.fetch("url"), commit, record.fetch("upstream_path"))
       unless record["source_sha256"].is_a?(String) && record["source_sha256"].match?(SHA256_PATTERN)
         raise ValidationError, "source_sha256 is invalid for #{record["path"]}"
@@ -1002,9 +994,8 @@ module KubernetesCorpusImporter
     def parse_canonical_bytes!(bytes, label)
       value = parse_json_bytes!(bytes, label)
       canonical = canonical_json(value)
-      unless canonical.b == bytes.b
-        raise ValidationError, "#{label} is not canonical JSON; rerun importer"
-      end
+      raise ValidationError, "#{label} is not canonical JSON; rerun importer" unless canonical.b == bytes.b
+
       value
     end
 
@@ -1035,7 +1026,7 @@ module KubernetesCorpusImporter
       text = bytes.dup.force_encoding(Encoding::UTF_8)
       raise ValidationError, "protobuf source is not valid UTF-8" unless text.valid_encoding?
 
-      text.gsub("\r\n", "\n").gsub("\r", "\n").sub(/\n*\z/, "\n").b
+      text.gsub("\r\n", "\n").tr("\r", "\n").sub(/\n*\z/, "\n").b
     end
 
     def safe_corpus_path(relative_path)
@@ -1043,19 +1034,20 @@ module KubernetesCorpusImporter
              !relative_path.start_with?("/") && !relative_path.split("/").include?("..")
         raise ValidationError, "invalid corpus path in sources.json: #{relative_path.inspect}"
       end
+
       path = File.expand_path(relative_path, @corpus_root)
       unless path == @corpus_root || path.start_with?("#{@corpus_root}/")
         raise ValidationError, "corpus path escaped output root: #{relative_path.inspect}"
       end
+
       path
     end
 
     def atomic_write(path, bytes)
       FileUtils.mkdir_p(File.dirname(path))
       raise Error, "refusing to overwrite symlink: #{path}" if File.symlink?(path)
-      if File.file?(path) && File.binread(path) == bytes
-        return
-      end
+      return if File.file?(path) && File.binread(path) == bytes
+
       temporary = Tempfile.new([".#{File.basename(path)}.", ".tmp"], File.dirname(path))
       temporary.binmode
       temporary.write(bytes)
@@ -1072,6 +1064,7 @@ module KubernetesCorpusImporter
              !upstream_path.split("/").include?("..")
         raise ValidationError, "invalid pinned upstream path: #{upstream_path.inspect}"
       end
+
       url = "#{RAW_BASE_URL}/#{commit}/#{upstream_path}"
       validate_raw_url!(url, commit, upstream_path)
       url
@@ -1083,6 +1076,7 @@ module KubernetesCorpusImporter
       unless uri.scheme == "https" && uri.host == RAW_HOST && uri.path == expected_path && uri.query.nil?
         raise ValidationError, "source URL must be the official HTTPS raw URL for #{upstream_path}"
       end
+
       url
     rescue URI::InvalidURIError => error
       raise ValidationError, "invalid source URL #{url.inspect}: #{error.message}"

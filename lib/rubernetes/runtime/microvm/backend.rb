@@ -24,13 +24,14 @@ module Rubernetes
 
       def initialize(data_dir:, artifacts: nil, artifacts_lock: nil, project_root: nil, chroot_base: DEFAULT_CHROOT_BASE, netns_root: DEFAULT_NETNS_ROOT,
                      run_root: DEFAULT_RUN_ROOT, parent_cgroup: DEFAULT_PARENT_CGROUP, machine: nil, use_base_snapshot: true, logger: nil,
-                     clock: -> { Time.now.utc }, broker: nil, adapter: nil, **options)
+                     clock: -> { Time.now.utc }, broker: nil, adapter: nil, **)
         project_root ||= File.expand_path("../../../..", __dir__)
-        artifacts ||= Artifacts.load(lock_path: artifacts_lock || File.join(project_root, MicroVMArtifactDefaults::LOCK_PATH), root: project_root)
+        artifacts ||= Artifacts.load(lock_path: artifacts_lock || File.join(project_root, MicroVMArtifactDefaults::LOCK_PATH),
+                                     root: project_root)
         @microvm_adapter = adapter || Adapter.new(runtime_class: self.class.runtime_class, data_dir: data_dir, artifacts: artifacts, chroot_base: chroot_base,
                                                   netns_root: netns_root, run_root: run_root, parent_cgroup: parent_cgroup, clock: clock, logger: logger,
                                                   machine: machine, use_base_snapshot: use_base_snapshot, network_device: self.class.network_device?, broker: broker)
-        super(data_dir: data_dir, adapter: @microvm_adapter, clock: clock, **options)
+        super(data_dir: data_dir, adapter: @microvm_adapter, clock: clock, **)
       end
 
       def self.network_device? = true
@@ -49,8 +50,9 @@ module Rubernetes
       # live so the common state machine can then remove it.
       def remove_sandbox(id, request_id: nil)
         state = operation_state(id)
-        stop_sandbox(id, timeout: 10, request_id: request_id && "#{request_id}-stop") if %w[WorkloadStopped Running Stopping StateUnknown].include?(state)
-        super(id, request_id: request_id)
+        stop_sandbox(id, timeout: 10, request_id: request_id && "#{request_id}-stop") if %w[WorkloadStopped Running Stopping
+                                                                                            StateUnknown].include?(state)
+        super
       rescue Rubernetes::Runtime::InvalidTransition, Rubernetes::Runtime::RecoveryRequired
         # A hung/unknown VM cannot be gracefully stopped; reconcile host-side.
         errors = @microvm_adapter.force_teardown(id)

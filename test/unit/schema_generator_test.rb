@@ -36,17 +36,21 @@ class SchemaGeneratorTest < Minitest::Test
           assert_equal(tree(first), tree(second))
           field_sets = JSON.parse(File.read(File.join(first, "fixtures/field-sets.json")))
           sets = field_sets.fetch("io.k8s.api.core.v1.ConfigMap")
+
           assert_equal(sets.fetch("ruby"), sets.fetch("rbs"))
           assert_equal(sets.fetch("ruby"), sets.fetch("openapi"))
           assert_equal(sets.fetch("ruby"), sets.fetch("codec"))
           assert_equal(sets.fetch("ruby"), sets.fetch("patch"))
           registry = JSON.parse(File.read(File.join(first, "schema/registry.json")))
+
           assert_equal(2, registry.fetch("gvks").length)
           protocol_only = registry.fetch("gvks").find { |entry| entry.fetch("kind") == "PodExecOptions" }
+
           assert_nil(protocol_only.fetch("schema"))
 
           config_map = registry.fetch("types").find { |entry| entry.fetch("schema") == "io.k8s.api.core.v1.ConfigMap" }
           definitions = config_map.fetch("field_definitions")
+
           assert_equal("string", definitions.dig("data", "additional_properties", "type"))
           assert_equal("reference", definitions.dig("metadata", "type"))
           assert_equal("io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta", definitions.dig("metadata", "reference"))
@@ -58,15 +62,16 @@ class SchemaGeneratorTest < Minitest::Test
           assert_equal(true, definitions.dig("raw", "preserve_unknown_fields"))
 
           runtime = inspect_generated(first)
+
           assert_equal(2, runtime.fetch("definition_count"))
           assert_equal(true, runtime.fetch("definitions_frozen"))
           assert_equal(
-            [["data", "key"], ["metadata", "name"]],
+            [%w[data key], %w[metadata name]],
             runtime.fetch("invalid_paths")
           )
           assert_equal(true, runtime.fetch("recursive_reference_valid"))
           assert_equal(2, runtime.fetch("default_count"))
-          assert_equal({"count" => ["range"], "mode" => ["enum", "pattern"], "names" => ["type"]},
+          assert_equal({"count" => ["range"], "mode" => %w[enum pattern], "names" => ["type"]},
                        runtime.fetch("constraint_codes"))
           assert_equal(true, runtime.fetch("nullable_and_preserved_valid"))
         end
@@ -82,9 +87,11 @@ class SchemaGeneratorTest < Minitest::Test
 
         assert_equal(tree(first), tree(second))
         _stdout, stderr, status = Open3.capture3(RbConfig.ruby, "-c", File.join(first, "ruby/kubernetes_types.rb"), chdir: ROOT)
+
         assert_predicate(status, :success?, stderr)
 
         runtime = inspect_canonical_generated(first)
+
         assert_equal(771, runtime.fetch("definition_count"))
         assert_equal(true, runtime.fetch("definitions_frozen"))
         assert_equal("Rubernetes::Schema::Reference", runtime.fetch("pod_spec_type"))
@@ -103,9 +110,9 @@ class SchemaGeneratorTest < Minitest::Test
         assert_equal(true, runtime.fetch("scalar_reference_values_valid"))
         assert_equal(
           {
-            "config_map" => [["data", "key"]],
-            "crd" => [["spec", "group"]],
-            "pod" => [["spec", "containers", "0", "name"]]
+            "config_map" => [%w[data key]],
+            "crd" => [%w[spec group]],
+            "pod" => [%w[spec containers 0 name]]
           },
           runtime.fetch("invalid_paths")
         )
@@ -143,8 +150,9 @@ class SchemaGeneratorTest < Minitest::Test
             "data" => {"type" => "object", "additionalProperties" => {"type" => "string"}, "x-kubernetes-map-type" => "atomic"},
             "kind" => {"type" => "string"},
             "metadata" => {"$ref" => "#/definitions/io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta"},
-            "mode" => {"type" => "string", "enum" => ["safe", "fast"], "pattern" => "^(safe|fast)$"},
-            "names" => {"type" => "array", "items" => {"type" => "string"}, "x-kubernetes-list-type" => "set", "x-kubernetes-patch-strategy" => "merge"},
+            "mode" => {"type" => "string", "enum" => %w[safe fast], "pattern" => "^(safe|fast)$"},
+            "names" => {"type" => "array", "items" => {"type" => "string"}, "x-kubernetes-list-type" => "set",
+                        "x-kubernetes-patch-strategy" => "merge"},
             "raw" => {"type" => "object", "x-kubernetes-preserve-unknown-fields" => true}
           },
           "x-kubernetes-group-version-kind" => [{"group" => "", "version" => "v1", "kind" => "ConfigMap"}]
@@ -170,7 +178,8 @@ class SchemaGeneratorTest < Minitest::Test
     }
     File.write(File.join(directory, "openapi/v2.json"), JSON.generate(swagger))
     File.write(File.join(directory, "discovery/aggregated_v2.json"), JSON.generate(discovery))
-    File.write(File.join(directory, "discovery/api__v1.json"), JSON.generate("groupVersion" => "v1", "kind" => "APIResourceList", "resources" => []))
+    File.write(File.join(directory, "discovery/api__v1.json"),
+               JSON.generate("groupVersion" => "v1", "kind" => "APIResourceList", "resources" => []))
     File.write(
       File.join(directory, "sources.json"),
       JSON.generate(
@@ -185,6 +194,7 @@ class SchemaGeneratorTest < Minitest::Test
 
   def run_generator(corpus, output)
     stdout, stderr, status = invoke_generator(corpus, output)
+
     assert_predicate(status, :success?, "#{stdout}\n#{stderr}")
   end
 
@@ -199,7 +209,7 @@ class SchemaGeneratorTest < Minitest::Test
   end
 
   def inspect_generated(output)
-    script = <<~'RUBY'
+    script = <<~RUBY
       require "json"
       require File.expand_path(ARGV.fetch(0))
       constants = Rubernetes::Generated::SCHEMA_CONSTANTS.values
@@ -238,7 +248,7 @@ class SchemaGeneratorTest < Minitest::Test
   end
 
   def inspect_canonical_generated(output)
-    script = <<~'RUBY'
+    script = <<~RUBY
       require "json"
       require File.expand_path(ARGV.fetch(0))
       constants = Rubernetes::Generated::SCHEMA_CONSTANTS.values
@@ -287,7 +297,8 @@ class SchemaGeneratorTest < Minitest::Test
 
   def run_generated_inspector(output, script)
     source = File.join(output, "ruby/kubernetes_types.rb")
-    stdout, stderr, status = Open3.capture3(RbConfig.ruby, "-I#{File.join(ROOT, 'lib')}", "-e", script, source, chdir: ROOT)
+    stdout, stderr, status = Open3.capture3(RbConfig.ruby, "-I#{File.join(ROOT, "lib")}", "-e", script, source, chdir: ROOT)
+
     assert_predicate(status, :success?, stderr)
     JSON.parse(stdout)
   end

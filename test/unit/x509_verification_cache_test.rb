@@ -18,7 +18,7 @@ class X509VerificationCacheTest < Minitest::Test
     ca = OpenSSL::X509::Certificate.new
     ca.version = 2
     ca.serial = 1
-    ca.subject = OpenSSL::X509::Name.new([["CN", "cache-ca"]])
+    ca.subject = OpenSSL::X509::Name.new([%w[CN cache-ca]])
     ca.issuer = ca.subject
     ca.public_key = ca_key
     ca.not_before = Time.now - 60
@@ -50,7 +50,10 @@ class X509VerificationCacheTest < Minitest::Test
     authenticator = A::X509.new(ca_certificates: [ca], clock: now)
     store = authenticator.instance_variable_get(:@store)
     counter = Hash.new(0)
-    store.define_singleton_method(:verify) { |*args| counter[:verify] += 1; super(*args) }
+    store.define_singleton_method(:verify) do |*args|
+      counter[:verify] += 1
+      super(*args)
+    end
     [authenticator, counter]
   end
 
@@ -58,8 +61,9 @@ class X509VerificationCacheTest < Minitest::Test
     ca, cert = certificates
     authenticator, counter = counting_authenticator(ca)
     results = Array.new(5) { authenticator.authenticate(context(cert)) }
+
     assert_equal 1, counter[:verify]
-    assert results.all? { |r| r.user.name == "alice" }
+    assert(results.all? { |r| r.user.name == "alice" })
     assert_includes results.first.user.groups, "team"
   end
 
@@ -67,6 +71,7 @@ class X509VerificationCacheTest < Minitest::Test
     ca, alice = certificates(cn: "alice")
     _other_ca, bob = certificates(cn: "bob")
     authenticator, counter = counting_authenticator(ca)
+
     assert_equal "alice", authenticator.authenticate(context(alice)).user.name
     assert_raises(S::AuthenticationError) { authenticator.authenticate(context(bob)) }
     assert_equal "alice", authenticator.authenticate(context(alice)).user.name
@@ -77,6 +82,7 @@ class X509VerificationCacheTest < Minitest::Test
     now = Time.now.utc
     ca, cert = certificates(not_after: now + 5)
     authenticator, counter = counting_authenticator(ca, now: -> { now })
+
     assert authenticator.authenticate(context(cert))
     assert_equal 1, counter[:verify]
     now += 10
@@ -91,6 +97,7 @@ class X509VerificationCacheTest < Minitest::Test
     authenticator.authenticate(context(cert))
     now += A::X509::CACHE_SECONDS + 1
     authenticator.authenticate(context(cert))
+
     assert_equal 2, counter[:verify]
   end
 
@@ -101,6 +108,7 @@ class X509VerificationCacheTest < Minitest::Test
     cache = authenticator.instance_variable_get(:@cache)
     (A::X509::MAX_CACHED + 10).times { |index| cache["k#{index}"] = {result: nil, expires_at: Time.now + 60} }
     authenticator.send(:remember, "fresh", :result, expires_at: Time.now + 60)
+
     assert_operator cache.length, :<=, A::X509::MAX_CACHED
   end
 end

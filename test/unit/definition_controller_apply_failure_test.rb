@@ -17,6 +17,7 @@ class DefinitionControllerApplyFailureTest < Minitest::Test
     result = Controller::ReconcileResult.new(operations: [create], status: {}, controller: "rc", key: "ns/rc")
     Controller::ApplyFailures.reset!
     wrapper.send(:record_apply_failure, result, RuntimeError.new("exceeded quota"))
+
     assert_equal "exceeded quota", Controller::ApplyFailures["rc", "ns/rc"]
   end
 end

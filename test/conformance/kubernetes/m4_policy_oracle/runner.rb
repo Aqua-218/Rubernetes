@@ -45,7 +45,11 @@ module M4PolicyOracleRunner
 
   def canonical(value)
     case value
-    when Hash then value.keys.map(&:to_s).sort.each_with_object({}) { |key, out| out[key] = canonical(value.fetch(value.keys.find { |k| k.to_s == key })) }
+    when Hash then value.keys.map(&:to_s).sort.each_with_object({}) do |key, out|
+      out[key] = canonical(value.fetch(value.keys.find do |k|
+        k.to_s == key
+      end))
+    end
     when Array then value.map { |child| canonical(child) }
     else value
     end
@@ -67,7 +71,8 @@ module M4PolicyOracleRunner
 
     FileUtils.mkdir_p(BUILD_DIR)
     environment = {"GOTOOLCHAIN" => "auto", "GOWORK" => "off", "CGO_ENABLED" => "0"}
-    _stdout, stderr, status = Open3.capture3(environment, "go", "build", "-trimpath", "-ldflags", "-s -w", "-o", binary, ".", chdir: NETPROBE_DIR)
+    _stdout, stderr, status = Open3.capture3(environment, "go", "build", "-trimpath", "-ldflags", "-s -w", "-o", binary, ".",
+                                             chdir: NETPROBE_DIR)
     raise "go build of netprobe failed: #{stderr.strip}" unless status.success?
 
     [binary, source_sha]
@@ -120,7 +125,10 @@ module M4PolicyOracleRunner
       node_exec("chmod", "0755", NODE_NETPROBE_PATH)
       sha, = node_exec("sha256sum", NODE_NETPROBE_PATH)
       @verifications["netprobe"] = {"path" => NODE_NETPROBE_PATH, "sha256" => sha.split.first, "runner_sha256" => Digest::SHA256.file(@netprobe).hexdigest}
-      raise M2LifecycleOracleHarness::HarnessError, "netprobe inside the node differs from the runner binary" unless sha.split.first == Digest::SHA256.file(@netprobe).hexdigest
+      unless sha.split.first == Digest::SHA256.file(@netprobe).hexdigest
+        raise M2LifecycleOracleHarness::HarnessError, "netprobe inside the node differs from the runner binary"
+      end
+
       step("netprobe_installed", sha256: sha.split.first)
     end
 
@@ -153,12 +161,16 @@ module M4PolicyOracleRunner
       wait_until("policy oracle pods running", M2LifecycleOracleHarness::TIMEOUTS.fetch(:cases)) do
         pods = kubectl_json("get", "pods", "-n", NAMESPACE, "-l", "rubernetes.io/m4-policy-oracle=#{@cluster}")
         items = pods.fetch("items")
-        next false unless items.length == 2 && items.all? { |item| item.dig("status", "phase") == "Running" && item.dig("status", "podIP").to_s != "" }
+        next false unless items.length == 2 && items.all? do |item|
+          item.dig("status", "phase") == "Running" && item.dig("status", "podIP").to_s != ""
+        end
 
         items.each do |item|
-          @pods[item.dig("metadata", "name")] = {"ip" => item.dig("status", "podIP"), "ips" => Array(item.dig("status", "podIPs")).map { |entry| entry["ip"] },
-                                                "labels" => item.dig("metadata", "labels"), "node" => item.dig("spec", "nodeName"),
-                                                "uid" => item.dig("metadata", "uid")}
+          @pods[item.dig("metadata", "name")] = {"ip" => item.dig("status", "podIP"), "ips" => Array(item.dig("status", "podIPs")).map do |entry|
+            entry["ip"]
+          end,
+                                                 "labels" => item.dig("metadata", "labels"), "node" => item.dig("spec", "nodeName"),
+                                                 "uid" => item.dig("metadata", "uid")}
         end
         true
       end
@@ -190,7 +202,9 @@ module M4PolicyOracleRunner
 
         sleep 0.5
       end
-      {"allowed" => attempts.any? { |attempt| attempt["connected"] == true }, "attempts" => attempts, "protocol" => protocol, "port" => port}
+      {"allowed" => attempts.any? do |attempt|
+        attempt["connected"] == true
+      end, "attempts" => attempts, "protocol" => protocol, "port" => port}
     end
 
     def verify_baseline!
@@ -198,7 +212,11 @@ module M4PolicyOracleRunner
       {"tcp" => 8080, "tcp_alt" => 8001, "sctp" => 9999}.each do |label, port|
         protocol = label.start_with?("sctp") ? "sctp" : "tcp"
         @baseline[label] = measure_reachability(protocol, port)
-        raise M2LifecycleOracleHarness::HarnessError, "baseline #{protocol}/#{port} is unreachable without any policy: #{JSON.generate(@baseline[label])[0, 400]}" unless @baseline[label]["allowed"]
+        next if @baseline[label]["allowed"]
+
+        raise M2LifecycleOracleHarness::HarnessError,
+              "baseline #{protocol}/#{port} is unreachable without any policy: #{JSON.generate(@baseline[label])[0,
+                                                                                                                 400]}"
       end
       step("baseline_verified")
     end
@@ -216,13 +234,15 @@ module M4PolicyOracleRunner
       policy = JSON.parse(JSON.generate(fixture.fetch("policy")))
       policy["apiVersion"] ||= "networking.k8s.io/v1"
       policy["kind"] ||= "NetworkPolicy"
-      policy["metadata"] = (policy["metadata"] || {}).merge("namespace" => NAMESPACE, "labels" => {"rubernetes.io/m4-policy-oracle" => @cluster})
+      policy["metadata"] =
+        (policy["metadata"] || {}).merge("namespace" => NAMESPACE, "labels" => {"rubernetes.io/m4-policy-oracle" => @cluster})
       protocol = fixture["protocol"].to_s.downcase
       protocol = "tcp" if protocol.empty?
       port = resolve_port(fixture)
       kubectl("apply", "-f", "-", stdin_data: JSON.generate(policy))
       applied = wait_until("policy #{id} visible", 30) do
-        stdout, _stderr, status = kubectl("get", "networkpolicy", "-n", NAMESPACE, policy.dig("metadata", "name"), "-o", "json", allow_failure: true)
+        stdout, _stderr, status = kubectl("get", "networkpolicy", "-n", NAMESPACE, policy.dig("metadata", "name"), "-o", "json",
+                                          allow_failure: true)
         status.success? ? JSON.parse(stdout) : nil
       end
       sleep SETTLE_SECONDS
@@ -253,7 +273,8 @@ module M4PolicyOracleRunner
     netprobe, netprobe_sha = build_netprobe!
     image = M2LifecycleOracleNodeImage.report("kubernetes_version" => M2LifecycleOracleHarness::KUBERNETES_VERSION,
                                               "source_commit" => M2LifecycleOracleHarness::KUBERNETES_SOURCE_COMMIT)
-    input = {"request" => {"cases" => {}}, "node_image" => image.fetch("image"), "runtime" => image.fetch("runtime"), "node_image_document" => image}
+    input = {"request" => {"cases" => {}}, "node_image" => image.fetch("image"), "runtime" => image.fetch("runtime"),
+             "node_image_document" => image}
     run = PolicyRun.new(input, cases: cases, netprobe: netprobe)
     trace = run.trace
     cluster = run.execute
@@ -268,7 +289,10 @@ module M4PolicyOracleRunner
     end
     errors = []
     comparisons.each { |entry| errors << "case #{entry["id"]} measurement was not stable between attempts" unless entry["passed"] }
-    run.results.each { |result| errors << "case #{result["id"]} connectivity did not recover after the policy was deleted" unless result.dig("restored_without_policy", "allowed") }
+    run.results.each do |result|
+      errors << "case #{result["id"]} connectivity did not recover after the policy was deleted" unless result.dig("restored_without_policy",
+                                                                                                                   "allowed")
+    end
     finished_at = Time.now.utc.iso8601(6)
     runner = {
       "runner_sha256" => Digest::SHA256.file(RUNNER_PATH).hexdigest,
@@ -295,7 +319,8 @@ module M4PolicyOracleRunner
   rescue StandardError => error
     warn "#{error.class}: #{error.message}"
     warn error.backtrace.first(12).join("\n")
-    puts JSON.generate({"executed" => false, "passed" => false, "errors" => ["#{error.class}: #{error.message}"], "trace" => (defined?(trace) ? trace : [])})
+    puts JSON.generate({"executed" => false, "passed" => false, "errors" => ["#{error.class}: #{error.message}"],
+                        "trace" => (defined?(trace) ? trace : [])})
     exit 2
   end
 end

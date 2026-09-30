@@ -25,7 +25,7 @@ module Rubernetes
     VERSION = "0.2" unless const_defined?(:VERSION, false)
 
     InterfaceContract = {
-      add: [:sandbox, :config],
+      add: %i[sandbox config],
       delete: [:sandbox],
       check: [:sandbox],
       recover: []

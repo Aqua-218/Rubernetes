@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
 require_relative "runtime"
 require_relative "support"
 require_relative "types"
@@ -34,9 +33,7 @@ module Rubernetes
         discovered = discover(group: group, version: version, kind: kind)
         return descriptor_for(discovered, fallback_kind: kind) if discovered
 
-        if api_version.nil? || api_version.to_s.empty?
-          return ResourceDescriptor.parse(kind) if ResourceDescriptor::KNOWN.key?(kind)
-        end
+        return ResourceDescriptor.parse(kind) if (api_version.nil? || api_version.to_s.empty?) && ResourceDescriptor::KNOWN.key?(kind)
 
         # ResourceDescriptor::KNOWN is the production bootstrap's pinned
         # discovery snapshot.  A custom kind is accepted only when a real
@@ -77,11 +74,11 @@ module Rubernetes
 
         candidate = if schema_registry.respond_to?(:find_gvk)
                       schema_registry.find_gvk(group: group, version: version, kind: kind)
-        elsif schema_registry.respond_to?(:resource_for_gvk)
-          schema_registry.resource_for_gvk(group: group, version: version, kind: kind)
-        elsif schema_registry.respond_to?(:resolve)
-          schema_registry.resolve(group: group, version: version, kind: kind)
-        end
+                    elsif schema_registry.respond_to?(:resource_for_gvk)
+                      schema_registry.resource_for_gvk(group: group, version: version, kind: kind)
+                    elsif schema_registry.respond_to?(:resolve)
+                      schema_registry.resolve(group: group, version: version, kind: kind)
+                    end
         return candidate unless candidate && schema_registry.respond_to?(:resources)
 
         # The generated schema catalog indexes GVK and GVR separately.  Its
@@ -256,7 +253,8 @@ module Rubernetes
 
         metrics = items.to_h do |item|
           [Support.value(item["describedObject"] || {}, "name", ""),
-           PodMetric.new(value: milli(item["value"]), timestamp: Support.parse_time(item["timestamp"]), window: Float(item["windowSeconds"] || 60))]
+           PodMetric.new(value: milli(item["value"]), timestamp: Support.parse_time(item["timestamp"]),
+                         window: Float(item["windowSeconds"] || 60))]
         end
         [metrics, Support.parse_time(items.first["timestamp"])]
       end
@@ -266,9 +264,13 @@ module Rubernetes
         resource = ResourceDescriptor.parse({"apiVersion" => object_reference["apiVersion"], "kind" => object_reference["kind"]})
         group = resource.group.to_s.empty? ? "" : "#{resource.group}/"
         path = if resource.cluster_scoped?
-                 "/apis/custom.metrics.k8s.io/v1beta2/#{resource.resource}.#{group.chomp("/")}/#{object_reference["name"]}/#{metric_name}".sub(".//", "/")
+                 "/apis/custom.metrics.k8s.io/v1beta2/#{resource.resource}.#{group.chomp("/")}/#{object_reference["name"]}/#{metric_name}".sub(
+                   ".//", "/"
+                 )
                else
-                 "/apis/custom.metrics.k8s.io/v1beta2/namespaces/#{namespace}/#{[resource.resource, resource.group].reject { |part| part.to_s.empty? }.join(".")}/#{object_reference["name"]}/#{metric_name}"
+                 "/apis/custom.metrics.k8s.io/v1beta2/namespaces/#{namespace}/#{[resource.resource, resource.group].reject do |part|
+                   part.to_s.empty?
+                 end.join(".")}/#{object_reference["name"]}/#{metric_name}"
                end
         list = fetch(path, metricLabelSelector: metric_selector)
         item = Array(list && list["items"]).first
@@ -348,7 +350,7 @@ module Rubernetes
           return [(ratio * ready).ceil, utilization, raw, timestamp]
         end
 
-        if !missing.empty?
+        unless missing.empty?
           if ratio < 1.0
             fallback = [100, target_utilization].max
             missing.each { |name| metrics[name] = MetricsClient::PodMetric.new(value: requests[name].to_i * fallback / 100) }
@@ -403,7 +405,8 @@ module Rubernetes
       end
 
       # GetObjectPerPodMetricReplicas.
-      def object_per_pod_metric_replicas(status_replicas, target_average, metric_name, tolerances, namespace, object_reference, metric_selector)
+      def object_per_pod_metric_replicas(status_replicas, target_average, metric_name, tolerances, namespace, object_reference,
+                                         metric_selector)
         begin
           usage, timestamp = @metrics.object_metric(metric_name, namespace, object_reference, metric_selector)
         rescue MetricsClient::MetricsError => error
@@ -421,7 +424,8 @@ module Rubernetes
         begin
           values, timestamp = @metrics.external_metric(metric_name, namespace, Support.selector_string(metric_selector))
         rescue MetricsClient::MetricsError => error
-          raise MetricsClient::MetricsError, "unable to get external metric #{namespace}/#{metric_name}/#{metric_selector.inspect}: #{error.message}"
+          raise MetricsClient::MetricsError,
+                "unable to get external metric #{namespace}/#{metric_name}/#{metric_selector.inspect}: #{error.message}"
         end
         usage = values.sum
         replicas = usage_ratio_replica_count(current, usage.to_f / target_usage, tolerances, namespace, selector)
@@ -433,7 +437,8 @@ module Rubernetes
         begin
           values, timestamp = @metrics.external_metric(metric_name, namespace, Support.selector_string(metric_selector))
         rescue MetricsClient::MetricsError => error
-          raise MetricsClient::MetricsError, "unable to get external metric #{namespace}/#{metric_name}/#{metric_selector.inspect}: #{error.message}"
+          raise MetricsClient::MetricsError,
+                "unable to get external metric #{namespace}/#{metric_name}/#{metric_selector.inspect}: #{error.message}"
         end
         usage = values.sum
         replicas = status_replicas
@@ -460,7 +465,7 @@ module Rubernetes
           return [(ratio * ready).ceil, usage]
         end
 
-        if !missing.empty?
+        unless missing.empty?
           if ratio < 1.0
             missing.each { |name| metrics[name] = MetricsClient::PodMetric.new(value: target_usage) }
           elsif ratio > 1.0
@@ -482,10 +487,13 @@ module Rubernetes
         return current if tolerances.within?(ratio)
 
         pods = pods_for(namespace, selector)
-        raise MetricsClient::MetricsError, "unable to calculate ready pods: no pods returned by selector while calculating replica count" if pods.empty?
+        if pods.empty?
+          raise MetricsClient::MetricsError,
+                "unable to calculate ready pods: no pods returned by selector while calculating replica count"
+        end
 
         ready = pods.count { |pod| Support.value(Support.status(pod), "phase", "") == "Running" && Support.ready?(pod) }
-        [(ratio * ready).ceil, 2**31 - 1].min
+        [(ratio * ready).ceil, (2**31) - 1].min
       end
 
       # GetResourceUtilizationRatio.
@@ -576,7 +584,8 @@ module Rubernetes
             if container.to_s.empty? || container == entry["name"]
               value = (Support.value(entry["resources"] || {}, "requests", {}) || {})[resource]
               if value.nil?
-                raise MetricsClient::MetricsError, "missing request for #{resource} in container #{entry["name"]} of Pod #{Support.name(pod)}"
+                raise MetricsClient::MetricsError,
+                      "missing request for #{resource} in container #{entry["name"]} of Pod #{Support.name(pod)}"
               end
 
               total += (Schema::Quantity.from_json(value).value * 1000).ceil
@@ -586,7 +595,10 @@ module Rubernetes
               break
             end
           end
-          raise MetricsClient::MetricsError, "container #{container} not found in Pod #{Support.name(pod)}" if !container.to_s.empty? && !found
+          if !container.to_s.empty? && !found
+            raise MetricsClient::MetricsError,
+                  "container #{container} not found in Pod #{Support.name(pod)}"
+          end
 
           [Support.name(pod), total]
         end
@@ -614,7 +626,7 @@ module Rubernetes
       attr_reader :rest_mapper, :scale_client, :metrics_client
 
       def initialize(store: nil, rest_mapper: nil, scale_client: nil, metrics_client: nil, schema_registry: nil,
-                     clock: -> { Time.now.utc }, **options)
+                     clock: -> { Time.now.utc }, **)
         schema_registry ||= if store.respond_to?(:schema_registry)
                               store.schema_registry
                             elsif store.respond_to?(:registry)
@@ -629,7 +641,7 @@ module Rubernetes
         @scale_up_events = {}
         @scale_down_events = {}
         @selectors = {}
-        super(store: store, **options)
+        super(store: store, **)
       end
 
       def plan(hpa, store: nil, pods: nil, metrics_client: nil, scale_client: nil, **_options)
@@ -639,7 +651,13 @@ module Rubernetes
         context[:hpa]["status"] ||= {}
         client = scale_client || @scale_client || ScaleClient.new(adapter: adapter)
         metrics = metrics_client || @metrics_client || MetricsClient.new(client: adapter.respond_to?(:client) ? adapter.client : nil)
-        pods_source = pods ? ->(namespace) { Array(pods).select { |pod| Support.namespace(pod) == namespace } } : ->(namespace) { list_for(adapter, POD, namespace: namespace) }
+        pods_source = if pods
+                        ->(namespace) { Array(pods).select { |pod| Support.namespace(pod) == namespace } }
+                      else
+                        lambda { |namespace|
+                          list_for(adapter, POD, namespace: namespace)
+                        }
+                      end
         calculator = ReplicaCalculator.new(metrics_client: metrics, pods: pods_source, clock: @clock)
         observe_hpa(key)
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -653,7 +671,10 @@ module Rubernetes
                                   Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, labels)
         original = Support.status(hpa)
         status = context[:hpa]["status"]
-        context[:operations] << operation_status(hpa, status, descriptor: HPA, reason: "horizontal pod autoscaler status") if status != original
+        if status != original
+          context[:operations] << operation_status(hpa, status, descriptor: HPA,
+                                                                reason: "horizontal pod autoscaler status")
+        end
         ReconcileResult.new(operations: context[:operations].compact, status: status, events: once_per_state(key, context[:events]), controller: name,
                             key: key, requeue_after: SYNC_PERIOD)
       end
@@ -710,7 +731,8 @@ module Rubernetes
           needs_metrics = false
           desired = 0
           rescale = false
-          set_condition(hpa, "ScalingActive", "False", "ScalingDisabled", "scaling is disabled since the replica count of the target is zero")
+          set_condition(hpa, "ScalingActive", "False", "ScalingDisabled",
+                        "scaling is disabled since the replica count of the target is zero")
           remove_condition(hpa, "ScaledToZero")
         elsif current > max_replicas
           rescale_reason = "Current number of replicas above Spec.MaxReplicas"
@@ -748,9 +770,10 @@ module Rubernetes
 
         if rescale
           update = operation_update(snapshot.target, client.build_update(snapshot, desired), descriptor: snapshot.descriptor,
-                                    reason: "horizontal pod autoscaler rescale")
+                                                                                             reason: "horizontal pod autoscaler rescale")
           context[:operations] << update
-          set_condition(hpa, "AbleToScale", "True", "SucceededRescale", "the HPA controller was able to update the target scale to #{desired}")
+          set_condition(hpa, "AbleToScale", "True", "SucceededRescale",
+                        "the HPA controller was able to update the target scale to #{desired}")
           event(context, "Normal", "SuccessfulRescale", "New size: #{desired}; reason: #{rescale_reason}")
           store_scale_event(spec["behavior"], key, current, desired)
           remove_condition(hpa, "ScaledToZero")
@@ -795,7 +818,8 @@ module Rubernetes
         first_error = nil
         first_condition = nil
         metrics.each_with_index do |spec, index|
-          proposal, proposal_name, status, condition, error = compute_replicas_for_metric(context, spec, spec_replicas, status_replicas, selector, calculator)
+          proposal, proposal_name, status, condition, error = compute_replicas_for_metric(context, spec, spec_replicas, status_replicas,
+                                                                                          selector, calculator)
           if error
             if invalid.zero?
               first_condition = condition
@@ -816,7 +840,8 @@ module Rubernetes
           return [-1, "", statuses, error]
         end
 
-        set_condition(hpa, "ScalingActive", "True", "ValidMetricFound", "the HPA was able to successfully calculate a replica count from #{metric}")
+        set_condition(hpa, "ScalingActive", "True", "ValidMetricFound",
+                      "the HPA was able to successfully calculate a replica count from #{metric}")
         [replicas, metric, statuses, error]
       end
 
@@ -858,16 +883,17 @@ module Rubernetes
           begin
             if !target["averageValue"].nil?
               replicas, raw, = calculator.raw_resource_replicas(spec_replicas, milli(target["averageValue"]), resource, tolerances, namespace,
-                                                                 selector, container)
+                                                                selector, container)
               current = {"averageValue" => quantity(resource, raw)}
               name = "#{resource} resource"
             elsif !target["averageUtilization"].nil?
               replicas, utilization, raw, = calculator.resource_replicas(spec_replicas, Integer(target["averageUtilization"]), resource, tolerances,
-                                                                          namespace, selector, container)
+                                                                         namespace, selector, container)
               current = {"averageUtilization" => utilization, "averageValue" => quantity(resource, raw)}
               name = container_type ? "#{resource} container resource utilization (percentage of request)" : "#{resource} resource utilization (percentage of request)"
             else
-              raise MetricsClient::MetricsError, "invalid resource metric source: neither an average utilization target nor an average value (usage) target was set"
+              raise MetricsClient::MetricsError,
+                    "invalid resource metric source: neither an average utilization target nor an average value (usage) target was set"
             end
           rescue MetricsClient::MetricsError => error
             detail = if !target["averageValue"].nil? then "failed to get #{resource} usage: #{error.message}"
@@ -878,7 +904,8 @@ module Rubernetes
             return [0, "", nil, unable_condition(context, reason, detail), label]
           end
           status = if container_type
-                     {"type" => "ContainerResource", "containerResource" => {"name" => resource, "container" => container, "current" => current}}
+                     {"type" => "ContainerResource",
+                      "containerResource" => {"name" => resource, "container" => container, "current" => current}}
                    else
                      {"type" => "Resource", "resource" => {"name" => resource, "current" => current}}
                    end
@@ -889,7 +916,8 @@ module Rubernetes
             replicas, usage, = calculator.metric_replicas(spec_replicas, milli(source.dig("target", "averageValue")), source.dig("metric", "name").to_s,
                                                           tolerances, namespace, selector, Support.selector_string(source.dig("metric", "selector")))
           rescue MetricsClient::MetricsError => error
-            return [0, "", nil, unable_condition(context, "FailedGetPodsMetric", error.message), "failed to get pods metric value: #{error.message}"]
+            return [0, "", nil, unable_condition(context, "FailedGetPodsMetric", error.message),
+                    "failed to get pods metric value: #{error.message}"]
           end
           [replicas, "pods metric #{source.dig("metric", "name")}",
            {"type" => "Pods", "pods" => {"metric" => source["metric"], "current" => {"averageValue" => decimal_milli(usage)}}}, nil, nil]
@@ -912,7 +940,8 @@ module Rubernetes
               raise MetricsClient::MetricsError, "invalid object metric source: neither a value target nor an average value target was set"
             end
           rescue MetricsClient::MetricsError => error
-            return [0, "", nil, unable_condition(context, "FailedGetObjectMetric", error.message), "failed to get object metric value: #{error.message}"]
+            return [0, "", nil, unable_condition(context, "FailedGetObjectMetric", error.message),
+                    "failed to get object metric value: #{error.message}"]
           end
           [replicas, name, {"type" => "Object", "object" => {"describedObject" => source["describedObject"], "metric" => source["metric"], "current" => current}},
            nil, nil]
@@ -930,10 +959,12 @@ module Rubernetes
                                                                      metric["selector"], selector)
               current = {"value" => decimal_milli(usage)}
             else
-              raise MetricsClient::MetricsError, "invalid external metric source: neither a value target nor an average value target was set"
+              raise MetricsClient::MetricsError,
+                    "invalid external metric source: neither a value target nor an average value target was set"
             end
           rescue MetricsClient::MetricsError => error
-            return [0, "", nil, unable_condition(context, "FailedGetExternalMetric", error.message), "failed to get #{metric["name"]} external metric value: #{error.message}"]
+            return [0, "", nil, unable_condition(context, "FailedGetExternalMetric", error.message),
+                    "failed to get #{metric["name"]} external metric value: #{error.message}"]
           end
           [replicas, "external metric #{metric["name"]}(#{selector_text(metric["selector"])})",
            {"type" => "External", "external" => {"metric" => metric, "current" => current}}, nil, nil]
@@ -969,7 +1000,10 @@ module Rubernetes
         end
         return nil if controlling.empty?
 
-        names = ([key] + controlling.map(&:first)).sort.map { |entry| namespace, hpa_name = entry.split("/", 2); "#{namespace}/#{hpa_name}" }
+        names = ([key] + controlling.map(&:first)).sort.map do |entry|
+          namespace, hpa_name = entry.split("/", 2)
+          "#{namespace}/#{hpa_name}"
+        end
         "pods by selector #{Support.selector_string(selector)} are controlled by multiple HPAs: [#{names.join(" ")}]"
       end
 
@@ -978,7 +1012,8 @@ module Rubernetes
         down = TOLERANCE
         behavior = Support.value(Support.spec(hpa), "behavior", nil)
         if behavior
-          down = Schema::Quantity.from_json(behavior.dig("scaleDown", "tolerance")).value.to_f unless behavior.dig("scaleDown", "tolerance").nil?
+          down = Schema::Quantity.from_json(behavior.dig("scaleDown", "tolerance")).value.to_f unless behavior.dig("scaleDown",
+                                                                                                                   "tolerance").nil?
           up = Schema::Quantity.from_json(behavior.dig("scaleUp", "tolerance")).value.to_f unless behavior.dig("scaleUp", "tolerance").nil?
         end
         ReplicaCalculator::Tolerances.new(down, up)
@@ -1005,11 +1040,11 @@ module Rubernetes
           old_index ? @recommendations[key][old_index] = [desired, @clock.call] : @recommendations[key] << [desired, @clock.call]
           highest
         end
-        if stabilized != desired
+        if stabilized == desired
+          set_condition(hpa, "AbleToScale", "True", "ReadyForNewScale", "recommended size matches current size")
+        else
           set_condition(hpa, "AbleToScale", "True", "ScaleDownStabilized",
                         "recent recommendations were higher than current one, applying the highest recent recommendation")
-        else
-          set_condition(hpa, "AbleToScale", "True", "ReadyForNewScale", "recommended size matches current size")
         end
         result, reason, message = convert_with_rules(current, stabilized, min_replicas, max_replicas)
         set_condition(hpa, "ScalingLimited", result == stabilized ? "False" : "True", reason, message)
@@ -1027,7 +1062,10 @@ module Rubernetes
           reason = "TooManyReplicas"
           message = "the desired replica count is more than the maximum replica count"
         end
-        return [min_replicas, "TooFewReplicas", "the desired replica count is less than the minimum replica count"] if desired < min_replicas
+        if desired < min_replicas
+          return [min_replicas, "TooFewReplicas",
+                  "the desired replica count is less than the minimum replica count"]
+        end
         return [maximum, reason, message] if desired > maximum
 
         [desired, "DesiredWithinRange", "the desired count is within the acceptable range"]
@@ -1053,17 +1091,20 @@ module Rubernetes
           recommendation = [[current, up].max, down].min
           old_index ? @recommendations[key][old_index] = [desired, now] : @recommendations[key] << [desired, now]
           if desired >= current
-            [recommendation, "ScaleUpStabilized", "recent recommendations were lower than current one, applying the lowest recent recommendation"]
+            [recommendation, "ScaleUpStabilized",
+             "recent recommendations were lower than current one, applying the lowest recent recommendation"]
           else
-            [recommendation, "ScaleDownStabilized", "recent recommendations were higher than current one, applying the highest recent recommendation"]
+            [recommendation, "ScaleDownStabilized",
+             "recent recommendations were higher than current one, applying the highest recent recommendation"]
           end
         end
-        if stabilized != desired
-          set_condition(hpa, "AbleToScale", "True", reason, message)
-        else
+        if stabilized == desired
           set_condition(hpa, "AbleToScale", "True", "ReadyForNewScale", "recommended size matches current size")
+        else
+          set_condition(hpa, "AbleToScale", "True", reason, message)
         end
-        result, limit_reason, limit_message = convert_with_behavior_rate(key, current, stabilized, min_replicas, max_replicas, scale_up, scale_down)
+        result, limit_reason, limit_message = convert_with_behavior_rate(key, current, stabilized, min_replicas, max_replicas, scale_up,
+                                                                         scale_down)
         set_condition(hpa, "ScalingLimited", result == stabilized ? "False" : "True", limit_reason, limit_message)
         result
       end
@@ -1111,9 +1152,9 @@ module Rubernetes
           start = current - added + deleted
           value = Integer(policy["value"])
           if direction == :up
-            policy["type"] == "Pods" ? start + value : (start * (1 + value / 100.0)).ceil
+            policy["type"] == "Pods" ? start + value : (start * (1 + (value / 100.0))).ceil
           else
-            policy["type"] == "Pods" ? start - value : (start * (1 - value / 100.0)).to_i
+            policy["type"] == "Pods" ? start - value : (start * (1 - (value / 100.0))).to_i
           end
         end
         return current if results.empty?

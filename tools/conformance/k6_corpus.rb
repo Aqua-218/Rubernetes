@@ -58,7 +58,7 @@ module Conformance
     def client_matrix(options)
       return [] unless File.file?(CLIENTS)
 
-      matrix = YAML.safe_load(File.read(CLIENTS))
+      matrix = YAML.safe_load_file(CLIENTS)
       Array(matrix["kubectl"]).map do |entry|
         binary = File.join(ROOT, entry.fetch("path"))
         unless File.executable?(binary)
@@ -103,7 +103,11 @@ module Conformance
         when "wait" then %w[wait --help]
         when "top" then %w[top --help]
         end
-      stdin = %w[apply diff replace].include?(verb) ? JSON.generate({"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "default"}}) : nil
+      stdin = if %w[apply diff
+                    replace].include?(verb)
+                JSON.generate({"apiVersion" => "v1", "kind" => "Namespace",
+                               "metadata" => {"name" => "default"}})
+              end
       stdout, stderr, status = Open3.capture3(binary, "--kubeconfig", kubeconfig, *argv, stdin_data: stdin.to_s)
       {"verb" => verb, "passed" => status.success?, "exit_status" => status.exitstatus,
        "stderr" => status.success? ? nil : stderr.lines.first(3).join.strip,
@@ -113,7 +117,7 @@ module Conformance
     def project_runs(options)
       return [] unless File.file?(CORPUS)
 
-      projects = YAML.safe_load(File.read(CORPUS)).fetch("projects", [])
+      projects = YAML.safe_load_file(CORPUS).fetch("projects", [])
       projects = projects.select { |project| options[:only].include?(project.fetch("name")) } if options[:only]
       projects.map { |project| run_project(project, options) }
     end
@@ -161,7 +165,11 @@ module Conformance
       out, _err, status = Open3.capture3(kubectl, "--kubeconfig", options.fetch(:kubeconfig),
                                          "get", "namespace", namespace, "-o", "json")
       if status.success?
-        document = JSON.parse(out) rescue {}
+        document = begin
+          JSON.parse(out)
+        rescue StandardError
+          {}
+        end
         residue << {"kind" => "Namespace", "name" => namespace,
                     "finalizers" => document.dig("spec", "finalizers") || document.dig("metadata", "finalizers")}
       end
@@ -172,7 +180,11 @@ module Conformance
                                            "get", resource, "-o", "json")
         next unless status.success?
 
-        items = (JSON.parse(out)["items"] rescue []) || []
+        items = begin
+          JSON.parse(out)["items"]
+        rescue StandardError
+          []
+        end || []
         items.each do |item|
           next unless item.dig("metadata", "name").to_s.include?(namespace)
 

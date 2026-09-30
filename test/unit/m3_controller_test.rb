@@ -10,10 +10,11 @@ class M3ControllerTest < Minitest::Test
 
   def test_builtin_corpus_and_default_registry_are_complete
     corpus = Controller::BuiltinControllerCorpus
+
     assert_equal "v1.36.2", corpus::VERSION
     assert_equal 52, corpus.names.length
     assert_equal corpus.names.length, corpus.names.uniq.length
-    assert corpus.complete?
+    assert_predicate corpus, :complete?
     assert_equal Controller::BUILTIN_IMPLEMENTATIONS.keys.sort, Controller.default_registry.names
     assert_empty Controller.default_registry.missing_names
     assert_empty Controller.unimplemented_builtin_controllers
@@ -28,8 +29,8 @@ class M3ControllerTest < Minitest::Test
     refute Controller.const_defined?(:CorpusController, false)
     Controller.default_registry.each do |definition|
       refute_nil definition.implementation
-      assert definition.implementation <= Controller::BaseController,
-             "#{definition.name} must use a concrete BaseController implementation"
+      assert_operator definition.implementation, :<=, Controller::BaseController,
+                      "#{definition.name} must use a concrete BaseController implementation"
     end
   end
 
@@ -55,7 +56,7 @@ class M3ControllerTest < Minitest::Test
 
     assert_raises(Controller::LeadershipLostError) do
       controller.reconcile(resource, store: store, apply: true,
-                           leader_guard: -> { raise Controller::LeadershipLostError, "lease lost" })
+                                     leader_guard: -> { raise Controller::LeadershipLostError, "lease lost" })
     end
 
     assert_equal revision_before, store.revision
@@ -133,12 +134,12 @@ class M3ControllerTest < Minitest::Test
     a = Controller::ControllerDefinition.new(
       name: "a-controller", kind: Controller::ResourceDescriptor.parse("Deployment"),
       owns: [Controller::OwnershipEdge.new(owner: Controller::ResourceDescriptor.parse("Deployment"), dependent: Controller::ResourceDescriptor.parse("ReplicaSet"))],
-      reconcile_block: ->(_resource) { nil }
+      reconcile_block: ->(_resource) {}
     )
     b = Controller::ControllerDefinition.new(
       name: "b-controller", kind: Controller::ResourceDescriptor.parse("ReplicaSet"),
       owns: [Controller::OwnershipEdge.new(owner: Controller::ResourceDescriptor.parse("ReplicaSet"), dependent: Controller::ResourceDescriptor.parse("Deployment"))],
-      reconcile_block: ->(_resource) { nil }
+      reconcile_block: ->(_resource) {}
     )
     registry.register_many([a, b])
     assert_raises(Controller::OwnershipCycleError) { registry.startup_validate! }
@@ -150,6 +151,7 @@ class M3ControllerTest < Minitest::Test
     stale = object("Pod", "stale", uid: "pod-b", owners: [owner.merge("metadata" => owner.fetch("metadata").merge("uid" => "uid-old"))])
     non_controller = object("Pod", "other", uid: "pod-c", owners: [owner], controller: false)
     index = Controller::OwnerReferenceIndex.new
+
     refute index.owned?(owner, stale, controller: true)
     assert index.owned?(owner, owned, controller: true)
     refute index.owned?(owner, non_controller, controller: true)
@@ -159,12 +161,13 @@ class M3ControllerTest < Minitest::Test
     deployment = deployment(replicas: 3, generation: 2)
     result = Controller::DeploymentController.new.plan(deployment, replicasets: [])
     create = result.creates.fetch(0)
+
     assert_equal "ReplicaSet", create.resource.kind
     assert_equal 3, create.object.dig("spec", "replicas")
     assert_equal create.object.dig("metadata", "labels", "pod-template-hash"),
                  create.object.dig("spec", "selector", "matchLabels", "pod-template-hash")
-    assert_equal 1, result.operations.count { |operation| operation.action == :update }
-    assert_equal 1, result.operations.count { |operation| operation.action == :status_update }
+    assert_equal(1, result.operations.count { |operation| operation.action == :update })
+    assert_equal(1, result.operations.count { |operation| operation.action == :status_update })
     assert_equal 0, result.deletes.length
     assert_equal 2, result.status.fetch("observedGeneration")
   end
@@ -172,6 +175,7 @@ class M3ControllerTest < Minitest::Test
   def test_replicaset_caps_scale_up_and_prioritizes_pending_unscheduled_deletion
     rs = replica_set(replicas: 600)
     result = Controller::ReplicaSetController.new.plan(rs, pods: [])
+
     assert_equal 500, result.creates.length
 
     candidates = [
@@ -186,43 +190,49 @@ class M3ControllerTest < Minitest::Test
       candidate["metadata"]["labels"] = Controller::Support.deep_copy(smaller.dig("spec", "selector", "matchLabels") || {})
     end
     smaller_result = Controller::ReplicaSetController.new.plan(smaller, pods: candidates)
-    assert_equal ["unscheduled", "pending"], smaller_result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+
+    assert_equal(%w[unscheduled pending], smaller_result.deletes.map { |operation| operation.object.dig("metadata", "name") })
   end
 
   def test_statefulset_keeps_stable_ordinals_and_scales_down_highest_first
     set = stateful_set(replicas: 2)
     pods = [0, 1, 2].map { |ordinal| pod("db-#{ordinal}", owners: [set], labels: {"controller.kubernetes.io/ordinal" => ordinal.to_s}) }
     result = Controller::StatefulSetController.new.plan(set, pods: pods)
-    assert_equal ["db-2"], result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+
+    assert_equal(["db-2"], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
     assert_empty result.creates
   end
 
   def test_daemonset_assigns_one_pod_per_schedulable_matching_node
     daemon = daemon_set
-    nodes = [node("node-a", labels: {"role" => "worker"}), node("node-b", labels: {"role" => "worker"}), node("node-c", labels: {"role" => "control"})]
+    nodes = [node("node-a", labels: {"role" => "worker"}), node("node-b", labels: {"role" => "worker"}),
+             node("node-c", labels: {"role" => "control"})]
     result = Controller::DaemonSetController.new.plan(daemon, pods: [], nodes: nodes)
-    assert result.creates.all? { |operation| operation.object.dig("spec", "nodeName").nil? }
-    assert_equal %w[node-a node-b], result.creates.map { |operation|
+
+    assert(result.creates.all? { |operation| operation.object.dig("spec", "nodeName").nil? })
+    assert_equal(%w[node-a node-b], result.creates.map do |operation|
       operation.object.dig("spec", "affinity", "nodeAffinity", "requiredDuringSchedulingIgnoredDuringExecution",
                            "nodeSelectorTerms", 0, "matchFields", 0, "values", 0)
-    }
+    end)
     assert_equal 2, result.status.fetch("desiredNumberScheduled")
   end
 
   def test_job_and_cronjob_are_time_and_completion_deterministic
     job = job(replicas: 3)
     result = Controller::JobController.new.plan(job, pods: [])
+
     assert_equal 1, result.creates.length
     # Upstream only counts terminated Pods that still carry the job-tracking
     # finalizer; a Pod without it was already accounted for.
     completed = pod("job-done", owners: [job], phase: "Succeeded")
     completed["metadata"]["finalizers"] = ["batch.kubernetes.io/job-tracking"]
     complete = Controller::JobController.new.plan(job, pods: [completed, pod("job-running", owners: [job])])
+
     assert_equal 1, complete.status.fetch("succeeded")
     assert_equal 1, complete.status.fetch("active")
-    assert complete.updates.any? { |operation|
+    assert(complete.updates.any? do |operation|
       operation.resource.kind == "Pod" && !operation.object.dig("metadata", "finalizers").include?("batch.kubernetes.io/job-tracking")
-    }
+    end)
 
     # Upstream schedules only the most recent unmet time; the Job name is the
     # schedule minute count since the epoch (cronjob/utils.go getJobName).
@@ -230,6 +240,7 @@ class M3ControllerTest < Minitest::Test
     cron["metadata"]["creationTimestamp"] = "2025-12-31T00:00:00Z"
     at = Time.utc(2026, 1, 1, 0, 5)
     cron_result = Controller::CronJobController.new(clock: -> { at }).plan(cron, jobs: [], now: at)
+
     assert_equal 1, cron_result.creates.length
     assert_equal "cron-#{at.to_i / 60}", cron_result.creates.first.object.dig("metadata", "name")
     assert_equal at.iso8601(6), cron_result.status.fetch("lastScheduleTime")
@@ -238,22 +249,29 @@ class M3ControllerTest < Minitest::Test
 
   def test_node_grace_and_taint_evict_only_pods_without_toleration
     n = node("node-a")
-    n["status"] = {"conditions" => [{"type" => "Ready", "status" => "False", "lastHeartbeatTime" => "2025-12-31T23:54:00Z", "lastTransitionTime" => "2025-12-31T23:54:00Z"}]}
+    n["status"] =
+      {"conditions" => [{"type" => "Ready", "status" => "False", "lastHeartbeatTime" => "2025-12-31T23:54:00Z",
+                         "lastTransitionTime" => "2025-12-31T23:54:00Z"}]}
     evict = pod("evict", node: "node-a")
     tolerate = pod("tolerate", node: "node-a")
     tolerate["spec"]["tolerations"] = [{"key" => "node.kubernetes.io/unreachable", "effect" => "NoExecute", "operator" => "Exists"}]
     result = Controller::NodeController.new(clock: -> { Time.utc(2026, 1, 1) }).plan(n, pods: [evict, tolerate], now: Time.utc(2026, 1, 1))
-    assert_equal "node.kubernetes.io/unreachable", result.operations.find { |operation| operation.update? }.object.dig("spec", "taints").first.fetch("key")
-    assert_equal ["evict"], result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+
+    assert_equal "node.kubernetes.io/unreachable", result.operations.find { |operation|
+      operation.update?
+    }.object.dig("spec", "taints").first.fetch("key")
+    assert_equal(["evict"], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
   end
 
   def test_endpoint_controller_separates_ready_and_not_ready_addresses
-    service = {"apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => "web", "namespace" => "default"}, "spec" => {"selector" => {"app" => "web"}, "ports" => [{"port" => 80}]}}
+    service = {"apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => "web", "namespace" => "default"},
+               "spec" => {"selector" => {"app" => "web"}, "ports" => [{"port" => 80}]}}
     ready = pod("ready", labels: {"app" => "web"}, ip: "10.0.0.1")
     pending = pod("pending", labels: {"app" => "web"}, ip: "10.0.0.2", ready: false)
     endpoint = Controller::EndpointController.new.plan(service, pods: [ready, pending]).creates.first.object
-    assert_equal ["10.0.0.1"], endpoint.dig("subsets", 0, "addresses").map { |address| address.fetch("ip") }
-    assert_equal ["10.0.0.2"], endpoint.dig("subsets", 0, "notReadyAddresses").map { |address| address.fetch("ip") }
+
+    assert_equal(["10.0.0.1"], endpoint.dig("subsets", 0, "addresses").map { |address| address.fetch("ip") })
+    assert_equal(["10.0.0.2"], endpoint.dig("subsets", 0, "notReadyAddresses").map { |address| address.fetch("ip") })
   end
 
   def test_garbage_collector_detects_cycle_and_orders_foreground_deletion
@@ -262,10 +280,12 @@ class M3ControllerTest < Minitest::Test
     grandchild = object("ConfigMap", "grandchild", uid: "grandchild", owners: [child])
     gc = Controller::GarbageCollector.new
     result = gc.deletion_plan(parent, [parent, child, grandchild], propagation_policy: :foreground)
-    assert_equal %w[grandchild child parent], result.deletes.map { |operation| operation.object.dig("metadata", "name") }
+
+    assert_equal(%w[grandchild child parent], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
     parent["metadata"]["ownerReferences"] = [{"kind" => "ConfigMap", "name" => "child", "uid" => "child"}]
     child["metadata"]["ownerReferences"] = [{"kind" => "ConfigMap", "name" => "parent", "uid" => "parent"}]
     cycle = gc.plan([parent, child])
+
     assert_empty cycle.operations
     assert_equal "OwnerReferenceCycle", cycle.events.first.fetch("reason")
   end
@@ -275,9 +295,11 @@ class M3ControllerTest < Minitest::Test
     store = Store.new(history_revisions: nil, history_seconds: nil)
     first = Controller::LeaseElector.new(store: store, identity: "first", clock: -> { now })
     second = Controller::LeaseElector.new(store: store, identity: "second", clock: -> { now })
+
     assert_equal :acquired, first.step
     assert_equal :follower, second.step
     now += 16
+
     assert_equal :acquired, second.step
     assert_equal "second", store.list("").items.first.dig("spec", "holderIdentity")
   end
@@ -292,19 +314,22 @@ class M3ControllerTest < Minitest::Test
     store = Store.new(history_revisions: nil, history_seconds: nil)
     elector = Controller::LeaseElector.new(store: store, identity: "only", clock: -> { now },
                                            lease_duration_seconds: 15, renew_deadline_seconds: 10, retry_period_seconds: 2)
+
     assert_equal :acquired, elector.step
     transitions = store.list("").items.first.dig("spec", "leaderTransitions")
     now += 11
+
     assert_equal :lost, elector.step
-    refute elector.leader?
+    refute_predicate elector, :leader?
     assert_equal :acquired, elector.step
-    assert elector.leader?
+    assert_predicate elector, :leader?
     assert_equal transitions, store.list("").items.first.dig("spec", "leaderTransitions")
     # The elector touches the API once per retry period, so a step at the
     # same instant reports the cached decision; the renewal follows once the
     # retry period has passed.
     assert_equal :acquired, elector.step
     now += 2
+
     assert_equal :renewed, elector.step
   end
 
@@ -336,9 +361,11 @@ class M3ControllerTest < Minitest::Test
 
     result = Controller::EndpointController.new.plan(existing, store: adapter)
     update = result.updates.find { |operation| operation.resource.kind == "Endpoints" }
+
     refute_nil update, "the Endpoints must be updated from the Service's selector"
     addresses = update.object.fetch("subsets").fetch(0).fetch("addresses")
-    assert_equal ["10.0.0.5"], addresses.map { |entry| entry.fetch("ip") }
+
+    assert_equal(["10.0.0.5"], addresses.map { |entry| entry.fetch("ip") })
   end
 
   private
@@ -364,41 +391,50 @@ class M3ControllerTest < Minitest::Test
     value = object("Deployment", "web", uid: "uid-deployment")
     value["metadata"]["generation"] = generation
     value["spec"] = {"replicas" => replicas, "selector" => {"matchLabels" => {"app" => "web"}},
-                      "strategy" => {"type" => "RollingUpdate", "rollingUpdate" => {"maxSurge" => 1, "maxUnavailable" => 0}},
-                      "template" => {"metadata" => {"labels" => {"app" => "web"}}, "spec" => {"containers" => [{"name" => "web", "image" => "example/web:1"}]}}}
+                     "strategy" => {"type" => "RollingUpdate", "rollingUpdate" => {"maxSurge" => 1, "maxUnavailable" => 0}},
+                     "template" => {"metadata" => {"labels" => {"app" => "web"}}, "spec" => {"containers" => [{"name" => "web", "image" => "example/web:1"}]}}}
     value
   end
 
   def replica_set(replicas:)
     value = object("ReplicaSet", "web", uid: "uid-rs")
     value["spec"] = {"replicas" => replicas, "selector" => {"matchLabels" => {"app" => "web"}},
-                      "template" => {"metadata" => {"labels" => {"app" => "web"}}, "spec" => {"containers" => [{"name" => "web", "image" => "example/web:1"}]}}}
+                     "template" => {"metadata" => {"labels" => {"app" => "web"}}, "spec" => {"containers" => [{"name" => "web", "image" => "example/web:1"}]}}}
     value
   end
 
   def stateful_set(replicas:)
     value = object("StatefulSet", "db", uid: "uid-set")
     value["spec"] = {"replicas" => replicas, "selector" => {"matchLabels" => {"app" => "db"}},
-                      "serviceName" => "db", "template" => {"metadata" => {"labels" => {"app" => "db"}}, "spec" => {"containers" => [{"name" => "db", "image" => "example/db:1"}]}}}
+                     "serviceName" => "db", "template" => {"metadata" => {"labels" => {"app" => "db"}}, "spec" => {"containers" => [{"name" => "db", "image" => "example/db:1"}]}}}
     value
   end
 
   def daemon_set
     value = object("DaemonSet", "daemon", uid: "uid-daemon", namespace: "")
     value["metadata"].delete("namespace")
-    value["spec"] = {"selector" => {"matchLabels" => {"role" => "worker"}}, "template" => {"metadata" => {"labels" => {"role" => "worker"}}, "spec" => {"nodeSelector" => {"role" => "worker"}, "containers" => [{"name" => "daemon", "image" => "example/daemon:1"}]}}}
+    value["spec"] =
+      {"selector" => {"matchLabels" => {"role" => "worker"}},
+       "template" => {"metadata" => {"labels" => {"role" => "worker"}},
+                      "spec" => {"nodeSelector" => {"role" => "worker"},
+                                 "containers" => [{"name" => "daemon", "image" => "example/daemon:1"}]}}}
     value
   end
 
   def job(replicas:)
     value = object("Job", "batch", uid: "uid-job")
-    value["spec"] = {"completions" => replicas, "parallelism" => 1, "template" => {"metadata" => {"labels" => {"job" => "batch"}}, "spec" => {"containers" => [{"name" => "job", "image" => "example/job:1"}]}}}
+    value["spec"] =
+      {"completions" => replicas, "parallelism" => 1,
+       "template" => {"metadata" => {"labels" => {"job" => "batch"}}, "spec" => {"containers" => [{"name" => "job", "image" => "example/job:1"}]}}}
     value
   end
 
   def cron_job
     value = object("CronJob", "cron", uid: "uid-cron")
-    value["spec"] = {"schedule" => "*/5 * * * *", "jobTemplate" => {"spec" => {"template" => {"metadata" => {}, "spec" => {"containers" => [{"name" => "job", "image" => "example/job:1"}]}}}}}
+    value["spec"] =
+      {"schedule" => "*/5 * * * *",
+       "jobTemplate" => {"spec" => {"template" => {"metadata" => {},
+                                                   "spec" => {"containers" => [{"name" => "job", "image" => "example/job:1"}]}}}}}
     value
   end
 

@@ -54,9 +54,11 @@ class ConsensusGroupCommitTest < Minitest::Test
       end
       threads.each(&:join)
       applied = Array.new(16) { results.pop }
+
       assert applied.all? { |result| result["ok"] }, applied.reject { |result| result["ok"] }.inspect
       assert_operator leader.node.flushes, :<, 16, "16 concurrent proposals must not each flush alone"
       store = C::RaftStore.new(leader)
+
       assert_equal 16, store.list("registry/things/").items.length
       servers.each_value(&:stop)
     end
@@ -68,6 +70,7 @@ class ConsensusGroupCommitTest < Minitest::Test
       leader = servers.values.find(&:leader?)
       leader.node.singleton_class.prepend(FlushCounter)
       leader.propose(command(0))
+
       assert_equal 1, leader.node.flushes
       servers.each_value(&:stop)
     end
@@ -95,10 +98,13 @@ class ConsensusForwardedGroupCommitTest < Minitest::Test
                                                            "request_uid" => "u#{index}", "leader_time" => cluster.now})
       cluster.route(leader.handle(message, cluster.now))
     end
+
     assert_nil leader.flushes, "handling a forwarded proposal must not flush on its own"
     cluster.run(0.01)
+
     assert_equal 1, leader.flushes, "one flush for the three forwarded proposals"
     cluster.run(0.05)
+
     assert_operator leader.commit_index, :>=, 3
     assert_operator follower.log.last_index, :>=, 3, "the batch reached the follower"
   end

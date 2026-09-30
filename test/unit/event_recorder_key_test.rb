@@ -37,6 +37,7 @@ class EventRecorderKeyTest < Minitest::Test
   def test_same_field_path_with_a_different_message_is_a_new_event
     @recorder.record(involved_object: pod("spec.containers{kas}"), reason: "Pulling", message: "Pulling image \"a\"")
     other = @recorder.record(involved_object: pod("spec.containers{kas}"), reason: "Pulling", message: "Pulling image \"b\"")
+
     assert_equal 1, other["count"]
     assert_equal 2, @recorder.events.length
   end
@@ -61,6 +62,7 @@ class EventRecorderKeyTest < Minitest::Test
     10.times { |i| @recorder.record(involved_object: pod("spec.containers{kas}"), reason: "Unhealthy", message: "m#{i}") }
     @now += 601
     fresh = @recorder.record(involved_object: pod("spec.containers{kas}"), reason: "Unhealthy", message: "late")
+
     assert_equal "late", fresh["message"]
   end
 end

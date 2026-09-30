@@ -57,12 +57,18 @@ module Rubernetes
 
       def verify(backup_directory)
         manifest = JSON.parse(File.read(File.join(backup_directory, MANIFEST)))
-        raise CorruptionError.new("backup manifest kind is invalid", path: backup_directory) unless manifest["kind"] == "rubernetes_raft_backup"
+        unless manifest["kind"] == "rubernetes_raft_backup"
+          raise CorruptionError.new("backup manifest kind is invalid",
+                                    path: backup_directory)
+        end
 
         manifest.fetch("files").each do |file|
           path = File.join(backup_directory, file.fetch("path"))
           raise CorruptionError.new("backup file missing: #{file["path"]}", path: path) unless File.file?(path)
-          raise CorruptionError.new("backup file digest mismatch: #{file["path"]}", path: path) unless Digest::SHA256.file(path).hexdigest == file.fetch("sha256")
+          unless Digest::SHA256.file(path).hexdigest == file.fetch("sha256")
+            raise CorruptionError.new("backup file digest mismatch: #{file["path"]}",
+                                      path: path)
+          end
           raise CorruptionError.new("backup file size mismatch: #{file["path"]}", path: path) unless File.size(path) == file.fetch("bytes")
         end
         manifest

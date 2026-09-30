@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "securerandom"
-require "set"
 
 module Rubernetes
   module Volume
@@ -319,7 +318,8 @@ module Rubernetes
           end
           label = labels.first.to_s
           mount_label = label
-          mount_label = "" if spec.dig("pod", "spec", "securityContext", "seLinuxChangePolicy") == "Recursive" || spec["seLinuxChangePolicy"] == "Recursive"
+          mount_label = "" if spec.dig("pod", "spec", "securityContext",
+                                       "seLinuxChangePolicy") == "Recursive" || spec["seLinuxChangePolicy"] == "Recursive"
           mount_label = "" unless plugin_supports
           Info.new(mount_label: mount_label, original_label: label, plugin_supports: plugin_supports)
         end
@@ -328,7 +328,7 @@ module Rubernetes
           return unless @logger.respond_to?(:warn)
 
           @logger.warn("volume.selinux_#{kind}_context_mismatch", error: error.message,
-                                                                    note: "not an error yet: https://github.com/kubernetes/enhancements/issues/1710")
+                                                                  note: "not an error yet: https://github.com/kubernetes/enhancements/issues/1710")
         end
       end
     end

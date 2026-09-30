@@ -15,8 +15,14 @@ module PodResourcesDifferential
   module_function
 
   def pod(name, containers:, resources: nil, init: nil, os: nil, overhead: nil)
-    spec = {"containers" => containers.each_with_index.map { |value, index| {"name" => "c#{index}", "image" => "registry.k8s.io/pause:3.10"}.merge(value) }}
-    spec["initContainers"] = init.each_with_index.map { |value, index| {"name" => "i#{index}", "image" => "registry.k8s.io/pause:3.10"}.merge(value) } if init
+    spec = {"containers" => containers.each_with_index.map do |value, index|
+      {"name" => "c#{index}", "image" => "registry.k8s.io/pause:3.10"}.merge(value)
+    end}
+    if init
+      spec["initContainers"] = init.each_with_index.map do |value, index|
+        {"name" => "i#{index}", "image" => "registry.k8s.io/pause:3.10"}.merge(value)
+      end
+    end
     spec["resources"] = resources if resources
     spec["os"] = {"name" => os} if os
     spec["overhead"] = overhead if overhead
@@ -36,7 +42,8 @@ module PodResourcesDifferential
     ["extended-needs-limit-equal", pod("c", containers: [res(requests: {"example.com/foo" => "1"}, limits: {"example.com/foo" => "2"})])],
     ["extended-request-only", pod("d", containers: [res(requests: {"example.com/foo" => "1"})])],
     ["hugepages-alone", pod("e", containers: [res(requests: {"hugepages-2Mi" => "2Mi"}, limits: {"hugepages-2Mi" => "2Mi"})])],
-    ["hugepages-indivisible", pod("f", containers: [res(requests: {"cpu" => "1", "hugepages-2Mi" => "3Mi"}, limits: {"hugepages-2Mi" => "3Mi"})])],
+    ["hugepages-indivisible",
+     pod("f", containers: [res(requests: {"cpu" => "1", "hugepages-2Mi" => "3Mi"}, limits: {"hugepages-2Mi" => "3Mi"})])],
     ["storage-resource", pod("g", containers: [res(requests: {"storage" => "1Gi"})])],
     ["pod-request-over-limit", pod("h", containers: [{}], resources: {"requests" => {"cpu" => "2"}, "limits" => {"cpu" => "1"}})],
     ["pod-unsupported", pod("i", containers: [{}], resources: {"requests" => {"ephemeral-storage" => "1Gi"}})],
@@ -49,7 +56,9 @@ module PodResourcesDifferential
                                                   resources: {"limits" => {"cpu" => "1", "memory" => "1Gi"}})],
     ["default-with-init", pod("o", containers: [res(requests: {"cpu" => "100m"})], init: [res(requests: {"cpu" => "700m"})],
                                    resources: {"limits" => {"cpu" => "1"}})],
-    ["pod-guaranteed", pod("p", containers: [{}], resources: {"requests" => {"cpu" => "1", "memory" => "1Gi"}, "limits" => {"cpu" => "1", "memory" => "1Gi"}})],
+    ["pod-guaranteed",
+     pod("p", containers: [{}],
+              resources: {"requests" => {"cpu" => "1", "memory" => "1Gi"}, "limits" => {"cpu" => "1", "memory" => "1Gi"}})],
     ["pod-burstable-cpu-only", pod("q", containers: [res(requests: {"cpu" => "1"}, limits: {"cpu" => "1", "memory" => "1Gi"})],
                                         resources: {"limits" => {"cpu" => "1"}})],
     ["pod-requests-only", pod("r", containers: [{}], resources: {"requests" => {"memory" => "100Mi"}})],
@@ -57,7 +66,8 @@ module PodResourcesDifferential
                                             resources: {"limits" => {"memory" => "1Gi"}})],
     ["pod-hugepage-below-containers", pod("t", containers: [res(requests: {"cpu" => "1", "hugepages-2Mi" => "4Mi"}, limits: {"hugepages-2Mi" => "4Mi"})],
                                                resources: {"limits" => {"memory" => "1Gi", "hugepages-2Mi" => "2Mi"}})],
-    ["container-guaranteed", pod("u", containers: [res(requests: {"cpu" => "1", "memory" => "1Gi"}, limits: {"cpu" => "1000m", "memory" => "1Gi"})])],
+    ["container-guaranteed",
+     pod("u", containers: [res(requests: {"cpu" => "1", "memory" => "1Gi"}, limits: {"cpu" => "1000m", "memory" => "1Gi"})])],
     ["container-besteffort", pod("v", containers: [{}])],
     ["empty-pod-resources", pod("w", containers: [res(limits: {"cpu" => "1", "memory" => "1Gi"})], resources: {})],
     ["integer-pods-resource", pod("x", containers: [res(requests: {"pods" => "1"})])]

@@ -78,7 +78,7 @@ module Rubernetes
 
       def fetch(resource, name, namespace: nil)
         value = get(resource, name, namespace: namespace)
-        raise NotFound, "#{singular_for(resource)} #{namespace ? "#{namespace}/" : ""}#{name} not found" if value.nil?
+        raise NotFound, "#{singular_for(resource)} #{"#{namespace}/" if namespace}#{name} not found" if value.nil?
 
         value
       end
@@ -107,7 +107,9 @@ module Rubernetes
             @cache.clear
           else
             plural = plural_for(resource)
-            @cache.delete_if { |key, _| key[0] == plural && (name.nil? || key[2] == name.to_s) && (namespace.nil? || key[1] == namespace.to_s) }
+            @cache.delete_if do |key, _|
+              key[0] == plural && (name.nil? || key[2] == name.to_s) && (namespace.nil? || key[1] == namespace.to_s)
+            end
           end
         end
       end
@@ -162,7 +164,11 @@ module Rubernetes
                   response.json
                 elsif response.respond_to?(:body) && !response.is_a?(Hash)
                   body = response.body
-                  body.is_a?(String) ? (body.empty? ? nil : JSON.parse(body)) : body
+                  if body.is_a?(String)
+                    body.empty? ? nil : JSON.parse(body)
+                  else
+                    body
+                  end
                 else
                   response
                 end

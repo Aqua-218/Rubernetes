@@ -28,8 +28,8 @@ class FieldSelectorResourceNameTest < Minitest::Test
     source.define_singleton_method(:roles) { |namespace| namespace == "kube-system" ? [role] : [] }
     source.define_singleton_method(:role_bindings) { |namespace| namespace == "kube-system" ? [binding] : [] }
     tokens = S::Authentication::StaticTokenFile.new(S::Authentication::StaticTokenFile.parse(
-                                                      "sa-token,system:serviceaccount:wardle:default,1,\"system:serviceaccounts,system:serviceaccounts:wardle\"\n"
-                                                    ))
+      "sa-token,system:serviceaccount:wardle:default,1,\"system:serviceaccounts,system:serviceaccounts:wardle\"\n"
+    ))
     pipeline = S::Pipeline.new(authenticator: S::Authentication::Union.new(authenticators: [tokens]),
                                authorizer: S::Authorization::Union.new(authorizers: [S::Authorization::RBAC.new(source: source)]))
     @server = API::Server.new(store: Rubernetes::Storage::MemoryStore.new(history_revisions: nil, history_seconds: nil), security: pipeline)
@@ -50,6 +50,7 @@ class FieldSelectorResourceNameTest < Minitest::Test
 
   def test_exact_match_parsing
     match = S::Pipeline.method(:exact_field_match)
+
     assert_equal "x", match.call("a=b,metadata.name==x", "metadata.name")
     assert_equal "a,b", match.call('metadata.name=a\,b', "metadata.name")
     assert_nil match.call("metadata.name!=x", "metadata.name")

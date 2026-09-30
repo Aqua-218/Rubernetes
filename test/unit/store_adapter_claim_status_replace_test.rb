@@ -26,7 +26,8 @@ class StoreAdapterClaimStatusReplaceTest < Minitest::Test
     def update(object, namespace: nil, subresource: nil)
       @updates << [Marshal.load(Marshal.dump(object)), subresource]
       current = @version.to_s
-      raise Rubernetes::Client::APIError.new("conflict", response: Struct.new(:status).new(409)) if object.dig("metadata", "resourceVersion") != current
+      raise Rubernetes::Client::APIError.new("conflict", response: Struct.new(:status).new(409)) if object.dig("metadata",
+                                                                                                               "resourceVersion") != current
 
       @version += 1
       object.merge("metadata" => object["metadata"].merge("resourceVersion" => @version.to_s))
@@ -64,6 +65,7 @@ class StoreAdapterClaimStatusReplaceTest < Minitest::Test
 
     assert_empty adapter.client.applies, "no server-side apply of a claim status"
     (status_body, status_sub), (object_body, object_sub) = adapter.client.updates
+
     assert_equal "status", status_sub
     assert_equal({"reservedFor" => []}, status_body["status"], "allocation is gone from the replaced status")
     assert_equal "50", status_body.dig("metadata", "resourceVersion")

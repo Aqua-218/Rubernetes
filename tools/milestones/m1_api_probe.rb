@@ -12,8 +12,8 @@ require_relative "m1_gate"
 
 module M1APIDifferential
   REVIEW_TOKEN = M1KubernetesOracle::REVIEW_TOKEN
-  USER_AGENT = "rubernetes-m1-oracle-probe/1".freeze
-  NAMESPACE = "m1-oracle".freeze
+  USER_AGENT = "rubernetes-m1-oracle-probe/1"
+  NAMESPACE = "m1-oracle"
   COLLECTION_PATH = "/api/v1/namespaces/#{NAMESPACE}/configmaps".freeze
   # Only transport-generated or hop-by-hop headers may be omitted from the
   # semantic comparison.  This is intentionally a closed, machine-readable
@@ -78,7 +78,7 @@ module M1APIDifferential
   # versions. Evidence
   # must record that absence explicitly; treating a 404 as a successful 200
   # comparison would make the surface report forgeable.
-  DEFAULT_PROFILE = "kubernetes-v1.36.2-default".freeze
+  DEFAULT_PROFILE = "kubernetes-v1.36.2-default"
   DEFAULT_FEATURE_GATES = {
     "MutatingAdmissionPolicy" => true,
     "ClusterTrustBundle" => false,
@@ -204,8 +204,8 @@ module M1APIDifferential
     /apis/storagemigration.k8s.io
     /apis/storagemigration.k8s.io/v1beta1
   ].freeze
-  DEFAULT_OFF_REASON = "the pinned Kubernetes v1.36.2 default API profile does not serve this compiled API version".freeze
-  DISCOVERY_NOT_FOUND_BODY = "404 page not found\n".freeze
+  DEFAULT_OFF_REASON = "the pinned Kubernetes v1.36.2 default API profile does not serve this compiled API version"
+  DISCOVERY_NOT_FOUND_BODY = "404 page not found\n"
   ROUTER_NOT_FOUND_DISCOVERY_PATHS = %w[
     /apis/internal.apiserver.k8s.io
     /apis/internal.apiserver.k8s.io/v1alpha1
@@ -417,9 +417,9 @@ module M1APIDifferential
     }
   end
 
-  def operation(id, method:, path:, rubernetes:, oracle:, defaulting: false, validation: false,
+  def operation(id, method:, path:, rubernetes:, oracle:, request:, defaulting: false, validation: false,
                 watch: false, initial_watch: false, rubernetes_causality: nil, oracle_causality: nil,
-                body_policy: nil, request:)
+                body_policy: nil)
     category = response_category(oracle, watch: watch, initial_watch: initial_watch)
     rubernetes_body = body_signature(rubernetes, category, policy: body_policy)
     oracle_body = body_signature(oracle, category, policy: body_policy)
@@ -481,13 +481,13 @@ module M1APIDifferential
         "actual" => header_observation(rubernetes)
       },
       "resource_version_observation" => if watch_operation
-                                           {
-                                             "expected" => oracle_causality,
-                                             "actual" => rubernetes_causality,
-                                             "expected_sha256" => M1Gate.canonical_document_digest(oracle_causality),
-                                             "actual_sha256" => M1Gate.canonical_document_digest(rubernetes_causality)
-                                           }
-                                         end,
+                                          {
+                                            "expected" => oracle_causality,
+                                            "actual" => rubernetes_causality,
+                                            "expected_sha256" => M1Gate.canonical_document_digest(oracle_causality),
+                                            "actual_sha256" => M1Gate.canonical_document_digest(rubernetes_causality)
+                                          }
+                                        end,
       "attempt_count" => 1,
       "differences" => dimensions.reject { |_name, matches| matches }.keys,
       # Keep the complete observable packets in the report.  A digest without
@@ -530,8 +530,8 @@ module M1APIDifferential
     initial_records = records.reject { |record| record["initial_events_end"] }
     event_versions = initial_records.map { |record| positive_resource_version(record["resourceVersion"]) }
     valid = response.status == 200 && bookmark_index == records.length - 1 && !initial_records.empty? &&
-      initial_records.all? { |record| record["type"] == "ADDED" } && list_version &&
-      event_versions.all? && event_versions.all? { |version| version <= list_version }
+            initial_records.all? { |record| record["type"] == "ADDED" } && list_version &&
+            event_versions.all? && event_versions.all? { |version| version <= list_version }
     {
       "mode" => "initial-watch",
       "response_status" => response.status,
@@ -557,7 +557,9 @@ module M1APIDifferential
         "event_types" => records.map { |record| record.is_a?(Hash) ? record["type"].to_s : "" },
         "initial_events_end_index" => bookmark_indices.one? ? bookmark_indices.first : nil,
         "resourceVersions_valid" => !!(list_version && event_versions.all?),
-        "events_not_newer_than_list" => !!(list_version && event_versions.all? && event_versions.all? { |version| version <= list_version }),
+        "events_not_newer_than_list" => !!(list_version && event_versions.all? && event_versions.all? do |version|
+          version <= list_version
+        end),
         "valid" => trace["valid"] == true
       }
     when "watch"
@@ -588,7 +590,7 @@ module M1APIDifferential
     end
     event_versions = records.map { |record| positive_resource_version(record["resourceVersion"]) }
     valid = watch_response.status == 200 && force_version && patch_version && patch_version > force_version &&
-      records.length == 1 && records.first["type"] == "MODIFIED" && event_versions == [patch_version]
+            records.length == 1 && records.first["type"] == "MODIFIED" && event_versions == [patch_version]
     {
       "mode" => "watch",
       "response_status" => watch_response.status,
@@ -687,11 +689,13 @@ module M1APIDifferential
     if canonical["groups"].is_a?(Array)
       groups = canonical.fetch("groups").filter_map do |group|
         next group unless group.is_a?(Hash)
+
         name = group["name"].to_s
         versions = Array(group["versions"]).reject do |version|
           DEFAULT_OFF_DISCOVERY_PATHS.include?("/apis/#{name}/#{version["version"]}")
         end
         next nil if versions.empty?
+
         preferred = group["preferredVersion"]
         preferred = versions.first unless versions.any? { |entry| entry == preferred }
         group.merge("versions" => versions, "preferredVersion" => preferred)
@@ -736,15 +740,15 @@ module M1APIDifferential
       rows << base
       override_group = entry["group"]
       override_version = entry["version"] || version
-      if override_group
-        override = M1ProbeSupport.discovery_surface_fields(
-          entry,
-          group: override_group,
-          version: override_version,
-          subresources: siblings
-        )
-        rows << override if expected_ids.key?(M1ProbeSupport.surface_identifier(override))
-      end
+      next unless override_group
+
+      override = M1ProbeSupport.discovery_surface_fields(
+        entry,
+        group: override_group,
+        version: override_version,
+        subresources: siblings
+      )
+      rows << override if expected_ids.key?(M1ProbeSupport.surface_identifier(override))
     end
     rows
   end
@@ -966,7 +970,7 @@ module M1APIDifferential
       header_matches = oracle_headers.fetch("compared") == rubernetes_headers.fetch("compared")
       expected_status = default_off_endpoint ? 404 : 200
       endpoint_passed = oracle_response.status == expected_status && rubernetes_response.status == expected_status &&
-        expected_digest == oracle_digest && expected_digest == rubernetes_digest && header_matches
+                        expected_digest == oracle_digest && expected_digest == rubernetes_digest && header_matches
       endpoints << {
         "id" => path,
         "path" => path,
@@ -1019,30 +1023,32 @@ module M1APIDifferential
       runtime_rows: runtime_rows
     )
     gvr_missing_oracle = gvr_matrix.count { |row| row.fetch("oracle").fetch("present") == false && !default_off_gvr?(row.fetch("id")) }
-    gvr_missing_rubernetes = gvr_matrix.count { |row| row.fetch("rubernetes").fetch("present") == false && !default_off_gvr?(row.fetch("id")) }
+    gvr_missing_rubernetes = gvr_matrix.count do |row|
+      row.fetch("rubernetes").fetch("present") == false && !default_off_gvr?(row.fetch("id"))
+    end
     gvr_duplicates = oracle_occurrences.values.sum { |rows| [rows.length - 1, 0].max } +
-      rubernetes_occurrences.values.sum { |rows| [rows.length - 1, 0].max }
-    gvk_missing_oracle = gvk_matrix.count { |row| row.fetch("expected_present") && !default_off_gvk?(row.fetch("id")) && !row.fetch("oracle_present") }
-    gvk_missing_rubernetes = gvk_matrix.count { |row| row.fetch("expected_present") && !default_off_gvk?(row.fetch("id")) && !row.fetch("rubernetes_present") }
+                     rubernetes_occurrences.values.sum { |rows| [rows.length - 1, 0].max }
+    gvk_missing_oracle = gvk_matrix.count do |row|
+      row.fetch("expected_present") && !default_off_gvk?(row.fetch("id")) && !row.fetch("oracle_present")
+    end
+    gvk_missing_rubernetes = gvk_matrix.count do |row|
+      row.fetch("expected_present") && !default_off_gvk?(row.fetch("id")) && !row.fetch("rubernetes_present")
+    end
     expected_gvk_ids = Array(registry_document.fetch("gvks")).map { |entry| M1ProbeSupport.gvk_identifier(entry) }.to_h { |id| [id, true] }
     oracle_gvk_ids = oracle_rows.flat_map do |row|
       ids = [M1ProbeSupport.identifier(row.fetch("group", ""), row.fetch("version"), row.fetch("kind"))]
-      if row["listKind"].to_s != ""
-        ids << M1ProbeSupport.identifier(row.fetch("group", ""), row.fetch("version"), row.fetch("listKind"))
-      end
+      ids << M1ProbeSupport.identifier(row.fetch("group", ""), row.fetch("version"), row.fetch("listKind")) if row["listKind"].to_s != ""
       ids
     end.to_h { |id| [id, true] }
     rubernetes_gvk_ids = rubernetes_rows.flat_map do |row|
       ids = [M1ProbeSupport.identifier(row.fetch("group", ""), row.fetch("version"), row.fetch("kind"))]
-      if row["listKind"].to_s != ""
-        ids << M1ProbeSupport.identifier(row.fetch("group", ""), row.fetch("version"), row.fetch("listKind"))
-      end
+      ids << M1ProbeSupport.identifier(row.fetch("group", ""), row.fetch("version"), row.fetch("listKind")) if row["listKind"].to_s != ""
       ids
     end.to_h { |id| [id, true] }
     unexpected_count = (oracle_occurrences.keys - expected_ids.keys).length +
-      (rubernetes_occurrences.keys - expected_ids.keys).length +
-      (oracle_gvk_ids.keys - expected_gvk_ids.keys).length +
-      (rubernetes_gvk_ids.keys - expected_gvk_ids.keys).length
+                       (rubernetes_occurrences.keys - expected_ids.keys).length +
+                       (oracle_gvk_ids.keys - expected_gvk_ids.keys).length +
+                       (rubernetes_gvk_ids.keys - expected_gvk_ids.keys).length
     endpoint_failures = endpoints.count { |entry| !entry.fetch("passed") }
     matrix_failures = gvr_matrix.count { |entry| !entry.fetch("passed") } + gvk_matrix.count { |entry| !entry.fetch("passed") }
     {
@@ -1096,8 +1102,8 @@ module M1APIDifferential
     )
     operations << operation(
       "create-defaulting", method: "POST", path: COLLECTION_PATH,
-      rubernetes: rubernetes_created, oracle: oracle_created, defaulting: true,
-      request: request_observation(method: "POST", path: COLLECTION_PATH, body: created_body)
+                           rubernetes: rubernetes_created, oracle: oracle_created, defaulting: true,
+                           request: request_observation(method: "POST", path: COLLECTION_PATH, body: created_body)
     )
 
     rubernetes_get, oracle_get = call_pair(
@@ -1105,8 +1111,8 @@ module M1APIDifferential
     )
     operations << operation(
       "get", method: "GET", path: "#{COLLECTION_PATH}/m1-created",
-      rubernetes: rubernetes_get, oracle: oracle_get,
-      request: request_observation(method: "GET", path: "#{COLLECTION_PATH}/m1-created")
+             rubernetes: rubernetes_get, oracle: oracle_get,
+             request: request_observation(method: "GET", path: "#{COLLECTION_PATH}/m1-created")
     )
 
     # The collection response is the executable evidence for ListMeta
@@ -1114,8 +1120,8 @@ module M1APIDifferential
     rubernetes_list, oracle_list = call_pair(rubernetes, oracle, method: "GET", path: COLLECTION_PATH)
     operations << operation(
       "list", method: "GET", path: COLLECTION_PATH,
-      rubernetes: rubernetes_list, oracle: oracle_list,
-      request: request_observation(method: "GET", path: COLLECTION_PATH)
+              rubernetes: rubernetes_list, oracle: oracle_list,
+              request: request_observation(method: "GET", path: COLLECTION_PATH)
     )
 
     rubernetes_duplicate, oracle_duplicate = call_pair(
@@ -1123,8 +1129,8 @@ module M1APIDifferential
     )
     operations << operation(
       "duplicate-create-status", method: "POST", path: COLLECTION_PATH,
-      rubernetes: rubernetes_duplicate, oracle: oracle_duplicate,
-      request: request_observation(method: "POST", path: COLLECTION_PATH, body: created_body)
+                                 rubernetes: rubernetes_duplicate, oracle: oracle_duplicate,
+                                 request: request_observation(method: "POST", path: COLLECTION_PATH, body: created_body)
     )
 
     invalid_body = {"apiVersion" => "v1", "kind" => "ConfigMap", "data" => {"key" => "value"}}
@@ -1133,8 +1139,8 @@ module M1APIDifferential
     )
     operations << operation(
       "validation-status", method: "POST", path: COLLECTION_PATH,
-      rubernetes: rubernetes_invalid, oracle: oracle_invalid, validation: true,
-      request: request_observation(method: "POST", path: COLLECTION_PATH, body: invalid_body)
+                           rubernetes: rubernetes_invalid, oracle: oracle_invalid, validation: true,
+                           request: request_observation(method: "POST", path: COLLECTION_PATH, body: invalid_body)
     )
 
     initial_validation_query = {"watch" => "true", "sendInitialEvents" => "true"}
@@ -1143,9 +1149,9 @@ module M1APIDifferential
     )
     operations << operation(
       "initial-watch-validation-status", method: "GET",
-      path: "#{COLLECTION_PATH}?watch=true&sendInitialEvents=true",
-      rubernetes: rubernetes_initial_invalid, oracle: oracle_initial_invalid, validation: true,
-      request: request_observation(method: "GET", path: COLLECTION_PATH, query: initial_validation_query)
+                                         path: "#{COLLECTION_PATH}?watch=true&sendInitialEvents=true",
+                                         rubernetes: rubernetes_initial_invalid, oracle: oracle_initial_invalid, validation: true,
+                                         request: request_observation(method: "GET", path: COLLECTION_PATH, query: initial_validation_query)
     )
 
     apply_path = "#{COLLECTION_PATH}/m1-applied"
@@ -1156,37 +1162,37 @@ module M1APIDifferential
     apply_headers = {"Content-Type" => "application/apply-patch+yaml"}
     rubernetes_applied, oracle_applied = call_pair(
       rubernetes, oracle, method: "PATCH", path: apply_path, body: apply_body,
-      query: {"fieldManager" => "manager-one"}, headers: apply_headers
+                          query: {"fieldManager" => "manager-one"}, headers: apply_headers
     )
     operations << operation(
       "apply-create", method: "PATCH", path: "#{apply_path}?fieldManager=manager-one",
-      rubernetes: rubernetes_applied, oracle: oracle_applied,
-      request: request_observation(method: "PATCH", path: apply_path, body: apply_body,
-                                   query: {"fieldManager" => "manager-one"}, headers: apply_headers)
+                      rubernetes: rubernetes_applied, oracle: oracle_applied,
+                      request: request_observation(method: "PATCH", path: apply_path, body: apply_body,
+                                                   query: {"fieldManager" => "manager-one"}, headers: apply_headers)
     )
 
     conflicting_body = clone_payload(apply_body)
     conflicting_body["data"]["owned"] = "two"
     rubernetes_conflict, oracle_conflict = call_pair(
       rubernetes, oracle, method: "PATCH", path: apply_path, body: conflicting_body,
-      query: {"fieldManager" => "manager-two"}, headers: apply_headers
+                          query: {"fieldManager" => "manager-two"}, headers: apply_headers
     )
     operations << operation(
       "apply-conflict-status", method: "PATCH", path: "#{apply_path}?fieldManager=manager-two",
-      rubernetes: rubernetes_conflict, oracle: oracle_conflict,
-      request: request_observation(method: "PATCH", path: apply_path, body: conflicting_body,
-                                   query: {"fieldManager" => "manager-two"}, headers: apply_headers)
+                               rubernetes: rubernetes_conflict, oracle: oracle_conflict,
+                               request: request_observation(method: "PATCH", path: apply_path, body: conflicting_body,
+                                                            query: {"fieldManager" => "manager-two"}, headers: apply_headers)
     )
 
     rubernetes_force, oracle_force = call_pair(
       rubernetes, oracle, method: "PATCH", path: apply_path, body: conflicting_body,
-      query: {"fieldManager" => "manager-two", "force" => "true"}, headers: apply_headers
+                          query: {"fieldManager" => "manager-two", "force" => "true"}, headers: apply_headers
     )
     operations << operation(
       "apply-force", method: "PATCH", path: "#{apply_path}?fieldManager=manager-two&force=true",
-      rubernetes: rubernetes_force, oracle: oracle_force,
-      request: request_observation(method: "PATCH", path: apply_path, body: conflicting_body,
-                                   query: {"fieldManager" => "manager-two", "force" => "true"}, headers: apply_headers)
+                     rubernetes: rubernetes_force, oracle: oracle_force,
+                     request: request_observation(method: "PATCH", path: apply_path, body: conflicting_body,
+                                                  query: {"fieldManager" => "manager-two", "force" => "true"}, headers: apply_headers)
     )
 
     merge_body = {"data" => {"watch" => "ready"}}
@@ -1196,8 +1202,8 @@ module M1APIDifferential
     )
     operations << operation(
       "merge-patch", method: "PATCH", path: apply_path,
-      rubernetes: rubernetes_patch, oracle: oracle_patch,
-      request: request_observation(method: "PATCH", path: apply_path, body: merge_body, headers: merge_headers)
+                     rubernetes: rubernetes_patch, oracle: oracle_patch,
+                     request: request_observation(method: "PATCH", path: apply_path, body: merge_body, headers: merge_headers)
     )
 
     initial_watch_query = {
@@ -1213,11 +1219,11 @@ module M1APIDifferential
     )
     operations << operation(
       "initial-watch", method: "GET",
-      path: "#{COLLECTION_PATH}?watch=true&sendInitialEvents=true&allowWatchBookmarks=true&resourceVersionMatch=NotOlderThan&resourceVersion=0&timeoutSeconds=1",
-      rubernetes: rubernetes_initial_watch, oracle: oracle_initial_watch, initial_watch: true,
-      rubernetes_causality: initial_watch_causality(rubernetes_initial_watch),
-      oracle_causality: initial_watch_causality(oracle_initial_watch),
-      request: request_observation(method: "GET", path: COLLECTION_PATH, query: initial_watch_query)
+                       path: "#{COLLECTION_PATH}?watch=true&sendInitialEvents=true&allowWatchBookmarks=true&resourceVersionMatch=NotOlderThan&resourceVersion=0&timeoutSeconds=1",
+                       rubernetes: rubernetes_initial_watch, oracle: oracle_initial_watch, initial_watch: true,
+                       rubernetes_causality: initial_watch_causality(rubernetes_initial_watch),
+                       oracle_causality: initial_watch_causality(oracle_initial_watch),
+                       request: request_observation(method: "GET", path: COLLECTION_PATH, query: initial_watch_query)
     )
 
     rubernetes_watch = rubernetes.request(
@@ -1234,13 +1240,13 @@ module M1APIDifferential
     oracle_causality = causal_watch(oracle_force, oracle_patch, oracle_watch)
     operations << operation(
       "watch", method: "GET",
-      path: "#{COLLECTION_PATH}?watch=true&resourceVersion=<per-target>&timeoutSeconds=1",
-      rubernetes: rubernetes_watch, oracle: oracle_watch, watch: true,
-      rubernetes_causality: rubernetes_causality, oracle_causality: oracle_causality,
-      request: request_observation(
-        method: "GET", path: COLLECTION_PATH,
-        query: {"watch" => "true", "resourceVersion" => "<per-target>", "timeoutSeconds" => "1"}
-      )
+               path: "#{COLLECTION_PATH}?watch=true&resourceVersion=<per-target>&timeoutSeconds=1",
+               rubernetes: rubernetes_watch, oracle: oracle_watch, watch: true,
+               rubernetes_causality: rubernetes_causality, oracle_causality: oracle_causality,
+               request: request_observation(
+                 method: "GET", path: COLLECTION_PATH,
+                 query: {"watch" => "true", "resourceVersion" => "<per-target>", "timeoutSeconds" => "1"}
+               )
     )
 
     rubernetes_delete, oracle_delete = call_pair(
@@ -1248,8 +1254,8 @@ module M1APIDifferential
     )
     operations << operation(
       "delete", method: "DELETE", path: "#{COLLECTION_PATH}/m1-created",
-      rubernetes: rubernetes_delete, oracle: oracle_delete,
-      request: request_observation(method: "DELETE", path: "#{COLLECTION_PATH}/m1-created")
+                rubernetes: rubernetes_delete, oracle: oracle_delete,
+                request: request_observation(method: "DELETE", path: "#{COLLECTION_PATH}/m1-created")
     )
 
     rubernetes_missing, oracle_missing = call_pair(
@@ -1257,8 +1263,8 @@ module M1APIDifferential
     )
     operations << operation(
       "not-found-status", method: "GET", path: "#{COLLECTION_PATH}/m1-created",
-      rubernetes: rubernetes_missing, oracle: oracle_missing,
-      request: request_observation(method: "GET", path: "#{COLLECTION_PATH}/m1-created")
+                          rubernetes: rubernetes_missing, oracle: oracle_missing,
+                          request: request_observation(method: "GET", path: "#{COLLECTION_PATH}/m1-created")
     )
     operations.concat(execute_virtual_resources(rubernetes, oracle))
     operations
@@ -1274,16 +1280,17 @@ module M1APIDifferential
     rubernetes_review, oracle_review = call_pair(rubernetes, oracle, method: "POST", path: token_review_path, body: review_body)
     operations << operation(
       "tokenreview-create", method: "POST", path: token_review_path,
-      rubernetes: rubernetes_review, oracle: oracle_review,
-      request: request_observation(method: "POST", path: token_review_path, body: review_body)
+                            rubernetes: rubernetes_review, oracle: oracle_review,
+                            request: request_observation(method: "POST", path: token_review_path, body: review_body)
     )
 
     missing_token_body = {"apiVersion" => "authentication.k8s.io/v1", "kind" => "TokenReview", "spec" => {}}
-    rubernetes_missing_token, oracle_missing_token = call_pair(rubernetes, oracle, method: "POST", path: token_review_path, body: missing_token_body)
+    rubernetes_missing_token, oracle_missing_token = call_pair(rubernetes, oracle, method: "POST", path: token_review_path,
+                                                                                   body: missing_token_body)
     operations << operation(
       "tokenreview-missing-token", method: "POST", path: token_review_path,
-      rubernetes: rubernetes_missing_token, oracle: oracle_missing_token,
-      request: request_observation(method: "POST", path: token_review_path, body: missing_token_body)
+                                   rubernetes: rubernetes_missing_token, oracle: oracle_missing_token,
+                                   request: request_observation(method: "POST", path: token_review_path, body: missing_token_body)
     )
 
     self_review_path = "/apis/authentication.k8s.io/v1/selfsubjectreviews"
@@ -1291,8 +1298,8 @@ module M1APIDifferential
     rubernetes_self, oracle_self = call_pair(rubernetes, oracle, method: "POST", path: self_review_path, body: self_review_body)
     operations << operation(
       "selfsubjectreview-create", method: "POST", path: self_review_path,
-      rubernetes: rubernetes_self, oracle: oracle_self,
-      request: request_observation(method: "POST", path: self_review_path, body: self_review_body)
+                                  rubernetes: rubernetes_self, oracle: oracle_self,
+                                  request: request_observation(method: "POST", path: self_review_path, body: self_review_body)
     )
 
     rules_path = "/apis/authorization.k8s.io/v1/selfsubjectrulesreviews"
@@ -1300,23 +1307,25 @@ module M1APIDifferential
     rubernetes_rules, oracle_rules = call_pair(rubernetes, oracle, method: "POST", path: rules_path, body: rules_body)
     operations << operation(
       "selfsubjectrulesreview-create", method: "POST", path: rules_path,
-      rubernetes: rubernetes_rules, oracle: oracle_rules,
-      request: request_observation(method: "POST", path: rules_path, body: rules_body)
+                                       rubernetes: rubernetes_rules, oracle: oracle_rules,
+                                       request: request_observation(method: "POST", path: rules_path, body: rules_body)
     )
 
     missing_namespace_body = {"apiVersion" => "authorization.k8s.io/v1", "kind" => "SelfSubjectRulesReview", "spec" => {}}
-    rubernetes_no_namespace, oracle_no_namespace = call_pair(rubernetes, oracle, method: "POST", path: rules_path, body: missing_namespace_body)
+    rubernetes_no_namespace, oracle_no_namespace = call_pair(rubernetes, oracle, method: "POST", path: rules_path,
+                                                                                 body: missing_namespace_body)
     operations << operation(
       "selfsubjectrulesreview-missing-namespace", method: "POST", path: rules_path,
-      rubernetes: rubernetes_no_namespace, oracle: oracle_no_namespace,
-      request: request_observation(method: "POST", path: rules_path, body: missing_namespace_body)
+                                                  rubernetes: rubernetes_no_namespace, oracle: oracle_no_namespace,
+                                                  request: request_observation(method: "POST", path: rules_path, body: missing_namespace_body)
     )
 
     # Eviction needs a stored pod; the isolated kube-apiserver runs the
     # ServiceAccount admission plugin, which requires the namespace's default
     # service account.  Neither fixture request is a compared operation.
     service_account_body = {"apiVersion" => "v1", "kind" => "ServiceAccount", "metadata" => {"name" => "default", "namespace" => NAMESPACE}}
-    rubernetes_account, oracle_account = call_pair(rubernetes, oracle, method: "POST", path: "/api/v1/namespaces/#{NAMESPACE}/serviceaccounts", body: service_account_body)
+    rubernetes_account, oracle_account = call_pair(rubernetes, oracle, method: "POST",
+                                                                       path: "/api/v1/namespaces/#{NAMESPACE}/serviceaccounts", body: service_account_body)
     unless rubernetes_account.status == 201 && oracle_account.status == 201
       raise M1KubernetesOracle::Error,
             "service account fixture creation failed (Rubernetes #{rubernetes_account.status}, oracle #{oracle_account.status})"
@@ -1336,35 +1345,36 @@ module M1APIDifferential
       "apiVersion" => "policy/v1", "kind" => "Eviction", "metadata" => {"name" => "m1-evict", "namespace" => NAMESPACE},
       "deleteOptions" => {"propagationPolicy" => "Invalid"}
     }
-    rubernetes_invalid_eviction, oracle_invalid_eviction = call_pair(rubernetes, oracle, method: "POST", path: eviction_path, body: invalid_eviction)
+    rubernetes_invalid_eviction, oracle_invalid_eviction = call_pair(rubernetes, oracle, method: "POST", path: eviction_path,
+                                                                                         body: invalid_eviction)
     operations << operation(
       "eviction-invalid-delete-options", method: "POST", path: eviction_path,
-      rubernetes: rubernetes_invalid_eviction, oracle: oracle_invalid_eviction, validation: true,
-      request: request_observation(method: "POST", path: eviction_path, body: invalid_eviction)
+                                         rubernetes: rubernetes_invalid_eviction, oracle: oracle_invalid_eviction, validation: true,
+                                         request: request_observation(method: "POST", path: eviction_path, body: invalid_eviction)
     )
 
     eviction_body = {"apiVersion" => "policy/v1", "kind" => "Eviction", "metadata" => {"name" => "m1-evict", "namespace" => NAMESPACE}}
     rubernetes_eviction, oracle_eviction = call_pair(rubernetes, oracle, method: "POST", path: eviction_path, body: eviction_body)
     operations << operation(
       "eviction-create", method: "POST", path: eviction_path,
-      rubernetes: rubernetes_eviction, oracle: oracle_eviction,
-      request: request_observation(method: "POST", path: eviction_path, body: eviction_body)
+                         rubernetes: rubernetes_eviction, oracle: oracle_eviction,
+                         request: request_observation(method: "POST", path: eviction_path, body: eviction_body)
     )
 
     list_path = "/api/v1/componentstatuses"
     rubernetes_components, oracle_components = call_pair(rubernetes, oracle, method: "GET", path: list_path)
     operations << operation(
       "componentstatus-list", method: "GET", path: list_path,
-      rubernetes: rubernetes_components, oracle: oracle_components, body_policy: :component_status,
-      request: request_observation(method: "GET", path: list_path)
+                              rubernetes: rubernetes_components, oracle: oracle_components, body_policy: :component_status,
+                              request: request_observation(method: "GET", path: list_path)
     )
 
     get_path = "#{list_path}/etcd-0"
     rubernetes_component, oracle_component = call_pair(rubernetes, oracle, method: "GET", path: get_path)
     operations << operation(
       "componentstatus-get", method: "GET", path: get_path,
-      rubernetes: rubernetes_component, oracle: oracle_component, body_policy: :component_status,
-      request: request_observation(method: "GET", path: get_path)
+                             rubernetes: rubernetes_component, oracle: oracle_component, body_policy: :component_status,
+                             request: request_observation(method: "GET", path: get_path)
     )
     operations
   end

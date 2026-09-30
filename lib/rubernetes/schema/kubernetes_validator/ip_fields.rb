@@ -131,7 +131,9 @@ module Rubernetes
 
         old_status = old.is_a?(Hash) ? fetch(old, "status") : nil
         %w[podIPs hostIPs].each do |field|
-          existing = Array(old_status.is_a?(Hash) ? fetch(old_status, field) : nil).filter_map { |entry| entry.is_a?(Hash) ? fetch(entry, "ip").to_s : nil }
+          existing = Array(old_status.is_a?(Hash) ? fetch(old_status, field) : nil).filter_map do |entry|
+            entry.is_a?(Hash) ? fetch(entry, "ip").to_s : nil
+          end
           Array(fetch(status, field)).each_with_index do |entry, index|
             next unless entry.is_a?(Hash)
 
@@ -192,7 +194,7 @@ module Rubernetes
         return [] unless ingress.is_a?(Array) && old.is_a?(Hash)
 
         existing = Array(old.is_a?(Hash) ? dig_path(old, %w[status loadBalancer ingress]) : nil)
-                   .filter_map { |entry| entry.is_a?(Hash) ? fetch(entry, "ip").to_s : nil }
+          .filter_map { |entry| entry.is_a?(Hash) ? fetch(entry, "ip").to_s : nil }
         ingress.each_with_index.flat_map do |entry, index|
           next [] unless entry.is_a?(Hash)
 

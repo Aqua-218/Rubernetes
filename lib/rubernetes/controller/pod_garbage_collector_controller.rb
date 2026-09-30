@@ -24,8 +24,8 @@ module Rubernetes
 
       include SecondarySupport
 
-      def initialize(*arguments, clock: -> { Time.now.utc }, **options)
-        super(*arguments, **options)
+      def initialize(*, clock: -> { Time.now.utc }, **)
+        super(*, **)
         @clock = clock
         @missing_nodes = {}
         @mutex = Mutex.new
@@ -36,7 +36,7 @@ module Rubernetes
         adapter = adapter_for(store)
         pods ||= list_for(adapter, POD, namespace: :all)
         nodes ||= list_for(adapter, NODE, namespace: :all)
-        threshold = threshold.nil? ? terminated_pod_gc_threshold : threshold
+        threshold = terminated_pod_gc_threshold if threshold.nil?
         threshold = DEFAULT_TERMINATED_POD_GC_THRESHOLD if threshold.nil?
         threshold = Integer(threshold)
         raise ArgumentError, "terminated pod GC threshold must be non-negative" if threshold.negative?
@@ -111,7 +111,9 @@ module Rubernetes
       def orphans(pods, nodes, adapter)
         existing = Array(nodes).to_h { |node| [Support.name(node), true] }
         now = @clock.call
-        missing = pods.map { |pod| Support.value(Support.spec(pod), "nodeName", "").to_s }.reject { |name| name.empty? || existing[name] }.uniq
+        missing = pods.map do |pod|
+          Support.value(Support.spec(pod), "nodeName", "").to_s
+        end.reject { |name| name.empty? || existing[name] }.uniq
         deleted = @mutex.synchronize do
           @missing_nodes.delete_if { |name, _| existing[name] }
           missing.each { |name| @missing_nodes[name] ||= now }

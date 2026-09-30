@@ -38,18 +38,16 @@ module Rubernetes
 
       def apply_json_patch(object, operations)
         operations = deep_copy(operations)
-        unless operations.is_a?(Array)
-          raise Error, "JSON Patch body must be an array of operations"
-        end
+        raise Error, "JSON Patch body must be an array of operations" unless operations.is_a?(Array)
 
         result = deep_copy(object)
         operations.each_with_index do |operation, index|
-          unless operation.is_a?(Hash)
-            raise Error, "JSON Patch operation #{index} must be an object"
-          end
+          raise Error, "JSON Patch operation #{index} must be an object" unless operation.is_a?(Hash)
+
           op = value_for(operation, "op").to_s.downcase
           path = value_for(operation, "path")
           raise Error, "JSON Patch operation #{index} is missing path" if path.nil?
+
           case op
           when "add"
             result = pointer_add(result, path, value_for(operation, "value"))
@@ -61,22 +59,20 @@ module Rubernetes
           when "move"
             from = value_for(operation, "from")
             raise Error, "JSON Patch move operation #{index} is missing from" if from.nil?
-            if pointer_descendant?(from, path)
-              raise Error, "JSON Patch move operation #{index} cannot move a value into its own descendant"
-            end
+            raise Error, "JSON Patch move operation #{index} cannot move a value into its own descendant" if pointer_descendant?(from, path)
+
             value = pointer_get(result, from)
             result = pointer_remove(result, from)
             result = pointer_add(result, path, value)
           when "copy"
             from = value_for(operation, "from")
             raise Error, "JSON Patch copy operation #{index} is missing from" if from.nil?
+
             result = pointer_add(result, path, pointer_get(result, from))
           when "test"
             expected = value_for(operation, "value")
             actual = pointer_get(result, path)
-            unless deep_equal?(actual, expected)
-              raise Error, "JSON Patch test failed at #{path.inspect}"
-            end
+            raise Error, "JSON Patch test failed at #{path.inspect}" unless deep_equal?(actual, expected)
           else
             raise Error, "JSON Patch operation #{index} has unsupported op #{op.inspect}"
           end
@@ -87,9 +83,7 @@ module Rubernetes
       end
 
       def apply_merge_patch(object, patch)
-        unless patch.is_a?(Hash)
-          return deep_copy(patch)
-        end
+        return deep_copy(patch) unless patch.is_a?(Hash)
 
         target = object.is_a?(Hash) ? deep_copy(object) : {}
         patch.each do |raw_key, value|
@@ -107,26 +101,21 @@ module Rubernetes
       end
 
       def apply_strategic_merge(object, patch, resource: nil)
-        unless patch.is_a?(Hash)
-          raise Error, "strategic merge patch body must be an object"
-        end
+        raise Error, "strategic merge patch body must be an object" unless patch.is_a?(Hash)
+
         merge_keys = resource.respond_to?(:merge_keys) ? resource.merge_keys : {}
         strategic_merge(deep_copy(object), patch, path: [], merge_keys: merge_keys)
       end
 
       def strategic_merge(base, patch, path:, merge_keys:)
         return deep_copy(patch) unless patch.is_a?(Hash)
+
         directive = patch["$patch"] || patch[:$patch]
-        if directive && !%w[replace].include?(directive.to_s)
-          raise Error, "unsupported strategic merge directive #{directive.inspect}"
-        end
+        raise Error, "unsupported strategic merge directive #{directive.inspect}" if directive && !%w[replace].include?(directive.to_s)
+
         retain_keys = patch["$retainKeys"] || patch[:$retainKeys]
-        if patch.key?("$retainKeys") || patch.key?(:$retainKeys)
-          raise Error, "$retainKeys must be an array" unless retain_keys.is_a?(Array)
-        end
-        if directive.to_s == "replace"
-          return deep_copy(patch.reject { |key, _| key.to_s == "$patch" })
-        end
+        raise Error, "$retainKeys must be an array" if (patch.key?("$retainKeys") || patch.key?(:$retainKeys)) && !retain_keys.is_a?(Array)
+        return deep_copy(patch.reject { |key, _| key.to_s == "$patch" }) if directive.to_s == "replace"
         return deep_copy(patch) unless base.is_a?(Hash)
 
         if retain_keys.is_a?(Array)
@@ -137,6 +126,7 @@ module Rubernetes
         patch.each_with_object(base) do |(raw_key, patch_value), result|
           key = raw_key.to_s
           next if key == "$patch" || key == "$retainKeys" || key.start_with?("$setElementOrder/")
+
           if patch_value.nil?
             result.delete(key)
             next
@@ -146,7 +136,7 @@ module Rubernetes
                           strategic_merge(current, patch_value, path: path + [key], merge_keys: merge_keys)
                         elsif patch_value.is_a?(Array)
                           strategic_merge_array(current, patch_value, path: path + [key], merge_keys: merge_keys,
-                                                order: patch["$setElementOrder/#{key}"])
+                                                                      order: patch["$setElementOrder/#{key}"])
                         else
                           deep_copy(patch_value)
                         end
@@ -169,10 +159,10 @@ module Rubernetes
       # "[sig-apps] ReplicaSet Replace and Patch tests" never saw its image.
       def order_merged_items(merged, current, order, merge_key)
         identity = ->(item) { item.is_a?(Hash) ? item[merge_key].to_s : item }
-        order_index = order.each_with_index.to_h { |item, index| [identity.(item), index] }
-        server_index = current.each_with_index.to_h { |item, index| [identity.(item), index] }
-        patch_items, server_only = merged.partition { |item| order_index.key?(identity.(item)) }
-        patch_items = patch_items.each_with_index.sort_by { |item, index| [order_index[identity.(item)], index] }.map(&:first)
+        order_index = order.each_with_index.to_h { |item, index| [identity.call(item), index] }
+        server_index = current.each_with_index.to_h { |item, index| [identity.call(item), index] }
+        patch_items, server_only = merged.partition { |item| order_index.key?(identity.call(item)) }
+        patch_items = patch_items.each_with_index.sort_by { |item, index| [order_index[identity.call(item)], index] }.map(&:first)
         result = []
         until server_only.empty? && patch_items.empty?
           if patch_items.empty?
@@ -180,8 +170,8 @@ module Rubernetes
           elsif server_only.empty?
             result << patch_items.shift
           else
-            left = server_index[identity.(server_only.first)]
-            right = server_index[identity.(patch_items.first)]
+            left = server_index[identity.call(server_only.first)]
+            right = server_index[identity.call(patch_items.first)]
             result << (left && right && left < right ? server_only.shift : patch_items.shift)
           end
         end
@@ -189,18 +179,19 @@ module Rubernetes
       end
 
       def merge_keyed_items(current, patch, path:, merge_key:, merge_keys:)
-
         result = deep_copy(current)
         patch.each do |item|
           if item.is_a?(Hash) && item.key?("$patch") && !%w[delete replace].include?(item["$patch"].to_s)
             raise Error, "unsupported strategic merge directive #{item["$patch"].inspect}"
           end
+
           if item.is_a?(Hash) && item.key?(merge_key)
             existing_index = result.index { |candidate| candidate.is_a?(Hash) && candidate[merge_key].to_s == item[merge_key].to_s }
             if item["$patch"] == "delete"
               result.delete_at(existing_index) if existing_index
             elsif existing_index
-              result[existing_index] = strategic_merge(result[existing_index], item, path: path + ["#{merge_key}=#{item[merge_key]}"], merge_keys: merge_keys)
+              result[existing_index] =
+                strategic_merge(result[existing_index], item, path: path + ["#{merge_key}=#{item[merge_key]}"], merge_keys: merge_keys)
             else
               result << deep_copy(item.reject { |key, _| key.to_s == "$patch" })
             end
@@ -215,25 +206,30 @@ module Rubernetes
         path_string = path.join(".")
         return merge_keys[path_string].to_s unless merge_keys[path_string].nil?
         return merge_keys[path.join("/")].to_s unless merge_keys[path.join("/")].nil?
+
         normalized_path = path.reject { |part| part.to_s.include?("=") }
         normalized_string = normalized_path.join(".")
         return merge_keys[normalized_string].to_s unless merge_keys[normalized_string].nil?
+
         merge_keys.each do |pattern, key|
           pattern_path = pattern.to_s.gsub("[*]", "").split(".").reject(&:empty?)
           return key.to_s if pattern_path == normalized_path
         end
         return "name" if %w[containers env].include?(path.last.to_s)
+
         nil
       end
 
       def pointer_get(document, pointer)
         return document if pointer.to_s.empty?
+
         tokens = pointer_tokens(pointer)
         tokens.reduce(document) { |value, token| read_token(value, token) }
       end
 
       def pointer_add(document, pointer, value)
         return deep_copy(value) if pointer.to_s.empty?
+
         parent, token = pointer_parent(document, pointer)
         if parent.is_a?(Array)
           index = token == "-" ? parent.length : array_index(token, parent.length, allow_end: true)
@@ -248,12 +244,14 @@ module Rubernetes
 
       def pointer_replace(document, pointer, value)
         return deep_copy(value) if pointer.to_s.empty?
+
         parent, token = pointer_parent(document, pointer)
         if parent.is_a?(Array)
           index = array_index(token, parent.length)
           parent[index] = deep_copy(value)
         elsif parent.is_a?(Hash)
           raise Error, "JSON Pointer path #{pointer.inspect} does not exist" unless parent.key?(token)
+
           parent[token] = deep_copy(value)
         else
           raise Error, "JSON Pointer parent #{pointer.inspect} is not a container"
@@ -263,11 +261,13 @@ module Rubernetes
 
       def pointer_remove(document, pointer)
         return nil if pointer.to_s.empty?
+
         parent, token = pointer_parent(document, pointer)
         if parent.is_a?(Array)
           parent.delete_at(array_index(token, parent.length))
         elsif parent.is_a?(Hash)
           raise Error, "JSON Pointer path #{pointer.inspect} does not exist" unless parent.key?(token)
+
           parent.delete(token)
         else
           raise Error, "JSON Pointer parent #{pointer.inspect} is not a container"
@@ -278,6 +278,7 @@ module Rubernetes
       def pointer_parent(document, pointer)
         tokens = pointer_tokens(pointer)
         raise Error, "JSON Pointer must begin with /" if tokens.empty?
+
         parent = tokens[0...-1].reduce(document) { |value, token| read_token(value, token) }
         [parent, tokens.last]
       end
@@ -285,6 +286,7 @@ module Rubernetes
       def pointer_tokens(pointer)
         value = pointer.to_s
         raise Error, "JSON Pointer must begin with /" unless value.empty? || value.start_with?("/")
+
         value.split("/", -1)[1..].to_a.map do |token|
           raise Error, "JSON Pointer token #{token.inspect} has an invalid escape" if token.match?(/~(?![01])/)
 
@@ -305,6 +307,7 @@ module Rubernetes
           value.fetch(array_index(token, value.length))
         elsif value.is_a?(Hash)
           raise Error, "JSON Pointer path token #{token.inspect} does not exist" unless value.key?(token)
+
           value.fetch(token)
         else
           raise Error, "JSON Pointer token #{token.inspect} traverses a scalar"
@@ -329,7 +332,6 @@ module Rubernetes
 
         raise KeyError, "missing #{key}"
       end
-
 
       def deep_copy(value)
         case value

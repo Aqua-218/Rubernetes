@@ -30,6 +30,7 @@ class NativeKernelObserverTest < Minitest::Test
 
   def test_omits_a_process_that_no_longer_exists
     dead = spawn_and_reap
+
     assert_empty(observe([process_claim(pid: dead, start_time: "1")]))
   end
 
@@ -48,10 +49,12 @@ class NativeKernelObserverTest < Minitest::Test
     Dir.mktmpdir("kernel-observer-") do |directory|
       stat = File.stat(directory)
       present = observe([path_claim(directory, device: stat.dev, inode: stat.ino)])
+
       assert_equal(1, present.length)
       assert_equal(true, present.first.dig("metadata", "live"))
 
       missing = observe([path_claim(File.join(directory, "gone"), device: stat.dev, inode: stat.ino)])
+
       assert_empty(missing)
     end
   end

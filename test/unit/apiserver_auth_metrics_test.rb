@@ -23,6 +23,7 @@ class APIServerAuthMetricsTest < Minitest::Test
     @server.call(request("GET", "/api/v1/namespaces/default/pods", token: "bob-token"))
     @server.call(request("GET", "/api/v1/namespaces/default/pods", token: "nope"))
     text = @server.instance_variable_get(:@metrics).render
+
     assert_match(/^authentication_attempts\{result="success"\} 2/, text)
     assert_match(/^authentication_attempts\{result="failure"\} 1/, text)
     assert_match(/^authentication_duration_seconds_count\{result="success"\} 2/, text)
@@ -40,11 +41,17 @@ class APIServerAuthMetricsTest < Minitest::Test
     @server.call(request("POST", "/api/v1/namespaces/default/pods", token: "alice-token", body: pod("fine")))
     @server.call(request("POST", "/api/v1/namespaces/default/pods", token: "alice-token", body: pod("forbidden-pod")))
     text = @server.instance_variable_get(:@metrics).render
+
     assert_match(/^apiserver_admission_step_admission_duration_seconds_count\{operation="CREATE",rejected="false",type="admit"\} 2/, text)
-    assert_match(/^apiserver_admission_step_admission_duration_seconds_count\{operation="CREATE",rejected="false",type="validate"\} 1/, text)
+    assert_match(/^apiserver_admission_step_admission_duration_seconds_count\{operation="CREATE",rejected="false",type="validate"\} 1/,
+                 text)
     assert_match(/^apiserver_admission_step_admission_duration_seconds_count\{operation="CREATE",rejected="true",type="validate"\} 1/, text)
-    assert_match(/^apiserver_admission_controller_admission_duration_seconds_count\{name="RejectNamedPods",operation="CREATE",rejected="true",type="validate"\} 1/, text)
-    assert_match(/^apiserver_admission_controller_admission_duration_seconds_count\{name="LabelEverything",operation="CREATE",rejected="false",type="admit"\} 2/, text)
+    assert_match(
+      /^apiserver_admission_controller_admission_duration_seconds_count\{name="RejectNamedPods",operation="CREATE",rejected="true",type="validate"\} 1/, text
+    )
+    assert_match(
+      /^apiserver_admission_controller_admission_duration_seconds_count\{name="LabelEverything",operation="CREATE",rejected="false",type="admit"\} 2/, text
+    )
     assert_match(/^apiserver_audit_level_total\{level="RequestResponse"\} 2/, text)
     assert_match(/^apiserver_audit_event_total \d+/, text)
   end

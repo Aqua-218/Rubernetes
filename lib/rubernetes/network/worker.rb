@@ -194,7 +194,11 @@ module Rubernetes
         nil
       ensure
         failure = Worker::Error.new("network worker exited")
-        waiters = @pending_mutex.synchronize { taken = @pending.values; @pending.clear; taken }
+        waiters = @pending_mutex.synchronize do
+          taken = @pending.values
+          @pending.clear
+          taken
+        end
         waiters.each { |waiter| waiter.push([:error, failure]) }
       end
     end

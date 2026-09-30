@@ -31,7 +31,9 @@ class SchedulerVolumeBindingTest < Minitest::Test
       claim = @objects["pvc/#{namespace}/#{name}"]
       return claim unless claim && @bind
 
-      volume = claim.dig("spec", "volumeName") || @objects.values.find { |object| object.dig("spec", "claimRef", "name") == name }&.dig("metadata", "name")
+      volume = claim.dig("spec", "volumeName") || @objects.values.find do |object|
+        object.dig("spec", "claimRef", "name") == name
+      end&.dig("metadata", "name")
       if volume.nil? && claim.dig("metadata", "annotations", VB::ANN_SELECTED_NODE)
         volume = "provisioned-#{name}"
         @objects["pv/#{volume}"] ||= {"metadata" => {"name" => volume, "resourceVersion" => "1"}, "spec" => {}}
@@ -39,7 +41,8 @@ class SchedulerVolumeBindingTest < Minitest::Test
       return claim if volume.nil?
 
       claim.merge("spec" => claim["spec"].merge("volumeName" => volume),
-                  "metadata" => claim["metadata"].merge("annotations" => (claim.dig("metadata", "annotations") || {}).merge(VB::ANN_BIND_COMPLETED => "yes")))
+                  "metadata" => claim["metadata"].merge("annotations" => (claim.dig("metadata",
+                                                                                    "annotations") || {}).merge(VB::ANN_BIND_COMPLETED => "yes")))
     end
 
     def update_pv(pv) = store("pv/#{pv.dig("metadata", "name")}", pv)
@@ -75,7 +78,8 @@ class SchedulerVolumeBindingTest < Minitest::Test
   def volume(name, class_name: "wffc", zone: nil, size: "5Gi", claim_ref: nil, phase: "Available")
     spec = {"storageClassName" => class_name, "capacity" => {"storage" => size}, "accessModes" => ["ReadWriteOnce"]}
     if zone
-      spec["nodeAffinity"] = {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone", "operator" => "In", "values" => [zone]}]}]}}
+      spec["nodeAffinity"] =
+        {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone", "operator" => "In", "values" => [zone]}]}]}}
     end
     spec["claimRef"] = claim_ref if claim_ref
     {"metadata" => {"name" => name, "resourceVersion" => "1"}, "spec" => spec, "status" => {"phase" => phase}}
@@ -85,11 +89,12 @@ class SchedulerVolumeBindingTest < Minitest::Test
     {"metadata" => {"name" => name}, "provisioner" => provisioner, "volumeBindingMode" => mode, "allowedTopologies" => topologies}.compact
   end
 
-  def context(claims: [], volumes: [], classes: [storage_class("wffc"), storage_class("now", mode: "Immediate")], drivers: [], capacities: [])
+  def context(claims: [], volumes: [], classes: [storage_class("wffc"), storage_class("now", mode: "Immediate")], drivers: [],
+              capacities: [])
     S::CycleContext.new(nodes: [], pods: [], volume_data: {
-      "persistentVolumeClaims" => claims, "persistentVolumes" => volumes, "storageClasses" => classes,
-      "csiNodes" => [], "csiDrivers" => drivers, "csiStorageCapacities" => capacities
-    })
+                          "persistentVolumeClaims" => claims, "persistentVolumes" => volumes, "storageClasses" => classes,
+                          "csiNodes" => [], "csiDrivers" => drivers, "csiStorageCapacities" => capacities
+                        })
   end
 
   def uses(*names) = names.map { |name| {"name" => name, "persistentVolumeClaim" => {"claimName" => name}} }
@@ -98,24 +103,33 @@ class SchedulerVolumeBindingTest < Minitest::Test
 
   def test_prefilter_rejections
     vb = plugin
+
     assert_equal true, vb.filter(pod([{"name" => "tmp", "emptyDir" => {}}]), node, context)
     missing = vb.filter(pod(uses("gone")), node, context)
+
     assert_equal ["UnschedulableAndUnresolvable", %(persistentvolumeclaim "gone" not found)], [missing.code, missing.reason]
     ephemeral = vb.filter(pod([{"name" => "scratch", "ephemeral" => {"volumeClaimTemplate" => {}}}]), node, context)
+
     assert_equal %(waiting for ephemeral volume controller to create the persistentvolumeclaim "web-scratch"), ephemeral.reason
     immediate = plugin.filter(pod(uses("data")), node, context(claims: [claim("data", class_name: "now")]))
+
     assert_equal VB::REASON_UNBOUND_IMMEDIATE, immediate.reason
     deleting = claim("data").tap { |object| object["metadata"]["deletionTimestamp"] = "2026-09-24T00:00:00Z" }
-    assert_equal %(persistentvolumeclaim "data" is being deleted), plugin.filter(pod(uses("data")), node, context(claims: [deleting])).reason
+
+    assert_equal %(persistentvolumeclaim "data" is being deleted),
+                 plugin.filter(pod(uses("data")), node, context(claims: [deleting])).reason
   end
 
   def test_bound_claims_follow_the_pv_node_affinity
     claims = [claim("data", volume: "pv-a", bound: true)]
     volumes = [volume("pv-a", zone: "a")]
+
     assert_equal true, plugin.filter(pod(uses("data")), node, context(claims: claims, volumes: volumes))
     conflict = plugin.filter(pod(uses("data")), node("node-b", labels: {"zone" => "b"}), context(claims: claims, volumes: volumes))
+
     assert_equal VB::REASON_NODE_CONFLICT, conflict.reason
     gone = plugin.filter(pod(uses("data")), node, context(claims: claims, volumes: []))
+
     assert_equal VB::REASON_PV_NOT_EXIST, gone.reason
   end
 
@@ -127,11 +141,13 @@ class SchedulerVolumeBindingTest < Minitest::Test
     vb = plugin(api)
     ctx = context(claims: claims, volumes: volumes, classes: [storage_class("wffc", provisioner: VB::NOT_SUPPORTED_PROVISIONER)])
     target = pod(uses("data"))
+
     assert_equal true, vb.filter(target, node, ctx)
     assert_equal VB::REASON_BIND_CONFLICT, vb.filter(target, node("node-b", labels: {"zone" => "c"}), ctx).reason
     assert_equal true, vb.reserve(target, node, ctx)
     assert_equal true, vb.pre_bind(target, node, ctx)
     key, written = api.updates.first
+
     assert_equal "pv/pv-small", key
     assert_equal({"kind" => "PersistentVolumeClaim", "namespace" => "ns", "name" => "data", "uid" => "uid-data", "apiVersion" => "v1",
                   "resourceVersion" => "1"}, written.dig("spec", "claimRef"))
@@ -144,30 +160,37 @@ class SchedulerVolumeBindingTest < Minitest::Test
     vb = plugin(api)
     ctx = context(claims: claims)
     target = pod(uses("data"))
+
     assert_equal true, vb.filter(target, node, ctx)
     assert_equal true, vb.reserve(target, node, ctx)
     assert_equal true, vb.pre_bind(target, node, ctx)
     key, written = api.updates.first
+
     assert_equal ["pvc/ns/data", "node-a"], [key, written.dig("metadata", "annotations", VB::ANN_SELECTED_NODE)]
   end
 
   def test_provisioning_limits
     claims = [claim("data", size: "10Gi")]
     no_provisioner = context(claims: claims, classes: [storage_class("wffc", provisioner: VB::NOT_SUPPORTED_PROVISIONER)])
+
     assert_equal VB::REASON_BIND_CONFLICT, plugin.filter(pod(uses("data")), node, no_provisioner).reason
     topology = [{"matchLabelExpressions" => [{"key" => "zone", "values" => ["b"]}]}]
     restricted = context(claims: claims, classes: [storage_class("wffc", topologies: topology)])
+
     assert_equal VB::REASON_BIND_CONFLICT, plugin.filter(pod(uses("data")), node, restricted).reason
     assert_equal true, plugin.filter(pod(uses("data")), node("node-b", labels: {"zone" => "b"}), restricted)
 
     drivers = [{"metadata" => {"name" => "csi.example.com"}, "spec" => {"storageCapacity" => true}}]
     small = [{"metadata" => {"name" => "cap", "namespace" => "kube-system"}, "storageClassName" => "wffc", "capacity" => "5Gi",
               "nodeTopology" => {"matchLabels" => {"zone" => "a"}}}]
+
     assert_equal VB::REASON_NOT_ENOUGH_SPACE,
                  plugin.filter(pod(uses("data")), node, context(claims: claims, drivers: drivers, capacities: small)).reason
     large = [small.first.merge("capacity" => "100Gi", "maximumVolumeSize" => "20Gi")]
+
     assert_equal true, plugin.filter(pod(uses("data")), node, context(claims: claims, drivers: drivers, capacities: large))
     elsewhere = [large.first.merge("nodeTopology" => {"matchLabels" => {"zone" => "z"}})]
+
     assert_equal VB::REASON_NOT_ENOUGH_SPACE,
                  plugin.filter(pod(uses("data")), node, context(claims: claims, drivers: drivers, capacities: elsewhere)).reason
     assert_equal true, plugin.filter(pod(uses("data")), node, context(claims: claims, drivers: [], capacities: small)),
@@ -176,6 +199,7 @@ class SchedulerVolumeBindingTest < Minitest::Test
 
   def test_a_claim_selected_for_another_node_only_fits_there
     claims = [claim("data", annotations: {VB::ANN_SELECTED_NODE => "node-b"})]
+
     assert_equal VB::REASON_BIND_CONFLICT, plugin.filter(pod(uses("data")), node, context(claims: claims)).reason
     assert_equal true, plugin.filter(pod(uses("data")), node("node-b"), context(claims: claims))
   end
@@ -192,6 +216,7 @@ class SchedulerVolumeBindingTest < Minitest::Test
     vb.filter(target, node, ctx)
     vb.reserve(target, node, ctx)
     result = vb.pre_bind(target, node, ctx)
+
     assert_equal "binding volumes: provisioning failed for PVC \"data\"", result.reason
   end
 
@@ -204,6 +229,7 @@ class SchedulerVolumeBindingTest < Minitest::Test
     target = pod(uses("data"))
     vb.filter(target, node, ctx)
     vb.reserve(target, node, ctx)
+
     assert_equal true, vb.pre_bind(target, node, ctx)
     assert vb.pending?(target)
     assert vb.wait_for_bindings(target, "node-a")
@@ -216,18 +242,22 @@ class SchedulerVolumeBindingTest < Minitest::Test
     ctx = context(claims: claims, volumes: volumes, classes: [storage_class("wffc", provisioner: VB::NOT_SUPPORTED_PROVISIONER)])
     vb = plugin
     first = pod(uses("a"))
+
     assert_equal true, vb.filter(first, node, ctx)
     vb.reserve(first, node, ctx)
     second = S::Pod.new(pod(uses("b")).to_h.merge("metadata" => {"name" => "other", "namespace" => "ns", "uid" => "other-uid"}))
     ctx2 = context(claims: claims, volumes: volumes, classes: [storage_class("wffc", provisioner: VB::NOT_SUPPORTED_PROVISIONER)])
+
     assert_equal VB::REASON_BIND_CONFLICT, vb.filter(second, node, ctx2).reason, "pv-1 is assumed for claim a"
     vb.unreserve(first, node, ctx)
     ctx3 = context(claims: claims, volumes: volumes, classes: [storage_class("wffc", provisioner: VB::NOT_SUPPORTED_PROVISIONER)])
+
     assert_equal true, vb.filter(second, node, ctx3)
   end
 
   def test_the_framework_uses_one_stateful_instance
     framework = S::Framework.new
+
     assert_kind_of VB, framework.volume_binding
     refute_same framework.volume_binding, S::Framework.new.volume_binding
   end
