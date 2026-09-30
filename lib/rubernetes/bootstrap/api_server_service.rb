@@ -206,6 +206,7 @@ module Rubernetes
         @system_namespace_thread&.join(1)
         @dynamic_api_thread&.join(2)
         @repair_thread&.kill
+        @encryption_reload&.stop
         @store.close if @store.respond_to?(:close)
         @raft_server&.stop
         @logger.info("process.stopped", reason: reason)
