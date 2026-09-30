@@ -151,6 +151,38 @@ module Rubernetes
         @registry.increment("kubelet_certificate_manager_client_expiration_renew_errors")
       end
 
+      # serverTLSBootstrap: the serving certificate manager's gauge (+Inf
+      # without a certificate), the lifetime of each certificate it replaces
+      # and its renewal errors (kubelet_certificate_manager_server_* /
+      # kubelet_server_expiration_renew_errors).
+      def server_certificate_source=(source)
+        @registry.register("kubelet_certificate_manager_server_ttl_seconds", type: :gauge)
+        @registry.register("kubelet_certificate_manager_server_rotation_seconds", type: :histogram)
+        @registry.register("kubelet_server_expiration_renew_errors", type: :counter)
+        @registry.set("kubelet_server_expiration_renew_errors", 0)
+        clock = @wall_clock
+        @registry.add_collector do |registry|
+          certificate = begin
+            source.call
+          rescue StandardError
+            nil
+          end
+          ttl = certificate.respond_to?(:not_after) ? (certificate.not_after - clock.call).truncate.to_f : Float::INFINITY
+          registry.set("kubelet_certificate_manager_server_ttl_seconds", ttl)
+        end
+      end
+
+      # +previous+: the certificate just replaced (nil for the first one).
+      def server_certificate_rotated(previous)
+        return unless previous.respond_to?(:not_before)
+
+        @registry.observe("kubelet_certificate_manager_server_rotation_seconds", (@wall_clock.call - previous.not_before).to_f)
+      end
+
+      def server_certificate_renew_failed
+        @registry.increment("kubelet_server_expiration_renew_errors")
+      end
+
       # The sync loop saw the Pod (kubelet's first-seen time).
       def pod_seen(pod)
         uid = pod.is_a?(Hash) ? pod.dig("metadata", "uid").to_s : ""
