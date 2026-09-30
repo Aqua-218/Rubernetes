@@ -40,6 +40,8 @@ module Conformance
     L = Conformance::Lock
     ROOT = L::ROOT
     DEFAULT_ROOT = ENV.fetch("RUBERNETES_M8_CLUSTER_ROOT", "/srv/rbn-m8")
+    class Error < StandardError; end
+
     CONTROL_IDS = %w[control-0 control-1 control-2].freeze
     WORKER_IDS = %w[worker-0 worker-1 worker-2].freeze
     READY_TIMEOUT = Float(ENV.fetch("RUBERNETES_M8_READY_TIMEOUT", "180"))
@@ -125,6 +127,7 @@ module Conformance
       # "Address already in use" while the old ones keep the old nodes Ready,
       # and `up` reports a cluster that is half the previous one.
       down(options)
+      refuse_to_disturb_other_clusters!(root, profile)
       unmount_stale_mounts(root)
       FileUtils.rm_rf(root)
       FileUtils.mkdir_p(root)
@@ -550,6 +553,54 @@ module Conformance
     # and listening.  Every link on a bridge this provisioner owns (rbn0..N) is
     # a leftover by the time `up` runs, so it is removed; deleting the host end
     # of a veth deletes the pair.
+    # `up` owns the host-global objects of its profile (the rbn0..2 bridges
+    # and their veths, the cgroup tree, the rbn-* namespaces): the purges
+    # below would take them from any OTHER cluster of the same profile that is
+    # alive on this host (2026-09-30: an `up` for /srv/rbn-m8 deleted every
+    # Pod veth of the /srv/rbn-app GitLab cluster).  Refuse unless
+    # RUBERNETES_M8_FORCE_UP=1, and say which cluster is in the way; a
+    # separate network namespace + cgroup root (tools/conformance/netns_env.sh)
+    # is the supported way to run two instances.
+    def refuse_to_disturb_other_clusters!(root, profile)
+      return if ENV["RUBERNETES_M8_FORCE_UP"] == "1"
+
+      live = other_live_clusters(root)
+      return if live.empty?
+
+      names = live.map { |entry| "#{entry[:root]} (#{entry[:alive]} live processes)" }.join(", ")
+      raise Error, "another #{profile.fetch("name")} cluster is alive on this host: #{names}; " \
+                   "bring it down first, run this instance in its own netns (netns_env.sh), " \
+                   "or set RUBERNETES_M8_FORCE_UP=1 to take over its bridges and workloads"
+    end
+
+    def other_live_clusters(root)
+      Dir.glob("/srv/*/**/cluster.json").filter_map do |path|
+        other_root = File.dirname(path)
+        next if other_root == root || other_root.start_with?("#{root}/")
+
+        descriptor = begin
+          JSON.parse(File.binread(path))
+        rescue JSON::ParserError, SystemCallError
+          next
+        end
+        # Only a cluster whose bridges live in THIS network namespace can be
+        # disturbed; one brought up inside its own netns has its own rbnN.
+        next unless same_network_namespace?(descriptor)
+
+        alive = descriptor.fetch("processes", []).count { |process| alive?(process.fetch("pid")) }
+        {root: other_root, alive: alive} if alive.positive?
+      end
+    end
+
+    def same_network_namespace?(descriptor)
+      pid = descriptor.fetch("processes", []).map { |process| process.fetch("pid") }.find { |candidate| alive?(candidate) }
+      return false if pid.nil?
+
+      File.readlink("/proc/#{pid}/ns/net") == File.readlink("/proc/self/ns/net")
+    rescue SystemCallError
+      false
+    end
+
     def purge_stale_bridge_links
       WORKER_IDS.each_index do |index|
         bridge = "rbn#{index}"
@@ -862,7 +913,7 @@ module Conformance
                        # stays on loopback; the API server learns where to dial
                        # it from the node's streaming-address annotation, not
                        # from its InternalIP.
-                       "streaming" => {"host" => "127.0.0.1", "port" => 21_250 + index,
+                       "streaming" => {"host" => "127.0.0.1", "port" => free_port,
                                        "advertise_address" => "127.0.0.1"}.merge(kubelet_streaming_security(pki, id)),
                        "addresses" => [*node_advertise_addresses(index, profile).map do |address|
                          {"type" => "InternalIP", "address" => address}
