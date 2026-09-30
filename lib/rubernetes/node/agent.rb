@@ -1360,6 +1360,22 @@ module Rubernetes
 
       # nodeshutdown.NewManager with the kubelet's shutdownGracePeriod*
       # settings; nil (managerStub) without a grace period.
+      # The volume manager's SELinux desired-state checks (KEP-1710) on the
+      # Pod volumes; CSIDriver.spec.seLinuxMount read through the node's reader.
+      def attach_selinux_tracker
+        pod_volumes = @lifecycle.respond_to?(:pod_volumes) ? @lifecycle.pod_volumes : nil
+        return unless pod_volumes.respond_to?(:selinux_tracker=) && pod_volumes.selinux_tracker.nil?
+
+        reader = @lifecycle.respond_to?(:resource_reader) ? @lifecycle.resource_reader : nil
+        csi_driver_reader = lambda do |driver|
+          reader.respond_to?(:get) ? reader.get("csidrivers", driver, namespace: nil) : nil
+        rescue StandardError
+          nil
+        end
+        pod_volumes.selinux_tracker = Volume::SELinux::Tracker.new(metrics: @kubelet_metrics, feature_gates: @feature_gates,
+                                                                    csi_driver_reader: csi_driver_reader, logger: @logger)
+      end
+
       def build_shutdown_manager(config, feature_gates, kubelet_root, error_handler)
         config = Helpers.string_keys(config || {})
         gates = Helpers.string_keys(feature_gates || {})
