@@ -408,6 +408,18 @@ module Rubernetes
         end ? QUEUE : SKIP
       end
 
+      # helper.MatchingSchedulingGroup: same namespace and podGroupName.
+      SAME_GANG_POD_ADDED = lambda do |pod, _old, added|
+        mine = value(pod, "spec", "schedulingGroup", "podGroupName").to_s
+        theirs = value(added, "spec", "schedulingGroup", "podGroupName").to_s
+        !mine.empty? && mine == theirs && namespace(pod) == namespace(added) ? QUEUE : SKIP
+      end
+
+      OWN_POD_GROUP_ADDED = lambda do |pod, _old, group|
+        mine = value(pod, "spec", "schedulingGroup", "podGroupName").to_s
+        !mine.empty? && namespace(group) == namespace(pod) && name(group) == mine ? QUEUE : SKIP
+      end
+
       NODE_UPDATE_ALL = %w[Add UpdateNodeTaint UpdateNodeLabel].freeze
 
       REGISTRATIONS = {
