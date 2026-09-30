@@ -469,6 +469,47 @@ module Rubernetes
         end)
       end
 
+      # serverTLSBootstrap: the streaming server's certificate comes from a
+      # kubelet-serving CertificateSigningRequest and is rotated; the static
+      # tls.cert_file stays the fallback until the first one is issued.
+      def start_server_certificate_rotation!
+        return unless @config["server_tls_bootstrap"] == true
+
+        client = @node_agent.respond_to?(:api) && @node_agent.api.respond_to?(:client) ? @node_agent.api.client : nil
+        return log(:warn, "serving_certificate.rotation_disabled", reason: "no API client") if client.nil?
+
+        kubeconfig = @config["kubeconfig"].to_s
+        cert_dir = @config["cert_dir"] || File.join(File.dirname(File.expand_path(kubeconfig)), "pki")
+        addresses = lambda do
+          listed = @node_agent.respond_to?(:node_addresses) ? Array(@node_agent.node_addresses) : []
+          listed = Socket.ip_address_list.reject { |address| address.ipv4_loopback? || address.ipv6_loopback? || address.ipv6_linklocal? }.map(&:ip_address) if listed.empty?
+          listed
+        end
+        @serving_certificate_manager = Node::ServingCertificateManager.new(
+          node_name: @node_name, cert_dir: cert_dir, addresses: addresses,
+          logger: ->(level, event, **fields) { log(level, event, **fields) }
+        )
+        manager = @serving_certificate_manager
+        metrics = @node_agent.respond_to?(:kubelet_metrics) ? @node_agent.kubelet_metrics : nil
+        if metrics.respond_to?(:server_certificate_source=)
+          metrics.server_certificate_source = -> { manager.current_certificate }
+          manager.on_renew_failure = -> { metrics.server_certificate_renew_failed }
+        end
+        install = lambda do |certificate, previous|
+          key = manager.current_private_key
+          server = @streaming_server.respond_to?(:server) ? @streaming_server.server : nil
+          server.reload_tls!(certificate: certificate, private_key: key) if server.respond_to?(:reload_tls!) && certificate && key
+          metrics.server_certificate_rotated(previous) if metrics.respond_to?(:server_certificate_rotated)
+        end
+        current = manager.current_certificate
+        install.call(current, nil) if current && manager.valid?(current)
+        previous_holder = [current]
+        manager.start(client: client, on_rotate: lambda do |certificate|
+          install.call(certificate, previous_holder[0])
+          previous_holder[0] = certificate
+        end)
+      end
+
       def stop_streaming_server!
         @streaming_server&.stop
         @streaming_server = nil
