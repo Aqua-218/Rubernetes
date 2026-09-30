@@ -312,6 +312,23 @@ module Rubernetes
         end
       end
 
+      # The list work estimator's object counts and sizes per resource
+      # ("pods", "deployments.apps"), from the store's registry prefixes.
+      def store_object_stats
+        store = @store
+        return nil unless store.respond_to?(:object_counts) && store.respond_to?(:object_sizes)
+
+        lambda do
+          counts = store.object_counts
+          sizes = store.object_sizes
+          counts.each_with_object({}) do |(prefix, count), stats|
+            parts = prefix.split("/")
+            resource_key = parts.length == 3 ? parts[2] : "#{parts[3]}.#{parts[1]}"
+            stats[resource_key] = [count, sizes[prefix].to_i]
+          end
+        end
+      end
+
       def rbac_source
         Security::Authorization::StoreRBACSource.new(@store, key_for: ->(resource, namespace) { @key_for.call("rbac.authorization.k8s.io", "v1", resource, namespace, nil) })
       end
