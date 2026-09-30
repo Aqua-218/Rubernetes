@@ -224,7 +224,6 @@ module Rubernetes
           "apiserver_validation_declarative_validation_panic_total" => no_declarative,
           "apiserver_validation_declarative_validation_panics_total" => no_declarative,
           "apiserver_validation_declarative_validation_parity_discrepancies_total" => no_declarative,
-          "node_authorizer_graph_actions_duration_seconds" => "the node authorizer answers from the live store (Pods, claims, volumes, attachments read on demand); no graph is maintained, so there are no AddPod/DeletePod graph actions to time",
           "apiserver_stream_translator_requests_total" => no_stream_translation,
           "apiserver_stream_tunnel_requests_total" => no_stream_translation,
           "apiserver_storage_decode_errors_total" => "stored objects live decoded in the replica; a record that fails to decode is WAL or snapshot corruption, fatal at recovery, never a per-resource read error",
