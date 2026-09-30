@@ -67,6 +67,7 @@ module Rubernetes
         @exact, @prefixes = self.class.parse_allowlist(allowlist)
         @clock = clock
         @records = {}
+        @intents = {}
         @mutex = Mutex.new
       end
 
