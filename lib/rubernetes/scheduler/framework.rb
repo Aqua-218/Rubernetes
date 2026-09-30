@@ -1056,7 +1056,7 @@ module Rubernetes
           node.with_pods(assigned, preserve_requested: assigned.empty?)
         end
         CycleContext.new(nodes: node_objects, pods: pods, namespace_data: namespace_labels || @namespace_labels,
-                         volume_data: volume_data || {}, workload_selectors: workload_selectors)
+                         volume_data: volume_data || {}, workload_selectors: workload_selectors, pod_groups: pod_groups)
       end
 
       def run_pre_enqueue(pod, context, trace)
