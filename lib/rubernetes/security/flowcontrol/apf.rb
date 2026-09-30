@@ -1384,9 +1384,7 @@ module Rubernetes
           nil
         end
 
-        # AddRequestsInQueues / AddSeatsInQueues, ObserveQueueLength on
-        # enqueue, and the waiting ratios.
-        def note_queued(labels, mutating, delta, length)
+        def note_queued(labels, delta)
           adjust("apiserver_flowcontrol_current_inqueue_requests", labels, delta)
           adjust("apiserver_flowcontrol_current_inqueue_seats", labels, delta)
           # apiserver_current_inqueue_requests{request_kind}: the same queue
