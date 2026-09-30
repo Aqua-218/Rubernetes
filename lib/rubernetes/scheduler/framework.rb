@@ -444,6 +444,7 @@ module Rubernetes
         @preempting = {}
         @preemption_threads = []
         @preemption_observer = preemption_observer
+        @waiting_pods = {}
         @cycle = 0
         @batch = if opportunistic_batching
                    OpportunisticBatch.new(plugin_names: (filter_plugins + score_plugins).map(&:name))
