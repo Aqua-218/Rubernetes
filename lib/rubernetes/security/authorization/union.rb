@@ -29,6 +29,14 @@ module Rubernetes
           @privileged_groups = Array(privileged_groups)
         end
 
+        # --authorization-config reload: the chain is swapped in place, so
+        # every holder of this union (the pipeline, SubjectAccessReview)
+        # sees the new authorizers at once.
+        def reload(authorizers)
+          @authorizers = Array(authorizers).freeze
+          self
+        end
+
         def modes
           @authorizers.map(&:name)
         end
