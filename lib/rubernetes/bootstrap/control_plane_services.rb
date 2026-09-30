@@ -1768,7 +1768,11 @@ module Rubernetes
         return unless changed
 
         event = "#{kind}#{deleted ? "Delete" : (added ? "Add" : "Update")}"
-        timed_event(event) { retry_unschedulable("#{kind.downcase}_changed", event: event) if REQUEUE_KINDS.include?(kind) }
+        timed_event(event) do
+          if REQUEUE_KINDS.include?(kind)
+            retry_unschedulable("#{kind.downcase}_changed", event: event, old_object: deleted ? object : previous_object, new_object: deleted ? nil : object)
+          end
+        end
       end
 
       # The plugin inputs for one cycle, rebuilt only after an informer event.
