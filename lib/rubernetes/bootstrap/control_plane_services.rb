@@ -1752,6 +1752,7 @@ module Rubernetes
 
       def observe_cluster_object(kind, object, deleted: false)
         added = false
+        previous_object = nil
         changed = @mutex.synchronize do
           key = cluster_key(object)
           previous = @cluster_objects[kind][key]
