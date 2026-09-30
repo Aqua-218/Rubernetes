@@ -213,7 +213,6 @@ module Rubernetes
       no_peer_proxy = "no UnknownVersionInteroperabilityProxy / peer aggregated discovery: every replica serves the same API set from the shared raft log, so no request is rerouted to a peer and no peer discovery is fetched"
       no_delegation = "this is the kube-apiserver itself: delegated authn/authz (an aggregated server asking the kube-apiserver) is not a role it plays"
       no_declarative = "declarative validation (DeclarativeValidation / +k8s: validation tags) is not implemented; every rule is hand-written in Schema::KubernetesValidator"
-      no_evented_pleg = "EventedPLEG (Beta, off by default) is not implemented; upstream registers these only with the gate on"
       windows_only = "Windows HostProcess containers do not exist on Linux"
       UNIMPLEMENTED = {
         "kube-apiserver" => {
