@@ -69,6 +69,8 @@ module Rubernetes
           @name
         end
 
+        attr_reader :match_conditions
+
         def authorize(attributes)
           key = attributes.to_h
           now = @clock.call
