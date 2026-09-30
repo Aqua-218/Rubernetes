@@ -876,6 +876,17 @@ module Rubernetes
         end
       end
 
+      # desiredStateOfWorld.AddPodToVolume's SELinux part: the label this
+      # volume is mounted with for this Pod, or nil.
+      def admit_selinux(pod, uid, name, spec, contexts)
+        return nil unless @selinux_tracker
+
+        tracker_spec = spec["pod"] ? spec : spec.merge("pod" => pod)
+        @selinux_tracker.admit(pod_uid: uid, volume_name: name, spec: tracker_spec, contexts: contexts[name])
+      rescue Volume::SELinux::Error => error
+        raise SELinuxConflict, "volume #{name.inspect}: #{error.message}"
+      end
+
       def observe_operation(plugin, operation, status, started)
         return if @metrics_observer.nil? || plugin.nil?
 
