@@ -212,7 +212,6 @@ module Rubernetes
       no_exec_plugins = "exec credential plugins are refused by the kubeconfig loader (Kubeconfig::UnsupportedCredentialError)"
       no_stream_translation = "exec, attach and port-forward websocket requests are served natively by the subresource bridge: nothing is translated to SPDY (no StreamTranslator) and no SPDY is tunneled over websocket (no StreamTunnel)"
       no_peer_proxy = "no UnknownVersionInteroperabilityProxy / peer aggregated discovery: every replica serves the same API set from the shared raft log, so no request is rerouted to a peer and no peer discovery is fetched"
-      no_external_jwt = "the external JWT signer (ExternalServiceAccountTokenSigner) is not implemented: service account tokens are signed in process"
       no_delegation = "this is the kube-apiserver itself: delegated authn/authz (an aggregated server asking the kube-apiserver) is not a role it plays"
       no_declarative = "declarative validation (DeclarativeValidation / +k8s: validation tags) is not implemented; every rule is hand-written in Schema::KubernetesValidator"
       no_evented_pleg = "EventedPLEG (Beta, off by default) is not implemented; upstream registers these only with the gate on"
