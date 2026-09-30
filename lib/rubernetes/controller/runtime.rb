@@ -36,8 +36,10 @@ module Rubernetes
       # sync whose informer copy is older than that (the watch cache has not
       # caught up), counting it in <controller>_stale_sync_skips_total and
       # retrying shortly after.
-      CONSISTENCY_CONTROLLERS = {"daemonset-controller" => "daemonset", "job-controller" => "job",
-                                 "replicaset-controller" => "replicaset", "statefulset-controller" => "statefulset"}.freeze
+      CONSISTENCY_CONTROLLERS = {"daemonset-controller" => "daemonset_controller_stale_sync_skips_total",
+                                 "job-controller" => "job_controller_stale_sync_skips_total",
+                                 "replicaset-controller" => "replicaset_controller_stale_sync_skips_total",
+                                 "statefulset-controller" => "statefulset_controller_stale_sync_skips_total"}.freeze
       STALE_SYNC_RETRY_SECONDS = 0.1
 
       module ConsistencyStore
