@@ -69,6 +69,9 @@ module Rubernetes
       # bootstrap.LoadClientCert: a kubeconfig whose client certificate is
       # still valid is used as it is; otherwise a certificate is requested
       # with +bootstrap_client+ and +kubeconfig_path+ written to use it.
+      # ->() called after a failed renewal (the kubelet's renew-error counters).
+      attr_writer :on_renew_failure
+
       def bootstrap!(kubeconfig_path:, bootstrap_client:, server:, ca_file: nil)
         return kubeconfig_path if File.exist?(kubeconfig_path) && kubeconfig_valid?(kubeconfig_path)
 
