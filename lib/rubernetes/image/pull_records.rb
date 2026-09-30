@@ -176,6 +176,7 @@ module Rubernetes
           record[:updated] = @clock.call
           snapshot = record
         end
+        persist_record(image_ref.to_s, snapshot) if snapshot && @directory
       end
 
       # MustAttemptImagePull.  +pod_credentials+ is only called when the
