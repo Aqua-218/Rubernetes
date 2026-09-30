@@ -324,8 +324,6 @@ module Rubernetes
           "scheduler_podgroup_scheduling_attempt_duration_seconds" => no_pod_groups
         }.freeze,
         "kubelet" => {
-          "force_cleaned_failed_volume_operations_total" => no_force_clean,
-          "force_cleaned_failed_volume_operation_errors_total" => no_force_clean,
           "kubelet_certificate_manager_server_rotation_seconds" => no_serving_rotation,
           "kubelet_certificate_manager_server_ttl_seconds" => no_serving_rotation,
           "kubelet_server_expiration_renew_errors" => no_serving_rotation,
