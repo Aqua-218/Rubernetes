@@ -31,6 +31,41 @@ module Rubernetes
         @event_sink = event_sink
       end
 
+      # StaleControllerConsistency (Beta, on): the four workload controllers
+      # remember the resourceVersion of the object they last wrote and skip a
+      # sync whose informer copy is older than that (the watch cache has not
+      # caught up), counting it in <controller>_stale_sync_skips_total and
+      # retrying shortly after.
+      CONSISTENCY_CONTROLLERS = {"daemonset-controller" => "daemonset", "job-controller" => "job",
+                                 "replicaset-controller" => "replicaset", "statefulset-controller" => "statefulset"}.freeze
+      STALE_SYNC_RETRY_SECONDS = 0.1
+
+      module ConsistencyStore
+        LOCK = Mutex.new
+        WRITTEN = {}
+
+        module_function
+
+        def newer?(candidate, current)
+          Integer(candidate.to_s, 10) > Integer(current.to_s, 10)
+        rescue ArgumentError, TypeError
+          false
+        end
+
+        def record(controller, key, resource_version)
+          return if resource_version.to_s.empty?
+
+          LOCK.synchronize do
+            current = WRITTEN[[controller.to_s, key]]
+            WRITTEN[[controller.to_s, key]] = resource_version.to_s if current.nil? || newer?(resource_version, current)
+          end
+        end
+
+        def expected(controller, key) = LOCK.synchronize { WRITTEN[[controller.to_s, key]] }
+        def clear(controller, key) = LOCK.synchronize { WRITTEN.delete([controller.to_s, key]) }
+        def reset! = LOCK.synchronize { WRITTEN.clear }
+      end
+
       def reconcile(resource_or_key, store: @store, apply: nil, **options)
         leader_guard = options.delete(:leader_guard)
         if leader_guard && !leader_guard.respond_to?(:call)
