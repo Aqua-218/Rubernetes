@@ -167,7 +167,14 @@ module Rubernetes
           cipher.iv = nonce
           cipher.auth_data = associated_data
           ciphertext = cipher.update(plaintext) + cipher.final
-          wrapped = @client.encrypt(dek, uid: SecureRandom.uuid)
+          wrapped = begin
+            timed_kms("Encrypt") { @client.encrypt(dek, uid: SecureRandom.uuid) }
+          rescue StandardError
+            Encryption.increment("apiserver_storage_data_key_generation_failures_total")
+            raise
+          end
+          Encryption.observe("apiserver_storage_data_key_generation_duration_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - generation_started)
+          note_key_id(wrapped.fetch("key_id"), "to_storage")
           envelope = {"encryptedDEK" => Base64.strict_encode64(wrapped.fetch("ciphertext")), "keyID" => wrapped.fetch("key_id"),
                       "annotations" => wrapped.fetch("annotations", {}), "nonce" => Base64.strict_encode64(nonce),
                       "ciphertext" => Base64.strict_encode64(ciphertext + cipher.auth_tag)}
