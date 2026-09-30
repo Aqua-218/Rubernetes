@@ -111,7 +111,7 @@ module Rubernetes
       end
 
       def dynamic_paths
-        @mutex.synchronize { @dynamic.keys.map { |relative| relative.delete_suffix(".json").delete_prefix('v3/') } }
+        @mutex.synchronize { @dynamic.keys.map { |relative| relative.delete_suffix(".json").delete_prefix("v3/") } }
       end
 
       private

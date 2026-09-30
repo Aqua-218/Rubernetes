@@ -395,7 +395,8 @@ module Rubernetes
         container.register(:service) do |dependencies|
           config = dependencies.resolve(:config).process
           logger = dependencies.resolve(:logger)
-          if @process_name == "rubernetes-apiserver"
+          case @process_name
+          when "rubernetes-apiserver"
             APIServerService.new(
               config: config,
               logger: logger,
@@ -405,7 +406,7 @@ module Rubernetes
               identity_resolver: adapter_for(:api_identity_resolver, :identity_resolver),
               trusted_subresources: adapter_for(:trusted_subresources)
             )
-          elsif @process_name == "rubernetes-agent"
+          when "rubernetes-agent"
             AgentService.new(
               config: config,
               logger: logger,
@@ -417,7 +418,7 @@ module Rubernetes
               node_resolver: adapter_for(:node_resolver, :api_node_resolver),
               dns_service: dependencies.resolve(:dns_service)
             )
-          elsif @process_name == "rubernetes-controller-manager"
+          when "rubernetes-controller-manager"
             ControllerManagerService.new(
               config: config,
               logger: logger,
@@ -430,7 +431,7 @@ module Rubernetes
               resource_sources: @runtime_adapters[:controller_resource_sources] || @runtime_adapters["controller_resource_sources"] || {},
               runtime_adapters: @runtime_adapters
             )
-          elsif @process_name == "rubernetes-scheduler"
+          when "rubernetes-scheduler"
             SchedulerService.new(
               config: config,
               logger: logger,
@@ -443,7 +444,7 @@ module Rubernetes
               resource_sources: @runtime_adapters[:scheduler_resource_sources] || @runtime_adapters["scheduler_resource_sources"] || {},
               runtime_adapters: @runtime_adapters
             )
-          elsif @process_name == "rubernetes-proxy"
+          when "rubernetes-proxy"
             ProxyService.new(
               config: config,
               logger: logger,

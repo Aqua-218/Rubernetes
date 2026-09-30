@@ -299,7 +299,7 @@ module Rubernetes
           snapshot_revision = resolve_list_revision(resource_version, normalized_match, limit: normalized_limit)
           selector = normalize_selector(selector, label_selector: label_selector, field_selector: field_selector)
           normalized_gvr = gvr && gvr_key(gvr)
-          normalized_prefix = prefix && prefix.to_s.delete_prefix('/')
+          normalized_prefix = prefix && prefix.to_s.delete_prefix("/")
           objects = @objects.filter_map do |key, object|
             next unless key_matches?(key, normalized_prefix, normalized_gvr, namespace)
             next unless selector.nil? || selector.matches?(object)
@@ -430,7 +430,7 @@ module Rubernetes
                            resource_version: since, compacted_revision: @compacted_revision)
           end
           normalized_gvr = gvr && gvr_key(gvr)
-          normalized_prefix = prefix && prefix.to_s.delete_prefix('/')
+          normalized_prefix = prefix && prefix.to_s.delete_prefix("/")
           selector = normalize_selector(selector, label_selector: label_selector, field_selector: field_selector)
           condition = ConditionVariable.new
           subscription = Object.new
@@ -591,8 +591,8 @@ module Rubernetes
 
       def key_for(key = nil, gvr: nil, namespace: nil, name: nil, object: nil)
         if key
-          return key.to_s.delete_prefix('/') if key.to_s.start_with?("/registry/", "registry/")
-          return key.to_s.delete_prefix('/') if key.respond_to?(:to_s) && key.to_s.count("/") == 3
+          return key.to_s.delete_prefix("/") if key.to_s.start_with?("/registry/", "registry/")
+          return key.to_s.delete_prefix("/") if key.respond_to?(:to_s) && key.to_s.count("/") == 3
         end
         resource = gvr || key
         resource_key = gvr_key(resource)
@@ -628,7 +628,7 @@ module Rubernetes
           group = value.group.to_s
           return "#{group.empty? ? value.version : "#{group}/#{value.version}"}/#{value.resource}"
         end
-        value.to_s.delete_prefix('/').delete_prefix('registry/').delete_suffix('/')
+        value.to_s.delete_prefix("/").delete_prefix("registry/").delete_suffix("/")
       end
 
       def prepare_object(object, key, existing: nil)

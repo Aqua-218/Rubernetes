@@ -290,7 +290,7 @@ module Rubernetes
       def within_window?(event, timestamp)
         last = Time.parse(Support.value(event, "lastTimestamp").to_s)
         delta = Time.parse(timestamp) - last
-        delta >= 0 && delta <= @aggregation_window_seconds
+        delta.between?(0, @aggregation_window_seconds)
       rescue ArgumentError
         false
       end

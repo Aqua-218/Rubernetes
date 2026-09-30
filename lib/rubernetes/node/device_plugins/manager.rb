@@ -210,7 +210,7 @@ module Rubernetes
 
         # UpdateAllocatedDevices: allocations of Pods no longer active go.
         def remove_stale(active_pod_uids)
-          active = active_pod_uids.map(&:to_s).to_set
+          active = active_pod_uids.to_set(&:to_s)
           removed = @mutex.synchronize do
             before = @allocations.length
             @allocations.select! { |(uid, _, _), _| active.include?(uid) }

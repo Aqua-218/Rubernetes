@@ -1353,7 +1353,7 @@ module Rubernetes
           return [classes.map { |item| item[:upper] }, ub_max] if required - high_sum > -EPSILON
 
           fair_prop = required / target_sum
-          return [relative.map { |entry| entry[:target] * fair_prop }, fair_prop] if lb_max <= fair_prop && fair_prop <= ub_min
+          return [relative.map { |entry| entry[:target] * fair_prop }, fair_prop] if fair_prop.between?(lb_max, ub_min)
 
           # Bounds matter: walk the bounds in ascending order.
           bounds = []

@@ -178,7 +178,7 @@ module Rubernetes
 
       # heuristicsCopyFileLogs.
       def heuristic_file_log(service)
-        ["#{service}", "#{service}.log", "#{service}/#{service}.log"].each do |name|
+        [service.to_s, "#{service}.log", "#{service}/#{service}.log"].each do |name|
           target = inside(name)
           next unless target && File.file?(target)
 

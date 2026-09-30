@@ -1294,11 +1294,11 @@ module Rubernetes
                   container["image"]
                 end
               end
-            end.compact.map do |image|
+            end.compact.to_set do |image|
               Image::Reference.parse(image.to_s).to_s
             rescue StandardError
               image.to_s
-            end.to_set
+            end
           })
           ImageGCManager.new(
             resolver: source, fs_stats: -> { source.fs_stats }, pods: pods,

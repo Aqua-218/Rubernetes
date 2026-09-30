@@ -47,7 +47,7 @@ module M4PolicyOracleRunner
     case value
     when Hash then value.keys.map(&:to_s).sort.to_h do |key|
                      [key, canonical(value.fetch(value.keys.find do |k|
-        k.to_s == key
+                       k.to_s == key
                      end))]
                    end
     when Array then value.map { |child| canonical(child) }

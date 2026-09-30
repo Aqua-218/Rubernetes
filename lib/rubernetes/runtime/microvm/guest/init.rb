@@ -5,6 +5,7 @@
 # host side); everything writable lives on tmpfs or the injected
 # workspace.  Failures here are fatal for the VM: the host observes the
 # missing hello and never opens the workload gate.
+require "English"
 $LOAD_PATH.unshift("/opt/rubernetes/lib")
 $LOAD_PATH.unshift("/opt/rubernetes/ext")
 
@@ -25,7 +26,7 @@ end
 loop do
   pid = Process.wait(-1)
   if pid == supervisor
-    warn "[rubernetes-guest] supervisor exited (#{$?.inspect}); halting"
+    warn "[rubernetes-guest] supervisor exited (#{$CHILD_STATUS.inspect}); halting"
     sleep 2
     exit 1
   end

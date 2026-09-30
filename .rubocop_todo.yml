@@ -8,19 +8,6 @@
 
 # This cop supports safe autocorrection (--autocorrect).
 # Configuration parameters: EnforcedStyle, IndentationWidth.
-# SupportedStyles: with_first_argument, with_fixed_indentation
-Layout/ArgumentAlignment:
-  Exclude:
-    - 'Rakefile'
-    - 'lib/rubernetes/image/registry_client.rb'
-    - 'lib/rubernetes/proxy/nftables_netlink.rb'
-    - 'test/unit/m0_gate_test.rb'
-    - 'test/unit/m1_gate_test.rb'
-    - 'tools/milestones/m1_gate.rb'
-    - 'tools/milestones/m2_gate.rb'
-
-# This cop supports safe autocorrection (--autocorrect).
-# Configuration parameters: EnforcedStyle, IndentationWidth.
 # SupportedStyles: with_first_element, with_fixed_indentation
 Layout/ArrayAlignment:
   Exclude:
@@ -58,7 +45,30 @@ Layout/BlockAlignment:
 # This cop supports safe autocorrection (--autocorrect).
 Layout/BlockEndNewline:
   Exclude:
+    - 'benchmarks/consensus/raft_write_bench.rb'
     - 'lib/rubernetes/image/registry_client.rb'
+    - 'lib/rubernetes/metrics_server/server.rb'
+    - 'lib/rubernetes/proxy/iptables.rb'
+    - 'lib/rubernetes/runtime/microvm/identity.rb'
+    - 'tools/milestones/m5_fault_matrix_probe.rb'
+
+# This cop supports safe autocorrection (--autocorrect).
+Layout/EmptyLineAfterGuardClause:
+  Exclude:
+    - 'lib/rubernetes/runtime/microvm/identity.rb'
+
+# This cop supports safe autocorrection (--autocorrect).
+# Configuration parameters: EmptyLineBetweenMethodDefs, EmptyLineBetweenClassDefs, EmptyLineBetweenModuleDefs, DefLikeMacros, AllowAdjacentOneLineDefs, NumberOfEmptyLines.
+Layout/EmptyLineBetweenDefs:
+  Exclude:
+    - 'test/unit/proxy_conntrack_reconciler_test.rb'
+
+# This cop supports safe autocorrection (--autocorrect).
+# Configuration parameters: AllowForAlignment, AllowBeforeTrailingComments, ForceEqualSignAlignment.
+Layout/ExtraSpacing:
+  Exclude:
+    - 'lib/rubernetes/metrics_server/server.rb'
+    - 'lib/rubernetes/runtime/microvm/identity.rb'
 
 # This cop supports safe autocorrection (--autocorrect).
 # Configuration parameters: EnforcedStyle, IndentationWidth.
@@ -84,17 +94,18 @@ Layout/HashAlignment:
     - 'lib/rubernetes/image/registry_client.rb'
 
 # This cop supports safe autocorrection (--autocorrect).
-# Configuration parameters: Width, EnforcedStyleAlignWith, AllowedPatterns.
-# SupportedStylesAlignWith: start_of_line, relative_to_receiver
-Layout/IndentationWidth:
+# Configuration parameters: EnforcedStyle.
+# SupportedStyles: normal, indented_internal_methods
+Layout/IndentationConsistency:
   Exclude:
-    - 'lib/rubernetes/image/registry_client.rb'
-    - 'lib/rubernetes/node/probe_manager.rb'
-    - 'lib/rubernetes/platform/linux/security.rb'
-    - 'lib/rubernetes/proxy/backend.rb'
-    - 'lib/rubernetes/runtime/native.rb'
-    - 'test/conformance/kubernetes/m4_policy_oracle/runner.rb'
-    - 'tools/milestones/m5_probe_support.rb'
+    - 'apps/dashboard/lib/prom/rules.rb'
+    - 'benchmarks/consensus/raft_write_bench.rb'
+    - 'lib/rubernetes/metrics_server/server.rb'
+    - 'lib/rubernetes/proxy/engine.rb'
+    - 'lib/rubernetes/proxy/iptables.rb'
+    - 'lib/rubernetes/runtime/microvm/identity.rb'
+    - 'test/integration/network_policy_native_kernel_test.rb'
+    - 'tools/milestones/m5_fault_matrix_probe.rb'
 
 # This cop supports safe autocorrection (--autocorrect).
 # Configuration parameters: Max, AllowHeredoc, AllowURI, AllowQualifiedName, URISchemes, AllowRBSInlineAnnotation, AllowCopDirectives, AllowedPatterns, SplitStrings.
@@ -130,7 +141,6 @@ Layout/LineLength:
     - 'lib/rubernetes/bootstrap/kubernetes_service_reconciler.rb'
     - 'lib/rubernetes/bootstrap/security_assembly.rb'
     - 'lib/rubernetes/client/http_client.rb'
-    - 'lib/rubernetes/client/kubernetes_client.rb'
     - 'lib/rubernetes/consensus/node.rb'
     - 'lib/rubernetes/consensus/operation_journal.rb'
     - 'lib/rubernetes/consensus/raft_store.rb'
@@ -538,6 +548,13 @@ Layout/LineLength:
     - 'tools/verification/m2_runtime_trace_verifier.rb'
 
 # This cop supports safe autocorrection (--autocorrect).
+Layout/MultilineBlockLayout:
+  Exclude:
+    - 'benchmarks/consensus/raft_write_bench.rb'
+    - 'lib/rubernetes/proxy/iptables.rb'
+    - 'tools/milestones/m5_fault_matrix_probe.rb'
+
+# This cop supports safe autocorrection (--autocorrect).
 # Configuration parameters: EnforcedStyle, IndentationWidth.
 # SupportedStyles: aligned, indented
 Layout/MultilineOperationIndentation:
@@ -640,7 +657,9 @@ Lint/IncompatibleIoSelectWithFiberScheduler:
     - 'test/conformance/kubernetes/m4_network_observation/runner.rb'
     - 'test/conformance/kubernetes/m4_proxy_parity/runner.rb'
     - 'test/integration/http_transport_test.rb'
+    - 'test/unit/netlink_test.rb'
     - 'test/unit/process_gate_wrapper_descriptors_test.rb'
+    - 'test/unit/proxy_conntrack_reconciler_test.rb'
 
 Lint/IneffectiveAccessModifier:
   Exclude:
@@ -710,170 +729,6 @@ Lint/UnreachableLoop:
     - 'test/unit/apiserver_request_metrics_test.rb'
     - 'test/unit/apiserver_watch_list_metrics_test.rb'
     - 'test/unit/m2_probe_support_test.rb'
-
-# This cop supports safe autocorrection (--autocorrect).
-# Configuration parameters: IgnoreEmptyBlocks, AllowUnusedKeywordArguments.
-Lint/UnusedBlockArgument:
-  Exclude:
-    - 'test/security/m4_volume_security_test.rb'
-    - 'test/security/oci_layer_security_test.rb'
-    - 'test/unit/admission_reinvocation_test.rb'
-    - 'test/unit/admission_webhook_metrics_test.rb'
-    - 'test/unit/api_cached_update_read_test.rb'
-    - 'test/unit/custom_resource_field_selector_test.rb'
-    - 'test/unit/ebpf_program_test.rb'
-    - 'test/unit/ensure_secret_pulled_images_test.rb'
-    - 'test/unit/kubelet_debug_endpoints_test.rb'
-    - 'test/unit/m3_external_process_chaos_test.rb'
-    - 'test/unit/native_runtime_rollback_dependency_test.rb'
-    - 'test/unit/network_ledger_finish_test.rb'
-    - 'test/unit/network_persist_batching_test.rb'
-    - 'test/unit/node_pod_worker_coalescing_test.rb'
-    - 'test/unit/node_pod_worker_idle_retirement_test.rb'
-    - 'test/unit/node_sync_loop_test.rb'
-    - 'test/unit/orphan_dependents_resilience_test.rb'
-    - 'test/unit/raft_store_request_barrier_test.rb'
-    - 'test/unit/security_encryption_test.rb'
-    - 'test/verification/m2_hostile_verification_test.rb'
-
-# This cop supports safe autocorrection (--autocorrect).
-# Configuration parameters: AllowUnusedKeywordArguments, IgnoreEmptyMethods, IgnoreNotImplementedMethods, NotImplementedExceptions.
-# NotImplementedExceptions: NotImplementedError
-Lint/UnusedMethodArgument:
-  Exclude:
-    - 'apps/dashboard/test/lib/prom/kube_state_test.rb'
-    - 'apps/dashboard/test/lib/prom/targets_test.rb'
-    - 'apps/dashboard/test/support/fake_cluster.rb'
-    - 'lib/rubernetes/api/crd/manager.rb'
-    - 'lib/rubernetes/api/crd/structural_schema.rb'
-    - 'lib/rubernetes/api/node_endpoint_resolver.rb'
-    - 'lib/rubernetes/controller/advanced_misc.rb'
-    - 'lib/rubernetes/controller/builtins.rb'
-    - 'lib/rubernetes/controller/horizontal_pod_autoscaler_controller.rb'
-    - 'lib/rubernetes/controller/infrastructure_storage.rb'
-    - 'lib/rubernetes/controller/runtime.rb'
-    - 'lib/rubernetes/controller/store_adapter.rb'
-    - 'lib/rubernetes/image/content_store.rb'
-    - 'lib/rubernetes/network/dns_server.rb'
-    - 'lib/rubernetes/network/ipam.rb'
-    - 'lib/rubernetes/network/policy.rb'
-    - 'lib/rubernetes/node/container_spec.rb'
-    - 'lib/rubernetes/node/event_recorder.rb'
-    - 'lib/rubernetes/node/pod_files.rb'
-    - 'lib/rubernetes/node/pod_volumes.rb'
-    - 'lib/rubernetes/node/resource_manager.rb'
-    - 'lib/rubernetes/observability/metrics.rb'
-    - 'lib/rubernetes/platform/linux/native_adapters.rb'
-    - 'lib/rubernetes/proxy/backend.rb'
-    - 'lib/rubernetes/proxy/ebpf.rb'
-    - 'lib/rubernetes/runtime/cri/backend.rb'
-    - 'lib/rubernetes/runtime/cri/image_gc_source.rb'
-    - 'lib/rubernetes/runtime/microvm/adapter.rb'
-    - 'lib/rubernetes/schema/codec.rb'
-    - 'lib/rubernetes/schema/codec/proto_descriptor.rb'
-    - 'lib/rubernetes/schema/codec/protobuf.rb'
-    - 'lib/rubernetes/security/admission/plugins/webhooks.rb'
-    - 'lib/rubernetes/security/audit/backend.rb'
-    - 'lib/rubernetes/transport/http_server.rb'
-    - 'lib/rubernetes/volume/backends.rb'
-    - 'lib/rubernetes/volume/binding.rb'
-    - 'lib/rubernetes/volume/csi_uds_client.rb'
-    - 'lib/rubernetes/volume/kubernetes_csi.rb'
-    - 'lib/rubernetes/volume/manager.rb'
-    - 'lib/rubernetes/volume/native_device_adapter.rb'
-    - 'lib/rubernetes/volume/native_mount_adapter.rb'
-    - 'test/conformance/kubernetes/m4_network_observation/runner.rb'
-    - 'test/integration/bootstrap_process_services_test.rb'
-    - 'test/integration/m2_api_subresource_bridge_test.rb'
-    - 'test/integration/native_subresources_test.rb'
-    - 'test/integration/native_volume_assembler_test.rb'
-    - 'test/support/admission_policy_harness.rb'
-    - 'test/support/network_test_fakes.rb'
-    - 'test/support/node_lifecycle_fakes.rb'
-    - 'test/support/raft_write_client.rb'
-    - 'test/support/security_admission_fake_context.rb'
-    - 'test/unit/agent_restart_recovery_test.rb'
-    - 'test/unit/api_delete_preconditions_test.rb'
-    - 'test/unit/apiserver_conversion_webhook_metrics_test.rb'
-    - 'test/unit/apply_batch_parallel_delete_test.rb'
-    - 'test/unit/client_watch_gone_propagates_test.rb'
-    - 'test/unit/consensus_apply_invariants_test.rb'
-    - 'test/unit/controller_adoption_guard_test.rb'
-    - 'test/unit/controller_manager_collectors_test.rb'
-    - 'test/unit/controller_namespace_terminating_create_test.rb'
-    - 'test/unit/controller_service_account_credentials_test.rb'
-    - 'test/unit/cri_support_check_test.rb'
-    - 'test/unit/csr_sar_approval_test.rb'
-    - 'test/unit/daemonset_live_availability_test.rb'
-    - 'test/unit/device_cgroup_filter_test.rb'
-    - 'test/unit/disruption_target_condition_test.rb'
-    - 'test/unit/dra_resource_health_test.rb'
-    - 'test/unit/encryption_at_rest_test.rb'
-    - 'test/unit/eviction_disruption_budget_test.rb'
-    - 'test/unit/gc_dangling_owner_sweep_test.rb'
-    - 'test/unit/idempotent_teardown_test.rb'
-    - 'test/unit/image_resolver_cache_test.rb'
-    - 'test/unit/image_resolver_single_flight_test.rb'
-    - 'test/unit/init_container_restart_count_test.rb'
-    - 'test/unit/k1_conformance_fixes_test.rb'
-    - 'test/unit/kubelet_api_auth_test.rb'
-    - 'test/unit/kubelet_client_certificate_test.rb'
-    - 'test/unit/kubelet_csi_plugin_registration_test.rb'
-    - 'test/unit/kubelet_lifecycle_hook_fallback_test.rb'
-    - 'test/unit/kubelet_restart_cleanup_idempotency_test.rb'
-    - 'test/unit/kubelet_volume_expansion_test.rb'
-    - 'test/unit/kubelet_volume_metrics_test.rb'
-    - 'test/unit/kubelet_volumes_in_use_test.rb'
-    - 'test/unit/lifecycle_forget_gone_pod_test.rb'
-    - 'test/unit/lifecycle_metadata_volume_refresh_test.rb'
-    - 'test/unit/m2_probe_support_test.rb'
-    - 'test/unit/m4_volume_csi_lifecycle_test.rb'
-    - 'test/unit/metrics_server_test.rb'
-    - 'test/unit/namespace_contents_parallel_list_test.rb'
-    - 'test/unit/namespace_destroy_idempotent_test.rb'
-    - 'test/unit/namespace_process_descriptor_ownership_test.rb'
-    - 'test/unit/native_kernel_observer_test.rb'
-    - 'test/unit/native_runtime_lifecycle_test.rb'
-    - 'test/unit/network_neighbour_flush_test.rb'
-    - 'test/unit/node_backoff_wakeup_test.rb'
-    - 'test/unit/node_container_manager_lifecycle_test.rb'
-    - 'test/unit/node_dra_lifecycle_test.rb'
-    - 'test/unit/node_dra_manager_test.rb'
-    - 'test/unit/node_ephemeral_container_start_test.rb'
-    - 'test/unit/node_ephemeral_status_publish_test.rb'
-    - 'test/unit/node_pod_level_resize_test.rb'
-    - 'test/unit/node_probe_persist_test.rb'
-    - 'test/unit/node_probe_restart_test.rb'
-    - 'test/unit/node_restart_all_containers_test.rb'
-    - 'test/unit/node_restart_backoff_test.rb'
-    - 'test/unit/node_restart_exit_race_test.rb'
-    - 'test/unit/node_wakeup_timer_test.rb'
-    - 'test/unit/oci_puller_parallel_layers_test.rb'
-    - 'test/unit/orphan_dependents_resilience_test.rb'
-    - 'test/unit/pivot_root_detach_tree_test.rb'
-    - 'test/unit/pod_certificate_manager_test.rb'
-    - 'test/unit/probe_ipv6_hosts_test.rb'
-    - 'test/unit/probe_named_port_test.rb'
-    - 'test/unit/pv_binder_upstream_test.rb'
-    - 'test/unit/pv_collector_metrics_test.rb'
-    - 'test/unit/resource_source_watch_bookmarks_test.rb'
-    - 'test/unit/resourcequota_compute_usage_test.rb'
-    - 'test/unit/runtime_common_test.rb'
-    - 'test/unit/scheduler_async_bind_test.rb'
-    - 'test/unit/scheduler_nomination_wiring_test.rb'
-    - 'test/unit/status_merge_operation_test.rb'
-    - 'test/unit/store_adapter_claim_status_replace_test.rb'
-    - 'test/unit/store_adapter_delete_not_found_test.rb'
-    - 'test/unit/volume_selinux_test.rb'
-    - 'test/verification/m2_node_recovery_semantics_test.rb'
-    - 'tools/conformance/lanes.rb'
-    - 'tools/differential/map_reinvocation_differential.rb'
-    - 'tools/milestones/m2_kubernetes_lifecycle_oracle.rb'
-    - 'tools/milestones/m2_lifecycle_probe.rb'
-    - 'tools/milestones/m2_probe_support.rb'
-    - 'tools/milestones/m3_workload_probe.rb'
-    - 'tools/milestones/m4_gate.rb'
-    - 'tools/milestones/m6_security_pipeline_probe.rb'
 
 Lint/UselessRescue:
   Exclude:
@@ -1056,15 +911,6 @@ Performance/Count:
     - 'tools/milestones/m3_kubernetes_scheduler_oracle.rb'
     - 'tools/milestones/m3_kubernetes_workload_oracle.rb'
 
-# This cop supports unsafe autocorrection (--autocorrect-all).
-Performance/Detect:
-  Exclude:
-    - 'lib/rubernetes/api/table_printer.rb'
-    - 'test/unit/apf_fair_queuing_test.rb'
-    - 'test/unit/cri_backend_test.rb'
-    - 'tools/milestones/m2_probe_support.rb'
-    - 'tools/milestones/m4_proxy_probe.rb'
-
 Performance/FixedSize:
   Exclude:
     - 'test/unit/proxy_conntrack_reconciler_test.rb'
@@ -1161,19 +1007,10 @@ Style/ArgumentsForwarding:
 # AllowedMethods: lambda, proc, it
 Style/BlockDelimiters:
   Exclude:
+    - 'benchmarks/consensus/raft_write_bench.rb'
     - 'lib/rubernetes/image/registry_client.rb'
-
-# This cop supports unsafe autocorrection (--autocorrect-all).
-# Configuration parameters: MinBranchesCount.
-Style/CaseLikeIf:
-  Exclude:
-    - 'apps/dashboard/lib/promql/engine.rb'
-    - 'lib/rubernetes/bootstrap/assembler.rb'
-    - 'lib/rubernetes/network/netlink.rb'
-    - 'lib/rubernetes/runtime/native.rb'
-    - 'lib/rubernetes/security/cel/values.rb'
-    - 'tools/conformance/k5_differential.rb'
-    - 'tools/milestones/m3_idempotency_probe.rb'
+    - 'lib/rubernetes/proxy/iptables.rb'
+    - 'tools/milestones/m5_fault_matrix_probe.rb'
 
 # This cop supports unsafe autocorrection (--autocorrect-all).
 # Configuration parameters: EnforcedStyle, EnforcedStyleForClasses, EnforcedStyleForModules.
@@ -1194,17 +1031,6 @@ Style/ClassAndModuleChildren:
     - 'apps/dashboard/test/lib/tsdb/store_test.rb'
 
 # This cop supports unsafe autocorrection (--autocorrect-all).
-# Configuration parameters: AllowedMethods, AllowedPatterns.
-# AllowedMethods: ==, equal?, eql?
-Style/ClassEqualityComparison:
-  Exclude:
-    - 'apps/dashboard/app/controllers/application_controller.rb'
-    - 'lib/rubernetes/platform/linux/native_adapters.rb'
-    - 'lib/rubernetes/proxy/backend.rb'
-    - 'lib/rubernetes/schema/validator.rb'
-    - 'lib/rubernetes/security/cel/library.rb'
-
-# This cop supports unsafe autocorrection (--autocorrect-all).
 # Configuration parameters: AllowedReceivers.
 Style/CollectionCompact:
   Exclude:
@@ -1220,34 +1046,9 @@ Style/CollectionQuerying:
     - 'tools/milestones/m8_selection_probe.rb'
 
 # This cop supports unsafe autocorrection (--autocorrect-all).
-Style/CombinableLoops:
-  Exclude:
-    - 'apps/dashboard/lib/prom/rules.rb'
-    - 'benchmarks/consensus/raft_write_bench.rb'
-    - 'lib/rubernetes/metrics_server/server.rb'
-    - 'lib/rubernetes/proxy/engine.rb'
-    - 'lib/rubernetes/proxy/iptables.rb'
-    - 'lib/rubernetes/runtime/microvm/identity.rb'
-    - 'test/integration/network_policy_native_kernel_test.rb'
-    - 'tools/milestones/m5_fault_matrix_probe.rb'
-
-# This cop supports unsafe autocorrection (--autocorrect-all).
 Style/CommentedKeyword:
   Exclude:
     - 'test/unit/evented_pleg_test.rb'
-
-# This cop supports unsafe autocorrection (--autocorrect-all).
-Style/ComparableBetween:
-  Exclude:
-    - 'apps/dashboard/lib/tsdb/store.rb'
-    - 'lib/rubernetes/controller/horizontal_pod_autoscaler_controller.rb'
-    - 'lib/rubernetes/controller/job_controller.rb'
-    - 'lib/rubernetes/image/registry_client.rb'
-    - 'lib/rubernetes/node/event_recorder.rb'
-    - 'lib/rubernetes/schema/codec/protobuf.rb'
-    - 'lib/rubernetes/security/flowcontrol/apf.rb'
-    - 'lib/rubernetes/transport/http_server.rb'
-    - 'test/conformance/kubernetes/m4_volume_observation/observer_support.rb'
 
 # This cop supports safe autocorrection (--autocorrect).
 Style/ComparableClamp:
@@ -1275,10 +1076,7 @@ Style/DirectiveScope:
 # SupportedStyles: empty, nil, both
 Style/EmptyElse:
   Exclude:
-    - 'lib/rubernetes/proxy/nftables_netlink.rb'
-    - 'lib/rubernetes/rubectl/cli.rb'
     - 'lib/rubernetes/schema/codec/proto_descriptor.rb'
-    - 'lib/rubernetes/volume/manager.rb'
     - 'tools/milestones/m3_idempotency_probe.rb'
 
 # Configuration parameters: EnforcedStyle.
@@ -1357,15 +1155,6 @@ Style/FormatStringToken:
     - 'tools/repo/auto_commit.rb'
     - 'tools/test/parallel_runner.rb'
 
-# This cop supports unsafe autocorrection (--autocorrect-all).
-Style/GlobalStdStream:
-  Exclude:
-    - 'apps/dashboard/config/environments/production.rb'
-    - 'lib/rubernetes/platform/linux/native_adapters.rb'
-    - 'test/conformance/kubernetes/m4_proxy_parity/runner.rb'
-    - 'tools/milestones/m3_kubernetes_scheduler_oracle.rb'
-    - 'tools/milestones/m3_kubernetes_workload_oracle.rb'
-
 # Configuration parameters: AllowedVariables.
 Style/GlobalVars:
   Exclude:
@@ -1376,30 +1165,11 @@ Style/HashLikeCase:
   Exclude:
     - 'tools/conformance/k6_corpus.rb'
 
-# This cop supports unsafe autocorrection (--autocorrect-all).
-Style/HashTransformKeys:
-  Exclude:
-    - 'lib/rubernetes/bootstrap/control_plane_services.rb'
-    - 'lib/rubernetes/client/kubernetes_client.rb'
-    - 'lib/rubernetes/image/verifier.rb'
-    - 'lib/rubernetes/runtime/native/namespace.rb'
-    - 'lib/rubernetes/runtime/native/resources.rb'
-
 # This cop supports safe autocorrection (--autocorrect).
 # Configuration parameters: AllowIfModifier.
 Style/IfInsideElse:
   Exclude:
     - 'lib/rubernetes/consensus/node.rb'
-
-# This cop supports safe autocorrection (--autocorrect).
-Style/IfUnlessModifier:
-  Exclude:
-    - 'lib/rubernetes/image/registry_client.rb'
-    - 'lib/rubernetes/network/dns_server.rb'
-    - 'lib/rubernetes/schema/catalog.rb'
-    - 'tools/milestones/m1_gate.rb'
-    - 'tools/schema/generate.rb'
-    - 'tools/schema/import_kubernetes.rb'
 
 # This cop supports unsafe autocorrection (--autocorrect-all).
 # Configuration parameters: AllowedMethods.
@@ -1426,16 +1196,6 @@ Style/MapToHash:
   Exclude:
     - 'lib/rubernetes/network/topology.rb'
     - 'tools/differential/service_ip_family_differential.rb'
-
-# This cop supports unsafe autocorrection (--autocorrect-all).
-Style/MapToSet:
-  Exclude:
-    - 'lib/rubernetes/dra/allocator.rb'
-    - 'lib/rubernetes/network/ipam.rb'
-    - 'lib/rubernetes/node/agent.rb'
-    - 'lib/rubernetes/node/device_plugins/manager.rb'
-    - 'lib/rubernetes/node/dra_manager.rb'
-    - 'tools/schema/field_parity.rb'
 
 # This cop supports unsafe autocorrection (--autocorrect-all).
 Style/MinMaxComparison:
@@ -1524,29 +1284,17 @@ Style/RedundantInitialize:
   Exclude:
     - 'test/unit/endpointslice_placeholder_test.rb'
 
-# This cop supports unsafe autocorrection (--autocorrect-all).
-Style/RedundantInterpolation:
+# This cop supports safe autocorrection (--autocorrect).
+Style/RedundantParentheses:
   Exclude:
-    - 'lib/rubernetes/node/probe_manager.rb'
-    - 'lib/rubernetes/node/system_logs.rb'
+    - 'lib/rubernetes/controller/horizontal_pod_autoscaler_controller.rb'
     - 'lib/rubernetes/security/encryption/configuration.rb'
-    - 'test/unit/field_manager_update_test.rb'
-    - 'test/unit/m2_gate_test.rb'
-    - 'test/unit/native_kernel_observer_test.rb'
+    - 'lib/rubernetes/transport/http_server.rb'
 
 # This cop supports safe autocorrection (--autocorrect).
 Style/RedundantSelfAssignmentBranch:
   Exclude:
     - 'lib/rubernetes/image/registry_client.rb'
-
-# This cop supports unsafe autocorrection (--autocorrect-all).
-Style/RedundantSort:
-  Exclude:
-    - 'lib/rubernetes/client/kubernetes_client.rb'
-    - 'lib/rubernetes/proxy/backend.rb'
-    - 'lib/rubernetes/proxy/engine.rb'
-    - 'lib/rubernetes/volume/binding.rb'
-    - 'tools/milestones/m1_kubernetes_validation_oracle.rb'
 
 # This cop supports unsafe autocorrection (--autocorrect-all).
 # Configuration parameters: AllowedMethods, AllowedPatterns.
@@ -1576,67 +1324,11 @@ Style/SafeNavigationChainLength:
     - 'tools/milestones/m1_roundtrip_probe.rb'
 
 # This cop supports unsafe autocorrection (--autocorrect-all).
-Style/SelectByRegexp:
-  Exclude:
-    - 'apps/dashboard/lib/tsdb/store.rb'
-    - 'lib/rubernetes/consensus/storage.rb'
-    - 'lib/rubernetes/security/admission/policy_type_checker.rb'
-    - 'tools/milestones/m2_probe_support.rb'
-    - 'tools/verification/m2_formal_verify.rb'
-
-# This cop supports unsafe autocorrection (--autocorrect-all).
 # Configuration parameters: AllowSend.
 Style/SendWithLiteralMethodName:
   Exclude:
     - 'lib/rubernetes/node/lifecycle.rb'
     - 'tools/milestones/m2_kubernetes_lifecycle_oracle.rb'
-
-# This cop supports unsafe autocorrection (--autocorrect-all).
-Style/SingleArgumentDig:
-  Exclude:
-    - 'lib/rubernetes/api/crd/manager.rb'
-    - 'lib/rubernetes/controller/endpointslice_controller.rb'
-    - 'lib/rubernetes/controller/endpointslice_mirroring_controller.rb'
-    - 'lib/rubernetes/security/admission/plugins/core.rb'
-    - 'test/conformance/kubernetes/m3_control_plane_chaos/watch_control.rb'
-
-# This cop supports unsafe autocorrection (--autocorrect-all).
-# Configuration parameters: RequireEnglish, EnforcedStyle.
-# SupportedStyles: use_perl_names, use_english_names, use_builtin_english_names
-Style/SpecialGlobalVars:
-  Exclude:
-    - 'lib/rubernetes/api/long_running_body.rb'
-    - 'lib/rubernetes/runtime/microvm/guest/init.rb'
-    - 'lib/rubernetes/runtime/microvm/guest/supervisor.rb'
-    - 'test/conformance/kubernetes/m3_control_plane_chaos/runner.rb'
-    - 'test/integration/device_cgroup_kernel_test.rb'
-    - 'test/integration/http_transport_test.rb'
-    - 'tools/milestones/m1_kubernetes_validation_oracle.rb'
-    - 'tools/milestones/m2_probe_support.rb'
-
-# This cop supports safe autocorrection (--autocorrect).
-# Configuration parameters: EnforcedStyle, ConsistentQuotesInMultiline.
-# SupportedStyles: single_quotes, double_quotes
-Style/StringLiterals:
-  Exclude:
-    - 'lib/rubernetes/api/memory_store.rb'
-    - 'lib/rubernetes/api/openapi.rb'
-    - 'lib/rubernetes/api/registry.rb'
-    - 'lib/rubernetes/client/kubeconfig.rb'
-    - 'lib/rubernetes/client/kubernetes_client.rb'
-    - 'lib/rubernetes/controller/dsl.rb'
-    - 'lib/rubernetes/controller/resourcequota_controller.rb'
-    - 'lib/rubernetes/controller/runtime.rb'
-    - 'lib/rubernetes/controller/security_lifecycle.rb'
-    - 'lib/rubernetes/node/csi_plugins.rb'
-    - 'lib/rubernetes/node/dns_service.rb'
-    - 'lib/rubernetes/node/pod_files.rb'
-    - 'lib/rubernetes/platform/linux/capabilities.rb'
-    - 'lib/rubernetes/platform/linux/security.rb'
-    - 'lib/rubernetes/schema/codec/proto_descriptor.rb'
-    - 'lib/rubernetes/schema/registry.rb'
-    - 'lib/rubernetes/storage/memory_store.rb'
-    - 'tools/milestones/m3_evidence_support.rb'
 
 # This cop supports safe autocorrection (--autocorrect).
 # Configuration parameters: EnforcedStyle.
@@ -1647,6 +1339,14 @@ Style/StringLiteralsInInterpolation:
     - 'lib/rubernetes/schema/codec/proto_descriptor.rb'
     - 'lib/rubernetes/schema/kubernetes_validator/pod_update.rb'
     - 'tools/milestones/m3_idempotency_probe.rb'
+
+# This cop supports unsafe autocorrection (--autocorrect-all).
+# Configuration parameters: AllowMethodsWithArguments, AllowedMethods, AllowedPatterns, AllowComments.
+# AllowedMethods: define_method
+Style/SymbolProc:
+  Exclude:
+    - 'lib/rubernetes/bootstrap/control_plane_services.rb'
+    - 'lib/rubernetes/runtime/native/namespace.rb'
 
 # This cop supports safe autocorrection (--autocorrect).
 Style/WhileUntilModifier:

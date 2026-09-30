@@ -366,7 +366,7 @@ module Rubernetes
             end
             field_number = key >> 3
             wire_type = key & 0x07
-            validate_field_number!(field_number) unless field_number >= 1 && field_number <= MAX_FIELD_NUMBER
+            validate_field_number!(field_number) unless field_number.between?(1, MAX_FIELD_NUMBER)
             length = wire_type == WIRE_LENGTH_DELIMITED ? input.getbyte(offset) : nil
             small = wire_type == WIRE_VARINT ? input.getbyte(offset) : nil
             if small && small < 0x80

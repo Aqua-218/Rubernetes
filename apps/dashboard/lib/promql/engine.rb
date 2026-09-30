@@ -189,11 +189,12 @@ module Promql
     end
 
     def window_for(selector, context, extra_ms)
-      if selector.at.is_a?(Integer)
+      case selector.at
+      when Integer
         base_min = base_max = selector.at
-      elsif selector.at == :start
+      when :start
         base_min = base_max = context.start_ms
-      elsif selector.at == :end
+      when :end
         base_min = base_max = context.end_ms
       else
         base_min = context.start_ms

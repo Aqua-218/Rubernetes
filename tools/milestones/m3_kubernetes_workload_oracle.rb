@@ -38,7 +38,7 @@ module M3KubernetesWorkloadOracle
 
   module_function
 
-  def run(input_bytes: STDIN.read, source_root: ENV["RUBERNETES_M3_KUBERNETES_SOURCE_ROOT"] || ENV.fetch("KUBERNETES_SOURCE_ROOT", nil),
+  def run(input_bytes: $stdin.read, source_root: ENV["RUBERNETES_M3_KUBERNETES_SOURCE_ROOT"] || ENV.fetch("KUBERNETES_SOURCE_ROOT", nil),
           go: ENV.fetch("GO", "go"))
     request = JSON.parse(input_bytes, max_nesting: 512)
     verify_request!(request)

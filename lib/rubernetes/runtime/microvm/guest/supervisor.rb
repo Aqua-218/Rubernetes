@@ -9,6 +9,7 @@
 # registry or cluster credentials; everything it knows arrives through the
 # identity injection and is discarded on the next one.
 
+require "English"
 require "base64"
 require "digest"
 require "fiddle"
@@ -991,7 +992,7 @@ module Rubernetes
 
           def shell!(*arguments)
             output = IO.popen(arguments, err: %i[child out], &:read)
-            raise NetworkError, "#{arguments.join(" ")} failed: #{output.to_s.strip}" unless $?.success?
+            raise NetworkError, "#{arguments.join(" ")} failed: #{output.to_s.strip}" unless $CHILD_STATUS.success?
           rescue SystemCallError => error
             raise NetworkError, "#{arguments.join(" ")} could not run: #{error.message}"
           end

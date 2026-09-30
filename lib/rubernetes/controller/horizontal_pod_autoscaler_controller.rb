@@ -316,7 +316,7 @@ module Rubernetes
     # pkg/controller/podautoscaler/replica_calculator.go.
     class ReplicaCalculator
       Tolerances = Struct.new(:scale_down, :scale_up) do
-        def within?(ratio) = (1.0 - scale_down) <= ratio && ratio <= (1.0 + scale_up)
+        def within?(ratio) = ratio.between?((1.0 - scale_down), (1.0 + scale_up))
       end
 
       def initialize(metrics_client:, pods:, clock:, cpu_initialization_period: 300, delay_of_initial_readiness_status: 30)

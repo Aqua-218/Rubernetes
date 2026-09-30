@@ -56,7 +56,7 @@ class APFFairQueuingTest < Minitest::Test
     @now += 0.003
     set.finish(dispatched)
     dispatched = (flood + [quiet]).find { |request| request.decision == :execute && !order.include?(request) && request != dispatched }
-    second = (flood + [quiet]).select { |request| request.decision == :execute && request.start_time == @now }.first
+    second = (flood + [quiet]).find { |request| request.decision == :execute && request.start_time == @now }
     order << second.distinguisher
     # The flood's queue already spent virtual time on the holder, so the
     # quiet flow's request finishes earliest in virtual time and goes first.

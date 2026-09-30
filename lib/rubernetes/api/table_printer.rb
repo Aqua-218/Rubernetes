@@ -1059,7 +1059,7 @@ module Rubernetes
         "Node" => lambda do |node, now|
           spec = spec(node)
           status = status(node)
-          ready = Array(status["conditions"]).select { |condition| condition["type"] == "Ready" }.last
+          ready = Array(status["conditions"]).reverse.find { |condition| condition["type"] == "Ready" }
           states = if ready
                      [ready["status"] == "True" ? "Ready" : "NotReady"]
                    else

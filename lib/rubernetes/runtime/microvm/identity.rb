@@ -190,8 +190,7 @@ module Rubernetes
             value = fields[field]
             next if value.nil?
             raise IdentityError, "identity value for #{field} was issued before" if @seen[field].key?(value)
-          end
-          ROTATED_FIELDS.each { |field| @seen[field][fields[field]] = true unless fields[field].nil? }
+          @seen[field][fields[field]] = true unless fields[field].nil?  end
         end
 
         def append!(event, record)

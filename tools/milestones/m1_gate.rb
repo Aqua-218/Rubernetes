@@ -866,7 +866,9 @@ module M1Gate
       errors << "generation runs must produce the same tree digest" unless run_digests.length == 2 && run_digests.uniq.length == 1
       canonical_digest = document["canonical_tree_sha256"]
       errors << "generation report must include the canonical tree SHA-256" unless valid_digest?(canonical_digest)
-      errors << "generation output must match the canonical tree" unless valid_digest?(canonical_digest) && run_digests.all?(canonical_digest)
+      unless valid_digest?(canonical_digest) && run_digests.all?(canonical_digest)
+        errors << "generation output must match the canonical tree"
+      end
       byte_differences = document["byte_differences"] || document["byte_diff_entries"]
       canonical_differences = document["canonical_differences"] || document["canonical_diff_entries"]
       errors << "generation byte difference entries are required" unless byte_differences.is_a?(Array)
@@ -1452,7 +1454,7 @@ module M1Gate
           errors << "API surface discovery endpoint #{index} #{key} must be an object" unless valid_body
           next unless valid_body && valid_digest?(entry[key.sub(/_body\z/,
                                                                 "_sha256")]) && entry[key.sub(/_body\z/,
-                                                                                                "_sha256")] != canonical_discovery_digest(entry[key])
+                                                                                              "_sha256")] != canonical_discovery_digest(entry[key])
 
           errors << "API surface discovery endpoint #{index} #{key} digest does not match the body"
         end
@@ -1809,9 +1811,7 @@ module M1Gate
         unless all_headers.keys.all? { |name| name.is_a?(String) && name == name.downcase && name.match?(/\A[a-z0-9-]+\z/) }
           errors << "#{label} #{source} header observation names must be normalized lowercase tokens"
         end
-        unless all_headers.values.all?(String)
-          errors << "#{label} #{source} header observation values must be strings"
-        end
+        errors << "#{label} #{source} header observation values must be strings" unless all_headers.values.all?(String)
         errors << "#{label} #{source} header observation excludes an unexpected header" unless
           excluded.all? { |name| HEADER_EXCLUSION_ALLOWLIST.key?(name) }
         expected_compared = all_headers.reject { |name, _value| HEADER_EXCLUSION_ALLOWLIST.key?(name) }

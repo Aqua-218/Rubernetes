@@ -20,7 +20,7 @@ module M3KubernetesSchedulerOracle
 
   module_function
 
-  def run(input_bytes: STDIN.read, source_root: ENV["RUBERNETES_M3_KUBERNETES_SOURCE_ROOT"] || ENV.fetch("KUBERNETES_SOURCE_ROOT", nil),
+  def run(input_bytes: $stdin.read, source_root: ENV["RUBERNETES_M3_KUBERNETES_SOURCE_ROOT"] || ENV.fetch("KUBERNETES_SOURCE_ROOT", nil),
           go: ENV.fetch("GO", "go"))
     source = verify_source!(source_root)
     request = JSON.parse(input_bytes, max_nesting: 512)

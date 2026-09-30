@@ -35,7 +35,7 @@ class NativeKernelObserverTest < Minitest::Test
   end
 
   def test_reports_a_reused_pid_with_a_different_identity
-    claimed = process_claim(pid: @pid, start_time: "#{@start_time.to_i + 12_345}")
+    claimed = process_claim(pid: @pid, start_time: (@start_time.to_i + 12_345).to_s)
     entry = observe([claimed]).fetch(0)
 
     refute_equal(claimed.fetch("identity"), entry.fetch("identity"),

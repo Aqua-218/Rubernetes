@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "English"
 require "json"
 require "net/http"
 require "open3"
@@ -673,7 +674,7 @@ class HTTPTransportTest < Minitest::Test
   def kubectl_run(service, *)
     command = kubectl_args(service, *)
     output = IO.popen(command, err: %i[child out], &:read)
-    status = $?.exitstatus
+    status = $CHILD_STATUS.exitstatus
 
     assert_equal 0, status, "kubectl failed: #{command.join(" ")}\n#{output}"
     output

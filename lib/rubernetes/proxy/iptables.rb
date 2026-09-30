@@ -597,8 +597,8 @@ module Rubernetes
             chains = run!([binary("iptables-save", family), "-t", table], allow_failure: true)[1].to_s.lines.filter_map do |line|
               line[/\A:(KUBE-[A-Z0-9-]+) /, 1]
             end
-            chains.each { |chain| run!([binary("iptables", family), "-w", "5", "-t", table, "-F", chain], allow_failure: true) }
-            chains.each { |chain| run!([binary("iptables", family), "-w", "5", "-t", table, "-X", chain], allow_failure: true) }
+            chains.each { |chain| run!([binary("iptables", family), "-w", "5", "-t", table, "-F", chain], allow_failure: true)
+            run!([binary("iptables", family), "-w", "5", "-t", table, "-X", chain], allow_failure: true) }
           end
         end
 

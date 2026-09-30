@@ -184,9 +184,7 @@ module Rubernetes
         **extra_options
       )
         reference ||= extra_options.delete(:image) || extra_options.delete(:reference)
-        unless extra_options.empty?
-          raise RegistryError, "unknown registry client options: #{extra_options.keys.join(", ")}"
-        end
+        raise RegistryError, "unknown registry client options: #{extra_options.keys.join(", ")}" unless extra_options.empty?
 
         @reference = reference && Reference.parse(reference)
         registry_value = registry || (@reference && @reference.registry)
@@ -197,7 +195,7 @@ module Rubernetes
         endpoint_value = endpoint || if registry_value.to_s.match?(%r{\Ahttps?://})
                                        registry_value
                                      elsif registry_value
-                                     "https://#{registry_value}"
+                                       "https://#{registry_value}"
                                      end
         raise RegistryError, "registry endpoint is required" if endpoint_value.to_s.empty?
 
@@ -268,12 +266,8 @@ expected_size: descriptor.size, index_digest: index_digest)
       def fetch_blob(ref_or_digest, digest = nil, expected_size: nil, media_type: nil, io: nil)
         image_reference, blob_digest = normalize_blob_arguments(ref_or_digest, digest)
         validate_blob_media_type!(media_type)
-        if expected_size && Integer(expected_size) > @max_blob_bytes
-          raise LimitError, "registry blob exceeds the configured byte limit"
-        end
-        if io && !io.respond_to?(:write)
-          raise RegistryError, "registry blob destination must implement write"
-        end
+        raise LimitError, "registry blob exceeds the configured byte limit" if expected_size && Integer(expected_size) > @max_blob_bytes
+        raise RegistryError, "registry blob destination must implement write" if io && !io.respond_to?(:write)
 
         path = "/v2/#{image_reference.repository}/blobs/#{blob_digest}"
         if io
@@ -305,9 +299,7 @@ expected_size: descriptor.size, index_digest: index_digest)
               temporary.write(chunk)
             end
             ensure_success!(response, "GET #{path}")
-            if expected_size && bytes != Integer(expected_size)
-              raise RegistryError, "registry blob size does not match the descriptor"
-            end
+            raise RegistryError, "registry blob size does not match the descriptor" if expected_size && bytes != Integer(expected_size)
 
             verify_stream_digest!(digest_state, blob_digest, response["docker-content-digest"])
             validate_response_media_type!(media_type, response["content-type"])
@@ -323,9 +315,7 @@ expected_size: descriptor.size, index_digest: index_digest)
 scope: "repository:#{image_reference.repository}:pull", max_bytes: @max_blob_bytes)
         ensure_success!(response, "GET #{path}")
         body = response.body
-        if expected_size && body.bytesize != Integer(expected_size)
-          raise RegistryError, "registry blob size does not match the descriptor"
-        end
+        raise RegistryError, "registry blob size does not match the descriptor" if expected_size && body.bytesize != Integer(expected_size)
 
         verify_response_digest!(body, blob_digest, response["docker-content-digest"])
         validate_response_media_type!(media_type, response["content-type"])
@@ -381,16 +371,14 @@ scope: "repository:#{image_reference.repository}:pull", max_bytes: @max_blob_byt
         headers = {"Accept" => "application/json"}
         headers["Authorization"] = basic_authorization if basic_configured?
         response = call_transport("GET", uri, headers: headers, body: nil, max_bytes: 2 * 1024 * 1024)
-        unless response.success?
-          raise AuthenticationError, "registry token endpoint returned HTTP #{response.status}"
-        end
+        raise AuthenticationError, "registry token endpoint returned HTTP #{response.status}" unless response.success?
 
         payload = parse_json_response(response, "registry token response")
         raise AuthenticationError, "registry token response must be a JSON object" unless payload.is_a?(Hash)
 
         token = payload["token"] || payload["access_token"]
         raise AuthenticationError, 
-"registry token response did not contain a token" unless token.is_a?(String) && !token.empty? && !token.match?(/[\x00-\x20\x7f]/)
+              "registry token response did not contain a token" unless token.is_a?(String) && !token.empty? && !token.match?(/[\x00-\x20\x7f]/)
 
         expires_in = payload["expires_in"]
         expires_at = expires_in.is_a?(Numeric) && expires_in.positive? ? monotonic_time + expires_in.to_f : Float::INFINITY
@@ -464,7 +452,9 @@ scope: "repository:#{image_reference.repository}:pull", max_bytes: @max_blob_byt
         return if media_type.nil? || media_type.to_s.empty? || media_type.to_s.split(";", 2).first.strip == "application/octet-stream"
 
         normalized = media_type.to_s.split(";", 2).first.strip
-        return if MediaTypes.layer?(normalized) || MediaTypes.config?(normalized) || MediaTypes.manifest?(normalized) || MediaTypes.index?(normalized)
+        if MediaTypes.layer?(normalized) || MediaTypes.config?(normalized) || MediaTypes.manifest?(normalized) || MediaTypes.index?(normalized)
+          return
+        end
 
         raise UnsupportedMediaType, "unsupported registry blob media type: #{normalized}"
       end
@@ -475,7 +465,9 @@ scope: "repository:#{image_reference.repository}:pull", max_bytes: @max_blob_byt
         expected_type = expected.to_s.split(";", 2).first.strip
         actual_type = actual.to_s.split(";", 2).first.strip
         return if actual_type == "application/octet-stream" || actual_type == expected_type
-        return unless MediaTypes.layer?(actual_type) || MediaTypes.config?(actual_type) || MediaTypes.manifest?(actual_type) || MediaTypes.index?(actual_type)
+        unless MediaTypes.layer?(actual_type) || MediaTypes.config?(actual_type) || MediaTypes.manifest?(actual_type) || MediaTypes.index?(actual_type)
+          return
+        end
 
         raise RegistryError, "registry response media type does not match the descriptor"
       end
@@ -487,7 +479,7 @@ scope: "repository:#{image_reference.repository}:pull", max_bytes: @max_blob_byt
 max_bytes: @max_manifest_bytes)
         ensure_success!(response, "GET #{path}")
         verify_response_digest!(response.body, expected_digest || (image_reference.digest if image_reference.digest), 
-response["docker-content-digest"])
+                                response["docker-content-digest"])
         ManifestDocument.parse(response.body, expected_digest: expected_digest || (image_reference.digest if image_reference.digest), 
 expected_size: expected_size, max_bytes: @max_manifest_bytes, index_digest: index_digest)
       rescue JSON::ParserError, ManifestError, DigestError, DigestMismatch, LimitError
@@ -513,17 +505,13 @@ expected_size: expected_size, max_bytes: @max_manifest_bytes, index_digest: inde
           headers["Authorization"] = basic_authorization
           response = follow_redirects(method, build_uri(path), headers: headers, body: body, max_bytes: max_bytes)
         end
-        if response.status == 401
-          raise AuthenticationError, "registry authentication failed"
-        end
+        raise AuthenticationError, "registry authentication failed" if response.status == 401
 
         response
       end
 
       def stream_request(method, path, accept:, scope:, body: nil, max_bytes: @max_blob_bytes, on_retry: nil, &sink)
-        unless @transport.respond_to?(:stream)
-          raise RegistryError, "registry blob transport must implement streaming"
-        end
+        raise RegistryError, "registry blob transport must implement streaming" unless @transport.respond_to?(:stream)
 
         headers = {"Accept" => accept}
         headers["Authorization"] = "Bearer #{@bearer_token}" if @bearer_token
@@ -580,7 +568,7 @@ expected_size: expected_size, max_bytes: @max_manifest_bytes, index_digest: inde
 
           target = URI.join(current.to_s, location)
           raise RegistryError, 
-"registry redirect to a non-HTTPS location" unless target.scheme == "https" || (@allow_insecure && target.scheme == "http")
+                "registry redirect to a non-HTTPS location" unless target.scheme == "https" || (@allow_insecure && target.scheme == "http")
           raise RegistryError, "registry redirect with userinfo" if target.userinfo
 
           current_headers = same_origin?(target) && same_origin?(current) ? current_headers : current_headers.reject { |name, _|
@@ -659,7 +647,7 @@ expected_size: expected_size, max_bytes: @max_manifest_bytes, index_digest: inde
         return response if response.is_a?(RegistryResponse)
         if response.is_a?(Hash)
           return RegistryResponse.new(status: response[:status] || response["status"], 
-headers: response[:headers] || response["headers"] || {}, body: response[:body] || response["body"] || "")
+                                      headers: response[:headers] || response["headers"] || {}, body: response[:body] || response["body"] || "")
         end
 
         status = response.respond_to?(:status) ? response.status : response.status_code
@@ -690,9 +678,7 @@ headers: response[:headers] || response["headers"] || {}, body: response[:body] 
         if expected_digest && Digest.from_bytes(body) != expected_digest
           raise DigestMismatch, "registry response digest does not match the requested digest"
         end
-        if header && Digest.from_bytes(body) != header
-          raise DigestMismatch, "registry response digest does not match Docker-Content-Digest"
-        end
+        raise DigestMismatch, "registry response digest does not match Docker-Content-Digest" if header && Digest.from_bytes(body) != header
 
         true
       rescue DigestMismatch
@@ -805,9 +791,7 @@ headers: response[:headers] || response["headers"] || {}, body: response[:body] 
         unless %w[https http].include?(uri.scheme) && uri.host && uri.userinfo.nil? && uri.query.nil? && uri.fragment.nil?
           raise RegistryError, "registry endpoint must be an HTTPS URL without userinfo, query, or fragment"
         end
-        if uri.scheme != "https" && !allow_insecure
-          raise RegistryError, "registry endpoint must use HTTPS"
-        end
+        raise RegistryError, "registry endpoint must use HTTPS" if uri.scheme != "https" && !allow_insecure
 
         uri.path = "" if uri.path == "/"
         uri
@@ -848,13 +832,11 @@ headers: response[:headers] || response["headers"] || {}, body: response[:body] 
       end
 
       def validate_credentials!
-        if @username.nil? ^ @password.nil?
-          raise RegistryError, "registry basic authentication requires username and password"
-        end
+        raise RegistryError, "registry basic authentication requires username and password" if @username.nil? ^ @password.nil?
 
         [@username, @password, @bearer_token].compact.each do |value|
           raise RegistryError, 
-"registry credentials must be strings without control characters" unless value.is_a?(String) && !value.match?(/[\x00-\x1f\x7f]/)
+                "registry credentials must be strings without control characters" unless value.is_a?(String) && !value.match?(/[\x00-\x1f\x7f]/)
         end
         return if @username.nil? && @password.nil? && @bearer_token.nil?
         return if endpoint.scheme == "https"
@@ -872,9 +854,7 @@ headers: response[:headers] || response["headers"] || {}, body: response[:body] 
       end
 
       def validate_auth_uri!(uri)
-        if uri.scheme != "https" && !@allow_insecure
-          raise AuthenticationError, "registry token realm must use HTTPS"
-        end
+        raise AuthenticationError, "registry token realm must use HTTPS" if uri.scheme != "https" && !@allow_insecure
         raise AuthenticationError, "registry token realm must include a host" if uri.host.to_s.empty?
         raise AuthenticationError, "registry token realm must not contain userinfo" if uri.userinfo
         raise AuthenticationError, "registry token realm must not contain a query or fragment" if uri.query || uri.fragment
@@ -896,9 +876,7 @@ headers: response[:headers] || response["headers"] || {}, body: response[:body] 
           unless %w[https http].include?(uri.scheme) && uri.host && uri.userinfo.nil? && uri.query.nil? && uri.fragment.nil?
             raise RegistryError, "token realm allowlist entries must be absolute HTTP(S) URLs without userinfo, query, or fragment"
           end
-          if uri.scheme != "https" && !@allow_insecure
-            raise RegistryError, "token realm allowlist entries must use HTTPS"
-          end
+          raise RegistryError, "token realm allowlist entries must use HTTPS" if uri.scheme != "https" && !@allow_insecure
 
           origin_key(uri)
         rescue URI::InvalidURIError => error
@@ -921,7 +899,7 @@ headers: response[:headers] || response["headers"] || {}, body: response[:body] 
       def token_byte?(byte)
         return false unless byte
 
-        byte >= 0x21 && byte <= 0x7e && ![34, 40, 41, 44, 47, 58, 59, 60, 61, 62, 63, 64, 91, 92, 93, 123, 125].include?(byte)
+        byte.between?(0x21, 0x7e) && ![34, 40, 41, 44, 47, 58, 59, 60, 61, 62, 63, 64, 91, 92, 93, 123, 125].include?(byte)
       end
 
       def whitespace_byte?(byte)

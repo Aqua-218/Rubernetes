@@ -105,7 +105,7 @@ class FieldManagerUpdateTest < Minitest::Test
 
     # An apply starts tracking again: what was there before belongs to
     # before-first-apply.
-    status, applied = call("PATCH", "#{configmap_path}", {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm"},
+    status, applied = call("PATCH", configmap_path.to_s, {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm"},
                                                           "data" => {"z" => "1"}},
                            content_type: "application/apply-patch+yaml", manager: "applier")
 

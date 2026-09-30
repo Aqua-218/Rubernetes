@@ -65,7 +65,7 @@ module Rubernetes
         attr_reader :last_cap
 
         def self.normalize_name(value)
-          key = String(value).upcase.delete_prefix('CAP_')
+          key = String(value).upcase.delete_prefix("CAP_")
           Security::CAPABILITY_ALIASES.fetch("CAP_#{key}", key)
         end
 

@@ -635,9 +635,7 @@ module Rubernetes
         end
 
         def normalize_subresources(value)
-          unless value.is_a?(Array) && value.all?(Hash)
-            raise InvalidCatalogError, "resource subresources must be an array of objects"
-          end
+          raise InvalidCatalogError, "resource subresources must be an array of objects" unless value.is_a?(Array) && value.all?(Hash)
 
           Catalog.deep_freeze(Catalog.send(:deep_copy, value))
         end

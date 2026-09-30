@@ -313,7 +313,7 @@ module Rubernetes
         value = probe
         if value.is_a?(Hash)
           string = Helpers.string_keys(value)
-          value = string["#{type}Probe"] || string["#{type}"] || string
+          value = string["#{type}Probe"] || string[type.to_s] || string
         end
         value = options["#{type}Probe"] || options[type] || value
         value.nil? ? {} : Helpers.string_keys(value)
@@ -566,7 +566,7 @@ module Rubernetes
         ports = Helpers.key(context, "ports", {})
         if ports.is_a?(Array)
           ports = ports.to_h do |entry|
-                    [Helpers.key(entry, "name", ""), Helpers.key(entry, "containerPort", nil)]
+            [Helpers.key(entry, "name", ""), Helpers.key(entry, "containerPort", nil)]
           end
         end
         resolved = Helpers.key(ports, value, nil)

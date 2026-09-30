@@ -67,7 +67,9 @@ module Rubernetes
           deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
           loop do
             remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
-            raise DNSUpstreamError, "upstream #{address} did not answer within #{@timeout}s" if remaining <= 0 || socket.wait_readable(remaining).nil?
+            if remaining <= 0 || socket.wait_readable(remaining).nil?
+              raise DNSUpstreamError, "upstream #{address} did not answer within #{@timeout}s"
+            end
 
             reply, sender = socket.recvfrom(@max_packet_bytes + 1)
             # A connected UDP socket already filters foreign sources in the

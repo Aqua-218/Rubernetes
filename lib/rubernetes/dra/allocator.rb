@@ -278,7 +278,7 @@ module Rubernetes
                           counter_sets: counter_sets)
         end
 
-        targeting = slices.map { |slice| slice.dig("metadata", "name") }.to_set
+        targeting = slices.to_set { |slice| slice.dig("metadata", "name") }
         not_targeting = all_slices_for_pool.reject { |slice| targeting.include?(slice.dig("metadata", "name")) }
         reason = counter_consumption_error(counter_sets, not_targeting)
         return invalid.call(reason) if reason

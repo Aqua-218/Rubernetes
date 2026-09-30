@@ -827,7 +827,7 @@ module Rubernetes
           end
 
           def parse_qualified_name
-            parse_type_name.delete_prefix('.')
+            parse_type_name.delete_prefix(".")
           end
 
           def parse_field_number
@@ -900,7 +900,7 @@ module Rubernetes
           end
 
           def scalar_type?(type)
-            SCALAR_TYPES.include?(type.to_s.delete_prefix('.'))
+            SCALAR_TYPES.include?(type.to_s.delete_prefix("."))
           end
 
           def option_value(options, key)
@@ -1115,7 +1115,7 @@ module Rubernetes
             return nil if name.nil?
 
             value = name.to_s
-            @messages[value] || @messages[value.delete_prefix('.')] ||
+            @messages[value] || @messages[value.delete_prefix(".")] ||
               @messages[openapi_to_proto(value)] || resolve_gvk_string(value)
           end
 
@@ -1437,7 +1437,7 @@ module Rubernetes
           end
 
           def resolve_name_uncached(reference, current_message)
-            value = String(reference).delete_prefix('.')
+            value = String(reference).delete_prefix(".")
             return value if @messages.key?(value) || @enums.key?(value)
 
             ancestors = []

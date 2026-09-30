@@ -253,7 +253,7 @@ module Rubernetes
               (rule.port == normalized.destination_port || rule.node_port == normalized.destination_port)
           end
         end
-        candidates.sort_by(&:key).first
+        candidates.min_by(&:key)
       end
 
       protected
@@ -960,9 +960,9 @@ module Rubernetes
         return false unless adapter
 
         concrete = if defined?(LinuxEBPFAdapter) && backend.is_a?(EBPFBackend)
-                     adapter.class == LinuxEBPFAdapter
+                     adapter.instance_of?(LinuxEBPFAdapter)
                    elsif defined?(NftablesNetlinkAdapter) && backend.is_a?(NftablesBackend)
-                     adapter.class == NftablesNetlinkAdapter
+                     adapter.instance_of?(NftablesNetlinkAdapter)
                    else
                      false
                    end
@@ -1022,7 +1022,7 @@ module Rubernetes
         failures << "kernel readback case inventory digest is required" unless valid_digest?(evidence_value(value, "caseInventorySha256",
                                                                                                             "case_inventory_sha256"))
         backends = %w[ebpf nftables].to_h do |name|
-                     [name, value[name] || value[name.to_sym]]
+          [name, value[name] || value[name.to_sym]]
         end
         backends.each do |name, entry|
           validate_kernel_backend_readback(entry, name, name == "ebpf" ? left_digest : right_digest,

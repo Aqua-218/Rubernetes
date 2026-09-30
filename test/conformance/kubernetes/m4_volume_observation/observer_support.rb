@@ -629,7 +629,7 @@ module M4ObserverSupport
       @windows.each do |number, window, claims|
         first = window[0] + offset
         last = window[1] + offset
-        phase_records = records.select { |record| record["timestamp"] >= first - 0.001 && record["timestamp"] <= last + 0.001 }
+        phase_records = records.select { |record| record["timestamp"].between?(first - 0.001, last + 0.001) }
         remaining = Hash.new(0)
         claims.each do |claim|
           count = claim["count"]

@@ -34,7 +34,7 @@ module Rubernetes
       private
 
       def verify_resolved_image(entry)
-        value = entry.respond_to?(:to_h) ? entry.to_h.each_with_object({}) { |(key, child), result| result[String(key)] = child } : {}
+        value = entry.respond_to?(:to_h) ? entry.to_h.transform_keys { |key| String(key) } : {}
         pinned = Digest.parse(value["digest"])
         raw = value["manifest_raw"]
         raise DigestMismatch, "resolved image #{pinned} carries no raw manifest bytes" unless raw.is_a?(String) && !raw.empty?

@@ -87,7 +87,7 @@ module Rubernetes
       end
 
       def wal_files
-        Dir.children(@wal_directory).select { |name| name.match?(WAL_PATTERN) }.sort.map { |name| File.join(@wal_directory, name) }
+        Dir.children(@wal_directory).grep(WAL_PATTERN).sort.map { |name| File.join(@wal_directory, name) }
       end
 
       private

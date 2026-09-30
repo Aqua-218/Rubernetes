@@ -238,7 +238,8 @@ module M3IdempotencyMeasurement
     if %w[Deployment ReplicaSet StatefulSet DaemonSet].include?(descriptor.kind.to_s)
       object["spec"]["selector"] = {"matchLabels" => {"app" => "m3"}}
     end
-    if descriptor.kind == "CronJob"
+    case descriptor.kind
+    when "CronJob"
       # A generic workload fixture would leave CronJob's default `* * * * *`
       # schedule with a day of backlog.  That is an intentional scheduling
       # behavior, but it is not a replay-safe idempotency input: each retry
@@ -252,14 +253,15 @@ module M3IdempotencyMeasurement
         "jobTemplate" => {"spec" => {"template" => {"metadata" => {"labels" => {"app" => "m3"}}, "spec" => {}}}}
       }
       object["status"] = {"active" => [], "lastScheduleTime" => M3IdempotencyFixtures::FIXED_NOW.iso8601(6)}
-    elsif descriptor.kind == "Deployment"
+    when "Deployment"
       object["metadata"]["annotations"] = {"deployment.kubernetes.io/revision" => "1"}
-    elsif descriptor.kind == "ServiceCIDR"
+    when "ServiceCIDR"
       object["metadata"]["finalizers"] = ["networking.k8s.io/service-cidr-finalizer"]
     end
-    if descriptor.kind == "EndpointSlice"
+    case descriptor.kind
+    when "EndpointSlice"
       object["metadata"]["labels"] = {"kubernetes.io/service-name" => name}
-    elsif descriptor.kind == "HorizontalPodAutoscaler"
+    when "HorizontalPodAutoscaler"
       object["spec"] = {
         "minReplicas" => 1,
         "maxReplicas" => 3,
@@ -267,7 +269,7 @@ module M3IdempotencyMeasurement
         "metrics" => [{"type" => "Resource",
                        "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 80}}}]
       }
-    elsif descriptor.kind == "StorageVersionMigration"
+    when "StorageVersionMigration"
       object["spec"] = {"resource" => {"group" => "", "resource" => "pods"}}
       object["status"] = {"resourceVersion" => "1"}
     end

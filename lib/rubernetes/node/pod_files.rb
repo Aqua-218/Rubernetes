@@ -24,7 +24,7 @@ module Rubernetes
       def initialize(cluster_dns: [], cluster_domain: "cluster.local", resolv_conf: "/etc/resolv.conf",
                      node_hosts: "/etc/hosts")
         @cluster_dns = Array(cluster_dns).map(&:to_s).reject(&:empty?)
-        @cluster_domain = cluster_domain.to_s.delete_suffix('.')
+        @cluster_domain = cluster_domain.to_s.delete_suffix(".")
         @resolv_conf = resolv_conf
         @node_hosts = node_hosts
       end

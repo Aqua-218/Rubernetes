@@ -558,7 +558,7 @@ module Rubernetes
 
           def namespace_selector(namespace)
             value = @context.namespace(namespace)&.dig("metadata", "annotations", ANNOTATION)
-            value = @config.dig("cluster_default_node_selector") if value.nil?
+            value = @config["cluster_default_node_selector"] if value.nil?
             return {} if value.to_s.empty?
 
             value.split(",").map { |pair| pair.split("=", 2) }.to_h { |key, val| [key.strip, val.to_s.strip] }

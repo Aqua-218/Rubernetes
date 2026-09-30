@@ -87,7 +87,7 @@ module Rubernetes
 
         def compare(left, right)
           return numeric_value(left) <=> numeric_value(right) if numeric?(left) && numeric?(right)
-          return left.compareTo(right) if left.respond_to?(:compareTo) && right.class == left.class
+          return left.compareTo(right) if left.respond_to?(:compareTo) && right.instance_of?(left.class)
 
           case left
           when String then raise TypeMismatch, "cannot compare string with #{type_of(right)}" unless right.is_a?(String)
@@ -97,7 +97,7 @@ module Rubernetes
           when TrueClass, FalseClass then raise TypeMismatch, "cannot compare bool" unless [true, false].include?(right)
 
                                           return (left ? 1 : 0) <=> (right ? 1 : 0)
-          when Duration, Timestamp then unless right.class == left.class
+          when Duration, Timestamp then unless right.instance_of?(left.class)
                                           raise TypeMismatch,
                                                 "cannot compare #{type_of(left)} with #{type_of(right)}"
                                         end

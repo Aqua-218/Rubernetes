@@ -355,7 +355,7 @@ module Rubernetes
 
       # reconcileLoop: unprepare claims of Pods that are no longer active.
       def reconcile
-        active = Array(@active_pods.call).map { |pod| pod.dig("metadata", "uid").to_s }.to_set
+        active = Array(@active_pods.call).to_set { |pod| pod.dig("metadata", "uid").to_s }
         inactive = Hash.new { |hash, key| hash[key] = {namespace: nil, names: []} }
         @mutex.synchronize do
           @claims.each_value do |entry|

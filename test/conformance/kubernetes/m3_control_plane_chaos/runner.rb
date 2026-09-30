@@ -10,6 +10,7 @@
 # kept alive while workers are killed; M5 disk-durable Raft/API-server HA is not
 # part of this M3 proof.
 
+require "English"
 require "digest"
 require "fileutils"
 require "json"
@@ -263,7 +264,7 @@ module M3ControlPlaneChaosRunner
         return false
       end
 
-      process_status = $?
+      process_status = $CHILD_STATUS
       record["observed_exit"] = true
       record["exit_status"] = if process_status.exited?
                                 process_status.exitstatus

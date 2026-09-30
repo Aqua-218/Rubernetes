@@ -193,7 +193,7 @@ module Rubernetes
         groups.each_value do |endpoints_for_type|
           endpoints_for_type.each { |endpoint| endpoint.delete("_ports") }
           endpoints_for_type.sort_by! do |endpoint|
-            [endpoint.fetch("addresses").first, Support.value(endpoint.dig("targetRef"), "name", "")]
+            [endpoint.fetch("addresses").first, Support.value(endpoint["targetRef"], "name", "")]
           end
         end
         groups

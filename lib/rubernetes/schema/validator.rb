@@ -593,7 +593,7 @@ module Rubernetes
         return value.is_a?(Hash) || (value.is_a?(ValueObject) && value.definition.gvk == type.gvk) if type.is_a?(Definition)
         return value.is_a?(type) if type.is_a?(Class)
 
-        value.class == type
+        value.instance_of?(type)
       end
 
       def finite_numeric?(value)

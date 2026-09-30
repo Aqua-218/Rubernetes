@@ -96,8 +96,8 @@ module M5FaultMatrixProbe
     cluster.start_all
     leader = cluster.leader
     60.times { |index| write(leader, index, prefix: "m") }
-    %w[d e].each { |id| cluster.add_worker(id, voters: %w[a b c]) }
-    %w[d e].each { |id| cluster.start(id) }
+    %w[d e].each { |id| cluster.add_worker(id, voters: %w[a b c])
+    cluster.start(id) }
     # Start the joint change, then kill the leader before it can complete.
     change = Thread.new do
       leader.request({"op" => "membership", "voters" => %w[a b c d e]}, timeout: 5)

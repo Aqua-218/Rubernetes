@@ -629,7 +629,7 @@ module M34EvidenceSupport
   rescue SystemCallError => error
     result_path = File.join(File.dirname(manifest_path), "gate-result.json")
     File.binwrite(result_path,
-                  JSON.generate({"schema_version" => 1, "milestone" => name.delete_suffix('_gate'), "passed" => false,
+                  JSON.generate({"schema_version" => 1, "milestone" => name.delete_suffix("_gate"), "passed" => false,
                                  "errors" => [error.message]}))
     [command_record(name, [RbConfig.ruby, gate_path, manifest_path], started_at, now, 127,
                     error: "gate could not be executed: #{error.message}"), result_path, false]
@@ -655,10 +655,10 @@ module M34EvidenceSupport
     commands << command
     document = json_document(copied_manifest)
     references = {}
-    references[gate_name.delete_suffix('_gate')] = {
-      "manifest_path" => copied_manifest.delete_prefix("#{File.dirname(destination, 2)}/").delete_prefix('/'),
+    references[gate_name.delete_suffix("_gate")] = {
+      "manifest_path" => copied_manifest.delete_prefix("#{File.dirname(destination, 2)}/").delete_prefix("/"),
       "manifest_sha256" => Digest::SHA256.file(copied_manifest).hexdigest,
-      "gate_result_path" => gate_result_path.delete_prefix("#{File.dirname(destination, 2)}/").delete_prefix('/'),
+      "gate_result_path" => gate_result_path.delete_prefix("#{File.dirname(destination, 2)}/").delete_prefix("/"),
       "gate_result_sha256" => Digest::SHA256.file(gate_result_path).hexdigest,
       "input_sha256" => document["input_sha256"],
       "input_file_count" => document["input_file_count"],

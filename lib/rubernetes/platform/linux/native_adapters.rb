@@ -182,7 +182,7 @@ module Rubernetes
           # threaded callers through a single-threaded supervisor process;
           # the supervisor owns the clone3 child until the pidfd is closed.
           def create(plan:, id:, identity:)
-            if Thread.list.count(&:alive?) > 1 && @clone3.class == Clone3
+            if Thread.list.count(&:alive?) > 1 && @clone3.instance_of?(Clone3)
               return create_through_exec_supervisor(plan: plan, id: id, identity: identity)
             end
 
@@ -251,7 +251,7 @@ module Rubernetes
                 input_reader, input_writer = IO.pipe
                 pid = Process.spawn(
                   RbConfig.ruby, "--disable-gems", "-I", root, "-e", NAMESPACE_EXEC_SUPERVISOR_SOURCE,
-                  in: input_reader, out: writer, err: STDERR
+                  in: input_reader, out: writer, err: $stderr
                 )
                 writer.close
                 input_reader.close
@@ -302,7 +302,7 @@ module Rubernetes
               # its startup cost (a microVM guest runs it on one vCPU).
               supervisor_pid = Process.spawn(
                 RbConfig.ruby, "--disable-gems", "-I", ruby_library_root, "-e", NAMESPACE_EXEC_SUPERVISOR_SOURCE,
-                payload, out: writer, err: STDERR
+                payload, out: writer, err: $stderr
               )
               writer.close
             end

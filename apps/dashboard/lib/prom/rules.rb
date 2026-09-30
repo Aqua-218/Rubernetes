@@ -255,9 +255,7 @@ module Prom
             entry.state = "resolved"
             entry.resolved_at_ms = now_ms
           end
-        end
-        @active.each do |key, entry|
-          next unless key[0] == rule.object_id
+        next unless key[0] == rule.object_id
 
           alert_labels = entry.labels.merge("__name__" => "ALERTS", "alertstate" => entry.state)
           if entry.state == "resolved"

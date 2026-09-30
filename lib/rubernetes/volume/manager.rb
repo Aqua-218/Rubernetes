@@ -1584,7 +1584,6 @@ module Rubernetes
             stages.delete(path)
             state = transitional.attachments.empty? ? "Detached" : "Attached"
             @manager.volume_store[id] = transitional.with(state: state, stages: stages, generation: transitional.generation + 1)
-          else
           end
           true
         end
@@ -2805,7 +2804,6 @@ module Rubernetes
             return nil unless snapshot
 
             backends.fetch(snapshot.source_id).delete_snapshot(snapshot_id, token: entry.token)
-          else
           end
           snapshot_manager.store.delete(snapshot_id.to_s)
           operations.finish!(key: entry.key, operation: operation, token: entry.token, result: true)

@@ -230,7 +230,7 @@ module Rubernetes
           return existing if existing && existing.bound?
 
           candidate = @pvs.values.select { |pv| match?(claim, pv, storage_class: storage_class, node: node, node_labels: node_labels) }
-            .sort_by { |pv| [pv.capacity_bytes, pv.name] }.first
+            .min_by { |pv| [pv.capacity_bytes, pv.name] }
           if candidate.nil? && @provisioner
             candidate = dynamic_provision(claim, storage_class, node: node, token: token)
             @pvs[candidate.name] = candidate if candidate

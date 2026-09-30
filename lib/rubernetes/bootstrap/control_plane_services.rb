@@ -1544,7 +1544,7 @@ module Rubernetes
       end
 
       def symbolize(value)
-        value.to_h.each_with_object({}) { |(key, child), result| result[key.to_sym] = child }
+        value.to_h.transform_keys { |key| key.to_sym }
       end
 
       def log(level, event, **fields)
@@ -2626,7 +2626,7 @@ module Rubernetes
       end
 
       def symbolize(value)
-        value.to_h.each_with_object({}) { |(key, child), result| result[key.to_sym] = child }
+        value.to_h.transform_keys { |key| key.to_sym }
       end
     end
 

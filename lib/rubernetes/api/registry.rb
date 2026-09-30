@@ -463,7 +463,7 @@ module Rubernetes
       end
 
       def infer_kind(resource)
-        word = resource.to_s.delete_suffix('s')
+        word = resource.to_s.delete_suffix("s")
         word.split(/[-_]/).map { |part| part[0].to_s.upcase + part[1..].to_s }.join
       end
 
@@ -597,7 +597,7 @@ module Rubernetes
         values[:resource] ||= gvr.resource if gvr.respond_to?(:resource)
         values[:kind] ||= gvk.kind if gvk.respond_to?(:kind)
         values[:resource] ||= values.delete(:name)
-        values[:kind] ||= values[:resource].to_s.delete_suffix('s').split(/[-_]/).map(&:capitalize).join
+        values[:kind] ||= values[:resource].to_s.delete_suffix("s").split(/[-_]/).map(&:capitalize).join
         values[:scope] ||= values[:namespaced] ? :namespaced : :cluster
         values[:schema] ||= original_schema if original_schema
         Resource.new(**values.slice(*Resource.instance_method(:initialize).parameters.filter_map do |kind, name|

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "English"
 module Rubernetes
   module API
     # A long-running response (a watch, a followed log, a proxied stream)
@@ -46,7 +47,7 @@ module Rubernetes
             ensure
               # Once the bookmark is written -- a consumer may stop right
               # after it; a failed write ($!) is not recorded.
-              record_watch_list if initial_events_end && $!.nil?
+              record_watch_list if initial_events_end && $ERROR_INFO.nil?
             end
           end
         ensure

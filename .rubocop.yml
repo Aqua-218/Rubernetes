@@ -145,3 +145,11 @@ Lint/StructNewOverride:
   Enabled: false
 Lint/NoReturnInBeginEndBlocks:
   Enabled: false
+
+# Unused keyword arguments are interface conformance (a plan(**options)
+# contract shared by dozens of controllers); positional ones get the `_`.
+Lint/UnusedMethodArgument:
+  AllowUnusedKeywordArguments: true
+Lint/UnusedBlockArgument:
+  AllowUnusedKeywordArguments: true
+  IgnoreEmptyBlocks: true

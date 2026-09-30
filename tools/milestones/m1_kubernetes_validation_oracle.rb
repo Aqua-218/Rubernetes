@@ -5,6 +5,7 @@
 # the complete pkg/ and staging/ trees from the pinned Git object into a
 # temporary source tree before compiling the upstream strategy runner.
 
+require "English"
 require "digest"
 require "json"
 require "open3"
@@ -1616,7 +1617,7 @@ module M1KubernetesValidationOracle
         imports = parse_imports(content)
         match = nil
         content.scan(/func\s*\([^)]*\)\s+Validate\(ctx context\.Context,\s*obj runtime\.Object\) field\.ErrorList\s*\{/) do
-          body = content[$~.end(0), 4000] || ""
+          body = content[$LAST_MATCH_INFO.end(0), 4000] || ""
           assertion = body.match(/\bobj\.\(\*(?:(\w+)\.)?([A-Za-z_][A-Za-z0-9_]*)\)/)
           next unless assertion
 
@@ -2438,9 +2439,9 @@ module M1KubernetesValidationOracle
   end
 
   def preferred_gvk(type)
-    type.fetch("gvks").reject { |gvk| %w[DeleteOptions WatchEvent Status].include?(gvk.fetch("kind")) }.sort_by do |gvk|
+    type.fetch("gvks").reject { |gvk| %w[DeleteOptions WatchEvent Status].include?(gvk.fetch("kind")) }.min_by do |gvk|
       [version_sort_key(gvk.fetch("version")), gvk.fetch("group"), gvk.fetch("kind")]
-    end.first
+    end
   end
 
   def version_sort_key(version)

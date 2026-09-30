@@ -254,7 +254,7 @@ module M3WatchControl
     namespace = request.dig("target", "namespace").to_s
     raise ArgumentError, "watch target namespace is required" if namespace.empty?
 
-    target = create_target(client, namespace, request.dig("component").to_s)
+    target = create_target(client, namespace, request["component"].to_s)
     faults = Array(request["watch_faults"]).map(&:to_s)
     source = RealHTTPFaultSource.new(client: client, namespace: namespace, target: target, faults: faults)
     queue = ObservedWorkQueue.new(Rubernetes::Watch::WorkQueue.new)

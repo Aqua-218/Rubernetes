@@ -494,7 +494,7 @@ module Rubernetes
         end
 
         def intervals_include?(intervals, index)
-          intervals.any? { |first, last| index >= first && index <= last }
+          intervals.any? { |first, last| index.between?(first, last) }
         end
 
         def intervals_to_s(intervals)

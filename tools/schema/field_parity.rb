@@ -50,7 +50,7 @@ module RubernetesFieldParity
       names = Object.instance_methods + Kernel.instance_methods + BasicObject.instance_methods
       names.concat(Rubernetes::Schema::ValueObject.instance_methods)
       names.push(:field, :with, :to_h, :schema_name, :fields, :present?, :unknown_fields, :validate)
-      names.map(&:to_s).to_set.merge(RUBY_KEYWORDS).freeze
+      names.to_set(&:to_s).merge(RUBY_KEYWORDS).freeze
     end
   end
 

@@ -806,7 +806,7 @@ module Rubernetes
 
       # [group, resource] of a storage key or prefix.
       def self.group_resource(key)
-        parts = key.to_s.delete_prefix('/').split("/", 5)
+        parts = key.to_s.delete_prefix("/").split("/", 5)
         return ["", parts[2].to_s].freeze if parts[1].to_s.match?(/\Av\d/)
 
         [parts[1].to_s, parts[3].to_s].freeze
@@ -2134,7 +2134,7 @@ module Rubernetes
 
       # "registry/<resource>" for a key or prefix; nil when it is shorter.
       def resource_bucket(key)
-        parts = key.to_s.delete_prefix('/').split("/", 3)
+        parts = key.to_s.delete_prefix("/").split("/", 3)
         return nil if parts.length < 2 || parts[1].empty?
 
         "#{parts[0]}/#{parts[1]}"
@@ -2349,7 +2349,7 @@ module Rubernetes
       # group (the version segment is "__stored__" for custom resources).
       def group_resource(key)
         cache = (@group_resources ||= {})
-        parts = key.to_s.delete_prefix('/').split("/", 5)
+        parts = key.to_s.delete_prefix("/").split("/", 5)
         cache[parts.first(4)] ||= self.class.group_resource(key)
       end
 

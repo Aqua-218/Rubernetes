@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "English"
 require "digest"
 require "fileutils"
 require "securerandom"
@@ -65,7 +66,7 @@ class DeviceCgroupKernelTest < Minitest::Test
       output = reader.read
       Process.wait(pid)
 
-      assert_predicate $?, :success?
+      assert_predicate $CHILD_STATUS, :success?
       assert_equal "00000000", output
 
       assert_equal [id], attacher.detach(path)

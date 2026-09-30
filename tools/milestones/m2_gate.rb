@@ -667,7 +667,7 @@ module M2Gate
       errors << "#{label} claim must be RuntimeLifecycle" unless document["claim"] == "RuntimeLifecycle"
       errors << "#{label} report_sha256 is required" unless valid_digest?(document["report_sha256"])
       if valid_digest?(document["report_sha256"]) && document["report_sha256"] != canonical_document_digest(document,
-                                                                                                              excluded_keys: ["report_sha256"])
+                                                                                                            excluded_keys: ["report_sha256"])
         errors << "#{label} report_sha256 does not match canonical content"
       end
 

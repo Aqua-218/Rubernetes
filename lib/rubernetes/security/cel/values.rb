@@ -31,15 +31,16 @@ module Rubernetes
 
           def self.type_check(value, path)
             errors = []
-            if value.is_a?(ObjectVal)
+            case value
+            when ObjectVal
               expected = path.join(".")
               if value.type_name != expected
                 errors << %(unexpected type name "#{value.type_name}", expected "#{expected}", which matches field name path from root Object type)
               end
               value.each { |key, field| errors.concat(type_check(field, path + [key.to_s])) }
-            elsif value.is_a?(Array)
+            when Array
               value.each { |item| errors.concat(type_check(item, path)) }
-            elsif value.is_a?(Hash)
+            when Hash
               value.each_value { |item| errors.concat(type_check(item, path)) }
             end
             errors

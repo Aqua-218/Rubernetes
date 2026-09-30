@@ -144,9 +144,10 @@ module Conformance
       case value
       when nil then "<absent>"
       when String
-        if value.match?(/\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/) then "<uuid>"
-        elsif value.match?(/\A\d{4}-\d{2}-\d{2}T/) then "<rfc3339>"
-        elsif value.match?(/\A\d+\z/) then "<numeric-string>"
+        case value
+        when /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/ then "<uuid>"
+        when /\A\d{4}-\d{2}-\d{2}T/ then "<rfc3339>"
+        when /\A\d+\z/ then "<numeric-string>"
         else "<string>"
         end
       when Integer then "<int>"

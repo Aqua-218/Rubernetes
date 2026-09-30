@@ -251,7 +251,7 @@ module Rubernetes
         end
         groups.each_value do |endpoints|
           endpoints.sort_by! do |endpoint|
-            [endpoint.fetch("addresses").first, Support.value(endpoint.dig("targetRef"), "name", "")]
+            [endpoint.fetch("addresses").first, Support.value(endpoint["targetRef"], "name", "")]
           end
         end
         groups

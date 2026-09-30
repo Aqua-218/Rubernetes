@@ -276,9 +276,7 @@ module Rubernetes
           listener.fetch(:server).close
         rescue StandardError
           nil
-        end
-        listeners.each do |listener|
-          thread = listener[:thread]
+        thread = listener[:thread]
           thread.join(REQUEST_TIMEOUT + 1) if thread && thread != Thread.current
         end
       end
@@ -1245,9 +1243,9 @@ module Rubernetes
       end
 
       def choose_rule(candidates, packet)
-        candidates.sort_by do |rule|
+        candidates.min_by do |rule|
           [rule.health_check ? 0 : 1, rule.virtual_ip ? 0 : 1, rule.node_port == packet.destination_port ? 0 : 1, rule.key]
-        end.first
+        end
       end
 
       def node_port_destination?(packet)

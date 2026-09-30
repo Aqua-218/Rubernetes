@@ -585,7 +585,7 @@ module Rubernetes
           namespaced: !self.class.cluster_scoped_resources.include?(plural),
           verbs: %w[get list watch create update patch delete deletecollection],
           short_names: [],
-          singular_name: plural.delete_suffix('s'),
+          singular_name: plural.delete_suffix("s"),
           list_kind: "#{kind || resource_name}List",
           subresource: subresource
         )
@@ -615,7 +615,7 @@ module Rubernetes
           versions = entries.map(&:version).uniq
           preferred = pinned_discovery_versions(group, versions).first
           preferred ||= @discovery_preferred[group].to_s
-          selected = entries.find { |entry| entry.version == preferred } || entries.sort_by(&:version).first
+          selected = entries.find { |entry| entry.version == preferred } || entries.min_by(&:version)
           return selected.api_version if selected
         end
         nil
@@ -883,7 +883,7 @@ module Rubernetes
       def stringify_query(query)
         raise UsageError, "watch query must be a mapping" unless query.respond_to?(:to_h)
 
-        query.to_h.each_with_object({}) { |(key, value), normalized| normalized[key.to_s] = value }
+        query.to_h.transform_keys { |key| key.to_s }
       end
 
       def decode_response(response)

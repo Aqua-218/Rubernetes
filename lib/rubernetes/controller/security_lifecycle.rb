@@ -553,7 +553,7 @@ module Rubernetes
         rescue StoreError
           return nil
         rescue ArgumentError
-          raise SyncError, "#{descriptor.resource}.#{descriptor.group} does not implement the scale subresource".delete_suffix('.')
+          raise SyncError, "#{descriptor.resource}.#{descriptor.group} does not implement the scale subresource".delete_suffix(".")
         end
         return nil unless Support.uid(snapshot.target).to_s == Support.value(reference, "uid", "").to_s
 

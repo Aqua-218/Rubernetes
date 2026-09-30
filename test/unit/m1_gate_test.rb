@@ -910,7 +910,7 @@ class M1GateTest < Minitest::Test
   def m0_subjects(directory)
     source_paths = M0_EXECUTABLES.map { |name| "exe/#{name}" }
     source_paths.push("generated/platform/linux/abi/x86_64.json", "build/ext/rubernetes_linux/rubernetes_linux.so",
-                         "build/rubernetes-0.1.0.gem")
+                      "build/rubernetes-0.1.0.gem")
     source_paths.map do |source_path|
       source = source_path == "build/rubernetes-0.1.0.gem" ? current_gem_path : File.join(ROOT, source_path)
       relative = "subjects/#{source_path == "build/rubernetes-0.1.0.gem" ? "rubernetes-0.1.0.gem" : File.basename(source_path)}"

@@ -60,15 +60,15 @@ module M4ProxyParityRunner
     end
 
     def run
-      STDOUT.sync = true
-      while (line = STDIN.gets)
+      $stdout.sync = true
+      while (line = $stdin.gets)
         request = JSON.parse(line)
         response = begin
           handle(request)
         rescue StandardError => error
           {"ok" => false, "error" => "#{error.class}: #{error.message}"}
         end
-        STDOUT.puts(JSON.generate(response.merge("cmd" => request["cmd"], "seq" => request["seq"])))
+        $stdout.puts(JSON.generate(response.merge("cmd" => request["cmd"], "seq" => request["seq"])))
       end
     ensure
       @servers.each do |socket|
@@ -374,7 +374,7 @@ module M4ProxyParityRunner
   class Runner
     attr_reader :started_at, :stdout_lines
 
-    def initialize(input: STDIN, output: STDOUT)
+    def initialize(input: $stdin, output: $stdout)
       @input = input
       @output = output
       @started_at = Time.now.utc.iso8601(6)

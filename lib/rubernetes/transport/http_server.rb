@@ -869,13 +869,13 @@ module Rubernetes
       end
 
       def hex_byte?(byte)
-        (byte >= 0x30 && byte <= 0x39) || (byte >= 0x41 && byte <= 0x46) || (byte >= 0x61 && byte <= 0x66)
+        (byte.between?(0x30, 0x39)) || (byte.between?(0x41, 0x46)) || (byte.between?(0x61, 0x66))
       end
 
       def token_byte?(byte)
-        (byte >= 0x30 && byte <= 0x39) ||
-          (byte >= 0x41 && byte <= 0x5a) ||
-          (byte >= 0x61 && byte <= 0x7a) ||
+        (byte.between?(0x30, 0x39)) ||
+          (byte.between?(0x41, 0x5a)) ||
+          (byte.between?(0x61, 0x7a)) ||
           [0x21, 0x23, 0x24, 0x25, 0x26, 0x27, 0x2a, 0x2b, 0x2d, 0x2e, 0x5e, 0x5f, 0x60, 0x7c, 0x7e].include?(byte)
       end
 
@@ -884,7 +884,7 @@ module Rubernetes
       end
 
       def quoted_byte?(byte)
-        byte == 0x09 || (byte >= 0x20 && byte <= 0x7e && byte != 0x7f) || byte >= 0x80
+        byte == 0x09 || (byte.between?(0x20, 0x7e) && byte != 0x7f) || byte >= 0x80
       end
 
       def read_header_block(socket, buffer)

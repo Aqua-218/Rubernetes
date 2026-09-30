@@ -128,7 +128,7 @@ module Rubernetes
 
       def infer_kind(name)
         text = name.respond_to?(:name) && !name.is_a?(String) ? name.name.to_s : name.to_s
-        normalized = text.delete_suffix('-controller').delete_suffix('Controller')
+        normalized = text.delete_suffix("-controller").delete_suffix("Controller")
         normalized = normalized.split(/[-_]/).map { |part| part[0].to_s.upcase + part[1..].to_s }.join
         aliases = {
           "ReplicaSet" => "ReplicaSet", "StatefulSet" => "StatefulSet",

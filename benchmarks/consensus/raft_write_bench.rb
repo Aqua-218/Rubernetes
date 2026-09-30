@@ -163,8 +163,8 @@ threads.each(&:join)
 results[:read_index_forwarded_concurrent_16] = summarize(Array.new(queue.length) { queue.pop })
 
 servers.each_value(&:stop)
-children.each { |pid| Process.kill("TERM", pid) }
-children.each { |pid| Process.wait(pid) }
+children.each { |pid| Process.kill("TERM", pid)
+Process.wait(pid) }
 FileUtils.rm_rf(root) unless options[:dir]
 
 if options[:json]

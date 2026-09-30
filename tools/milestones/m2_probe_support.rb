@@ -4,6 +4,7 @@
 # profile into a successful result; they emit a complete, machine-readable
 # INCOMPLETE report and exit non-zero.
 
+require "English"
 require "digest"
 require "fileutils"
 require "json"
@@ -258,7 +259,7 @@ module M2ProbeSupport
       result[key] = value.to_s.strip if value
     end
     mountinfo = File.binread("/proc/#{pid}/mountinfo")
-    root_line = mountinfo.each_line.select { |line| line.split.fetch(4, nil) == "/" }.last
+    root_line = mountinfo.each_line.to_a.reverse.find { |line| line.split.fetch(4, nil) == "/" }
     {
       "name" => name,
       "container_id" => container_id,
@@ -298,7 +299,7 @@ module M2ProbeSupport
     root = File.expand_path(sandbox_root)
     mounts = []
     processes = []
-    Dir.children("/proc").select { |entry| entry.match?(/\A\d+\z/) }.each do |pid|
+    Dir.children("/proc").grep(/\A\d+\z/).each do |pid|
       begin
         File.foreach("/proc/#{pid}/mountinfo") do |line|
           mounts << {"pid" => Integer(pid), "line" => line.strip} if line.include?(root)
@@ -1347,7 +1348,7 @@ module M2ProbeSupport
     workload_status = File.binread("/proc/#{workload_pid}/status")
     security_fields = proc_status_security_fields(workload_status)
     workload_mountinfo = File.binread("/proc/#{workload_pid}/mountinfo")
-    root_line = workload_mountinfo.each_line.select { |line| line.split.fetch(4, nil) == "/" }.last
+    root_line = workload_mountinfo.each_line.to_a.reverse.find { |line| line.split.fetch(4, nil) == "/" }
     raise "workload root is not the pivoted OverlayFS" unless root_line && root_line.include?(" - overlay ")
 
     entries << measured_resource(
@@ -1488,7 +1489,7 @@ module M2ProbeSupport
           # EOF, parser/consumer errors, and a consumer break all pass through
           # this path.  Closing here also unregisters the body from the
           # transport so the ownership count cannot retain an exhausted watch.
-          primary_error = $!
+          primary_error = $ERROR_INFO
           begin
             close
           rescue StandardError => cleanup_error
@@ -2145,7 +2146,7 @@ module M2ProbeSupport
           cleanup_errors << "Node Lifecycle remains in #{lifecycle_after_cleanup[:state]}"
         end
         phase_mark.call("stop", cleanup_errors.empty? ? "passed" : "failed", "errors" => cleanup_errors)
-        raise "subresource probe cleanup failed: #{cleanup_errors.join("; ")}" if cleanup_errors.any? && $!.nil?
+        raise "subresource probe cleanup failed: #{cleanup_errors.join("; ")}" if cleanup_errors.any? && $ERROR_INFO.nil?
       end
     end
     e2e = M2Gate::REQUIRED_SUBRESOURCES.to_h { |name| [name, responses.fetch(name)] }
@@ -2209,7 +2210,7 @@ module M2ProbeSupport
       runtime.start_container(container)
       result = yield(runtime, sandbox, container)
     ensure
-      active_error = $!
+      active_error = $ERROR_INFO
       if runtime && sandbox && runtime.sandboxes.any?
         begin
           runtime.stop_sandbox(sandbox, timeout: 2)

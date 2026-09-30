@@ -593,9 +593,7 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
         child[:stdin].close unless child[:stdin].closed?
       rescue IOError, Errno::EPIPE
         nil
-      end
-      @children&.each_value do |child|
-        Process.kill("TERM", child[:thread].pid) if child[:thread].alive?
+      Process.kill("TERM", child[:thread].pid) if child[:thread].alive?
       rescue Errno::ESRCH
         nil
       ensure

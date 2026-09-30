@@ -282,7 +282,7 @@ module Tsdb
         head = @head[series_id]
         list.concat(head.samples) if head
       end
-      list.select { |t, _| t >= min_t && t <= max_t }
+      list.select { |t, _| t.between?(min_t, max_t) }
     end
 
     # [series, samples] pairs for every series matching +matchers+ that has
@@ -584,7 +584,7 @@ module Tsdb
         end
 
         matcher = bounding.first
-        values = @db.execute("SELECT DISTINCT value FROM labels WHERE name = ?", [matcher.name]).flatten.select { |v| matcher.match?(v) }
+        values = @db.execute("SELECT DISTINCT value FROM labels WHERE name = ?", [matcher.name]).flatten.grep(matcher)
         return [] if values.empty?
 
         return values.each_slice(400).flat_map do |slice|

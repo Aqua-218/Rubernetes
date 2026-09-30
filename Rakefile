@@ -236,7 +236,7 @@ namespace :m8 do
     command.push("--kubeconfig", ENV["RUBERNETES_CONFORMANCE_KUBECONFIG"]) if ENV["RUBERNETES_CONFORMANCE_KUBECONFIG"]
     if ENV["RUBERNETES_CONFORMANCE_ORACLE_KUBECONFIG"]
       command.push("--oracle-kubeconfig",
-                      ENV["RUBERNETES_CONFORMANCE_ORACLE_KUBECONFIG"])
+                   ENV["RUBERNETES_CONFORMANCE_ORACLE_KUBECONFIG"])
     end
     sh(*command)
   end

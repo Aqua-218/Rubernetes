@@ -298,7 +298,7 @@ module Rubernetes
             next if groups.empty? || groups.any? { |group| group.include?("*") }
             next if versions.empty? || versions.any? { |version| version.include?("*") }
 
-            resources = Array(rule["resources"]).reject { |resource| resource.match?(%r{[*/]}) }
+            resources = Array(rule["resources"]).grep_v(%r{[*/]})
             next if resources.empty?
 
             count = 0

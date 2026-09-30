@@ -189,7 +189,7 @@ class CRIBackendTest < Minitest::Test
     assert_equal({"username" => "u-web", "password" => "p", "server_address" => "registry.example.com"}, pull["auth"])
     @backend.create_container("sb1", spec.merge("image" => "docker.io/library/public:1"))
 
-    assert_nil @client.calls.select { |method, _| method == "PullImage" }.last.last["auth"]
+    assert_nil @client.calls.reverse.find { |method, _| method == "PullImage" }.last["auth"]
   end
 
   def test_status_mapping

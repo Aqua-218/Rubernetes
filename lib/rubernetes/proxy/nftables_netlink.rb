@@ -1179,7 +1179,7 @@ module Rubernetes
       def service_match_expressions(rule, family:, destination_address:, source_range: nil)
         expressions = []
         expressions << expression("meta", attributes(attribute(NFTA_META_DREG, u32(1)),
-                                                       attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO))))
+                                                     attribute(NFTA_META_KEY, u32(NFT_META_NFPROTO))))
         expressions << compare_expression(1, family)
         if destination_address
           payload_offset = family == NFPROTO_IPV6 ? 24 : 16
@@ -1189,7 +1189,6 @@ module Rubernetes
                                                           attribute(NFTA_PAYLOAD_OFFSET, u32(payload_offset)),
                                                           attribute(NFTA_PAYLOAD_LEN, u32(payload_length))))
           expressions << compare_expression(1, IPAddr.new(destination_address).hton)
-        else
         end
         expressions.concat(source_range_expression(family, source_range)) if source_range
         protocol = protocol_number(rule.protocol)

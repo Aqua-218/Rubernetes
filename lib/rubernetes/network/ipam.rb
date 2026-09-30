@@ -657,7 +657,7 @@ module Rubernetes
         last = network.ipv4? ? total - 2 : total - 1
         used = @state.fetch("leases", {}).values.select do |lease|
           lease["node"] == node_id && lease["family"] == family && ACTIVE_STATES.include?(lease["state"])
-        end.map { |lease| lease["ip"] }.to_set
+        end.to_set { |lease| lease["ip"] }
         (start..last).each do |offset|
           candidate = IPAddr.new(network.to_i + offset, network.family).to_s
           return candidate unless used.include?(candidate)

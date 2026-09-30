@@ -435,9 +435,7 @@ module RubernetesSchemaGenerator
 
       covered = sources.dig("coverage", "covered_gvks")
       if covered
-        unless covered.is_a?(Array) && covered.all?(String)
-          raise Error, "sources.json coverage.covered_gvks must be an array of strings"
-        end
+        raise Error, "sources.json coverage.covered_gvks must be an array of strings" unless covered.is_a?(Array) && covered.all?(String)
         raise Error, "sources.json contains duplicate covered GVKs" unless covered.uniq.length == covered.length
 
         covered.each do |identifier|

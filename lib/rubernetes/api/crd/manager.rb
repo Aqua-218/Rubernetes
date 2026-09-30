@@ -535,7 +535,7 @@ module Rubernetes
           def convert_via_webhook(objects, to_version)
             raise ConversionError, "conversion webhook client is not configured" if @webhook_client.nil?
 
-            versions = Array(@webhook.dig("conversionReviewVersions"))
+            versions = Array(@webhook["conversionReviewVersions"])
             version = versions.find { |candidate| %w[v1 v1beta1].include?(candidate) } || "v1"
             uid = SecureRandom.uuid
             review = {"apiVersion" => "apiextensions.k8s.io/#{version}", "kind" => "ConversionReview",

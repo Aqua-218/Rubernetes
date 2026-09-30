@@ -578,7 +578,7 @@ class M2GateTest < Minitest::Test
                                                         "runtime_class" => "Rubernetes::Runtime::Native", "adapter_class" => "Rubernetes::Platform::Linux::NativeAdapters"}}}
                  end
       {"level" => level, "status" => "PASS", "passed" => true, "attempt_count" => 1, "failure_count" => 0, "unexpected_skip_count" => 0,
-       "unclassified_count" => 0, "evidence_sha256" => Digest::SHA256.hexdigest("#{level}"), "evidence" => evidence}.compact
+       "unclassified_count" => 0, "evidence_sha256" => Digest::SHA256.hexdigest(level.to_s), "evidence" => evidence}.compact
     end
     profiles = M2Gate::REQUIRED_ARCHITECTURES.map do |architecture|
       {"architecture" => architecture, "available" => true, "status" => "PASS", "passed" => true, "profile_sha256" => Digest::SHA256.hexdigest(architecture), "levels" => levels}

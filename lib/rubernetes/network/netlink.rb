@@ -1140,7 +1140,8 @@ module Rubernetes
       def link_info_attributes(kind, peer:, namespace:, namespace_fd:, attributes:)
         info = [attribute(IFLA_INFO_KIND, c_string(kind))]
         data = []
-        if kind == "veth"
+        case kind
+        when "veth"
           peer_name = peer_name_from(peer)
           raise ValidationError, "veth link requires a peer interface name" unless peer_name
 
@@ -1148,10 +1149,10 @@ module Rubernetes
           peer_namespace = namespace_fd || namespace
           peer_attrs << attribute(IFLA_NET_NS_FD, uint32(namespace_fd_value(peer_namespace), "network namespace FD")) if peer_namespace
           data << attribute(VETH_INFO_PEER, ifinfomsg(index: 0) + TLV.encode_many(peer_attrs), nested: true)
-        elsif kind == "bridge"
+        when "bridge"
           stp = Support.fetch(attributes, "stp", "stp_state", default: nil)
           data << attribute(IFLA_BR_STP_STATE, uint32(Support.bool(stp) ? 1 : 0, "bridge STP state")) unless stp.nil?
-        elsif kind == "vxlan"
+        when "vxlan"
           vni = Support.fetch(attributes, "vni", "id", default: nil)
           raise ValidationError, "VXLAN link requires a VNI" if vni.nil?
 

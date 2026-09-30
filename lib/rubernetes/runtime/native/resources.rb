@@ -276,7 +276,7 @@ module Rubernetes
         def string_keys(value)
           return {} unless value.respond_to?(:to_h)
 
-          value.to_h.each_with_object({}) { |(key, child), result| result[String(key)] = child }
+          value.to_h.transform_keys { |key| String(key) }
         end
 
         def fetch(container, name)

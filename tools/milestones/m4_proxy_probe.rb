@@ -471,7 +471,7 @@ module M4ProxyKernelProbe
                    ebpf_backend, nft_backend, auto, node_status, verifier_probe, dns_server, node_netns_inode, errors)
     runner = final.fetch("runner")
     packet_capture = final.fetch("packetCapture")
-    ebpf_phase = phases.select { |phase| phase["backend"] == "ebpf" }.last
+    ebpf_phase = phases.reverse.find { |phase| phase["backend"] == "ebpf" }
     nft_phase = phases.find { |phase| phase["backend"] == "nftables" }
     ebpf_cases = ebpf_phase.fetch("response").fetch("cases")
     nft_cases = nft_phase.fetch("response").fetch("cases")

@@ -301,9 +301,7 @@ module KubernetesCorpusImporter
       validate_manifest_header!(manifest, context)
 
       source_records = manifest.fetch("sources")
-      unless source_records.is_a?(Array) && source_records.all?(Hash)
-        raise ValidationError, "sources.json must contain a sources array"
-      end
+      raise ValidationError, "sources.json must contain a sources array" unless source_records.is_a?(Array) && source_records.all?(Hash)
 
       expected_paths = source_records.map { |record| record.fetch("path") }
       raise ValidationError, "sources.json contains duplicate source paths" if expected_paths.uniq.length != expected_paths.length
