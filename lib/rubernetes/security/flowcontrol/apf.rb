@@ -1392,10 +1392,16 @@ module Rubernetes
           adjust("apiserver_flowcontrol_current_executing_requests", labels, delta)
         end
 
-          adjust("apiserver_flowcontrol_current_executing_seats", labels, delta)
-          ratios = @ratios&.[](labels["priority_level"])
-          %i[executing seats demand].each { |key| ratios&.fetch(key)&.add(delta) }
-          @read_write&.[](["executing", mutating ? "mutating" : "readOnly"])&.add(delta)
+        def note_rejected(labels, reason)
+          adjust("apiserver_flowcontrol_rejected_requests_total", labels.merge("reason" => reason.to_s), 1)
+        end
+
+        # apiserver_current_inqueue_requests{request_kind} and the server's
+        # read-vs-write utilisation, by phase.
+        def note_read_write(phase, mutating, delta)
+          kind = mutating ? "mutating" : "readOnly"
+          adjust("apiserver_current_inqueue_requests", {"request_kind" => kind}, delta) if phase == "waiting"
+          @read_write&.[]([phase, kind])&.add(delta)
         rescue StandardError
           nil
         end
