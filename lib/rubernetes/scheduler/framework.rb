@@ -712,6 +712,65 @@ module Rubernetes
       def monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       private :monotonic
 
+      # RunPermitPlugins: every Permit plugin answers true (Success), false or
+      # a Rejection (the Pod is unreserved and requeued), or a Permit::Wait;
+      # a waiting Pod holds its reservation until every waiting plugin
+      # allowed it, one rejected it, or the longest timeout passed
+      # (scheduler_permit_wait_duration_seconds{result}).
+      def run_permit(pod, node, context, trace)
+        permit_plugins = plugins.phase_plugins(:permit)
+        return true if permit_plugins.empty?
+
+        started = monotonic
+        status = Metrics::STATUS_SUCCESS
+        waits = {}
+        permit_plugins.each do |plugin|
+          output = invoke_plugin(plugin, pod, node, context, phase: :permit)
+          trace&.record(plugin: plugin.name, phase: :permit, weight: plugin.weight,
+                        input: {"pod" => pod.to_h, "node" => node.to_h}, output: output.respond_to?(:to_h) ? output.to_h : output)
+          case output
+          when true, nil then next
+          when Permit::Wait then waits[plugin.name] = output.timeout
+          when false, Rejection
+            status = Metrics::STATUS_UNSCHEDULABLE
+            raise PermitError, "permit plugin #{plugin.name} rejected #{pod.name}"
+          else
+            status = Metrics::STATUS_ERROR
+            raise PermitError, "permit plugin #{plugin.name} returned #{output.inspect}"
+          end
+        end
+        return true if waits.empty?
+
+        waiting = Permit::WaitingPod.new(pod, node, waits.keys, waits.values.max)
+        key = pod_lock_key(pod)
+        @mutex.synchronize { @waiting_pods[key] = waiting }
+        wait_started = monotonic
+        begin
+          outcome, message = waiting.wait
+        ensure
+          @mutex.synchronize { @waiting_pods.delete(key) }
+        end
+        result = outcome == :allowed ? Metrics::STATUS_SUCCESS : Metrics::STATUS_UNSCHEDULABLE
+        @metrics.permit_wait(result, monotonic - wait_started)
+        return true if outcome == :allowed
+
+        status = Metrics::STATUS_UNSCHEDULABLE
+        raise PermitError, "permit plugin rejected #{pod.name}: #{message}"
+      ensure
+        @metrics.extension_point(:permit, status, monotonic - started) if started
+      end
+
+      # Handle.GetWaitingPod / IterateOverWaitingPods: the Pods parked by
+      # Permit plugins, by uid or "namespace/name".
+      def waiting_pod(pod_or_uid)
+        wanted = pod_or_uid.to_s
+        @mutex.synchronize do
+          @waiting_pods.values.find { |waiting| waiting.pod.uid == wanted || "#{waiting.pod.namespace}/#{waiting.pod.name}" == wanted }
+        end
+      end
+
+      def waiting_pods = @mutex.synchronize { @waiting_pods.values.dup }
+
       # The plugins that rejected the Pod on some node (scheduler_unschedulable_pods).
       def rejecting_plugins(filtered)
         filtered.values.filter_map { |entry| entry.is_a?(Hash) ? entry["plugin"] : nil }.uniq
