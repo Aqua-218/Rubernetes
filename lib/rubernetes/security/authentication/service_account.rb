@@ -60,7 +60,18 @@ module Rubernetes
           @metrics = nil
         end
 
-        attr_reader :issuer, :api_audiences, :metrics
+        attr_reader :issuer, :api_audiences, :metrics, :external_signer
+
+        # kid => public key: the static files, or the external signer's cache.
+        def verification_keys
+          @external_signer ? @external_signer.keys_by_id : @static_verification_keys
+        end
+
+        def sign_claims(claims)
+          return @external_signer.sign(claims) if @external_signer
+
+          JWT.sign(claims, key: @signing_key, algorithm: algorithm, key_id: @key_id)
+        end
 
         def metrics=(registry)
           @metrics = registry
