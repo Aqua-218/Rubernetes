@@ -1169,7 +1169,13 @@ module Rubernetes
           @flow_schemas.find { |schema| matches?(schema, attributes) }
         end
 
-        private
+        # -- borrowing (apf_controller.updateBorrowingLocked) ----------------
+
+        def start_borrowing_adjustments
+          return if @borrowing_thread&.alive? || @borrowing_adjustment_seconds.nil?
+
+          @mutex.synchronize do
+            return if @borrowing_thread&.alive?
 
         def record_dispatch(labels, waited, executing:)
           return unless @metrics
