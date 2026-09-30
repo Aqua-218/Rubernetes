@@ -1147,7 +1147,10 @@ module Rubernetes
         end
 
         def release(ticket)
-          return if ticket.nil? || ticket.exempt
+          return if ticket.nil?
+
+          ticket.forget_watch&.call
+          return if ticket.request.nil?
 
           labels = {"flow_schema" => ticket.flow_schema.to_s, "priority_level" => ticket.priority_level.to_s}
           adjust("apiserver_flowcontrol_current_executing_requests", labels, -1)
