@@ -906,6 +906,18 @@ module Rubernetes
         @evented_pleg.start
       end
 
+      # RuntimeConfig support of the CRI runtimes (kubelet_cri_losing_support).
+      def check_cri_runtime_support
+        return if @runtime.nil?
+
+        Thread.new do
+          Thread.current.name = "cri-support-check"
+          CRISupportCheck.run(runtime: @runtime, metrics: @kubelet_metrics, logger: @logger)
+        rescue StandardError => error
+          @error_handler&.call(error, :cri_support_check)
+        end
+      end
+
       def relist_loop
         until @mutex.synchronize { @stop_requested }
           begin
