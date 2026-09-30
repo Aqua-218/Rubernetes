@@ -50,7 +50,8 @@ class APIServerFlowControlExtrasMetricsTest < Minitest::Test
     assert_equal "1", line(text, "apiserver_flowcontrol_work_estimated_seats_count", tiny)
     assert_equal "1", line(text, "apiserver_flowcontrol_current_limit_seats", '{priority_level="tiny"}')
     assert_equal "1", line(text, "apiserver_flowcontrol_current_limit_seats", '{priority_level="none"}')
-    assert_nil line(text, "apiserver_flowcontrol_current_limit_seats", '{priority_level="exempt"}')
+    # The exempt level's current limit is its high watermark of demand (none yet).
+    assert_equal "0", line(text, "apiserver_flowcontrol_current_limit_seats", '{priority_level="exempt"}')
 
     # One second idle, two seconds with the level's single seat taken.
     seat = 'apiserver_flowcontrol_priority_level_seat_utilization'
