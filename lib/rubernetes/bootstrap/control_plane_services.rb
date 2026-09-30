@@ -2004,7 +2004,7 @@ module Rubernetes
         end
       end
 
-      def retry_unschedulable(reason, event: nil, **fields)
+      def retry_unschedulable(reason, event: nil, old_object: nil, new_object: nil, **fields)
         return unless @framework.respond_to?(:queue)
 
         queue = @framework.queue
