@@ -330,6 +330,110 @@ module Rubernetes
         end
       end
 
+      # The scheduling cycle of a popped Pod is over (bound, failed or
+      # requeued): the events it no longer needs are dropped.
+      def done(pod)
+        key = identity_key(pod)
+        @mutex.synchronize do
+          @in_flight.delete(key)
+          prune_in_flight_events_locked
+        end
+        nil
+      end
+
+      def in_flight_pods = @mutex.synchronize { @in_flight.keys.length }
+
+      # scheduler_inflight_events: the events still held, per label.
+      def in_flight_event_counts
+        @mutex.synchronize { @in_flight_events.each_with_object(Hash.new(0)) { |entry, counts| counts[entry[:event]] += 1 } }
+      end
+
+      # movePodsToActiveOrBackoffQueue: every unschedulable Pod whose
+      # rejecting plugins' hints say the event may help is moved to backoff
+      # (or active when it is not backing off); the event is remembered for
+      # the Pods in flight.  Returns the moved items.
+      def move_on_event(event, old_object: nil, new_object: nil)
+        strategy = @hint_strategy
+        return promote_unschedulable(event: event) if strategy.nil?
+
+        moved = []
+        @mutex.synchronize do
+          now = now_seconds
+          @unschedulable.keys.each do |key|
+            item = @unschedulable[key]
+            decision = begin
+              strategy.call(item.pod, @rejecting_plugins.fetch(key, []), event, old_object, new_object)
+            rescue StandardError
+              :after_backoff
+            end
+            next if decision == :skip
+
+            @unschedulable.delete(key)
+            @gated.delete(key)
+            requeue_with_strategy_locked(key, item, decision, event, now)
+            moved << item
+          end
+          record_in_flight_event_locked(event, old_object, new_object)
+        end
+        moved
+      end
+
+      private
+
+      def requeue_with_strategy_locked(key, item, decision, event, now)
+        return if @pending.key?(key)
+
+        attempts = @attempts.fetch(key, 0)
+        if decision == :after_backoff && attempts.positive? && now < (@first_failure_at&.fetch(key, 0.0) || 0.0) + backoff_delay(attempts)
+          @backoff[key] = [item, (@first_failure_at&.fetch(key, 0.0) || 0.0) + backoff_delay(attempts)]
+          incoming(event, "backoff")
+        else
+          @backoff.delete(key)
+          @pending[key] = item
+          incoming(event, "active")
+        end
+        enforce_capacity!
+      end
+
+      def record_in_flight_event_locked(event, old_object, new_object)
+        return if @in_flight.empty?
+
+        @event_sequence += 1
+        @in_flight_events << {sequence: @event_sequence, event: event.to_s, old: old_object, new: new_object}
+      end
+
+      def prune_in_flight_events_locked
+        oldest = @in_flight.values.min
+        @in_flight_events.reject! { |entry| oldest.nil? || entry[:sequence] <= oldest }
+      end
+
+      # determineSchedulingHintForInFlightPod: the events that arrived while
+      # this Pod was being scheduled, run through its rejecting plugins' hints.
+      def in_flight_strategy_locked(key, pod, plugins)
+        since = @in_flight[key]
+        strategy = @hint_strategy
+        return :skip if since.nil? || strategy.nil?
+
+        events = @in_flight_events.select { |entry| entry[:sequence] > since }
+        return :skip if events.empty?
+        return :after_backoff if Array(plugins).empty?
+
+        result = :skip
+        events.each do |entry|
+          decision = begin
+            strategy.call(pod, plugins, entry[:event], entry[:old], entry[:new])
+          rescue StandardError
+            :after_backoff
+          end
+          return :immediately if decision == :immediately
+
+          result = :after_backoff if decision == :after_backoff
+        end
+        result
+      end
+
+      public
+
       def next(trace: nil)
         pop(trace: trace)
       end
