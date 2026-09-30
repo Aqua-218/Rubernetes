@@ -48,6 +48,8 @@ module Rubernetes
       # Security::ConfigReloadController for --authorization-config and
       # --authentication-config files (the service starts and stops them).
       attr_reader :reload_controllers
+      # The ExternalJWTSigner when service account tokens are signed externally.
+      attr_reader :external_jwt_signer
 
       def self.default_feature_gates
         document = JSON.parse(File.read(File.join(CORPUS_ROOT, "features.json")))
