@@ -66,7 +66,7 @@ module Rubernetes
         end
 
         def name
-          NAME
+          @name
         end
 
         def authorize(attributes)
