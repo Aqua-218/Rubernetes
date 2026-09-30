@@ -133,7 +133,7 @@ module Rubernetes
           return nil
         end
         descriptor = respond_to?(:resource_descriptor) ? resource_descriptor : nil
-        ControllerMetrics.increment("#{prefix}_controller_stale_sync_skips_total",
+        ControllerMetrics.increment(prefix,
                                     {"group" => descriptor.respond_to?(:group) ? descriptor.group.to_s : "",
                                      "resource" => descriptor.respond_to?(:resource) ? descriptor.resource.to_s : ""})
         ReconcileResult.new(controller: name, key: key, requeue_after: STALE_SYNC_RETRY_SECONDS)
