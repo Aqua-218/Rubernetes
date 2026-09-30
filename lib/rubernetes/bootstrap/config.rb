@@ -212,6 +212,12 @@ module Rubernetes
             end
           elsif name == "rubernetes-scheduler"
             validate_control_plane!(process_config, SCHEDULER_KEYS, name, lease: true)
+            if process_config.key?("feature_gates")
+              validate_mapping!(process_config["feature_gates"], "rubernetes-scheduler.feature_gates")
+              process_config["feature_gates"].each do |gate, enabled|
+                raise Error, "rubernetes-scheduler.feature_gates.#{gate} must be true or false" unless [true, false].include?(enabled)
+              end
+            end
           elsif name == "rubernetes-proxy"
             validate_proxy!(process_config)
           else
