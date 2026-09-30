@@ -389,7 +389,28 @@ module Rubernetes
           @key_matcher = key_matcher || ->(key) { @resources.any? { |resource| key.to_s.start_with?("registry/#{resource}/") || key.to_s.include?("/#{resource}/") } }
         end
 
-        attr_reader :store
+        attr_reader :store, :resources
+        # Swapped by the configuration reload controller.
+        attr_accessor :transformer
+
+        # apiserver_storage_transformation_{operations_total,duration_seconds}
+        # around one seal or unseal: the transformer prefix that handled it
+        # and OK or the error's class.
+        def timed_transformation(key, transformation_type, prefix)
+          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          status = "OK"
+          yield
+        rescue StandardError => error
+          status = error.class.name.to_s.split("::").last
+          raise
+        ensure
+          elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+          _group, resource = Configuration.key_group_resource(key)
+          Encryption.increment("apiserver_storage_transformation_operations_total",
+                               {"resource" => resource.to_s, "status" => status, "transformation_type" => transformation_type, "transformer_prefix" => prefix})
+          Encryption.observe("apiserver_storage_transformation_duration_seconds", elapsed, {"transformation_type" => transformation_type, "transformer_prefix" => prefix})
+        end
+        private :timed_transformation
 
         def encrypted_key?(key)
           @key_matcher.call(key)
