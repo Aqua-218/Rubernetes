@@ -873,6 +873,9 @@ module Rubernetes
         context["ephemeral"] = Types.key(spec, "ephemeral", false) == true
         context["fsType"] = Types.key(spec, "fsType", "").to_s
         context["mountOptions"] = Array(Types.key(spec, "mountOptions", [])).map(&:to_s)
+        # SELinuxMount: the file label as a mount flag (AddSELinuxMountOption).
+        label = Types.key(spec, "selinuxMountLabel", nil).to_s
+        context["mountOptions"] += [SELinux.mount_option(label)] unless label.empty? || context["mountOptions"].any? { |option| option.start_with?("context=") }
         context
       end
 
