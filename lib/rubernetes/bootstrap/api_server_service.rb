@@ -177,6 +177,11 @@ module Rubernetes
         start_dynamic_api_reconciler
         bootstrap_service_cidr
         start_allocation_repair
+        if @encryption_reload
+          Security::Encryption.metrics = @api_server.metrics if @api_server.respond_to?(:metrics)
+          Security::Encryption.apiserver_id = @config["identity"] || Socket.gethostname
+          @encryption_reload.start
+        end
         @http_server.start
         @kubernetes_service.start
         @authentication_trust&.start
