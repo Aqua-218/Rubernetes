@@ -184,6 +184,7 @@ module Rubernetes
 
       class Unauthorized < Security::Error; end
       class BadRequest < Security::Error; end
+      class AuditRejected < Security::Error; end
       class Forbidden < Security::Error
         attr_reader :decision, :user, :attributes, :status_error
 
