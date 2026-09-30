@@ -969,6 +969,10 @@ module Rubernetes
 
       def validate_apiserver!(process_config)
         reject_unknown_keys!(process_config, APISERVER_KEYS, "rubernetes-apiserver configuration")
+        validate_absolute_path!(process_config["encryption_config_file"], "rubernetes-apiserver.encryption_config_file") if process_config.key?("encryption_config_file")
+        if process_config.key?("encryption_config_reload_interval_seconds")
+          validate_positive_integer!(process_config["encryption_config_reload_interval_seconds"], "rubernetes-apiserver.encryption_config_reload_interval_seconds")
+        end
         address = process_config["bind_address"]
         raise Error, "rubernetes-apiserver.bind_address must be a non-empty String" unless address.is_a?(String) && !address.empty?
 
