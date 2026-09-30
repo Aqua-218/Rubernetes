@@ -1158,7 +1158,7 @@ module Rubernetes
             observe("apiserver_flowcontrol_request_execution_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - ticket.dispatched_at,
                     labels.merge("type" => ticket.watch ? "watch" : "regular"))
           end
-          @priority_levels[ticket.priority_level]&.release
+          @priority_levels[ticket.priority_level]&.queue_set&.finish(ticket.request)
         end
 
         def stats
