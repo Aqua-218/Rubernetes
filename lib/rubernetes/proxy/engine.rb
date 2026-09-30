@@ -1119,6 +1119,7 @@ module Rubernetes
         failed = true
         raise
       ensure
+        reconcile_conntrack(published_rules) if published_rules && !failed
         seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
         record_publish(seconds)
         if @metrics
