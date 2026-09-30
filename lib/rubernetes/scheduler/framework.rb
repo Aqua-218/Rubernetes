@@ -437,8 +437,8 @@ module Rubernetes
         @dynamic_resources = dynamic_resources || DynamicResources.new
         @volume_binding = volume_binding || VolumeBinding.new
         @plugins = if standard_plugins
-                     self.class.default_registry("DynamicResources" => @dynamic_resources,
-                                                 "VolumeBinding" => @volume_binding).merge(custom)
+                     self.class.default_registry({"DynamicResources" => @dynamic_resources, "VolumeBinding" => @volume_binding},
+                                                 feature_gates: @feature_gates).merge(custom)
                    else
                      custom
                    end.freeze
