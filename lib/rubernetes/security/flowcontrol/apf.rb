@@ -922,9 +922,21 @@ module Rubernetes
                                    "queued" => waiting, "exempt" => @exempt)
           end
 
-          # Returns the queue index or raises RejectedError.
-          def admit(flow_hash, clock, on_queue: nil)
-            return [nil, 0.0] if @exempt
+          # finishQueueSetReconfigsLocked: the bounds from the shares.
+          def configure_bounds!(server_seats, share_sum)
+            @nominal_seats = @exempt ? 0 : (server_seats.to_f * @nominal_shares / [share_sum, 1.0].max).ceil
+            lendable = @lendable_percent.nil? ? 0 : go_round(@nominal_seats * @lendable_percent.to_f / 100)
+            borrowing = @borrowing_limit_percent.nil? ? server_seats : go_round(@nominal_seats * @borrowing_limit_percent.to_f / 100)
+            @min_seats = @nominal_seats - lendable
+            @max_seats = @nominal_seats + borrowing
+            @estimator_max_seats = if @queues.positive?
+                                     [1, [(@nominal_seats * PRIORITY_LEVEL_MAX_SEATS_PERCENT).ceil, @nominal_seats / [@hand_size, 1].max].min].max
+                                   else
+                                     0
+                                   end
+            @current_seats = @nominal_seats - lendable / 2 if @current_seats.zero?
+            @controller.set_priority_level_configuration(@name, @nominal_seats, @min_seats, @max_seats, exempt: @exempt)
+          end
 
             @monitor.synchronize do
               queue_index = shuffle_shard(flow_hash)
