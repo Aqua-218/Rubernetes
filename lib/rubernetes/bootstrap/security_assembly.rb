@@ -288,7 +288,7 @@ module Rubernetes
         client_key = key_pem ? OpenSSL::PKey.read(key_pem) : nil
         lambda do |body|
           uri = URI.parse(url)
-          http = Net::HTTP.new(uri.hostname, uri.port, nil)
+          http = Security::Egress.http(uri, "controlplane")
           http.use_ssl = uri.scheme == "https"
           http.open_timeout = [timeout.to_f, 10].min
           http.read_timeout = timeout.to_f
