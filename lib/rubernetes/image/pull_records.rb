@@ -168,6 +168,7 @@ module Rubernetes
         snapshot = nil
         @mutex.synchronize do
           record = (@records[image_ref.to_s] ||= {updated: @clock.call, mapping: {}})
+          @records.shift while @records.length > MEMORY_RECORDS_CAPACITY
           merged, changed = merge(record[:mapping][repository], credentials || Credentials.node)
           next unless changed
 
