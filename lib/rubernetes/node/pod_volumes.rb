@@ -403,6 +403,11 @@ module Rubernetes
       
           id = Helpers.key(mount, "id")
           backend = backends[id]
+          if backend.respond_to?(:pod_certificate_refresh_due?) && backend.pod_certificate_refresh_due?
+            backend.refresh_pod_certificates
+            reapply_ownership(object, entry, mount, id)
+            rotated << name
+          end
           next unless backend.respond_to?(:token_rotation_due?)
       
           if backend.token_rotation_due?(now)
