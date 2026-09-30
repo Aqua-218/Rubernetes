@@ -206,8 +206,6 @@ module Rubernetes
       # tools/differential/metrics_inventory_differential.rb reports.
       no_list_to_log = "every LIST is served by the apiserver's local replica (apiserver_cache_list_*); none reaches the raft log"
       no_ring = "no per-resource watch cache ring: one shared MVCC history, sized by revisions and age"
-      no_virtual_time = "API Priority and Fairness here has no fair-queuing virtual time (queues are served shortest-first)"
-      no_borrowing = "API Priority and Fairness here neither lends nor borrows seats: each level's limit is its nominal one"
       no_queueing_hints = "no QueueingHint plugins and no in-flight event list: an unschedulable Pod is retried on any cluster change (like SchedulerQueueingHints off)"
       no_pod_groups = "no workload-aware (PodGroup / gang) scheduling"
       iptables_only = "the iptables proxier is not implemented (nftables and eBPF backends only); iptables mode registers this"
