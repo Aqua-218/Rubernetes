@@ -42,7 +42,8 @@ class ProxyMetricsTest < Minitest::Test
        kubeproxy_sync_partial_proxy_rules_duration_seconds kubeproxy_network_programming_duration_seconds
        kubeproxy_sync_proxy_rules_endpoint_changes_total kubeproxy_sync_proxy_rules_service_changes_pending
        kubeproxy_sync_proxy_rules_last_timestamp_seconds kubeproxy_sync_proxy_rules_nftables_sync_failures_total
-       kubeproxy_sync_proxy_rules_no_local_endpoints_total kubeproxy_proxy_healthz_total kubernetes_build_info].each do |name|
+       kubeproxy_sync_proxy_rules_no_local_endpoints_total kubeproxy_proxy_healthz_total kubernetes_build_info
+       kubeproxy_conntrack_reconciler_deleted_entries_total kubeproxy_conntrack_reconciler_sync_duration_seconds].each do |name|
       assert_includes names, name
     end
     %w[kubeproxy_sync_proxy_rules_iptables_total kubeproxy_iptables_ct_state_invalid_dropped_packets_total
