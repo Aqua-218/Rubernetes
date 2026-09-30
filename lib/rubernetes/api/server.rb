@@ -2227,7 +2227,7 @@ module Rubernetes
         return [true, "ok", nil] if server.fetch("url").nil?
 
         uri = URI(server.fetch("url"))
-        http = Net::HTTP.new(uri.hostname, uri.port)
+        http = Security::Egress.http(uri, "cluster")
         http.use_ssl = true
         http.verify_mode = OpenSSL::SSL::VERIFY_NONE
         http.open_timeout = 2
