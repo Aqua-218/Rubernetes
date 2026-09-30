@@ -2008,7 +2008,9 @@ module Rubernetes
         return unless @framework.respond_to?(:queue)
 
         queue = @framework.queue
-        promoted = if event && queue.method(:promote_unschedulable).parameters.any? { |_kind, name| name == :event }
+        promoted = if event && @framework.respond_to?(:requeue_on_event)
+                     @framework.requeue_on_event(event, old_object: old_object, new_object: new_object)
+                   elsif event && queue.method(:promote_unschedulable).parameters.any? { |_kind, name| name == :event }
                      queue.promote_unschedulable(event: event)
                    else
                      queue.promote_unschedulable
