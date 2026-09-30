@@ -963,12 +963,25 @@ module Rubernetes
 
           # -- QueueSet observer callbacks (the metrics upstream's queueset records) --
 
-          # Round-robin fairness approximation: the queue with waiters that is
-          # also the shortest gets the seat; ties resolve by index.
-          def oldest_waiting?(queue_index)
-            waiting = @queue_lengths.each_index.select { |index| @queue_lengths[index].positive? }
-            shortest = waiting.min_by { |index| [@queue_lengths[index], index] }
-            shortest.nil? || shortest == queue_index
+          def labels(flow_schema) = {"flow_schema" => flow_schema.to_s, "priority_level" => @name}
+          def add_requests_in_queues(flow_schema, delta) = @controller.note_queued(labels(flow_schema), delta)
+          def add_seats_in_queues(flow_schema, delta) = @controller.adjust("apiserver_flowcontrol_current_inqueue_seats", labels(flow_schema), delta)
+          def observe_queue_length(flow_schema, length) = @controller.observe("apiserver_flowcontrol_request_queue_length_after_enqueue", length, labels(flow_schema))
+          def add_requests_executing(flow_schema, delta) = @controller.note_executing(labels(flow_schema), delta)
+          def add_seat_concurrency_in_use(flow_schema, delta) = @controller.adjust("apiserver_flowcontrol_current_executing_seats", labels(flow_schema), delta)
+          def add_reject(flow_schema, reason) = @controller.note_rejected(labels(flow_schema), reason)
+          def set_current_r(r) = @controller.set("apiserver_flowcontrol_current_r", r, {"priority_level" => @name})
+          def add_dispatch_with_no_accommodation(flow_schema) = @controller.adjust("apiserver_flowcontrol_request_dispatch_no_accommodation_total", labels(flow_schema), 1)
+          def add_epoch_advance(success) = @controller.adjust("apiserver_flowcontrol_epoch_advance_total", {"priority_level" => @name, "success" => success.to_s}, 1)
+
+          def set_dispatch_metrics(r, s, s_min, s_max, ds_min, ds_max)
+            level = {"priority_level" => @name}
+            @controller.set("apiserver_flowcontrol_dispatch_r", r, level)
+            @controller.set("apiserver_flowcontrol_latest_s", s, level)
+            @controller.set("apiserver_flowcontrol_next_s_bounds", s_min, level.merge("bound" => "min"))
+            @controller.set("apiserver_flowcontrol_next_s_bounds", s_max, level.merge("bound" => "max"))
+            @controller.set("apiserver_flowcontrol_next_discounted_s_bounds", ds_min, level.merge("bound" => "min"))
+            @controller.set("apiserver_flowcontrol_next_discounted_s_bounds", ds_max, level.merge("bound" => "max"))
           end
 
           # Shuffle sharding: derive hand_size candidate queues from the flow
