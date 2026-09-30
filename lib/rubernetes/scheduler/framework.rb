@@ -49,7 +49,7 @@ module Rubernetes
 
       def with(nodes: @nodes, pods: @pods, volume_data: @volume_data)
         self.class.new(nodes: nodes, pods: pods, namespace_data: @namespace_data, volume_data: volume_data,
-                       workload_selectors: @workload_selectors, cycle_state: @cycle_state)
+                       workload_selectors: @workload_selectors, cycle_state: @cycle_state, pod_groups: @pod_groups)
       end
     end
 
