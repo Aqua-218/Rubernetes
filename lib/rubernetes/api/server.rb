@@ -1801,8 +1801,12 @@ module Rubernetes
         # getaddrinfo does not resolve; URI#hostname is the bare address.
         # Every pods/services/nodes proxy to an IPv6 target answered 500
         # ("[sig-network] Proxy version v1 A set of valid responses ...").
-        tcp = Socket.tcp(uri.hostname, uri.port, connect_timeout: PROXY_TIMEOUT_SECONDS)
-        tcp.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
+        tcp = Security::Egress.tcp_socket(uri.hostname, uri.port, "cluster", connect_timeout: PROXY_TIMEOUT_SECONDS)
+        begin
+          tcp.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
+        rescue SystemCallError
+          nil # an egress tunnel over a Unix socket
+        end
         return tcp unless uri.scheme == "https"
 
         ssl = OpenSSL::SSL::SSLSocket.new(tcp, NodeEndpointResolver::KubeletClientTLS.context(tls))
