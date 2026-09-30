@@ -108,6 +108,50 @@ module Rubernetes
         raise MissingReconcileError, "controller #{self.class} must implement #plan before it can reconcile"
       end
 
+      def consistency_prefix
+        CONSISTENCY_CONTROLLERS[name.to_s]
+      end
+
+      def consistency_key(resource)
+        "#{Support.namespace(resource)}/#{Support.name(resource)}"
+      end
+
+      # nil when the sync proceeds, else the result standing in for the skip.
+      def stale_sync_skip(resource)
+        prefix = consistency_prefix
+        return nil unless prefix && resource.is_a?(Hash)
+
+        key = consistency_key(resource)
+        expected = ConsistencyStore.expected(name, key)
+        return nil if expected.nil?
+
+        cached = Support.value(Support.metadata(resource), "resourceVersion", nil).to_s
+        unless ConsistencyStore.newer?(expected, cached)
+          ConsistencyStore.clear(name, key)
+          return nil
+        end
+        descriptor = respond_to?(:resource_descriptor) ? resource_descriptor : nil
+        ControllerMetrics.increment("#{prefix}_controller_stale_sync_skips_total",
+                                    {"group" => descriptor.respond_to?(:group) ? descriptor.group.to_s : "",
+                                     "resource" => descriptor.respond_to?(:resource) ? descriptor.resource.to_s : ""})
+        ReconcileResult.new(controller: name, key: key, requeue_after: STALE_SYNC_RETRY_SECONDS)
+      end
+
+      # The resourceVersions this sync wrote to the object it reconciles.
+      def remember_written_versions(resource, responses)
+        return unless consistency_prefix && resource.is_a?(Hash)
+
+        kind = Support.kind(resource).to_s
+        key = consistency_key(resource)
+        Array(responses).each do |response|
+          next unless response.is_a?(Hash) && Support.kind(response).to_s == kind && consistency_key(response) == key
+
+          ConsistencyStore.record(name, key, Support.value(Support.metadata(response), "resourceVersion", nil))
+        end
+      rescue StandardError
+        nil
+      end
+
       # A key whose object is gone can still owe work.  A deleted Job leaves
       # its Pods holding the tracking finalizer, and with the Job removed no
       # sync will ever release them: the Pods stay Terminating and their
