@@ -803,6 +803,31 @@ module Rubernetes
       rescue StandardError => error
         requeue_after_failure(item.pod, error) if item
         raise
+      ensure
+        queue.done(item.pod) if item && queue.respond_to?(:done)
+        record_in_flight_events
+      end
+
+      # SchedulerQueueingHints: the queue asks this before moving an
+      # unschedulable Pod on a cluster event.
+      def queueing_strategy(pod, rejecting_plugins, event, old_object, new_object)
+        QueueingHints.strategy(pod, rejecting_plugins, event, old_object, new_object,
+                               observer: ->(plugin, label, hint, seconds) { @metrics.queueing_hint(plugin, label, hint, seconds) })
+      end
+
+      # A cluster event: the unschedulable Pods it may help are moved.
+      def requeue_on_event(event, old_object: nil, new_object: nil)
+        moved = queue.respond_to?(:move_on_event) ? queue.move_on_event(event, old_object: old_object, new_object: new_object) : queue.promote_unschedulable
+        record_in_flight_events
+        moved
+      end
+
+      def record_in_flight_events
+        return unless queue.respond_to?(:in_flight_event_counts) && @metrics.respond_to?(:inflight_events)
+
+        @metrics.inflight_events(queue.in_flight_event_counts)
+      rescue StandardError
+        nil
       end
 
       def schedule!(pod, nodes = nil, **options)
