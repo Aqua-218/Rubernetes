@@ -918,7 +918,8 @@ module Rubernetes
           def waiting = @queue_set.total_waiting
 
           def stats
-            @monitor.synchronize { {"name" => @name, "seats" => @seats, "inflight" => @inflight, "queued" => @queue_lengths.sum, "rejected" => @rejected, "dispatched" => @dispatched, "exempt" => @exempt} }
+            @queue_set.stats.merge("name" => @name, "seats" => @nominal_seats, "current_seats" => @current_seats, "inflight" => inflight,
+                                   "queued" => waiting, "exempt" => @exempt)
           end
 
           # Returns the queue index or raises RejectedError.
