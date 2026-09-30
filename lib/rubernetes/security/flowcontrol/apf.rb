@@ -1015,8 +1015,8 @@ module Rubernetes
           @fair_frac = 0.0
           @targets = {}
           @flow_schemas = Array(flow_schemas).sort_by { |schema| [schema.dig("spec", "matchingPrecedence").to_i, schema.dig("metadata", "name").to_s] }
-          total_shares = Array(priority_level_configurations).sum { |plc| plc.dig("spec", "limited", "nominalConcurrencyShares").to_i }
-          total_seats = read_seats + mutating_seats
+          @server_seats = read_seats + mutating_seats
+          @borrowing_adjustment_seconds = borrowing_adjustment_seconds
           @priority_levels = Array(priority_level_configurations).each_with_object({}) do |plc, levels|
             name = plc.dig("metadata", "name")
             spec = plc["spec"] || {}
