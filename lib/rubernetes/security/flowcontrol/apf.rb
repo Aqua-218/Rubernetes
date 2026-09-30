@@ -1090,7 +1090,7 @@ module Rubernetes
           end
         end
 
-        NON_MUTATING_VERBS = %w[get list watch].freeze
+        def ratio(level_name, key) = @ratios&.dig(level_name, key)
 
         # Classify and admit; returns a Ticket to release later.
         def enter(attributes)
