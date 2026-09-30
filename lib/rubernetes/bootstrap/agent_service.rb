@@ -324,7 +324,11 @@ module Rubernetes
         errors.concat(unresolved_orphans.map { |key| "unresolved orphan resource: #{key}" })
         blocked = Array(value["blocked"] || value[:blocked]).map(&:to_s)
         ready = value.key?("ready") ? value["ready"] : value.fetch(:ready, true)
-        return true if ready == true && errors.empty? && blocked.empty?
+        # A Pod whose cleanup is still pending is that Pod's problem: the
+        # lifecycle retries it (retry_pending_cleanups) and kubelet never
+        # refuses to start over one.  Only runtime-level errors keep the
+        # node down.
+        return true if ready == true && errors.empty?
 
         detail = (errors + blocked.map { |entry| "#{entry} is pending" }).join("; ")
         raise Error, "agent recovery is not complete#{": #{detail}" unless detail.empty?}"

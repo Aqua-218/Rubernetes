@@ -29,6 +29,8 @@ module Rubernetes
     class Lifecycle
       class Error < StandardError; end
       LifecycleError = Error
+      # The runtime no longer knows the sandbox (startup recovery released it).
+      class SandboxGone < LifecycleError; end
 
       # Small atomic state store for the node-side reconciliation cache.  The
       # runtime ledger remains the authority for kernel ownership; this store
@@ -3593,8 +3595,20 @@ module Rubernetes
           unless record[:cleanup_completed][key]
             begin
               event(record, "network.delete")
-              sandbox = network_sandbox_context(record)
-              if @network.respond_to?(:delete)
+              sandbox = begin
+                network_sandbox_context(record)
+              rescue SandboxGone => error
+                # The sandbox (and its namespace) no longer exists: tear down
+                # with the stored descriptor so IPAM and bridge state are
+                # released, and accept the result either way -- a Pod whose
+                # namespace is gone must not stay CleanupPending for ever
+                # (the agent refused to come up over one such Pod, 2026-09-30).
+                event(record, "network.delete.sandbox_gone", message: error.message)
+                record[:sandbox_context] || :gone
+              end
+              if sandbox == :gone
+                nil
+              elsif @network.respond_to?(:delete)
                 invoke(@network, :delete, sandbox)
               elsif @network.respond_to?(:disconnect)
                 invoke(@network, :disconnect, sandbox)
@@ -3978,6 +3992,14 @@ module Rubernetes
         # runtime cannot expose a live descriptor. If a live lookup exists
         # and fails, do not silently target the host namespace.
         if @runtime.respond_to?(:network_sandbox_context)
+          # The runtime no longer holds the sandbox at all (startup recovery
+          # released it: its namespace and links are gone with it).  That is
+          # not a lookup that might land on the host namespace; it is the
+          # answer "nothing left to enter", which the caller handles.
+          if Helpers.failure_message(error).include?("unknown sandbox")
+            raise SandboxGone, "sandbox #{sandbox_id} is gone: #{Helpers.failure_message(error)}"
+          end
+
           raise LifecycleError,
                 "sandbox network namespace lookup failed: #{Helpers.failure_message(error)}"
         end
