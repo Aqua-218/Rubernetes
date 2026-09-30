@@ -364,9 +364,6 @@ module Rubernetes
         @node_graph = live_node_graph
       end
 
-      # Started by the service once the store is serving.
-      attr_reader :node_graph_populator
-
       def live_node_graph
         assembly = self
         graph = Object.new
