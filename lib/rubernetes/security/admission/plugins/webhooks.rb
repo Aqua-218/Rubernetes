@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "../../egress"
 require "net/http"
 require "openssl"
 require "securerandom"
