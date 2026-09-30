@@ -197,6 +197,7 @@ module Rubernetes
               @dek_cache[wrapped] = dek
               @dek_cache.shift while @dek_cache.length > @cache_size
             end
+            note_cache_state
           end
           bytes = Base64.strict_decode64(document.fetch("ciphertext"))
           cipher = OpenSSL::Cipher.new("aes-256-gcm").decrypt
