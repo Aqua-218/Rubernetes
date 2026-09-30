@@ -293,6 +293,9 @@ module Rubernetes
         end
         @kubelet_metrics = KubeletMetrics.new(node_name: @node_name)
         @kubelet_metrics.plugin_manager = @plugin_manager if @plugin_manager
+        if image_resolver.respond_to?(:pull_records) && image_resolver.pull_records && @kubelet_metrics.respond_to?(:pull_records=)
+          @kubelet_metrics.pull_records = image_resolver.pull_records
+        end
         if @csi_plugins.respond_to?(:metrics_observer=)
           kubelet_metrics = @kubelet_metrics
           @csi_plugins.metrics_observer = ->(driver, method_name, code, seconds) { kubelet_metrics.csi_operation(driver, method_name, code, seconds) }
