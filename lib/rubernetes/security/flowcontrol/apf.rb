@@ -1080,8 +1080,8 @@ module Rubernetes
               executing: registry.ratio_gauge("apiserver_flowcontrol_priority_level_request_utilization", labels.merge("phase" => "executing"),
                                               denominator: [level.current_seats, 1].max, clock: @clock),
               seats: registry.ratio_gauge("apiserver_flowcontrol_priority_level_seat_utilization", labels.merge("phase" => "executing"),
-                                          denominator: level.seats, clock: @clock),
-              demand: registry.ratio_gauge("apiserver_flowcontrol_demand_seats", labels, denominator: level.seats, clock: @clock)
+                                          denominator: [level.current_seats, 1].max, clock: @clock),
+              demand: registry.ratio_gauge("apiserver_flowcontrol_demand_seats", labels, denominator: [level.current_seats, 1].max, clock: @clock)
             }
           end
           @read_write = %w[waiting executing].product(%w[readOnly mutating]).to_h do |phase, kind|
