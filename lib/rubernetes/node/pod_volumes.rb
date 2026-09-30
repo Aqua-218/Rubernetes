@@ -1072,6 +1072,19 @@ module Rubernetes
                                        "path" => Helpers.key(token, "path", "token")}.compact}
           elsif (bundle = Helpers.key(entry, "clusterTrustBundle", nil))
             cluster_trust_bundle_files(bundle)
+          elsif (certificate = Helpers.key(entry, "podCertificate", nil))
+            raise Unsupported, "projected podCertificate needs the PodCertificateRequest feature gate and the node's API client" if @pod_certificates.nil?
+
+            %w[credentialBundlePath keyPath certificateChainPath].each do |field|
+              path = Helpers.key(certificate, field, nil)
+              validate_relative_path!(path.to_s, "projected podCertificate #{field}") unless path.nil?
+            end
+            {"podCertificate" => {"signerName" => Helpers.key(certificate, "signerName", nil), "keyType" => Helpers.key(certificate, "keyType", nil),
+                                  "maxExpirationSeconds" => Helpers.key(certificate, "maxExpirationSeconds", nil),
+                                  "credentialBundlePath" => Helpers.key(certificate, "credentialBundlePath", nil),
+                                  "keyPath" => Helpers.key(certificate, "keyPath", nil), "certificateChainPath" => Helpers.key(certificate, "certificateChainPath", nil),
+                                  "userAnnotations" => Helpers.key(certificate, "userAnnotations", nil),
+                                  "volumeName" => Helpers.key(source, "name", nil), "sourceIndex" => Array(Helpers.key(source, "sources", [])).index(projection)}.compact}
           else
             raise Unsupported, "projected source #{entry.keys.inspect} is not supported"
           end
