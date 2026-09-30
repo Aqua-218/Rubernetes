@@ -1408,6 +1408,33 @@ module Rubernetes
                                                                     csi_driver_reader: csi_driver_reader, logger: @logger)
       end
 
+      # PodCertificateRequest (feature gate, off by default): projected
+      # podCertificate sources are served by the PodCertificateManager.
+      def attach_pod_certificate_manager
+        return unless @feature_gates.fetch("PodCertificateRequest", false) == true
+
+        pod_volumes = @lifecycle.respond_to?(:pod_volumes) ? @lifecycle.pod_volumes : nil
+        client = @api.respond_to?(:client) ? @api.client : nil
+        return unless pod_volumes.respond_to?(:pod_certificates=) && client
+
+        recorder = @event_recorder
+        manager = PodCertificateManager.new(
+          client: client, node_name: @node_name, logger: @logger,
+          node_uid: lambda do
+            node = client.get("nodes", @node_name, api_version: "v1")
+            node.is_a?(Hash) ? node.dig("metadata", "uid").to_s : ""
+          rescue StandardError
+            ""
+          end,
+          events: lambda do |pod, type, reason, message|
+            recorder&.record(involved_object: pod, reason: reason, message: message, type: type)
+          end
+        )
+        pod_volumes.pod_certificates = manager
+        @kubelet_metrics.pod_certificates = manager if @kubelet_metrics.respond_to?(:pod_certificates=)
+        @pod_certificate_manager = manager.start
+      end
+
       def build_shutdown_manager(config, feature_gates, kubelet_root, error_handler)
         config = Helpers.string_keys(config || {})
         gates = Helpers.string_keys(feature_gates || {})
