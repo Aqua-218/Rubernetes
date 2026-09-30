@@ -549,6 +549,8 @@ module Rubernetes
 
       # Schedule one pod.  Positional and keyword node forms are both
       # accepted because API adapters commonly call this method differently.
+      # +assume_only+: stop after Reserve (a pod-group cycle binds, or rolls
+      # back, all members together); +pod_groups+: the PodGroup objects.
       def schedule(pod, nodes = nil, pods: nil, namespace_labels: nil, volume_data: nil, enqueue: false,
                    trace: nil, workload_selectors: nil, **keywords)
         nodes ||= keywords.delete(:nodes)
