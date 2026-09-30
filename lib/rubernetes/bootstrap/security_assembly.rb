@@ -26,7 +26,7 @@ module Rubernetes
       attr_reader :authentication_info
 
       def initialize(config:, store:, key_for:, logger: nil, clock: -> { Time.now.utc }, resource_resolver: nil, service_resolver: nil,
-                     scope_resolver: nil, type_resolver: nil, defaulter: nil)
+                     scope_resolver: nil, type_resolver: nil, defaulter: nil, apiserver_id: nil)
         @defaulter = defaulter
         @service_resolver = service_resolver
         @scope_resolver = scope_resolver
