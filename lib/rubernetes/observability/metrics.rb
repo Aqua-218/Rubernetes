@@ -223,7 +223,6 @@ module Rubernetes
       no_egress = "no egress selector / konnectivity dialer: webhooks and node connections dial directly"
       no_delegation = "this is the kube-apiserver itself: delegated authn/authz (an aggregated server asking the kube-apiserver) is not a role it plays"
       no_declarative = "declarative validation (DeclarativeValidation / +k8s: validation tags) is not implemented; every rule is hand-written in Schema::KubernetesValidator"
-      no_serving_rotation = "the kubelet serving certificate is a file the operator issues (kubelet-serving-<node>); RotateKubeletServerCertificate is not implemented, so no server certificate manager runs"
       no_evented_pleg = "EventedPLEG (Beta, off by default) is not implemented; upstream registers these only with the gate on"
       no_pull_records = "no image pull record store: KubeletEnsureSecretPulledImages' pulled/pull-intent files and their must-pull checks are not implemented"
       windows_only = "Windows HostProcess containers do not exist on Linux"
