@@ -829,6 +829,7 @@ module Rubernetes
       rescue StandardError
         nil
       end
+      private :record_in_flight_events
 
       def schedule!(pod, nodes = nil, **options)
         result = schedule(pod, nodes, **options)
