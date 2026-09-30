@@ -135,6 +135,11 @@ module Rubernetes
         Entry.new(request: authorized, attributes: attributes, audit: audit, ticket: ticket, started_at: @clock.call)
       end
 
+      # The work estimator reads the list options off the request.
+      def flow_control_enter(attributes, request)
+        @flow_control.method(:enter).parameters.any? { |kind, name| kind == :key && name == :request } ? @flow_control.enter(attributes, request: request) : @flow_control.enter(attributes)
+      end
+
       def exit(entry, response, response_object: nil, request_object: nil, error: nil)
         return if entry.nil?
 
