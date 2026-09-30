@@ -892,18 +892,24 @@ module Rubernetes
           def initialize(controller:, name:, spec:, clock:, after: nil)
             @controller = controller
             @name = name
-            @seats = seats
-            @queues = queues
-            @hand_size = hand_size
-            @queue_length_limit = queue_length_limit
-            @wait_limit = wait_limit
-            @exempt = exempt
-            @inflight = 0
-            @queue_lengths = Array.new(queues) { 0 }
-            @monitor = Monitor.new
-            @condition = @monitor.new_cond
-            @rejected = 0
-            @dispatched = 0
+            @clock = clock
+            @exempt = spec["type"] == "Exempt"
+            limited = spec["limited"] || spec["exempt"] || {}
+            @nominal_shares = @exempt ? (limited["nominalConcurrencyShares"] || 0).to_i : (limited["nominalConcurrencyShares"] || 30).to_i
+            @lendable_percent = limited["lendablePercent"]
+            @borrowing_limit_percent = @exempt ? nil : limited["borrowingLimitPercent"]
+            queuing = limited.dig("limitResponse", "queuing")
+            @reject = !@exempt && limited.dig("limitResponse", "type") == "Reject"
+            @queues = @exempt ? -1 : (queuing ? (queuing["queues"] || DEFAULT_QUEUES).to_i : 0)
+            @hand_size = queuing ? (queuing["handSize"] || DEFAULT_HAND_SIZE).to_i : 1
+            @queue_length_limit = queuing ? (queuing["queueLengthLimit"] || DEFAULT_QUEUE_LENGTH_LIMIT).to_i : 0
+            @wait_limit = DEFAULT_REQUEST_WAIT_LIMIT
+            @nominal_seats = @min_seats = @max_seats = @current_seats = 0
+            @estimator_max_seats = 0
+            @seat_demand_integrator = Integrator.new(clock)
+            @seat_demand_stats = SeatDemandStats.new(average: 0.0, stdev: 0.0, high_watermark: 0, smoothed: 0.0)
+            @queue_set = QueueSet.new(name: name, desired_queues: @queues, queue_length_limit: @queue_length_limit, hand_size: @hand_size,
+                                      concurrency_limit: 0, concurrency_denominator: 1, clock: clock, observer: self, after: after)
           end
 
           def stats
