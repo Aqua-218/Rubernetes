@@ -2,6 +2,7 @@
 
 require "digest"
 require "monitor"
+require "set"
 
 require_relative "../identity"
 
