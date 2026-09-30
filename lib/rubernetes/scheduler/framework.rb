@@ -552,7 +552,7 @@ module Rubernetes
       # +assume_only+: stop after Reserve (a pod-group cycle binds, or rolls
       # back, all members together); +pod_groups+: the PodGroup objects.
       def schedule(pod, nodes = nil, pods: nil, namespace_labels: nil, volume_data: nil, enqueue: false,
-                   trace: nil, workload_selectors: nil, **keywords)
+                   trace: nil, workload_selectors: nil, pod_groups: nil, assume_only: false, **keywords)
         nodes ||= keywords.delete(:nodes)
         raise ArgumentError, "nodes are required" if nodes.nil?
         raise ArgumentError, "unknown scheduler options: #{keywords.keys.inspect}" unless keywords.empty?
