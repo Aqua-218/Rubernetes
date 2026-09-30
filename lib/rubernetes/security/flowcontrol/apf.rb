@@ -1115,6 +1115,8 @@ module Rubernetes
             return Ticket.new(priority_level: level_name, flow_schema: schema_name, queue_index: nil, seats: 0, queued_seconds: 0.0, exempt: true,
                               forget_watch: forget, watch: attributes.verb.to_s == "watch")
           end
+          work = @work_estimator.estimate(attributes, query, schema_name, level_name)
+          observe("apiserver_flowcontrol_work_estimated_seats", work.max_seats, labels)
           mutating = !NON_MUTATING_VERBS.include?(attributes.verb.to_s)
           on_queue = @metrics ? ->(delta, length) { note_queued(labels, mutating, delta, length) } : nil
           @metrics&.observe("apiserver_flowcontrol_work_estimated_seats", 1, labels)
