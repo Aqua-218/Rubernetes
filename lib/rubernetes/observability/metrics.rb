@@ -315,7 +315,6 @@ module Rubernetes
           "statefulset_controller_stale_sync_skips_total" => consistency
         }.freeze,
         "kube-scheduler" => {
-          "scheduler_permit_wait_duration_seconds" => "no Permit extension point: none of the default plugins implements Permit, so no Pod ever waits in it",
           "scheduler_inflight_events" => no_queueing_hints,
           "scheduler_queueing_hint_execution_duration_seconds" => no_queueing_hints,
           "scheduler_podgroup_schedule_attempts_total" => no_pod_groups,
