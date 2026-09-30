@@ -42,6 +42,9 @@ module Rubernetes
         def initialize(issuer:, signing_key: nil, verification_keys: nil, api_audiences:, lookup:, clock: -> { Time.now.utc },
                        max_expiration_seconds: nil, extend_expiration: true, secret_writer: nil, external_signer: nil)
           @issuer = String(issuer)
+          @external_signer = external_signer
+          raise ArgumentError, "a signing key or an external signer is required" if signing_key.nil? && external_signer.nil?
+
           @signing_key = signing_key
           @key_id = JWT.key_id(public_key(signing_key))
           keys = Array(verification_keys).empty? ? [public_key(signing_key)] : Array(verification_keys)
