@@ -15,7 +15,8 @@ module Rubernetes
         NAME = "Webhook"
 
         # transport.call(body_json) -> [status_code, body_json]
-        def initialize(transport:, authorized_ttl: 300, unauthorized_ttl: 30, clock: -> { Time.now.utc }, failure_policy: "NoOpinion", version: "v1")
+        def initialize(transport:, authorized_ttl: 300, unauthorized_ttl: 30, clock: -> { Time.now.utc }, failure_policy: "NoOpinion", version: "v1",
+                       name: NAME, match_conditions: nil)
           @transport = transport
           @authorized_ttl = authorized_ttl
           @unauthorized_ttl = unauthorized_ttl
