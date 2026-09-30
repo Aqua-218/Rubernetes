@@ -672,7 +672,8 @@ module Rubernetes
         section = process_config["image_pull_credentials"]
         raise Error, "#{context} must be a mapping" unless section.is_a?(Hash)
 
-        reject_unknown_keys!(section, %w[verification_policy preloaded_images_verification_allowlist], context)
+        reject_unknown_keys!(section, %w[verification_policy preloaded_images_verification_allowlist state_dir], context)
+        validate_absolute_path!(section["state_dir"], "#{context}.state_dir") if section.key?("state_dir")
         gates = process_config["feature_gates"].is_a?(Hash) ? process_config["feature_gates"] : {}
         if gates["KubeletEnsureSecretPulledImages"] == false
           raise Error, "#{context} must not be set if KubeletEnsureSecretPulledImages feature gate is not enabled"
