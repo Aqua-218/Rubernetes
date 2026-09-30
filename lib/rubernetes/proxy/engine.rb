@@ -1132,6 +1132,16 @@ module Rubernetes
         end
       end
 
+      def reconcile_conntrack(rules)
+        reconciler = @conntrack_reconciler
+        return unless reconciler && !reconciler.disabled?
+
+        reconciler.reconcile(rules)
+      rescue StandardError => error
+        @logger.warn("proxy.conntrack_reconcile_error", error: error.message) if defined?(@logger) && @logger.respond_to?(:warn)
+        nil
+      end
+
       # Services with a Local traffic policy and no local endpoint, per IP
       # family and policy (kubeproxy_sync_proxy_rules_no_local_endpoints_total).
       def count_no_local_endpoints
