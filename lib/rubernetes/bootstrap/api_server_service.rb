@@ -74,6 +74,9 @@ module Rubernetes
         @raft_server = nil
         @store = store || build_store(@config)
         @store = encrypt_store(@store, @config)
+        if (egress_path = @config["egress_selector_config_file"])
+          Security::Egress.selector = Security::Egress::Selector.load(egress_path)
+        end
         @security = build_security(@config)
         # kube-apiserver --proxy-client-cert-file / --proxy-client-key-file:
         # the client certificate the aggregator (and webhook calls) present,
