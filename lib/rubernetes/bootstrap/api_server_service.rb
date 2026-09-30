@@ -567,6 +567,24 @@ module Rubernetes
         end
       end
 
+      # --encryption-provider-config: the EncryptionConfiguration wraps the
+      # store so the listed resources are sealed at rest, and its reload
+      # controller re-reads the file as it changes.
+      def encrypt_store(store, config)
+        path = config["encryption_config_file"]
+        return store unless path
+
+        require_relative "../security/encryption"
+        configuration = Security::Encryption::Configuration.load(path)
+        wrapped = configuration.wrap(store)
+        interval = Float(config.fetch("encryption_config_reload_interval_seconds", Security::Encryption::ReloadController::POLL_INTERVAL))
+        @encryption_reload = Security::Encryption::ReloadController.new(path: path, wrapped: wrapped, interval: interval,
+                                                                       logger: ->(level, event, **fields) { @logger.public_send(level, event, **fields) })
+        @encryption_reload.note_loaded(configuration)
+        @logger.info("encryption.config.loaded", hash: configuration.hash, groups: configuration.groups.map(&:names))
+        wrapped
+      end
+
       def build_store(config)
         datastore = config["datastore"] || {}
         history = config.fetch("watch_history_limit")
