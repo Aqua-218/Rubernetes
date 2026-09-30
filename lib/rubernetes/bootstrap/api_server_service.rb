@@ -190,6 +190,10 @@ module Rubernetes
           @encryption_reload.start
         end
         Security::Egress.metrics = @api_server.metrics if Security::Egress.selector && @api_server.respond_to?(:metrics)
+        if @security&.node_graph_populator
+          Security::Authorization::NodeGraph.metrics = @api_server.metrics if @api_server.respond_to?(:metrics)
+          @security.node_graph_populator.start
+        end
         Array(@security&.reload_controllers).each do |controller|
           controller.metrics = @api_server.metrics if @api_server.respond_to?(:metrics)
           controller.note_loaded
