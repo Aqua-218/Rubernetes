@@ -380,6 +380,17 @@ module Rubernetes
 
       KEY_EXCHANGE_GROUPS = "X25519:P-256:P-384:P-521"
 
+      # A rotated serving certificate: connections accepted from now on use
+      # it, established ones keep theirs (as kubelet's dynamic certificate
+      # provider does).
+      def reload_tls!(certificate:, private_key:)
+        @certificate = certificate
+        @private_key = private_key
+        @mutex.synchronize { @ssl_context = build_ssl_context if @tls_enabled }
+        self
+      end
+      public :reload_tls!
+
       def build_ssl_context
         context = OpenSSL::SSL::SSLContext.new
         context.cert = @certificate || OpenSSL::X509::Certificate.new(File.binread(@cert_file))
