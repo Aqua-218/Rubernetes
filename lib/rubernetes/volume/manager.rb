@@ -1711,8 +1711,11 @@ module Rubernetes
         restored = @volume_store.values
         stats = {
           attempted: restored.count { |record| !record.publishes.to_h.empty? || !record.attachments.to_h.empty? },
-          errors: restored.count { |record| record.state.to_s == "Unknown" }
-        }.freeze
+          errors: restored.count { |record| record.state.to_s == "Unknown" },
+          force_cleaned: 0, force_clean_errors: 0
+        }
+        force_clean_unknown!(restored, stats)
+        @reconstruction_stats = stats.freeze
         @operations = operation_ledger || OperationLedger.new(path: File.join(@data_dir, "operations.json"), fsync: fsync, clock: clock)
         @mount_ledger = mount_ledger || MountIdentityLedger.new(path: File.join(@data_dir, "mounts.json"), fsync: fsync)
         if @mount_ledger.respond_to?(:live_check=) && @mount_ledger.live_check.nil? && @mount_adapter.respond_to?(:find_mount)
