@@ -176,6 +176,7 @@ module Rubernetes
         errors = []
         unregister_node_endpoint
         @certificate_manager&.stop
+        @serving_certificate_manager&.stop
         stop_dns_service!
         stop_streaming_server!
         [@sync_loop, @api_adapter, @runtime].compact.uniq.each do |component|
