@@ -104,7 +104,14 @@ module Rubernetes
           traced("security.audit") do
             context = @audit_policy ? Audit::Context.new(policy: @audit_policy, backend: @audit_backend, attributes: attributes, request: authorized,
                                                          audit_id: audit_id, clock: @clock) : nil
-            context&.request_received
+            begin
+              context&.request_received
+            rescue Audit::RejectedError => error
+              # A blocking-strict audit webhook that could not take the
+              # RequestReceived event fails the request.
+              @metrics&.increment("apiserver_audit_requests_rejected_total")
+              raise AuditRejected, error.message
+            end
             context
           end
         end
