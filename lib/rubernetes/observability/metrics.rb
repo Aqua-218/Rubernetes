@@ -252,9 +252,6 @@ module Rubernetes
           "scheduler_podgroup_scheduling_attempt_duration_seconds" => no_pod_groups
         }.freeze,
         "kubelet" => {
-          "kubelet_evented_pleg_connection_error_count" => no_evented_pleg,
-          "kubelet_evented_pleg_connection_latency_seconds" => no_evented_pleg,
-          "kubelet_evented_pleg_connection_success_count" => no_evented_pleg,
           "kubelet_cri_losing_support" => "set upstream only for a container runtime on a CRI API version about to lose support; the native runtime has no CRI version and the CRI backend speaks runtime.v1",
           "kubelet_podcertificate_states" => "the PodCertificateRequest kubelet manager (PodCertificateRequest, Alpha, off) is not implemented",
           "kubelet_started_host_process_containers_total" => windows_only,
