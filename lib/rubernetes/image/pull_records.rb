@@ -50,7 +50,17 @@ module Rubernetes
 
       attr_reader :policy
 
-      def initialize(policy: NEVER_VERIFY_PRELOADED, allowlist: [], clock: -> { Time.now.utc })
+      # pullmanager's in-memory cache sizes (their usage is exported in
+      # percent) and the on-disk layout: <directory>/pulling/<sha>.json
+      # ImagePullIntents written before a pull, <directory>/pulled/<sha>.json
+      # ImagePulledRecords after it.
+      MEMORY_RECORDS_CAPACITY = 1000
+      MEMORY_INTENTS_CAPACITY = 1000
+
+      # +directory+: where intents and records persist (nil = memory only).
+      # +metrics_observer+: ->(result) for each must-pull check
+      # ("pull_required" / "pull_not_required").
+      def initialize(policy: NEVER_VERIFY_PRELOADED, allowlist: [], clock: -> { Time.now.utc }, directory: nil, metrics_observer: nil)
         @policy = policy.to_s
         raise InvalidPolicy, "unknown image pull credential verification policy: #{@policy}" unless POLICIES.include?(@policy)
 
