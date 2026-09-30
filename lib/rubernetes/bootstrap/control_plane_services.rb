@@ -1634,7 +1634,7 @@ module Rubernetes
       # Changes that can make an unschedulable Pod schedulable.
       REQUEUE_KINDS = %w[Namespace PersistentVolume PersistentVolumeClaim StorageClass
                          ResourceClaim ResourceSlice DeviceClass CSINode CSIDriver VolumeAttachment
-                         CSIStorageCapacity].freeze
+                         CSIStorageCapacity PodGroup].freeze
 
       def start
         @mutex.synchronize { raise RuntimeError, "rubernetes-scheduler is already started" if @running }
