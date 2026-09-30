@@ -140,6 +140,20 @@ module Rubernetes
         end
       end
 
+      public
+
+      # pkg/proxy/conntrack.CleanStaleEntries, one family: how long the
+      # reconcile took and how many stale UDP flows it deleted.
+      def conntrack_reconciled(family, seconds, deleted)
+        labels = {"ip_family" => family.to_s}
+        observe("kubeproxy_conntrack_reconciler_sync_duration_seconds", seconds, labels)
+        @registry.increment("kubeproxy_conntrack_reconciler_deleted_entries_total", labels, by: deleted.to_i) if deleted.to_i.positive?
+      rescue StandardError
+        nil
+      end
+
+      private
+
       def observe(name, value, labels = {})
         @registry.observe(name, value, labels)
       rescue StandardError
