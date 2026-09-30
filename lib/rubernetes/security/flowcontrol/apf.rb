@@ -1388,9 +1388,9 @@ module Rubernetes
           adjust("apiserver_flowcontrol_current_inqueue_requests", labels, delta)
         end
 
-        # AddSeatConcurrencyInUse and the executing ratios.
-        def note_executing(labels, mutating, delta)
-          return unless @metrics
+        def note_executing(labels, delta)
+          adjust("apiserver_flowcontrol_current_executing_requests", labels, delta)
+        end
 
           adjust("apiserver_flowcontrol_current_executing_seats", labels, delta)
           ratios = @ratios&.[](labels["priority_level"])
