@@ -1371,7 +1371,8 @@ module Rubernetes
 
         Array(Types.key(spec, "sources", [])).any? do |source|
           value = source.respond_to?(:to_h) ? source.to_h : source
-          value.respond_to?(:key?) && (value.key?("secret") || value.key?(:secret) || value.key?("serviceAccountToken") || value.key?(:serviceAccountToken))
+          value.respond_to?(:key?) && (value.key?("secret") || value.key?(:secret) || value.key?("serviceAccountToken") || value.key?(:serviceAccountToken) ||
+                                       value.key?("podCertificate") || value.key?(:podCertificate))
         end
       end
 
