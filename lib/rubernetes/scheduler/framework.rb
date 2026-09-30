@@ -365,7 +365,7 @@ module Rubernetes
 
       # +overrides+: plugin name => implementation, for the stateful plugins
       # built per Framework (DynamicResources).
-      def self.default_registry(overrides = {})
+      def self.default_registry(overrides = {}, feature_gates: {})
         registry = PluginRegistry.new
         DEFAULT_PLUGIN_SPECS.each do |spec|
           implementation = overrides[spec.fetch(:name)] || spec[:implementation] || spec[:factory]&.call
