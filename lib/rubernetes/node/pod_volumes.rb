@@ -516,6 +516,7 @@ module Rubernetes
           guard(errors, "detach #{id}", ignore: true) { @volume.unpublish(id, @node_name, token: "#{token}-detach-#{id}") } unless @node_name.empty?
           guard(errors, "delete #{id}") { @volume.delete_volume(id, token: "#{token}-delete-#{id}") }
         end
+        @pod_certificates&.forget_pod(uid) unless keep_certificates
         guard(errors, "remove pod directory") do
           directory = pod_directory(object)
           FileUtils.rm_rf(directory) if File.directory?(directory) && !mounted_beneath?(directory)
