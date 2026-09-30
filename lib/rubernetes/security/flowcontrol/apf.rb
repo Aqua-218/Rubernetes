@@ -961,7 +961,7 @@ module Rubernetes
             stats
           end
 
-          private
+          # -- QueueSet observer callbacks (the metrics upstream's queueset records) --
 
           # Round-robin fairness approximation: the queue with waiters that is
           # also the shortest gets the seat; ties resolve by index.
