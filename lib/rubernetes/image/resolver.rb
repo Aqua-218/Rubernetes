@@ -381,6 +381,7 @@ module Rubernetes
                         PullRecords::Credentials.secret(**pull_secret.slice(:uid, :namespace, :name, :hash))
                       end
         @pull_records.record_pulled(repository_key(image_reference), digest.to_s, credentials)
+        @pull_records.clear_intent(image_reference.to_s)
       end
       private :record_pull
 
