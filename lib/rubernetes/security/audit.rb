@@ -78,6 +78,8 @@ module Rubernetes
                               impersonated: @impersonated, impersonation_constraint: @impersonation_constraint)
           event["requestReceivedTimestamp"] = @received_at.iso8601(6)
           @backend.process(event)
+        rescue RejectedError
+          raise
         end
       end
     end
