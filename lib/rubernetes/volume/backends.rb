@@ -1485,6 +1485,68 @@ module Rubernetes
         end
       end
 
+      # A podCertificate source: the credential bundle the kubelet's
+      # PodCertificateManager holds for this projection (not ready: the
+      # volume setup fails and is retried, as upstream's).
+      def pod_certificate_files(inner)
+        provider = @pod_certificates
+        raise SecretPersistenceError, "projected podCertificate requires the kubelet's PodCertificateManager" unless provider
+
+        pod = Types.key(spec, "pod", {})
+        volume_name = Types.key(inner, "volumeName", Types.key(spec, "name", "")).to_s
+        index = Types.key(inner, "sourceIndex", 0).to_i
+        source = inner.respond_to?(:to_h) ? inner.to_h : {}
+        key_pem, chain_pem = begin
+          provider.credential_bundle(pod, volume_name, index, source)
+        rescue StandardError => error
+          raise PodCertificateNotReadyError, "podCertificate #{volume_name}[#{index}]: #{error.message}"
+        end
+        @certificate_versions[index] = provider.respond_to?(:version) ? provider.version(pod, volume_name, index) : 1
+        files = {}
+        bundle_path = Types.key(inner, "credentialBundlePath", nil).to_s
+        files[bundle_path] = "#{key_pem}#{chain_pem}" unless bundle_path.empty?
+        key_path = Types.key(inner, "keyPath", nil).to_s
+        files[key_path] = key_pem unless key_path.empty?
+        chain_path = Types.key(inner, "certificateChainPath", nil).to_s
+        files[chain_path] = chain_pem unless chain_path.empty?
+        files
+      end
+
+      def pod_certificate_sources
+        Array(Types.key(spec, "sources", [])).filter_map do |source|
+          value = source.respond_to?(:to_h) ? source.to_h : source
+          next unless value.respond_to?(:key?) && (value.key?("podCertificate") || value.key?(:podCertificate))
+
+          Types.key(value, "podCertificate", {})
+        end
+      end
+
+      # A refreshed certificate was issued since the files were written.
+      def pod_certificate_refresh_due?
+        provider = @pod_certificates
+        return false unless provider.respond_to?(:version)
+
+        sources = pod_certificate_sources
+        return false if sources.empty?
+        # A backend rebuilt after a restart holds no versions: re-project once.
+        return true if @certificate_versions.empty?
+
+        pod = Types.key(spec, "pod", {})
+        sources.any? do |inner|
+          index = Types.key(inner, "sourceIndex", 0).to_i
+          provider.version(pod, Types.key(inner, "volumeName", Types.key(spec, "name", "")).to_s, index) != @certificate_versions[index]
+        end
+      end
+
+      # Rewrite the projection with the current credential bundles.
+      def refresh_pod_certificates(generation: nil)
+        normalized = normalize_sources(Array(Types.key(spec, "sources", [])))
+        @projected_files = merge_projected_files(normalized)
+        @projector.writer.write(@projected_files, generation: generation, secret: secret?, mode: default_file_mode, modes: file_modes)
+      end
+
+      public :pod_certificate_refresh_due?, :refresh_pod_certificates, :pod_certificate_sources
+
       def merge_projected_files(sources)
         sources.each_with_object({}) do |source, files|
           raise ValidationError, "projected source must return a map" unless source.respond_to?(:to_h)
