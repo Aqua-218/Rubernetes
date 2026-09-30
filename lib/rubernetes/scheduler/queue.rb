@@ -330,6 +330,24 @@ module Rubernetes
         end
       end
 
+      # PopSpecificPod: take a named Pod out of whichever queue holds it (a
+      # pod-group cycle schedules its members together).  Returns the item
+      # or nil when the Pod is not queued.
+      def pop_specific(pod)
+        key = identity_key(pod)
+        @mutex.synchronize do
+          item = @pending.delete(key) || @backoff.delete(key)&.first || @unschedulable.delete(key)
+          return nil unless item
+
+          @gated.delete(key)
+          now = now_seconds
+          @pops[key] = @pops.fetch(key, 0) + 1
+          @first_pop[key] ||= now
+          @in_flight[key] = @event_sequence
+          item
+        end
+      end
+
       # The scheduling cycle of a popped Pod is over (bound, failed or
       # requeued): the events it no longer needs are dropped.
       def done(pod)
