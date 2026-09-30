@@ -52,7 +52,7 @@ module Rubernetes
         enabled port bind_address advertise_address metric_resolution_seconds scrape_timeout_seconds kubelet_scheme kubelet_port
         kubelet_insecure_tls address_type_priority node_selector register tls jitter
       ].freeze
-      SCHEDULER_KEYS = %w[api_server kubeconfig context identity sync lease resource_kinds serving].freeze
+      SCHEDULER_KEYS = %w[api_server kubeconfig context identity sync lease resource_kinds serving feature_gates].freeze
       PROXY_KEYS = %w[api_server kubeconfig context node_name backend attach sync serving].freeze
       AGENT_KEYS = %w[
         node_name api_server kubeconfig context runtime_profile
