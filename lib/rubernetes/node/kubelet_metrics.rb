@@ -59,6 +59,8 @@ module Rubernetes
         @registry.set("kubelet_metrics_provider", 1, {"provider" => "cadvisor"})
         @plugin_manager = nil
         @registry.add_collector { |registry| collect_plugin_manager(registry) }
+        @pod_certificates = nil
+        @registry.add_collector { |registry| collect_pod_certificate_states(registry) }
         @node_startup = {kubelet: wall_clock.call.to_f}
         @worker_started = {}
         @worker_synced = Set.new
