@@ -820,7 +820,7 @@ module Rubernetes
       end
       private :record_pod_scheduled
 
-      def schedule_next(nodes:, pods: nil, namespace_labels: nil, volume_data: nil, workload_selectors: nil)
+      def schedule_next(nodes:, pods: nil, namespace_labels: nil, volume_data: nil, workload_selectors: nil, pod_groups: nil)
         trace = Trace.new
         item = queue.pop(trace: trace)
         return nil unless item
