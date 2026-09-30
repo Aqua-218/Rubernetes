@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "cgi"
+require_relative "../security/egress"
 require "digest"
 require "json"
 require "strscan"
