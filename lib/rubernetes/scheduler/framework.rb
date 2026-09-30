@@ -839,6 +839,119 @@ module Rubernetes
         record_in_flight_events
       end
 
+      # -- GenericWorkload / GangScheduling ----------------------------------------
+
+      def gang_scheduled?(pod, pod_groups)
+        return false unless @feature_gates["GangScheduling"] == true && pod.respond_to?(:scheduling_group)
+
+        group_name = pod.scheduling_group
+        return false if group_name.nil? || pod_groups.nil?
+
+        group = pod_groups["#{pod.namespace}/#{group_name}"]
+        !group.nil? && !Support.value(Support.value(Support.value(group, "spec", {}), "schedulingPolicy", {}), "gang", nil).nil?
+      end
+
+      # scheduleOnePodGroup: the Pod's whole gang is scheduled in one cycle.
+      # Every member is reserved in turn against the nodes as the earlier
+      # members filled them; all bind when all fit, none otherwise
+      # (scheduler_podgroup_schedule_attempts_total{profile,result}).
+      def schedule_pod_group(pod, nodes:, pods: nil, namespace_labels: nil, volume_data: nil, workload_selectors: nil, pod_groups: nil)
+        started = monotonic
+        group_name = pod.scheduling_group
+        profile = pod.scheduler_name
+        node_objects = normalize_nodes(nodes)
+        existing = normalize_pods(pods, node_objects)
+        members = [pod] + existing.select do |candidate|
+          candidate.namespace == pod.namespace && candidate.scheduling_group == group_name && candidate.node_name.empty? &&
+            candidate.uid != pod.uid && queue.respond_to?(:pop_specific) && queue.pop_specific(candidate)
+        end
+        members.sort_by! { |member| [-member.priority.to_i, queue.respond_to?(:seconds_since_first_attempt) ? -(queue.seconds_since_first_attempt(member) || 0.0) : 0.0] }
+        assumed = []
+        results = []
+        failure = nil
+        algorithm_started = monotonic
+        members.each do |member|
+          placed = assumed.map { |entry| entry.pod.with("spec" => entry.pod.spec.to_h.merge("nodeName" => entry.node.name)) }
+          result = schedule(member, node_objects, pods: existing.reject { |candidate| placed.any? { |item| item.uid == candidate.uid } } + placed,
+                                    namespace_labels: namespace_labels, volume_data: volume_data, workload_selectors: workload_selectors,
+                                    pod_groups: pod_groups, assume_only: true)
+          results << result
+          unless result.assumed?
+            failure = result
+            break
+          end
+          assumed << result
+        end
+        @metrics.pod_group_algorithm(monotonic - algorithm_started) if @metrics.respond_to?(:pod_group_algorithm)
+        outcome = if failure.nil? then "scheduled"
+                  elsif failure.error then "error"
+                  else "unschedulable"
+                  end
+        if failure.nil?
+          assumed.each_with_index do |result, index|
+            bound = bind_assumed(result, original: members[index])
+            results[index] = bound
+          end
+        else
+          assumed.each { |result| rollback_assumed(result, PodGroupUnschedulable.new("pod group is unschedulable")) }
+          reason = failure.reason || "pod group is unschedulable"
+          members.each do |member|
+            next if member.equal?(failure.pod) && !failure.assumed? && failure.unschedulable? # already parked by schedule
+
+            queue.delete(member)
+            queue.enqueue_unschedulable(member, reason: reason, plugins: ["GangScheduling"])
+          end
+        end
+        @metrics.pod_group_attempt(profile, outcome, monotonic - started) if @metrics.respond_to?(:pod_group_attempt)
+        note_pod_group_condition(pod.namespace, group_name, outcome, failure)
+        results.first
+      end
+
+      def bind_assumed(result, original:)
+        typed_pod = result.pod
+        node = result.node
+        context = build_context(normalize_nodes([node]), [], nil)
+        begin
+          run_permit(typed_pod, node, context, result.trace)
+          bound_pod = bind!(original, typed_pod, node, context: context, trace: result.trace)
+          commit_reservation!(result.reservation)
+          forget_nomination(typed_pod)
+          record_pod_scheduled(typed_pod)
+          queue.delete(typed_pod)
+          queue.forget(typed_pod) if queue.respond_to?(:forget)
+          ScheduleResult.new(status: :scheduled, pod: bound_pod, node: node, filtered: result.filtered, scores: result.scores,
+                             victims: result.victims, trace: result.trace, reservation: result.reservation)
+        rescue StandardError => error
+          rollback!(result.reservation, typed_pod, node, error, context: context, trace: result.trace)
+          status = requeue_after_failure(typed_pod, error)
+          ScheduleResult.new(status: status, pod: typed_pod, node: node, filtered: result.filtered, scores: result.scores,
+                             victims: result.victims, trace: result.trace, error: error, reason: "bind or reserve failed")
+        end
+      end
+
+      def rollback_assumed(result, error)
+        context = build_context(normalize_nodes([result.node]), [], nil)
+        rollback!(result.reservation, result.pod, result.node, error, context: context, trace: result.trace)
+      rescue StandardError
+        nil
+      end
+
+      class PodGroupUnschedulable < StandardError; end
+
+      # The PodGroupScheduled condition (updatePodGroupCondition).
+      def note_pod_group_condition(namespace, name, outcome, failure)
+        return unless @pod_group_status_handler
+
+        condition = case outcome
+                    when "scheduled" then {"type" => "PodGroupScheduled", "status" => "True", "reason" => "Scheduled", "message" => ""}
+                    when "unschedulable" then {"type" => "PodGroupScheduled", "status" => "False", "reason" => "Unschedulable", "message" => failure&.reason.to_s}
+                    else {"type" => "PodGroupScheduled", "status" => "False", "reason" => "SchedulerError", "message" => failure&.error&.message.to_s}
+                    end
+        @pod_group_status_handler.call(namespace, name, condition)
+      rescue StandardError
+        nil
+      end
+
       # SchedulerQueueingHints: the queue asks this before moving an
       # unschedulable Pod on a cluster event.
       def queueing_strategy(pod, rejecting_plugins, event, old_object, new_object)
