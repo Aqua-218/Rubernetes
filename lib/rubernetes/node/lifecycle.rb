@@ -2363,7 +2363,7 @@ module Rubernetes
           begin
             handle = @pod_volumes.prepare(pod, token: "prepare-#{record[:uid]}", host_ip: @host_ip,
                                           images: record[:volume_images] || {})
-          rescue PodVolumes::MissingDependency, PodVolumes::Unsupported => error
+          rescue PodVolumes::MissingDependency, PodVolumes::Unsupported, PodVolumes::SELinuxConflict => error
             record[:reason] = "FailedMount"
             raise LifecycleError, "MountVolume.SetUp failed: #{error.message}"
           end
