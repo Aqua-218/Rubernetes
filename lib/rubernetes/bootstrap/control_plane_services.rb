@@ -2304,6 +2304,25 @@ module Rubernetes
         true
       end
 
+      # updatePodGroupCondition: the PodGroupScheduled condition on the
+      # PodGroup's status (a True condition is never downgraded).
+      def patch_pod_group_status(namespace, name, condition)
+        return unless @client
+
+        current = @client.get("podgroups", name, namespace: namespace, api_version: "scheduling.k8s.io/v1alpha2")
+        conditions = Array(current.dig("status", "conditions"))
+        existing = conditions.find { |entry| entry["type"] == condition["type"] }
+        return if existing && existing["status"] == "True" && condition["status"] != "True"
+
+        stamped = condition.merge("observedGeneration" => current.dig("metadata", "generation"),
+                                  "lastTransitionTime" => (existing && existing["status"] == condition["status"] ? existing["lastTransitionTime"] : Time.now.utc.iso8601))
+        merged = conditions.reject { |entry| entry["type"] == condition["type"] } + [stamped]
+        @client.patch({"status" => {"conditions" => merged}}, type: :merge, namespace: namespace, name: name,
+                      api_version: "scheduling.k8s.io/v1alpha2", path: "/apis/scheduling.k8s.io/v1alpha2/namespaces/#{namespace}/podgroups/#{name}/status")
+      rescue StandardError => error
+        log(:warn, "scheduler.podgroup_status_failed", podgroup: "#{namespace}/#{name}", error: error.message.to_s[0, 200])
+      end
+
       def bind_pod(pod, node)
         @elector.step
         unless @elector.leader?
