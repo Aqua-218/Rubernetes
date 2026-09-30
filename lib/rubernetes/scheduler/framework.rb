@@ -563,7 +563,7 @@ module Rubernetes
         begin
           node_objects = normalize_nodes(nodes)
           existing_pods = normalize_pods(pods, node_objects)
-          context = build_context(node_objects, existing_pods, namespace_labels, volume_data, workload_selectors)
+          context = build_context(node_objects, existing_pods, namespace_labels, volume_data, workload_selectors, pod_groups)
           queue.enqueue(typed_pod) if enqueue && !queue.include?(typed_pod)
           trace ||= Trace.new
 
