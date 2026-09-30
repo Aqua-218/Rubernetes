@@ -53,6 +53,16 @@ module Rubernetes
                 description = services.fetch(call.fetch("service"))::Service.rpc_descs.fetch(name.to_sym)
                 message = description.input.decode_json(JSON.generate(call.fetch("request", {})), ignore_unknown_fields: true)
                 method = name.gsub(/([a-z0-9])([A-Z])/, '\1_\2').downcase
+                if call["stream"]
+                  # A server stream: one line per response, then "done".
+                  replies = stub.public_send(method, message)
+                  respond.call("id" => call["id"], "connected" => true)
+                  replies.each do |reply|
+                    respond.call("id" => call["id"], "event" => JSON.parse(reply.to_json(preserve_proto_fieldnames: true, emit_defaults: true)))
+                  end
+                  respond.call("id" => call["id"], "done" => true)
+                  next
+                end
                 reply = stub.public_send(method, message, deadline: Time.now + Float(call.fetch("timeout", 30)))
                 respond.call("id" => call["id"],
                              "ok" => JSON.parse(reply.to_json(preserve_proto_fieldnames: true, emit_defaults: true)))
