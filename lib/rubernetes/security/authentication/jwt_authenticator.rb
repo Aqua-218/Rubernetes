@@ -2,6 +2,7 @@
 
 require "digest"
 require "json"
+require_relative "../egress"
 require "net/http"
 require "openssl"
 require "uri"
