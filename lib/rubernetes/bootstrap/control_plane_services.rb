@@ -1630,7 +1630,7 @@ module Rubernetes
       CLUSTER_KINDS = %w[Namespace Service ReplicationController ReplicaSet StatefulSet
                          PersistentVolume PersistentVolumeClaim StorageClass
                          ResourceClaim ResourceSlice DeviceClass CSINode CSIDriver VolumeAttachment
-                         CSIStorageCapacity].freeze
+                         CSIStorageCapacity PodGroup Workload].freeze
       # Changes that can make an unschedulable Pod schedulable.
       REQUEUE_KINDS = %w[Namespace PersistentVolume PersistentVolumeClaim StorageClass
                          ResourceClaim ResourceSlice DeviceClass CSINode CSIDriver VolumeAttachment
