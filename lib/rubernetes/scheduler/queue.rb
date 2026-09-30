@@ -204,7 +204,18 @@ module Rubernetes
             @pending.delete(key)
             gated ? @gated[key] = true : @gated.delete(key)
             @rejecting_plugins[key] = Array(plugins).map(&:to_s).uniq.freeze
-            incoming(event, "unschedulable")
+            # An event received while the Pod was in flight may already have
+            # made it schedulable: it goes to backoff/active, not unschedulable.
+            decision = in_flight_strategy_locked(key, typed, @rejecting_plugins[key])
+            if decision == :skip
+              @unschedulable[key] = entry
+              incoming(event, "unschedulable")
+            else
+              @unschedulable.delete(key)
+              requeue_with_strategy_locked(key, entry, decision, event, now_seconds)
+            end
+            @in_flight.delete(key)
+            prune_in_flight_events_locked
           end
         end
         item
