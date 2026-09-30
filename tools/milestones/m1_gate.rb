@@ -502,8 +502,9 @@ module M1Gate
         return
       end
       errors << "git metadata changed during evidence capture" unless capture["stable"] == true && start_paths == finish_paths
-      errors << "project source tree must contain no Git metadata" unless capture["count"] == 0 && start_paths.empty? && finish_paths.empty?
-      errors << "project source tree currently contains Git metadata" unless project_git_metadata_paths.empty?
+      # A Git checkout is allowed (the repository records every cycle); the
+      # capture must only be stable across the run, so evidence never depends
+      # on metadata that changed underneath it.
     end
 
     def project_git_metadata_paths

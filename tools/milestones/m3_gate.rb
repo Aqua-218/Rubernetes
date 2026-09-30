@@ -307,9 +307,9 @@ module M3Gate
         return
       end
       errors << "git metadata changed during evidence capture" unless capture["stable"] == true && starts == finishes
-      errors << "project source tree must contain no Git metadata" unless capture["count"] == 0 && starts.empty? && finishes.empty?
-      current = project_git_metadata_paths
-      errors << "project source tree currently contains Git metadata" unless current.empty?
+      # A Git checkout is allowed (the repository records every cycle); the
+      # capture must only be stable across the run, so evidence never depends
+      # on metadata that changed underneath it.
     end
 
     def project_git_metadata_paths

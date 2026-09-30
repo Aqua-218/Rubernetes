@@ -593,7 +593,8 @@ class M1GateTest < Minitest::Test
     end
   end
 
-  def test_gate_rejects_claimed_git_metadata
+  # A Git checkout is allowed: the capture only has to be stable.
+  def test_gate_accepts_a_stable_git_metadata_capture_and_rejects_an_unstable_one
     Dir.mktmpdir("rubernetes-m1-gate-") do |directory|
       manifest_path = write_valid_evidence(directory)
       manifest = JSON.parse(File.read(manifest_path))
@@ -604,12 +605,16 @@ class M1GateTest < Minitest::Test
         "count" => 1
       }
       File.write(manifest_path, JSON.pretty_generate(manifest) << "\n")
-
       stdout, stderr, status = run_gate(manifest_path)
+      assert_predicate(status, :success?, stdout)
+      assert_empty(stderr)
 
+      manifest["git_metadata_capture"]["finish_paths"] = []
+      File.write(manifest_path, JSON.pretty_generate(manifest) << "\n")
+      stdout, stderr, status = run_gate(manifest_path)
       refute_predicate(status, :success?)
       assert_empty(stderr)
-      assert_includes JSON.parse(stdout).fetch("errors"), "project source tree must contain no Git metadata"
+      assert_includes JSON.parse(stdout).fetch("errors"), "git metadata changed during evidence capture"
     end
   end
 

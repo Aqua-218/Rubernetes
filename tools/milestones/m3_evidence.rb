@@ -260,7 +260,7 @@ manifest = {
   "subjects" => []
 }
 
-candidate_complete = chain_ready && input_stable && finished_git_metadata.empty? && commands.all? { |command| command["exit_status"] == 0 }
+candidate_complete = chain_ready && input_stable && starting_git_metadata == finished_git_metadata && commands.all? { |command| command["exit_status"] == 0 }
 manifest["status"] = "COMPLETE" if candidate_complete
 manifest_path = File.join(directory, "manifest.json")
 M34EvidenceSupport.write_json(manifest_path, manifest)

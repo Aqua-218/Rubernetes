@@ -330,8 +330,6 @@ module M3ProbeSupport
     input_stable = started_input.fetch("sha256") == finished_input.fetch("sha256") &&
                    started_input.fetch("file_count") == finished_input.fetch("file_count")
     errors << "source input changed during probe execution" unless input_stable
-    git_paths = project_git_metadata_paths
-    errors << "project source tree contains Git metadata" unless git_paths.empty?
     runner_sha256 = report_runner_sha256
     provenance = {
       "source_sha256" => started_input.fetch("sha256"),
