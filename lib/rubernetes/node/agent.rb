@@ -590,6 +590,7 @@ module Rubernetes
         @plugin_manager&.stop
         @dra_manager&.stop
         @evented_pleg&.stop
+        @pod_certificate_manager&.stop
         @relist_thread&.join if @relist_thread && @relist_thread != Thread.current
         @node_status_thread&.join if @node_status_thread && @node_status_thread != Thread.current
         @lease_thread&.join if @lease_thread && @lease_thread != Thread.current
