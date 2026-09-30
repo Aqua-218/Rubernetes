@@ -26,7 +26,7 @@ module Rubernetes
       TLS_KEYS = %w[cert_file key_file].freeze
       SECURITY_KEYS = %w[authentication authorization admission audit flow_control feature_gates].freeze
       AUTHENTICATION_KEYS = %w[client_ca_file token_file service_account bootstrap_tokens request_header jwt webhook anonymous config_file].freeze
-      SERVICE_ACCOUNT_KEYS = %w[issuer signing_key_file key_files api_audiences max_expiration_seconds].freeze
+      SERVICE_ACCOUNT_KEYS = %w[issuer signing_key_file key_files api_audiences max_expiration_seconds signing_endpoint allow_signing_with_non_oidc_keys].freeze
       REQUEST_HEADER_KEYS = %w[ca_file allowed_names username_headers group_headers extra_header_prefixes uid_headers].freeze
       AUTHENTICATION_WEBHOOK_KEYS = %w[url ca_file client_cert_file client_key_file cache_authenticated_ttl cache_unauthenticated_ttl].freeze
       AUTHORIZATION_KEYS = %w[modes abac_policy_file webhook config_file].freeze
