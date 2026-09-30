@@ -1412,6 +1412,40 @@ module Rubernetes
           nil
         end
 
+        def set(name, value, labels = {})
+          @metrics&.set(name, value, labels)
+        rescue StandardError
+          nil
+        end
+
+        def observe(name, value, labels = {})
+          @metrics&.observe(name, value, labels)
+        rescue StandardError
+          nil
+        end
+
+        private
+
+        def query_of(request)
+          return {} unless request.respond_to?(:query_value)
+
+          %w[limit continue resourceVersion resourceVersionMatch labelSelector fieldSelector sendInitialEvents].each_with_object({}) do |name, query|
+            value = request.query_value(name)
+            query[name] = value unless value.nil?
+          end
+        rescue StandardError
+          {}
+        end
+
+        def distinguisher(schema, attributes)
+          case schema.dig("spec", "distinguisherMethod", "type")
+          when "ByUser" then attributes.user.name.to_s
+          when "ByNamespace" then attributes.namespace.to_s
+          else ""
+          end
+        end
+
+        # hashFlowID: sha256(fsName + NUL + distinguisher), first eight bytes little-endian.
         def flow_hash(schema, attributes)
           method = schema.dig("spec", "distinguisherMethod", "type")
           distinguisher = case method
