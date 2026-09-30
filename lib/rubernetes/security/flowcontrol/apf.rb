@@ -1018,18 +1018,8 @@ module Rubernetes
           @server_seats = read_seats + mutating_seats
           @borrowing_adjustment_seconds = borrowing_adjustment_seconds
           @priority_levels = Array(priority_level_configurations).each_with_object({}) do |plc, levels|
-            name = plc.dig("metadata", "name")
-            spec = plc["spec"] || {}
-            exempt = spec["type"] == "Exempt"
-            limited = spec["limited"] || {}
-            shares = limited["nominalConcurrencyShares"].to_i
-            seats = exempt ? Float::INFINITY : [((shares.to_f / [total_shares, 1].max) * total_seats).floor, 1].max
-            queuing = limited.dig("limitResponse", "queuing") || {}
-            reject = limited.dig("limitResponse", "type") == "Reject"
-            levels[name] = PriorityLevel.new(name: name, seats: seats, queues: reject ? 1 : (queuing["queues"] || DEFAULT_QUEUES).to_i,
-                                             hand_size: (queuing["handSize"] || DEFAULT_HAND_SIZE).to_i,
-                                             queue_length_limit: reject ? 0 : (queuing["queueLengthLimit"] || DEFAULT_QUEUE_LENGTH_LIMIT).to_i,
-                                             wait_limit: DEFAULT_REQUEST_WAIT_LIMIT, exempt: exempt, reject: reject)
+            name = plc.dig("metadata", "name").to_s
+            levels[name] = PriorityLevel.new(controller: self, name: name, spec: plc["spec"] || {}, clock: clock, after: after)
           end
         end
 
