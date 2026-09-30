@@ -201,6 +201,7 @@ module Rubernetes
             observe_operation(current_plugin, "volume_mount", "success", operation_started)
           end
         rescue StandardError => error
+          error = MissingDependency.new(error.message) if error.is_a?(Volume::PodCertificateNotReadyError)
           observe_operation(current_plugin, "volume_mount", "fail-unknown", operation_started) if operation_started
           selinux_volumes.each_value { |unique| @selinux_tracker&.forget(pod_uid: uid, volume_name: nil, unique_name: unique) }
           begin
