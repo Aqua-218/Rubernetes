@@ -6,6 +6,7 @@
 require_relative "proxy/model"
 require_relative "proxy/compiler"
 require_relative "proxy/conntrack"
+require_relative "proxy/conntrack_reconciler"
 require_relative "proxy/node_port_allocator"
 require_relative "proxy/nftables_netlink"
 require_relative "proxy/backend"
