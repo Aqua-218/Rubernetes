@@ -159,6 +159,7 @@ module Rubernetes
         end
 
         def encrypt(plaintext, associated_data)
+          generation_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           dek = SecureRandom.random_bytes(32)
           nonce = SecureRandom.random_bytes(12)
           cipher = OpenSSL::Cipher.new("aes-256-gcm").encrypt
