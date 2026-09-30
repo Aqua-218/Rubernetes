@@ -89,6 +89,7 @@ module Rubernetes
             end
           end
           ApplyFailures.clear(result.controller || name, result.key)
+          remember_written_versions(resource, responses)
           responses
         rescue LeadershipLostError
           raise
