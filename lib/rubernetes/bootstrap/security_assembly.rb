@@ -220,6 +220,98 @@ module Rubernetes
         Security::Authorization::Union.new(authorizers: authorizers)
       end
 
+      # --authorization-config: the AuthorizationConfiguration file's
+      # authorizer chain, reloaded when the file changes (webhooks may come
+      # and go; the non-webhook types are fixed at startup).
+      def build_authorizer_from_file(path)
+        bytes = File.binread(path)
+        configuration = Security::Authorization::Configuration.from_bytes(bytes, cel: cel_evaluator)
+        union = Security::Authorization::Union.new(authorizers: configuration.build(authorizer_factory))
+        fixed_types = configuration.non_webhook_types
+        @reload_controllers << Security::ConfigReloadController.new(
+          kind: "authorization", path: path, apiserver_id: @apiserver_id, logger: @logger,
+          initial_bytes: bytes, initial_config: configuration,
+          load: ->(data) { Security::Authorization::Configuration.from_bytes(data, cel: cel_evaluator, require_non_webhook_types: fixed_types) },
+          apply: ->(new_configuration) { union.reload(new_configuration.build(authorizer_factory)) }
+        )
+        union
+      end
+
+      def authorizer_factory
+        {
+          "AlwaysAllow" => -> { Security::Authorization::AlwaysAllow.new },
+          "AlwaysDeny" => -> { Security::Authorization::AlwaysDeny.new },
+          "RBAC" => -> { Security::Authorization::RBAC.new(source: rbac_source) },
+          "Node" => -> { Security::Authorization::Node.new(graph: node_graph, features: @feature_gates) },
+          "ABAC" => ->(_entry) { Security::Authorization::ABAC.load((@config["authorization"] || {}).fetch("abac_policy_file")) },
+          "Webhook" => lambda do |entry, match_conditions|
+            hook = entry.webhook
+            Security::Authorization::Webhook.new(transport: webhook_connection_transport(hook), authorized_ttl: hook.authorized_ttl,
+                                                 unauthorized_ttl: hook.unauthorized_ttl, failure_policy: hook.failure_policy,
+                                                 version: hook.subject_access_review_version, clock: @clock,
+                                                 name: entry.name, match_conditions: match_conditions)
+          end
+        }
+      end
+
+      # connectionInfo: a kubeconfig's server and credentials, or the
+      # in-cluster service account (the API server itself, when it runs as a
+      # Pod).
+      def webhook_connection_transport(hook)
+        if hook.connection_type == "KubeConfigFile"
+          kubeconfig_transport(hook.kubeconfig_file, timeout: hook.timeout)
+        else
+          host = ENV.fetch("KUBERNETES_SERVICE_HOST", "")
+          port = ENV.fetch("KUBERNETES_SERVICE_PORT", "")
+          token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          raise Config::Error, "authorization webhook connectionInfo.type InClusterConfig: unable to load in-cluster configuration (KUBERNETES_SERVICE_HOST and the service account token must be present)" if host.empty? || port.empty? || !File.file?(token_file)
+
+          address = host.include?(":") ? "[#{host}]" : host
+          http_transport(url: "https://#{address}:#{port}/apis/authorization.k8s.io/v1/subjectaccessreviews",
+                         ca_pem: File.binread("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"), token: File.read(token_file).strip, timeout: hook.timeout)
+        end
+      end
+
+      def kubeconfig_transport(path, timeout: 30)
+        require_relative "../client/kubeconfig"
+        context = Client::Kubeconfig.load(path).resolve
+        ca_pem = context.ca_data || (context.ca_file && File.binread(context.ca_file))
+        cert_pem = context.client_certificate_data || (context.client_certificate_file && File.binread(context.client_certificate_file))
+        key_pem = context.client_key_data || (context.client_key_file && File.binread(context.client_key_file))
+        http_transport(url: context.server, ca_pem: ca_pem, cert_pem: cert_pem, key_pem: key_pem, token: context.bearer_token,
+                       insecure: context.insecure_skip_tls_verify == true, timeout: timeout)
+      end
+
+      def http_transport(url:, ca_pem: nil, cert_pem: nil, key_pem: nil, token: nil, insecure: false, timeout: 30)
+        ca = ca_pem ? ca_pem.to_s.scan(/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/m).map { |pem| OpenSSL::X509::Certificate.new(pem) } : []
+        client_cert = cert_pem ? OpenSSL::X509::Certificate.new(cert_pem) : nil
+        client_key = key_pem ? OpenSSL::PKey.read(key_pem) : nil
+        lambda do |body|
+          uri = URI.parse(url)
+          http = Net::HTTP.new(uri.hostname, uri.port, nil)
+          http.use_ssl = uri.scheme == "https"
+          http.open_timeout = [timeout.to_f, 10].min
+          http.read_timeout = timeout.to_f
+          if http.use_ssl?
+            if insecure
+              http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+            else
+              store = OpenSSL::X509::Store.new
+              ca.each { |certificate| store.add_cert(certificate) }
+              http.cert_store = store unless ca.empty?
+              http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+            end
+            http.cert = client_cert if client_cert
+            http.key = client_key if client_key
+          end
+          headers = {"content-type" => "application/json", "accept" => "application/json"}
+          headers["authorization"] = "Bearer #{token}" if token && !token.to_s.empty?
+          path = uri.request_uri.to_s.empty? || uri.request_uri == "/" ? "/apis/authorization.k8s.io/v1/subjectaccessreviews" : uri.request_uri
+          response = http.post(path, body, headers)
+          [response.code.to_i, response.body]
+        end
+      end
+
       def rbac_source
         Security::Authorization::StoreRBACSource.new(@store, key_for: ->(resource, namespace) { @key_for.call("rbac.authorization.k8s.io", "v1", resource, namespace, nil) })
       end
