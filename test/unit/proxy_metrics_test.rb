@@ -46,8 +46,7 @@ class ProxyMetricsTest < Minitest::Test
        kubeproxy_conntrack_reconciler_deleted_entries_total kubeproxy_conntrack_reconciler_sync_duration_seconds].each do |name|
       assert_includes names, name
     end
-    %w[kubeproxy_sync_proxy_rules_iptables_total kubeproxy_iptables_ct_state_invalid_dropped_packets_total
-       kubeproxy_conntrack_reconciler_deleted_entries_total].each do |name|
+    %w[kubeproxy_sync_proxy_rules_iptables_total kubeproxy_iptables_ct_state_invalid_dropped_packets_total].each do |name|
       refute_includes names, name
     end
     entry = Rubernetes::Observability::Metrics.upstream.fetch("kubeproxy_network_programming_duration_seconds")
