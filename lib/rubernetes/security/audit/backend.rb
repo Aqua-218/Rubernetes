@@ -3,6 +3,8 @@
 require "json"
 require "fileutils"
 require "monitor"
+require "uri"
+require "openssl"
 
 module Rubernetes
   module Security
