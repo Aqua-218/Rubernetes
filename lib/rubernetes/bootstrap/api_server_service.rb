@@ -226,6 +226,7 @@ module Rubernetes
         @encryption_reload&.stop
         Array(@security&.reload_controllers).each(&:stop)
         @security&.external_jwt_signer&.stop
+        @security&.node_graph_populator&.stop
         @store.close if @store.respond_to?(:close)
         @raft_server&.stop
         @logger.info("process.stopped", reason: reason)
