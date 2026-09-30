@@ -880,6 +880,8 @@ module Rubernetes
         Ticket = Struct.new(:priority_level, :flow_schema, :queue_index, :seats, :queued_seconds, :exempt, :dispatched_at, :mutating, :watch,
                             :request, :forget_watch, :work, keyword_init: true)
 
+        # One PriorityLevelConfiguration: its seat bounds, queue set, seat
+        # demand statistics and the metrics callbacks the queue set makes.
         class PriorityLevel
           attr_reader :name, :seats, :queues, :hand_size, :queue_length_limit, :wait_limit, :exempt, :inflight
 
