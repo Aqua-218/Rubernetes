@@ -387,6 +387,10 @@ module Rubernetes
         total.positive? ? total : nil
       end
 
+      # The ClusterIP / NodePort allocator (its periodic repair sweep runs
+      # from the process service).
+      def service_allocator = @service_allocator
+
       def mutating_input?(input)
         method = input.respond_to?(:method) && !input.is_a?(Hash) ? input.method : (input["REQUEST_METHOD"] || input[:method] if input.respond_to?(:[]))
         !%w[GET HEAD OPTIONS].include?(method.to_s.upcase)
