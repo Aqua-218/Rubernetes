@@ -156,8 +156,13 @@ module Rubernetes
                                   reason: "RequestEntityTooLarge")
         end
 
-        response = http.request(outbound)
-        record_x509(http)
+        # Inside #start: the peer certificate is readable only while the
+        # connection is open (a one-shot #request has closed it already).
+        response = if http.respond_to?(:start)
+                     http.start { |session| session.request(outbound).tap { record_x509(session) } }
+                   else
+                     http.request(outbound)
+                   end
         log_proxy(uri, target, request.method, response, sent_content_type: outbound["content-type"],
                                                          body_bytes: outbound.body.to_s.bytesize)
         if response.body.to_s.bytesize > MAX_BODY_BYTES
