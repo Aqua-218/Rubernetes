@@ -208,7 +208,6 @@ module Rubernetes
       no_ring = "no per-resource watch cache ring: one shared MVCC history, sized by revisions and age"
       no_virtual_time = "API Priority and Fairness here has no fair-queuing virtual time (queues are served shortest-first)"
       no_borrowing = "API Priority and Fairness here neither lends nor borrows seats: each level's limit is its nominal one"
-      consistency = "the StaleControllerConsistency consistency store (Beta, on in v1.36) is not implemented: controllers never skip a sync"
       no_queueing_hints = "no QueueingHint plugins and no in-flight event list: an unschedulable Pod is retried on any cluster change (like SchedulerQueueingHints off)"
       no_pod_groups = "no workload-aware (PodGroup / gang) scheduling"
       no_conntrack_reconciler = "no conntrack reconciler: stale UDP conntrack entries are not flushed when endpoints go away"
