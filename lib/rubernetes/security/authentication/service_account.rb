@@ -37,8 +37,10 @@ module Rubernetes
 
         Lookup = Struct.new(:service_account, :pod, :secret, :node, keyword_init: true)
 
-        def initialize(issuer:, signing_key:, verification_keys: nil, api_audiences:, lookup:, clock: -> { Time.now.utc },
-                       max_expiration_seconds: nil, extend_expiration: true, secret_writer: nil)
+        # +external_signer+: an ExternalJWTSigner that signs the tokens and
+        # serves the verification keys instead of +signing_key+.
+        def initialize(issuer:, signing_key: nil, verification_keys: nil, api_audiences:, lookup:, clock: -> { Time.now.utc },
+                       max_expiration_seconds: nil, extend_expiration: true, secret_writer: nil, external_signer: nil)
           @issuer = String(issuer)
           @signing_key = signing_key
           @key_id = JWT.key_id(public_key(signing_key))
