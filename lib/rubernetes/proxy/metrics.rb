@@ -6,8 +6,8 @@ module Rubernetes
   module Proxy
     # pkg/proxy/metrics: what kube-proxy records around a rules sync, with
     # upstream's names, labels and buckets (declared by the v1.36.2
-    # inventory).  The proxy engine calls these; the iptables-only and
-    # conntrack-reconciler families stay unregistered with a reason
+    # inventory).  The proxy engine and ConntrackReconciler call these; the
+    # iptables-only families stay unregistered with a reason
     # (Observability::Metrics::UNIMPLEMENTED["kube-proxy"]).
     class Metrics
       FAMILIES = %w[IPv4 IPv6].freeze
