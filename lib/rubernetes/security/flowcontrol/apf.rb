@@ -1051,6 +1051,8 @@ module Rubernetes
            "apiserver_flowcontrol_nominal_limit_seats" => [:gauge, "Nominal number of execution seats configured for each priority level"]}.each do |name, (type, help)|
             registry.register(name, type: type, help: help) unless registry.registered?(name)
           end
+          registry.register("apiserver_flowcontrol_request_wait_duration_seconds", type: :histogram, buckets: WAIT_BUCKETS,
+                                                                                   help: "Length of time a request spent waiting in its queue") unless registry.registered?("apiserver_flowcontrol_request_wait_duration_seconds")
           register_seat_metrics(registry)
         end
 
