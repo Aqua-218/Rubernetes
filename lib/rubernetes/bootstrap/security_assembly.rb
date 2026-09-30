@@ -388,7 +388,8 @@ module Rubernetes
         Security::FlowControl::Controller.new(
           flow_schemas: documents.fetch("flowschemas", []), priority_level_configurations: documents.fetch("prioritylevelconfigurations", []),
           read_seats: (apf || {}).fetch("read_seats", Security::FlowControl::Controller::DEFAULT_READ_SEATS),
-          mutating_seats: (apf || {}).fetch("mutating_seats", Security::FlowControl::Controller::DEFAULT_MUTATING_SEATS)
+          mutating_seats: (apf || {}).fetch("mutating_seats", Security::FlowControl::Controller::DEFAULT_MUTATING_SEATS),
+          object_stats: store_object_stats
         )
       end
 
