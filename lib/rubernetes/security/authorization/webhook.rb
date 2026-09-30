@@ -100,7 +100,7 @@ module Rubernetes
             elsif status["denied"] == true
               Decision.deny(status["reason"], authorizer: name)
             else
-              Decision.no_opinion(status["reason"], authorizer: NAME)
+              Decision.no_opinion(status["reason"], authorizer: name)
             end
           rescue Error, JSON::ParserError, SystemCallError, IOError => error
             result = error.is_a?(Errno::ETIMEDOUT) || error.message.to_s.match?(/timed? ?out/i) ? "timeout" : "error"
