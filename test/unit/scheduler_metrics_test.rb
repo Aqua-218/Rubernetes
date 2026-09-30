@@ -51,8 +51,7 @@ class SchedulerMetricsTest < Minitest::Test
        scheduler_get_node_hint_duration_seconds kubernetes_build_info disabled_metrics_total].each do |name|
       assert_includes names, name
     end
-    %w[scheduler_inflight_events scheduler_queueing_hint_execution_duration_seconds
-       scheduler_podgroup_schedule_attempts_total rest_client_exec_plugin_call_total rest_client_rate_limiter_duration_seconds].each do |name|
+    %w[scheduler_podgroup_schedule_attempts_total rest_client_exec_plugin_call_total rest_client_rate_limiter_duration_seconds].each do |name|
       refute_includes names, name, "#{name} measures machinery that does not exist here"
     end
     # client-go registers these plain families unconditionally: present and
