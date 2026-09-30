@@ -45,6 +45,10 @@ module Rubernetes
         build!
       end
 
+      # Security::ConfigReloadController for --authorization-config and
+      # --authentication-config files (the service starts and stops them).
+      attr_reader :reload_controllers
+
       def self.default_feature_gates
         document = JSON.parse(File.read(File.join(CORPUS_ROOT, "features.json")))
         document.fetch("gates").transform_values { |gate| gate["default"] == true }
