@@ -1059,7 +1059,18 @@ module Rubernetes
             validate_mapping!(sa, "#{context}.authentication.service_account")
             reject_unknown_keys!(sa, SERVICE_ACCOUNT_KEYS, "#{context}.authentication.service_account")
             validate_non_empty_string!(sa["issuer"], "#{context}.authentication.service_account.issuer")
-            validate_absolute_path!(sa["signing_key_file"], "#{context}.authentication.service_account.signing_key_file")
+            if sa.key?("signing_endpoint")
+              # --service-account-signing-endpoint: the external signer owns the keys.
+              validate_absolute_path!(sa["signing_endpoint"], "#{context}.authentication.service_account.signing_endpoint")
+              %w[signing_key_file key_files].each do |key|
+                raise Error, "#{context}.authentication.service_account.#{key} cannot be combined with signing_endpoint" if sa.key?(key)
+              end
+              if sa.key?("allow_signing_with_non_oidc_keys") && ![true, false].include?(sa["allow_signing_with_non_oidc_keys"])
+                raise Error, "#{context}.authentication.service_account.allow_signing_with_non_oidc_keys must be true or false"
+              end
+            else
+              validate_absolute_path!(sa["signing_key_file"], "#{context}.authentication.service_account.signing_key_file")
+            end
             Array(sa["key_files"]).each { |path| validate_absolute_path!(path, "#{context}.authentication.service_account.key_files[]") }
             raise Error, "#{context}.authentication.service_account.api_audiences must be a non-empty list" if sa.key?("api_audiences") && !(sa["api_audiences"].is_a?(Array) && !sa["api_audiences"].empty?)
           end
