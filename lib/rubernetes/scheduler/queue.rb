@@ -455,6 +455,8 @@ module Rubernetes
       def delete(pod)
         key = identity_key(pod)
         @mutex.synchronize do
+          @in_flight.delete(key)
+          prune_in_flight_events_locked
           @attempts.delete(key)
           @pops.delete(key)
           @first_pop.delete(key)
