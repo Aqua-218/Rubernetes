@@ -1101,6 +1101,7 @@ module Rubernetes
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         full = false
         failed = false
+        published_rules = nil
         @publish_mutex.synchronize do
           all_rules = @mutex.synchronize { @compiled.values.flat_map(&:rules) }
           full = @rule_set.revision.zero?
