@@ -1676,8 +1676,13 @@ module Rubernetes
             Support.value(taint, "effect", "").to_s == "NoSchedule" &&
               CONDITION_TAINT_KEYS.include?(Support.value(taint, "key", "").to_s)
           end
+          # A taint is its key AND effect: the unreachable:NoExecute eviction
+          # taint must not suppress the unreachable:NoSchedule condition taint,
+          # or a dead node keeps receiving new Pods that are then evicted.
           retained + desired.reject do |taint|
-            retained.any? { |existing| Support.value(existing, "key", "") == taint["key"] }
+            retained.any? do |existing|
+              Support.value(existing, "key", "") == taint["key"] && Support.value(existing, "effect", "") == taint["effect"]
+            end
           end
         end
 

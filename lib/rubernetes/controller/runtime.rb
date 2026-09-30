@@ -735,8 +735,14 @@ module Rubernetes
           rescue LeadershipLostError
             break
           rescue StandardError => error
+            # Same (key, error) contract as the queue path; the controller
+            # name travels on the error.
+            error.instance_variable_set(:@rubernetes_controller, controller.name.to_s)
+            unless error.respond_to?(:rubernetes_controller)
+              error.define_singleton_method(:rubernetes_controller) { @rubernetes_controller }
+            end
             begin
-              @error_handler&.call(Support.name(node), controller.name, error)
+              @error_handler&.call(Support.name(node), error)
             rescue StandardError
               nil
             end

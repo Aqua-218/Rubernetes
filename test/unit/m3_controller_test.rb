@@ -273,6 +273,12 @@ class M3ControllerTest < Minitest::Test
     assert_equal "NodeStatusUnknown", ready["reason"]
     assert_equal n["status"], update.object["status"]
     assert_operator result.operations.index(status_update), :<, result.operations.index(update)
+    # doNoScheduleTaintingPass: the Unknown condition also yields the
+    # unreachable:NoSchedule taint, next to the NoExecute eviction taint.
+    taints = update.object.dig("spec", "taints").map { |taint| [taint["key"], taint["effect"]] }
+
+    assert_includes taints, ["node.kubernetes.io/unreachable", "NoSchedule"]
+    assert_includes taints, ["node.kubernetes.io/unreachable", "NoExecute"]
   end
 
   def test_endpoint_controller_separates_ready_and_not_ready_addresses
