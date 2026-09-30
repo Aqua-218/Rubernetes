@@ -127,6 +127,11 @@ module Rubernetes
         @hint_strategy = nil
       end
 
+      # ->(pod, rejecting_plugins, event, old_object, new_object) -> :skip /
+      # :after_backoff / :immediately (Framework#queueing_strategy).  nil:
+      # every event moves every unschedulable Pod (hints off).
+      attr_accessor :hint_strategy
+
       # The Scheduler::Metrics observer (scheduler_queue_incoming_pods_total
       # and the pending-pod gauges); nil records nothing.
       attr_accessor :metrics
