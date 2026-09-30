@@ -282,6 +282,8 @@ module Rubernetes
         # ---------------------------------------------------------- graph
 
         def related?(node_name, type, namespace, name)
+          return @graph.references?(node_name, type, namespace, name) if @graph.respond_to?(:references?)
+
           case type
           when :volumeattachments
             object = graph_call(:volume_attachment, name)
