@@ -608,6 +608,9 @@ module Rubernetes
       attr_accessor :trace
       # Proxy::Metrics (kubeproxy_*); nil records nothing.
       attr_reader :metrics
+      # ConntrackReconciler run after every published rule set (upstream
+      # calls CleanStaleEntries at the end of syncProxyRules); nil skips it.
+      attr_accessor :conntrack_reconciler
 
       def metrics=(observer)
         @metrics = observer
