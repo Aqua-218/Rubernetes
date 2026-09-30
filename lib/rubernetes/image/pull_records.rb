@@ -165,6 +165,7 @@ module Rubernetes
       def record_pulled(repository, image_ref, credentials)
         return if image_ref.to_s.empty?
 
+        snapshot = nil
         @mutex.synchronize do
           record = (@records[image_ref.to_s] ||= {updated: @clock.call, mapping: {}})
           merged, changed = merge(record[:mapping][repository], credentials || Credentials.node)
