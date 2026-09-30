@@ -944,8 +944,7 @@ module Rubernetes
             @controller.set_demand_denominator(@name, denominator)
           end
 
-          def release
-            return if @exempt
+          def go_round(value) = value.negative? ? -((-value) + 0.5).floor : (value + 0.5).floor
 
             @monitor.synchronize do
               @inflight -= 1 if @inflight.positive?
