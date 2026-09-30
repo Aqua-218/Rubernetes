@@ -872,6 +872,10 @@ module Rubernetes
         PRIORITY_LEVEL_MAX_SEATS_PERCENT = 0.15
         LONG_RUNNING_VERBS = %w[watch].freeze
         LONG_RUNNING_SUBRESOURCES = %w[exec attach portforward proxy log].freeze
+        NON_MUTATING_VERBS = %w[get list watch].freeze
+        WAIT_BUCKETS = [0, 0.005, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30].freeze
+        MIN_TARGET = 0.001
+        EPSILON = 0.0000001
 
         Ticket = Struct.new(:priority_level, :flow_schema, :queue_index, :seats, :queued_seconds, :exempt, :dispatched_at, :mutating, :watch,
                             keyword_init: true)
