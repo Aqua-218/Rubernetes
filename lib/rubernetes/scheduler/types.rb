@@ -205,6 +205,12 @@ module Rubernetes
         Support.snapshot(Array(Support.value(spec, "schedulingGates", [])))
       end
 
+      # spec.schedulingGroup.podGroupName (GenericWorkload), or nil.
+      def scheduling_group
+        name = Support.value(Support.value(spec, "schedulingGroup", {}) || {}, "podGroupName", nil)
+        name.to_s.empty? ? nil : name.to_s
+      end
+
       def gated?
         !scheduling_gates.empty?
       end
