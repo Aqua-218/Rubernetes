@@ -883,7 +883,11 @@ module Rubernetes
         # One PriorityLevelConfiguration: its seat bounds, queue set, seat
         # demand statistics and the metrics callbacks the queue set makes.
         class PriorityLevel
-          attr_reader :name, :seats, :queues, :hand_size, :queue_length_limit, :wait_limit, :exempt, :inflight
+          attr_reader :name, :queues, :hand_size, :queue_length_limit, :wait_limit, :exempt, :reject, :queue_set,
+                      :nominal_seats, :min_seats, :max_seats, :current_seats, :seat_demand_integrator, :seat_demand_stats,
+                      :nominal_shares, :lendable_percent, :borrowing_limit_percent, :estimator_max_seats
+
+          SeatDemandStats = Struct.new(:average, :stdev, :high_watermark, :smoothed, keyword_init: true)
 
           def initialize(name:, seats:, queues:, hand_size:, queue_length_limit:, wait_limit:, exempt:, reject: false)
             @reject = reject
