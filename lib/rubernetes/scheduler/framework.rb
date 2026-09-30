@@ -431,6 +431,9 @@ module Rubernetes
                      pod_group_status: nil, **_options)
         custom = normalize_plugins(plugins, filters: filters, scores: scores)
         @metrics = metrics || NullMetrics.new
+        @feature_gates = (feature_gates || {}).transform_keys(&:to_s)
+        # GenericWorkload / GangScheduling: PodGroup-aware scheduling cycles.
+        @pod_group_status_handler = pod_group_status
         @dynamic_resources = dynamic_resources || DynamicResources.new
         @volume_binding = volume_binding || VolumeBinding.new
         @plugins = if standard_plugins
