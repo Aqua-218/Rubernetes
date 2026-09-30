@@ -504,7 +504,7 @@ module Rubernetes
       # reconstruct_volume_operations_total / _errors_total: the volumes the
       # manager rebuilt from its durable state at startup, and the ones whose
       # backend could not be rebuilt (StateUnknown).
-      def volume_reconstruction(attempted, errors)
+      def volume_reconstruction(attempted, errors, force_cleaned: 0, force_clean_errors: 0)
         @registry.increment("reconstruct_volume_operations_total", by: attempted.to_i) if attempted.to_i.positive?
         @registry.increment("reconstruct_volume_operations_errors_total", by: errors.to_i) if errors.to_i.positive?
       end
