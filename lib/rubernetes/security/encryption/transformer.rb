@@ -472,7 +472,8 @@ module Rubernetes
 
           clear = object.select { |field, _| CLEAR_FIELDS.include?(field) }
           sealed = object.reject { |field, _| CLEAR_FIELDS.include?(field) }
-          clear.merge(ENVELOPE_KEY => @transformer.encrypt(JSON.generate(sealed), key.to_s))
+          envelope = timed_transformation(key, "to_storage", @transformer.writer.prefix) { @transformer.encrypt(JSON.generate(sealed), key.to_s) }
+          clear.merge(ENVELOPE_KEY => envelope)
         end
 
         def unseal(key, object)
