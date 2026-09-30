@@ -426,7 +426,7 @@ module Rubernetes
         lambda do |body|
           uri = URI.parse(url)
           # URI#hostname: an IPv6 literal without the brackets URI#host keeps.
-          http = Net::HTTP.new(uri.hostname, uri.port, nil)
+          http = Security::Egress.http(uri, "controlplane")
           http.use_ssl = uri.scheme == "https"
           http.open_timeout = 10
           http.read_timeout = 30
