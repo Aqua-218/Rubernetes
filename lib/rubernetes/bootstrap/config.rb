@@ -32,7 +32,8 @@ module Rubernetes
       AUTHORIZATION_KEYS = %w[modes abac_policy_file webhook].freeze
       AUTHORIZATION_WEBHOOK_KEYS = %w[url ca_file client_cert_file client_key_file cache_authorized_ttl cache_unauthorized_ttl failure_policy].freeze
       ADMISSION_KEYS = %w[enable disable config].freeze
-      AUDIT_KEYS = %w[policy_file log_path max_queue].freeze
+      AUDIT_KEYS = %w[policy_file log_path max_queue webhook].freeze
+      AUDIT_WEBHOOK_KEYS = %w[url mode ca_file token token_file timeout_seconds batch_max_size batch_max_wait_seconds].freeze
       FLOW_CONTROL_KEYS = %w[enabled read_seats mutating_seats].freeze
       DATASTORE_KEYS = %w[type node_id cluster_id data_dir pki_dir listen_address listen_port voters peers timing
                           compaction_interval_seconds].freeze
