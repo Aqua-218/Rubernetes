@@ -668,6 +668,67 @@ module Rubernetes
         end
       end
 
+      # monitorNodeHealth: every --node-monitor-period (5 s) the node
+      # lifecycle controller looks at every Node's heartbeat, whether or not
+      # an event arrived, so a node that fell silent is noticed on time.
+      NODE_MONITOR_PERIOD_SECONDS = 5.0
+      NODE_CONTROLLER_NAMES = %w[node-lifecycle-controller node-controller].freeze
+
+      def node_controller
+        return nil if @controllers.nil?
+
+        lookup = -> { NODE_CONTROLLER_NAMES.filter_map { |name| @controllers[name] }.first }
+        @manager_mutex ? @manager_mutex.synchronize(&lookup) : lookup.call
+      end
+
+      def start_node_health_monitor_locked
+        return if @node_monitor_thread&.alive?
+        return if node_controller.nil?
+
+        @node_monitor_thread = Thread.new do
+          Thread.current.name = "node-health-monitor"
+          until @queue.shutdown?
+            sleep(@node_monitor_period || NODE_MONITOR_PERIOD_SECONDS)
+            break if @queue.shutdown?
+
+            begin
+              node_health_pass! if @elector.leader?
+            rescue StandardError => error
+              @last_error = error
+            end
+          end
+        end
+        @pool_threads << @node_monitor_thread
+      end
+
+      # One pass over all Nodes, timed as
+      # node_collector_update_all_nodes_health_duration_seconds.
+      def node_health_pass!
+        controller = node_controller
+        return 0 if controller.nil?
+
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        store = store_for(controller)
+        adapter = store.is_a?(StoreAdapter) ? store : StoreAdapter.new(store)
+        nodes = adapter.list(controller.resource_descriptor, namespace: :all)
+        reconciled = 0
+        Array(nodes).each do |node|
+          break unless @elector.leader?
+
+          begin
+            controller.reconcile(node, store: store, apply: true,
+                                 leader_guard: -> { raise LeadershipLostError, "controller leadership was lost before applying an operation" unless @elector.leader? })
+            reconciled += 1
+          rescue LeadershipLostError
+            break
+          rescue StandardError => error
+            @error_handler&.call(Support.name(node), controller.name, error) rescue nil
+          end
+        end
+        ControllerMetrics.observe("node_collector_update_all_nodes_health_duration_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+        reconciled
+      end
+
       POOL_IDLE_SECONDS = 0.5
 
       def run_pool_worker(wait)
