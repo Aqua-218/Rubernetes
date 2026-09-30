@@ -314,8 +314,6 @@ module Rubernetes
           "volume_manager_selinux_volumes_admitted_total" => no_selinux_mounts
         }.freeze,
         "kube-proxy" => {
-          "kubeproxy_conntrack_reconciler_deleted_entries_total" => no_conntrack_reconciler,
-          "kubeproxy_conntrack_reconciler_sync_duration_seconds" => no_conntrack_reconciler,
           "kubeproxy_iptables_ct_state_invalid_dropped_packets_total" => iptables_only,
           "kubeproxy_iptables_localhost_nodeports_accepted_packets_total" => iptables_only,
           "kubeproxy_sync_proxy_rules_iptables_last" => iptables_only,
