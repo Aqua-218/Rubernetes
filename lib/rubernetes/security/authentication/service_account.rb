@@ -161,7 +161,7 @@ module Rubernetes
           return authenticate_legacy(token) if claims["iss"] == LEGACY_ISSUER
           return nil unless claims["iss"] == @issuer && claims["sub"].to_s.start_with?(UserInfo::SERVICE_ACCOUNT_USERNAME_PREFIX)
 
-          _header, claims = JWT.verify(token, keys: @verification_keys, allowed_algorithms: %w[RS256 ES256 RS384 RS512 ES384 ES512])
+          _header, claims = verify_with_keys(token, header)
           now = @clock.call.to_i
           raise AuthenticationError, "serviceaccount: token has expired" if claims["exp"].is_a?(Integer) && claims["exp"] <= now
           raise AuthenticationError, "serviceaccount: token is not yet valid" if claims["nbf"].is_a?(Integer) && claims["nbf"] > now + 60
