@@ -73,6 +73,15 @@ module Rubernetes
 
         def authorize(attributes)
           key = attributes.to_h
+          # matchConditions first: an evaluation error (and no false) is the
+          # failure policy's decision; a false skips the webhook.
+          if @match_conditions && !@match_conditions.empty?
+            outcome = @match_conditions.evaluate(key)
+            if outcome.error
+              return @failure_policy == "Deny" ? Decision.deny("Webhook: #{outcome.error.message}", authorizer: name) : Decision.no_opinion("Webhook: #{outcome.error.message}", authorizer: name)
+            end
+            return Decision.no_opinion("Webhook: match conditions excluded the request", authorizer: name) unless outcome.matches
+          end
           now = @clock.call
           cached = @mutex.synchronize { @cache[key] }
           return cached[:decision] if cached && cached[:expires_at] > now
