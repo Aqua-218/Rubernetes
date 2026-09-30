@@ -239,6 +239,67 @@ module Rubernetes
 
       private
 
+      def observe_check(result)
+        @metrics_observer&.call(result)
+      rescue StandardError
+        nil
+      end
+
+      def digest_name(key) = ::Digest::SHA256.hexdigest(key)
+
+      def count_files(kind)
+        return 0 unless @directory && File.directory?(File.join(@directory, kind))
+
+        Dir.children(File.join(@directory, kind)).count { |name| name.end_with?(".json") }
+      rescue SystemCallError
+        0
+      end
+
+      def write_json(path, document)
+        FileUtils.mkdir_p(File.dirname(path), mode: 0o700)
+        temporary = "#{path}.tmp"
+        File.write(temporary, JSON.generate(document), perm: 0o600)
+        File.rename(temporary, path)
+      rescue SystemCallError
+        nil
+      end
+
+      # ImagePulledRecord: the image and, per repository, who may use it.
+      def persist_record(image_ref, record)
+        mapping = record[:mapping].to_h do |repository, credentials|
+          [repository, {"nodePodsAccessible" => credentials.node_accessible,
+                        "kubernetesSecrets" => credentials.secrets.map { |secret| secret.transform_keys(&:to_s) },
+                        "kubernetesServiceAccounts" => credentials.service_accounts}]
+        end
+        write_json(File.join(@directory, "pulled", "#{digest_name(image_ref)}.json"),
+                   {"kind" => "ImagePulledRecord", "apiVersion" => "kubelet.config.k8s.io/v1alpha1", "imageRef" => image_ref,
+                    "lastUpdatedTime" => record[:updated].utc.iso8601, "credentialMapping" => mapping})
+      end
+
+      def load_from_disk
+        Dir.glob(File.join(@directory, "pulled", "*.json")).each do |path|
+          document = JSON.parse(File.read(path))
+          image_ref = document["imageRef"].to_s
+          next if image_ref.empty?
+
+          updated = Time.parse(document["lastUpdatedTime"].to_s) rescue @clock.call
+          mapping = (document["credentialMapping"] || {}).to_h do |repository, entry|
+            [repository, Credentials.new(node_accessible: entry["nodePodsAccessible"] == true,
+                                         secrets: Array(entry["kubernetesSecrets"]).map { |secret| secret.transform_keys(&:to_sym) },
+                                         service_accounts: Array(entry["kubernetesServiceAccounts"]))]
+          end
+          @records[image_ref] = {updated: updated, mapping: mapping}
+        rescue JSON::ParserError, SystemCallError, ArgumentError
+          next
+        end
+        Dir.glob(File.join(@directory, "pulling", "*.json")).each do |path|
+          document = JSON.parse(File.read(path))
+          @intents[document["image"].to_s] = @clock.call unless document["image"].to_s.empty?
+        rescue JSON::ParserError, SystemCallError
+          next
+        end
+      end
+
       def remember(repository, image_ref, secret)
         record_pulled(repository, image_ref, Credentials.secret(uid: secret[:uid], namespace: secret[:namespace],
                                                                 name: secret[:name], hash: secret[:hash]))
