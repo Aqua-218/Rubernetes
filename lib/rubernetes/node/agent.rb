@@ -1052,6 +1052,7 @@ module Rubernetes
           @error_handler&.call(error)
         end
         start_relist_thread
+        start_evented_pleg
         start_node_status_thread
         # kubelet: evictionManager.Start(..., evictionMonitoringPeriod).
         @eviction_manager.start if @eviction_manager.respond_to?(:start) && @sleeper.equal?(DEFAULT_SLEEPER)
