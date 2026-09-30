@@ -1112,6 +1112,7 @@ module Rubernetes
             full = true
             resynchronize_backend(all_rules, @rule_set.revision)
           end
+          published_rules = all_rules
           diff
         end
       rescue StandardError
