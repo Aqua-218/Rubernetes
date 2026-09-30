@@ -970,6 +970,7 @@ module Rubernetes
       def validate_apiserver!(process_config)
         reject_unknown_keys!(process_config, APISERVER_KEYS, "rubernetes-apiserver configuration")
         validate_absolute_path!(process_config["encryption_config_file"], "rubernetes-apiserver.encryption_config_file") if process_config.key?("encryption_config_file")
+        validate_absolute_path!(process_config["egress_selector_config_file"], "rubernetes-apiserver.egress_selector_config_file") if process_config.key?("egress_selector_config_file")
         if process_config.key?("encryption_config_reload_interval_seconds")
           validate_positive_integer!(process_config["encryption_config_reload_interval_seconds"], "rubernetes-apiserver.encryption_config_reload_interval_seconds")
         end
