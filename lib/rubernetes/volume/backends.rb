@@ -1345,6 +1345,11 @@ module Rubernetes
     class ProjectedBackend < Backend
       TYPE = "projected"
 
+      class << self
+        # The node's PodCertificateManager (Node::PodVolumes#pod_certificates=).
+        attr_accessor :pod_certificate_provider
+      end
+
       def initialize(**kwargs)
         super
         @mount_identity = Types.key(Types.key(spec, "backendResult", {}), "mountIdentity")
