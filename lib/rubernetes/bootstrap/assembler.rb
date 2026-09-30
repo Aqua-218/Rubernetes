@@ -205,7 +205,8 @@ module Rubernetes
                         state_dir = section["state_dir"] ||
                                     (process["kubeconfig"] ? File.join(File.dirname(File.expand_path(process["kubeconfig"].to_s)), "image_manager") : nil)
                         Image::PullRecords.new(policy: section.fetch("verification_policy", Image::PullRecords::NEVER_VERIFY_PRELOADED),
-                                               allowlist: section.fetch("preloaded_images_verification_allowlist", []))
+                                               allowlist: section.fetch("preloaded_images_verification_allowlist", []),
+                                               directory: state_dir)
                       end
             Image::Resolver.new(pull_records: records)
           end
