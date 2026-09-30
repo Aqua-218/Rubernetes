@@ -19,7 +19,7 @@ class MetricsInventoryDifferentialTest < Minitest::Test
     assert_equal "hidden", state("kube-apiserver", "etcd_bookmark_counts")
     assert_equal "unimplemented", state("kube-apiserver", "apiserver_storage_list_total")
     assert_equal "upstream-unused", state("kube-apiserver", "aggregator_openapi_v2_regeneration_count")
-    assert_equal "unimplemented", state("kube-controller-manager", "job_controller_stale_sync_skips_total")
+    assert_equal "wired", state("kube-controller-manager", "job_controller_stale_sync_skips_total")
     assert_equal "wired", state("kube-controller-manager", "attachdetach_controller_total_volumes")
   end
 
