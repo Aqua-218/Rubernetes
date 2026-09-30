@@ -359,7 +359,6 @@ module Rubernetes
 
         # Never route cluster-internal traffic through an environment proxy.
         # URI#hostname: an IPv6 literal without the brackets URI#host keeps.
-        http = Net::HTTP.new(uri.hostname, uri.port, nil)
         address = resolved_address(backend)
         http.ipaddr = address[0] if address && address[0] != uri.hostname
         http.use_ssl = uri.scheme == "https"
