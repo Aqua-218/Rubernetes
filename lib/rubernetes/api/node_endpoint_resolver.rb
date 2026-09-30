@@ -141,7 +141,7 @@ module Rubernetes
           path = "/exec/#{escape(namespace || "default")}/#{escape(pod.to_s)}/#{escape(container_id.to_s)}"
           uri = URI.join(@base_uri, path)
           uri.query = URI.encode_www_form(query) unless query.empty?
-          http = Net::HTTP.new(uri.hostname, uri.port)
+          http = Security::Egress.http(uri, "cluster")
           KubeletClientTLS.configure(http, uri, @tls)
           http.open_timeout = @open_timeout
           http.read_timeout = 300
