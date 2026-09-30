@@ -495,8 +495,8 @@ module Rubernetes
         modes = Array(@config.dig("security", "authorization", "modes"))
         modes = %w[Node RBAC] if modes.empty?
         wanted = []
-        wanted.concat(%w[clusterroles clusterrolebindings roles rolebindings]) if modes.include?("RBAC")
-        wanted.concat(%w[prioritylevelconfigurations flowschemas]) unless @config.dig("security", "flow_control", "enabled") == false
+        wanted.push("clusterroles", "clusterrolebindings", "roles", "rolebindings") if modes.include?("RBAC")
+        wanted.push("prioritylevelconfigurations", "flowschemas") unless @config.dig("security", "flow_control", "enabled") == false
         installed = 0
         wanted.each do |name|
           documents.fetch(name, []).each do |object|

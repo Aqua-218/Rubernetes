@@ -108,8 +108,8 @@ module Rubernetes
             File.chmod(0o600, target)
           else
             stat = File.stat(host_path)
-            raise JailerError, "read-only input #{host_path} is writable by group/other" unless (stat.mode & 0o022).zero?
-            unless (stat.mode & 0o004) == 0o004 || acl_grants_read?(
+            raise JailerError, "read-only input #{host_path} is writable by group/other" unless stat.mode.nobits?(0o022)
+            unless stat.mode.allbits?(0o004) || acl_grants_read?(
               host_path, uid
             )
               raise JailerError,
@@ -134,8 +134,8 @@ module Rubernetes
 
           arguments = [@artifacts.path(:jailer), "--id", id, "--exec-file", @artifacts.path(:firecracker), "--uid", uid.to_s, "--gid", gid.to_s,
                        "--chroot-base-dir", @chroot_base, "--netns", netns_path, "--cgroup-version", "2", "--parent-cgroup", @parent_cgroup, "--new-pid-ns"]
-          cgroup_limits.each { |file, value| arguments.concat(["--cgroup", "#{file}=#{value}"]) }
-          arguments.concat(["--", "--api-sock", "/run/firecracker.socket", *firecracker_args])
+          cgroup_limits.each { |file, value| arguments.push("--cgroup", "#{file}=#{value}") }
+          arguments.push("--", "--api-sock", "/run/firecracker.socket", *firecracker_args)
           log = log_path ? File.open(log_path, "a") : File.open(File::NULL, "w")
           launched_at = Time.now.utc
           jailer_pid = Process.spawn(*arguments, in: File::NULL, out: log, err: log, close_others: true)

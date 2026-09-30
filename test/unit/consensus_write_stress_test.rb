@@ -36,9 +36,9 @@ class ConsensusWriteStressTest < Minitest::Test
     ROUNDS.times do |round|
       live = IDS - crashed
       # Creates arrive in bursts over the first ~30 ms of the round.
-      keys = CREATES_PER_ROUND.times.map { |i| "k/r#{round}-#{i}" }
+      keys = Array.new(CREATES_PER_ROUND) { |i| "k/r#{round}-#{i}" }
       bursts = keys.each_slice(random.rand(5..40)).to_a
-      events = random.rand(1..4).times.map { [random.rand * 0.6, EVENTS.sample(random: random)] }.sort_by(&:first)
+      events = Array.new(random.rand(1..4)) { [random.rand * 0.6, EVENTS.sample(random: random)] }.sort_by(&:first)
       round_started = cluster.now
       bursts.each do |burst|
         live = IDS - crashed

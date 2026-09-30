@@ -23,7 +23,7 @@ class NativeContainerIdReuseTest < Minitest::Test
     box = sandbox
 
     assert_equal(%w[sandbox-1.container-1 sandbox-1.container-2 sandbox-1.container-3],
-                 3.times.map { box.next_container_id })
+                 Array.new(3) { box.next_container_id })
   end
 
   def test_a_removed_container_never_gives_its_id_back

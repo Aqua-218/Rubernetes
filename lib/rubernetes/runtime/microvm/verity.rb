@@ -31,7 +31,7 @@ module Rubernetes
         def format(data_path, hash_path, salt: nil)
           arguments = [@veritysetup, "format", "--hash=sha256", "--data-block-size=4096", "--hash-block-size=4096"]
           arguments << "--salt=#{salt}" if salt
-          arguments.concat([data_path, hash_path])
+          arguments.push(data_path, hash_path)
           output = run!(arguments)
           root_hash = output[/Root hash:\s*([0-9a-f]{64})/, 1]
           raise VerityError, "veritysetup format did not report a root hash" if root_hash.nil?

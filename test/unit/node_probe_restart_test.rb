@@ -102,7 +102,7 @@ class NodeProbeRestartTest < Minitest::Test
     assert manager.should_restart?(policy: "OnFailure", exit_code: 1)
     assert manager.should_restart?(policy: "Always", exit_code: 0)
 
-    delays = 7.times.map do
+    delays = Array.new(7) do
       manager.record_start("c", at: clock)
       manager.record_exit("c", policy: "Always", exit_code: 1, at: clock).delay_seconds
     end

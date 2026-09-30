@@ -321,7 +321,7 @@ module Rubernetes
 
               offset += 1
               value |= (byte & 0x7f) << shift
-              break if (byte & 0x80).zero?
+              break if byte.nobits?(0x80)
 
               shift += 7
             end

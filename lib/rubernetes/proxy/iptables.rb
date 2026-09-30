@@ -649,11 +649,11 @@ module Rubernetes
 
         def families
           @families || begin
-            detected = @node_addresses.map do |ip|
+            detected = @node_addresses.filter_map do |ip|
               IPAddr.new(ip.to_s).ipv6? ? "IPv6" : "IPv4"
             rescue StandardError
               nil
-            end.compact.uniq
+            end.uniq
             detected.empty? ? ["IPv4"] : detected
           end
         end
@@ -783,9 +783,9 @@ module Rubernetes
         private
 
         def remember_changed(diff)
-          services = (diff.added + diff.deleted + diff.updated.flatten).map do |rule|
+          services = (diff.added + diff.deleted + diff.updated.flatten).filter_map do |rule|
             rule.respond_to?(:service_key) ? rule.service_key : nil
-          end.compact
+          end
           families.each { |family| @pending_services[family].merge(services) }
         end
 

@@ -141,7 +141,7 @@ module Rubernetes
 
       def storage_version_entries(status)
         values = Support.value(status, "storageVersions", [])
-        Array(values).select { |entry| entry.is_a?(Hash) }
+        Array(values).grep(Hash)
       end
 
       def identity_lease?(lease)

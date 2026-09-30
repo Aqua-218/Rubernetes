@@ -111,7 +111,7 @@ namespace :m1 do
   task :evidence do
     command = [RbConfig.ruby, "tools/milestones/m1_evidence.rb"]
     probe_commands.each do |name, adapter|
-      command.concat(["--#{name}-command", adapter])
+      command.push("--#{name}-command", adapter)
     end
     sh(*command)
   end
@@ -129,8 +129,8 @@ namespace :m2 do
   desc "Capture strict M2 Native Pod evidence from the five adapters"
   task evidence: [:compile] do
     command = [RbConfig.ruby, "tools/milestones/m2_evidence.rb"]
-    command.concat(["--m0-manifest", ENV.fetch("RUBERNETES_M2_M0_MANIFEST")]) if ENV["RUBERNETES_M2_M0_MANIFEST"]
-    command.concat(["--m1-manifest", ENV.fetch("RUBERNETES_M2_M1_MANIFEST")]) if ENV["RUBERNETES_M2_M1_MANIFEST"]
+    command.push("--m0-manifest", ENV.fetch("RUBERNETES_M2_M0_MANIFEST")) if ENV["RUBERNETES_M2_M0_MANIFEST"]
+    command.push("--m1-manifest", ENV.fetch("RUBERNETES_M2_M1_MANIFEST")) if ENV["RUBERNETES_M2_M1_MANIFEST"]
     sh(*command)
   end
 
@@ -142,9 +142,9 @@ namespace :m3 do
   desc "Capture strict M3 controller, scheduler, leader, and watch evidence"
   task :evidence do
     command = [RbConfig.ruby, "tools/milestones/m3_evidence.rb"]
-    command.concat(["--m0-manifest", ENV.fetch("RUBERNETES_M3_M0_MANIFEST")]) if ENV["RUBERNETES_M3_M0_MANIFEST"]
-    command.concat(["--m1-manifest", ENV.fetch("RUBERNETES_M3_M1_MANIFEST")]) if ENV["RUBERNETES_M3_M1_MANIFEST"]
-    command.concat(["--m2-manifest", ENV.fetch("RUBERNETES_M3_M2_MANIFEST")]) if ENV["RUBERNETES_M3_M2_MANIFEST"]
+    command.push("--m0-manifest", ENV.fetch("RUBERNETES_M3_M0_MANIFEST")) if ENV["RUBERNETES_M3_M0_MANIFEST"]
+    command.push("--m1-manifest", ENV.fetch("RUBERNETES_M3_M1_MANIFEST")) if ENV["RUBERNETES_M3_M1_MANIFEST"]
+    command.push("--m2-manifest", ENV.fetch("RUBERNETES_M3_M2_MANIFEST")) if ENV["RUBERNETES_M3_M2_MANIFEST"]
     sh(*command)
   end
 
@@ -156,10 +156,10 @@ namespace :m4 do
   desc "Capture strict M4 network, policy, proxy, volume, and mount-security evidence"
   task :evidence do
     command = [RbConfig.ruby, "tools/milestones/m4_evidence.rb"]
-    command.concat(["--m0-manifest", ENV.fetch("RUBERNETES_M4_M0_MANIFEST")]) if ENV["RUBERNETES_M4_M0_MANIFEST"]
-    command.concat(["--m1-manifest", ENV.fetch("RUBERNETES_M4_M1_MANIFEST")]) if ENV["RUBERNETES_M4_M1_MANIFEST"]
-    command.concat(["--m2-manifest", ENV.fetch("RUBERNETES_M4_M2_MANIFEST")]) if ENV["RUBERNETES_M4_M2_MANIFEST"]
-    command.concat(["--m3-manifest", ENV.fetch("RUBERNETES_M4_M3_MANIFEST")]) if ENV["RUBERNETES_M4_M3_MANIFEST"]
+    command.push("--m0-manifest", ENV.fetch("RUBERNETES_M4_M0_MANIFEST")) if ENV["RUBERNETES_M4_M0_MANIFEST"]
+    command.push("--m1-manifest", ENV.fetch("RUBERNETES_M4_M1_MANIFEST")) if ENV["RUBERNETES_M4_M1_MANIFEST"]
+    command.push("--m2-manifest", ENV.fetch("RUBERNETES_M4_M2_MANIFEST")) if ENV["RUBERNETES_M4_M2_MANIFEST"]
+    command.push("--m3-manifest", ENV.fetch("RUBERNETES_M4_M3_MANIFEST")) if ENV["RUBERNETES_M4_M3_MANIFEST"]
     sh(*command)
   end
 
@@ -171,7 +171,7 @@ namespace :m5 do
   desc "Capture strict M5 Raft linearizability, fault-matrix, corruption, RTO/RPO, and ownership evidence"
   task :evidence do
     command = [RbConfig.ruby, "tools/milestones/m5_evidence.rb"]
-    command.concat(["--m4-manifest", ENV.fetch("RUBERNETES_M5_M4_MANIFEST")]) if ENV["RUBERNETES_M5_M4_MANIFEST"]
+    command.push("--m4-manifest", ENV.fetch("RUBERNETES_M5_M4_MANIFEST")) if ENV["RUBERNETES_M5_M4_MANIFEST"]
     sh(*command)
   end
 
@@ -183,7 +183,7 @@ namespace :m6 do
   desc "Capture strict M6 API-coverage, feature-gate, CRD/aggregation, webhook, security-pipeline, and fuzz evidence"
   task :evidence do
     command = [RbConfig.ruby, "tools/milestones/m6_evidence.rb"]
-    command.concat(["--m5-manifest", ENV.fetch("RUBERNETES_M6_M5_MANIFEST")]) if ENV["RUBERNETES_M6_M5_MANIFEST"]
+    command.push("--m5-manifest", ENV.fetch("RUBERNETES_M6_M5_MANIFEST")) if ENV["RUBERNETES_M6_M5_MANIFEST"]
     sh(*command)
   end
 
@@ -204,22 +204,22 @@ namespace :m9 do
   desc "Run the release performance benchmark against a Kubernetes v1.36.2 oracle"
   task :benchmark do
     command = [RbConfig.ruby, "tools/release/benchmark.rb"]
-    command.concat(["--kubeconfig", ENV.fetch("RUBERNETES_BENCH_KUBECONFIG")]) if ENV["RUBERNETES_BENCH_KUBECONFIG"]
-    command.concat(["--oracle-kubeconfig", ENV.fetch("RUBERNETES_BENCH_ORACLE_KUBECONFIG")]) if ENV["RUBERNETES_BENCH_ORACLE_KUBECONFIG"]
+    command.push("--kubeconfig", ENV.fetch("RUBERNETES_BENCH_KUBECONFIG")) if ENV["RUBERNETES_BENCH_KUBECONFIG"]
+    command.push("--oracle-kubeconfig", ENV.fetch("RUBERNETES_BENCH_ORACLE_KUBECONFIG")) if ENV["RUBERNETES_BENCH_ORACLE_KUBECONFIG"]
     sh(*command)
   end
 
   desc "Run the 72-hour soak (RUBERNETES_SOAK_HOURS overrides only for a dry run)"
   task :soak do
     command = [RbConfig.ruby, "tools/release/soak.rb"]
-    command.concat(["--kubeconfig", ENV.fetch("RUBERNETES_SOAK_KUBECONFIG")]) if ENV["RUBERNETES_SOAK_KUBECONFIG"]
+    command.push("--kubeconfig", ENV.fetch("RUBERNETES_SOAK_KUBECONFIG")) if ENV["RUBERNETES_SOAK_KUBECONFIG"]
     sh(*command)
   end
 
   desc "Capture strict M9 release, formal, operations, and supply-chain evidence"
   task :evidence do
     command = [RbConfig.ruby, "tools/milestones/m9_evidence.rb"]
-    command.concat(["--m8-manifest", ENV.fetch("RUBERNETES_M9_M8_MANIFEST")]) if ENV["RUBERNETES_M9_M8_MANIFEST"]
+    command.push("--m8-manifest", ENV.fetch("RUBERNETES_M9_M8_MANIFEST")) if ENV["RUBERNETES_M9_M8_MANIFEST"]
     sh(*command)
   end
 
@@ -231,12 +231,12 @@ namespace :m8 do
   desc "Run the K0-K7 Kubernetes compatibility lanes against a cluster"
   task :lanes do
     command = [RbConfig.ruby, "tools/conformance/run.rb"]
-    command.concat(["--profile", ENV["RUBERNETES_M8_PROFILE"]]) if ENV["RUBERNETES_M8_PROFILE"]
-    command.concat(["--lanes", ENV["RUBERNETES_M8_LANES"]]) if ENV["RUBERNETES_M8_LANES"]
-    command.concat(["--kubeconfig", ENV["RUBERNETES_CONFORMANCE_KUBECONFIG"]]) if ENV["RUBERNETES_CONFORMANCE_KUBECONFIG"]
+    command.push("--profile", ENV["RUBERNETES_M8_PROFILE"]) if ENV["RUBERNETES_M8_PROFILE"]
+    command.push("--lanes", ENV["RUBERNETES_M8_LANES"]) if ENV["RUBERNETES_M8_LANES"]
+    command.push("--kubeconfig", ENV["RUBERNETES_CONFORMANCE_KUBECONFIG"]) if ENV["RUBERNETES_CONFORMANCE_KUBECONFIG"]
     if ENV["RUBERNETES_CONFORMANCE_ORACLE_KUBECONFIG"]
-      command.concat(["--oracle-kubeconfig",
-                      ENV["RUBERNETES_CONFORMANCE_ORACLE_KUBECONFIG"]])
+      command.push("--oracle-kubeconfig",
+                      ENV["RUBERNETES_CONFORMANCE_ORACLE_KUBECONFIG"])
     end
     sh(*command)
   end
@@ -249,7 +249,7 @@ namespace :m8 do
   desc "Build the upstream e2e.test binary from the pinned Kubernetes checkout"
   task :e2e_build do
     command = [RbConfig.ruby, "tools/conformance/build_e2e.rb"]
-    command.concat(["--source-root", ENV["RUBERNETES_KUBERNETES_SOURCE"]]) if ENV["RUBERNETES_KUBERNETES_SOURCE"]
+    command.push("--source-root", ENV["RUBERNETES_KUBERNETES_SOURCE"]) if ENV["RUBERNETES_KUBERNETES_SOURCE"]
     sh(*command)
   end
 
@@ -262,7 +262,7 @@ namespace :m8 do
   desc "Capture strict M8 conformance, selection, corpus, and integrity evidence"
   task :evidence do
     command = [RbConfig.ruby, "tools/milestones/m8_evidence.rb"]
-    command.concat(["--m7-manifest", ENV.fetch("RUBERNETES_M8_M7_MANIFEST")]) if ENV["RUBERNETES_M8_M7_MANIFEST"]
+    command.push("--m7-manifest", ENV.fetch("RUBERNETES_M8_M7_MANIFEST")) if ENV["RUBERNETES_M8_M7_MANIFEST"]
     sh(*command)
   end
 
@@ -274,7 +274,7 @@ namespace :m7 do
   desc "Capture strict M7 KVM L4/L5, attack-matrix, identity, snapshot-corruption, and startup-latency evidence"
   task :evidence do
     command = [RbConfig.ruby, "tools/milestones/m7_evidence.rb"]
-    command.concat(["--m6-manifest", ENV.fetch("RUBERNETES_M7_M6_MANIFEST")]) if ENV["RUBERNETES_M7_M6_MANIFEST"]
+    command.push("--m6-manifest", ENV.fetch("RUBERNETES_M7_M6_MANIFEST")) if ENV["RUBERNETES_M7_M6_MANIFEST"]
     sh(*command)
   end
 

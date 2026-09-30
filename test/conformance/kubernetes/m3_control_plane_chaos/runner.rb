@@ -333,7 +333,7 @@ module M3ControlPlaneChaosRunner
     def proc_start_time(pid)
       text = File.read("/proc/#{pid}/stat")
       tail = text.rpartition(") ").last
-      fields = tail.split(" ")
+      fields = tail.split
       value = fields.fetch(19)
       Integer(value)
     rescue Errno::ENOENT, Errno::EACCES, IndexError, ArgumentError
@@ -636,7 +636,7 @@ module M3ControlPlaneChaosRunner
                                          extra: {"recovery_seconds" => recovered_at.fetch("seconds"),
                                                  "recovery_observation" => recovered_at,
                                                  "effect_ids" => Array(recovery["effect_ids"])})
-      @events.concat([fence_event, recovery_event])
+      @events.push(fence_event, recovery_event)
       component_effect_ids = Array(before["effect_ids"]) + Array(after["effect_ids"]) +
                              Array(fence["effect_ids"]) + Array(recovery["effect_ids"])
       @effect_ids.concat(component_effect_ids)
@@ -1149,13 +1149,13 @@ module M3ControlPlaneChaosRunner
         end.values.sum { |duplicates| [duplicates.length - 1, 0].max }
         {
           "effect_key" => key,
-          "effect_ids" => values.map { |entry| entry["effect_id"] }.compact.uniq.sort,
-          "reconcile_key" => values.map { |entry| entry["reconcile_key"] }.compact.uniq.sort,
-          "effect_types" => values.map { |entry| entry["effect_type"] }.compact.uniq.sort,
-          "actions" => values.map { |entry| entry["action"] }.compact.uniq.sort,
+          "effect_ids" => values.filter_map { |entry| entry["effect_id"] }.uniq.sort,
+          "reconcile_key" => values.filter_map { |entry| entry["reconcile_key"] }.uniq.sort,
+          "effect_types" => values.filter_map { |entry| entry["effect_type"] }.uniq.sort,
+          "actions" => values.filter_map { |entry| entry["action"] }.uniq.sort,
           "mutation_count" => values.length,
           "duplicate_mutation_count" => duplicate_mutation_count,
-          "object_digests" => values.map { |entry| entry["object_sha256"] }.compact.uniq.sort
+          "object_digests" => values.filter_map { |entry| entry["object_sha256"] }.uniq.sort
         }
       end.sort_by { |entry| entry.fetch("effect_key") }
       canonical_entries = Rubernetes::Controller::EffectJournal.canonical(entries)
@@ -1191,7 +1191,7 @@ module M3ControlPlaneChaosRunner
 
       Process.kill(0, record.fetch("pid"))
       expected_start = Integer(record.fetch("start_time"))
-      current = File.read("/proc/#{record.fetch("pid")}/stat").rpartition(") ").last.split(" ").fetch(19).to_i
+      current = File.read("/proc/#{record.fetch("pid")}/stat").rpartition(") ").last.split.fetch(19).to_i
       current == expected_start
     rescue Errno::ESRCH, Errno::EPERM, Errno::ENOENT, Errno::EACCES, IndexError, ArgumentError
       false

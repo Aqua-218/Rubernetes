@@ -96,7 +96,7 @@ module Rubernetes
       end
 
       def rule_map
-        rules.each_with_object({}) { |rule, result| result[rule.key] = rule }
+        rules.to_h { |rule| [rule.key, rule] }
       end
 
       def headless?
@@ -126,7 +126,7 @@ module Rubernetes
 
       def initialize(local_node: nil, node_addresses: [], node_name: nil, node_zone: nil, zone: nil)
         @local_node = (local_node || node_name)&.to_s
-        @node_addresses = Array(node_addresses).map { |ip| ModelSupport.canonical_ip(ip) }.compact.freeze
+        @node_addresses = Array(node_addresses).filter_map { |ip| ModelSupport.canonical_ip(ip) }.freeze
         @node_zone = (node_zone || zone)&.to_s
       end
 
@@ -310,7 +310,7 @@ module Rubernetes
         incoming = if compiled_or_rules.respond_to?(:rule_map)
                      compiled_or_rules.rule_map
                    else
-                     Array(compiled_or_rules).each_with_object({}) { |rule, result| result[rule.key] = rule }
+                     Array(compiled_or_rules).to_h { |rule| [rule.key, rule] }
                    end
         incoming = incoming.freeze
         @mutex.synchronize do

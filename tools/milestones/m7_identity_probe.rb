@@ -41,7 +41,7 @@ module M7IdentityProbe
       end
       reused = {}
       FIELDS.each do |field|
-        values = clones.map { |clone| clone["fields"][field] }.compact
+        values = clones.filter_map { |clone| clone["fields"][field] }
         duplicates = values.tally.select { |_value, count| count > 1 }.keys
         reused[field] = duplicates
       end

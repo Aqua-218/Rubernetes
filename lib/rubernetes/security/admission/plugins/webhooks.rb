@@ -70,7 +70,7 @@ module Rubernetes
                        namespace = @context.namespace(attributes.namespace)
                        (namespace&.dig("metadata", "labels") || {}).merge("kubernetes.io/metadata.name" => attributes.namespace)
                      end
-            return true if labels.nil? && attributes.namespace.empty? && !(attributes.resource == "namespaces")
+            return true if labels.nil? && attributes.namespace.empty? && attributes.resource != "namespaces"
 
             label_selector_matches?(selector, labels)
           end

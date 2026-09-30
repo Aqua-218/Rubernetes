@@ -223,7 +223,7 @@ module Rubernetes
 
       def process_start_time(pid)
         text = File.read("/proc/#{pid}/stat")
-        fields = text.rpartition(") ").last.split(" ")
+        fields = text.rpartition(") ").last.split
         Integer(fields.fetch(19))
       rescue Errno::ENOENT, Errno::EACCES, IndexError, ArgumentError
         "unknown"

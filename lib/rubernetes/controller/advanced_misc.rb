@@ -82,7 +82,7 @@ module Rubernetes
                  else
                    resource_or_status
                  end
-        Array(Support.value(source, "conditions", [])).select { |condition| condition.is_a?(Hash) }
+        Array(Support.value(source, "conditions", [])).grep(Hash)
       end
 
       def condition_for(resource_or_status, type)
@@ -407,7 +407,7 @@ module Rubernetes
         pod_snapshot = list_for(adapter, POD, namespace: Support.namespace(claim)) if pod_snapshot.nil? && adapter
         deleted_uids = Array(deleted_pod_uids).map(&:to_s)
         status = Support.deep_copy(Support.status(claim))
-        reserved = Array(Support.value(status, "reservedFor", [])).select { |entry| entry.is_a?(Hash) }
+        reserved = Array(Support.value(status, "reservedFor", [])).grep(Hash)
         remaining = reserved.select { |reference| keep_reserved_reference?(claim, reference, pod_snapshot, deleted_uids) }
 
         operations = []
@@ -1320,7 +1320,7 @@ module Rubernetes
       end
 
       CONFLICT_METRIC = "selinux_warning_controller_selinux_volume_conflict"
-      CONFLICT_SERIES = {}
+      CONFLICT_SERIES = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache)
       CONFLICT_SERIES_LOCK = Mutex.new
 
       private
@@ -1411,9 +1411,7 @@ module Rubernetes
         security_context = Support.value(Support.spec(pod), "securityContext", {})
         options = value_at(volume, "seLinuxOptions") || value_at(security_context, "seLinuxOptions", "selinuxOptions")
         if options.is_a?(Hash)
-          [value_at(options, "user"), value_at(options, "role"), value_at(options, "type"), value_at(options, "level")].map do |part|
-            part.to_s
-          end.join(":").then { |label| label == ":::" ? "" : label }
+          [value_at(options, "user"), value_at(options, "role"), value_at(options, "type"), value_at(options, "level")].map(&:to_s).join(":").then { |label| label == ":::" ? "" : label }
         else
           value_at(pod, "seLinuxLabel", "selinuxLabel").to_s
         end

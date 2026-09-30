@@ -234,7 +234,7 @@ module Rubernetes
 
       def discovery_items
         record_discovery_aggregation
-        @mutex.synchronize { @backends.values.group_by(&:group) }.sort.map do |group, backends|
+        @mutex.synchronize { @backends.values.group_by(&:group) }.sort.filter_map do |group, backends|
           versions = backends.sort_by { |backend| [-backend.priority[1], backend.version] }.filter_map do |backend|
             next nil unless @mutex.synchronize { @availability.fetch(backend.name, false) }
 
@@ -251,7 +251,7 @@ module Rubernetes
           next nil if versions.empty?
 
           {"metadata" => {"name" => group, "creationTimestamp" => nil}, "versions" => versions}
-        end.compact
+        end
       end
 
       # Discovery merged from the backend's /apis/<group>/<version>.

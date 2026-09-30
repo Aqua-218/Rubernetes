@@ -17,7 +17,7 @@ module CSIStubGenerator
   CSI_SPEC_VERSION = "1.9.0"
   CSI_SPEC_COMMIT = "80d53107c70981b9da8aaf9cd1c90249562b22f0"
   CSI_PROTO_SHA256 = "0b625eff0484fa61a1ddb06570a71c118e6af3b8f73e4d860f43d477412e4d55"
-  CSI_PROTO_URL = "https://raw.githubusercontent.com/container-storage-interface/spec/#{CSI_SPEC_COMMIT}/csi.proto"
+  CSI_PROTO_URL = "https://raw.githubusercontent.com/container-storage-interface/spec/#{CSI_SPEC_COMMIT}/csi.proto".freeze
   OUTPUT_DIR = File.expand_path("../../lib/rubernetes/volume/generated", __dir__)
 
   module_function

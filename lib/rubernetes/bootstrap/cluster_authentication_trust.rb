@@ -22,7 +22,7 @@ module Rubernetes
     class ClusterAuthenticationTrust
       NAMESPACE = "kube-system"
       NAME = "extension-apiserver-authentication"
-      PATH = "/api/v1/namespaces/#{NAMESPACE}/configmaps"
+      PATH = "/api/v1/namespaces/#{NAMESPACE}/configmaps".freeze
       INTERVAL = 60.0
       IDENTITY = KubernetesServiceReconciler::IDENTITY
 

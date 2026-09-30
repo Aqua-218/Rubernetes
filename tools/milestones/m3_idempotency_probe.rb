@@ -263,7 +263,7 @@ module M3IdempotencyMeasurement
       object["spec"] = {
         "minReplicas" => 1,
         "maxReplicas" => 3,
-        "scaleTargetRef" => {"apiVersion" => "apps/v1", "kind" => "Deployment", "name" => "m3-target-#{name.sub(/\Am3-/, "")}"},
+        "scaleTargetRef" => {"apiVersion" => "apps/v1", "kind" => "Deployment", "name" => "m3-target-#{name.delete_prefix('m3-')}"},
         "metrics" => [{"type" => "Resource",
                        "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 80}}}]
       }

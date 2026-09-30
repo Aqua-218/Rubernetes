@@ -185,7 +185,7 @@ class EgressSelectorTest < Minitest::Test
       rescue StandardError
         nil
       end
-      [origin_thread, uds_thread, tcp_thread].compact.each { |thread| thread.kill }
+      [origin_thread, uds_thread, tcp_thread].compact.each(&:kill)
     end
   end
 

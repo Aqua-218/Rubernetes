@@ -258,7 +258,7 @@ module M2ProbeSupport
       result[key] = value.to_s.strip if value
     end
     mountinfo = File.binread("/proc/#{pid}/mountinfo")
-    root_line = mountinfo.each_line.select { |line| line.split(" ").fetch(4, nil) == "/" }.last
+    root_line = mountinfo.each_line.select { |line| line.split.fetch(4, nil) == "/" }.last
     {
       "name" => name,
       "container_id" => container_id,
@@ -272,8 +272,8 @@ module M2ProbeSupport
       "cgroup_path" => cgroup_path,
       "cgroup_inode" => cgroup_path ? File.stat(cgroup_path).ino : nil,
       "cgroup_membership" => File.readlines("/proc/#{pid}/cgroup", chomp: true),
-      "root_mount_id" => root_line ? Integer(root_line.split(" ").fetch(0)) : nil,
-      "root_filesystem" => root_line ? root_line.split(" - ", 2).last.split(" ").first : nil,
+      "root_mount_id" => root_line ? Integer(root_line.split.fetch(0)) : nil,
+      "root_filesystem" => root_line ? root_line.split(" - ", 2).last.split.first : nil,
       "mount_count" => mountinfo.lines.length,
       "mountinfo_sha256" => Digest::SHA256.hexdigest(mountinfo),
       "status" => fields.slice("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb", "NoNewPrivs", "Seccomp", "NSpid", "Uid", "Gid"),
@@ -322,7 +322,7 @@ module M2ProbeSupport
     cgroups = prefixes.flat_map do |prefix|
       Dir.glob(File.join("/sys/fs/cgroup/rubernetes", "*", "#{prefix}*")).select { |path| File.directory?(path) }
     end.uniq.sort
-    temp = Dir.glob(File.join(root, "*")).sort
+    temp = Dir.glob(File.join(root, "*"))
     after = pidfd_count
     {
       "source" => "procfs+cgroupfs",
@@ -1288,11 +1288,11 @@ module M2ProbeSupport
     entries = []
 
     mount_line = File.readlines("/proc/#{namespace.pid}/mountinfo", chomp: true).find do |line|
-      line.split(" ").fetch(4, "") == workspace.root.gsub(" ", "\\040")
+      line.split.fetch(4, "") == workspace.root.gsub(" ", "\\040")
     end
     raise "OverlayFS mount was not observed in namespace #{namespace.pid}" unless mount_line&.include?(" - overlay ")
 
-    mount_fields = mount_line.split(" ")
+    mount_fields = mount_line.split
     entries << measured_resource("mount", "#{sandbox.id}:#{mount_fields.fetch(0)}",
                                  "mount:#{sandbox.id}:#{mount_fields.fetch(0)}:#{workspace.root}", owner,
                                  "mountpoint" => workspace.root, "mountinfo" => mount_line)
@@ -1347,7 +1347,7 @@ module M2ProbeSupport
     workload_status = File.binread("/proc/#{workload_pid}/status")
     security_fields = proc_status_security_fields(workload_status)
     workload_mountinfo = File.binread("/proc/#{workload_pid}/mountinfo")
-    root_line = workload_mountinfo.each_line.select { |line| line.split(" ").fetch(4, nil) == "/" }.last
+    root_line = workload_mountinfo.each_line.select { |line| line.split.fetch(4, nil) == "/" }.last
     raise "workload root is not the pivoted OverlayFS" unless root_line && root_line.include?(" - overlay ")
 
     entries << measured_resource(
@@ -1367,7 +1367,7 @@ module M2ProbeSupport
       "creation_method" => process.workload_creation_method,
       "clone_flags" => process.workload_clone_flags,
       "security" => security_fields,
-      "root_mount_id" => Integer(root_line.split(" ").fetch(0)),
+      "root_mount_id" => Integer(root_line.split.fetch(0)),
       "root_filesystem" => "overlay",
       "mount_count" => workload_mountinfo.lines.length,
       "mountinfo_sha256" => Digest::SHA256.hexdigest(workload_mountinfo),
@@ -2049,7 +2049,7 @@ module M2ProbeSupport
             "response_preview" => body.byteslice(0, 512).inspect
           }
         end
-        failed_subresources = responses.select { |_name, result| !result.fetch("passed") }
+        failed_subresources = responses.reject { |_name, result| result.fetch("passed") }
         unless failed_subresources.empty?
           container_stderr = begin
             runtime.logs(container.fetch(:id), stream: :stderr).to_s.b.byteslice(0, 4096).inspect
@@ -2249,7 +2249,7 @@ module M2ProbeSupport
       rootfs_isolated = lines[1] == "l3-ok" &&
                         (observed_digest == (image_digest || "missing")) &&
                         (host_digest.nil? || observed_digest != host_digest)
-      inventory = runtime.resource_inventory.select { |resource| !resource.fetch("owner", "").empty? }
+      inventory = runtime.resource_inventory.reject { |resource| resource.fetch("owner", "").empty? }
       measurement = {
         "exit_code" => waited.fetch("exitCode"),
         "stdout_sha256" => Digest::SHA256.hexdigest(output),
@@ -2360,7 +2360,7 @@ module M2ProbeSupport
                    container.process.workload_pidfd]
         )
         residual = native_cycle_residual_inventory(sandbox, container)
-        difference_keys = RESOURCE_KINDS.select { |kind| baseline.fetch(kind) != final.fetch(kind) }
+        difference_keys = RESOURCE_KINDS.reject { |kind| baseline.fetch(kind) == final.fetch(kind) }
         parent_security = proc_status_security_fields(File.binread("/proc/self/status"))
         result = {
           "baseline" => baseline,
@@ -2849,7 +2849,7 @@ module M2ProbeSupport
     end
 
     def manifests
-      Dir.glob(File.join(@directory, MANIFEST_GLOB)).sort.map do |path|
+      Dir.glob(File.join(@directory, MANIFEST_GLOB)).map do |path|
         JSON.parse(File.binread(path))
       end
     end
@@ -2951,7 +2951,7 @@ module M2ProbeSupport
         mount_line = mountinfo_line(namespace.pid, workspace.root)
         raise "OverlayFS readback is missing for #{workspace.root}" unless mount_line&.include?(" - overlay ")
 
-        mount_fields = mount_line.split(" ")
+        mount_fields = mount_line.split
         entries << measured(
           "mount", "#{sandbox.id}:#{mount_fields.fetch(0)}",
           "mount:#{sandbox.id}:#{mount_fields.fetch(0)}:#{workspace.root}", owner,
@@ -3003,7 +3003,7 @@ module M2ProbeSupport
       mount_line = mountinfo_line(namespace.pid, workspace.root)
       raise "OverlayFS readback is missing for #{workspace.root}" unless mount_line&.include?(" - overlay ")
 
-      mount_fields = mount_line.split(" ")
+      mount_fields = mount_line.split
       entries = [measured(
         "mount", "#{sandbox.id}:#{mount_fields.fetch(0)}",
         "mount:#{sandbox.id}:#{mount_fields.fetch(0)}:#{workspace.root}", owner,
@@ -3127,7 +3127,7 @@ module M2ProbeSupport
 
     def mountinfo_line(pid, target)
       File.readlines("/proc/#{Integer(pid)}/mountinfo", chomp: true).find do |line|
-        line.split(" ").fetch(4, "") == String(target).gsub(" ", "\\040")
+        line.split.fetch(4, "") == String(target).gsub(" ", "\\040")
       end
     rescue SystemCallError, ArgumentError
       nil

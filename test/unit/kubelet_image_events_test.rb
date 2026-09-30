@@ -10,7 +10,7 @@ require_relative "../support/node_lifecycle_fakes"
 # node has and for every later container of the same image, Failed and
 # ErrImageNeverPull, and the pull-duration / ensure-image metrics.
 class KubeletImageEventsTest < Minitest::Test
-  DIGEST = "sha256:#{"a" * 64}"
+  DIGEST = "sha256:#{"a" * 64}".freeze
 
   class Resolver
     def initialize(cached: [], fail: [])

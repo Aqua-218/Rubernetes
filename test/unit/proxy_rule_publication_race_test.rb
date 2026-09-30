@@ -40,7 +40,7 @@ class ProxyRulePublicationRaceTest < Minitest::Test
 
   def test_concurrent_publication_keeps_the_backend_in_step_with_the_rule_set
     subject = proxy
-    threads = 8.times.map do |index|
+    threads = Array.new(8) do |index|
       Thread.new do
         subject.apply_service(service("svc-#{index}", "10.96.0.#{index + 10}"))
         subject.apply_endpoint_slice(slice("svc-#{index}-abc", "svc-#{index}", "10.244.0.#{index + 10}"))

@@ -117,7 +117,7 @@ module Rubernetes
         last = @network.to_i + (1 << (bits - @prefix)) - 1
         return false unless value.to_i.between?(@network.to_i, last)
 
-        !@except.any? do |entry|
+        @except.none? do |entry|
           except_network, except_prefix = Support.cidr(entry, name: "ipBlock except")
           except_last = except_network.to_i + (1 << (bits - except_prefix)) - 1
           value.to_i.between?(except_network.to_i, except_last)

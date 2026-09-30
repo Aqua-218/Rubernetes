@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require "base64"
 # frozen_string_literal: true
 
@@ -110,7 +111,7 @@ class M3SecondaryControllerBatch1Test < Minitest::Test
   def test_pod_garbage_collector_deletes_oldest_excess_terminal_pods
     store = Store.new(history_revisions: nil, history_seconds: nil)
     adapter = Controller::StoreAdapter.new(store)
-    pods = 3.times.map do |index|
+    pods = Array.new(3) do |index|
       pod = pod("done-#{index}", ip: nil)
       pod["metadata"]["creationTimestamp"] = "2026-01-01T00:0#{index}:00Z"
       pod["status"] = {"phase" => "Succeeded"}

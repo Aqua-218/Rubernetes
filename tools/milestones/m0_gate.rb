@@ -186,7 +186,7 @@ module M0Gate
     end
 
     def validate_command_bindings(manifest, directory, errors)
-      commands = Array(manifest["commands"]).select { |entry| entry.is_a?(Hash) }
+      commands = Array(manifest["commands"]).grep(Hash)
       index = commands.to_h { |entry| [entry["name"], entry] }
       captured = capture_directory(manifest) || directory
       output_path = lambda do |name|
@@ -240,7 +240,7 @@ module M0Gate
     end
 
     def validate_command_argv(commands, errors)
-      index = commands.filter { |entry| entry.is_a?(Hash) }.to_h { |entry| [entry["name"], Array(entry["command"])] }
+      index = commands.grep(Hash).to_h { |entry| [entry["name"], Array(entry["command"])] }
       expected_tokens = {
         "gem_build" => ["gem", "build", "rubernetes.gemspec", "--output"],
         "rake_test" => %w[bundle exec rake test],
@@ -856,9 +856,7 @@ module M0Gate
       when "kvm_capability"
         capabilities = value["capabilities"]
         unless value["api_version"] == 12 && capabilities.is_a?(Hash) && capabilities.keys.map(&:to_s).sort == %w[3
-                                                                                                                  9] && capabilities.values.all? do |entry|
-                                                                                                                          entry.is_a?(Integer)
-                                                                                                                        end
+                                                                                                                  9] && capabilities.values.all?(Integer)
           errors << "KVM payload does not prove API and capability readback"
         end
       when *ERRNO_PROBES.keys
@@ -1004,13 +1002,13 @@ module M0Gate
       nil
     end
 
-    MINITEST_INVENTORY_CACHE = {}
+    MINITEST_INVENTORY_CACHE = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache)
     MINITEST_INVENTORY_CACHE_MUTEX = Mutex.new
 
     # Every input the discovery tool reads: the test files under the rake pattern
     # (path and content), the tool itself and the interpreter description.
     def minitest_inventory_cache_key(tool)
-      files = Dir.glob(File.join(ROOT, "test/**/*_test.rb")).sort
+      files = Dir.glob(File.join(ROOT, "test/**/*_test.rb"))
       content = files.map { |path| "#{path.delete_prefix("#{ROOT}/")}\0#{Digest::SHA256.file(path).hexdigest}\n" }.join
       Digest::SHA256.hexdigest("#{RUBY_DESCRIPTION}\0#{Digest::SHA256.file(tool).hexdigest}\0#{content}")
     end
@@ -1058,7 +1056,7 @@ module M0Gate
       return false unless nonempty?(value) && !value.start_with?("/")
 
       parts = value.split("/")
-      !parts.any? { |part| part.empty? || part == "." || part == ".." } && !M0SourceInventory.excluded?(value)
+      parts.none? { |part| part.empty? || part == "." || part == ".." } && !M0SourceInventory.excluded?(value)
     end
 
     def safe_subject_source_path?(value)

@@ -1079,7 +1079,7 @@ module Rubernetes
           # a uid-less placeholder and then matching on uid dropped every
           # reference on the following sync, leaving status.active empty for
           # good -- which also disabled the Forbid concurrency policy.
-          previous_active = Array(status["active"]).select { |reference| reference.is_a?(Hash) }
+          previous_active = Array(status["active"]).grep(Hash)
             .map { |reference| Support.deep_copy(reference) }
           active = previous_active.map { |reference| Support.deep_copy(reference) }
           operations = []
@@ -1565,7 +1565,7 @@ module Rubernetes
         # The zones are the process's (the plan and orphan paths use separate
         # instances of this controller).
         ZONE_MUTEX = Mutex.new
-        ZONE_NODES = {}
+        ZONE_NODES = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache)
 
         def record_zone_health(name, zone, ready)
           ZONE_MUTEX.synchronize do

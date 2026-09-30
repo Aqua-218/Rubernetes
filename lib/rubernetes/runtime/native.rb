@@ -18,7 +18,7 @@ require "time"
 # `require "rubernetes/runtime/native"` safe and warning-free.
 module Rubernetes
   module Runtime
-    NativeLoaderConstants = {} unless const_defined?(:NativeLoaderConstants, false)
+    NativeLoaderConstants = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache) unless const_defined?(:NativeLoaderConstants, false)
     %i[Error JournalCorruption OwnershipConflict InvalidTransition RecoveryRequired
        RollbackJournal OwnershipLedger ResourceLedger Recovery StartupReconciler].each do |name|
       NativeLoaderConstants[name] = const_get(name, false) if const_defined?(name, false)
@@ -209,7 +209,7 @@ module Rubernetes
                      **config_options)
         @config = Configuration.from(config, profile: profile, **config_options)
         @clock = clock
-        @adapters = adapters.to_h.transform_keys { |key| key.to_sym }
+        @adapters = adapters.to_h.transform_keys(&:to_sym)
         {
           namespace_adapter: :namespace,
           filesystem_adapter: :filesystem,
@@ -1274,7 +1274,7 @@ module Rubernetes
       # downgraded to death: they remain fatal evidence of possible PID/path
       # reuse and are never cleaned automatically.
       def mark_dead_operations_for_recovery!(observed)
-        observed_by_key = observed.each_with_object({}) { |entry, result| result[resource_key(entry)] = entry }
+        observed_by_key = observed.to_h { |entry| [resource_key(entry), entry] }
         @ledger.operations.each do |operation_value|
           operation = operation_value.respond_to?(:to_h) ? operation_value.to_h : operation_value
           state = String(operation.fetch("state") { operation[:state] })
@@ -1560,7 +1560,7 @@ module Rubernetes
       def reconstruct_sandboxes_from_observed!(observed)
         return true unless @namespace.adapter.respond_to?(:adopt)
 
-        observed_by_key = observed.each_with_object({}) { |entry, result| result[resource_key(entry)] = entry }
+        observed_by_key = observed.to_h { |entry| [resource_key(entry), entry] }
         @ledger.operations.each do |operation_value|
           operation = operation_value.respond_to?(:to_h) ? operation_value.to_h : operation_value
           state = String(operation.fetch("state") { operation[:state] })
@@ -1609,9 +1609,9 @@ module Rubernetes
                                      plan: plan, metadata: namespace_metadata)
         cgroup = adopt_cgroup(cgroup_resource)
         workspace_data = workspace_resource.fetch("metadata")
-        workspace_fields = %w[id root upper work identity image_digest].each_with_object({}) do |field, result|
-          result[field.to_sym] = workspace_data.fetch(field)
-        end
+        workspace_fields = %w[id root upper work identity image_digest].to_h do |field|
+                             [field.to_sym, workspace_data.fetch(field)]
+                           end
         workspace = Filesystem::Workspace.new(**workspace_fields)
         @filesystem.adopt(workspace, namespace: namespace, metadata: workspace_resource.fetch("metadata", {}))
         sandbox = Sandbox.new(id: sandbox_id, identity: owner, config: {}, clock: @clock)

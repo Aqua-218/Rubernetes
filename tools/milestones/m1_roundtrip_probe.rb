@@ -381,7 +381,7 @@ def go_struct_field_metadata(source_root, go_package, go_type, cache:)
   return cache.fetch(key) if cache.key?(key)
 
   package_root = File.join(source_root, "staging/src", go_package)
-  source_files = Dir.glob(File.join(package_root, "**/*.go")).sort.filter_map do |path|
+  source_files = Dir.glob(File.join(package_root, "**/*.go")).filter_map do |path|
     [path, File.read(path)]
   rescue Errno::ENOENT, Errno::EACCES
     nil

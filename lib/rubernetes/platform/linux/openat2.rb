@@ -121,7 +121,7 @@ module Rubernetes
           relative = validate!(path)
           parent_fd = descriptor_for(parent)
           how = OpenHow.new(flags: Integer(flags) | O_CLOEXEC, mode: Integer(mode), resolve: Integer(resolve))
-          validate_resolve!(how.resolve, allow_mount_crossing: (how.resolve & RESOLVE_NO_XDEV).zero?)
+          validate_resolve!(how.resolve, allow_mount_crossing: how.resolve.nobits?(RESOLVE_NO_XDEV))
 
           fd = call_openat2(parent_fd, relative, how, resource_id || "openat2-relative:#{relative}")
           Handle.new(fd: fd, path: relative.freeze, root: @root.freeze, flags: how.flags)
@@ -170,10 +170,10 @@ module Rubernetes
           value = Integer(resolve)
           required = RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV
           required = TARGET_RESOLVE if allow_mount_crossing
-          return true if (value & required) == required
+          return true if value.allbits?(required)
 
           in_root = allow_mount_crossing ? (RESOLVE_IN_ROOT | RESOLVE_NO_MAGICLINKS) : IN_ROOT_RESOLVE
-          return true if (value & in_root) == in_root
+          return true if value.allbits?(in_root)
 
           raise UnsafePath,
                 "openat2 requires RESOLVE_BENEATH, RESOLVE_NO_SYMLINKS, RESOLVE_NO_MAGICLINKS, and RESOLVE_NO_XDEV " \

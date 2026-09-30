@@ -68,9 +68,9 @@ module Rubernetes
       }.freeze
 
       def self.parse_mountinfo(contents)
-        String(contents).each_line.with_index(1).map do |line, line_number|
+        String(contents).each_line.with_index(1).filter_map do |line, line_number|
           parse_mountinfo_line(line, line_number)
-        end.compact.freeze
+        end.freeze
       rescue TypeError
         raise MountIdentityError, "mountinfo contents must be a string"
       end
@@ -84,7 +84,7 @@ module Rubernetes
           raise MountIdentityError, "mountinfo line #{line_number || "?"} has no filesystem separator"
         end
 
-        fields = before_separator.split(" ")
+        fields = before_separator.split
         raise MountIdentityError, "mountinfo line #{line_number || "?"} has fewer than six pre-filesystem fields" if fields.length < 6
 
         filesystem_fields = after_separator.split(" ", 3)
@@ -209,7 +209,7 @@ module Rubernetes
         bind = bind_mount?(requested_filesystem, option_flags, requested_flags)
         effective_flags = requested_flags | option_flags
         effective_flags |= MS_BIND if bind
-        effective_readonly = readonly == true || (effective_flags & MS_RDONLY) != 0 || option_names.include?("ro")
+        effective_readonly = readonly == true || effective_flags.anybits?(MS_RDONLY) || option_names.include?("ro")
         resource_id ||= resource_id_for("mount", normalized_target, volume_id)
         kernel_filesystem = bind ? nil : requested_filesystem
         mount_api = bind && open_tree_bind? ? "open_tree" : "mount"
@@ -528,7 +528,7 @@ module Rubernetes
 
       def fs_group_root_matches?(root, group, mask)
         stat = File.lstat(root)
-        stat.gid == group && (stat.mode & (SETGID | EXEC_MASK | mask)) == (SETGID | EXEC_MASK | mask)
+        stat.gid == group && stat.mode.allbits?((SETGID | EXEC_MASK | mask))
       rescue SystemCallError
         false
       end
@@ -632,7 +632,7 @@ module Rubernetes
         @mount.unmount(target: kernel_target, flags: kernel_flags, resource_id: resource_id)
       rescue StandardError => error
         raise unless busy_unmount?(error)
-        raise if (Integer(kernel_flags) & MNT_DETACH) != 0
+        raise if Integer(kernel_flags).anybits?(MNT_DETACH)
 
         @mount.unmount(target: kernel_target, flags: Integer(kernel_flags) | MNT_DETACH, resource_id: resource_id)
       end
@@ -720,8 +720,8 @@ module Rubernetes
             opened << target_fd
           end
           @mount.bind_tree(source_fd: source_fd, target_fd: target_fd, readonly: readonly,
-                           nosuid: (flags & MS_NOSUID) != 0, nodev: (flags & MS_NODEV) != 0,
-                           noexec: (flags & MS_NOEXEC) != 0, recursive: (flags & MS_REC) != 0,
+                           nosuid: flags.anybits?(MS_NOSUID), nodev: flags.anybits?(MS_NODEV),
+                           noexec: flags.anybits?(MS_NOEXEC), recursive: flags.anybits?(MS_REC),
                            resource_id: resource_id)
         rescue SystemCallError => error
           raise MountIdentityError, "bind source/target descriptor could not be opened for #{resource_id}: #{error.message}",
@@ -764,7 +764,7 @@ module Rubernetes
       end
 
       def bind_mount?(filesystem, option_flags, requested_flags)
-        filesystem.to_s.casecmp?("bind") || ((option_flags | requested_flags) & MS_BIND) != 0
+        filesystem.to_s.casecmp?("bind") || (option_flags | requested_flags).anybits?(MS_BIND)
       end
 
       def normalize_options(options, data)

@@ -866,9 +866,7 @@ module M1Gate
       errors << "generation runs must produce the same tree digest" unless run_digests.length == 2 && run_digests.uniq.length == 1
       canonical_digest = document["canonical_tree_sha256"]
       errors << "generation report must include the canonical tree SHA-256" unless valid_digest?(canonical_digest)
-      errors << "generation output must match the canonical tree" unless valid_digest?(canonical_digest) && run_digests.all? do |digest|
-        digest == canonical_digest
-      end
+      errors << "generation output must match the canonical tree" unless valid_digest?(canonical_digest) && run_digests.all?(canonical_digest)
       byte_differences = document["byte_differences"] || document["byte_diff_entries"]
       canonical_differences = document["canonical_differences"] || document["canonical_diff_entries"]
       errors << "generation byte difference entries are required" unless byte_differences.is_a?(Array)
@@ -959,7 +957,7 @@ module M1Gate
             end
           end
           errors << "API operation #{index} request digest is invalid" unless valid_digest?(operation["request_sha256"])
-          if valid_digest?(operation["request_sha256"]) && operation["request"].is_a?(Hash) && !(operation["request_sha256"] == canonical_document_digest(operation["request"]))
+          if valid_digest?(operation["request_sha256"]) && operation["request"].is_a?(Hash) && operation["request_sha256"] != canonical_document_digest(operation["request"])
             errors << "API operation #{index} request digest does not match its preimage"
           end
           attempt_count = operation["attempt_count"] || operation["attempts"]
@@ -1011,9 +1009,7 @@ module M1Gate
         if packet["headers"].is_a?(Hash)
           errors << "#{label} #{packet_name} header names must be normalized lowercase tokens" unless
             packet["headers"].keys.all? { |name| name.is_a?(String) && name == name.downcase && name.match?(/\A[a-z0-9-]+\z/) }
-          errors << "#{label} #{packet_name} header values must be strings" unless packet["headers"].values.all? do |value|
-            value.is_a?(String)
-          end
+          errors << "#{label} #{packet_name} header values must be strings" unless packet["headers"].values.all?(String)
         end
         if packet.key?("resourceVersion_causality") && !packet["resourceVersion_causality"].is_a?(Hash)
           errors << "#{label} #{packet_name} resourceVersion causality must be a measured signature"
@@ -1027,10 +1023,10 @@ module M1Gate
       %w[expected_sha256 actual_sha256].each do |key|
         errors << "#{label} #{key} must be a SHA-256 digest" unless valid_digest?(operation[key])
       end
-      if valid_digest?(operation["expected_sha256"]) && !(operation["expected_sha256"] == canonical_document_digest(expected))
+      if valid_digest?(operation["expected_sha256"]) && operation["expected_sha256"] != canonical_document_digest(expected)
         errors << "#{label} expected digest does not match observable packet"
       end
-      if valid_digest?(operation["actual_sha256"]) && !(operation["actual_sha256"] == canonical_document_digest(actual))
+      if valid_digest?(operation["actual_sha256"]) && operation["actual_sha256"] != canonical_document_digest(actual)
         errors << "#{label} actual digest does not match observable packet"
       end
       errors << "#{label} observable packets differ while operation is marked passed" if
@@ -1046,16 +1042,16 @@ module M1Gate
           actual["headers"] == actual_headers
       end
 
-      if integer?(expected["status"]) && integer?(actual["status"]) && !(operation["status_matches"] == (expected["status"] == actual["status"]))
+      if integer?(expected["status"]) && integer?(actual["status"]) && operation["status_matches"] != (expected["status"] == actual["status"])
         errors << "#{label} status_matches is inconsistent with observable packets"
       end
-      if expected["headers"].is_a?(Hash) && actual["headers"].is_a?(Hash) && !(operation["header_matches"] == (expected["headers"] == actual["headers"]))
+      if expected["headers"].is_a?(Hash) && actual["headers"].is_a?(Hash) && operation["header_matches"] != (expected["headers"] == actual["headers"])
         errors << "#{label} header_matches is inconsistent with observable packets"
       end
-      if expected.key?("body") && actual.key?("body") && !(operation["body_matches"] == (expected["body"] == actual["body"]))
+      if expected.key?("body") && actual.key?("body") && operation["body_matches"] != (expected["body"] == actual["body"])
         errors << "#{label} body_matches is inconsistent with observable packets"
       end
-      if expected["ownership"].is_a?(Array) && actual["ownership"].is_a?(Array) && !(operation["ownership_matches"] == (expected["ownership"] == actual["ownership"]))
+      if expected["ownership"].is_a?(Array) && actual["ownership"].is_a?(Array) && operation["ownership_matches"] != (expected["ownership"] == actual["ownership"])
         errors << "#{label} ownership_matches is inconsistent with observable packets"
       end
       if expected.key?("resourceVersion_causality") || actual.key?("resourceVersion_causality")
@@ -1063,8 +1059,8 @@ module M1Gate
         actual_causality = actual["resourceVersion_causality"]
         errors << "#{label} resourceVersion causality must be recorded on both observable packets" unless
           expected.key?("resourceVersion_causality") && actual.key?("resourceVersion_causality")
-        if expected_causality.is_a?(Hash) && actual_causality.is_a?(Hash) && !(operation["resource_version_causality_matches"] ==
-            (expected_causality["valid"] == true && actual_causality["valid"] == true))
+        if expected_causality.is_a?(Hash) && actual_causality.is_a?(Hash) && operation["resource_version_causality_matches"] !=
+            (expected_causality["valid"] == true && actual_causality["valid"] == true)
           errors << "#{label} resource_version_causality_matches is inconsistent with observable packets"
         end
       else
@@ -1109,7 +1105,7 @@ module M1Gate
           next
         end
         errors << "#{label} #{source} resourceVersion trace digest is invalid" unless valid_digest?(observation[digest_key])
-        if valid_digest?(observation[digest_key]) && !(observation[digest_key] == canonical_document_digest(trace))
+        if valid_digest?(observation[digest_key]) && observation[digest_key] != canonical_document_digest(trace)
           errors << "#{label} #{source} resourceVersion trace digest does not match its preimage"
         end
         calculated_valid = valid_resource_version_trace?(trace)
@@ -1210,7 +1206,7 @@ module M1Gate
     # unvalidated ownership state inside the packet preimage.
     def valid_ownership_observation?(value)
       value.is_a?(Array) && value.all? do |entry|
-        entry.is_a?(Hash) || (entry.is_a?(Array) && entry.all? { |owner| owner.is_a?(Hash) })
+        entry.is_a?(Hash) || (entry.is_a?(Array) && entry.all?(Hash))
       end
     end
 
@@ -1231,7 +1227,7 @@ module M1Gate
       end
       digest = document["header_policy_sha256"]
       errors << "API semantic header exclusion policy digest is required" unless valid_digest?(digest)
-      if valid_digest?(digest) && !(digest == canonical_document_digest(policy))
+      if valid_digest?(digest) && digest != canonical_document_digest(policy)
         errors << "API semantic header exclusion policy digest does not match policy"
       end
 
@@ -1424,7 +1420,7 @@ module M1Gate
         errors << "API surface discovery endpoint #{index} id and path must match" unless id == entry["path"]
         expected_endpoint = pinned_by_path[id]
         errors << "API surface discovery endpoint #{index} is not in the pinned v1.36.2 inventory" unless expected_endpoint
-        if expected_endpoint && !(entry["source_path"] == expected_endpoint.fetch("source_path"))
+        if expected_endpoint && entry["source_path"] != expected_endpoint.fetch("source_path")
           errors << "API surface discovery endpoint #{index} source path does not match the pinned v1.36.2 file"
         end
         errors << "API surface discovery endpoint #{index} must run exactly once" unless entry["attempt_count"] == 1
@@ -1455,8 +1451,8 @@ module M1Gate
           valid_body = entry[key].is_a?(Hash) || (default_off && entry[key].is_a?(String))
           errors << "API surface discovery endpoint #{index} #{key} must be an object" unless valid_body
           next unless valid_body && valid_digest?(entry[key.sub(/_body\z/,
-                                                                "_sha256")]) && !(entry[key.sub(/_body\z/,
-                                                                                                "_sha256")] == canonical_discovery_digest(entry[key]))
+                                                                "_sha256")]) && entry[key.sub(/_body\z/,
+                                                                                                "_sha256")] != canonical_discovery_digest(entry[key])
 
           errors << "API surface discovery endpoint #{index} #{key} digest does not match the body"
         end
@@ -1558,7 +1554,7 @@ module M1Gate
           next nil if versions.empty?
 
           preferred = group["preferredVersion"]
-          preferred = versions.first unless versions.any? { |entry| entry == preferred }
+          preferred = versions.first unless versions.any?(preferred)
           group.merge("versions" => versions, "preferredVersion" => preferred)
         end
         return canonical.merge("groups" => groups)
@@ -1570,7 +1566,7 @@ module M1Gate
           DEFAULT_OFF_DISCOVERY_PATHS.include?("/apis/#{group}/#{version["version"]}")
         end
         preferred = canonical["preferredVersion"]
-        preferred = versions.first unless versions.any? { |entry| entry == preferred }
+        preferred = versions.first unless versions.any?(preferred)
         return canonical.merge("versions" => versions, "preferredVersion" => preferred)
       end
 
@@ -1690,7 +1686,7 @@ module M1Gate
           applicable = entry["schema_contract_applicable"]
           errors << "API surface #{label} matrix entry #{index} schema contract applicability must be boolean" unless [true,
                                                                                                                        false].include?(applicable)
-          if (applicable == true) && !(entry["schema_contract_present"] == true)
+          if (applicable == true) && entry["schema_contract_present"] != true
             errors << "API surface #{label} matrix entry #{index} requires a schema contract"
           end
         else
@@ -1754,12 +1750,12 @@ module M1Gate
       end
       keys = fields.keys
       errors << "#{label} fields must contain exactly the API surface fields" unless
-        keys.all? { |key| key.is_a?(String) } && keys.sort == API_SURFACE_FIELDS.sort
+        keys.all?(String) && keys.sort == API_SURFACE_FIELDS.sort
       API_SURFACE_FIELDS.each do |field|
         value = fields[field]
         case field
         when "verbs", "subresources", "shortNames", "categories"
-          errors << "#{label} #{field} must be an array of strings" unless value.is_a?(Array) && value.all? { |item| item.is_a?(String) }
+          errors << "#{label} #{field} must be an array of strings" unless value.is_a?(Array) && value.all?(String)
         when "schema_contract_present"
           errors << "#{label} schema contract presence must be boolean" unless [true, false].include?(value)
         else
@@ -1804,16 +1800,16 @@ module M1Gate
         %w[all_sha256 compared_sha256].each do |digest_key|
           errors << "#{label} #{source} header observation #{digest_key} is invalid" unless valid_digest?(source_observation[digest_key])
         end
-        if valid_digest?(source_observation["all_sha256"]) && !(source_observation["all_sha256"] == canonical_document_digest(all_headers))
+        if valid_digest?(source_observation["all_sha256"]) && source_observation["all_sha256"] != canonical_document_digest(all_headers)
           errors << "#{label} #{source} all-header digest does not match its preimage"
         end
-        if valid_digest?(source_observation["compared_sha256"]) && !(source_observation["compared_sha256"] == canonical_document_digest(compared_headers))
+        if valid_digest?(source_observation["compared_sha256"]) && source_observation["compared_sha256"] != canonical_document_digest(compared_headers)
           errors << "#{label} #{source} compared-header digest does not match its preimage"
         end
         unless all_headers.keys.all? { |name| name.is_a?(String) && name == name.downcase && name.match?(/\A[a-z0-9-]+\z/) }
           errors << "#{label} #{source} header observation names must be normalized lowercase tokens"
         end
-        unless all_headers.values.all? { |value| value.is_a?(String) }
+        unless all_headers.values.all?(String)
           errors << "#{label} #{source} header observation values must be strings"
         end
         errors << "#{label} #{source} header observation excludes an unexpected header" unless
@@ -1918,7 +1914,7 @@ module M1Gate
         end
         errors << "API Kubernetes oracle container execution #{index} sequence is invalid" unless record["sequence"] == index
         errors << "API Kubernetes oracle container execution #{index} argv is invalid" unless
-          record["argv"].is_a?(Array) && record["argv"].all? { |value| value.is_a?(String) }
+          record["argv"].is_a?(Array) && record["argv"].all?(String)
         errors << "API Kubernetes oracle container execution #{index} raw stdout/stderr are required" unless
           record["stdout"].is_a?(String) && record["stderr"].is_a?(String)
         errors << "API Kubernetes oracle container execution #{index} exit status is invalid" unless integer?(record["exit_status"])
@@ -2327,7 +2323,7 @@ module M1Gate
       errors << "#{label} validation applicability status does not match its N/A count" unless status == expected_status
       errors << "#{label} validation criterion remains INCOMPLETE" unless status == "COMPLETE"
       comparisons = oracle["comparisons"]
-      if comparisons.is_a?(Array) && comparisons.all? { |comparison| comparison.is_a?(Hash) }
+      if comparisons.is_a?(Array) && comparisons.all?(Hash)
         observed_applicable_count = comparisons.count { |comparison| comparison["validation_applicable"] == true }
         observed_not_applicable_count = comparisons.count { |comparison| comparison["validation_applicable"] == false }
         errors << "#{label} validation applicability counts do not match comparison records" unless
@@ -2410,7 +2406,7 @@ module M1Gate
 
       semantic = document["semantic_oracle"]
       criterion = semantic.is_a?(Hash) ? semantic["validation_criterion"] : nil
-      if criterion.is_a?(Hash) && valid_digest?(oracle["validation_criterion_sha256"]) && !(oracle["validation_criterion_sha256"] == canonical_document_digest(criterion))
+      if criterion.is_a?(Hash) && valid_digest?(oracle["validation_criterion_sha256"]) && oracle["validation_criterion_sha256"] != canonical_document_digest(criterion)
         errors << "#{label} validation criterion digest does not match semantic evidence"
       end
 

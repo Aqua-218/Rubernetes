@@ -59,7 +59,7 @@ module Conformance
       return [] unless File.file?(CLIENTS)
 
       matrix = YAML.safe_load_file(CLIENTS)
-      Array(matrix["kubectl"]).map do |entry|
+      Array(matrix["kubectl"]).filter_map do |entry|
         binary = File.join(ROOT, entry.fetch("path"))
         unless File.executable?(binary)
           next {"id" => "kubectl-#{entry.fetch("version")}", "passed" => false,
@@ -75,7 +75,7 @@ module Conformance
         verbs = KUBECTL_VERBS.map { |verb| exercise_verb(binary, verb, options.fetch(:kubeconfig)) }
         {"id" => "kubectl-#{entry.fetch("version")}", "passed" => verbs.all? { |v| v.fetch("passed") },
          "sha256" => digest, "verbs" => verbs}
-      end.compact
+      end
     end
 
     # Each verb is exercised against a disposable object; a verb that the

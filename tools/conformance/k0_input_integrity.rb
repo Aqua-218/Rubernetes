@@ -85,7 +85,7 @@ module Conformance
       digest = L.digest_file(path)
       require "yaml"
       document = YAML.safe_load_file(path)
-      entries = (document.is_a?(Hash) ? document.values.flatten : Array(document)).select { |entry| entry.is_a?(Hash) }
+      entries = (document.is_a?(Hash) ? document.values.flatten : Array(document)).grep(Hash)
       codenames = entries.filter_map { |entry| entry["codename"] }
       testnames = entries.filter_map { |entry| entry["testname"] }
       # `codename` is the unique key: upstream v1.36.2 ships 446 entries with

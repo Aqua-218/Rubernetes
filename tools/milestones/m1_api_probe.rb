@@ -697,7 +697,7 @@ module M1APIDifferential
         next nil if versions.empty?
 
         preferred = group["preferredVersion"]
-        preferred = versions.first unless versions.any? { |entry| entry == preferred }
+        preferred = versions.first unless versions.any?(preferred)
         group.merge("versions" => versions, "preferredVersion" => preferred)
       end
       return canonical.merge("groups" => groups)
@@ -709,7 +709,7 @@ module M1APIDifferential
         DEFAULT_OFF_DISCOVERY_PATHS.include?("/apis/#{group}/#{version["version"]}")
       end
       preferred = canonical["preferredVersion"]
-      preferred = versions.first unless versions.any? { |entry| entry == preferred }
+      preferred = versions.first unless versions.any?(preferred)
       return canonical.merge("versions" => versions, "preferredVersion" => preferred)
     end
 

@@ -146,7 +146,7 @@ module M1KubernetesProtobufOracle
   end
 
   def go_source(registry, requests)
-    files_by_package = registry.files.each_with_object({}) { |file, index| index[file.package] = file }
+    files_by_package = registry.files.to_h { |file| [file.package, file] }
     mappings = requests.each_with_object({}) do |request, result|
       descriptor = registry.fetch(request.fetch("descriptor"))
       file = files_by_package.fetch(descriptor.package) do

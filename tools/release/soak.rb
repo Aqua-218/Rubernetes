@@ -107,7 +107,7 @@ module Release
         out, _err, status = Open3.capture3("pgrep", "-f", name)
         next [] unless status.success?
 
-        out.split.map do |pid|
+        out.split.filter_map do |pid|
           {
             "name" => name,
             "pid" => Integer(pid),
@@ -120,7 +120,7 @@ module Release
           }
         rescue Errno::ENOENT
           nil
-        end.compact
+        end
       end
     end
 

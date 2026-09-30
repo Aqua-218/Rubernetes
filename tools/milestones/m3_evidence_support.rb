@@ -656,9 +656,9 @@ module M34EvidenceSupport
     document = json_document(copied_manifest)
     references = {}
     references[gate_name.sub(/_gate\z/, "")] = {
-      "manifest_path" => copied_manifest.delete_prefix("#{File.dirname(destination, 2)}/").sub(%r{\A/}, ""),
+      "manifest_path" => copied_manifest.delete_prefix("#{File.dirname(destination, 2)}/").delete_prefix('/'),
       "manifest_sha256" => Digest::SHA256.file(copied_manifest).hexdigest,
-      "gate_result_path" => gate_result_path.delete_prefix("#{File.dirname(destination, 2)}/").sub(%r{\A/}, ""),
+      "gate_result_path" => gate_result_path.delete_prefix("#{File.dirname(destination, 2)}/").delete_prefix('/'),
       "gate_result_sha256" => Digest::SHA256.file(gate_result_path).hexdigest,
       "input_sha256" => document["input_sha256"],
       "input_file_count" => document["input_file_count"],

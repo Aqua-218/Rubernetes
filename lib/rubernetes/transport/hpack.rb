@@ -81,7 +81,7 @@ module Rubernetes
           value += (byte & 0x7f) << shift
           shift += 7
           raise DecodingError, "integer overflow" if shift > 56
-          break if (byte & 0x80).zero?
+          break if byte.nobits?(0x80)
         end
         [value, offset]
       end
@@ -103,7 +103,7 @@ module Rubernetes
       def decode_string(bytes, offset)
         raise DecodingError, "truncated string" if offset >= bytes.bytesize
 
-        huffman = (bytes.getbyte(offset) & 0x80) != 0
+        huffman = bytes.getbyte(offset).anybits?(0x80)
         length, offset = decode_integer(bytes, offset, 7)
         raise DecodingError, "truncated string" if offset + length > bytes.bytesize
 

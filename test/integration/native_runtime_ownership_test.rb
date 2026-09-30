@@ -267,7 +267,7 @@ class NativeRuntimeOwnershipTest < Minitest::Test
 
       reopened = Rubernetes::Runtime::Native::RollbackJournal.new(path)
       ledger = Rubernetes::Runtime::Native::OwnershipLedger.new(journal: reopened)
-      requests = ledger.requests.each_with_object({}) { |record, result| result[record.fetch("id")] = record }
+      requests = ledger.requests.to_h { |record| [record.fetch("id"), record] }
 
       %w[owner-create owner-start owner-stop owner-remove].each do |request_id|
         assert_equal("Completed", requests.fetch(request_id).fetch("state"))

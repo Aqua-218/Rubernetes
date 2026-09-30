@@ -233,7 +233,7 @@ module Rubernetes
           @mutex.synchronize do
             loop do
               return [:rejected, @rejection] if @rejection
-              return [:allowed, nil] if @plugins.values.none? { |state| state == :waiting }
+              return [:allowed, nil] if @plugins.values.none?(:waiting)
 
               remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
               if remaining <= 0
@@ -645,7 +645,7 @@ module Rubernetes
               # node and retried when they are deleted.
               node_name = preemption.node.name
               nominate!(typed_pod, node_name)
-              reason = filtered.values.map { |value| value["reason"] }.compact.first || "no feasible nodes"
+              reason = filtered.values.filter_map { |value| value["reason"] }.first || "no feasible nodes"
               queue.enqueue_unschedulable(typed_pod, reason: reason, plugins: rejecting_plugins(filtered))
               @batch&.failed(cycle)
               return ScheduleResult.new(status: :unschedulable, pod: typed_pod, filtered: filtered,
@@ -660,7 +660,7 @@ module Rubernetes
           end
 
           if candidates.empty?
-            reason = filtered.values.map { |value| value["reason"] }.compact.first || "no feasible nodes"
+            reason = filtered.values.filter_map { |value| value["reason"] }.first || "no feasible nodes"
             queue.enqueue_unschedulable(typed_pod, reason: reason, plugins: rejecting_plugins(filtered))
             @batch&.failed(cycle)
             @metrics.algorithm(monotonic - algorithm_started)
@@ -1224,7 +1224,7 @@ module Rubernetes
           rescue StandardError => error
             error
           end
-        end.map(&:value).compact
+        end.filter_map(&:value)
         raise errors.first if errors.first.is_a?(PreemptionError)
         raise PreemptionError.new("preemption failed: #{errors.first.message}", cause_error: errors.first) if errors.first
 
@@ -1487,11 +1487,11 @@ module Rubernetes
           raise PluginError.new("post-filter plugin #{plugin.name} returned an unknown node",
                                 plugin: plugin.name, phase: :post_filter)
         end
-        unless output.victims.any? && output.victims.all? { |victim| victim.is_a?(Pod) }
+        unless output.victims.any? && output.victims.all?(Pod)
           raise PluginError.new("post-filter plugin #{plugin.name} returned an invalid victim set",
                                 plugin: plugin.name, phase: :post_filter)
         end
-        identities = context.pods.each_with_object({}) { |candidate, result| result[pod_identity(candidate)] = candidate }
+        identities = context.pods.to_h { |candidate| [pod_identity(candidate), candidate] }
         victims = output.victims.map do |victim|
           canonical = identities[pod_identity(victim)]
           unless canonical && canonical.priority < pending.priority && canonical.node_name == node.name

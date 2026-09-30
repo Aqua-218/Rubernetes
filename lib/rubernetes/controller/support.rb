@@ -318,7 +318,7 @@ module Rubernetes
 
       def owner_references(object)
         refs = value(metadata(object), "ownerReferences", [])
-        refs.is_a?(Array) ? refs.select { |ref| ref.is_a?(Hash) } : []
+        refs.is_a?(Array) ? refs.grep(Hash) : []
       end
 
       def ref_value(ref, key, default = nil)

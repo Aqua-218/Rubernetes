@@ -180,7 +180,7 @@ module Conformance
         execution = Lanes.capture(command, timeout: HYDROPHONE_TIMEOUT_SECONDS)
         artifacts = [Lanes.record(directory, "hydrophone-cleanup.json", cleanup),
                      Lanes.record(directory, "hydrophone-command.json", execution)]
-        junit = Dir.glob(File.join(output, "**", "*.xml")).sort.first
+        junit = Dir.glob(File.join(output, "**", "*.xml")).first
         if junit.nil?
           reason = if execution["timed_out"]
                      "hydrophone exceeded #{execution.fetch("timeout_seconds")}s and was terminated"
@@ -242,7 +242,7 @@ module Conformance
         artifacts = [Lanes.record(directory, "sonobuoy-command.json", execution)]
         retrieve = Lanes.capture([sonobuoy, "retrieve", directory, "--kubeconfig", kubeconfig])
         artifacts << Lanes.record(directory, "sonobuoy-retrieve.json", retrieve)
-        archive = Dir.glob(File.join(directory, "*.tar.gz")).sort.first
+        archive = Dir.glob(File.join(directory, "*.tar.gz")).first
         if archive.nil?
           return Lanes.incomplete("K2", "sonobuoy produced no results archive",
                                   "execution" => execution.slice("exit_status", "stderr"))

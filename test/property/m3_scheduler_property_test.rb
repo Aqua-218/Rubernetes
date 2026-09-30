@@ -11,14 +11,14 @@ class M3SchedulerPropertyTest < Minitest::Test
   def test_seeded_cycles_have_stable_node_and_trace_results
     SEEDS.each do |seed|
       random = Random.new(seed)
-      nodes = 5.times.map do |index|
+      nodes = Array.new(5) do |index|
         {
           "kind" => "Node", "metadata" => {"name" => format("node-%02d", index), "labels" => {"zone" => (index % 2).to_s}},
           "status" => {"allocatable" => {"cpu" => "4", "memory" => "8Gi"},
                        "conditions" => [{"type" => "Ready", "status" => "True"}]}
         }
       end
-      existing = 8.times.map do |index|
+      existing = Array.new(8) do |index|
         {
           "kind" => "Pod", "metadata" => {"name" => "existing-#{index}", "namespace" => "default", "uid" => "existing-#{index}",
                                           "labels" => {"app" => index.even? ? "web" : "worker"}},
@@ -57,6 +57,6 @@ class M3SchedulerPropertyTest < Minitest::Test
       queue.enqueue({"metadata" => {"name" => name}, "spec" => {"priority" => index % 2, "containers" => []}})
     end
 
-    assert_equal(%w[a m z], 3.times.map { queue.pop.pod.name })
+    assert_equal(%w[a m z], Array.new(3) { queue.pop.pod.name })
   end
 end

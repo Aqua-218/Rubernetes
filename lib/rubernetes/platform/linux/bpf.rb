@@ -720,7 +720,7 @@ module Rubernetes
                                    details: {translated_program_bytes: buffer.bytesize})
           end
 
-          (buffer.bytesize / 8).times.map do |index|
+          Array.new((buffer.bytesize / 8)) do |index|
             code, registers, offset, immediate = buffer.byteslice(index * 8, 8).unpack("CCs<l<")
             Instruction.new(code: code, destination: registers & 0x0f, source: (registers >> 4) & 0x0f,
                             offset: offset, immediate: immediate)

@@ -62,7 +62,7 @@ module Rubernetes
             results << result if result
           end
           if results.length > 1
-            distinct = results.map { |result| result.user }.uniq
+            distinct = results.map(&:user).uniq
             raise AuthenticationError, "conflicting identities from #{results.map(&:authenticator).join(", ")}" if distinct.length > 1
           end
           return results.first if results.any?

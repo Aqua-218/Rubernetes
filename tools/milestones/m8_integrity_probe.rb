@@ -55,7 +55,7 @@ module M8IntegrityProbe
     cases << {"id" => "k5_api_wire_differential",
               "passed" => k5.any? { |lane| lane["status"] == "COMPLETE" && lane["passed"] == true },
               "runs" => k5.length,
-              "differences" => k5.map { |lane| lane["differences"] }.compact,
+              "differences" => k5.filter_map { |lane| lane["differences"] },
               "detail" => k5.empty? ? "no K5 differential is recorded" : k5.first["reason"]}
 
     k7 = manifests.flat_map { |manifest| S.lane_results(manifest, "K7") }

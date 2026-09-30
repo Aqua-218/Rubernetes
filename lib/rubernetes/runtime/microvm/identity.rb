@@ -167,7 +167,7 @@ module Rubernetes
           @mutex.synchronize do
             report = {}
             ROTATED_FIELDS.each do |field|
-              values = @records.values.map { |record| record.fields[field] }.compact
+              values = @records.values.filter_map { |record| record.fields[field] }
               duplicates = values.tally.select { |_value, count| count > 1 }
               report[field] = {"records" => values.length, "distinct" => values.uniq.length, "reused" => duplicates.length}
             end

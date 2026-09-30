@@ -65,7 +65,7 @@ module Rubernetes
         attr_reader :last_cap
 
         def self.normalize_name(value)
-          key = String(value).upcase.sub(/\ACAP_/, "")
+          key = String(value).upcase.delete_prefix('CAP_')
           Security::CAPABILITY_ALIASES.fetch("CAP_#{key}", key)
         end
 
@@ -78,7 +78,7 @@ module Rubernetes
         end
 
         def self.names(mask)
-          NUMBERS.select { |_name, bit| (Integer(mask) & (1 << bit)).positive? }.keys.sort
+          NUMBERS.select { |_name, bit| Integer(mask).anybits?((1 << bit)) }.keys.sort
         end
 
         # Highest capability the running kernel knows, read from the kernel
@@ -189,7 +189,7 @@ module Rubernetes
           current = capget
           capset(effective: current.permitted, permitted: current.permitted, inheritable: 0)
           (0..Integer(last_cap)).each do |bit|
-            next unless (target & (1 << bit)).zero?
+            next unless target.nobits?((1 << bit))
             next unless bounding_set_has?(bit)
 
             bounding_set_drop(bit)

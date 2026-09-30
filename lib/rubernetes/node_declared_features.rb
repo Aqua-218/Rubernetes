@@ -42,7 +42,7 @@ module Rubernetes
 
       def subset?(other)
         check_size!(other)
-        (@bits & ~other.bits).zero?
+        @bits.nobits?(~other.bits)
       end
 
       def ==(other)
@@ -160,7 +160,7 @@ module Rubernetes
       end
 
       def containers(spec, field)
-        Array(spec[field]).select { |container| container.is_a?(Hash) }
+        Array(spec[field]).grep(Hash)
       end
 
       def sidecar?(container) = container["restartPolicy"] == "Always"

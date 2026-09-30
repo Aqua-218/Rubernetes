@@ -72,7 +72,7 @@ module M2LifecycleOracleNodeImage
     case value
     when Hash then value.keys.map(&:to_s).reject do |key|
       excluded.include?(key)
-    end.sort.each_with_object({}) { |key, result| result[key] = canonical_value(value[key] || value[key.to_sym]) }
+    end.sort.to_h { |key| [key, canonical_value(value[key] || value[key.to_sym])] }
     when Array then value.map { |child| canonical_value(child) }
     else value
     end

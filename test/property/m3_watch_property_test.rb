@@ -67,7 +67,7 @@ class M3WatchPropertyTest < Minitest::Test
 
   def test_concurrent_indexer_updates_preserve_a_consistent_snapshot
     indexer = Watch::Indexer.new(indices: {"generation" => ->(value) { value.dig("spec", "generation") }})
-    threads = 8.times.map do |worker|
+    threads = Array.new(8) do |worker|
       Thread.new do
         50.times do |offset|
           name = "pod-#{worker}-#{offset}"
@@ -89,7 +89,7 @@ class M3WatchPropertyTest < Minitest::Test
     fifo = Watch::DeltaFIFO.new
     fifo.add(object("pod", 1))
     key, _first = fifo.pop(timeout: 0)
-    writers = 10.times.map do |index|
+    writers = Array.new(10) do |index|
       Thread.new { fifo.update(object("pod", index + 2)) }
     end
     writers.each(&:join)

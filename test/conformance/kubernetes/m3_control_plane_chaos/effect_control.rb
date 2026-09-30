@@ -209,7 +209,7 @@ module M3EffectControl
     pid = Integer(record.fetch("pid"))
     Process.kill(0, pid)
     text = File.read("/proc/#{pid}/stat")
-    start_time = Integer(text.rpartition(") ").last.split(" ").fetch(19))
+    start_time = Integer(text.rpartition(") ").last.split.fetch(19))
     expected = record.fetch("generation").to_s
     expected == [record.fetch("identity"), pid, start_time].join(":")
   rescue Errno::ESRCH, Errno::EPERM, Errno::ENOENT, Errno::EACCES, IndexError, ArgumentError

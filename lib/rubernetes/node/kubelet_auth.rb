@@ -142,7 +142,7 @@ module Rubernetes
         return nil unless @client_ca.verify(certificate, intermediates)
 
         usage = certificate.extensions.find { |extension| extension.oid == "extendedKeyUsage" }
-        return nil if usage && !usage.value.split(/,\s*/).any? do |value|
+        return nil if usage && usage.value.split(/,\s*/).none? do |value|
           ["TLS Web Client Authentication", "Any Extended Key Usage"].include?(value)
         end
 

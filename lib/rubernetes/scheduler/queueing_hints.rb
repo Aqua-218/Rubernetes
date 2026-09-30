@@ -207,11 +207,11 @@ module Rubernetes
 
       def self.resource_claim_names(pod)
         statuses = Array(value(pod, "status", "resourceClaimStatuses"))
-        Array(value(pod, "spec", "resourceClaims")).map do |claim|
+        Array(value(pod, "spec", "resourceClaims")).filter_map do |claim|
           value(claim, "resourceClaimName") || statuses.find do |status|
             value(status, "name") == value(claim, "name")
           end&.then { |status| value(status, "resourceClaimName") }
-        end.compact.map(&:to_s)
+        end.map(&:to_s)
       end
 
       # -- the registrations, per plugin -------------------------------------

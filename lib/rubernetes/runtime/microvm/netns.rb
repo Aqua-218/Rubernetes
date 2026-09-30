@@ -141,7 +141,7 @@ module Rubernetes
         end
 
         def mounted?(path)
-          File.read("/proc/self/mountinfo").lines.any? { |line| line.split(" ")[4] == path }
+          File.read("/proc/self/mountinfo").lines.any? { |line| line.split[4] == path }
         end
 
         def validate_name!(name)

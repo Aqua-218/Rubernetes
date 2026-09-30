@@ -101,7 +101,7 @@ module M4ObserverSupport
     before, after = line.strip.split(" - ", 2)
     return nil unless before && after
 
-    fields = before.split(" ")
+    fields = before.split
     return nil if fields.length < 6
 
     filesystem, source, super_options = after.split(" ", 3)
@@ -165,7 +165,7 @@ module M4ObserverSupport
   end
 
   def loop_devices
-    Dir.glob("/sys/block/loop*").sort.filter_map do |sys|
+    Dir.glob("/sys/block/loop*").filter_map do |sys|
       backing = File.join(sys, "loop", "backing_file")
       next unless File.file?(backing)
 
@@ -178,7 +178,7 @@ module M4ObserverSupport
   end
 
   def dm_devices
-    Dir.glob("/sys/block/dm-*").sort.filter_map do |sys|
+    Dir.glob("/sys/block/dm-*").filter_map do |sys|
       name_path = File.join(sys, "dm", "name")
       next unless File.file?(name_path)
 
@@ -531,7 +531,7 @@ module M4ObserverSupport
       Array(expected["statfs"]).each do |claim|
         actual = begin
           observed = M4ObserverSupport.statfs(pid, claim["path"].to_s)
-          claim.keys.each_with_object({}) { |key, result| result[key] = observed.key?(key) ? observed[key] : nil }
+          claim.keys.to_h { |key| [key, observed.key?(key) ? observed[key] : nil] }
         rescue StandardError => error
           {"path" => claim["path"].to_s, "error" => error.class.name}
         end
@@ -544,7 +544,7 @@ module M4ObserverSupport
         live = (M4ObserverSupport.loop_devices + M4ObserverSupport.dm_devices)
         observed = live.find { |device| device["path"] == claim["path"] }
         actual = if observed
-                   claim.keys.each_with_object({}) { |key, result| result[key] = observed.key?(key) ? observed[key] : nil }
+                   claim.keys.to_h { |key| [key, observed.key?(key) ? observed[key] : nil] }
                  else
                    {"path" => claim["path"], "present" => false}
                  end

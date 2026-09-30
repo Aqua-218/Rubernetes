@@ -465,7 +465,7 @@ module Rubernetes
       # report them at the top level or under "terminated".
       def exit_details(status)
         candidates = [status, Helpers.key(status, "process", nil), Helpers.key(status, "terminated", nil)].compact
-        candidates = candidates.map { |candidate| candidate.respond_to?(:to_h) ? Helpers.string_keys(candidate.to_h) : nil }.compact
+        candidates = candidates.filter_map { |candidate| candidate.respond_to?(:to_h) ? Helpers.string_keys(candidate.to_h) : nil }
         exit_code = nil
         signal = nil
         candidates.each do |candidate|
@@ -2699,7 +2699,7 @@ module Rubernetes
       # ones.
       def apply_sysctls(pod, record)
         sysctls = Array(Helpers.key(Helpers.key(Helpers.key(pod, "spec", {}), "securityContext", {}) || {}, "sysctls", []))
-        sysctls = sysctls.map { |entry| Helpers.string_keys(entry) }.select { |entry| entry["name"].to_s != "" }
+        sysctls = sysctls.map { |entry| Helpers.string_keys(entry) }.reject { |entry| entry["name"].to_s == "" }
         return if sysctls.empty?
         raise LifecycleError, "runtime does not apply sysctls" unless @runtime.respond_to?(:apply_sysctls)
 
@@ -3893,7 +3893,7 @@ module Rubernetes
       def schedule_probe_wakeup(uid, entries, first:)
         return if uid.nil? || @wakeup.nil?
 
-        definitions = Array(entries).flat_map { |entry| probes_for(entry[:spec]).values.compact }.select { |probe| probe.is_a?(Hash) }
+        definitions = Array(entries).flat_map { |entry| probes_for(entry[:spec]).values.compact }.grep(Hash)
         return if definitions.empty?
 
         delay = if first

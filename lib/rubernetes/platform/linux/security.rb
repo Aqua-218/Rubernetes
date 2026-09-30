@@ -122,7 +122,7 @@ module Rubernetes
           private
 
           def normalize_name(name)
-            value = String(name).upcase.sub(/\ACAP_/, "")
+            value = String(name).upcase.delete_prefix('CAP_')
             CAPABILITY_ALIASES.fetch("CAP_#{value}", value)
           end
         end
@@ -193,8 +193,8 @@ module Rubernetes
           def effective_capability_names
             return CAPABILITIES.keys.map { |name| "CAP_#{name}" } if privileged?
 
-            adds = Array(capabilities[:add] || capabilities["add"]).map { |name| String(name).upcase.sub(/\ACAP_/, "") }
-            drops = Array(capabilities[:drop] || capabilities["drop"]).map { |name| String(name).upcase.sub(/\ACAP_/, "") }
+            adds = Array(capabilities[:add] || capabilities["add"]).map { |name| String(name).upcase.delete_prefix('CAP_') }
+            drops = Array(capabilities[:drop] || capabilities["drop"]).map { |name| String(name).upcase.delete_prefix('CAP_') }
             names = CRI_DEFAULT_CAPABILITIES.dup
             names = [] if drops.include?("ALL")
             names -= drops
@@ -532,9 +532,9 @@ module Rubernetes
 
             status = File.file?(@proc_status) ? File.read(@proc_status) : ""
             values = parse_status(status)
-            capabilities = CAPABILITIES.keys.each_with_object({}) do |name, result|
-              result[name] = bit_set?(values.fetch("CapBnd", 0), CAPABILITIES.fetch(name))
-            end
+            capabilities = CAPABILITIES.keys.to_h do |name|
+                             [name, bit_set?(values.fetch("CapBnd", 0), CAPABILITIES.fetch(name))]
+                           end
             Probe.new(
               architecture: normalize_architecture(@architecture),
               capabilities: capabilities.freeze,
@@ -563,7 +563,7 @@ module Rubernetes
             Probe.new(
               architecture: String(input[:architecture] || input["architecture"] || normalize_architecture(@architecture)),
               capabilities: (input[:capabilities] || input["capabilities"] || {}).to_h.transform_keys do |key|
-                String(key).upcase.sub(/\ACAP_/, "")
+                String(key).upcase.delete_prefix('CAP_')
               end.freeze,
               no_new_privs: input.key?(:no_new_privs) ? input[:no_new_privs] : input.fetch("no_new_privs", false),
               seccomp: input.key?(:seccomp) ? input[:seccomp] : input.fetch("seccomp", false),
@@ -584,7 +584,7 @@ module Rubernetes
           end
 
           def bit_set?(value, bit)
-            (Integer(value) & (1 << bit)).positive?
+            Integer(value).anybits?((1 << bit))
           end
 
           def normalize_architecture(value)
@@ -757,7 +757,7 @@ module Rubernetes
 
         def normalize_capability(value)
           key = String(value).upcase
-          CAPABILITY_ALIASES.fetch(key, key.sub(/\ACAP_/, ""))
+          CAPABILITY_ALIASES.fetch(key, key.delete_prefix('CAP_'))
         end
 
         def topological_steps

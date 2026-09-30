@@ -6,7 +6,7 @@ require "rubernetes/network"
 class M4NetworkPropertyTest < Minitest::Test
   def test_many_pods_never_share_a_committed_ip
     ipam = Rubernetes::Network::IPAM.new(ipv4_cidr: "10.244.0.0/28", ipv4_node_prefix: 28)
-    leases = 12.times.map do |index|
+    leases = Array.new(12) do |index|
       reserved = ipam.reserve(node: "node-a", pod_uid: "pod-#{index}", sandbox_id: "sandbox-#{index}", families: ["ipv4"])
       ipam.commit(reserved)
     end

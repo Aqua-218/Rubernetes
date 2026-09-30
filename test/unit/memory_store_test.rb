@@ -138,7 +138,7 @@ class MemoryStoreTest < Minitest::Test
   def test_concurrent_guaranteed_updates_are_serialized
     store = Store.new(history_revisions: nil, history_seconds: nil, sleeper: ->(_seconds) {})
     store.create("counter", object(name: "counter", spec: {"count" => 0}))
-    threads = 8.times.map do
+    threads = Array.new(8) do
       Thread.new do
         store.guaranteed_update("counter") do |current|
           current["spec"]["count"] += 1
@@ -180,7 +180,7 @@ class MemoryStoreTest < Minitest::Test
   def test_concurrent_replay_of_one_request_uid_commits_once
     store = Store.new(history_revisions: nil, history_seconds: nil, sleeper: ->(_seconds) {})
     store.create("counter", object(name: "counter", spec: {"count" => 0}))
-    results = 10.times.map do
+    results = Array.new(10) do
       Thread.new do
         store.guaranteed_update("counter", request_uid: "same-request") do |current|
           current["spec"]["count"] += 1
@@ -191,7 +191,7 @@ class MemoryStoreTest < Minitest::Test
 
     assert_equal(1, store.get("counter").dig("spec", "count"))
     assert_equal(2, store.revision)
-    assert(results.all? { |result| result == results.first })
+    assert(results.all?(results.first))
   end
 
   def test_field_selector_and_selector_transition_are_applied_to_watch
@@ -308,7 +308,7 @@ class MemoryStoreTest < Minitest::Test
     end
     [creator, updater, deleter].each(&:join)
 
-    assert_equal([1, 2, 3], 3.times.map { watcher.next.revision })
+    assert_equal([1, 2, 3], Array.new(3) { watcher.next.revision })
     assert_equal(3, store.revision)
     assert_raises(Rubernetes::Storage::NotFound) { store.get("pods/parallel") }
   ensure

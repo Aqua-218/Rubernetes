@@ -604,7 +604,7 @@ module Rubernetes
           raise CSIUnavailable,
                 "CSI socket mode #{format("%04o", mode)} does not match pinned mode #{format("%04o", @expected_socket_mode)}"
         end
-        raise CSIUnavailable, "CSI socket must not be world-writable" if @expected_socket_mode.nil? && (mode & 0o002).positive?
+        raise CSIUnavailable, "CSI socket must not be world-writable" if @expected_socket_mode.nil? && mode.anybits?(0o002)
 
         peer_pid, peer_uid, peer_gid = peer_credentials
         if @expected_peer_uid && peer_uid != @expected_peer_uid

@@ -57,7 +57,7 @@ class NativeRuntimeHotspotTest < Minitest::Test
     trace = TracePoint.new(:raise) { |point| raised << point.raised_exception }
     trace.enable { @runtime.container_status(container) }
 
-    assert_empty(raised.select { |error| error.is_a?(Native::Sandbox::Error) })
+    assert_empty(raised.grep(Native::Sandbox::Error))
     assert_raises(Native::Error) { @runtime.container_status("no-such-container") }
   end
 

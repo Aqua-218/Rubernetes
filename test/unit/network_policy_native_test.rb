@@ -137,7 +137,7 @@ class NetworkPolicyNativeTest < Minitest::Test
                                          IPAddr.new("2001:db8::"), 64, :source))
 
     assert_equal %w[meta cmp], cidr_names.first(2)
-    refute(cidr_names.any? { |name| name.is_a?(Array) })
+    refute(cidr_names.any?(Array))
   end
 
   def test_nft_policy_markers_are_scoped_to_one_adapter_instance

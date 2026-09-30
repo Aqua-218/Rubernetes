@@ -100,7 +100,7 @@ class EBPFProgramTest < Minitest::Test
 
   def test_sctp_crc32c_table_matches_the_standard_reference_vector
     adapter = Rubernetes::Proxy::LinuxEBPFAdapter.new
-    table = 256.times.map { |index| adapter.send(:sctp_crc32c_table_value, index) }
+    table = Array.new(256) { |index| adapter.send(:sctp_crc32c_table_value, index) }
     crc = 0xffff_ffff
     "123456789".bytes.each { |byte| crc = (crc >> 8) ^ table[(crc ^ byte) & 0xff] }
 

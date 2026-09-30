@@ -541,7 +541,7 @@ module Rubernetes
 
         keys = result[:keys] || result["keys"]
         version = result[:resource_version] || result["resource_version"] || result[:resourceVersion] || result["resourceVersion"]
-        @mutex.synchronize { @known_keys = Array(keys).each_with_object({}) { |key, map| map[key] = true } } if keys
+        @mutex.synchronize { @known_keys = Array(keys).to_h { |key| [key, true] } } if keys
         advance_resource_version(version)
       end
 
@@ -641,7 +641,7 @@ module Rubernetes
         @node_zone = (node_zone || zone)&.to_s
         address_values = Array(node_addresses)
         address_values = Array(node_ips) if address_values.empty? && node_ips
-        @node_addresses = address_values.map { |ip| ModelSupport.canonical_ip(ip) }.compact.freeze
+        @node_addresses = address_values.filter_map { |ip| ModelSupport.canonical_ip(ip) }.freeze
         @endpoint_store = endpoint_store || EndpointStore.new(clock: clock)
         @service_store = service_store
         @compiler = compiler || RuleCompiler.new(local_node: @local_node, node_addresses: @node_addresses,

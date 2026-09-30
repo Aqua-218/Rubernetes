@@ -565,9 +565,9 @@ module Rubernetes
 
         ports = Helpers.key(context, "ports", {})
         if ports.is_a?(Array)
-          ports = ports.each_with_object({}) do |entry, result|
-            result[Helpers.key(entry, "name", "")] = Helpers.key(entry, "containerPort", nil)
-          end
+          ports = ports.to_h do |entry|
+                    [Helpers.key(entry, "name", ""), Helpers.key(entry, "containerPort", nil)]
+                  end
         end
         resolved = Helpers.key(ports, value, nil)
         raise ArgumentError, "named probe port #{value.inspect} is not defined" if resolved.nil?

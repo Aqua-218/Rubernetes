@@ -9,12 +9,12 @@ module Rubernetes
     module PodSecurity
       LEVELS = %w[privileged baseline restricted].freeze
       LABEL_PREFIX = "pod-security.kubernetes.io/"
-      ENFORCE_LEVEL_LABEL = "#{LABEL_PREFIX}enforce"
-      ENFORCE_VERSION_LABEL = "#{LABEL_PREFIX}enforce-version"
-      AUDIT_LEVEL_LABEL = "#{LABEL_PREFIX}audit"
-      AUDIT_VERSION_LABEL = "#{LABEL_PREFIX}audit-version"
-      WARN_LEVEL_LABEL = "#{LABEL_PREFIX}warn"
-      WARN_VERSION_LABEL = "#{LABEL_PREFIX}warn-version"
+      ENFORCE_LEVEL_LABEL = "#{LABEL_PREFIX}enforce".freeze
+      ENFORCE_VERSION_LABEL = "#{LABEL_PREFIX}enforce-version".freeze
+      AUDIT_LEVEL_LABEL = "#{LABEL_PREFIX}audit".freeze
+      AUDIT_VERSION_LABEL = "#{LABEL_PREFIX}audit-version".freeze
+      WARN_LEVEL_LABEL = "#{LABEL_PREFIX}warn".freeze
+      WARN_VERSION_LABEL = "#{LABEL_PREFIX}warn-version".freeze
       EXEMPTION_REASON_ANNOTATION = "exempt"
       AUDIT_VIOLATIONS_ANNOTATION = "audit-violations"
       ENFORCED_POLICY_ANNOTATION = "enforce-policy"
@@ -230,7 +230,7 @@ module Rubernetes
       # ---- the checks -----------------------------------------------------------
 
       def allow_privilege_escalation_1_8(_meta, spec)
-        bad = containers(spec).select { |c| value(c, "securityContext", "allowPrivilegeEscalation") != false }.map { |c| c["name"].to_s }
+        bad = containers(spec).reject { |c| value(c, "securityContext", "allowPrivilegeEscalation") == false }.map { |c| c["name"].to_s }
         return ALLOWED if bad.empty?
 
         CheckResult.new(false, "allowPrivilegeEscalation != false",

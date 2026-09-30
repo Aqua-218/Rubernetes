@@ -282,12 +282,12 @@ input_stable = starting_input.fetch("sha256") == finished_input.fetch("sha256") 
 artifact_paths = Dir.glob(File.join(directory, "**/*"), File::FNM_DOTMATCH).select do |path|
   File.file?(path) && path != File.join(directory, "manifest.json")
 end.sort
-artifacts = artifact_paths.map do |path|
+artifacts = artifact_paths.filter_map do |path|
   name = path.delete_prefix("#{directory}/")
   next unless File.file?(path)
 
   {"path" => name, "sha256" => Digest::SHA256.file(path).hexdigest, "bytes" => File.size(path)}
-end.compact
+end
 
 uname = Etc.uname
 manifest = {

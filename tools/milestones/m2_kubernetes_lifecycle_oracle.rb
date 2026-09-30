@@ -183,7 +183,7 @@ module M2KubernetesLifecycleOracle
       "input_file_count" => source.fetch("file_count"),
       "fixture_sha256" => canonical_digest(cases),
       "timeline_sha256" => canonical_digest(timeline),
-      "cases" => REQUIRED_CASES.each_with_object({}) { |name, result| result[name] = cases.fetch(name) },
+      "cases" => REQUIRED_CASES.to_h { |name| [name, cases.fetch(name)] },
       "timeline" => timeline
     }
     request["request_seed_sha256"] = canonical_digest(request)
@@ -226,7 +226,7 @@ module M2KubernetesLifecycleOracle
     end
     if document.key?("lock_sha256")
       errors << "CNI lock #{relative_path} lock_sha256 must be a SHA-256 digest" unless valid_digest?(document["lock_sha256"])
-      if valid_digest?(document["lock_sha256"]) && !(document["lock_sha256"] == canonical_digest(document, excluded_keys: ["lock_sha256"]))
+      if valid_digest?(document["lock_sha256"]) && document["lock_sha256"] != canonical_digest(document, excluded_keys: ["lock_sha256"])
         errors << "CNI lock #{relative_path} lock_sha256 does not match canonical content"
       end
     end
@@ -674,9 +674,9 @@ module M2KubernetesLifecycleOracle
       runner_identity: expected_runner
     )
     external_provenance = document["provenance"]
-    if external_provenance.is_a?(Hash) && external_provenance["provenance_sha256"] && !(external_provenance["provenance_sha256"] == canonical_digest(
+    if external_provenance.is_a?(Hash) && external_provenance["provenance_sha256"] && external_provenance["provenance_sha256"] != canonical_digest(
       external_provenance, excluded_keys: ["provenance_sha256"]
-    ))
+    )
       errors << "external lifecycle oracle provenance SHA-256 does not match canonical content"
     end
 
@@ -802,7 +802,7 @@ module M2KubernetesLifecycleOracle
       errors << "external lifecycle oracle CNI image_digest must be a SHA-256 digest" unless valid_digest?(cni["image_digest"])
       errors << "external lifecycle oracle CNI config_sha256 must be a SHA-256 digest" unless valid_digest?(cni["config_sha256"])
       errors << "external lifecycle oracle CNI image_reference must be digest-pinned" unless digest_pinned_image?(cni["image_reference"])
-      if digest_pinned_image?(cni["image_reference"]) && !(cni["image_reference"].split("@sha256:", 2).last == cni["image_digest"])
+      if digest_pinned_image?(cni["image_reference"]) && cni["image_reference"].split("@sha256:", 2).last != cni["image_digest"]
         errors << "external lifecycle oracle CNI image_reference digest must match image_digest"
       end
       if cni_lock.is_a?(Hash)

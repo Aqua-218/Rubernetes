@@ -464,7 +464,7 @@ module M3Gate
       valid_entries.each do |entry|
         path = File.expand_path(entry.fetch("path"), PROJECT_ROOT)
         errors << "source inventory entry #{entry.fetch("path")} is missing" unless File.file?(path)
-        if File.file?(path) && valid_digest?(entry["sha256"]) && !(Digest::SHA256.file(path).hexdigest == entry["sha256"])
+        if File.file?(path) && valid_digest?(entry["sha256"]) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
           errors << "source inventory digest mismatch #{entry.fetch("path")}"
         end
       end
@@ -806,13 +806,13 @@ module M3Gate
         validate_idempotency_step_observable(second_observable, errors, index, "second")
         validate_provider_applicability(first_observable, second_observable, errors, index)
         validate_idempotency_effect_inventory(first_observable, second_observable, errors, index)
-        if structured_observable?(first_observable) && valid_digest?(first) && !(canonical_document_digest(first_observable) == first)
+        if structured_observable?(first_observable) && valid_digest?(first) && canonical_document_digest(first_observable) != first
           errors << "reconcile idempotency case #{index} first effect digest does not match observable"
         end
-        if structured_observable?(second_observable) && valid_digest?(second) && !(canonical_document_digest(second_observable) == second)
+        if structured_observable?(second_observable) && valid_digest?(second) && canonical_document_digest(second_observable) != second
           errors << "reconcile idempotency case #{index} second effect digest does not match observable"
         end
-        if first_observable.is_a?(Hash) && second_observable.is_a?(Hash) && !(first_observable["store"] == second_observable["store"])
+        if first_observable.is_a?(Hash) && second_observable.is_a?(Hash) && first_observable["store"] != second_observable["store"]
           errors << "reconcile idempotency case #{index} final store state changed during replay"
         end
         first_snapshot = entry["first_run_raw_snapshot"]
@@ -958,9 +958,7 @@ module M3Gate
         errors << "#{label} raw snapshot must contain raw entries for run #{run_number}"
         return nil
       end
-      errors << "#{label} raw snapshot contains a non-object entry for run #{run_number}" unless raw_entries.all? do |entry|
-        entry.is_a?(Hash)
-      end
+      errors << "#{label} raw snapshot contains a non-object entry for run #{run_number}" unless raw_entries.all?(Hash)
       unless snapshot["raw_entry_count"] == raw_entries.length
         errors << "#{label} raw snapshot entry count is incorrect for run #{run_number}"
       end
@@ -1000,7 +998,7 @@ module M3Gate
     end
 
     def recompute_idempotency_inventory(raw_entries)
-      entries = raw_entries.select { |entry| entry.is_a?(Hash) }
+      entries = raw_entries.grep(Hash)
       mutations = entries.select { |entry| entry["kind"] == "api_mutation" }
       semantic_mutations = mutations.reject { |entry| lease_mutation_entry?(entry) }
       events = entries.select { |entry| entry["kind"] == "controller_event" }
@@ -1064,7 +1062,7 @@ module M3Gate
           unless structured_observable?(entry["actual_observable"]) && structured_observable?(entry["expected_observable"])
             errors << "scheduler case #{index} must include structured local and oracle observables"
           end
-          if structured_observable?(entry["actual_observable"]) && valid_digest?(entry["evidence_sha256"]) && !(canonical_document_digest(entry["actual_observable"]) == entry["evidence_sha256"])
+          if structured_observable?(entry["actual_observable"]) && valid_digest?(entry["evidence_sha256"]) && canonical_document_digest(entry["actual_observable"]) != entry["evidence_sha256"]
             errors << "scheduler case #{index} observable digest does not match local result"
           end
           next unless structured_observable?(entry["actual_observable"]) && structured_observable?(entry["expected_observable"])

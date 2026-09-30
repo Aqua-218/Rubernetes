@@ -110,12 +110,12 @@ class M4ProxyPropertyTest < Minitest::Test
     table = Rubernetes::Proxy::ConntrackTable.new(clock: -> { now })
     key = Rubernetes::Proxy::ConnectionKey.new(protocol: "TCP", source_ip: "192.0.2.60", source_port: 1,
                                                destination_ip: "10.96.0.60", destination_port: 80)
-    selector = ->(items) { items.first }
+    selector = lambda(&:first)
     first = table.find_or_select(key, service_key: service.key, backends: endpoints, selector: selector,
                                       session_affinity: service.session_affinity, source_ip: "192.0.2.60",
                                       timeout_seconds: service.session_affinity_timeout_seconds, now: now)
     now = 3.0
-    second = table.find_or_select(key, service_key: service.key, backends: endpoints, selector: ->(items) { items.last },
+    second = table.find_or_select(key, service_key: service.key, backends: endpoints, selector: lambda(&:last),
                                        session_affinity: service.session_affinity, source_ip: "192.0.2.60",
                                        timeout_seconds: service.session_affinity_timeout_seconds, now: now)
 

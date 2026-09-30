@@ -275,8 +275,8 @@ module Rubernetes
           end
 
           def sample_message(registry, descriptor, depth: 0, ancestors: [])
-            descriptor.fields.each_with_object({}) do |field, result|
-              result[field.json_name] = sample_field(registry, field, depth: depth, ancestors: ancestors + [descriptor.full_name])
+            descriptor.fields.to_h do |field|
+              [field.json_name, sample_field(registry, field, depth: depth, ancestors: ancestors + [descriptor.full_name])]
             end
           end
 

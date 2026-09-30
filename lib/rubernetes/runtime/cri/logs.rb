@@ -17,7 +17,7 @@ module Rubernetes
         module_function
 
         def parse_line(line)
-          time, stream, tag, content = line.chomp("\n").split(" ", 4)
+          time, stream, tag, content = line.chomp.split(" ", 4)
           return nil if time.nil? || !%w[stdout stderr].include?(stream)
 
           partial = tag == "P"

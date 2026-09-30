@@ -91,11 +91,11 @@ module Rubernetes
           next false unless codes.is_a?(Hash)
 
           operator = (codes["operator"] || codes[:operator]).to_s
-          values = Array(codes["values"] || codes[:values]).map do |item|
+          values = Array(codes["values"] || codes[:values]).filter_map do |item|
             Integer(item)
           rescue StandardError
             nil
-          end.compact
+          end
           case operator
           when "In" then values.include?(Integer(exit_code))
           when "NotIn" then !values.include?(Integer(exit_code))

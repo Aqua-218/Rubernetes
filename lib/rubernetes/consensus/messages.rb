@@ -199,7 +199,7 @@ module Rubernetes
         extra = value.keys - required - ["type"]
         raise ProtocolError, "message #{type} has unknown fields #{extra.join(", ")}" unless extra.empty?
 
-        fields = REQUIRED_FIELDS.fetch(type).each_with_object({}) { |key, hash| hash[key.to_sym] = value.fetch(key) }
+        fields = REQUIRED_FIELDS.fetch(type).to_h { |key| [key.to_sym, value.fetch(key)] }
         validate_fields!(type, fields)
         klass.new(cluster_id: value["cluster_id"], from: value["from"], to: value["to"], term: value["term"],
                   request_id: value["request_id"], **fields)

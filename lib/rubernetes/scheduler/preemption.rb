@@ -31,7 +31,7 @@ module Rubernetes
         end
 
         def to_h
-          {"node" => node.name, "victims" => victims.map { |pod| pod.to_h }, "reason" => reason}
+          {"node" => node.name, "victims" => victims.map(&:to_h), "reason" => reason}
         end
       end
 

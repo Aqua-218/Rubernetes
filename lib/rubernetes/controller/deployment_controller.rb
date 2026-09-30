@@ -890,7 +890,7 @@ module Rubernetes
           def old_pods_running?(new_rs, old_rss)
             return true if old_rss.sum { |rs| @c.rs_status_int(rs, "replicas") }.positive?
 
-            old_uids = old_rss.map { |rs| Support.uid(rs) }.compact
+            old_uids = old_rss.filter_map { |rs| Support.uid(rs) }
             @pods.any? do |pod|
               owner = Support.owner_references(pod).find { |reference| Support.ref_value(reference, "kind", "") == "ReplicaSet" }
               next false unless owner && old_uids.include?(Support.ref_value(owner, "uid", nil).to_s)

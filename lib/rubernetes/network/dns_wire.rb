@@ -142,8 +142,8 @@ module Rubernetes
 
           id, flags, qdcount, ancount, nscount, arcount = buffer.unpack("n6")
           message = Message.new(
-            id: id, qr: (flags & FLAG_QR) != 0, opcode: (flags >> 11) & 0x0f, aa: (flags & FLAG_AA) != 0,
-            tc: (flags & FLAG_TC) != 0, rd: (flags & FLAG_RD) != 0, ra: (flags & FLAG_RA) != 0, rcode: flags & 0x0f
+            id: id, qr: flags.anybits?(FLAG_QR), opcode: (flags >> 11) & 0x0f, aa: flags.anybits?(FLAG_AA),
+            tc: flags.anybits?(FLAG_TC), rd: flags.anybits?(FLAG_RD), ra: flags.anybits?(FLAG_RA), rcode: flags & 0x0f
           )
           offset = HEADER_BYTES
           qdcount.times do
@@ -180,7 +180,7 @@ module Rubernetes
             raise FormatError, "truncated name" if cursor >= buffer.bytesize
 
             length = buffer.getbyte(cursor)
-            if (length & 0xc0) == 0xc0
+            if length.allbits?(0xc0)
               raise FormatError, "truncated compression pointer" if cursor + 1 >= buffer.bytesize
 
               pointer = ((length & 0x3f) << 8) | buffer.getbyte(cursor + 1)
@@ -195,7 +195,7 @@ module Rubernetes
               cursor = pointer
               next
             end
-            raise FormatError, "unsupported label type" unless (length & 0xc0).zero?
+            raise FormatError, "unsupported label type" unless length.nobits?(0xc0)
 
             if length.zero?
               next_offset ||= cursor + 1

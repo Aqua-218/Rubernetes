@@ -202,7 +202,7 @@ M4ProbeSupport.run_report(kind: "m4_volume_lifecycle_trace", adapter_name: "volu
   writer_class = M4ProbeSupport.constant("Rubernetes::Volume::AtomicWriter")
   bridge_class = M4ProbeSupport.constant("Rubernetes::Volume::CSIBridge")
   required_classes = [manager_class, adapter_class, writer_class, bridge_class]
-  unless required_classes.all? { |klass| klass.is_a?(Class) }
+  unless required_classes.all?(Class)
     errors << "production volume manager, unprivileged adapter, atomic writer, or CSI bridge is unavailable"
     next {"measurement_source" => M4VolumeProbe::NON_KERNEL_ADAPTER_SOURCE, "volume_kinds" => [], "stages" => []}
   end

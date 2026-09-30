@@ -99,7 +99,7 @@ module Tsdb
 
     class AlreadyOpen < StandardError; end
 
-    OPEN_WRITERS = {}
+    OPEN_WRITERS = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache)
     OPEN_WRITERS_LOCK = Mutex.new
 
     def self.stale_marker?(value)

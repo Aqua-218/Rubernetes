@@ -73,7 +73,7 @@ class Tsdb::StoreTest < ActiveSupport::TestCase
     reopened = open_store
     series = reopened.select_series([M.new(name: "__name__", op: "=", value: "m")]).first
 
-    assert_equal 5.times.map { |i| [1000 + i, i.to_f] }, reopened.samples(series.id, 0, 2000)
+    assert_equal Array.new(5) { |i| [1000 + i, i.to_f] }, reopened.samples(series.id, 0, 2000)
     # And appending continues without duplicating the recovered series.
     reopened.append(labels("m", "k" => "v"), 1005, 5.0)
 
@@ -92,7 +92,7 @@ class Tsdb::StoreTest < ActiveSupport::TestCase
     assert_operator store.blocks.length, :>=, 1
     series = store.select_series([M.new(name: "__name__", op: "=", value: "m")]).first
 
-    assert_equal 130.times.map { |i| [t0 + (i * 1000), i.to_f] }, store.samples(series.id, 0, t0 + 200_000)
+    assert_equal Array.new(130) { |i| [t0 + (i * 1000), i.to_f] }, store.samples(series.id, 0, t0 + 200_000)
     stats = store.stats
 
     assert_operator stats["block_bytes"], :>, 0
@@ -132,7 +132,7 @@ class Tsdb::StoreTest < ActiveSupport::TestCase
 
   test "batch append is one WAL flush and reports the count" do
     store = open_store
-    rows = 1000.times.map { |i| [labels("batch", "i" => (i % 10).to_s), 1_000 + ((i / 10) * 1000), i.to_f] }
+    rows = Array.new(1000) { |i| [labels("batch", "i" => (i % 10).to_s), 1_000 + ((i / 10) * 1000), i.to_f] }
 
     assert_equal 1000, store.append_batch(rows)
     assert_equal 10, store.series_count

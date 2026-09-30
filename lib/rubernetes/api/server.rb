@@ -196,9 +196,7 @@ module Rubernetes
         @openapi_encoded_mutex = Mutex.new
         @aggregator = aggregator
         if @security
-          @identity_resolver ||= lambda do |request|
-            request.identity
-          end
+          @identity_resolver ||= lambda(&:identity)
           authorizer ||= @security.respond_to?(:review_adapter) ? @security.review_adapter : nil
         end
         @api_audiences = (api_audiences.nil? || Array(api_audiences).empty? ? DEFAULT_API_AUDIENCES : Array(api_audiences)).map(&:to_s).freeze
@@ -5708,7 +5706,7 @@ module Rubernetes
       def dry_run?(request)
         values = request.respond_to?(:query_values) ? Array(request.query_values("dryRun")) : []
         values = [query(request, "dryRun")].compact if values.empty?
-        values.map(&:to_s).reject(&:empty?).any? { |value| value == "All" }
+        values.map(&:to_s).reject(&:empty?).any?("All")
       rescue StandardError
         false
       end

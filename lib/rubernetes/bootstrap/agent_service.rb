@@ -22,7 +22,7 @@ module Rubernetes
 
         def initialize(errors)
           @errors = errors.freeze
-          super("agent stop failed: #{errors.map { |error| error.message }.join("; ")}")
+          super("agent stop failed: #{errors.map(&:message).join("; ")}")
         end
       end
 

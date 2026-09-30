@@ -331,9 +331,9 @@ module Rubernetes
         module_function
 
         def table
-          @table ||= 256.times.map do |index|
+          @table ||= Array.new(256) do |index|
             value = index
-            8.times { value = (value >> 1) ^ ((value & 1).positive? ? POLY : 0) }
+            8.times { value = (value >> 1) ^ (value.anybits?(1) ? POLY : 0) }
             value & 0xffff_ffff
           end.freeze
         end

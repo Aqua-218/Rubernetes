@@ -757,7 +757,7 @@ module Rubernetes
       READER_WEBSOCKET_PROTOCOLS = [BINARY_WEBSOCKET_PROTOCOL, BASE64_BINARY_WEBSOCKET_PROTOCOL].freeze
 
       def select_websocket_protocol(header, operation)
-        offered = header.to_s.split(",").map { |value| value.strip }
+        offered = header.to_s.split(",").map(&:strip)
         unless DUPLEX_SUBRESOURCES.include?(operation)
           # An absent subprotocol is valid for a reader stream and means binary.
           return "" if offered.empty? || offered == [""]
@@ -869,7 +869,7 @@ module Rubernetes
             first, second = header.bytes
             opcode = first & 0x0f
             length = second & 0x7f
-            masked = (second & 0x80) != 0
+            masked = second.anybits?(0x80)
             length = socket.read(2).unpack1("n") if length == 126
             length = socket.read(8).unpack1("Q>") if length == 127
             break if length.nil? || length > MAX_FRAME_BYTES
@@ -961,9 +961,9 @@ module Rubernetes
         def read_loop(socket)
           loop do
             first, second = read_bytes(socket, 2).bytes
-            fin = (first & 0x80) != 0
+            fin = first.anybits?(0x80)
             opcode = first & 0x0f
-            masked = (second & 0x80) != 0
+            masked = second.anybits?(0x80)
             length = second & 0x7f
             raise IOError, "fragmented websocket frames are not supported" unless fin
             raise IOError, "client websocket frames must be masked" unless masked

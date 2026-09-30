@@ -257,7 +257,7 @@ module Rubernetes
       def publish(requests)
         FileUtils.mkdir_p(@state_dir, mode: 0o700)
         state = {"node" => @node_name, "pid" => Process.pid, "start_time" => @start_time,
-                 "allocatable" => node_values.transform_values { |value| value.to_s },
+                 "allocatable" => node_values.transform_values(&:to_s),
                  "requests" => requests.to_h}
         temporary = "#{state_path}.#{Process.pid}.tmp"
         File.write(temporary, JSON.generate(state), perm: 0o600)

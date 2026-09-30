@@ -533,7 +533,7 @@ module Rubernetes
         if namespaced
           selected_namespace = namespace || context_namespace
           if selected_namespace && selected_namespace != :all && !selected_namespace.to_s.empty?
-            path_parts.concat(["namespaces", escape_path(selected_namespace)])
+            path_parts.push("namespaces", escape_path(selected_namespace))
           end
         end
         path_parts << escape_path(resource_name)
@@ -746,7 +746,7 @@ module Rubernetes
       def register_resource_list(group:, version:, payload:)
         return unless payload.is_a?(Hash)
 
-        entries = Array(payload["resources"]).select { |entry| entry.is_a?(Hash) }
+        entries = Array(payload["resources"]).grep(Hash)
         # Base resources are registered first because subresources inherit
         # scope and identity defaults from their parent APIResource entry.
         entries.sort_by { |entry| entry["name"].to_s.include?("/") ? 1 : 0 }.each do |entry|

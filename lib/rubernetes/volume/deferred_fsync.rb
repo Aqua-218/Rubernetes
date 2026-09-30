@@ -41,8 +41,8 @@ module Rubernetes
         end
 
         def sync_path(path)
-          File.open(path, File::RDONLY) { |file| file.fsync }
-          File.open(File.dirname(path), File::RDONLY) { |directory| directory.fsync }
+          File.open(path, File::RDONLY, &:fsync)
+          File.open(File.dirname(path), File::RDONLY, &:fsync)
         rescue SystemCallError, IOError
           nil
         end

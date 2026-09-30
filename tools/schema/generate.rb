@@ -401,7 +401,7 @@ module RubernetesSchemaGenerator
 
     def normalize_expected_gvrs(sources)
       identifiers = sources.dig("coverage", "covered_gvrs")
-      unless identifiers.is_a?(Array) && identifiers.all? { |identifier| identifier.is_a?(String) }
+      unless identifiers.is_a?(Array) && identifiers.all?(String)
         raise Error, "sources.json coverage.covered_gvrs must be an array of strings"
       end
       raise Error, "sources.json contains duplicate covered GVRs" unless identifiers.uniq.length == identifiers.length
@@ -435,7 +435,7 @@ module RubernetesSchemaGenerator
 
       covered = sources.dig("coverage", "covered_gvks")
       if covered
-        unless covered.is_a?(Array) && covered.all? { |identifier| identifier.is_a?(String) }
+        unless covered.is_a?(Array) && covered.all?(String)
           raise Error, "sources.json coverage.covered_gvks must be an array of strings"
         end
         raise Error, "sources.json contains duplicate covered GVKs" unless covered.uniq.length == covered.length
@@ -606,7 +606,7 @@ module RubernetesSchemaGenerator
         end
         lines << "    end"
       end
-      lines.concat(["  end", "end", ""])
+      lines.push("  end", "end", "")
       lines.join("\n")
     end
 
@@ -694,7 +694,7 @@ module RubernetesSchemaGenerator
         end
         lines << "    end"
       end
-      lines.concat(["  end", "end", ""])
+      lines.push("  end", "end", "")
       lines.join("\n")
     end
 

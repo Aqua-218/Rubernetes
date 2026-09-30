@@ -329,7 +329,7 @@ module Rubernetes
           header = @stdout.gets
           return nil if header.nil? || header.end_with?(" missing\n")
 
-          size = Integer(header.split(" ")[2])
+          size = Integer(header.split[2])
           payload = @stdout.read(size)
           @stdout.read(1)
           payload
@@ -789,7 +789,7 @@ module Rubernetes
           meta = fields[cursor]
           break unless meta.start_with?(":")
 
-          old_mode, new_mode, old_sha, new_sha, status = meta[1..].split(" ")
+          old_mode, new_mode, old_sha, new_sha, status = meta[1..].split
           if %w[R C].include?(status[0])
             old_path = fields[cursor + 1]
             path = fields[cursor + 2]
@@ -999,7 +999,7 @@ module Rubernetes
               next if item.empty?
 
               meta, path = item.split("\t", 2)
-              _mode, _sha, stage = meta.split(" ")
+              _mode, _sha, stage = meta.split
               raise GitError, "#{path} has unresolved merge conflicts; resolve them before recording" if stage != "0"
 
               @index_before[path] = meta

@@ -167,7 +167,7 @@ module PrivateLogind
     # logind on SIGHUP: the drop-ins in lexical order, the last one wins.
     def reload
       delay = @base_delay
-      Dir.glob(File.join(@config_directory, "*.conf")).sort.each do |path|
+      Dir.glob(File.join(@config_directory, "*.conf")).each do |path|
         File.read(path).scan(/^\s*InhibitDelayMaxSec\s*=\s*(\d+)\s*$/) { |(seconds)| delay = Integer(seconds) }
       end
       @mutex.synchronize do

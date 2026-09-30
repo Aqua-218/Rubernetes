@@ -62,7 +62,7 @@ class ConsensusAsyncApplyConfigEntriesTest < Minitest::Test
       server.start
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
       sleep 0.01 until server.leader? || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-      latencies = 10.times.map do |i|
+      latencies = Array.new(10) do |i|
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         result = server.propose({"type" => "create", "key" => "k/#{i}", "object" => {"metadata" => {"name" => "x"}}, "leader_time" => 0.0})
 

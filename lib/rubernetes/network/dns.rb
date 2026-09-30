@@ -660,7 +660,7 @@ module Rubernetes
             target = "#{target}.#{pod.fetch("subdomain")}.#{pod.fetch("namespace")}.svc.#{@domain}" if pod.fetch("subdomain")
             matches << Record.new(name: name, type: "PTR", data: target, ttl: @positive_ttl).freeze
           end
-          matches.uniq { |record| record.data }.freeze
+          matches.uniq(&:data).freeze
         rescue DNSQueryError
           [].freeze
         end
@@ -749,7 +749,7 @@ module Rubernetes
             begin
               address = IPAddr.new(text)
               unspecified = address.to_i.zero?
-              multicast = address.ipv4? ? address.to_i.between?(0xe000_0000, 0xefff_ffff) : ((address.to_i >> 120) & 0xff) == 0xff
+              multicast = address.ipv4? ? address.to_i.between?(0xe000_0000, 0xefff_ffff) : (address.to_i >> 120).allbits?(0xff)
               if address.loopback? || multicast || unspecified || address.link_local?
                 raise DNSUpstreamError,
                       "DNS upstream must not be loopback, multicast, or unspecified"

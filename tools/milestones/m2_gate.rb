@@ -666,8 +666,8 @@ module M2Gate
       errors << "#{label} milestone must be M2" unless document["milestone"] == "M2"
       errors << "#{label} claim must be RuntimeLifecycle" unless document["claim"] == "RuntimeLifecycle"
       errors << "#{label} report_sha256 is required" unless valid_digest?(document["report_sha256"])
-      if valid_digest?(document["report_sha256"]) && !(document["report_sha256"] == canonical_document_digest(document,
-                                                                                                              excluded_keys: ["report_sha256"]))
+      if valid_digest?(document["report_sha256"]) && document["report_sha256"] != canonical_document_digest(document,
+                                                                                                              excluded_keys: ["report_sha256"])
         errors << "#{label} report_sha256 does not match canonical content"
       end
 
@@ -838,7 +838,7 @@ module M2Gate
         errors << "#{label} #{key} must be zero" unless integer?(document[key]) && document[key].zero?
       end
       errors << "#{label} errors must be an array" unless document["errors"].is_a?(Array)
-      errors << "#{label} must run exactly once" if document.key?("attempt_count") && !(document["attempt_count"] == 1)
+      errors << "#{label} must run exactly once" if document.key?("attempt_count") && document["attempt_count"] != 1
       errors << "#{label} cannot claim PASS with unavailable profiles" if document["available"] == false
     end
 
@@ -1022,7 +1022,7 @@ module M2Gate
         return
       end
       errors << "Pod lifecycle trace digest is required" unless valid_digest?(document["trace_sha256"])
-      if valid_digest?(document["trace_sha256"]) && !(document["trace_sha256"] == Digest::SHA256.hexdigest(JSON.generate(trace)))
+      if valid_digest?(document["trace_sha256"]) && document["trace_sha256"] != Digest::SHA256.hexdigest(JSON.generate(trace))
         errors << "Pod lifecycle trace digest does not match events"
       end
       unless integer?(document["failure_injection_count"]) && document["failure_injection_count"].positive?
@@ -1107,7 +1107,7 @@ module M2Gate
       end
       errors << "Pod lifecycle oracle difference count must be zero" unless document["oracle_difference_count"] == 0
       errors << "Pod lifecycle semantics matrix digest is required" unless valid_digest?(document["lifecycle_semantics_matrix_sha256"])
-      if semantics.is_a?(Array) && valid_digest?(document["lifecycle_semantics_matrix_sha256"]) && !(document["lifecycle_semantics_matrix_sha256"] == canonical_document_digest(semantics))
+      if semantics.is_a?(Array) && valid_digest?(document["lifecycle_semantics_matrix_sha256"]) && document["lifecycle_semantics_matrix_sha256"] != canonical_document_digest(semantics)
         errors << "Pod lifecycle semantics matrix digest does not match"
       end
       validate_lifecycle_oracle(document, errors)
@@ -1213,7 +1213,7 @@ module M2Gate
       errors << "#{label} errors must be an array" unless oracle_errors.is_a?(Array)
       errors << "#{label} errors must be empty for PASS" unless oracle_errors.is_a?(Array) && oracle_errors.empty?
       errors << "#{label} was not executed" unless oracle["executed"] == true
-      if (oracle["status"] == "BLOCKED") && !(oracle["blocker"] == LIFECYCLE_CNI_LOCK_BLOCKER)
+      if (oracle["status"] == "BLOCKED") && oracle["blocker"] != LIFECYCLE_CNI_LOCK_BLOCKER
         errors << "#{label} blocked status must report the exact product-defining CNI lock blocker"
       end
       errors << "#{label} Kubernetes version must be #{KUBERNETES_VERSION}" unless oracle["kubernetes_version"] == KUBERNETES_VERSION
@@ -1293,7 +1293,7 @@ module M2Gate
         errors << "#{label} provenance explicitly locked CNI identity is required"
       end
       trace = oracle["trace"]
-      if trace.is_a?(Array) && valid_digest?(oracle["canonical_trace_sha256"]) && !(oracle["canonical_trace_sha256"] == canonical_document_digest(trace))
+      if trace.is_a?(Array) && valid_digest?(oracle["canonical_trace_sha256"]) && oracle["canonical_trace_sha256"] != canonical_document_digest(trace)
         errors << "#{label} canonical trace SHA-256 does not match trace"
       end
       %w[input_sha256 fixture_sha256 timeline_sha256 raw_trace_sha256 canonical_trace_sha256 request_seed_sha256].each do |key|
@@ -1982,7 +1982,7 @@ module M2Gate
         errors << "#{label} actual Native workload must use clone3" unless actual_workload["creation_method"] == "clone3"
         errors << "#{label} actual Native workload must have CLONE_PIDFD and CLONE_NEWPID" unless
           integer?(actual_workload["clone_flags"]) &&
-          (actual_workload["clone_flags"] & (CLONE_PIDFD | CLONE_NEWPID)) == (CLONE_PIDFD | CLONE_NEWPID)
+          actual_workload["clone_flags"].allbits?((CLONE_PIDFD | CLONE_NEWPID))
         unless valid_digest?(actual_workload["executable_digest"].to_s.delete_prefix("sha256:"))
           errors << "#{label} actual Native workload executable digest is invalid"
         end
@@ -2041,7 +2041,7 @@ module M2Gate
       validate_inventory_duplicates(at_kill, "#{label} kernel inventory at kill", errors)
       errors << "#{label} kernel inventory_at_kill digest is required" unless
         valid_digest?(observer["inventory_at_kill_sha256"])
-      if valid_digest?(observer["inventory_at_kill_sha256"]) && !(observer["inventory_at_kill_sha256"] == canonical_document_digest(at_kill))
+      if valid_digest?(observer["inventory_at_kill_sha256"]) && observer["inventory_at_kill_sha256"] != canonical_document_digest(at_kill)
         errors << "#{label} kernel inventory_at_kill digest does not match"
       end
 
@@ -2109,7 +2109,7 @@ module M2Gate
         required_namespace_flags = CLONE_PIDFD | CLONE_NEWNS | CLONE_NEWPID
         errors << "#{label} namespace holder must be created by clone3 with namespace flags and pidfd" unless
           victim_namespace&.dig("metadata", "creation_method") == "clone3" && integer?(namespace_flags) &&
-          (namespace_flags & required_namespace_flags) == required_namespace_flags
+          namespace_flags.allbits?(required_namespace_flags)
       end
 
       before = Array(entry["inventory_before"])
@@ -2209,7 +2209,7 @@ module M2Gate
           errors << "#{label} active kernel observation is required" unless non_empty_string?(object["active"])
           errors << "#{label} must come from production Native adapters" unless object["measurement_source"] == "production_native_adapter"
           errors << "#{label} active_sha256 is required" unless valid_digest?(object["active_sha256"])
-          if valid_digest?(object["active_sha256"]) && non_empty_string?(object["active"]) && !(object["active_sha256"] == Digest::SHA256.hexdigest(object["active"]))
+          if valid_digest?(object["active_sha256"]) && non_empty_string?(object["active"]) && object["active_sha256"] != Digest::SHA256.hexdigest(object["active"])
             errors << "#{label} active_sha256 does not match"
           end
         end
@@ -2228,7 +2228,7 @@ module M2Gate
               required_workload_flags = CLONE_PIDFD | CLONE_NEWPID
               errors << "kernel inventory profile #{index} actual workload must use clone3 with CLONE_PIDFD and CLONE_NEWPID" unless
                 child["creation_method"] == "clone3" && integer?(flags) &&
-                (flags & required_workload_flags) == required_workload_flags
+                flags.allbits?(required_workload_flags)
             rescue JSON::ParserError, KeyError => error
               errors << "kernel inventory profile #{index} actual workload security evidence is invalid: #{error.message}"
             end

@@ -395,7 +395,7 @@ class StreamingProtocolsTest < Minitest::Test
 
       assert_match(/ 101 /, head)
       client = WebSocket::Connection.new(socket, client: true)
-      announcements = 2.times.map { client.read_message.payload }
+      announcements = Array.new(2) { client.read_message.payload }
 
       assert_equal ["\x00\x50\x00".b, "\x01\x50\x00".b], announcements.sort
       client.write_message("\x00hi".b)

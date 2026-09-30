@@ -86,8 +86,8 @@ module Rubernetes
           when Array
             value.map { |child| sort_keys(child, max_depth: max_depth, depth: depth + 1) }
           when Hash
-            value.keys.sort_by(&:to_s).each_with_object({}) do |key, sorted|
-              sorted[key.to_s] = sort_keys(value[key], max_depth: max_depth, depth: depth + 1)
+            value.keys.sort_by(&:to_s).to_h do |key|
+              [key.to_s, sort_keys(value[key], max_depth: max_depth, depth: depth + 1)]
             end
           else
             value

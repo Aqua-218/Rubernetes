@@ -56,7 +56,7 @@ class DeviceCgroupKernelTest < Minitest::Test
         File.write("/dev/null", "discard")
         zero = File.binread("/dev/zero", 4)
         File.binread("/dev/urandom", 4)
-        File.open("/dev/ptmx", "r+") { |ptmx| ptmx.fileno }
+        File.open("/dev/ptmx", "r+", &:fileno)
         writer.write(zero.unpack1("H*"))
         writer.close
         exit!(0)

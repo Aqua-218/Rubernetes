@@ -88,7 +88,7 @@ module Rubernetes
       end
 
       # endpointslicemirroring/metrics Cache (process-wide).
-      ENDPOINTS_CACHE = {}
+      ENDPOINTS_CACHE = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache)
       ENDPOINTS_CACHE_MUTEX = Mutex.new
 
       # reconcile: addresses skipped, endpoints added / updated / removed,
@@ -276,7 +276,7 @@ module Rubernetes
         ports = Array(Support.value(endpoints, "subsets", [])).flat_map do |subset|
           Array(Support.value(subset, "ports", []))
         end.uniq { |port| Support.canonical(port) }
-        ports.map do |port|
+        ports.filter_map do |port|
           result = {}
           name = Support.value(port, "name", nil)
           result["name"] = name.to_s unless name.to_s.empty?
@@ -287,7 +287,7 @@ module Rubernetes
           result
         rescue ArgumentError
           nil
-        end.compact
+        end
       end
 
       def preserve_metadata(current, candidate)

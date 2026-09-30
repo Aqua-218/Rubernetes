@@ -197,7 +197,7 @@ module Rubernetes
       end
 
       def fsync_directory(directory)
-        File.open(directory, File::RDONLY) { |file| file.fsync }
+        File.open(directory, File::RDONLY, &:fsync)
       rescue Errno::EINVAL, Errno::ENOTSUP, Errno::EOPNOTSUPP => error
         raise StoreError.new("filesystem cannot durably sync content store directory: #{directory}", cause: error), cause: error
       rescue SystemCallError => error

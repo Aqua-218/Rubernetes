@@ -141,7 +141,7 @@ class NodeDeclaredFeaturesTest < Minitest::Test
   end
 
   def test_gate_only_discovery
-    NDF::Features::ALL.reject { |feature| feature.is_a?(NDF::Features::UserNamespacesHostNetwork) }.each do |feature|
+    NDF::Features::ALL.grep_v(NDF::Features::UserNamespacesHostNetwork).each do |feature|
       assert feature.discover(NDF::NodeConfiguration.new(feature_gates: {feature.name => true})), feature.name
       refute feature.discover(NDF::NodeConfiguration.new(feature_gates: {feature.name => false})), feature.name
     end

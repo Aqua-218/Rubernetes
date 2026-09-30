@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 require "digest"
 require "base64"
 require "fileutils"
@@ -330,8 +331,8 @@ module Rubernetes
       end
 
       # PVC resize statuses (v1.ClaimResourceStatus) and conditions.
-      NODE_RESIZE_PENDING = "NodeResizePending"
-      NODE_RESIZE_IN_PROGRESS = "NodeResizeInProgress"
+      NODE_RESIZE_PENDING = "NodeResizePending".freeze
+      NODE_RESIZE_IN_PROGRESS = "NodeResizeInProgress".freeze
       RESIZE_CONDITIONS = %w[Resizing FileSystemResizePending ControllerResizeError NodeResizeError].freeze
 
       # The kubelet's in-use expansion (desired state populator
@@ -643,7 +644,7 @@ module Rubernetes
         File.binread("/proc/self/mountinfo").each_line.any? do |line|
           next false unless line.include?(needle)
 
-          line.split(" ")[4].to_s.gsub(/\\([0-7]{3})/) { ::Regexp.last_match(1).to_i(8).chr } == normalized
+          line.split[4].to_s.gsub(/\\([0-7]{3})/) { ::Regexp.last_match(1).to_i(8).chr } == normalized
         end
       rescue SystemCallError
         false
@@ -658,7 +659,7 @@ module Rubernetes
 
         prefix = "#{directory}/"
         File.foreach("/proc/self/mountinfo").any? do |line|
-          mountpoint = line.split(" ")[4].to_s.gsub(/\\([0-7]{3})/) { ::Regexp.last_match(1).to_i(8).chr }
+          mountpoint = line.split[4].to_s.gsub(/\\([0-7]{3})/) { ::Regexp.last_match(1).to_i(8).chr }
           mountpoint == directory || mountpoint.start_with?(prefix)
         end
       rescue SystemCallError

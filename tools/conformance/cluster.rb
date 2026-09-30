@@ -223,7 +223,7 @@ module Conformance
     rescue StandardError => error
       report = {"schema_version" => 1, "kind" => "conformance_cluster", "passed" => false,
                 "detail" => "#{error.class}: #{error.message}",
-                "logs" => Dir[File.join(options.fetch(:root), "**", "*.log")].sort.last(12)}
+                "logs" => Dir[File.join(options.fetch(:root), "**", "*.log")].last(12)}
       puts JSON.pretty_generate(report)
       down(options)
       1
@@ -505,7 +505,7 @@ module Conformance
     def unmount_stale_mounts(root)
       prefix = "#{File.expand_path(root)}/"
       targets = File.readlines("/proc/self/mountinfo").filter_map do |line|
-        fields = line.split(" ")
+        fields = line.split
         target = fields[4].to_s.gsub(/\\(\d{3})/) { ::Regexp.last_match(1).to_i(8).chr }
         target if target.start_with?(prefix)
       end

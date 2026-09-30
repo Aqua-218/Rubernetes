@@ -38,7 +38,7 @@ module M5RaftCluster
       command = [RbConfig.ruby, WORKER, "--id", @id, "--cluster", @cluster, "--data", @data, "--pki", File.join(@pki, @id),
                  "--listen", "127.0.0.1:0", "--voters", @voters.join(","), "--control", @control, "--journal", @journal,
                  "--timing", JSON.generate(@timing)]
-      command.concat(["--peers", peers.map { |id, address| "#{id}=#{address}" }.join(",")]) unless peers.empty?
+      command.push("--peers", peers.map { |id, address| "#{id}=#{address}" }.join(",")) unless peers.empty?
       reader, writer = IO.pipe
       @pid = Process.spawn(*command, out: writer, err: File.join(@root, "worker-#{@id}.log"))
       writer.close

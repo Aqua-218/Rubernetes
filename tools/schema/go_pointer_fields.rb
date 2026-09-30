@@ -106,7 +106,7 @@ module GoPointerFields
     registry = Rubernetes::Schema::Codec::ProtoDescriptor::Registry.load(CORPUS.join("protobuf").to_s)
     table = {}
     SOURCE_PACKAGES.each do |relative, proto_prefix|
-      Dir.glob(source.join(relative, "**", "types*.go").to_s).sort.each do |path|
+      Dir.glob(source.join(relative, "**", "types*.go").to_s).each do |path|
         directory = Pathname.new(path).dirname
         suffix = directory.relative_path_from(source.join(relative)).to_s
         package = suffix == "." ? proto_prefix : "#{proto_prefix}.#{suffix.tr("/", ".").tr("-", "_")}"
@@ -141,7 +141,7 @@ module GoPointerFields
   end
 
   def self.lower_camel(name)
-    name.sub(/\A[A-Z]+(?=[A-Z][a-z]|\z)/) { |prefix| prefix.downcase }.sub(/\A[A-Z]/) { |first| first.downcase }
+    name.sub(/\A[A-Z]+(?=[A-Z][a-z]|\z)/, &:downcase).sub(/\A[A-Z]/, &:downcase)
   end
 
   # Returns struct name => {pointer:, zero:, inline:} where +pointer+ and

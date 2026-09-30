@@ -126,7 +126,7 @@ end
 
 class NativeImageRuntimeIntegrationTest < Minitest::Test
   Native = Rubernetes::Runtime::Native
-  DIGEST = "sha256:#{"b" * 64}"
+  DIGEST = "sha256:#{"b" * 64}".freeze
 
   class FakeResolver
     attr_reader :references, :released

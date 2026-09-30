@@ -203,7 +203,7 @@ module Rubernetes
           resource = Resource.new(kind: resource_kind, id: resource_id,
                                   identity: resource_identity, owner: operation.owner,
                                   state: "Owned", metadata: Canonical.immutable(metadata),
-                                  sequence: @resources.values.map(&:sequence).compact.max.to_i + 1)
+                                  sequence: @resources.values.filter_map(&:sequence).max.to_i + 1)
           updated = update_operation(operation, resources: (operation.resources + [resource_key]).uniq)
           append!(operation.id, "resource_claimed", resource.to_h)
           append!(operation.id, "operation_resources", updated.to_h)
@@ -310,7 +310,7 @@ module Rubernetes
       def active_resource_keys(operation_id)
         @mutex.synchronize do
           operation = operation!(operation_id)
-          operation.resources.select { |resource_key| @resources.fetch(resource_key).state != "Released" }.freeze
+          operation.resources.reject { |resource_key| @resources.fetch(resource_key).state == "Released" }.freeze
         end
       end
 

@@ -672,9 +672,9 @@ module Rubernetes
               image["rootfs"] = image_mount_path(image.fetch("digest")) if image["digest"]
             end
             if translated["resolved_images"]
-              translated["lowerdirs"] = Array(translated["resolved_images"]).map do |image|
+              translated["lowerdirs"] = Array(translated["resolved_images"]).filter_map do |image|
                 image["rootfs"]
-              end.compact
+              end
             end
             translated
           end
@@ -984,8 +984,8 @@ module Rubernetes
           def mount(source, target, type, options = nil)
             FileUtils.mkdir_p(target)
             arguments = ["mount", "-t", type]
-            arguments.concat(["-o", options]) if options
-            arguments.concat([source, target])
+            arguments.push("-o", options) if options
+            arguments.push(source, target)
             system(*arguments, out: File::NULL, err: File::NULL)
           end
 

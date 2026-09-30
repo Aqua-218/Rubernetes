@@ -205,7 +205,7 @@ module Rubernetes
             thread = Thread.new(socket) { |client| serve(client) }
             thread.name = "raft-inbound-#{@node_id}"
             @inbound_threads << thread
-            @inbound_threads.reject! { |candidate| !candidate.alive? }
+            @inbound_threads.select!(&:alive?)
           end
         end
 

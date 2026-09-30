@@ -168,7 +168,7 @@ module Rubernetes
         module_function
 
         def for_hash(policy_name, default_cpu_set, entries, type_name: "CPUManagerCheckpoint", pod_entries: :absent)
-          rendered_entries = spew_map(entries) { |containers| spew_map(containers) { |cpus| cpus.to_s } }
+          rendered_entries = spew_map(entries) { |containers| spew_map(containers, &:to_s) }
           pods = ""
           unless pod_entries == :absent
             rendered = spew_map(pod_entries || {}) { |entry| "{CPUSet:(cpuset.CPUSet)#{spew_cpuset(entry["cpuSet"])}}" }

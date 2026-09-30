@@ -362,7 +362,7 @@ module M1ProbeSupport
   # immutable inventory.
   def canonical_discovery_documents(root = ROOT)
     discovery_root = File.join(root, "schema/kubernetes/v1.36.2/discovery")
-    Dir.glob(File.join(discovery_root, "*.json")).sort.filter_map do |path|
+    Dir.glob(File.join(discovery_root, "*.json")).filter_map do |path|
       basename = File.basename(path, ".json")
       endpoint = case basename
                  when "api"
@@ -615,7 +615,7 @@ module M1ProbeSupport
     # autoscaling/v1/.../scale).  Resource metadata intentionally stores the
     # parent group, so materialize any alternate GVR identity from the
     # authoritative registry inventory before producing the matrix.
-    by_id = rows.each_with_object({}) { |row, result| result[surface_identifier(row)] = row }
+    by_id = rows.to_h { |row| [surface_identifier(row), row] }
     Array(registry_document.fetch("gvrs", [])).each do |gvr|
       group = gvr.fetch("group", "").to_s
       version = gvr.fetch("version").to_s

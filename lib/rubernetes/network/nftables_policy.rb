@@ -429,7 +429,7 @@ module Rubernetes
         end
         missing = desired_rules.keys - actual_rules.keys
         extra = actual_rules.keys - desired_rules.keys
-        changed = (actual_rules.keys & desired_rules.keys).select { |marker| actual_rules[marker] != desired_rules[marker] }
+        changed = (actual_rules.keys & desired_rules.keys).reject { |marker| actual_rules[marker] == desired_rules[marker] }
         first = changed.first
         detail = if first
                    actual_entry = actual.fetch("rules").find { |entry| entry["marker"] == first }

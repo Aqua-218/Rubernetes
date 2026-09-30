@@ -30,7 +30,7 @@ end
 def m4_mountinfo_line(pid, target)
   escaped = target.to_s.gsub("\\", "\\\\").gsub(" ", "\\040").gsub("\t", "\\011")
   m4_read_mountinfo(pid).find do |line|
-    fields = line.split(" - ", 2).first.to_s.split(" ")
+    fields = line.split(" - ", 2).first.to_s.split
     fields.length >= 5 && fields[4] == escaped
   end
 end
@@ -487,7 +487,7 @@ M4ProbeSupport.run_report(kind: "m4_mount_attack_corpus", adapter_name: "mount-a
   security_class = M4ProbeSupport.constant("Rubernetes::Volume::PathSecurity")
   manager_class = M4ProbeSupport.constant("Rubernetes::Volume::Manager")
   adapter_class = M4ProbeSupport.constant("Rubernetes::Volume::FilesystemAdapter")
-  unless [security_class, manager_class, adapter_class].all? { |klass| klass.is_a?(Class) }
+  unless [security_class, manager_class, adapter_class].all?(Class)
     errors << "production volume path-security and attach state modules are unavailable"
     next {"measurement_source" => "missing_production_module", "cases" => []}
   end
@@ -525,7 +525,7 @@ M4ProbeSupport.run_report(kind: "m4_mount_attack_corpus", adapter_name: "mount-a
       end
     end
     threads.each(&:join)
-    results = 2.times.map { race_results.pop }
+    results = Array.new(2) { race_results.pop }
     attached = results.count { |entry| entry[1] == :attached }
     blocked = results.count { |entry| entry[1] == :blocked }
     outcomes["attach_race"] = attached == 1 && blocked == 1

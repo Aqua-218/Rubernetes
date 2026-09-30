@@ -235,7 +235,7 @@ class RuntimeLedgerInertOperationsTest < Minitest::Test
     reopened = Native::OwnershipLedger.new(journal: Native::RollbackJournal.new(@path, fsync: false))
     ids = reopened.operations.map { |operation| operation[:id] }
 
-    assert_equal 10.times.map { |index| "live-#{index}" } + ["empty"], ids
+    assert_equal Array.new(10) { |index| "live-#{index}" } + ["empty"], ids
     assert_equal live_resources, reopened.resources(include_released: false)
     assert reopened.operations.all? { |operation| operation[:state] == "New" }, "live operations keep their state"
     lines = File.readlines(@path)

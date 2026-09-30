@@ -202,7 +202,7 @@ module Rubernetes
         else
           source_files = profile["source_files"]
           errors << "source_files must exactly match the selected formal source files" unless source_files == source_manifest["files"]
-          if M2Gate::SHA256_PATTERN.match?(profile["source_sha256"].to_s) && !(profile["source_sha256"] == source_manifest["sha256"])
+          if M2Gate::SHA256_PATTERN.match?(profile["source_sha256"].to_s) && profile["source_sha256"] != source_manifest["sha256"]
             errors << "source_sha256 does not match the selected formal source files"
           end
         end
@@ -224,7 +224,7 @@ module Rubernetes
           errors << "#{label} name is required" unless non_empty_string?(tool["name"])
           if non_empty_string?(tool["name"])
             errors << "#{label} name is not an approved formal tool" unless FORMAL_TOOL_NAMES.include?(tool["name"])
-            errors << "#{label} name is duplicated" if tool_declarations.any? { |record| record == tool["name"] }
+            errors << "#{label} name is duplicated" if tool_declarations.any?(tool["name"])
             tool_declarations << tool["name"]
           end
           if tool["skip"] == true || tool["skipped"] == true || tool["ruby_only"] == true || tool["available"] == false
@@ -237,9 +237,9 @@ module Rubernetes
           validate_tool_declaration(tool, label, errors, source_manifest)
         end
         errors << "profile_sha256 is required" unless M2Gate::SHA256_PATTERN.match?(profile["profile_sha256"].to_s)
-        if M2Gate::SHA256_PATTERN.match?(profile["profile_sha256"].to_s) && !(profile["profile_sha256"] == M2Gate.canonical_document_digest(
+        if M2Gate::SHA256_PATTERN.match?(profile["profile_sha256"].to_s) && profile["profile_sha256"] != M2Gate.canonical_document_digest(
           profile, excluded_keys: ["profile_sha256"]
-        ))
+        )
           errors << "profile_sha256 does not match profile content"
         end
         return profile_failure("invalid_schema", errors.join("; ")) unless errors.empty?
@@ -335,12 +335,12 @@ module Rubernetes
                  else []
                  end
         source_manifest.fetch("files", []).select { |entry| labels.include?(entry["label"]) }
-          .each_with_object({}) do |entry, bindings|
-            bindings[entry.fetch("label")] = {
+          .to_h do |entry|
+          [entry.fetch("label"), {
               "path" => entry.fetch("path"),
               "sha256" => entry.fetch("sha256")
-            }
-          end
+            }]
+        end
       end
 
       def execute_profile_tools(tools, source_manifest)
@@ -549,18 +549,18 @@ module Rubernetes
 
       def property_results(trace, tla, lean, external_profile)
         {
-          "tla" => FORMAL_PROPERTY_BINDINGS.fetch("tla").each_with_object({}) do |property, results|
-            results[property] = {"success" => tla["success"] == true, "binding" => source_display_path(@tla_config)}
-          end,
-          "lean" => FORMAL_PROPERTY_BINDINGS.fetch("lean").each_with_object({}) do |property, results|
-            results[property] = {"success" => lean["success"] == true, "binding" => source_display_path(@lean_source)}
-          end,
-          "ruby" => FORMAL_PROPERTY_BINDINGS.fetch("ruby").each_with_object({}) do |property, results|
-            results[property] = {"success" => trace["success"] == true, "binding" => source_display_path(RUBY_TRACE_SOURCE)}
-          end,
-          "external" => FORMAL_TOOL_NAMES.each_with_object({}) do |tool, results|
-            results[tool] = {"success" => external_profile["success"] == true, "binding" => "external_proof_profile"}
-          end
+          "tla" => FORMAL_PROPERTY_BINDINGS.fetch("tla").to_h do |property|
+                     [property, {"success" => tla["success"] == true, "binding" => source_display_path(@tla_config)}]
+                   end,
+          "lean" => FORMAL_PROPERTY_BINDINGS.fetch("lean").to_h do |property|
+                      [property, {"success" => lean["success"] == true, "binding" => source_display_path(@lean_source)}]
+                    end,
+          "ruby" => FORMAL_PROPERTY_BINDINGS.fetch("ruby").to_h do |property|
+                      [property, {"success" => trace["success"] == true, "binding" => source_display_path(RUBY_TRACE_SOURCE)}]
+                    end,
+          "external" => FORMAL_TOOL_NAMES.to_h do |tool|
+                          [tool, {"success" => external_profile["success"] == true, "binding" => "external_proof_profile"}]
+                        end
         }
       end
 

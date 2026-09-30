@@ -64,7 +64,7 @@ module Rubernetes
           pidfd_storage[0, 4] = [-1].pack("l")
           fields = [
             args.flags,
-            (args.flags & CLONE_PIDFD).zero? ? 0 : pidfd_storage.to_i,
+            args.flags.nobits?(CLONE_PIDFD) ? 0 : pidfd_storage.to_i,
             0,
             0,
             args.exit_signal,
@@ -82,7 +82,7 @@ module Rubernetes
           raise Linux::Error.new(errno: result.errno, operation: "clone3", resource_id: resource_id) if result.value == -1
 
           child = result.value.zero?
-          pidfd = child || (args.flags & CLONE_PIDFD).zero? ? nil : pidfd_storage[0, 4].unpack1("l")
+          pidfd = child || args.flags.nobits?(CLONE_PIDFD) ? nil : pidfd_storage[0, 4].unpack1("l")
           Result.new(pid: Integer(result.value), pidfd: pidfd, child: child)
         end
       end

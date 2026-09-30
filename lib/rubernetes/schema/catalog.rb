@@ -635,7 +635,7 @@ module Rubernetes
         end
 
         def normalize_subresources(value)
-          unless value.is_a?(Array) && value.all? { |entry| entry.is_a?(Hash) }
+          unless value.is_a?(Array) && value.all?(Hash)
             raise InvalidCatalogError, "resource subresources must be an array of objects"
           end
 

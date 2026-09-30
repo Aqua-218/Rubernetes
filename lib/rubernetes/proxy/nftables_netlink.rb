@@ -1748,7 +1748,7 @@ module Rubernetes
       def receive_acknowledgements(socket, sequences:)
         pending = sequences.to_h { |sequence| [sequence, false] }
         deadline = monotonic_now + @timeout
-        while pending.values.any? { |acknowledged| !acknowledged }
+        while pending.values.any?(&:!)
           buffer = receive_bytes(socket, deadline: deadline, operation: "nftables ACK")
           parse_messages(buffer).each do |message|
             next unless pending.key?(message.sequence)
@@ -1959,7 +1959,7 @@ module Rubernetes
           length, type = buffer.byteslice(offset, 4).unpack("S<S<")
           raise NftablesNetlinkError, "nftables attribute has invalid length #{length}" if length < 4 || offset + length > buffer.bytesize
 
-          values << {"type" => type & NLA_TYPE_MASK, "nested" => (type & NLA_F_NESTED).positive?,
+          values << {"type" => type & NLA_TYPE_MASK, "nested" => type.anybits?(NLA_F_NESTED),
                      "value" => buffer.byteslice(offset + 4, length - 4).to_s}
           offset += align(length)
         end

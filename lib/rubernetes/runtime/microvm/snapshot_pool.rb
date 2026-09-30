@@ -61,7 +61,7 @@ module Rubernetes
             path = File.join(staging, name)
             File.chown(0, 0, path)
             File.chmod(0o644, path)
-            File.open(path, File::RDONLY) { |file| file.fsync }
+            File.open(path, File::RDONLY, &:fsync)
           end
           manifest = {
             "schema_version" => 1,
@@ -76,10 +76,10 @@ module Rubernetes
             "files" => {MEM => file_record(File.join(staging, MEM)), VMSTATE => file_record(File.join(staging, VMSTATE))}
           }
           File.write(File.join(staging, MANIFEST), JSON.pretty_generate(manifest) + "\n")
-          File.open(File.join(staging, MANIFEST), File::RDONLY) { |file| file.fsync }
+          File.open(File.join(staging, MANIFEST), File::RDONLY, &:fsync)
           FileUtils.mkdir_p(File.dirname(directory), mode: 0o700)
           File.rename(staging, directory)
-          File.open(File.dirname(directory), File::RDONLY) { |dir| dir.fsync }
+          File.open(File.dirname(directory), File::RDONLY, &:fsync)
           Base.new(id: id, runtime_class: runtime_class, directory: directory, manifest: manifest)
         end
 

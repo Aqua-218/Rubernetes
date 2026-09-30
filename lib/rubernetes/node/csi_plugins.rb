@@ -178,7 +178,7 @@ module Rubernetes
       private
 
       def highest_supported_version(name, versions)
-        candidates = Array(versions).map(&:to_s).select { |version| version.sub(/\Av/, "").split(".").first == "1" }
+        candidates = Array(versions).map(&:to_s).select { |version| version.delete_prefix('v').split(".").first == "1" }
         if candidates.empty?
           raise Error,
                 "RegisterPlugin error -- none of the versions specified #{Array(versions).inspect} are supported by CSI driver #{name}; supported: 1.x"
@@ -188,7 +188,7 @@ module Rubernetes
       end
 
       def compare_versions(left, right)
-        parse = ->(value) { value.to_s.sub(/\Av/, "").split(".").map(&:to_i) }
+        parse = ->(value) { value.to_s.delete_prefix('v').split(".").map(&:to_i) }
         parse.call(left) <=> parse.call(right)
       end
 

@@ -398,7 +398,7 @@ module Rubernetes
           type = schema["type"]
           return type_invalid(causes, path, value, type) if type && !type_matches?(type, value)
 
-          if schema["enum"] && !schema["enum"].any? { |allowed| allowed == value }
+          if schema["enum"] && schema["enum"].none?(value)
             supported = schema["enum"].map { |allowed| allowed.is_a?(String) ? go_quote(allowed) : go_quote(JSON.generate(allowed)) }
             add(causes, path, "Unsupported value: #{render_value(value)}: supported values: #{supported.join(", ")}",
                 "FieldValueNotSupported")

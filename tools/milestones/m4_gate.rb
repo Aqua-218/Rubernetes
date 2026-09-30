@@ -793,7 +793,7 @@ module M4Gate
           entry.is_a?(Hash) && entry["passed"] == true && VALID_VOLUME_MEASUREMENT_SOURCES.include?(entry["measurement_source"]) && entry["attempt_count"] == 1
         validate_volume_component_source(entry, errors, "volume kind #{index}") if entry.is_a?(Hash)
       end
-      access_modes = Array(document["access_modes"]).map { |value| value.to_s }.sort
+      access_modes = Array(document["access_modes"]).map(&:to_s).sort
       errors << "volume lifecycle must cover all access modes" unless access_modes == REQUIRED_VOLUME_ACCESS_MODES.sort
       stages = Array(document["stages"]).filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["stage"]) : nil }
       errors << "volume lifecycle must cover attach/mount/unmount/detach" unless stages.sort == REQUIRED_VOLUME_STAGES.sort
@@ -998,7 +998,7 @@ module M4Gate
     end
 
     def node_crash_mountinfo_matches_identity?(identity)
-      fields = identity["mountinfo_line"].to_s.split(" - ", 2).first.to_s.split(" ")
+      fields = identity["mountinfo_line"].to_s.split(" - ", 2).first.to_s.split
       return false unless fields.length >= 6
 
       mountpoint = fields[4].gsub(/\\([0-7]{3})/) { Regexp.last_match(1).to_i(8).chr }
@@ -1538,7 +1538,7 @@ module M4Gate
 
       path = packet["path"] || packet["capture_path"]
       unless non_empty_string?(path) && !path.start_with?("/") && !path.include?("\0") &&
-             !path.split("/").any? { |segment| ["", ".", ".."].include?(segment) }
+             path.split("/").none? { |segment| ["", ".", ".."].include?(segment) }
         errors << "#{label} packet trace must use a normalized bundle-relative path"
         return
       end

@@ -32,7 +32,7 @@ module M8ProbeSupport
 
   # Every conformance run manifest under the run root, newest first.
   def run_manifests
-    Dir.glob(File.join(RUN_ROOT, "*", "manifest.json")).sort.reverse.filter_map do |path|
+    Dir.glob(File.join(RUN_ROOT, "*", "manifest.json")).reverse.filter_map do |path|
       document = begin
         JSON.parse(File.read(path))
       rescue StandardError

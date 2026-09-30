@@ -407,7 +407,7 @@ class M4ProxyTest < Minitest::Test
     }
     @proxy.apply_service(service)
     @proxy.apply_endpoint_slice(slice)
-    destinations = 20.times.map do |index|
+    destinations = Array.new(20) do |index|
       @proxy.route({"sourceIP" => "198.51.100.#{index + 1}", "sourcePort" => index + 1,
                     "destinationIP" => "10.96.0.31", "destinationPort" => 80, "zone" => "zone-a"}).address
     end
@@ -423,7 +423,7 @@ class M4ProxyTest < Minitest::Test
                  "ports" => [{"port" => 53, "targetPort" => 5353, "nodePort" => 30_053, "protocol" => "UDP"}]}
     )
     rules = Rubernetes::Proxy::RuleCompiler.new(local_node: "node-a").compile(service, endpoints: []).rules
-    health = rules.find { |rule| rule.health_check }
+    health = rules.find(&:health_check)
 
     assert_equal "TCP", health.protocol
     assert_equal 30_090, health.port

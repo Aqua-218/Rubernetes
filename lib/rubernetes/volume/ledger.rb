@@ -295,7 +295,7 @@ module Rubernetes
         end
 
         def legacy_identity
-          [mount_id, filesystem_uuid, device_id, target].map { |value| value.to_s }.join("/")
+          [mount_id, filesystem_uuid, device_id, target].map(&:to_s).join("/")
         end
 
         def identity
@@ -391,7 +391,7 @@ module Rubernetes
       end
 
       def entries
-        @mutex.synchronize { Types.deep_freeze(@mounts.values.map { |mount| mount.to_h }) }
+        @mutex.synchronize { Types.deep_freeze(@mounts.values.map(&:to_h)) }
       end
 
       # Drops every record whose target is `path`.  Used when an abandoned

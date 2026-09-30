@@ -100,7 +100,7 @@ module Rubernetes
           return nil if first.nil?
 
           word = first.unpack1("N")
-          if (word & 0x80000000).zero?
+          if word.nobits?(0x80000000)
             read_data_frame(word & 0x7fffffff)
           else
             version = (word >> 16) & 0x7fff
@@ -193,7 +193,7 @@ module Rubernetes
         def read_data_frame(stream_id)
           flags, length = read_flags_and_length
           data = length.zero? ? "".b : read_exact(length)
-          Data.new(stream_id: stream_id, data: data, fin: (flags & FLAG_FIN) != 0)
+          Data.new(stream_id: stream_id, data: data, fin: flags.anybits?(FLAG_FIN))
         end
 
         def read_flags_and_length
@@ -211,13 +211,13 @@ module Rubernetes
             stream_id, associated = payload.unpack("NN")
             priority = payload.getbyte(8) >> 5
             SynStream.new(stream_id: stream_id & 0x7fffffff, associated_stream_id: associated & 0x7fffffff, priority: priority,
-                          headers: decompress_headers(payload.byteslice(10..)), fin: (flags & FLAG_FIN) != 0,
-                          unidirectional: (flags & FLAG_UNIDIRECTIONAL) != 0)
+                          headers: decompress_headers(payload.byteslice(10..)), fin: flags.anybits?(FLAG_FIN),
+                          unidirectional: flags.anybits?(FLAG_UNIDIRECTIONAL))
           when TYPE_SYN_REPLY
             raise ProtocolError, "short SYN_REPLY" if payload.bytesize < 4
 
             SynReply.new(stream_id: payload.unpack1("N") & 0x7fffffff, headers: decompress_headers(payload.byteslice(4..)),
-                         fin: (flags & FLAG_FIN) != 0)
+                         fin: flags.anybits?(FLAG_FIN))
           when TYPE_RST_STREAM
             raise ProtocolError, "short RST_STREAM" if payload.bytesize < 8
 
@@ -246,7 +246,7 @@ module Rubernetes
             raise ProtocolError, "short HEADERS" if payload.bytesize < 4
 
             HeadersFrame.new(stream_id: payload.unpack1("N") & 0x7fffffff, headers: decompress_headers(payload.byteslice(4..)),
-                             fin: (flags & FLAG_FIN) != 0)
+                             fin: flags.anybits?(FLAG_FIN))
           when TYPE_WINDOW_UPDATE
             raise ProtocolError, "short WINDOW_UPDATE" if payload.bytesize < 8
 

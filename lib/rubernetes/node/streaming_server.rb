@@ -830,7 +830,7 @@ module Rubernetes
 
         cmd = request.respond_to?(:query_value) ? request.query_value("cmd").to_s : ""
         container = await_container(namespace, pod, CGI.unescape(match[:container]), follow: false)
-        result = @exec_service.exec(container, command: cmd.split(" "), tty: false, stdin: false,
+        result = @exec_service.exec(container, command: cmd.split, tty: false, stdin: false,
                                                stdout: true, stderr: true, identity: "node-streaming")
         output = exec_body(result).map(&:to_s).join
         [200, {"content-type" => "application/json"}, [output]]

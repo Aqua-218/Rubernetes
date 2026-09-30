@@ -26,7 +26,7 @@ module KubernetesOpenAPIV3Importer
 
   def sort_keys(value)
     case value
-    when Hash then value.keys.sort.each_with_object({}) { |key, hash| hash[key] = sort_keys(value[key]) }
+    when Hash then value.keys.sort.to_h { |key| [key, sort_keys(value[key])] }
     when Array then value.map { |item| sort_keys(item) }
     else value
     end

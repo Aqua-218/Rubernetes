@@ -50,7 +50,7 @@ class RcStatusNeverAheadOfPodsTest < Minitest::Test
   end
 
   def test_a_sync_with_nothing_to_change_writes_one_status
-    existing = 2.times.map do |index|
+    existing = Array.new(2) do |index|
       {"apiVersion" => "v1", "kind" => "Pod",
        "metadata" => {"name" => "rc-#{index}", "namespace" => "ns", "uid" => "p#{index}", "labels" => {"app" => "a"},
                       "ownerReferences" => [{"apiVersion" => "v1", "kind" => "ReplicationController", "name" => "rc",

@@ -36,7 +36,7 @@ class VolumeRecordFilesTest < Minitest::Test
 
       store["vol-7"] = record("vol-7", state: "Staged")
       after = snapshot("#{path}.d")
-      changed = after.keys.select { |name| after[name] != before[name] }
+      changed = after.keys.reject { |name| after[name] == before[name] }
 
       assert_equal 1, changed.length, "only vol-7's record file is replaced"
       refute_path_exists path, "no single all-records file is written"

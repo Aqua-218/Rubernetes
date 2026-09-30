@@ -362,7 +362,7 @@ module Rubernetes
                              confirm_stopped: nil, force: false, **options)
         sandbox_hash, config_hash = normalize_request(sandbox, config, options)
         sandbox_id = sandbox_hash.fetch("sandbox_id")
-        confirmed = [stopped, process_stopped, confirm_stopped].compact.any? { |value| value == true }
+        confirmed = [stopped, process_stopped, confirm_stopped].compact.any?(true)
         raise OwnershipError, "network delete requires explicit process-stop confirmation" unless confirmed
 
         operation_id = @mutex.synchronize do
@@ -994,15 +994,15 @@ module Rubernetes
       end
 
       def merge_resources(current, additions)
-        (Array(current) + Array(additions)).each_with_object({}) do |resource, result|
-          result[[resource.fetch("kind"), resource.fetch("id"), resource.fetch("identity")]] = resource
+        (Array(current) + Array(additions)).to_h do |resource|
+          [[resource.fetch("kind"), resource.fetch("id"), resource.fetch("identity")], resource]
         end.values.freeze
       end
 
       def build_result(operation_id, sandbox_id, leases, plan)
         lease_values = leases ? leases.map(&:to_h) : []
         ips = lease_values.map { |entry| entry.fetch("ip") }
-        routes = plan.operations.select { |operation| operation.action == "route_add" }.map { |operation| operation.parameters }
+        routes = plan.operations.select { |operation| operation.action == "route_add" }.map(&:parameters)
         {"sandbox_id" => sandbox_id, "operation_id" => operation_id, "ip" => (ips.length == 1 ? ips.first : ips),
          "ips" => ips, "leases" => lease_values, "routes" => routes, "mtu" => plan.mtu,
          "backend" => plan.backend, "interface" => Support.fetch(plan.metadata, "host_ifname", default: nil),

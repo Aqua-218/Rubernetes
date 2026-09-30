@@ -571,7 +571,7 @@ module M1KubernetesSemanticOracle
 
   def validation_registration(source_root:, go_package:, go_type:)
     package_root = ::File.join(source_root, "staging/src", go_package)
-    validation_paths = Dir.glob(::File.join(package_root, "**/zz_generated.validations.go")).sort
+    validation_paths = Dir.glob(::File.join(package_root, "**/zz_generated.validations.go"))
     pattern = /AddValidationFunc\(\(\*#{Regexp.escape(go_type)}\)\(nil\)/
     matching_paths = validation_paths.select do |path|
       ::File.read(path).match?(pattern)

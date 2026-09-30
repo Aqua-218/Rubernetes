@@ -644,7 +644,7 @@ class M3SchedulerTest < Minitest::Test
                                                                        "creationTimestamp" => timestamp}))
     end
 
-    assert_equal(%w[high-old high-new low], 3.times.map { queue.pop.pod.name })
+    assert_equal(%w[high-old high-new low], Array.new(3) { queue.pop.pod.name })
 
     pending = pod("default-bind")
     result = Scheduler.new(preemption: false).schedule(pending, [node("bound-node")])

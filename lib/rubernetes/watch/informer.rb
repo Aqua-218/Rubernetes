@@ -62,7 +62,7 @@ module Rubernetes
       def on(event = nil, &handler)
         raise ArgumentError, "event handler block is required" unless handler
 
-        events = event.nil? ? EVENT_TYPES : Array(event).map { |value| value.to_sym }
+        events = event.nil? ? EVENT_TYPES : Array(event).map(&:to_sym)
         unknown = events.reject { |name| EVENT_TYPES.include?(name) }
         raise ArgumentError, "unknown informer event #{unknown.first.inspect}" unless unknown.empty?
 

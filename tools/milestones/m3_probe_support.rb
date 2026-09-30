@@ -115,7 +115,7 @@ module M3ProbeSupport
       # absent. Unrelated optional packages must not mask that diagnosis.
     end
     %w[network service storage].each do |directory|
-      Dir.glob(File.join(ROOT, "lib", "rubernetes", directory, "*.rb")).sort.each do |path|
+      Dir.glob(File.join(ROOT, "lib", "rubernetes", directory, "*.rb")).each do |path|
         require path
       rescue LoadError, NameError
         # Probe-specific production availability is checked below.

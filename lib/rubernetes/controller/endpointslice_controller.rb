@@ -80,7 +80,7 @@ module Rubernetes
       # and the slices an ideal packing needs, and its trafficDistribution;
       # the gauges are the sums (process-wide, as the plan and orphan paths
       # use separate instances).
-      SERVICE_CACHE = {}
+      SERVICE_CACHE = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache)
       SERVICE_CACHE_MUTEX = Mutex.new
       TRAFFIC_DISTRIBUTIONS = %w[PreferClose PreferSameZone PreferSameNode].freeze
 

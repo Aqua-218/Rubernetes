@@ -28,7 +28,7 @@ module Rubernetes
       rescue ArgumentError => error
         # A small number of test/third-party adapters expose a positional
         # request object. Retry only when the signature proves that shape.
-        raise error unless kwargs.any? && !method.parameters.any? { |kind, _| %i[keyreq keyrest key].include?(kind) }
+        raise error unless kwargs.any? && method.parameters.none? { |kind, _| %i[keyreq keyrest key].include?(kind) }
 
         method.call(*args, kwargs)
       end
@@ -456,7 +456,7 @@ module Rubernetes
                 "snapshot content file set changed for #{volume_id}: missing #{missing.inspect}, unexpected #{extra.inspect}"
         end
 
-        corrupted = actual.select { |relative, digest| expected.fetch(relative).to_s != digest }.keys
+        corrupted = actual.reject { |relative, digest| expected.fetch(relative).to_s == digest }.keys
         raise SnapshotIntegrityError, "snapshot content digest mismatch for #{volume_id}: #{corrupted.inspect}" unless corrupted.empty?
 
         true

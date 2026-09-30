@@ -806,7 +806,7 @@ module Rubernetes
 
       # [group, resource] of a storage key or prefix.
       def self.group_resource(key)
-        parts = key.to_s.sub(%r{\A/}, "").split("/", 5)
+        parts = key.to_s.delete_prefix('/').split("/", 5)
         return ["", parts[2].to_s].freeze if parts[1].to_s.match?(/\Av\d/)
 
         [parts[1].to_s, parts[3].to_s].freeze
@@ -1280,9 +1280,9 @@ module Rubernetes
             "revision" => @revision,
             "compacted_revision" => @compacted_revision,
             "known_keys" => @known_keys.keys.sort,
-            "versions" => @versions.keys.sort.each_with_object({}) do |key, output|
-              output[key] = @versions[key].map { |(revision, object)| [revision, object] }
-            end,
+            "versions" => @versions.keys.sort.to_h do |key|
+                            [key, @versions[key].map { |(revision, object)| [revision, object] }]
+                          end,
             "history" => @history.map do |mutation|
               {"type" => mutation.type.to_s, "key" => mutation.key, "revision" => mutation.revision,
                "object" => mutation.object, "old_object" => mutation.old_object, "timestamp" => mutation.timestamp}
@@ -2135,7 +2135,7 @@ module Rubernetes
 
       # "registry/<resource>" for a key or prefix; nil when it is shorter.
       def resource_bucket(key)
-        parts = key.to_s.sub(%r{\A/}, "").split("/", 3)
+        parts = key.to_s.delete_prefix('/').split("/", 3)
         return nil if parts.length < 2 || parts[1].empty?
 
         "#{parts[0]}/#{parts[1]}"
@@ -2350,7 +2350,7 @@ module Rubernetes
       # group (the version segment is "__stored__" for custom resources).
       def group_resource(key)
         cache = (@group_resources ||= {})
-        parts = key.to_s.sub(%r{\A/}, "").split("/", 5)
+        parts = key.to_s.delete_prefix('/').split("/", 5)
         cache[parts.first(4)] ||= self.class.group_resource(key)
       end
 

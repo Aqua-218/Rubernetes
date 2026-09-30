@@ -22,7 +22,7 @@ module M4NetworkKernelProbe
     interface_class = M4ProbeSupport.constant("Rubernetes::Network::Interface")
     bridge_manager_class = M4ProbeSupport.constant("Rubernetes::Network::BridgeManager")
     classes = [netlink_class, observer_class, ipam_class, topology_class, interface_class, bridge_manager_class]
-    unless classes.all? { |klass| klass.is_a?(Class) }
+    unless classes.all?(Class)
       errors << "production network netlink, observer, IPAM, topology, interface, and bridge manager are unavailable"
       return empty_result("missing_production_module")
     end
@@ -39,7 +39,7 @@ module M4NetworkKernelProbe
     namespace_leases = []
     results = []
     begin
-      keepers = 2.times.map { spawn_namespace_keeper }
+      keepers = Array.new(2) { spawn_namespace_keeper }
       contexts = keepers.map { |pid| namespace_context(pid) }
       namespace_leases = contexts.map do |context|
         Rubernetes::Network::Netlink::NamespaceLease.open(context.fetch("netns"))

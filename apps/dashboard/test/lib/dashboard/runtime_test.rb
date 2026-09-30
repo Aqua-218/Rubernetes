@@ -18,7 +18,7 @@ class Dashboard::RuntimeTest < ActiveSupport::TestCase
       assert_same runtime.store, runtime.engine.store
       assert_same runtime.scraper, collector.scraper
       # Concurrent first access yields one store, never two writers.
-      threads = 8.times.map { Thread.new { runtime.store } }
+      threads = Array.new(8) { Thread.new { runtime.store } }
 
       assert_equal 1, threads.map(&:value).uniq.length
       assert_kind_of Prom::Rules, runtime.rules

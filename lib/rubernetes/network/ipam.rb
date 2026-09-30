@@ -224,7 +224,7 @@ module Rubernetes
             return lease_set_for(existing.fetch("lease_keys"), operation_id: operation, sandbox_id: sandbox, pod_uid: pod)
           end
           sandbox_operation = find_operation(operation_id: nil, sandbox_id: sandbox)
-          if sandbox_operation && ACTIVE_STATES.include?(sandbox_operation.fetch("state")) && !(sandbox_operation.fetch("operation_id") == operation)
+          if sandbox_operation && ACTIVE_STATES.include?(sandbox_operation.fetch("state")) && sandbox_operation.fetch("operation_id") != operation
             raise OperationConflict,
                   "sandbox #{sandbox.inspect} already owns IPAM operation #{sandbox_operation.fetch("operation_id")}"
           end
@@ -333,7 +333,7 @@ module Rubernetes
         operation ||= lease_or_set.respond_to?(:operation_id) && lease_or_set.operation_id
         operation ||= find_operation(operation_id: nil, sandbox_id: sandbox_id)&.fetch("operation_id", nil)
         operation = Support.identifier(operation, "operation_id")
-        confirmed = [stopped, process_stopped, confirm_stopped, stop_confirmed].compact.any? { |value| value == true }
+        confirmed = [stopped, process_stopped, confirm_stopped, stop_confirmed].compact.any?(true)
         # `force` is retained for API compatibility, but cannot establish that
         # the old sandbox process has stopped. Reuse must remain fail-closed.
         raise LeaseStateError, "IP release requires explicit process-stop confirmation" unless confirmed

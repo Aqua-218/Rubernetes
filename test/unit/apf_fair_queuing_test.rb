@@ -42,7 +42,7 @@ class APFFairQueuingTest < Minitest::Test
     holder = set.start_request(work: work, hash_value: hash_for_queue(0), distinguisher: "a", flow_schema: "fs")
 
     assert_equal :execute, holder.decision
-    flood = 3.times.map { set.start_request(work: work, hash_value: hash_for_queue(0), distinguisher: "a", flow_schema: "fs") }
+    flood = Array.new(3) { set.start_request(work: work, hash_value: hash_for_queue(0), distinguisher: "a", flow_schema: "fs") }
     quiet = set.start_request(work: work, hash_value: hash_for_queue(1), distinguisher: "b", flow_schema: "fs")
 
     assert_equal 4, set.total_waiting
@@ -216,7 +216,7 @@ class APFFairQueuingTest < Minitest::Test
 
   def test_mutating_work_follows_the_interested_watchers
     subject = estimator(max_seats: 10)
-    forgets = 25.times.map { @watches.register(attributes(verb: "watch", namespace: "")) }
+    forgets = Array.new(25) { @watches.register(attributes(verb: "watch", namespace: "")) }
     forgets << @watches.register(attributes(verb: "watch", namespace: "ns"))
     forgets << @watches.register(attributes(verb: "watch", namespace: "other"))
     forgets << @watches.register(attributes(verb: "watch", namespace: "", field_selector: "spec.nodeName=n1"),

@@ -48,7 +48,7 @@ module Rubernetes
           }
           path = File.join(destination, MANIFEST)
           File.write(path, JSON.pretty_generate(manifest) << "\n")
-          File.open(path) { |file| file.fsync }
+          File.open(path, &:fsync)
           manifest
         ensure
           storage.close
@@ -91,7 +91,7 @@ module Rubernetes
                      File.join(data_directory, "wal", name)
                    end
           FileUtils.cp(source, target)
-          File.open(target) { |handle| handle.fsync }
+          File.open(target, &:fsync)
         end
         storage = Storage.new(data_directory, recover_torn_tail: false)
         begin

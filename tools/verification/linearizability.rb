@@ -175,7 +175,7 @@ module Linearizability
           return {linearizable: true, "order" => order.map { |id| by_id[id].input.merge("id" => id) }, "explored" => @explored}
         end
 
-        minimal_return = remaining.select { |op| op.status != "info" }.map(&:return_time).min || Float::INFINITY
+        minimal_return = remaining.reject { |op| op.status == "info" }.map(&:return_time).min || Float::INFINITY
         candidates = remaining.select { |op| op.invoke_time <= minimal_return }
         candidates.each do |op|
           next_state, expected = @model.step(state, op.input)

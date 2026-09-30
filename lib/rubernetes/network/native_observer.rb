@@ -241,7 +241,7 @@ module Rubernetes
             "index" => index,
             "name" => name,
             "flags" => flags,
-            "up" => (flags & Netlink::IFF_UP).positive?,
+            "up" => flags.anybits?(Netlink::IFF_UP),
             "mac" => address && format_mac(address),
             "master" => master,
             "mtu" => mtu
@@ -271,8 +271,8 @@ module Rubernetes
             "state" => "observed",
             "metadata" => {"netns_inode" => namespace_inode, "ifindex" => index, "ifname" => link.fetch("name"),
                            "address" => ip, "prefix" => prefix, "family" => family_name(family), "flags" => flags,
-                           "tentative" => (flags & Netlink::IFA_F_TENTATIVE).positive?,
-                           "dad_failed" => (flags & Netlink::IFA_F_DADFAILED).positive?}
+                           "tentative" => flags.anybits?(Netlink::IFA_F_TENTATIVE),
+                           "dad_failed" => flags.anybits?(Netlink::IFA_F_DADFAILED)}
           }
         end
       end

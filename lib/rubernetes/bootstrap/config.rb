@@ -1217,9 +1217,7 @@ module Rubernetes
           reject_unknown_keys!(admission, ADMISSION_KEYS, "#{context}.admission")
           %w[enable disable].each do |key|
             next unless admission.key?(key)
-            next if admission[key].is_a?(Array) && admission[key].all? do |name|
-              name.is_a?(String)
-            end
+            next if admission[key].is_a?(Array) && admission[key].all?(String)
 
             raise Error,
                   "#{context}.admission.#{key} must be a list of plugin names"

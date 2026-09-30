@@ -608,7 +608,7 @@ module Rubernetes
         end
         stale = existing.select do |candidate|
           managed_route?(candidate) &&
-            !desired.any? { |route| route_identity(route) == route_identity(candidate) }
+            desired.none? { |route| route_identity(route) == route_identity(candidate) }
         end
         stale.each do |route|
           call_provider(cloud, %i[delete_route remove_route], positional: [node, route],

@@ -40,7 +40,7 @@ class LifecyclePersistGroupCommitTest < Minitest::Test
     records = subject.instance_variable_get(:@records)
     mutex = subject.instance_variable_get(:@mutex)
     persisted_after_return = Queue.new
-    threads = 20.times.map do |i|
+    threads = Array.new(20) do |i|
       Thread.new do
         mutex.synchronize { records["uid-#{i}"] = {uid: "uid-#{i}", state: "Running"} }
         subject.send(:persist_state!)

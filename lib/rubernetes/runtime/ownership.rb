@@ -90,7 +90,7 @@ module Rubernetes
       end
 
       def records
-        @mutex.synchronize { @records.map { |record| record.to_h }.freeze }
+        @mutex.synchronize { @records.map(&:to_h).freeze }
       end
 
       alias entries records

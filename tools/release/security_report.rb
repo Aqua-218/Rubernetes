@@ -47,7 +47,7 @@ module Release
       # bundler-audit may be installed into the Ruby prefix rather than onto
       # PATH, so the prefix's bin directory is searched too.
       binary = ENV["RUBERNETES_BUNDLER_AUDIT"] ||
-               %w[bundler-audit bundle-audit].map { |name| which(name) }.compact.first ||
+               %w[bundler-audit bundle-audit].filter_map { |name| which(name) }.first ||
                %w[bundler-audit bundle-audit]
                  .map { |name| File.join(RbConfig::CONFIG["bindir"], name) }
                  .find { |path| File.executable?(path) }
@@ -87,7 +87,7 @@ module Release
     # Locks must pin by digest or commit, never by a floating tag alone.
     def pinned_inputs
       unpinned = []
-      Dir.glob(File.join(ROOT, "third_party/locks/*.json")).sort.each do |path|
+      Dir.glob(File.join(ROOT, "third_party/locks/*.json")).each do |path|
         document = begin
           JSON.parse(File.read(path))
         rescue StandardError
@@ -130,7 +130,7 @@ module Release
     def unresolved_markers
       markers = []
       %w[lib exe ext].each do |root|
-        Dir.glob(File.join(ROOT, root, "**", "*.rb")).sort.each do |path|
+        Dir.glob(File.join(ROOT, root, "**", "*.rb")).each do |path|
           File.readlines(path, chomp: true).each_with_index do |line, index|
             next unless line.match?(/\b(TODO|FIXME|XXX|HACK)\b/)
             next if line.match?(/\b\d{4}-\d{2}-\d{2}\b/)

@@ -1726,7 +1726,7 @@ module Rubernetes
         if require_real_readback == true && mount_adapter.nil? && adapter.nil?
           raise MountIdentityError, "real mount readback requires an explicitly injected mount adapter"
         end
-        if require_real_readback == true && [mount_adapter, adapter].compact.any? { |candidate| candidate.is_a?(FilesystemAdapter) }
+        if require_real_readback == true && [mount_adapter, adapter].compact.any?(FilesystemAdapter)
           raise MountIdentityError, "real mount readback cannot use the in-memory FilesystemAdapter"
         end
 
@@ -2593,7 +2593,7 @@ module Rubernetes
       def reconcile_missing_mounts(missing, errors:)
         outcomes = []
         entries = Array(missing).map { |entry| entry.respond_to?(:to_h) ? entry.to_h.transform_keys(&:to_s) : entry }
-        entries = entries.select { |entry| entry.is_a?(Hash) }
+        entries = entries.grep(Hash)
         # Publishes ride on stages, stages on the source: retract in that order.
         rank = lambda { |entry|
           if entry["owner"].to_s.start_with?("pod:")

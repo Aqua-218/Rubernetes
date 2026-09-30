@@ -249,7 +249,7 @@ module Rubernetes
       end
 
       def replace_service_ports(service, allocated)
-        by_key = allocated.each_with_object({}) { |reservation, result| result[[reservation.port, reservation.protocol]] = reservation }
+        by_key = allocated.to_h { |reservation| [[reservation.port, reservation.protocol], reservation] }
         ports = service.ports.map do |service_port|
           reservation = by_key[[service_port.port, service_port.protocol]]
           ServicePort.new(name: service_port.name, port: service_port.port, target_port: service_port.target_port,

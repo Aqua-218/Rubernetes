@@ -119,7 +119,7 @@ module Rubernetes
           missing.each { |name| @missing_nodes[name] ||= now }
           @missing_nodes.select { |name, since| now - since >= QUARANTINE_TIME && missing.include?(name) }.keys
         end
-        deleted.select! { |name| !node_exists?(adapter, name) }
+        deleted.reject! { |name| node_exists?(adapter, name) }
         pods.select { |pod| deleted.include?(Support.value(Support.spec(pod), "nodeName", "").to_s) }
       end
 

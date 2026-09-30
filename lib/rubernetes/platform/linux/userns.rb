@@ -164,7 +164,7 @@ module Rubernetes
               file.fsync
             end
             File.rename(temporary, @path)
-            File.open(File.dirname(@path), File::RDONLY) { |directory| directory.fsync }
+            File.open(File.dirname(@path), File::RDONLY, &:fsync)
             true
           rescue SystemCallError => error
             raise Error, "user namespace allocation file could not be persisted: #{error.message}"

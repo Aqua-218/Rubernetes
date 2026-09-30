@@ -1219,7 +1219,7 @@ module Rubernetes
           end
         end
         placements = %w[nodeName nodeSelector allNodes perDeviceNodeSelection]
-        present = placements.select { |name| !fetch(spec, name).nil? }
+        present = placements.reject { |name| fetch(spec, name).nil? }
         if present.empty?
           issues << issue(%w[spec], :required,
                           "exactly one of `nodeName`, `nodeSelector`, `allNodes`, `perDeviceNodeSelection` is required")
@@ -1714,7 +1714,7 @@ module Rubernetes
           # normal resource create/update strategies do not validate them.
           next if path.include?("status")
 
-          present = PROBE_HANDLERS.select { |name| !fetch(value, name).nil? }
+          present = PROBE_HANDLERS.reject { |name| fetch(value, name).nil? }
           next if present.empty?
 
           if present.length > 1
@@ -1871,7 +1871,7 @@ module Rubernetes
 
       def downward_api_volume_context?(path)
         path.any? { |segment| segment.to_s == "downwardAPI" } ||
-          (path.any? { |segment| segment.to_s == "volumes" } && !path.any? { |segment| segment.to_s == "env" })
+          (path.any? { |segment| segment.to_s == "volumes" } && path.none? { |segment| segment.to_s == "env" })
       end
 
       # The core Pod validator owns a large family of value-typed helper
@@ -1985,7 +1985,7 @@ module Rubernetes
             items = fetch(value, "items")
             if !path.include?("projected") && items.is_a?(Array) && !items.empty?
               invalid_item = items.any? do |item|
-                item.is_a?(Hash) && !%w[fieldRef resourceFieldRef].any? { |name| fetch(item, name).is_a?(Hash) }
+                item.is_a?(Hash) && %w[fieldRef resourceFieldRef].none? { |name| fetch(item, name).is_a?(Hash) }
               end
               issues << issue(path, :required, "one of fieldRef and resourceFieldRef is required") if invalid_item
             end
@@ -4690,7 +4690,7 @@ module Rubernetes
         requests.each do |request|
           next unless request.is_a?(Hash)
 
-          subrequests = Array(fetch(request, "firstAvailable")).select { |sub| sub.is_a?(Hash) }
+          subrequests = Array(fetch(request, "firstAvailable")).grep(Hash)
           request_names[fetch(request, "name").to_s] = subrequests.map { |sub| fetch(sub, "name").to_s }
         end
         issues << issue(path + ["requests"], :too_many, "must have at most 32 items") if requests.length > 32
@@ -5151,7 +5151,7 @@ module Rubernetes
             end
           end
         end
-        encodings = entries.select { |entry| entry.is_a?(Hash) }.map { |entry| fetch(entry, "encodingVersion").to_s }
+        encodings = entries.grep(Hash).map { |entry| fetch(entry, "encodingVersion").to_s }
         actual_common = encodings.empty? || encodings.uniq.length != 1 ? nil : encodings.first
         common = fetch(status, "commonEncodingVersion")
         if actual_common.nil? && !common.nil?

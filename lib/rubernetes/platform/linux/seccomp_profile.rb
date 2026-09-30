@@ -330,7 +330,7 @@ module Rubernetes
               when BPF_JMP_JGE_K
                 pc += 1 + (accumulator >= k ? jt : jf)
               when BPF_JMP_JSET_K
-                pc += 1 + ((accumulator & k) == 0 ? jf : jt)
+                pc += 1 + (accumulator.nobits?(k) ? jf : jt)
               when BPF_RET_K
                 return k
               else

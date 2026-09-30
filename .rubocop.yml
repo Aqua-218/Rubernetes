@@ -87,3 +87,33 @@ Minitest/TestMethodName:
   Enabled: false
 Minitest/AssertTruthy:
   Enabled: true
+
+# Cops whose autocorrect assumes concrete core types.  This tree passes
+# duck-typed collections (Array/Headers/ListType where a Hash is expected,
+# CPUSet where an Array is, String or nil where a number is) and custom
+# exception constructors; batch-applying these on 2026-09-30 produced 249
+# test failures (each_key on Array, zero? on String, intersect? on CPUSet,
+# raise with three arguments).  They stay off rather than parked.
+Style/HashEachMethods:
+  Enabled: false
+Style/NumericPredicate:
+  Enabled: false
+Style/ArrayIntersect:
+  Enabled: false
+Style/HashExcept:
+  Enabled: false
+Style/HashSlice:
+  Enabled: false
+Style/RaiseArgs:
+  Enabled: false
+Style/SafeNavigation:
+  Enabled: false
+Style/DoubleNegation:
+  Enabled: false
+Style/StringConcatenation:
+  Enabled: false
+# assert_equal true / refute_equal false assert an exact boolean on purpose.
+Minitest/AssertTruthy:
+  Enabled: false
+Minitest/RefuteFalse:
+  Enabled: false

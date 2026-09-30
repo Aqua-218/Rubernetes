@@ -287,8 +287,8 @@ module Rubernetes
           when "startsWith" then string_target(target).start_with?(string_argument(arguments, 0))
           when "endsWith" then string_target(target).end_with?(string_argument(arguments, 0))
           when "matches" then matches?(string_target(target), string_argument(arguments, 0))
-          when "lowerAscii" then string_target(target).gsub(/[A-Z]/) { |c| c.downcase }
-          when "upperAscii" then string_target(target).gsub(/[a-z]/) { |c| c.upcase }
+          when "lowerAscii" then string_target(target).gsub(/[A-Z]/, &:downcase)
+          when "upperAscii" then string_target(target).gsub(/[a-z]/, &:upcase)
           when "trim" then string_target(target).strip
           when "replace"
             text = string_target(target)

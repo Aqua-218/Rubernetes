@@ -49,7 +49,7 @@ class ConsensusGroupCommitTest < Minitest::Test
       leader = servers.values.find(&:leader?)
       leader.node.singleton_class.prepend(FlushCounter)
       results = Queue.new
-      threads = 16.times.map do |index|
+      threads = Array.new(16) do |index|
         Thread.new { results << leader.propose(command(index)) }
       end
       threads.each(&:join)

@@ -196,7 +196,7 @@ module Prom
         return 64 if value.zero?
 
         count = 0
-        count += 1 while ((value >> count) & 1).zero?
+        count += 1 while (value >> count).nobits?(1)
         count
       end
     end
@@ -262,7 +262,7 @@ module Prom
       loop do
         byte = reader.read_bits(8)
         value |= (byte & 0x7F) << shift
-        break if (byte & 0x80).zero?
+        break if byte.nobits?(0x80)
 
         shift += 7
       end

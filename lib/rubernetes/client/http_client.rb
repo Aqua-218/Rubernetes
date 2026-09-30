@@ -539,7 +539,7 @@ module Rubernetes
         end
         result["Accept"] = "application/json" unless result.keys.any? { |key| key.casecmp?("Accept") }
         result["User-Agent"] = @user_agent unless @user_agent.empty? || result.keys.any? { |key| key.casecmp?("User-Agent") }
-        result["Content-Type"] = "application/json" if body && !result.keys.any? { |key| key.casecmp?("Content-Type") }
+        result["Content-Type"] = "application/json" if body && result.keys.none? { |key| key.casecmp?("Content-Type") }
         unless result.keys.any? { |key| key.casecmp?("Authorization") }
           token = context_value(:bearer_token) || context_value(:token)
           result["Authorization"] = "Bearer #{token}" if token && !token.to_s.empty?
@@ -1038,8 +1038,8 @@ module Rubernetes
           file.binmode
           stat = file.stat
           raise ConfigurationError, "#{label} file must be a regular file: #{path}" unless stat.file?
-          raise ConfigurationError, "#{label} file has no read permission: #{path}" if (stat.mode & 0o444).zero?
-          if sensitive && (stat.mode & 0o077).positive?
+          raise ConfigurationError, "#{label} file has no read permission: #{path}" if stat.mode.nobits?(0o444)
+          if sensitive && stat.mode.anybits?(0o077)
             raise ConfigurationError, "#{label} file must not grant permissions to group or other users: #{path}"
           end
 

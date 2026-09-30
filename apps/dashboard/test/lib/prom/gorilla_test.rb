@@ -13,7 +13,7 @@ class Prom::GorillaTest < ActiveSupport::TestCase
 
   test "roundtrips regular scrape data compactly" do
     t0 = 1_700_000_000_000
-    samples = 240.times.map { |i| [t0 + (i * 15_000) + (i % 7 == 0 ? 3 : 0), 1000.0 + i] }
+    samples = Array.new(240) { |i| [t0 + (i * 15_000) + (i % 7 == 0 ? 3 : 0), 1000.0 + i] }
     bytes, decoded = roundtrip(samples)
 
     assert_equal samples, decoded

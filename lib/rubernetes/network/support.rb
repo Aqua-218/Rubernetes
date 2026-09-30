@@ -82,7 +82,7 @@ module Rubernetes
             string = key.to_s
             by_string[string] = child unless by_string.key?(string)
           end
-          by_string.keys.sort.each_with_object({}) { |key, result| result[key] = canonical(by_string[key]) }
+          by_string.keys.sort.to_h { |key| [key, canonical(by_string[key])] }
         when Array
           value.map { |child| canonical(child) }
         when IPAddr

@@ -18,7 +18,7 @@ $LOAD_PATH.unshift(File.join(ROOT, "build/ext/rubernetes_linux"))
 $LOAD_PATH.unshift(File.join(ROOT, "test"))
 $LOAD_PATH.unshift(File.join(ROOT, "lib"))
 
-files = Dir.glob(File.join(ROOT, "test/**/*_test.rb")).sort
+files = Dir.glob(File.join(ROOT, "test/**/*_test.rb"))
 files.each { |path| load(path) }
 
 identities = Minitest::Runnable.runnables.flat_map do |runnable|

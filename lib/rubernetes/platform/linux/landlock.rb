@@ -177,7 +177,7 @@ module Rubernetes
 
         def add_path_rule(ruleset, path_fd:, allowed_access:, resource_id: "landlock:path")
           rights = Integer(allowed_access)
-          unless (rights & ~ruleset.handled_access_fs).zero?
+          unless rights.nobits?(~ruleset.handled_access_fs)
             raise ArgumentError, "path rights must be a subset of the ruleset handled rights"
           end
 

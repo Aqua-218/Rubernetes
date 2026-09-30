@@ -287,7 +287,7 @@ module Rubernetes
           return false if result > MAX_INT64
 
           if format == :binary_si
-            (exponent % 10).zero? && (magnitude & 0x07) != 0
+            (exponent % 10).zero? && magnitude.anybits?(0x07)
           else
             (scale % 3).zero? && !digits.end_with?("000") && digits[0] != "0"
           end

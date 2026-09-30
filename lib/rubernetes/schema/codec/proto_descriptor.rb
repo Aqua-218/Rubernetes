@@ -178,8 +178,8 @@ module Rubernetes
             @full_name = String(full_name).freeze
             @package = String(package || "").freeze
             @values = values.sort_by(&:number).freeze
-            @values_by_name = values.each_with_object({}) { |value, result| result[value.name] = value }.freeze
-            @values_by_number = values.each_with_object({}) { |value, result| result[value.number] = value }.freeze
+            @values_by_name = values.to_h { |value| [value.name, value] }.freeze
+            @values_by_number = values.to_h { |value| [value.number, value] }.freeze
             @parent = parent
             @options = (options || {}).transform_keys(&:to_s).freeze
             freeze
@@ -212,9 +212,9 @@ module Rubernetes
             @full_name = String(full_name).freeze
             @package = String(package || "").freeze
             @fields = fields.sort_by(&:number).freeze
-            @fields_by_name = fields.each_with_object({}) { |field, result| result[field.name] = field }.freeze
-            @fields_by_json_name = fields.each_with_object({}) { |field, result| result[field.json_name] = field }.freeze
-            @fields_by_number = fields.each_with_object({}) { |field, result| result[field.number] = field }.freeze
+            @fields_by_name = fields.to_h { |field| [field.name, field] }.freeze
+            @fields_by_json_name = fields.to_h { |field| [field.json_name, field] }.freeze
+            @fields_by_number = fields.to_h { |field| [field.number, field] }.freeze
             @nested_messages = nested_messages.freeze
             @enums = enums.freeze
             @parent = parent
@@ -438,7 +438,7 @@ module Rubernetes
                           when 34 then '"'
                           when 39 then "'"
                           when 120
-                            hex = 2.times.map { advance_char }.join
+                            hex = Array.new(2) { advance_char }.join
                             raise ParseError, "invalid hex escape" unless hex.match?(/\A[0-9a-fA-F]{2}\z/)
 
                             hex.to_i(16).chr(Encoding::BINARY)
@@ -827,7 +827,7 @@ module Rubernetes
           end
 
           def parse_qualified_name
-            parse_type_name.sub(/\A\./, "")
+            parse_type_name.delete_prefix('.')
           end
 
           def parse_field_number
@@ -900,7 +900,7 @@ module Rubernetes
           end
 
           def scalar_type?(type)
-            SCALAR_TYPES.include?(type.to_s.sub(/\A\./, ""))
+            SCALAR_TYPES.include?(type.to_s.delete_prefix('.'))
           end
 
           def option_value(options, key)
@@ -974,7 +974,7 @@ module Rubernetes
           end
 
           def fetch(key, *args, &block)
-            return unknown_fields if %w[unknown_fields unknownFields __protobuf_unknown_fields__].include?(key.to_s) && !args.any? && !block
+            return unknown_fields if %w[unknown_fields unknownFields __protobuf_unknown_fields__].include?(key.to_s) && args.none? && !block
 
             super
           end
@@ -1115,7 +1115,7 @@ module Rubernetes
             return nil if name.nil?
 
             value = name.to_s
-            @messages[value] || @messages[value.sub(/\A\./, "")] ||
+            @messages[value] || @messages[value.delete_prefix('.')] ||
               @messages[openapi_to_proto(value)] || resolve_gvk_string(value)
           end
 
@@ -1437,7 +1437,7 @@ module Rubernetes
           end
 
           def resolve_name_uncached(reference, current_message)
-            value = String(reference).sub(/\A\./, "")
+            value = String(reference).delete_prefix('.')
             return value if @messages.key?(value) || @enums.key?(value)
 
             ancestors = []
@@ -1496,7 +1496,7 @@ module Rubernetes
 
             # OpenAPI uses Go import-path package spelling, while protoc turns
             # hyphens in those package segments into underscores.
-            "k8s.io.#{value.sub(/\Aio\.k8s\./, "").tr("-", "_")}"
+            "k8s.io.#{value.delete_prefix('io.k8s.').tr("-", "_")}"
           end
 
           def descriptor_paths(path)

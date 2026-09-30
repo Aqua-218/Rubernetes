@@ -62,7 +62,7 @@ module Rubernetes
         # An object's managedFields come back on nearly every write, so the
         # same few sets are decoded again and again; sets never change, so
         # an unchanged set also encodes to the object it was read from.
-        SETS = {}
+        SETS = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache)
         SETS_LIMIT = 8192
         ENCODED = ObjectSpace::WeakMap.new
         CACHE_LOCK = Mutex.new

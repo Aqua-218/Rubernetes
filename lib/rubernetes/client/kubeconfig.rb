@@ -198,8 +198,8 @@ module Rubernetes
           raise ConfigurationError, "#{label} must be a regular file: #{path}" unless stat.file?
 
           mode = stat.mode & 0o777
-          raise ConfigurationError, "#{label} has no read permission: #{path}" if (mode & 0o444).zero?
-          raise ConfigurationError, "#{label} must not grant permissions to group or other users: #{path}" if (mode & 0o077).positive?
+          raise ConfigurationError, "#{label} has no read permission: #{path}" if mode.nobits?(0o444)
+          raise ConfigurationError, "#{label} must not grant permissions to group or other users: #{path}" if mode.anybits?(0o077)
 
           content = file.read(limit + 1)
           raise ConfigurationError, "#{label} exceeds #{limit} bytes: #{path}" if content.bytesize > limit
@@ -471,8 +471,8 @@ module Rubernetes
           raise ConfigurationError, "kubeconfig #{field} must be a regular file" unless stat.file?
 
           mode = stat.mode & 0o777
-          raise ConfigurationError, "kubeconfig #{field} has no read permission" if (mode & 0o444).zero?
-          raise ConfigurationError, "kubeconfig #{field} must not be readable by group or other users" if (mode & 0o077).positive?
+          raise ConfigurationError, "kubeconfig #{field} has no read permission" if mode.nobits?(0o444)
+          raise ConfigurationError, "kubeconfig #{field} must not be readable by group or other users" if mode.anybits?(0o077)
 
           value = file.read(MAX_TOKEN_FILE_BYTES + 1)
           raise ConfigurationError, "kubeconfig #{field} exceeds #{MAX_TOKEN_FILE_BYTES} bytes" if value.bytesize > MAX_TOKEN_FILE_BYTES

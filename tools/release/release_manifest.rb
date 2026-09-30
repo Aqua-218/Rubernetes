@@ -57,7 +57,7 @@ module Release
         },
         "artifacts" => options[:artifacts].map { |path| artifact_entry(path) },
         "sbom" => artifact_entry(File.join(ROOT, "artifacts/release/sbom.cdx.json")),
-        "pinned_inputs" => Dir.glob(File.join(ROOT, "third_party/locks/*.json")).sort.map { |path| artifact_entry(path) },
+        "pinned_inputs" => Dir.glob(File.join(ROOT, "third_party/locks/*.json")).map { |path| artifact_entry(path) },
         "evidence" => options[:evidence].transform_values { |path| artifact_entry(path) },
         "source_inventory" => inventory
       }

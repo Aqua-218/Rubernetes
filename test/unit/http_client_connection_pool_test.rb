@@ -70,7 +70,7 @@ class HTTPClientConnectionPoolTest < Minitest::Test
   end
 
   def test_connections_are_shared_across_threads_and_bounded_by_concurrency
-    threads = 4.times.map { Thread.new { 10.times { @client.request("GET", "/api/v1/namespaces") } } }
+    threads = Array.new(4) { Thread.new { 10.times { @client.request("GET", "/api/v1/namespaces") } } }
     threads.each(&:join)
     first_wave = FakeNetHTTP.starts
 
@@ -78,14 +78,14 @@ class HTTPClientConnectionPoolTest < Minitest::Test
     assert_equal 40, FakeNetHTTP.requests
 
     # A second wave of new threads reuses the idle connections of the first.
-    4.times.map { Thread.new { 10.times { @client.request("GET", "/api/v1/namespaces") } } }.each(&:join)
+    Array.new(4) { Thread.new { 10.times { @client.request("GET", "/api/v1/namespaces") } } }.each(&:join)
 
     assert_equal first_wave, FakeNetHTTP.starts
     assert_operator pool_size, :<=, Rubernetes::Client::HTTPClient::POOL_MAX_IDLE_PER_SERVER
   end
 
   def test_idle_pool_is_bounded
-    threads = 20.times.map { Thread.new { @client.request("GET", "/api/v1/namespaces") } }
+    threads = Array.new(20) { Thread.new { @client.request("GET", "/api/v1/namespaces") } }
     threads.each(&:join)
 
     assert_operator pool_size, :<=, Rubernetes::Client::HTTPClient::POOL_MAX_IDLE_PER_SERVER

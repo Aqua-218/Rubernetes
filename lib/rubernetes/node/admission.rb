@@ -555,7 +555,7 @@ module Rubernetes
 
       def normalize_runtime_classes(classes, handlers)
         values = if classes.is_a?(Array)
-                   classes.each_with_object({}) { |entry, output| output[Support.value(entry, "name", entry).to_s] = entry }
+                   classes.to_h { |entry| [Support.value(entry, "name", entry).to_s, entry] }
                  else
                    Support.object_hash(classes || {})
                  end

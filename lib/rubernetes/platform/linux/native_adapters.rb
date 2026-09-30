@@ -1034,7 +1034,7 @@ module Rubernetes
             end
 
             mounted = File.readlines("/proc/self/mountinfo", chomp: true).any? do |line|
-              point = unescape_mountinfo(line.split(" ").fetch(4, ""))
+              point = unescape_mountinfo(line.split.fetch(4, ""))
               point == directory || point.start_with?("#{directory}/")
             end
             raise EffectError, "orphan workspace #{workspace.identity} is still mounted" if mounted
@@ -1172,7 +1172,7 @@ module Rubernetes
             filesystem = separator.fetch(1, "").split.first
             raise EffectError, "mount at #{target} is not OverlayFS" unless filesystem == "overlay"
 
-            fields = separator.fetch(0).split(" ")
+            fields = separator.fetch(0).split
             {
               "mount_id" => Integer(fields.fetch(0)),
               "parent_id" => Integer(fields.fetch(1)),
@@ -1197,7 +1197,7 @@ module Rubernetes
           def mountinfo_for(pid, target)
             escaped = String(target).gsub("\\", "\\134").gsub(" ", "\\040").gsub("\t", "\\011")
             File.readlines("/proc/#{Integer(pid)}/mountinfo", chomp: true).find do |line|
-              line.split(" ").fetch(4, nil) == escaped
+              line.split.fetch(4, nil) == escaped
             end
           end
 
@@ -2071,7 +2071,7 @@ module Rubernetes
               # extension handles) are close-on-exec.  Leave those alone:
               # closing them before exec destabilizes MRI, while the kernel
               # will close them atomically during exec.
-              next unless (descriptor_flags & FD_CLOEXEC).zero?
+              next unless descriptor_flags.nobits?(FD_CLOEXEC)
 
               result = CLOSE.call(fd)
               errno = Fiddle.last_error

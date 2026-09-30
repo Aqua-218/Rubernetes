@@ -56,7 +56,7 @@ class NetworkWorkerTest < Minitest::Test
 
   def test_concurrent_calls_proceed_in_parallel
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    4.times.map { Thread.new { @remote.check(0.3) } }.each(&:join)
+    Array.new(4) { Thread.new { @remote.check(0.3) } }.each(&:join)
 
     assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 0.9
   end

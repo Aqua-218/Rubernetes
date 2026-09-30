@@ -1220,7 +1220,7 @@ module Rubernetes
           untolerated = node.taints.select do |taint|
             effect = Support.value(taint, "effect", "").to_s
             %w[NoSchedule NoExecute].include?(effect) &&
-              !pod.tolerations.any? { |toleration| Helpers.tolerates?(toleration, taint) }
+              pod.tolerations.none? { |toleration| Helpers.tolerates?(toleration, taint) }
           end
           return true if untolerated.empty?
 

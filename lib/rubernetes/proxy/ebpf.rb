@@ -1282,7 +1282,7 @@ module Rubernetes
       def sctp_crc32c_table_value(index)
         crc = Integer(index)
         8.times do
-          crc = (crc >> 1) ^ ((crc & 1).positive? ? 0x82f63b78 : 0)
+          crc = (crc >> 1) ^ (crc.anybits?(1) ? 0x82f63b78 : 0)
         end
         crc & 0xffff_ffff
       end
@@ -1467,7 +1467,7 @@ module Rubernetes
         all = Array(rule.backends)
         metadata = rule.respond_to?(:metadata) ? rule.metadata : {}
         groups = metadata["backendGroups"] || metadata[:backendGroups] || {}
-        by_identity = all.each_with_object({}) { |backend, result| result[backend_identity(backend)] = backend }
+        by_identity = all.to_h { |backend| [backend_identity(backend), backend] }
         all_ids = Array(groups["all"] || groups[:all]).map(&:to_s)
         local_ids = Array(groups["local"] || groups[:local]).map(&:to_s)
         healthy_ids = Array(groups["healthy"] || groups[:healthy]).map(&:to_s)
@@ -1682,7 +1682,7 @@ module Rubernetes
           length, type = buffer.byteslice(offset, 4).unpack("S<S<")
           break if length < 4 || offset + length > buffer.bytesize
 
-          attributes << {type: type & 0x3fff, nested: (type & 0x8000).positive?,
+          attributes << {type: type & 0x3fff, nested: type.anybits?(0x8000),
                          value: buffer.byteslice(offset + 4, length - 4).freeze}
           offset += TCNetlink.align(length)
         end

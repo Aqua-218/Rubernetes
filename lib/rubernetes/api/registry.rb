@@ -282,7 +282,7 @@ module Rubernetes
           else
             Subresource.new(resource: entry)
           end
-        end.uniq { |entry| entry.resource }
+        end.uniq(&:resource)
       end
     end
 
@@ -597,7 +597,7 @@ module Rubernetes
         values[:resource] ||= gvr.resource if gvr.respond_to?(:resource)
         values[:kind] ||= gvk.kind if gvk.respond_to?(:kind)
         values[:resource] ||= values.delete(:name)
-        values[:kind] ||= values[:resource].to_s.sub(/s\z/, "").split(/[-_]/).map { |word| word.capitalize }.join
+        values[:kind] ||= values[:resource].to_s.sub(/s\z/, "").split(/[-_]/).map(&:capitalize).join
         values[:scope] ||= values[:namespaced] ? :namespaced : :cluster
         values[:schema] ||= original_schema if original_schema
         Resource.new(**values.slice(*Resource.instance_method(:initialize).parameters.filter_map do |kind, name|

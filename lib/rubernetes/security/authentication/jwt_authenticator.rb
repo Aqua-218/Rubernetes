@@ -302,7 +302,7 @@ module Rubernetes
           return [] if values.nil?
 
           list = values.is_a?(Array) ? values : [values]
-          raise AuthenticationError, "jwt: groups claim must be a list of strings" unless list.all? { |entry| entry.is_a?(String) }
+          raise AuthenticationError, "jwt: groups claim must be a list of strings" unless list.all?(String)
 
           list.map { |entry| mapping["expression"] ? entry : "#{mapping["prefix"]}#{entry}" }
         end

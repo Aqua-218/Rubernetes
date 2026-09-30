@@ -27,7 +27,7 @@ module M9FormalProbe
   def run
     started_at = S.now
     cases = []
-    files = Dir.glob(File.join(LEAN_ROOT, "**", "*.lean")).sort
+    files = Dir.glob(File.join(LEAN_ROOT, "**", "*.lean"))
 
     cases << {"id" => "lean_sources_present", "passed" => !files.empty?, "files" => files.length}
 

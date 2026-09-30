@@ -80,9 +80,9 @@ module M2LifecycleOracleHarness
 
   def canonical_value(value)
     case value
-    when Hash then value.keys.map(&:to_s).sort.each_with_object({}) do |key, result|
-      result[key] = canonical_value(value[key] || value[key.to_sym])
-    end
+    when Hash then value.keys.map(&:to_s).sort.to_h do |key|
+                     [key, canonical_value(value[key] || value[key.to_sym])]
+                   end
     when Array then value.map { |child| canonical_value(child) }
     else value
     end
@@ -875,7 +875,7 @@ module M2LifecycleOracleHarness
     def observe_cases!
       pod_watcher = Watcher.new(@node, "/api/v1/namespaces/#{NAMESPACE}/pods?watch=1", "pods").start
       event_watcher = Watcher.new(@node, "/api/v1/namespaces/#{NAMESPACE}/events?watch=1", "events").start
-      @watchers.concat([pod_watcher, event_watcher])
+      @watchers.push(pod_watcher, event_watcher)
       sleep(1)
       raise HarnessError, "pod watch exited early: #{pod_watcher.stderr}" unless pod_watcher.alive?
       raise HarnessError, "event watch exited early: #{event_watcher.stderr}" unless event_watcher.alive?

@@ -48,7 +48,7 @@ module M4WorkerSupport
 
   def mount_lines_under(root)
     File.binread("/proc/self/mountinfo").lines.map(&:chomp).select do |line|
-      target = line.split(" ")[4].to_s.gsub(/\\([0-7]{3})/) { Regexp.last_match(1).to_i(8).chr }
+      target = line.split[4].to_s.gsub(/\\([0-7]{3})/) { Regexp.last_match(1).to_i(8).chr }
       target == root || target.start_with?("#{root}/")
     end
   end

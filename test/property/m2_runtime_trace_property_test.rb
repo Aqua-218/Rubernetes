@@ -438,12 +438,12 @@ class M2RuntimeTracePropertyTest < Minitest::Test
     owned << "temp"
     events << transition_event("ImagePinned", "WorkspaceAllocated", live_owner: owner.dup, owned_resources: owned.dup)
 
-    owner.concat(%w[mount ns])
-    owned.concat(%w[mount ns])
+    owner.push("mount", "ns")
+    owned.push("mount", "ns")
     events << transition_event("WorkspaceAllocated", "IsolationCreated", live_owner: owner.dup, owned_resources: owned.dup)
 
-    owner.concat(%w[cgroup pidfd])
-    owned.concat(%w[cgroup pidfd])
+    owner.push("cgroup", "pidfd")
+    owned.push("cgroup", "pidfd")
     events << transition_event("IsolationCreated", "ResourcesAttached", live_owner: owner.dup, owned_resources: owned.dup)
     events << transition_event(
       "ResourcesAttached", "WorkloadStopped", live_owner: owner.dup,

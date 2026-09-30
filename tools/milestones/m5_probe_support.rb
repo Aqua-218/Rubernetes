@@ -43,11 +43,11 @@ module M5ProbeSupport
 
   def canonical(value)
     case value
-    when Hash then value.keys.map(&:to_s).sort.each_with_object({}) do |key, out|
-      out[key] = canonical(value[value.keys.find do |k|
+    when Hash then value.keys.map(&:to_s).sort.to_h do |key|
+                     [key, canonical(value[value.keys.find do |k|
         k.to_s == key
-      end])
-    end
+      end])]
+                   end
     when Array then value.map { |child| canonical(child) }
     when Symbol then value.to_s
     else value

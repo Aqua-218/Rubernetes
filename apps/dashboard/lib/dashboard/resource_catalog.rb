@@ -71,7 +71,7 @@ module Dashboard
                           }),
       ingresses: Entry.new(kind: "Ingress", resource: "ingresses", api_version: "networking.k8s.io/v1", scalable: false, columns: {
                              "Class" => ->(o) { o.dig("spec", "ingressClassName") },
-                             "Hosts" => ->(o) { Array(o.dig("spec", "rules")).map { |r| r["host"] }.compact.join(", ") },
+                             "Hosts" => ->(o) { Array(o.dig("spec", "rules")).filter_map { |r| r["host"] }.join(", ") },
                              "Address" => lambda { |o|
                                Array(o.dig("status", "loadBalancer", "ingress")).map do |i|
                                  i["ip"] || i["hostname"]

@@ -60,7 +60,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
     others = followers(cluster)
     # Proposals sit in the leader's batch (no lone-proposer flush); before
     # the tick loop flushes them the leader is isolated.
-    requests = 40.times.map { |i| client.create(leader.id, "k/#{i}", flush_now: false) }
+    requests = Array.new(40) { |i| client.create(leader.id, "k/#{i}", flush_now: false) }
     others.each do |other|
       cluster.network.cut(leader.id, other)
       cluster.network.cut(other, leader.id)
@@ -140,7 +140,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
     # was appended twice (a duplicated ForwardProposal joining the batch a
     # second time) and the forwarder was told 409 for its own create.
     assert_unknown_outcome_rejections_only(client)
-    logs = cluster.processes.values.map { |process| process.node.log.entries.map { |entry| entry.command["key"] }.compact }
+    logs = cluster.processes.values.map { |process| process.node.log.entries.filter_map { |entry| entry.command["key"] } }
     logs.each do |keys|
       duplicates = keys.tally.select { |_key, count| count > 1 }
 
@@ -165,7 +165,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
     leader.handle(forward, cluster.now)
     leader.handle(forward, cluster.now)
     leader.flush(cluster.now)
-    responses = leader.drain.select { |message| message.is_a?(C::Messages::ForwardProposalResponse) }
+    responses = leader.drain.grep(C::Messages::ForwardProposalResponse)
 
     assert_equal 2, responses.length, "both copies are answered"
     assert_equal 1, responses.map { |message| [message.index, message.entry_term] }.uniq.length, "with one position"
@@ -189,7 +189,7 @@ class ConsensusAckDurabilityTest < Minitest::Test
     end
     # Flushed at once: appended to the isolated leader's own log, never
     # replicated.
-    isolated = 30.times.map { |i| client.create(leader.id, "k/isolated-#{i}", flush_now: true) }
+    isolated = Array.new(30) { |i| client.create(leader.id, "k/isolated-#{i}", flush_now: true) }
     cluster.run(1.5)
     new_leader = cluster.leader.find { |node| node.id != leader.id }
 

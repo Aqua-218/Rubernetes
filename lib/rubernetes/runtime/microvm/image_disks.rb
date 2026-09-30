@@ -111,7 +111,7 @@ module Rubernetes
         end
 
         def workspaces
-          Dir.glob(File.join(@root, "workspaces", "*.ext4")).sort.map { |path| File.basename(path, ".ext4") }
+          Dir.glob(File.join(@root, "workspaces", "*.ext4")).map { |path| File.basename(path, ".ext4") }
         end
 
         # Placeholder drives keep the drive slots of the base snapshot valid.

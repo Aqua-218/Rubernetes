@@ -68,7 +68,7 @@ module Rubernetes
         File.rename(temporary, target)
         if @fsync == true
           if durable
-            File.open(@directory, File::RDONLY) { |directory| directory.fsync }
+            File.open(@directory, File::RDONLY, &:fsync)
           else
             DeferredFsync.schedule(target)
           end

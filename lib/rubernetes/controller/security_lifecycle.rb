@@ -86,7 +86,7 @@ module Rubernetes
                  else
                    resource_or_status
                  end
-        Array(Support.value(source, "conditions", [])).select { |condition| condition.is_a?(Hash) }
+        Array(Support.value(source, "conditions", [])).grep(Hash)
       end
 
       def true_condition?(resource_or_status, type)

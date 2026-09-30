@@ -121,7 +121,7 @@ module Rubernetes
         end
 
         def index_by_name(objects)
-          Array(objects).each_with_object({}) { |object, index| index[object.dig("metadata", "name")] = object }
+          Array(objects).to_h { |object| [object.dig("metadata", "name"), object] }
         end
 
         def effective_rules(role, cluster_roles)
@@ -203,7 +203,7 @@ module Rubernetes
 
         def cluster_roles_by_name
           cached(:cluster, :cluster_roles_by_name) do
-            cluster_roles.each_with_object({}) { |role, index| index[role.dig("metadata", "name")] = role }.freeze
+            cluster_roles.to_h { |role| [role.dig("metadata", "name"), role] }.freeze
           end
         end
 

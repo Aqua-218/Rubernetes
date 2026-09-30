@@ -84,11 +84,11 @@ module Rubernetes
 
     def sidecar?(container) = container.is_a?(Hash) && container["restartPolicy"].to_s == "Always"
 
-    def containers(pod, field) = Array(spec(pod)[field]).select { |container| container.is_a?(Hash) }
+    def containers(pod, field) = Array(spec(pod)[field]).grep(Hash)
 
     def container_statuses(pod)
       (Array(status(pod)["containerStatuses"]) + Array(status(pod)["initContainerStatuses"]))
-        .select { |entry| entry.is_a?(Hash) }.to_h { |entry| [entry["name"].to_s, entry] }
+        .grep(Hash).to_h { |entry| [entry["name"].to_s, entry] }
     end
 
     # IsPodResizeInfeasible / IsPodResizeDeferred.

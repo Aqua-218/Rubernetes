@@ -316,7 +316,7 @@ module Rubernetes
         end
 
         # A field key depends only on (number, wire type): encoded once.
-        KEY_CACHE = {}
+        KEY_CACHE = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache)
 
         def encode_key(field_number, wire_type)
           integers = field_number.is_a?(Integer) && wire_type.is_a?(Integer)
@@ -669,7 +669,7 @@ module Rubernetes
 
             cursor += 1
             value |= (byte & 0x7f) << shift
-            if (byte & 0x80).zero?
+            if byte.nobits?(0x80)
               raise Codec::ParseError, "protobuf varint exceeds #{max_bits} bits" if value >= (1 << max_bits)
               raise Codec::ParseError, "non-canonical protobuf varint" if strict && index.positive? && value < (1 << (7 * index))
 

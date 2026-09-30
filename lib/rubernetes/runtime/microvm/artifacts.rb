@@ -72,7 +72,7 @@ module Rubernetes
 
             stat = File.stat(entry.path)
             raise ArtifactError, "artifact #{name} is owned by uid #{stat.uid}, expected #{expected_uid}" unless stat.uid == expected_uid
-            unless (stat.mode & 0o022).zero?
+            unless stat.mode.nobits?(0o022)
               raise ArtifactError,
                     "artifact #{name} is group/world writable (mode #{format("%o", stat.mode & 0o777)})"
             end
@@ -82,7 +82,7 @@ module Rubernetes
             raise ArtifactError, "artifact #{name} size #{stat.size} does not match the lock" if entry.bytes && stat.size != entry.bytes
 
             parent = File.stat(File.dirname(entry.path))
-            raise ArtifactError, "artifact #{name} parent directory is writable by others" unless (parent.mode & 0o022).zero?
+            raise ArtifactError, "artifact #{name} parent directory is writable by others" unless parent.mode.nobits?(0o022)
 
             {"name" => name, "path" => entry.path, "sha256" => digest, "bytes" => stat.size, "uid" => stat.uid,
              "mode" => format("%o", stat.mode & 0o777)}

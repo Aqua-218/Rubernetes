@@ -291,7 +291,7 @@ module Rubernetes
             break if length < 4 || offset + length > bytes.bytesize
 
             body = bytes.byteslice(offset + 4, length - 4)
-            attributes << {"type" => type & 0x3fff, "nested" => (type & 0x8000).positive?, "value" => body}
+            attributes << {"type" => type & 0x3fff, "nested" => type.anybits?(0x8000), "value" => body}
             offset += align(length)
           end
           raise NetlinkError, "netlink attribute stream is truncated" unless offset == bytes.bytesize
@@ -576,7 +576,7 @@ module Rubernetes
         {
           "name" => selected_name,
           "index" => selected_index,
-          "up" => (flags & IFF_UP).positive?,
+          "up" => flags.anybits?(IFF_UP),
           "mtu" => mtu,
           "master" => master,
           "kind" => kind,
@@ -1230,7 +1230,7 @@ module Rubernetes
             "name" => entry_name,
             "index" => entry_index,
             "flags" => flags,
-            "up" => (flags & IFF_UP).positive?,
+            "up" => flags.anybits?(IFF_UP),
             "mtu" => attributes_uint32(attributes, IFLA_MTU),
             "master_index" => attributes_uint32(attributes, IFLA_MASTER),
             "kind" => kind,

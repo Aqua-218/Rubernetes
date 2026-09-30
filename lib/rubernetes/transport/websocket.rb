@@ -227,11 +227,11 @@ module Rubernetes
 
         def read_frame
           first, second = read_exact(2).bytes
-          fin = (first & 0x80) != 0
-          raise ProtocolError, "reserved websocket bits set" if (first & 0x70) != 0
+          fin = first.anybits?(0x80)
+          raise ProtocolError, "reserved websocket bits set" if first.anybits?(0x70)
 
           opcode = first & 0x0f
-          masked = (second & 0x80) != 0
+          masked = second.anybits?(0x80)
           length = second & 0x7f
           if opcode >= 0x8
             raise ProtocolError, "fragmented websocket control frame" unless fin

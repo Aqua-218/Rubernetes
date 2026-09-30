@@ -47,7 +47,7 @@ class SchedulerServiceDrainsQueueTest < Minitest::Test
 
   def test_the_loop_only_sleeps_when_the_queue_is_empty
     sleeps = []
-    results = 3.times.map { |_index| Result.new(:scheduled, nil, nil) }
+    results = Array.new(3) { |_index| Result.new(:scheduled, nil, nil) }
     service = build_service(results: results, sleeps: sleeps)
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     service.send(:run_loop)

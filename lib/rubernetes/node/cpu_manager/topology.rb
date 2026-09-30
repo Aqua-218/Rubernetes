@@ -165,13 +165,13 @@ module Rubernetes
 
           # GetNodesInfo; without NUMA directories, one node per package.
           def nodes_info
-            node_dirs = Dir.glob(File.join(@node_root, "node*[0-9]")).sort
+            node_dirs = Dir.glob(File.join(@node_root, "node*[0-9]"))
             return cpu_topology if node_dirs.empty?
 
             total = 0
             nodes = node_dirs.map do |dir|
               id = Integer(File.basename(dir)[/\d+\z/])
-              cpu_dirs = Dir.glob(File.join(dir, "cpu*[0-9]")).sort
+              cpu_dirs = Dir.glob(File.join(dir, "cpu*[0-9]"))
               node = {id: id, cores: cpu_dirs.empty? ? [] : cores_info(cpu_dirs)}
               node[:cores].each { |core| total += core[:threads].length }
               add_cache_info(node)
@@ -184,7 +184,7 @@ module Rubernetes
           end
 
           def cpu_topology
-            cpu_dirs = Dir.glob(File.join(@cpu_root, "cpu*[0-9]")).sort
+            cpu_dirs = Dir.glob(File.join(@cpu_root, "cpu*[0-9]"))
             raise Error, "no CPU is available, cpusPath: #{@cpu_root}" if cpu_dirs.empty?
 
             by_package = cpu_dirs.group_by { |dir| read_int(File.join(dir, "topology/physical_package_id")) }

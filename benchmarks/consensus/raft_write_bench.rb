@@ -113,7 +113,7 @@ end
 # Warm up TLS connections and the JIT-less interpreter.
 20.times { |i| leader.propose(command("registry/pods/bench/warm-#{i}")) }
 
-samples = rounds.times.map { |i| timed { leader.propose(command("registry/pods/bench/lone-#{i}")) } }
+samples = Array.new(rounds) { |i| timed { leader.propose(command("registry/pods/bench/lone-#{i}")) } }
 results[:propose_lone_leader] = summarize(samples)
 
 phase_sums = Hash.new { |hash, key| hash[key] = Hash.new(0.0) }
@@ -121,7 +121,7 @@ phase_sums = Hash.new { |hash, key| hash[key] = Hash.new(0.0) }
   per_thread = [rounds / concurrency, 10].max
   queue = Queue.new
   wall = timed do
-    threads = concurrency.times.map do |thread_index|
+    threads = Array.new(concurrency) do |thread_index|
       Thread.new do
         per_thread.times do |i|
           phases = Thread.current[:rubernetes_request_phases] = {}
@@ -139,7 +139,7 @@ phase_sums = Hash.new { |hash, key| hash[key] = Hash.new(0.0) }
   end
 end
 
-samples = rounds.times.map { timed { leader.read_index } }
+samples = Array.new(rounds) { timed { leader.read_index } }
 results[:read_index_leader] = summarize(samples)
 
 if options[:processes]
@@ -152,13 +152,13 @@ if options[:processes]
   follower = leader
 end
 
-samples = rounds.times.map { |i| timed { follower.propose(command("registry/pods/bench/fwd-#{i}")) } }
+samples = Array.new(rounds) { |i| timed { follower.propose(command("registry/pods/bench/fwd-#{i}")) } }
 results[:propose_forwarded] = summarize(samples)
-samples = rounds.times.map { timed { follower.read_index } }
+samples = Array.new(rounds) { timed { follower.read_index } }
 results[:read_index_forwarded] = summarize(samples)
 
 queue = Queue.new
-threads = 16.times.map { Thread.new { (rounds / 16).times { queue << timed { follower.read_index } } } }
+threads = Array.new(16) { Thread.new { (rounds / 16).times { queue << timed { follower.read_index } } } }
 threads.each(&:join)
 results[:read_index_forwarded_concurrent_16] = summarize(Array.new(queue.length) { queue.pop })
 

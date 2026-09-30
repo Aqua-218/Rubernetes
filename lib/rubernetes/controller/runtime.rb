@@ -43,7 +43,7 @@ module Rubernetes
 
       module ConsistencyStore
         LOCK = Mutex.new
-        WRITTEN = {}
+        WRITTEN = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache)
 
         module_function
 

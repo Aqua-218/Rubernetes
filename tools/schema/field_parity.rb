@@ -49,7 +49,7 @@ module RubernetesFieldParity
     @reserved_methods ||= begin
       names = Object.instance_methods + Kernel.instance_methods + BasicObject.instance_methods
       names.concat(Rubernetes::Schema::ValueObject.instance_methods)
-      names.concat(%i[field with to_h schema_name fields present? unknown_fields validate])
+      names.push(:field, :with, :to_h, :schema_name, :fields, :present?, :unknown_fields, :validate)
       names.map(&:to_s).to_set.merge(RUBY_KEYWORDS).freeze
     end
   end
@@ -65,7 +65,7 @@ module RubernetesFieldParity
   def canonical_value(value)
     case value
     when Hash
-      value.keys.sort.each_with_object({}) { |key, result| result[key] = canonical_value(value.fetch(key)) }
+      value.keys.sort.to_h { |key| [key, canonical_value(value.fetch(key))] }
     when Array
       value.map { |item| canonical_value(item) }
     else

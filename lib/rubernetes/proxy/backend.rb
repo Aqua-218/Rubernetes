@@ -1021,9 +1021,9 @@ module Rubernetes
                                                                                                    "packet_trace_sha256"))
         failures << "kernel readback case inventory digest is required" unless valid_digest?(evidence_value(value, "caseInventorySha256",
                                                                                                             "case_inventory_sha256"))
-        backends = %w[ebpf nftables].each_with_object({}) do |name, result|
-          result[name] = value[name] || value[name.to_sym]
-        end
+        backends = %w[ebpf nftables].to_h do |name|
+                     [name, value[name] || value[name.to_sym]]
+                   end
         backends.each do |name, entry|
           validate_kernel_backend_readback(entry, name, name == "ebpf" ? left_digest : right_digest,
                                            expected_rules: expected_rules && expected_rules[name], failures: failures)
@@ -1577,7 +1577,7 @@ module Rubernetes
 
       RuleSetSnapshot = Struct.new(:rules, :revision, keyword_init: true) do
         def rule_map
-          rules.each_with_object({}) { |rule, result| result[rule.key] = rule }
+          rules.to_h { |rule| [rule.key, rule] }
         end
       end
 

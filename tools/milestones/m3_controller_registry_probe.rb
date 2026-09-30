@@ -30,7 +30,7 @@ M3ProbeSupport.run_report(kind: "m3_controller_registry", adapter_name: "control
   registered = if registry.respond_to?(:names)
                  Array(registry.names).map(&:to_s).sort
                elsif registry.respond_to?(:definitions)
-                 Array(registry.definitions).map { |definition| definition.respond_to?(:name) ? definition.name.to_s : nil }.compact.sort
+                 Array(registry.definitions).filter_map { |definition| definition.respond_to?(:name) ? definition.name.to_s : nil }.sort
                else
                  []
                end

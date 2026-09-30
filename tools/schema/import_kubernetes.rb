@@ -301,7 +301,7 @@ module KubernetesCorpusImporter
       validate_manifest_header!(manifest, context)
 
       source_records = manifest.fetch("sources")
-      unless source_records.is_a?(Array) && source_records.all? { |record| record.is_a?(Hash) }
+      unless source_records.is_a?(Array) && source_records.all?(Hash)
         raise ValidationError, "sources.json must contain a sources array"
       end
 
@@ -647,7 +647,7 @@ module KubernetesCorpusImporter
           import_occurrences << import_path
           if standard_descriptor_import?(import_path)
             standard_imports << import_path
-          elsif !KUBERNETES_PROTO_PREFIXES.any? { |prefix| import_path.start_with?(prefix) } ||
+          elsif KUBERNETES_PROTO_PREFIXES.none? { |prefix| import_path.start_with?(prefix) } ||
                 !sources_by_import_path.key?(import_path)
             unresolved_imports << {
               "source" => source.id,
@@ -833,7 +833,7 @@ module KubernetesCorpusImporter
 
       scope = resource.fetch("scope")
       verbs = (subresource || resource).fetch("verbs")
-      unless %w[Cluster Namespaced].include?(scope) && verbs.is_a?(Array) && verbs.all? { |verb| verb.is_a?(String) }
+      unless %w[Cluster Namespaced].include?(scope) && verbs.is_a?(Array) && verbs.all?(String)
         raise ValidationError, "aggregated discovery resource #{name} has invalid scope or verbs"
       end
 
@@ -866,7 +866,7 @@ module KubernetesCorpusImporter
       resources.map do |resource|
         unless resource.is_a?(Hash) && resource["name"].is_a?(String) && resource["kind"].is_a?(String) &&
                [true, false].include?(resource["namespaced"]) && resource["verbs"].is_a?(Array) &&
-               resource["verbs"].all? { |verb| verb.is_a?(String) }
+               resource["verbs"].all?(String)
           raise ValidationError, "APIResourceList #{group_version} contains an invalid resource"
         end
 
@@ -1014,7 +1014,7 @@ module KubernetesCorpusImporter
     def canonical_value(value)
       case value
       when Hash
-        value.keys.sort.each_with_object({}) { |key, result| result[key] = canonical_value(value.fetch(key)) }
+        value.keys.sort.to_h { |key| [key, canonical_value(value.fetch(key))] }
       when Array
         value.map { |item| canonical_value(item) }
       else

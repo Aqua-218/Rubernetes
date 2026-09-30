@@ -239,7 +239,7 @@ module M4ProxyParityRunner
         response = Timeout.timeout(CASE_TIMEOUT) { socket.read }
         status_line, rest = response.to_s.split("\r\n", 2)
         body = rest.to_s.split("\r\n\r\n", 2)[1].to_s
-        {"ok" => true, "connected" => true, "status" => status_line.to_s.split(" ")[1].to_i, "body" => body.strip,
+        {"ok" => true, "connected" => true, "status" => status_line.to_s.split[1].to_i, "body" => body.strip,
          "status_line" => status_line}
       rescue Timeout::Error, SystemCallError, IOError => error
         {"ok" => true, "connected" => false, "error" => "#{error.class}: #{error.message}"}
@@ -476,7 +476,7 @@ module M4ProxyParityRunner
       vip = service.dig("spec", "clusterIPs").find { |ip| !ip.include?(":") }
       port = service.dig("spec", "ports").first.fetch("port")
       @agents.fetch("client").call("close_all")
-      @connection_ids = count.times.map { |index| "conn-#{index}-#{SecureRandom.hex(3)}" }
+      @connection_ids = Array.new(count) { |index| "conn-#{index}-#{SecureRandom.hex(3)}" }
       opened = @connection_ids.map do |id|
         @agents.fetch("client").call("open", id: id, address: vip, port: port)
       end
@@ -666,7 +666,7 @@ module M4ProxyParityRunner
       when "dns_cname"
         target = find_service(kase.fetch("target_service"))
         {"verdict" => "cname", "cname" => "#{kase.fetch("target_service")}.#{M4ProxyParityCorpus::NAMESPACE}.svc.#{M4ProxyParityCorpus::CLUSTER_DOMAIN}.",
-         "addresses" => target.dig("spec", "clusterIPs").select { |ip| !ip.include?(":") }.sort, "rcode" => "NOERROR"}
+         "addresses" => target.dig("spec", "clusterIPs").reject { |ip| ip.include?(":") }.sort, "rcode" => "NOERROR"}
       when "affinity"
         {"verdict" => "affinity", "connections" => kase.fetch("connections"), "all_delivered" => true, "distinct_endpoints" => 1,
          "client_source" => "preserved"}
@@ -719,8 +719,8 @@ module M4ProxyParityRunner
         [{"udp" => udp, "tcp" => tcp, "name" => name}, actual]
       when "affinity"
         destination = destination_for(kase, family)
-        results = kase.fetch("connections").times.map { exchange(kase, destination, backend) }
-        endpoints = results.map { |entry| entry["observed_endpoint"] }.compact.uniq
+        results = Array.new(kase.fetch("connections")) { exchange(kase, destination, backend) }
+        endpoints = results.filter_map { |entry| entry["observed_endpoint"] }.uniq
         actual = {"verdict" => "affinity", "connections" => results.length, "all_delivered" => results.all? { |entry| entry["delivered"] },
                   "distinct_endpoints" => endpoints.length, "client_source" => observed_client_source(results.first["reply"], family)}
         [{"exchanges" => results, "destination" => destination}, actual]

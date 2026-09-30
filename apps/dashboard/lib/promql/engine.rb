@@ -700,7 +700,7 @@ module Promql
     end
 
     MATH_FUNCTIONS = {
-      "abs" => ->(v) { v.abs },
+      "abs" => lambda(&:abs),
       "ceil" => ->(v) { v.finite? ? v.ceil.to_f : v },
       "floor" => ->(v) { v.finite? ? v.floor.to_f : v },
       "exp" => ->(v) { Math.exp(v) },

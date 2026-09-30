@@ -39,7 +39,7 @@ module M2KernelProbe
         after: JSON.generate(native.fetch("final").fetch(kind))
       )
     end
-    objects.concat([
+    objects.push(
                      object("host", "architecture", before: architecture, active: architecture, after: architecture),
                      object("kernel", "release", before: kernel.fetch(:release), active: kernel.fetch(:release),
                                                  after: kernel.fetch(:release)),
@@ -53,7 +53,7 @@ module M2KernelProbe
                        active: JSON.generate(native.fetch("child_security")),
                        after: JSON.generate(M2ProbeSupport.proc_status_security_fields(File.binread("/proc/self/status")))
                      )
-                   ])
+                   )
     missing = []
     missing << "cgroup_v2" unless cgroup.available?
     missing << "no_new_privs" unless security.available?(:no_new_privs)

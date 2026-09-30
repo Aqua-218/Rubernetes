@@ -136,7 +136,7 @@ module Rubernetes
         when "requests.storage", /#{Regexp.escape(STORAGE_CLASS_SUFFIX)}/o then "PersistentVolumeClaim"
         when /#{Regexp.escape(Rubernetes::ClaimQuotaUsage::PER_CLASS_SUFFIX)}\z/o then "ResourceClaim"
         when /\Aservices/ then "Service"
-        when %r{\Acount/} then resource_kind(name.sub(%r{\Acount/}, "").split(".").first)
+        when %r{\Acount/} then resource_kind(name.delete_prefix('count/').split(".").first)
         else resource_kind(name)
         end
       end
@@ -297,7 +297,7 @@ module Rubernetes
       end
 
       def countable_resource(resource_name, objects)
-        normalized = resource_name.sub(%r{\Acount/}, "")
+        normalized = resource_name.delete_prefix('count/')
         normalized = normalized.split(".").first
         kind = if normalized.include?("/")
                  normalized.split("/").last

@@ -218,7 +218,7 @@ module Rubernetes
         def mountinfo_entry(path, mountinfo: "/proc/self/mountinfo")
           found = nil
           File.foreach(mountinfo) do |line|
-            fields = line.split(" ")
+            fields = line.split
             mount_point = fields[4].to_s.gsub(/\\(\d{3})/) { Regexp.last_match(1).to_i(8).chr }
             next unless mount_point == path
 

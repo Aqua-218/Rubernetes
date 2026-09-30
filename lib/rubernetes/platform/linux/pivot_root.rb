@@ -98,7 +98,7 @@ module Rubernetes
             next if line.strip.empty?
 
             before, after = line.split(" - ", 2)
-            fields = before.to_s.split(" ")
+            fields = before.to_s.split
             tail = after.to_s.split(" ", 3)
             next if fields.length < 6 || tail.length < 2
 

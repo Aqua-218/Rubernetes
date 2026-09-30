@@ -111,7 +111,7 @@ module Rubernetes
       end
 
       def dynamic_paths
-        @mutex.synchronize { @dynamic.keys.map { |relative| relative.delete_suffix(".json").sub(%r{\Av3/}, "") } }
+        @mutex.synchronize { @dynamic.keys.map { |relative| relative.delete_suffix(".json").delete_prefix('v3/') } }
       end
 
       private
@@ -119,7 +119,7 @@ module Rubernetes
       # Every CRD that serves this group/version contributes its paths and
       # schemas to one document.
       def refresh_dynamic_locked(key, owners)
-        documents = owners.values.select { |document| document.is_a?(Hash) }
+        documents = owners.values.grep(Hash)
         merged = documents.first ? JSON.parse(JSON.generate(documents.first)) : {}
         documents.drop(1).each do |document|
           merged["paths"] = (merged["paths"] || {}).merge(document["paths"] || {})

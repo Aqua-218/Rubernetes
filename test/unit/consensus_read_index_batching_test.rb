@@ -65,6 +65,6 @@ class ConsensusReadIndexBatchingTest < Minitest::Test
     leader.__send__(:become_follower, leader.current_term + 1, leader: nil, now: cluster.now)
 
     assert_equal 2, errors.length
-    assert(errors.all? { |error| error.is_a?(C::NotLeader) })
+    assert(errors.all?(C::NotLeader))
   end
 end

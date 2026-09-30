@@ -336,7 +336,7 @@ module M7Gate
         end
         records = Array(clones["records"])
         IDENTITY_FIELDS.each do |field|
-          values = records.map { |record| record.dig("fields", field) }.compact
+          values = records.filter_map { |record| record.dig("fields", field) }
           errors << "identity field #{field} values must be unique in the records" unless values.uniq.length == values.length
         end
       end
@@ -376,8 +376,8 @@ module M7Gate
         errors << "latency report needs at least #{MIN_LATENCY_SAMPLES} raw samples"
       end
       totals = samples.map { |sample| sample["total"] }
-      errors << "latency samples must carry numeric totals" unless totals.all? { |value| value.is_a?(Numeric) }
-      if totals.all? { |value| value.is_a?(Numeric) } && !totals.empty?
+      errors << "latency samples must carry numeric totals" unless totals.all?(Numeric)
+      if totals.all?(Numeric) && !totals.empty?
         sorted = totals.sort
         p95 = sorted[((sorted.length - 1) * 0.95).round]
         unless entry["p95_seconds"].is_a?(Numeric) && (entry["p95_seconds"] - p95).abs < 1e-6

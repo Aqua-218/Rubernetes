@@ -181,7 +181,7 @@ module Rubernetes
       end
 
       def go_scope_selector(selector)
-        {"MatchExpressions" => Array(fetch(selector, "matchExpressions")).select { |item| item.is_a?(Hash) }.map do |expression|
+        {"MatchExpressions" => Array(fetch(selector, "matchExpressions")).grep(Hash).map do |expression|
           values = fetch(expression, "values")
           {"ScopeName" => fetch(expression, "scopeName").to_s, "Operator" => fetch(expression, "operator").to_s,
            "Values" => values.is_a?(Array) && !values.empty? ? values : nil}

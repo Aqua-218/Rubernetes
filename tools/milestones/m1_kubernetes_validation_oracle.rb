@@ -2322,7 +2322,7 @@ module M1KubernetesValidationOracle
   def external_source_paths(source_root, external)
     package_root = ::File.join(source_root, "staging/src", external.fetch("external_package"))
     type = external.fetch("external_type")
-    paths = Dir.glob(::File.join(package_root, "**/*.go")).sort.filter_map do |path|
+    paths = Dir.glob(::File.join(package_root, "**/*.go")).filter_map do |path|
       content = ::File.read(path)
       next unless content.match?(/(?:^|\n)\s*type\s+#{Regexp.escape(type)}\b/m)
 
@@ -2346,7 +2346,7 @@ module M1KubernetesValidationOracle
   def runtime_object_source_paths(source_root, external)
     package_root = ::File.join(source_root, "staging/src", external.fetch("external_package"))
     type = external.fetch("external_type")
-    Dir.glob(::File.join(package_root, "**/*.go")).sort.filter_map do |path|
+    Dir.glob(::File.join(package_root, "**/*.go")).filter_map do |path|
       content = ::File.read(path)
       next unless content.match?(/func\s*\([^)]*\*?#{Regexp.escape(type)}\)?\s+(?:GetObjectKind|DeepCopyObject)\s*\(/)
 
@@ -2367,7 +2367,7 @@ module M1KubernetesValidationOracle
     group = match[1]
     type = external.fetch("external_type")
     root = ::File.join(source_root, "pkg/apis", group, "validation")
-    Dir.glob(::File.join(root, "**/*.go")).sort.filter_map do |path|
+    Dir.glob(::File.join(root, "**/*.go")).filter_map do |path|
       content = ::File.read(path)
       next unless content.match?(/func\s+Validate[A-Za-z0-9_]*\s*\([^)]*\*[^)]*\b#{Regexp.escape(type)}\b/m)
 
@@ -2438,7 +2438,7 @@ module M1KubernetesValidationOracle
   end
 
   def preferred_gvk(type)
-    type.fetch("gvks").select { |gvk| !%w[DeleteOptions WatchEvent Status].include?(gvk.fetch("kind")) }.sort_by do |gvk|
+    type.fetch("gvks").reject { |gvk| %w[DeleteOptions WatchEvent Status].include?(gvk.fetch("kind")) }.sort_by do |gvk|
       [version_sort_key(gvk.fetch("version")), gvk.fetch("group"), gvk.fetch("kind")]
     end.first
   end

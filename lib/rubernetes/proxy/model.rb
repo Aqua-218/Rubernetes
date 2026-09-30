@@ -283,7 +283,7 @@ module Rubernetes
         raw_cluster_ips = Array(raw_cluster_ips).reject { |value| value.nil? || value.to_s.empty? }
         @cluster_ips = raw_cluster_ips.reject do |value|
           value.to_s.casecmp("none").zero?
-        end.map { |value| ModelSupport.canonical_ip(value) }.compact.uniq.freeze
+        end.filter_map { |value| ModelSupport.canonical_ip(value) }.uniq.freeze
         primary_cluster_ip = cluster_ip.nil? ? ModelSupport.key(spec, "clusterIP", nil) : cluster_ip
         if primary_cluster_ip && !primary_cluster_ip.to_s.empty? && primary_cluster_ip.to_s.casecmp("none").nonzero?
           canonical_primary = ModelSupport.canonical_ip(primary_cluster_ip)
@@ -324,17 +324,17 @@ module Rubernetes
         [@internal_traffic_policy, @external_traffic_policy].each do |policy|
           raise ValidationError, "unsupported traffic policy #{policy.inspect}" unless TRAFFIC_POLICIES.include?(policy)
         end
-        @external_ips = Array(external_ips || ModelSupport.key(spec, "externalIPs", [])).map do |ip|
+        @external_ips = Array(external_ips || ModelSupport.key(spec, "externalIPs", [])).filter_map do |ip|
           ModelSupport.canonical_ip(ip)
-        end.compact.uniq.freeze
+        end.uniq.freeze
         status = ModelSupport.key(source, "status", {}) || {}
         ingress = Array(ModelSupport.key(ModelSupport.key(status, "loadBalancer", {}) || {}, "ingress", []) || {})
         status_load_balancer_ips = ingress.filter_map { |entry| ModelSupport.key(ModelSupport.string_keys(entry || {}), "ip", nil) }
         @load_balancer_ips = Array(load_balancer_ips || ModelSupport.key(spec, "loadBalancerIPs",
                                                                          nil) || ModelSupport.key(spec, "loadBalancerIP",
-                                                                                                  nil) || status_load_balancer_ips).map do |ip|
+                                                                                                  nil) || status_load_balancer_ips).filter_map do |ip|
           ModelSupport.canonical_ip(ip)
-        end.compact.uniq.freeze
+        end.uniq.freeze
         @external_name = (external_name || ModelSupport.key(spec, "externalName", nil))&.to_s
         health_port_value = health_check_node_port || ModelSupport.key(spec, "healthCheckNodePort", nil)
         @health_check_node_port = ModelSupport.strict_integer(health_port_value, "healthCheckNodePort")
@@ -535,7 +535,7 @@ module Rubernetes
         raw_addresses = addresses || ModelSupport.key(source, "addresses",
                                                       nil) || ModelSupport.key(source, "address",
                                                                                nil) || address || ModelSupport.key(source, "ip", nil)
-        @addresses = Array(raw_addresses).map(&:to_s).reject(&:empty?).map { |ip| ModelSupport.canonical_ip(ip) }.compact.freeze
+        @addresses = Array(raw_addresses).map(&:to_s).reject(&:empty?).filter_map { |ip| ModelSupport.canonical_ip(ip) }.freeze
         @address = (address || @addresses.first)&.to_s
         @address = ModelSupport.canonical_ip(@address) if @address
         raise ValidationError, "endpoint address is required" if @address.to_s.empty?
