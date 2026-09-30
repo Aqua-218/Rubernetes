@@ -1869,12 +1869,31 @@ module Rubernetes
 
         before = node_scheduling_view(previous)
         after = node_scheduling_view(node)
-        return "NodeUpdateNodeLabel" if before[1] != after[1]
-        return "NodeUpdateNodeAllocatable" if before[2] != after[2] || before[3] != after[3]
-        return "NodeUpdateNodeCondition" if before[4] != after[4]
-        return "NodeUpdateNodeTaint" if before[0] != after[0]
+        events = []
+        events << "NodeUpdateNodeLabel" if before[1] != after[1]
+        events << "NodeUpdateNodeAllocatable" if before[2] != after[2] || before[3] != after[3]
+        events << "NodeUpdateNodeCondition" if before[4] != after[4]
+        events << "NodeUpdateNodeTaint" if before[0] != after[0] && Controller::Support.value(before[0], "taints", nil) != Controller::Support.value(after[0], "taints", nil)
+        events << "NodeUpdateNodeDeclaredFeature" if before[5] != after[5]
+        events << "NodeUpdate" if events.empty?
+        events
+      end
 
-        "NodeUpdate"
+      # podSchedulingPropertiesChange: the subtypes of a Pod update.
+      def pod_events(previous, pod, assigned)
+        prefix = assigned ? "assignedPod" : "Pod"
+        return ["#{prefix}Add"] if previous.nil?
+
+        events = []
+        events << "#{prefix}UpdatePodLabel" if previous.labels != pod.labels
+        events << "#{prefix}UpdatePodToleration" if previous.tolerations != pod.tolerations
+        events << "#{prefix}UpdatePodSchedulingGatesEliminated" if !previous.scheduling_gates.empty? && pod.scheduling_gates.empty?
+        events << "#{prefix}UpdatePodGeneratedResourceClaim" if previous.status["resourceClaimStatuses"] != pod.status["resourceClaimStatuses"]
+        before = previous.requests
+        after = pod.requests
+        events << "#{prefix}UpdatePodScaleDown" if before.any? { |name, amount| after.fetch(name, 0).to_f < amount.to_f }
+        events << "#{prefix}Update" if events.empty?
+        events
       end
 
       def prime_informers!
