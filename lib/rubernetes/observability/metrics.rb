@@ -273,7 +273,6 @@ module Rubernetes
           "apiserver_validation_declarative_validation_panic_total" => no_declarative,
           "apiserver_validation_declarative_validation_panics_total" => no_declarative,
           "apiserver_validation_declarative_validation_parity_discrepancies_total" => no_declarative,
-          "apiextensions_apiserver_validation_ratcheting_seconds" => "CRDValidationRatcheting is not implemented: a custom resource update is validated in full, nothing is compared with the stored object to skip it",
           "apiserver_clusterip_repair_ip_errors_total" => no_repair,
           "apiserver_clusterip_repair_reconcile_errors_total" => no_repair,
           "apiserver_nodeport_repair_port_errors_total" => no_repair,
