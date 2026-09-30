@@ -257,10 +257,22 @@ class M3ControllerTest < Minitest::Test
     tolerate["spec"]["tolerations"] = [{"key" => "node.kubernetes.io/unreachable", "effect" => "NoExecute", "operator" => "Exists"}]
     result = Controller::NodeController.new(clock: -> { Time.utc(2026, 1, 1) }).plan(n, pods: [evict, tolerate], now: Time.utc(2026, 1, 1))
 
-    assert_equal "node.kubernetes.io/unreachable", result.operations.find { |operation|
-      operation.update?
-    }.object.dig("spec", "taints").first.fetch("key")
+    update = result.operations.find { |operation| operation.action == :update }
+
+    assert_equal "node.kubernetes.io/unreachable", update.object.dig("spec", "taints").first.fetch("key")
     assert_equal(["evict"], result.deletes.map { |operation| operation.object.dig("metadata", "name") })
+    # The condition travels through the status subresource (UpdateStatus);
+    # the taint update carries the status the node was read with, since the
+    # primary URL ignores status anyway.
+    status_update = result.operations.find { |operation| operation.action == :status_update }
+
+    refute_nil status_update, "the stale node's Ready condition is written through the status subresource"
+    ready = status_update.patch.fetch("conditions").find { |condition| condition["type"] == "Ready" }
+
+    assert_equal "Unknown", ready["status"]
+    assert_equal "NodeStatusUnknown", ready["reason"]
+    assert_equal n["status"], update.object["status"]
+    assert_operator result.operations.index(status_update), :<, result.operations.index(update)
   end
 
   def test_endpoint_controller_separates_ready_and_not_ready_addresses

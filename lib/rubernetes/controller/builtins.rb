@@ -1509,7 +1509,19 @@ module Rubernetes
                                                                      Array(Support.value(Support.spec(candidate), "taints", [])))
           candidate["spec"].delete("taints") if candidate["spec"]["taints"].empty? &&
                                                 Array(Support.value(Support.spec(node), "taints", [])).empty?
-          update = operation_update(node, candidate, descriptor: DESCRIPTOR, reason: "node heartbeat/status")
+          # Two writes, as upstream issues them: the Ready condition through
+          # the status subresource (tryUpdateNodeHealth -> UpdateStatus) and
+          # the taints through the primary resource (AddOrUpdateTaintOnNode).
+          # A single PUT of the whole object would carry both, but the API
+          # server ignores status on the primary URL: the taint landed and the
+          # node stayed "Ready", so the unreachable:NoSchedule taint was never
+          # derived and the scheduler kept placing Pods that the NoExecute
+          # taint then evicted, over and over.
+          status_update = operation_status(node, Support.status(candidate), descriptor: DESCRIPTOR, reason: "node heartbeat/status")
+          operations << status_update if status_update
+          spec_candidate = Support.deep_copy(candidate)
+          spec_candidate["status"] = Support.deep_copy(Support.status(node))
+          update = operation_update(node, spec_candidate, descriptor: DESCRIPTOR, reason: "node taints")
           zone = self.class.zone_key(node)
           if update && unhealthy && !self.class.eviction_tainted?(node)
             # doNoExecuteTaintingPass: a node newly tainted for eviction.

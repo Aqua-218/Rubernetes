@@ -141,7 +141,8 @@ class ControllerManagerMetricsTest < Minitest::Test
     assert_equal 1, count(%(node_collector_unhealthy_nodes_in_zone{#{labels}}))
     assert_equal 50, count(%(node_collector_zone_health{#{labels}}))
     assert_equal 0, count(%(node_collector_evictions_total{#{labels}}))
-    result.operations.first.notify(true)
+    # The taint write (not the status-subresource write) is the eviction.
+    result.operations.find { |operation| operation.action == :update }.notify(true)
 
     assert_equal 1, count(%(node_collector_evictions_total{#{labels}}))
     Controller::NodeController.new.plan_orphans("b")
