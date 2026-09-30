@@ -718,6 +718,10 @@ module Rubernetes
           sources, modes = projected_sources(source, pod, namespace, pod_ip: pod_ip, host_ip: host_ip)
           spec = {"name" => name, "backend" => "projected", "sources" => sources, "modes" => modes, "pod" => pod,
                   "podUid" => pod_uid(pod), "defaultMode" => Helpers.key(source, "defaultMode", DEFAULT_MODE)}
+          if sources.any? { |projection| projection.is_a?(Hash) && projection.key?("podCertificate") }
+            sources.each { |projection| projection["podCertificate"]["volumeName"] ||= name if projection.is_a?(Hash) && projection["podCertificate"] }
+            spec["podCertificateProvider"] = @pod_certificates
+          end
           if sources.any? { |projection| projection.is_a?(Hash) && projection.key?("serviceAccountToken") }
             rotator = @volume.respond_to?(:token_rotator_for) ? @volume.token_rotator_for(pod) : nil
             raise MissingDependency, "projected serviceAccountToken volume #{name.inspect} needs the node's TokenRequest client" if rotator.nil?
