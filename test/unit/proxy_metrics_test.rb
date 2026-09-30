@@ -35,7 +35,7 @@ class ProxyMetricsTest < Minitest::Test
     [proxy, metrics]
   end
 
-  def test_registry_declares_the_inventory_without_iptables_and_conntrack_families
+  def test_registry_declares_the_inventory_without_iptables_families
     metrics = Proxy::Metrics.new
     names = metrics.registry.registered_names
     %w[kubeproxy_sync_proxy_rules_duration_seconds kubeproxy_sync_full_proxy_rules_duration_seconds
