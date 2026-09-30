@@ -583,7 +583,8 @@ module Rubernetes
       end
 
       def selinux_container_context(access_mode, error:)
-        @registry.increment("volume_manager_selinux_container_#{error ? "errors" : "warnings"}_total", {"access_mode" => access_mode.to_s})
+        name = error ? "volume_manager_selinux_container_errors_total" : "volume_manager_selinux_container_warnings_total"
+        @registry.increment(name, {"access_mode" => access_mode.to_s})
       end
 
       def selinux_pod_context_mismatch(access_mode, error:)
