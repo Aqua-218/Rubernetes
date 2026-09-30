@@ -1005,7 +1005,8 @@ module Rubernetes
         # +object_stats+: -> { {"pods" => [count, total_bytes], ...} } for the
         # list work estimator (the store's counts, polled once a minute).
         def initialize(flow_schemas:, priority_level_configurations:, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
-                       read_seats: DEFAULT_READ_SEATS, mutating_seats: DEFAULT_MUTATING_SEATS)
+                       read_seats: DEFAULT_READ_SEATS, mutating_seats: DEFAULT_MUTATING_SEATS, object_stats: nil, after: nil,
+                       borrowing_adjustment_seconds: BORROWING_ADJUSTMENT_SECONDS)
           @clock = clock
           @flow_schemas = Array(flow_schemas).sort_by { |schema| [schema.dig("spec", "matchingPrecedence").to_i, schema.dig("metadata", "name").to_s] }
           total_shares = Array(priority_level_configurations).sum { |plc| plc.dig("spec", "limited", "nominalConcurrencyShares").to_i }
