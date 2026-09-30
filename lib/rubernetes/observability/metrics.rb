@@ -323,9 +323,6 @@ module Rubernetes
           "scheduler_podgroup_scheduling_attempt_duration_seconds" => no_pod_groups
         }.freeze,
         "kubelet" => {
-          "kubelet_certificate_manager_server_rotation_seconds" => no_serving_rotation,
-          "kubelet_certificate_manager_server_ttl_seconds" => no_serving_rotation,
-          "kubelet_server_expiration_renew_errors" => no_serving_rotation,
           "kubelet_evented_pleg_connection_error_count" => no_evented_pleg,
           "kubelet_evented_pleg_connection_latency_seconds" => no_evented_pleg,
           "kubelet_evented_pleg_connection_success_count" => no_evented_pleg,
