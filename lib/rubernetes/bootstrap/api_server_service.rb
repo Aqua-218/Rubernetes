@@ -185,6 +185,7 @@ module Rubernetes
           Security::Encryption.apiserver_id = @config["identity"] || Socket.gethostname
           @encryption_reload.start
         end
+        Security::Egress.metrics = @api_server.metrics if Security::Egress.selector && @api_server.respond_to?(:metrics)
         Array(@security&.reload_controllers).each do |controller|
           controller.metrics = @api_server.metrics if @api_server.respond_to?(:metrics)
           controller.note_loaded
