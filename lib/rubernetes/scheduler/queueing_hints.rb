@@ -28,7 +28,7 @@ module Rubernetes
       end
 
       RESOURCES = %w[Node assignedPod Pod PersistentVolumeClaim PersistentVolume StorageClass CSINode CSIDriver
-                     CSIStorageCapacity VolumeAttachment ResourceClaim ResourceSlice DeviceClass Namespace Service].freeze
+                     CSIStorageCapacity VolumeAttachment ResourceClaim ResourceSlice DeviceClass Namespace Service PodGroup Workload].freeze
 
       def self.split_event(event)
         label = event.to_s
