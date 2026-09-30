@@ -201,7 +201,21 @@ module Rubernetes
         return [nil, nil] unless audit
 
         policy = Security::Audit::Policy.from_h(YAML.safe_load(File.read(audit.fetch("policy_file")), permitted_classes: [], aliases: false))
-        backend = audit["log_path"] ? Security::Audit::LogBackend.new(path: audit["log_path"], max_queue: audit.fetch("max_queue", 10_000)) : Security::Audit::MemoryBackend.new
+        backends = []
+        backends << Security::Audit::LogBackend.new(path: audit["log_path"], max_queue: audit.fetch("max_queue", 10_000)) if audit["log_path"]
+        if (webhook = audit["webhook"])
+          token = webhook["token_file"] ? File.read(webhook["token_file"]).strip : webhook["token"]
+          backends << Security::Audit::WebhookBackend.new(url: webhook.fetch("url"), mode: webhook.fetch("mode", "batch"),
+                                                          ca_file: webhook["ca_file"], token: token,
+                                                          timeout: webhook.fetch("timeout_seconds", 30),
+                                                          batch_max_size: webhook.fetch("batch_max_size", Security::Audit::WebhookBackend::DEFAULT_BATCH_MAX_SIZE),
+                                                          batch_max_wait: webhook.fetch("batch_max_wait_seconds", Security::Audit::WebhookBackend::DEFAULT_BATCH_MAX_WAIT))
+        end
+        backend = case backends.length
+                  when 0 then Security::Audit::MemoryBackend.new
+                  when 1 then backends.first
+                  else Security::Audit::UnionBackend.new(*backends)
+                  end
         [policy, backend]
       end
 
