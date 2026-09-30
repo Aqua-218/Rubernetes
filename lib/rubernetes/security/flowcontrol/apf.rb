@@ -1155,8 +1155,8 @@ module Rubernetes
           labels = {"flow_schema" => ticket.flow_schema.to_s, "priority_level" => ticket.priority_level.to_s}
           note_read_write("executing", ticket.mutating, -1)
           if @metrics && ticket.dispatched_at
-            @metrics.observe("apiserver_flowcontrol_request_execution_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - ticket.dispatched_at,
-                             labels.merge("type" => ticket.watch ? "watch" : "regular"))
+            observe("apiserver_flowcontrol_request_execution_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - ticket.dispatched_at,
+                    labels.merge("type" => ticket.watch ? "watch" : "regular"))
           end
           @priority_levels[ticket.priority_level]&.release
         end
