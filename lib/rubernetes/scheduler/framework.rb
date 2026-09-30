@@ -5,6 +5,8 @@ require "monitor"
 require_relative "batch"
 require_relative "metrics"
 
+require_relative "queueing_hints"
+
 module Rubernetes
   module Scheduler
     # Immutable context shared by built-in filters and scores.  Custom DSL
