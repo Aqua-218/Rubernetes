@@ -2110,7 +2110,8 @@ module Rubernetes
               view = cluster_view
               attempt_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
               result = @framework.schedule_next(nodes: nodes, pods: pods, namespace_labels: view[:namespace_labels],
-                                                volume_data: view[:volume_data], workload_selectors: view[:workload_selectors])
+                                                volume_data: view[:volume_data], workload_selectors: view[:workload_selectors],
+                                                pod_groups: view[:pod_groups])
               record_attempt(result, Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started) if result
               @last_result = result if result
               # A result that is neither a binding nor an unschedulable verdict
