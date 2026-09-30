@@ -309,6 +309,84 @@ module Rubernetes
         @metrics&.inflight(kind, -1) if kind
       end
 
+      # WithTimeoutForNonLongRunningRequests (--request-timeout, 60s; a
+      # shorter ?timeout= is honoured): a request that is neither a watch nor
+      # a streaming subresource runs on its own thread; past the deadline the
+      # client gets 504 Timeout and apiserver_request_aborts_total counts it,
+      # while the abandoned handler's later fate is
+      # apiserver_request_post_timeout_total{source, status}.
+      REQUEST_TIMEOUT_SECONDS = Float(ENV.fetch("RUBERNETES_REQUEST_TIMEOUT", "60"))
+      # Fiber-locals the handler reads or writes; carried over to the
+      # request thread and back.
+      REQUEST_THREAD_LOCALS = [REQUEST_PHASES_KEY, WEBHOOK_SECONDS_KEY, :rubernetes_request_phases].freeze
+
+      def with_request_timeout(request, route)
+        deadline = request_timeout_seconds(request, route)
+        return yield if deadline.nil?
+
+        parent = Thread.current
+        locals = REQUEST_THREAD_LOCALS.to_h { |key| [key, parent[key]] }
+        extra_keys = parent.keys - REQUEST_THREAD_LOCALS
+        extra_keys.each { |key| locals[key] = parent[key] }
+        outcome = Queue.new
+        timed_out = false
+        worker = Thread.new do
+          Thread.current.name = "apiserver-request"
+          locals.each { |key, value| Thread.current[key] = value }
+          begin
+            value = yield
+            outcome << [:ok, value, REQUEST_THREAD_LOCALS.to_h { |key| [key, Thread.current[key]] }]
+            @metrics&.increment("apiserver_request_post_timeout_total", {"source" => "rest-handler", "status" => "ok"}) if timed_out
+          rescue Exception => error # rubocop:disable Lint/RescueException -- re-raised on the request thread
+            outcome << [:error, error, REQUEST_THREAD_LOCALS.to_h { |key| [key, Thread.current[key]] }]
+            @metrics&.increment("apiserver_request_post_timeout_total", {"source" => "rest-handler", "status" => "panic"}) if timed_out
+          end
+        end
+        result = outcome.pop(timeout: deadline)
+        if result.nil?
+          timed_out = true
+          labels = begin
+            Observability::Metrics.request_labels(**request_metric_labels(request, route)).slice("group", "resource", "scope", "subresource", "verb", "version")
+          rescue StandardError
+            {}
+          end
+          @metrics&.increment("apiserver_request_aborts_total", labels)
+          @metrics&.increment("apiserver_request_post_timeout_total", {"source" => "timeout-handler", "status" => "pending"})
+          raise Status::Error.new(message: "request did not complete within the allotted timeout", code: 504, reason: "Timeout")
+        end
+        kind, value, returned = result
+        returned.each { |key, item| parent[key] = item }
+        raise value if kind == :error
+
+        value
+      ensure
+        worker&.join(0) unless timed_out
+      end
+
+      # nil for a long-running request (watch, exec, attach, log, proxy,
+      # portforward), else the effective deadline.
+      def request_timeout_seconds(request, route)
+        return nil if route.nil? || watch_request?(request) || LONG_RUNNING_SUBRESOURCES.include?(route.subresource.to_s)
+        return nil unless REQUEST_TIMEOUT_SECONDS.positive?
+
+        requested = request.query_value("timeout").to_s
+        seconds = parse_go_duration_seconds(requested)
+        seconds && seconds.positive? ? [seconds, REQUEST_TIMEOUT_SECONDS].min : REQUEST_TIMEOUT_SECONDS
+      rescue StandardError
+        REQUEST_TIMEOUT_SECONDS
+      end
+
+      def parse_go_duration_seconds(text)
+        return nil if text.empty?
+        return Float(text) if text.match?(/\A\d+(\.\d+)?\z/)
+
+        total = 0.0
+        text.scan(/(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/) do |number, unit|
+          total += Float(number) * {"ns" => 1e-9, "us" => 1e-6, "µs" => 1e-6, "ms" => 1e-3, "s" => 1.0, "m" => 60.0, "h" => 3600.0}.fetch(unit)
+        end
+        total.positive? ? total : nil
+      end
+
       def mutating_input?(input)
         method = input.respond_to?(:method) && !input.is_a?(Hash) ? input.method : (input["REQUEST_METHOD"] || input[:method] if input.respond_to?(:[]))
         !%w[GET HEAD OPTIONS].include?(method.to_s.upcase)
