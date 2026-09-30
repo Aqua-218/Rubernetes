@@ -1707,7 +1707,9 @@ module Rubernetes
                                                 nominate: method(:nominate_pod),
                                                 clear_nomination: method(:clear_pod_nomination),
                                                 preemption_observer: method(:observe_preemption_goroutine),
-                                                metrics: @scheduler_metrics)
+                                                metrics: @scheduler_metrics,
+                                                feature_gates: @config.fetch("feature_gates", {}),
+                                                pod_group_status: method(:patch_pod_group_status))
         end
         if @framework.respond_to?(:queue) && @scheduler_metrics.respond_to?(:queue=)
           @scheduler_metrics.queue = @framework.queue
