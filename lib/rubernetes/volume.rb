@@ -18,6 +18,7 @@ require_relative "volume/csi_uds_client"
 require_relative "volume/csi"
 require_relative "volume/snapshot"
 require_relative "volume/manager"
+require_relative "volume/selinux"
 
 module Rubernetes
   module Volume
