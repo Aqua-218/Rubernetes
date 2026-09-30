@@ -1002,6 +1002,8 @@ module Rubernetes
 
         attr_reader :priority_levels, :flow_schemas, :server_seats, :work_estimator, :watch_tracker, :object_counts
 
+        # +object_stats+: -> { {"pods" => [count, total_bytes], ...} } for the
+        # list work estimator (the store's counts, polled once a minute).
         def initialize(flow_schemas:, priority_level_configurations:, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) },
                        read_seats: DEFAULT_READ_SEATS, mutating_seats: DEFAULT_MUTATING_SEATS)
           @clock = clock
