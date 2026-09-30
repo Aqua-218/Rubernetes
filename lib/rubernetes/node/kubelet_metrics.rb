@@ -386,6 +386,13 @@ module Rubernetes
         @registry.increment("kubelet_pleg_discard_events")
       end
 
+      # kubelet_cri_losing_support{version}: registered only once a CRI
+      # runtime without RuntimeConfig was seen (as upstream registers it).
+      def cri_losing_support(version)
+        @registry.register("kubelet_cri_losing_support", type: :gauge) unless @registry.registered?("kubelet_cri_losing_support")
+        @registry.set("kubelet_cri_losing_support", 1, {"version" => version.to_s})
+      end
+
       # EventedPLEG: stream connections obtained / failed, and each event's
       # age on arrival.
       def evented_pleg_connected
