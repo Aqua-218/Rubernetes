@@ -324,7 +324,11 @@ module Rubernetes
         {name: "DefaultBinder", phase: :bind, phases: %i[bind], weight: 1,
          implementation: DefaultBinder.new},
         {name: "NodeDeclaredFeatures", phase: :filter, phases: %i[filter], weight: 1,
-         implementation: Filters::NodeDeclaredFeatures.new}
+         implementation: Filters::NodeDeclaredFeatures.new},
+        # GangScheduling (alpha gate): PreEnqueue holds a gang until minCount
+        # Pods exist, Permit until minCount are assumed in the group cycle.
+        {name: "GangScheduling", phase: :pre_enqueue, phases: %i[pre_enqueue permit], weight: 1,
+         implementation: Filters::GangScheduling.new, gate: "GangScheduling"}
       ].map(&:freeze).freeze
 
       DEFAULT_PLUGIN_NAMES = KUBERNETES_V1_36_2_DEFAULT_PLUGINS.map { |plugin| plugin.fetch(:name) }.freeze
