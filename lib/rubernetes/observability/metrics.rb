@@ -249,8 +249,6 @@ module Rubernetes
         "kube-controller-manager" => {
         }.freeze,
         "kube-scheduler" => {
-          "scheduler_inflight_events" => no_queueing_hints,
-          "scheduler_queueing_hint_execution_duration_seconds" => no_queueing_hints,
           "scheduler_podgroup_schedule_attempts_total" => no_pod_groups,
           "scheduler_podgroup_scheduling_algorithm_duration_seconds" => no_pod_groups,
           "scheduler_podgroup_scheduling_attempt_duration_seconds" => no_pod_groups
