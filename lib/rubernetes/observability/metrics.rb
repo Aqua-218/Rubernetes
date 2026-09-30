@@ -253,7 +253,6 @@ module Rubernetes
         }.freeze,
         "kubelet" => {
           "kubelet_cri_losing_support" => "set upstream only for a container runtime on a CRI API version about to lose support; the native runtime has no CRI version and the CRI backend speaks runtime.v1",
-          "kubelet_podcertificate_states" => "the PodCertificateRequest kubelet manager (PodCertificateRequest, Alpha, off) is not implemented",
           "kubelet_started_host_process_containers_total" => windows_only,
           "kubelet_started_host_process_containers_errors_total" => windows_only,
         }.freeze,
