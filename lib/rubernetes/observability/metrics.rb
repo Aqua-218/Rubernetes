@@ -210,7 +210,6 @@ module Rubernetes
       no_borrowing = "API Priority and Fairness here neither lends nor borrows seats: each level's limit is its nominal one"
       no_queueing_hints = "no QueueingHint plugins and no in-flight event list: an unschedulable Pod is retried on any cluster change (like SchedulerQueueingHints off)"
       no_pod_groups = "no workload-aware (PodGroup / gang) scheduling"
-      no_conntrack_reconciler = "no conntrack reconciler: stale UDP conntrack entries are not flushed when endpoints go away"
       iptables_only = "the iptables proxier is not implemented (nftables and eBPF backends only); iptables mode registers this"
       no_exec_plugins = "exec credential plugins are refused by the kubeconfig loader (Kubeconfig::UnsupportedCredentialError)"
       no_stream_translation = "exec, attach and port-forward websocket requests are served natively by the subresource bridge: nothing is translated to SPDY (no StreamTranslator) and no SPDY is tunneled over websocket (no StreamTunnel)"
