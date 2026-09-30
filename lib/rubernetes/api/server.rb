@@ -2781,7 +2781,13 @@ module Rubernetes
         # Truncated once: the no-op check compares it, and the store takes it
         # as is instead of truncating it again in convert_in.
         object = StoreAdapter.time_codec.truncated_frozen(object) if object.is_a?(Hash) && StoreAdapter.time_codec.respond_to?(:truncated_frozen)
-        if phase("update.noop_check") { noop_update?(object, existing) }
+        comparison_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        unchanged = phase("update.noop_check") { noop_update?(object, existing) }
+        # apiserver_request_timestamp_comparison_time{code_path}: the old vs
+        # new comparison (time fields normalised) of an UPDATE or PATCH.
+        @metrics&.observe("apiserver_request_timestamp_comparison_time", Process.clock_gettime(Process::CLOCK_MONOTONIC) - comparison_started,
+                          {"code_path" => request.method.to_s == "PATCH" ? "patch" : "update"})
+        if unchanged
           return json_response(route.subresource == "status" ? status_view(existing) : existing)
         end
         write = lambda do
