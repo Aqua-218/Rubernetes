@@ -1103,6 +1103,17 @@ module Rubernetes
           validate_absolute_path!(audit["policy_file"], "#{context}.audit.policy_file")
           validate_absolute_path!(audit["log_path"], "#{context}.audit.log_path") if audit.key?("log_path")
           validate_positive_integer!(audit["max_queue"], "#{context}.audit.max_queue") if audit.key?("max_queue")
+          if audit.key?("webhook")
+            webhook = audit["webhook"]
+            validate_mapping!(webhook, "#{context}.audit.webhook")
+            reject_unknown_keys!(webhook, AUDIT_WEBHOOK_KEYS, "#{context}.audit.webhook")
+            validate_non_empty_string!(webhook["url"], "#{context}.audit.webhook.url")
+            if webhook.key?("mode") && !%w[batch blocking blocking-strict].include?(webhook["mode"].to_s)
+              raise Error, "#{context}.audit.webhook.mode must be batch, blocking or blocking-strict"
+            end
+            validate_absolute_path!(webhook["ca_file"], "#{context}.audit.webhook.ca_file") if webhook.key?("ca_file")
+            validate_absolute_path!(webhook["token_file"], "#{context}.audit.webhook.token_file") if webhook.key?("token_file")
+          end
         end
         if value.key?("flow_control")
           apf = value["flow_control"]
