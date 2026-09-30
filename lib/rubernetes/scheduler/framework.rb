@@ -31,6 +31,7 @@ module Rubernetes
         @namespace_data = Support.snapshot(namespace_data || {})
         @volume_data = Support.snapshot(volume_data || {})
         @workload_selectors = workload_selectors.nil? ? nil : Support.snapshot(workload_selectors)
+        @pod_groups = pod_groups.nil? ? nil : Support.snapshot(pod_groups)
         freeze
       end
 
