@@ -367,6 +367,20 @@ module Rubernetes
         @registry.increment("kubelet_pleg_discard_events")
       end
 
+      # EventedPLEG: stream connections obtained / failed, and each event's
+      # age on arrival.
+      def evented_pleg_connected
+        @registry.increment("kubelet_evented_pleg_connection_success_count")
+      end
+
+      def evented_pleg_connection_error
+        @registry.increment("kubelet_evented_pleg_connection_error_count")
+      end
+
+      def evented_pleg_latency(seconds)
+        @registry.observe("kubelet_evented_pleg_connection_latency_seconds", seconds)
+      end
+
       # HandlePodCleanups: a runtime Pod no worker knows (orphaned).
       def orphaned_runtime_pod(count = 1)
         @registry.increment("kubelet_orphaned_runtime_pods_total", by: count)
