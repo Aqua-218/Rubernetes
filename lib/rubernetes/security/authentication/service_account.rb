@@ -218,7 +218,7 @@ module Rubernetes
 
         # legacyValidator.Validate.
         def authenticate_legacy(token)
-          _header, claims = JWT.verify(token, keys: @verification_keys, allowed_algorithms: %w[RS256 ES256 RS384 RS512 ES384 ES512])
+          _header, claims = verify_with_keys(token, JWT.parse(token).first)
           subject = claims["sub"].to_s
           raise AuthenticationError, "sub claim is missing" if subject.empty?
 
