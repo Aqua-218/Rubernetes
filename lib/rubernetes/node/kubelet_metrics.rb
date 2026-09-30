@@ -74,6 +74,23 @@ module Rubernetes
       # The Plugins::Manager whose registry directory plugin_manager_total_plugins reports.
       attr_accessor :plugin_manager
 
+      # kubelet_podcertificate_states{signer_name,state}: a Custom collector
+      # upstream, from the PodCertificateManager's report.
+      attr_accessor :pod_certificates
+
+      def collect_pod_certificate_states(registry)
+        manager = @pod_certificates
+        return unless manager.respond_to?(:metric_report)
+
+        registry.register("kubelet_podcertificate_states", type: :gauge) unless registry.registered?("kubelet_podcertificate_states")
+        registry.reset("kubelet_podcertificate_states")
+        manager.metric_report.each do |(signer, state), count|
+          registry.set("kubelet_podcertificate_states", count, {"signer_name" => signer.to_s, "state" => state.to_s})
+        end
+      rescue StandardError
+        nil
+      end
+
       def collect_plugin_manager(registry)
         manager = @plugin_manager
         return unless manager.respond_to?(:plugin_states)
