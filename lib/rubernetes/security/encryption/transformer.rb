@@ -479,7 +479,9 @@ module Rubernetes
         def unseal(key, object)
           return object unless object.is_a?(Hash) && object.key?(ENVELOPE_KEY)
 
-          plaintext, _current = @transformer.decrypt(object[ENVELOPE_KEY], key.to_s)
+          envelope = object[ENVELOPE_KEY].to_s
+          prefix = @transformer.respond_to?(:prefix_of) ? @transformer.prefix_of(envelope) : ""
+          plaintext, _current = timed_transformation(key, "from_storage", prefix) { @transformer.decrypt(envelope, key.to_s) }
           restored = object.reject { |field, _| field == ENVELOPE_KEY }.merge(JSON.parse(plaintext))
           object.frozen? ? Rubernetes::Storage::MemoryStoreSupport.deep_freeze(restored) : restored
         end
