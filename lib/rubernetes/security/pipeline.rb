@@ -121,7 +121,7 @@ module Rubernetes
         begin
           filtered("authorization") { traced("security.authorize") { authorize!(attributes) } }
           audit&.annotate("authorization.k8s.io/decision", "allow")
-          ticket = @flow_control ? filtered("priorityandfairness") { traced("security.flow_control") { @flow_control.enter(attributes) } } : nil
+          ticket = @flow_control ? filtered("priorityandfairness") { traced("security.flow_control") { flow_control_enter(attributes, request) } } : nil
         rescue Forbidden => error
           audit&.annotate("authorization.k8s.io/decision", "forbid")
           audit&.annotate("authorization.k8s.io/reason", error.message)
