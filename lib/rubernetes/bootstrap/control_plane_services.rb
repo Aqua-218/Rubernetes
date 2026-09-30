@@ -1817,7 +1817,8 @@ module Rubernetes
                                   "csiDrivers" => objects["CSIDriver"].values,
                                   "volumeAttachments" => objects["VolumeAttachment"].values,
                                   "csiStorageCapacities" => objects["CSIStorageCapacity"].values} : nil,
-            workload_selectors: track ? {"services" => services, "controllers" => controllers} : nil
+            workload_selectors: track ? {"services" => services, "controllers" => controllers} : nil,
+            pod_groups: track && @cluster_informers.key?("PodGroup") ? objects["PodGroup"].dup : nil
           }
         end
       end
