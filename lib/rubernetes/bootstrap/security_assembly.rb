@@ -139,6 +139,14 @@ module Rubernetes
         Array(authn["jwt"]).each do |jwt_config|
           authenticators << cache_token.call(Security::Authentication::JWTAuthenticator.new(config: jwt_config, cel: cel_evaluator, clock: @clock))
         end
+        file_configuration = nil
+        file_authenticators = []
+        if authn["config_file"]
+          file_bytes = File.binread(authn["config_file"])
+          file_configuration = Security::Authentication::Configuration.from_bytes(file_bytes, disallowed_issuers: service_account_issuers(authn))
+          file_authenticators = build_file_jwt_authenticators(file_configuration, cache_token)
+          authenticators.concat(file_authenticators)
+        end
         if authn["webhook"]
           hook = authn["webhook"]
           authenticators << Security::Authentication::WebhookToken.new(
