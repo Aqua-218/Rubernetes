@@ -91,6 +91,11 @@ module Rubernetes
         freeze
       end
 
+      # A pod-group cycle reserved the node but has not bound yet.
+      def assumed?
+        @status == :assumed
+      end
+
       def scheduled?
         status == :scheduled
       end
