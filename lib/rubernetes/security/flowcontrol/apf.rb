@@ -1092,8 +1092,11 @@ module Rubernetes
 
         def ratio(level_name, key) = @ratios&.dig(level_name, key)
 
-        # Classify and admit; returns a Ticket to release later.
-        def enter(attributes)
+        # Classify, estimate and admit; returns a Ticket to release later.
+        # +request+ (optional): the HTTP request, for the list options the
+        # work estimator reads.
+        def enter(attributes, request: nil)
+          start_borrowing_adjustments
           schema = classify(attributes)
           raise RejectedError.new("no FlowSchema matches the request", retry_after: 1) if schema.nil?
 
