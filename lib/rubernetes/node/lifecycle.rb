@@ -1042,7 +1042,10 @@ module Rubernetes
         return unless observer.respond_to?(:volume_reconstruction) && @pod_volumes.respond_to?(:reconstruction_stats)
 
         stats = @pod_volumes.reconstruction_stats
-        observer.volume_reconstruction(stats[:attempted], stats[:errors]) if stats
+        return unless stats
+
+        observer.volume_reconstruction(stats[:attempted], stats[:errors],
+                                       force_cleaned: stats[:force_cleaned].to_i, force_clean_errors: stats[:force_clean_errors].to_i)
       rescue StandardError
         nil
       end
