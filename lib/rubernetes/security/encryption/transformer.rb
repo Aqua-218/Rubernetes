@@ -108,6 +108,35 @@ module Rubernetes
 
         attr_reader :name
 
+        # envelopekmsv2 metrics: a KMS gRPC round trip, and the key ids seen.
+        def timed_kms(method_name)
+          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          code = "OK"
+          yield
+        rescue StandardError => error
+          code = error.message.to_s[/gRPC (\w+)/, 1] || "Unknown"
+          raise
+        ensure
+          Encryption.observe("apiserver_envelope_encryption_kms_operations_latency_seconds", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started,
+                             {"grpc_status_code" => code, "method_name" => "/v2.KeyManagementService/#{method_name}", "provider_name" => @name})
+        end
+        private :timed_kms
+
+        def note_key_id(key_id, transformation_type)
+          labels = {"apiserver_id_hash" => Encryption.apiserver_id_hash, "key_id_hash" => "sha256:#{Digest::SHA256.hexdigest(key_id.to_s)}",
+                    "provider_name" => @name, "transformation_type" => transformation_type}
+          Encryption.increment("apiserver_envelope_encryption_key_id_hash_total", labels)
+          Encryption.set("apiserver_envelope_encryption_key_id_hash_last_timestamp_seconds", Time.now.to_f, labels)
+        end
+        private :note_key_id
+
+        def note_cache_state
+          size = @mutex.synchronize { @dek_cache.length }
+          Encryption.set("apiserver_envelope_encryption_dek_source_cache_size", size, {"provider_name" => @name})
+          Encryption.set("apiserver_envelope_encryption_dek_cache_fill_percent", @cache_size.positive? ? size * 100.0 / @cache_size : 0)
+        end
+        private :note_cache_state
+
         def prefix
           "#{PREFIX}#{@name}:"
         end
