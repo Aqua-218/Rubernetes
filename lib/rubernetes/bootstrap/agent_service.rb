@@ -140,6 +140,7 @@ module Rubernetes
             start_streaming_server!
             start_dns_service!
             start_certificate_rotation!
+            start_server_certificate_rotation!
             @started = true
           rescue StandardError
             unregister_node_endpoint
