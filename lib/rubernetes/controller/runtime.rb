@@ -932,6 +932,7 @@ module Rubernetes
         @running = false
         @queue.shutdown
         threads = @pool_mutex ? @pool_mutex.synchronize { Array(@pool_threads).dup } : []
+        @node_monitor_thread&.wakeup rescue nil
         threads.each { |thread| thread.join(5) }
         self
       end
