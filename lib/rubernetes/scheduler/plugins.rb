@@ -72,7 +72,7 @@ module Rubernetes
       # framework at each extension point.  Keeping the primary phase and the
       # supported phases separate preserves the pinned inventory order while
       # still making every concrete lifecycle method observable.
-      PHASES = %i[pre_enqueue queue_sort filter score post_filter reserve unreserve pre_bind bind].freeze
+      PHASES = %i[pre_enqueue queue_sort filter score post_filter reserve permit unreserve pre_bind bind].freeze
 
       attr_reader :name, :kind, :phase, :weight, :block, :supported_phases, :score_extension
 
