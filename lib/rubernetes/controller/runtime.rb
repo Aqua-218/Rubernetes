@@ -73,6 +73,9 @@ module Rubernetes
         end
         adapter = store && (store.is_a?(StoreAdapter) ? store : StoreAdapter.new(store))
         resource = resolve_resource(resource_or_key, adapter)
+        stale = stale_sync_skip(resource)
+        return stale if stale
+
         result = plan(resource, store: adapter, **options)
         should_apply = apply.nil? ? (!adapter.nil? && @apply) : !!apply
         return result unless should_apply
