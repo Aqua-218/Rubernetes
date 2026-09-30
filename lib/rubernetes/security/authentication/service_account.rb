@@ -303,6 +303,16 @@ module Rubernetes
           resolver.call(namespace, name)
         end
 
+        # An unknown kid makes the external key cache fetch again first.
+        def verify_with_keys(token, header)
+          keys = verification_keys
+          if @external_signer && header.is_a?(Hash) && !keys.key?(header["kid"].to_s)
+            @external_signer.public_keys(header["kid"].to_s)
+            keys = verification_keys
+          end
+          JWT.verify(token, keys: keys, allowed_algorithms: %w[RS256 ES256 RS384 RS512 ES384 ES512])
+        end
+
         def public_key(key)
           case key
           when OpenSSL::PKey::RSA then OpenSSL::PKey::RSA.new(key.public_to_der)
