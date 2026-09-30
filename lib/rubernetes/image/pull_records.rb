@@ -174,6 +174,7 @@ module Rubernetes
 
           record[:mapping][repository] = merged
           record[:updated] = @clock.call
+          snapshot = record
         end
       end
 
