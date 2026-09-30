@@ -1120,11 +1120,19 @@ module Rubernetes
           mutating = !NON_MUTATING_VERBS.include?(attributes.verb.to_s)
           started = @clock.call
           begin
-            queue_index, waited = level.admit(flow_hash(schema, attributes), @clock, on_queue: on_queue)
-          rescue RejectedError => error
-            if @metrics
-              @metrics.increment("apiserver_flowcontrol_rejected_requests_total", labels.merge("reason" => error.reason.to_s))
-              @metrics.observe("apiserver_flowcontrol_request_wait_duration_seconds", 0.0, labels.merge("execute" => "false"))
+            queue_request = level.queue_set.start_request(work: work, hash_value: flow_hash(schema, attributes),
+                                                          distinguisher: distinguisher(schema, attributes), flow_schema: schema_name)
+            unless queue_request.decision == :execute
+              note_read_write("waiting", mutating, 1)
+              begin
+                executed = level.queue_set.wait(queue_request, deadline: started + level.wait_limit)
+              ensure
+                note_read_write("waiting", mutating, -1)
+              end
+              unless executed
+                raise RejectedError.new("request waited #{level.wait_limit}s for priority level #{level_name}", retry_after: [level.wait_limit.ceil, 1].max,
+                                                                                                             reason: "time-out")
+              end
             end
             raise
           end
