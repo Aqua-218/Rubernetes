@@ -23,7 +23,8 @@ module Rubernetes
       # scheduling cycle only (DynamicResources keeps its PreFilter result
       # there); shared by the contexts #with derives, as upstream's Clone of
       # stateData shares the same data.
-      def initialize(nodes:, pods:, namespace_data: {}, volume_data: {}, workload_selectors: nil, cycle_state: nil)
+      # +pod_groups+: {"namespace/name" => PodGroup object} (GenericWorkload).
+      def initialize(nodes:, pods:, namespace_data: {}, volume_data: {}, workload_selectors: nil, cycle_state: nil, pod_groups: nil)
         @cycle_state = cycle_state || {}
         @nodes = Array(nodes).freeze
         @pods = Array(pods).freeze
