@@ -681,6 +681,7 @@ module Rubernetes
               raise
             end
             @metrics.extension_point(:reserve, Metrics::STATUS_SUCCESS, monotonic - reserve_started)
+            run_permit(typed_pod, selected.node, context, trace)
             bound_pod = bind!(pod, typed_pod, selected.node, context: context, trace: trace)
             commit_reservation!(reservation)
             forget_nomination(typed_pod)
