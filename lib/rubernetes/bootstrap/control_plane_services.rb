@@ -2675,6 +2675,14 @@ module Rubernetes
         (@config["backend"] || "auto").to_s.downcase.to_sym
       end
 
+      # The node's address families (what --cluster-cidr / the node IPs give
+      # kube-proxy): the conntrack reconciler runs once per family.
+      def proxy_ip_families
+        addresses = @proxy.respond_to?(:node_addresses) ? Array(@proxy.node_addresses) : []
+        families = addresses.filter_map { |ip| Proxy::ModelSupport.ip_family(ip) }.uniq
+        families.empty? ? ["IPv4"] : families
+      end
+
       def resource_source_for(descriptor)
         @resource_sources[descriptor] || @resource_sources[descriptor.identifier] ||
           @resource_sources[descriptor.kind] || KubernetesResourceSource.new(client: @client, descriptor: descriptor)
