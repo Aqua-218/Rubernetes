@@ -188,7 +188,11 @@ module Rubernetes
           wrapped = Base64.strict_decode64(document.fetch("encryptedDEK"))
           dek = @mutex.synchronize { @dek_cache[wrapped] }
           if dek.nil?
-            dek = @client.decrypt(wrapped, uid: SecureRandom.uuid, key_id: document.fetch("keyID"), annotations: document.fetch("annotations", {}))
+            now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            Encryption.increment("apiserver_storage_envelope_transformation_cache_misses_total")
+            Encryption.observe("apiserver_envelope_encryption_dek_cache_inter_arrival_time_seconds", now - @last_miss_at, {"transformation_type" => "from_storage"}) if @last_miss_at
+            @last_miss_at = now
+            dek = timed_kms("Decrypt") { @client.decrypt(wrapped, uid: SecureRandom.uuid, key_id: document.fetch("keyID"), annotations: document.fetch("annotations", {})) }
             @mutex.synchronize do
               @dek_cache[wrapped] = dek
               @dek_cache.shift while @dek_cache.length > @cache_size
