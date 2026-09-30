@@ -28,6 +28,8 @@ module Rubernetes
       def initialize(config:, store:, key_for:, logger: nil, clock: -> { Time.now.utc }, resource_resolver: nil, service_resolver: nil,
                      scope_resolver: nil, type_resolver: nil, defaulter: nil, apiserver_id: nil)
         @defaulter = defaulter
+        @apiserver_id = apiserver_id || Socket.gethostname
+        @reload_controllers = []
         @service_resolver = service_resolver
         @scope_resolver = scope_resolver
         @type_resolver = type_resolver
