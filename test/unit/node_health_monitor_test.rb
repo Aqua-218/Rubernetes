@@ -15,7 +15,7 @@ class NodeHealthMonitorTest < Minitest::Test
   end
 
   class FakeNodeController
-    attr_reader :seen, :name
+    attr_reader :seen
 
     def initialize = (@seen = [])
     def name = "node-lifecycle-controller"
