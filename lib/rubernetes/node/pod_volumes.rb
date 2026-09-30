@@ -478,6 +478,9 @@ module Rubernetes
             guard(errors, "detach #{id}") { @volume.unpublish(id, @node_name, token: "#{token}-detach-#{id}") } unless @node_name.empty?
           end
           guard(errors, "delete #{id}") { @volume.delete_volume(id, token: "#{token}-delete-#{id}") }
+          if (unique = Helpers.key(mount, "selinuxVolume", nil))
+            @selinux_tracker&.forget(pod_uid: uid, volume_name: Helpers.key(mount, "name"), unique_name: unique)
+          end
           observe_operation(KubeletMetrics.mount_plugin(mount), "volume_unmount", errors.length == errors_before ? "success" : "fail-unknown",
                             unmount_started)
         end
