@@ -1071,10 +1071,9 @@ module Rubernetes
             next if level.exempt
 
             labels = {"priority_level" => name}
-            registry.set("apiserver_flowcontrol_current_limit_seats", level.seats, labels)
-            waiting_limit = [level.queue_length_limit, 1].max * level.queues
-            max_waiting += level.queue_length_limit * level.queues
-            max_executing += level.seats
+            waiting_limit = [level.queue_length_limit, 1].max * [level.queues, 1].max
+            max_waiting += level.queue_length_limit * [level.queues, 0].max
+            max_executing += level.nominal_seats
             @ratios[name] = {
               waiting: registry.ratio_gauge("apiserver_flowcontrol_priority_level_request_utilization", labels.merge("phase" => "waiting"),
                                             denominator: waiting_limit, clock: @clock),
