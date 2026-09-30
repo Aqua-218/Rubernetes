@@ -368,6 +368,8 @@ module Rubernetes
       def self.default_registry(overrides = {}, feature_gates: {})
         registry = PluginRegistry.new
         DEFAULT_PLUGIN_SPECS.each do |spec|
+          next if spec[:gate] && (feature_gates || {})[spec[:gate]] != true
+
           implementation = overrides[spec.fetch(:name)] || spec[:implementation] || spec[:factory]&.call
           score_implementation = spec[:score_implementation]
           block = lambda do |pod, node|
