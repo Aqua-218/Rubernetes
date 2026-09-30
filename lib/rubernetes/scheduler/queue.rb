@@ -202,7 +202,6 @@ module Rubernetes
           QueueItem.new(pod: typed, priority: typed.priority, sequence: @sequence,
                         reason: String(reason), unschedulable: true).tap do |entry|
             @pending.delete(key)
-            @unschedulable[key] = entry
             gated ? @gated[key] = true : @gated.delete(key)
             @rejecting_plugins[key] = Array(plugins).map(&:to_s).uniq.freeze
             incoming(event, "unschedulable")
