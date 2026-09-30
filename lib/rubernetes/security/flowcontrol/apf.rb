@@ -1044,20 +1044,12 @@ module Rubernetes
           @metrics = registry
           return unless registry
 
-          registry.register("apiserver_flowcontrol_dispatched_requests_total", type: :counter,
-                                                                               help: "Number of requests executed by API Priority and Fairness subsystem")
-          registry.register("apiserver_flowcontrol_rejected_requests_total", type: :counter,
-                                                                             help: "Number of requests rejected by API Priority and Fairness subsystem")
-          registry.register("apiserver_flowcontrol_current_executing_requests", type: :gauge,
-                                                                                help: "Number of requests in initial (for a WATCH) or any (for a non-WATCH) execution stage in the API Priority and Fairness subsystem")
-          registry.register("apiserver_flowcontrol_current_inqueue_requests", type: :gauge,
-                                                                              help: "Number of requests currently pending in queues of the API Priority and Fairness subsystem")
-          registry.register("apiserver_flowcontrol_request_wait_duration_seconds", type: :histogram, buckets: WAIT_BUCKETS,
-                                                                                   help: "Length of time a request spent waiting in its queue")
-          registry.register("apiserver_flowcontrol_nominal_limit_seats", type: :gauge,
-                                                                         help: "Nominal number of execution seats configured for each priority level")
-          @priority_levels.each do |name, level|
-            registry.set("apiserver_flowcontrol_nominal_limit_seats", level.exempt ? 0 : level.seats, {"priority_level" => name})
+          {"apiserver_flowcontrol_dispatched_requests_total" => [:counter, "Number of requests executed by API Priority and Fairness subsystem"],
+           "apiserver_flowcontrol_rejected_requests_total" => [:counter, "Number of requests rejected by API Priority and Fairness subsystem"],
+           "apiserver_flowcontrol_current_executing_requests" => [:gauge, "Number of requests in initial (for a WATCH) or any (for a non-WATCH) execution stage in the API Priority and Fairness subsystem"],
+           "apiserver_flowcontrol_current_inqueue_requests" => [:gauge, "Number of requests currently pending in queues of the API Priority and Fairness subsystem"],
+           "apiserver_flowcontrol_nominal_limit_seats" => [:gauge, "Nominal number of execution seats configured for each priority level"]}.each do |name, (type, help)|
+            registry.register(name, type: type, help: help) unless registry.registered?(name)
           end
           register_seat_metrics(registry)
         end
