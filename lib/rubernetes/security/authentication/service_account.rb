@@ -93,7 +93,8 @@ module Rubernetes
         end
 
         def algorithm
-          @signing_key.is_a?(OpenSSL::PKey::EC) ? "ES256" : "RS256"
+          key = @signing_key || verification_keys.values.first
+          key.is_a?(OpenSSL::PKey::EC) ? "ES256" : "RS256"
         end
 
         # OpenID discovery documents served at /.well-known/openid-configuration and /openid/v1/jwks.
