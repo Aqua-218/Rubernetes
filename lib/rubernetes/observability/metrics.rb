@@ -304,13 +304,6 @@ module Rubernetes
           "kubelet_podcertificate_states" => "the PodCertificateRequest kubelet manager (PodCertificateRequest, Alpha, off) is not implemented",
           "kubelet_started_host_process_containers_total" => windows_only,
           "kubelet_started_host_process_containers_errors_total" => windows_only,
-          "volume_manager_selinux_container_errors_total" => no_selinux_mounts,
-          "volume_manager_selinux_container_warnings_total" => no_selinux_mounts,
-          "volume_manager_selinux_pod_context_mismatch_errors_total" => no_selinux_mounts,
-          "volume_manager_selinux_pod_context_mismatch_warnings_total" => no_selinux_mounts,
-          "volume_manager_selinux_volume_context_mismatch_errors_total" => no_selinux_mounts,
-          "volume_manager_selinux_volume_context_mismatch_warnings_total" => no_selinux_mounts,
-          "volume_manager_selinux_volumes_admitted_total" => no_selinux_mounts
         }.freeze,
         "kube-proxy" => {
           "kubeproxy_iptables_ct_state_invalid_dropped_packets_total" => iptables_only,
