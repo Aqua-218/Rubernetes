@@ -120,6 +120,14 @@ module Rubernetes
       # Volume::SELinux::Tracker: the label each volume is mounted with and
       # the KEP-1710 mismatch checks; nil mounts without -o context.
       attr_accessor :selinux_tracker
+      # Node::PodCertificateManager for projected podCertificate sources
+      # (PodCertificateRequest feature gate); nil refuses such volumes.
+      attr_reader :pod_certificates
+
+      def pod_certificates=(manager)
+        @pod_certificates = manager
+        Volume::ProjectedBackend.pod_certificate_provider = manager if defined?(Volume::ProjectedBackend)
+      end
 
       # A volume whose containers or Pods disagree on an SELinux label and
       # whose access mode makes that an error (MountVolume.SetUp fails).
