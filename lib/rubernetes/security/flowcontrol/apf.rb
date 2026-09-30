@@ -984,10 +984,9 @@ module Rubernetes
             @controller.set("apiserver_flowcontrol_next_discounted_s_bounds", ds_max, level.merge("bound" => "max"))
           end
 
-          # Shuffle sharding: derive hand_size candidate queues from the flow
-          # hash and pick the shortest.
-          def shuffle_shard(flow_hash)
-            return 0 if @queues <= 1
+          def requests_waiting(delta) = @controller.ratio(@name, :waiting)&.add(delta)
+          def requests_executing(delta) = @controller.ratio(@name, :executing)&.add(delta)
+          def exec_seats(delta) = @controller.ratio(@name, :seats)&.add(delta)
 
             candidates = []
             value = flow_hash
