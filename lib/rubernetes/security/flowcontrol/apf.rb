@@ -1078,8 +1078,7 @@ module Rubernetes
               waiting: registry.ratio_gauge("apiserver_flowcontrol_priority_level_request_utilization", labels.merge("phase" => "waiting"),
                                             denominator: waiting_limit, clock: @clock),
               executing: registry.ratio_gauge("apiserver_flowcontrol_priority_level_request_utilization", labels.merge("phase" => "executing"),
-                                              denominator: level.seats, clock: @clock),
-              # ConstLabels: phase="executing".
+                                              denominator: [level.current_seats, 1].max, clock: @clock),
               seats: registry.ratio_gauge("apiserver_flowcontrol_priority_level_seat_utilization", labels.merge("phase" => "executing"),
                                           denominator: level.seats, clock: @clock),
               demand: registry.ratio_gauge("apiserver_flowcontrol_demand_seats", labels, denominator: level.seats, clock: @clock)
