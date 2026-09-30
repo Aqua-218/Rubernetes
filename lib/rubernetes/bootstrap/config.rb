@@ -271,6 +271,9 @@ module Rubernetes
         if process_config.key?("bootstrap_kubeconfig") && !process_config.key?("kubeconfig")
           raise Error, "rubernetes-agent.bootstrap_kubeconfig requires kubeconfig (the file the bootstrap writes)"
         end
+        if process_config.key?("server_tls_bootstrap") && ![true, false].include?(process_config["server_tls_bootstrap"])
+          raise Error, "rubernetes-agent.server_tls_bootstrap must be true or false"
+        end
         if process_config.key?("rotate_certificates") && ![true, false].include?(process_config["rotate_certificates"])
           raise Error, "rubernetes-agent.rotate_certificates must be true or false"
         end
