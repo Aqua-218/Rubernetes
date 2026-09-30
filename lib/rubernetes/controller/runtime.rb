@@ -664,6 +664,7 @@ module Rubernetes
           (@worker_count - @pool_threads.length).times do
             @pool_threads << Thread.new { run_pool_worker(wait) }
           end
+          start_node_health_monitor_locked
         end
       end
 
