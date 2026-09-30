@@ -169,6 +169,73 @@ module Rubernetes
     # The scheduling framework implements the normative pipeline:
     # Queue -> Filter -> Score -> Reserve -> Bind.  Every externally visible
     # choice is derived from immutable snapshots and deterministic sorting.
+    # A Permit plugin's answer that holds the Pod: the framework parks it as
+    # a waiting Pod for up to +timeout+ seconds until a plugin (or the
+    # framework's owner) allows or rejects it (framework.Status Wait).
+    class PermitError < StandardError; end
+
+    module Permit
+      Wait = Struct.new(:timeout) do
+        def initialize(timeout = 15.0)
+          super(Float(timeout))
+        end
+      end
+
+      # framework.WaitingPod: Allow / Reject from any thread, and the wait.
+      class WaitingPod
+        attr_reader :pod, :node
+
+        def initialize(pod, node, plugins, timeout)
+          @pod = pod
+          @node = node
+          @plugins = plugins.to_h { |name| [name, :waiting] }
+          @timeout = timeout
+          @mutex = Mutex.new
+          @condition = ConditionVariable.new
+          @rejection = nil
+        end
+
+        def allow(plugin_name)
+          @mutex.synchronize do
+            @plugins[plugin_name.to_s] = :allowed if @plugins.key?(plugin_name.to_s)
+            @condition.broadcast
+          end
+          true
+        end
+
+        def reject(plugin_name, reason = "rejected")
+          @mutex.synchronize do
+            @rejection ||= "#{plugin_name}: #{reason}"
+            @condition.broadcast
+          end
+          true
+        end
+
+        def pending_plugins
+          @mutex.synchronize { @plugins.select { |_, state| state == :waiting }.keys }
+        end
+
+        # [:allowed, nil], [:rejected, message] or [:timeout, message].
+        def wait
+          deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
+          @mutex.synchronize do
+            loop do
+              return [:rejected, @rejection] if @rejection
+              return [:allowed, nil] if @plugins.values.none? { |state| state == :waiting }
+
+              remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+              if remaining <= 0
+                pending = @plugins.select { |_, state| state == :waiting }.keys.join(", ")
+                return [:timeout, "pod rejected due to timeout after waiting #{@timeout}s at plugin #{pending}"]
+              end
+
+              @condition.wait(@mutex, remaining)
+            end
+          end
+        end
+      end
+    end
+
     class Framework
       # Ordered MultiPoint inventory copied from Kubernetes v1.36.2's
       # getDefaultPlugins.  Only entries with a complete implementation in
