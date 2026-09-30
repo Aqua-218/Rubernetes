@@ -1177,7 +1177,205 @@ module Rubernetes
           @mutex.synchronize do
             return if @borrowing_thread&.alive?
 
-        def record_dispatch(labels, waited, executing:)
+            @borrowing_thread = Thread.new do
+              Thread.current.name = "apf-borrowing"
+              loop do
+                sleep(@borrowing_adjustment_seconds)
+                begin
+                  adjust_borrowing!
+                rescue StandardError
+                  nil
+                end
+              end
+            end
+          end
+        end
+
+        def stop
+          @borrowing_thread&.kill
+          @borrowing_thread = nil
+        end
+
+        # One adjustment period: each level's seat demand statistics, then
+        # the concurrency allocation between the levels' bounds.
+        def adjust_borrowing!
+          @mutex.synchronize do
+            items = []
+            non_exempt = []
+            min_current_of_exempt = {}
+            min_sum = 0
+            min_current_sum = 0
+            remaining = @nominal_sum
+            @priority_levels.each_value do |level|
+              stats = level.update_seat_demand_stats!
+              if level.exempt
+                min_current = [level.min_seats, stats.high_watermark].max
+                min_current_of_exempt[level.name] = min_current
+                remaining -= min_current
+              else
+                min_current = [level.min_seats, [level.nominal_seats, stats.high_watermark].min].max
+                non_exempt << [level, min_current]
+                items << {lower: min_current.to_f, upper: level.max_seats.to_f, target: [min_current.to_f, stats.smoothed].max}
+                min_sum += level.min_seats
+                min_current_sum += min_current
+              end
+            end
+            return if items.empty? && @nominal_sum.positive?
+
+            allocations = nil
+            share_frac = 0.0
+            @fair_frac = 0.0
+            if remaining <= min_sum
+              nil
+            elsif remaining <= min_current_sum
+              share_frac = (remaining - min_sum).to_f / (min_current_sum - min_sum)
+            else
+              begin
+                allocations, @fair_frac = self.class.compute_concurrency_allocation(@nominal_sum, items)
+              rescue ArgumentError
+                allocations = non_exempt.map { |level, _| level.current_seats.to_f }
+              end
+            end
+            @targets = {}
+            @priority_levels.each_value do |level|
+              index = non_exempt.index { |candidate, _| candidate.equal?(level) }
+              current = if index.nil? then min_current_of_exempt[level.name]
+                        elsif remaining <= min_sum then level.min_seats
+                        elsif remaining <= min_current_sum then level.min_seats + ((non_exempt[index][1] - level.min_seats) * share_frac).round
+                        else allocations[index].round
+                        end
+              denominator = current.positive? ? current : [1, (@server_seats / 10.0).round].max
+              @targets[level.name] = index ? items[index][:target] : nil
+              level.apply_current_seats!(current, denominator)
+            end
+            record_borrowing_metrics
+          end
+        end
+
+        # conc_alloc.computeConcurrencyAllocation: split +required_sum+ among
+        # classes in proportion to their targets, each within its bounds.
+        # Returns [allocations, fair proportion].
+        def self.compute_concurrency_allocation(required_sum, classes)
+          raise ArgumentError, "negative sums are not supported" if required_sum.negative?
+
+          required = required_sum.to_f
+          low_sum = high_sum = target_sum = 0.0
+          ub_min = lb_min = Float::MAX
+          ub_max = lb_max = -Float::MAX
+          relative = classes.each_with_index.map do |item, index|
+            target = item[:target]
+            raise ArgumentError, "lower bound #{index} is #{item[:lower]} but negative lower bounds are not allowed" if item[:lower].negative?
+            raise ArgumentError, "target #{index} is #{target}, which is below its lower bound of #{item[:lower]}" if target < item[:lower]
+            raise ArgumentError, "upper bound #{index} is #{item[:upper]} but should not be less than the lower bound #{item[:lower]}" if item[:upper] < item[:lower]
+
+            target = MIN_TARGET if target < MIN_TARGET
+            low_sum += item[:lower]
+            high_sum += item[:upper]
+            target_sum += target
+            entry = {target: target, lower: item[:lower] / target, upper: item[:upper] / target}
+            ub_min = [ub_min, entry[:upper]].min
+            ub_max = [ub_max, entry[:upper]].max
+            lb_min = [lb_min, entry[:lower]].min
+            lb_max = [lb_max, entry[:lower]].max
+            entry
+          end
+          raise ArgumentError, "lbRange.max-1=#{lb_max - 1}, which is impossible because lbRange.max can not be greater than 1" if lb_max > 1
+          raise ArgumentError, "lower bounds sum to #{low_sum}, which is higher than the required sum of #{required_sum}" if low_sum - required > EPSILON
+          raise ArgumentError, "upper bounds sum to #{high_sum}, which is lower than the required sum of #{required_sum}" if required - high_sum > EPSILON
+
+          answer = Array.new(classes.length, 0.0)
+          return [answer, 0.0] if required_sum.zero?
+          return [classes.map { |item| item[:lower] }, lb_min] if low_sum - required > -EPSILON
+          return [classes.map { |item| item[:upper] }, ub_max] if required - high_sum > -EPSILON
+
+          fair_prop = required / target_sum
+          return [relative.map { |entry| entry[:target] * fair_prop }, fair_prop] if lb_max <= fair_prop && fair_prop <= ub_min
+
+          # Bounds matter: walk the bounds in ascending order.
+          bounds = []
+          relative.each_with_index do |entry, index|
+            bounds << [entry[:lower], index, true]
+            bounds << [entry[:upper], index, false]
+          end
+          bounds.sort_by!(&:first)
+          sum_so_far = low_sum
+          fair_prop = lb_min
+          sensitive_target_sum = 0.0
+          delta_sensitive_target_sum = 0.0
+          sensitive_classes = 0
+          delta_sensitive_classes = 0
+          next_index = 0
+          while sum_so_far < required
+            next_bound = nil
+            loop do
+              sensitive_target_sum += delta_sensitive_target_sum
+              sensitive_classes += delta_sensitive_classes
+              raise ArgumentError, "impossible: ran out of bounds to consider in bound-constrained problem" if next_index >= bounds.length
+
+              next_bound, item_index, lower = bounds[next_index]
+              if lower
+                delta_sensitive_classes = 1
+                delta_sensitive_target_sum = relative[item_index][:target]
+              else
+                delta_sensitive_classes = -1
+                delta_sensitive_target_sum = -relative[item_index][:target]
+              end
+              next_index += 1
+              break if next_bound > fair_prop
+            end
+            if sensitive_classes.zero?
+              fair_prop = next_bound
+              next
+            end
+            delta_fair_prop = (required - sum_so_far) / sensitive_target_sum
+            next_prop = fair_prop + delta_fair_prop
+            if next_prop <= next_bound
+              fair_prop = next_prop
+              break
+            end
+            sum_so_far += (next_bound - fair_prop) * sensitive_target_sum
+            fair_prop = next_bound
+          end
+          allocations = classes.each_with_index.map do |item, index|
+            [item[:lower], [item[:upper], fair_prop * relative[index][:target]].min].max
+          end
+          [allocations, fair_prop]
+        end
+
+        # -- metrics plumbing (called by the levels and queue sets) ----------
+
+        def set_priority_level_configuration(name, nominal, min, max, exempt: false)
+          return unless @metrics
+
+          labels = {"priority_level" => name}
+          set("apiserver_flowcontrol_nominal_limit_seats", nominal, labels)
+          set("apiserver_flowcontrol_request_concurrency_limit", nominal, labels)
+          set("apiserver_flowcontrol_lower_limit_seats", min, labels)
+          set("apiserver_flowcontrol_upper_limit_seats", max, labels)
+          _ = exempt
+        end
+
+        def set_demand_denominator(name, denominator)
+          ratio(name, :demand)&.set_denominator(denominator)
+        end
+
+        def record_borrowing_metrics
+          return unless @metrics
+
+          set("apiserver_flowcontrol_seat_fair_frac", @fair_frac || 0.0)
+          @priority_levels.each_value do |level|
+            labels = {"priority_level" => level.name}
+            stats = level.seat_demand_stats
+            set("apiserver_flowcontrol_demand_seats_high_watermark", stats.high_watermark, labels)
+            set("apiserver_flowcontrol_demand_seats_average", stats.average, labels)
+            set("apiserver_flowcontrol_demand_seats_stdev", stats.stdev, labels)
+            set("apiserver_flowcontrol_demand_seats_smoothed", stats.smoothed, labels)
+            set("apiserver_flowcontrol_target_seats", @targets&.dig(level.name) || 0.0, labels) unless level.exempt
+            set("apiserver_flowcontrol_current_limit_seats", level.current_seats, labels)
+          end
+        end
+
+        def record_dispatch(labels, waited)
           return unless @metrics
 
           @metrics.increment("apiserver_flowcontrol_dispatched_requests_total", labels)
