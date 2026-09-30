@@ -45,6 +45,8 @@ module Rubernetes
       end
     end
     class SecretPersistenceError < SecurityError; end
+    # A projected podCertificate whose PodCertificateRequest is not issued yet.
+    class PodCertificateNotReadyError < Error; end
     # Snapshot payload bytes no longer match the digests recorded when the
     # snapshot was taken.  Restoring them would present corrupted data as a
     # faithful copy, so the restore must fail before any file is written.
