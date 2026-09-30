@@ -889,8 +889,8 @@ module Rubernetes
 
           SeatDemandStats = Struct.new(:average, :stdev, :high_watermark, :smoothed, keyword_init: true)
 
-          def initialize(name:, seats:, queues:, hand_size:, queue_length_limit:, wait_limit:, exempt:, reject: false)
-            @reject = reject
+          def initialize(controller:, name:, spec:, clock:, after: nil)
+            @controller = controller
             @name = name
             @seats = seats
             @queues = queues
