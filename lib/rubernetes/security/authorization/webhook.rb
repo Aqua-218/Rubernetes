@@ -18,6 +18,8 @@ module Rubernetes
         def initialize(transport:, authorized_ttl: 300, unauthorized_ttl: 30, clock: -> { Time.now.utc }, failure_policy: "NoOpinion", version: "v1",
                        name: NAME, match_conditions: nil)
           @transport = transport
+          @name = name.to_s.empty? ? NAME : name.to_s
+          @match_conditions = match_conditions
           @authorized_ttl = authorized_ttl
           @unauthorized_ttl = unauthorized_ttl
           @clock = clock
