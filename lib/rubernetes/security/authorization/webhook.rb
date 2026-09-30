@@ -106,7 +106,7 @@ module Rubernetes
             result = error.is_a?(Errno::ETIMEDOUT) || error.message.to_s.match?(/timed? ?out/i) ? "timeout" : "error"
             fail_open = @failure_policy != "Deny"
             self.class.record_fail_open(name, result) if fail_open
-            fail_open ? Decision.no_opinion("Webhook: #{error.message}", authorizer: NAME) : Decision.deny("Webhook: #{error.message}", authorizer: NAME)
+            fail_open ? Decision.no_opinion("Webhook: #{error.message}", authorizer: name) : Decision.deny("Webhook: #{error.message}", authorizer: name)
           end
           self.class.record_evaluation(name, result, Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
           ttl = decision.allowed? ? @authorized_ttl : @unauthorized_ttl
