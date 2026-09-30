@@ -271,7 +271,7 @@ class M3ControllerTest < Minitest::Test
 
     assert_equal "Unknown", ready["status"]
     assert_equal "NodeStatusUnknown", ready["reason"]
-    assert_equal n["status"], update.object["status"]
+    assert_equal "Unknown", update.object.dig("status", "conditions", 0, "status"), "the taint write carries the new status"
     assert_operator result.operations.index(status_update), :<, result.operations.index(update)
     # doNoScheduleTaintingPass: the Unknown condition also yields the
     # unreachable:NoSchedule taint, next to the NoExecute eviction taint.

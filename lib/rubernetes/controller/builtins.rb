@@ -1519,9 +1519,13 @@ module Rubernetes
           # taint then evicted, over and over.
           status_update = operation_status(node, Support.status(candidate), descriptor: DESCRIPTOR, reason: "node heartbeat/status")
           operations << status_update if status_update
+          # The taint write is issued only when spec/metadata changed; it
+          # carries the new status too, so an in-memory store (which honours
+          # status on a primary write) ends up identical to the API server's
+          # view and a second pass over the result is a no-op.
           spec_candidate = Support.deep_copy(candidate)
           spec_candidate["status"] = Support.deep_copy(Support.status(node))
-          update = operation_update(node, spec_candidate, descriptor: DESCRIPTOR, reason: "node taints")
+          update = spec_candidate == node ? nil : operation_update(node, candidate, descriptor: DESCRIPTOR, reason: "node taints")
           zone = self.class.zone_key(node)
           if update && unhealthy && !self.class.eviction_tainted?(node)
             # doNoExecuteTaintingPass: a node newly tainted for eviction.

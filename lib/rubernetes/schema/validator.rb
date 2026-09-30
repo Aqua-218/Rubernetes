@@ -370,7 +370,7 @@ module Rubernetes
         object_definition.fields.each_value do |field|
           present, field_value = read_field(value, field)
           unless present
-            if field.required?
+            if field.required? && !go_zero_value_field?(field)
               issues << issue(path + [field.json_name], :required, "field #{field.json_name.inspect} is required",
                               expected: :present)
             end
@@ -378,6 +378,13 @@ module Rubernetes
           end
 
           if field_value.nil?
+            # A null list or map is Go's nil slice/map: what a client sends for
+            # an empty `drivers`, `ports`, `annotations`...  The apiserver
+            # decodes it to the zero value and only kind-specific validation
+            # may demand entries (containers), so it is neither a missing
+            # required field nor a type error here.
+            next if go_zero_value_field?(field)
+
             unless field.nullable?
               issues << issue(path + [field.json_name], :type,
                               "expected #{expected_type(field)}, got null",
@@ -489,6 +496,14 @@ module Rubernetes
 
         [issue(path, :type, "expected #{type_name(item)}, got #{type_name(value)}", value: value,
                                                                                     expected: type_name(item))]
+      end
+
+      # Go decodes an absent or null repeated/map field to a nil slice or map
+      # and never fails "required" on it (CSINode.spec.drivers, sent as null by
+      # an empty Go slice, is valid): the schema's required marker is met by
+      # presence of the parent, and emptiness is a per-kind rule.
+      def go_zero_value_field?(field)
+        field.array? || (field.type == :object && !field.additional_properties.nil?)
       end
 
       def read_field(value, field)
