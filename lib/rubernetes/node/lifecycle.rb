@@ -1025,6 +1025,9 @@ module Rubernetes
       # KubeletMetrics: sees every trace entry (started Pods and containers,
       # terminations, Pod start latency).
       attr_reader :metrics_observer
+      # The kubelet-side Pod volume translation and the node's API reader
+      # (the agent attaches the SELinux tracker to them).
+      attr_reader :pod_volumes, :resource_reader
 
       # kubelet /metrics: the lifecycle's observer, and the volume operations
       # (storage_operation_duration_seconds) through the Pod volumes.
