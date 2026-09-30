@@ -325,6 +325,7 @@ module Rubernetes
           @pending.delete(key)
           @pops[key] = @pops.fetch(key, 0) + 1
           @first_pop[key] ||= now
+          @in_flight[key] = @event_sequence
           item
         end
       end
