@@ -167,6 +167,9 @@ module Rubernetes
             spec = spec.merge("podUid" => uid, "attempt" => token)
             operation_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             current_plugin = plugin_name(entry, spec)
+            selinux_label = admit_selinux(object, uid, name, spec, selinux_contexts ||= Volume::SELinux.container_contexts(object))
+            spec = spec.merge("selinuxMountLabel" => selinux_label) if selinux_label
+            selinux_volumes[name] = @selinux_tracker.unique_name(uid, name, spec) if @selinux_tracker
             id = create(spec, token: "#{token}-#{name}")
             ids << id
             target = File.join(pod_directory(object), "volumes", name)
