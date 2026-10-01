@@ -701,8 +701,9 @@ module Rubernetes
           raise Error,
                 "rubernetes-agent.microvm.parent_cgroup must be a relative cgroup path"
         end
-        raise Error, "rubernetes-agent.microvm.use_base_snapshot must be true or false" if section.key?("use_base_snapshot") && ![true,
-                                                                                                                                  false].include?(section["use_base_snapshot"])
+        return unless section.key?("use_base_snapshot") && ![true, false].include?(section["use_base_snapshot"])
+
+        raise Error, "rubernetes-agent.microvm.use_base_snapshot must be true or false"
       end
 
       # kubelet crashLoopBackOff (KubeletCrashLoopBackOffMax, Beta, on):
