@@ -192,7 +192,8 @@ class SecurityAuthenticationTest < Minitest::Test
                                   "groups" => {"claim" => "roles", "prefix" => "oidc:"}}}
     authenticator = A::JWTAuthenticator.new(config: config, key_fetcher: ->(_url, _ca) { jwks })
     now = Time.now.to_i
-    claims = {"iss" => "https://issuer.example", "aud" => "client-a", "exp" => now + 60, "iat" => now, "email" => "a@example.com", "hd" => "example.com", "roles" => %w[admin]}
+    claims = {"iss" => "https://issuer.example", "aud" => "client-a", "exp" => now + 60, "iat" => now, "email" => "a@example.com", "hd" => "example.com",
+              "roles" => %w[admin]}
     token = A::JWT.sign(claims, key: key, algorithm: "RS256", key_id: "issuer-key")
     result = authenticator.authenticate_token(token)
 
