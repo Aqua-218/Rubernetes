@@ -1240,9 +1240,7 @@ module Rubernetes
         failures << "#{name} kernel identity is required" unless identity.is_a?(Hash) && !identity.empty?
         failures << "#{name} kernel identity digest is invalid" unless valid_digest?(identity_digest) && identity_digest == canonical_trace_digest(identity)
         rules_digest = evidence_value(entry, "rulesDigest", "rules_digest", "ruleDigest", "rule_digest")
-        unless valid_digest?(rules_digest) && rules_digest == canonical_trace_digest(rules)
-          failures << "#{name} kernel rules digest does not match readback"
-        end
+        failures << "#{name} kernel rules digest does not match readback" unless valid_digest?(rules_digest) && rules_digest == canonical_trace_digest(rules)
         if expected_rules
           unless ModelSupport.canonicalize(rules) == ModelSupport.canonicalize(expected_rules)
             failures << "#{name} kernel rules do not match the canonical model snapshot"
