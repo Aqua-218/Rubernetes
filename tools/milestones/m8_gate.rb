@@ -249,9 +249,7 @@ module M8Gate
         end
       end
       streaks = cases.select { |entry| entry["id"].to_s.start_with?("k1_consecutive_clean-") }
-      unless streaks.length == REQUIRED_PROFILES
-        errors << "K1 must record a clean-run streak for each of the #{REQUIRED_PROFILES} release profiles"
-      end
+      errors << "K1 must record a clean-run streak for each of the #{REQUIRED_PROFILES} release profiles" unless streaks.length == REQUIRED_PROFILES
       streaks.each do |entry|
         unless entry["clean_streak"].to_i >= REQUIRED_CLEAN_RUNS
           errors << "profile #{entry["profile"]} needs #{REQUIRED_CLEAN_RUNS} consecutive clean K1 runs, has #{entry["clean_streak"]}"
