@@ -62,8 +62,8 @@ module Rubernetes
         @write_timeout = Integer(write_timeout)
         @ca_file = ca_file
         @ca_data = ca_data
-        raise RegistryError, "registry transport timeout must be non-negative" if [@open_timeout, @read_timeout, 
-@write_timeout].any?(&:negative?)
+        raise RegistryError, "registry transport timeout must be non-negative" if [@open_timeout, @read_timeout,
+                                                                                   @write_timeout].any?(&:negative?)
       rescue ArgumentError, TypeError => error
         raise RegistryError.new("invalid registry transport configuration: #{error.message}", cause: error), cause: error
       end
