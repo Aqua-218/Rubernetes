@@ -284,6 +284,7 @@ class M2LifecycleOracleHarnessTest < Minitest::Test
   def waiting(restart_count, message, last_exit_code, last_reason)
     {"name" => "app", "ready" => false, "started" => false, "restartCount" => restart_count,
      "state" => {"waiting" => {"reason" => "CrashLoopBackOff", "message" => message}},
-     "lastState" => {"terminated" => {"exitCode" => last_exit_code, "reason" => last_reason, "startedAt" => "2026-09-04T04:43:14Z", "finishedAt" => "2026-09-04T04:43:14Z"}}}
+     "lastState" => {"terminated" => {"exitCode" => last_exit_code, "reason" => last_reason, "startedAt" => "2026-09-04T04:43:14Z",
+                                      "finishedAt" => "2026-09-04T04:43:14Z"}}}
   end
 end
