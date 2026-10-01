@@ -437,9 +437,7 @@ module Rubernetes
           unless expected_scope == watch.resource.scope
             raise ScopeMismatchError, "watch scope #{expected_scope.inspect} conflicts with #{watch.resource.identifier}"
           end
-          unless %i[owner_reference label selector all].include?(watch.via)
-            raise InvalidWatchError, "unsupported watch relationship #{watch.via.inspect}"
-          end
+          raise InvalidWatchError, "unsupported watch relationship #{watch.via.inspect}" unless %i[owner_reference label selector all].include?(watch.via)
         end
         raise MissingReconcileError, "controller #{definition.name} has no reconcile block" unless definition.reconcile_block
       end
