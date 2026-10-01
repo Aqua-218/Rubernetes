@@ -3165,7 +3165,8 @@ module Rubernetes
           spec = fetch(root, "spec")
           if spec.is_a?(Hash)
             sources = %w[awsElasticBlockStore azureDisk azureFile cephfs cinder configMap csi downwardAPI emptyDir ephemeral fc flexVolume
-                         flocker gcePersistentDisk glusterfs hostPath iscsi local nfs persistentVolumeClaim photonPersistentDisk portworxVolume projected quobyte rbd scaleIO storageos vsphereVolume]
+                         flocker gcePersistentDisk glusterfs hostPath iscsi local nfs persistentVolumeClaim photonPersistentDisk portworxVolume projected
+                         quobyte rbd scaleIO storageos vsphereVolume]
             present_sources = sources.select { |name| source_key_present?(spec, name) }
             if present_sources.empty?
               source_issues = [
