@@ -20,9 +20,7 @@ class KubeletLifecycleHookFallbackTest < Minitest::Test
 
     def http_get(_id, definition, timeout:)
       @requests << definition
-      if definition["scheme"] == "HTTPS" && @plain
-        raise OpenSSL::SSL::SSLError, "SSL_connect returned=1 errno=0 state=error: wrong version number"
-      end
+      raise OpenSSL::SSL::SSLError, "SSL_connect returned=1 errno=0 state=error: wrong version number" if definition["scheme"] == "HTTPS" && @plain
 
       {"status" => 200, "success" => true}
     end
