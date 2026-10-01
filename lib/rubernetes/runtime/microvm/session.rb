@@ -86,7 +86,8 @@ module Rubernetes
         attr_reader :sandbox_id, :identity, :instance, :resources, :phase, :base, :machine, :drive_layout, :netns_handle, :tap_name,
                     :verity_mapping, :guest_hello, :log_path, :acks, :timings
 
-        def initialize(sandbox_id:, identity:, artifacts:, jailer:, verity:, netns:, disks:, pool:, broker:, clock:, run_root:, logger: nil, machine: DEFAULT_MACHINE,
+        def initialize(sandbox_id:, identity:, artifacts:, jailer:, verity:, netns:, disks:, pool:, broker:, clock:, run_root:, logger: nil,
+                       machine: DEFAULT_MACHINE,
                        network_device: true)
           @sandbox_id = sandbox_id
           @identity = identity
