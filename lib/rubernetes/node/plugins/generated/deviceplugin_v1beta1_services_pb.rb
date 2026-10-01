@@ -44,7 +44,7 @@ module Rubernetes
 
               self.marshal_class_method = :encode
               self.unmarshal_class_method = :decode
-              self.service_name = 'v1beta1.DevicePlugin'
+              self.service_name = "v1beta1.DevicePlugin"
 
               # GetDevicePluginOptions returns options to be communicated with Device
               # Manager
