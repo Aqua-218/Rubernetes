@@ -20,10 +20,10 @@ module Prom
       FileUtils.rm_rf(@dir)
     end
 
-  def target(body, job: "test", instance: "t:1", labels: {}, status: 200, &block)
-    fetch = block || -> { [status, body] }
-    Prom::Target.new(job: job, instance: instance, labels: labels, url: "http://#{instance}/metrics", fetch: fetch)
-  end
+    def target(body, job: "test", instance: "t:1", labels: {}, status: 200, &block)
+      fetch = block || -> { [status, body] }
+      Prom::Target.new(job: job, instance: instance, labels: labels, url: "http://#{instance}/metrics", fetch: fetch)
+    end
 
   def value_of(name, extra = {})
     matchers = [M.new(name: "__name__", op: "=", value: name)] + extra.map { |k, v| M.new(name: k, op: "=", value: v) }
