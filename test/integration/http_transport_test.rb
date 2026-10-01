@@ -598,32 +598,32 @@ class HTTPTransportTest < Minitest::Test
         assert_includes kubectl_run(service, "delete", "pod", "web", "-n", "default"), "pod \"web\" deleted"
       end
 
-    # The API server keeps watches of its own (CustomResourceDefinitions and
-    # APIServices, to serve dynamic APIs), so the kubectl watch is counted on
-    # top of whatever was registered before it started.
-    baseline_watchers = store_watcher_count(service.store)
-    watch_input, watch_output, watch_error, watch_wait = Open3.popen3(*kubectl_args(
-      service,
-      "get", "pods", "-A", "-w", "-o", "json"
-    ))
-    watch_input.close
-    wait_until(timeout: 5) { store_watcher_count(service.store) == baseline_watchers + 1 }
+      # The API server keeps watches of its own (CustomResourceDefinitions and
+      # APIServices, to serve dynamic APIs), so the kubectl watch is counted on
+      # top of whatever was registered before it started.
+      baseline_watchers = store_watcher_count(service.store)
+      watch_input, watch_output, watch_error, watch_wait = Open3.popen3(*kubectl_args(
+        service,
+        "get", "pods", "-A", "-w", "-o", "json"
+      ))
+      watch_input.close
+      wait_until(timeout: 5) { store_watcher_count(service.store) == baseline_watchers + 1 }
 
-    Tempfile.create(["rubernetes-kubectl-watch", ".yaml"]) do |manifest|
-      manifest.write(<<~YAML)
-        apiVersion: v1
-        kind: Pod
-        metadata:
-          name: watch-web
-          namespace: default
-        spec:
-          containers:
-            - name: app
-              image: registry.k8s.io/pause:3.10
-      YAML
-      manifest.flush
-      kubectl_run(service, "apply", "--validate=false", "-f", manifest.path)
-    end
+      Tempfile.create(["rubernetes-kubectl-watch", ".yaml"]) do |manifest|
+        manifest.write(<<~YAML)
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: watch-web
+            namespace: default
+          spec:
+            containers:
+              - name: app
+                image: registry.k8s.io/pause:3.10
+        YAML
+        manifest.flush
+        kubectl_run(service, "apply", "--validate=false", "-f", manifest.path)
+      end
 
     watch_transcript = read_until(watch_output, "watch-web", timeout: 5)
 
