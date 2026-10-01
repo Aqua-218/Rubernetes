@@ -744,7 +744,8 @@ module Rubernetes
                                                                              ModelSupport.key(source, "srcIP", ModelSupport.key(source, "source", nil))))
         @source_port = ModelSupport.integer(source_port || ModelSupport.key(source, "sourcePort", ModelSupport.key(source, "srcPort", nil)))
         @destination_ip = ModelSupport.canonical_ip(destination_ip || ModelSupport.key(source, "destinationIP",
-                                                                                       ModelSupport.key(source, "dstIP", ModelSupport.key(source, "destination", nil))))
+                                                                                       ModelSupport.key(source, "dstIP",
+                                                                                                        ModelSupport.key(source, "destination", nil))))
         @destination_port = ModelSupport.integer(destination_port || ModelSupport.key(source, "destinationPort",
                                                                                       ModelSupport.key(source, "dstPort", nil)))
         @protocol = ModelSupport.normalize_protocol(protocol || ModelSupport.key(source, "protocol", "TCP"))
