@@ -606,9 +606,7 @@ module M4Gate
     def validate_policy(document, errors)
       cases = document["cases"]
       ids = Array(cases).filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["case"]) : nil }
-      unless ids.sort == REQUIRED_POLICY_CASES.sort && ids.uniq.length == REQUIRED_POLICY_CASES.length
-        errors << "policy differential cases are incomplete"
-      end
+      errors << "policy differential cases are incomplete" unless ids.sort == REQUIRED_POLICY_CASES.sort && ids.uniq.length == REQUIRED_POLICY_CASES.length
       Array(cases).each_with_index do |entry, index|
         unless entry.is_a?(Hash) && entry["passed"] == true && entry["measurement_source"] == "production_module" && entry["attempt_count"] == 1
           errors << "policy case #{index} must pass from production module"
