@@ -1512,8 +1512,7 @@ module Rubernetes
           record = @manager.fetch_record(id)
           @manager.ensure_known!(record, action: "Cleanup")
           key = "#{pod_id}\0#{target}"
-          if record.publishes.empty? || !record.publishes.key?(key)
-          else
+          unless record.publishes.empty? || !record.publishes.key?(key)
             entry = record.publishes.fetch(key)
             transitional = record.with(state: "Unpublishing", generation: record.generation + 1)
             @manager.volume_store[id] = transitional
