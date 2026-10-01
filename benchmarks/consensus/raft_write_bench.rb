@@ -172,7 +172,7 @@ FileUtils.rm_rf(root) unless options[:dir]
 if options[:json]
   puts JSON.pretty_generate(results)
 else
-  puts format("%-36s %8s %8s %8s %6s %s", "case", "p50 ms", "p90 ms", "p99 ms", "n", "")
+  puts "case                                   p50 ms   p90 ms   p99 ms      n "
   results.each do |name, stats|
     extra = stats[:throughput_per_s] ? "#{stats[:throughput_per_s]}/s" : ""
     puts format("%-36s %8.2f %8.2f %8.2f %6d %s", name, stats[:p50], stats[:p90], stats[:p99], stats[:n], extra)
