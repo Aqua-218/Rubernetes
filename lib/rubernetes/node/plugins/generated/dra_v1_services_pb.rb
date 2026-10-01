@@ -34,7 +34,6 @@ module Rubernetes
         module DRAV1
           module DRAPlugin
             class Service
-
               include ::GRPC::GenericService
 
               self.marshal_class_method = :encode
