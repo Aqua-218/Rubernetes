@@ -393,9 +393,7 @@ module M4Gate
         valid_entries << entry
       end
       errors << "source inventory entries must be sorted by path" unless paths.sort == paths
-      unless canonical_inventory_digest(valid_entries) == manifest["input_sha256"]
-        errors << "source inventory digest does not match manifest input"
-      end
+      errors << "source inventory digest does not match manifest input" unless canonical_inventory_digest(valid_entries) == manifest["input_sha256"]
       errors << "source inventory file count does not match manifest input" unless valid_entries.length == manifest["input_file_count"]
       valid_entries.each do |entry|
         path = File.expand_path(entry.fetch("path"), PROJECT_ROOT)
