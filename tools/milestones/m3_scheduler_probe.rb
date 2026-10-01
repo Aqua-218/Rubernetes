@@ -59,7 +59,8 @@ def scheduler_fixture_cases
                                                                                                                       []), "binding_node" => "node-a"}
   score_affinity = {
     "nodeAffinity" => {"preferredDuringSchedulingIgnoredDuringExecution" => [{"weight" => 1,
-                                                                              "preference" => {"matchExpressions" => [{"key" => "topology.kubernetes.io/zone", "operator" => "In",
+                                                                              "preference" => {"matchExpressions" => [{"key" => "topology.kubernetes.io/zone",
+                                                                                                                       "operator" => "In",
                                                                                                                        "values" => ["zone-a"]}]}}]},
     "podAffinity" => {"preferredDuringSchedulingIgnoredDuringExecution" => [{
       "weight" => 1, "podAffinityTerm" => {"labelSelector" => {"matchLabels" => {"app" => "peer"}}, "topologyKey" => "topology.kubernetes.io/zone"}
