@@ -4228,16 +4228,6 @@
         "responses": {
           "200": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.admissionregistration.v1.MutatingWebhookConfigurationList"
-                }
-              },
-              "application/cbor-seq": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.admissionregistration.v1.MutatingWebhookConfigurationList"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.admissionregistration.v1.MutatingWebhookConfigurationList"
