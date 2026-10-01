@@ -99,9 +99,7 @@ module Rubernetes
         end
 
         def self.validate_adapter!(name, adapter, requirement)
-          if testing_adapter?(adapter)
-            raise Error, "#{name} adapter #{adapter.class} is a recording/fake adapter and cannot be used by a host profile"
-          end
+          raise Error, "#{name} adapter #{adapter.class} is a recording/fake adapter and cannot be used by a host profile" if testing_adapter?(adapter)
 
           missing_methods = requirement.fetch(:methods).reject { |method| adapter.respond_to?(method) }
           unless missing_methods.empty?
