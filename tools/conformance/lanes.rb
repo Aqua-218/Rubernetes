@@ -297,11 +297,19 @@ module Conformance
         end
 
         required = inventory.select { |entry| entry["classification"] == "required" }
-        execution = Lanes.capture([binary, "--provider=skeleton", "--kubeconfig", kubeconfig,
-                                   "--ginkgo.focus=#{required.map { |e| Regexp.escape(e.fetch("id")) }.join("|")}",
-                                   "--report-dir=#{directory}"])
-        artifacts << Lanes.record(directory, "e2e-command.json", execution)
-        passed = execution.fetch("exit_status").zero? && unclassified.empty? && unlinked.empty?
+        # One focus regex over all required specs is far above the kernel's
+        # per-argument limit (MAX_ARG_STRLEN, 128 KiB), so the selection is
+        # executed in chunks, each its own e2e.test process with its own
+        # report directory; a chunk's exit status is upstream's verdict on
+        # those specs and nothing is retried or re-interpreted.
+        chunks = focus_chunks(required.map { |entry| entry.fetch("id") })
+        executions = run_chunks(binary, kubeconfig, directory, chunks)
+        executions.each_with_index do |execution, index|
+          artifacts << Lanes.record(directory, format("e2e-command-%03d.json", index), execution)
+        end
+        totals = junit_totals(directory)
+        artifacts << Lanes.record(directory, "e2e-totals.json", totals)
+        passed = executions.all? { |execution| execution.fetch("exit_status").zero? } && unclassified.empty? && unlinked.empty?
         {"lane" => "K3", "passed" => passed, "status" => passed ? "COMPLETE" : "FAILED",
          "required" => required.length, "unclassified" => unclassified.length,
          "unlinked_external_contracts" => unlinked.length, "artifacts" => artifacts}
