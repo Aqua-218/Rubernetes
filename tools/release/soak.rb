@@ -174,7 +174,7 @@ module Release
       items = document["items"] || []
       {
         "available" => true,
-        "pods" => items.count { |item| item["kind"] == "Pod" },
+        "pods" => items.length,
         "terminating" => items.count { |item| item.dig("metadata", "deletionTimestamp") },
         "resource_version" => document.dig("metadata", "resourceVersion").to_i
       }
