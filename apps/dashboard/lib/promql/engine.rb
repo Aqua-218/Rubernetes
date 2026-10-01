@@ -424,9 +424,7 @@ module Promql
         metric = result_metric(series, other, matching, op, node.return_bool)
         key = metric.sort.to_s
         if matching.card == :one_to_one
-          if seen_left.key?(sig)
-            raise EvalError, "multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)"
-          end
+          raise EvalError, "multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)" if seen_left.key?(sig)
 
           seen_left[sig] = true
         elsif seen_left.key?(key)
