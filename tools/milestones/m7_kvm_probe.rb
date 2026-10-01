@@ -251,7 +251,8 @@ module M7KVMProbe
       manifest = runtime.snapshot_pool.latest(runtime.runtime_class).manifest
       cases << {"id" => "base_snapshot", "snapshot_id" => base, "seconds" => (S.monotonic - base_started).round(3), "files" => manifest["files"],
                 "pause_ack" => manifest["pause_ack"], "guest_phase" => manifest.dig("guest_hello", "phase"), "artifact_digest" => manifest["artifact_digest"],
-                "passed" => manifest.dig("guest_hello", "phase") == "base" && manifest["pause_ack"].is_a?(Hash) && manifest["artifact_digest"] == S.artifacts.digest}
+                "passed" => manifest.dig("guest_hello",
+                                         "phase") == "base" && manifest["pause_ack"].is_a?(Hash) && manifest["artifact_digest"] == S.artifacts.digest}
       runtime.adapter.instance_variable_set(:@use_base_snapshot, true)
       cases << lifecycle_case("restored_lifecycle", runtime, network, expect_base: true)
       cases << node_lifecycle_case(runtime, network)
