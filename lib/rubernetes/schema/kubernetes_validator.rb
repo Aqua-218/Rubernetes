@@ -2435,9 +2435,7 @@ module Rubernetes
           return issues
         end
         containers = fetch(pod_spec, "containers")
-        if containers.is_a?(Array) && containers.first.is_a?(Hash)
-          required(containers.first, "image", %w[spec template spec containers 0], issues)
-        end
+        required(containers.first, "image", %w[spec template spec containers 0], issues) if containers.is_a?(Array) && containers.first.is_a?(Hash)
         if blank?(fetch(pod_spec, "restartPolicy"))
           issues << issue(%w[spec template spec restartPolicy], :required,
                           "valid values: \"OnFailure\", \"Never\"")
