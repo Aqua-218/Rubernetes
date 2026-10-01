@@ -203,8 +203,9 @@ Honest list, as of 2026-10-01:
   therefore stale by construction; the gates and the Conformance suite have
   been re-run on the current tree, but a release candidate must re-capture
   the whole M0–M9 chain.
-- **Lint debt.** About 3,000 historical RuboCop offenses remain in
-  `.rubocop_todo.yml` (mostly line length); new code must be clean.
+- **Lint.** `rake lint` runs clean over the whole tree with no todo file;
+  the cops that are off are listed in `.rubocop.yml` with the reason
+  (mostly ones whose autocorrect assumes a concrete receiver type).
 
 ## Documentation
 
