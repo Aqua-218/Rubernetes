@@ -131,7 +131,7 @@ module CPUManagerDifferential
         options["strict-cpu-reservation"] = "true" if random.rand < 0.2
         if random.rand < 0.2
           options["distribute-cpus-across-numa"] = "true"
-        elsif random.rand < 0.2
+        elsif random.rand < 0.2 # rubocop:disable Lint/DuplicateElsifCondition -- a second independent draw
           options["prefer-align-cpus-by-uncorecache"] = "true"
         end
         reserved = random.rand(1..3)
