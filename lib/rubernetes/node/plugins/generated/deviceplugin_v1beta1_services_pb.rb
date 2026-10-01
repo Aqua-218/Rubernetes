@@ -48,7 +48,8 @@ module Rubernetes
 
               # GetDevicePluginOptions returns options to be communicated with Device
               # Manager
-              rpc :GetDevicePluginOptions, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::Empty, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::DevicePluginOptions
+              rpc :GetDevicePluginOptions, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::Empty,
+                  ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::DevicePluginOptions
               # ListAndWatch returns a stream of List of Devices
               # Whenever a Device state change or a Device disappears, ListAndWatch
               # returns the new list
