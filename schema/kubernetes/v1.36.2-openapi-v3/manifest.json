@@ -258,7 +258,8 @@
       "upstream_path": "api/openapi-spec/v3/apis__coordination.k8s.io__v1alpha2_openapi.json",
       "source_sha256": "69f49100f471578cef82b0b294ff49fef5c37c11718d94ae8b8c9ad4e3040bb0",
       "sha256": "69f49100f471578cef82b0b294ff49fef5c37c11718d94ae8b8c9ad4e3040bb0",
-      "paths": 7
+      "paths": 7,
+      "source": "tree"
     },
     {
       "path": "apis/coordination.k8s.io/v1beta1.json",
