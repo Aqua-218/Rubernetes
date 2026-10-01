@@ -806,9 +806,7 @@ module M2Gate
 
       validate_provenance(document, manifest, errors, label)
       measurement_level = document["measurement_level"]
-      unless MEASUREMENT_LEVELS.include?(measurement_level)
-        errors << "#{label} measurement_level must be one of #{MEASUREMENT_LEVELS.join(", ")}"
-      end
+      errors << "#{label} measurement_level must be one of #{MEASUREMENT_LEVELS.join(", ")}" unless MEASUREMENT_LEVELS.include?(measurement_level)
       errors << "#{label} report_sha256 is required" unless valid_digest?(document["report_sha256"])
       if valid_digest?(document["report_sha256"])
         expected_digest = canonical_document_digest(document, excluded_keys: ["report_sha256"])
