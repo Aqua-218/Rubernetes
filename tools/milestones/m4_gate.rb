@@ -671,9 +671,7 @@ module M4Gate
         errors << "proxy parity packet corpus and kernel readback are required"
         return
       end
-      unless packet["executed"] == true && non_empty_string?(packet["measurementSource"])
-        errors << "proxy packet corpus must be executed externally"
-      end
+      errors << "proxy packet corpus must be executed externally" unless packet["executed"] == true && non_empty_string?(packet["measurementSource"])
       unless non_empty_string?(packet["runnerIdentity"]) && valid_digest?(packet["runnerDigest"]) && non_empty_string?(packet["mode"]) && packet["mode"] != "model"
         errors << "proxy packet runner provenance is incomplete"
       end
