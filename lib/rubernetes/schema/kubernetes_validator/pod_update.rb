@@ -254,7 +254,7 @@ module Rubernetes
           end
         end
 
-        def convert_struct(name, v1, keep_empty = false)
+        def convert_struct(name, v1, keep_empty: false)
           fields = layout.fetch("types").fetch(name).filter_map do |field|
             source = field["v1"] ? v1.dig(*field["v1"]) : nil
             value = convert_value(field["type"], source, keep_empty)
