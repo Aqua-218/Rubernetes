@@ -66,8 +66,9 @@ module Prom
       encoder = Prom::Gorilla::Encoder.new
       encoder.append(100, 1.0).append(200, 2.0).append(300, 3.0)
 
-    assert_equal 3, encoder.count
-    assert_equal 100, encoder.min_time
-    assert_equal 300, encoder.max_time
+      assert_equal 3, encoder.count
+      assert_equal 100, encoder.min_time
+      assert_equal 300, encoder.max_time
+    end
   end
 end
