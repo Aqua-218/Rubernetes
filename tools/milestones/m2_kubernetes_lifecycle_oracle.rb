@@ -206,9 +206,7 @@ module M2KubernetesLifecycleOracle
 
     document = parse_json(path)
     required_fields = %w[plugin version source_commit image_reference image_digest config_sha256]
-    unless document.is_a?(Hash)
-      return {"available" => false, "path" => relative_path, "errors" => ["CNI lock #{relative_path} must be an object"]}
-    end
+    return {"available" => false, "path" => relative_path, "errors" => ["CNI lock #{relative_path} must be an object"]} unless document.is_a?(Hash)
 
     missing = required_fields.reject { |field| document[field].is_a?(String) && !document[field].empty? }
     errors = missing.map { |field| "CNI lock #{relative_path} is missing #{field}" }
