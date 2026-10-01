@@ -52,7 +52,8 @@ module M6CRDDifferentialProbe
     {"apiVersion" => "apiextensions.k8s.io/v1", "kind" => "CustomResourceDefinition", "metadata" => {"name" => "widgets.probe.example.com"},
      "spec" => {"group" => "probe.example.com", "scope" => "Namespaced",
                 "names" => {"plural" => "widgets", "singular" => "widget", "kind" => "Widget", "shortNames" => ["wd"]},
-                "versions" => [{"name" => "v1", "served" => true, "storage" => true, "schema" => {"openAPIV3Schema" => schema}, "subresources" => {"status" => {}}},
+                "versions" => [{"name" => "v1", "served" => true, "storage" => true, "schema" => {"openAPIV3Schema" => schema},
+                                "subresources" => {"status" => {}}},
                                {"name" => "v2", "served" => true, "storage" => false, "schema" => {"openAPIV3Schema" => schema}}]}}
   end
 
