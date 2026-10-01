@@ -2531,7 +2531,8 @@ module M1Gate
       errors << "#{label} comparison count must match the report inventory" unless packet["comparison_count"] == expected_count
       mismatch_count = packet["mismatch_count"]
       non_comparable_count = packet["non_comparable_count"]
-      unless integer?(mismatch_count) && integer?(non_comparable_count) && mismatch_count >= 0 && non_comparable_count >= 0 && mismatch_count + non_comparable_count <= expected_count
+      unless integer?(mismatch_count) && integer?(non_comparable_count) && mismatch_count >= 0 && non_comparable_count >= 0 &&
+             mismatch_count + non_comparable_count <= expected_count
         errors << "#{label} counts must be non-negative and partition no more than the report inventory"
       end
       expected_ids = Array(expected_items).filter_map { |item| item.is_a?(Hash) ? (item["id"] || item["name"]) : item }
