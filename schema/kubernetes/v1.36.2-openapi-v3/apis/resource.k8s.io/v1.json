@@ -2717,16 +2717,6 @@
         "responses": {
           "200": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.resource.v1.DeviceClassList"
-                }
-              },
-              "application/cbor-seq": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.resource.v1.DeviceClassList"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.resource.v1.DeviceClassList"
