@@ -54,7 +54,13 @@ module Promql
       load("up", {"job" => "a"}, [1, 1, 1, 1, 1])
       load("up", {"job" => "b"}, [0], end_ms: T0 - (6 * 60_000)) # older than the lookback
 
-  # ---------------------------------------------------------- selectors
+      assert_equal [[{"__name__" => "up", "job" => "a"}, 1.0]], vector("up")
+      assert_equal [], vector('up{job="b"}')
+      assert_equal [[{"__name__" => "up", "job" => "b"}, 0.0]], vector('up{job="b"} offset 6m')
+      assert_equal [[{"__name__" => "up", "job" => "b"}, 0.0]], vector("up{job=\"b\"} @ #{(T0 - (6 * 60_000)) / 1000}")
+      assert_equal 1, vector('{__name__=~"u.*"}').length
+      assert_equal 1, vector('up{job!="b"}').length
+    end
 
   test "instant selectors use a five minute lookback and honour offset and @" do
     load("up", {"job" => "a"}, [1, 1, 1, 1, 1])
