@@ -361,7 +361,8 @@ class M4NetworkTest < Minitest::Test
                                                                                                         "value" => "vxlan-test\0"
                                                                                                       },
                                                                                                       {
-                                                                                                        "type" => Rubernetes::Network::Netlink::IFLA_MTU, "value" => [1430].pack("L<")
+                                                                                                        "type" => Rubernetes::Network::Netlink::IFLA_MTU,
+                                                                                                        "value" => [1430].pack("L<")
                                                                                                       },
                                                                                                       {
                                                                                                         "type" => Rubernetes::Network::Netlink::IFLA_ADDRESS, "value" => ["02aabbccddee"].pack("H12")
