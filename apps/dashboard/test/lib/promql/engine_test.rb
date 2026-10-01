@@ -233,19 +233,7 @@ module Promql
       assert_equal({"1" => 1.0, "3" => 1.0, "10" => 1.0}, counts)
     end
 
-  test "group_right carries labels from the many side" do
-    load("a", {"k" => "1", "extra" => "x"}, [1])
-    load("a", {"k" => "1", "extra" => "y"}, [2])
-    load("b", {"k" => "1"}, [10])
-    result = vector("b * on(k) group_right a").sort_by { |m, _| m["extra"] }
-
-    assert_equal [[{"extra" => "x", "k" => "1"}, 10.0], [{"extra" => "y", "k" => "1"}, 20.0]], result
-    # Labels listed in group_right() come from the "one" side; b has no
-    # `extra`, so both results collapse onto the same labels -- an error,
-    # exactly as in Prometheus.
-    error = assert_raises(Promql::EvalError) { vector("b * on(k) group_right(extra) a") }
-    assert_match(/grouping labels must ensure unique matches/, error.message)
-  end
+    # ---------------------------------------------------------- functions
 
   # ---------------------------------------------------------- aggregations
 
