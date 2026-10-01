@@ -184,9 +184,7 @@ module Rubernetes
           return no_opinion("can only get, create, update, patch, or delete a CSINode") unless %w[get create update patch
                                                                                                   delete].include?(verb)
           return no_opinion("cannot authorize CSINode subresources") unless attributes.subresource.empty?
-          if verb != "create" && attributes.name != node_name
-            return no_opinion("can only access CSINode with the same name as the requesting node")
-          end
+          return no_opinion("can only access CSINode with the same name as the requesting node") if verb != "create" && attributes.name != node_name
 
           allow("own CSINode")
         end
