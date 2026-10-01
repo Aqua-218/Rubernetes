@@ -15,11 +15,11 @@ module Dashboard
         runtime = Dashboard::Runtime.new(client: client, kubeconfig_context: {server: "https://api"})
         collector = runtime.collector # builds store, scraper, engine, rules, targets inside one lock
 
-      assert_same collector, runtime.collector
-      assert_same runtime.store, runtime.engine.store
-      assert_same runtime.scraper, collector.scraper
-      # Concurrent first access yields one store, never two writers.
-      threads = Array.new(8) { Thread.new { runtime.store } }
+        assert_same collector, runtime.collector
+        assert_same runtime.store, runtime.engine.store
+        assert_same runtime.scraper, collector.scraper
+        # Concurrent first access yields one store, never two writers.
+        threads = Array.new(8) { Thread.new { runtime.store } }
 
       assert_equal 1, threads.map(&:value).uniq.length
       assert_kind_of Prom::Rules, runtime.rules
