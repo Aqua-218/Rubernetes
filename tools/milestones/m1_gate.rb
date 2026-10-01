@@ -2198,7 +2198,8 @@ module M1Gate
         operations.each do |operation|
           record = differential[operation]
           unless record.is_a?(Hash) && record["passed"] == true
-            errors << "#{label} ledger entry #{index} (#{entry["id"]}) references API differential operation #{operation.inspect}, which was not executed or did not pass"
+            errors << "#{label} ledger entry #{index} (#{entry["id"]}) references API differential operation #{operation.inspect}, which was not executed " \
+                      "or did not pass"
           end
         end
       end
