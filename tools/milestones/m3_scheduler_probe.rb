@@ -49,7 +49,8 @@ def scheduler_fixture_cases
   storage = scheduler_storage
   nodes = [scheduler_node("node-a", "zone-a"), scheduler_node("node-b", "zone-b")]
   base = {"nodes" => nodes, "existing_pods" => [], "persistent_volumes" => storage.fetch("persistent_volumes"),
-          "persistent_volume_claims" => storage.fetch("persistent_volume_claims"), "storage_classes" => storage.fetch("storage_classes", []), "binding_node" => "node-a"}
+          "persistent_volume_claims" => storage.fetch("persistent_volume_claims"), "storage_classes" => storage.fetch("storage_classes",
+                                                                                                                      []), "binding_node" => "node-a"}
   score_affinity = {
     "nodeAffinity" => {"preferredDuringSchedulingIgnoredDuringExecution" => [{"weight" => 1,
                                                                               "preference" => {"matchExpressions" => [{"key" => "topology.kubernetes.io/zone", "operator" => "In",
