@@ -1637,7 +1637,8 @@ module M3Gate
       source = runner.is_a?(Hash) ? runner["source"] : nil
       build = runner.is_a?(Hash) ? runner["build"] : nil
       image = runner.is_a?(Hash) ? runner["image"] : nil
-      unless source.is_a?(Hash) && source["version"] == KUBERNETES_VERSION && source["tag"] == KUBERNETES_VERSION && source["commit"] == KUBERNETES_SOURCE_COMMIT && source["tree_clean"] == true && valid_digest?(source["source_tree_sha256"])
+      unless source.is_a?(Hash) && source["version"] == KUBERNETES_VERSION && source["tag"] == KUBERNETES_VERSION &&
+             source["commit"] == KUBERNETES_SOURCE_COMMIT && source["tree_clean"] == true && valid_digest?(source["source_tree_sha256"])
         errors << "workload oracle pinned source provenance is incomplete"
       end
       unless build.is_a?(Hash) && build["source_build"] == true && valid_digest?(build["binary_sha256"])
