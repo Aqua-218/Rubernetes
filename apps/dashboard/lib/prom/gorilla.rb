@@ -225,7 +225,7 @@ module Prom
       (count - 2).times do
         dod = if reader.read_bit.zero?
                 0
-              elsif reader.read_bit.zero?
+              elsif reader.read_bit.zero? # rubocop:disable Lint/DuplicateElsifCondition -- each read_bit consumes the next bit
                 reader.read_signed(14)
               elsif reader.read_bit.zero?
                 reader.read_signed(17)
