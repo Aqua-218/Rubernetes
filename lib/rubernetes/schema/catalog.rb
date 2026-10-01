@@ -1075,9 +1075,7 @@ module Rubernetes
             version: primary_resource.version,
             resource: full_resource
           )
-          if @subresources_by_gvr.key?(key) || @resources_by_gvr.key?(key)
-            raise DuplicateGVRError, "duplicate served GVR registration #{key}"
-          end
+          raise DuplicateGVRError, "duplicate served GVR registration #{key}" if @subresources_by_gvr.key?(key) || @resources_by_gvr.key?(key)
 
           @subresources_by_gvr[key] = {
             "primary_resource" => primary_resource,
