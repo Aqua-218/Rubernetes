@@ -160,7 +160,8 @@ class OCIRegistryTest < Minitest::Test
 
   def test_authenticate_parser_rejects_duplicate_and_malformed_parameters
     transport = FakeTransport.new([
-                                    {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://registry.example/token",realm="https://evil.example/token"'},
+                                    {status: 401,
+                                     headers: {"www-authenticate" => 'Bearer realm="https://registry.example/token",realm="https://evil.example/token"'},
                                      body: ""},
                                     {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://registry.example/token",service'}, body: ""}
                                   ])
