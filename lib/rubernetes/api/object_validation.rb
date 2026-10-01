@@ -120,9 +120,7 @@ module Rubernetes
       def validate_object_meta(kind, metadata, causes, namespaced:, old_metadata: nil)
         name = metadata["name"]
         generate_name = metadata["generateName"]
-        if !name.nil? && !name.to_s.empty?
-          name_errors(kind, name.to_s, prefix: false).each { |message| causes << invalid("metadata.name", name, message) }
-        end
+        name_errors(kind, name.to_s, prefix: false).each { |message| causes << invalid("metadata.name", name, message) } if !name.nil? && !name.to_s.empty?
         if !generate_name.nil? && !generate_name.to_s.empty?
           name_errors(kind, generate_name.to_s, prefix: true).each do |message|
             causes << invalid("metadata.generateName", generate_name, message)
