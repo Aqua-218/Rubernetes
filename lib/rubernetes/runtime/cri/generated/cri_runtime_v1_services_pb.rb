@@ -34,7 +34,6 @@ module Rubernetes
           module RuntimeService
             # Runtime service defines the public APIs for remote container runtimes
             class Service
-
               include ::GRPC::GenericService
 
               self.marshal_class_method = :encode
