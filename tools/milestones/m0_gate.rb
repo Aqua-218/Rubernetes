@@ -846,9 +846,9 @@ module M0Gate
         end
       when "clone3_pid_namespace_mount_proc_pidfd_wait"
         observed_pids = value["ps_output"].to_s.lines.filter_map { |line| line[/\A\s*(\d+)\s+/, 1]&.to_i }
-        unless positive_integer?(value["pid"]) && positive_integer?(value["pidfd"]) && value["exit_status"] == 0 && value["ps_pids"] == [1] && observed_pids == [1] && value["ps_output"].to_s.match?(/\b1\b/)
-          errors << "clone3 namespace payload does not prove pid namespace and pidfd wait semantics"
-        end
+        payload_proves_namespace = positive_integer?(value["pid"]) && positive_integer?(value["pidfd"]) && value["exit_status"] == 0 &&
+                                   value["ps_pids"] == [1] && observed_pids == [1] && value["ps_output"].to_s.match?(/\b1\b/)
+        errors << "clone3 namespace payload does not prove pid namespace and pidfd wait semantics" unless payload_proves_namespace
       when "netlink_ack"
         unless value["sequence"] == 60_000 && value["message_types"].is_a?(Array) && !value["message_types"].empty? && value["message_types"].all? do |type|
           type.is_a?(Integer) && type >= 0
