@@ -138,7 +138,8 @@ module M6CRDDifferentialProbe
         end.sort_by(&:to_s),
          "message_fragments" => message_fragments(document["message"])}
       elsif document.is_a?(Hash)
-        {"status" => status, "spec" => document["spec"], "status_field" => document["status"], "apiVersion" => document["apiVersion"], "kind" => document["kind"],
+        {"status" => status, "spec" => document["spec"], "status_field" => document["status"], "apiVersion" => document["apiVersion"],
+         "kind" => document["kind"],
          "labels" => document.dig("metadata", "labels")}
       else
         {"status" => status}
