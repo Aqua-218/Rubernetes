@@ -237,7 +237,8 @@ class ProxyIptablesBackendTest < Minitest::Test
 
     proxy, backend, = build
     proxy.apply_service(service(type: "LoadBalancer", extra: {"externalTrafficPolicy" => "Local", "loadBalancerSourceRanges" => ["192.168.0.0/16"],
-                                                              "sessionAffinity" => "ClientIP", "sessionAffinityConfig" => {"clientIP" => {"timeoutSeconds" => 60}}},
+                                                              "sessionAffinity" => "ClientIP",
+                                                              "sessionAffinityConfig" => {"clientIP" => {"timeoutSeconds" => 60}}},
                                 ports: [{"name" => "http", "port" => 80, "protocol" => "TCP", "targetPort" => 8080, "nodePort" => 30_080}]).tap do |s|
       s["status"] =
         {"loadBalancer" => {"ingress" => [{"ip" => "203.0.113.5"}]}}
