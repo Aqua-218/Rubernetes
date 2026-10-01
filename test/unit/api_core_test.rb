@@ -14,7 +14,8 @@ class APICoreTest < Minitest::Test
       namespace_lifecycle: true
     )
     # NamespaceLifecycle admission: namespaced objects need their namespace.
-    assert_equal(201, call("POST", "/api/v1/namespaces", {"metadata" => {"name" => "dev"}}).status)
+    status = call("POST", "/api/v1/namespaces", {"metadata" => {"name" => "dev"}}).status
+    raise "setup: namespace create returned #{status}" unless status == 201
   end
 
   def test_discovery_and_health_endpoints_are_available_without_transport
