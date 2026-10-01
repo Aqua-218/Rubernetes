@@ -233,8 +233,12 @@ module Rubernetes
               next
             end
 
-            size = raw.byteslice(offset, line_end - offset).split(";").first.to_s.strip.to_i(16)
-            break if size.zero?
+            size = buffer.byteslice(0, line_end).split(";").first.to_s.strip.to_i(16)
+            if size.zero?
+              # Trailers up to the blank line end the message.
+              fill_buffer(buffer, socket) until buffer.index("\r\n\r\n", line_end)
+              return result
+            end
 
             result << raw.byteslice(line_end + 2, size).to_s
             offset = line_end + 2 + size + 2
