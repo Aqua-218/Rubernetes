@@ -365,7 +365,7 @@ module M4NetworkObservationRunner
       end
       connection = nil
       begin
-        ready = IO.select([server], nil, nil, 5)
+        ready = server.wait_readable(5)
         return false unless ready
 
         connection = server.accept
