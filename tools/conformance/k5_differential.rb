@@ -127,6 +127,10 @@ module Conformance
       }
     end
 
+    # kind, the oracle, adds its own namespaces (local-path-storage); only the
+    # namespaces every v1.36.2 cluster has are compared.
+    SYSTEM_NAMESPACES = %w[default kube-system kube-public kube-node-lease].freeze
+
     def scrub(value)
       case value
       when Hash
