@@ -890,9 +890,7 @@ module Rubernetes
             scheduling = runtime_class["scheduling"] || {}
             (scheduling["nodeSelector"] || {}).each do |key, value|
               existing = pod_spec.dig("nodeSelector", key)
-              if existing && existing != value
-                reject!("pod rejected: conflict: runtime class node selector #{key}=#{value} conflicts with pod node selector")
-              end
+              reject!("pod rejected: conflict: runtime class node selector #{key}=#{value} conflicts with pod node selector") if existing && existing != value
               (pod_spec["nodeSelector"] ||= {})[key] = value
             end
             Array(scheduling["tolerations"]).each do |toleration|
