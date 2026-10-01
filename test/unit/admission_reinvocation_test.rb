@@ -128,7 +128,10 @@ class AdmissionReinvocationTest < Minitest::Test
       calls << url
       response = {"uid" => review["request"]["uid"], "allowed" => true}
       patch = patches[url]&.call(review["request"]["object"])
-      response.merge!("patchType" => "JSONPatch", "patch" => [JSON.generate(patch)].pack("m0")) if patch
+      if patch
+        response["patchType"] = "JSONPatch"
+        response["patch"] = [JSON.generate(patch)].pack("m0")
+      end
       [200, {"response" => response}]
     end
     [client, calls]
