@@ -205,8 +205,10 @@
       "path": "apis/batch.json",
       "upstream_path": "api/openapi-spec/v3/apis__batch_openapi.json",
       "source_sha256": "c9d5b55a1eb99cadf8ed53f032cb45a369b71e4a56137cff9621740cf8505d0c",
-      "sha256": "c9d5b55a1eb99cadf8ed53f032cb45a369b71e4a56137cff9621740cf8505d0c",
-      "paths": 1
+      "sha256": "5c5f81e3e33af81e301dac810c90b6dfafb8da26e1dcb8bf6cffdd60394d3dff",
+      "paths": 1,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/batch"
     },
     {
       "path": "apis/certificates.k8s.io/v1.json",
