@@ -727,6 +727,15 @@ module RubernetesSchemaGenerator
         # Patch, WatchEvent, ListMeta ...): pull them into the closure.
         referenced = paths.to_s.scan(%r{#/components/schemas/([A-Za-z0-9_.-]+)}).flatten.uniq
         selected_definitions = schema_closure(definitions, (roots + referenced.select { |name| definitions.key?(name) }).uniq)
+        schemas = deep_transform_refs(selected_definitions)
+        # The v2 definitions describe Quantity and IntOrString as plain
+        # strings; upstream's v3 documents give them their oneOf shape, which
+        # is what `kubectl explain` prints as <Quantity>.  Take those two from
+        # the pinned v3 document whenever it has them.
+        pinned_schemas = pinned ? pinned.dig("components", "schemas") || {} : {}
+        OPENAPI_V3_SCALAR_SCHEMAS.each do |name|
+          schemas[name] = pinned_schemas.fetch(name) if schemas.key?(name) && pinned_schemas.key?(name)
+        end
         document = {
           "openapi" => "3.0.0",
           "info" => {"title" => "Rubernetes Kubernetes #{group.empty? ? "core" : group}/#{version}", "version" => "v1.36.2"},
