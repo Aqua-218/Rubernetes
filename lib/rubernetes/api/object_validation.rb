@@ -179,9 +179,7 @@ module Rubernetes
                  when :ip_address then ip_address_name_errors(name)
                  else label_errors(name, DNS1123_SUBDOMAIN, DNS1123_SUBDOMAIN_MESSAGE, DNS1123_SUBDOMAIN_MAX, prefix: prefix)
                  end
-        if LABEL_LENGTH_NAME_KINDS.include?(kind) && name.length > DNS1123_LABEL_MAX
-          errors << "must be no more than #{DNS1123_LABEL_MAX} characters"
-        end
+        errors << "must be no more than #{DNS1123_LABEL_MAX} characters" if LABEL_LENGTH_NAME_KINDS.include?(kind) && name.length > DNS1123_LABEL_MAX
         errors << "must be no more than #{CRONJOB_NAME_MAX} characters" if kind == "CronJob" && name.length > CRONJOB_NAME_MAX
         errors.uniq
       end
