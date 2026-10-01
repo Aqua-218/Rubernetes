@@ -722,7 +722,7 @@ module Rubernetes
             false
           end
 
-          def self.parse(text, normalize = false)
+          def self.parse(text, normalize: false)
             raise TypeMismatch, "semver requires a string" unless text.is_a?(String)
 
             source = normalize == true ? normalized(text) : text
