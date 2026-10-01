@@ -369,9 +369,7 @@ module Rubernetes
           groups = nil
           if @constrained && (node = Impersonation.node_username(wanted.name))
             attributes = attributes.with(resource: "nodes", name: node)
-            unless wanted.groups.empty?
-              raise Forbidden.new(attributes, "when impersonating a node, cannot impersonate groups #{go_quoted(wanted.groups)}")
-            end
+            raise Forbidden.new(attributes, "when impersonating a node, cannot impersonate groups #{go_quoted(wanted.groups)}") unless wanted.groups.empty?
 
             groups = [UserInfo::NODES_GROUP]
           end
