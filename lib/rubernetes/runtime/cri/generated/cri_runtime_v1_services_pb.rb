@@ -205,7 +205,8 @@ module Rubernetes
               # adding or removing metrics descriptors, or they should not change.
               # Put differently, if ListPodSandboxMetrics references a name that is not described in the initial
               # ListMetricDescriptors call, then the metric will not be broadcasted.
-              rpc :ListMetricDescriptors, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListMetricDescriptorsRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListMetricDescriptorsResponse
+              rpc :ListMetricDescriptors, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListMetricDescriptorsRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListMetricDescriptorsResponse
               # ListPodSandboxMetrics gets pod sandbox metrics from CRI Runtime
               rpc :ListPodSandboxMetrics, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxMetricsRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxMetricsResponse
               # StreamPodSandboxMetrics returns a stream of pod sandbox metrics.
