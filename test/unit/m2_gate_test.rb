@@ -958,7 +958,9 @@ class M2GateTest < Minitest::Test
 
   def fixture_subresource_e2e
     M2Gate::REQUIRED_SUBRESOURCES.to_h do |name|
-      [name, {"requested" => true, "observed" => true, "passed" => true, "request_id" => "fixture-#{name}", "response_sha256" => Digest::SHA256.hexdigest("response-#{name}")}]
+      [name,
+       {"requested" => true, "observed" => true, "passed" => true, "request_id" => "fixture-#{name}",
+        "response_sha256" => Digest::SHA256.hexdigest("response-#{name}")}]
     end
   end
 
