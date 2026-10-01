@@ -1431,9 +1431,7 @@ module Rubernetes
         namespace = storage_namespace(route, operation: :get)
         account = @store.get(resource: route.resource, namespace: namespace, name: route.name)
         body = request_body(request)
-        unless body.is_a?(Hash) && (body["kind"].nil? || body["kind"] == "TokenRequest")
-          raise Status::BadRequest.new("request body must be a TokenRequest")
-        end
+        raise Status::BadRequest.new("request body must be a TokenRequest") unless body.is_a?(Hash) && (body["kind"].nil? || body["kind"] == "TokenRequest")
 
         # TokenRequestServiceAccountUIDValidation (Beta, on): a request for
         # another incarnation of the ServiceAccount is a conflict.
