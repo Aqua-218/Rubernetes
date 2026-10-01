@@ -552,7 +552,8 @@
       "upstream_path": "api/openapi-spec/v3/logs_openapi.json",
       "source_sha256": "6b263751854cd33af73aa5d3a753e8e406c9f32d60e8fa67af7c188141134bf7",
       "sha256": "6b263751854cd33af73aa5d3a753e8e406c9f32d60e8fa67af7c188141134bf7",
-      "paths": 2
+      "paths": 2,
+      "source": "tree"
     },
     {
       "path": "openid/v1/jwks.json",
