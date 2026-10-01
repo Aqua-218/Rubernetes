@@ -748,9 +748,7 @@ module Rubernetes
         buffer = dm_buffer
         issue_ioctl(control, DM_IOCTLS.fetch(:version), buffer)
         version = parse_dm_ioctl(buffer).fetch(:version)
-        unless version[0] == DM_IOCTL_VERSION[0] && version[1] >= 1
-          raise Unsupported, "device-mapper ioctl version #{version.join(".")} is unsupported"
-        end
+        raise Unsupported, "device-mapper ioctl version #{version.join(".")} is unsupported" unless version[0] == DM_IOCTL_VERSION[0] && version[1] >= 1
 
         true
       end
