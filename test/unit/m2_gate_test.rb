@@ -949,7 +949,9 @@ class M2GateTest < Minitest::Test
       "provenance" => provenance,
       "comparisons" => M2Gate::REQUIRED_LIFECYCLE_SEMANTICS.map do |name|
         digest = Digest::SHA256.hexdigest("lifecycle:#{name}")
-        {"id" => name, "attempt_count" => 1, "passed" => true, "expected_source" => "kubernetes_external", "actual_source" => M2Gate::LIFECYCLE_SEMANTICS_ACTUAL_SOURCE, "actual_provenance" => fixture_semantics_provenance(name), "expected_sha256" => digest, "actual_sha256" => digest}
+        {"id" => name, "attempt_count" => 1, "passed" => true, "expected_source" => "kubernetes_external",
+         "actual_source" => M2Gate::LIFECYCLE_SEMANTICS_ACTUAL_SOURCE, "actual_provenance" => fixture_semantics_provenance(name), "expected_sha256" => digest,
+         "actual_sha256" => digest}
       end
     }
   end
