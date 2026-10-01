@@ -1061,9 +1061,11 @@ module M1Gate
         actual_causality = actual["resourceVersion_causality"]
         errors << "#{label} resourceVersion causality must be recorded on both observable packets" unless
           expected.key?("resourceVersion_causality") && actual.key?("resourceVersion_causality")
-        if expected_causality.is_a?(Hash) && actual_causality.is_a?(Hash) && operation["resource_version_causality_matches"] !=
-            (expected_causality["valid"] == true && actual_causality["valid"] == true)
-          errors << "#{label} resource_version_causality_matches is inconsistent with observable packets"
+        if expected_causality.is_a?(Hash) && actual_causality.is_a?(Hash)
+          both_valid = expected_causality["valid"] == true && actual_causality["valid"] == true
+          if operation["resource_version_causality_matches"] != both_valid
+            errors << "#{label} resource_version_causality_matches is inconsistent with observable packets"
+          end
         end
       else
         errors << "#{label} resource_version_causality_matches must be true when no causality packet is present" unless
