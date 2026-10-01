@@ -483,9 +483,7 @@ module Rubernetes
 
             csr = OpenSSL::X509::Request.new(request.unpack1("m0"))
             organizations = csr.subject.to_a.select { |entry| entry[0] == "O" }.map { |entry| entry[1] }
-            if organizations.include?("system:masters")
-              reject!("use of kubernetes.io/kube-apiserver-client signer with system:masters group is not allowed")
-            end
+            reject!("use of kubernetes.io/kube-apiserver-client signer with system:masters group is not allowed") if organizations.include?("system:masters")
           rescue OpenSSL::X509::RequestError, ArgumentError
             reject!("certificate request is not a valid PEM/DER CSR", code: 400, reason: "BadRequest")
           end
