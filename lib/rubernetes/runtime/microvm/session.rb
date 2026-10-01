@@ -136,9 +136,7 @@ module Rubernetes
                                                     **(workspace_mib ? {size_mib: workspace_mib} : {}))
             claim("workspace", identity.fields.fetch("workspace_id"), "workspace:#{identity.fields.fetch("workspace_id")}:#{File.stat(@workspace_path).ino}",
                   {"path" => @workspace_path})
-            if images.length > ImageDisks::MAX_IMAGE_DRIVES
-              raise Error, "at most #{ImageDisks::MAX_IMAGE_DRIVES} distinct images per microVM"
-            end
+            raise Error, "at most #{ImageDisks::MAX_IMAGE_DRIVES} distinct images per microVM" if images.length > ImageDisks::MAX_IMAGE_DRIVES
 
             @image_disks = images.map do |image|
               {"digest" => image.fetch("digest"), "path" => @disks.image_disk(image.fetch("digest"), image.fetch("rootfs"))}
