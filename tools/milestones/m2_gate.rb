@@ -543,9 +543,7 @@ module M2Gate
         entry
       end
       errors << "source inventory entries must be sorted by path" unless valid_entries.map { |entry| entry.fetch("path") }.sort == paths
-      unless canonical_inventory_digest(valid_entries) == manifest["input_sha256"]
-        errors << "source inventory digest does not match manifest input"
-      end
+      errors << "source inventory digest does not match manifest input" unless canonical_inventory_digest(valid_entries) == manifest["input_sha256"]
       errors << "source inventory file count does not match manifest input" unless valid_entries.length == manifest["input_file_count"]
     end
 
