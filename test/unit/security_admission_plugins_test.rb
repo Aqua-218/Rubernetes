@@ -315,7 +315,10 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     csr.sign(key, OpenSSL::Digest.new("SHA256"))
     object = {"metadata" => {"name" => "csr"},
               "spec" => {"signerName" => "kubernetes.io/kube-apiserver-client", "request" => [csr.to_pem].pack("m0")}}
-    assert_raises(A::Rejected) { plugin("CertificateSubjectRestriction").validate(attributes("CREATE", resource: "certificatesigningrequests", group: "certificates.k8s.io", namespace: "", object: object)) }
+    assert_raises(A::Rejected) do
+      plugin("CertificateSubjectRestriction").validate(attributes("CREATE", resource: "certificatesigningrequests",
+                                                                            group: "certificates.k8s.io", namespace: "", object: object))
+    end
     service = {"metadata" => {"name" => "svc"}, "spec" => {"externalIPs" => ["203.0.113.5"]}}
     error = assert_raises(A::Rejected) { plugin("DenyServiceExternalIPs").validate(attributes("CREATE", resource: "services", object: service)) }
     assert_equal 422, error.code
