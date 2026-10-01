@@ -35,7 +35,8 @@ class APIDeprecationWarningTest < Minitest::Test
     text = @server.instance_variable_get(:@metrics).render
 
     assert_includes text,
-                    'apiserver_requested_deprecated_apis{group="storage.k8s.io",removed_release="1.37",resource="volumeattributesclasses",subresource="",version="v1beta1"} 1'
+                    'apiserver_requested_deprecated_apis{group="storage.k8s.io",removed_release="1.37",resource="volumeattributesclasses",subresource="",' \
+                    'version="v1beta1"} 1'
   end
 
   def test_deprecated_crd_versions_carry_their_warning
