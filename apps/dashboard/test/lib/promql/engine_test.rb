@@ -185,7 +185,8 @@ module Promql
       assert_equal({"code" => "200", "method" => "get"}, result[0][0])
       assert_in_delta 100.0 / 124, result[0][1]
 
-    result = vector("requests / ignoring(code) group_left total").sort_by { |m, _| [m["method"], m["code"]] }
+      error = assert_raises(Promql::EvalError) { vector("requests / ignoring(code) total") }
+      assert_match(/many-to-one matching must be explicit/, error.message)
 
     assert_equal 4, result.length
     assert_equal({"code" => "200", "method" => "get"}, result[0][0])
