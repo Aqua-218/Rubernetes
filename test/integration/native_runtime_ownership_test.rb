@@ -175,8 +175,8 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       first.start_container(container, request_id: "reconstruct-start")
       observed = first.resource_inventory
 
-    second = Rubernetes::Runtime::Native.new(**options, log_root: File.join(directory, "logs-restarted"))
-    report = second.recover(observer: -> { observed })
+      second = Rubernetes::Runtime::Native.new(**options, log_root: File.join(directory, "logs-restarted"))
+      report = second.recover(observer: -> { observed })
 
     assert_empty(report.to_h.fetch("errors"))
     assert_equal(:running, second.sandbox(sandbox_id).state)
