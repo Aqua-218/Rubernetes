@@ -6871,11 +6871,6 @@
           },
           "201": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.networking.v1.ServiceCIDR"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.networking.v1.ServiceCIDR"
