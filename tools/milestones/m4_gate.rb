@@ -695,7 +695,8 @@ module M4Gate
              valid_digest?(packet["inputBindingSha256"]) && packet["inputBindingSha256"] == canonical_document_digest(binding)
         errors << "proxy packet immutable input binding is incomplete"
       end
-      unless packet["rawPacketTrace"] && valid_digest?(packet["packetTraceSha256"]) && packet["packetTraceSha256"] == canonical_document_digest(packet["rawPacketTrace"])
+      unless packet["rawPacketTrace"] && valid_digest?(packet["packetTraceSha256"]) &&
+             packet["packetTraceSha256"] == canonical_document_digest(packet["rawPacketTrace"])
         errors << "proxy packet corpus raw trace digest is invalid"
       end
       capture = packet["packetCapture"] || packet["packet_capture"] || packet["pcap"]
