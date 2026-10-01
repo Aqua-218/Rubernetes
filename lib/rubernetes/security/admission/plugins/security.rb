@@ -317,7 +317,9 @@ module Rubernetes
                       code: 404, reason: "NotFound")
             end
             unless request["podUID"].to_s == metadata(pod)["uid"].to_s
-              reject!("PodCertificateRequest for pod \"#{namespace}/#{pod_name}\" contains pod UID (#{request["podUID"].to_s.inspect}) which differs from running pod #{metadata(pod)["uid"].to_s.inspect}",
+              reject!("PodCertificateRequest for pod \"#{namespace}/#{pod_name}\" contains pod UID (#{request["podUID"].to_s.inspect}) which differs from " \
+                      "running pod " \
+                      "#{metadata(pod)["uid"].to_s.inspect}",
                       code: 500, reason: "InternalError")
             end
             unless spec(pod)["nodeName"].to_s == node_name
