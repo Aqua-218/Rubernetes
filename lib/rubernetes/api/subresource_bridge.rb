@@ -808,12 +808,8 @@ module Rubernetes
         return raise(error) if error.is_a?(Status::Error)
 
         name = error.class.name.to_s
-        if name.end_with?("::AuthorizationError")
-          raise Status::Forbidden.new("request is not authorized for Pod #{operation}"), cause: error
-        end
-        if name.end_with?("::InvalidRequest", "::ConfigurationError")
-          raise Status::BadRequest.new("Pod #{operation} request is invalid"), cause: error
-        end
+        raise Status::Forbidden.new("request is not authorized for Pod #{operation}"), cause: error if name.end_with?("::AuthorizationError")
+        raise Status::BadRequest.new("Pod #{operation} request is invalid"), cause: error if name.end_with?("::InvalidRequest", "::ConfigurationError")
         if name.end_with?("::RuntimeUnavailable", "::CapabilityError")
           raise Status::ServiceUnavailable.new("Pod #{operation} runtime is unavailable"), cause: error
         end
