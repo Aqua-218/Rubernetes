@@ -791,6 +791,12 @@ module Rubernetes
         with_network_namespace(target, operation: operation, &block)
       end
 
+      def self.fork_for_namespaces?
+        return @fork_for_namespaces unless @fork_for_namespaces.nil?
+
+        @fork_for_namespaces = ENV["RUBY_MN_THREADS"] == "1"
+      end
+
       private
 
       # Execute a request in the target network namespace without changing
