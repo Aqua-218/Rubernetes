@@ -365,7 +365,8 @@ class M4NetworkTest < Minitest::Test
                                                                                                         "value" => [1430].pack("L<")
                                                                                                       },
                                                                                                       {
-                                                                                                        "type" => Rubernetes::Network::Netlink::IFLA_ADDRESS, "value" => ["02aabbccddee"].pack("H12")
+                                                                                                        "type" => Rubernetes::Network::Netlink::IFLA_ADDRESS,
+                                                                                                        "value" => ["02aabbccddee"].pack("H12")
                                                                                                       },
                                                                                                       {"type" => Rubernetes::Network::Netlink::IFLA_LINKINFO,
                                                                                                        "value" => link_info, "nested" => true}
