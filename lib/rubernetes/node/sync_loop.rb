@@ -166,7 +166,7 @@ module Rubernetes
         end
         if @workers.respond_to?(:stop)
           begin
-            @workers.stop(drain: true, join: join)
+            @workers.stop(drain: true, join: join, timeout: STOP_DRAIN_TIMEOUT)
           rescue StandardError => error
             close_errors.concat(Array(error.respond_to?(:cleanup_errors) ? error.cleanup_errors : error))
           end
