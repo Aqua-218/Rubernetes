@@ -67,9 +67,7 @@ module Rubernetes
       def initialize(table_name: "rubernetes_policy", timeout: 2.0, socket_factory: nil, transport: nil,
                      instance_identity: nil)
         @instance_identity = String(instance_identity || "#{Socket.gethostname}/#{table_name}")
-        if @instance_identity.empty? || @instance_identity.include?("\0")
-          raise ArgumentError, "nftables policy instance identity is invalid"
-        end
+        raise ArgumentError, "nftables policy instance identity is invalid" if @instance_identity.empty? || @instance_identity.include?("\0")
 
         super(table_name: table_name, timeout: timeout, socket_factory: socket_factory, transport: transport)
         @packet_matrix = nil
