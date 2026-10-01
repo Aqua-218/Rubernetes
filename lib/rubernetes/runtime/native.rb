@@ -1435,9 +1435,7 @@ module Rubernetes
         deferred, pod_deferred = @mutex.synchronize do
           [@deferred_memory_limits.delete(key), @deferred_memory_limits.delete(pod_key)]
         end
-        if pod_deferred && !pod_deferred.empty? && sandbox.cgroup && @cgroup.respond_to?(:configure_pod)
-          @cgroup.configure_pod(sandbox.cgroup, pod_deferred)
-        end
+        @cgroup.configure_pod(sandbox.cgroup, pod_deferred) if pod_deferred && !pod_deferred.empty? && sandbox.cgroup && @cgroup.respond_to?(:configure_pod)
         return if deferred.nil? || deferred.empty?
 
         @cgroup.configure(container.cgroup, deferred)
