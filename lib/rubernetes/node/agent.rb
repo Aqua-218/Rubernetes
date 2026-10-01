@@ -414,15 +414,7 @@ module Rubernetes
         if @eviction_manager.respond_to?(:on_eviction=)
           metrics = @kubelet_metrics
           @eviction_manager.on_eviction = ->(signal) { metrics.eviction(signal) }
-          if @eviction_manager.respond_to?(:on_stats_age=)
-            @eviction_manager.on_stats_age = ->(signal, seconds) { metrics.eviction_stats_age(signal, seconds) }
-          end
-        end
-        if @eviction_manager && @admission.respond_to?(:eviction_admit_handler=)
-          @admission.eviction_admit_handler = @eviction_manager.method(:admit)
-        end
-        if @container_manager && @admission.respond_to?(:allocation_admit_handler=)
-          @admission.allocation_admit_handler = @container_manager.method(:admit)
+          @eviction_manager.on_stats_age = ->(signal, seconds) { metrics.eviction_stats_age(signal, seconds) } if @eviction_manager.respond_to?(:on_stats_age=)
         end
         # GracefulNodeShutdown: a manager only with a shutdown grace period.
         @shutdown_manager = shutdown_manager || build_shutdown_manager(shutdown, feature_gates, kubelet_root, error_handler)
