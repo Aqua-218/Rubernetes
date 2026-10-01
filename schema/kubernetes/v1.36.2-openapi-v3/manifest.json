@@ -423,8 +423,10 @@
       "path": "apis/rbac.authorization.k8s.io.json",
       "upstream_path": "api/openapi-spec/v3/apis__rbac.authorization.k8s.io_openapi.json",
       "source_sha256": "15f461c99c4904cb084be11331ca59d5e042f9cf491fd1da9b04f340f8df68e6",
-      "sha256": "15f461c99c4904cb084be11331ca59d5e042f9cf491fd1da9b04f340f8df68e6",
-      "paths": 1
+      "sha256": "c457e2c56328cfd8ada112e60be207698e3e655c0d0ee19619b8b48dc091f1cd",
+      "paths": 1,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/rbac.authorization.k8s.io"
     },
     {
       "path": "apis/resource.k8s.io/v1.json",
