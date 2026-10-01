@@ -623,7 +623,14 @@ module Rubernetes
           def self.parse(text)
             raise EvaluationError, "invalid IP address #{text.inspect}" unless valid?(text)
 
-            new(IPAddr.new(text))
+            new(IPAddr.new(text), text)
+          end
+
+          # `text` is the source form when the value was parsed from a string;
+          # isCanonical compares it with the canonical rendering, as cel-go does.
+          def initialize(address, text = nil)
+            @address = address
+            @text = text
           end
 
           def initialize(address) = @address = address
