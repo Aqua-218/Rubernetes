@@ -1240,9 +1240,7 @@ module Rubernetes
           end
         end
         next_source_ranges = current_source_range_entries(service_rules)
-        if next_source_ranges.any? && !maps.key?("source_ranges")
-          raise ArgumentError, "source_ranges map is required for LoadBalancer source ranges"
-        end
+        raise ArgumentError, "source_ranges map is required for LoadBalancer source ranges" if next_source_ranges.any? && !maps.key?("source_ranges")
 
         requires_snat = service_rules.any? do |rule|
           service_rule_families(rule).any? do |family|
