@@ -634,7 +634,7 @@ class HTTPTransportTest < Minitest::Test
 
       assert_equal baseline_watchers, store_watcher_count(service.store)
 
-    service.stop(reason: "integration test")
+      service.stop(reason: "integration test")
 
     assert_predicate service.http_server, :stopped?
     assert_equal 0, service.http_server.active_connections
