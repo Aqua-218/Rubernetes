@@ -2053,9 +2053,7 @@ module M2Gate
         unless entry["node_resolver_class"] == "Rubernetes::API::SubresourceBridge::NodeResolver"
           errors << "#{label} subresource #{name} must use the production NodeResolver"
         end
-        unless entry["node_endpoint_registered"] == true
-          errors << "#{label} subresource #{name} must observe the registered AgentService endpoint"
-        end
+        errors << "#{label} subresource #{name} must observe the registered AgentService endpoint" unless entry["node_endpoint_registered"] == true
         unless entry["service_class"] == REQUIRED_SUBRESOURCE_SERVICES[name]
           errors << "#{label} subresource #{name} service class is not the production Node service"
         end
