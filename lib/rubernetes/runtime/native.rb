@@ -1253,6 +1253,7 @@ module Rubernetes
         cleaner ||= @adapters[:cleaner] || method(:cleanup_resource)
         observed_snapshot = normalize_inventory(invoke_observer(observer))
         mark_dead_operations_for_recovery!(observed_snapshot)
+        observed_snapshot = quiesce_dead_operations!(observed_snapshot, observer)
         reconstruct_sandboxes_from_observed!(observed_snapshot)
         recovery = Support::Recovery.new(
           ledger: ledger,
@@ -1282,13 +1283,16 @@ module Rubernetes
 
           owner = String(operation.fetch("owner") { operation[:owner] })
           resources = normalize_inventory(@ledger.resources(owner: owner, include_released: false))
-          # Any key collision with a different durable identity/owner is PID,
-          # inode, or namespace reuse evidence. Do not downgrade the whole
-          # operation to a dead-resource cleanup candidate: Recovery must
-          # surface the mismatch and refuse all automatic deletion.
+          # A key collision with a different durable identity/owner on a
+          # path-like resource (inode, namespace link) is reuse evidence: the
+          # operation is not downgraded to a cleanup candidate; Recovery
+          # surfaces the mismatch and refuses deletion.  A *process* whose pid
+          # now carries another start time or executable is proof that ours
+          # exited (the kernel reused the pid): the operation is dead and the
+          # claim is released without ever signalling the stranger.
           identity_mismatch = resources.any? do |resource|
             observed_resource = observed_by_key[resource_key(resource)]
-            observed_resource &&
+            observed_resource && resource["kind"] != "process" &&
               (observed_resource["identity"] != resource["identity"] ||
                observed_resource["owner"] != resource["owner"])
           end
@@ -1297,6 +1301,7 @@ module Rubernetes
           dead = resources.any? do |resource|
             observed_resource = observed_by_key[resource_key(resource)]
             observed_resource.nil? ||
+              (resource["kind"] == "process" && observed_resource["identity"] != resource["identity"]) ||
               (observed_resource["identity"] == resource["identity"] &&
                observed_resource["owner"] == resource["owner"] &&
                observed_resource.dig("metadata", "live") == false)
@@ -1304,6 +1309,69 @@ module Rubernetes
           @ledger.transition(operation_id: operation.fetch("id") { operation[:id] }, to: "StateUnknown") if dead
         end
         true
+      end
+
+      RECOVERY_CANDIDATE_STATES = %w[StateUnknown RollingBack CleanupPending].freeze
+      RECOVERY_STOP_TIMEOUT_SECONDS = 10
+
+      # A dead operation (its sandbox lost a namespace, a veth, a mount) may
+      # still have live containers; kubelet kills the containers of a broken
+      # sandbox and lets the Pod be recreated.  Stop every process Recovery
+      # would otherwise refuse to touch ("live or liveness is unknown"), but
+      # only after re-verifying it is ours (pid + start time + executable
+      # digest through ProcessSupervisor#adopt), kill the populated cgroups
+      # the same way, then observe again so the cleanup sees dead resources.
+      # A pid whose identity no longer matches is never signalled.
+      def quiesce_dead_operations!(observed, observer)
+        observed_by_key = observed.each_with_object({}) { |entry, result| result[resource_key(entry)] = entry }
+        quiesced = []
+        @ledger.operations.each do |operation_value|
+          operation = operation_value.respond_to?(:to_h) ? operation_value.to_h : operation_value
+          state = String(operation.fetch("state") { operation[:state] })
+          next unless RECOVERY_CANDIDATE_STATES.include?(state)
+
+          owner = String(operation.fetch("owner") { operation[:owner] })
+          resources = normalize_inventory(@ledger.resources(owner: owner, include_released: false))
+          resources.sort_by { |resource| resource["kind"] == "process" ? 0 : 1 }.each do |resource|
+            observed_resource = observed_by_key[resource_key(resource)]
+            next unless observed_resource
+            next unless observed_resource["identity"] == resource["identity"] && observed_resource["owner"] == resource["owner"]
+            next unless observed_resource.dig("metadata", "live") == true
+
+            begin
+              case resource["kind"]
+              when "process" then stop_recovered_process(resource)
+              when "cgroup" then kill_recovered_cgroup(resource)
+              else next
+              end
+              quiesced << resource_key(resource)
+            rescue StandardError => error
+              record(:recovery_quiesce_failed, resource: resource_key(resource), error: error_payload(error))
+            end
+          end
+        end
+        return observed if quiesced.empty?
+
+        record(:recovery_quiesced, resources: quiesced)
+        normalize_inventory(invoke_observer(observer))
+      end
+
+      def stop_recovered_process(resource)
+        metadata = resource.fetch("metadata", {}).merge("id" => resource.fetch("id"))
+        handle = @process_supervisor.handles.values.find { |entry| entry.id.to_s == resource.fetch("id") } ||
+                 @process_supervisor.adopt(metadata: metadata)
+        @process_supervisor.stop(handle, timeout: RECOVERY_STOP_TIMEOUT_SECONDS, resource_id: "process:#{resource.fetch("id")}")
+        @process_supervisor.close(handle)
+      end
+
+      def kill_recovered_cgroup(resource)
+        return unless @cgroup.respond_to?(:kill)
+
+        metadata = resource.fetch("metadata", {})
+        handle = @cgroup.lookup(metadata["path"] || resource.fetch("id"))
+        raise Platform::Linux::CgroupV2::Error, "cgroup #{resource_key(resource)} identity changed" unless handle.identity == resource.fetch("identity")
+
+        @cgroup.kill(handle)
       end
 
       # hostUsers=false receives a durable, non-overlapping 65,536 ID range
@@ -1610,7 +1678,7 @@ module Rubernetes
         cgroup = adopt_cgroup(cgroup_resource)
         workspace_data = workspace_resource.fetch("metadata")
         workspace_fields = %w[id root upper work identity image_digest].to_h do |field|
-                             [field.to_sym, workspace_data.fetch(field)]
+          [field.to_sym, workspace_data.fetch(field)]
         end
         workspace = Filesystem::Workspace.new(**workspace_fields)
         @filesystem.adopt(workspace, namespace: namespace, metadata: workspace_resource.fetch("metadata", {}))
@@ -1688,15 +1756,16 @@ module Rubernetes
         end
         return if sandbox.state == target
 
-        if target == :running
+        case target
+        when :running
           sandbox.transition(:running)
-        elsif target == :stopping
+        when :stopping
           sandbox.transition(:running)
           sandbox.transition(:stopping)
-        elsif target == :stopped
+        when :stopped
           sandbox.transition(:rolling_back)
           sandbox.transition(:stopped)
-        elsif target == :rolling_back
+        when :rolling_back
           sandbox.transition(:rolling_back)
         else
           raise RecoveryRequired, "unsupported sandbox state #{state.inspect} during reconstruction"

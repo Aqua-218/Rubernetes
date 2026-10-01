@@ -855,13 +855,17 @@ module Rubernetes
         observed_by_key = index_resources(observed, "observed")
         ledger_only = ledger_by_key.keys - observed_by_key.keys
         kernel_only = observed_by_key.keys - ledger_by_key.keys
-        identity_mismatch = (ledger_by_key.keys & observed_by_key.keys).filter_map do |resource_key|
+        mismatched = (ledger_by_key.keys & observed_by_key.keys).filter_map do |resource_key|
           expected = ledger_by_key.fetch(resource_key)
           actual = observed_by_key.fetch(resource_key)
           next if expected.fetch("identity") == actual.fetch("identity") && expected.fetch("owner") == actual.fetch("owner")
 
           {"resource" => resource_key, "ledger" => expected, "observed" => actual}
         end
+        # A process whose pid now belongs to another program (start time or
+        # executable differ) is proof that ours exited: the claim is released
+        # and nothing is signalled.  Path-like reuse stays fatal to cleanup.
+        pid_reused, identity_mismatch = mismatched.partition { |entry| entry.fetch("ledger").fetch("kind") == "process" }
         orphans = kernel_only.map do |resource_key|
           observed_by_key.fetch(resource_key)
         end.select { |resource| @orphan_predicate.call(resource) }
@@ -892,6 +896,22 @@ module Rubernetes
           end ? "orphan" : "kernel_only", resource_key)
         end
         identity_mismatch.each { |entry| audit << audit_entry("identity_mismatch", entry.fetch("resource")) }
+        pid_reused.each do |entry|
+          resource = entry.fetch("ledger")
+          resource_key = entry.fetch("resource")
+          audit << audit_entry("pid_reused", resource_key)
+          begin
+            operation = operation_for_resource(resource)
+            raise RecoveryRequired, "ledger resource #{resource_key} has no owning operation" unless operation
+
+            @ledger.release(operation_id: operation.id, kind: resource.fetch("kind"), id: resource.fetch("id"),
+                            identity: resource.fetch("identity"), force: true)
+            released << resource_key
+          rescue StandardError => error
+            errors << error_entry(resource_key, error)
+            mark_recovery_failure(operation_for_resource(resource), error)
+          end
+        end
 
         cleanup_in_dependency_order(orphans).each do |resource|
           resource_key = key(resource)
