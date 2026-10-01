@@ -527,9 +527,7 @@ module Rubernetes
           elsif atom.list
             left_list = deref(lhs, Array, "lhs: ", "list", errors)
             right_list = deref(rhs, Array, "rhs: ", "list", errors)
-            if atom.list.atomic? || ((left_list.nil? || left_list.empty?) && (right_list.nil? || right_list.empty?))
-              return merge_leaf(lhs, rhs, state)
-            end
+            return merge_leaf(lhs, rhs, state) if atom.list.atomic? || ((left_list.nil? || left_list.empty?) && (right_list.nil? || right_list.empty?))
             return if left_list.nil? && right_list.nil?
 
             merge_list_items(atom.list, left_list || [], right_list || [], errors, state, rhs_typed)
