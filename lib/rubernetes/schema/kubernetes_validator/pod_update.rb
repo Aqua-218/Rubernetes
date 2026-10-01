@@ -213,7 +213,7 @@ module Rubernetes
         # request body decoded from JSON keeps them (keep_empty).
         def convert(pod, keep_empty: false)
           v1 = pod.is_a?(Hash) ? (pod["spec"] || {}) : {}
-          spec = convert_struct(layout.fetch("internal"), v1, keep_empty)
+          spec = convert_struct(layout.fetch("internal"), v1, keep_empty: keep_empty)
           # Convert_v1_PodSpec_To_core_PodSpec.
           spec = spec.with("ServiceAccountName", v1["serviceAccount"].to_s) if v1["serviceAccountName"].to_s.empty?
           context = spec["SecurityContext"] || zero_struct(CORE + "PodSecurityContext")
