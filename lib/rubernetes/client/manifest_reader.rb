@@ -59,6 +59,15 @@ module Rubernetes
         parse(content, filename: filename)
       end
 
+      def self.positive_integer(value, name)
+        integer = Integer(value)
+        raise ArgumentError, "#{name} must be positive" unless integer.positive?
+
+        integer
+      rescue ArgumentError, TypeError => error
+        raise ArgumentError, "#{name} must be a positive integer: #{error.message}"
+      end
+
       private
 
       def load_ruby(path)
