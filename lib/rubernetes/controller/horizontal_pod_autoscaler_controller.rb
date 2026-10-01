@@ -947,7 +947,8 @@ module Rubernetes
             return [0, "", nil, unable_condition(context, "FailedGetObjectMetric", error.message),
                     "failed to get object metric value: #{error.message}"]
           end
-          [replicas, name, {"type" => "Object", "object" => {"describedObject" => source["describedObject"], "metric" => source["metric"], "current" => current}},
+          [replicas, name,
+           {"type" => "Object", "object" => {"describedObject" => source["describedObject"], "metric" => source["metric"], "current" => current}},
            nil, nil]
         when "External"
           source = spec["external"]
