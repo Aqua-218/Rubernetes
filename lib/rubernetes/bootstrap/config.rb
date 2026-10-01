@@ -21,8 +21,9 @@ module Rubernetes
       TOP_LEVEL_KEYS = %w[version logging processes].freeze
       LOGGING_KEYS = %w[level].freeze
       MAX_BYTES = 1_048_576
-      APISERVER_KEYS = %w[bind_address port max_body_bytes watch_history_limit datastore tls security runtime_config service_cluster_ip_range node_port_range advertise_address
-                          proxy_client kubelet_client encryption_config_file encryption_config_reload_interval_seconds egress_selector_config_file].freeze
+      APISERVER_KEYS = %w[bind_address port max_body_bytes watch_history_limit datastore tls security runtime_config
+                          service_cluster_ip_range node_port_range advertise_address proxy_client kubelet_client
+                          encryption_config_file encryption_config_reload_interval_seconds egress_selector_config_file].freeze
       TLS_KEYS = %w[cert_file key_file].freeze
       SECURITY_KEYS = %w[authentication authorization admission audit flow_control feature_gates].freeze
       AUTHENTICATION_KEYS = %w[client_ca_file token_file service_account bootstrap_tokens request_header jwt webhook anonymous
