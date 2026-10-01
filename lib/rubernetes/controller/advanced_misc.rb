@@ -384,9 +384,7 @@ module Rubernetes
       # random characters the API server would append.
       def generated_name(pod_name, claim_name)
         base = "#{pod_name}-#{claim_name}-"
-        if base.length > 57
-          base = "#{pod_name[0, pod_name.length * 57 / base.length]}-#{claim_name[0, claim_name.length * 57 / base.length]}"
-        end
+        base = "#{pod_name[0, pod_name.length * 57 / base.length]}-#{claim_name[0, claim_name.length * 57 / base.length]}" if base.length > 57
         base + Array.new(5) { NAME_ALPHABET[@random.rand(NAME_ALPHABET.length)] }.join
       end
 
