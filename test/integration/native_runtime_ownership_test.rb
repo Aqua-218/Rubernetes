@@ -121,24 +121,25 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       Process.wait(orchestrator_pid)
       wait_until(timeout: 3.0) { !File.exist?("/proc/#{holder_pid}") }
 
-    refute_path_exists("/proc/#{holder_pid}", "PID namespace holder survived agent SIGKILL")
-  ensure
-    reader&.close unless reader&.closed?
-    writer&.close unless writer&.closed?
-    begin
-      Process.kill(Signal.list.fetch("KILL"), orchestrator_pid) if orchestrator_pid && File.exist?("/proc/#{orchestrator_pid}")
-    rescue Errno::ESRCH
-      nil
-    end
-    begin
-      Process.wait(orchestrator_pid, Process::WNOHANG) if orchestrator_pid
-    rescue Errno::ECHILD
-      nil
-    end
-    begin
-      Process.kill(Signal.list.fetch("KILL"), holder_pid) if holder_pid && File.exist?("/proc/#{holder_pid}")
-    rescue Errno::ESRCH
-      nil
+      refute_path_exists("/proc/#{holder_pid}", "PID namespace holder survived agent SIGKILL")
+    ensure
+      reader&.close unless reader&.closed?
+      writer&.close unless writer&.closed?
+      begin
+        Process.kill(Signal.list.fetch("KILL"), orchestrator_pid) if orchestrator_pid && File.exist?("/proc/#{orchestrator_pid}")
+      rescue Errno::ESRCH
+        nil
+      end
+      begin
+        Process.wait(orchestrator_pid, Process::WNOHANG) if orchestrator_pid
+      rescue Errno::ECHILD
+        nil
+      end
+      begin
+        Process.kill(Signal.list.fetch("KILL"), holder_pid) if holder_pid && File.exist?("/proc/#{holder_pid}")
+      rescue Errno::ESRCH
+        nil
+      end
     end
   end
 
