@@ -347,7 +347,7 @@ module Rubernetes
           return false unless status.success?
 
           output.lines.any? { |line| line.strip.match?(/\Auser:#{Integer(uid)}:r/) } && output.lines.none? do |line|
-            line.strip.match?(/\Amask::-/)
+            line.strip.start_with?("mask::-")
           end
         rescue SystemCallError
           false
