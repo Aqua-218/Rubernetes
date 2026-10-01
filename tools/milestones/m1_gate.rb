@@ -2171,9 +2171,7 @@ module M1Gate
 
         errors << "#{label} ledger entry #{index} must be applicable" unless entry["applicable"] == true
         mode = entry["mode"]
-        unless VALIDATION_LEDGER_MODES.include?(mode)
-          errors << "#{label} ledger entry #{index} mode #{mode.inspect} is not an executable validation path"
-        end
+        errors << "#{label} ledger entry #{index} mode #{mode.inspect} is not an executable validation path" unless VALIDATION_LEDGER_MODES.include?(mode)
         collaborators = entry["collaborators"]
         if mode == "constructor" && collaborators.is_a?(Array) && !collaborators.empty?
           collaborators.each do |collaborator|
