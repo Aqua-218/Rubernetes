@@ -730,6 +730,8 @@ module RubernetesSchemaGenerator
           artifacts[relative] = RubernetesSchemaGenerator.canonical_json(pinned) << "\n"
           next
         end
+        paths = {}
+        schemas = deep_transform_refs(schema_closure(definitions, roots))
         document = {
           "openapi" => "3.0.0",
           "info" => {"title" => "Rubernetes Kubernetes #{group.empty? ? "core" : group}/#{version}", "version" => "v1.36.2"},
