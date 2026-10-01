@@ -1416,7 +1416,8 @@ module Rubernetes
       def controller_manager_metrics
         metrics = Observability::Metrics.new(apiserver: false, component: "kube-controller-manager")
         metrics.register("leader_election_master_status", type: :gauge,
-                                                          help: "Gauge of if the reporting system is master of the relevant lease, 0 indicates backup, 1 indicates master. " \
+                                                          help: "Gauge of if the reporting system is master of the relevant lease, 0 indicates backup, 1 " \
+                                                                "indicates master. " \
                                                                 "'name' is the string used to identify the lease. Please make sure to group by name.")
         metrics.register("running_managed_controllers", type: :gauge,
                                                         help: "Indicates where instances of a controller are currently running")
