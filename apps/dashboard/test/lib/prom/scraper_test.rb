@@ -64,10 +64,10 @@ module Prom
       @now += 15_000
       status = @scraper.scrape(target(nil, status: 500))
 
-    assert_equal "down", status.health
-    assert_match(/HTTP status 500/, status.last_error)
-    assert_in_delta(0.0, value_of("up")[0][1][1])
-    assert Tsdb::Store.stale_marker?(value_of("a")[0][1][1])
+      assert_equal "down", status.health
+      assert_match(/HTTP status 500/, status.last_error)
+      assert_in_delta(0.0, value_of("up")[0][1][1])
+      assert Tsdb::Store.stale_marker?(value_of("a")[0][1][1])
 
     @now += 15_000
     failing = target(nil) { raise Errno::ECONNREFUSED, "connection refused" }
