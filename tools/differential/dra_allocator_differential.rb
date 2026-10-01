@@ -235,8 +235,9 @@ module DRAAllocatorDifferential
                                                                                                                                    2Gi 4Gi
                                                                                                                                  ]}})])],
                                          claims: [claim("a", [request("r", capacity: {"requests" => {"memory" => "3Gi"}})])])
-    add.call("consumable-policy-max", slices: [slice("s1", [shared.call("mem", memory: {"value" => "8Gi", "requestPolicy" => {"validRange" => {"min" => "1Gi", "max" => "2Gi"}}})])],
-                                      claims: [claim("a", [request("r", capacity: {"requests" => {"memory" => "3Gi"}})])])
+    add.call("consumable-policy-max",
+             slices: [slice("s1", [shared.call("mem", memory: {"value" => "8Gi", "requestPolicy" => {"validRange" => {"min" => "1Gi", "max" => "2Gi"}}})])],
+             claims: [claim("a", [request("r", capacity: {"requests" => {"memory" => "3Gi"}})])])
     add.call("consumable-undefined", slices: [slice("s1", [shared.call("nic", bandwidth: "10G")])],
                                      claims: [claim("a", [request("r", capacity: {"requests" => {"memory" => "1Gi"}})])])
     add.call("consumable-already-used", slices: [slice("s1", [shared.call("nic", bandwidth: "10G")])],
