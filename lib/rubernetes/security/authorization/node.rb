@@ -173,12 +173,8 @@ module Rubernetes
           verb = attributes.verb
           return no_opinion("can only get, create, update, patch, or delete a node lease") unless %w[get create update patch
                                                                                                      delete].include?(verb)
-          unless attributes.namespace == "kube-node-lease"
-            return no_opinion("can only access leases in the \"kube-node-lease\" system namespace")
-          end
-          if verb != "create" && attributes.name != node_name
-            return no_opinion("can only access node lease with the same name as the requesting node")
-          end
+          return no_opinion("can only access leases in the \"kube-node-lease\" system namespace") unless attributes.namespace == "kube-node-lease"
+          return no_opinion("can only access node lease with the same name as the requesting node") if verb != "create" && attributes.name != node_name
 
           allow("own lease")
         end
