@@ -1815,8 +1815,7 @@ module Rubernetes
           # With no explicit match, the upstream cacher only honors an exact
           # RV for a chunked list.  An unchunked list uses the latest
           # consistent revision (including when the requested RV was compacted).
-          if resource_version.nil? || resource_version == "" || resource_version == 0 || resource_version == "0"
-          else
+          unless resource_version.nil? || resource_version == "" || resource_version == 0 || resource_version == "0"
             requested = parse_revision(resource_version)
             raise InvalidResourceVersion, "resourceVersion #{requested} is ahead of current revision #{@revision}" if requested > @revision
 
