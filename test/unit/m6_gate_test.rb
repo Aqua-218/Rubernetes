@@ -89,7 +89,9 @@ class M6GateTest < Minitest::Test
   def test_differential_without_oracle_execution_is_rejected
     cases = M6Gate::WEBHOOK_REQUIRED.map { |id| {"id" => id, "passed" => true, "oracle" => {"status" => 201}, "rubernetes" => {"status" => 201}} }
     errors = []
-    M6Gate.send(:validate_report, "webhook", report("m6_webhook_differential", cases, "measurement_level" => "differentially_tested", "docker_gateway" => "172.17.0.1", "sources" => sources),
+    M6Gate.send(:validate_report, "webhook",
+                report("m6_webhook_differential", cases, "measurement_level" => "differentially_tested", "docker_gateway" => "172.17.0.1",
+                                                         "sources" => sources),
                 "m6_webhook_differential", manifest_identity, errors)
 
     assert(errors.any? { |error| error.include?("oracle") })
