@@ -420,9 +420,7 @@ module Rubernetes
         messages = destroy_messages(actual)
         transaction = send_transaction(messages)
         remaining = read_kernel_ruleset
-        unless remaining["table"].nil?
-          raise NftablesNetlinkError, "nftables detach readback still contains owned table #{@table_name.inspect}"
-        end
+        raise NftablesNetlinkError, "nftables detach readback still contains owned table #{@table_name.inspect}" unless remaining["table"].nil?
 
         @last_transaction = transaction.freeze
         @last_readback = remaining.merge("verified" => true).freeze
