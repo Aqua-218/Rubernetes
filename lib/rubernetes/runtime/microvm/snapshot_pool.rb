@@ -180,6 +180,8 @@ module Rubernetes
           digest.hexdigest
         end
 
+        private
+
         def file_record(path)
           {"sha256" => self.class.file_digest(path), "bytes" => File.size(path)}
         end
