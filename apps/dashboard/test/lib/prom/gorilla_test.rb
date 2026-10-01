@@ -62,9 +62,9 @@ module Prom
       assert_raises(ArgumentError) { encoder.append(15, 1.0) }
     end
 
-  test "counts and bounds are tracked" do
-    encoder = Prom::Gorilla::Encoder.new
-    encoder.append(100, 1.0).append(200, 2.0).append(300, 3.0)
+    test "counts and bounds are tracked" do
+      encoder = Prom::Gorilla::Encoder.new
+      encoder.append(100, 1.0).append(200, 2.0).append(300, 3.0)
 
     assert_equal 3, encoder.count
     assert_equal 100, encoder.min_time
