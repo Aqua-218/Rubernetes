@@ -869,7 +869,8 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
 
       assert_predicate status, :success?, "isolated eBPF NetworkPolicy test failed: #{error.empty? ? output : error}"
       assert_match(/1 runs, \d+ assertions, 0 failures, 0 errors, 0 skips/, output)
-      return pass # the eBPF policy test ran and passed in the isolated child above
+      # The eBPF policy test ran and passed in the isolated child above.
+      return pass # rubocop:disable Minitest/ReturnInTestMethod
     end
 
     result = EBPFReverseConntrackKernelRunner.new.run
