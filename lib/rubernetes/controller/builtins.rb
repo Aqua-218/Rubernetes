@@ -421,9 +421,7 @@ module Rubernetes
           strategy = Support.value(Support.spec(working_set), "updateStrategy", {})
           strategy = {} unless strategy.is_a?(Hash)
           strategy_type = Support.value(strategy, "type", "RollingUpdate").to_s
-          unless %w[RollingUpdate OnDelete].include?(strategy_type)
-            raise ArgumentError, "unsupported StatefulSet updateStrategy #{strategy_type.inspect}"
-          end
+          raise ArgumentError, "unsupported StatefulSet updateStrategy #{strategy_type.inspect}" unless %w[RollingUpdate OnDelete].include?(strategy_type)
 
           replicas = (start...(start + desired)).map { |ordinal| existing_by_ordinal[ordinal] }
           condemned = existing_by_ordinal.select { |ordinal, _pod| ordinal < start || ordinal >= start + desired }
