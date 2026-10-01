@@ -397,9 +397,7 @@ module Rubernetes
         end
         @eviction_manager = eviction_manager
         eviction = Helpers.string_keys(eviction || {})
-        if @eviction_manager.nil? && @stats_provider && eviction.fetch("enabled", true) != false
-          @eviction_manager = build_eviction_manager(eviction)
-        end
+        @eviction_manager = build_eviction_manager(eviction) if @eviction_manager.nil? && @stats_provider && eviction.fetch("enabled", true) != false
         # kubelet /metrics (the registry exists from the container manager's start).
         @lifecycle.metrics_observer = @kubelet_metrics if @lifecycle.respond_to?(:metrics_observer=)
         attach_selinux_tracker
