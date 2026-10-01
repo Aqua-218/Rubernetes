@@ -1918,7 +1918,8 @@ module Rubernetes
         pv_capacity = quantity_base(pv_capacity_value)
         if pv_capacity < requested
           expanded = call_provider(provider_from(provider || cloud_provider || cloud), %i[expand_volume expand], positional: [pv, claim],
-                                                                                                                 keywords: {volume: pv, claim: claim, requested_capacity: requested})
+                                                                                                                 keywords: {volume: pv, claim: claim,
+                                                                                                                            requested_capacity: requested})
           pv_capacity_value = provider_capacity(expanded) || pv_capacity_value
           pv_capacity = quantity_base(pv_capacity_value)
         end
