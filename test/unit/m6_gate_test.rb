@@ -79,7 +79,8 @@ class M6GateTest < Minitest::Test
     cases = M6Gate::CRD_REQUIRED.map { |id| {"id" => id, "passed" => true, "oracle" => {"status" => 200}, "rubernetes" => {"status" => 200}} }
     cases.find { |entry| entry["id"] == "create_ok" }["rubernetes"] = {"status" => 201}
     errors = []
-    M6Gate.send(:validate_report, "crd", report("m6_crd_aggregation_differential", cases, "measurement_level" => "differentially_tested", "oracle" => oracle, "sources" => sources),
+    M6Gate.send(:validate_report, "crd",
+                report("m6_crd_aggregation_differential", cases, "measurement_level" => "differentially_tested", "oracle" => oracle, "sources" => sources),
                 "m6_crd_aggregation_differential", manifest_identity, errors)
 
     assert(errors.any? { |error| error.include?("create_ok") && error.include?("differ") })
