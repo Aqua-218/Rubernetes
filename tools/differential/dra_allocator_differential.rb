@@ -98,7 +98,9 @@ module DRAAllocatorDifferential
                                                          device("b",
                                                                 attributes: {"model" => {"string" => "h100"},
                                                                              "driverVersion" => {"version" => "2.0.0-rc.1"}})])],
-                                   claims: [claim("c", [request("r", selectors: ["device.attributes[\"#{DRIVER}\"].driverVersion.isGreaterThan(semver(\"1.5.0\"))"])])])
+                                   claims: [claim("c",
+                                                  [request("r",
+                                                           selectors: ["device.attributes[\"#{DRIVER}\"].driverVersion.isGreaterThan(semver(\"1.5.0\"))"])])])
     add.call("capacity-selector", slices: [slice("s1", [device("a", capacity: {"memory" => "16Gi"}), device("b", capacity: {"memory" => "80Gi"})])],
                                   claims: [claim("c", [request("r", selectors: ["device.capacity[\"#{DRIVER}\"].memory.compareTo(quantity(\"40Gi\")) >= 0"])])])
     add.call("cel-bind", slices: [slice("s1", gpus(3))],
