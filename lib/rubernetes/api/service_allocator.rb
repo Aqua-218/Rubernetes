@@ -367,7 +367,8 @@ module Rubernetes
           families.each_with_index do |family, index|
             next if cluster_families.include?(family)
 
-            raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.ipFamilies[#{index}]: Invalid value: \"#{family}\": not configured on this cluster",
+            raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.ipFamilies[#{index}]: Invalid value: \"#{family}\": not configured " \
+                                      "on this cluster",
                                       details: {"kind" => "Service", "name" => name_of(service)})
           end
         end
