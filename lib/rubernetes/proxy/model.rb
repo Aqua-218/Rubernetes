@@ -349,7 +349,7 @@ module Rubernetes
             topology_hints.nil? || topology_hints
           else
             topology_aware_hints
-          end, true
+          end, default: true
         )
         @raw = ModelSupport.immutable(source)
         validate_service!
