@@ -196,9 +196,7 @@ module Rubernetes
           issues << issue(path + ["interfaceName"], :too_long, "may not be more than #{NETWORK_INTERFACE_MAX} bytes")
         end
         hardware = fetch(network, "hardwareAddress").to_s
-        if hardware.bytesize > NETWORK_HARDWARE_MAX
-          issues << issue(path + ["hardwareAddress"], :too_long, "may not be more than #{NETWORK_HARDWARE_MAX} bytes")
-        end
+        issues << issue(path + ["hardwareAddress"], :too_long, "may not be more than #{NETWORK_HARDWARE_MAX} bytes") if hardware.bytesize > NETWORK_HARDWARE_MAX
         ips = Array(fetch(network, "ips"))
         issues << issue(path + ["ips"], :too_many, "must have at most #{NETWORK_MAX_IPS} items") if ips.length > NETWORK_MAX_IPS
         seen = {}
