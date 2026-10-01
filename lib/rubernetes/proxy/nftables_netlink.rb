@@ -315,9 +315,10 @@ module Rubernetes
 
         reasons = missing_service_contract.dup
         reasons << "transport-backed readback is not a live NETLINK_NETFILTER probe" if @transport
-        reasons << "an external packet semantic probe and verified ruleset readback are required" unless @semantic_verified && @semantic_evidence_attested && @last_readback&.fetch(
-          "verified", false
-        )
+        reasons << "an external packet semantic probe and verified ruleset readback are required" unless @semantic_verified && @semantic_evidence_attested &&
+                                                                                                         @last_readback&.fetch(
+                                                                                                           "verified", false
+                                                                                                         )
         reasons << production_capability_error_detail if production_capability_error_detail
         reasons << "live NETLINK_NETFILTER owned-table readback probe is required" if reasons.empty?
         "nftables adapter is not production-capable: #{reasons.join("; ")}"
