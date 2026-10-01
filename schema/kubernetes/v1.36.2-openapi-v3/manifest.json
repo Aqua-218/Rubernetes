@@ -196,8 +196,10 @@
       "path": "apis/batch/v1.json",
       "upstream_path": "api/openapi-spec/v3/apis__batch__v1_openapi.json",
       "source_sha256": "f39ccc48cf5d51dd6312299624c5033f935a67b8044f4c91f0fb8cdc7391f689",
-      "sha256": "f39ccc48cf5d51dd6312299624c5033f935a67b8044f4c91f0fb8cdc7391f689",
-      "paths": 15
+      "sha256": "a6b6e46a207f054cd24207b861b6e5dda5a74742f1c4f77dac1ec85906cb5b23",
+      "paths": 15,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/batch/v1"
     },
     {
       "path": "apis/batch.json",
