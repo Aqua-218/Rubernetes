@@ -18,7 +18,8 @@ class SecurityAdmissionPolicyTest < Minitest::Test
                              "paramKind" => {"apiVersion" => "v1", "kind" => "ConfigMap"},
                              "variables" => [{"name" => "limit", "expression" => "int(params.data.max)"}],
                              "validations" => [{"expression" => "object.spec.replicas <= variables.limit",
-                                                "messageExpression" => "'replicas ' + string(object.spec.replicas) + ' exceed ' + string(variables.limit)", "reason" => "Forbidden"}],
+                                                "messageExpression" => "'replicas ' + string(object.spec.replicas) + ' exceed ' + " \
+                                                                       "string(variables.limit)", "reason" => "Forbidden"}],
                              "auditAnnotations" => [{"key" => "replicas", "valueExpression" => "string(object.spec.replicas)"}]}},
                  group: "admissionregistration.k8s.io")
     @context.put("configmaps", "team", "limits", {"metadata" => {"name" => "limits"}, "data" => {"max" => "3"}})
