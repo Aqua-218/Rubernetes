@@ -331,8 +331,8 @@ module Rubernetes
         end
       end
 
-      def create(key = nil, object = nil, gvr: nil, namespace: nil, name: nil, **_options)
-        object = object || _options.delete(:object) || _options.delete(:resource) || _options.delete(:body)
+      def create(key = nil, object = nil, gvr: nil, namespace: nil, name: nil, **options)
+        object = object || options.delete(:object) || options.delete(:resource) || options.delete(:body)
         normalized_key = key_for(key, gvr: gvr, namespace: namespace, name: name, object: object)
         @mutex.synchronize do
           raise AlreadyExists, "resource #{normalized_key.inspect} already exists" if @objects.key?(normalized_key)
