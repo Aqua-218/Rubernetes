@@ -101,7 +101,8 @@ class SecurityAdmissionPolicyTest < Minitest::Test
   def test_mutating_admission_policy_applies_configuration_and_json_patch
     @context.put("mutatingadmissionpolicies", nil, "label",
                  {"metadata" => {"name" => "label"},
-                  "spec" => {"matchConstraints" => {"resourceRules" => [{"apiGroups" => ["apps"], "apiVersions" => ["*"], "operations" => ["CREATE"], "resources" => ["deployments"]}]},
+                  "spec" => {"matchConstraints" => {"resourceRules" => [{"apiGroups" => ["apps"], "apiVersions" => ["*"], "operations" => ["CREATE"],
+                                                                         "resources" => ["deployments"]}]},
                              "reinvocationPolicy" => "IfNeeded",
                              "mutations" => [{"patchType" => "ApplyConfiguration", "applyConfiguration" => {"expression" => "Object{metadata: " \
                                                                                                                             "Object.metadata{labels: " \
