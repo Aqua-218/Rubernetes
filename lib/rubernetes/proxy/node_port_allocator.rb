@@ -257,7 +257,9 @@ module Rubernetes
                           app_protocol: service_port.app_protocol)
         end
         Service.new(service.raw.merge("metadata" => service.raw.fetch("metadata", {}).merge("name" => service.name,
-                                                                                            "namespace" => service.namespace), "spec" => service.raw.fetch("spec", {}).merge("ports" => ports.map(&:to_h))),
+                                                                                            "namespace" => service.namespace),
+                                      "spec" => service.raw.fetch("spec",
+                                                                  {}).merge("ports" => ports.map(&:to_h))),
                     name: service.name, namespace: service.namespace, uid: service.uid, service_type: service.service_type,
                     cluster_ips: service.cluster_ips, ip_families: service.ip_families, ports: ports,
                     selector: service.selector, session_affinity: service.session_affinity,
