@@ -1051,7 +1051,8 @@ class M1GateTest < Minitest::Test
   def current_source_entries
     paths = Dir.glob(File.join(ROOT, "**/*"), File::FNM_DOTMATCH).select do |path|
       relative = path.delete_prefix("#{ROOT}/")
-      if relative.empty? || relative.match?(%r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/})
+      if relative.empty? ||
+         relative.match?(%r{\A(?:\.git|artifacts|build|pkg|tmp|\.bundle)(?:/|\z)|\Aa11-generated\.[A-Za-z0-9]{6,}/|\Aapps/[^/]+/(?:log|tmp|storage)/})
         next false
       end
 
