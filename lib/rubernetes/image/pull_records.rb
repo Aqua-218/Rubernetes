@@ -124,9 +124,7 @@ module Rubernetes
           wildcard = pattern.end_with?("/*")
           trimmed = wildcard ? pattern.delete_suffix("*") : pattern
           raise InvalidPolicy, "the supplied pattern is too short: #{pattern}" if trimmed.empty?
-          if trimmed.include?("*")
-            raise InvalidPolicy, "not a valid wildcard pattern, only patterns ending with '/*' are allowed: #{pattern}"
-          end
+          raise InvalidPolicy, "not a valid wildcard pattern, only patterns ending with '/*' are allowed: #{pattern}" if trimmed.include?("*")
 
           if wildcard
             raise InvalidPolicy, "at least registry hostname is required" if trimmed.length == 1
