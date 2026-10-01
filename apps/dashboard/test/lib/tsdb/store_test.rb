@@ -49,8 +49,11 @@ module Tsdb
       assert_equal 2, negative.length
       window = store.samples(result[0][0].id, t0 + 30_000, t0 + 60_000)
 
-  test "out of order and duplicate timestamps are rejected per series" do
-    store = open_store
+      assert_equal [t0 + 30_000, t0 + 45_000, t0 + 60_000], window.map(&:first)
+      assert_equal %w[__name__ instance job], store.label_names
+      assert_equal %w[apiserver node], store.label_values("job")
+      assert_equal 3, store.series_count
+    end
 
     assert store.append(labels("m"), 100, 1.0)
     refute store.append(labels("m"), 100, 2.0)
