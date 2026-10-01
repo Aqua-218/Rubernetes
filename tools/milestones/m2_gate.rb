@@ -1219,12 +1219,8 @@ module M2Gate
         unless comparison["actual_source"] == LIFECYCLE_SEMANTICS_ACTUAL_SOURCE
           errors << "#{label} comparison #{index} actual source must be #{LIFECYCLE_SEMANTICS_ACTUAL_SOURCE}"
         end
-        unless valid_digest?(expected) && valid_digest?(actual)
-          errors << "#{label} comparison #{index} must record expected and actual SHA-256 digests"
-        end
-        if valid_digest?(expected) && valid_digest?(actual) && expected != actual
-          errors << "#{label} comparison #{index} observable digests differ"
-        end
+        errors << "#{label} comparison #{index} must record expected and actual SHA-256 digests" unless valid_digest?(expected) && valid_digest?(actual)
+        errors << "#{label} comparison #{index} observable digests differ" if valid_digest?(expected) && valid_digest?(actual) && expected != actual
         validate_lifecycle_semantics_provenance(identifier, comparison["actual_provenance"], errors, label: "#{label} comparison")
         semantic_case = Array(document["lifecycle_semantics_matrix"]).find { |entry| entry.is_a?(Hash) && entry["name"] == identifier }
         errors << "#{label} comparison #{index} provenance does not match the measured semantics case" unless
