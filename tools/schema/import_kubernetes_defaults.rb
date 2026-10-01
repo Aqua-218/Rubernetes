@@ -57,6 +57,7 @@ module KubernetesDefaultsImporter
     return {} if body.nil?
 
     body.scan(/^\t([A-Za-z0-9_.]+):\s*\{\n(.*?)\n\t\},/m) do |name, specs|
+      # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
       versions = specs.scan(/\{Version:\s*version\.MustParse\("(\d+)\.(\d+)"\),\s*Default:\s*(true|false),\s*PreRelease:\s*featuregate\.(\w+)(?:,\s*LockToDefault:\s*(true|false))?\s*\}/).map do |major, minor, default, prerelease, lock|
         {"version" => "#{major}.#{minor}", "default" => default == "true", "prerelease" => prerelease, "lock_to_default" => lock == "true"}
       end
