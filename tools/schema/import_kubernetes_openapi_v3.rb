@@ -55,6 +55,8 @@ module KubernetesOpenAPIV3Importer
     directory = File.join(source_root, SOURCE_DIRECTORY)
     raise "missing #{directory}" unless File.directory?(directory)
 
+    readme = File.join(OUTPUT, "README.md")
+    readme_text = File.file?(readme) ? File.read(readme) : nil
     FileUtils.rm_rf(OUTPUT)
     FileUtils.mkdir_p(OUTPUT)
     files = Dir.glob(File.join(directory, "*_openapi.json"), File::FNM_DOTMATCH).sort.map do |path|
