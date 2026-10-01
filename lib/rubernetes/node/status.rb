@@ -258,9 +258,7 @@ module Rubernetes
             # An ephemeral container has a status list of its own upstream; an
             # empty one is omitted so a Pod that never had a debug container
             # does not report an empty array it never had.
-            unless Array(ephemeral_container_statuses).empty?
-              payload["ephemeralContainerStatuses"] = Helpers.deep_copy(ephemeral_container_statuses)
-            end
+            payload["ephemeralContainerStatuses"] = Helpers.deep_copy(ephemeral_container_statuses) unless Array(ephemeral_container_statuses).empty?
             # The status is delivered as a merge patch, so a field that is
             # simply omitted keeps whatever the API server already holds.  A
             # Pod that recovered from a failed mount would otherwise keep
