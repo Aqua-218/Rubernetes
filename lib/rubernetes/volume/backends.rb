@@ -721,9 +721,7 @@ module Rubernetes
                      else
                        observed_hash[field] || observed_hash[field.gsub(/([A-Z])/, '_\\1').downcase]
                      end
-            if expected && actual && expected.to_s != actual.to_s
-              raise MountIdentityError, "mount identity changed for #{path}: #{field} mismatch"
-            end
+            raise MountIdentityError, "mount identity changed for #{path}: #{field} mismatch" if expected && actual && expected.to_s != actual.to_s
           end
         end
         true
