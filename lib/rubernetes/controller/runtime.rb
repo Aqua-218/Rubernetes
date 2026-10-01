@@ -975,7 +975,7 @@ module Rubernetes
         # ignores its own status writes and plain adds, as upstream's does).
         if controller.respond_to?(:skip_event?)
           arity = controller.method(:skip_event?).arity
-          skipped = arity == 2 ? controller.skip_event?(object, _old_object) : controller.skip_event?(object, _old_object, type)
+          skipped = arity == 2 ? controller.skip_event?(object, old_object) : controller.skip_event?(object, old_object, type)
           return if skipped
         end
 
