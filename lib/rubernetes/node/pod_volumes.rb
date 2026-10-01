@@ -1102,7 +1102,8 @@ module Rubernetes
                                   "keyPath" => Helpers.key(certificate, "keyPath", nil), "certificateChainPath" => Helpers.key(certificate,
                                                                                                                                "certificateChainPath", nil),
                                   "userAnnotations" => Helpers.key(certificate, "userAnnotations", nil),
-                                  "volumeName" => Helpers.key(source, "name", nil), "sourceIndex" => Array(Helpers.key(source, "sources", [])).index(projection)}.compact}
+                                  "volumeName" => Helpers.key(source, "name",
+                                                              nil), "sourceIndex" => Array(Helpers.key(source, "sources", [])).index(projection)}.compact}
           else
             raise Unsupported, "projected source #{entry.keys.inspect} is not supported"
           end
