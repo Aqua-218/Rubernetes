@@ -702,9 +702,7 @@ module Rubernetes
             namespace = nil
             unless cluster_scoped
               namespace = param_ref["namespace"].to_s.empty? ? attributes.namespace : param_ref["namespace"]
-              if namespace.to_s.empty?
-                raise ConfigurationError, "cannot use namespaced paramRef in policy binding that matches cluster-scoped resources"
-              end
+              raise ConfigurationError, "cannot use namespaced paramRef in policy binding that matches cluster-scoped resources" if namespace.to_s.empty?
             end
             if !param_ref["namespace"].to_s.empty? && cluster_scoped
               raise ConfigurationError, "paramRef.namespace must not be provided for a cluster-scoped `paramKind`"
