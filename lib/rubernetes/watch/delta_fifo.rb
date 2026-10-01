@@ -192,7 +192,7 @@ module Rubernetes
         self
       end
 
-      def has_synced?
+      def synced?
         @mutex.synchronize { @has_synced }
       end
 
