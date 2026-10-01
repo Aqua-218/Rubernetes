@@ -1124,9 +1124,7 @@ module M3Gate
       end
       if valid_digest?(runner["provenance_sha256"])
         expected_provenance = canonical_document_digest(runner, excluded_keys: ["provenance_sha256"])
-        unless expected_provenance == runner["provenance_sha256"]
-          errors << "#{label} runner provenance digest does not match canonical content"
-        end
+        errors << "#{label} runner provenance digest does not match canonical content" unless expected_provenance == runner["provenance_sha256"]
       else
         errors << "#{label} runner provenance digest is required"
       end
