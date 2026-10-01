@@ -1545,9 +1545,7 @@ module Rubernetes
       end
 
       def read_kernel_ruleset
-        if @transport.respond_to?(:readback)
-          return normalize_transport_readback(@transport.readback(table_name: @table_name, family: NFPROTO_INET))
-        end
+        return normalize_transport_readback(@transport.readback(table_name: @table_name, family: NFPROTO_INET)) if @transport.respond_to?(:readback)
 
         table_entries = dump(NFT_MSG_GETTABLE)
         table = table_entries.find { |entry| entry.fetch("name") == @table_name }
