@@ -93,6 +93,7 @@ class ResourceClaimStatusAuthorizationTest < Minitest::Test
     put_status({"allocation" => ALLOCATION})
     server([])
     # Re-seeded: the claim is created without status by server(); give it one.
+    current = JSON.parse(JSON.generate(@unsecured.call(API::Request.new(method: "GET", path: "#{PATH}/c")).body))
     @unsecured.call(API::Request.new(method: "PUT", path: "#{PATH}/c/status", headers: {"content-type" => "application/json"},
                                      body: JSON.generate(JSON.parse(JSON.generate(@unsecured.call(API::Request.new(method: "GET",
                                                                                                                    path: "#{PATH}/c")).body)).merge("status" => {"allocation" => ALLOCATION}))))
