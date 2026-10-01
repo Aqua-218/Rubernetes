@@ -638,7 +638,8 @@ module Rubernetes
         request_warnings(request) << deprecation.message
         unless @deprecated_metric_registered
           @metrics&.register("apiserver_requested_deprecated_apis", type: :gauge,
-                                                                    help: "Gauge of deprecated APIs that have been requested, broken out by API group, version, resource, subresource, and removed_release.")
+                                                                    help: "Gauge of deprecated APIs that have been requested, broken out by API group, " \
+                                                                          "version, resource, subresource, and removed_release.")
           @deprecated_metric_registered = true
         end
         @metrics&.set("apiserver_requested_deprecated_apis", 1,
