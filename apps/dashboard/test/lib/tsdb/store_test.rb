@@ -11,9 +11,10 @@ module Tsdb
       @dir = Dir.mktmpdir("tsdb")
     end
 
-  def open_store(**)
-    @store = Tsdb::Store.new(@dir, **)
-  end
+    def teardown
+      @store&.close
+      FileUtils.rm_rf(@dir)
+    end
 
   def labels(name, extra = {})
     {"__name__" => name}.merge(extra)
