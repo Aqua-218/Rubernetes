@@ -1030,7 +1030,8 @@ module M3Gate
           unless structured_observable?(entry["actual_observable"]) && structured_observable?(entry["expected_observable"])
             errors << "scheduler case #{index} must include structured local and oracle observables"
           end
-          if structured_observable?(entry["actual_observable"]) && valid_digest?(entry["evidence_sha256"]) && canonical_document_digest(entry["actual_observable"]) != entry["evidence_sha256"]
+          if structured_observable?(entry["actual_observable"]) && valid_digest?(entry["evidence_sha256"]) &&
+             canonical_document_digest(entry["actual_observable"]) != entry["evidence_sha256"]
             errors << "scheduler case #{index} observable digest does not match local result"
           end
           next unless structured_observable?(entry["actual_observable"]) && structured_observable?(entry["expected_observable"])
