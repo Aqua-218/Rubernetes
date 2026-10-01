@@ -267,23 +267,24 @@ module Promql
       assert_equal [5.0, 0.0], values("round(s, 5)")
     end
 
-  test "label_replace, label_join, sort and clamp" do
-    load("s", {"instance" => "host-1:9100"}, [3])
-    load("s", {"instance" => "host-2:9100"}, [1])
-    replaced = vector('label_replace(s, "host", "$1", "instance", "(.*):.*")').map { |m, _| m["host"] }.sort
+    test "absent, scalar, vector, time and calendar functions" do
+      assert_equal [[{"job" => "x"}, 1.0]], vector('absent(nothing{job="x"})')
+      load("one", {}, [7])
 
-    assert_equal %w[host-1 host-2], replaced
-    joined = vector('label_join(s, "j", "-", "instance", "instance")').map { |m, _| m["j"] }.sort
+      assert_equal [], vector("absent(one)")
+      assert_in_delta(7.0, scalar("scalar(one)"))
+      assert_equal [[{}, 2.0]], vector("vector(2)")
+      assert_equal T0 / 1000.0, scalar("time()")
+      assert_equal [T0 / 1000.0], values("timestamp(one)")
+      utc = Time.at(T0 / 1000).utc
 
-    assert_equal ["host-1:9100-host-1:9100", "host-2:9100-host-2:9100"], joined
-    assert_equal [1.0, 3.0], values("sort(s)")
-    assert_equal [3.0, 1.0], values("sort_desc(s)")
-    assert_equal [2.0, 2.0], values("clamp(s, 2, 2)")
-    assert_equal [3.0, 2.0], values("clamp_min(s, 2)")
-    assert_equal [2.0, 1.0], values("clamp_max(s, 2)")
-    assert_equal [3.0, 1.0], values("round(s)")
-    assert_equal [5.0, 0.0], values("round(s, 5)")
-  end
+      assert_equal [utc.hour.to_f], values("hour()")
+      assert_equal [utc.wday.to_f], values("day_of_week()")
+      assert_equal [utc.year.to_f], values("year(vector(#{T0 / 1000}))")
+      assert_in_delta Math::PI, scalar("pi()")
+      assert_equal [Math.sqrt(7)], values("sqrt(one)")
+      assert_predicate values("ln(vector(-1))").first, :nan?
+    end
 
   test "absent, scalar, vector, time and calendar functions" do
     assert_equal [[{"job" => "x"}, 1.0]], vector('absent(nothing{job="x"})')
