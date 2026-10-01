@@ -765,7 +765,8 @@ module Rubernetes
           issues << issue(%w[spec group], :required, "only v1 may have an empty group and it better be legacy kube")
           issues << issue(%w[spec groupPriorityMinimum], :invalid, "must be positive and less than 20000")
           issues << issue(%w[spec version], :invalid,
-                          "a DNS-1035 label must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')")
+                          "a DNS-1035 label must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with an " \
+                          "alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')")
           issues << issue(%w[spec versionPriority], :invalid, "must be positive and less than 1000")
         end
         issues
