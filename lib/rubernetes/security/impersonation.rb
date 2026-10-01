@@ -444,9 +444,7 @@ module Rubernetes
         # validation.IsDomainPrefixedPath at field path extra.key.
         def domain_prefixed_path_error(key)
           host, path = key.split("/", 2)
-          if path.nil? || host.empty? || path.empty?
-            return "extra.key: Invalid value: #{key.inspect}: must be a domain-prefixed path (such as \"acme.io/foo\")"
-          end
+          return "extra.key: Invalid value: #{key.inspect}: must be a domain-prefixed path (such as \"acme.io/foo\")" if path.nil? || host.empty? || path.empty?
 
           errors = []
           errors << "must be no more than 253 characters" if host.length > 253
