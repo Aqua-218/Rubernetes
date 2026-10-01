@@ -45,7 +45,8 @@ class AdmissionWebhookMetricsTest < Minitest::Test
     assert_includes text,
                     'apiserver_admission_webhook_request_total{code="200",name="deny.example",operation="CREATE",rejected="true",type="validating"} 1'
     assert_includes text,
-                    'apiserver_admission_webhook_rejection_count{error_type="no_error",name="deny.example",operation="CREATE",rejection_code="422",type="validating"} 1'
+                    'apiserver_admission_webhook_rejection_count{error_type="no_error",name="deny.example",operation="CREATE",rejection_code="422",' \
+                    'type="validating"} 1'
     assert_includes text,
                     'apiserver_admission_webhook_rejection_count{error_type="calling_webhook_error",name="broken.example",operation="CREATE",rejection_code="0",type="validating"} 1'
     assert_includes text, 'apiserver_admission_webhook_fail_open_count{name="broken.example",type="validating"} 1'
