@@ -31,8 +31,9 @@ class KubeletMetricsExtrasTest < Minitest::Test
     km.image_volume_mount_failed
     text = km.registry.render
 
-    assert_in_delta(1.0, value(text, "csi_operations_seconds_count", driver_name: "hostpath.csi.k8s.io", grpc_status_code: "OK", method_name: "NodePublishVolume",
-                                                                     migrated: "false"))
+    assert_in_delta(1.0,
+                    value(text, "csi_operations_seconds_count", driver_name: "hostpath.csi.k8s.io", grpc_status_code: "OK", method_name: "NodePublishVolume",
+                                                                migrated: "false"))
     assert_in_delta(1.0, value(text, "csi_operations_seconds_count", grpc_status_code: "DEADLINE_EXCEEDED", method_name: "NodeStageVolume"))
     assert_in_delta(3.0, value(text, "reconstruct_volume_operations_total"))
     assert_in_delta(1.0, value(text, "reconstruct_volume_operations_errors_total"))
