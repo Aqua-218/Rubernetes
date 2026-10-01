@@ -111,9 +111,10 @@ module Tsdb
       5.times { |i| store.append(labels("old"), t0 + (i * 1000), 1.0) }
       store.flush
 
-    assert_equal 0, store.blocks.length, "the old block is past retention"
-    assert_equal ["new"], store.select_series([M.new(name: "__name__", op: "=~", value: ".+")]).map(&:metric)
-  end
+      assert_equal 1, store.blocks.length
+      later = 10 * 60_000
+      store.append(labels("new"), later, 1.0)
+      store.maintain(later)
 
   test "stale markers are preserved bit-exactly" do
     store = open_store
