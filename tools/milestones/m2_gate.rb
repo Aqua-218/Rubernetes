@@ -1316,9 +1316,7 @@ module M2Gate
       return unless source.is_a?(Hash)
 
       %w[kubelet_image apiserver_image etcd_image].each do |key|
-        unless source[key].is_a?(String) && DIGEST_PINNED_IMAGE_PATTERN.match?(source[key])
-          errors << "#{label} #{key} must be digest-pinned"
-        end
+        errors << "#{label} #{key} must be digest-pinned" unless source[key].is_a?(String) && DIGEST_PINNED_IMAGE_PATTERN.match?(source[key])
       end
       runtime = source["runtime"]
       if runtime.is_a?(Hash)
