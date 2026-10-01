@@ -95,8 +95,10 @@ module Promql
 
       assert_in_delta 40.0, increase, 1e-9
 
-    assert_in_delta 40.0 / 75, rate, 1e-9
-    increase = values("increase(http_requests_total[75s])").first
+      load("resets_total", {}, [10, 20, 5, 15])
+      # 10 -> 20 (+10), reset to 5 (+5 from zero), 5 -> 15 (+10): 25 over 45s
+      # of samples, extrapolated the 1s to the window start: 25 * 46/45.
+      inc = values("increase(resets_total[46s])").first
 
     assert_in_delta 40.0, increase, 1e-9
 
