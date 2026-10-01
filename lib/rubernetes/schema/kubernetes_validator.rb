@@ -3116,9 +3116,7 @@ module Rubernetes
             end
           else
             access_modes = fetch(inline, "accessModes")
-            unless access_modes.is_a?(Array) && !access_modes.empty?
-              issues << issue(%w[spec source inlineVolumeSpec accessModes], :required, "")
-            end
+            issues << issue(%w[spec source inlineVolumeSpec accessModes], :required, "") unless access_modes.is_a?(Array) && !access_modes.empty?
             source_fields = inline_fields - ["accessModes"]
             present_sources = source_fields.select do |field|
               wire_field = field == "cephFS" ? "cephfs" : field
