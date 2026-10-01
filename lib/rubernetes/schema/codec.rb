@@ -623,9 +623,7 @@ module Rubernetes
       def normalize_generic_value(value, path:, mode: :preserve)
         nested_schema = schema_definition_for(value)
         return normalize_typed_value(value, nested_schema, mode, path: path) if nested_schema
-        if value.respond_to?(:to_h_for_codec)
-          return normalize_generic_value(value.to_h_for_codec(unknown_fields: mode), path: path, mode: mode)
-        end
+        return normalize_generic_value(value.to_h_for_codec(unknown_fields: mode), path: path, mode: mode) if value.respond_to?(:to_h_for_codec)
 
         case value
         when Hash
