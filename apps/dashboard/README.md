@@ -40,7 +40,7 @@ Prometheus data source:
 `/graph` is the expression browser, `/targets`, `/rules`, `/alerts` and
 `/status` the usual status pages, `/up` the health check.
 
-* Services (job queues, cache servers, search engines, etc.)
+## Running it
 
 * Deployment instructions
 
