@@ -141,7 +141,7 @@ module Rubernetes
       end
 
       def response_headers(response)
-        response.each_header.each_with_object({}) do |(key, value), headers|
+        response.each_header.with_object({}) do |(key, value), headers|
           headers[key.to_s.downcase] = value.to_s
         end
       end
