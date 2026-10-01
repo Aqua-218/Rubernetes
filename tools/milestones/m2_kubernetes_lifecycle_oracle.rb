@@ -216,9 +216,7 @@ module M2KubernetesLifecycleOracle
     image_reference = document["image_reference"]
     if digest_pinned_image?(image_reference)
       expected_digest = image_reference.split("@sha256:", 2).last
-      unless expected_digest == document["image_digest"]
-        errors << "CNI lock #{relative_path} image_reference digest must match image_digest"
-      end
+      errors << "CNI lock #{relative_path} image_reference digest must match image_digest" unless expected_digest == document["image_digest"]
     else
       errors << "CNI lock #{relative_path} image_reference must be digest-pinned"
     end
