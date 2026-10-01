@@ -1317,7 +1317,7 @@ module Rubernetes
       # the same way, then observe again so the cleanup sees dead resources.
       # A pid whose identity no longer matches is never signalled.
       def quiesce_dead_operations!(observed, observer)
-        observed_by_key = observed.each_with_object({}) { |entry, result| result[resource_key(entry)] = entry }
+        observed_by_key = observed.to_h { |entry| [resource_key(entry), entry] }
         quiesced = []
         @ledger.operations.each do |operation_value|
           operation = operation_value.respond_to?(:to_h) ? operation_value.to_h : operation_value
