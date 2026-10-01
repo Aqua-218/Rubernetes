@@ -316,7 +316,8 @@ module Rubernetes
           # ValidateServiceClusterIPsRelatedFields: clusterIPs is only
           # accepted alongside clusterIP (clusterIPs[0] == clusterIP).
           if spec["clusterIP"].to_s.empty? && !Array(spec["clusterIPs"]).empty? && existing.nil?
-            raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.clusterIPs: Invalid value: #{JSON.generate(Array(spec["clusterIPs"]))}: must be empty when `clusterIP` is not specified",
+            raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.clusterIPs: Invalid value: " \
+                                      "#{JSON.generate(Array(spec["clusterIPs"]))}: must be empty when `clusterIP` is not specified",
                                       details: {"kind" => "Service", "name" => name_of(service)})
           end
 
