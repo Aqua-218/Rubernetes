@@ -578,7 +578,8 @@ module M4Gate
         errors << "network matrix must cover pod, service, DNS, ingress, and egress"
       end
       Array(families).each_with_index do |entry, index|
-        unless entry.is_a?(Hash) && entry["passed"] == true && entry["measurement_source"] == "production_module" && entry["packet_trace_sha256"].to_s.match?(SHA256_PATTERN)
+        unless entry.is_a?(Hash) && entry["passed"] == true && entry["measurement_source"] == "production_module" &&
+               entry["packet_trace_sha256"].to_s.match?(SHA256_PATTERN)
           errors << "network family #{index} must pass from production module"
         end
       end
