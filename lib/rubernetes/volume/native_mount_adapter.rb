@@ -80,9 +80,7 @@ module Rubernetes
         return nil if value.empty?
 
         before_separator, after_separator = value.split(" - ", 2)
-        unless before_separator && after_separator
-          raise MountIdentityError, "mountinfo line #{line_number || "?"} has no filesystem separator"
-        end
+        raise MountIdentityError, "mountinfo line #{line_number || "?"} has no filesystem separator" unless before_separator && after_separator
 
         fields = before_separator.split
         raise MountIdentityError, "mountinfo line #{line_number || "?"} has fewer than six pre-filesystem fields" if fields.length < 6
