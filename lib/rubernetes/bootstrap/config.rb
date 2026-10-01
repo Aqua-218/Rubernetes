@@ -695,7 +695,8 @@ module Rubernetes
                   "rubernetes-agent.microvm.#{key} must be a positive integer"
           end
         end
-        if section.key?("parent_cgroup") && !(section["parent_cgroup"].is_a?(String) && section["parent_cgroup"].match?(%r{\A[a-zA-Z0-9_./-]+\z}) && !section["parent_cgroup"].start_with?("/"))
+        if section.key?("parent_cgroup") &&
+           !(section["parent_cgroup"].is_a?(String) && section["parent_cgroup"].match?(%r{\A[a-zA-Z0-9_./-]+\z}) && !section["parent_cgroup"].start_with?("/"))
           raise Error,
                 "rubernetes-agent.microvm.parent_cgroup must be a relative cgroup path"
         end
