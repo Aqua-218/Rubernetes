@@ -690,12 +690,8 @@ module Rubernetes
         expected_digest = expected && Digest.parse(expected)
         header = header_digest && Digest.parse(header_digest)
         actual = digest_state.hexdigest
-        if expected_digest && !secure_compare(actual, expected_digest.hex)
-          raise DigestMismatch, "registry response digest does not match the requested digest"
-        end
-        if header && !secure_compare(actual, header.hex)
-          raise DigestMismatch, "registry response digest does not match Docker-Content-Digest"
-        end
+        raise DigestMismatch, "registry response digest does not match the requested digest" if expected_digest && !secure_compare(actual, expected_digest.hex)
+        raise DigestMismatch, "registry response digest does not match Docker-Content-Digest" if header && !secure_compare(actual, header.hex)
 
         true
       rescue DigestMismatch
