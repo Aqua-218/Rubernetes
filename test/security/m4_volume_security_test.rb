@@ -466,11 +466,16 @@ class M4VolumeSecurityTest < Minitest::Test
       security = Rubernetes::Volume::PathSecurity.new(root: "/", adapter: openat2, require_openat2: true)
       lease = security.acquire_target!(target, directory: true, create: true)
 
-    File.rename(target, held)
-    FileUtils.mkdir_p(target)
-    mount_identity = {"target" => target, "mountId" => lease.identity.fetch("mountId")}
-    assert_raises(Rubernetes::Volume::PathSecurityError) do
-      lease.verify_original!(mounted: true, mount_identity: mount_identity)
+      File.rename(target, held)
+      FileUtils.mkdir_p(target)
+      mount_identity = {"target" => target, "mountId" => lease.identity.fetch("mountId")}
+      assert_raises(Rubernetes::Volume::PathSecurityError) do
+        lease.verify_original!(mounted: true, mount_identity: mount_identity)
+      end
+    ensure
+      lease&.close
+      openat2&.close
+      FileUtils.remove_entry(directory) if directory && File.exist?(directory)
     end
   ensure
     lease&.close
