@@ -21,7 +21,8 @@ class SchedulerGangSchedulingTest < Minitest::Test
   end
 
   def group(min_count)
-    {"default/gang" => {"apiVersion" => "scheduling.k8s.io/v1alpha2", "kind" => "PodGroup", "metadata" => {"name" => "gang", "namespace" => "default", "generation" => 1},
+    {"default/gang" => {"apiVersion" => "scheduling.k8s.io/v1alpha2", "kind" => "PodGroup",
+                        "metadata" => {"name" => "gang", "namespace" => "default", "generation" => 1},
                         "spec" => {"schedulingPolicy" => {"gang" => {"minCount" => min_count}}}}}
   end
 
