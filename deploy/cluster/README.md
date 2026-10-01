@@ -210,9 +210,8 @@ directory is the `datastore.data_dir` of that node's API server
 configuration.
 
 ```
-rubernetes-apiserver snapshot save /var/backups/rubernetes-$(date +%Y%m%dT%H%M%SZ).snapshot \
-  --config /etc/rubernetes/apiserver.yml
-sha256sum /var/backups/rubernetes-*.snapshot > /var/backups/rubernetes.sha256
+ruby -I /usr/local/lib/rubernetes -r rubernetes/consensus -e \
+  'Rubernetes::Consensus::Backup.create("/var/lib/rubernetes/raft", "/var/backups/rubernetes-$(date +%Y%m%dT%H%M%SZ)")'
 ```
 
 Back up `/etc/rubernetes/pki/` separately and at least once: without the CA
