@@ -102,7 +102,8 @@ module CRDAggregationHarness
       elsif path.start_with?("/apis/metrics.example/v1beta1/nodes")
         user = outbound.respond_to?(:[]) ? outbound["X-Remote-User"] : nil
         Response.new("200", JSON.generate({"kind" => "NodeMetricsList", "apiVersion" => "metrics.example/v1beta1", "items" => [], "seenUser" => user,
-                                           "authorization" => (outbound.respond_to?(:[]) ? outbound["authorization"] : nil)}), {"content-type" => "application/json"})
+                                           "authorization" => (outbound.respond_to?(:[]) ? outbound["authorization"] : nil)}),
+                     {"content-type" => "application/json"})
       else
         Response.new("404", "nope", {"content-type" => "text/plain"})
       end
