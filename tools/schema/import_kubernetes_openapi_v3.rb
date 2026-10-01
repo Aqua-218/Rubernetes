@@ -72,8 +72,10 @@ module KubernetesOpenAPIV3Importer
       {"path" => relative, "upstream_path" => "#{SOURCE_DIRECTORY}/#{File.basename(path)}", "source_sha256" => Digest::SHA256.file(path).hexdigest,
        "sha256" => Digest::SHA256.file(target).hexdigest, "paths" => (document["paths"] || {}).length}
     end
-    manifest = {"schema_version" => 1, "kubernetes" => {"tag" => "v1.36.2", "commit" => EXPECTED_COMMIT}, "source_directory" => SOURCE_DIRECTORY,
-                "file_count" => files.length, "path_count" => files.sum { |file| file["paths"] }, "files" => files}
+    files.each { |file| file["source"] = "tree" }
+    served = options[:kubeconfig] ? overlay_served!(files, options[:kubeconfig]) : nil
+    manifest = {"schema_version" => 2, "kubernetes" => {"tag" => "v1.36.2", "commit" => EXPECTED_COMMIT}, "source_directory" => SOURCE_DIRECTORY,
+                "served" => served, "file_count" => files.length, "path_count" => files.sum { |file| file["paths"] }, "files" => files}
     File.write(File.join(OUTPUT, "manifest.json"), JSON.pretty_generate(manifest) << "\n")
     puts "pinned #{files.length} OpenAPI v3 documents with #{manifest["path_count"]} paths"
   end
