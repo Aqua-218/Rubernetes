@@ -126,11 +126,9 @@ module Promql
       assert_in_delta 20.0 * 60 / 45, delta, 1e-6
       load("lin", {}, [0, 1, 2, 3, 4])
 
-    assert_in_delta 30.0 / 15, values("irate(g[1m])").first, 1e-9 # counter reset: last value / interval
-    assert_equal [-10.0], values("idelta(g[1m])")
-    # 45s of samples inside a 60s window; the 15s to the window start is
-    # under the threshold, so delta extrapolates the full 15s.
-    delta = values("delta(g[1m])").first
+      assert_in_delta 1.0 / 15, values("deriv(lin[2m])").first, 1e-9
+      assert_in_delta 4.0 + (60.0 / 15), values("predict_linear(lin[2m], 60)").first, 1e-6
+    end
 
     assert_in_delta 20.0 * 60 / 45, delta, 1e-6
     load("lin", {}, [0, 1, 2, 3, 4])
