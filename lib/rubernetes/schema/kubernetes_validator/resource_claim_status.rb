@@ -213,9 +213,7 @@ module Rubernetes
       # canonical form.
       def interface_address_messages(value)
         address_text, slash, length_text = value.rpartition("/")
-        if slash.empty? || !length_text.match?(/\A\d+\z/)
-          return ["must be a valid address in CIDR form, (e.g. 10.9.8.7/24 or 2001:db8::1/64)"]
-        end
+        return ["must be a valid address in CIDR form, (e.g. 10.9.8.7/24 or 2001:db8::1/64)"] if slash.empty? || !length_text.match?(/\A\d+\z/)
 
         address = IPAddr.new(address_text)
         maximum = address.ipv4? ? 32 : 128
