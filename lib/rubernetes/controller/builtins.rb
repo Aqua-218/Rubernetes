@@ -1539,7 +1539,12 @@ module Rubernetes
             end
           end
           ReconcileResult.new(operations: operations, status: Support.status(candidate),
-                              events: unhealthy ? [{"type" => "Warning", "reason" => "NodeNotReady", "message" => "node #{Support.name(node)} is not ready"}] : [],
+                              events: if unhealthy
+                                        [{"type" => "Warning", "reason" => "NodeNotReady", "message" => "node #{Support.name(node)} is not " \
+                                                                                                        "ready"}]
+                                      else
+                                        []
+                                      end,
                               controller: name, key: Support.name(node))
         end
 
