@@ -248,7 +248,11 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     # The admitted request is charged, so the next one sees it before the
     # quota controller recomputes usage.
     assert_equal "900m", @context.get("resourcequotas", "team", "q").dig("status", "used", "requests.cpu")
-    assert_raises(A::Rejected) { quota.validate(attributes("CREATE", resource: "pods", object: pod("light2", containers: [{"name" => "c", "resources" => {"requests" => {"cpu" => "200m"}}}]))) }
+    assert_raises(A::Rejected) do
+      quota.validate(attributes("CREATE", resource: "pods",
+                                          object: pod("light2",
+                                                      containers: [{"name" => "c", "resources" => {"requests" => {"cpu" => "200m"}}}])))
+    end
   end
 
   # plugin/pkg/admission/resourcequota: a failed quota lookup fails the request.
