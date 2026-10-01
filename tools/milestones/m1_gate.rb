@@ -2601,9 +2601,7 @@ module M1Gate
       errors << "#{label} must record expected and actual SHA-256 digests" unless valid_digest?(expected_digest) && valid_digest?(actual_digest)
       errors << "#{label} observable digests differ" if valid_digest?(expected_digest) && valid_digest?(actual_digest) && expected_digest != actual_digest
       errors << "#{label} must record a matching semantic result" unless dimension["matches"] == true
-      unless dimension["expected"].is_a?(Hash) && dimension["actual"].is_a?(Hash)
-        errors << "#{label} expected and actual observations are required"
-      end
+      errors << "#{label} expected and actual observations are required" unless dimension["expected"].is_a?(Hash) && dimension["actual"].is_a?(Hash)
       return unless dimension["applicable"] == false
 
       reason = dimension["reason"]
