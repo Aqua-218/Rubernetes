@@ -21,7 +21,7 @@ module Rubernetes
     NATIVE_LOADER_CONSTANTS = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache) unless const_defined?(:NATIVE_LOADER_CONSTANTS, false)
     %i[Error JournalCorruption OwnershipConflict InvalidTransition RecoveryRequired
        RollbackJournal OwnershipLedger ResourceLedger Recovery StartupReconciler].each do |name|
-      NativeLoaderConstants[name] = const_get(name, false) if const_defined?(name, false)
+      NATIVE_LOADER_CONSTANTS[name] = const_get(name, false) if const_defined?(name, false)
     end
     NativeLoaderConstants.each_key { |name| remove_const(name) }
     generic_runtime = const_get(:Runtime, false) if const_defined?(:Runtime, false)
