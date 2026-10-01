@@ -485,8 +485,8 @@ module Rubernetes
                 hook_name = hook["name"].to_s
                 uid = "#{configuration_name}/#{hook_name}/#{seen[hook_name]}"
                 seen[hook_name] += 1
-                [hook.object_id, uid]
-              end
+                [hook, uid]
+              end.compare_by_identity
               applicable_hooks(configuration, attributes).each do |hook|
                 uid = uids.fetch(hook.object_id)
                 # A hook is never called for the first time on the
