@@ -57,7 +57,8 @@ class K1ConformanceFixesTest < Minitest::Test
 
     refute_includes config_map.validator.errors(object.merge("apiVersion" => "v1", "kind" => "ConfigMap"), operation: :update).map(&:kubernetes_field),
                     "metadata.resourceVersion"
-    assert_includes lease.validator.errors(object.merge("apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease"), operation: :update).map(&:kubernetes_field),
+    assert_includes lease.validator.errors(object.merge("apiVersion" => "coordination.k8s.io/v1", "kind" => "Lease"),
+                                           operation: :update).map(&:kubernetes_field),
                     "metadata.resourceVersion"
   end
 
