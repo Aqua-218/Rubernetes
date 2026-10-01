@@ -710,7 +710,8 @@ module RubernetesSchemaGenerator
     def render_openapi_v3(swagger, resources)
       definitions = swagger.fetch("definitions")
       schemas_by_group_version = resources.group_by { |resource| [resource.fetch("group"), resource.fetch("version")] }
-      index = {"apiVersion" => "v1", "kind" => "OpenAPIV3Discovery", "paths" => {}}
+      # kube-apiserver's /openapi/v3 root is a bare {"paths": ...} document.
+      index = {"paths" => {}}
       artifacts = {}
       schemas_by_group_version.keys.sort.each do |group, version|
         key = group.empty? ? "api/#{version}" : "apis/#{group}/#{version}"
