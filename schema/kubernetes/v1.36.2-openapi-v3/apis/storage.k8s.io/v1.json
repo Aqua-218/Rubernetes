@@ -33,7 +33,12 @@
         "properties": {
           "cachingMode": {
             "default": "ReadWrite",
-            "description": "cachingMode is the Host Caching mode: None, Read Only, Read Write.",
+            "description": "cachingMode is the Host Caching mode: None, Read Only, Read Write.\n\nPossible enum values:\n - `\"None\"`\n - `\"ReadOnly\"`\n - `\"ReadWrite\"`",
+            "enum": [
+              "None",
+              "ReadOnly",
+              "ReadWrite"
+            ],
             "type": "string"
           },
           "diskName": {
