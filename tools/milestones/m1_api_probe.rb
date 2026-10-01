@@ -456,7 +456,7 @@ module M1APIDifferential
       "watch" => watch_matches,
       "resourceVersion_causality" => causality_matches
     }
-    result = {
+    {
       "id" => id,
       "method" => method,
       "path" => path,
