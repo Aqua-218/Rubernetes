@@ -95,8 +95,9 @@ class PodCertificateManagerTest < Minitest::Test
   def pod(name = "web")
     {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => name, "namespace" => "ns", "uid" => "uid-#{name}"},
      "spec" => {"serviceAccountName" => "app", "containers" => [{"name" => "c"}],
-                "volumes" => [{"name" => "certs", "projected" => {"sources" => [{"podCertificate" => {"signerName" => "example.com/pods", "keyType" => "ECDSAP256",
-                                                                                                      "credentialBundlePath" => "creds.pem"}}]}}]}}
+                "volumes" => [{"name" => "certs",
+                               "projected" => {"sources" => [{"podCertificate" => {"signerName" => "example.com/pods", "keyType" => "ECDSAP256",
+                                                                                   "credentialBundlePath" => "creds.pem"}}]}}]}}
   end
 
   def manager
