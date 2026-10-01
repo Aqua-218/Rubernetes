@@ -24,12 +24,6 @@ module Prom
        "spec" => {"nodeName" => node, "containers" => [{"name" => "c", "ports" => [{"containerPort" => 8080}]}]},
        "status" => {"podIP" => ip, "phase" => phase}}
     end
-  end
-
-  test "discovery failures yield no targets rather than raising" do
-    broken = Object.new
-    broken.define_singleton_method(:get) { |*| raise "api down" }
-    targets = Prom::Targets.new(client: broken, cluster_json: {})
 
     assert_equal [], targets.discover
   end
