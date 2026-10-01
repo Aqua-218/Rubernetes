@@ -307,9 +307,9 @@ module Promql
       assert_equal [[T0 - 60_000, 10.0], [T0 - 30_000, 30.0], [T0, 50.0]], result.value[0].points
       api = result.to_api
 
-    assert_equal :matrix, result.type
-    assert_equal [[T0 - 60_000, 10.0], [T0 - 30_000, 30.0], [T0, 50.0]], result.value[0].points
-    api = result.to_api
+      assert_equal "matrix", api["resultType"]
+      assert_equal [[(T0 - 60_000) / 1000.0, "10"], [(T0 - 30_000) / 1000.0, "30"], [T0 / 1000.0, "50"]], api["result"][0]["values"]
+      scalar_range = @engine.query_range("2 + 2", T0 - 30_000, T0, 30_000)
 
     assert_equal "matrix", api["resultType"]
     assert_equal [[(T0 - 60_000) / 1000.0, "10"], [(T0 - 30_000) / 1000.0, "30"], [T0 / 1000.0, "50"]], api["result"][0]["values"]
