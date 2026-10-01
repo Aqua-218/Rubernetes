@@ -386,9 +386,7 @@ module Rubernetes
         # identity to verify; the target must nevertheless still be absent
         # from mountinfo, otherwise a foreign mount appeared under our path.
         if unmounted_stage_identity?(identity)
-          if remote_mount_readback(path)
-            raise MountIdentityError, "CSI stage #{path.inspect} was recorded unmounted but a mount now covers it"
-          end
+          raise MountIdentityError, "CSI stage #{path.inspect} was recorded unmounted but a mount now covers it" if remote_mount_readback(path)
         else
           verify_mount_identity!(path, identity)
         end
