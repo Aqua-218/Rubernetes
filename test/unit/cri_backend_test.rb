@@ -101,10 +101,11 @@ class CRIBackendTest < Minitest::Test
   # its containers'.
   def test_pod_cgroup_limits_and_usage
     guaranteed = pod.merge("spec" => pod["spec"].merge("containers" => [
-                                                         {"name" => "main", "image" => "busybox", "resources" => {"requests" => {"cpu" => "500m", "memory" => "64Mi"},
-                                                                                                                  "limits" => {
-                                                                                                                    "cpu" => "500m", "memory" => "64Mi"
-                                                                                                                  }}}
+                                                         {"name" => "main", "image" => "busybox",
+                                                          "resources" => {"requests" => {"cpu" => "500m", "memory" => "64Mi"},
+                                                                          "limits" => {
+                                                                            "cpu" => "500m", "memory" => "64Mi"
+                                                                          }}}
                                                        ]))
     begin
       File.write(File.join(@cgroups, "rbn"), "")
