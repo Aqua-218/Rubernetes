@@ -130,9 +130,8 @@ class NftablesNetlinkAdapterTest < Minitest::Test
   def test_kernel_lifecycle_and_ruleset_readback_when_enabled
     adapter = nil
     backend = nil
-    begin
-      skip "set RUBERNETES_NFTABLES_KERNEL_TEST=1 for the privileged kernel test" unless ENV["RUBERNETES_NFTABLES_KERNEL_TEST"] == "1"
-      skip "kernel lifecycle test requires root" unless Process.uid.zero?
+    skip "set RUBERNETES_NFTABLES_KERNEL_TEST=1 for the privileged kernel test" unless ENV["RUBERNETES_NFTABLES_KERNEL_TEST"] == "1"
+    skip "kernel lifecycle test requires root" unless Process.uid.zero?
 
       table_name = "rubernetes_test_#{Process.pid}_#{rand(1_000_000)}"
       adapter = Adapter.new(table_name: table_name, timeout: 2.0)
