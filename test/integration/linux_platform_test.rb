@@ -149,7 +149,7 @@ class LinuxPlatformTest < Minitest::Test
     assert(Process.kill(0, process.fetch(:pid)))
     refute_nil(adapter.wait(pid: process.fetch(:pid), timeout: 2.0))
   ensure
-    process&.values_at(:stdout, :stderr)&.compact&.each { |io| io.close unless io.closed? }
+    process&.values_at(:stdout, :stderr)&.each { |io| io.close if io && !io.closed? }
   end
 
   def test_production_process_gate_executes_inside_selected_rootfs
