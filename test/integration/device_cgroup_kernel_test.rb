@@ -54,7 +54,7 @@ class DeviceCgroupKernelTest < Minitest::Test
       pid = fork do
         reader.close
         File.write(File.join(path, "cgroup.procs"), Process.pid.to_s)
-        File.write("/dev/null", "discard")
+        File.write(File::NULL, "discard")
         zero = File.binread("/dev/zero", 4)
         File.binread("/dev/urandom", 4)
         File.open("/dev/ptmx", "r+", &:fileno)
