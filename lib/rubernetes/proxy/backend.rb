@@ -180,9 +180,7 @@ module Rubernetes
         incoming = compiled.rule_map
         @mutex.synchronize do
           compiled_revision = Integer(compiled.revision)
-          if compiled_revision < @revision
-            raise StaleRevisionError, "compiled rule revision #{compiled_revision} is older than #{@revision}"
-          end
+          raise StaleRevisionError, "compiled rule revision #{compiled_revision} is older than #{@revision}" if compiled_revision < @revision
 
           old_rules = @rules
           added = incoming.keys.reject { |key| old_rules.key?(key) }.map { |key| incoming.fetch(key) }
