@@ -350,7 +350,7 @@ def validation_scalar_fixture(schema)
     "1"
   when "io.k8s.apimachinery.pkg.util.intstr.IntOrString"
     1
-  when "io.k8s.apimachinery.pkg.apis.meta.v1.Time",
+  when "io.k8s.apimachinery.pkg.apis.meta.v1.Time"
     "1970-01-01T00:00:00Z"
   when "io.k8s.apimachinery.pkg.apis.meta.v1.MicroTime"
     "1970-01-01T00:00:00.000000Z"
