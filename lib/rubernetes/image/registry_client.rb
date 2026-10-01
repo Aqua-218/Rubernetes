@@ -311,8 +311,8 @@ module Rubernetes
             temporary.close!
           end
         end
-        response = request("GET", path, accept: media_type || "application/octet-stream", 
-scope: "repository:#{image_reference.repository}:pull", max_bytes: @max_blob_bytes)
+        response = request("GET", path, accept: media_type || "application/octet-stream",
+                                        scope: "repository:#{image_reference.repository}:pull", max_bytes: @max_blob_bytes)
         ensure_success!(response, "GET #{path}")
         body = response.body
         raise RegistryError, "registry blob size does not match the descriptor" if expected_size && body.bytesize != Integer(expected_size)
