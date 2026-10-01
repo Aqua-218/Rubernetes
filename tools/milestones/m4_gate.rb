@@ -677,7 +677,8 @@ module M4Gate
         return
       end
       errors << "proxy packet corpus must be executed externally" unless packet["executed"] == true && non_empty_string?(packet["measurementSource"])
-      unless non_empty_string?(packet["runnerIdentity"]) && valid_digest?(packet["runnerDigest"]) && non_empty_string?(packet["mode"]) && packet["mode"] != "model"
+      unless non_empty_string?(packet["runnerIdentity"]) && valid_digest?(packet["runnerDigest"]) && non_empty_string?(packet["mode"]) &&
+             packet["mode"] != "model"
         errors << "proxy packet runner provenance is incomplete"
       end
       runner = packet["runner"] || packet["runner_provenance"]
