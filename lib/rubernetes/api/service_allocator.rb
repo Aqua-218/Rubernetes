@@ -647,7 +647,11 @@ module Rubernetes
             if requested.positive?
               unless @node_port_range.cover?(requested)
                 count_allocation(:port, "static", error: true)
-                raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.ports[#{Array(spec["ports"]).index(port)}].nodePort: Invalid value: #{requested}: provided port is not in the valid range. The range of valid ports is #{@node_port_range.first}-#{@node_port_range.last}",
+                raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.ports[#{Array(spec["ports"]).index(port)}].nodePort: Invalid " \
+                                          "value: #{requested}: provided port is not " \
+                                          "in the valid range. The range of valid " \
+                                          "ports is " \
+                                          "#{@node_port_range.first}-#{@node_port_range.last}",
                                           details: {"kind" => "Service", "name" => name_of(service)})
               end
               if used.include?(requested)
