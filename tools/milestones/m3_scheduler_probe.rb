@@ -58,7 +58,10 @@ def scheduler_fixture_cases
   score_affinity = {
     "nodeAffinity" => {"preferredDuringSchedulingIgnoredDuringExecution" => [{"weight" => 1,
                                                                               "preference" => {"matchExpressions" => [{"key" => "topology.kubernetes.io/zone", "operator" => "In",
-                                                                                                                       "values" => ["zone-a"]}]}}]}, "podAffinity" => {"preferredDuringSchedulingIgnoredDuringExecution" => [{"weight" => 1, "podAffinityTerm" => {"labelSelector" => {"matchLabels" => {"app" => "peer"}}, "topologyKey" => "topology.kubernetes.io/zone"}}]}
+                                                                                                                       "values" => ["zone-a"]}]}}]},
+    "podAffinity" => {"preferredDuringSchedulingIgnoredDuringExecution" => [{
+      "weight" => 1, "podAffinityTerm" => {"labelSelector" => {"matchLabels" => {"app" => "peer"}}, "topologyKey" => "topology.kubernetes.io/zone"}
+    }]}
   }
   score_existing = [{"apiVersion" => "v1", "kind" => "Pod",
                      "metadata" => {"name" => "peer", "namespace" => "default", "uid" => "peer-uid", "labels" => {"app" => "peer"}}, "spec" => {"nodeName" => "node-a", "containers" => [{"name" => "peer", "image" => "example/peer", "resources" => {"requests" => {"cpu" => "0", "memory" => "0"}}}]}}]
