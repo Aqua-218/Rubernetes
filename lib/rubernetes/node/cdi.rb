@@ -121,7 +121,7 @@ module Rubernetes
           end
           unless applied_specs.key?(spec)
             edits.merge!(spec["containerEdits"])
-            applied_specs[spec.object_id] = true
+            applied_specs[spec] = true
           end
           edits.merge!(device["containerEdits"])
         end
