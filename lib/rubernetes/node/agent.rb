@@ -902,7 +902,8 @@ module Rubernetes
           relist: -> { relist_once },
           on_fallback: lambda do
             @relist_period = default_period
-            @error_handler&.call(RuntimeError.new("evented PLEG gave up after #{EventedPLEG::MAX_STREAM_RETRIES} stream failures; generic relist at #{default_period}s"), :evented_pleg)
+            @error_handler&.call(RuntimeError.new("evented PLEG gave up after #{EventedPLEG::MAX_STREAM_RETRIES} stream failures; generic relist at " \
+                                                  "#{default_period}s"), :evented_pleg)
           end
         )
         @relist_period = EventedPLEG::GENERIC_RELIST_SECONDS_WITH_EVENTS
