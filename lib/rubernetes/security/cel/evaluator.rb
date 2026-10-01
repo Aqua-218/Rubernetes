@@ -149,7 +149,7 @@ module Rubernetes
 
           def eval_has(node)
             _, target_node, field = node
-            target = eval(target_node)
+            target = evaluate(target_node)
             target = target.present? ? target.value : nil if target.is_a?(Values::Optional)
             raise EvaluationError, "has() applied to non-map #{Values.type_of(target)}" unless target.is_a?(Hash) || target.nil?
 
