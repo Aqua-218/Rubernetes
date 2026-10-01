@@ -184,9 +184,7 @@ module Rubernetes
           until (index = buffer.index("\r\n\r\n"))
             chunk = socket.readpartial(4096)
             buffer << chunk
-            if buffer.bytesize > MAX_HEAD_BYTES
-              raise Status::ServiceUnavailable.new("node streaming endpoint sent an oversized response head")
-            end
+            raise Status::ServiceUnavailable.new("node streaming endpoint sent an oversized response head") if buffer.bytesize > MAX_HEAD_BYTES
           end
           head = buffer.byteslice(0, index)
           leftover = buffer.byteslice((index + 4)..) || "".b
