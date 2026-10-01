@@ -55,12 +55,8 @@ module Rubernetes
             unless ALPHA_OPTIONS.include?(name) || BETA_OPTIONS.include?(name) || STABLE_OPTIONS.include?(name)
               raise Error, "unknown CPU Manager Policy option: #{name.dump}"
             end
-            if ALPHA_OPTIONS.include?(name) && !alpha
-              raise Error, "CPU Manager Policy Alpha-level Options not enabled, but option #{name.dump} provided"
-            end
-            if BETA_OPTIONS.include?(name) && !beta
-              raise Error, "CPU Manager Policy Beta-level Options not enabled, but option #{name.dump} provided"
-            end
+            raise Error, "CPU Manager Policy Alpha-level Options not enabled, but option #{name.dump} provided" if ALPHA_OPTIONS.include?(name) && !alpha
+            raise Error, "CPU Manager Policy Beta-level Options not enabled, but option #{name.dump} provided" if BETA_OPTIONS.include?(name) && !beta
 
             flag = TopologyManager::Options.parse_bool(name, value)
             member = {FULL_PCPUS_ONLY => :full_physical_cpus_only, DISTRIBUTE_CPUS_ACROSS_NUMA => :distribute_cpus_across_numa,
