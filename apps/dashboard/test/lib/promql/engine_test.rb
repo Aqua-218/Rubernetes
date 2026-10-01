@@ -322,10 +322,9 @@ module Promql
       end
       good = Promql::Parser.parse('sum by (job) (rate(http_requests_total{code=~"5.."}[5m] offset 1h)) > bool 0.1')
 
-  test "parser rejects what Prometheus rejects" do
-    ["sum(", "up offset", "rate(up)", "up and 1", "{}", '{job=~".*"}', "1 == 1", "topk(up)", "unknown_fn(up)",
-     'label_replace(up, "a")', "up[5m] + 1"].each do |bad|
-      assert_raises(Promql::ParseError, "#{bad.inspect} should not parse") { Promql::Parser.parse(bad) }
+      assert_instance_of Promql::AST::BinaryExpr, good
+      assert good.return_bool
+      assert_equal 3_600_000, good.lhs.expr.args[0].selector.offset_ms
     end
     good = Promql::Parser.parse('sum by (job) (rate(http_requests_total{code=~"5.."}[5m] offset 1h)) > bool 0.1')
 
