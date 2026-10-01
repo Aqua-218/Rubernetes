@@ -57,9 +57,7 @@ module M4ProxyKernelProbe
 
       response = JSON.parse(line, max_nesting: 512)
       @stdout_lines << line.chomp unless phase == "finish"
-      unless response["ok"] == true
-        raise "runner #{phase} failed: #{response["error"]} #{Array(response["backtrace"]).first(3).join(" | ")}"
-      end
+      raise "runner #{phase} failed: #{response["error"]} #{Array(response["backtrace"]).first(3).join(" | ")}" unless response["ok"] == true
 
       @init_response = response if phase == "init"
       response
