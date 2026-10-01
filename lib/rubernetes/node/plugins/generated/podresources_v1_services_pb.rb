@@ -24,7 +24,7 @@ module Rubernetes
 
               self.marshal_class_method = :encode
               self.unmarshal_class_method = :decode
-              self.service_name = 'v1.PodResourcesLister'
+              self.service_name = "v1.PodResourcesLister"
 
               rpc :List, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::ListPodResourcesRequest, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::ListPodResourcesResponse
               rpc :GetAllocatableResources, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::AllocatableResourcesRequest, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::AllocatableResourcesResponse
