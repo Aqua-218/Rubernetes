@@ -62,7 +62,8 @@ module M6CRDDifferentialProbe
 
   def apiservice
     {"apiVersion" => "apiregistration.k8s.io/v1", "kind" => "APIService", "metadata" => {"name" => "v1beta1.metrics.probe.example.com"},
-     "spec" => {"group" => "metrics.probe.example.com", "version" => "v1beta1", "service" => {"namespace" => "default", "name" => "no-such-service", "port" => 443},
+     "spec" => {"group" => "metrics.probe.example.com", "version" => "v1beta1",
+                "service" => {"namespace" => "default", "name" => "no-such-service", "port" => 443},
                 "groupPriorityMinimum" => 100, "versionPriority" => 100, "insecureSkipTLSVerify" => true}}
   end
 
