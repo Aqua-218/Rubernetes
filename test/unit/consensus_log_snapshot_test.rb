@@ -160,6 +160,9 @@ class ConsensusLogSnapshotTest < Minitest::Test
                          '"last_log_index":-1,"last_log_term":0}')
     end
     assert_raises(C::ProtocolError) { C::Messages.decode('{"type":"nope"}') }
-    assert_raises(C::ProtocolError) { C::Messages.decode('{"type":"timeout_now","type":"timeout_now","cluster_id":"c","from":"a","to":"b","term":1,"request_id":"r"}') }
+    assert_raises(C::ProtocolError) do
+      C::Messages.decode('{"type":"timeout_now","type":"timeout_now","cluster_id":"c","from":"a","to":"b","term":1,' \
+                         '"request_id":"r"}')
+    end
   end
 end
