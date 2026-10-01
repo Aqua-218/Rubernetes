@@ -93,7 +93,8 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     assert_equal "100m", attrs.object.dig("spec", "containers", 0, "resources", "requests", "cpu")
     ranger.validate(attrs)
     big = attributes("CREATE", resource: "pods",
-                               object: pod("big", containers: [{"name" => "c", "resources" => {"limits" => {"memory" => "2Gi"}, "requests" => {"memory" => "2Gi"}}}]))
+                               object: pod("big",
+                                           containers: [{"name" => "c", "resources" => {"limits" => {"memory" => "2Gi"}, "requests" => {"memory" => "2Gi"}}}]))
     assert_raises(A::Rejected) { ranger.validate(big) }
     small = attributes("CREATE", resource: "pods",
                                  object: pod("small", containers: [{"name" => "c", "resources" => {"requests" => {"cpu" => "10m"}}}]))
