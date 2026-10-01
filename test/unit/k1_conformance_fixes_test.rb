@@ -220,7 +220,8 @@ class K1ConformanceFixesBatch2Test < Minitest::Test
                      "template" => {"metadata" => {"labels" => {"app" => "web"}}, "spec" => {"containers" => [{"name" => "c", "image" => "img"}]}}}}
     pod = {"apiVersion" => "v1", "kind" => "Pod",
            "metadata" => {"name" => "web-1", "namespace" => "default", "uid" => "p1", "labels" => match_labels,
-                          "ownerReferences" => [{"apiVersion" => "apps/v1", "kind" => "ReplicaSet", "name" => "web", "uid" => "rs-1", "controller" => true, "blockOwnerDeletion" => true}]},
+                          "ownerReferences" => [{"apiVersion" => "apps/v1", "kind" => "ReplicaSet", "name" => "web", "uid" => "rs-1", "controller" => true,
+                                                 "blockOwnerDeletion" => true}]},
            "spec" => {"nodeName" => "n"}, "status" => {"phase" => "Running", "conditions" => [{"type" => "Ready", "status" => "True"}]}}
     [rs, pod]
   end
