@@ -337,9 +337,9 @@ module Rubernetes
         source_manifest.fetch("files", []).select { |entry| labels.include?(entry["label"]) }
           .to_h do |entry|
           [entry.fetch("label"), {
-              "path" => entry.fetch("path"),
-              "sha256" => entry.fetch("sha256")
-            }]
+            "path" => entry.fetch("path"),
+            "sha256" => entry.fetch("sha256")
+          }]
         end
       end
 
