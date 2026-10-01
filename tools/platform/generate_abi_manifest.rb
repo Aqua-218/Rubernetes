@@ -196,9 +196,7 @@ module Rubernetes
           [key, Integer(value)]
         end
         host = ARCHITECTURES.fetch(RbConfig::CONFIG.fetch("host_cpu")) { raise "unsupported host architecture" }
-        unless host == architecture
-          raise "the probe binary can only be executed for the host architecture (#{host}); use --update for #{architecture}"
-        end
+        raise "the probe binary can only be executed for the host architecture (#{host}); use --update for #{architecture}" unless host == architecture
 
         # Both routes must agree on every syscall number the header defines.
         preprocessed = preprocessed_syscalls
