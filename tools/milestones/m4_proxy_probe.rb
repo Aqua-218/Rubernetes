@@ -569,9 +569,7 @@ module M4ProxyKernelProbe
     }
     parity_result = Rubernetes::Proxy::BackendParity.production_compare(ebpf_backend, nft_backend,
                                                                         packet_corpus: packet_corpus, kernel_readback: kernel_readback)
-    unless parity_result["productionVerified"] == true
-      errors << "production parity comparison failed: #{Array(parity_result["evidenceErrors"]).join("; ")}"
-    end
+    errors << "production parity comparison failed: #{Array(parity_result["evidenceErrors"]).join("; ")}" unless parity_result["productionVerified"] == true
 
     switch_documents = switches.each_with_index.map do |measurement, index|
       raw = connection_probe.measurements.fetch(index)
