@@ -39,7 +39,8 @@ module Rubernetes
         registry.register("authentication_duration_seconds", type: :histogram, buckets: AUTH_BUCKETS,
                                                              help: "Authentication duration in seconds broken out by result.")
         registry.register("authorization_attempts_total", type: :counter,
-                                                          help: "Counter of authorization attempts broken down by result. It can be either 'allowed', 'denied', 'no-opinion' or 'error'.")
+                                                          help: "Counter of authorization attempts broken down by result. It can be either 'allowed', " \
+                                                                "'denied', 'no-opinion' or 'error'.")
         registry.register("authorization_duration_seconds", type: :histogram, buckets: AUTH_BUCKETS,
                                                             help: "Authorization duration in seconds broken out by result.")
         @admission.metrics = registry if @admission.respond_to?(:metrics=)
