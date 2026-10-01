@@ -785,7 +785,8 @@ module M0Gate
         validate_time(entry["finished_at"], errors, "ABI probe #{entry["name"]} finished_at")
         result_started = parse_time(entry["started_at"])
         result_finished = parse_time(entry["finished_at"])
-        unless result_started && result_finished && probe_started && probe_finished && result_finished >= result_started && result_started >= probe_started && result_finished <= probe_finished
+        unless result_started && result_finished && probe_started && probe_finished && result_finished >= result_started && result_started >= probe_started &&
+               result_finished <= probe_finished
           errors << "ABI probe #{entry["name"]} result time is outside the probe interval"
         end
         validate_abi_result(entry["name"], entry["result"], manifest, subjects, errors)
