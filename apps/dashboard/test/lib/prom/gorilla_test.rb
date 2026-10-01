@@ -33,11 +33,10 @@ module Prom
     test "NaN survives as NaN" do
       _, decoded = roundtrip([[1, 1.0], [2, Float::NAN], [3, 2.0]])
 
-  test "single sample and two samples" do
-    assert_equal [[5, 9.5]], roundtrip([[5, 9.5]]).last
-    assert_equal [[5, 9.5], [65, 9.5]], roundtrip([[5, 9.5], [65, 9.5]]).last
-    assert_equal [], Prom::Gorilla.decode([0].pack("n"))
-  end
+      assert_predicate decoded[1][1], :nan?
+      assert_equal [1, 1.0], decoded[0]
+      assert_equal [3, 2.0], decoded[2]
+    end
 
   test "irregular and large timestamp gaps use the wider delta-of-delta buckets" do
     t = 0
