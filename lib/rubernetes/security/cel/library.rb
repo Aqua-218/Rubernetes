@@ -635,7 +635,7 @@ module Rubernetes
 
           def cel_receiver? = true
           def family = @address.ipv4? ? 4 : 6
-          def isCanonical = @address.to_s == @address.to_s
+          def isCanonical = @text.nil? || @text == @address.to_s
           def isUnspecified = @address.to_i.zero?
           def isLoopback = @address.loopback?
 
