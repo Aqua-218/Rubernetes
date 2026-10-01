@@ -144,7 +144,11 @@ run_command.call(
     # rather than being exported by whoever invokes the capture: a manifest
     # whose command does not reproduce its own result is not evidence.
     "RUBERNETES_NFTABLES_KERNEL_TEST" => "1",
-    "RUBERNETES_NFTABLES_PACKET_TEST" => "1"
+    "RUBERNETES_NFTABLES_PACKET_TEST" => "1",
+    # The CRI backend integration tests run against a private containerd
+    # (/usr/bin/containerd on the capture host); without this they are four
+    # skips and the gate fails.
+    "RUBERNETES_CRI_INTEGRATION" => "1"
   }
 )
 
