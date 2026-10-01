@@ -183,9 +183,7 @@ module KubernetesCorpusImporter
     end
 
     def validate_entry!(entry, commit, parent_path)
-      unless entry.is_a?(Hash) && %w[file dir].include?(entry["type"])
-        raise ValidationError, "unexpected GitHub contents entry under #{parent_path}"
-      end
+      raise ValidationError, "unexpected GitHub contents entry under #{parent_path}" unless entry.is_a?(Hash) && %w[file dir].include?(entry["type"])
 
       path = entry["path"]
       unless path.is_a?(String) && path.start_with?("#{parent_path}/") && !path.include?("..")
