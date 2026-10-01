@@ -981,9 +981,7 @@ module M2Gate
         unless entry["measurement_source"] == "production_image_layer_extractor"
           errors << "#{label} measurement_source must be production image-layer extraction"
         end
-        unless entry["adapter_class"] == "Rubernetes::Image::LayerExtractor"
-          errors << "#{label} adapter class must be the production LayerExtractor"
-        end
+        errors << "#{label} adapter class must be the production LayerExtractor" unless entry["adapter_class"] == "Rubernetes::Image::LayerExtractor"
       end
       %w[coverage_count case_count].each do |key|
         next unless document.key?(key)
