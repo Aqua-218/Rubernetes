@@ -238,7 +238,6 @@ divergent histories.
    a failed restore can still be examined.
 
    ```
-   sha256sum --check /var/backups/rubernetes.sha256
    mv /var/lib/rubernetes/raft /var/lib/rubernetes/raft.pre-restore
    rubernetes-apiserver snapshot restore /var/backups/<snapshot> \
      --config /etc/rubernetes/apiserver.yml
