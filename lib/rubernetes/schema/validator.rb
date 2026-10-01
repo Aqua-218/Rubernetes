@@ -30,7 +30,7 @@ module Rubernetes
       def kubernetes_field
         return "<nil>" if path.empty?
 
-        path.each_with_object(String.new) do |segment, result|
+        path.each_with_object(+"") do |segment, result|
           result << if segment.match?(/\A\d+\z/)
                       "[#{segment}]"
                     elsif segment.match?(/\A\[.*\]\z/)
