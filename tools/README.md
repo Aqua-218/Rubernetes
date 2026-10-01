@@ -30,6 +30,7 @@ matrix, identity ledger, snapshot corruption corpus, startup latency samples) an
 validates them on top of the complete M0–M6 chain.
 
 - [Conformance tooling boundary](conformance/README.md)
+- [Milestone probes and gates](milestones/README.md)
 
 ## Related
 
