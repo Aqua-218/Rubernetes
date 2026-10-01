@@ -237,13 +237,12 @@ class ProxyIptablesBackendTest < Minitest::Test
     skip "needs root and iptables-restore" unless Process.uid.zero? && system("iptables-restore --version >/dev/null 2>&1")
 
     proxy, backend, = build
-    proxy.apply_service(service(type: "LoadBalancer", extra: {"externalTrafficPolicy" => "Local", "loadBalancerSourceRanges" => ["192.168.0.0/16"],
-                                                              "sessionAffinity" => "ClientIP",
-                                                              "sessionAffinityConfig" => {"clientIP" => {"timeoutSeconds" => 60}}},
-                                ports: [{"name" => "http", "port" => 80, "protocol" => "TCP", "targetPort" => 8080, "nodePort" => 30_080}]).tap do |s|
-      s["status"] =
-        {"loadBalancer" => {"ingress" => [{"ip" => "203.0.113.5"}]}}
-    end)
+    load_balancer = service(type: "LoadBalancer", extra: {"externalTrafficPolicy" => "Local", "loadBalancerSourceRanges" => ["192.168.0.0/16"],
+                                                          "sessionAffinity" => "ClientIP",
+                                                          "sessionAffinityConfig" => {"clientIP" => {"timeoutSeconds" => 60}}},
+                            ports: [{"name" => "http", "port" => 80, "protocol" => "TCP", "targetPort" => 8080, "nodePort" => 30_080}])
+    load_balancer["status"] = {"loadBalancer" => {"ingress" => [{"ip" => "203.0.113.5"}]}}
+    proxy.apply_service(load_balancer)
     proxy.apply_endpoint_slice(slice([["10.244.0.5", "worker-0"], ["10.244.1.6", "worker-1"]]))
     program = Iptables::Renderer.new(family: "IPv4", node_name: "worker-0", node_ips: ["192.168.1.10"], cluster_cidr: "10.244.0.0/16",
                                      nfacct_counters: {Iptables::CT_STATE_INVALID_COUNTER => system("nfacct list >/dev/null 2>&1")}).render(backend.rules).text
