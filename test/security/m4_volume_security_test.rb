@@ -444,13 +444,14 @@ class M4VolumeSecurityTest < Minitest::Test
       lease = security.acquire_target!(target, directory: true, create: true)
       held_target = File.join(held_parent, "target")
 
-    assert_equal File.stat(held_target).ino, File.stat(lease.dispatch_path).ino
-    refute_equal File.stat(target).ino, File.stat(lease.dispatch_path).ino
-    assert_raises(Rubernetes::Volume::PathSecurityError) { lease.verify_original! }
-  ensure
-    lease&.close
-    openat2&.close
-    FileUtils.remove_entry(directory) if directory && File.exist?(directory)
+      assert_equal File.stat(held_target).ino, File.stat(lease.dispatch_path).ino
+      refute_equal File.stat(target).ino, File.stat(lease.dispatch_path).ino
+      assert_raises(Rubernetes::Volume::PathSecurityError) { lease.verify_original! }
+    ensure
+      lease&.close
+      openat2&.close
+      FileUtils.remove_entry(directory) if directory && File.exist?(directory)
+    end
   end
 
   def test_target_lease_rejects_ordinary_leaf_replacement_after_mount_readback
