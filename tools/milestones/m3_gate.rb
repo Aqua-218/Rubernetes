@@ -861,9 +861,7 @@ module M3Gate
         inventory = validate_idempotency_run_snapshot(snapshot, observable, errors, label, run_index + 1)
         next unless inventory
 
-        unless journal["after"] == inventory
-          errors << "#{label} durable journal after inventory is not bound to raw snapshot for run #{run_index + 1}"
-        end
+        errors << "#{label} durable journal after inventory is not bound to raw snapshot for run #{run_index + 1}" unless journal["after"] == inventory
         %w[api_mutations events provider_calls].each do |inventory_key|
           unless observable[inventory_key] == inventory[inventory_key]
             errors << "#{label} #{inventory_key} inventory is not bound to durable journal for run #{run_index + 1}"
