@@ -159,7 +159,9 @@ class SecurityAuditFlowControlTest < Minitest::Test
                 "spec" => {"matchingPrecedence" => 1, "priorityLevelConfiguration" => {"name" => "tiny"}, "distinguisherMethod" => {"type" => "ByUser"},
                            "rules" => rule}},
                {"metadata" => {"name" => "rest"}, "spec" => {"matchingPrecedence" => 2, "priorityLevelConfiguration" => {"name" => "none"},
-                                                             "rules" => [{"subjects" => [{"kind" => "Group", "group" => {"name" => "*"}}], "resourceRules" => [{"verbs" => ["*"], "apiGroups" => ["*"], "resources" => ["*"], "namespaces" => ["*"], "clusterScope" => true}]}]}}]
+                                                             "rules" => [{"subjects" => [{"kind" => "Group", "group" => {"name" => "*"}}],
+                                                                          "resourceRules" => [{"verbs" => ["*"], "apiGroups" => ["*"], "resources" => ["*"],
+                                                                                               "namespaces" => ["*"], "clusterScope" => true}]}]}}]
     controller = S::FlowControl::Controller.new(flow_schemas: schemas, priority_level_configurations: plcs, read_seats: 2,
                                                 mutating_seats: 0)
     registry = Rubernetes::Observability::Metrics.new(apiserver: false)
