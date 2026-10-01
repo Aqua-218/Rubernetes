@@ -544,7 +544,8 @@ module Rubernetes
         if owner == service_reference(service)
           ip
         else
-          raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.clusterIPs: Invalid value: #{ip.inspect}: failed to allocate IP #{ip}: provided IP is already allocated",
+          raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.clusterIPs: Invalid value: #{ip.inspect}: failed to allocate IP " \
+                                    "#{ip}: provided IP is already allocated",
                                     details: {"kind" => "Service", "name" => name_of(service)})
         end
       end
