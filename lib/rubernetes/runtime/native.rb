@@ -1593,9 +1593,7 @@ module Rubernetes
         return nil unless spec["rootfs_path"] || spec[:rootfs_path]
 
         root = (container.respond_to?(:workspace) && container.workspace&.root) || sandbox.workspace&.root
-        unless root && File.directory?(root) && !File.symlink?(root)
-          raise FailClosed, "resolved image rootfs is unavailable at workload start"
-        end
+        raise FailClosed, "resolved image rootfs is unavailable at workload start" unless root && File.directory?(root) && !File.symlink?(root)
 
         root
       end
