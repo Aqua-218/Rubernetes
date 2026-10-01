@@ -40,9 +40,9 @@ module Promql
     def scalar(expr, t = T0)
       result = @engine.query(expr, t)
 
-    assert_equal :vector, result.type, "#{expr}: #{result.inspect}"
-    result.value.map { |s| [s.metric, s.point[1]] }
-  end
+      assert_equal :scalar, result.type
+      result.value[1]
+    end
 
   def scalar(expr, t = T0)
     result = @engine.query(expr, t)
