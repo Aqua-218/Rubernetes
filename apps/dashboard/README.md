@@ -32,7 +32,10 @@ rule-file format; alerts move through pending/firing/resolved, produce
 The HTTP API is Prometheus-compatible, so Grafana can use the dashboard as a
 Prometheus data source:
 
-* Database initialization
+```
+/api/v1/query  /api/v1/query_range  /api/v1/series  /api/v1/labels  /api/v1/label/:name/values
+/api/v1/metadata  /api/v1/targets  /api/v1/rules  /api/v1/alerts  /api/v1/status/{buildinfo,tsdb,runtimeinfo,config}
+```
 
 * How to run the test suite
 
