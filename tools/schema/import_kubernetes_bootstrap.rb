@@ -133,7 +133,8 @@ module KubernetesBootstrapImporter
   def write(file, document, manifest)
     path = File.join(OUTPUT, file)
     File.write(path, JSON.pretty_generate(document) << "\n")
-    manifest["files"][file] = {"sha256" => Digest::SHA256.file(path).hexdigest, "items" => document.is_a?(Hash) && document["items"].is_a?(Array) ? document["items"].length : document.length}
+    manifest["files"][file] = {"sha256" => Digest::SHA256.file(path).hexdigest,
+                               "items" => document.is_a?(Hash) && document["items"].is_a?(Array) ? document["items"].length : document.length}
   end
 end
 
