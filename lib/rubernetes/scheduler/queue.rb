@@ -99,9 +99,7 @@ module Rubernetes
         @clock = clock
         @initial_backoff_seconds = normalize_duration(initial_backoff_seconds, "initial backoff")
         @max_backoff_seconds = normalize_duration(max_backoff_seconds, "maximum backoff")
-        if @max_backoff_seconds < @initial_backoff_seconds
-          raise ValidationError, "maximum backoff cannot be shorter than the initial backoff"
-        end
+        raise ValidationError, "maximum backoff cannot be shorter than the initial backoff" if @max_backoff_seconds < @initial_backoff_seconds
 
         @max_active_attempts = if max_active_attempts.nil?
                                  nil
