@@ -242,12 +242,8 @@ module M8Gate
       end
       cases.select { |entry| entry["id"].to_s.start_with?("k1_totals-") }.each do |entry|
         summary = entry["summary"] || {}
-        unless summary["selected"] == EXPECTED_CONFORMANCE_TESTS
-          errors << "K1 run #{entry["id"]} must select #{EXPECTED_CONFORMANCE_TESTS} tests"
-        end
-        unless summary["passed"] == EXPECTED_CONFORMANCE_TESTS
-          errors << "K1 run #{entry["id"]} must pass #{EXPECTED_CONFORMANCE_TESTS} tests"
-        end
+        errors << "K1 run #{entry["id"]} must select #{EXPECTED_CONFORMANCE_TESTS} tests" unless summary["selected"] == EXPECTED_CONFORMANCE_TESTS
+        errors << "K1 run #{entry["id"]} must pass #{EXPECTED_CONFORMANCE_TESTS} tests" unless summary["passed"] == EXPECTED_CONFORMANCE_TESTS
         %w[failed skipped flaked].each do |key|
           errors << "K1 run #{entry["id"]} must record #{key} 0" unless summary[key].to_i.zero?
         end
