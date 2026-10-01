@@ -84,7 +84,7 @@
   "cri_image_ids": {
     "kube_apiserver": {
       "tag": "registry.k8s.io/kube-apiserver:v1.36.2",
-      "id": "sha256:14f31f5fc9a7610452a0a33b36618c0ebf94488a7341d44f8c71017524c4a494"
+      "id": "sha256:a7291d8f3ec41adee8ee9d508da51695564c44ae18e90d6624fb64fbafae3cb6"
     },
     "etcd": {
       "tag": "registry.k8s.io/etcd:3.6.8-0",
