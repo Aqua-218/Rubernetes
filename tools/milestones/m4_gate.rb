@@ -1419,9 +1419,7 @@ module M4Gate
       unless valid_digest?(expected_digest) && canonical_document_digest(expected) == expected_digest
         errors << "#{label} expected digest does not match observation"
       end
-      unless valid_digest?(actual_digest) && canonical_document_digest(actual) == actual_digest
-        errors << "#{label} actual digest does not match observation"
-      end
+      errors << "#{label} actual digest does not match observation" unless valid_digest?(actual_digest) && canonical_document_digest(actual) == actual_digest
       expected_pass = valid_digest?(expected_digest) && valid_digest?(actual_digest) && expected_digest == actual_digest
       errors << "#{label} passed flag must match content-bound observations" unless observation["passed"] == expected_pass
       errors << "#{label} must pass the content-bound comparison" unless observation["passed"] == true
