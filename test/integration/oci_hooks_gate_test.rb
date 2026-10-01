@@ -77,7 +77,7 @@ class OCIHooksGateTest < Minitest::Test
       assert_equal "created", JSON.parse(start_state)["status"]
       refute_path_exists File.join(directory, "marker"), "startContainer ran inside the container root"
     ensure
-      process&.values_at(:stdout, :stderr)&.compact&.each { |io| io.close unless io.closed? }
+      process&.values_at(:stdout, :stderr)&.each { |io| io.close if io && !io.closed? }
     end
   end
 
