@@ -37,7 +37,8 @@ class ResourceClaimStatusValidationTest < Minitest::Test
 
   def test_device_status_rules
     found = errors({"allocation" => ALLOCATION, "devices" => [device(device: "gpu-9"), device, device,
-                                                              device(pool: "node-1", networkData: {"ips" => ["10.0.0.5"]}, conditions: [{"type" => "Ready", "status" => "Maybe"}])]},
+                                                              device(pool: "node-1", networkData: {"ips" => ["10.0.0.5"]},
+                                                                     conditions: [{"type" => "Ready", "status" => "Maybe"}])]},
                    old_status: {"allocation" => ALLOCATION})
 
     assert(found.any? do |message|
