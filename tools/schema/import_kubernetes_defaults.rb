@@ -155,7 +155,9 @@ module KubernetesDefaultsImporter
     write("features.json", features)
     write("admission-plugins.json", plugins)
     write("authorization-modes.json", modes)
-    puts "features: #{features["gate_count"]} gates; admission plugins: #{plugins["ordered_plugins"].length} ordered, #{plugins["default_on"].length} default on; modes: #{modes["modes"].join(",")}"
+    puts "features: #{features["gate_count"]} gates; admission plugins: #{plugins["ordered_plugins"].length} ordered, #{plugins["default_on"].length} " \
+         "default on; modes: " \
+         "#{modes["modes"].join(",")}"
   end
 end
 
