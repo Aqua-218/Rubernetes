@@ -31,8 +31,9 @@ class APIUnconditionalUpdateRetryTest < Minitest::Test
     @server = API::Server.new(registry: registry, store: @store)
     call("POST", "/api/v1/namespaces", {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "ns"}})
 
-    assert_equal 201, call("POST", "/api/v1/namespaces/ns/configmaps",
-                           {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm"}, "data" => {"a" => "1"}}).status
+    status = call("POST", "/api/v1/namespaces/ns/configmaps",
+                  {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm"}, "data" => {"a" => "1"}}).status
+    raise "setup: configmap create returned #{status}" unless status == 201
   end
 
   def call(method, path, body)
