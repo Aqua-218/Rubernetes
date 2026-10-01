@@ -872,9 +872,7 @@ module Rubernetes
                                                  memory].include?(process_config["backend"].to_s.downcase)
           raise Error, "rubernetes-proxy.backend must be one of auto, ebpf, bpf, nftables, nft, iptables, or memory"
         end
-        if process_config.key?("attach") && ![true, false].include?(process_config["attach"])
-          raise Error, "rubernetes-proxy.attach must be true or false"
-        end
+        raise Error, "rubernetes-proxy.attach must be true or false" if process_config.key?("attach") && ![true, false].include?(process_config["attach"])
 
         validate_sync!(process_config["sync"], "rubernetes-proxy") if process_config.key?("sync")
       end
