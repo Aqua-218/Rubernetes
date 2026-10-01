@@ -55,6 +55,7 @@ class JWTAuthenticatorMetricsTest < Minitest::Test
     key_set = hash(JSON.generate(@jwks))
 
     assert_match(
+      # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
       /apiserver_authentication_jwt_authenticator_jwks_fetch_last_key_set_info\{apiserver_id_hash="#{server}",hash="#{key_set}",jwt_issuer_hash="#{issuer}"\} 1/, text
     )
   end
