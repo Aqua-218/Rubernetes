@@ -702,9 +702,7 @@ module M1Gate
             next
           end
           nested_path = File.join(File.dirname(manifest_path_value), entry["path"])
-          unless artifacts.any? { |artifact| artifact["path"] == nested_path }
-            errors << "M0 #{collection} entry is not content-addressed by M1: #{nested_path}"
-          end
+          errors << "M0 #{collection} entry is not content-addressed by M1: #{nested_path}" unless artifacts.any? { |artifact| artifact["path"] == nested_path }
         end
       end
       same_input = m0_manifest["input_sha256"] == manifest["input_sha256"] &&
