@@ -863,7 +863,8 @@ module Rubernetes
             klass = class_name.empty? ? nil : @context.get("storageclasses", nil, class_name, group: "storage.k8s.io")
             return if klass && klass["allowVolumeExpansion"] == true
 
-            reject!("persistentvolumeclaims #{attributes.name.inspect} is forbidden: only dynamically provisioned pvc can be resized and the storageclass that provisions the pvc must support resize")
+            reject!("persistentvolumeclaims #{attributes.name.inspect} is forbidden: only dynamically provisioned pvc can be resized and the storageclass " \
+                    "that provisions the pvc must support resize")
           end
         end
         Registry.register("PersistentVolumeClaimResize") do |context, config|
