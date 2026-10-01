@@ -426,7 +426,8 @@ module Rubernetes
 
         detail = []
         unless production_release_attested?
-          detail << "M4 eBPF gate requires Linux >= 6.12 for SCTP CRC32c (observed #{@actual_kernel_release}); set #{KERNEL_WAIVER_ENV} to record an explicit waiver"
+          detail << "M4 eBPF gate requires Linux >= 6.12 for SCTP CRC32c (observed #{@actual_kernel_release}); set #{KERNEL_WAIVER_ENV} to record an " \
+                    "explicit waiver"
         end
         detail << "SCTP CRC32c release requirement waived: #{@kernel_waiver.fetch("reason")}" if sctp_crc32c_waived?
         detail << "SCTP CRC32c requires a verified bpf_loop static callback and BPF_PSEUDO_FUNC relocation" if gaps.include?("sctp_crc32c")
