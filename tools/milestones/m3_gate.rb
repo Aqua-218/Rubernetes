@@ -1229,12 +1229,8 @@ module M3Gate
       errors << "#{label} pinned source tree digest is not content-bound" unless source["source_tree_sha256"] == expected_tree_digest
       expected_inventory_digest = Digest::SHA256.hexdigest("#{source_inventory}\n")
       expected_inventory_count = source_inventory.lines.reject { |line| line.strip.empty? }.length
-      unless source["source_inventory_sha256"] == expected_inventory_digest
-        errors << "#{label} pinned source inventory digest was not recomputed"
-      end
-      unless source["source_inventory_file_count"] == expected_inventory_count
-        errors << "#{label} pinned source inventory count was not recomputed"
-      end
+      errors << "#{label} pinned source inventory digest was not recomputed" unless source["source_inventory_sha256"] == expected_inventory_digest
+      errors << "#{label} pinned source inventory count was not recomputed" unless source["source_inventory_file_count"] == expected_inventory_count
       errors << "#{label} pinned source repository is not the official Kubernetes repository" unless source["repository"] == "https://github.com/kubernetes/kubernetes.git"
     rescue StandardError => error
       errors << "#{label} pinned source verification failed closed: #{error.class}: #{error.message}"
