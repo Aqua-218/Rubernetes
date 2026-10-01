@@ -21,9 +21,9 @@ module Dashboard
         # Concurrent first access yields one store, never two writers.
         threads = Array.new(8) { Thread.new { runtime.store } }
 
-      assert_equal 1, threads.map(&:value).uniq.length
-      assert_kind_of Prom::Rules, runtime.rules
-      collector.round
+        assert_equal 1, threads.map(&:value).uniq.length
+        assert_kind_of Prom::Rules, runtime.rules
+        collector.round
 
       assert_equal 1, collector.targets.length, "the built-in kube-state target"
       runtime.stop
