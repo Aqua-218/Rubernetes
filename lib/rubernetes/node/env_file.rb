@@ -51,9 +51,7 @@ module Rubernetes
 
             next
           end
-          unless trimmed.start_with?("'")
-            raise Error, "invalid environment variable format at line #{line_number}: value must be enclosed in single quotes"
-          end
+          raise Error, "invalid environment variable format at line #{line_number}: value must be enclosed in single quotes" unless trimmed.start_with?("'")
 
           value = +""
           rest = trimmed[1..]
