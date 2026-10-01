@@ -129,7 +129,7 @@ module Conformance
     def normalize(result, custom_groups: [])
       body =
         begin
-          scrub(JSON.parse(result.fetch("stdout")))
+          drop_custom_groups(scrub(JSON.parse(result.fetch("stdout"))), custom_groups)
         rescue JSON::ParserError
           result.fetch("stdout").lines.map(&:strip).reject(&:empty?).sort
         end
