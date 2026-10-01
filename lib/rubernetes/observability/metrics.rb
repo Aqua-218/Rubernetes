@@ -233,8 +233,10 @@ module Rubernetes
           "apiserver_validation_declarative_validation_parity_discrepancies_total" => no_declarative,
           "apiserver_stream_translator_requests_total" => no_stream_translation,
           "apiserver_stream_tunnel_requests_total" => no_stream_translation,
-          "apiserver_storage_decode_errors_total" => "stored objects live decoded in the replica; a record that fails to decode is WAL or snapshot corruption, fatal at recovery, never a per-resource read error",
-          "apiserver_storage_consistency_checks_total" => "no watch cache consistency checker: the local replica is the raft state machine itself, applied in log order, so there is no second store to compare it with",
+          "apiserver_storage_decode_errors_total" => "stored objects live decoded in the replica; a record that fails to decode is WAL or snapshot " \
+                                                     "corruption, fatal at recovery, never a per-resource read error",
+          "apiserver_storage_consistency_checks_total" => "no watch cache consistency checker: the local replica is the raft state machine itself, applied " \
+                                                          "in log order, so there is no second store to compare it with",
           "aggregator_discovery_nopeer_requests_total" => no_peer_proxy,
           "aggregator_discovery_peer_aggregated_cache_hits_total" => no_peer_proxy,
           "aggregator_discovery_peer_aggregated_cache_misses_total" => no_peer_proxy,
