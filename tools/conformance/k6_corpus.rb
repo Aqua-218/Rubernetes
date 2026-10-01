@@ -131,6 +131,60 @@ module Conformance
       projects.map { |project| run_project(project, options) }
     end
 
+    # The install commands are the projects' own (`helm upgrade --install
+    # name alias/chart --version X`); the aliases come from the corpus and
+    # every package is pulled once first and checked against the SHA-256 the
+    # corpus pins, so a repository that moved a version is caught before it
+    # is installed.
+    def prepare_repositories(repositories, projects, options)
+      helm = File.join(ROOT, "build/tools/clients/helm")
+      results = repositories.map do |name, url|
+        _out, err, status = Open3.capture3({"PATH" => options.fetch(:path)}, helm, "repo", "add", name, url, "--force-update")
+        {"id" => "repo-#{name}", "passed" => status.success?, "url" => url, "stderr" => status.success? ? nil : err.strip[-300..]}
+      end
+      _out, err, status = Open3.capture3({"PATH" => options.fetch(:path)}, helm, "repo", "update")
+      results << {"id" => "repo-update", "passed" => status.success?, "stderr" => status.success? ? nil : err.strip[-300..]}
+      return results unless results.all? { |entry| entry.fetch("passed") }
+
+      Dir.mktmpdir("k6-charts") do |dir|
+        projects.each do |project|
+          chart = project.fetch("chart")
+          if chart.start_with?("oci://")
+            next results << {"id" => "chart-#{project.fetch("name")}", "passed" => true,
+                             "note" => "OCI reference, pulled by the install command"}
+          end
+
+          _out, err, status = Open3.capture3({"PATH" => options.fetch(:path)}, helm, "pull", chart, "--version", project.fetch("chart_version").to_s,
+                                             "--destination", dir)
+          package = File.join(dir, project.fetch("chart_package"))
+          observed = File.file?(package) ? Digest::SHA256.file(package).hexdigest : nil
+          results << {"id" => "chart-#{project.fetch("name")}", "passed" => status.success? && observed == project.fetch("chart_sha256"),
+                      "expected_sha256" => project.fetch("chart_sha256"), "observed_sha256" => observed,
+                      "stderr" => status.success? ? nil : err.strip[-300..]}
+        end
+      end
+      results
+    end
+
+    def unprepared_project(project, preparation)
+      failed = preparation.reject { |entry| entry.fetch("passed") }.map { |entry| entry.fetch("id") }
+      {"name" => project.fetch("name"), "categories" => project["categories"], "namespace" => "k6-#{project.fetch("name")}",
+       "passed" => false, "stages" => [], "residue" => [],
+       "reason" => "repository preparation failed: #{failed.join(", ")}"}
+    end
+
+    # The stage commands call `kubectl` and `helm` by name: the pinned
+    # binaries, under those names, come first on PATH.
+    def client_path
+      bin = File.join(ROOT, "build/tools/clients/bin")
+      FileUtils.mkdir_p(bin)
+      {"kubectl" => File.join(ROOT, "build/tools/kubectl-v1.36.2"), "helm" => File.join(ROOT, "build/tools/clients/helm")}.each do |name, target|
+        link = File.join(bin, name)
+        File.symlink(target, link) unless File.symlink?(link) && File.readlink(link) == target
+      end
+      [bin, ENV.fetch("PATH", "")].join(File::PATH_SEPARATOR)
+    end
+
     # install -> Ready -> smoke -> scale -> upgrade -> rollback -> restart ->
     # uninstall, then a residue sweep, exactly as the spec lists.
     def run_project(project, options)
