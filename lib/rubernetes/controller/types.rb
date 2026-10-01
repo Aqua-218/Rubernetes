@@ -532,9 +532,7 @@ module Rubernetes
         seen = {}
         watches.each do |watch|
           raise ValidationError, "controller #{name} watches must contain WatchSpec instances" unless watch.is_a?(WatchSpec)
-          unless watch.resource.is_a?(ResourceDescriptor)
-            raise ValidationError, "controller #{name} watch resource must be a ResourceDescriptor"
-          end
+          raise ValidationError, "controller #{name} watch resource must be a ResourceDescriptor" unless watch.resource.is_a?(ResourceDescriptor)
           raise InvalidWatchError, "unsupported watch relationship #{watch.via.inspect}" unless WATCH_RELATIONSHIPS.include?(watch.via)
           if watch.scope && watch.scope != watch.resource.scope
             raise ScopeMismatchError, "watch scope #{watch.scope.inspect} conflicts with #{watch.resource.identifier}"
