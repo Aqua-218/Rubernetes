@@ -99,7 +99,7 @@ module Rubernetes
               condition = evaluate(node[1])
               raise TypeMismatch, "conditional requires a bool" unless [true, false].include?(condition)
 
-              condition ? eval(node[2]) : eval(node[3])
+              condition ? evaluate(node[2]) : evaluate(node[3])
             when :call then eval_call(node)
             when :comprehension then eval_comprehension(node)
             when :bind then with({node[1] => eval(node[2])}) { eval(node[3]) }
