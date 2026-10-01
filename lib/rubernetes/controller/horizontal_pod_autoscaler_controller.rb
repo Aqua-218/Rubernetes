@@ -1210,6 +1210,7 @@ module Rubernetes
         existing["status"] = status
         existing["reason"] = reason
         existing["message"] = message
+        existing
       end
 
       def remove_condition(hpa, type)
