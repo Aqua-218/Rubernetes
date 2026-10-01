@@ -532,9 +532,7 @@ module Rubernetes
         path_parts = [base]
         if namespaced
           selected_namespace = namespace || context_namespace
-          if selected_namespace && selected_namespace != :all && !selected_namespace.to_s.empty?
-            path_parts.push("namespaces", escape_path(selected_namespace))
-          end
+          path_parts.push("namespaces", escape_path(selected_namespace)) if selected_namespace && selected_namespace != :all && !selected_namespace.to_s.empty?
         end
         path_parts << escape_path(resource_name)
         path_parts << escape_path(name) if name
