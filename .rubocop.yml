@@ -33,6 +33,13 @@ AllCops:
 
 Layout/LineLength:
   Max: 160
+  # Tabular data: one row per line is the readable form (kubectl column
+  # definitions, the validation-oracle mapping, the protobuf pointer-field
+  # table).  Wrapping the rows would hide the columns.
+  Exclude:
+    - 'lib/rubernetes/api/table_printer/columns.rb'
+    - 'tools/milestones/m1_kubernetes_validation_oracle.rb'
+    - 'lib/rubernetes/schema/codec/kubernetes_pointer_fields.rb'
   AllowURI: true
   AllowedPatterns:
     - '\A\s*#'
