@@ -201,7 +201,10 @@ class MicroVMProtocolTest < Minitest::Test
     assert_equal({"name" => "api.example.com", "addresses" => ["10.1.0.5", "10.1.0.6"]},
                  broker.handle("vm-1", "broker.request", {"operation" => "dns.resolve", "params" => {"name" => "api.example.com"}}))
     assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "dns.resolve", "params" => {"name" => "evil.example.com"}}) }
-    assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "dns.resolve", "params" => {"name" => "api.example.com", "extra" => 1}}) }
+    assert_raises(M::PolicyError) do
+      broker.handle("vm-1", "broker.request",
+                    {"operation" => "dns.resolve", "params" => {"name" => "api.example.com", "extra" => 1}})
+    end
     assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "time.now", "params" => {}}) }
     assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "shell.exec", "params" => {}}) }
     assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "dns.resolve", "params" => {"name" => "api.example.com"}, "subject_id" => "spoofed"}) }
