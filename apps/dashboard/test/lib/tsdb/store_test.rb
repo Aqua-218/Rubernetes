@@ -189,6 +189,28 @@ module Tsdb
       assert_equal ["old_total"], reopened.label_values("__name__")
     end
 
-    assert_equal "opened\n1\n", IO.popen([RbConfig.ruby, "-e", script, @dir], &:read)
+    test "a writer in another process is refused by the directory lock" do
+      store = open_store
+      store.append(labels("m"), 1, 1.0)
+      script = <<~RUBY
+        $LOAD_PATH.unshift(#{File.expand_path("../../../lib", __dir__).inspect})
+        require "tsdb/store"
+        begin
+          Tsdb::Store.new(ARGV[0])
+          puts "opened"
+        rescue Tsdb::Store::AlreadyOpen => e
+          puts "refused: " + e.message
+        end
+        puts Tsdb::Store.new(ARGV[0], readonly: true).series_count
+      RUBY
+      out = IO.popen([RbConfig.ruby, "-e", script, @dir], &:read)
+
+      assert_match(/\Arefused: .*pid #{Process.pid}/, out)
+      assert_match(/^1$/, out, "readers are still admitted")
+      store.close
+      @store = nil
+
+      assert_equal "opened\n1\n", IO.popen([RbConfig.ruby, "-e", script, @dir], &:read)
+    end
   end
 end
