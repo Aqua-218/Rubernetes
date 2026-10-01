@@ -153,7 +153,8 @@ class SecurityAdmissionPluginsTest < Minitest::Test
 
   def test_storage_defaults_and_protection
     @context.put("storageclasses", nil, "fast",
-                 {"metadata" => {"name" => "fast", "annotations" => {"storageclass.kubernetes.io/is-default-class" => "true"}}, "allowVolumeExpansion" => true}, group: "storage.k8s.io")
+                 {"metadata" => {"name" => "fast", "annotations" => {"storageclass.kubernetes.io/is-default-class" => "true"}},
+                  "allowVolumeExpansion" => true}, group: "storage.k8s.io")
     claim = {"metadata" => {"name" => "data"}, "spec" => {"resources" => {"requests" => {"storage" => "1Gi"}}}}
     attrs = attributes("CREATE", resource: "persistentvolumeclaims", object: claim)
     plugin("DefaultStorageClass").admit(attrs)
