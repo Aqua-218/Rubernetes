@@ -257,10 +257,11 @@ class CRIBackendTest < Minitest::Test
       assert_equal true, @backend.tcp_socket("c1", {"port" => port}, timeout: 2)["success"]
       result = @backend.http_get("c1", {"port" => port, "path" => "healthz"}, timeout: 2)
 
-    assert_equal [204, true], result.values_at("status", "success")
-  ensure
-    server&.close
-    acceptor&.kill
+      assert_equal [204, true], result.values_at("status", "success")
+    ensure
+      server&.close
+      acceptor&.kill
+    end
   end
 
   # After an agent restart nothing remembers who owns what: the backend that
