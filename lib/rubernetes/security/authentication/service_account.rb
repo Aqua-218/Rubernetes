@@ -232,9 +232,7 @@ module Rubernetes
           raise AuthenticationError, "secretName claim is missing" if secret_name.empty?
           raise AuthenticationError, "serviceAccountName claim is missing" if sa_name.empty?
           raise AuthenticationError, "serviceAccountUID claim is missing" if sa_uid.empty?
-          unless subject == "#{UserInfo::SERVICE_ACCOUNT_USERNAME_PREFIX}#{namespace}:#{sa_name}"
-            raise AuthenticationError, "sub claim is invalid"
-          end
+          raise AuthenticationError, "sub claim is invalid" unless subject == "#{UserInfo::SERVICE_ACCOUNT_USERNAME_PREFIX}#{namespace}:#{sa_name}"
 
           secret = resolve(:secret, namespace, secret_name)
           raise AuthenticationError, "Token has been invalidated" if secret.nil? || secret.dig("metadata", "deletionTimestamp")
