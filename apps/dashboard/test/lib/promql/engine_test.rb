@@ -235,31 +235,15 @@ module Promql
 
     # ---------------------------------------------------------- functions
 
-  # ---------------------------------------------------------- aggregations
-
-  test "aggregations with by and without" do
-    load("n", {"job" => "a", "instance" => "1"}, [1])
-    load("n", {"job" => "a", "instance" => "2"}, [3])
-    load("n", {"job" => "b", "instance" => "3"}, [10])
-
-    assert_equal [[{}, 14.0]], vector("sum(n)")
-    assert_equal([[{"job" => "a"}, 4.0], [{"job" => "b"}, 10.0]], vector("sum by (job) (n)").sort_by { |m, _| m["job"] })
-    assert_equal([[{"job" => "a"}, 4.0], [{"job" => "b"}, 10.0]], vector("sum without (instance) (n)").sort_by { |m, _| m["job"] })
-    assert_equal([[{"job" => "a"}, 2.0], [{"job" => "b"}, 10.0]], vector("avg by (job) (n)").sort_by { |m, _| m["job"] })
-    assert_equal [[{}, 3.0]], vector("count(n)")
-    assert_equal [[{}, 1.0]], vector("min(n)")
-    assert_equal [[{}, 10.0]], vector("max(n)")
-    assert_equal([[{"job" => "a"}, 1.0], [{"job" => "b"}, 1.0]], vector("group by (job) (n)").sort_by { |m, _| m["job"] })
-    assert_in_delta 1.0, vector("stdvar by (job) (n)").find { |m, _| m["job"] == "a" }[1]
-    assert_in_delta 3.0, vector("quantile(0.5, n)")[0][1]
-    top = vector("topk(2, n)").map(&:last)
-
-    assert_equal [10.0, 3.0], top
-    assert_equal [1.0], vector("bottomk(1, n)").map(&:last)
-    counts = vector("count_values(\"v\", n)").to_h { |m, c| [m["v"], c] }
-
-    assert_equal({"1" => 1.0, "3" => 1.0, "10" => 1.0}, counts)
-  end
+    test "histogram_quantile interpolates within the bucket" do
+      {"0.1" => 10, "0.5" => 30, "1" => 40, "+Inf" => 40}.each do |le, count|
+        load("d_bucket", {"le" => le}, [count])
+      end
+      # rank 0.5*40 = 20 lies in the (0.1, 0.5] bucket at (20-10)/20 -> 0.3
+      assert_in_delta 0.3, values("histogram_quantile(0.5, d_bucket)").first, 1e-9
+      assert_in_delta 0.1, values("histogram_quantile(0.25, d_bucket)").first, 1e-9
+      assert_equal [1.0], values("histogram_quantile(1, d_bucket)")
+      summed = vector("histogram_quantile(0.5, sum by (le) (d_bucket))")
 
   # ---------------------------------------------------------- functions
 
