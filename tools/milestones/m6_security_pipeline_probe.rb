@@ -212,7 +212,8 @@ module M6SecurityPipelineProbe
                                                          headers: {"authorization" => "Bearer alice-token",
                                                                    "content-type" => "application/json"}, body: "{not json"))
     cases << {"id" => "malformed_body_is_400_without_internal_detail", "status" => malformed.status, "message" => malformed.body["message"],
-              "passed" => malformed.status == 400 && malformed.body["reason"] == "BadRequest" && !leak?(malformed.body) && !recorder.events.include?("store.create")}
+              "passed" => malformed.status == 400 && malformed.body["reason"] == "BadRequest" && !leak?(malformed.body) &&
+                          !recorder.events.include?("store.create")}
 
     audit_events = sink.events
     audit_bodies = JSON.generate(audit_events)
