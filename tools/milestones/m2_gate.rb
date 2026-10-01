@@ -470,9 +470,7 @@ module M2Gate
           next
         end
         resolved = File.realpath(path)
-        if valid_digest?(entry["sha256"]) && Digest::SHA256.file(resolved).hexdigest != entry["sha256"]
-          errors << "#{label} digest mismatch #{path_value}"
-        end
+        errors << "#{label} digest mismatch #{path_value}" if valid_digest?(entry["sha256"]) && Digest::SHA256.file(resolved).hexdigest != entry["sha256"]
         errors << "#{label} byte count mismatch #{path_value}" if integer?(entry["bytes"]) && File.size(resolved) != entry["bytes"]
         entry
       end
