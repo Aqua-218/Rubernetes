@@ -127,9 +127,9 @@ module Tsdb
       series = store.select_series([M.new(name: "__name__", op: "=", value: "m")]).first
       values = store.samples(series.id, 0, 10).map(&:last)
 
-  test "batch append is one WAL flush and reports the count" do
-    store = open_store
-    rows = Array.new(1000) { |i| [labels("batch", "i" => (i % 10).to_s), 1_000 + ((i / 10) * 1000), i.to_f] }
+      assert Tsdb::Store.stale_marker?(values[1])
+      refute Tsdb::Store.stale_marker?(Float::NAN)
+    end
 
     assert_equal 1000, store.append_batch(rows)
     assert_equal 10, store.series_count
