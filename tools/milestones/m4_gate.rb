@@ -771,7 +771,8 @@ module M4Gate
             errors << "proxy eBPF program/map/TC readback identities are incomplete"
           end
         else
-          unless entry.is_a?(Hash) && entry["table"].is_a?(Hash) && non_empty_string?(entry["table"]["name"]) && Array(entry["chains"]).any? && Array(entry["sets"]).any?
+          unless entry.is_a?(Hash) && entry["table"].is_a?(Hash) && non_empty_string?(entry["table"]["name"]) && Array(entry["chains"]).any? &&
+                 Array(entry["sets"]).any?
             errors << "proxy nftables table/chain/set readback identities are incomplete"
           end
         end
