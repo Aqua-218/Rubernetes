@@ -226,7 +226,9 @@ class SecurityAdmissionPolicyTest < Minitest::Test
     assert(calls.any? { |url, _, _| url == "https://deny.example/" })
     assert calls.none? { |url, _, _| url == "https://broken.example/" }, "sideEffects Unknown webhooks are skipped on dry-run"
     @context.put("validatingwebhookconfigurations", nil, "fail",
-                 {"metadata" => {"name" => "fail"}, "webhooks" => [{"name" => "broken.example", "clientConfig" => {"url" => "https://broken.example/"}, "rules" => [rule], "sideEffects" => "None", "admissionReviewVersions" => ["v1"], "failurePolicy" => "Fail"}]}, group: "admissionregistration.k8s.io")
+                 {"metadata" => {"name" => "fail"},
+                  "webhooks" => [{"name" => "broken.example", "clientConfig" => {"url" => "https://broken.example/"}, "rules" => [rule],
+                                  "sideEffects" => "None", "admissionReviewVersions" => ["v1"], "failurePolicy" => "Fail"}]}, group: "admissionregistration.k8s.io")
     error = assert_raises(A::Rejected) { validating.validate(attributes("CREATE", object: deployment(replicas: 1))) }
     assert_equal 500, error.code
     assert_match(/failed calling webhook "broken.example"/, error.message)
