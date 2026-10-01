@@ -1,8 +1,9 @@
 # Conformance Tooling Boundary
 
-This directory will contain Ruby commands that verify upstream locks, provision test
-profiles, invoke pinned Hydrophone/Sonobuoy binaries, normalize JUnit/Ginkgo output,
-classify upstream e2e inventory, detect resource leaks, and emit evidence manifests.
+Ruby commands that verify the pinned upstream inputs, bring up the release
+topology cluster, invoke the pinned Hydrophone/Sonobuoy binaries and the
+upstream `e2e.test`, normalize JUnit/Ginkgo output, classify the upstream
+e2e inventory and emit the M8 evidence manifests.
 
 The tooling may orchestrate upstream executables but may not modify their source, focus,
 skip expression, or result. A failed or incomplete upstream run remains failed.
