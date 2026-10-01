@@ -610,9 +610,7 @@ module Promql
         check_types(node.rhs)
         lt = node.lhs.type
         rt = node.rhs.type
-        if SET_OPS.include?(node.op) && !(lt == :vector && rt == :vector)
-          raise ParseError, "set operator #{node.op} not allowed in binary scalar expression"
-        end
+        raise ParseError, "set operator #{node.op} not allowed in binary scalar expression" if SET_OPS.include?(node.op) && !(lt == :vector && rt == :vector)
         raise ParseError, "bool modifier can only be used on comparison operators" if node.return_bool && !COMPARISON.include?(node.op)
         if COMPARISON.include?(node.op) && lt == :scalar && rt == :scalar && !node.return_bool
           raise ParseError, "comparisons between scalars must use BOOL modifier"
