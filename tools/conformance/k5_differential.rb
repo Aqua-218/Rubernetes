@@ -134,6 +134,9 @@ module Conformance
     def scrub(value)
       case value
       when Hash
+        if value["kind"] == "NamespaceList" && value["items"].is_a?(Array)
+          value = value.merge("items" => value["items"].select { |item| SYSTEM_NAMESPACES.include?(item.dig("metadata", "name")) })
+        end
         value.each_with_object({}) do |(key, child), out|
           out[key] = VOLATILE.include?(key) ? present_shape(child) : scrub(child)
         end
