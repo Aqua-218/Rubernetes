@@ -53,7 +53,8 @@ class PodSecurityAdmissionUpstreamTest < Minitest::Test
     text = @metrics.render
 
     assert_includes text,
-                    %(pod_security_evaluations_total{decision="deny",mode="enforce",policy_level="restricted",policy_version="latest",request_operation="create",resource="pod",subresource=""} 1)
+                    %(pod_security_evaluations_total{decision="deny",mode="enforce",policy_level="restricted",policy_version="latest",) +
+                    %(request_operation="create",resource="pod",subresource=""} 1)
   end
 
   def test_invalid_labels_are_refused_on_create
