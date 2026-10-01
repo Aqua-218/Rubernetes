@@ -190,8 +190,8 @@ module Rubernetes
           filter_rules = []
           nat_rules = []
           skipped_nat_rules = 0
-          %w[KUBE-SERVICES KUBE-EXTERNAL-SERVICES KUBE-FORWARD KUBE-NODEPORTS KUBE-PROXY-FIREWALL].each do |chain|
-            filter_chains << ":#{chain} - [0:0]"
+          filter_chains = %w[KUBE-SERVICES KUBE-EXTERNAL-SERVICES KUBE-FORWARD KUBE-NODEPORTS KUBE-PROXY-FIREWALL].map do |chain|
+            ":#{chain} - [0:0]"
           end
           %w[KUBE-SERVICES KUBE-NODEPORTS KUBE-POSTROUTING KUBE-MARK-MASQ].each { |chain| nat_chains << ":#{chain} - [0:0]" }
           nat_rules << "-A KUBE-POSTROUTING -m mark ! --mark #{MASQUERADE_MARK}/#{MASQUERADE_MARK} -j RETURN"
