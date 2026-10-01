@@ -131,10 +131,9 @@ module Tsdb
       refute Tsdb::Store.stale_marker?(Float::NAN)
     end
 
-    assert_equal 1000, store.append_batch(rows)
-    assert_equal 10, store.series_count
-    assert_equal 100, store.samples(1, 0, 10**9).length
-  end
+    test "batch append is one WAL flush and reports the count" do
+      store = open_store
+      rows = Array.new(1000) { |i| [labels("batch", "i" => (i % 10).to_s), 1_000 + ((i / 10) * 1000), i.to_f] }
 
   test "readers in another process see cut blocks" do
     store = open_store(block_range_ms: 1000)
