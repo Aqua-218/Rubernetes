@@ -108,7 +108,8 @@ module SchedulerPodLevelDifferential
       "pod-level-existing" => base.merge("phase" => "filter", "existing_pods" => busy,
                                          "pod" => pod("ple", containers: [res(requests: {"cpu" => "2"})])),
       "pod-level-score" => base.merge("phase" => "score", "existing_pods" => busy,
-                                      "pod" => pod("pls", containers: [res(requests: {"cpu" => "100m"})], resources: {"requests" => {"cpu" => "1", "memory" => "1Gi"}})),
+                                      "pod" => pod("pls", containers: [res(requests: {"cpu" => "100m"})],
+                                                          resources: {"requests" => {"cpu" => "1", "memory" => "1Gi"}})),
       "besteffort-score" => base.merge("phase" => "score", "existing_pods" => besteffort, "pod" => pod("bes", containers: [{}])),
       # The oracle's score phase scores every node without filtering, so a
       # score case keeps every node feasible.
