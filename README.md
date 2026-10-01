@@ -212,10 +212,7 @@ Honest list, as of 2026-10-01:
 - [Operating a cluster](deploy/cluster/README.md)
 - [Conformance tooling](tools/conformance/README.md) and [milestone gates](tools/milestones/README.md)
 
-```sh
-cd apps/dashboard && bin/rails test                     # 69 tests
-RUBERNETES_KUBECONFIG=/srv/rbn-app/linux-amd64-ipv4-native/kubeconfig bin/rails server -p 3000
-```
+## License
 
 `apps/dashboard/deploy/` holds a systemd unit, its environment file and an
 Ingress manifest that publishes the host-run dashboard through the cluster's
