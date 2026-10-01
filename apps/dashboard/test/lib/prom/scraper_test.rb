@@ -96,10 +96,10 @@ module Prom
       second = target("a 2\n", instance: "two:1")
       @scraper.scrape_all([first, second])
 
-    assert_equal 2, value_of("a").length
-    @now += 15_000
-    @scraper.scrape_all([first])
-    two = value_of("a", "instance" => "two:1")[0][1]
+      assert_equal 2, value_of("a").length
+      @now += 15_000
+      @scraper.scrape_all([first])
+      two = value_of("a", "instance" => "two:1")[0][1]
 
     assert Tsdb::Store.stale_marker?(two[1])
     assert Tsdb::Store.stale_marker?(value_of("up", "instance" => "two:1")[0][1][1])
