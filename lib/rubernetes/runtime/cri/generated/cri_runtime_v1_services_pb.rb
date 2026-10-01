@@ -278,7 +278,8 @@ module Rubernetes
               rpc :ImageStatus, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ImageStatusRequest,
                   ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ImageStatusResponse
               # PullImage pulls an image with authentication config.
-              rpc :PullImage, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PullImageRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PullImageResponse
+              rpc :PullImage, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PullImageRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PullImageResponse
               # RemoveImage removes the image.
               # This call is idempotent, and must not return an error if the image has
               # already been removed.
