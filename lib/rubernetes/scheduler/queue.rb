@@ -153,9 +153,7 @@ module Rubernetes
       def configure_sort(sorter = nil, name: nil, weight: 1, &block)
         comparator = sorter || block
         raise ValidationError, "queue sort comparator is required" unless comparator
-        unless comparator.respond_to?(:call) || comparator.respond_to?(:compare)
-          raise ValidationError, "queue sort comparator must implement #call or #compare"
-        end
+        raise ValidationError, "queue sort comparator must implement #call or #compare" unless comparator.respond_to?(:call) || comparator.respond_to?(:compare)
 
         normalized_name = (name || queue_sort_name_for(comparator)).to_s
         raise ValidationError, "queue sort plugin name cannot be empty" if normalized_name.empty?
