@@ -1294,12 +1294,8 @@ module Rubernetes
         by_volume.keys.sort.each do |identity|
           records = by_volume[identity].sort_by { |record| pod_key(record[:pod]) }
           records.combination(2).each do |left, right|
-            if left[:policy] != right[:policy]
-              events.concat(conflict_events(left, right, "SELinuxChangePolicy", "SELinuxChangePolicyConflict"))
-            end
-            if selinux_labels_conflict?(left[:label], right[:label])
-              events.concat(conflict_events(left, right, "SELinuxLabel", "SELinuxLabelConflict"))
-            end
+            events.concat(conflict_events(left, right, "SELinuxChangePolicy", "SELinuxChangePolicyConflict")) if left[:policy] != right[:policy]
+            events.concat(conflict_events(left, right, "SELinuxLabel", "SELinuxLabelConflict")) if selinux_labels_conflict?(left[:label], right[:label])
           end
         end
         # Avoid duplicate reports where a Pod has two equivalent volume
