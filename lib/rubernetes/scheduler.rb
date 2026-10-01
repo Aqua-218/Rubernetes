@@ -97,7 +97,7 @@ module Rubernetes
       pod_anti_affinity: Filters::PodAntiAffinity,
       ready: Filters::Ready
     }.freeze
-    StandardScores = {
+    STANDARD_SCORES = {
       taint_toleration: Scores::TaintToleration,
       node_affinity: Scores::NodeAffinity,
       resources_fit: Scores::LeastAllocated,
