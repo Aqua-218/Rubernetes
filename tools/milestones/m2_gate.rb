@@ -1808,9 +1808,7 @@ module M2Gate
           unless native_agent["agent_pid"].is_a?(Integer) && native_agent["agent_pid"].positive?
             errors << "#{entry_label} Native Node Agent PID must be positive"
           end
-          unless native_agent["agent_pid"] == entry["restart_pid"]
-            errors << "#{entry_label} Native Node Agent PID must be the restarted child process"
-          end
+          errors << "#{entry_label} Native Node Agent PID must be the restarted child process" unless native_agent["agent_pid"] == entry["restart_pid"]
           unless native_agent["agent_start_time"].to_s.match?(/\A\d+\z/)
             errors << "#{entry_label} Native Node Agent start time must be a numeric /proc start time"
           end
