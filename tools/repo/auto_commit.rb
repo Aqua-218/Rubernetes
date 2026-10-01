@@ -1200,9 +1200,7 @@ module Rubernetes
 
       def entry_detail(entry)
         detail = entry.old_path ? "#{entry.old_path} -> #{entry.path}" : entry.path
-        if entry.letter == "T" || (entry.old_mode != entry.new_mode && entry.letter == "M")
-          detail += " (mode #{entry.old_mode} -> #{entry.new_mode})"
-        end
+        detail += " (mode #{entry.old_mode} -> #{entry.new_mode})" if entry.letter == "T" || (entry.old_mode != entry.new_mode && entry.letter == "M")
         if entry.attribute_nodiff
           detail += " (#{plural(entry.removed, "line")} -> #{plural(entry.added, "line")})" if entry.added != entry.removed
         elsif entry.binary
