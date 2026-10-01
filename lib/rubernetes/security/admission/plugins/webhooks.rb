@@ -195,12 +195,8 @@ module Rubernetes
             certificate = http.respond_to?(:peer_cert) ? http.peer_cert : nil
             return unless registry && certificate
 
-            unless ::Rubernetes::Observability::Metrics.certificate_has_san?(certificate)
-              registry.increment("apiserver_webhooks_x509_missing_san_total")
-            end
-            if ::Rubernetes::Observability::Metrics.certificate_sha1?(certificate)
-              registry.increment("apiserver_webhooks_x509_insecure_sha1_total")
-            end
+            registry.increment("apiserver_webhooks_x509_missing_san_total") unless ::Rubernetes::Observability::Metrics.certificate_has_san?(certificate)
+            registry.increment("apiserver_webhooks_x509_insecure_sha1_total") if ::Rubernetes::Observability::Metrics.certificate_sha1?(certificate)
           rescue StandardError
             nil
           end
