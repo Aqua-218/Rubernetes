@@ -156,3 +156,64 @@ Lint/UnusedMethodArgument:
 Lint/UnusedBlockArgument:
   AllowUnusedKeywordArguments: true
   IgnoreEmptyBlocks: true
+
+# Decisions taken while burning down .rubocop_todo.yml (2026-10-01), each
+# with the reason, so nobody re-litigates them by accident:
+# - MethodParameterName MinNameLength 1: one-letter parameters are used where
+#   they mirror the formula or spec being implemented (jhash a/b/c, APF r/s,
+#   CEL type checker m/t1/t2, PromQL q/t, eBPF assembler a); longer names
+#   would move the code away from its reference.
+# - FormatStringToken off: the format strings are table layouts in tools
+#   (`%-20s %6d`); annotated tokens make those rows harder to read.
+# - AssertWithExpectedArgument off: the second argument of these asserts is
+#   always a computed failure message (`errors.inspect`); assert_equal is
+#   used wherever a value is expected.
+# - VariableNumber AllowedPatterns: trailing numbers after an underscore are
+#   Kubernetes versions (check_1_25), HTTP codes (_with_408) and modes (_0644).
+# - MethodName: camelCase names are Kubernetes wire fields (resourceVersion)
+#   and CEL library functions (isInteger); Boolean() is a conversion function
+#   like Kernel#Integer.
+# - Security/Open: PathSecurity and Openat2 define their own `open`.
+# - AccessorMethodName off: set_* here names an action with side effects
+#   (setns-style kernel calls, metric sets), not an attribute writer.
+# - FloatComparison off: exact float comparisons mirror upstream (PromQL
+#   bool modifier, quantity rendering `value.round == value`).
+# - OneClassPerFile off: probe scripts keep their helper classes with their
+#   only user; splitting them adds files without adding clarity.
+# - MissingSuper in test/: test doubles replace the parent's state wholesale.
+# - LineLength 160: measured 2026-10-01, the median over-long line was 157
+#   columns; 140 would have meant wrapping two thousand lines by hand.
+Naming/MethodParameterName:
+  MinNameLength: 1
+Style/FormatStringToken:
+  Enabled: false
+Minitest/AssertWithExpectedArgument:
+  Enabled: false
+Naming/VariableNumber:
+  EnforcedStyle: normalcase
+  AllowedPatterns:
+    - '_\d+(_\d+)*\z'
+Naming/MethodName:
+  AllowedPatterns:
+    - '\A(resourceVersion|remainingItemCount|vendorVersion|pluginVersion|Boolean)\z'
+  Exclude:
+    - 'lib/rubernetes/security/cel/library.rb'
+Security/Open:
+  Exclude:
+    - 'lib/rubernetes/volume/path_security.rb'
+    - 'lib/rubernetes/platform/linux/openat2.rb'
+Naming/AccessorMethodName:
+  Enabled: false
+Lint/FloatComparison:
+  Enabled: false
+Style/OneClassPerFile:
+  Enabled: false
+Lint/MissingSuper:
+  Exclude:
+    - 'test/**/*'
+# ComparableClamp off: Comparable#clamp raises when min > max, and several of
+# the `[[x, lo].max, hi].min` sites have data-dependent bounds that can
+# invert (HPA scale policies, APF seat limits, webhook timeouts).
+Style/ComparableClamp:
+  Enabled: false
+
