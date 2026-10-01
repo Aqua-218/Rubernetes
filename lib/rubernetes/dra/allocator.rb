@@ -497,9 +497,7 @@ module Rubernetes
           if !@features.admin_access && request.admin_access_set?
             raise Error, "claim #{ref(claim)}, request #{request.name}: admin access is requested, but the feature is disabled"
           end
-          if request.device_class_name.empty?
-            raise Error, "claim #{ref(claim)}, request #{request.name}: missing device class name (unsupported request type?)"
-          end
+          raise Error, "claim #{ref(claim)}, request #{request.name}: missing device class name (unsupported request type?)" if request.device_class_name.empty?
 
           klass = @classes[request.device_class_name]
           unless klass
