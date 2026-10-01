@@ -478,7 +478,8 @@ module Rubernetes
             config[plugin] = (config[plugin] || {}).merge("service_resolver" => @service_resolver)
           end
         end
-        Security::Admission::Registry.default_chain(context: context, enable: Array(admission&.fetch("enable", nil)), disable: Array(admission&.fetch("disable", nil)),
+        Security::Admission::Registry.default_chain(context: context, enable: Array(admission&.fetch("enable", nil)),
+                                                    disable: Array(admission&.fetch("disable", nil)),
                                                     config: config, feature_gates: @feature_gates)
       end
 
