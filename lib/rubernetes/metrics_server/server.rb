@@ -90,7 +90,8 @@ module Rubernetes
           thread.wakeup
         rescue StandardError
           nil
-        thread.join(2)  end
+        end
+        @threads.each { |thread| thread.join(2) }
         @http&.stop
         self
       end
