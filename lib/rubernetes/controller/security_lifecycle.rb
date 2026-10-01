@@ -396,9 +396,7 @@ module Rubernetes
                      "message" => "Failed to calculate the number of expected pods: #{error.message}"}
           return fail_safe(pdb, error.message, events, now)
         end
-        unless unmanaged.empty?
-          events << {"type" => "Warning", "reason" => "UnmanagedPods", "message" => format(UNMANAGED_MESSAGE, selector_text(selector))}
-        end
+        events << {"type" => "Warning", "reason" => "UnmanagedPods", "message" => format(UNMANAGED_MESSAGE, selector_text(selector))} unless unmanaged.empty?
 
         disrupted, recheck, not_deleted = disrupted_pod_map(pods, pdb, now)
         not_deleted.each do |pod|
