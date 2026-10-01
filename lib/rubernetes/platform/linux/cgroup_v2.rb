@@ -516,9 +516,7 @@ module Rubernetes
         def ensure_controllers!(leaf_parent)
           base = File.join(@root, @hierarchy)
           target = File.expand_path(String(leaf_parent))
-          unless target == base || target.start_with?(base + File::SEPARATOR)
-            raise InvalidPath, "cgroup parent escapes configured hierarchy"
-          end
+          raise InvalidPath, "cgroup parent escapes configured hierarchy" unless target == base || target.start_with?(base + File::SEPARATOR)
 
           chain = [base]
           relative = target.delete_prefix(base).split(File::SEPARATOR).reject(&:empty?)
