@@ -143,7 +143,8 @@ module Rubernetes
               # Attach prepares a streaming endpoint to attach to a running container.
               rpc :Attach, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::AttachRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::AttachResponse
               # PortForward prepares a streaming endpoint to forward ports from a PodSandbox.
-              rpc :PortForward, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PortForwardRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PortForwardResponse
+              rpc :PortForward, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PortForwardRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PortForwardResponse
               # ContainerStats returns stats of the container. If the container does not
               # exist, the call returns an error.
               rpc :ContainerStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatsRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatsResponse
