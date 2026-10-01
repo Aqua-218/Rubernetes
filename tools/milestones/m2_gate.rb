@@ -1239,7 +1239,8 @@ module M2Gate
       cni = source.is_a?(Hash) ? source["cni"] : nil
       unless runtime.is_a?(Hash) && %w[containerd runc].all? do |name|
                identity = runtime[name]
-               identity.is_a?(Hash) && non_empty_string?(identity["version"]) && valid_digest?(identity["binary_sha256"]) && non_empty_string?(identity["identity_method"])
+               identity.is_a?(Hash) && non_empty_string?(identity["version"]) && valid_digest?(identity["binary_sha256"]) &&
+               non_empty_string?(identity["identity_method"])
              end
         errors << "#{label} provenance containerd and runc immutable identities are required"
       end
