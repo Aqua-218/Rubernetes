@@ -224,7 +224,8 @@ module Rubernetes
               entry.crd_name == crd.dig("metadata", "name") && entry.names["plural"] == resource.resource
             end
 
-            resource.resource == names["plural"] || resource.singular_name == names["singular"] || (resource.short_names & candidates).any? || resource.kind == names["kind"]
+            resource.resource == names["plural"] || resource.singular_name == names["singular"] || (resource.short_names & candidates).any? ||
+              resource.kind == names["kind"]
           end
           return nil unless conflict
 
