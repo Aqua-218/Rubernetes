@@ -1311,12 +1311,8 @@ module M1Gate
         "StorageVersionAPI" => false
       }
       errors << "API surface feature profile default gates are invalid" unless gates == expected_gates
-      unless profile["default_off_gvr_ids"] == DEFAULT_OFF_GVR_IDS
-        errors << "API surface feature profile default-off GVR inventory is invalid"
-      end
-      unless profile["default_off_gvk_ids"] == DEFAULT_OFF_GVK_IDS
-        errors << "API surface feature profile default-off GVK inventory is invalid"
-      end
+      errors << "API surface feature profile default-off GVR inventory is invalid" unless profile["default_off_gvr_ids"] == DEFAULT_OFF_GVR_IDS
+      errors << "API surface feature profile default-off GVK inventory is invalid" unless profile["default_off_gvk_ids"] == DEFAULT_OFF_GVK_IDS
       unless profile["default_off_discovery_paths"] == DEFAULT_OFF_DISCOVERY_PATHS
         errors << "API surface feature profile default-off endpoint inventory is invalid"
       end
