@@ -136,21 +136,6 @@ module Prom
       server&.close
       thread&.kill
     end
-    targets = Prom::Targets.new(client: Object.new, cluster_json: {})
-    t = Prom::Target.new(job: "http", instance: "127.0.0.1:#{port}", labels: {}, url: "http://127.0.0.1:#{port}/metrics",
-                         fetch: -> { targets.send(:plain_http_fetch, "http://127.0.0.1:#{port}/metrics") })
-    status = @scraper.scrape(t)
-
-    assert_equal "up", status.health, status.last_error.to_s
-    engine = Promql::Engine.new(@store, now: -> { @now })
-    result = engine.query("sum(requests_total)")
-
-    assert_equal([43.0], result.value.map { |s| s.point[1] })
-    assert_equal([1.0], engine.query('up{job="http"}').value.map { |s| s.point[1] })
-  ensure
-    server&.close
-    thread&.kill
-  end
 
   test "collector rounds discover, scrape, evaluate and maintain" do
     calls = 0
