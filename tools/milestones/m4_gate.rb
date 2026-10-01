@@ -770,7 +770,9 @@ module M4Gate
                !entry["rules"].empty? && valid_digest?(entry["rulesDigest"]) && entry["rulesDigest"] == canonical_document_digest(entry["rules"])
           errors << "proxy #{backend} kernel readback identity is incomplete"
         end
-        unless entry.is_a?(Hash) && expected_rules.is_a?(Array) && !expected_rules.empty? && entry["inputDigest"] == expected_input_digest && entry["rulesModelDigest"] == expected_input_digest && entry["rules"] == expected_rules && entry["rulesDigest"] == canonical_document_digest(expected_rules)
+        unless entry.is_a?(Hash) && expected_rules.is_a?(Array) && !expected_rules.empty? && entry["inputDigest"] == expected_input_digest &&
+               entry["rulesModelDigest"] == expected_input_digest && entry["rules"] == expected_rules &&
+               entry["rulesDigest"] == canonical_document_digest(expected_rules)
           errors << "proxy #{backend} kernel readback must bind model rules"
         end
         if backend == "ebpf"
