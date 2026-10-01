@@ -874,7 +874,8 @@ module Rubernetes
                                      "service:#{rule_identity(rule)}:#{family}:#{destination_address}:#{source_range_id}:#{backend.fetch("address")}:#{backend.fetch("port")}", rule_digest(rule))
             if hairpin_for?(rule, backend)
               hairpin_marker = marker("rule",
-                                      "hairpin:#{rule_identity(rule)}:#{family}:#{destination_address}:#{source_range_id}:#{backend.fetch("address")}", rule_digest(rule))
+                                      "hairpin:#{rule_identity(rule)}:#{family}:#{destination_address}:#{source_range_id}:#{backend.fetch("address")}",
+                                      rule_digest(rule))
               hairpin_expressions = service_match_expressions(rule, family: family, destination_address: destination_address,
                                                                     source_range: source_range) +
                                     source_address_expression(family, address: backend.fetch("address")) +
