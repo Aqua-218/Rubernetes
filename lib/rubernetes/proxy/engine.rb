@@ -272,6 +272,8 @@ module Rubernetes
       end
 
       def close_listeners(listeners)
+        # Close every server first so no accept loop is still blocking while
+        # another listener's thread is being joined; then join them all.
         listeners.each do |listener|
           listener.fetch(:server).close
         rescue StandardError
