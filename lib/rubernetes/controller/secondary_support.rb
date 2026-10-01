@@ -155,9 +155,7 @@ module Rubernetes
       def format_binary_quantity(value, unit, suffix)
         scaled = value.to_f / unit
         return "#{Integer(scaled.round)}#{suffix}" if scaled.round == scaled
-        if unit > 1024.0**2 && (value.to_f / (1024.0**2)).round == value.to_f / (1024.0**2)
-          return "#{Integer((value.to_f / (1024.0**2)).round)}Mi"
-        end
+        return "#{Integer((value.to_f / (1024.0**2)).round)}Mi" if unit > 1024.0**2 && (value.to_f / (1024.0**2)).round == value.to_f / (1024.0**2)
         return "#{Integer((value.to_f / 1024.0).round)}Ki" if unit > 1024.0 && (value.to_f / 1024.0).round == value.to_f / 1024.0
 
         "#{scaled.round(6)}#{suffix}"
