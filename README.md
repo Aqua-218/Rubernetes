@@ -136,10 +136,11 @@ Conventions that matter:
   is reported as `INCOMPLETE` or an error, never as a pass. Waivers are
   recorded by name and reason (see the kernel waiver in
   [tools/milestones/README.md](tools/milestones/README.md)).
-- **Duck typing is deliberate.** Several RuboCop cops that assume a concrete
-  receiver type are disabled in `.rubocop.yml` with the reason; historical
-  offenses are parked in `.rubocop_todo.yml` and burned down by hand.
-  Format-only commits are listed in `.git-blame-ignore-revs`.
+- **Duck typing is deliberate.** Every RuboCop cop that is off is listed in
+  `.rubocop.yml` with the reason, most of them because their autocorrect
+  assumes a concrete receiver type (`grep` on a Struct, `partition` on a
+  Hash, `empty?` on a `File::Stat`). `rake lint` must stay clean; there is
+  no todo file. Format-only commits are listed in `.git-blame-ignore-revs`.
 - **After adding a `require` under `lib/`, load the whole library once**
   (`ruby -Ilib -e 'require "rubernetes"'`); a bad `require_relative` only
   shows up in the process that needs it.
