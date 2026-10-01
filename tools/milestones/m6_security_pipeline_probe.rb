@@ -115,7 +115,8 @@ module M6SecurityPipelineProbe
   module_function
 
   def build(recorder)
-    tokens = S::Authentication::StaticTokenFile.new(S::Authentication::StaticTokenFile.parse("admin-token,admin,1,system:masters\nalice-token,alice,2\nbob-token,bob,3\n"))
+    tokens = S::Authentication::StaticTokenFile.new(S::Authentication::StaticTokenFile.parse("admin-token,admin,1,system:masters\nalice-token,alice," \
+                                                                                             "2\nbob-token,bob,3\n"))
     authenticator = observed(S::Authentication::Union.new(authenticators: [tokens]), recorder, "authentication", :authenticate)
     source = Object.new
     roles = [{"metadata" => {"name" => "cm-writer"},
