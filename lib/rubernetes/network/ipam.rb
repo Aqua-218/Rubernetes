@@ -593,9 +593,7 @@ module Rubernetes
 
       def validate_prefixes!
         @node_cidrs.each do |family, config|
-          unless @node_prefixes.fetch(family) >= config.fetch("prefix")
-            raise ValidationError, "#{family} node prefix must not be broader than cluster CIDR"
-          end
+          raise ValidationError, "#{family} node prefix must not be broader than cluster CIDR" unless @node_prefixes.fetch(family) >= config.fetch("prefix")
         end
       end
 
