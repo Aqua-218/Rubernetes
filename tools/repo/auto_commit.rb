@@ -672,7 +672,7 @@ module Rubernetes
               name = raw[4..]
               name = name[0...-1] if name.end_with?("\t")
               name = unquote_c(name)
-              path = name.start_with?("b/") ? name[2..] : name unless name == "/dev/null"
+              path = name.start_with?("b/") ? name[2..] : name unless name == File::NULL
             elsif raw.start_with?("--- ") && path.nil?
               name = raw[4..]
               name = name[0...-1] if name.end_with?("\t")
