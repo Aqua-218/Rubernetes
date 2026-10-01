@@ -135,7 +135,9 @@ class EgressSelectorTest < Minitest::Test
       assert_equal ["127.0.0.1:#{origin_port}"], uds_seen
 
       selector = Egress::Selector.from_h({"apiVersion" => "apiserver.k8s.io/v1beta1", "kind" => "EgressSelectorConfiguration",
-                                          "egressSelections" => [{"name" => "cluster", "connection" => {"proxyProtocol" => "HTTPConnect", "transport" => {"uds" => {"udsName" => uds_path}}}},
+                                          "egressSelections" => [{"name" => "cluster",
+                                                                  "connection" => {"proxyProtocol" => "HTTPConnect",
+                                                                                   "transport" => {"uds" => {"udsName" => uds_path}}}},
                                                                  {"name" => "controlplane",
                                                                   "connection" => {"proxyProtocol" => "Direct"}}]})
       Egress.selector = selector
