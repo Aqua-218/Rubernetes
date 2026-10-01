@@ -2133,9 +2133,7 @@ module M2Gate
         errors << "kernel inventory profile #{index} inventory_sha256 is required" unless valid_digest?(profile["inventory_sha256"])
         if objects.all? { |object| object.is_a?(Hash) && %w[kind identity before after].all? { |key| non_empty_string?(object[key]) } }
           expected = canonical_kernel_inventory_digest(objects)
-          unless profile["inventory_sha256"] == expected
-            errors << "kernel inventory profile #{index} inventory_sha256 does not match objects"
-          end
+          errors << "kernel inventory profile #{index} inventory_sha256 does not match objects" unless profile["inventory_sha256"] == expected
         end
         %w[difference_count live_leak_count orphan_count].each do |key|
           errors << "kernel inventory profile #{index} #{key} must be zero" unless profile[key] == 0
