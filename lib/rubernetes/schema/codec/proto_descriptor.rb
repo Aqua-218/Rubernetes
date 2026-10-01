@@ -1853,10 +1853,7 @@ module Rubernetes
                                                                                                   max_bytes: max_bytes, max_depth: max_depth, depth: depth, keys: keys,
                                                                                                   unknown_policy: unknown_policy)
                         end
-              else
-                # Map-entry unknowns cannot be surfaced as top-level fields;
-                # retaining them would require a synthetic nested unknown slot.
-              end
+              end # map-entry unknowns stay unrepresented: surfacing them would need a synthetic nested slot
             end
             [key, value]
           end
