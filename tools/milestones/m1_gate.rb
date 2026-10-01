@@ -1046,7 +1046,8 @@ module M1Gate
       if expected.key?("body") && actual.key?("body") && operation["body_matches"] != (expected["body"] == actual["body"])
         errors << "#{label} body_matches is inconsistent with observable packets"
       end
-      if expected["ownership"].is_a?(Array) && actual["ownership"].is_a?(Array) && operation["ownership_matches"] != (expected["ownership"] == actual["ownership"])
+      if expected["ownership"].is_a?(Array) && actual["ownership"].is_a?(Array) &&
+         operation["ownership_matches"] != (expected["ownership"] == actual["ownership"])
         errors << "#{label} ownership_matches is inconsistent with observable packets"
       end
       if expected.key?("resourceVersion_causality") || actual.key?("resourceVersion_causality")
