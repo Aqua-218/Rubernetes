@@ -226,9 +226,7 @@ module Rubernetes
         def decode(bytes, expected: nil)
           Codec.validate_body!(bytes, MAX_FRAME_BYTES)
           raise DecodeError, "empty data" if bytes.empty?
-          unless bytes.start_with?(Protobuf::MAGIC)
-            raise DecodeError, "provided data does not appear to be a protobuf message, expected prefix [107 56 115 0]"
-          end
+          raise DecodeError, "provided data does not appear to be a protobuf message, expected prefix [107 56 115 0]" unless bytes.start_with?(Protobuf::MAGIC)
           raise DecodeError, "empty body" if bytes.bytesize == Protobuf::MAGIC.bytesize
 
           envelope = Protobuf.decode_envelope(bytes)
