@@ -144,7 +144,8 @@ class KubeletCSIPluginRegistrationTest < Minitest::Test
 
     assert_equal MIGRATED, csi_node.dig("metadata", "annotations", "storage.alpha.kubernetes.io/migrated-plugins")
     # An existing CSINode with a stale annotation is corrected, an equal one left alone.
-    stale = csi_node.merge("metadata" => csi_node["metadata"].merge("annotations" => {"storage.alpha.kubernetes.io/migrated-plugins" => "kubernetes.io/gce-pd"}))
+    stale_annotations = {"storage.alpha.kubernetes.io/migrated-plugins" => "kubernetes.io/gce-pd"}
+    stale = csi_node.merge("metadata" => csi_node["metadata"].merge("annotations" => stale_annotations))
     @client.put("csinodes", stale)
     version = csi_node.dig("metadata", "resourceVersion")
     Rubernetes::Node::CSIPlugins.new(client: @client, node_name: "n1", bridge_factory: ->(_) {}).initialize_csi_node
