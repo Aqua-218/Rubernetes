@@ -96,9 +96,10 @@ module Tsdb
       assert_equal Array.new(130) { |i| [t0 + (i * 1000), i.to_f] }, store.samples(series.id, 0, t0 + 200_000)
       stats = store.stats
 
-    assert_equal 0, store.head_series_count
-    assert_equal 130, store.samples(series.id, 0, t0 + 200_000).length
-  end
+      assert_operator stats["block_bytes"], :>, 0
+      # The WAL was rewritten with only what is still in the head.
+      assert_operator stats["wal_bytes"], :<, 130 * 25
+      store.flush
 
   test "retention drops old blocks and orphaned series" do
     store = open_store(block_range_ms: 60_000, retention_ms: 120_000)
