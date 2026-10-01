@@ -127,8 +127,11 @@ class SecurityAuditFlowControlTest < Minitest::Test
                         "limited" => {"nominalConcurrencyShares" => 1,
                                       "limitResponse" => {"type" => "Queue",
                                                           "queuing" => {"queues" => 1, "handSize" => 1, "queueLengthLimit" => 1}}}}}]
-    schemas = [{"metadata" => {"name" => "all"}, "spec" => {"matchingPrecedence" => 1, "priorityLevelConfiguration" => {"name" => "tiny"}, "distinguisherMethod" => {"type" => "ByUser"},
-                                                            "rules" => [{"subjects" => [{"kind" => "Group", "group" => {"name" => "*"}}], "resourceRules" => [{"verbs" => ["*"], "apiGroups" => ["*"], "resources" => ["*"], "namespaces" => ["*"], "clusterScope" => true}]}]}}]
+    schemas = [{"metadata" => {"name" => "all"},
+                "spec" => {"matchingPrecedence" => 1, "priorityLevelConfiguration" => {"name" => "tiny"}, "distinguisherMethod" => {"type" => "ByUser"},
+                           "rules" => [{"subjects" => [{"kind" => "Group", "group" => {"name" => "*"}}],
+                                        "resourceRules" => [{"verbs" => ["*"], "apiGroups" => ["*"], "resources" => ["*"],
+                                                             "namespaces" => ["*"], "clusterScope" => true}]}]}}]
     controller = S::FlowControl::Controller.new(flow_schemas: schemas, priority_level_configurations: plcs, read_seats: 1,
                                                 mutating_seats: 0)
     a = attributes(user("a"), verb: "get", resource: "pods")
