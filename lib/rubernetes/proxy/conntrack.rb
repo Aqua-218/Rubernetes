@@ -23,7 +23,9 @@ module Rubernetes
                                                                                                                                                    "dstIP",
                                                                                                                                                    nil)))
         @destination_port = ModelSupport.integer(destination_port || packet&.destination_port || ModelSupport.key(value || {},
-                                                                                                                  "destinationPort", ModelSupport.key(value || {}, "dstPort", nil)))
+                                                                                                                  "destinationPort",
+                                                                                                                  ModelSupport.key(value || {}, "dstPort",
+                                                                                                                                   nil)))
         raise ValidationError, "connection destination IP is required" if @destination_ip.nil?
         raise ValidationError, "connection destination port must be between 1 and 65535" unless @destination_port&.between?(1, 65_535)
         raise ValidationError, "connection source port must be between 0 and 65535" if @source_port && !@source_port.between?(0, 65_535)
