@@ -100,14 +100,7 @@ def scheduler_fixture_cases
                                                        "memory" => "0"}), "persistent_volumes" => storage.fetch("persistent_volumes"),
                      "persistent_volume_claims" => storage.fetch("persistent_volume_claims")},
     "binding" => base.merge("phase" => "binding", "pod" => scheduler_pod(name: "m3-binding-pod", uid: "m3-binding-uid")),
-    "volume_binding" => base.merge("phase" => "volume_binding",
-                                   "pod" => scheduler_pod(name: "m3-volume-binding-pod",
-                                                          uid: "m3-volume-binding-uid").merge("spec" => {"priority" => 10,
-                                                                                                         "containers" => [{"name" => "app",
-                                                                                                                           "image" => "example/app",
-                                                                                                                           "resources" => {"requests" => {
-                                                                                                                             "cpu" => "0", "memory" => "0"
-                                                                                                                           }}}], "volumes" => [{"name" => "claim", "persistentVolumeClaim" => {"claimName" => "m3-pvc"}}]}))
+    "volume_binding" => base.merge("phase" => "volume_binding", "pod" => volume_binding_pod)
   }
 end
 
