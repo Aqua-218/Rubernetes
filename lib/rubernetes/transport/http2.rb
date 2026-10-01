@@ -458,9 +458,7 @@ module Rubernetes
         end
 
         def on_continuation(flags, stream_id, payload)
-          if @continuation.nil? || @continuation[:stream_id] != stream_id
-            raise ConnectionError.new(PROTOCOL_ERROR, "unexpected CONTINUATION")
-          end
+          raise ConnectionError.new(PROTOCOL_ERROR, "unexpected CONTINUATION") if @continuation.nil? || @continuation[:stream_id] != stream_id
 
           @continuation[:block] << payload
           if @continuation[:block].bytesize > [@max_header_bytes * 4, 1 << 20].max
