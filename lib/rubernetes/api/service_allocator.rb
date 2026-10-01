@@ -534,7 +534,8 @@ module Rubernetes
                                     details: {"kind" => "Service", "name" => name_of(service)})
         end
         unless cidr.include?(address) && address != cidr && address != broadcast(cidr)
-          raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.clusterIPs: Invalid value: #{ip.inspect}: the IP is not in the service CIDR #{cidr}/#{cidr.prefix}",
+          raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.clusterIPs: Invalid value: #{ip.inspect}: the IP is not in the " \
+                                    "service CIDR #{cidr}/#{cidr.prefix}",
                                     details: {"kind" => "Service", "name" => name_of(service)})
         end
         return ip if create_ipaddress(ip, service)
