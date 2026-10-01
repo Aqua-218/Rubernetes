@@ -17,6 +17,12 @@ class ComponentServerTest < Minitest::Test
     Rubernetes::Transport::Request.new(method: method, target: path, headers: headers)
   end
 
+  def setup
+    # The shared registry carries whatever earlier tests recorded (authorization
+    # webhook, token cache ...); a scheduler process would never have those.
+    Rubernetes::Observability::Metrics.reset_global!
+  end
+
   def server(ready: -> { true })
     metrics = Rubernetes::Observability::Metrics.new(apiserver: false)
     B::ComponentServer.new(component: "kube-scheduler", config: {"serving" => {"enabled" => true, "port" => 1}, "lease" => {"name" => "x"}},
