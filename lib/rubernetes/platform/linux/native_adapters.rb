@@ -1616,7 +1616,7 @@ module Rubernetes
               raise EffectError, "required host device is unavailable: #{source}" unless File.stat(source).chardev?
 
               device = File.join(target, name)
-              File.open(device, File::WRONLY | File::CREAT | File::EXCL, 0o666) {}
+              File.open(device, File::WRONLY | File::CREAT | File::EXCL, 0o666).close
               @mount.mount(source: source, target: device, filesystem: nil, flags: MS_BIND, resource_id: "workload:dev:#{name}")
             end
             mount_host_devices(target, "/dev") if privileged
