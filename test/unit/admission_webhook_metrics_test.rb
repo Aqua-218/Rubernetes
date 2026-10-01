@@ -54,6 +54,7 @@ class AdmissionWebhookMetricsTest < Minitest::Test
     assert_includes text,
                     'apiserver_admission_webhook_admission_duration_seconds_count{name="allow.example",operation="CREATE",rejected="false",type="validating"} 1'
     assert_includes text,
-                    'apiserver_admission_controller_admission_duration_seconds_count{name="ValidatingAdmissionWebhook",operation="CREATE",rejected="true",type="validate"} 1'
+                    'apiserver_admission_controller_admission_duration_seconds_count{name="ValidatingAdmissionWebhook",operation="CREATE",rejected="true",' \
+                    'type="validate"} 1'
   end
 end
