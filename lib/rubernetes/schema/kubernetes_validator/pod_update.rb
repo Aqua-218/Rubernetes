@@ -239,7 +239,7 @@ module Rubernetes
           when "slice"
             return nil unless value.is_a?(Array) && (keep_empty || !value.empty?)
 
-            value.map { |item| convert_value(type["e"], item, keep_empty) }
+            value.map { |item| convert_value(type["e"], item, keep_empty: keep_empty) }
           when "map"
             return nil unless value.is_a?(Hash) && (keep_empty || !value.empty?)
 
