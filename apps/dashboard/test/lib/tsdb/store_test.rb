@@ -66,9 +66,13 @@ module Tsdb
                    store.samples(store.select_series([M.new(name: "__name__", op: "=", value: "m")]).first.id, 0, 200)
     end
 
-    assert_equal Array.new(5) { |i| [1000 + i, i.to_f] }, reopened.samples(series.id, 0, 2000)
-    # And appending continues without duplicating the recovered series.
-    reopened.append(labels("m", "k" => "v"), 1005, 5.0)
+    test "the head survives a restart through the WAL" do
+      store = open_store
+      5.times { |i| store.append(labels("m", "k" => "v"), 1000 + i, i.to_f) }
+      store.close
+      @store = nil
+      reopened = open_store
+      series = reopened.select_series([M.new(name: "__name__", op: "=", value: "m")]).first
 
     assert_equal 1, reopened.series_count
     assert_equal 6, reopened.samples(series.id, 0, 2000).length
