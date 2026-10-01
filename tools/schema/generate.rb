@@ -399,9 +399,7 @@ module RubernetesSchemaGenerator
 
     def normalize_expected_gvrs(sources)
       identifiers = sources.dig("coverage", "covered_gvrs")
-      unless identifiers.is_a?(Array) && identifiers.all?(String)
-        raise Error, "sources.json coverage.covered_gvrs must be an array of strings"
-      end
+      raise Error, "sources.json coverage.covered_gvrs must be an array of strings" unless identifiers.is_a?(Array) && identifiers.all?(String)
       raise Error, "sources.json contains duplicate covered GVRs" unless identifiers.uniq.length == identifiers.length
 
       identifiers.sort.map do |identifier|
