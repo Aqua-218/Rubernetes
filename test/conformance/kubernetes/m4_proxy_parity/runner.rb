@@ -213,7 +213,7 @@ module M4ProxyParityRunner
       begin
         socket.send(payload, 0, address, Integer(request.fetch("port")))
         local = socket.local_address
-        ready = IO.select([socket], nil, nil, timeout)
+        ready = socket.wait_readable(timeout)
         return {"ok" => true, "replied" => false, "local" => [local.ip_address, local.ip_port]} unless ready
 
         reply, sender = socket.recvfrom(65_535)
