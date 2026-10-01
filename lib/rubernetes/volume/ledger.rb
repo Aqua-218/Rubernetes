@@ -358,9 +358,7 @@ module Rubernetes
         @mutex.synchronize do
           existing = @mounts[mount.identity]
           if existing
-            if existing.to_h != mount.to_h
-              raise MountIdentityError, "mount identity #{mount.identity} is already owned by a different volume"
-            end
+            raise MountIdentityError, "mount identity #{mount.identity} is already owned by a different volume" if existing.to_h != mount.to_h
           elsif (conflict = conflicting_mount(mount))
             drop_stale_conflicts_locked!(mount)
             conflict = conflicting_mount(mount)
