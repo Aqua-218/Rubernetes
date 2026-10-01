@@ -193,7 +193,8 @@ class SecurityAdmissionPolicyTest < Minitest::Test
                  {"metadata" => {"name" => "v"}, "webhooks" => [
                    {"name" => "deny.example", "clientConfig" => {"url" => "https://deny.example/"}, "rules" => [rule], "sideEffects" => "None", "admissionReviewVersions" => ["v1"],
                     "matchConditions" => [{"name" => "big", "expression" => "object.spec.replicas > 3"}]},
-                   {"name" => "broken.example", "clientConfig" => {"url" => "https://broken.example/"}, "rules" => [rule], "sideEffects" => "Unknown", "admissionReviewVersions" => ["v1"], "failurePolicy" => "Ignore"}
+                   {"name" => "broken.example", "clientConfig" => {"url" => "https://broken.example/"}, "rules" => [rule], "sideEffects" => "Unknown",
+                    "admissionReviewVersions" => ["v1"], "failurePolicy" => "Ignore"}
                  ]}, group: "admissionregistration.k8s.io")
     mutating = A::Registry.factories.fetch("MutatingAdmissionWebhook").call(@context, {"client" => client})
     validating = A::Registry.factories.fetch("ValidatingAdmissionWebhook").call(@context, {"client" => client})
