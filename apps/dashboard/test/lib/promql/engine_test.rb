@@ -70,9 +70,9 @@ module Promql
       assert_equal [], vector("m", T0 + 30_000)
     end
 
-  test "stale markers end a series" do
-    load("m", {}, [1, 2, 3])
-    @store.append({"__name__" => "m"}, T0 + 15_000, Tsdb::Store::STALE_NAN)
+    test "range selectors are left-open windows" do
+      load("c", {}, [1, 2, 3, 4, 5]) # T0-60s .. T0
+      result = @engine.query("c[1m]")
 
     assert_equal [3.0], values("m")
     assert_equal [], vector("m", T0 + 30_000)
