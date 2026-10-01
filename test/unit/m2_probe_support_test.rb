@@ -133,7 +133,7 @@ class M2ProbeSupportTest < Minitest::Test
     transport = native_transport(stream)
     body = transport.request("GET", "/watch").body
 
-    body.each { break }
+    body.each { break } # rubocop:disable Lint/UnreachableLoop -- reads one chunk on purpose
 
     assert_equal 0, transport.active_watch_count
     assert_equal 1, stream.close_calls
