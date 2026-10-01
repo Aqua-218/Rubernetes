@@ -128,7 +128,8 @@ module VAPTypeCheckingDifferential
     when :bool then options += ["#{path} && true", "#{path} || 1", "!#{path}"]
     when :list
       element = "x"
-      options += ["#{path}.all(#{element}, #{element} == 1)", "#{path}.exists(#{element}, #{element}.name == 'a')", "#{path}.map(#{element}, #{element}.foo).size() > 0",
+      options += ["#{path}.all(#{element}, #{element} == 1)", "#{path}.exists(#{element}, #{element}.name == 'a')",
+                  "#{path}.map(#{element}, #{element}.foo).size() > 0",
                   "#{path}.filter(#{element}, #{element} != null).size() > 0", "#{path}.exists_one(#{element}, true)", "#{path}.size() > 0",
                   "#{path}.all(i, v, i < 10)", "#{path}[0] == 1", "1 in #{path}"]
     when :map then options += ["#{path}.all(k, k.startsWith('a'))", "'a' in #{path}", "#{path}['a'] == 1", "#{path}.size() > 0"]
