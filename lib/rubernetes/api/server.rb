@@ -4884,7 +4884,8 @@ module Rubernetes
         manager.each_char do |char|
           unless go_printable?(char)
             causes << {"reason" => "FieldValueInvalid", "field" => "fieldManager",
-                       "message" => "Invalid value: #{ManagedFields::Value.go_quote(manager)}: invalid character U+#{format("%04X", char.ord)} (at position #{byte})"}
+                       "message" => "Invalid value: #{ManagedFields::Value.go_quote(manager)}: invalid character U+#{format("%04X", char.ord)} (at position " \
+                                    "#{byte})"}
           end
           byte += char.bytesize
         end
