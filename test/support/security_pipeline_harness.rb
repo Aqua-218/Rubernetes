@@ -50,7 +50,8 @@ module SecurityPipelineHarness
     @audit = S::Audit::MemoryBackend.new
     policy = S::Audit::Policy.from_h({"apiVersion" => "audit.k8s.io/v1", "kind" => "Policy", "rules" => [{"level" => "RequestResponse"}]})
     @pipeline = S::Pipeline.new(
-      authenticator: S::Authentication::Union.new(authenticators: [tokens], anonymous: S::Authentication::Union::Anonymous.new(enabled: true, conditions: [{"path" => "/healthz"}])),
+      authenticator: S::Authentication::Union.new(authenticators: [tokens],
+                                                  anonymous: S::Authentication::Union::Anonymous.new(enabled: true, conditions: [{"path" => "/healthz"}])),
       authorizer: S::Authorization::Union.new(authorizers: [S::Authorization::RBAC.new(source: rbac_source)]),
       admission: S::Admission::Chain.new(plugins: [LabelEverything.new("LabelEverything"), RejectNamedPods.new("RejectNamedPods")]),
       audit_policy: policy, audit_backend: @audit
