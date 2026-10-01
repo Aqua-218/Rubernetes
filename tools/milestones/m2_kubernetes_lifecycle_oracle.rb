@@ -797,9 +797,7 @@ module M2KubernetesLifecycleOracle
       end
       if cni_lock.is_a?(Hash)
         locked_identity = cni_lock.slice("plugin", "version", "source_commit", "image_reference", "image_digest", "config_sha256")
-        unless cni.slice(*locked_identity.keys) == locked_identity
-          errors << "external lifecycle oracle CNI identity does not match the repository lock"
-        end
+        errors << "external lifecycle oracle CNI identity does not match the repository lock" unless cni.slice(*locked_identity.keys) == locked_identity
       else
         errors << "external lifecycle oracle CNI repository lock identity is required"
       end
