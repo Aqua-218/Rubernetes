@@ -132,7 +132,8 @@ module Rubernetes
 
       def list(prefix = "", resource_version: nil, resource_version_match: nil, **options)
         read_barrier(prefix) unless historical?(resource_version,
-                                                options) || (resource_version_match.to_s == "NotOlderThan" && !resource_version.nil? && resource_version.to_s != "0")
+                                                options) ||
+                                    (resource_version_match.to_s == "NotOlderThan" && !resource_version.nil? && resource_version.to_s != "0")
         local_store.list(prefix, resource_version: resource_version, resource_version_match: resource_version_match, **options)
       end
 
