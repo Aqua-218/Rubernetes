@@ -109,9 +109,7 @@ module M1KubernetesSemanticOracle
   end
 
   def verify_source!(source_root)
-    unless ::File.directory?(::File.join(source_root, ".git"))
-      raise OracleError, "Kubernetes oracle source is not a Git checkout: #{source_root}"
-    end
+    raise OracleError, "Kubernetes oracle source is not a Git checkout: #{source_root}" unless ::File.directory?(::File.join(source_root, ".git"))
 
     commit = capture!("git", "-C", source_root, "rev-parse", "HEAD").strip
     raise OracleError, "Kubernetes oracle source commit must be #{SOURCE_COMMIT}, got #{commit}" unless commit == SOURCE_COMMIT
