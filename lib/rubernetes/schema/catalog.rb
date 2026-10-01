@@ -958,9 +958,7 @@ module Rubernetes
           raise InvalidCatalogError, "OpenAPI definition for #{schema_name.inspect} must be an object" unless openapi_schema.is_a?(Hash)
 
           entry = Type.new(payload: payload, openapi_schema: openapi_schema)
-          if @types_by_ruby_constant.key?(entry.ruby_constant)
-            raise DuplicateTypeError, "duplicate Ruby constant #{entry.ruby_constant.inspect}"
-          end
+          raise DuplicateTypeError, "duplicate Ruby constant #{entry.ruby_constant.inspect}" if @types_by_ruby_constant.key?(entry.ruby_constant)
 
           @types_by_schema[entry.schema_name] = entry
           @types_by_ruby_constant[entry.ruby_constant] = entry
