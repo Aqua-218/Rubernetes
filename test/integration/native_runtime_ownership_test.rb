@@ -148,31 +148,32 @@ class NativeRuntimeOwnershipTest < Minitest::Test
   # identity before the running container is exposed again.
   def test_restart_reconstructs_real_kernel_ownership_before_cleanup
     skip "native restart reconstruction requires root" unless Process.uid.zero?
-    directory = Dir.mktmpdir("m2-reconstruct-")
-    sandbox_root = File.join(directory, "sandboxes")
-    adapters = NativeAdapters.for_profile(
-      profile: :kernel_isolation, sandbox_root: sandbox_root, cgroup_root: "/sys/fs/cgroup"
-    )
-    options = {
-      profile: :kernel_isolation, adapters: adapters, sandbox_root: sandbox_root,
-      cgroup_root: "/sys/fs/cgroup", journal_path: File.join(directory, "journal.wal"),
-      log_root: File.join(directory, "logs"),
-      security_context: {"allow_privilege_escalation" => false, "seccomp" => "RuntimeDefault"}
-    }
-    first = Rubernetes::Runtime::Native.new(**options)
-    sandbox_id = "m2-reconstruct-#{Process.pid}-#{SecureRandom.hex(4)}"
-    image_bytes = "verified-reconstruction-image"
-    sandbox = first.run_sandbox(
-      {"id" => sandbox_id, "image_bytes" => image_bytes,
-       "image_digest" => "sha256:#{Digest::SHA256.hexdigest(image_bytes)}"},
-      request_id: "reconstruct-sandbox"
-    )
-    container = first.create_container(
-      sandbox, {"id" => "app", "command" => ["/bin/sh", "-c", "sleep 30"]},
-      request_id: "reconstruct-create"
-    )
-    first.start_container(container, request_id: "reconstruct-start")
-    observed = first.resource_inventory
+    begin
+      directory = Dir.mktmpdir("m2-reconstruct-")
+      sandbox_root = File.join(directory, "sandboxes")
+      adapters = NativeAdapters.for_profile(
+        profile: :kernel_isolation, sandbox_root: sandbox_root, cgroup_root: "/sys/fs/cgroup"
+      )
+      options = {
+        profile: :kernel_isolation, adapters: adapters, sandbox_root: sandbox_root,
+        cgroup_root: "/sys/fs/cgroup", journal_path: File.join(directory, "journal.wal"),
+        log_root: File.join(directory, "logs"),
+        security_context: {"allow_privilege_escalation" => false, "seccomp" => "RuntimeDefault"}
+      }
+      first = Rubernetes::Runtime::Native.new(**options)
+      sandbox_id = "m2-reconstruct-#{Process.pid}-#{SecureRandom.hex(4)}"
+      image_bytes = "verified-reconstruction-image"
+      sandbox = first.run_sandbox(
+        {"id" => sandbox_id, "image_bytes" => image_bytes,
+         "image_digest" => "sha256:#{Digest::SHA256.hexdigest(image_bytes)}"},
+        request_id: "reconstruct-sandbox"
+      )
+      container = first.create_container(
+        sandbox, {"id" => "app", "command" => ["/bin/sh", "-c", "sleep 30"]},
+        request_id: "reconstruct-create"
+      )
+      first.start_container(container, request_id: "reconstruct-start")
+      observed = first.resource_inventory
 
     second = Rubernetes::Runtime::Native.new(**options, log_root: File.join(directory, "logs-restarted"))
     report = second.recover(observer: -> { observed })
