@@ -416,6 +416,8 @@ module Rubernetes
           @eviction_manager.on_eviction = ->(signal) { metrics.eviction(signal) }
           @eviction_manager.on_stats_age = ->(signal, seconds) { metrics.eviction_stats_age(signal, seconds) } if @eviction_manager.respond_to?(:on_stats_age=)
         end
+        @admission.eviction_admit_handler = @eviction_manager.method(:admit) if @eviction_manager && @admission.respond_to?(:eviction_admit_handler=)
+        @admission.allocation_admit_handler = @container_manager.method(:admit) if @container_manager && @admission.respond_to?(:allocation_admit_handler=)
         # GracefulNodeShutdown: a manager only with a shutdown grace period.
         @shutdown_manager = shutdown_manager || build_shutdown_manager(shutdown, feature_gates, kubelet_root, error_handler)
         @pod_resources.metrics = @kubelet_metrics.registry if @pod_resources.respond_to?(:metrics=) && !@pod_resources.frozen?
