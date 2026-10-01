@@ -286,9 +286,7 @@ module Rubernetes
         publisher.lifecycle = @lifecycle if publisher
         # A new attachable volume in the desired state: report it in use now,
         # the mount waits for the report.
-        if @lifecycle.respond_to?(:volumes_in_use_observer=) && !@lifecycle.frozen?
-          @lifecycle.volumes_in_use_observer = -> { request_node_status_sync }
-        end
+        @lifecycle.volumes_in_use_observer = -> { request_node_status_sync } if @lifecycle.respond_to?(:volumes_in_use_observer=) && !@lifecycle.frozen?
         if @dra_manager.respond_to?(:active_pods=) && @lifecycle.respond_to?(:admitted_pods)
           lifecycle_for_dra = @lifecycle
           @dra_manager.active_pods = -> { lifecycle_for_dra.admitted_pods }
