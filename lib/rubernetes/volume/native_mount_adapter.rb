@@ -92,9 +92,7 @@ module Rubernetes
         unless mount_id.match?(/\A\d+\z/) && parent_id.match?(/\A\d+\z/)
           raise MountIdentityError, "mountinfo line #{line_number || "?"} has invalid mount or parent id"
         end
-        unless device_id.match?(/\A\d+:\d+\z/)
-          raise MountIdentityError, "mountinfo line #{line_number || "?"} has invalid device major:minor"
-        end
+        raise MountIdentityError, "mountinfo line #{line_number || "?"} has invalid device major:minor" unless device_id.match?(/\A\d+:\d+\z/)
 
         fs_type, source, super_options = filesystem_fields
         decoded_source = decode_mountinfo_field(source)
