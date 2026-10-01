@@ -3699,10 +3699,12 @@ module Rubernetes
               record[:cleanup_completed][key] = true
               clear_cleanup_error(record, key)
             rescue StandardError => error
-              if sandbox_already_removed?(record[:sandbox_id])
-                # The runtime finished removing it (an earlier attempt, or a
-                # concurrent one): the record is clean on that step.
-                event(record, "sandbox.already_removed", sandbox_id: record[:sandbox_id])
+              # The runtime finished removing it (an earlier attempt, or a
+              # concurrent one), or no longer knows it at all (startup
+              # recovery released it): the record is clean on that step, as
+              # kubelet treats a NotFound on RemovePodSandbox.
+              if sandbox_already_removed?(record[:sandbox_id]) || Helpers.failure_message(error).include?("unknown sandbox")
+                event(record, "sandbox.already_removed", sandbox_id: record[:sandbox_id], message: Helpers.failure_message(error))
                 record[:cleanup_completed][key] = true
                 clear_cleanup_error(record, key)
               else
