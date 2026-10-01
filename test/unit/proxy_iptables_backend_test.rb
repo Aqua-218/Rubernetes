@@ -107,7 +107,8 @@ class ProxyIptablesBackendTest < Minitest::Test
       "-A KUBE-POSTROUTING -m mark ! --mark 0x4000/0x4000 -j RETURN",
       "-A KUBE-MARK-MASQ -j MARK --or-mark 0x4000",
       "-A KUBE-FORWARD -m conntrack --ctstate INVALID -j DROP",
-      "-A KUBE-SERVICES -m comment --comment \"kubernetes service nodeports; NOTE: this must be the last rule in this chain\" -m addrtype --dst-type LOCAL -j KUBE-NODEPORTS"
+      "-A KUBE-SERVICES -m comment --comment \"kubernetes service nodeports; NOTE: this must be the last rule in this chain\" -m addrtype --dst-type LOCAL " \
+      "-j KUBE-NODEPORTS"
     ].each { |line| assert_includes program.lines.map(&:chomp), line }
     refute_includes program, "-m nfacct", "no nfacct counters exist on a fake adapter"
     assert program.end_with?("COMMIT\n")
