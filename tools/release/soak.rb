@@ -40,6 +40,9 @@ module Release
         parser.on("--hours H", Float, "soak duration (default #{REQUIRED_HOURS})") { |v| options[:hours] = v }
         parser.on("--interval S", Float, "sample interval seconds") { |v| options[:interval] = v }
         parser.on("--kubeconfig PATH") { |v| options[:kubeconfig] = v }
+        parser.on("--cluster-root DIR", "cluster.rb layout whose pids/*.pid name the soaked processes " \
+                                        "(default: the kubeconfig's directory when it holds cluster.json)") { |v| options[:cluster_root] = v }
+        parser.on("--netns NAME", "network namespace the cluster's API endpoint lives in") { |v| options[:netns] = v }
       end.parse!(argv)
 
       FileUtils.mkdir_p(File.dirname(options[:journal]))
