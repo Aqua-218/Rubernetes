@@ -4170,7 +4170,8 @@ module Rubernetes
           else
             compile_issue = cel_compile_issue(base + ["valueExpression"], expression.strip, value: expression, compiler: compiler,
                                                                                             return_types: cel_return_types(:string_or_null),
-                                                                                            has_params: fetch(spec, "paramKind").is_a?(Hash), has_authorizer: true)
+                                                                                            has_params: fetch(spec,
+                                                                                                              "paramKind").is_a?(Hash), has_authorizer: true)
             issues << compile_issue if compile_issue
           end
           issues << issue(base + ["key"], :duplicate, "") if seen[key]
