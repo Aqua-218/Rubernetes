@@ -429,7 +429,8 @@ module Rubernetes
           scope = generic_scope(parts, TEST_DIRS)
           return [scope == "repo" ? "tests" : scope, "tests"]
         end
-        if (!(dirs & DOC_DIRS).empty? || DOC_SUFFIXES.include?(suffix) || DOC_FILES.include?(stem) || DOC_FILES.include?(lowered)) && !(SOURCE_SUFFIXES.include?(suffix) && (dirs & DOC_DIRS).empty?)
+        if (!(dirs & DOC_DIRS).empty? || DOC_SUFFIXES.include?(suffix) || DOC_FILES.include?(stem) || DOC_FILES.include?(lowered)) &&
+           !(SOURCE_SUFFIXES.include?(suffix) && (dirs & DOC_DIRS).empty?)
           return %w[docs docs]
         end
         return %w[schemas schemas] unless (dirs & SCHEMA_DIRS).empty?
