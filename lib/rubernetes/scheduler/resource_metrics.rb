@@ -17,8 +17,10 @@ module Rubernetes
       REQUEST = "kube_pod_resource_request"
       LIMIT = "kube_pod_resource_limit"
       HELP = {
-        REQUEST => "Resources requested by workloads on the cluster, broken down by pod. This shows the resource usage the scheduler and kubelet expect per pod for resources along with the unit for the resource if any.",
-        LIMIT => "Resources limit for workloads on the cluster, broken down by pod. This shows the resource usage the scheduler and kubelet expect per pod for resources along with the unit for the resource if any."
+        REQUEST => "Resources requested by workloads on the cluster, broken down by pod. This shows the resource usage the scheduler and kubelet expect per " \
+                   "pod for resources along with the unit for the resource if any.",
+        LIMIT => "Resources limit for workloads on the cluster, broken down by pod. This shows the resource usage the scheduler and kubelet expect per pod " \
+                 "for resources along with the unit for the resource if any."
       }.freeze
       TERMINAL_PHASES = %w[Succeeded Failed].freeze
 
