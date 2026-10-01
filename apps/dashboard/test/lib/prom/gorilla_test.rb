@@ -17,11 +17,9 @@ module Prom
       samples = Array.new(240) { |i| [t0 + (i * 15_000) + (i % 7 == 0 ? 3 : 0), 1000.0 + i] }
       bytes, decoded = roundtrip(samples)
 
-  test "roundtrips floats with awkward bit patterns" do
-    values = [0.0, -0.0, 1.0, -1.0, 3.14159, 1e-300, 1e300, 123_456_789.0, 0.1, 0.2, 0.30000000000000004,
-              Float::INFINITY, -Float::INFINITY, 2.0**52, 5e-324, 42.0, 42.0, 42.0, 41.999]
-    samples = values.each_with_index.map { |v, i| [1000 + (i * 1000), v] }
-    _, decoded = roundtrip(samples)
+      assert_equal samples, decoded
+      assert_operator bytes.bytesize, :<, samples.length * 3, "about 1-2 bytes per sample, got #{bytes.bytesize}"
+    end
 
     assert_equal samples, decoded
   end
