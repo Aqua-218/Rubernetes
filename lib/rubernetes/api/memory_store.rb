@@ -323,12 +323,8 @@ module Rubernetes
           snapshot_revision = continuation[:revision] if continuation[:revision] && normalized_limit
           objects = objects.drop(start) if start.positive?
           selected = normalized_limit.nil? ? objects : objects.first(normalized_limit)
-          next_token = if normalized_limit && objects.length > selected.length
-                         encode_continue_token(start + selected.length, snapshot_revision)
-                       end
-          remaining = if normalized_limit && objects.length > selected.length && !selector_filtered?(selector)
-                        objects.length - selected.length
-                      end
+          next_token = (encode_continue_token(start + selected.length, snapshot_revision) if normalized_limit && objects.length > selected.length)
+          remaining = (objects.length - selected.length if normalized_limit && objects.length > selected.length && !selector_filtered?(selector))
           ListResult.new(items: selected.map { |object| deep_freeze(deep_copy(object)) },
                          resource_version: snapshot_revision, continue_token: next_token,
                          remaining_item_count: remaining)
