@@ -319,15 +319,7 @@ M3ProbeSupport.run_report(kind: "m3_scheduler_differential", adapter_name: "sche
             "comparison_count" => cases.length, "comparisons" => comparisons}
   {"measurement_source" => "production_module", "adapter_class" => class_name, "plugins" => plugins, "cases" => cases, "oracle" => oracle,
    "difference_count" => difference_count,
-   "filter_mismatch_count" => cases.count do |entry|
-     entry["id"] == "filter" && !entry["passed"]
-   end, "score_mismatch_count" => cases.count do |entry|
-     entry["id"] == "score" && !entry["passed"]
-   end, "tie_break_mismatch_count" => cases.count do |entry|
-          entry["id"] == "tie_break" && !entry["passed"]
-        end, "preemption_mismatch_count" => cases.count do |entry|
-               entry["id"] == "preemption" && !entry["passed"]
-             end, "binding_mismatch_count" => cases.count do |entry|
-                    entry["id"] == "binding" && !entry["passed"]
-                  end}
+   "filter_mismatch_count" => mismatch_count.call("filter"), "score_mismatch_count" => mismatch_count.call("score"),
+   "tie_break_mismatch_count" => mismatch_count.call("tie_break"), "preemption_mismatch_count" => mismatch_count.call("preemption"),
+   "binding_mismatch_count" => mismatch_count.call("binding")}
 end
