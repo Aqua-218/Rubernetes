@@ -1019,6 +1019,14 @@ module Rubernetes
 
       alias ready? started?
 
+      def self.pv_plugin_name(pv)
+        spec = pv["spec"] || {}
+        return "kubernetes.io/csi:#{spec.dig("csi", "driver")}" if spec["csi"].is_a?(Hash)
+
+        PV_PLUGINS.each { |field, plugin| return plugin if spec[field].is_a?(Hash) }
+        "N/A"
+      end
+
       private
 
       # The event source each upstream controller records with
