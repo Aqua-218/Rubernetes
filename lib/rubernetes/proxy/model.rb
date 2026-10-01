@@ -340,7 +340,7 @@ module Rubernetes
         @allocate_load_balancer_node_ports = ModelSupport.bool(
           allocate_load_balancer_node_ports.nil? ? ModelSupport.key(spec, "allocateLoadBalancerNodePorts",
                                                                     true) : allocate_load_balancer_node_ports,
-          true
+          default: true
         )
         @load_balancer_source_ranges = Array(load_balancer_source_ranges || ModelSupport.key(spec, "loadBalancerSourceRanges",
                                                                                              [])).map(&:to_s).freeze
