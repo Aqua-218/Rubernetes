@@ -114,7 +114,7 @@ module Rubernetes
         @transport = transport
         @stream_mutex = Mutex.new
         @stream_condition = ConditionVariable.new
-        @active_streams = {}
+        @active_streams = {}.compare_by_identity
         @pool = {}
         @pool_mutex = Mutex.new
         @closed = false
