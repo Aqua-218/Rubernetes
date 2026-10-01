@@ -169,8 +169,6 @@ module Rubernetes
           true
         end
 
-        private
-
         # Large-buffer SHA-256 through OpenSSL (the memory file is hundreds
         # of MiB; the digest gem's own implementation is several times slower).
         def self.file_digest(path, chunk: 8 * 1024 * 1024)
