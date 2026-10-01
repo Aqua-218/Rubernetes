@@ -12,6 +12,11 @@ module Rubernetes
     # adapter may be an API watch, a static-Pod source, or a deterministic test
     # double; the loop only relies on list/watch/close capabilities.
     class SyncLoop
+      # How long a stop waits for in-flight Pod work before leaving it behind
+      # (PodWorker#stop); the kubelet waits for none.  Bounded so SIGTERM
+      # always ends the agent within the operator's restart window.
+      STOP_DRAIN_TIMEOUT = Float(ENV.fetch("RUBERNETES_AGENT_STOP_DRAIN_SECONDS", 20))
+
       DEFAULT_RESYNC_PERIOD_SECONDS = 60
       # kubelet's syncLoop runs a housekeeping pass on a short timer that
       # re-syncs every Pod it knows about, from its own cache, without asking
