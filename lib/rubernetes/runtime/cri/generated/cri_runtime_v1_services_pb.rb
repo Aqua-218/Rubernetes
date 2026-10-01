@@ -256,7 +256,8 @@ module Rubernetes
               self.service_name = "runtime.v1.ImageService"
 
               # ListImages lists existing images.
-              rpc :ListImages, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListImagesRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListImagesResponse
+              rpc :ListImages, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListImagesRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListImagesResponse
               # StreamImages returns a stream of images.
               # This is an alternative to ListImages that streams results in lists of at
               # least one item, avoiding the gRPC message size limit for nodes with many
