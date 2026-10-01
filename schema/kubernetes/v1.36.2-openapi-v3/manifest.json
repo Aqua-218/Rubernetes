@@ -527,7 +527,8 @@
       "upstream_path": "api/openapi-spec/v3/apis__storagemigration.k8s.io__v1beta1_openapi.json",
       "source_sha256": "9235547d6fe39acf620db96acf742c7dd2075e6268f357926f5b0a07097e7d34",
       "sha256": "9235547d6fe39acf620db96acf742c7dd2075e6268f357926f5b0a07097e7d34",
-      "paths": 6
+      "paths": 6,
+      "source": "tree"
     },
     {
       "path": "apis/storagemigration.k8s.io.json",
