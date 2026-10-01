@@ -310,7 +310,7 @@ class M2KubernetesLifecycleOracleTest < Minitest::Test
     # the separate Native kernel-effect and SIGKILL evidence paths.
     path = File.join(ROOT, "tools/milestones/m2_lifecycle_probe.rb")
     source = File.read(path).split("\nM2ProbeSupport.run_probe", 2).first
-    eval(source, TOPLEVEL_BINDING, path, 1)
+    eval(source, TOPLEVEL_BINDING, path, 1) # rubocop:disable Security/Eval -- loads the probe script under test as a library
 
     matrix = M2LifecycleProbe.lifecycle_semantics_matrix
 
