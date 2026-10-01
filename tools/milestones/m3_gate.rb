@@ -1440,9 +1440,7 @@ module M3Gate
           !non_empty_string?(value)
         end
         seconds = component["recovery_seconds"]
-        unless seconds.is_a?(Numeric) && seconds >= 0 && seconds <= 60
-          errors << "#{label} component #{index} recovery must be measured within 60 seconds"
-        end
+        errors << "#{label} component #{index} recovery must be measured within 60 seconds" unless seconds.is_a?(Numeric) && seconds >= 0 && seconds <= 60
         errors << "#{label} component #{index} duplicate side effects must be zero" unless component["duplicate_side_effect_count"] == 0
         recovery = component["recovery_observation"]
         next if recovery.is_a?(Hash) && recovery["restarted_process_alive"] == true && recovery["resource_version_changed"] == true &&
