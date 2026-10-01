@@ -96,8 +96,12 @@ module Rubernetes
                           "alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')"
       QUALIFIED_NAME_PART_MSG = "name part must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character " \
                                 "(e.g. 'MyName',  or 'my.name',  or '123-abc', regex used for validation is '([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]')"
-      QUALIFIED_NAME_FULL_MSG = "a qualified name must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character (e.g. 'MyName',  or 'my.name',  or '123-abc', regex used for validation is '([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]') with an optional DNS subdomain prefix and '/' (e.g. 'example.com/MyName')"
-      LABEL_VALUE_MSG = "a valid label must be an empty string or consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character (e.g. 'MyValue',  or 'my_value',  or '12345', regex used for validation is '(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?')"
+      QUALIFIED_NAME_FULL_MSG = "a qualified name must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric " \
+                                "character (e.g. 'MyName',  or 'my.name',  or '123-abc', regex used for validation is " \
+                                "'([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]') with an optional DNS subdomain prefix and '/' (e.g. 'example.com/MyName')"
+      LABEL_VALUE_MSG = "a valid label must be an empty string or consist of alphanumeric characters, '-', '_' or '.', and must start and end with an " \
+                        "alphanumeric character (e.g. 'MyValue',  or 'my_value',  or '12345', regex used for validation is " \
+                        "'(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?')"
       ADMISSION_MATCH_RESOURCE_OPERATIONS = %w[* CONNECT CREATE DELETE UPDATE].freeze
       ADMISSION_MUTATING_OPERATIONS = %w[* CONNECT CREATE UPDATE].freeze
       POD_CERTIFICATE_REQUEST_DEFAULT_MAX_EXPIRATION = 86_400
