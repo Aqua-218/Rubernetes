@@ -450,7 +450,10 @@ module PrintersDifferential
         spec["volumeLifecycleModes"] = Array.new(int(0..2)) { pick("Persistent", "Ephemeral") } if chance(0.6)
         {"apiVersion" => "storage.k8s.io/v1", "kind" => kind, "metadata" => cluster, "spec" => spec}
       when "MutatingWebhookConfiguration", "ValidatingWebhookConfiguration"
-        webhooks = Array.new(int(0..3)) { |index| {"name" => "w#{index}.example.com", "clientConfig" => {"url" => "https://x"}, "sideEffects" => "None", "admissionReviewVersions" => ["v1"]} }
+        webhooks = Array.new(int(0..3)) do |index|
+          {"name" => "w#{index}.example.com", "clientConfig" => {"url" => "https://x"}, "sideEffects" => "None",
+           "admissionReviewVersions" => ["v1"]}
+        end
         {"apiVersion" => "admissionregistration.k8s.io/v1", "kind" => kind, "metadata" => cluster, "webhooks" => webhooks}
       when "ValidatingAdmissionPolicy", "MutatingAdmissionPolicy"
         field_name = kind.start_with?("Validating") ? "validations" : "mutations"
