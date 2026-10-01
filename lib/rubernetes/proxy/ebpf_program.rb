@@ -398,9 +398,7 @@ module Rubernetes
             extension_count = 0
             while ipv6_extension_header?(next_header)
               extension_count += 1
-              if extension_count > ServiceDatapath::MAX_IPV6_EXTENSION_HEADERS
-                raise ArgumentError, "IPv6 extension header chain exceeds parser bound"
-              end
+              raise ArgumentError, "IPv6 extension header chain exceeds parser bound" if extension_count > ServiceDatapath::MAX_IPV6_EXTENSION_HEADERS
               raise ArgumentError, "truncated IPv6 extension header" if cursor + 2 > packet_end
 
               current_header = next_header
