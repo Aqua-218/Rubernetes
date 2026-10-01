@@ -27,6 +27,7 @@ class ProxyConntrackReconcilerTest < Minitest::Test
 
     def bind(_address) = nil
     def close = nil
+
     # IO#wait_readable, as the production socket path now waits (fiber-scheduler safe).
     def wait_readable(timeout = nil)
       IO.select([@reader], nil, nil, timeout) ? self : nil
