@@ -53,11 +53,14 @@ module Prom
       end
       _, decoded = roundtrip(samples)
 
-  test "timestamps must not go backwards" do
-    encoder = Prom::Gorilla::Encoder.new
-    encoder.append(10, 1.0).append(20, 1.0)
-    assert_raises(ArgumentError) { encoder.append(15, 1.0) }
-  end
+      assert_equal samples, decoded
+    end
+
+    test "timestamps must not go backwards" do
+      encoder = Prom::Gorilla::Encoder.new
+      encoder.append(10, 1.0).append(20, 1.0)
+      assert_raises(ArgumentError) { encoder.append(15, 1.0) }
+    end
 
   test "counts and bounds are tracked" do
     encoder = Prom::Gorilla::Encoder.new
