@@ -111,7 +111,7 @@ module Rubernetes
         devices = registry(spec_dirs)
         unresolved = []
         edits = Edits.empty
-        applied_specs = {}
+        applied_specs = {}.compare_by_identity
         ids.each do |id|
           kind, name = parse_id(id)
           spec, device = devices.dig(kind, name)
