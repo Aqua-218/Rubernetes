@@ -65,7 +65,8 @@ module Rubernetes
               # Allocate is called during container creation so that the Device
               # Plugin can run device specific operations and instruct Kubelet
               # of the steps to make the Device available in the container
-              rpc :Allocate, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::AllocateRequest, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::AllocateResponse
+              rpc :Allocate, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::AllocateRequest,
+                  ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::AllocateResponse
               # PreStartContainer is called, if indicated by Device Plugin during registeration phase,
               # before each container start. Device plugin can run device specific operations
               # such as resetting the device before making devices available to the container
