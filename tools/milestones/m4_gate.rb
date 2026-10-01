@@ -813,9 +813,7 @@ module M4Gate
     def validate_mount_attacks(document, errors)
       cases = document["cases"]
       ids = Array(cases).filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["case"]) : nil }
-      unless ids.sort == REQUIRED_MOUNT_ATTACKS.sort && ids.uniq.length == REQUIRED_MOUNT_ATTACKS.length
-        errors << "mount attack corpus is incomplete"
-      end
+      errors << "mount attack corpus is incomplete" unless ids.sort == REQUIRED_MOUNT_ATTACKS.sort && ids.uniq.length == REQUIRED_MOUNT_ATTACKS.length
       Array(cases).each_with_index do |entry, index|
         if entry.is_a?(Hash) && (entry["id"] || entry["case"]).to_s == "node_crash_double_attach"
           errors << "mount attack case #{index} must pass from bound native crash evidence" unless
