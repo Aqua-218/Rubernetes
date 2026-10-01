@@ -272,7 +272,7 @@ module Rubernetes
             items.each do |item|
               charge(2)
               with(iter_var => item, accu_var => accumulator) do
-                condition = eval(condition_node)
+                condition = evaluate(condition_node)
                 break unless condition == true
 
                 accumulator = eval(step_node)
