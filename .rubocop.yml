@@ -1,4 +1,3 @@
-inherit_from: .rubocop_todo.yml
 
 # RuboCop: strict layout and style for readability; size metrics stay off
 # (they measure design, not formatting) and remaining historical offenses
