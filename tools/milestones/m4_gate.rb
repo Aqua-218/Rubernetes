@@ -548,9 +548,10 @@ module M4Gate
         unless valid_digest?(provenance["runner_sha256"]) && provenance["runner_sha256"] == adapter["runner_sha256"]
           errors << "#{label} provenance runner_sha256 must match adapter"
         end
-        errors << "#{label} provenance command must be a non-empty argv" unless provenance["command"].is_a?(Array) && !provenance["command"].empty? && provenance["command"].all? do |part|
-          non_empty_string?(part)
-        end
+        errors << "#{label} provenance command must be a non-empty argv" unless provenance["command"].is_a?(Array) && !provenance["command"].empty? &&
+                                                                                provenance["command"].all? do |part|
+                                                                                  non_empty_string?(part)
+                                                                                end
         errors << "#{label} provenance process_id must be positive" unless provenance["process_id"].is_a?(Integer) && provenance["process_id"].positive?
         errors << "#{label} provenance measurement_id is required" unless non_empty_string?(provenance["measurement_id"])
         %w[started_at finished_at].each { |key| errors << "#{label} provenance #{key} must be ISO-8601" unless iso8601?(provenance[key]) }
