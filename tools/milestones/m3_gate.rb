@@ -1434,9 +1434,7 @@ module M3Gate
       end
       components.each_with_index do |component, index|
         errors << "#{label} component #{index} must pass" unless component["passed"] == true
-        unless Array(component["process_identities"]).uniq.length >= 2
-          errors << "#{label} component #{index} must record at least two process identities"
-        end
+        errors << "#{label} component #{index} must record at least two process identities" unless Array(component["process_identities"]).uniq.length >= 2
         versions = Array(component["lease_resource_versions"])
         errors << "#{label} component #{index} must record lease resourceVersions" if versions.empty? || versions.any? do |value|
           !non_empty_string?(value)
