@@ -150,9 +150,7 @@ module Rubernetes
 
           @identifier = (supplied_identifier || expected_identifier).dup.freeze
           raw_schema = payload["schema"]
-          unless raw_schema.nil? || (raw_schema.is_a?(String) && !raw_schema.empty?)
-            raise InvalidCatalogError, "GVK schema must be a non-empty String or null"
-          end
+          raise InvalidCatalogError, "GVK schema must be a non-empty String or null" unless raw_schema.nil? || (raw_schema.is_a?(String) && !raw_schema.empty?)
 
           @schema_name = raw_schema&.dup&.freeze
           @type = type
