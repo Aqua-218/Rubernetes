@@ -1656,9 +1656,7 @@ module M1Gate
           applicable = entry["schema_contract_applicable"]
           errors << "API surface #{label} matrix entry #{index} schema contract applicability must be boolean" unless [true,
                                                                                                                        false].include?(applicable)
-          if (applicable == true) && entry["schema_contract_present"] != true
-            errors << "API surface #{label} matrix entry #{index} requires a schema contract"
-          end
+          errors << "API surface #{label} matrix entry #{index} requires a schema contract" if (applicable == true) && entry["schema_contract_present"] != true
         else
           errors << "API surface #{label} matrix entry #{index} requires a schema contract" unless entry["schema_contract_present"] == true
         end
