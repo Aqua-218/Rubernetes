@@ -2419,9 +2419,7 @@ module M1Gate
             referenced_catalog[digest] = entries
           end
         end
-        unless catalog.keys.sort == referenced_catalog.keys.sort
-          errors << "#{label} error catalog keys must exactly match operation error digests"
-        end
+        errors << "#{label} error catalog keys must exactly match operation error digests" unless catalog.keys.sort == referenced_catalog.keys.sort
         referenced_catalog.each do |digest, entries|
           errors << "#{label} error catalog entry #{digest} does not match operation errors" unless catalog[digest] == entries
         end
