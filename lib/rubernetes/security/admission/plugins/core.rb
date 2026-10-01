@@ -320,9 +320,7 @@ module Rubernetes
                 reject!("maximum #{resource} usage per #{item["type"]} is #{maximum}.  No limit is specified")
                 next
               end
-              if quantity(limit) > quantity(maximum)
-                reject!("maximum #{resource} usage per #{item["type"]} is #{maximum}, but limit is #{limit}")
-              end
+              reject!("maximum #{resource} usage per #{item["type"]} is #{maximum}, but limit is #{limit}") if quantity(limit) > quantity(maximum)
               if !request.nil? && quantity(request) > quantity(maximum)
                 reject!("maximum #{resource} usage per #{item["type"]} is #{maximum}, but request is #{request}")
               end
