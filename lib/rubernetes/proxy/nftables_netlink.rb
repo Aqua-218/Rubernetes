@@ -870,8 +870,9 @@ module Rubernetes
         source_ranges_for(rule, family).each do |source_range|
           endpoints.each_with_index do |backend, index|
             source_range_id = source_range ? source_range_identity(source_range) : nil
-            endpoint_marker = marker("rule",
-                                     "service:#{rule_identity(rule)}:#{family}:#{destination_address}:#{source_range_id}:#{backend.fetch("address")}:#{backend.fetch("port")}", rule_digest(rule))
+            endpoint_identity = "service:#{rule_identity(rule)}:#{family}:#{destination_address}:#{source_range_id}:" \
+                                "#{backend.fetch("address")}:#{backend.fetch("port")}"
+            endpoint_marker = marker("rule", endpoint_identity, rule_digest(rule))
             if hairpin_for?(rule, backend)
               hairpin_marker = marker("rule",
                                       "hairpin:#{rule_identity(rule)}:#{family}:#{destination_address}:#{source_range_id}:#{backend.fetch("address")}",
