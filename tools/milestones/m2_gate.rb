@@ -1511,9 +1511,7 @@ module M2Gate
           "orphan_count" => document["orphan_count"],
           "resource_reuse_count" => document["resource_reuse_count"]
         }
-        unless document["ledger_sha256"] == canonical_document_digest(canonical_payload)
-          errors << "resource ledger digest does not match canonical content"
-        end
+        errors << "resource ledger digest does not match canonical content" unless document["ledger_sha256"] == canonical_document_digest(canonical_payload)
       end
       errors << "resource ledger evidence must be measured at L3" if document["status"] == "PASS" && document["measurement_level"] != "L3"
       validate_sigkill_matrix(document, "resource ledger", errors)
