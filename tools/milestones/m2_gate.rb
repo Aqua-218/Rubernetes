@@ -1354,9 +1354,7 @@ module M2Gate
         return
       end
       identity_keys = %w[plugin version source_commit image_reference image_digest config_sha256]
-      unless lock.is_a?(Hash) && cni.slice(*identity_keys) == lock.slice(*identity_keys)
-        errors << "#{label} CNI identity must match the repository lock"
-      end
+      errors << "#{label} CNI identity must match the repository lock" unless lock.is_a?(Hash) && cni.slice(*identity_keys) == lock.slice(*identity_keys)
       unless cni["image_reference"].is_a?(String) && DIGEST_PINNED_IMAGE_PATTERN.match?(cni["image_reference"])
         errors << "#{label} CNI image reference must be digest-pinned"
       end
