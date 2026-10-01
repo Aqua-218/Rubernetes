@@ -1,6 +1,47 @@
 # Rubernetes
 
-> **Status:** M0 through M7 are implemented and content-addressed evidence-gated for the x86_64 release target. Cumulative completion is established only by the latest M7 bundle that passes every M0–M7 gate on one identical source input with all required real adapters and external runners; the single host-bound exception (Linux >= 6.12) is recorded as an explicit waiver in the M4 bundle it carries.
+Rubernetes is an independent, Ruby-first implementation of Kubernetes
+v1.36.2 for Linux: the API server, the Raft datastore, the controllers,
+the scheduler, the node agent with its own container runtime, the Pod
+network, the service proxy, cluster DNS and the volume path are all
+project-owned Ruby. Kubernetes code is used only as a pinned test oracle,
+never as a dependency. A cluster speaks the Kubernetes API unchanged, so
+`kubectl`, Helm, client-go and upstream charts work against it as they are.
+
+| | |
+|---|---|
+| Kubernetes contract | v1.36.2 (`status.nodeInfo.kubeletVersion` reports it) |
+| Latest full Conformance run | 459 / 459 passed, 2026-09-30, `linux-amd64-ipv4-native`, unmodified `registry.k8s.io/conformance` image via Hydrophone |
+| Target | Linux x86_64, cgroup v2, root. Ruby 3.4.11 |
+| Size | about 220 k lines of Ruby and C under `lib/` and `ext/`, 100 k lines of tests |
+| License | Apache-2.0 |
+
+The normative specification lives in [`spec/`](spec/README.md) (Japanese);
+this README is the practical entry point.
+
+## What is in the box
+
+| Rubernetes process | Stands in for | Notes |
+|---|---|---|
+| `rubernetes-apiserver` | kube-apiserver + etcd | Full v1.36.2 default API surface and discovery, JSON/YAML/Protobuf, watch, patch, server-side apply with field managers, admission (plugins from the pinned corpus, webhooks, CEL policies), authn/authz, API Priority and Fairness, audit, encryption at rest, CRDs, API aggregation, feature gates and `--runtime-config`. Storage is the built-in Raft datastore (`lib/rubernetes/consensus/`): CRC-32C WAL, snapshots, joint consensus, pre-vote, ReadIndex, mutual TLS. |
+| `rubernetes-controller-manager` | kube-controller-manager | The upstream controller set (workloads, GC, namespace, endpoints and EndpointSlice, service accounts and tokens, node lifecycle, CSR approval, PV/PVC, quota, …) on an informer/work-queue framework with leader election. |
+| `rubernetes-scheduler` | kube-scheduler | The scheduling framework with the default plugin set, preemption, async binding, scoring. |
+| `rubernetes-agent` | kubelet + CRI runtime + CNI | Pod sync loop, probes, eviction, graceful node shutdown, device plugins, CPU/memory/topology managers, DRA, kubelet API (`exec`, `logs`, `/metrics*`, `/configz`, …). Runtimes: **native** (clone3, cgroup v2, namespaces, OCI images pulled and verified in Ruby), **microvm** (Firecracker with jailer, dm-verity rootfs, vsock supervisor) and an opt-in **CRI** backend. Networking is a built-in bridge datapath with dual-stack IPAM, NetworkPolicy (nftables or eBPF), egress NAT and an in-process cluster DNS. |
+| `rubernetes-proxy` | kube-proxy | Service, EndpointSlice, NodePort, session affinity, traffic policies; **iptables**, **nftables** and **eBPF** datapaths with the upstream chain layout and metrics. |
+| `rubectl` | kubectl (subset) | `get`, `create`, `apply`, `patch`, `delete`, `watch`, `raw`; a Ruby Manifest DSL compiled from the schema corpus. Any real `kubectl` works too. |
+| `apps/dashboard` | Kubernetes dashboard + Prometheus | A Rails application: cluster browser, its own Prometheus-shaped time-series store, PromQL, recording and alerting rules, a Prometheus-compatible HTTP API. See [its README](apps/dashboard/README.md). |
+
+Everything a cluster needs at runtime is Ruby plus one small C shim
+([`ext/rubernetes_linux`](ext/README.md)) for the syscalls that cannot be
+made safely from a forking Ruby VM.
+
+## Quick start
+
+Requirements: Linux x86_64 with cgroup v2, root, `nft` and `iptables`
+installed, Ruby 3.4.11 (the Gemfile pins it), outbound access to pull
+images, and a `kubectl` v1.36.2 at `build/tools/kubectl-v1.36.2` (its
+checksum is in `test/compatibility/clients/matrix.yml`). KVM is only needed
+for the `microvm` RuntimeClass.
 
 Rubernetes specifies an independent, Ruby-first implementation of the externally observable
 Kubernetes v1.36.2 contract for Linux clusters. The implementation boundary assigns the
