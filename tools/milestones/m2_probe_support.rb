@@ -254,7 +254,7 @@ module M2ProbeSupport
 
     cgroup_path = status.dig("cgroup", "path")
     proc_status = File.binread("/proc/#{pid}/status")
-    fields = proc_status.each_line.each_with_object({}) do |line, result|
+    fields = proc_status.each_line.with_object({}) do |line, result|
       key, value = line.split(":", 2)
       result[key] = value.to_s.strip if value
     end
