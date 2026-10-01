@@ -19,7 +19,9 @@ module Rubernetes
         @source_port = ModelSupport.integer(source_port || packet&.source_port || ModelSupport.key(value || {}, "sourcePort",
                                                                                                    ModelSupport.key(value || {}, "srcPort", nil)))
         @destination_ip = ModelSupport.canonical_ip(destination_ip || packet&.destination_ip || ModelSupport.key(value || {},
-                                                                                                                 "destinationIP", ModelSupport.key(value || {}, "dstIP", nil)))
+                                                                                                                 "destinationIP", ModelSupport.key(value || {},
+                                                                                                                                                   "dstIP",
+                                                                                                                                                   nil)))
         @destination_port = ModelSupport.integer(destination_port || packet&.destination_port || ModelSupport.key(value || {},
                                                                                                                   "destinationPort", ModelSupport.key(value || {}, "dstPort", nil)))
         raise ValidationError, "connection destination IP is required" if @destination_ip.nil?
