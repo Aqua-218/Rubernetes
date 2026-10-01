@@ -154,7 +154,7 @@ module Rubernetes
           @running = false
           @mutex = Mutex.new
           @counter_mutex = Mutex.new
-          @counters = Counters.to_h { |name| [name, 0] }
+          @counters = COUNTERS.to_h { |name| [name, 0] }
           @transcript = []
           @transcript_limit = 512
         end
