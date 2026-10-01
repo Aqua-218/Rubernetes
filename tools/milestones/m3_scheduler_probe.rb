@@ -112,7 +112,9 @@ end
 def production_schedule(scheduler, fixture)
   scheduler.schedule(JSON.parse(JSON.generate(fixture.fetch("pod"))), JSON.parse(JSON.generate(fixture.fetch("nodes"))),
                      pods: JSON.parse(JSON.generate(fixture.fetch("existing_pods"))),
-                     volume_data: {"persistentVolumes" => JSON.parse(JSON.generate(fixture.fetch("persistent_volumes"))), "persistentVolumeClaims" => JSON.parse(JSON.generate(fixture.fetch("persistent_volume_claims"))), "storageClasses" => JSON.parse(JSON.generate(fixture.fetch("storage_classes", [])))})
+                     volume_data: {"persistentVolumes" => JSON.parse(JSON.generate(fixture.fetch("persistent_volumes"))),
+                                   "persistentVolumeClaims" => JSON.parse(JSON.generate(fixture.fetch("persistent_volume_claims"))),
+                                   "storageClasses" => JSON.parse(JSON.generate(fixture.fetch("storage_classes", [])))})
 end
 
 def local_filter_observable(result, nodes)
