@@ -5105,11 +5105,6 @@
           },
           "202": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.storage.v1.CSIStorageCapacity"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.storage.v1.CSIStorageCapacity"
