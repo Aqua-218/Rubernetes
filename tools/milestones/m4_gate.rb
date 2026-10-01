@@ -1449,7 +1449,8 @@ module M4Gate
       end
       observed_operations = []
       comparisons.each_with_index do |entry, index|
-        unless entry.is_a?(Hash) && non_empty_string?(entry["id"] || entry["case"] || entry["operation"] || entry["name"] || entry["operation_id"] || entry["operationId"])
+        unless entry.is_a?(Hash) &&
+               non_empty_string?(entry["id"] || entry["case"] || entry["operation"] || entry["name"] || entry["operation_id"] || entry["operationId"])
           errors << "#{label} comparison #{index} must identify an operation"
           next
         end
