@@ -101,11 +101,9 @@ module Tsdb
       assert_operator stats["wal_bytes"], :<, 130 * 25
       store.flush
 
-  test "retention drops old blocks and orphaned series" do
-    store = open_store(block_range_ms: 60_000, retention_ms: 120_000)
-    t0 = 0
-    5.times { |i| store.append(labels("old"), t0 + (i * 1000), 1.0) }
-    store.flush
+      assert_equal 0, store.head_series_count
+      assert_equal 130, store.samples(series.id, 0, t0 + 200_000).length
+    end
 
     assert_equal 1, store.blocks.length
     later = 10 * 60_000
