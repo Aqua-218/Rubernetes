@@ -90,7 +90,9 @@ module SchedulerPodLevelDifferential
                                             "pod" => web.call("ipr")),
       "ipa-own-anti" => base.merge("phase" => "score", "existing_pods" => [labeled.call("w1", "node-a", {"app" => "web"})],
                                    "pod" => web.call("ipa", "affinity" => {"podAntiAffinity" => {"preferredDuringSchedulingIgnoredDuringExecution" => [
-                                                       {"weight" => 5, "podAffinityTerm" => {"labelSelector" => {"matchLabels" => {"app" => "web"}}, "topologyKey" => "topology.kubernetes.io/zone"}}
+                                                       {"weight" => 5,
+                                                        "podAffinityTerm" => {"labelSelector" => {"matchLabels" => {"app" => "web"}},
+                                                                              "topologyKey" => "topology.kubernetes.io/zone"}}
                                                      ]}})),
       "pts-soft-zone" => base.merge("phase" => "score", "existing_pods" => [labeled.call("w1", "node-a", {"app" => "web"}), labeled.call("w2", "node-a", {"app" => "web"})],
                                     "pod" => web.call("pts", "topologySpreadConstraints" => [spread.call("topology.kubernetes.io/zone", 1)])),
