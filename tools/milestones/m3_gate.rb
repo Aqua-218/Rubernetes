@@ -672,9 +672,7 @@ module M3Gate
       required = Array(document["required_controller_names"])
       registered = Array(document["registered_controller_names"] || document["registered_names"])
       errors << "controller registry required controller corpus differs" unless required.sort == REQUIRED_CONTROLLER_NAMES.sort
-      unless registered.length == REQUIRED_CONTROLLER_NAMES.length
-        errors << "controller registry registered controller count must equal corpus"
-      end
+      errors << "controller registry registered controller count must equal corpus" unless registered.length == REQUIRED_CONTROLLER_NAMES.length
       errors << "controller registry contains duplicate names" unless registered.uniq.length == registered.length
       errors << "controller registry has missing or unexpected controllers" unless registered.sort == REQUIRED_CONTROLLER_NAMES.sort
       entries = document["controllers"] || document["entries"]
