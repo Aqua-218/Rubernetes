@@ -168,7 +168,7 @@ module Conformance
     # probe so the check stays a real observation rather than an assumption.
     def reversible?(stage_id, options)
       driver = options[:driver] || ENV.fetch("RUBERNETES_K7_DRIVER", nil)
-      return nil if driver.nil? || !File.executable?(driver)
+      return false if driver.nil? || !File.executable?(driver)
 
       _out, _err, status = Open3.capture3({"KUBECONFIG" => options.fetch(:kubeconfig)},
                                           driver, "#{stage_id}-reversible", chdir: ROOT)
