@@ -251,7 +251,8 @@ module VAPTypeCheckingDifferential
       spec["paramKind"] = if params
                             {"apiVersion" => params[0].empty? ? params[1] : "#{params[0]}/#{params[1]}", "kind" => params[3]}
                           else
-                            pick(random, [{"apiVersion" => "a/b/c", "kind" => "X"}, {"apiVersion" => "example.com/v1", "kind" => "Widget"}, {"kind" => "ConfigMap"}])
+                            pick(random,
+                                 [{"apiVersion" => "a/b/c", "kind" => "X"}, {"apiVersion" => "example.com/v1", "kind" => "Widget"}, {"kind" => "ConfigMap"}])
                           end
     end
     names = []
