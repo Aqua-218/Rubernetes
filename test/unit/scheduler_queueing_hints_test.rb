@@ -13,7 +13,8 @@ class SchedulerQueueingHintsTest < Minitest::Test
 
   def pod(name, uid: name, node: "", **spec)
     {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => name, "namespace" => "ns", "uid" => uid, "labels" => spec.delete(:labels) || {}},
-     "spec" => {"nodeName" => node, "containers" => [{"name" => "c", "resources" => {"requests" => spec.delete(:requests) || {"cpu" => "1"}}}]}.merge(spec.transform_keys(&:to_s)),
+     "spec" => {"nodeName" => node,
+                "containers" => [{"name" => "c", "resources" => {"requests" => spec.delete(:requests) || {"cpu" => "1"}}}]}.merge(spec.transform_keys(&:to_s)),
      "status" => {}}
   end
 
