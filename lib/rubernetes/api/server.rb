@@ -5985,7 +5985,13 @@ module Rubernetes
         result["metadata"] ||= {}
         result["metadata"]["uid"] = @uid_generator.call.to_s
         result["metadata"]["creationTimestamp"] = @clock.call.utc.iso8601(6)
-        result["metadata"]["generation"] = 1 if result["spec"].is_a?(Hash)
+        # Server-owned, 1 on create for the kinds whose strategy tracks it;
+        # the rest never carry one (see GENERATION_TRACKED_KINDS).
+        if tracks_generation?(result, resource)
+          result["metadata"]["generation"] = 1
+        else
+          result["metadata"].delete("generation")
+        end
         result
       end
 
