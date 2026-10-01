@@ -321,9 +321,7 @@ module Rubernetes
 
           Array(group).join(" or ")
         end
-        unless missing_operations.empty?
-          raise BackendError, "#{name} #{phase} adapter is missing required operation: #{missing_operations.join(", ")}"
-        end
+        raise BackendError, "#{name} #{phase} adapter is missing required operation: #{missing_operations.join(", ")}" unless missing_operations.empty?
 
         raise BackendError, "#{name} #{phase} adapter must expose verified attach/transaction readback"
       end
