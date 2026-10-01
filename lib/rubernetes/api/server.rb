@@ -237,7 +237,7 @@ module Rubernetes
           object = {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => name},
                     "spec" => {"finalizers" => ["kubernetes"]}, "status" => {"phase" => "Active"}}
           object = apply_schema(namespaces, object, operation: :create)
-          object = prepare_created_metadata(object)
+          object = prepare_created_metadata(object, resource: namespaces)
           begin
             @store.create(resource: namespaces, namespace: :cluster, object: object)
           rescue MemoryStore::AlreadyExists
