@@ -1195,8 +1195,8 @@ module Rubernetes
 
       def missing_path_error?(error)
         current = error
-        seen = {}
-        while current && !seen[current.object_id]
+        seen = {}.compare_by_identity
+        while current && !seen[current]
           return true if current.is_a?(Errno::ENOENT)
           return true if current.respond_to?(:errno) && current.errno.to_i == Errno::ENOENT::Errno
 
