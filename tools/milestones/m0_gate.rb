@@ -555,7 +555,8 @@ module M0Gate
         errors << "executable report command identity is invalid"
       end
       tool = File.join(ROOT, "tools/milestones/executables_probe.rb")
-      unless document["tool_path"] == "tools/milestones/executables_probe.rb" && digest?(document["tool_sha256"]) && File.file?(tool) && document["tool_sha256"] == Digest::SHA256.file(tool).hexdigest
+      unless document["tool_path"] == "tools/milestones/executables_probe.rb" && digest?(document["tool_sha256"]) && File.file?(tool) &&
+             document["tool_sha256"] == Digest::SHA256.file(tool).hexdigest
         errors << "executable report is not bound to the current probe tool"
       end
       validate_time(document["started_at"], errors, "executable report started_at")
