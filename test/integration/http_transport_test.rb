@@ -651,6 +651,8 @@ class HTTPTransportTest < Minitest::Test
           nil
         end
       end
+      [watch_input, watch_output, watch_error].compact.each { |io| io.close unless io.closed? }
+      service&.stop(reason: "integration test")
     end
     [watch_input, watch_output, watch_error].compact.each { |io| io.close unless io.closed? }
     service&.stop(reason: "integration test")
