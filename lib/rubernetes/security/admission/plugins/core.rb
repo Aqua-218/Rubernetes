@@ -443,7 +443,8 @@ module Rubernetes
               next if secret.nil? || !secret.start_with?("#{spec(pod)["serviceAccountName"]}-token-")
               next if allowed.include?(secret)
 
-              reject!("pods #{attributes.name.inspect} is forbidden: volume with secret.secretName=#{secret.inspect} is not allowed because service account #{spec(pod)["serviceAccountName"]} does not reference that secret")
+              reject!("pods #{attributes.name.inspect} is forbidden: volume with secret.secretName=#{secret.inspect} is not allowed because service account " \
+                      "#{spec(pod)["serviceAccountName"]} does not reference that secret")
             end
           end
 
