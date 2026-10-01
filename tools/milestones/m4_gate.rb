@@ -1514,7 +1514,8 @@ module M4Gate
         entry.is_a?(Hash) && non_empty_string?(entry["name"]) && entry.key?("return")
       end
       errors << "#{label} must include actual container observations" unless containers.is_a?(Array) && !containers.empty? && containers.all? do |entry|
-        entry.is_a?(Hash) && non_empty_string?(entry["container_id"] || entry["id"]) && entry["pid"].is_a?(Integer) && entry["pid"].positive? && entry["observed"] == true
+        entry.is_a?(Hash) && non_empty_string?(entry["container_id"] || entry["id"]) && entry["pid"].is_a?(Integer) && entry["pid"].positive? &&
+        entry["observed"] == true
       end
     end
 
