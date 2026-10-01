@@ -850,7 +850,8 @@ module M2LifecycleOracleHarness
                                                                                         "repoTags"))}"
       end
 
-      @source["workload_image"] = {"reference" => @busybox_reference, "cri_image_id" => status["id"], "oci_archive_sha256" => Digest::SHA256.file(archive).hexdigest}
+      @source["workload_image"] = {"reference" => @busybox_reference, "cri_image_id" => status["id"],
+                                   "oci_archive_sha256" => Digest::SHA256.file(archive).hexdigest}
       step("workload_image_imported", reference: @busybox_reference, cri_image_id: status["id"])
     end
 
