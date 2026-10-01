@@ -53,9 +53,7 @@ class ConsensusBatchFlushStepDownTest < Minitest::Test
       # The entry commits under the next leader and every replica holds it once.
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 10
       all_applied = -> { servers.values.all? { |server| server.node.last_applied >= appended[:index] } }
-      until all_applied.call || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-        sleep 0.02
-      end
+      sleep 0.02 until all_applied.call || Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
       servers.each_value do |server|
         assert_operator server.node.last_applied, :>=, appended[:index], "#{server.id} applied the entry"
         assert_equal 1, C::RaftStore.new(server).list("registry/things/").items.length
