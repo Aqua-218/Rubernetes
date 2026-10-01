@@ -372,7 +372,9 @@ module Rubernetes
           end
           reference = {"$ref" => "#/components/schemas/#{definition_name}"}
           operation = lambda do |verb, action, response_ref, body: false|
-            document = {"operationId" => "#{verb}#{gvk["group"].split(".").first.capitalize}#{gvk["version"].capitalize}#{"Collection" if collection}#{gvk["kind"]}#{subresource.capitalize if subresource}",
+            operation_id = "#{verb}#{gvk["group"].split(".").first.capitalize}#{gvk["version"].capitalize}" \
+                           "#{"Collection" if collection}#{gvk["kind"]}#{subresource.capitalize if subresource}"
+            document = {"operationId" => operation_id,
                         "responses" => {"200" => {"description" => "OK", "content" => {"application/json" => {"schema" => response_ref}}}},
                         "x-kubernetes-action" => action, "x-kubernetes-group-version-kind" => gvk}
             document["requestBody"] = {"content" => {"application/json" => {"schema" => reference}}, "required" => true} if body
