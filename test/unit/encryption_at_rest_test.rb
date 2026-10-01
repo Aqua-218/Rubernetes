@@ -179,6 +179,7 @@ class EncryptionAtRestTest < Minitest::Test
     text = @metrics.render_own
 
     assert_match(
+      # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
       %r{apiserver_envelope_encryption_kms_operations_latency_seconds_count\{grpc_status_code="OK",method_name="/v2.KeyManagementService/Encrypt",provider_name="vault"\} 1}, text
     )
     assert_match(/apiserver_storage_data_key_generation_duration_seconds_count 1/, text)
