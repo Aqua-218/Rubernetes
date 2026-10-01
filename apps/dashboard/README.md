@@ -20,7 +20,14 @@ scrapes, every `DASHBOARD_SCRAPE_INTERVAL` seconds:
 - a built-in kube-state exporter (`kube_node_*`, `kube_pod_*`,
   `kube_deployment_*`, …) computed from the API.
 
-* Configuration
+Samples go into `lib/tsdb`, a Prometheus-shaped store: Gorilla-compressed
+chunks, a write-ahead log, 2-hour blocks, time-based retention and a SQLite
+label index. `lib/promql` implements PromQL (instant and range selectors,
+`offset` and `@`, subqueries, the aggregation and function set, vector
+matching with `on`/`ignoring`/`group_left`/`group_right`, set operators).
+`config/rules.yml` holds recording and alerting rules in the Prometheus
+rule-file format; alerts move through pending/firing/resolved, produce
+`ALERTS` series and can be posted to an Alertmanager-style webhook.
 
 * Database creation
 
