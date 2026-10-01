@@ -30,6 +30,7 @@ class CadvisorMetricsTest < Minitest::Test
       File.write(File.join(pid_dir, "status"), "Name:\tnginx\nThreads:\t3\n")
       File.write(File.join(pid_dir, "limits"),
                  "Limit                     Soft Limit           Hard Limit           Units\nMax open files            1048576              1048576              " \
+                 "" \
                  "files\n")
       File.symlink("socket:[12345]", File.join(pid_dir, "fd", "3"))
       File.symlink(File::NULL, File.join(pid_dir, "fd", "0"))
