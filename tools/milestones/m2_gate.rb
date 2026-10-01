@@ -115,7 +115,9 @@ module M2Gate
   KUBERNETES_VERSION = M1Gate::KUBERNETES_VERSION
   KUBERNETES_SOURCE_COMMIT = M1Gate::KUBERNETES_SOURCE_COMMIT
   KUBERNETES_SEMANTICS_ORACLE_KIND = M1Gate::KUBERNETES_SEMANTICS_ORACLE_KIND
-  LIFECYCLE_CNI_LOCK_BLOCKER = "M2 external lifecycle oracle is blocked: no repository lock selects an immutable CNI plugin digest; add third_party/locks/m2-lifecycle-cni.json with plugin, version, source_commit, image_reference, image_digest, and config_sha256 before running the privileged oracle"
+  LIFECYCLE_CNI_LOCK_BLOCKER = "M2 external lifecycle oracle is blocked: no repository lock selects an immutable CNI plugin digest; add " \
+                               "third_party/locks/m2-lifecycle-cni.json with plugin, version, source_commit, image_reference, image_digest, and " \
+                               "config_sha256 before running the privileged oracle"
   REQUIRED_MEASUREMENT_SOURCES = {
     "runtime" => "production_native_runtime",
     "attacks" => "production_image_layer_extractor",
