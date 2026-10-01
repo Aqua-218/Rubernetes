@@ -72,10 +72,10 @@
     }
   },
   "images": {
-    "kube_apiserver": "registry.k8s.io/kube-apiserver@sha256:9234d70ce85fd203c449d5a18821f7c138356fd2fcd50adf6b96dc35139195bb",
-    "kube_controller_manager": "registry.k8s.io/kube-controller-manager@sha256:682e4deafa7d95e5bb0f32b9cce933ea2d4aff67dde0af224f99e02cb300c67a",
-    "kube_scheduler": "registry.k8s.io/kube-scheduler@sha256:ac6ee182cde0b2d2782888b3ab2b9fe1f232f4f938bee7d34a14f4eee2197feb",
-    "kube_proxy": "registry.k8s.io/kube-proxy@sha256:ffb6a673d9d5fa0c262ceaaea9e2169132bdba57dad67e6df95d61fc126c9397",
+    "kube_apiserver": "registry.k8s.io/kube-apiserver@sha256:ea2c794a663b54f8d970ee4c37b8ea85ddf9d1dfe7e3483d94e832f4579bfa20",
+    "kube_controller_manager": "registry.k8s.io/kube-controller-manager@sha256:de8843be6d589422ed5b64546d568018a8f611faf2ab1501f0a5a8cf2bcc4690",
+    "kube_scheduler": "registry.k8s.io/kube-scheduler@sha256:497151fca7fceb77526361c454408a9b194f91aaad2ce484587bb62a5aaf774f",
+    "kube_proxy": "registry.k8s.io/kube-proxy@sha256:6d26a6b9bae5540d1031e092fc2b06f2f46adeff2e845292c1c0e6c2745d6d1f",
     "etcd": "registry.k8s.io/etcd@sha256:397189418d1a00e500c0605ad18d1baf3b541a1004d768448c367e48071622e5",
     "coredns": "registry.k8s.io/coredns/coredns@sha256:e7e6440cfd1e919280958f5b5a6ab2b184d385bba774c12ad2a9e1e4183f90d9",
     "pause": "registry.k8s.io/pause@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a",
