@@ -187,6 +187,7 @@ class EncryptionAtRestTest < Minitest::Test
     assert_match(/apiserver_envelope_encryption_dek_source_cache_size\{provider_name="vault"\} 1/, text)
     assert_match(/apiserver_envelope_encryption_dek_cache_fill_percent 10/, text)
     assert_match(
+      # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
       /apiserver_envelope_encryption_key_id_hash_total\{apiserver_id_hash="sha256:[0-9a-f]+",key_id_hash="sha256:[0-9a-f]+",provider_name="vault",transformation_type="to_storage"\} 1/, text
     )
     assert_match(/apiserver_envelope_encryption_key_id_hash_total\{[^}]*transformation_type="from_storage"\} 2/, text)
