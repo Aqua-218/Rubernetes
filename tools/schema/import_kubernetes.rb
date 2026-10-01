@@ -782,9 +782,7 @@ module KubernetesCorpusImporter
         versions.each do |version_entry|
           version = version_entry["version"]
           resources = version_entry["resources"]
-          unless version.is_a?(String) && resources.is_a?(Array)
-            raise ValidationError, "aggregated discovery group #{group} has an invalid version"
-          end
+          raise ValidationError, "aggregated discovery group #{group} has an invalid version" unless version.is_a?(String) && resources.is_a?(Array)
 
           resources.each do |resource|
             raise ValidationError, "aggregated discovery group #{group}/#{version} contains an invalid resource" unless resource.is_a?(Hash)
