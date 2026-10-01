@@ -158,6 +158,7 @@ module Rubernetes
         decision = authorize(attributes)
         unless decision
           subject = attributes.resource ? %(#{attributes.resource}.#{API::GROUP} is forbidden) : %(forbidden: #{path})
+          scope = attributes.namespace.empty? ? " at the cluster scope" : %( in the namespace "#{attributes.namespace}")
           return status(403, "Forbidden",
                         %(#{subject}: User "#{user.name}" cannot #{attributes.verb} resource "#{attributes.resource}" in API group "#{API::GROUP}"#{attributes.namespace.empty? ? " at the cluster scope" : %( in the namespace "#{attributes.namespace}")}))
         end
