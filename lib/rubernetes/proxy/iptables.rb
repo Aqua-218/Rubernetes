@@ -385,7 +385,8 @@ module Rubernetes
                           else
                             (@localhost_node_ports ? "" : " ! -d 127.0.0.0/8")
                           end
-          nat_rules << "-A KUBE-SERVICES -m comment --comment \"kubernetes service nodeports; NOTE: this must be the last rule in this chain\" #{destinations} -j KUBE-NODEPORTS"
+          nat_rules << "-A KUBE-SERVICES -m comment --comment \"kubernetes service nodeports; NOTE: this must be the last rule in this chain\" " \
+                       "#{destinations} -j KUBE-NODEPORTS"
           unless @conntrack_tcp_liberal
             nfacct = @nfacct_counters[CT_STATE_INVALID_COUNTER] ? " -m nfacct --nfacct-name #{CT_STATE_INVALID_COUNTER}" : ""
             filter_rules << "-A KUBE-FORWARD -m conntrack --ctstate INVALID#{nfacct} -j DROP"
