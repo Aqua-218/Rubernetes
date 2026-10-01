@@ -1209,9 +1209,7 @@ module Rubernetes
           message = message.dup.force_encoding(Encoding::UTF_8).scrub
         end
         failed = !Integer(exit_code).zero? || reason.to_s == "OOMKilled"
-        if message.empty? && failed && Helpers.key(settings, "policy", "File").to_s == "FallbackToLogsOnError"
-          message = tail_container_log(entry[:id])
-        end
+        message = tail_container_log(entry[:id]) if message.empty? && failed && Helpers.key(settings, "policy", "File").to_s == "FallbackToLogsOnError"
         message.empty? ? nil : message
       rescue StandardError
         nil
