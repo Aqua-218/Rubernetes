@@ -190,7 +190,8 @@ module Rubernetes
               rpc :StreamPodSandboxStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamPodSandboxStatsRequest,
                   stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamPodSandboxStatsResponse)
               # UpdateRuntimeConfig updates the runtime configuration based on the given request.
-              rpc :UpdateRuntimeConfig, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdateRuntimeConfigRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdateRuntimeConfigResponse
+              rpc :UpdateRuntimeConfig, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdateRuntimeConfigRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdateRuntimeConfigResponse
               # Status returns the status of the runtime.
               rpc :Status, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StatusRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StatusResponse
               # CheckpointContainer checkpoints a container
