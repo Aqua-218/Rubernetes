@@ -46,10 +46,11 @@ module M2KubernetesLifecycleOracleRunner
       # bytes that run inside the oracle node.
       %w[containerd runc].each do |name|
         host = host_runtime.fetch("identities").fetch(name)
-        unless host.fetch("binary_sha256") == runtime.fetch(name).fetch("binary_sha256")
-          raise M2KubernetesLifecycleOracle::OracleError,
-                "host #{name} #{host.fetch("path")} (#{host.fetch("binary_sha256")}) is not the oracle node runtime (#{runtime.fetch(name).fetch("binary_sha256")}); host reuse refused"
-        end
+        next if host.fetch("binary_sha256") == runtime.fetch(name).fetch("binary_sha256")
+
+        raise M2KubernetesLifecycleOracle::OracleError,
+              "host #{name} #{host.fetch("path")} (#{host.fetch("binary_sha256")}) is not the oracle node runtime " \
+              "(#{runtime.fetch(name).fetch("binary_sha256")}); host reuse refused"
       end
       runtime = host_runtime.fetch("identities")
     end
