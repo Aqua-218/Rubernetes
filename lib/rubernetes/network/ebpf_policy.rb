@@ -494,9 +494,7 @@ module Rubernetes
           raise PolicyError, "native NetworkPolicy peer kind is unsupported"
         end
         protocol = hash["protocol"]
-        unless protocol.nil? || PolicyEngine::PROTOCOLS.include?(protocol.to_s)
-          raise PolicyError, "native NetworkPolicy protocol is invalid"
-        end
+        raise PolicyError, "native NetworkPolicy protocol is invalid" unless protocol.nil? || PolicyEngine::PROTOCOLS.include?(protocol.to_s)
 
         port = hash["port"]
         end_port = hash["end_port"]
