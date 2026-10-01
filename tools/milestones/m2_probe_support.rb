@@ -1997,7 +1997,8 @@ module M2ProbeSupport
           "attach" => "/api/v1/namespaces/default/pods/m2-subresource-probe/attach",
           "exec" => "/api/v1/namespaces/default/pods/m2-subresource-probe/exec?#{URI.encode_www_form([
                                                                                                        ["command",
-                                                                                                        "/bin/busybox"], ["command", "echo"], ["command", "exec-ok"]
+                                                                                                        "/bin/busybox"], ["command", "echo"], ["command",
+                                                                                                                                               "exec-ok"]
                                                                                                      ])}",
           "port_forward" => "/api/v1/namespaces/default/pods/m2-subresource-probe/portforward?ports=18080&timeout=5"
         }
