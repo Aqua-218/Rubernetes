@@ -352,6 +352,16 @@ class M3JobControllerTest < Minitest::Test
     refute_predicate plain, :orphan_cleanup?, "a controller without orphan work must not advertise any"
   end
 
+  private
+
+  # A Job deleted while its Pods still carry the tracking finalizer leaves
+  # them unreleasable: no Job sync will ever run for them again.  Upstream's
+  # syncOrphanPod strips the finalizer so the Pod can finish deleting, and
+  # its namespace with it.
+  # In the controller manager a built-in controller reaches the reconcile
+  # loop wrapped in a DefinitionController.  The orphan hook has to survive
+  # that wrapping: while it did not, the finalizer cleanup existed only in
+  # this test file and every CronJob namespace stayed Terminating forever.
   def controller
     Controller::JobController.new(clock: -> { NOW })
   end
