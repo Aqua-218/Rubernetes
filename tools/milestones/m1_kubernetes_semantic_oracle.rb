@@ -122,9 +122,7 @@ module M1KubernetesSemanticOracle
 
     MODULE_SOURCE_PATHS.each_value do |relative|
       module_root = ::File.join(source_root, relative)
-      unless ::File.file?(::File.join(module_root, "go.mod"))
-        raise OracleError, "Kubernetes oracle source module is unavailable: #{relative}"
-      end
+      raise OracleError, "Kubernetes oracle source module is unavailable: #{relative}" unless ::File.file?(::File.join(module_root, "go.mod"))
     end
   end
 
