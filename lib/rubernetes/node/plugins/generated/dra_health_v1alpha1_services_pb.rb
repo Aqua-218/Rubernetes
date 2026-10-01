@@ -36,7 +36,7 @@ module Rubernetes
 
               self.marshal_class_method = :encode
               self.unmarshal_class_method = :decode
-              self.service_name = 'v1alpha1.DRAResourceHealth'
+              self.service_name = "v1alpha1.DRAResourceHealth"
 
               # NodeWatchResources allows a DRA plugin to stream health updates for its devices to Kubelet.
               rpc :NodeWatchResources, ::Rubernetes::Node::Plugins::Generated::DRAHealthV1alpha1::NodeWatchResourcesRequest, stream(::Rubernetes::Node::Plugins::Generated::DRAHealthV1alpha1::NodeWatchResourcesResponse)
