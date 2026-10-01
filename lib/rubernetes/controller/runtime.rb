@@ -983,7 +983,7 @@ module Rubernetes
         # keys it used to match; a status-only update (the bulk of Pod
         # events) matches the same keys twice and was routed twice.
         observed_objects = [object]
-        observed_objects << _old_object if _old_object && routing_identity(_old_object) != routing_identity(object)
+        observed_objects << old_object if old_object && routing_identity(old_object) != routing_identity(object)
         observed_objects.each do |observed|
           watches = controller_watches(controller)
           matching = watches.select { |watch| watch_matches?(watch, observed) }
