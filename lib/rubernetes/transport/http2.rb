@@ -659,9 +659,7 @@ module Rubernetes
           streaming = response.stream? && !no_body
           body_bytes = nil
           if no_body
-            unless response.no_body? || response.stream?
-              headers.set("Content-Length", @server.__send__(:body_to_bytes, response.body).bytesize.to_s)
-            end
+            headers.set("Content-Length", @server.__send__(:body_to_bytes, response.body).bytesize.to_s) unless response.no_body? || response.stream?
           elsif !streaming
             body_bytes = @server.__send__(:body_to_bytes, response.body)
             if @max_response_bytes && body_bytes.bytesize > @max_response_bytes
