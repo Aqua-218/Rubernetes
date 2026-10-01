@@ -55,7 +55,8 @@ class SecurityAuthorizationTest < Minitest::Test
     source.namespaced_roles["team"] << role("deployer",
                                             [{"apiGroups" => %w[apps], "resources" => %w[deployments], "verbs" => %w[*], "resourceNames" => %w[web]}], kind: "Role", namespace: "team")
     source.namespaced_role_bindings["team"] << binding("deployer", "Role", "deployer",
-                                                       [{"kind" => "ServiceAccount", "name" => "ci", "namespace" => "team"}], kind: "RoleBinding", namespace: "team")
+                                                       [{"kind" => "ServiceAccount", "name" => "ci", "namespace" => "team"}], kind: "RoleBinding",
+                                                                                                                              namespace: "team")
     source.namespaced_role_bindings["team"] << binding("logs", "ClusterRole", "log-reader", [{"kind" => "User", "name" => "dev"}],
                                                        kind: "RoleBinding", namespace: "team")
     rbac = Z::RBAC.new(source: source)
