@@ -70,7 +70,8 @@ def scheduler_fixture_cases
                      "metadata" => {"name" => "peer", "namespace" => "default", "uid" => "peer-uid",
                                     "labels" => {"app" => "peer"}}, "spec" => {"nodeName" => "node-a",
                                                                                "containers" => [{"name" => "peer", "image" => "example/peer",
-                                                                                                 "resources" => {"requests" => {"cpu" => "0", "memory" => "0"}}}]}}]
+                                                                                                 "resources" => {"requests" => {"cpu" => "0",
+                                                                                                                                "memory" => "0"}}}]}}]
   topology = [{"maxSkew" => 1, "topologyKey" => "topology.kubernetes.io/zone", "whenUnsatisfiable" => "ScheduleAnyway",
                "labelSelector" => {"matchLabels" => {"app" => "score"}}}]
   {
