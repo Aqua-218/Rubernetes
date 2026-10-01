@@ -23,7 +23,7 @@ module Rubernetes
        RollbackJournal OwnershipLedger ResourceLedger Recovery StartupReconciler].each do |name|
       NATIVE_LOADER_CONSTANTS[name] = const_get(name, false) if const_defined?(name, false)
     end
-    NativeLoaderConstants.each_key { |name| remove_const(name) }
+    NATIVE_LOADER_CONSTANTS.each_key { |name| remove_const(name) }
     generic_runtime = const_get(:Runtime, false) if const_defined?(:Runtime, false)
     remove_const(:Native) if const_defined?(:Native, false) && generic_runtime && const_get(:Native, false).equal?(generic_runtime)
     remove_const(:Backend) if const_defined?(:Backend, false) && generic_runtime && const_get(:Backend, false).equal?(generic_runtime)
