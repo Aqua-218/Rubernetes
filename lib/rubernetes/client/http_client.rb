@@ -940,9 +940,7 @@ module Rubernetes
         end
 
         insecure = insecure_value == true
-        if insecure && (ca_data || ca_file)
-          raise ConfigurationError, "certificate authority data cannot be combined with insecure TLS verification"
-        end
+        raise ConfigurationError, "certificate authority data cannot be combined with insecure TLS verification" if insecure && (ca_data || ca_file)
 
         http.verify_mode = insecure ? OpenSSL::SSL::VERIFY_NONE : OpenSSL::SSL::VERIFY_PEER if http.respond_to?(:verify_mode=)
         if ca_data
