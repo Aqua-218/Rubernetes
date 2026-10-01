@@ -1251,9 +1251,7 @@ module M3Gate
       expected = comparison["expected_observable"]
       actual = comparison["actual_observable"]
       errors << "#{label} must include expected and actual observables" if expected.nil? || actual.nil?
-      unless structured_observable?(expected) && structured_observable?(actual)
-        errors << "#{label} observables must contain structured observations"
-      end
+      errors << "#{label} observables must contain structured observations" unless structured_observable?(expected) && structured_observable?(actual)
       expected_digest = comparison["expected_sha256"]
       actual_digest = comparison["actual_sha256"]
       errors << "#{label} expected observable digest is invalid" unless valid_digest?(expected_digest)
