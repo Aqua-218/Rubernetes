@@ -632,7 +632,7 @@ module RubernetesFieldParity
     options = {root: ROOT, corpus_root: nil, generated_root: nil, output: nil, pretty: false}
     parser = OptionParser.new do |opts|
       opts.banner = "Usage: ruby tools/schema/field_parity.rb [--check] [--output PATH]"
-      opts.on("--check", "verify parity and exit non-zero on any difference") {}
+      opts.on("--check", "verify parity and exit non-zero on any difference") { nil }
       opts.on("--root PATH", "repository root") { |value| options[:root] = value }
       opts.on("--corpus-root PATH", "canonical Kubernetes corpus root") { |value| options[:corpus_root] = value }
       opts.on("--generated-root PATH", "generated artifact root") { |value| options[:generated_root] = value }
