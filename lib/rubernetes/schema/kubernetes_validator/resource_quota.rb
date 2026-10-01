@@ -81,9 +81,7 @@ module Rubernetes
         unless STANDARD_RESOURCES.include?(name) || quota_huge_page?(name)
           issues << valued_issue(path, name, "must be a standard resource type or fully qualified")
         end
-        unless STANDARD_QUOTA_RESOURCES.include?(name) || quota_huge_page?(name)
-          issues << valued_issue(path, name, "must be a standard resource for quota")
-        end
+        issues << valued_issue(path, name, "must be a standard resource for quota") unless STANDARD_QUOTA_RESOURCES.include?(name) || quota_huge_page?(name)
         issues
       end
 
