@@ -420,9 +420,7 @@ module M3Gate
       document = parse_json(evidence_path(directory, artifact["path"]), errors, "source inventory")
       return unless document.is_a?(Hash)
 
-      unless document["schema_version"] == REPORT_SCHEMA_VERSION
-        errors << "source inventory schema_version must be #{REPORT_SCHEMA_VERSION}"
-      end
+      errors << "source inventory schema_version must be #{REPORT_SCHEMA_VERSION}" unless document["schema_version"] == REPORT_SCHEMA_VERSION
       errors << "source inventory kind must be m3_source_inventory" unless document["kind"] == "m3_source_inventory"
       errors << "source inventory input_sha256 must match manifest" unless document["input_sha256"] == manifest["input_sha256"]
       errors << "source inventory input_file_count must match manifest" unless document["input_file_count"] == manifest["input_file_count"]
