@@ -198,7 +198,8 @@ module M6SecurityPipelineProbe
               "passed" => forbidden.status == 403 && recorder.events.include?("authentication") && recorder.events.include?("authorization") &&
                           !recorder.events.include?("admission.mutating") && !recorder.events.include?("store.create") &&
                           recorder.events.include?("audit.ResponseComplete") &&
-                          forbidden.body["message"] == 'configmaps is forbidden: User "bob" cannot create resource "configmaps" in API group "" in the namespace "default"' && !leak?(forbidden.body)}
+                          forbidden.body["message"] == 'configmaps is forbidden: User "bob" cannot create resource "configmaps" in API group "" in the ' \
+                                                       'namespace "default"' && !leak?(forbidden.body)}
 
     recorder.reset
     hidden = request(server, "GET", "/api/v1/namespaces/default/configmaps/does-not-exist", token: "bob-token")
