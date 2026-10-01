@@ -37,7 +37,8 @@ class FakeCluster
       "ingresses" => [], "endpointslices" => [], "configmaps" => [{"metadata" => {"name" => "cfg", "namespace" => "gitlab"}, "data" => {"a" => "1"}}],
       "secrets" => [{"metadata" => {"name" => "sec", "namespace" => "gitlab"}, "type" => "Opaque", "data" => {"password" => "c2VjcmV0"}}],
       "persistentvolumeclaims" => [], "serviceaccounts" => [], "horizontalpodautoscalers" => [], "resourcequotas" => [],
-      "persistentvolumes" => [], "storageclasses" => [], "ingressclasses" => [], "customresourcedefinitions" => [], "clusterroles" => [], "priorityclasses" => [],
+      "persistentvolumes" => [], "storageclasses" => [], "ingressclasses" => [], "customresourcedefinitions" => [], "clusterroles" => [],
+      "priorityclasses" => [],
       "events" => [{"metadata" => {"name" => "e1", "namespace" => "gitlab", "creationTimestamp" => "2026-09-29T09:00:00Z"}, "type" => "Warning", "reason" => "BackOff",
                     "message" => "Back-off restarting failed container", "count" => 7, "lastTimestamp" => "2026-09-29T09:05:00Z",
                     "involvedObject" => {"kind" => "Pod", "name" => "crash-1", "namespace" => "gitlab", "fieldPath" => "spec.containers{c}"}}]
