@@ -656,7 +656,8 @@ module M2LifecycleOracleHarness
       server = JSON.parse(version)["serverVersion"] || {}
       unless server["gitVersion"] == KUBERNETES_VERSION && server["gitCommit"] == KUBERNETES_SOURCE_COMMIT && server["gitTreeState"] == "clean"
         raise HarnessError,
-              "kube-apiserver reports #{server["gitVersion"]} at #{server["gitCommit"]} (#{server["gitTreeState"]}), expected #{KUBERNETES_VERSION} at #{KUBERNETES_SOURCE_COMMIT}"
+              "kube-apiserver reports #{server["gitVersion"]} at #{server["gitCommit"]} (#{server["gitTreeState"]}), expected #{KUBERNETES_VERSION} at " \
+              "#{KUBERNETES_SOURCE_COMMIT}"
       end
 
       kubelet, = node_exec("kubelet", "--version")
