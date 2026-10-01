@@ -587,7 +587,7 @@ module Rubernetes
         # as whatever uid it runs as ("... TerminationMessagePath is set as
         # non-root user and at a non-default path" runs as uid 10000, and a
         # 0644 root-owned file left it with "Permission denied" and Failed).
-        File.open(host_path, File::WRONLY | File::CREAT, 0o666) {} unless File.exist?(host_path)
+        File.open(host_path, File::WRONLY | File::CREAT, 0o666).close unless File.exist?(host_path)
         File.chmod(0o666, host_path)
         result.merge("host_path" => host_path)
       end
