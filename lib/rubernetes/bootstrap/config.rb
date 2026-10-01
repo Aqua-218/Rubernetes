@@ -762,9 +762,7 @@ module Rubernetes
 
           raise Error, "rubernetes-agent.cri.#{key} must be an absolute path"
         end
-        if section["enabled"] == true && !section.key?("endpoint")
-          raise Error, "rubernetes-agent.cri.endpoint is required when cri is enabled"
-        end
+        raise Error, "rubernetes-agent.cri.endpoint is required when cri is enabled" if section["enabled"] == true && !section.key?("endpoint")
 
         handlers = section.fetch("handlers", {})
         unless handlers.is_a?(Hash) && handlers.all? { |name, handler| name.is_a?(String) && !name.empty? && handler.is_a?(String) }
