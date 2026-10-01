@@ -271,7 +271,8 @@ module Rubernetes
                              "#{svc.port} -j #{lb_chain}"
               end
               if uses_fw_chain
-                filter_rules << "-A KUBE-PROXY-FIREWALL -m comment --comment \"#{name} traffic not accepted by #{fw_chain}\" -m #{protocol} -p #{protocol} -d #{lb_ip} --dport #{svc.port} -j DROP"
+                filter_rules << "-A KUBE-PROXY-FIREWALL -m comment --comment \"#{name} traffic not accepted by #{fw_chain}\" -m #{protocol} -p #{protocol} " \
+                                "-d #{lb_ip} --dport #{svc.port} -j DROP"
               end
             end
             unless has_external
