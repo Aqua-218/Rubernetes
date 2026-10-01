@@ -87,7 +87,7 @@ module Rubernetes
         # Exact nanoseconds, like time.Time.Sub; the rate itself is Go's
         # float64(delta) / window.Seconds(), truncated to uint64.
         window = last.timestamp.to_r - prev.timestamp.to_r
-        rate = window.zero? ? 0 : ((last.cumulative_cpu - prev.cumulative_cpu).to_f / window.to_f).to_i
+        rate = window.zero? ? 0 : ((last.cumulative_cpu - prev.cumulative_cpu).to_f / window).to_i
         Usage.new(cpu: nano_quantity(rate), memory: binary_quantity(last.memory), timestamp: last.timestamp, window: window)
       end
 
