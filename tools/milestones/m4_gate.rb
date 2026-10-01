@@ -766,7 +766,8 @@ module M4Gate
           program = entry.is_a?(Hash) ? entry["program"] : nil
           maps = entry.is_a?(Hash) ? entry["maps"] : nil
           filters = entry.is_a?(Hash) ? entry["filters"] : nil
-          unless program.is_a?(Hash) && program["id"].is_a?(Integer) && program["id"].positive? && valid_bpf_tag?(program["tag"]) && maps.is_a?(Array) && !maps.empty? && filters.is_a?(Array) && !filters.empty?
+          unless program.is_a?(Hash) && program["id"].is_a?(Integer) && program["id"].positive? && valid_bpf_tag?(program["tag"]) && maps.is_a?(Array) &&
+                 !maps.empty? && filters.is_a?(Array) && !filters.empty?
             errors << "proxy eBPF program/map/TC readback identities are incomplete"
           end
         else
