@@ -1838,9 +1838,7 @@ module M1Gate
         unless comparison["expected_source"] == "kubernetes_external"
           errors << "#{label} Kubernetes oracle comparison #{index} expected source must be external Kubernetes"
         end
-        unless comparison["actual_source"] == "rubernetes"
-          errors << "#{label} Kubernetes oracle comparison #{index} actual source must be Rubernetes"
-        end
+        errors << "#{label} Kubernetes oracle comparison #{index} actual source must be Rubernetes" unless comparison["actual_source"] == "rubernetes"
         unless valid_digest?(expected_digest) && valid_digest?(actual_digest)
           errors << "#{label} Kubernetes oracle comparison #{index} must record both observable SHA-256 digests"
         end
