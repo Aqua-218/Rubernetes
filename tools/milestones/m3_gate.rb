@@ -1483,12 +1483,8 @@ module M3Gate
     def validate_workload(document, errors)
       types = Array(document["workload_types"]).map(&:to_s).sort
       operations = Array(document["operations"]).map(&:to_s).sort
-      unless types == REQUIRED_WORKLOAD_TYPES.sort
-        errors << "workload differential must cover deployment, statefulset, daemonset, job, and cronjob"
-      end
-      unless operations == REQUIRED_WORKLOAD_OPERATIONS.sort
-        errors << "workload differential must cover rollout, rollback, scale, and delete"
-      end
+      errors << "workload differential must cover deployment, statefulset, daemonset, job, and cronjob" unless types == REQUIRED_WORKLOAD_TYPES.sort
+      errors << "workload differential must cover rollout, rollback, scale, and delete" unless operations == REQUIRED_WORKLOAD_OPERATIONS.sort
       unless document["execution_component"] == "Rubernetes::Bootstrap::ControllerManagerService"
         errors << "workload differential must execute the production ControllerManagerService"
       end
