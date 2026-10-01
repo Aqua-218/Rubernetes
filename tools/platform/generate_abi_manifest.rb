@@ -100,7 +100,8 @@ module Rubernetes
       def initialize(arguments)
         @options = {cc: ENV.fetch("CC", "cc"), output: nil, check: nil, update: nil, architecture: nil, header: nil}
         OptionParser.new do |parser|
-          parser.banner = "Usage: generate_abi_manifest.rb [--output PATH | --check PATH | --update PATH] [--architecture ARCH] [--cc COMMAND] [--syscall-header PATH]"
+          parser.banner = "Usage: generate_abi_manifest.rb [--output PATH | --check PATH | --update PATH] [--architecture ARCH] [--cc COMMAND] " \
+                          "[--syscall-header PATH]"
           parser.on("--cc COMMAND", "C compiler executable") { |value| @options[:cc] = value }
           parser.on("--architecture ARCH", "target architecture (default: host)") { |value| @options[:architecture] = value }
           parser.on("--syscall-header PATH", "UAPI unistd header naming the syscalls") { |value| @options[:header] = value }
