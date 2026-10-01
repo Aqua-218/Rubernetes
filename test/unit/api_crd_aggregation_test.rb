@@ -42,7 +42,8 @@ class APICRDAggregationTest < Minitest::Test
     assert_equal 422, too_big.status
     assert_match(/large widgets must be red/, too_big.body["message"])
     ok = call("POST", "/apis/example.com/v1/namespaces/team/widgets",
-              body: {"apiVersion" => "example.com/v1", "kind" => "Widget", "metadata" => {"name" => "w1"}, "spec" => {"size" => 3, "junk" => "x", "tags" => ["a"]}, "unknown" => 1})
+              body: {"apiVersion" => "example.com/v1", "kind" => "Widget", "metadata" => {"name" => "w1"},
+                     "spec" => {"size" => 3, "junk" => "x", "tags" => ["a"]}, "unknown" => 1})
 
     assert_equal 201, ok.status, ok.body.inspect
     assert_equal "blue", ok.body.dig("spec", "color"), "defaulting"
