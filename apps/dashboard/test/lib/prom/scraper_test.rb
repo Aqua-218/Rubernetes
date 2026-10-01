@@ -137,27 +137,28 @@ module Prom
       thread&.kill
     end
 
-  test "collector rounds discover, scrape, evaluate and maintain" do
-    calls = 0
-    targets = lambda {
-      calls += 1
-      [target("gauge #{calls}\n")]
-    }
-    evaluated = []
-    rules = Object.new
-    rules.define_singleton_method(:evaluate) { |_engine, now| evaluated << now }
-    collector = Prom::Collector.new(store: @store, targets: targets, scraper: @scraper, rules: rules,
-                                    interval_seconds: 15, clock: -> { @now })
-    collector.round
-    @now += 15_000
-    collector.round
+    test "collector rounds discover, scrape, evaluate and maintain" do
+      calls = 0
+      targets = lambda {
+        calls += 1
+        [target("gauge #{calls}\n")]
+      }
+      evaluated = []
+      rules = Object.new
+      rules.define_singleton_method(:evaluate) { |_engine, now| evaluated << now }
+      collector = Prom::Collector.new(store: @store, targets: targets, scraper: @scraper, rules: rules,
+                                      interval_seconds: 15, clock: -> { @now })
+      collector.round
+      @now += 15_000
+      collector.round
 
-    assert_equal 2, calls
-    assert_equal 2, evaluated.length
-    assert_equal [1.0, 2.0],
-                 @store.samples(@store.select_series([M.new(name: "__name__", op: "=", value: "gauge")]).first.id, 0, @now + 1).map(&:last)
-    assert_equal 1, collector.targets.length
-  end
+      assert_equal 2, calls
+      assert_equal 2, evaluated.length
+      assert_equal [1.0, 2.0],
+                   @store.samples(@store.select_series([M.new(name: "__name__", op: "=", value: "gauge")]).first.id, 0,
+                                  @now + 1).map(&:last)
+      assert_equal 1, collector.targets.length
+    end
 
   test "a binary-encoded body yields UTF-8 labels the index can match" do
     body = "# TYPE http_requests_total counter\nhttp_requests_total{path=\"/caf\u00e9\"} 3\n".b
