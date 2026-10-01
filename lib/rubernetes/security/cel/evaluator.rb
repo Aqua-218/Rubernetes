@@ -262,7 +262,7 @@ module Rubernetes
 
           def eval_comprehension(node)
             _, iter_var, range_node, accu_var, init_node, condition_node, step_node, result_node = node
-            range = eval(range_node)
+            range = evaluate(range_node)
             items = case range
                     when Array then range
                     when Hash then range.keys
