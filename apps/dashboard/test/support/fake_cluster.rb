@@ -67,7 +67,8 @@ class FakeCluster
                  {"running" => {"startedAt" => "2026-09-29T09:00:00Z"}}
                end)
             end
-    {"metadata" => {"name" => name, "namespace" => namespace, "uid" => "uid-#{name}", "creationTimestamp" => "2026-09-29T09:00:00Z", "labels" => {"app" => "web"}},
+    {"metadata" => {"name" => name, "namespace" => namespace, "uid" => "uid-#{name}", "creationTimestamp" => "2026-09-29T09:00:00Z",
+                    "labels" => {"app" => "web"}},
      "spec" => {"nodeName" => node, "containers" => [{"name" => "c", "image" => "img:1", "ports" => [{"containerPort" => 8080}]}],
                 "volumes" => [{"name" => "data", "emptyDir" => {}}]},
      "status" => {"phase" => phase, "podIP" => "10.240.0.9", "startTime" => "2026-09-29T09:00:00Z", "qosClass" => "BestEffort",
