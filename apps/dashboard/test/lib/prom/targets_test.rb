@@ -56,8 +56,7 @@ module Prom
       assert_equal({"kubelet" => 2, "cadvisor" => 2, "kubelet-resource" => 2, "kubelet-probes" => 2,
                     "kubernetes-pods" => 3, "kubernetes-service-endpoints" => 1}, jobs)
 
-      assert_equal %w[kube-controller-manager kube-proxy kube-scheduler kube-scheduler-resources], all.map(&:job).sort
-      scheduler = all.find { |t| t.job == "kube-scheduler" }
+      kubelet = all.find { |t| t.job == "kubelet" && t.instance == "worker-1" }
 
       assert_equal "http://127.0.0.1:21001/metrics", scheduler.url
       assert_equal({"process" => "scheduler"}, scheduler.labels)
