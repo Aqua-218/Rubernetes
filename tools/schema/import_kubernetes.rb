@@ -876,9 +876,7 @@ module KubernetesCorpusImporter
     def add_discovery_record(record, gvks, gvrs, duplicate_gvrs, document_id)
       gvk = gvk_key(record.fetch("group"), record.fetch("version"), record.fetch("kind"))
       gvr = gvr_key(record.fetch("group"), record.fetch("version"), record.fetch("resource"))
-      if gvrs.key?(gvr) && gvrs.fetch(gvr).fetch("kind") != record.fetch("kind")
-        raise ValidationError, "discovery GVR #{gvr} maps to conflicting kinds"
-      end
+      raise ValidationError, "discovery GVR #{gvr} maps to conflicting kinds" if gvrs.key?(gvr) && gvrs.fetch(gvr).fetch("kind") != record.fetch("kind")
 
       # Aggregated discovery and APIResourceList are two representations of
       # the same endpoint. Duplicate GVRs are errors only within one document;
