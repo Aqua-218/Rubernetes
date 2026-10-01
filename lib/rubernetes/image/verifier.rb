@@ -39,9 +39,7 @@ module Rubernetes
 
         pinned.verify_bytes!(raw.b)
         rootfs = value["rootfs"]
-        if rootfs && !(File.directory?(rootfs) && !File.symlink?(rootfs))
-          raise DigestMismatch, "resolved image #{pinned} rootfs is not a directory: #{rootfs}"
-        end
+        raise DigestMismatch, "resolved image #{pinned} rootfs is not a directory: #{rootfs}" if rootfs && !(File.directory?(rootfs) && !File.symlink?(rootfs))
 
         pinned.to_s
       end
