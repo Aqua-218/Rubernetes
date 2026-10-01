@@ -18,7 +18,7 @@ descriptor_data = "\n\tapi.proto\x12\x02v1\x1a\x1fgoogle/protobuf/timestamp.prot
                   "\x01(\t\x12\x0b\n\x03key\x18\x02 \x01(\x0c\x12#\n\x1b\x65xclude_from_oidc_discovery\x18\x03 " \
                   "\x01(\x08\"\x11\n\x0fMetadataRequest\"8\n\x10MetadataResponse\x12$\n\x1cmax_token_expiration_seconds\x18\x01 \x01(\x03\x32\xbb\x01\n\x11\x45xternalJWTSigner\x12\x31\n\x04Sign\x12\x12.v1.SignJWTRequest\x1a\x13.v1.SignJWTResponse\"\x00\x12:\n\tFetchKeys\x12\x14.v1.FetchKeysRequest\x1a\x15.v1.FetchKeysResponse\"\x00\x12\x37\n\x08Metadata\x12\x13.v1.MetadataRequest\x1a\x14.v1.MetadataResponse\"\x00\x42\x1cZ\x1ak8s.io/externaljwt/apis/v1b\x06proto3"
 
-pool = ::Google::Protobuf::DescriptorPool.generated_pool
+pool = Google::Protobuf::DescriptorPool.generated_pool
 pool.add_serialized_file(descriptor_data)
 
 module Rubernetes
