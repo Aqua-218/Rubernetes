@@ -3048,9 +3048,7 @@ module Rubernetes
         issues = []
         if blank?(fetch(root, "eventTime"))
           if involved_namespace.empty?
-            unless namespace.empty? || namespace == "default"
-              issues << issue(%w[involvedObject namespace], :invalid, "does not match event.namespace")
-            end
+            issues << issue(%w[involvedObject namespace], :invalid, "does not match event.namespace") unless namespace.empty? || namespace == "default"
           elsif namespace != involved_namespace
             issues << issue(%w[involvedObject namespace], :invalid, "does not match event.namespace")
           end
