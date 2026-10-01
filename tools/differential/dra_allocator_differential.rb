@@ -159,7 +159,8 @@ module DRAAllocatorDifferential
     add.call("class-and-claim-config", classes: [klass("gpu", selectors: ["device.driver == \"#{DRIVER}\""],
                                                               config: [{"opaque" => {"driver" => DRIVER, "parameters" => {"from" => "class"}}}])],
                                        slices: [slice("s1", gpus(3))],
-                                       claims: [claim("c", [request("a"), request("b")], config: [{"requests" => ["a"], "opaque" => {"driver" => DRIVER, "parameters" => {"from" => "claim"}}}])])
+                                       claims: [claim("c", [request("a"), request("b")],
+                                                      config: [{"requests" => ["a"], "opaque" => {"driver" => DRIVER, "parameters" => {"from" => "claim"}}}])])
     add.call("incomplete-pool", slices: [slice("s1", gpus(2), count: 2)], claims: [claim("c", [request("r")])])
     add.call("incomplete-pool-all", slices: [slice("s1", gpus(2), count: 2)], claims: [claim("c", [request("r", mode: "All")])])
     add.call("pool-two-slices", slices: [slice("s2", [device("b")], count: 2), slice("s1", [device("a")], count: 2)],
