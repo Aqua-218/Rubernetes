@@ -258,9 +258,7 @@ module Rubernetes
         definition = definition.with_incomplete_reasons(reasons) if reasons.any?
         @mutex.synchronize do
           raise RegistrySealedError, "controller registry is sealed" if @sealed
-          if @definitions.key?(definition.name)
-            raise DuplicateControllerError, "controller #{definition.name.inspect} is already registered"
-          end
+          raise DuplicateControllerError, "controller #{definition.name.inspect} is already registered" if @definitions.key?(definition.name)
 
           validate_definition!(definition)
           @definitions[definition.name] = definition
