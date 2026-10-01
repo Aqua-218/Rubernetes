@@ -580,9 +580,7 @@ module Rubernetes
       def tar_field(header, offset, length, label)
         field = header.byteslice(offset, length).to_s.b
         nul = field.index("\0")
-        if nul && field.byteslice((nul + 1)..).to_s.bytes.any? { |byte| byte != 0 }
-          raise SecurityError, "tar #{label} field contains data after NUL"
-        end
+        raise SecurityError, "tar #{label} field contains data after NUL" if nul && field.byteslice((nul + 1)..).to_s.bytes.any? { |byte| byte != 0 }
 
         value = nul ? field.byteslice(0, nul) : field
         value.to_s.b.delete_suffix(" ".b)
