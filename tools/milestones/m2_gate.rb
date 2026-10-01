@@ -1712,9 +1712,7 @@ module M2Gate
       missing_kinds = Array(measurement["missing_resource_kinds"]).map(&:to_s).uniq.sort
       errors << "#{label} inventory missing_resource_kinds does not match observed kinds" unless missing_kinds == (REQUIRED_RESOURCE_KINDS - kinds).sort
       expected_profile_status = missing_kinds.empty? ? "PASS" : "INCOMPLETE"
-      unless measurement["profile_status"] == expected_profile_status
-        errors << "#{label} inventory profile_status does not match missing kinds"
-      end
+      errors << "#{label} inventory profile_status does not match missing kinds" unless measurement["profile_status"] == expected_profile_status
       return unless document["status"] == "PASS"
 
       errors << "#{label} inventory must cover mount/ns/cgroup/process/pidfd/temp" unless REQUIRED_RESOURCE_KINDS - kinds == []
