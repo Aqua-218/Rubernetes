@@ -439,7 +439,8 @@ module M4ObserverSupport
         "phases" => @phases, "mountinfo" => @mountinfo, "files" => @files, "statfs" => @statfs,
         "devices" => @devices, "container_observation" => @containers, "syscalls" => @syscalls,
         "projected_rotation" => @reader_result, "errors" => @errors,
-        "strace_command" => trace&.command, "strace_log_sha256" => (trace && File.exist?(trace.output_path) ? Digest::SHA256.file(trace.output_path).hexdigest : nil)
+        "strace_command" => trace&.command,
+        "strace_log_sha256" => (trace && File.exist?(trace.output_path) ? Digest::SHA256.file(trace.output_path).hexdigest : nil)
       }
     ensure
       stop_reader if @reader
