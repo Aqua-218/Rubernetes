@@ -70,8 +70,10 @@
       "path": "apis/admissionregistration.k8s.io.json",
       "upstream_path": "api/openapi-spec/v3/apis__admissionregistration.k8s.io_openapi.json",
       "source_sha256": "dc6c54d8c99e5909ff109974998538ecfb2031827c2d11863436f7a203af1522",
-      "sha256": "dc6c54d8c99e5909ff109974998538ecfb2031827c2d11863436f7a203af1522",
-      "paths": 1
+      "sha256": "85a1d8327afa56862435931ed8c0ae2d7160727ca0497d98268d94a9df35660b",
+      "paths": 1,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/admissionregistration.k8s.io"
     },
     {
       "path": "apis/apiextensions.k8s.io/v1.json",
