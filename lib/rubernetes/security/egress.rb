@@ -329,8 +329,7 @@ module Rubernetes
           context.cert = OpenSSL::X509::Certificate.new(File.binread(client_cert))
           context.key = OpenSSL::PKey.read(File.binread(client_key))
           ca = config["caBundle"].to_s
-          if ca.empty?
-          else
+          unless ca.empty?
             store = OpenSSL::X509::Store.new
             File.binread(ca).scan(/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/m).each { |pem| store.add_cert(OpenSSL::X509::Certificate.new(pem)) }
             context.cert_store = store
