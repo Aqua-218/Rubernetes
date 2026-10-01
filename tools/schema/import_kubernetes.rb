@@ -837,9 +837,7 @@ module KubernetesCorpusImporter
     def extract_api_resource_list_records(document)
       group_version = document["groupVersion"]
       resources = document["resources"]
-      unless group_version.is_a?(String) && resources.is_a?(Array)
-        raise ValidationError, "APIResourceList must contain groupVersion and resources"
-      end
+      raise ValidationError, "APIResourceList must contain groupVersion and resources" unless group_version.is_a?(String) && resources.is_a?(Array)
 
       parts = group_version.split("/", 2)
       group, version = parts.length == 2 ? parts : ["", parts.fetch(0)]
