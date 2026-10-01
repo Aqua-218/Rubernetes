@@ -249,9 +249,7 @@ module Rubernetes
                     "runtime trace must expose snapshots with ownership and safety fields")
         end
         validate_initial_state(report, first_state, 0)
-        if report["snapshot_count"] > 0 && report["transition_count"] == 0
-          report["warnings"] << "trace contains observations but no explicit state transition"
-        end
+        report["warnings"] << "trace contains observations but no explicit state transition" if report["snapshot_count"] > 0 && report["transition_count"] == 0
 
         finalize(report)
       rescue StandardError => error
