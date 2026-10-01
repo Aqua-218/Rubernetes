@@ -58,7 +58,8 @@ module M7ProbeSupport
 
   def host_facts
     {"kernel" => File.read("/proc/sys/kernel/osrelease").strip, "kvm" => File.exist?("/dev/kvm"), "vhost_vsock" => File.exist?("/dev/vhost-vsock"),
-     "cpu_virtualization" => File.read("/proc/cpuinfo")[/\b(vmx|svm)\b/, 1], "artifacts" => artifacts.to_h.slice("firecracker_version", "verity_root_hash", "digest")}
+     "cpu_virtualization" => File.read("/proc/cpuinfo")[/\b(vmx|svm)\b/, 1],
+     "artifacts" => artifacts.to_h.slice("firecracker_version", "verity_root_hash", "digest")}
   end
 
   # A fresh MicroVM backend under a per-run directory.  Image disks are
