@@ -588,6 +588,8 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
       rescue StandardError
         nil
       end
+      # Two passes on purpose: ask every child to quit first, then kill the
+      # ones still alive (the kill must not depend on the quit having failed).
       @children&.each_value do |child|
         child[:stdin].write("quit\n") unless child[:stdin].closed?
         child[:stdin].close unless child[:stdin].closed?
