@@ -560,9 +560,7 @@ module Rubernetes
         # getContainerRequestedResources: a container of a pod-level Pod has
         # exclusive memory only when it is Guaranteed on its own terms.
         def container_requests(pod, container)
-          if @pod_level && PodResources.pod_level_resources?(pod) && !CPUManager::PodResources.container_equivalent_guaranteed?(container)
-            return {}
-          end
+          return {} if @pod_level && PodResources.pod_level_resources?(pod) && !CPUManager::PodResources.container_equivalent_guaranteed?(container)
 
           PodResources.container_requests(container)
         end
