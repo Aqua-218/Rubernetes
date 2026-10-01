@@ -207,7 +207,10 @@ class MicroVMProtocolTest < Minitest::Test
     end
     assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "time.now", "params" => {}}) }
     assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "shell.exec", "params" => {}}) }
-    assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "dns.resolve", "params" => {"name" => "api.example.com"}, "subject_id" => "spoofed"}) }
+    assert_raises(M::PolicyError) do
+      broker.handle("vm-1", "broker.request",
+                    {"operation" => "dns.resolve", "params" => {"name" => "api.example.com"}, "subject_id" => "spoofed"})
+    end
     assert_raises(M::PolicyError) { broker.handle("vm-2", "broker.request", {"operation" => "dns.resolve", "params" => {"name" => "api.example.com"}}) }
     # All answers must satisfy the policy: a mixed answer is rejected as a whole.
     resolver.define_singleton_method(:getaddresses) { |_name| ["10.1.0.5", "203.0.113.9"] }
