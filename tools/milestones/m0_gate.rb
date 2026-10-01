@@ -579,7 +579,8 @@ module M0Gate
       end
       host = document["host"]
       current = Etc.uname
-      unless host.is_a?(Hash) && host["sysname"] == current[:sysname] && host["release"] == current[:release] && host["machine"] == current[:machine] && host["ruby"] == RUBY_DESCRIPTION
+      unless host.is_a?(Hash) && host["sysname"] == current[:sysname] && host["release"] == current[:release] && host["machine"] == current[:machine] &&
+             host["ruby"] == RUBY_DESCRIPTION
         errors << "executable report host is not bound to the current host"
       end
       results = document["results"]
