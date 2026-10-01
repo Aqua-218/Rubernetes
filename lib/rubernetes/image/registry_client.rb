@@ -612,7 +612,7 @@ module Rubernetes
         raise RegistryError.new("registry stream transport failed: #{error.message}", cause: error), cause: error
       end
 
-      def invoke_stream(method, uri, headers:, body:, max_bytes:, &block)
+      def invoke_stream(method, uri, headers:, body:, max_bytes:, &)
         parameters = @transport.method(:stream).parameters
         keyword = parameters.any? { |kind, name| %i[key keyreq keyrest].include?(kind) && name == :method }
         if keyword
