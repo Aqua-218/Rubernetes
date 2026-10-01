@@ -254,7 +254,6 @@ class ProxyIptablesBackendTest < Minitest::Test
     client = Iptables::Nfacct.new
     name = "rbn_test_#{Process.pid}"
     skip "nfnetlink_acct unavailable" unless client.ensure(name)
-    counters = client.counters
 
     assert_equal [0, 0], counters[name]
     assert client.delete(name)
