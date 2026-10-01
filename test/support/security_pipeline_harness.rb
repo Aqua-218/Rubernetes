@@ -34,7 +34,8 @@ module SecurityPipelineHarness
   def setup
     @store = Rubernetes::Storage::MemoryStore.new(history_revisions: nil, history_seconds: nil)
     rbac_source = Object.new
-    roles = {"cluster_roles" => [{"metadata" => {"name" => "pod-reader"}, "rules" => [{"apiGroups" => [""], "resources" => %w[pods], "verbs" => %w[get list create]}]},
+    roles = {"cluster_roles" => [{"metadata" => {"name" => "pod-reader"},
+                                  "rules" => [{"apiGroups" => [""], "resources" => %w[pods], "verbs" => %w[get list create]}]},
                                  {"metadata" => {"name" => "system:public-info-viewer"},
                                   "rules" => [{"nonResourceURLs" => %w[/healthz /version /livez /readyz], "verbs" => %w[get]}]}],
              "cluster_role_bindings" => [{"metadata" => {"name" => "readers"}, "roleRef" => {"kind" => "ClusterRole", "name" => "pod-reader"},
