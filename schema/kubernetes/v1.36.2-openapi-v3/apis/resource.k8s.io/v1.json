@@ -461,7 +461,11 @@
           },
           "source": {
             "default": "",
-            "description": "Source records whether the configuration comes from a class and thus is not something that a normal user would have been able to set or from a claim.",
+            "description": "Source records whether the configuration comes from a class and thus is not something that a normal user would have been able to set or from a claim.\n\n\nPossible enum values:\n - `\"FromClaim\"`\n - `\"FromClass\"`",
+            "enum": [
+              "FromClaim",
+              "FromClass"
+            ],
             "type": "string"
           }
         },
