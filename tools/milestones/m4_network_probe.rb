@@ -44,9 +44,7 @@ module M4NetworkKernelProbe
       namespace_leases = contexts.map do |context|
         Rubernetes::Network::Netlink::NamespaceLease.open(context.fetch("netns"))
       end
-      if contexts.map { |entry| entry.fetch("netns").fetch("inode") }.uniq.length != 2
-        raise "isolated network namespace inodes are not unique"
-      end
+      raise "isolated network namespace inodes are not unique" if contexts.map { |entry| entry.fetch("netns").fetch("inode") }.uniq.length != 2
 
       netlink = netlink_class.new
       observer = observer_class.new(netlink: netlink)
