@@ -216,7 +216,15 @@ module Rubernetes
           body || "".b
         end
 
-        def decode_chunked(raw)
+        MAX_ERROR_BODY_BYTES = 1024 * 1024
+
+        # A chunked body is read chunk by chunk up to its terminating
+        # zero-size chunk.  The node answers a refused exec (a missing
+        # executable, an unknown container) with a chunked 500 on a
+        # keep-alive connection; reading that socket to EOF waited for the
+        # node's 30s idle close before the client saw the error.
+        def read_chunked(socket, leftover)
+          buffer = leftover.dup
           result = "".b
           offset = 0
           loop do
