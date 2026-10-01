@@ -17,9 +17,7 @@ module Rubernetes
 
         new_spec = fetch(root, "spec") || {}
         old_spec = fetch(old, "spec") || {}
-        if (old.dig("metadata", "annotations") || {}).key?("kubernetes.io/config.mirror")
-          return [issue([], :forbidden, "static pods cannot be resized")]
-        end
+        return [issue([], :forbidden, "static pods cannot be resized")] if (old.dig("metadata", "annotations") || {}).key?("kubernetes.io/config.mirror")
         return [issue([], :forbidden, "windows pods cannot be resized")] if old_spec.dig("os", "name").to_s == "windows"
 
         helpers = Rubernetes::ResourceHelpers
