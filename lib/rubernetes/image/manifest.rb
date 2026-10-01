@@ -70,7 +70,7 @@ module Rubernetes
         @size = Integer(size)
         raise ManifestError, "descriptor size must be non-negative" if @size.negative?
 
-        @urls = urls.map(&:to_s).map(&:freeze).freeze
+        @urls = urls.map { |url| url.to_s.freeze }.freeze
         @annotations = annotations.dup.freeze
         @platform = platform&.dup&.freeze
         freeze
