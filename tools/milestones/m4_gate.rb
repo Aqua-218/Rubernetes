@@ -220,7 +220,8 @@ module M4Gate
         errors << "input_capture must include start and finish identities"
         return
       end
-      unless start["sha256"] == manifest["input_sha256"] && finish["sha256"] == manifest["input_sha256"] && start["file_count"] == manifest["input_file_count"] && finish["file_count"] == manifest["input_file_count"]
+      unless start["sha256"] == manifest["input_sha256"] && finish["sha256"] == manifest["input_sha256"] &&
+             start["file_count"] == manifest["input_file_count"] && finish["file_count"] == manifest["input_file_count"]
         errors << "input_capture identities must match the manifest input"
       end
       errors << "input_capture start and finish identities differ" unless start == finish
