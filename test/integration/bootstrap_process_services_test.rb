@@ -148,8 +148,7 @@ class BootstrapProcessServicesTest < Minitest::Test
     end
   end
 
-  class NetworkPort
-  end
+  NetworkPort = Class.new
 
   class VolumePort
   end
