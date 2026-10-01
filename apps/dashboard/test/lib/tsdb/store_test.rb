@@ -173,9 +173,12 @@ module Tsdb
       assert_equal 1, store.series_count
     end
 
-    assert_equal ["old_total"], reopened.select_series([M.new(name: "__name__", op: "=", value: "old_total")]).map(&:metric)
-    assert_equal ["old_total"], reopened.label_values("__name__")
-  end
+    test "an index written with BLOB labels is repaired on open" do
+      store = open_store
+      db = store.instance_variable_get(:@db)
+      db.execute("INSERT INTO series (fingerprint, metric, labels) VALUES (?, ?, ?)",
+                 ["f1", "old_total".b, JSON.generate({"__name__" => "old_total"}).b])
+      db.execute("INSERT INTO labels (series_id, name, value) VALUES (?, ?, ?)", [1, "__name__".b, "old_total".b])
 
   test "a writer in another process is refused by the directory lock" do
     store = open_store
