@@ -866,7 +866,9 @@ module M0Gate
           errors << "KVM payload does not prove API and capability readback"
         end
       when *ERRNO_PROBES.keys
-        unless positive_integer?(value["errno"]) && nonempty?(value["errno_name"]) && nonempty?(value["operation"]) && nonempty?(value["resource_id"]) && value["details"].is_a?(Hash) && nonempty?(value["message"]) && value["message"].include?(value["operation"]) && value["message"].include?(value["resource_id"])
+        unless positive_integer?(value["errno"]) && nonempty?(value["errno_name"]) && nonempty?(value["operation"]) && nonempty?(value["resource_id"]) &&
+               value["details"].is_a?(Hash) && nonempty?(value["message"]) && value["message"].include?(value["operation"]) &&
+               value["message"].include?(value["resource_id"])
           errors << "#{name} payload does not preserve errno identity"
         end
       when "source_input_stability"
