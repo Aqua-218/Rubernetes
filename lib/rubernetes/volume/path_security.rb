@@ -384,15 +384,6 @@ module Rubernetes
           end
         end
 
-        def secure_resolve_flags(value)
-          required = if defined?(Rubernetes::Platform::Linux::Openat2::DEFAULT_RESOLVE)
-                       Rubernetes::Platform::Linux::Openat2::DEFAULT_RESOLVE
-                     else
-                       0x08 | 0x04 | 0x02 | 0x01
-                     end
-          value.nil? ? required : Integer(value) | required
-        end
-
         def open_mount_point(path, flags: nil, resource_id: nil)
           relative_path = relative(path)
           return open(relative_path, flags: flags, resource_id: resource_id) unless descriptor_capable?
