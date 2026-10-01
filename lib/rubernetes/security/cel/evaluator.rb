@@ -68,7 +68,7 @@ module Rubernetes
             @scopes.pop
           end
 
-          def eval(node)
+          def evaluate(node)
             charge
             case node.first
             when :literal then node[1]
