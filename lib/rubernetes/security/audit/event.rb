@@ -46,7 +46,7 @@ module Rubernetes
           event["responseStatus"] = response_status(response) if response
           event["requestObject"] = sanitize(attributes, request_object, omit_managed_fields) if %w[Request RequestResponse].include?(level) && request_object
           event["responseObject"] = sanitize(attributes, response_object, omit_managed_fields) if level == "RequestResponse" && response_object
-          event.reject { |_key, value| value.nil? }
+          event.compact
         end
 
         def request_uri(request)
