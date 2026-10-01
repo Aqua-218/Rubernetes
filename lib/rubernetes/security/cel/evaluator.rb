@@ -268,7 +268,7 @@ module Rubernetes
                     when Hash then range.keys
                     else raise TypeMismatch, "comprehension range must be a list or map"
                     end
-            accumulator = eval(init_node)
+            accumulator = evaluate(init_node)
             items.each do |item|
               charge(2)
               with(iter_var => item, accu_var => accumulator) do
