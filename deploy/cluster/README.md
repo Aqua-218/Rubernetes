@@ -275,7 +275,8 @@ rm --force /etc/systemd/system/rubernetes-*.service /usr/local/bin/rubernetes-* 
 systemctl daemon-reload
 ```
 
-Run the agent cleanup before removing the state directory. The ledger is what
-names the sandboxes, bind mounts and network interfaces the agent created;
-deleting it first leaves that kernel state behind with nothing to identify
-it.
+Drain every node while its agent is still running: the agent is what
+releases the sandboxes, bind mounts and network interfaces it created, and
+its ledger under `/var/lib/rubernetes` is what names them. Deleting the state
+directory under a stopped agent leaves that kernel state behind with nothing
+to identify it (there is no separate cleanup command yet).
