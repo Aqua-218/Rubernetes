@@ -436,12 +436,10 @@ class M4VolumeSecurityTest < Minitest::Test
         end
         handle
       end
-      handle
-    end
-    adapter.define_singleton_method(:open_relative) do |**kwargs|
-      openat2.open_relative(**kwargs)
-    end
-    security = Rubernetes::Volume::PathSecurity.new(root: "/", adapter: adapter, require_openat2: true)
+      adapter.define_singleton_method(:open_relative) do |**kwargs|
+        openat2.open_relative(**kwargs)
+      end
+      security = Rubernetes::Volume::PathSecurity.new(root: "/", adapter: adapter, require_openat2: true)
 
     lease = security.acquire_target!(target, directory: true, create: true)
     held_target = File.join(held_parent, "target")
