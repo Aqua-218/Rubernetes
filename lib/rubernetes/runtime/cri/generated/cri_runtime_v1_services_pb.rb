@@ -136,7 +136,8 @@ module Rubernetes
               rpc :ReopenContainerLog, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ReopenContainerLogRequest,
                   ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ReopenContainerLogResponse
               # ExecSync runs a command in a container synchronously.
-              rpc :ExecSync, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ExecSyncRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ExecSyncResponse
+              rpc :ExecSync, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ExecSyncRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ExecSyncResponse
               # Exec prepares a streaming endpoint to execute a command in the container.
               rpc :Exec, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ExecRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ExecResponse
               # Attach prepares a streaming endpoint to attach to a running container.
