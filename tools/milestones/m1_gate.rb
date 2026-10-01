@@ -2135,8 +2135,9 @@ module M1Gate
                 errors << "#{label} comparison #{index} defaulting observations are required"
               end
               if expected_observation.is_a?(Hash) && actual_observation.is_a?(Hash)
-                errors << "#{label} comparison #{index} defaulting scheme registration must be recorded" unless [true,
-                                                                                                                 false].include?(expected_observation["scheme_registered"])
+                unless [true, false].include?(expected_observation["scheme_registered"])
+                  errors << "#{label} comparison #{index} defaulting scheme registration must be recorded"
+                end
                 %w[before_sha256 after_sha256].each do |digest_name|
                   unless valid_digest?(expected_observation[digest_name]) && valid_digest?(actual_observation[digest_name])
                     errors << "#{label} comparison #{index} defaulting #{digest_name} must be recorded for both sources"
