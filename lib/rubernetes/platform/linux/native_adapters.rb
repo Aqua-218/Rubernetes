@@ -3747,8 +3747,8 @@ module Rubernetes
         end
       end
 
-      NativeAdapters = NativeAdapters unless const_defined?(:NativeAdapters,
-                                                            false)
+      # rubocop:disable-next Lint/SelfAssignment -- re-exports the outer constant into this scope when it is missing
+      NativeAdapters = NativeAdapters unless const_defined?(:NativeAdapters, false)
     end
   end
 end
