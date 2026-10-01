@@ -1099,7 +1099,8 @@ module Rubernetes
             {"podCertificate" => {"signerName" => Helpers.key(certificate, "signerName", nil), "keyType" => Helpers.key(certificate, "keyType", nil),
                                   "maxExpirationSeconds" => Helpers.key(certificate, "maxExpirationSeconds", nil),
                                   "credentialBundlePath" => Helpers.key(certificate, "credentialBundlePath", nil),
-                                  "keyPath" => Helpers.key(certificate, "keyPath", nil), "certificateChainPath" => Helpers.key(certificate, "certificateChainPath", nil),
+                                  "keyPath" => Helpers.key(certificate, "keyPath", nil), "certificateChainPath" => Helpers.key(certificate,
+                                                                                                                               "certificateChainPath", nil),
                                   "userAnnotations" => Helpers.key(certificate, "userAnnotations", nil),
                                   "volumeName" => Helpers.key(source, "name", nil), "sourceIndex" => Array(Helpers.key(source, "sources", [])).index(projection)}.compact}
           else
