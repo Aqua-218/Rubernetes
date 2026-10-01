@@ -1071,7 +1071,8 @@ module Rubernetes
           @work_estimator = WorkEstimator.new(object_counts: @object_counts, watch_tracker: @watch_tracker,
                                               max_seats: ->(level_name) { @priority_levels[level_name]&.estimator_max_seats.to_i },
                                               watch_count_observer: lambda { |level_name, schema, count|
-                                                observe("apiserver_flowcontrol_watch_count_samples", count, {"flow_schema" => schema.to_s, "priority_level" => level_name.to_s})
+                                                observe("apiserver_flowcontrol_watch_count_samples", count,
+                                                        {"flow_schema" => schema.to_s, "priority_level" => level_name.to_s})
                                               })
           @borrowing_thread = nil
           adjust_borrowing!
