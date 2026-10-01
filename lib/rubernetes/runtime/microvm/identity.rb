@@ -190,7 +190,10 @@ module Rubernetes
             value = fields[field]
             next if value.nil?
             raise IdentityError, "identity value for #{field} was issued before" if @seen[field].key?(value)
-          @seen[field][fields[field]] = true unless fields[field].nil?  end
+          end
+          # Mark only after every field passed: a rejected identity must not
+          # leave half of its values recorded as issued.
+          ROTATED_FIELDS.each { |field| @seen[field][fields[field]] = true unless fields[field].nil? }
         end
 
         def append!(event, record)
