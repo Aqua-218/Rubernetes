@@ -165,8 +165,9 @@ module Rubernetes
             terms.each do |term|
               next if term["topologyKey"] == "kubernetes.io/hostname"
 
-              invalid!("Pod", attributes.name, [{"reason" => "FieldValueForbidden", "field" => "spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution",
-                                                 "message" => "Forbidden: pod anti-affinity topology key must be kubernetes.io/hostname"}])
+              invalid!("Pod", attributes.name,
+                       [{"reason" => "FieldValueForbidden", "field" => "spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution",
+                         "message" => "Forbidden: pod anti-affinity topology key must be kubernetes.io/hostname"}])
             end
           end
         end
