@@ -131,9 +131,7 @@ module Rubernetes
             raise StoreError, "content blob size does not match the descriptor" if expected_size && bytes != Integer(expected_size)
 
             actual = digest.hexdigest
-            unless secure_compare(actual, parsed.hex)
-              raise DigestMismatch, "content blob digest mismatch: expected #{parsed}, got sha256:#{actual}"
-            end
+            raise DigestMismatch, "content blob digest mismatch: expected #{parsed}, got sha256:#{actual}" unless secure_compare(actual, parsed.hex)
 
             file.flush
             file.fsync
