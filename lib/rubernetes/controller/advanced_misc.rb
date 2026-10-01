@@ -1404,7 +1404,8 @@ module Rubernetes
         security_context = Support.value(Support.spec(pod), "securityContext", {})
         options = value_at(volume, "seLinuxOptions") || value_at(security_context, "seLinuxOptions", "selinuxOptions")
         if options.is_a?(Hash)
-          [value_at(options, "user"), value_at(options, "role"), value_at(options, "type"), value_at(options, "level")].join(":").then { |label| label == ":::" ? "" : label }
+          [value_at(options, "user"), value_at(options, "role"), value_at(options, "type"),
+           value_at(options, "level")].join(":").then { |label| label == ":::" ? "" : label }
         else
           value_at(pod, "seLinuxLabel", "selinuxLabel").to_s
         end
