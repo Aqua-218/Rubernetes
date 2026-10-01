@@ -2841,9 +2841,7 @@ module Rubernetes
         # object then lost a 409 to.
         # Truncated once: the no-op check compares it, and the store takes it
         # as is instead of truncating it again in convert_in.
-        if object.is_a?(Hash) && StoreAdapter.time_codec.respond_to?(:truncated_frozen)
-          object = StoreAdapter.time_codec.truncated_frozen(object)
-        end
+        object = StoreAdapter.time_codec.truncated_frozen(object) if object.is_a?(Hash) && StoreAdapter.time_codec.respond_to?(:truncated_frozen)
         comparison_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         unchanged = phase("update.noop_check") { noop_update?(object, existing) }
         # apiserver_request_timestamp_comparison_time{code_path}: the old vs
