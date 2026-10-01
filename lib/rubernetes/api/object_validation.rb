@@ -345,9 +345,7 @@ module Rubernetes
         unless spec["restartPolicy"].nil? || RESTART_POLICIES.include?(spec["restartPolicy"])
           causes << unsupported("#{path}.restartPolicy", spec["restartPolicy"], RESTART_POLICIES)
         end
-        unless spec["dnsPolicy"].nil? || DNS_POLICIES.include?(spec["dnsPolicy"])
-          causes << unsupported("#{path}.dnsPolicy", spec["dnsPolicy"], DNS_POLICIES)
-        end
+        causes << unsupported("#{path}.dnsPolicy", spec["dnsPolicy"], DNS_POLICIES) unless spec["dnsPolicy"].nil? || DNS_POLICIES.include?(spec["dnsPolicy"])
         if spec.key?("terminationGracePeriodSeconds") && !spec["terminationGracePeriodSeconds"].nil? &&
            (!spec["terminationGracePeriodSeconds"].is_a?(Integer) || spec["terminationGracePeriodSeconds"].negative?)
           causes << invalid("#{path}.terminationGracePeriodSeconds", spec["terminationGracePeriodSeconds"],
