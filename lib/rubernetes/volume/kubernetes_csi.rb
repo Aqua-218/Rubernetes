@@ -115,9 +115,7 @@ module Rubernetes
             nil
           end
           status = attachment.is_a?(Hash) ? (attachment["status"] || {}) : {}
-          if status["attached"] == true
-            return {"volumeId" => id.to_s, "node" => node.to_s, "publishContext" => (status["attachmentMetadata"] || {}).to_h}
-          end
+          return {"volumeId" => id.to_s, "node" => node.to_s, "publishContext" => (status["attachmentMetadata"] || {}).to_h} if status["attached"] == true
 
           error = status.dig("attachError", "message")
           if @clock.call >= deadline
