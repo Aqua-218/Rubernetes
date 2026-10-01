@@ -286,24 +286,9 @@ module Promql
       assert_predicate values("ln(vector(-1))").first, :nan?
     end
 
-  test "absent, scalar, vector, time and calendar functions" do
-    assert_equal [[{"job" => "x"}, 1.0]], vector('absent(nothing{job="x"})')
-    load("one", {}, [7])
-
-    assert_equal [], vector("absent(one)")
-    assert_in_delta(7.0, scalar("scalar(one)"))
-    assert_equal [[{}, 2.0]], vector("vector(2)")
-    assert_equal T0 / 1000.0, scalar("time()")
-    assert_equal [T0 / 1000.0], values("timestamp(one)")
-    utc = Time.at(T0 / 1000).utc
-
-    assert_equal [utc.hour.to_f], values("hour()")
-    assert_equal [utc.wday.to_f], values("day_of_week()")
-    assert_equal [utc.year.to_f], values("year(vector(#{T0 / 1000}))")
-    assert_in_delta Math::PI, scalar("pi()")
-    assert_equal [Math.sqrt(7)], values("sqrt(one)")
-    assert_predicate values("ln(vector(-1))").first, :nan?
-  end
+    test "subqueries evaluate the inner expression at each step" do
+      load("sq", {}, [1, 2, 3, 4, 5])
+      result = vector("max_over_time(sq[1m:15s])")
 
   test "subqueries evaluate the inner expression at each step" do
     load("sq", {}, [1, 2, 3, 4, 5])
