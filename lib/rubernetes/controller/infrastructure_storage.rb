@@ -236,8 +236,9 @@ module Rubernetes
           # addConditionAndDeletePod, and emitPodDeletionEvent on the Pod;
           # deletePodHandler counts each delete that went through.
           fired = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          operations.concat(disruption_and_delete(pod, timestamp, reason: "DeletionByTaintManager",
-                                                                  message: "Taint manager: deleting due to NoExecute taint").map do |operation|
+          deletions = disruption_and_delete(pod, timestamp, reason: "DeletionByTaintManager",
+                                                            message: "Taint manager: deleting due to NoExecute taint")
+          observed = deletions.map do |operation|
             next operation unless operation.delete?
 
             operation.observed do |succeeded, _|
