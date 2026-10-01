@@ -6020,7 +6020,7 @@ module Rubernetes
         return true if resource.respond_to?(:custom?) && resource.custom?
         return GENERATION_TRACKED_KINDS.include?(resource.kind.to_s) if resource.respond_to?(:kind)
 
-        resource.respond_to?(:kind) && GENERATION_TRACKED_KINDS.include?(resource.kind.to_s)
+        object["spec"].is_a?(Hash)
       end
 
       def apply_generation(object, existing, subresource: nil, resource: nil)
