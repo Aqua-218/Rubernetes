@@ -177,7 +177,9 @@ module DRAAllocatorDifferential
                                                                                                                                   "values" => ["a"]}]}]})],
                                     claims: [claim("c", [request("r")])])
     add.call("node-selector-no-match", slices: [slice("s1", gpus(1), node_name: nil, pool: "zone-b",
-                                                                     nodeSelector: {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone", "operator" => "In", "values" => ["b"]}]}]})],
+                                                                     nodeSelector: {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone",
+                                                                                                                                     "operator" => "In",
+                                                                                                                                     "values" => ["b"]}]}]})],
                                        claims: [claim("c", [request("r")])])
     add.call("per-device-node-selection", slices: [slice("s1", [device("a", nodeName: "node-2"), device("b", nodeName: "node-1"), device("c", allNodes: true)],
                                                          node_name: nil, pool: "pd", perDeviceNodeSelection: true)],
