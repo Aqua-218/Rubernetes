@@ -448,7 +448,7 @@ module Rubernetes
           duplicate = value.length != value.uniq.length
           raise InvalidCatalogError, "GVR verbs contain duplicate values" if duplicate
 
-          value.map(&:dup).map(&:freeze).freeze
+          value.map { |item| item.dup.freeze }.freeze
         end
 
         def source_identifier
