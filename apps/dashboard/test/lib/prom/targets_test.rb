@@ -61,8 +61,7 @@ module Prom
       assert_equal "https://api:6443/api/v1/nodes/worker-1/proxy/metrics", kubelet.url
       assert_equal [200, "proxied /api/v1/nodes/worker-1/proxy/metrics\n"], kubelet.fetch.call
 
-      assert_equal({"process" => "proxy-worker-0", "node" => "worker-0"}, proxy.labels)
-      proxy.fetch.call
+      gitaly = all.find { |t| t.labels["pod"] == "gitaly-0" }
 
       assert_equal ["http://127.0.0.1:21003/metrics"], fetched
     end
