@@ -11,7 +11,8 @@ class SchedulerGangSchedulingTest < Minitest::Test
 
   def pod(name, group: "gang", cpu: "1")
     S::Pod.new({"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => name, "namespace" => "default", "uid" => "uid-#{name}"},
-                "spec" => {"schedulingGroup" => {"podGroupName" => group}, "containers" => [{"name" => "c", "image" => "nginx", "resources" => {"requests" => {"cpu" => cpu}}}]}})
+                "spec" => {"schedulingGroup" => {"podGroupName" => group},
+                           "containers" => [{"name" => "c", "image" => "nginx", "resources" => {"requests" => {"cpu" => cpu}}}]}})
   end
 
   def node(name, cpu:)
