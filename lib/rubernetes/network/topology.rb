@@ -914,9 +914,7 @@ module Rubernetes
         vtep = Support.fetch(hash, "vtep", "vtep_ip", "next_hop", default: nil)
         vtep = Support.ip(vtep, name: "VTEP IP").to_s if vtep
         mac = Support.fetch(hash, "mac", "vtep_mac", default: nil)
-        if mac && !Support.string(mac, "VTEP MAC").match?(/\A[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\z/)
-          raise ValidationError, "VTEP MAC is invalid"
-        end
+        raise ValidationError, "VTEP MAC is invalid" if mac && !Support.string(mac, "VTEP MAC").match?(/\A[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}\z/)
 
         Node.new(name: Support.string(Support.fetch(hash, "name", "node"), "node name"),
                  pod_cidr: normalize_cidr(Support.fetch(hash, "pod_cidr", "podCIDR", "cidr")),
