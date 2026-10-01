@@ -115,8 +115,10 @@
       "path": "apis/apps/v1.json",
       "upstream_path": "api/openapi-spec/v3/apis__apps__v1_openapi.json",
       "source_sha256": "4e190f85e4d9bcea04ee9a4a1501205fd4d1902766426c0e3de7efdeaa7395dc",
-      "sha256": "4e190f85e4d9bcea04ee9a4a1501205fd4d1902766426c0e3de7efdeaa7395dc",
-      "paths": 38
+      "sha256": "911770c06db66fc8131329b2254e107370a4aa5f1910e0c5d9b2dfb93e0d87f5",
+      "paths": 38,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/apps/v1"
     },
     {
       "path": "apis/apps.json",
