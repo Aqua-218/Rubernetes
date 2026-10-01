@@ -720,19 +720,15 @@ module RubernetesSchemaGenerator
           schema_name if gvks.any? { |gvk| gvk.fetch("group") == group && gvk.fetch("version") == version }
         end
         pinned = pinned_openapi_v3(key)
-        paths = pinned ? pinned.fetch("paths", {}) : {}
-        # Operations reference shared meta types (Status, DeleteOptions,
-        # Patch, WatchEvent, ListMeta ...): pull them into the closure.
-        referenced = paths.to_s.scan(%r{#/components/schemas/([A-Za-z0-9_.-]+)}).flatten.uniq
-        selected_definitions = schema_closure(definitions, (roots + referenced.select { |name| definitions.key?(name) }).uniq)
-        schemas = deep_transform_refs(selected_definitions)
-        # The v2 definitions describe Quantity and IntOrString as plain
-        # strings; upstream's v3 documents give them their oneOf shape, which
-        # is what `kubectl explain` prints as <Quantity>.  Take those two from
-        # the pinned v3 document whenever it has them.
-        pinned_schemas = pinned ? pinned.dig("components", "schemas") || {} : {}
-        OPENAPI_V3_SCALAR_SCHEMAS.each do |name|
-          schemas[name] = pinned_schemas.fetch(name) if schemas.key?(name) && pinned_schemas.key?(name)
+        # A group/version with a pinned upstream document serves that
+        # document: it carries the enum lists, the allOf+description form of
+        # $ref properties and the exact operation set that `kubectl explain`
+        # and the K5 wire differential compare.  Rendering from the v2
+        # definitions lost every enum ("explain pod" printed none) and the
+        # field-level descriptions of $ref properties.
+        if pinned && pinned.dig("components", "schemas").is_a?(Hash) && pinned["paths"].is_a?(Hash)
+          artifacts[relative] = RubernetesSchemaGenerator.canonical_json(pinned) << "\n"
+          next
         end
         document = {
           "openapi" => "3.0.0",
