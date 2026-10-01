@@ -257,10 +257,8 @@ module Rubernetes
                      external_ips: nil, load_balancer_ips: nil, external_name: nil,
                      health_check_node_port: nil, publish_not_ready_addresses: nil,
                      allocate_load_balancer_node_ports: nil, load_balancer_source_ranges: nil,
-                     topology_aware_hints: nil, topology_hints: nil, **_options)
-        if object.nil? && (_options.key?(:metadata) || _options.key?("metadata") || _options.key?(:spec) || _options.key?("spec"))
-          object = _options
-        end
+                     topology_aware_hints: nil, topology_hints: nil, **options)
+        object = options if object.nil? && (options.key?(:metadata) || options.key?("metadata") || options.key?(:spec) || options.key?("spec"))
         source = ModelSupport.string_keys(object || {})
         metadata = ModelSupport.key(source, "metadata", {})
         spec = ModelSupport.key(source, "spec", source)
