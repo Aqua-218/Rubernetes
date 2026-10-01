@@ -103,7 +103,8 @@ class VolumeRecordFilesTest < Minitest::Test
     Dir.mktmpdir do |dir|
       path = File.join(dir, "mounts.json")
       File.write(path, JSON.generate([
-                                       {"volumeId" => "v1", "source" => "/dev/sda1", "target" => "/t1", "mountId" => "m1", "filesystemUuid" => "u", "deviceId" => "8:1",
+                                       {"volumeId" => "v1", "source" => "/dev/sda1", "target" => "/t1", "mountId" => "m1", "filesystemUuid" => "u",
+                                        "deviceId" => "8:1",
                                         "owner" => "o"},
                                        {"volumeId" => "v2", "source" => "/dev/sdb1", "target" => "/t2", "mountId" => "m2", "filesystemUuid" => "u2", "deviceId" => "8:17",
                                         "owner" => "o"}
