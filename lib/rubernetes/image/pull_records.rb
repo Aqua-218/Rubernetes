@@ -131,9 +131,7 @@ module Rubernetes
 
             prefixes << trimmed
           else
-            if trim_tag_digest(pattern) != pattern
-              raise InvalidPolicy, "neither tag nor digest is accepted in an image reference: #{pattern}"
-            end
+            raise InvalidPolicy, "neither tag nor digest is accepted in an image reference: #{pattern}" if trim_tag_digest(pattern) != pattern
 
             exact[trimmed] = true
           end
