@@ -3381,16 +3381,6 @@
         "responses": {
           "200": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.admissionregistration.v1.MutatingAdmissionPolicyBindingList"
-                }
-              },
-              "application/cbor-seq": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.admissionregistration.v1.MutatingAdmissionPolicyBindingList"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.admissionregistration.v1.MutatingAdmissionPolicyBindingList"
