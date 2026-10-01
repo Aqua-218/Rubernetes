@@ -881,7 +881,7 @@ module Rubernetes
       def stringify_query(query)
         raise UsageError, "watch query must be a mapping" unless query.respond_to?(:to_h)
 
-        query.to_h.transform_keys { |key| key.to_s }
+        query.to_h.transform_keys(&:to_s)
       end
 
       def decode_response(response)
