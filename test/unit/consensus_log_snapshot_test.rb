@@ -155,7 +155,10 @@ class ConsensusLogSnapshotTest < Minitest::Test
     assert_equal 3, decoded.type_code
     assert_raises(C::ProtocolError) { C::Messages.decode('{"type":"append_entries","cluster_id":"c","from":"a","to":"b","term":1,"request_id":"r"}') }
     assert_raises(C::ProtocolError) { C::Messages.decode(message.encode.sub('"to":"b"', '"to":"b","extra":1')) }
-    assert_raises(C::ProtocolError) { C::Messages.decode('{"type":"request_vote","cluster_id":"c","from":"a","to":"b","term":1,"request_id":"r","last_log_index":-1,"last_log_term":0}') }
+    assert_raises(C::ProtocolError) do
+      C::Messages.decode('{"type":"request_vote","cluster_id":"c","from":"a","to":"b","term":1,"request_id":"r",' \
+                         '"last_log_index":-1,"last_log_term":0}')
+    end
     assert_raises(C::ProtocolError) { C::Messages.decode('{"type":"nope"}') }
     assert_raises(C::ProtocolError) { C::Messages.decode('{"type":"timeout_now","type":"timeout_now","cluster_id":"c","from":"a","to":"b","term":1,"request_id":"r"}') }
   end
