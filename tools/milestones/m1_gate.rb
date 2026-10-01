@@ -1214,9 +1214,7 @@ module M1Gate
       end
       errors << "API semantic header exclusion allowlist must exactly match the pinned policy" unless policy == HEADER_EXCLUSION_ALLOWLIST
       policy.each do |name, metadata|
-        unless name.is_a?(String) && name == name.downcase && name.match?(/\A[a-z0-9-]+\z/)
-          errors << "API semantic header exclusion name must be lowercase"
-        end
+        errors << "API semantic header exclusion name must be lowercase" unless name.is_a?(String) && name == name.downcase && name.match?(/\A[a-z0-9-]+\z/)
         unless metadata.is_a?(Hash) && %w[dynamic hop-by-hop].include?(metadata["class"]) && non_empty_string?(metadata["reason"])
           errors << "API semantic header exclusion #{name.inspect} must have a class and machine-readable reason"
         end
