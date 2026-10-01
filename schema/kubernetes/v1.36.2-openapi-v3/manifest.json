@@ -568,8 +568,10 @@
       "path": "version.json",
       "upstream_path": "api/openapi-spec/v3/version_openapi.json",
       "source_sha256": "9077133c6af1c993f466a91f9f870daaee779581adc2c3614176c273dd2f52a2",
-      "sha256": "9077133c6af1c993f466a91f9f870daaee779581adc2c3614176c273dd2f52a2",
-      "paths": 1
+      "sha256": "152178d602052231a77259f0f1987d2a49275c0ff94a81e89a1f996fee68ed5f",
+      "paths": 1,
+      "source": "served",
+      "served_path": "/openapi/v3/version"
     }
   ]
 }
