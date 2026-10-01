@@ -377,8 +377,10 @@ module Rubernetes
         raise AuthenticationError, "registry token response must be a JSON object" unless payload.is_a?(Hash)
 
         token = payload["token"] || payload["access_token"]
-        raise AuthenticationError, 
-              "registry token response did not contain a token" unless token.is_a?(String) && !token.empty? && !token.match?(/[\x00-\x20\x7f]/)
+        unless token.is_a?(String) && !token.empty? && !token.match?(/[\x00-\x20\x7f]/)
+          raise AuthenticationError,
+                "registry token response did not contain a token"
+        end
 
         expires_in = payload["expires_in"]
         expires_at = expires_in.is_a?(Numeric) && expires_in.positive? ? monotonic_time + expires_in.to_f : Float::INFINITY
