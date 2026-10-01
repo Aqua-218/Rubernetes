@@ -34,7 +34,8 @@ class M2LifecycleOracleHarnessTest < Minitest::Test
         "phase" => "Running",
         "initContainerStatuses" => [
           {"name" => "prepare", "ready" => true, "started" => false, "restartCount" => 0,
-           "state" => {"terminated" => {"exitCode" => 0, "reason" => "Completed", "startedAt" => "2026-09-04T04:42:40Z", "finishedAt" => "2026-09-04T04:42:40Z"}}},
+           "state" => {"terminated" => {"exitCode" => 0, "reason" => "Completed", "startedAt" => "2026-09-04T04:42:40Z",
+                                        "finishedAt" => "2026-09-04T04:42:40Z"}}},
           {"name" => "sidecar", "ready" => true, "started" => true, "restartCount" => 0,
            "state" => {"running" => {"startedAt" => "2026-09-04T04:42:41Z"}}}
         ],
