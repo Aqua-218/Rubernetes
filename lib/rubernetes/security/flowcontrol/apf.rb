@@ -355,10 +355,10 @@ module Rubernetes
                               when "Exact" then true
                               when "NotOlderThan" then false
                               when ""
-                                if !query["continue"].to_s.empty? then true
-                                elsif limit.positive? && !resource_version.empty? && resource_version != "0" then true
-                                else false # ConsistentListFromCache: RV "" is served from the cache
-                                end
+                                # A continue token or an exact positive-limit RV goes to storage;
+                                # ConsistentListFromCache: RV "" is served from the cache.
+                                !query["continue"].to_s.empty? ||
+                                (limit.positive? && !resource_version.empty? && resource_version != "0")
                               else true
                               end
           list_from_cache = attributes.verb.to_s == "watch" || !list_from_storage
