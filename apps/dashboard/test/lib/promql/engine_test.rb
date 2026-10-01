@@ -188,9 +188,10 @@ module Promql
       error = assert_raises(Promql::EvalError) { vector("requests / ignoring(code) total") }
       assert_match(/many-to-one matching must be explicit/, error.message)
 
-    assert_equal 4, result.length
-    assert_equal({"code" => "200", "method" => "get"}, result[0][0])
-    assert_in_delta 100.0 / 124, result[0][1]
+      assert_equal 2, vector('requests{code="500"} and on(method) total').length
+      assert_equal 0, vector('requests{code="500"} unless on(method) total').length
+      assert_equal 6, vector("requests or total").length
+    end
 
     error = assert_raises(Promql::EvalError) { vector("requests / ignoring(code) total") }
     assert_match(/many-to-one matching must be explicit/, error.message)
