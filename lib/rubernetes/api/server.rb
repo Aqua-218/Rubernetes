@@ -2681,7 +2681,7 @@ module Rubernetes
           candidate = inject_csr_requester(request, route.resource, candidate)
           validate_object!(route.resource, candidate)
           admit_validating(request, route, "CREATE", candidate, nil, namespace)
-          candidate = prepare_created_metadata(candidate)
+          candidate = prepare_created_metadata(candidate, resource: route.resource)
           candidate = prepare_registry_create(route.resource, candidate)
           # Job selectors are generated from the apiserver-assigned UID. The
           # first schema pass necessarily precedes metadata allocation, so run
