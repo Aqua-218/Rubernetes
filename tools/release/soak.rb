@@ -137,20 +137,7 @@ module Release
         out, _err, status = Open3.capture3("pgrep", "-f", "(^|/)exe/#{Regexp.escape(name)}( |$)")
         next [] unless status.success?
 
-        out.split.filter_map do |pid|
-          {
-            "name" => name,
-            "pid" => Integer(pid),
-            "rss_kb" => File.read("/proc/#{pid}/status")[/VmRSS:\s+(\d+)/, 1].to_i,
-            "open_files" => begin
-              Dir.children("/proc/#{pid}/fd").length
-            rescue StandardError
-              0
-            end
-          }
-        rescue Errno::ENOENT
-          nil
-        end
+        out.split.filter_map { |pid| process_sample(name, Integer(pid, 10)) }
       end
     end
 
