@@ -424,7 +424,8 @@ module Rubernetes
                                                                                                     secrets: Types.key(request, "secrets", {}), volume_capability: Types.key(request, "volumeCapability")
         )
         when "NodeStageVolume" then stage(Types.key(request, "volumeId"), Types.key(request, "stagingTargetPath"), token: token,
-                                                                                                                   readonly: Types.key(request, "readonly", false), context: request)
+                                                                                                                   readonly: Types.key(request, "readonly",
+                                                                                                                                       false), context: request)
         when "NodeUnstageVolume" then unstage(Types.key(request, "volumeId"), Types.key(request, "stagingTargetPath"), token: token)
         when "NodePublishVolume" then publish_node(Types.key(request, "volumeId"), Types.key(request, "stagingTargetPath"),
                                                    Types.key(request, "targetPath"), token: token,
