@@ -432,9 +432,7 @@ module Rubernetes
           shutdown_gauges = @kubelet_metrics.registry
           @shutdown_manager.gauge_sink = ->(name, value) { shutdown_gauges.set(name, value) }
         end
-        if @shutdown_manager && @admission.respond_to?(:shutdown_admit_handler=)
-          @admission.shutdown_admit_handler = @shutdown_manager.method(:admit)
-        end
+        @admission.shutdown_admit_handler = @shutdown_manager.method(:admit) if @shutdown_manager && @admission.respond_to?(:shutdown_admit_handler=)
         @pressure_conditions = {}
         @pressure_mutex = Mutex.new
         @mutex = Mutex.new
