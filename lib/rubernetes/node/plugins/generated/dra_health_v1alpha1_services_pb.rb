@@ -39,7 +39,8 @@ module Rubernetes
               self.service_name = "v1alpha1.DRAResourceHealth"
 
               # NodeWatchResources allows a DRA plugin to stream health updates for its devices to Kubelet.
-              rpc :NodeWatchResources, ::Rubernetes::Node::Plugins::Generated::DRAHealthV1alpha1::NodeWatchResourcesRequest, stream(::Rubernetes::Node::Plugins::Generated::DRAHealthV1alpha1::NodeWatchResourcesResponse)
+              rpc :NodeWatchResources, ::Rubernetes::Node::Plugins::Generated::DRAHealthV1alpha1::NodeWatchResourcesRequest,
+                  stream(::Rubernetes::Node::Plugins::Generated::DRAHealthV1alpha1::NodeWatchResourcesResponse)
             end
 
             Stub = Service.rpc_stub_class
