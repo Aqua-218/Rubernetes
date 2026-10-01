@@ -99,7 +99,7 @@ module Rubernetes
         end
         ReconcileResult.new(operations: result.operations, batches: result.batches, status: result.status,
                             events: result.events, controller: result.controller,
-                            key: result.key, applied: true, requeue_after: result.requeue_after).tap { |_record| }
+                            key: result.key, applied: true, requeue_after: result.requeue_after)
       end
 
       def plan(_resource, store: nil, **_options)
