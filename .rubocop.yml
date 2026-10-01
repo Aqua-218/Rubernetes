@@ -107,6 +107,16 @@ Style/DoubleNegation:
   Enabled: false
 Style/StringConcatenation:
   Enabled: false
+# SelectByRegexp rewrote `select { |v| matcher.match?(v) }` into `grep(matcher)`
+# where matcher is a Struct with its own match? (apps/dashboard tsdb): grep uses
+# ===, so every regex label selector silently returned nothing (found 2026-10-01).
+Style/SelectByRegexp:
+  Enabled: false
+# CombinableLoops merged two consecutive loops over the same hash into one
+# although the first loop `next`s past some entries (apps/dashboard rules):
+# ALERTS rows stopped being written for active alerts (found 2026-10-01).
+Style/CombinableLoops:
+  Enabled: false
 # assert_equal true / refute_equal false assert an exact boolean on purpose.
 Minitest/AssertTruthy:
   Enabled: false
