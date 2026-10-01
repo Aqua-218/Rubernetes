@@ -584,7 +584,8 @@ module M2LifecycleOracleNodeImage
     _stdout, stderr, status = docker("image", "inspect", "--format", "{{.Id}}", reference, allow_failure: true)
     unless status.success?
       raise BuildError,
-            "locked node image #{reference} is not in the local Docker image store (#{stderr.strip}); run `ruby #{File.basename(__FILE__)} --write-lock` after building"
+            "locked node image #{reference} is not in the local Docker image store (#{stderr.strip}); run `ruby #{File.basename(__FILE__)} --write-lock` " \
+            "after building"
     end
 
     id = image_id(reference)
