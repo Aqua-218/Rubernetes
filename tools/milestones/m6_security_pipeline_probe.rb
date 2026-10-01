@@ -203,7 +203,8 @@ module M6SecurityPipelineProbe
 
     recorder.reset
     denied = request(server, "POST", "/api/v1/namespaces/default/configmaps", token: "alice-token", body: configmap("denied"))
-    cases << {"id" => "validating_admission_rejects_after_mutation_before_store", "status" => denied.status, "observed" => recorder.events.dup, "message" => denied.body["message"],
+    cases << {"id" => "validating_admission_rejects_after_mutation_before_store", "status" => denied.status, "observed" => recorder.events.dup,
+              "message" => denied.body["message"],
               "passed" => denied.status == 403 && recorder.events.index("admission.mutating") < recorder.events.index("admission.validating") &&
                           !recorder.events.include?("store.create") && denied.body["reason"] == "Forbidden" && !leak?(denied.body)}
 
