@@ -319,12 +319,6 @@ class M3JobControllerTest < Minitest::Test
     Controller.metrics = nil
   end
 
-  private
-
-  # A Job deleted while its Pods still carry the tracking finalizer leaves
-  # them unreleasable: no Job sync will ever run for them again.  Upstream's
-  # syncOrphanPod strips the finalizer so the Pod can finish deleting, and
-  # its namespace with it.
   def test_orphaned_pods_lose_the_tracking_finalizer_when_their_job_is_gone
     owner = job(completions: 1, parallelism: 1)
     orphan = pod("batch-a", owner, phase: "Succeeded", finalizer: true)
