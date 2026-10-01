@@ -201,7 +201,8 @@ class KubeletDebugEndpointsTest < Minitest::Test
     assert_includes text,
                     'container_memory_working_set_bytes{container="app",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} 80'
     assert_includes text,
-                    'container_fs_usage_bytes{container="app",device="rootfs",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} 4096'
+                    'container_fs_usage_bytes{container="app",device="rootfs",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} ' \
+                    "4096"
     assert_includes text,
                     'container_start_time_seconds{container="app",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} 1.7672256e+09'
   end
