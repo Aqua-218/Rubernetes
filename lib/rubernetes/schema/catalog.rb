@@ -830,7 +830,7 @@ module Rubernetes
 
         private
 
-        def deep_copy(value, seen = {})
+        def deep_copy(value, seen = {}.compare_by_identity)
           case value
           when Hash
             return seen.fetch(value.object_id) if seen.key?(value.object_id)
