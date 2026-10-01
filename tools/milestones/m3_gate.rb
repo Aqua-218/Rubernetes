@@ -1650,9 +1650,7 @@ module M3Gate
       errors << "queue/informer property identifiers must be unique" unless ids.length == ids.uniq.length
       errors << "queue/informer property inventory is incomplete" unless ids.sort == REQUIRED_QUEUE_PROPERTIES.sort
       properties.each_with_index do |entry, index|
-        unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1
-          errors << "queue/informer property #{index} must pass once"
-        end
+        errors << "queue/informer property #{index} must pass once" unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1
         unless entry.is_a?(Hash) && entry["measurement_source"] == "production_module"
           errors << "queue/informer property #{index} must record production module"
         end
