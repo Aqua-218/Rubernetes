@@ -196,10 +196,8 @@ module M4Gate
       errors << "input_file_count must be positive" unless positive_integer?(manifest["input_file_count"])
       errors << "source input must remain stable during evidence capture" unless manifest["input_stable"] == true
       host = manifest["host"]
-      errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel
-                                                                                                             ruby].all? do |key|
-        non_empty_string?(host[key])
-      end
+      host_described = host.is_a?(Hash) && %w[architecture kernel ruby].all? { |key| non_empty_string?(host[key]) }
+      errors << "host architecture, kernel, and Ruby description are required" unless host_described
       validate_kernel_requirement(manifest, host, errors)
       %w[started_at finished_at].each { |key| errors << "#{key} must be an ISO-8601 timestamp" unless iso8601?(manifest[key]) }
       validate_input_capture(manifest, errors)
