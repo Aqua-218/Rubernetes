@@ -641,7 +641,8 @@ module M0Gate
       actual_command = Array(document["command"])
       output_path = document["output_path"]
       output_file = safe_evidence_path(directory, rebase_evidence_path(output_path, manifest, directory))
-      unless actual_command.length == 4 && actual_command.first(3) == expected_command && nonempty?(output_path) && actual_command.last == output_path && output_file && File.file?(output_file)
+      unless actual_command.length == 4 && actual_command.first(3) == expected_command && nonempty?(output_path) && actual_command.last == output_path &&
+             output_file && File.file?(output_file)
         errors << "native boundary scan command identity is invalid"
       end
       expected_tool = File.join(ROOT, "tools/milestones/native_boundary_scan.rb")
