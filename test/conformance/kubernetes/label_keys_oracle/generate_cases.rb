@@ -44,7 +44,8 @@ add.call("affinity_missing_label", "create", pod(affinity: affinity(required: [t
 add.call("affinity_nil_selector", "create", pod(affinity: affinity(required: [term(selector: nil, match: ["tier"])])))
 add.call("affinity_dup_matchlabels", "create", pod(affinity: affinity(required: [term(match: ["app"])])))
 add.call("affinity_dup_expression", "create",
-         pod(affinity: affinity(required: [term(selector: {"matchExpressions" => [{"key" => "tier", "operator" => "In", "values" => ["x"]}]}, match: ["tier"])])))
+         pod(affinity: affinity(required: [term(selector: {"matchExpressions" => [{"key" => "tier", "operator" => "In", "values" => ["x"]}]},
+                                                match: ["tier"])])))
 add.call("affinity_match_mismatch_dup", "create", pod(affinity: affinity(required: [term(match: ["tier"], mismatch: ["tier"])])))
 add.call("affinity_bad_key", "create", pod(affinity: affinity(required: [term(match: ["-bad"])])))
 add.call("affinity_preferred", "create", pod(affinity: affinity(preferred: [term(match: ["tier"])])))
