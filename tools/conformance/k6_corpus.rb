@@ -120,7 +120,8 @@ module Conformance
     def project_runs(options)
       return [] unless File.file?(CORPUS)
 
-      projects = YAML.safe_load_file(CORPUS).fetch("projects", [])
+      corpus = YAML.safe_load_file(CORPUS)
+      projects = corpus.fetch("projects", [])
       projects = projects.select { |project| options[:only].include?(project.fetch("name")) } if options[:only]
       projects.map { |project| run_project(project, options) }
     end
