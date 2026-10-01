@@ -245,7 +245,8 @@ module Conformance
         # `sonobuoy run` refuse with "namespace already exists".
         cleanup = Lanes.capture([sonobuoy, "delete", "--wait", "--all", "--kubeconfig", kubeconfig])
         execution = Lanes.capture(command)
-        artifacts = [Lanes.record(directory, "sonobuoy-command.json", execution)]
+        artifacts = [Lanes.record(directory, "sonobuoy-delete-before.json", cleanup),
+                     Lanes.record(directory, "sonobuoy-command.json", execution)]
         retrieve = Lanes.capture([sonobuoy, "retrieve", directory, "--kubeconfig", kubeconfig])
         artifacts << Lanes.record(directory, "sonobuoy-retrieve.json", retrieve)
         archive = Dir.glob(File.join(directory, "*.tar.gz")).first
