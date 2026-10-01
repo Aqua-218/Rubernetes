@@ -185,10 +185,8 @@ class KubeletCSIPluginRegistrationTest < Minitest::Test
     assert_equal (2**31) - 1, csi_node.dig("spec", "drivers").find { |driver| driver["name"] == "big.csi" }.dig("allocatable", "count")
     errors = []
     registry = Rubernetes::Node::CSIPlugins.new(client: @client, node_name: "n1", bridge_factory: ->(endpoint) { @bridges.fetch(endpoint) },
-                                                adapter_options: {attach_timeout: 0.0, sleeper: lambda { |_|
-                                                }}, error_handler: lambda { |error, *|
-                                                      errors << error
-                                                    })
+                                                adapter_options: {attach_timeout: 0.0, sleeper: ->(_) {}},
+                                                error_handler: ->(error, *) { errors << error })
     @bridges["/neg.sock"] = FakeBridge.new(info: {"nodeId" => "node-y", "maxVolumesPerNode" => -3, "topology" => {}})
     registry.register_plugin("neg.csi", "/neg.sock", ["1.0.0"])
 
