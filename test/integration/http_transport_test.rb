@@ -240,7 +240,7 @@ class HTTPTransportTest < Minitest::Test
     assert_equal 1, limited.active_connections
 
     second = TCPSocket.new("127.0.0.1", limited.port)
-    ready = IO.select([second], nil, nil, 1)
+    ready = second.wait_readable(1)
 
     refute_nil ready, "connection limit did not close the excess socket"
     result = second.read_nonblock(128, exception: false)
