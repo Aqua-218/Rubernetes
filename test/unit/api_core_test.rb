@@ -211,7 +211,8 @@ class APICoreTest < Minitest::Test
          })
     merged = call("PATCH", "/api/v1/namespaces/dev/pods/workload", {
                     "spec" => {"containers" => [
-                      {"name" => "web", "image" => "new", "ports" => [{"containerPort" => 80, "name" => "http", "protocol" => "TCP"}, {"containerPort" => 443, "name" => "https"}],
+                      {"name" => "web", "image" => "new",
+                       "ports" => [{"containerPort" => 80, "name" => "http", "protocol" => "TCP"}, {"containerPort" => 443, "name" => "https"}],
                        "env" => [{"name" => "A", "value" => "2"}, {"name" => "B", "value" => "3"}]},
                       {"name" => "side", "$patch" => "delete"},
                       {"name" => "helper", "image" => "helper"}
