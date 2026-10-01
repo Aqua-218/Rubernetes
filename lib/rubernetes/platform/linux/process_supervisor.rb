@@ -628,9 +628,7 @@ module Rubernetes
           return nil unless result
 
           normalized = normalize_wait_result(result)
-          if normalized.exit_status.nil? && normalized.term_signal.nil?
-            raise Error, "process wait returned no exit confirmation for #{current.id}"
-          end
+          raise Error, "process wait returned no exit confirmation for #{current.id}" if normalized.exit_status.nil? && normalized.term_signal.nil?
 
           update(current, state: :stopped, exit_status: normalized.exit_status, term_signal: normalized.term_signal)
           normalized
