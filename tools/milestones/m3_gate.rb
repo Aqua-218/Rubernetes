@@ -700,9 +700,7 @@ module M3Gate
         unless entry["owns_declared"] == true && entry["reconcile_declared"] == true
           errors << "controller registry entry #{index} must validate ownership and reconcile"
         end
-        unless entry["measurement_source"] == "production_module"
-          errors << "controller registry entry #{index} must execute against production registry"
-        end
+        errors << "controller registry entry #{index} must execute against production registry" unless entry["measurement_source"] == "production_module"
         errors << "controller registry entry #{index} must run once" unless entry["attempt_count"] == 1
         implementation = entry["implementation_class"]
         unless entry["implementation_present"] == true && non_empty_string?(implementation)
