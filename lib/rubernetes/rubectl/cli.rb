@@ -358,9 +358,7 @@ module Rubernetes
       def read_resources(filenames, options)
         raise Client::UsageError, "-f/--filename is required" if filenames.empty?
 
-        sandbox = if options[:allow_code] && filenames.any? { |filename| File.extname(filename).casecmp?(".rb") }
-                    build_manifest_sandbox(options)
-                  end
+        sandbox = (build_manifest_sandbox(options) if options[:allow_code] && filenames.any? { |filename| File.extname(filename).casecmp?(".rb") })
         reader = Client::ManifestReader.new(
           sandbox: sandbox,
           allow_code: options[:allow_code],
