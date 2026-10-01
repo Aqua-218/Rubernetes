@@ -286,7 +286,8 @@ module Rubernetes
             record.reason = condition["reason"].to_s
             record.message = condition["message"].to_s
             event(record.pod, "Warning", condition["type"],
-                  "PodCertificateRequest #{key.namespace}/#{pcr.dig("metadata", "name")} #{condition["type"] == "Denied" ? "was denied" : "failed"}, reason=#{record.reason.inspect}, message=#{record.message.inspect}")
+                  "PodCertificateRequest #{key.namespace}/#{pcr.dig("metadata", "name")} #{condition["type"] == "Denied" ? "was denied" : "failed"}, " \
+                  "reason=#{record.reason.inspect}, message=#{record.message.inspect}")
             return true
           when "Issued"
             record.private_key_pem = private_key_pem
