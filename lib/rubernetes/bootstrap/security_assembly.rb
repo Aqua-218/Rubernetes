@@ -432,8 +432,10 @@ module Rubernetes
           backends << Security::Audit::WebhookBackend.new(url: webhook.fetch("url"), mode: webhook.fetch("mode", "batch"),
                                                           ca_file: webhook["ca_file"], token: token,
                                                           timeout: webhook.fetch("timeout_seconds", 30),
-                                                          batch_max_size: webhook.fetch("batch_max_size", Security::Audit::WebhookBackend::DEFAULT_BATCH_MAX_SIZE),
-                                                          batch_max_wait: webhook.fetch("batch_max_wait_seconds", Security::Audit::WebhookBackend::DEFAULT_BATCH_MAX_WAIT))
+                                                          batch_max_size: webhook.fetch("batch_max_size",
+                                                                                        Security::Audit::WebhookBackend::DEFAULT_BATCH_MAX_SIZE),
+                                                          batch_max_wait: webhook.fetch("batch_max_wait_seconds",
+                                                                                        Security::Audit::WebhookBackend::DEFAULT_BATCH_MAX_WAIT))
         end
         backend = case backends.length
                   when 0 then Security::Audit::MemoryBackend.new
