@@ -632,7 +632,7 @@ class HTTPTransportTest < Minitest::Test
       watch_wait.value
       wait_until(timeout: 5) { store_watcher_count(service.store) == baseline_watchers }
 
-    assert_equal baseline_watchers, store_watcher_count(service.store)
+      assert_equal baseline_watchers, store_watcher_count(service.store)
 
     service.stop(reason: "integration test")
 
