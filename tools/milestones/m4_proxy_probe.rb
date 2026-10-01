@@ -538,12 +538,8 @@ module M4ProxyKernelProbe
     }
     ebpf_identity = ebpf_adapter.kernel_identity
     nft_identity = nft_adapter.kernel_identity
-    unless ebpf_identity.is_a?(Hash)
-      errors << "eBPF adapter did not expose a kernel identity after packet proof: #{ebpf_adapter.production_capability_error}"
-    end
-    unless nft_identity.is_a?(Hash)
-      errors << "nftables adapter did not expose a kernel identity after packet proof: #{nft_adapter.production_capability_error}"
-    end
+    errors << "eBPF adapter did not expose a kernel identity after packet proof: #{ebpf_adapter.production_capability_error}" unless ebpf_identity.is_a?(Hash)
+    errors << "nftables adapter did not expose a kernel identity after packet proof: #{nft_adapter.production_capability_error}" unless nft_identity.is_a?(Hash)
     ebpf_entry = {
       "readback" => ebpf_readback.fetch("readback"), "rules" => left_rules, "rulesDigest" => M4ProbeSupport.digest(left_rules),
       "identity" => ebpf_identity || {}, "identityDigest" => M4ProbeSupport.digest(ebpf_identity || {}),
