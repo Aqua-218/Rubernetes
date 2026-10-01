@@ -560,42 +560,43 @@ class HTTPTransportTest < Minitest::Test
     kubectl = File.expand_path("../../build/tools/kubectl-v1.36.2", __dir__)
     skip "official kubectl v1.36.2 is unavailable" unless File.executable?(kubectl)
 
-    config = Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-apiserver").process.merge("port" => 0)
-    logger = Rubernetes::Bootstrap::StructuredLogger.new(io: StringIO.new, process_name: "rubernetes-apiserver")
-    service = Rubernetes::Bootstrap::APIServerService.new(config: config, logger: logger)
-    service.start
-    wait_for_port(service.http_server)
+    begin
+      config = Rubernetes::Bootstrap::Config.load(process_name: "rubernetes-apiserver").process.merge("port" => 0)
+      logger = Rubernetes::Bootstrap::StructuredLogger.new(io: StringIO.new, process_name: "rubernetes-apiserver")
+      service = Rubernetes::Bootstrap::APIServerService.new(config: config, logger: logger)
+      service.start
+      wait_for_port(service.http_server)
 
-    Tempfile.create(["rubernetes-kubectl", ".yaml"]) do |manifest|
-      manifest.write(<<~YAML)
-        apiVersion: v1
-        kind: Pod
-        metadata:
-          name: web
-          namespace: default
-        spec:
-          containers:
-            - name: app
-              image: registry.k8s.io/pause:3.10
-      YAML
-      manifest.flush
+      Tempfile.create(["rubernetes-kubectl", ".yaml"]) do |manifest|
+        manifest.write(<<~YAML)
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: web
+            namespace: default
+          spec:
+            containers:
+              - name: app
+                image: registry.k8s.io/pause:3.10
+        YAML
+        manifest.flush
 
-      assert_includes kubectl_run(service, "apply", "--validate=false", "-f", manifest.path), "pod/web created"
-      pod = JSON.parse(kubectl_run(service, "get", "pod", "web", "-n", "default", "-o", "json"))
+        assert_includes kubectl_run(service, "apply", "--validate=false", "-f", manifest.path), "pod/web created"
+        pod = JSON.parse(kubectl_run(service, "get", "pod", "web", "-n", "default", "-o", "json"))
 
-      assert_equal "web", pod.dig("metadata", "name")
+        assert_equal "web", pod.dig("metadata", "name")
 
-      assert_includes kubectl_run(
-        service,
-        "patch", "pod", "web", "-n", "default", "--type=merge",
-        "-p", '{"metadata":{"labels":{"app":"transport"}}}'
-      ), "pod/web patched"
-      patched = JSON.parse(kubectl_run(service, "get", "pod", "web", "-n", "default", "-o", "json"))
+        assert_includes kubectl_run(
+          service,
+          "patch", "pod", "web", "-n", "default", "--type=merge",
+          "-p", '{"metadata":{"labels":{"app":"transport"}}}'
+        ), "pod/web patched"
+        patched = JSON.parse(kubectl_run(service, "get", "pod", "web", "-n", "default", "-o", "json"))
 
-      assert_equal "transport", patched.dig("metadata", "labels", "app")
+        assert_equal "transport", patched.dig("metadata", "labels", "app")
 
-      assert_includes kubectl_run(service, "delete", "pod", "web", "-n", "default"), "pod \"web\" deleted"
-    end
+        assert_includes kubectl_run(service, "delete", "pod", "web", "-n", "default"), "pod \"web\" deleted"
+      end
 
     # The API server keeps watches of its own (CustomResourceDefinitions and
     # APIServices, to serve dynamic APIs), so the kubectl watch is counted on
