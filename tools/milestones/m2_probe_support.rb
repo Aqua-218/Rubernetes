@@ -1275,7 +1275,8 @@ module M2ProbeSupport
       "qos" => qos,
       "expected" => resources.container_cgroup_limits(container, qos: qos, memory_qos: true, pids_limit: LEDGER_PIDS_LIMIT),
       "expected_pod" => resources.pod_cgroup_limits({"spec" => LEDGER_POD_SPEC}, qos: qos, memory_qos: true),
-      "formula_source" => "pkg/kubelet/cm/helpers_linux.go (MilliCPUToQuota, MilliCPUToShares), pkg/kubelet/cm/cgroup_manager_linux.go (getCPUWeight), pkg/kubelet/kuberuntime/kuberuntime_container_linux.go (memory.high)"
+      "formula_source" => "pkg/kubelet/cm/helpers_linux.go (MilliCPUToQuota, MilliCPUToShares), pkg/kubelet/cm/cgroup_manager_linux.go (getCPUWeight), " \
+                          "pkg/kubelet/kuberuntime/kuberuntime_container_linux.go (memory.high)"
     }
   end
 
