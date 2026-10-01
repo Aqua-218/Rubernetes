@@ -139,7 +139,6 @@ module Tsdb
       assert_equal 10, store.series_count
       assert_equal 100, store.samples(1, 0, 10**9).length
     end
-  end
 
   test "binary-encoded labels are stored as text and found by equality matchers" do
     store = open_store
