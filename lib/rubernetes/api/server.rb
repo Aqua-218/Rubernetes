@@ -4897,7 +4897,8 @@ module Rubernetes
         directive = query(request, "fieldValidation")
         unless directive.nil? || directive.to_s.empty? || FIELD_VALIDATION_DIRECTIVES.include?(directive.to_s)
           causes << {"reason" => "FieldValueNotSupported", "field" => "fieldValidation",
-                     "message" => "Unsupported value: #{ManagedFields::Value.go_quote(directive.to_s)}: supported values: \"\", \"Ignore\", \"Strict\", \"Warn\""}
+                     "message" => "Unsupported value: #{ManagedFields::Value.go_quote(directive.to_s)}: supported values: \"\", \"Ignore\", \"Strict\", " \
+                                  "\"Warn\""}
         end
         return if causes.empty?
 
