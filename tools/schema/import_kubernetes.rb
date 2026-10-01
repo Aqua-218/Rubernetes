@@ -230,9 +230,7 @@ module KubernetesCorpusImporter
     def load_lock
       data = JSON.parse(File.binread(@lock_path))
       source = data.fetch("source")
-      unless source.is_a?(Hash) && source["repository"] == OFFICIAL_REPOSITORY
-        raise ValidationError, "Kubernetes lock must pin #{OFFICIAL_REPOSITORY}"
-      end
+      raise ValidationError, "Kubernetes lock must pin #{OFFICIAL_REPOSITORY}" unless source.is_a?(Hash) && source["repository"] == OFFICIAL_REPOSITORY
       raise ValidationError, "Kubernetes lock tag must be #{EXPECTED_TAG.inspect}" unless source["tag"] == EXPECTED_TAG
 
       commit = source["commit"]
