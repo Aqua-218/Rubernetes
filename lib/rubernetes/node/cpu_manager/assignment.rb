@@ -176,7 +176,7 @@ module Rubernetes
               return if satisfied? # rubocop:disable Lint/NonLocalExitFromIterator -- the method is done once this holds
 
               take_partial_uncore(uncore)
-              return if satisfied?
+              return if satisfied? # rubocop:disable Lint/NonLocalExitFromIterator -- the method is done once this holds
             end
           end
 
