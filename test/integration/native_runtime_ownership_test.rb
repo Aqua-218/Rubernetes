@@ -110,24 +110,6 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       writer.close
       holder_pid, clone3_creation, clone_flags = Timeout.timeout(5) { reader.read(24).unpack("Q<Q<Q<") }
       reader.close
-      plan = Rubernetes::Runtime::Native::Namespace::Plan.new(
-        namespaces: [:pid].freeze, shared: [].freeze, host: [].freeze,
-        user_mapping: nil, hostname: nil
-      )
-      handle = low_level.create(plan: plan, id: "m2-holder-#{Process.pid}", identity: "namespace:m2-holder-#{Process.pid}")
-      writer.write([
-        handle.pid,
-        handle.creation_method == "clone3" ? 1 : 0,
-        handle.clone_flags
-      ].pack("Q<Q<Q<"))
-      writer.flush
-      sleep 60
-    ensure
-      writer.close unless writer.closed?
-    end
-    writer.close
-    holder_pid, clone3_creation, clone_flags = Timeout.timeout(5) { reader.read(24).unpack("Q<Q<Q<") }
-    reader.close
 
     assert_equal(1, clone3_creation)
     assert_equal(Linux::Clone3::CLONE_PIDFD,
