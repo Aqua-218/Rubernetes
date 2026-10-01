@@ -2105,7 +2105,8 @@ module M2Gate
           errors << "#{label} active kernel observation is required" unless non_empty_string?(object["active"])
           errors << "#{label} must come from production Native adapters" unless object["measurement_source"] == "production_native_adapter"
           errors << "#{label} active_sha256 is required" unless valid_digest?(object["active_sha256"])
-          if valid_digest?(object["active_sha256"]) && non_empty_string?(object["active"]) && object["active_sha256"] != Digest::SHA256.hexdigest(object["active"])
+          if valid_digest?(object["active_sha256"]) && non_empty_string?(object["active"]) &&
+             object["active_sha256"] != Digest::SHA256.hexdigest(object["active"])
             errors << "#{label} active_sha256 does not match"
           end
         end
