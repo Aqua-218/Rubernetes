@@ -153,7 +153,8 @@ class M2LifecycleOracleHarnessTest < Minitest::Test
     )
     assert_equal(
       {"probe" => "exec:/bin/false", "failureThreshold" => 2, "periodSeconds" => 1, "initialDelaySeconds" => 10, "result" => "failed",
-       "failures_before_kill" => 2, "kill_reason" => "Killing", "kill_message" => "Container app failed liveness probe, will be restarted", "restartCount_after_kill" => 1}, observable.fetch("liveness")
+       "failures_before_kill" => 2, "kill_reason" => "Killing", "kill_message" => "Container app failed liveness probe, will be " \
+                                                                                  "restarted", "restartCount_after_kill" => 1}, observable.fetch("liveness")
     )
   end
 
