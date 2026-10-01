@@ -334,7 +334,11 @@ module Rubernetes
       # +timeout+ bounds the whole pool: every worker shares one deadline.
       def stop(drain: true, join: true, timeout: nil)
         workers = @mutex.synchronize { @workers.values.dup }
-        workers.each { |worker| worker.stop(drain: drain, join: join) }
+        deadline = timeout && (Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout.to_f)
+        workers.each do |worker|
+          remaining = deadline && [deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC), 0].max
+          worker.stop(drain: drain, join: join, timeout: remaining)
+        end
         self
       end
 
