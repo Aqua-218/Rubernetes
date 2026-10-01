@@ -30,7 +30,7 @@ class ProxyConntrackReconcilerTest < Minitest::Test
 
     # IO#wait_readable, as the production socket path now waits (fiber-scheduler safe).
     def wait_readable(timeout = nil)
-      IO.select([@reader], nil, nil, timeout) ? self : nil
+      @reader.wait_readable(timeout) ? self : nil
     end
 
     def to_io = @reader
