@@ -342,8 +342,8 @@ module Rubernetes
         end
       end
 
-      def update(key = nil, object = nil, gvr: nil, namespace: nil, name: nil, resource_version: nil, **_options)
-        object = object || _options.delete(:object) || _options.delete(:resource) || _options.delete(:body)
+      def update(key = nil, object = nil, gvr: nil, namespace: nil, name: nil, resource_version: nil, **options)
+        object = object || options.delete(:object) || options.delete(:resource) || options.delete(:body)
         normalized_key = key_for(key, gvr: gvr, namespace: namespace, name: name, object: object)
         @mutex.synchronize do
           existing = @objects[normalized_key]
