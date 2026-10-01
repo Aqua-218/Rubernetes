@@ -17,10 +17,11 @@ module Dashboard
                "DASHBOARD_BIND" => "10.240.0.1") do
         hosts = Dashboard::Config.allowed_hosts
 
-      assert_includes hosts, "localhost"
-      assert_includes hosts, "10.240.0.1"
-      assert_includes hosts, "dashboard.dev.provn-vm.jp"
-      assert_includes hosts, Socket.gethostname
+        assert_includes hosts, "localhost"
+        assert_includes hosts, "10.240.0.1"
+        assert_includes hosts, "dashboard.dev.provn-vm.jp"
+        assert_includes hosts, Socket.gethostname
+      end
     end
   end
 
