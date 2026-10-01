@@ -883,9 +883,7 @@ module Rubernetes
         proofs.each_with_index.map do |proof, index|
           hash = proof.respond_to?(:to_h) ? proof.to_h : proof
           identity = Support.fetch(hash, "identity", "stable_identity", default: nil)
-          if @require_observer && identity.to_s.empty?
-            raise OwnershipError, "kernel observer returned an empty identity for #{operation.resource}"
-          end
+          raise OwnershipError, "kernel observer returned an empty identity for #{operation.resource}" if @require_observer && identity.to_s.empty?
 
           proof_id = Support.fetch(hash, "id", default: nil)
           resource_id = index.zero? ? operation.resource : proof_id
