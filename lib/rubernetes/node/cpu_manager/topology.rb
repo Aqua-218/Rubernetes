@@ -223,7 +223,7 @@ module Rubernetes
             node[:caches] = []
             node[:cores].each do |core|
               caches = cache_info(core[:threads].first)
-              return if caches.nil?
+              return if caches.nil? # rubocop:disable Lint/NonLocalExitFromIterator -- the method is done once this holds
 
               per_core = core[:threads].length
               per_node = node[:cores].length * per_core
