@@ -1100,9 +1100,7 @@ module Rubernetes
                                    controller: name, descriptor: STORAGE_VERSION_MIGRATION)
         end
 
-        unless valid_resource_version?(checkpoint)
-          return failed_result(migration, "invalid migration checkpoint resourceVersion #{checkpoint.inspect}", now)
-        end
+        return failed_result(migration, "invalid migration checkpoint resourceVersion #{checkpoint.inspect}", now) unless valid_resource_version?(checkpoint)
         if gc_resource_version && valid_resource_version?(gc_resource_version.to_s) && compare_resource_version(gc_resource_version.to_s,
                                                                                                                 checkpoint) == -1
           return result(migration, operations: [], events: [{"type" => "Normal", "reason" => "MigrationRunning",
