@@ -99,6 +99,7 @@ module Release
       cluster = options[:kubeconfig] ? cluster_sample(options[:kubeconfig], netns: options[:netns]) : {"available" => false}
       {
         "at" => at,
+        "scope" => options[:cluster_root] || "host",
         "processes" => processes,
         "open_files" => processes.sum { |entry| entry["open_files"].to_i },
         "rss_kb" => processes.sum { |entry| entry["rss_kb"].to_i },
