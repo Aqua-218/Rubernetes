@@ -145,7 +145,6 @@ module Rubernetes
         @reader = Thread.new { read_replies }
         @reader.name = "network-worker-client"
       end
-      # rubocop:enable Lint/MissingSuper
 
       FORWARDED.each do |name|
         define_method(name) do |*args, **kwargs|
