@@ -213,7 +213,7 @@ module Rubernetes
                             list_item_element(atom.list, child)
                           rescue Error => error
                             errors << prefixed(path, "element #{index}: #{error.message}")
-                            return
+                            return # rubocop:disable Lint/NonLocalExitFromIterator -- the method is done once this holds
                           end
                         else
                           PathElement.index(index)
