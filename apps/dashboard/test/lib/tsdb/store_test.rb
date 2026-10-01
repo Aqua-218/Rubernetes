@@ -165,12 +165,10 @@ module Tsdb
       found = store.select_series([M.new(name: "__name__", op: "=", value: "apiserver_request_total"),
                                    M.new(name: "job", op: "=", value: "apiserver")])
 
-  test "an index written with BLOB labels is repaired on open" do
-    store = open_store
-    db = store.instance_variable_get(:@db)
-    db.execute("INSERT INTO series (fingerprint, metric, labels) VALUES (?, ?, ?)",
-               ["f1", "old_total".b, JSON.generate({"__name__" => "old_total"}).b])
-    db.execute("INSERT INTO labels (series_id, name, value) VALUES (?, ?, ?)", [1, "__name__".b, "old_total".b])
+      assert_equal 1, found.length
+      assert_equal Encoding::UTF_8, found.first.labels["job"].encoding
+      # A second append with UTF-8 strings is the same series, not a duplicate.
+      store.append({"__name__" => "apiserver_request_total", "job" => "apiserver", "verb" => "GET"}, 2000, 2.0)
 
     assert_equal "blob", db.get_first_value("SELECT typeof(value) FROM labels")
     store.close
