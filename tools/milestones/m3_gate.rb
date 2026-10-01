@@ -1518,9 +1518,7 @@ module M3Gate
         unless entry["execution_component"] == "Rubernetes::Bootstrap::ControllerManagerService"
           errors << "workload differential case #{index} must execute through ControllerManagerService"
         end
-        unless entry["deadline_seconds"] == document["deadline_seconds"]
-          errors << "workload differential case #{index} deadline must match the report"
-        end
+        errors << "workload differential case #{index} deadline must match the report" unless entry["deadline_seconds"] == document["deadline_seconds"]
         errors << "workload differential case #{index} stream digest is required" unless valid_digest?(entry["stream_sha256"])
         if case_streams.is_a?(Hash) && case_streams[entry["id"].to_s] != entry["stream_sha256"]
           errors << "workload differential case #{index} stream digest is not bound to its input inventory"
