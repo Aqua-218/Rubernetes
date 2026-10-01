@@ -77,8 +77,10 @@ class NodeTokenAudienceRestrictionTest < Minitest::Test
                                            lookup: S::Authentication::ServiceAccount::Lookup.new(service_account: ->(*) {}, pod: ->(*) {},
                                                                                                  secret: ->(*) {}, node: ->(*) {})
                                          ))
-    call = ->(method, path,
-              body = nil) { server.call(Rubernetes::API::Request.new(method: method, path: path, headers: {"content-type" => "application/json"}, body: body && JSON.generate(body))) }
+    call = lambda { |method, path, body = nil|
+      server.call(Rubernetes::API::Request.new(method: method, path: path, headers: {"content-type" => "application/json"},
+                                               body: body && JSON.generate(body)))
+    }
     call.call("POST", "/api/v1/namespaces", {"apiVersion" => "v1", "kind" => "Namespace", "metadata" => {"name" => "team"}})
     account = call.call("POST", "/api/v1/namespaces/team/serviceaccounts",
                         {"apiVersion" => "v1", "kind" => "ServiceAccount", "metadata" => {"name" => "robot"}}).body
