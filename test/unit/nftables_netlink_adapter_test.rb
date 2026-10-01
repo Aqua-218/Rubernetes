@@ -17,6 +17,10 @@ class NftablesNetlinkAdapterTest < Minitest::Test
       @reader
     end
 
+    def wait_readable(timeout = nil)
+      @reader.wait_readable(timeout)
+    end
+
     def recv(_length)
       @reader.read
     end
