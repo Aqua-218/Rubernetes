@@ -768,7 +768,8 @@ module M2LifecycleProbe
         "apply_lifecycle_native_flow" => apply_lifecycle_native_flow,
         "resource_kinds" => inventory_measurement.fetch("resource_kinds"),
         "l3_available" => l3_available,
-        "passed" => l3_available && matrix_passed && subresources_passed && lifecycle_oracle["executed"] == true && oracle_difference_count.zero? && live.zero? &&
+        "passed" => l3_available && matrix_passed && subresources_passed && lifecycle_oracle["executed"] == true && oracle_difference_count.zero? &&
+          live.zero? &&
           sigkill_matrix.all? { |entry| entry["dead_residual_count"] == 0 } && errors.empty?,
         "errors" => errors
       }
