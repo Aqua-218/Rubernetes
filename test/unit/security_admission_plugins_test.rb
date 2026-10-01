@@ -224,7 +224,8 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     error = assert_raises(A::Rejected) { quota.validate(attributes("CREATE", resource: "pods", object: pod_level)) }
     assert_match(/exceeded quota: q, requested: pods=1/, error.message)
     @context.put("resourcequotas", "team", "q",
-                 {"metadata" => {"name" => "q"}, "spec" => {"hard" => {"requests.cpu" => "1"}}, "status" => {"hard" => {"requests.cpu" => "1"}, "used" => {"requests.cpu" => "800m"}}})
+                 {"metadata" => {"name" => "q"}, "spec" => {"hard" => {"requests.cpu" => "1"}},
+                  "status" => {"hard" => {"requests.cpu" => "1"}, "used" => {"requests.cpu" => "800m"}}})
     heavy = pod("heavy", containers: [{"name" => "c", "resources" => {"requests" => {"cpu" => "500m"}}}])
     assert_raises(A::Rejected) { quota.validate(attributes("CREATE", resource: "pods", object: heavy)) }
     light = pod("light", containers: [{"name" => "c", "resources" => {"requests" => {"cpu" => "100m"}}}])
