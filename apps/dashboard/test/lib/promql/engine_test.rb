@@ -48,9 +48,7 @@ module Promql
       vector(expr, t).map(&:last)
     end
 
-    assert_equal :scalar, result.type
-    result.value[1]
-  end
+    # ---------------------------------------------------------- selectors
 
   def values(expr, t = T0)
     vector(expr, t).map(&:last)
