@@ -1856,7 +1856,7 @@ module Rubernetes
         remaining = deadline - monotonic_now
         raise NftablesNetlinkError.new("#{operation} timed out", errno: Errno::ETIMEDOUT::Errno, operation: operation) if remaining <= 0
 
-        ready = IO.select([socket], nil, nil, remaining)
+        ready = socket.wait_readable(remaining)
         raise NftablesNetlinkError.new("#{operation} timed out", errno: Errno::ETIMEDOUT::Errno, operation: operation) unless ready
 
         socket.recv(MAX_MESSAGE_BYTES)
