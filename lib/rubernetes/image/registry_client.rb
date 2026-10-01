@@ -780,8 +780,8 @@ module Rubernetes
 
           attributes[name.to_sym] = parsed_value
           cursor += 1 while cursor < length && whitespace_byte?(remainder.getbyte(cursor))
-          if cursor < length
-            return nil unless remainder.getbyte(cursor) == 44 # comma
+          next unless cursor < length
+          return nil unless remainder.getbyte(cursor) == 44 # comma
 
             cursor += 1
             return nil if cursor >= length
