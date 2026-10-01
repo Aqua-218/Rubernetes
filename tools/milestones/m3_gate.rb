@@ -1618,7 +1618,8 @@ module M3Gate
         errors << "workload oracle input raw and canonical digests are required"
       end
       case_streams = input.is_a?(Hash) ? input["case_stream_sha256"] : nil
-      unless case_streams.is_a?(Hash) && case_streams.keys.map(&:to_s).sort == REQUIRED_WORKLOAD_TYPES.product(REQUIRED_WORKLOAD_OPERATIONS).map { |type, operation|
+      unless case_streams.is_a?(Hash) && case_streams.keys.map(&:to_s).sort == REQUIRED_WORKLOAD_TYPES.product(REQUIRED_WORKLOAD_OPERATIONS).map { |type,
+                                                                                                                                                  operation|
         "#{type}:#{operation}"
       }.sort &&
              case_streams.values.all? { |digest| valid_digest?(digest) }
