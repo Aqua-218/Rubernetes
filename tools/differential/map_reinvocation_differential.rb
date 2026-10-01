@@ -116,7 +116,8 @@ module MAPReinvocationDifferential
       metadata["labels"] = labels if labels.any?
       {"object" => {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => metadata, "data" => {"seed" => "1"}},
        "params" => PARAMS.map do |name, set, value|
-         {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => name, "namespace" => "default", "labels" => {"set" => set}}, "data" => {"v" => value}}
+         {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => name, "namespace" => "default", "labels" => {"set" => set}},
+          "data" => {"v" => value}}
        end,
        "policies" => policies, "bindings" => policies.flat_map { |item| bindings(random, item) },
        "chain" => before + [{"name" => "MutatingAdmissionPolicy", "type" => "policy"}] + after}
