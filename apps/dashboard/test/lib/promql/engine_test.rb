@@ -33,7 +33,8 @@ module Promql
     def vector(expr, t = T0)
       result = @engine.query(expr, t)
 
-      @store.append({"__name__" => name}.merge(labels), start + (i * step_ms), value.to_f)
+      assert_equal :vector, result.type, "#{expr}: #{result.inspect}"
+      result.value.map { |s| [s.metric, s.point[1]] }
     end
   end
 
