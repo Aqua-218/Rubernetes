@@ -256,7 +256,8 @@ module M4PolicyOracleRunner
         "id" => id, "policy_name" => policy.dig("metadata", "name"), "policy_uid" => applied.dig("metadata", "uid"),
         "policy_resource_version" => applied.dig("metadata", "resourceVersion"),
         "protocol" => protocol.upcase, "port" => port, "requested_port" => fixture["port"], "end_port" => fixture["end_port"],
-        "direction" => fixture["direction"], "server_ip" => @pods.fetch("m4-policy-server").fetch("ip"), "client_ip" => @pods.fetch("m4-policy-client").fetch("ip"),
+        "direction" => fixture["direction"], "server_ip" => @pods.fetch("m4-policy-server").fetch("ip"),
+        "client_ip" => @pods.fetch("m4-policy-client").fetch("ip"),
         "measurement" => measurement, "confirmation" => confirmation, "restored_without_policy" => restored,
         "policy_sha256" => M4PolicyOracleRunner.digest(fixture.fetch("policy"))
       }
