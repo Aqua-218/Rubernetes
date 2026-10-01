@@ -171,7 +171,7 @@ module RubernetesSchemaGenerator
       return false unless properties.empty? && !schema.key?("additionalProperties")
 
       description = schema["description"].to_s
-      return true if schema["type"].nil? && description.match?(/\AJSON represents any valid JSON value\./)
+      return true if schema["type"].nil? && description.start_with?("JSON represents any valid JSON value.")
       return true if schema["type"] == "object" && description.match?(/\bin JSON format\b|\braw JSON\b/i)
 
       false
