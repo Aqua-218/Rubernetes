@@ -88,8 +88,8 @@ module Prom
       end
       status = @scraper.scrape(slow)
 
-    assert_match(/deadline exceeded/, status.last_error)
-  end
+      assert_match(/deadline exceeded/, status.last_error)
+    end
 
   test "scrape_all runs targets concurrently and retires targets that vanish" do
     first = target("a 1\n", instance: "one:1")
