@@ -143,7 +143,7 @@ module Rubernetes
 
         object_definition.fields.each_value do |field|
           next if supplied.key?(field.name)
-          next unless field.has_default?
+          next unless field.explicit_default?
 
           result[field.json_name] = apply_field(
             default_value(field),
