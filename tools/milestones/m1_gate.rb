@@ -1244,12 +1244,8 @@ module M1Gate
         errors << "API corpus-driven surface matrix is required"
         return
       end
-      unless surface["registry_gvk_count"] == API_SURFACE_GVK_COUNT
-        errors << "API surface registry GVK count must equal #{API_SURFACE_GVK_COUNT}"
-      end
-      unless surface["registry_gvr_count"] == API_SURFACE_GVR_COUNT
-        errors << "API surface registry GVR count must equal #{API_SURFACE_GVR_COUNT}"
-      end
+      errors << "API surface registry GVK count must equal #{API_SURFACE_GVK_COUNT}" unless surface["registry_gvk_count"] == API_SURFACE_GVK_COUNT
+      errors << "API surface registry GVR count must equal #{API_SURFACE_GVR_COUNT}" unless surface["registry_gvr_count"] == API_SURFACE_GVR_COUNT
       unless surface["discovery_endpoint_count"] == API_SURFACE_ENDPOINT_COUNT
         errors << "API surface discovery endpoint count must equal #{API_SURFACE_ENDPOINT_COUNT}"
       end
