@@ -310,7 +310,8 @@ module M4VolumeObservationRunner
       second_node = second_result["stdout"].is_a?(Hash) ? second_result["stdout"]["second_node"] : nil
       record["second_node"] = second_node
       unless second_node.is_a?(Hash) && second_node["attached"] == false && second_node["error_class"] == "Rubernetes::Volume::MultiAttachError"
-        @errors << "#{label}: a second node was able to attach (or not fenced by MultiAttachError) after the crash: #{second_result["stderr"].to_s.strip.lines.last}"
+        @errors << "#{label}: a second node was able to attach (or not fenced by MultiAttachError) after the crash: " \
+                   "#{second_result["stderr"].to_s.strip.lines.last}"
       end
 
       restart = spawn_worker(role: "restart", data_dir: data_dir, control_dir: File.join(scenario_dir, "restart-control"),
