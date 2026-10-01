@@ -41,9 +41,7 @@ module Rubernetes
       end
 
       def self.default_manifest_sandbox(root: PROJECT_ROOT, registry_path: nil, openapi_path: nil, **)
-        unless defined?(Rubernetes::Manifest::Sandbox)
-          raise Client::RubyManifestIsolationError, "isolated Ruby manifest sandbox is unavailable"
-        end
+        raise Client::RubyManifestIsolationError, "isolated Ruby manifest sandbox is unavailable" unless defined?(Rubernetes::Manifest::Sandbox)
 
         paths = default_manifest_paths(root: root, registry_path: registry_path, openapi_path: openapi_path)
         Rubernetes::Manifest::Sandbox.new(**paths, **)
