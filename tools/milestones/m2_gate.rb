@@ -896,9 +896,7 @@ module M2Gate
           next
         end
         names = levels.map { |level| level.is_a?(Hash) ? level["level"] : nil }
-        unless names.sort == REQUIRED_LEVELS.sort && names.uniq.length == REQUIRED_LEVELS.length
-          errors << "runtime profile #{index} must contain exactly L0-L3"
-        end
+        errors << "runtime profile #{index} must contain exactly L0-L3" unless names.sort == REQUIRED_LEVELS.sort && names.uniq.length == REQUIRED_LEVELS.length
         levels.each_with_index do |level, level_index|
           unless level.is_a?(Hash)
             errors << "runtime profile #{index} level #{level_index} must be an object"
