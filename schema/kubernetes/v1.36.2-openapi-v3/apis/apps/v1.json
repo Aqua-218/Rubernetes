@@ -3541,6 +3541,12 @@
             "description": "accessModes contains the actual access modes the volume backing the PVC has. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#access-modes-1",
             "items": {
               "default": "",
+              "enum": [
+                "ReadOnlyMany",
+                "ReadWriteMany",
+                "ReadWriteOnce",
+                "ReadWriteOncePod"
+              ],
               "type": "string"
             },
             "type": "array",
