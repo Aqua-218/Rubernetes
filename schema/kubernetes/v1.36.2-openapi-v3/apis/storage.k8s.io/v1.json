@@ -3357,11 +3357,6 @@
           },
           "202": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.storage.v1.CSIDriver"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.storage.v1.CSIDriver"
