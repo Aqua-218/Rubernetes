@@ -168,9 +168,7 @@ module Rubernetes
             raise ConfigurationError,
                   "jwt claimMappings.username needs claim or expression"
           end
-          if username["claim"] && username["prefix"].nil?
-            raise ConfigurationError, "jwt claimMappings.username.prefix is required when claim is set"
-          end
+          raise ConfigurationError, "jwt claimMappings.username.prefix is required when claim is set" if username["claim"] && username["prefix"].nil?
 
           groups = mappings["groups"] || {}
           if groups["claim"] && groups["prefix"].nil?
