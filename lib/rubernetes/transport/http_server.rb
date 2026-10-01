@@ -1328,9 +1328,7 @@ module Rubernetes
 
           body.piece_written(encoded.bytesize) if sizes
           bytes_written += encoded.bytesize
-          if !unbounded && bytes_written > @max_response_bytes
-            raise ResponseTooLarge.new("response stream exceeds #{@max_response_bytes} bytes", partial: true)
-          end
+          raise ResponseTooLarge.new("response stream exceeds #{@max_response_bytes} bytes", partial: true) if !unbounded && bytes_written > @max_response_bytes
 
           frame = "#{encoded.bytesize.to_s(16)}\r\n".b + encoded + CRLF
           write_all(socket, frame, deadline: monotonic_time + @write_timeout, timeout_error: ResponseTimeout)
