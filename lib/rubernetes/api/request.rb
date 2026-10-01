@@ -75,7 +75,7 @@ module Rubernetes
       # node as the container `["x", "x"]`, a 60s wait and a 503.
       def query_value(name, default = nil)
         value = @query[name.to_s]
-        value = value.first if value.is_a?(Array) && value.length == 1
+        value = value.first if value.is_a?(Array)
         value.nil? ? default : value
       end
 
