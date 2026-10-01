@@ -423,9 +423,7 @@ module Rubernetes
         @pod_resources.metrics = @kubelet_metrics.registry if @pod_resources.respond_to?(:metrics=) && !@pod_resources.frozen?
         @device_plugins.metrics = @kubelet_metrics.registry if @device_plugins.respond_to?(:metrics=) && !@device_plugins.frozen?
         @dra_manager.metrics = @kubelet_metrics.registry if @dra_manager.respond_to?(:metrics=) && !@dra_manager.frozen?
-        if @credential_providers.respond_to?(:metrics=) && !@credential_providers.frozen?
-          @credential_providers.metrics = @kubelet_metrics.registry
-        end
+        @credential_providers.metrics = @kubelet_metrics.registry if @credential_providers.respond_to?(:metrics=) && !@credential_providers.frozen?
         if @qos_cgroup_manager.respond_to?(:cgroup_observer=) && !@qos_cgroup_manager.frozen?
           cgroup_metrics = @kubelet_metrics
           @qos_cgroup_manager.cgroup_observer = ->(operation, seconds) { cgroup_metrics.cgroup_operation(operation, seconds) }
