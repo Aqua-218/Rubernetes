@@ -1079,7 +1079,8 @@ module M2Gate
       end
       errors << "Pod lifecycle oracle difference count must be zero" unless document["oracle_difference_count"] == 0
       errors << "Pod lifecycle semantics matrix digest is required" unless valid_digest?(document["lifecycle_semantics_matrix_sha256"])
-      if semantics.is_a?(Array) && valid_digest?(document["lifecycle_semantics_matrix_sha256"]) && document["lifecycle_semantics_matrix_sha256"] != canonical_document_digest(semantics)
+      if semantics.is_a?(Array) && valid_digest?(document["lifecycle_semantics_matrix_sha256"]) &&
+         document["lifecycle_semantics_matrix_sha256"] != canonical_document_digest(semantics)
         errors << "Pod lifecycle semantics matrix digest does not match"
       end
       validate_lifecycle_oracle(document, errors)
