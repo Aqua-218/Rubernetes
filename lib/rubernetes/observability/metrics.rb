@@ -173,6 +173,15 @@ module Rubernetes
         @global_mutex.synchronize { @global ||= new(apiserver: false, process: false) }
       end
 
+      # Drops the process-wide registry so the next `global` starts empty.
+      # For tests that assert what one component serves: in a real process
+      # only that component's code records here, in a test process every
+      # earlier test did.
+      def self.reset_global!
+        @global_mutex ||= Mutex.new
+        @global_mutex.synchronize { @global = nil }
+      end
+
       # +source+ answers [[group, resource, count]] for every stored
       # resource; it is asked at scrape time, at most once a refresh period.
       attr_writer :storage_source
