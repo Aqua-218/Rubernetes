@@ -83,9 +83,7 @@ module Rubernetes
           if REDACTED_RESOURCES.include?(attributes.resource) || REDACTED_RESOURCES.include?(attributes.resource_with_subresource)
             copy = {"apiVersion" => copy["apiVersion"], "kind" => copy["kind"], "metadata" => copy["metadata"]}.compact
           end
-          if omit_managed_fields && copy["metadata"].is_a?(Hash)
-            copy["metadata"] = copy["metadata"].reject { |key, _| key == "managedFields" }
-          end
+          copy["metadata"] = copy["metadata"].reject { |key, _| key == "managedFields" } if omit_managed_fields && copy["metadata"].is_a?(Hash)
           copy
         end
 
