@@ -2798,7 +2798,8 @@ module Rubernetes
         # last-write-wins over a Lease, a PDB or a webhook configuration that
         # upstream would have rejected.
         if unconditional && strict_update?(route.resource)
-          raise Status::Invalid.new("#{route.resource.resource} #{route.name.inspect} is invalid: metadata.resourceVersion: Invalid value: 0x0: must be specified for an update",
+          raise Status::Invalid.new("#{route.resource.resource} #{route.name.inspect} is invalid: metadata.resourceVersion: Invalid value: 0x0: must be " \
+                                    "specified for an update",
                                     details: resource_details(route))
         end
         # Strategy.AllowCreateOnUpdate: a PUT to an object that does not exist
