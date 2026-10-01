@@ -658,7 +658,8 @@ module Rubernetes
 
       def register_apiserver_defaults
         register("apiserver_request_total", type: :counter,
-                                            help: "Counter of apiserver requests broken out for each verb, group, version, resource, scope and HTTP response code.")
+                                            help: "Counter of apiserver requests broken out for each verb, group, version, resource, scope and HTTP " \
+                                                  "response code.")
         register("apiserver_request_duration_seconds", type: :histogram, buckets: REQUEST_DURATION_BUCKETS,
                                                        help: "Response latency distribution in seconds for each verb, group, version, resource and scope.")
         register("apiserver_response_sizes", type: :histogram, buckets: RESPONSE_SIZE_BUCKETS,
