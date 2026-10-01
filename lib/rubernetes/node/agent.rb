@@ -683,6 +683,21 @@ module Rubernetes
         persist_node(build_node(ready: value, reason: reason, message: message))
       end
 
+      # nodeStatusHasChanged: conditions compared without their heartbeat
+      # time (and by type), everything else as it is.
+      def self.node_status_changed?(previous, current)
+        return previous.nil? != current.nil? if previous.nil? || current.nil?
+
+        strip = lambda do |status|
+          copy = JSON.parse(JSON.generate(status))
+          conditions = Array(copy.delete("conditions")).map do |condition|
+            condition.is_a?(Hash) ? condition.except("lastHeartbeatTime") : condition
+          end
+          [copy, conditions.sort_by { |condition| condition.is_a?(Hash) ? condition["type"].to_s : "" }]
+        end
+        strip.call(previous) != strip.call(current)
+      end
+
       private
 
       # The final delete of a gracefully deleted Pod: the API server set its
