@@ -143,6 +143,7 @@ class KubeletVolumesInUseTest < Minitest::Test
     record = lifecycle.record("uid-a")
 
     assert_equal "FailedMount", record[:reason]
+    # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
     assert_match(/Unable to attach or mount volumes: unmounted volumes=\["pv"\], unattached volumes=\["pv"\], failed to process volumes=\[\]: timed out waiting for the condition/,
                  record[:error].to_s)
     assert_empty @volumes.prepared
