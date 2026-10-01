@@ -285,9 +285,9 @@ module M7Gate
       inventory = cases.find { |entry| entry["id"] == "host_inventory_after_cleanup" }
       errors << "host inventory must be empty after cleanup" unless inventory && Array(inventory["resources"]).empty?
       node = cases.find { |entry| entry["id"] == "node_lifecycle_contract" }
-      unless node && node["start_phase"] == "Running" && node["finish_state"] == "Removed" && node["lifecycle_class"] == "Rubernetes::Node::Lifecycle"
-        errors << "node lifecycle contract must reach Running and Removed through Node::Lifecycle"
-      end
+      return if node && node["start_phase"] == "Running" && node["finish_state"] == "Removed" && node["lifecycle_class"] == "Rubernetes::Node::Lifecycle"
+
+      errors << "node lifecycle contract must reach Running and Removed through Node::Lifecycle"
     end
 
     def validate_attacks(document, cases, errors)
