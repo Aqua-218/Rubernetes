@@ -361,11 +361,11 @@ module Rubernetes
               candidate.path[0, 3] == %w[spec template spec]
           end
         end
-        issues.concat(selector_errors(root, kind))
-        issues.concat(enum_and_one_of_errors(root, kind))
-        issues.concat(job_family_errors(root, kind))
-        issues.concat(job_restart_policy_errors(root, kind))
-        issues.concat(job_update_errors(root, kind, operation))
+        issues.concat(selector_errors(walk_root, kind))
+        issues.concat(enum_and_one_of_errors(walk_root, kind))
+        issues.concat(job_family_errors(walk_root, kind))
+        issues.concat(job_restart_policy_errors(walk_root, kind))
+        issues.concat(job_update_errors(walk_root, kind, operation))
         # The pods/resize strategy validates with ValidatePodResize, the main
         # resource with ValidatePodUpdate; the status and ephemeralcontainers
         # strategies take the rest of the spec from the stored Pod.
