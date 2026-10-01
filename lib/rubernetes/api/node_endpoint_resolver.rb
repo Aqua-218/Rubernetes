@@ -249,6 +249,11 @@ module Rubernetes
           result
         end
 
+        def fill_buffer(buffer, socket)
+          chunk = socket.readpartial(4096)
+          buffer << chunk
+        end
+
         # A followed log has no end: buffering it returns nothing until the
         # container exits, which every client reads as a stalled request.  The
         # chunks are yielded as the node produces them, and the connection is
