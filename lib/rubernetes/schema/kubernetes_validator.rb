@@ -249,9 +249,7 @@ module Rubernetes
           issues << issue(%w[metadata name], :required, "name or generateName is required")
         end
         issues.concat(kind_name_format_errors(kind, fetch(metadata, "name").to_s, root)) unless blank?(fetch(metadata, "name"))
-        if namespaced && namespace_required?(kind, operation) && blank?(fetch(metadata, "namespace"))
-          issues << issue(%w[metadata namespace], :required, "")
-        end
+        issues << issue(%w[metadata namespace], :required, "") if namespaced && namespace_required?(kind, operation) && blank?(fetch(metadata, "namespace"))
         if operation == :update && resource_version_required?(kind) && blank?(fetch(metadata, "resourceVersion"))
           issues << issue(%w[metadata resourceVersion], :invalid, "must be specified for an update")
         end
