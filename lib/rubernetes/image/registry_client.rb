@@ -569,8 +569,10 @@ module Rubernetes
           raise RegistryError, "registry redirect without Location" if location.empty?
 
           target = URI.join(current.to_s, location)
-          raise RegistryError, 
-                "registry redirect to a non-HTTPS location" unless target.scheme == "https" || (@allow_insecure && target.scheme == "http")
+          unless target.scheme == "https" || (@allow_insecure && target.scheme == "http")
+            raise RegistryError,
+                  "registry redirect to a non-HTTPS location"
+          end
           raise RegistryError, "registry redirect with userinfo" if target.userinfo
 
           current_headers = same_origin?(target) && same_origin?(current) ? current_headers : current_headers.reject { |name, _|
