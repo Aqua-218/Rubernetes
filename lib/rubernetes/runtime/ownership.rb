@@ -558,9 +558,7 @@ module Rubernetes
       def complete_request(request_id:, state:, result: nil, error: nil)
         request = normalize_request_id(request_id)
         terminal = String(state)
-        unless %w[Completed Failed CleanupPending].include?(terminal)
-          raise ArgumentError, "request terminal state must be Completed, Failed, or CleanupPending"
-        end
+        raise ArgumentError, "request terminal state must be Completed, Failed, or CleanupPending" unless %w[Completed Failed CleanupPending].include?(terminal)
 
         @mutex.synchronize do
           existing = @requests.fetch(request) { raise OwnershipConflict, "unknown request #{request}" }
