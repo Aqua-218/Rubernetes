@@ -40,7 +40,6 @@ module Rubernetes
           module DevicePlugin
             # DevicePlugin is the service advertised by Device Plugins
             class Service
-
               include ::GRPC::GenericService
 
               self.marshal_class_method = :encode
