@@ -38,9 +38,7 @@ module Rubernetes
         # ResourceDescriptor::KNOWN is the production bootstrap's pinned
         # discovery snapshot.  A custom kind is accepted only when a real
         # schema registry supplied it above.
-        unless ResourceDescriptor::KNOWN.key?(kind)
-          raise UnknownGVKError, "HPA scale target #{group}/#{version}/#{kind} is not discoverable"
-        end
+        raise UnknownGVKError, "HPA scale target #{group}/#{version}/#{kind} is not discoverable" unless ResourceDescriptor::KNOWN.key?(kind)
 
         descriptor = ResourceDescriptor.parse({"apiVersion" => api_version, "kind" => kind})
         unless descriptor.group == group && descriptor.version == version
