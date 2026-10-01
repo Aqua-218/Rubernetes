@@ -416,7 +416,8 @@ module Rubernetes
           if svc.session_affinity == "ClientIP"
             endpoints.each do |endpoint|
               sep_chain = Iptables.endpoint_chain(name, protocol, endpoint_address(endpoint))
-              write.call("-A #{chain} -m comment --comment \"#{name} -> #{endpoint_address(endpoint)}\" -m recent --name #{sep_chain} --rcheck --seconds #{svc.affinity_timeout} --reap -j #{sep_chain}")
+              write.call("-A #{chain} -m comment --comment \"#{name} -> #{endpoint_address(endpoint)}\" -m recent --name #{sep_chain} --rcheck --seconds " \
+                         "#{svc.affinity_timeout} --reap -j #{sep_chain}")
             end
           end
           endpoints.each_with_index do |endpoint, index|
