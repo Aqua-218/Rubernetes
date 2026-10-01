@@ -1453,9 +1453,7 @@ module M2Gate
         if !fault.is_a?(Hash) && !measured_kernel_kinds.empty? && cycle_kinds != measured_kernel_kinds
           errors << "#{label} resource_kinds must match measured inventory"
         end
-        unless cycle["inventory_measurement_id"] == inventory_measurement_id
-          errors << "#{label} inventory_measurement_id must match measured inventory"
-        end
+        errors << "#{label} inventory_measurement_id must match measured inventory" unless cycle["inventory_measurement_id"] == inventory_measurement_id
         validate_effect_fault_record(cycle, label, errors) if fault.is_a?(Hash)
       end
       effects = document["effect_points"]
