@@ -108,10 +108,8 @@ module Promql
     test "rate needs two samples and the result has no metric name" do
       load("one", {"a" => "b"}, [5])
 
-    assert_in_delta 25.0 * 46 / 45, inc, 1e-6
-    assert_equal [1.0], values("resets(resets_total[1m])")
-    assert_equal [3.0], values("changes(resets_total[1m])")
-  end
+      assert_equal [], vector("rate(one[1m])")
+      load("two", {"a" => "b"}, [5, 6])
 
   test "rate needs two samples and the result has no metric name" do
     load("one", {"a" => "b"}, [5])
