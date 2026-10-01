@@ -353,9 +353,7 @@ module Rubernetes
           unless SAFE_SYSCTLS.include?(name) || unsafe_allowed?(name)
             return rejected(pod, "SysctlForbidden", "forbidden sysctl: #{name.inspect} not allowlisted")
           end
-          if host_net && name.start_with?("net.")
-            return rejected(pod, "SysctlForbidden", "forbidden sysctl: #{name.inspect} not allowed with host net enabled")
-          end
+          return rejected(pod, "SysctlForbidden", "forbidden sysctl: #{name.inspect} not allowed with host net enabled") if host_net && name.start_with?("net.")
           if host_ipc && (name.start_with?("kernel.shm", "kernel.msg", "fs.mqueue.") || name == "kernel.sem")
             return rejected(pod, "SysctlForbidden", "forbidden sysctl: #{name.inspect} not allowed with host ipc enabled")
           end
