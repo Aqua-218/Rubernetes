@@ -1019,7 +1019,9 @@ module Rubernetes
         operations = Array(Support.fetch(hash, "operations", default: [])).map do |entry|
           operation = entry.respond_to?(:to_h) ? entry.to_h : entry
           Rubernetes::Network::Operation.new(action: Support.fetch(operation, "action"), resource: Support.fetch(operation, "resource"),
-                                             identity: Support.fetch(operation, "identity"), parameters: Support.immutable(Support.fetch(operation, "parameters", default: {})))
+                                             identity: Support.fetch(operation,
+                                                                     "identity"),
+                                             parameters: Support.immutable(Support.fetch(operation, "parameters", default: {})))
         end
         Plan.new(operations: operations.freeze, mtu: Support.fetch(hash, "mtu", default: nil),
                  backend: Support.fetch(hash, "backend", default: nil), revision: Support.fetch(hash, "revision", default: nil),
