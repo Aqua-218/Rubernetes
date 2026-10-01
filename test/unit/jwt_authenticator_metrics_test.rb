@@ -49,6 +49,7 @@ class JWTAuthenticatorMetricsTest < Minitest::Test
     assert_match(/apiserver_authentication_jwt_authenticator_latency_seconds_count\{jwt_issuer_hash="#{issuer}",result="success"\} 1/, text)
     assert_match(/apiserver_authentication_jwt_authenticator_latency_seconds_count\{jwt_issuer_hash="#{issuer}",result="failure"\} 1/, text)
     assert_match(
+      # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
       /apiserver_authentication_jwt_authenticator_jwks_fetch_last_timestamp_seconds\{apiserver_id_hash="#{server}",jwt_issuer_hash="#{issuer}",result="success"\} \d/, text
     )
     key_set = hash(JSON.generate(@jwks))
