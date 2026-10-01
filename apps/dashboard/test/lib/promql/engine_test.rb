@@ -117,8 +117,11 @@ module Promql
     test "irate, idelta, delta, deriv and predict_linear" do
       load("g", {}, [10, 20, 40, 30])
 
-    assert_equal [{"a" => "b"}], vector("rate(two[1m])").map(&:first)
-  end
+      assert_in_delta 30.0 / 15, values("irate(g[1m])").first, 1e-9 # counter reset: last value / interval
+      assert_equal [-10.0], values("idelta(g[1m])")
+      # 45s of samples inside a 60s window; the 15s to the window start is
+      # under the threshold, so delta extrapolates the full 15s.
+      delta = values("delta(g[1m])").first
 
   test "irate, idelta, delta, deriv and predict_linear" do
     load("g", {}, [10, 20, 40, 30])
