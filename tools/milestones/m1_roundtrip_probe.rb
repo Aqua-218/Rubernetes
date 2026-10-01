@@ -1925,9 +1925,7 @@ M1ProbeSupport.run_probe("m1_roundtrip_report", pretty: false) do |_current, inp
   end
   expected_unsupported = UPSTREAM_PROTOBUF_UNSUPPORTED.keys.sort
   actual_unsupported = unsupported_types.map { |entry| entry.fetch("id") }.sort
-  unless actual_unsupported == expected_unsupported
-    structural_errors << "protobuf unsupported inventory differs from the pinned upstream exception"
-  end
+  structural_errors << "protobuf unsupported inventory differs from the pinned upstream exception" unless actual_unsupported == expected_unsupported
   unless validation_criterion.is_a?(Hash) &&
          validation_criterion["status"] == "COMPLETE" &&
          validation_criterion["applicable_count"] == cases.length &&
