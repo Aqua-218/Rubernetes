@@ -196,7 +196,22 @@ class ExecLateCgroupJoinTest < Minitest::Test
         exit!(0)
       end
       writer.close
-      exit!(0)
+      procs.close
+      report = JSON.parse(reader.read)
+      Process.wait(pid)
+      # CPU the cgroup was charged, not wall time: under host load the elapsed
+      # time of even unthrottled work passed any fixed bound.  Only the few
+      # steps after the join may be charged to c1, never the work before it.
+      charged = File.read(File.join(path, "cpu.stat"))[/^usage_usec (\d+)/, 1].to_i
+
+      assert_equal 65_534, report["uid"]
+      refute_equal "0::/#{hierarchy}/c1", report["before"]
+      assert_equal "0::/#{hierarchy}/c1", report["after"]
+      assert_operator charged, :<, report["pre_join_usec"] / 2, "the pre-join work was charged to the throttled cgroup"
+    ensure
+      reader&.close unless reader.nil? || reader.closed?
+      sleep 0.1
+      [path, parent].each { |dir| Dir.rmdir(dir) if dir && Dir.exist?(dir) }
     end
     writer.close
     procs.close
