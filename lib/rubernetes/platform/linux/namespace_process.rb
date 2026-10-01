@@ -21,9 +21,7 @@ module Rubernetes
         }.freeze
 
         def spawn(command:, output_fd:, resource_id:, proc_target: "/proc", flags: Clone3::NAMESPACE_FLAGS)
-          unless command.length.between?(1, MAX_ARGUMENTS)
-            raise ArgumentError, "command must contain between 1 and #{MAX_ARGUMENTS} arguments"
-          end
+          raise ArgumentError, "command must contain between 1 and #{MAX_ARGUMENTS} arguments" unless command.length.between?(1, MAX_ARGUMENTS)
 
           flags = Integer(flags)
           raise ArgumentError, "flags must be exactly CLONE_PIDFD | CLONE_NEWNS | CLONE_NEWPID" unless flags == Clone3::NAMESPACE_FLAGS
