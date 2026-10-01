@@ -1146,8 +1146,9 @@ module Rubernetes
                     "#{context}.authentication.service_account.api_audiences must be a non-empty list"
             end
           end
-          raise Error, "#{context}.authentication.bootstrap_tokens must be a boolean" if authn.key?("bootstrap_tokens") && ![true,
-                                                                                                                             false].include?(authn["bootstrap_tokens"])
+          if authn.key?("bootstrap_tokens") && ![true, false].include?(authn["bootstrap_tokens"])
+            raise Error, "#{context}.authentication.bootstrap_tokens must be a boolean"
+          end
 
           if authn.key?("request_header")
             rh = authn["request_header"]
