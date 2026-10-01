@@ -68,7 +68,7 @@ module Rubernetes
       # component-base/metrics/prometheus/workqueue: ExponentialBuckets(10e-9,
       # 10, 10) -- ten bounds, each the previous times ten in floating point
       # (so 9.999999999999999e-06, not 1e-05).
-      DURATION_BUCKETS = Array.new(10).each_with_object([]) { |_, bounds| bounds << (bounds.empty? ? 10e-9 : bounds.last * 10) }.freeze
+      DURATION_BUCKETS = Array.new(10).each_with_object([]) { |_, bounds| bounds << (bounds.empty? ? 1e-8 : bounds.last * 10) }.freeze
 
       def add(key)
         normalized = normalize_key(key)
