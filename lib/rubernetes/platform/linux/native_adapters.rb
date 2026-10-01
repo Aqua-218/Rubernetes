@@ -2252,9 +2252,7 @@ module Rubernetes
 
                 host_pid, host_start_time = host_identity.unpack("Q<2")
                 clone_pid = clone_identity.unpack1("Q<")
-                unless host_pid.positive? && host_start_time.positive? && clone_pid == host_pid
-                  raise EffectError, "workload readiness identities do not agree"
-                end
+                raise EffectError, "workload readiness identities do not agree" unless host_pid.positive? && host_start_time.positive? && clone_pid == host_pid
 
                 metadata = JSON.parse(metadata_raw)
                 raise EffectError, "workload readiness metadata must be an object" unless metadata.is_a?(Hash)
