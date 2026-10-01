@@ -767,9 +767,7 @@ module M3Gate
             errors << "reconcile idempotency case #{index} must observe a real queue retry"
           end
         else
-          unless entry["queue_retry_observed"] == false
-            errors << "reconcile idempotency case #{index} must report that no update retry was applicable"
-          end
+          errors << "reconcile idempotency case #{index} must report that no update retry was applicable" unless entry["queue_retry_observed"] == false
         end
         unless entry["owner_scope_checked"] == true && entry["foreign_resource_preserved"] == true
           errors << "reconcile idempotency case #{index} must check owner scope and foreign resources"
