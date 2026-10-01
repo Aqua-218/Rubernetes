@@ -2882,9 +2882,7 @@ module Rubernetes
         namespace = storage_namespace(route, operation: :update)
         content_type = request.content_type
         patch_type = Patch.type_for(content_type)
-        if patch_type.nil? || patch_type == :apply_cbor
-          raise Status::UnsupportedMediaType.new("unsupported patch content type #{content_type.inspect}")
-        end
+        raise Status::UnsupportedMediaType.new("unsupported patch content type #{content_type.inspect}") if patch_type.nil? || patch_type == :apply_cbor
 
         validate_write_options!(request, "PatchOptions", patch_type: patch_type)
         patch_document = patch_document(request, patch_type)
