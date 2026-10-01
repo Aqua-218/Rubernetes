@@ -193,7 +193,9 @@ class SecurityAuditFlowControlTest < Minitest::Test
     backend = S::Audit::MemoryBackend.new
     pipeline = S::Pipeline.new(authenticator: authenticator, authorizer: authorizer, audit_policy: policy, audit_backend: backend)
     route = Rubernetes::API::Router::Route.new(kind: :resource, operation: :list, group: "", version: "v1",
-                                               resource: Rubernetes::API::Resource.new(group: "", version: "v1", resource: "pods", kind: "Pod", scope: :namespaced), namespace: "ns", collection: true, path: "/api/v1/namespaces/ns/pods")
+                                               resource: Rubernetes::API::Resource.new(group: "", version: "v1", resource: "pods", kind: "Pod",
+                                                                                       scope: :namespaced), namespace: "ns", collection: true,
+                                               path: "/api/v1/namespaces/ns/pods")
     bad = Rubernetes::API::Request.new(method: "GET", path: "/api/v1/namespaces/ns/pods", headers: {"authorization" => "Bearer wrong"})
     # An unrecognised bearer token is an invalid credential (401), never anonymous.
     error = assert_raises(S::Pipeline::Unauthorized) { pipeline.enter(bad, route) }
