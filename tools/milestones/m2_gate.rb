@@ -1183,9 +1183,7 @@ module M2Gate
         errors << "#{label} blocked status must report the exact product-defining CNI lock blocker"
       end
       errors << "#{label} Kubernetes version must be #{KUBERNETES_VERSION}" unless oracle["kubernetes_version"] == KUBERNETES_VERSION
-      unless oracle["source_commit"] == KUBERNETES_SOURCE_COMMIT
-        errors << "#{label} Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}"
-      end
+      errors << "#{label} Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}" unless oracle["source_commit"] == KUBERNETES_SOURCE_COMMIT
       errors << "#{label} runner SHA-256 is required" unless valid_digest?(oracle["runner_sha256"])
       errors << "#{label} request seed SHA-256 is required" unless valid_digest?(oracle["request_seed_sha256"])
       if oracle["executed"] == true
