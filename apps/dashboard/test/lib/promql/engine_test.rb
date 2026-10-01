@@ -193,8 +193,19 @@ module Promql
       assert_equal 6, vector("requests or total").length
     end
 
-    error = assert_raises(Promql::EvalError) { vector("requests / ignoring(code) total") }
-    assert_match(/many-to-one matching must be explicit/, error.message)
+    test "group_right carries labels from the many side" do
+      load("a", {"k" => "1", "extra" => "x"}, [1])
+      load("a", {"k" => "1", "extra" => "y"}, [2])
+      load("b", {"k" => "1"}, [10])
+      result = vector("b * on(k) group_right a").sort_by { |m, _| m["extra"] }
+
+      assert_equal [[{"extra" => "x", "k" => "1"}, 10.0], [{"extra" => "y", "k" => "1"}, 20.0]], result
+      # Labels listed in group_right() come from the "one" side; b has no
+      # `extra`, so both results collapse onto the same labels -- an error,
+      # exactly as in Prometheus.
+      error = assert_raises(Promql::EvalError) { vector("b * on(k) group_right(extra) a") }
+      assert_match(/grouping labels must ensure unique matches/, error.message)
+    end
 
     assert_equal 2, vector('requests{code="500"} and on(method) total').length
     assert_equal 0, vector('requests{code="500"} unless on(method) total').length
