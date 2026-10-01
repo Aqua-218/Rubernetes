@@ -44,7 +44,7 @@ module M8SelectionProbe
     cases << {"id" => "external_contracts_have_replacements", "passed" => unlinked.empty?,
               "unlinked" => unlinked.length}
     cases << {"id" => "required_tests_present",
-              "passed" => tests.count { |entry| entry["classification"] == "required" }.positive?,
+              "passed" => tests.any? { |entry| entry["classification"] == "required" },
               "required" => tests.count { |entry| entry["classification"] == "required" }}
 
     manifests = S.run_manifests
