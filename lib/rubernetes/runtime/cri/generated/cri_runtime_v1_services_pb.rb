@@ -82,7 +82,8 @@ module Rubernetes
               # and will discard partial results if the stream is not completed in time.
               # Feature gate: CRIListStreaming
               # See https://kep.k8s.io/5825 for more details.
-              rpc :StreamPodSandboxes, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamPodSandboxesRequest, stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamPodSandboxesResponse)
+              rpc :StreamPodSandboxes, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamPodSandboxesRequest,
+                  stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamPodSandboxesResponse)
               # CreateContainer creates a new container in specified PodSandbox
               rpc :CreateContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CreateContainerRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CreateContainerResponse
               # StartContainer starts the container.
