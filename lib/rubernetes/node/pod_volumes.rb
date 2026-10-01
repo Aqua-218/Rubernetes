@@ -332,8 +332,8 @@ module Rubernetes
       end
 
       # PVC resize statuses (v1.ClaimResourceStatus) and conditions.
-      NODE_RESIZE_PENDING = "NodeResizePending".freeze
-      NODE_RESIZE_IN_PROGRESS = "NodeResizeInProgress".freeze
+      NODE_RESIZE_PENDING = "NodeResizePending"
+      NODE_RESIZE_IN_PROGRESS = "NodeResizeInProgress"
       RESIZE_CONDITIONS = %w[Resizing FileSystemResizePending ControllerResizeError NodeResizeError].freeze
 
       # The kubelet's in-use expansion (desired state populator
