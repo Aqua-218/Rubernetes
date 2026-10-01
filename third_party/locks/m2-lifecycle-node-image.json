@@ -5,8 +5,8 @@
   "image": {
     "reference": "localhost:25000/rubernetes/kind-node@sha256:f2ce941fe71ad2e2da20b75f441141ef7c81d065834630b3f430ed1929198854",
     "local_tag": "rubernetes/kind-node:v1.36.2",
-    "image_id": "sha256:ca5140751fd07738c436fc51c8b2a080189f260ae03482875d1ed77db3e4b980",
-    "repo_digest": "sha256:2f0ecbdcd9d0bb44584f8700f5ae0be071c65135989e325789388d3df59c4efa",
+    "image_id": "sha256:d4b4466ccd2d9e263133a2478eb9d3e5b90d196c8ddc4afb5a6806a4e305b2f0",
+    "repo_digest": "sha256:f2ce941fe71ad2e2da20b75f441141ef7c81d065834630b3f430ed1929198854",
     "os_image": "Debian GNU/Linux 13 (trixie)"
   },
   "build": {
