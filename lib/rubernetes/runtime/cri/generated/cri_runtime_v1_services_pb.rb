@@ -118,7 +118,8 @@ module Rubernetes
               # and will discard partial results if the stream is not completed in time.
               # Feature gate: CRIListStreaming
               # See https://kep.k8s.io/5825 for more details.
-              rpc :StreamContainers, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamContainersRequest, stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamContainersResponse)
+              rpc :StreamContainers, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamContainersRequest,
+                  stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamContainersResponse)
               # ContainerStatus returns status of the container. If the container is not
               # present, returns an error.
               rpc :ContainerStatus, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatusRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatusResponse
