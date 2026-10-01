@@ -1160,9 +1160,7 @@ module Rubernetes
         end
         case_ids = cases.map(&case_id).map(&:to_s)
         inventory_ids = inventory.map(&case_id).map(&:to_s)
-        unless case_ids.sort == inventory_ids.sort && case_ids.uniq.length == case_ids.length
-          failures << "packet corpus case inventory does not bind cases"
-        end
+        failures << "packet corpus case inventory does not bind cases" unless case_ids.sort == inventory_ids.sort && case_ids.uniq.length == case_ids.length
         failures << "packet corpus required case inventory is incomplete" unless case_ids.sort == REQUIRED_CASE_IDS.sort
         failures << "packet corpus case count is not #{REQUIRED_CASE_IDS.length}" unless case_ids.length == REQUIRED_CASE_IDS.length
         cases.each do |entry|
