@@ -1688,7 +1688,7 @@ module Rubernetes
                 ensure_directory_tree(root, target)
               else
                 ensure_directory_tree(root, File.dirname(target))
-                File.open(target, File::WRONLY | File::CREAT, 0o644) {} unless File.exist?(target)
+                File.open(target, File::WRONLY | File::CREAT, 0o644).close unless File.exist?(target)
                 raise EffectError, "bind mount #{index} destination is a directory but the source is a file" if File.directory?(target)
               end
               readonly = spec["readonly"] == true || spec["read_only"] == true
