@@ -93,14 +93,7 @@ module Promql
       assert_in_delta 40.0 / 75, rate, 1e-9
       increase = values("increase(http_requests_total[75s])").first
 
-  test "rate and increase extrapolate to the window edges and handle counter resets" do
-    # 5 samples 15s apart: 0, 10, 20, 30, 40 -> exact rate 10/15 = 0.6667/s over a 60s window
-    load("http_requests_total", {}, [0, 10, 20, 30, 40])
-    # Window (T0-75s, T0] contains all five.  The first sample is 15s from
-    # the window start, under the 1.1 * interval threshold, so the increase
-    # would extrapolate 15s back -- but a counter is never extrapolated below
-    # zero, and the first value is 0, so nothing is added: 40 over 75s.
-    rate = values("rate(http_requests_total[75s])").first
+      assert_in_delta 40.0, increase, 1e-9
 
     assert_in_delta 40.0 / 75, rate, 1e-9
     increase = values("increase(http_requests_total[75s])").first
