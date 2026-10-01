@@ -1504,9 +1504,7 @@ module M3Gate
       end
       errors << "workload differential stream bundle digest is required" unless valid_digest?(document["stream_bundle_sha256"])
       ids = Array(cases).filter_map { |entry| entry.is_a?(Hash) ? entry["id"] : nil }
-      unless ids.sort == expected_ids && ids.uniq.length == expected_ids.length
-        errors << "workload differential case inventory is incomplete"
-      end
+      errors << "workload differential case inventory is incomplete" unless ids.sort == expected_ids && ids.uniq.length == expected_ids.length
       Array(cases).each_with_index do |entry, index|
         unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1 && entry["measurement_source"] == "production_module"
           errors << "workload differential case #{index} must pass once from production module"
