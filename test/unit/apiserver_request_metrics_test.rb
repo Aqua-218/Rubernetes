@@ -82,7 +82,7 @@ class APIServerRequestMetricsTest < Minitest::Test
     started = Queue.new
     finish = Queue.new
     reader = Thread.new do
-      response.body.each do
+      response.body.each do # rubocop:disable Lint/UnreachableLoop -- reads one event from the stream
         started << true
         finish.pop
         break
