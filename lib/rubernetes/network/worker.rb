@@ -133,7 +133,7 @@ module Rubernetes
 
       attr_reader :policy_engine, :pid
 
-      # rubocop:disable Lint/MissingSuper -- the interface lives in the worker
+      # rubocop:disable-next Lint/MissingSuper -- the interface lives in the worker
       def initialize(socket, pid:, policy_engine: nil)
         @socket = socket
         @pid = pid
