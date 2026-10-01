@@ -275,7 +275,7 @@ module Rubernetes
                 condition = evaluate(condition_node)
                 break unless condition == true
 
-                accumulator = eval(step_node)
+                accumulator = evaluate(step_node)
               end
             end
             with(accu_var => accumulator) { eval(result_node) }
