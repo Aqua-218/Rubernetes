@@ -161,8 +161,9 @@ module Release
     # empty (upstream too), which left the lost-commit check comparing zeros.
     def cluster_sample(kubeconfig, netns: nil)
       kubectl = File.join(ROOT, "build/tools/kubectl-v1.36.2")
-      out, _err, status = Open3.capture3(kubectl, "--kubeconfig", kubeconfig, "get",
-                                         "pods,events", "--all-namespaces", "-o", "json")
+      command = [kubectl, "--kubeconfig", kubeconfig, "get", "--raw", "/api/v1/pods"]
+      command = ["ip", "netns", "exec", netns, *command] if netns && !netns.empty?
+      out, _err, status = Open3.capture3({"NO_PROXY" => "*", "no_proxy" => "*"}, *command)
       return {"available" => false} unless status.success?
 
       document = begin
