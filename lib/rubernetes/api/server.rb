@@ -6016,7 +6016,9 @@ module Rubernetes
       ].freeze
 
       def tracks_generation?(object, resource)
-        return true if object.is_a?(Hash) && object["spec"].is_a?(Hash)
+        return false unless object.is_a?(Hash)
+        return true if resource.respond_to?(:custom?) && resource.custom?
+        return GENERATION_TRACKED_KINDS.include?(resource.kind.to_s) if resource.respond_to?(:kind)
 
         resource.respond_to?(:kind) && GENERATION_TRACKED_KINDS.include?(resource.kind.to_s)
       end
