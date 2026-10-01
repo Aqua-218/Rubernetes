@@ -819,9 +819,7 @@ module M3Gate
                durable_journal["second_run_inventory"] == second_observable&.dig("durable_journal", "after")
           errors << "reconcile idempotency case #{index} durable journal must contain separate first and second run snapshots"
         end
-        unless entry["measurement_source"] == "production_module"
-          errors << "reconcile idempotency case #{index} must come from production module"
-        end
+        errors << "reconcile idempotency case #{index} must come from production module" unless entry["measurement_source"] == "production_module"
         implementation = entry["implementation_class"]
         unless entry["implementation_present"] == true && non_empty_string?(implementation)
           errors << "reconcile idempotency case #{index} must record a concrete implementation"
