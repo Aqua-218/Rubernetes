@@ -522,9 +522,7 @@ module Rubernetes
             raise EffectError, "namespace holder start time changed during adoption" unless actual_start == expected_start
 
             expected_links = value["namespace_links"] || {}
-            unless expected_links.empty? || expected_links == links
-              raise EffectError, "namespace holder namespace identity changed during adoption"
-            end
+            raise EffectError, "namespace holder namespace identity changed during adoption" unless expected_links.empty? || expected_links == links
 
             pidfd = @pidfd.open(pid: pid, resource_id: String(identity))
             handle = Handle.new(id: String(id).freeze, identity: String(identity).freeze, pid: pid,
