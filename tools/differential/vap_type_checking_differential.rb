@@ -60,7 +60,8 @@ module VAPTypeCheckingDifferential
     "[1, 2].map(x, x * 2)[0] == 2", "[1, 2].filter(x, x)", "{'a': 1}.all(k, k == 1)", "[1].exists_one(x, x == 'a')",
     "[1, 2].all(i, v, i < v)", "{'a': 1}.transformMap(k, v, v + 1)['a'] == 2", "[1].transformList(i, v, v).size() == 1",
     "[2, 1].sortBy(x, x)[0] == 1", "authorizer.requestResource.check('get').allowed()", "authorizer.requestResource.check(1).allowed()",
-    "authorizer.requestResource.subresource('x').namespace('n').check('get').reason() == ''", "optional.of(1).optMap(x, x + 1).value() == 2", "optional.of(1).optFlatMap(x, optional.of(x)).hasValue()",
+    "authorizer.requestResource.subresource('x').namespace('n').check('get').reason() == ''", "optional.of(1).optMap(x, x + 1).value() == " \
+                                                                                              "2", "optional.of(1).optFlatMap(x, optional.of(x)).hasValue()",
     "'x'.format([1, 2]) == 'x'", "cel.bind(x, 1, x + 1) == 2", "[1, 2].reverse()[0] == 2", "strings.quote('a') == 'a'",
     "'a'.lowerAscii().upperAscii() == 'A'", "[1, 2, 2].distinct().size() == 2", "lists.range(3).size() == 3", "[1].first().value() == 1"
   ].freeze
