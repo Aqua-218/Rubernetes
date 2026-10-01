@@ -382,7 +382,8 @@ module Rubernetes
           list_reference = {"$ref" => "#/components/schemas/#{definition_name}List"}
           methods = if collection
                       {"get" => operation.call("list", "list", list_reference), "post" => operation.call("create", "post", reference, body: true),
-                       "delete" => operation.call("deletecollection", "deletecollection", {"$ref" => "#/components/schemas/io.k8s.apimachinery.pkg.apis.meta.v1.Status"})}
+                       "delete" => operation.call("deletecollection", "deletecollection",
+                                                  {"$ref" => "#/components/schemas/io.k8s.apimachinery.pkg.apis.meta.v1.Status"})}
                     else
                       {"get" => operation.call("read", "get", reference), "put" => operation.call("replace", "put", reference, body: true),
                        "patch" => operation.call("patch", "patch", reference, body: true),
