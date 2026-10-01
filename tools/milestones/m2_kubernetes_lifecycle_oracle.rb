@@ -618,9 +618,7 @@ module M2KubernetesLifecycleOracle
       errors << "external lifecycle oracle case #{name} is missing" if expected.nil?
       errors << "Rubernetes lifecycle case #{name} is missing" if actual.nil?
       REQUIRED_OBSERVABLE_FIELDS.fetch(name).each do |field|
-        unless expected.is_a?(Hash) && expected.key?(field)
-          errors << "external lifecycle oracle case #{name} is missing observable field #{field}"
-        end
+        errors << "external lifecycle oracle case #{name} is missing observable field #{field}" unless expected.is_a?(Hash) && expected.key?(field)
         errors << "Rubernetes lifecycle case #{name} is missing observable field #{field}" unless actual.is_a?(Hash) && actual.key?(field)
       end
       errors << "Rubernetes lifecycle case #{name} actual provenance is missing" unless actual_provenance.is_a?(Hash)
