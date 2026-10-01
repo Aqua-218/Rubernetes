@@ -24,9 +24,7 @@ module Rubernetes
         digests = resolved.map { |entry| verify_resolved_image(entry) }.uniq.sort
         aggregate = "sha256:#{::Digest::SHA256.hexdigest(JSON.generate(digests))}"
         expected = String(digest).downcase
-        unless secure_compare(aggregate, expected)
-          raise DigestMismatch, "aggregate image digest mismatch: expected #{expected}, got #{aggregate}"
-        end
+        raise DigestMismatch, "aggregate image digest mismatch: expected #{expected}, got #{aggregate}" unless secure_compare(aggregate, expected)
 
         true
       end
