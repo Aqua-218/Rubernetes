@@ -105,9 +105,7 @@ module Rubernetes
 
         if File.file?(destination) && !File.symlink?(destination)
           verify_file!(destination, parsed)
-          if expected_size && File.size(destination) != Integer(expected_size)
-            raise StoreError, "existing content blob size does not match the descriptor"
-          end
+          raise StoreError, "existing content blob size does not match the descriptor" if expected_size && File.size(destination) != Integer(expected_size)
 
           return destination
         elsif File.exist?(destination) || File.symlink?(destination)
