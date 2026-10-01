@@ -452,9 +452,7 @@ module Rubernetes
         return if media_type.nil? || media_type.to_s.empty? || media_type.to_s.split(";", 2).first.strip == "application/octet-stream"
 
         normalized = media_type.to_s.split(";", 2).first.strip
-        if MediaTypes.layer?(normalized) || MediaTypes.config?(normalized) || MediaTypes.manifest?(normalized) || MediaTypes.index?(normalized)
-          return
-        end
+        return if MediaTypes.layer?(normalized) || MediaTypes.config?(normalized) || MediaTypes.manifest?(normalized) || MediaTypes.index?(normalized)
 
         raise UnsupportedMediaType, "unsupported registry blob media type: #{normalized}"
       end
