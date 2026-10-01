@@ -2735,6 +2735,12 @@
             "description": "accessModes contains the desired access modes the volume should have. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#access-modes-1",
             "items": {
               "default": "",
+              "enum": [
+                "ReadOnlyMany",
+                "ReadWriteMany",
+                "ReadWriteOnce",
+                "ReadWriteOncePod"
+              ],
               "type": "string"
             },
             "type": "array",
