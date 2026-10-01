@@ -225,9 +225,7 @@ module M5Gate
       ids = cases.map { |entry| entry["id"] }
       FAULT_MATRIX_REQUIRED.each { |id| errors << "fault matrix is missing case #{id}" unless ids.include?(id) }
       cases.each do |entry|
-        unless entry["measurement_source"] == "real_processes_sigkill"
-          errors << "fault case #{entry["id"]} must come from real processes under SIGKILL"
-        end
+        errors << "fault case #{entry["id"]} must come from real processes under SIGKILL" unless entry["measurement_source"] == "real_processes_sigkill"
         next unless entry["id"].to_s.end_with?("_failures")
 
         errors << "fault case #{entry["id"]} must acknowledge writes before the fault" unless entry["acknowledged_writes"].to_i >= 100
