@@ -245,7 +245,9 @@ module Promql
       assert_equal [1.0], values("histogram_quantile(1, d_bucket)")
       summed = vector("histogram_quantile(0.5, sum by (le) (d_bucket))")
 
-  # ---------------------------------------------------------- functions
+      assert_equal [{}], summed.map(&:first)
+      assert_in_delta 0.3, summed[0][1], 1e-9
+    end
 
   test "histogram_quantile interpolates within the bucket" do
     {"0.1" => 10, "0.5" => 30, "1" => 40, "+Inf" => 40}.each do |le, count|
