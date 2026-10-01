@@ -23,9 +23,7 @@ end
 def affinity(kind: "podAffinity", required: [], preferred: [])
   section = {}
   section["requiredDuringSchedulingIgnoredDuringExecution"] = required unless required.empty?
-  unless preferred.empty?
-    section["preferredDuringSchedulingIgnoredDuringExecution"] = preferred.map { |t| {"weight" => 10, "podAffinityTerm" => t} }
-  end
+  section["preferredDuringSchedulingIgnoredDuringExecution"] = preferred.map { |t| {"weight" => 10, "podAffinityTerm" => t} } unless preferred.empty?
   {kind => section}
 end
 
