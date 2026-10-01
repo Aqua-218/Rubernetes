@@ -9,7 +9,8 @@ DaemonSets, Jobs, CronJobs, Services, Ingresses, ConfigMaps, …), Pods with
 logs and YAML, events and alerts. Writes (delete Pod, scale, rollout
 restart) can be switched off.
 
-* Ruby version
+**Metrics server.** A collector thread in the same process discovers and
+scrapes, every `DASHBOARD_SCRAPE_INTERVAL` seconds:
 
 * System dependencies
 
