@@ -365,7 +365,8 @@ class M4NetworkTest < Minitest::Test
                                                                                                       {
                                                                                                         "type" => Rubernetes::Network::Netlink::IFLA_ADDRESS, "value" => ["02aabbccddee"].pack("H12")
                                                                                                       },
-                                                                                                      {"type" => Rubernetes::Network::Netlink::IFLA_LINKINFO, "value" => link_info, "nested" => true}
+                                                                                                      {"type" => Rubernetes::Network::Netlink::IFLA_LINKINFO,
+                                                                                                       "value" => link_info, "nested" => true}
                                                                                                     ])
     message = Rubernetes::Network::Netlink::Message.new(type: Rubernetes::Network::Netlink::RTM_NEWLINK,
                                                         flags: 0, sequence: 1, payload: payload)
