@@ -1913,9 +1913,7 @@ module Rubernetes
         else
           while (chunk = socket.read(65_536))
             body << chunk
-            if body.bytesize > PROXY_MAX_BODY_BYTES
-              raise Status::ServiceUnavailable.new("proxied response exceeds #{PROXY_MAX_BODY_BYTES} bytes")
-            end
+            raise Status::ServiceUnavailable.new("proxied response exceeds #{PROXY_MAX_BODY_BYTES} bytes") if body.bytesize > PROXY_MAX_BODY_BYTES
           end
           body = decode_chunked_body(body) if headers["transfer-encoding"].any? { |value| value.downcase.include?("chunked") }
         end
