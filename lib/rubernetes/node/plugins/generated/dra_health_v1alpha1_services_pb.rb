@@ -21,7 +21,7 @@
 # limitations under the License.
 #
 
-require 'grpc'
+require "grpc"
 require_relative "dra_health_v1alpha1_pb"
 
 module Rubernetes
