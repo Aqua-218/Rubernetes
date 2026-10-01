@@ -44,6 +44,7 @@ module Release
                                         "(default: the kubeconfig's directory when it holds cluster.json)") { |v| options[:cluster_root] = v }
         parser.on("--netns NAME", "network namespace the cluster's API endpoint lives in") { |v| options[:netns] = v }
       end.parse!(argv)
+      options[:cluster_root] ||= default_cluster_root(options[:kubeconfig])
 
       FileUtils.mkdir_p(File.dirname(options[:journal]))
       started = Time.now.utc
