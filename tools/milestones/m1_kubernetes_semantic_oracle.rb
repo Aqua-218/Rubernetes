@@ -101,7 +101,8 @@ module M1KubernetesSemanticOracle
       "json_unknown_behavior" => "encoding/json discards unknown fields in concrete structs; strict decode records field errors",
       "defaulting_observable" => "runtime.Scheme.Default after concrete JSON decode",
       "validation_observable" => "runtime.Scheme.Validate using generated declarative validation registrations",
-      "applicability_policy" => "N/A is emitted only for non-runtime objects or types without an upstream validation registration; each reason cites the source package/type",
+      "applicability_policy" => "N/A is emitted only for non-runtime objects or types without an upstream validation registration; each reason cites the " \
+                                "source package/type",
       "validation_criterion" => validation_criterion,
       "provenance" => provenance,
       "comparisons" => response.sort_by { |entry| entry.fetch("id") }
