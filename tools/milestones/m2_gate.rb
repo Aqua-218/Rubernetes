@@ -1272,9 +1272,7 @@ module M2Gate
         unless expected_digest && provenance["runner_sha256"] == expected_digest
           errors << "#{label} provenance runner SHA-256 must match the built-in runner file"
         end
-        unless provenance["runner_path"] == File.realpath(expected_path)
-          errors << "#{label} provenance runner path must match the built-in runner"
-        end
+        errors << "#{label} provenance runner path must match the built-in runner" unless provenance["runner_path"] == File.realpath(expected_path)
         return
       end
 
