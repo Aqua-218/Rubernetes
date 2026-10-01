@@ -114,9 +114,7 @@ module Rubernetes
       def errors(definition, value, operation: :create, old: nil, strategy_prepare: false, subresource: nil)
         # metav1.DeleteOptions carries no ObjectMeta; ValidateDeleteOptions
         # (apimachinery/pkg/apis/meta/v1/validation) runs in the delete handler.
-        if definition.respond_to?(:kind) && definition.kind == "DeleteOptions" && object_like?(value)
-          return delete_options_errors(plain_object(value))
-        end
+        return delete_options_errors(plain_object(value)) if definition.respond_to?(:kind) && definition.kind == "DeleteOptions" && object_like?(value)
         return [] unless resource_definition?(definition)
         return [] unless object_like?(value)
 
