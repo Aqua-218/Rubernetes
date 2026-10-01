@@ -229,7 +229,7 @@ module Rubernetes
           spec
         end
 
-        def convert_value(type, value, keep_empty = false)
+        def convert_value(type, value, keep_empty: false)
           case type["k"]
           when "string" then value.is_a?(String) ? value : ""
           when "int", "uint" then value.is_a?(Numeric) ? value.to_i : 0
