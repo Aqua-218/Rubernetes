@@ -484,7 +484,8 @@
       "upstream_path": "api/openapi-spec/v3/apis__scheduling.k8s.io__v1alpha2_openapi.json",
       "source_sha256": "34ef4f4363dd505fc2cca53e55562c926f31d92abc92e055aa1e2410aa479880",
       "sha256": "34ef4f4363dd505fc2cca53e55562c926f31d92abc92e055aa1e2410aa479880",
-      "paths": 14
+      "paths": 14,
+      "source": "tree"
     },
     {
       "path": "apis/scheduling.k8s.io.json",
