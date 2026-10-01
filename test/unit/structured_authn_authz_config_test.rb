@@ -258,7 +258,10 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
     invalid.call(authn_document([], anonymous: {"enabled" => false, "conditions" => [{"path" => "/x"}]}),
                  /enabled should be set to true when conditions are defined/)
     invalid.call(authn_document([]).merge("kind" => "Other"), /kind must be AuthenticationConfiguration/)
-    error = assert_raises(A::Configuration::InvalidError) { A::Configuration.from_h(authn_document([jwt_entry]), disallowed_issuers: ["https://issuer.example"]) }
+    error = assert_raises(A::Configuration::InvalidError) do
+      A::Configuration.from_h(authn_document([jwt_entry]),
+                              disallowed_issuers: ["https://issuer.example"])
+    end
     assert_match(/must not overlap with disallowed issuers/, error.message)
   end
 
