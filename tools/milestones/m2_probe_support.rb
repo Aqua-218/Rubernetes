@@ -1262,6 +1262,44 @@ module M2ProbeSupport
     "containers" => [{"name" => "main", "resources" => LEDGER_CONTAINER_RESOURCES}]
   }.freeze
 
+  # The native cycles own fixed, evidence-bound identities
+  # (m2-native-cycle-NNNN cgroups and sandboxes under /sys/fs/cgroup/rubernetes)
+  # and the leak scan counts every process in such a cgroup.  Two probes on
+  # one host therefore corrupt each other: a 17-hour orphaned ledger probe
+  # made the 2026-10-01 test lane fail with "cgroup.procs: No such file or
+  # directory" and would have counted as leaks.  One host-wide lock
+  # serialises them; a holder that does not finish within the wait is
+  # reported by pid instead of being waited on for ever.
+  NATIVE_CYCLE_LOCK_PATH = File.join(Dir.tmpdir, "rubernetes-m2-native-cycles.lock")
+  NATIVE_CYCLE_LOCK_WAIT = Float(ENV.fetch("RUBERNETES_M2_NATIVE_LOCK_WAIT", 1800))
+
+  def native_cycle_workspace(lock_path: NATIVE_CYCLE_LOCK_PATH, wait: NATIVE_CYCLE_LOCK_WAIT, &)
+    lock = File.open(lock_path, File::RDWR | File::CREAT, 0o600)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait
+    until lock.flock(File::LOCK_EX | File::LOCK_NB)
+      if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+        holder = lock.read.to_s.strip
+        raise "another M2 native-cycle probe (pid #{holder.empty? ? "unknown" : holder}) has held #{lock_path} for " \
+              "#{wait.round}s; the cycles cannot run concurrently"
+      end
+      sleep 0.5
+    end
+    lock.rewind
+    lock.truncate(0)
+    lock.write("#{Process.pid}\n")
+    lock.flush
+    Dir.mktmpdir("rubernetes-m2-native-cycles-", &)
+  ensure
+    if lock
+      begin
+        lock.flock(File::LOCK_UN)
+      rescue StandardError
+        nil
+      end
+      lock.close
+    end
+  end
+
   def ledger_limits_evidence
     require "rubernetes/runtime/native"
     resources = Rubernetes::Runtime::Native::Resources
