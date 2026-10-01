@@ -517,8 +517,10 @@
       "path": "apis/storage.k8s.io.json",
       "upstream_path": "api/openapi-spec/v3/apis__storage.k8s.io_openapi.json",
       "source_sha256": "9cf25959dd59c003609183375f830f41ace5cfb7cfac8747fd4312149b0233bf",
-      "sha256": "9cf25959dd59c003609183375f830f41ace5cfb7cfac8747fd4312149b0233bf",
-      "paths": 1
+      "sha256": "8bfc48b5196efd8c151c2c45f9d3b18f6a45c9590f1e34e0529ebee59f46879e",
+      "paths": 1,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/storage.k8s.io"
     },
     {
       "path": "apis/storagemigration.k8s.io/v1beta1.json",
