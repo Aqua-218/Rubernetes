@@ -351,7 +351,7 @@ module Rubernetes
         result[:items] = items unless items.nil?
         result[:additional_properties] = additional_properties unless additional_properties.nil?
         result[:properties] = properties unless properties.empty?
-        result[:default] = default_value if has_default?
+        result[:default] = default_value if explicit_default?
         result[:enum] = enum unless enum.nil?
         result[:minimum] = minimum unless minimum.nil?
         result[:maximum] = maximum unless maximum.nil?
