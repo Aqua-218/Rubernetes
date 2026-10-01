@@ -422,12 +422,8 @@ module Rubernetes
 
         has_certificate = certificate_file || certificate_data
         has_key = key_file || key_data
-        if has_certificate && !has_key
-          raise ConfigurationError, "context #{context_name.inspect} has a client certificate without a client key"
-        end
-        if has_key && !has_certificate
-          raise ConfigurationError, "context #{context_name.inspect} has a client key without a client certificate"
-        end
+        raise ConfigurationError, "context #{context_name.inspect} has a client certificate without a client key" if has_certificate && !has_key
+        raise ConfigurationError, "context #{context_name.inspect} has a client key without a client certificate" if has_key && !has_certificate
 
         {
           ca_file: ca_file,
