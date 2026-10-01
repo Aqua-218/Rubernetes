@@ -101,7 +101,8 @@ module Rubernetes
               # container must be forcibly removed.
               # This call is idempotent, and must not return an error if the container has
               # already been removed.
-              rpc :RemoveContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RemoveContainerRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RemoveContainerResponse
+              rpc :RemoveContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RemoveContainerRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RemoveContainerResponse
               # ListContainers lists all containers by filters.
               rpc :ListContainers, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListContainersRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListContainersResponse
               # StreamContainers returns a stream of containers.
