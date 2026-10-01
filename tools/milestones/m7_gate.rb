@@ -305,9 +305,10 @@ module M7Gate
         errors << "host confinement must verify uid, capabilities, seccomp, no_new_privs, chroot and namespaces"
       end
       forgery = cases.find { |entry| entry["id"] == "identity_ack_forgery" }
-      errors << "every forged or stale ACK must be rejected" unless forgery && forgery["rejections"].is_a?(Hash) && forgery["rejections"].length >= 4 && forgery["rejections"].values.all? do |value|
-        value.to_s.start_with?("rejected")
-      end
+      errors << "every forged or stale ACK must be rejected" unless forgery && forgery["rejections"].is_a?(Hash) && forgery["rejections"].length >= 4 &&
+                                                                    forgery["rejections"].values.all? do |value|
+                                                                      value.to_s.start_with?("rejected")
+                                                                    end
       restricted = cases.find { |entry| entry["id"] == "restricted_no_network_device" }
       errors << "the restricted class must expose only the loopback interface" unless restricted && restricted["interfaces"] == ["lo"]
     end
