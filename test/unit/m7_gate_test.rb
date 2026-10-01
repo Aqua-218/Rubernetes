@@ -91,7 +91,8 @@ class M7GateTest < Minitest::Test
       when /\Afault_/ then base.merge("residue" => clean_residue)
       when "identity_reuse_after_faults" then base.merge("report" => {"vm_id" => {"reused" => 0}})
       when "host_inventory_after_cleanup" then base.merge("resources" => [])
-      when "node_lifecycle_contract" then base.merge("start_phase" => "Running", "finish_state" => "Removed", "lifecycle_class" => "Rubernetes::Node::Lifecycle")
+      when "node_lifecycle_contract" then base.merge("start_phase" => "Running", "finish_state" => "Removed",
+                                                     "lifecycle_class" => "Rubernetes::Node::Lifecycle")
       else base
       end
     end
