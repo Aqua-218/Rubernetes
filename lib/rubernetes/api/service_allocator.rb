@@ -656,7 +656,9 @@ module Rubernetes
               end
               if used.include?(requested)
                 count_allocation(:port, "static", error: true)
-                raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.ports[#{Array(spec["ports"]).index(port)}].nodePort: Invalid value: #{requested}: provided port is already allocated",
+                raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.ports[#{Array(spec["ports"]).index(port)}].nodePort: Invalid " \
+                                          "value: #{requested}: provided port is " \
+                                          "already allocated",
                                           details: {"kind" => "Service", "name" => name_of(service)})
               end
               count_allocation(:port, "static") unless existing_node_port?(existing, requested)
