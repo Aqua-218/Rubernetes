@@ -486,7 +486,8 @@ module M2LifecycleOracleNodeImage
     node_lock = {
       "schema_version" => 1,
       "verified_at" => Time.now.utc.strftime("%Y-%m-%d"),
-      "purpose" => "M2 lifecycle oracle: Kubernetes #{KUBERNETES_VERSION} node image (kubelet, kubeadm, kube-apiserver, etcd, containerd, runc, kindnetd) built from the pinned source checkout",
+      "purpose" => "M2 lifecycle oracle: Kubernetes #{KUBERNETES_VERSION} node image (kubelet, kubeadm, kube-apiserver, etcd, containerd, runc, kindnetd) " \
+                   "built from the pinned source checkout",
       "image" => {
         "reference" => reference,
         "local_tag" => LOCAL_TAG,
