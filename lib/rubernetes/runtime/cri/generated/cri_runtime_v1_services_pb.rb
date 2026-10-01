@@ -122,7 +122,8 @@ module Rubernetes
                   stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamContainersResponse)
               # ContainerStatus returns status of the container. If the container is not
               # present, returns an error.
-              rpc :ContainerStatus, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatusRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatusResponse
+              rpc :ContainerStatus, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatusRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatusResponse
               # UpdateContainerResources updates ContainerConfig of the container synchronously.
               # If runtime fails to transactionally update the requested resources, an error is returned.
               rpc :UpdateContainerResources, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdateContainerResourcesRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdateContainerResourcesResponse
