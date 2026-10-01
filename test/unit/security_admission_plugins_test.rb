@@ -57,7 +57,10 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     error = assert_raises(A::Rejected) { lifecycle.validate(attributes("CREATE", resource: "pods", object: pod("late"), namespace: "dying")) }
     assert_match(/being terminated/, error.message)
     assert_raises(A::Rejected) { lifecycle.validate(attributes("CREATE", resource: "pods", object: pod("x"), namespace: "missing")) }
-    assert_raises(A::Rejected) { lifecycle.validate(attributes("DELETE", resource: "namespaces", namespace: "", name: "kube-system", old: {"metadata" => {"name" => "kube-system"}})) }
+    assert_raises(A::Rejected) do
+      lifecycle.validate(attributes("DELETE", resource: "namespaces", namespace: "", name: "kube-system",
+                                              old: {"metadata" => {"name" => "kube-system"}}))
+    end
   end
 
   def test_service_account_defaults_and_mounts_projected_token
