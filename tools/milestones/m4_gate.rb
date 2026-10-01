@@ -750,7 +750,9 @@ module M4Gate
         errors << "proxy kernel runner provenance must match packet runner"
       end
       kernel_runner = kernel["runner"] || kernel["runner_provenance"]
-      kernel_started = kernel_runner.is_a?(Hash) ? (kernel_runner["startedAt"] || kernel_runner["started_at"] || kernel_runner["startTime"] || kernel_runner["start_time"]) : nil
+      kernel_started = if kernel_runner.is_a?(Hash)
+                         kernel_runner["startedAt"] || kernel_runner["started_at"] || kernel_runner["startTime"] || kernel_runner["start_time"]
+                       end
       kernel_source = kernel_runner.is_a?(Hash) ? (kernel_runner["source"] || kernel_runner["sourcePath"] || kernel_runner["source_path"]) : nil
       kernel_stdout_digest = kernel_runner.is_a?(Hash) ? (kernel_runner["stdoutSha256"] || kernel_runner["stdout_sha256"]) : nil
       kernel_matches = kernel_runner.is_a?(Hash) && kernel_runner["pid"] == runner["pid"] && kernel_started == runner_started &&
