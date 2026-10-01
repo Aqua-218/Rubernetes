@@ -310,9 +310,7 @@ module KubernetesCorpusImporter
         raise ValidationError, "corpus source must not be a symlink: #{record.fetch("path")}" if File.symlink?(path)
 
         bytes = File.binread(path)
-        if Digest::SHA256.hexdigest(bytes) != record.fetch("sha256")
-          raise ValidationError, "corpus digest mismatch for #{record.fetch("path")}; rerun importer"
-        end
+        raise ValidationError, "corpus digest mismatch for #{record.fetch("path")}; rerun importer" if Digest::SHA256.hexdigest(bytes) != record.fetch("sha256")
         raise ValidationError, "corpus size mismatch for #{record.fetch("path")}; rerun importer" if bytes.bytesize != record.fetch("bytes")
 
         if record.fetch("kind") == "json"
