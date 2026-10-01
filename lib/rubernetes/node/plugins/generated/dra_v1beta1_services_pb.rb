@@ -48,7 +48,8 @@ module Rubernetes
                   ::Rubernetes::Node::Plugins::Generated::DRAV1beta1::NodePrepareResourcesResponse
               # NodeUnprepareResources is the opposite of NodePrepareResources.
               # The same error handling rules apply,
-              rpc :NodeUnprepareResources, ::Rubernetes::Node::Plugins::Generated::DRAV1beta1::NodeUnprepareResourcesRequest, ::Rubernetes::Node::Plugins::Generated::DRAV1beta1::NodeUnprepareResourcesResponse
+              rpc :NodeUnprepareResources, ::Rubernetes::Node::Plugins::Generated::DRAV1beta1::NodeUnprepareResourcesRequest,
+                  ::Rubernetes::Node::Plugins::Generated::DRAV1beta1::NodeUnprepareResourcesResponse
             end
 
             Stub = Service.rpc_stub_class
