@@ -52,7 +52,8 @@ class ControllerManagerCollectorsTest < Minitest::Test
   def test_attach_detach_state
     objects = {
       "Pod" => [{"metadata" => {"name" => "p", "namespace" => "ns"},
-                 "spec" => {"nodeName" => "a", "volumes" => [{"name" => "v", "persistentVolumeClaim" => {"claimName" => "c"}}]}, "status" => {"phase" => "Running"}}],
+                 "spec" => {"nodeName" => "a",
+                            "volumes" => [{"name" => "v", "persistentVolumeClaim" => {"claimName" => "c"}}]}, "status" => {"phase" => "Running"}}],
       "PersistentVolumeClaim" => [{"metadata" => {"name" => "c", "namespace" => "ns"}, "spec" => {"volumeName" => "data"}}],
       "PersistentVolume" => [{"metadata" => {"name" => "data"}, "spec" => {"csi" => {"driver" => "d.example", "volumeHandle" => "h"}}}],
       "Node" => [{"metadata" => {"name" => "a", "annotations" => {"volumes.kubernetes.io/controller-managed-attach-detach" => "true"}}}],
