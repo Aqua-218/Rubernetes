@@ -3219,9 +3219,7 @@ module Rubernetes
           end
           return false if Helpers.key(value, "state", nil).to_s.match?(/\A(?:created|running|waiting|pending)\z/i)
 
-          if value.key?("success") || value.key?("allowed") || value.key?(:success) || value.key?(:allowed)
-            return Helpers.success_result?(value)
-          end
+          return Helpers.success_result?(value) if value.key?("success") || value.key?("allowed") || value.key?(:success) || value.key?(:allowed)
           return false if value.key?("state") || value.key?(:state)
 
           status = Helpers.key(value, "status", nil)
