@@ -836,9 +836,7 @@ module Rubernetes
                 # The error handler sees the key only; name the controller so a
                 # failed write can be traced to the loop that issued it.
                 error.instance_variable_set(:@rubernetes_controller, controller.name.to_s)
-                unless error.respond_to?(:rubernetes_controller)
-                  error.define_singleton_method(:rubernetes_controller) { @rubernetes_controller }
-                end
+                error.define_singleton_method(:rubernetes_controller) { @rubernetes_controller } unless error.respond_to?(:rubernetes_controller)
                 controller_error ||= error
                 next
               end
