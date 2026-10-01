@@ -45,7 +45,7 @@ module Rubernetes
       # runtime can become ready.  Pure and fake_io profiles intentionally do
       # not enter this contract and remain deterministic.
       class HostCapabilityContract
-        Requirements = {
+        REQUIREMENTS = {
           namespace: {
             capability: :namespace,
             methods: %i[create destroy]
