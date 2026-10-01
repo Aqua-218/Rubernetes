@@ -80,6 +80,17 @@ module Conformance
       after = capture_state(options)
       loss = compare_state(baseline, after)
       stuck = stuck_operations(options)
+      # Exit 2 is the driver saying "not performed on this topology" (with the
+      # reason on stderr): recorded as INCOMPLETE, never as a pass or a failure
+      # of the cluster.
+      not_performed = status.exitstatus == 2
+      stage_status = if status.success?
+                       "COMPLETE"
+                     elsif not_performed
+                       "INCOMPLETE"
+                     else
+                       "FAILED"
+                     end
       stage.merge(
         "passed" => status.success? && loss.empty? && stuck.empty?,
         "status" => status.success? ? "COMPLETE" : "FAILED",
