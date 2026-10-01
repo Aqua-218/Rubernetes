@@ -1409,9 +1409,7 @@ module M2Gate
         active_digest = canonical_document_digest(active_inventory)
         errors << "#{label} active_inventory_sha256 must match the raw active inventory" unless
           valid_digest?(cycle["active_inventory_sha256"]) && cycle["active_inventory_sha256"] == active_digest
-        unless cycle["active_inventory_count"] == active_inventory.length
-          errors << "#{label} active_inventory_count must match the raw active inventory"
-        end
+        errors << "#{label} active_inventory_count must match the raw active inventory" unless cycle["active_inventory_count"] == active_inventory.length
         active_kinds = active_inventory.filter_map { |resource| resource.is_a?(Hash) ? resource["kind"] : nil }.uniq.sort
         errors << "#{label} active_inventory_kinds must match the raw active inventory" unless
           Array(cycle["active_inventory_kinds"]).map(&:to_s).uniq.sort == active_kinds
