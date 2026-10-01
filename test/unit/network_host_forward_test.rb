@@ -38,6 +38,12 @@ class NetworkHostForwardTest < Minitest::Test
     assert_equal 2, inserts.length
     assert_includes inserts, ["iptables", "-I", "FORWARD", "1", "-s", "10.240.0.0/16", "-j", "ACCEPT"]
     assert_includes inserts, ["iptables", "-I", "FORWARD", "1", "-d", "10.240.0.0/16", "-j", "ACCEPT"]
+    # ipMasq: Pod egress to anything outside the cluster leaves as the node.
+    nat = runner.calls.select { |call| call[1] == "-t" && call[2] == "nat" }
+
+    refute_empty nat
+    assert(nat.all? { |call| call.include?("MASQUERADE") && call.include?("-s") && call.include?("10.240.0.0/16") })
+    assert(nat.all? { |call| call.each_cons(3).any? { |a, b, c| a == "!" && b == "-d" && c == "10.240.0.0/16" } })
   end
 
   def test_an_existing_rule_is_not_installed_twice
@@ -47,7 +53,7 @@ class NetworkHostForwardTest < Minitest::Test
     result = HostForward.new(runner: runner).ensure!(["10.240.0.0/16"])
 
     assert_empty result.installed
-    assert_equal 2, result.already_present.length
+    assert_equal 3, result.already_present.length, "two FORWARD accepts and the egress masquerade"
     refute(runner.calls.any? { |call| call[1] == "-I" })
   end
 
@@ -65,6 +71,6 @@ class NetworkHostForwardTest < Minitest::Test
     result = HostForward.new(runner: runner).ensure!(["10.240.0.0/16"])
 
     assert_empty result.installed
-    assert_equal 2, result.skipped.length
+    assert_equal 3, result.skipped.length, "two FORWARD accepts and the egress masquerade"
   end
 end

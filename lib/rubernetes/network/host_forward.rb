@@ -49,12 +49,16 @@ module Rubernetes
         false
       end
 
+      NAT_CHAIN = "POSTROUTING"
+      MASQUERADE_COMMENT = "rubernetes pod egress"
+
       def ensure!(cidrs)
         ensure_bridge_netfilter!
         installed = []
         present = []
         skipped = []
-        Array(cidrs).map(&:to_s).reject(&:empty?).uniq.each do |cidr|
+        list = Array(cidrs).map(&:to_s).reject(&:empty?).uniq
+        list.each do |cidr|
           binary = cidr.include?(":") ? "ip6tables" : "iptables"
           %w[-s -d].each do |direction|
             arguments = [CHAIN, direction, cidr, "-j", "ACCEPT"]
@@ -69,12 +73,37 @@ module Rubernetes
               skipped << [binary, direction, cidr]
             end
           end
+          ensure_masquerade!(binary, cidr, list, installed, present, skipped)
         end
         log(installed, present, skipped)
         Result.new(installed: installed, already_present: present, skipped: skipped)
       end
 
       private
+
+      # The bridge CNI plugin's ipMasq: traffic from the Pod CIDR to anything
+      # outside the cluster leaves with the node's address.  Without it a Pod
+      # reaches the host and other Pods but nothing beyond (its address is
+      # not routable upstream), and an HTTPS call from a Pod to the internet
+      # -- cert-manager registering an ACME account, 2026-10-01 -- times out
+      # without a trace.  Cluster-internal and multicast destinations are
+      # excluded, as the plugin does.
+      def ensure_masquerade!(binary, cidr, cluster_cidrs, installed, present, skipped)
+        rule = [NAT_CHAIN, "-s", cidr]
+        cluster_cidrs.select { |other| other.include?(":") == cidr.include?(":") }.each { |other| rule += ["!", "-d", other] }
+        unless cluster_cidrs.include?(cidr.include?(":") ? "ff00::/8" : "224.0.0.0/4")
+          rule += ["!", "-d",
+                   cidr.include?(":") ? "ff00::/8" : "224.0.0.0/4"]
+        end
+        rule += ["-m", "comment", "--comment", MASQUERADE_COMMENT, "-j", "MASQUERADE"]
+        if invoke(binary, "-t", "nat", "-C", *rule)
+          present << [binary, "masquerade", cidr]
+        elsif invoke(binary, "-t", "nat", "-A", *rule)
+          installed << [binary, "masquerade", cidr]
+        else
+          skipped << [binary, "masquerade", cidr]
+        end
+      end
 
       def invoke(binary, *)
         @runner.call(binary, *)
