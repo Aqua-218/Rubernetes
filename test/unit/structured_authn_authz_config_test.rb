@@ -54,7 +54,8 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
     Dir.mktmpdir do |dir|
       kubeconfig = write_kubeconfig(dir)
       good = Z::Configuration.from_h(authz_document([{"type" => "Node", "name" => "node"}, {"type" => "RBAC", "name" => "rbac"},
-                                                     webhook_entry("audit.example.com", kubeconfig, conditions: ['request.resourceAttributes.namespace == "kube-system"'])]), cel: cel)
+                                                     webhook_entry("audit.example.com", kubeconfig,
+                                                                   conditions: ['request.resourceAttributes.namespace == "kube-system"'])]), cel: cel)
 
       assert_equal %w[Node RBAC Webhook], good.authorizers.map(&:type)
       assert_equal %w[Node RBAC], good.non_webhook_types
