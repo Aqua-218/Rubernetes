@@ -2076,9 +2076,7 @@ module Rubernetes
 
       def set_state(record, state)
         state = state.to_s
-        unless RUNTIME_STATES.include?(state) || %w[Failed Unknown].include?(state)
-          raise LifecycleError, "unknown lifecycle state #{state.inspect}"
-        end
+        raise LifecycleError, "unknown lifecycle state #{state.inspect}" unless RUNTIME_STATES.include?(state) || %w[Failed Unknown].include?(state)
 
         previous = record[:state]
         record[:state] = state
