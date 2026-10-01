@@ -850,9 +850,7 @@ module M3Gate
           errors << "#{label} durable side-effect journal is required for run #{run_index + 1}"
           next
         end
-        unless journal["run"] == (run_index.zero? ? "first" : "second")
-          errors << "#{label} durable journal run label is invalid for run #{run_index + 1}"
-        end
+        errors << "#{label} durable journal run label is invalid for run #{run_index + 1}" unless journal["run"] == (run_index.zero? ? "first" : "second")
         errors << "#{label} durable journal before inventory is required for run #{run_index + 1}" unless journal["before"].is_a?(Hash)
         errors << "#{label} durable journal after inventory is required for run #{run_index + 1}" unless journal["after"].is_a?(Hash)
         snapshot = journal["raw_snapshot"]
