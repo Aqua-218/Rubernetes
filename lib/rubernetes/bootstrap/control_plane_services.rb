@@ -1528,14 +1528,6 @@ module Rubernetes
       PV_PLUGINS = {"hostPath" => "kubernetes.io/host-path", "local" => "kubernetes.io/local-volume", "nfs" => "kubernetes.io/nfs",
                     "iscsi" => "kubernetes.io/iscsi", "fc" => "kubernetes.io/fc"}.freeze
 
-      def self.pv_plugin_name(pv)
-        spec = pv["spec"] || {}
-        return "kubernetes.io/csi:#{spec.dig("csi", "driver")}" if spec["csi"].is_a?(Hash)
-
-        PV_PLUGINS.each { |field, plugin| return plugin if spec[field].is_a?(Hash) }
-        "N/A"
-      end
-
       def stop_components(reason:)
         @component_server&.stop
         @component_server = nil
