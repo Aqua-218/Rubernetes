@@ -431,9 +431,7 @@ module Rubernetes
         detail << "SCTP CRC32c release requirement waived: #{@kernel_waiver.fetch("reason")}" if sctp_crc32c_waived?
         detail << "SCTP CRC32c requires a verified bpf_loop static callback and BPF_PSEUDO_FUNC relocation" if gaps.include?("sctp_crc32c")
         detail << "kernel verifier/load evidence is not content-bound" unless @verifier_attested
-        unless @helper_live_readback_attested
-          detail << "live kernel helper ID readback is incomplete; external helper attestation is test-only"
-        end
+        detail << "live kernel helper ID readback is incomplete; external helper attestation is test-only" unless @helper_live_readback_attested
         detail << "TC filter identity readback is incomplete" unless @tc_attach_attested
         detail << "kernel_release override is test-only and cannot authorize production" if @kernel_release_override
         if gaps.include?("ipv4_fragment_reassembly")
