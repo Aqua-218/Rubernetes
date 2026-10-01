@@ -207,9 +207,7 @@ module Rubernetes
 
             extra["authentication.kubernetes.io/#{kind}-name"] = [binding["name"].to_s]
             extra["authentication.kubernetes.io/#{kind}-uid"] = [binding["uid"].to_s]
-            if kind == "pod" && object.dig("spec", "nodeName")
-              extra["authentication.kubernetes.io/node-name"] = [object.dig("spec", "nodeName").to_s]
-            end
+            extra["authentication.kubernetes.io/node-name"] = [object.dig("spec", "nodeName").to_s] if kind == "pod" && object.dig("spec", "nodeName")
           end
           # claims.go: past warnafter the token is stale.
           warn_after = private_claims["warnafter"]
