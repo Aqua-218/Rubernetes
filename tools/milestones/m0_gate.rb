@@ -814,7 +814,8 @@ module M0Gate
       current_path = File.join(ROOT, source_path)
       unless value.is_a?(Hash) && subject && value["path"] == source_path && value["loaded_feature"] == source_path &&
              value["sha256"] == subject["sha256"] && value["bytes"] == subject["bytes"] &&
-             File.file?(current_path) && !File.symlink?(current_path) && Digest::SHA256.file(current_path).hexdigest == value["sha256"] && File.size(current_path) == value["bytes"]
+             File.file?(current_path) && !File.symlink?(current_path) && Digest::SHA256.file(current_path).hexdigest == value["sha256"] &&
+             File.size(current_path) == value["bytes"]
         errors << "ABI probe is not bound to the loaded native extension subject"
         return
       end
