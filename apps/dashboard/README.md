@@ -12,7 +12,13 @@ restart) can be switched off.
 **Metrics server.** A collector thread in the same process discovers and
 scrapes, every `DASHBOARD_SCRAPE_INTERVAL` seconds:
 
-* System dependencies
+- every API server (`/metrics`),
+- every node's kubelet endpoints (`/metrics`, `/metrics/cadvisor`,
+  `/metrics/resource`, `/metrics/probes`),
+- Pods and Services annotated `prometheus.io/scrape: "true"`
+  (`prometheus.io/port`, `prometheus.io/path`, `prometheus.io/scheme`),
+- a built-in kube-state exporter (`kube_node_*`, `kube_pod_*`,
+  `kube_deployment_*`, …) computed from the API.
 
 * Configuration
 
