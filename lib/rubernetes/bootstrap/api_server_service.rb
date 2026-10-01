@@ -329,7 +329,7 @@ module Rubernetes
                              # The API server's structured-merge-diff types
                              # (a MutatingAdmissionPolicy's ApplyConfiguration).
                              type_resolver: lambda { |group, version, kind|
-                               @api_server&.field_managers&.type_converter(group, version)&.type_for(group, version, kind)
+                               @api_server&.field_managers&.then { |managers| managers.type_converter(group, version)&.type_for(group, version, kind) }
                              },
                              # The scheme defaulter a MutatingAdmissionPolicy
                              # runs over each patched object.
