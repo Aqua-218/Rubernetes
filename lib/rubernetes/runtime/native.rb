@@ -530,9 +530,7 @@ module Rubernetes
 
       def create_container(sandbox_value, spec, id: nil, request_id: nil)
         sandbox = sandbox(sandbox_value)
-        unless %i[workload_stopped running].include?(sandbox.state)
-          raise InvalidState, "container creation requires a WorkloadStopped or Running sandbox"
-        end
+        raise InvalidState, "container creation requires a WorkloadStopped or Running sandbox" unless %i[workload_stopped running].include?(sandbox.state)
 
         input = resolve_container_spec(normalize_hash(spec), sandbox: sandbox)
         command = input["command"] || input[:command] || input["argv"] || input[:argv]
