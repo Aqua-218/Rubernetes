@@ -242,7 +242,8 @@ class K1ConformanceFixesBatch2Test < Minitest::Test
                      "template" => {"metadata" => {"labels" => {"app" => "web"}}, "spec" => {"containers" => [{"name" => "c", "image" => "img"}]}}}}
     pod = {"apiVersion" => "v1", "kind" => "Pod",
            "metadata" => {"name" => "rc-1", "namespace" => "default", "uid" => "p1", "labels" => {"app" => "other"},
-                          "ownerReferences" => [{"apiVersion" => "v1", "kind" => "ReplicationController", "name" => "rc", "uid" => "rc-1", "controller" => true}]},
+                          "ownerReferences" => [{"apiVersion" => "v1", "kind" => "ReplicationController", "name" => "rc", "uid" => "rc-1",
+                                                 "controller" => true}]},
            "spec" => {"nodeName" => "n"}, "status" => {"phase" => "Running"}}
     result = Rubernetes::Controller::ReplicationControllerController.new.plan(rc, pods: [pod])
     release = result.operations.find { |operation| operation.action == :update }
