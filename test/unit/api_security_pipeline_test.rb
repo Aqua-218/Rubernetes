@@ -91,7 +91,9 @@ class APISecurityPipelineTest < Minitest::Test
     plcs = [{"metadata" => {"name" => "tiny"},
              "spec" => {"type" => "Limited", "limited" => {"nominalConcurrencyShares" => 1, "limitResponse" => {"type" => "Reject"}}}}]
     schemas = [{"metadata" => {"name" => "all"}, "spec" => {"matchingPrecedence" => 1, "priorityLevelConfiguration" => {"name" => "tiny"},
-                                                            "rules" => [{"subjects" => [{"kind" => "Group", "group" => {"name" => "*"}}], "resourceRules" => [{"verbs" => ["*"], "apiGroups" => ["*"], "resources" => ["*"], "namespaces" => ["*"], "clusterScope" => true}]}]}}]
+                                                            "rules" => [{"subjects" => [{"kind" => "Group", "group" => {"name" => "*"}}],
+                                                                         "resourceRules" => [{"verbs" => ["*"], "apiGroups" => ["*"], "resources" => ["*"],
+                                                                                              "namespaces" => ["*"], "clusterScope" => true}]}]}}]
     controller = S::FlowControl::Controller.new(flow_schemas: schemas, priority_level_configurations: plcs, read_seats: 1,
                                                 mutating_seats: 0)
     pipeline = S::Pipeline.new(authenticator: @pipeline.authenticator, authorizer: @pipeline.authorizer, flow_control: controller)
