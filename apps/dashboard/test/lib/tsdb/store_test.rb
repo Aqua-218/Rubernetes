@@ -7,14 +7,9 @@ module Tsdb
   class StoreTest < ActiveSupport::TestCase
     M = Tsdb::Store::Matcher
 
-  def setup
-    @dir = Dir.mktmpdir("tsdb")
-  end
-
-  def teardown
-    @store&.close
-    FileUtils.rm_rf(@dir)
-  end
+    def setup
+      @dir = Dir.mktmpdir("tsdb")
+    end
 
   def open_store(**)
     @store = Tsdb::Store.new(@dir, **)
