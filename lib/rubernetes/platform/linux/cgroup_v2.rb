@@ -596,9 +596,7 @@ module Rubernetes
 
         def validate_component(value, name)
           component = String(value)
-          unless component.match?(/\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\z/)
-            raise InvalidPath, "#{name} must be a single safe cgroup path component"
-          end
+          raise InvalidPath, "#{name} must be a single safe cgroup path component" unless component.match?(/\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\z/)
 
           component
         end
