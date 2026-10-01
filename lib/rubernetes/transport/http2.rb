@@ -461,9 +461,7 @@ module Rubernetes
           raise ConnectionError.new(PROTOCOL_ERROR, "unexpected CONTINUATION") if @continuation.nil? || @continuation[:stream_id] != stream_id
 
           @continuation[:block] << payload
-          if @continuation[:block].bytesize > [@max_header_bytes * 4, 1 << 20].max
-            raise ConnectionError.new(ENHANCE_YOUR_CALM, "header block too large")
-          end
+          raise ConnectionError.new(ENHANCE_YOUR_CALM, "header block too large") if @continuation[:block].bytesize > [@max_header_bytes * 4, 1 << 20].max
 
           header_block_complete if flags & FLAG_END_HEADERS != 0
         end
