@@ -595,7 +595,8 @@ class M2GateTest < Minitest::Test
   def attack_report(sha, count)
     cases = M2Gate::REQUIRED_ATTACKS.map do |attack|
       {"id" => attack, "category" => attack, "status" => "PASS", "passed" => true, "attempt_count" => 1, "fail_closed" => true,
-       "measurement_source" => "production_image_layer_extractor", "adapter_class" => "Rubernetes::Image::LayerExtractor", "observable_sha256" => Digest::SHA256.hexdigest(attack)}
+       "measurement_source" => "production_image_layer_extractor", "adapter_class" => "Rubernetes::Image::LayerExtractor",
+       "observable_sha256" => Digest::SHA256.hexdigest(attack)}
     end
     finalize_report(report_base(sha, count, "m2_oci_attack_corpus").merge("cases" => cases, "coverage_count" => 4, "case_count" => 4))
   end
