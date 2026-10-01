@@ -1924,12 +1924,8 @@ module M1Gate
       errors << "API Kubernetes oracle request stream differs from the exact probe inventory" unless stream == expected_stream
       stream_digest = canonical_document_digest(stream)
       errors << "API Kubernetes oracle request stream SHA-256 is invalid" unless valid_digest?(oracle["request_stream_sha256"])
-      unless oracle["request_stream_sha256"] == stream_digest
-        errors << "API Kubernetes oracle request stream digest does not match its preimage"
-      end
-      unless oracle["request_seed_sha256"] == stream_digest
-        errors << "API Kubernetes oracle request seed is not the exact request stream digest"
-      end
+      errors << "API Kubernetes oracle request stream digest does not match its preimage" unless oracle["request_stream_sha256"] == stream_digest
+      errors << "API Kubernetes oracle request seed is not the exact request stream digest" unless oracle["request_seed_sha256"] == stream_digest
     rescue Errno::ENOENT => error
       errors << "API Kubernetes oracle runner source is unavailable: #{error.message}"
     end
