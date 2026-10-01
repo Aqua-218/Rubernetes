@@ -258,6 +258,8 @@ module Rubernetes
         encoded = JSON.generate(normalized)
         raise InvalidCommand, "command exceeds #{@timing.max_command_bytes} bytes" if encoded.bytesize > @timing.max_command_bytes
 
+        # A command larger than a batch gets a batch of its own.
+        flush_batch(now) if encoded.bytesize > @timing.batch_max_bytes && !@pending_batch.empty?
         @pending_batch << [request_id, normalized]
         @pending_batch_ids << request_id
         @pending_batch_bytes += encoded.bytesize
