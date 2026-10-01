@@ -843,9 +843,7 @@ module M3WorkloadRunner
           case_document["_observed_uid"] =
             response.body.dig("metadata", "uid")
         end
-        unless response.success?
-          raise "#{case_document.fetch("id")} #{action.fetch("id")} returned HTTP #{response.status}: #{response.body.inspect}"
-        end
+        raise "#{case_document.fetch("id")} #{action.fetch("id")} returned HTTP #{response.status}: #{response.body.inspect}" unless response.success?
       elsif action["wait"]
         started = monotonic
         state = wait_for(client, case_document, action.fetch("wait"), service: service)
