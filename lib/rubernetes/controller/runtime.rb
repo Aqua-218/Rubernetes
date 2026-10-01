@@ -730,9 +730,7 @@ module Rubernetes
             # Same (key, error) contract as the queue path; the controller
             # name travels on the error.
             error.instance_variable_set(:@rubernetes_controller, controller.name.to_s)
-            unless error.respond_to?(:rubernetes_controller)
-              error.define_singleton_method(:rubernetes_controller) { @rubernetes_controller }
-            end
+            error.define_singleton_method(:rubernetes_controller) { @rubernetes_controller } unless error.respond_to?(:rubernetes_controller)
             begin
               @error_handler&.call(Support.name(node), error)
             rescue StandardError
