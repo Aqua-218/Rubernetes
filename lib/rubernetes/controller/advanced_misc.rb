@@ -599,7 +599,8 @@ module Rubernetes
           pool.delete("nodeName") if pool["nodeName"].nil?
           expected = pool.delete("expectedSliceCount")
           if expected > pool["resourceSliceCount"]
-            message = "pool #{pool["driver"]}/#{pool["poolName"]} is incomplete: observed #{pool["resourceSliceCount"]}/#{expected} slices at generation #{pool["generation"]}"
+            message = "pool #{pool["driver"]}/#{pool["poolName"]} is incomplete: observed #{pool["resourceSliceCount"]}/#{expected} slices at generation " \
+                      "#{pool["generation"]}"
             pool.delete("resourceSliceCount")
             pool.delete("totalDevices")
             pool["validationError"] = message.byteslice(0, 256)
