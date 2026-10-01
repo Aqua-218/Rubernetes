@@ -27,8 +27,8 @@ module Prom
       samples = values.each_with_index.map { |v, i| [1000 + (i * 1000), v] }
       _, decoded = roundtrip(samples)
 
-  test "NaN survives as NaN" do
-    _, decoded = roundtrip([[1, 1.0], [2, Float::NAN], [3, 2.0]])
+      assert_equal samples, decoded
+    end
 
     assert_predicate decoded[1][1], :nan?
     assert_equal [1, 1.0], decoded[0]
