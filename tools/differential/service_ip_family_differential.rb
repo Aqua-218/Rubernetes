@@ -103,7 +103,7 @@ module ServiceIPFamilyDifferential
                 "metadata" => {"name" => test_case["name"], "namespace" => namespace}, "spec" => test_case["spec"]}
       response = yield(:post, "/api/v1/namespaces/#{namespace}/services", object)
       [test_case["name"], observe(response)]
-    end.to_h
+    end
   end
 
   def run_oracle
