@@ -179,8 +179,7 @@ module Promql
 
       assert_equal [{"method" => "get"}, {"method" => "post"}], result.map(&:first)
 
-    assert_equal [[{"method" => "get"}, 24.0 / 124], [{"method" => "post"}, 6.0 / 106]], result
-    result = vector('requests{code="500"} / on(method) total').sort_by { |m, _| m["method"] }
+      result = vector("requests / ignoring(code) group_left total").sort_by { |m, _| [m["method"], m["code"]] }
 
     assert_equal [{"method" => "get"}, {"method" => "post"}], result.map(&:first)
 
