@@ -1561,11 +1561,6 @@
         "responses": {
           "200": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIService"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.kube-aggregator.pkg.apis.apiregistration.v1.APIService"
