@@ -133,6 +133,7 @@ class NftablesNetlinkAdapterTest < Minitest::Test
     skip "set RUBERNETES_NFTABLES_KERNEL_TEST=1 for the privileged kernel test" unless ENV["RUBERNETES_NFTABLES_KERNEL_TEST"] == "1"
     skip "kernel lifecycle test requires root" unless Process.uid.zero?
 
+    begin
       table_name = "rubernetes_test_#{Process.pid}_#{rand(1_000_000)}"
       adapter = Adapter.new(table_name: table_name, timeout: 2.0)
       backend = Rubernetes::Proxy::NftablesBackend.new(netlink_adapter: adapter, test_adapter: true)
