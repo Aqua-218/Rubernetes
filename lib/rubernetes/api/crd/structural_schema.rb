@@ -307,7 +307,7 @@ module Rubernetes
           causes = []
           validate_value(object, @schema, [], causes, root: true)
           ratchet!(causes, object, old) if old
-          if @cel && has_validations?(@schema)
+          if @cel && validations?(@schema)
             if causes.any? { |cause| BLOCKING_REASONS.include?(cause["reason"]) }
               causes << {"field" => "<nil>", "message" => "Invalid value: null: #{BLOCKED_MESSAGE}", "reason" => "FieldValueInvalid"}
             else
