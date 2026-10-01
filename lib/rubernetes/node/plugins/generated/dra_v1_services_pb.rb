@@ -24,7 +24,7 @@
 # To regenerate api.pb.go run `hack/update-codegen.sh protobindings`
 #
 
-require 'grpc'
+require "grpc"
 require_relative "dra_v1_pb"
 
 module Rubernetes
