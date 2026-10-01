@@ -190,8 +190,10 @@ class SecurityAdmissionPolicyTest < Minitest::Test
     end
     rule = {"apiGroups" => ["apps"], "apiVersions" => ["v1"], "operations" => ["CREATE"], "resources" => ["deployments"]}
     @context.put("mutatingwebhookconfigurations", nil, "m",
-                 {"metadata" => {"name" => "m"}, "webhooks" => [{"name" => "mutate.example", "clientConfig" => {"url" => "https://mutate.example/"}, "rules" => [rule], "sideEffects" => "None",
-                                                                 "admissionReviewVersions" => ["v1"], "timeoutSeconds" => 5, "reinvocationPolicy" => "IfNeeded"}]}, group: "admissionregistration.k8s.io")
+                 {"metadata" => {"name" => "m"},
+                  "webhooks" => [{"name" => "mutate.example", "clientConfig" => {"url" => "https://mutate.example/"}, "rules" => [rule], "sideEffects" => "None",
+                                  "admissionReviewVersions" => ["v1"], "timeoutSeconds" => 5,
+                                  "reinvocationPolicy" => "IfNeeded"}]}, group: "admissionregistration.k8s.io")
     @context.put("validatingwebhookconfigurations", nil, "v",
                  {"metadata" => {"name" => "v"}, "webhooks" => [
                    {"name" => "deny.example", "clientConfig" => {"url" => "https://deny.example/"}, "rules" => [rule], "sideEffects" => "None", "admissionReviewVersions" => ["v1"],
