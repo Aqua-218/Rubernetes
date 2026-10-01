@@ -645,9 +645,7 @@ module Rubernetes
         when WEBSOCKET_UPGRADE
           version = request.header("sec-websocket-version").to_s
           key = request.header("sec-websocket-key").to_s
-          unless version == WEBSOCKET_VERSION && valid_websocket_key?(key)
-            raise Status::BadRequest.new("websocket upgrade requires version 13 and a valid key")
-          end
+          raise Status::BadRequest.new("websocket upgrade requires version 13 and a valid key") unless version == WEBSOCKET_VERSION && valid_websocket_key?(key)
 
           protocol = select_websocket_protocol(request.header("sec-websocket-protocol"), operation)
           raise Status::BadRequest.new("websocket upgrade does not offer a supported Kubernetes channel protocol") unless protocol
