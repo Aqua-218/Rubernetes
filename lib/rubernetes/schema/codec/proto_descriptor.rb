@@ -1853,7 +1853,8 @@ module Rubernetes
                                                                                                   max_bytes: max_bytes, max_depth: max_depth, depth: depth, keys: keys,
                                                                                                   unknown_policy: unknown_policy)
                         end
-              end # map-entry unknowns stay unrepresented: surfacing them would need a synthetic nested slot
+                # Map-entry unknowns stay unrepresented: surfacing them would need a synthetic nested slot.
+              end
             end
             [key, value]
           end
