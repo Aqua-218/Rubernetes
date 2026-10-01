@@ -155,7 +155,7 @@ class M3WatchTest < Minitest::Test
     assert_equal("current", second_key)
     assert_equal(:sync, second_deltas.first.type)
     assert_equal("8", second_deltas.first.resource_version)
-    assert_predicate fifo, :has_synced?
+    assert_predicate fifo, :synced?
   end
 
   def test_work_queue_deduplicates_dirty_key_and_requeues_once_after_done
