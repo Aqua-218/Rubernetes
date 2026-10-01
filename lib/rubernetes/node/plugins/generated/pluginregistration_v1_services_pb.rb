@@ -23,7 +23,7 @@ module Rubernetes
 
               self.marshal_class_method = :encode
               self.unmarshal_class_method = :decode
-              self.service_name = 'pluginregistration.Registration'
+              self.service_name = "pluginregistration.Registration"
 
               rpc :GetInfo, ::Rubernetes::Node::Plugins::Generated::PluginRegistrationV1::InfoRequest, ::Rubernetes::Node::Plugins::Generated::PluginRegistrationV1::PluginInfo
               rpc :NotifyRegistrationStatus, ::Rubernetes::Node::Plugins::Generated::PluginRegistrationV1::RegistrationStatus, ::Rubernetes::Node::Plugins::Generated::PluginRegistrationV1::RegistrationStatusResponse
