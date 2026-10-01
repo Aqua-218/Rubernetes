@@ -475,6 +475,51 @@ module Rubernetes
         handled
       end
 
+      CONTAINER_STATUS_UNKNOWN_REASON = "ContainerStatusUnknown"
+      CONTAINER_STATUS_UNKNOWN_MESSAGE = "The container could not be located when the pod was terminated"
+
+      def lost_container_error?(error)
+        Helpers.failure_message(error).match?(/unknown container|no such container|container .* not found/i)
+      end
+
+      def sandbox_lost?(record)
+        return false unless record[:sandbox_id] && @runtime.respond_to?(:sandbox)
+
+        invoke(@runtime, :sandbox, record[:sandbox_id])
+        false
+      rescue StandardError => error
+        Helpers.failure_message(error).include?("unknown sandbox")
+      end
+
+      # kubelet SyncPod on a sandbox the runtime lost ("pod sandbox changed"):
+      # every container that ran is reported Terminated with
+      # ContainerStatusUnknown/137, the Pod is killed, and the restart policy
+      # decides what follows -- Always/OnFailure start it again on the next
+      # sync (no tombstone), Never ends it Failed.
+      def lose_sandbox!(object, record, error)
+        event(record, "sandbox.lost", sandbox_id: record[:sandbox_id], message: Helpers.failure_message(error))
+        finished_at = Helpers.now(@clock).iso8601(6)
+        record[:containers].each do |entry|
+          next unless entry[:started]
+
+          @probes.unregister(entry[:id]) if @probes.respond_to?(:unregister)
+          restart_count = entry[:status].is_a?(Hash) ? entry[:status]["restartCount"].to_i : 0
+          terminated = {"exitCode" => 137, "reason" => CONTAINER_STATUS_UNKNOWN_REASON, "message" => CONTAINER_STATUS_UNKNOWN_MESSAGE,
+                        "finishedAt" => finished_at, "containerID" => entry[:id]}
+          terminated["startedAt"] = entry[:started_at] if entry[:started_at]
+          entry[:started] = false
+          entry[:status] = {"state" => "terminated", "exitCode" => 137, "reason" => CONTAINER_STATUS_UNKNOWN_REASON,
+                            "terminated" => terminated, "ready" => false, "started" => false, "restartCount" => restart_count}
+        end
+        # kubelet getPhase: every container stopped under Always (or a failed
+        # one under OnFailure) is still a Running Pod -- it is being
+        # restarted; only Never ends Failed.
+        policy = Helpers.key(Helpers.key(object || {}, "spec", {}), "restartPolicy", "Always").to_s
+        terminate(object || record[:uid], reason: "SandboxLost", terminal_phase: policy == "Never" ? "Failed" : "Running",
+                                          message: CONTAINER_STATUS_UNKNOWN_MESSAGE)
+        record[:containers].length
+      end
+
       # The exit code and terminating signal a runtime status carries.  The
       # Native runtime keeps them on the process handle; simpler runtimes
       # report them at the top level or under "terminated".
