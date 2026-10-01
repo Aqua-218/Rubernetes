@@ -1662,7 +1662,7 @@ module Rubernetes
               device = File.join(target, name)
               next if File.exist?(device) || File.symlink?(device)
 
-              File.open(device, File::WRONLY | File::CREAT | File::EXCL, stat.mode & 0o777) {}
+              File.open(device, File::WRONLY | File::CREAT | File::EXCL, stat.mode & 0o777).close
               @mount.mount(source: host, target: device, filesystem: nil, flags: MS_BIND,
                            resource_id: "workload:dev:#{host.delete_prefix("/dev/")}")
             end
