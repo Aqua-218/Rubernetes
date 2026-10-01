@@ -768,7 +768,7 @@ module Rubernetes
       end
 
       def unregister_stream(session)
-        @stream_mutex.synchronize { @active_streams.delete(session.object_id) }
+        @stream_mutex.synchronize { @active_streams.delete(session) }
       end
 
       def ensure_open_stream!(session)
