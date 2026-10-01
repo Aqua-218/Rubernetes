@@ -339,7 +339,8 @@ module Rubernetes
               raise SyntaxError, "filter() takes 2 arguments" unless arguments.length == 2
 
               [:comprehension, variable, target, "__result__", [:list, []], [:literal, true],
-               [:conditional, arguments[1], [:binary, "+", [:ident, "__result__"], [:list, [[:ident, variable]]]], [:ident, "__result__"]], [:ident, "__result__"]]
+               [:conditional, arguments[1], [:binary, "+", [:ident, "__result__"], [:list, [[:ident, variable]]]], [:ident, "__result__"]], [:ident,
+                                                                                                                                             "__result__"]]
             end
           else
             [:call, name, target, arguments]
