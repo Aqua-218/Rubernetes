@@ -59,7 +59,9 @@ class APIServerTLSMetricsTest < Minitest::Test
       File.write(File.join(directory, "tls.key"), key.to_pem)
       failures = Queue.new
       server = Rubernetes::Transport::HTTPServer.new(->(_request) { [200, {}, ["ok"]] }, host: "127.0.0.1", port: 0,
-                                                                                         cert_file: File.join(directory, "tls.crt"), key_file: File.join(directory, "tls.key"))
+                                                                                         cert_file: File.join(directory,
+                                                                                                              "tls.crt"), key_file: File.join(directory,
+                                                                                                                                              "tls.key"))
       server.on_tls_handshake_error = -> { failures << true }
       server.start(background: true)
       begin
