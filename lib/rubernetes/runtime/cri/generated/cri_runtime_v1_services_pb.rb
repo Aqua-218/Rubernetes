@@ -104,7 +104,8 @@ module Rubernetes
               rpc :RemoveContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RemoveContainerRequest,
                   ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RemoveContainerResponse
               # ListContainers lists all containers by filters.
-              rpc :ListContainers, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListContainersRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListContainersResponse
+              rpc :ListContainers, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListContainersRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListContainersResponse
               # StreamContainers returns a stream of containers.
               # This is an alternative to ListContainers that streams results in lists
               # of at least one item, avoiding the gRPC message size limit for nodes with
