@@ -23,7 +23,6 @@ module Dashboard
         assert_includes hosts, Socket.gethostname
       end
     end
-  end
 
   test "DASHBOARD_HOSTS overrides the default list and empty disables the check" do
     with_env("DASHBOARD_HOSTS" => "a.example.com, .b.example.com", "DASHBOARD_EXTERNAL_URL" => "https://x.example.com/") do
