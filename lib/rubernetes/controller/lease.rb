@@ -252,9 +252,7 @@ module Rubernetes
         candidate["spec"]["acquireTime"] = now.utc.iso8601(6)
         candidate["spec"]["renewTime"] = now.utc.iso8601(6)
         candidate["spec"]["leaseDurationSeconds"] = lease_duration_seconds.to_i
-        unless same_holder
-          candidate["spec"]["leaderTransitions"] = Support.integer(Support.value(candidate["spec"], "leaderTransitions", 0), 0) + 1
-        end
+        candidate["spec"]["leaderTransitions"] = Support.integer(Support.value(candidate["spec"], "leaderTransitions", 0), 0) + 1 unless same_holder
         begin
           stored = @adapter.update(candidate, descriptor: lease_descriptor, existing: lease)
         rescue StandardError => error
