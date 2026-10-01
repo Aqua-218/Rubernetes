@@ -245,7 +245,7 @@ module Rubernetes
 
             value.keys.map(&:to_s).sort.to_h { |key| [key, convert_value(type["e"], value[key], keep_empty: keep_empty)] }
           when "bytes" then value.is_a?(String) && (keep_empty || !value.empty?) ? value : nil
-          when "struct" then convert_struct(type["n"], value.is_a?(Hash) ? value : {}, keep_empty)
+          when "struct" then convert_struct(type["n"], value.is_a?(Hash) ? value : {}, keep_empty: keep_empty)
           when "quantity" then value.nil? ? "0" : Quantity.from_json(value).to_s
           when "intorstring" then value.is_a?(Integer) || value.is_a?(String) ? value : 0
           when "time" then value.is_a?(String) && !value.empty? ? value : nil
