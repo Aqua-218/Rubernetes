@@ -91,7 +91,8 @@ class KubeletMetricsExtrasTest < Minitest::Test
   def test_resource_metrics_render_swap
     summary = {"node" => {"swap" => {"time" => "2026-09-29T10:00:00Z", "swapUsageBytes" => 4096}},
                "pods" => [{"podRef" => {"name" => "p", "namespace" => "n"}, "swap" => {"time" => "2026-09-29T10:00:00Z", "swapUsageBytes" => 100},
-                           "containers" => [{"name" => "c", "swap" => {"time" => "2026-09-29T10:00:00Z", "swapUsageBytes" => 60, "swapAvailableBytes" => 40}}]}]}
+                           "containers" => [{"name" => "c",
+                                             "swap" => {"time" => "2026-09-29T10:00:00Z", "swapUsageBytes" => 60, "swapAvailableBytes" => 40}}]}]}
     text = Rubernetes::Node::ResourceMetrics.render(summary)
 
     assert_in_delta(4096.0, value(text, "node_swap_usage_bytes"))
