@@ -523,9 +523,7 @@ module Rubernetes
             started = ResourceMetrics.parse_time(container["startTime"])
             samples["container_start_time_seconds"] << [labels, started.to_f] if started
             rootfs = container["rootfs"]
-            if rootfs.is_a?(Hash) && rootfs["usedBytes"]
-              samples["container_fs_usage_bytes"] << [labels.merge("device" => "rootfs"), rootfs["usedBytes"].to_i]
-            end
+            samples["container_fs_usage_bytes"] << [labels.merge("device" => "rootfs"), rootfs["usedBytes"].to_i] if rootfs.is_a?(Hash) && rootfs["usedBytes"]
           end
         end
         (MACHINE_FAMILIES.map { |name, type, help| [name, type, help] } + SUMMARY_DESCRIPTORS.map do |name, (type, help)|
