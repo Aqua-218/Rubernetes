@@ -66,9 +66,8 @@ module PodResizeDifferential
       {"status" => status, "reason" => document["reason"], "message" => document["message"], "causes" => causes.sort_by(&:to_s)}
     else
       {"status" => status, "generation" => document.dig("metadata", "generation"), "labels" => document.dig("metadata", "labels"),
-       "resources" => document.dig("spec", "resources"), "containers" => Array(document.dig("spec", "containers")).map do |c|
-                                                           c.slice("image", "resources")
-                                                         end}
+       "resources" => document.dig("spec", "resources"),
+       "containers" => Array(document.dig("spec", "containers")).map { |c| c.slice("image", "resources") }}
     end
   rescue JSON::ParserError
     {"status" => status, "body" => body.to_s[0, 300]}
