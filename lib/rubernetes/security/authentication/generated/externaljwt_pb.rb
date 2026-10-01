@@ -22,13 +22,13 @@ pool = Google::Protobuf::DescriptorPool.generated_pool
 pool.add_serialized_file(descriptor_data)
 
 module Rubernetes
-module ExternalJWTProto
-  SignJWTRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.SignJWTRequest").msgclass
-  SignJWTResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.SignJWTResponse").msgclass
-  FetchKeysRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.FetchKeysRequest").msgclass
-  FetchKeysResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.FetchKeysResponse").msgclass
-  Key = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.Key").msgclass
-  MetadataRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.MetadataRequest").msgclass
-  MetadataResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.MetadataResponse").msgclass
-end
+  module ExternalJWTProto
+    SignJWTRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.SignJWTRequest").msgclass
+    SignJWTResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.SignJWTResponse").msgclass
+    FetchKeysRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.FetchKeysRequest").msgclass
+    FetchKeysResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.FetchKeysResponse").msgclass
+    Key = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.Key").msgclass
+    MetadataRequest = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.MetadataRequest").msgclass
+    MetadataResponse = ::Google::Protobuf::DescriptorPool.generated_pool.lookup("v1.MetadataResponse").msgclass
+  end
 end
