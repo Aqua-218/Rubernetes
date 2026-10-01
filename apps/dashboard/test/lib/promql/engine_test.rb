@@ -147,9 +147,23 @@ module Promql
       assert_equal [], vector("absent_over_time(v[1m])")
     end
 
-    assert_in_delta 1.0 / 15, values("deriv(lin[2m])").first, 1e-9
-    assert_in_delta 4.0 + (60.0 / 15), values("predict_linear(lin[2m], 60)").first, 1e-6
-  end
+    # ---------------------------------------------------------- operators
+
+    test "arithmetic drops the metric name and comparisons filter unless bool" do
+      load("x", {"i" => "1"}, [2])
+      load("x", {"i" => "2"}, [8])
+
+      assert_equal [[{"i" => "1"}, 4.0], [{"i" => "2"}, 16.0]], vector("x * 2")
+      assert_equal [[{"i" => "1"}, 0.5], [{"i" => "2"}, 0.125]], vector("1 / x")
+      assert_equal [[{"__name__" => "x", "i" => "2"}, 8.0]], vector("x > 5")
+      assert_equal [[{"i" => "1"}, 0.0], [{"i" => "2"}, 1.0]], vector("x > bool 5")
+      assert_in_delta(1.0, scalar("3 > bool 2"))
+      assert_in_delta(8.0, scalar("2 ^ 3"))
+      assert_in_delta(-1.0, scalar("-7 % 3"))
+      assert_in_delta(2.0, scalar("7 % -5"))
+      assert_predicate scalar("1 / 0"), :infinite?
+      assert_predicate scalar("0 / 0"), :nan?
+    end
 
   test "over_time functions" do
     load("v", {}, [1, 2, 3, 4])
