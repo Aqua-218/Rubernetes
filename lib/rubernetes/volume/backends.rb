@@ -652,7 +652,8 @@ module Rubernetes
 
           if block_filesystem_mount?(source: source, filesystem: filesystem, root: root,
                                      bind: bind_identity) && !(%w[ext4
-                                                                  xfs].include?(filesystem.to_s.downcase) && filesystem_uuid_present?(filesystem_uuid) && uuid_available)
+                                                                  xfs].include?(filesystem.to_s.downcase) && filesystem_uuid_present?(filesystem_uuid) &&
+                                                                    uuid_available)
             raise MountIdentityError, "persistent block mount for volume #{id} requires a real ext4/xfs filesystem UUID"
           end
         end
