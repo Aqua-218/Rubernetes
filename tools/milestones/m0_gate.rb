@@ -472,7 +472,8 @@ module M0Gate
       gem_subjects = subjects.select do |entry|
         entry["source_path"].to_s.match?(%r{(?:\A|/)rubernetes-#{Regexp.escape(expected_spec.version.to_s)}\.gem\z})
       end
-      unless gem_subjects.length == 1 && gem_subjects.first["sha256"] == Digest::SHA256.file(gem_path).hexdigest && gem_subjects.first["bytes"] == File.size(gem_path)
+      unless gem_subjects.length == 1 && gem_subjects.first["sha256"] == Digest::SHA256.file(gem_path).hexdigest &&
+             gem_subjects.first["bytes"] == File.size(gem_path)
         errors << "gem_build output is not linked to the captured gem subject"
       end
 
