@@ -843,7 +843,7 @@ module Rubernetes
             return seen.fetch(value) if seen.key?(value)
 
             copy = []
-            seen[value.object_id] = copy
+            seen[value] = copy
             value.each { |child| copy << deep_copy(child, seen) }
             copy
           when String
