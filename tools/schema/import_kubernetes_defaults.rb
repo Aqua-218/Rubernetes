@@ -127,6 +127,7 @@ module KubernetesDefaultsImporter
         raise "unknown default-on plugin #{name}"
       end
     end
+    # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
     conditional = text.scan(%r{if utilfeature\.DefaultFeatureGate\.Enabled\(\w+\.(\w+)\) \{\n\s*defaultOnPlugins\.Insert\(\w+\.PluginName\) // ([A-Za-z0-9]+)}).map do |gate, plugin|
       {"plugin" => plugin, "feature_gate" => gate}
     end
