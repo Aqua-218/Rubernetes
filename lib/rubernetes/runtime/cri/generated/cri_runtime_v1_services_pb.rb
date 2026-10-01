@@ -147,7 +147,8 @@ module Rubernetes
                   ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PortForwardResponse
               # ContainerStats returns stats of the container. If the container does not
               # exist, the call returns an error.
-              rpc :ContainerStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatsRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatsResponse
+              rpc :ContainerStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatsRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatsResponse
               # ListContainerStats returns stats of all running containers.
               rpc :ListContainerStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListContainerStatsRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListContainerStatsResponse
               # StreamContainerStats returns a stream of container stats.
