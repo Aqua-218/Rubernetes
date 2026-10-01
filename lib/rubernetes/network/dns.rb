@@ -683,9 +683,7 @@ module Rubernetes
           ip = reverse_name_to_ip(name)
           matches = []
           @services.each_value do |service|
-            if service.cluster_ips.include?(ip)
-              matches << Record.new(name: name, type: "PTR", data: service.fqdn, ttl: @positive_ttl).freeze
-            end
+            matches << Record.new(name: name, type: "PTR", data: service.fqdn, ttl: @positive_ttl).freeze if service.cluster_ips.include?(ip)
             endpoints_for(service).each do |endpoint|
               next unless endpoint.ip == ip
 
