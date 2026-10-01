@@ -1965,9 +1965,7 @@ module Rubernetes
         raise Status::BadRequest.new("target is required") unless target.is_a?(Hash)
 
         target_kind = target["kind"].to_s
-        unless target_kind.empty? || target_kind == "Node"
-          raise Status::BadRequest.new("target.kind #{target_kind.inspect} is not supported (expected Node)")
-        end
+        raise Status::BadRequest.new("target.kind #{target_kind.inspect} is not supported (expected Node)") unless target_kind.empty? || target_kind == "Node"
 
         node_name = target["name"].to_s
         raise Status::BadRequest.new("target.name is required") if node_name.empty?
