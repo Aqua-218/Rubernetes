@@ -144,9 +144,7 @@ module M6Gate
       valid.each do |entry|
         path = File.expand_path(entry.fetch("path"), PROJECT_ROOT)
         errors << "source inventory entry #{entry.fetch("path")} is missing" unless File.file?(path)
-        if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
-          errors << "source inventory digest mismatch #{entry.fetch("path")}"
-        end
+        errors << "source inventory digest mismatch #{entry.fetch("path")}" if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
       end
     end
 
