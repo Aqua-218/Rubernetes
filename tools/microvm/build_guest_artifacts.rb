@@ -167,7 +167,8 @@ def main
                  "base_config_sha256" => "adbc70ab5e89213ba00594b12d25e09bdf8bb1ed3c252d7449326bb14c22963b",
                  "build_script" => "tools/microvm/build_guest_kernel.sh", "added_options" => %w[CONFIG_SECURITY_LANDLOCK CONFIG_DM_VERITY CONFIG_IKCONFIG_PROC CONFIG_PSI CONFIG_CGROUP_FREEZER]},
     "guest_image" => {"base" => provenance["reference"], "base_image_id" => provenance["image_id"], "lib_tree_sha256" => provenance["lib_tree_sha256"],
-                      "extension_sha256" => provenance["ext_sha256"], "generated_platform_sha256" => provenance["generated_platform_sha256"], "init" => "lib/rubernetes/runtime/microvm/guest/init.rb", "size_mib" => ROOTFS_SIZE_MIB},
+                      "extension_sha256" => provenance["ext_sha256"], "generated_platform_sha256" => provenance["generated_platform_sha256"],
+                      "init" => "lib/rubernetes/runtime/microvm/guest/init.rb", "size_mib" => ROOTFS_SIZE_MIB},
     "verity" => {"algorithm" => "sha256", "data_block_size" => 4096, "hash_block_size" => 4096, "root_hash" => root_hash, "salt" => salt},
     "guest_bundle" => {"sha256" => provenance["lib_tree_sha256"]},
     "files" => files
