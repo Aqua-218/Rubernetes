@@ -488,7 +488,7 @@ module Rubernetes
                 [hook, uid]
               end.compare_by_identity
               applicable_hooks(configuration, attributes).each do |hook|
-                uid = uids.fetch(hook.object_id)
+                uid = uids.fetch(hook)
                 # A hook is never called for the first time on the
                 # reinvocation pass, and only IfNeeded hooks run on it.
                 next if attributes.reinvocation? && !state.should_reinvoke?(uid)
