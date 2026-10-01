@@ -130,7 +130,8 @@ class M2LifecycleOracleHarnessTest < Minitest::Test
                    running.call(15.0, false, false, 1)]
     event = lambda { |at, reason, message, count|
       {"at" => at, "type" => "ADDED",
-       "object" => {"reason" => reason, "message" => message, "count" => count, "involvedObject" => {"name" => "m2-probes", "fieldPath" => "spec.containers{app}"}}}
+       "object" => {"reason" => reason, "message" => message, "count" => count,
+                    "involvedObject" => {"name" => "m2-probes", "fieldPath" => "spec.containers{app}"}}}
     }
     event_history = [
       event.call(0.5, "Scheduled", "Successfully assigned", 1),
