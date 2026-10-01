@@ -76,7 +76,7 @@ module Rubernetes
             when :select then eval_select(node)
             when :has then eval_has(node)
             when :index then eval_index(node)
-            when :list then node[1].map { |item| eval(item) }
+            when :list then node[1].map { |item| evaluate(item) }
             when :struct
               node[2].each_with_object(Values::ObjectVal.new(node[1])) do |(field, value_node), hash|
                 raise EvaluationError, "duplicate field #{field.inspect} in #{node[1]}" if hash.key?(field)
