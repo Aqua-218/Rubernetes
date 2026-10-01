@@ -557,9 +557,10 @@ module M4Gate
         errors << "#{label} provenance process_id must be positive" unless provenance["process_id"].is_a?(Integer) && provenance["process_id"].positive?
         errors << "#{label} provenance measurement_id is required" unless non_empty_string?(provenance["measurement_id"])
         %w[started_at finished_at].each { |key| errors << "#{label} provenance #{key} must be ISO-8601" unless iso8601?(provenance[key]) }
-        errors << "#{label} provenance_sha256 does not match canonical content" unless valid_digest?(provenance["provenance_sha256"]) && canonical_document_digest(
-          provenance, excluded_keys: ["provenance_sha256"]
-        ) == provenance["provenance_sha256"]
+        errors << "#{label} provenance_sha256 does not match canonical content" unless valid_digest?(provenance["provenance_sha256"]) &&
+                                                                                       canonical_document_digest(
+                                                                                         provenance, excluded_keys: ["provenance_sha256"]
+                                                                                       ) == provenance["provenance_sha256"]
       else
         errors << "#{label} provenance is required"
       end
