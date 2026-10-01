@@ -608,9 +608,7 @@ module M0Gate
         errors << "executable #{executable} #{option} command identity is invalid" unless argv == expected_command
         subject = subject_index["exe/#{executable}"]
         errors << "executable #{executable} binary digest is invalid" unless digest?(entry["binary_sha256"])
-        unless subject && subject["sha256"] == entry["binary_sha256"]
-          errors << "executable #{executable} is not linked to its captured binary"
-        end
+        errors << "executable #{executable} is not linked to its captured binary" unless subject && subject["sha256"] == entry["binary_sha256"]
         validate_time(entry["started_at"], errors, "executable #{executable} started_at")
         validate_time(entry["finished_at"], errors, "executable #{executable} finished_at")
         result_started = parse_time(entry["started_at"])
