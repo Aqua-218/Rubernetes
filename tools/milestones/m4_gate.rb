@@ -322,9 +322,7 @@ module M4Gate
           next
         end
         errors << "#{label} #{path_value} must not be a symlink" if stat.symlink? || path_component_symlink?(directory, path)
-        if valid_digest?(entry["sha256"]) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
-          errors << "#{label} digest mismatch #{path_value}"
-        end
+        errors << "#{label} digest mismatch #{path_value}" if valid_digest?(entry["sha256"]) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
         errors << "#{label} byte count mismatch #{path_value}" if integer?(entry["bytes"]) && File.size(path) != entry["bytes"]
         entry
       end
