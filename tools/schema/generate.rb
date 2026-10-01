@@ -697,6 +697,8 @@ module RubernetesSchemaGenerator
     # operations; the schemas still come from the pinned v2 definitions so
     # the field sets stay identical to the generated types.
     OPENAPI_V3_PINNED = File.expand_path("../../schema/kubernetes/v1.36.2-openapi-v3", __dir__)
+    OPENAPI_V3_SCALAR_SCHEMAS = %w[io.k8s.apimachinery.pkg.api.resource.Quantity
+                                   io.k8s.apimachinery.pkg.util.intstr.IntOrString].freeze
 
     def pinned_openapi_v3(key)
       path = File.join(OPENAPI_V3_PINNED, "#{key}.json")
