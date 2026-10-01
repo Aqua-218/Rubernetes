@@ -183,9 +183,10 @@ module DRAAllocatorDifferential
                                 claims: [claim("c", [request("r", tolerations: [{"key" => "broken", "operator" => "Equal", "value" => "yes", "effect" => "NoExecute"}])])])
     add.call("taint-none-effect", slices: [slice("s1", [device("a", taints: [{"key" => "x", "effect" => "None"}])])],
                                   claims: [claim("c", [request("r")])])
-    add.call("binding-conditions-last", slices: [slice("s1", [device("bound", bindingConditions: ["ready"], bindingFailureConditions: ["failed"])], pool: "a-pool"),
-                                                 slice("s2", [device("plain")], pool: "b-pool")],
-                                        claims: [claim("c", [request("r")])])
+    add.call("binding-conditions-last",
+             slices: [slice("s1", [device("bound", bindingConditions: ["ready"], bindingFailureConditions: ["failed"])], pool: "a-pool"),
+                      slice("s2", [device("plain")], pool: "b-pool")],
+             claims: [claim("c", [request("r")])])
     add.call("binds-to-node", slices: [slice("s1", [device("a", bindsToNode: true, bindingConditions: ["ready"], bindingFailureConditions: ["failed"])],
                                              node_name: nil, pool: "shared", allNodes: true)],
                               claims: [claim("c", [request("r")])])
