@@ -705,9 +705,7 @@ module Rubernetes
                 value_number = parse_signed_integer
                 value_options = parse_field_options
                 expect(";")
-                if values.any? { |item| item.name == value_name }
-                  raise DuplicateFieldError, "duplicate enum value #{full_name}.#{value_name}"
-                end
+                raise DuplicateFieldError, "duplicate enum value #{full_name}.#{value_name}" if values.any? { |item| item.name == value_name }
 
                 values << EnumValueDescriptor.new(name: value_name, number: value_number, options: value_options)
               end
