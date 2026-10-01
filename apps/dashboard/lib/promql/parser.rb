@@ -49,7 +49,8 @@ module Promql
 
     # on/ignoring + group_left/group_right(labels)
     VectorMatching = Struct.new(:card, :labels, :on, :include) do
-      def initialize(card = :one_to_one, labels = [], on = false, include = []) # rubocop:disable Style/OptionalBooleanParameter -- Struct members mirror the AST node
+      def initialize(card = :one_to_one, labels = [], on = false,
+                     include = [])
         super
       end
     end
