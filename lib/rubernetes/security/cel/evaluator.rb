@@ -165,7 +165,7 @@ module Rubernetes
               target = target.value
               optional = true
             end
-            index = eval(index_node)
+            index = evaluate(index_node)
             case target
             when Array
               raise TypeMismatch, "list index must be int" unless index.is_a?(Integer) || index.is_a?(Values::UInt)
