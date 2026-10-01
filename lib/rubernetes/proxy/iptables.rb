@@ -284,7 +284,8 @@ module Rubernetes
             if svc.node_port.positive?
               if has_endpoints
                 if @localhost_node_ports && @nfacct_counters[LOCALHOST_NODEPORTS_COUNTER]
-                  nat_rules << "-A KUBE-NODEPORTS -m comment --comment #{name} -m #{protocol} -p #{protocol} -d 127.0.0.0/8 --dport #{svc.node_port} -m nfacct --nfacct-name #{LOCALHOST_NODEPORTS_COUNTER} -j #{external_chain}"
+                  nat_rules << "-A KUBE-NODEPORTS -m comment --comment #{name} -m #{protocol} -p #{protocol} -d 127.0.0.0/8 --dport #{svc.node_port} -m " \
+                               "nfacct --nfacct-name #{LOCALHOST_NODEPORTS_COUNTER} -j #{external_chain}"
                 end
                 nat_rules << "-A KUBE-NODEPORTS -m comment --comment #{name} -m #{protocol} -p #{protocol} --dport #{svc.node_port} -j #{external_chain}"
               end
