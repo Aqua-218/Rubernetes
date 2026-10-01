@@ -96,7 +96,7 @@ module Rubernetes
             when :unary then eval_unary(node)
             when :binary then eval_binary(node)
             when :conditional
-              condition = eval(node[1])
+              condition = evaluate(node[1])
               raise TypeMismatch, "conditional requires a bool" unless [true, false].include?(condition)
 
               condition ? eval(node[2]) : eval(node[3])
