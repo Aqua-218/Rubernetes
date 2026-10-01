@@ -931,7 +931,8 @@ module Rubernetes
               # compiled by the strict stateless compiler (no params).
               expression_path = path + ["matchConditions", condition_index.to_s, "expression"]
               compile_issue = cel_compile_issue(expression_path, expression.strip, compiler: policy_expression_compiler,
-                                                                                   return_types: cel_return_types(:bool), has_params: false, has_authorizer: true)
+                                                                                   return_types: cel_return_types(:bool), has_params: false,
+                                                                                   has_authorizer: true)
               errors << compile_issue if compile_issue
             end
           end
