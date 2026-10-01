@@ -443,9 +443,7 @@ module Rubernetes
 
               queue << Event.new(type: "ADDED", object: object, key: key)
             end
-            if send_initial_events && allow_bookmarks
-              queue << Event.new(type: "BOOKMARK", object: bookmark_object(resource, initial_events_end: true))
-            end
+            queue << Event.new(type: "BOOKMARK", object: bookmark_object(resource, initial_events_end: true)) if send_initial_events && allow_bookmarks
             since = @revision
           elsif allow_bookmarks
             queue = @history.filter_map do |event|
