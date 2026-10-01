@@ -120,24 +120,97 @@ rake lint:fix                    # safe autocorrect only; re-run the tests after
 rake rbs:validate                # hand-authored RBS baseline
 ```
 
-## Dashboard (apps/dashboard)
+Conventions that matter:
 
-A Rails 8 application that is both the cluster's web UI and its Prometheus:
-it browses nodes, namespaces, workloads, Pods (logs, YAML, delete, scale,
-rollout restart), events and alerts, and it scrapes every API server, every
-kubelet endpoint (`/metrics`, `/metrics/cadvisor`, `/metrics/resource`,
-`/metrics/probes`), Pods and Services annotated `prometheus.io/scrape`, and a
-built-in kube-state exporter into its own time-series store.  The store is
-Prometheus-shaped (Gorilla-compressed chunks, a write-ahead log, 2h blocks,
-time-based retention, a SQLite label index) and the query language is PromQL
-(selectors with offset/@, range vectors, subqueries, the aggregation and
-function set, vector matching with on/ignoring/group_left/right, set
-operators).  Recording and alerting rules use the Prometheus rule-file format
-(`apps/dashboard/config/rules.yml`), with pending/firing/resolved state,
-`ALERTS` series and Alertmanager-style webhook notifications.  The HTTP API is
-Prometheus-compatible (`/api/v1/query`, `query_range`, `series`, `labels`,
-`targets`, `rules`, `alerts`, `metadata`, `status/*`), so Grafana can point at
-it.
+- **The schema corpus is the source of truth for types.** Do not hand-write
+  Kubernetes types; change the importer or generator under `tools/schema/`
+  and regenerate. Generated output must be byte-reproducible.
+- **Behaviour is checked against upstream, not against our own reading of
+  it.** New API, controller, scheduler or kubelet behaviour gets a
+  differential or oracle test against the pinned Kubernetes binaries or
+  images where one is possible, and otherwise a test derived from the
+  upstream test it mirrors.
+- **No silent skips.** A missing adapter, kernel feature or external runner
+  is reported as `INCOMPLETE` or an error, never as a pass. Waivers are
+  recorded by name and reason (see the kernel waiver in
+  [tools/milestones/README.md](tools/milestones/README.md)).
+- **Duck typing is deliberate.** Several RuboCop cops that assume a concrete
+  receiver type are disabled in `.rubocop.yml` with the reason; historical
+  offenses are parked in `.rubocop_todo.yml` and burned down by hand.
+  Format-only commits are listed in `.git-blame-ignore-revs`.
+- **After adding a `require` under `lib/`, load the whole library once**
+  (`ruby -Ilib -e 'require "rubernetes"'`); a bad `require_relative` only
+  shows up in the process that needs it.
+- **Commits are recorded, not written.** `rake repo:commit` (or
+  `ruby tools/repo/auto_commit.rb --cycle <name> --status 0`) turns the work
+  tree into one commit per contiguous edit, named after the declaration it
+  lands in, sources before tests before docs, published with a
+  compare-and-swap on HEAD. It commits unstaged changes as well, so stash
+  what should not land. No trailers are added beyond the author.
+
+## Verification
+
+Four layers, each with its own tooling:
+
+1. **Tests** (`rake test`): about 3,400 test cases across unit, property,
+   integration, chaos and security suites, plus Go-oracle differentials for
+   codecs, validation, server-side apply, controllers and the scheduler.
+2. **Kubernetes Conformance and compatibility lanes**
+   ([tools/conformance](tools/conformance/README.md)): K0 input integrity,
+   K1 the official Conformance suite through Hydrophone, K2 Sonobuoy
+   certified-conformance, K3 the full e2e inventory under the selection
+   ledger (`test/compatibility/api/selection-ledger.json`, 7,579 specs
+   classified), K4 node conformance, K5 differential against a real
+   kube-apiserver, K6 a corpus of 32 pinned upstream Helm charts and
+   operators, K7 cluster lifecycle. Profiles: IPv4, IPv6 and dual-stack,
+   three control nodes and three workers each
+   (`test/conformance/kubernetes/profiles.yml`).
+3. **Formal models** ([verification/](verification/README.md)): Raft and the
+   runtime lifecycle in TLA+ (TLC, Apalache) and Lean, tied to the
+   implementation by traces replayed from the production journals, and a
+   linearizability checker over real client histories.
+4. **Milestone evidence gates** ([tools/milestones](tools/milestones/README.md)):
+   M0 (executable foundation) through M9 (release) each produce a
+   content-addressed bundle that a strict gate re-checks; the chain is
+   cumulative and any source change invalidates it. `rake m<n>:evidence`,
+   `rake m<n>:verify`.
+
+## Status and known limitations
+
+Honest list, as of 2026-10-01:
+
+- **Platform.** Linux x86_64 only. arm64 is untested. Kernel 6.8+ is
+  exercised; one M4 check (an SCTP CRC32c helper) wants 6.12 and is waived
+  explicitly on older kernels.
+- **Networking.** The Pod network is the built-in bridge datapath; external
+  CNI plugins are not executed. IPv6-only clusters have no NAT64. There are
+  no cloud-provider integrations (LoadBalancer Services stay pending unless
+  something external programs them, as on bare metal).
+- **Scale.** Everything that has been measured ran as a multi-node cluster
+  on one host (three control nodes, three workers). Multi-host operation is
+  configured through the same YAML but has not been exercised end to end.
+- **Metrics.** Component `/metrics` mirror the upstream families, including
+  cadvisor and kube-proxy ones. 27 apiserver and 2 kubelet families that
+  describe Go runtime internals or features Rubernetes has no equivalent
+  of are registered with an explicit "not implemented" help string and are
+  always empty, so a dashboard built for upstream still loads.
+- **Alpha APIs** are served only when enabled through `--runtime-config`,
+  as upstream. Most alpha feature gates have no behaviour behind them.
+- **Evidence bundles** on disk predate the latest source changes and are
+  therefore stale by construction; the gates and the Conformance suite have
+  been re-run on the current tree, but a release candidate must re-capture
+  the whole M0–M9 chain.
+- **Lint debt.** About 3,000 historical RuboCop offenses remain in
+  `.rubocop_todo.yml` (mostly line length); new code must be clean.
+
+## Documentation
+
+- [Specification index](spec/README.md) and [architecture](spec/foundation/architecture.md)
+- [Milestones and completion gates](spec/delivery/milestones.md)
+- [Kubernetes compatibility contract](spec/verification/kubernetes-compatibility.md)
+- [Coding standards](spec/delivery/coding-standards.md) and [project structure](spec/delivery/project-structure.md)
+- [Operating a cluster](deploy/cluster/README.md)
+- [Conformance tooling](tools/conformance/README.md) and [milestone gates](tools/milestones/README.md)
 
 ```sh
 cd apps/dashboard && bin/rails test                     # 69 tests
