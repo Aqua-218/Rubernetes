@@ -107,7 +107,6 @@ class RBACSourceCacheTest < Minitest::Test
     2.times { assert_predicate rbac.authorize(attributes("alice")), :allowed? }
     assert_equal 2, lists["registry/clusterroles/"]
   end
-end
 
 class RBACSourceCacheScopeTest < RBACSourceCacheTest
   def test_a_namespaced_binding_write_keeps_the_cluster_cache
