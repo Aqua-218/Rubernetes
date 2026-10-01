@@ -3519,11 +3519,6 @@
           },
           "202": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.admissionregistration.v1.MutatingAdmissionPolicyBinding"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.admissionregistration.v1.MutatingAdmissionPolicyBinding"
