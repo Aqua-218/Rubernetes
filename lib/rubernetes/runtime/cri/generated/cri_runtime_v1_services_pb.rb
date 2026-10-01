@@ -239,7 +239,8 @@ module Rubernetes
               # Kubelet reconfigures the pod-level cgroups.
               # This request is treated as best effort, and failure will not block the
               # Kubelet with proceeding with a resize.
-              rpc :UpdatePodSandboxResources, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdatePodSandboxResourcesRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdatePodSandboxResourcesResponse
+              rpc :UpdatePodSandboxResources, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdatePodSandboxResourcesRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdatePodSandboxResourcesResponse
             end
 
             Stub = Service.rpc_stub_class
