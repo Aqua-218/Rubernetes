@@ -22,7 +22,8 @@ module M6FuzzProbe
     duplicate = '{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"dup","name":"dup2"},"data":{"a":"1","a":"2"}}'
     invalid_utf8 = "{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"".b + [0xff, 0xfe].pack("C*") + "\"}}".b
     with_nul = "{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"a".b + [0].pack("C") + "b\"}}".b
-    yaml_bomb = "a: &a [\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\"]\nb: &b [*a,*a,*a,*a,*a,*a,*a,*a,*a]\nc: &c [*b,*b,*b,*b,*b,*b,*b,*b,*b]\nd: &d [*c,*c,*c,*c,*c,*c,*c,*c,*c]\n"
+    yaml_bomb = "a: &a [\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\",\"x\"]\nb: &b [*a,*a,*a,*a,*a,*a,*a,*a,*a]\nc: &c [*b,*b,*b,*b,*b,*b,*b,*b,*b]\nd: " \
+                "&d [*c,*c,*c,*c,*c,*c,*c,*c,*c]\n"
     [
       ["empty", ""],
       ["truncated_json", '{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"x"'],
