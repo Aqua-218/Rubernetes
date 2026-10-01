@@ -79,7 +79,7 @@ class NativeDeviceFilterWiringTest < Minitest::Test
     filter = RecordingFilter.new
     runtime = runtime(filter)
     sandbox_id = runtime.run_sandbox({"request_id" => "request-devices"})
-    null = File.stat("/dev/null")
+    null = File.stat(File::NULL)
     container = runtime.create_container(sandbox_id, {
                                            "id" => "container-1", "command" => ["/bin/true"],
                                            "mounts" => [
