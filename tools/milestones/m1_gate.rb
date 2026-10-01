@@ -2332,9 +2332,7 @@ module M1Gate
       validate_oracle_provenance(oracle, errors, label, expected_kind: KUBERNETES_SEMANTICS_ORACLE_KIND)
       errors << "#{label} was not executed" unless oracle["executed"] == true
       errors << "#{label} Kubernetes version must be #{KUBERNETES_VERSION}" unless oracle["kubernetes_version"] == KUBERNETES_VERSION
-      unless oracle["source_commit"] == KUBERNETES_SOURCE_COMMIT
-        errors << "#{label} Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}"
-      end
+      errors << "#{label} Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}" unless oracle["source_commit"] == KUBERNETES_SOURCE_COMMIT
       errors << "#{label} source root must match provenance" unless non_empty_string?(oracle["source_root"]) && oracle.dig("provenance",
                                                                                                                            "source", "root") == oracle["source_root"]
       errors << "#{label} source checkout must be clean" unless oracle["source_tree_clean"] == true
