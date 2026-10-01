@@ -2292,7 +2292,8 @@ module Rubernetes
           host = device["host_path"].to_s
           raise LifecycleError, "device plugin device #{host} does not exist on the node" unless File.exist?(host)
 
-          mount = {"name" => "device-plugin-device-#{index}", "source" => host, "destination" => (device["container_path"].to_s.empty? ? host : device["container_path"].to_s),
+          mount = {"name" => "device-plugin-device-#{index}", "source" => host,
+                   "destination" => (device["container_path"].to_s.empty? ? host : device["container_path"].to_s),
                    "readonly" => false, "propagation" => "None", "device" => true}
           # DeviceSpec.permissions ("rwm" subset) become the cgroup rule.
           mount["permissions"] = device["permissions"].to_s unless device["permissions"].to_s.empty?
