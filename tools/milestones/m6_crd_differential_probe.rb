@@ -265,7 +265,9 @@ module M6CRDDifferentialProbe
     end
     M6ProbeSupport.emit(M6ProbeSupport.report(
       kind: "m6_crd_aggregation_differential", measurement_level: "differentially_tested", started_at: started_at, cases: cases,
-      extra: {"oracle" => evidence, "sources" => M5ProbeSupport.source_files(%w[lib/rubernetes/api/crd/manager.rb lib/rubernetes/api/crd/structural_schema.rb lib/rubernetes/api/aggregator.rb])}
+      extra: {"oracle" => evidence,
+              "sources" => M5ProbeSupport.source_files(%w[lib/rubernetes/api/crd/manager.rb lib/rubernetes/api/crd/structural_schema.rb
+                                                          lib/rubernetes/api/aggregator.rb])}
     ))
   end
 end
