@@ -740,8 +740,9 @@ module RubernetesSchemaGenerator
         }
         artifacts[relative] = RubernetesSchemaGenerator.canonical_json(document) << "\n"
       end
-      # Root, group-index and auxiliary documents are served verbatim from the pin.
-      %w[api apis version logs openid/v1/jwks .well-known/openid-configuration].each do |key|
+      # Root, group-index and auxiliary documents are served verbatim from the
+      # pin.  `logs` is not in a v1.36.2 server's root document.
+      %w[api apis version openid/v1/jwks .well-known/openid-configuration].each do |key|
         pinned = pinned_openapi_v3(key)
         next if pinned.nil?
 
