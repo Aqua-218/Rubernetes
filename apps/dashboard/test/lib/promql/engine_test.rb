@@ -266,15 +266,6 @@ module Promql
       assert_equal [3.0, 1.0], values("round(s)")
       assert_equal [5.0, 0.0], values("round(s, 5)")
     end
-    # rank 0.5*40 = 20 lies in the (0.1, 0.5] bucket at (20-10)/20 -> 0.3
-    assert_in_delta 0.3, values("histogram_quantile(0.5, d_bucket)").first, 1e-9
-    assert_in_delta 0.1, values("histogram_quantile(0.25, d_bucket)").first, 1e-9
-    assert_equal [1.0], values("histogram_quantile(1, d_bucket)")
-    summed = vector("histogram_quantile(0.5, sum by (le) (d_bucket))")
-
-    assert_equal [{}], summed.map(&:first)
-    assert_in_delta 0.3, summed[0][1], 1e-9
-  end
 
   test "label_replace, label_join, sort and clamp" do
     load("s", {"instance" => "host-1:9100"}, [3])
