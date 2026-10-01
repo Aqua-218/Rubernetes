@@ -308,9 +308,7 @@ module Rubernetes
                 reject!("minimum #{resource} usage per #{item["type"]} is #{minimum}.  No request is specified")
                 next
               end
-              if quantity(request) < quantity(minimum)
-                reject!("minimum #{resource} usage per #{item["type"]} is #{minimum}, but request is #{request}")
-              end
+              reject!("minimum #{resource} usage per #{item["type"]} is #{minimum}, but request is #{request}") if quantity(request) < quantity(minimum)
               if !limit.nil? && quantity(limit) < quantity(minimum)
                 reject!("minimum #{resource} usage per #{item["type"]} is #{minimum}, but limit is #{limit}")
               end
