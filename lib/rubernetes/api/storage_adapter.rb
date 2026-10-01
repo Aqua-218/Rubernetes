@@ -517,6 +517,12 @@ module Rubernetes
           raise storage_status_error(error), cause: error if storage_error?(error)
 
           raise MemoryStore::Gone, error.message
+        when "InvalidCommand"
+          # etcd answers a write above --max-request-bytes with
+          # "etcdserver: request is too large"; kube-apiserver relays it as
+          # 413 RequestEntityTooLarge.  A 500 hid the limit from kubectl.
+          raise Status::Error.new(message: "request is too large: #{error.message}", code: 413,
+                                  reason: "RequestEntityTooLarge"), cause: error
         else
           raise storage_status_error(error), cause: error if storage_error?(error)
 
