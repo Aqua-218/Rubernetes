@@ -139,7 +139,8 @@ module M2KubernetesLifecycleOracleRunner
   def validate_kubernetes_lock!
     lock = M2KubernetesLifecycleOracle.parse_json(M2KubernetesLifecycleOracle::KUBERNETES_LOCK_PATH)
     source = lock.is_a?(Hash) ? lock["source"] : nil
-    unless source.is_a?(Hash) && source["tag"] == M2KubernetesLifecycleOracle::KUBERNETES_VERSION && source["commit"] == M2KubernetesLifecycleOracle::KUBERNETES_SOURCE_COMMIT
+    unless source.is_a?(Hash) && source["tag"] == M2KubernetesLifecycleOracle::KUBERNETES_VERSION &&
+           source["commit"] == M2KubernetesLifecycleOracle::KUBERNETES_SOURCE_COMMIT
       raise M2KubernetesLifecycleOracle::OracleError, "Kubernetes lock does not identify v1.36.2 at #{M2KubernetesLifecycleOracle::KUBERNETES_SOURCE_COMMIT}"
     end
 
