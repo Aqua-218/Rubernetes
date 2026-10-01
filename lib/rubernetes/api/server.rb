@@ -736,7 +736,8 @@ module Rubernetes
           @metrics.register("aggregator_unavailable_apiservice", type: :gauge,
                                                                  help: "Gauge of APIServices which are marked as unavailable broken down by APIService name.")
           @metrics.register("aggregator_unavailable_apiservice_total", type: :counter,
-                                                                       help: "Counter of APIServices which are marked as unavailable broken down by APIService name and reason.")
+                                                                       help: "Counter of APIServices which are marked as unavailable broken down by " \
+                                                                             "APIService name and reason.")
           @aggregator_metrics_registered = true
         end
         available = condition["status"] == "True"
