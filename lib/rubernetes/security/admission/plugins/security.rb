@@ -223,7 +223,8 @@ module Rubernetes
             reject!("node requested token with a pod binding without a uid") if ref["uid"].to_s.empty?
             pod = existing_pod(attributes.namespace, ref["name"])
             unless ref["uid"].to_s == metadata(pod)["uid"].to_s
-              reject!("the UID in the bound object reference (#{ref["uid"]}) does not match the UID in record. The object might have been deleted and then recreated")
+              reject!("the UID in the bound object reference (#{ref["uid"]}) does not match the UID in record. The object might have been deleted and then " \
+                      "recreated")
             end
             reject!("node requested token bound to a pod scheduled on a different node") unless spec(pod)["nodeName"] == node_name
             return if @context.feature_gates.fetch("ServiceAccountNodeAudienceRestriction", true) == false
