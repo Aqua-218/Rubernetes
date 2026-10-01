@@ -382,7 +382,8 @@ module Rubernetes
           api.pause!
           api.snapshot_create!(snapshot_path: "/snapshot/vmstate", mem_file_path: "/snapshot/mem")
           @phase = "snapshotted"
-          @pool.store(id: id, runtime_class: runtime_class, mem_path: @instance.host_path("/snapshot/mem"), vmstate_path: @instance.host_path("/snapshot/vmstate"),
+          @pool.store(id: id, runtime_class: runtime_class, mem_path: @instance.host_path("/snapshot/mem"),
+                      vmstate_path: @instance.host_path("/snapshot/vmstate"),
                       artifact_digest: @artifacts.digest, drive_layout: @drive_layout.map do |drive|
                                                             drive.slice("id", "jail_path", "read_only", "root")
                                                           end,
