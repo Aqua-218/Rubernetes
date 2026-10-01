@@ -295,7 +295,8 @@ module Rubernetes
               end
             end
             if svc.health_check_node_port.positive?
-              filter_rules << "-A KUBE-NODEPORTS -m comment --comment \"#{name} health check node port\" -m tcp -p tcp --dport #{svc.health_check_node_port} -j ACCEPT"
+              filter_rules << "-A KUBE-NODEPORTS -m comment --comment \"#{name} health check node port\" -m tcp -p tcp --dport " \
+                              "#{svc.health_check_node_port} -j ACCEPT"
             end
             # Partial sync: an unchanged service keeps its chains as they are.
             service_key = name.split(":").first
