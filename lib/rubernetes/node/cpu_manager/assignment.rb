@@ -190,7 +190,7 @@ module Rubernetes
           def take_remaining_cpus
             sort_available_cpus.each do |cpu|
               take(CPUSet[cpu])
-              return if satisfied?
+              return if satisfied? # rubocop:disable Lint/NonLocalExitFromIterator -- the method is done once this holds
             end
           end
 
