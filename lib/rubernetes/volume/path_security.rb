@@ -432,7 +432,7 @@ module Rubernetes
         O_PATH_FLAG = 0x200000
 
         def mount_id_of(descriptor)
-          File.foreach("/proc/self/fdinfo/#{Integer(descriptor)}").find { |entry| entry.start_with?("mnt_id:") }&.split(":")&.last&.strip
+          File.foreach("/proc/self/fdinfo/#{Integer(descriptor)}").find { |entry| entry.start_with?("mnt_id:") }&.then { |entry| entry.split(":").last.strip }
         end
 
         def acquire_target!(path, directory: true, create: true, mode: nil)
