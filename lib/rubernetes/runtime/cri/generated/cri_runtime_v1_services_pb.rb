@@ -270,7 +270,8 @@ module Rubernetes
               # discard partial results if the stream is not completed in time.
               # Feature gate: CRIListStreaming
               # See https://kep.k8s.io/5825 for more details.
-              rpc :StreamImages, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamImagesRequest, stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamImagesResponse)
+              rpc :StreamImages, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamImagesRequest,
+                  stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamImagesResponse)
               # ImageStatus returns the status of the image. If the image is not
               # present, returns a response with ImageStatusResponse.Image set to
               # nil.
