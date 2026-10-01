@@ -2436,9 +2436,7 @@ module Rubernetes
             end, type: entry["type"] || entry[:type] || :file, link_target: entry["link_target"] || entry[:link_target])
           end
         end
-        if digest && !String(digest).match?(/\Asha256:[0-9a-fA-F]{64}\z/)
-          raise Filesystem::DigestMismatch, "image digest must be sha256:<64 hex characters>"
-        end
+        raise Filesystem::DigestMismatch, "image digest must be sha256:<64 hex characters>" if digest && !String(digest).match?(/\Asha256:[0-9a-fA-F]{64}\z/)
 
         true
       end
