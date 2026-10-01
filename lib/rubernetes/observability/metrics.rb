@@ -788,33 +788,6 @@ module Rubernetes
         self.class.go_float(value.to_f)
       end
 
-      def self.go_float(number)
-        return "NaN" if number.nan?
-        return number.positive? ? "+Inf" : "-Inf" if number.infinite?
-        return "0" if number.zero?
-
-        sign = number.negative? ? "-" : ""
-        mantissa, _, exponent = number.abs.to_s.partition("e")
-        whole, _, fraction = mantissa.partition(".")
-        digits = whole + fraction
-        point = whole.length + exponent.to_i
-        leading = digits[/\A0*/].length
-        digits = digits[leading..]
-        point -= leading
-        digits = digits.sub(/0+\z/, "")
-        exp = point - 1
-        if exp < -4 || exp >= 6
-          tail = digits.length > 1 ? ".#{digits[1..]}" : ""
-          "#{sign}#{digits[0]}#{tail}e#{exp.negative? ? "-" : "+"}#{format("%02d", exp.abs)}"
-        elsif point <= 0
-          "#{sign}0.#{"0" * -point}#{digits}"
-        elsif digits.length <= point
-          "#{sign}#{digits}#{"0" * (point - digits.length)}"
-        else
-          "#{sign}#{digits[0, point]}.#{digits[point..]}"
-        end
-      end
-
       # A summary: the objectives' quantiles over the samples of the last
       # MaxAge (NaN when the window is empty, as client_golang prints), then
       # _sum and _count over everything ever observed.
