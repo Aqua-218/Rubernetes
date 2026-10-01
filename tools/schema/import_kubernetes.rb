@@ -951,9 +951,7 @@ module KubernetesCorpusImporter
       unless record["source_sha256"].is_a?(String) && record["source_sha256"].match?(SHA256_PATTERN)
         raise ValidationError, "source_sha256 is invalid for #{record["path"]}"
       end
-      unless record["sha256"].is_a?(String) && record["sha256"].match?(SHA256_PATTERN)
-        raise ValidationError, "sha256 is invalid for #{record["path"]}"
-      end
+      raise ValidationError, "sha256 is invalid for #{record["path"]}" unless record["sha256"].is_a?(String) && record["sha256"].match?(SHA256_PATTERN)
       unless record["source_bytes"].is_a?(Integer) && record["source_bytes"] > 0 &&
              record["bytes"].is_a?(Integer) && record["bytes"] > 0
         raise ValidationError, "source byte sizes are invalid for #{record["path"]}"
