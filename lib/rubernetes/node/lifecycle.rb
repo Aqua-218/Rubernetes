@@ -2375,7 +2375,8 @@ module Rubernetes
             if remaining <= 0
               record[:reason] = "FailedMount"
               raise LifecycleError,
-                    "Unable to attach or mount volumes: unmounted volumes=#{volume_names}, " + "unattached volumes=#{volume_names}, failed to process volumes=[]: timed out waiting for the condition"
+                    "Unable to attach or mount volumes: unmounted volumes=#{volume_names}, " + "unattached volumes=#{volume_names}, failed to process " \
+                                                                                               "volumes=[]: timed out waiting for the condition"
             end
             @volumes_in_use_observer&.call
             @reported_in_use_changed.wait(@mutex, [remaining, 1.0].min)
