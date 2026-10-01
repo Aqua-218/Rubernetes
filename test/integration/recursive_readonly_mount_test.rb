@@ -46,7 +46,7 @@ class RecursiveReadOnlyMountTest < Minitest::Test
     adapter.wait(pid: process.fetch(:pid), timeout: 5.0)
     process.fetch(:stdout).read.strip
   ensure
-    process&.values_at(:stdout, :stderr)&.compact&.each { |io| io.close unless io.closed? }
+    process&.values_at(:stdout, :stderr)&.each { |io| io.close if io && !io.closed? }
   end
 
   def test_a_plain_read_only_mount_leaves_submounts_writable
