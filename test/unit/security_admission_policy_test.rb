@@ -48,7 +48,9 @@ class SecurityAdmissionPolicyTest < Minitest::Test
                     'policy_binding="deny"} 1'
     refute_match(/check_total\{enforcement_action="allow"/, text, "a plain admit is not counted")
     @context.put("validatingadmissionpolicybindings", nil, "deny",
-                 {"metadata" => {"name" => "warn"}, "spec" => {"policyName" => "replica-limit", "validationActions" => %w[Warn], "paramRef" => {"name" => "limits", "namespace" => "team"}}}, group: "admissionregistration.k8s.io")
+                 {"metadata" => {"name" => "warn"},
+                  "spec" => {"policyName" => "replica-limit", "validationActions" => %w[Warn],
+                             "paramRef" => {"name" => "limits", "namespace" => "team"}}}, group: "admissionregistration.k8s.io")
     warned = attributes("CREATE", object: deployment(replicas: 5))
     plugin.validate(warned)
 
