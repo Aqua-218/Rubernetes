@@ -863,9 +863,7 @@ module Rubernetes
           error_body = +""
           each_raw_response_chunk(raw_response) do |chunk|
             error_body << chunk
-            if error_body.bytesize > MAX_STREAM_ERROR_BODY_BYTES
-              raise TransportError, "HTTP error response exceeds #{MAX_STREAM_ERROR_BODY_BYTES} bytes"
-            end
+            raise TransportError, "HTTP error response exceeds #{MAX_STREAM_ERROR_BODY_BYTES} bytes" if error_body.bytesize > MAX_STREAM_ERROR_BODY_BYTES
           end
           response.body = error_body
           raise_for_status!(response, method, path)
