@@ -58,10 +58,8 @@ module Prom
 
       kubelet = all.find { |t| t.job == "kubelet" && t.instance == "worker-1" }
 
-      assert_equal "http://127.0.0.1:21001/metrics", scheduler.url
-      assert_equal({"process" => "scheduler"}, scheduler.labels)
-      assert_equal "http://127.0.0.1:21001/metrics/resources", all.find { |t| t.job == "kube-scheduler-resources" }.url
-      proxy = all.find { |t| t.job == "kube-proxy" }
+      assert_equal "https://api:6443/api/v1/nodes/worker-1/proxy/metrics", kubelet.url
+      assert_equal [200, "proxied /api/v1/nodes/worker-1/proxy/metrics\n"], kubelet.fetch.call
 
       assert_equal({"process" => "proxy-worker-0", "node" => "worker-0"}, proxy.labels)
       proxy.fetch.call
