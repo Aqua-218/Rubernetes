@@ -1166,9 +1166,7 @@ module M3Gate
                           File.expand_path("m3_workload_oracle/runner.rb", File.join(PROJECT_ROOT, "test", "conformance", "kubernetes"))
                         end
       expected_argv = [RbConfig.ruby, expected_runner]
-      unless execution["argv"] == expected_argv && execution["built_in"] == expected_argv
-        errors << "#{label} execution argv is not the built-in runner"
-      end
+      errors << "#{label} execution argv is not the built-in runner" unless execution["argv"] == expected_argv && execution["built_in"] == expected_argv
       errors << "#{label} evidence mode must be enabled" unless execution["evidence_mode"] == true
       errors << "#{label} external execution must exit successfully" unless execution["success"] == true && execution["exit_status"] == 0
       %w[stdin stdout stderr].each do |stream|
