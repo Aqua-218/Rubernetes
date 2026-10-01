@@ -101,9 +101,7 @@ module Rubernetes
             %(query: Invalid value: "#{service}": input contains unsupported characters)
           end
         end
-        if query.services.length > MAX_SERVICES
-          errors << "query: Too many: #{query.services.length}: must have at most #{MAX_SERVICES} items"
-        end
+        errors << "query: Too many: #{query.services.length}: must have at most #{MAX_SERVICES} items" if query.services.length > MAX_SERVICES
         if query.files.empty? && query.services.empty?
           errors << "query: Required value: cannot be empty with options"
         elsif !query.files.empty? && !query.services.empty?
