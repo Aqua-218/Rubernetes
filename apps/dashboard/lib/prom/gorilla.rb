@@ -229,7 +229,7 @@ module Prom
                 reader.read_signed(14)
               elsif reader.read_bit.zero? # rubocop:disable Lint/DuplicateElsifCondition -- each read_bit consumes the next bit
                 reader.read_signed(17)
-              elsif reader.read_bit.zero?
+              elsif reader.read_bit.zero? # rubocop:disable Lint/DuplicateElsifCondition -- each read_bit consumes the next bit
                 reader.read_signed(20)
               else
                 reader.read_signed(64)
