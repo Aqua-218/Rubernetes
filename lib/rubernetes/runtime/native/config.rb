@@ -203,15 +203,6 @@ module Rubernetes
           else JSON.generate(value)
           end
         end
-
-        def self.symbolize_known(input)
-          known = %i[profile sandbox_root cgroup_root log_root journal_path runtime_class architecture host_integration l3 security_context
-                     capabilities limits image network namespace max_log_bytes max_log_files strict memory_qos pod_pids_limit userns_allocation_path seccomp_root]
-          input.each_with_object({}) do |(key, value), result|
-            symbol = key.to_sym
-            result[symbol] = value if known.include?(symbol)
-          end
-        end
       end
 
       Config = Configuration unless const_defined?(:Config, false)
