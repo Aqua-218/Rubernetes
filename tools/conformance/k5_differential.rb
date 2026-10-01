@@ -138,7 +138,14 @@ module Conformance
           value = value.merge("items" => value["items"].select { |item| SYSTEM_NAMESPACES.include?(item.dig("metadata", "name")) })
         end
         value.each_with_object({}) do |(key, child), out|
-          out[key] = VOLATILE.include?(key) ? present_shape(child) : scrub(child)
+          out[key] = if VOLATILE.include?(key)
+                       present_shape(child)
+                     elsif key == "serverRelativeURL" && child.is_a?(String)
+                       # The OpenAPI document hash is an implementation's own content digest.
+                       child.sub(/hash=[0-9A-Fa-f]+/, "hash=<digest>")
+                     else
+                       scrub(child)
+                     end
         end
       when Array then value.map { |child| scrub(child) }
       else value
