@@ -166,9 +166,7 @@ module Rubernetes
                 value[name] = default_value(value[name], child)
               end
             end
-            if schema["additionalProperties"].is_a?(Hash)
-              value.each_key { |key| value[key] = default_value(value[key], schema["additionalProperties"]) }
-            end
+            value.each_key { |key| value[key] = default_value(value[key], schema["additionalProperties"]) } if schema["additionalProperties"].is_a?(Hash)
           when Array
             value.map! { |item| default_value(item, schema["items"]) } if schema["items"].is_a?(Hash)
           end
