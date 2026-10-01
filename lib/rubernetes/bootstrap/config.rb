@@ -386,9 +386,7 @@ module Rubernetes
         validate_positive_integer!(lease["duration_seconds"], "rubernetes-agent.lease.duration_seconds") if lease.key?("duration_seconds")
         if lease.key?("renew_fraction")
           value = lease["renew_fraction"]
-          unless value.is_a?(Numeric) && value.positive? && value <= 1
-            raise Error, "rubernetes-agent.lease.renew_fraction must be between 0 and 1"
-          end
+          raise Error, "rubernetes-agent.lease.renew_fraction must be between 0 and 1" unless value.is_a?(Numeric) && value.positive? && value <= 1
         end
         %w[privileged l3].each do |key|
           next unless process_config.key?(key)
