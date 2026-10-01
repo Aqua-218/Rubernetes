@@ -1095,7 +1095,11 @@
           },
           "operator": {
             "default": "Equal",
-            "description": "Operator represents a key's relationship to the value. Valid operators are Exists and Equal. Defaults to Equal. Exists is equivalent to wildcard for value, so that a ResourceClaim can tolerate all taints of a particular category.",
+            "description": "Operator represents a key's relationship to the value. Valid operators are Exists and Equal. Defaults to Equal. Exists is equivalent to wildcard for value, so that a ResourceClaim can tolerate all taints of a particular category.\n\n\nPossible enum values:\n - `\"Equal\"`\n - `\"Exists\"`",
+            "enum": [
+              "Equal",
+              "Exists"
+            ],
             "type": "string"
           },
           "tolerationSeconds": {
