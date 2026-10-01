@@ -794,9 +794,7 @@ module KubernetesCorpusImporter
             end
 
             subresources.to_a.each do |subresource|
-              unless subresource.is_a?(Hash)
-                raise ValidationError, "aggregated discovery resource #{resource["resource"]} has an invalid subresource"
-              end
+              raise ValidationError, "aggregated discovery resource #{resource["resource"]} has an invalid subresource" unless subresource.is_a?(Hash)
 
               records << aggregated_record(group, version, resource, subresource)
             end
