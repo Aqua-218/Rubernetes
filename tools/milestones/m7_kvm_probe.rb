@@ -204,7 +204,8 @@ module M7KVMProbe
     identity = ledger.allocate(sandbox_id: "pause-loss", runtime_class: runtime.runtime_class, artifact_digest: S.artifacts.digest,
                                policy_digest: "probe")
     session = M::VMSession.new(sandbox_id: "pause-loss", identity: identity, artifacts: S.artifacts, jailer: adapter.instance_variable_get(:@jailer),
-                               verity: adapter.instance_variable_get(:@verity), netns: adapter.instance_variable_get(:@netns), disks: adapter.instance_variable_get(:@disks),
+                               verity: adapter.instance_variable_get(:@verity), netns: adapter.instance_variable_get(:@netns),
+                               disks: adapter.instance_variable_get(:@disks),
                                pool: runtime.snapshot_pool, broker: nil, clock: lambda {
                                                                            Time.now.utc
                                                                          }, machine: {"vcpu_count" => 1, "mem_size_mib" => 256},
