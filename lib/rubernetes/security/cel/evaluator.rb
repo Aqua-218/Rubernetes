@@ -91,7 +91,7 @@ module Rubernetes
                 end
                 raise EvaluationError, "duplicate map key #{key.inspect}" if hash.key?(key)
 
-                hash[key] = eval(value_node)
+                hash[key] = evaluate(value_node)
               end
             when :unary then eval_unary(node)
             when :binary then eval_binary(node)
