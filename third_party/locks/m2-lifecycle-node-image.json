@@ -41,8 +41,8 @@
     "method": "docker push to an ephemeral local registry (localhost, port >= 25000); the recorded RepoDigest resolves from the local image store without the registry",
     "registry_image": {
       "reference": "docker.io/library/registry:3",
-      "digest_reference": "docker.io/library/registry@sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33",
-      "image_id": "sha256:1bc3f1a4432290d5ac3341603f15bf99c5b2feb4a9e3195e530aadc66fbcc65e"
+      "digest_reference": "docker.io/library/registry@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636d8bd5c546dab2a7b8",
+      "image_id": "sha256:b16ad6cc19df5d687ed2e5b4ba6fa51a38bfbb4687ecc11bf54e0899638c0ee2"
     }
   },
   "alias_container_image": {
