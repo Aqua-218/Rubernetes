@@ -40,7 +40,8 @@ module SecurityPipelineHarness
              "cluster_role_bindings" => [{"metadata" => {"name" => "readers"}, "roleRef" => {"kind" => "ClusterRole", "name" => "pod-reader"},
                                           "subjects" => [{"kind" => "User", "name" => "alice"}]},
                                          {"metadata" => {"name" => "system:public-info-viewer"}, "roleRef" => {"kind" => "ClusterRole", "name" => "system:public-info-viewer"},
-                                          "subjects" => [{"kind" => "Group", "name" => "system:unauthenticated"}, {"kind" => "Group", "name" => "system:authenticated"}]}]}
+                                          "subjects" => [{"kind" => "Group", "name" => "system:unauthenticated"},
+                                                         {"kind" => "Group", "name" => "system:authenticated"}]}]}
     rbac_source.define_singleton_method(:cluster_roles) { roles["cluster_roles"] }
     rbac_source.define_singleton_method(:cluster_role_bindings) { roles["cluster_role_bindings"] }
     rbac_source.define_singleton_method(:roles) { |_ns| [] }
