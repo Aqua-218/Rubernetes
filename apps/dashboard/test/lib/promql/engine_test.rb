@@ -290,9 +290,9 @@ module Promql
       load("sq", {}, [1, 2, 3, 4, 5])
       result = vector("max_over_time(sq[1m:15s])")
 
-  test "subqueries evaluate the inner expression at each step" do
-    load("sq", {}, [1, 2, 3, 4, 5])
-    result = vector("max_over_time(sq[1m:15s])")
+      assert_equal [5.0], result.map(&:last)
+      # rate over a subquery of an instant expression
+      rate = vector("sum_over_time((sq * 2)[1m:15s])").map(&:last)
 
     assert_equal [5.0], result.map(&:last)
     # rate over a subquery of an instant expression
