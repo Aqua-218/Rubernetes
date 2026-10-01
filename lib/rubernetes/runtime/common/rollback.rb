@@ -54,9 +54,7 @@ module Rubernetes
 
       def cleanup(resource)
         observed = observe(resource)
-        if observed && !same_identity?(resource, observed)
-          raise IdentityMismatch, "resource #{resource.kind}:#{resource.id} identity changed before cleanup"
-        end
+        raise IdentityMismatch, "resource #{resource.kind}:#{resource.id} identity changed before cleanup" if observed && !same_identity?(resource, observed)
 
         response = invoke_cleanup(resource)
         raise Error, "cleanup returned false for #{resource.kind}:#{resource.id}" if response == false
