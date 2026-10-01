@@ -839,8 +839,8 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
       assert_match(/0 failures, 0 errors, 0 skips/, output)
       # The matrix ran and passed in the isolated child; the parent is the
       # pass.  Reporting it as a skip made the M0 gate ("JUnit skipped must
-      # be zero") fail on every full run.
-      return pass
+      # be zero") fail on every full run, and the cop's alternative IS skip.
+      return pass # rubocop:disable Minitest/ReturnInTestMethod
     end
 
     result = NativePacketMatrixRunner.new.run
