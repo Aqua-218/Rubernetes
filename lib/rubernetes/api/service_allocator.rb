@@ -579,7 +579,8 @@ module Rubernetes
           candidate = IPAddr.new(first + ((start + step) % span), cidr.family).to_s
           return candidate if create_ipaddress(candidate, service)
         end
-        raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.clusterIPs: Invalid value: []: failed to allocate a serviceIP: range is full",
+        raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.clusterIPs: Invalid value: []: failed to allocate a serviceIP: range is " \
+                                  "full",
                                   details: {"kind" => "Service", "name" => name_of(service)})
       end
 
