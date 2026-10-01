@@ -1381,9 +1381,7 @@ end
 
 M1ProbeSupport.run_probe("m1_api_differential") do |_current, input|
   server, _store, registry_document = M1ProbeSupport.build_api_server
-  unless Array(registry_document["gvks"]).length == 321
-    raise M1KubernetesOracle::Error, "generated registry GVK inventory must contain exactly 321 entries"
-  end
+  raise M1KubernetesOracle::Error, "generated registry GVK inventory must contain exactly 321 entries" unless Array(registry_document["gvks"]).length == 321
 
   rubernetes_client = M1KubernetesOracle::InProcessClient.new(server)
   M1KubernetesOracle::DockerCluster.new.with_client do |oracle, evidence|
