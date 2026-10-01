@@ -61,7 +61,8 @@ module Rubernetes
               # in the sandbox, they must be forcibly terminated and removed.
               # This call is idempotent, and must not return an error if the sandbox has
               # already been removed.
-              rpc :RemovePodSandbox, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RemovePodSandboxRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RemovePodSandboxResponse
+              rpc :RemovePodSandbox, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RemovePodSandboxRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RemovePodSandboxResponse
               # PodSandboxStatus returns the status of the PodSandbox. If the PodSandbox is not
               # present, returns an error.
               rpc :PodSandboxStatus, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatusRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatusResponse
