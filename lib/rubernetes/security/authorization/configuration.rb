@@ -289,9 +289,7 @@ module Rubernetes
           case connection_type
           when "" then errors << "#{path}.connectionInfo.type: Required value"
           when "InClusterConfig"
-            unless kubeconfig_file.nil?
-              errors << "#{path}.connectionInfo.kubeConfigFile: Invalid value: can only be set when type=KubeConfigFile"
-            end
+            errors << "#{path}.connectionInfo.kubeConfigFile: Invalid value: can only be set when type=KubeConfigFile" unless kubeconfig_file.nil?
           when "KubeConfigFile"
             if kubeconfig_file.to_s.empty?
               errors << "#{path}.connectionInfo.kubeConfigFile: Required value"
