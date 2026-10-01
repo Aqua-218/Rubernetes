@@ -646,7 +646,8 @@ module M0Gate
         errors << "native boundary scan command identity is invalid"
       end
       expected_tool = File.join(ROOT, "tools/milestones/native_boundary_scan.rb")
-      unless document["tool_path"] == "tools/milestones/native_boundary_scan.rb" && digest?(document["tool_sha256"]) && File.file?(expected_tool) && document["tool_sha256"] == Digest::SHA256.file(expected_tool).hexdigest
+      unless document["tool_path"] == "tools/milestones/native_boundary_scan.rb" && digest?(document["tool_sha256"]) && File.file?(expected_tool) &&
+             document["tool_sha256"] == Digest::SHA256.file(expected_tool).hexdigest
         errors << "native boundary scan is not bound to the current scanner"
       end
       validate_time(document["started_at"], errors, "native boundary scan started_at")
