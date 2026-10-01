@@ -1940,9 +1940,7 @@ module Rubernetes
             # field in the request.  ValidateProbe reports the parent
             # handler's structural error, not a synthetic child error, until
             # a concrete numeric port was supplied.
-            if !port.nil? && port.is_a?(String) && port.match?(/\A\d+\z/)
-              issues << issue(path + ["port"], :invalid, "must contain at least one letter (a-z)")
-            end
+            issues << issue(path + ["port"], :invalid, "must contain at least one letter (a-z)") if !port.nil? && port.is_a?(String) && port.match?(/\A\d+\z/)
           when "hostAliases"
             # handled below from the array value
           when "iscsi"
