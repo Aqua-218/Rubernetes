@@ -15,7 +15,7 @@ descriptor_data = "\n\x1bpluginregistration_v1.proto\x12\x12pluginregistration\"
                   "\x03(\t\">\n\x12RegistrationStatus\x12\x19\n\x11plugin_registered\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 " \
                   "\x01(\t\"\x1c\n\x1aRegistrationStatusResponse\"\r\n\x0bInfoRequest2\xd2\x01\n\x0cRegistration\x12L\n\x07GetInfo\x12\x1f.pluginregistration.InfoRequest\x1a\x1e.pluginregistration.PluginInfo\"\x00\x12t\n\x18NotifyRegistrationStatus\x12&.pluginregistration.RegistrationStatus\x1a..pluginregistration.RegistrationStatusResponse\"\x00\x42lZ-k8s.io/kubelet/pkg/apis/pluginregistration/v1\xea\x02:Rubernetes::Node::Plugins::Generated::PluginRegistrationV1b\x06proto3"
 
-pool = ::Google::Protobuf::DescriptorPool.generated_pool
+pool = Google::Protobuf::DescriptorPool.generated_pool
 pool.add_serialized_file(descriptor_data)
 
 module Rubernetes
