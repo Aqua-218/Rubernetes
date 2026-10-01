@@ -1140,7 +1140,8 @@ module Rubernetes
             name = fetch(device, "name")
             unless name.is_a?(String) && name.match?(/\A[a-z0-9]([-a-z0-9]*[a-z0-9])?\z/)
               issues << issue(["spec", "devices", index.to_s, "name"], :invalid,
-                              "a lowercase RFC 1123 label must consist of lower case alphanumeric characters or '-', and must start and end with an alphanumeric character (e.g. 'my-name',  or '123-abc', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?')")
+                              "a lowercase RFC 1123 label must consist of lower case alphanumeric characters or '-', and must start and end with an " \
+                              "alphanumeric character (e.g. 'my-name',  or '123-abc', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?')")
             end
             advanced_device = fetch(device, "basic")
             advanced_device = device unless advanced_device.is_a?(Hash)
