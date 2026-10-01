@@ -726,7 +726,8 @@ module M4Gate
           errors << "proxy packet case #{index} actual digest is invalid"
         end
       end
-      unless valid_digest?(kernel["packetTraceSha256"]) && kernel["packetTraceSha256"] == packet["packetTraceSha256"] && valid_digest?(kernel["caseInventorySha256"]) && kernel["caseInventorySha256"] == packet["caseInventorySha256"]
+      unless valid_digest?(kernel["packetTraceSha256"]) && kernel["packetTraceSha256"] == packet["packetTraceSha256"] &&
+             valid_digest?(kernel["caseInventorySha256"]) && kernel["caseInventorySha256"] == packet["caseInventorySha256"]
         errors << "proxy kernel readback must bind packet trace and case inventory"
       end
       unless kernel["runnerIdentity"] == packet["runnerIdentity"] && kernel["runnerDigest"] == packet["runnerDigest"] && kernel["mode"] == packet["mode"] && valid_digest?(kernel["executionIdentitySha256"])
