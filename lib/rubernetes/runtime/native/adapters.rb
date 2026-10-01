@@ -105,9 +105,7 @@ module Rubernetes
           raise Error, "#{name} adapter #{adapter.class} is missing required effects: #{missing_methods.join(", ")}" unless missing_methods.empty?
 
           declaration = adapter.respond_to?(:native_capabilities) ? adapter.native_capabilities : nil
-          unless declaration.respond_to?(:to_h)
-            raise Error, "#{name} adapter #{adapter.class} must declare native_capabilities and validate them"
-          end
+          raise Error, "#{name} adapter #{adapter.class} must declare native_capabilities and validate them" unless declaration.respond_to?(:to_h)
 
           capabilities = declaration.to_h
           capability = requirement.fetch(:capability)
