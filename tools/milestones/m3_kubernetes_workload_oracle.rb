@@ -106,7 +106,8 @@ module M3KubernetesWorkloadOracle
 
     cases = request["cases"]
     expected = %w[daemonset:delete daemonset:rollout daemonset:rollback daemonset:scale deployment:delete deployment:rollout
-                  deployment:rollback deployment:scale cronjob:delete cronjob:rollout cronjob:rollback cronjob:scale job:delete job:rollout job:rollback job:scale statefulset:delete statefulset:rollout statefulset:rollback statefulset:scale].sort
+                  deployment:rollback deployment:scale cronjob:delete cronjob:rollout cronjob:rollback cronjob:scale job:delete
+                  job:rollout job:rollback job:scale statefulset:delete statefulset:rollout statefulset:rollback statefulset:scale].sort
     raise Error, "workload oracle request must contain exactly 20 independent cases" unless cases.is_a?(Hash) && cases.keys.sort == expected
 
     cases.each do |id, entry|
