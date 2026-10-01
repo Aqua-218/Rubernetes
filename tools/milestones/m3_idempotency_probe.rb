@@ -469,10 +469,7 @@ M3ProbeSupport.run_report(kind: "m3_reconcile_idempotency", adapter_name: "recon
       first_success_observable = M3IdempotencyMeasurement.step_observable(
         first_success_step, manager: manager, key: key, controller: name, error_before: retry_error_before
       )
-    else
-      # Controllers whose fixture has no update operation complete on the first
-      # step.  Do not manufacture a second empty step and call it execution.
-    end
+    end # a fixture without an update operation completes on the first step: no second step is manufactured
     first_success_queue = M3IdempotencyMeasurement.queue_snapshot(manager.queue, key)
     after_first = M3IdempotencyMeasurement.store_observable(adapter)
     first_run_snapshot = journal.snapshot(journal_before_cursor)
