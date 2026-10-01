@@ -31,9 +31,7 @@ module Rubernetes
         issues << issue(["spec"], :forbidden, "Pod running on node without support for resize") unless resize_request_supported?(old)
 
         munged = deep_copy_value(new_spec)
-        if resize_pod_level_set?(old_spec) || resize_pod_level_set?(new_spec)
-          issues.concat(pod_level_resize_errors(new_spec, old_spec, munged))
-        end
+        issues.concat(pod_level_resize_errors(new_spec, old_spec, munged)) if resize_pod_level_set?(old_spec) || resize_pod_level_set?(new_spec)
         unless Array(old.dig("status", "nodeAllocatableResourceClaimStatuses")).empty?
           issues << issue(["spec"], :forbidden, "pods with node allocatable resource claims cannot be resized")
         end
