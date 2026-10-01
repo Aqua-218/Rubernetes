@@ -178,7 +178,8 @@ module Rubernetes
             present = @authorizers.map(&:type).reject { |type| type == "Webhook" }.to_set
             wanted = require_non_webhook_types.to_set
             unless present == wanted
-              errors << "authorizers: non-webhook authorizer types must not change on reload (want #{wanted.to_a.sort.join(", ")}, got #{present.to_a.sort.join(", ")})"
+              errors << "authorizers: non-webhook authorizer types must not change on reload (want #{wanted.to_a.sort.join(", ")}, got " \
+                        "#{present.to_a.sort.join(", ")})"
             end
           end
           raise InvalidError, errors.join("; ") unless errors.empty?
