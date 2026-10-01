@@ -214,9 +214,4 @@ Honest list, as of 2026-10-01:
 
 ## License
 
-`apps/dashboard/deploy/` holds a systemd unit, its environment file and an
-Ingress manifest that publishes the host-run dashboard through the cluster's
-ingress controller.  Configuration is entirely environment variables
-(`DASHBOARD_PASSWORD`, `DASHBOARD_RETENTION`, `DASHBOARD_SCRAPE_INTERVAL`,
-`DASHBOARD_RULES`, `DASHBOARD_ALERT_WEBHOOK`, `DASHBOARD_ALLOW_WRITES`, ...);
-see `apps/dashboard/lib/dashboard/config.rb`.
+Apache License 2.0. See [LICENSE](LICENSE).
