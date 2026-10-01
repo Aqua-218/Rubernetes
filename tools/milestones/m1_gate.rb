@@ -1601,9 +1601,7 @@ module M1Gate
         expected_availability = default_off ? "not_served_default" : "served"
         errors << "API surface #{label} matrix entry #{index} availability profile is invalid" unless entry["availability"] == expected_availability
         if default_off
-          unless entry["availability_reason"] == DEFAULT_OFF_REASON
-            errors << "API surface #{label} matrix entry #{index} default-off reason is invalid"
-          end
+          errors << "API surface #{label} matrix entry #{index} default-off reason is invalid" unless entry["availability_reason"] == DEFAULT_OFF_REASON
         else
           unless entry["availability_reason"].nil?
             errors << "API surface #{label} matrix entry #{index} served entry must not carry a default-off reason"
