@@ -2370,7 +2370,8 @@ module Rubernetes
                                   "lastTransitionTime" => (existing && existing["status"] == condition["status"] ? existing["lastTransitionTime"] : Time.now.utc.iso8601))
         merged = conditions.reject { |entry| entry["type"] == condition["type"] } + [stamped]
         @client.patch({"status" => {"conditions" => merged}}, type: :merge, namespace: namespace, name: name,
-                                                              api_version: "scheduling.k8s.io/v1alpha2", path: "/apis/scheduling.k8s.io/v1alpha2/namespaces/#{namespace}/podgroups/#{name}/status")
+                                                              api_version: "scheduling.k8s.io/v1alpha2",
+                                                              path: "/apis/scheduling.k8s.io/v1alpha2/namespaces/#{namespace}/podgroups/#{name}/status")
       rescue StandardError => error
         log(:warn, "scheduler.podgroup_status_failed", podgroup: "#{namespace}/#{name}", error: error.message.to_s[0, 200])
       end
