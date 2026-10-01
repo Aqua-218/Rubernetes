@@ -131,7 +131,9 @@ module Conformance
         begin
           drop_custom_groups(scrub(JSON.parse(result.fetch("stdout"))), custom_groups)
         rescue JSON::ParserError
-          result.fetch("stdout").lines.map(&:strip).reject(&:empty?).sort
+          lines = result.fetch("stdout").lines.map(&:strip).reject(&:empty?)
+          lines.reject! { |line| custom_groups.any? { |group| line.include?(group) } }
+          lines.sort
         end
       {
         "exit_status" => result.fetch("exit_status"),
