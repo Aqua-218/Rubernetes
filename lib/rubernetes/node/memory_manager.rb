@@ -184,9 +184,7 @@ module Rubernetes
             [pod, containers.sort.to_h { |name, blocks| [name, blocks.map(&:to_h)] }]
           end
           body["entries"] = entries unless entries.empty?
-          unless pod_blocks.nil? || pod_blocks.empty?
-            body["podEntries"] = pod_blocks.sort.to_h { |pod, blocks| [pod, {"memoryBlocks" => blocks.map(&:to_h)}] }
-          end
+          body["podEntries"] = pod_blocks.sort.to_h { |pod, blocks| [pod, {"memoryBlocks" => blocks.map(&:to_h)}] } unless pod_blocks.nil? || pod_blocks.empty?
           body["checksum"] = Checksum.fnv32a(Checksum.for_hash(policy_name, machine, assignments,
                                                                pod_entries: pod_blocks.nil? ? :absent : pod_blocks))
           JSON.generate(body)
