@@ -884,9 +884,7 @@ module Rubernetes
             end
             overhead = runtime_class.dig("overhead", "podFixed")
             if overhead
-              if pod_spec["overhead"] && pod_spec["overhead"] != overhead
-                reject!("pod rejected: Pod's Overhead doesn't match RuntimeClass's defined Overhead")
-              end
+              reject!("pod rejected: Pod's Overhead doesn't match RuntimeClass's defined Overhead") if pod_spec["overhead"] && pod_spec["overhead"] != overhead
               pod_spec["overhead"] = overhead
             end
             scheduling = runtime_class["scheduling"] || {}
