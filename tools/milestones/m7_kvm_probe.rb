@@ -242,7 +242,8 @@ module M7KVMProbe
     cases << {"id" => "artifact_verification", "files" => verification.map do |entry|
       entry.slice("name", "sha256", "uid", "mode")
     end, "artifact_digest" => S.artifacts.digest,
-              "firecracker_version" => S.artifacts.firecracker_version, "verity_root_hash" => S.artifacts.verity_root_hash, "passed" => verification.length >= 7}
+              "firecracker_version" => S.artifacts.firecracker_version, "verity_root_hash" => S.artifacts.verity_root_hash,
+              "passed" => verification.length >= 7}
     runtime, root = S.build_runtime("kvm", use_base_snapshot: false)
     network = S::ProbeNetwork.new(1)
     begin
