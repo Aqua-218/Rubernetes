@@ -1144,9 +1144,7 @@ module M2Gate
       end
       provenance = oracle["provenance"]
       if provenance.is_a?(Hash)
-        unless provenance["kind"] == KUBERNETES_SEMANTICS_ORACLE_KIND
-          errors << "#{label} provenance kind must be #{KUBERNETES_SEMANTICS_ORACLE_KIND}"
-        end
+        errors << "#{label} provenance kind must be #{KUBERNETES_SEMANTICS_ORACLE_KIND}" unless provenance["kind"] == KUBERNETES_SEMANTICS_ORACLE_KIND
         errors << "#{label} provenance mode must be external" unless provenance["mode"] == "external"
         errors << "#{label} provenance must not be a self-comparison" unless provenance["self_comparison"] == false
         errors << "#{label} provenance implementation is required" unless non_empty_string?(provenance["implementation"])
