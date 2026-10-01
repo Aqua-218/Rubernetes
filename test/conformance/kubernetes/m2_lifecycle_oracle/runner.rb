@@ -362,7 +362,8 @@ module M2KubernetesLifecycleOracleRunner
 
     %w[containerd runc].each do |name|
       reported = harness_runtime[name]
-      unless reported.is_a?(Hash) && reported["in_node_sha256"] == runtime.fetch(name).fetch("binary_sha256") && reported["binary_sha256"] == runtime.fetch(name).fetch("binary_sha256")
+      unless reported.is_a?(Hash) && reported["in_node_sha256"] == runtime.fetch(name).fetch("binary_sha256") &&
+             reported["binary_sha256"] == runtime.fetch(name).fetch("binary_sha256")
         raise M2KubernetesLifecycleOracle::OracleError,
               "privileged lifecycle harness #{name} identity does not match the runner's #{name} identity"
       end
