@@ -124,7 +124,8 @@ module M4VolumeProbe
     content_sha256 = Digest::SHA256.hexdigest("m4-snapshot-content")
     snapshot_id = manager.create_snapshot(source_id, token: "m4-snapshot-create")
     restored_id = manager.restore(snapshot_id,
-                                  spec: {"id" => "m4-snapshot-restored", "name" => "m4-snapshot-restored", "backend" => "emptyDir"}, token: "m4-snapshot-restore")
+                                  spec: {"id" => "m4-snapshot-restored", "name" => "m4-snapshot-restored",
+                                         "backend" => "emptyDir"}, token: "m4-snapshot-restore")
     restored_content = File.read(File.join(volume_root, restored_id, "payload"))
 
     operations = [
