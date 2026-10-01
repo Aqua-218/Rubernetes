@@ -30,7 +30,8 @@ module Rubernetes
               self.unmarshal_class_method = :decode
               self.service_name = "v1beta1.Registration"
 
-              rpc :Register, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::RegisterRequest, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::Empty
+              rpc :Register, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::RegisterRequest,
+                  ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::Empty
             end
 
             Stub = Service.rpc_stub_class
