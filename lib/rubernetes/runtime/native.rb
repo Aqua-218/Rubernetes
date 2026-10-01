@@ -2284,6 +2284,7 @@ module Rubernetes
         devices = container_device_rules(input)
         rules = Platform::Linux::DeviceCgroup.rules_for(privileged: privileged, devices: devices)
         program_id = @device_filter.attach(cgroup.path, rules)
+        device_rules = devices.map { |rule| rule.respond_to?(:to_h) ? rule.to_h : rule }
         record(:device_filter_attached, sandbox_id: sandbox.id, container_id: container.id, cgroup: cgroup.path,
                                         program_id: program_id, privileged: privileged, devices: devices.map do |rule|
                                                                                           rule.respond_to?(:to_h) ? rule.to_h : rule
