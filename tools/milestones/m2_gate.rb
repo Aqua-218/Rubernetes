@@ -1035,9 +1035,7 @@ module M2Gate
           errors << "Pod lifecycle flow must use the production NodeResolver"
         end
         errors << "Pod lifecycle flow must dispatch through API::Server" unless flow["api_server_class"] == "Rubernetes::API::Server"
-        unless flow["http_server_class"] == "Rubernetes::Transport::HTTPServer"
-          errors << "Pod lifecycle flow must serve through Transport::HTTPServer"
-        end
+        errors << "Pod lifecycle flow must serve through Transport::HTTPServer" unless flow["http_server_class"] == "Rubernetes::Transport::HTTPServer"
         errors << "Pod lifecycle Apply event must bind to the API watch" unless flow["apply_watch_binding"] == true
         errors << "Pod lifecycle Delete event must bind to the API watch" unless flow["delete_watch_binding"] == true
         routes = flow["subresource_routes"]
