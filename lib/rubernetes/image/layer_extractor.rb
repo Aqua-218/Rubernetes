@@ -153,9 +153,7 @@ module Rubernetes
         raise LayerError, "compressed layer size does not match the descriptor" if expected_size && compressed_bytes != Integer(expected_size)
 
         actual = digest.hexdigest
-        unless secure_compare(actual, expected.hex)
-          raise DigestMismatch, "layer digest mismatch: expected #{expected}, got sha256:#{actual}"
-        end
+        raise DigestMismatch, "layer digest mismatch: expected #{expected}, got sha256:#{actual}" unless secure_compare(actual, expected.hex)
 
         compressed_bytes
       rescue ArgumentError, TypeError => error
