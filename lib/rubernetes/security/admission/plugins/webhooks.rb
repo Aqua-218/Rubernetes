@@ -912,8 +912,10 @@ module Rubernetes
             code = {"Forbidden" => 403, "Unauthorized" => 401, "RequestEntityTooLarge" => 413, "Invalid" => 422}.fetch(reason, 422)
             resource = attributes.group.empty? ? attributes.resource : "#{attributes.resource}.#{attributes.group}"
             Rejected.new("#{resource} #{attributes.name.inspect} is forbidden: #{message}", code: code, reason: reason,
-                                                                                            details: {"name" => attributes.name, "group" => attributes.group, "kind" => attributes.resource,
-                                                                                                      "causes" => [{"message" => message}]}.reject do |key, value|
+                                                                                            details: {"name" => attributes.name, "group" => attributes.group,
+                                                                                                      "kind" => attributes.resource,
+                                                                                                      "causes" => [{"message" => message}]}.reject do |key,
+                                                                                                      value|
                                                                                               key == "group" && value.to_s.empty?
                                                                                             end,
                                                                                             plugin: name)
