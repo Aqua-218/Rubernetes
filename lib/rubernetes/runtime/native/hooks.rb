@@ -111,7 +111,8 @@ module Rubernetes
           output_reader, output_writer = IO.pipe
           begin
             pid = Process.spawn(env, [hook["path"], argv.first], *argv.drop(1), unsetenv_others: true, pgroup: true,
-                                                                                in: input_reader, out: output_writer, err: output_writer, close_others: true, chdir: "/")
+                                                                                in: input_reader, out: output_writer, err: output_writer, close_others: true,
+                                                                                chdir: "/")
           rescue SystemCallError => error
             raise Error, "error running #{stage} hook ##{index}: #{error.message}"
           ensure
