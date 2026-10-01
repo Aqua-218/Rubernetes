@@ -606,7 +606,8 @@ module Rubernetes
             end
             unknown = hard.keys.select { |resource| delta.key?(resource) && !used.key?(resource) }
             unless unknown.empty?
-              reject!("#{group_resource(attributes)} #{attributes.name.to_s.inspect} is forbidden: status unknown for quota: #{name}, resources: #{unknown.sort.join(",")}")
+              reject!("#{group_resource(attributes)} #{attributes.name.to_s.inspect} is forbidden: status unknown for quota: #{name}, resources: " \
+                      "#{unknown.sort.join(",")}")
             end
             requested = hard.keys.each_with_object({}) do |resource, result|
               change = delta[resource]
