@@ -299,7 +299,9 @@ module Promql
 
     # ---------------------------------------------------------- range queries
 
-  # ---------------------------------------------------------- range queries
+    test "query_range evaluates per step and formats like the HTTP API" do
+      load("r", {"k" => "v"}, [1, 2, 3, 4, 5])
+      result = @engine.query_range("r * 10", T0 - 60_000, T0, 30_000)
 
   test "query_range evaluates per step and formats like the HTTP API" do
     load("r", {"k" => "v"}, [1, 2, 3, 4, 5])
