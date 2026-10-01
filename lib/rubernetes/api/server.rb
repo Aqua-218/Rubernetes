@@ -2133,9 +2133,7 @@ module Rubernetes
             )
           end
           allowed = status["disruptionsAllowed"].to_i
-          if allowed.negative?
-            raise Status::Forbidden.new("poddisruptionbudgets.policy #{name.to_s.inspect} is forbidden: pdb disruptions allowed is negative")
-          end
+          raise Status::Forbidden.new("poddisruptionbudgets.policy #{name.to_s.inspect} is forbidden: pdb disruptions allowed is negative") if allowed.negative?
           next if allowed.positive?
 
           message = if status["currentHealthy"].to_i <= status["desiredHealthy"].to_i
