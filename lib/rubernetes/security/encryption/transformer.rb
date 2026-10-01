@@ -153,7 +153,8 @@ module Rubernetes
                                  {"error" => key_id.empty? ? "empty" : "too_long", "provider_name" => @name})
           else
             Encryption.set("apiserver_envelope_encryption_key_id_hash_status_last_timestamp_seconds", Time.now.to_f,
-                           {"apiserver_id_hash" => Encryption.apiserver_id_hash, "key_id_hash" => "sha256:#{Digest::SHA256.hexdigest(key_id)}", "provider_name" => @name})
+                           {"apiserver_id_hash" => Encryption.apiserver_id_hash, "key_id_hash" => "sha256:#{Digest::SHA256.hexdigest(key_id)}",
+                            "provider_name" => @name})
           end
           response
         end
