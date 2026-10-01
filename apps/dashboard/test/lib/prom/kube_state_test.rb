@@ -99,8 +99,8 @@ module Prom
       assert_in_delta(1.0, samples.find { |s| s.name == "kube_namespace_status_phase" && s.labels["phase"] == "Active" }.value)
     end
 
-  test "is an in-process scrape target" do
-    target = Prom::KubeState.new(client: FakeClient.new(OBJECTS)).target
+    test "is an in-process scrape target" do
+      target = Prom::KubeState.new(client: FakeClient.new(OBJECTS)).target
 
     assert_equal "kube-state", target.job
     status, body = target.fetch.call
