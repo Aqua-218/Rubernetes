@@ -30,7 +30,8 @@ module Rubernetes
                                      root: project_root)
         @microvm_adapter = adapter || Adapter.new(runtime_class: self.class.runtime_class, data_dir: data_dir, artifacts: artifacts, chroot_base: chroot_base,
                                                   netns_root: netns_root, run_root: run_root, parent_cgroup: parent_cgroup, clock: clock, logger: logger,
-                                                  machine: machine, use_base_snapshot: use_base_snapshot, network_device: self.class.network_device?, broker: broker)
+                                                  machine: machine, use_base_snapshot: use_base_snapshot, network_device: self.class.network_device?,
+                                                  broker: broker)
         super(data_dir: data_dir, adapter: @microvm_adapter, clock: clock, **)
       end
 
