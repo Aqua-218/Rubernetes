@@ -1064,7 +1064,7 @@ module Rubernetes
       # Admission warnings reach the client as RFC 7234 Warning headers with
       # kube-apiserver's `299 - "text"` rendering.
       def with_warning_headers(request, response)
-        warnings = @request_warnings&.delete(request.object_id)
+        warnings = @request_warnings&.delete(request)
         return response if warnings.nil? || warnings.empty? || !response.respond_to?(:with_header)
 
         rendered = warnings.map { |warning| "299 - #{warning.to_s.gsub(/[\r\n]+/, " ").inspect}" }
