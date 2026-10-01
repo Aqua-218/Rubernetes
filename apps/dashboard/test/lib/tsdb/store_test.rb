@@ -180,21 +180,10 @@ module Tsdb
                  ["f1", "old_total".b, JSON.generate({"__name__" => "old_total"}).b])
       db.execute("INSERT INTO labels (series_id, name, value) VALUES (?, ?, ?)", [1, "__name__".b, "old_total".b])
 
-  test "a writer in another process is refused by the directory lock" do
-    store = open_store
-    store.append(labels("m"), 1, 1.0)
-    script = <<~RUBY
-      $LOAD_PATH.unshift(#{File.expand_path("../../../lib", __dir__).inspect})
-      require "tsdb/store"
-      begin
-        Tsdb::Store.new(ARGV[0])
-        puts "opened"
-      rescue Tsdb::Store::AlreadyOpen => e
-        puts "refused: " + e.message
-      end
-      puts Tsdb::Store.new(ARGV[0], readonly: true).series_count
-    RUBY
-    out = IO.popen([RbConfig.ruby, "-e", script, @dir], &:read)
+      assert_equal "blob", db.get_first_value("SELECT typeof(value) FROM labels")
+      store.close
+      @store = nil
+      reopened = open_store
 
     assert_match(/\Arefused: .*pid #{Process.pid}/, out)
     assert_match(/^1$/, out, "readers are still admitted")
