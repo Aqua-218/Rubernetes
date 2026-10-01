@@ -250,9 +250,7 @@ module M34EvidenceSupport
   # the last complete record could otherwise claim an arbitrary packet count.
   def parse_packet_capture(path, max_bytes: MAX_EXTERNAL_ARTIFACT_BYTES)
     stat = File.lstat(path)
-    unless stat.file? && !stat.symlink? && stat.size.positive? && stat.size <= max_bytes
-      raise "packet capture must be a bounded regular non-symlink file"
-    end
+    raise "packet capture must be a bounded regular non-symlink file" unless stat.file? && !stat.symlink? && stat.size.positive? && stat.size <= max_bytes
 
     bytes = File.open(path, File::RDONLY | File::BINARY | File::NOFOLLOW | O_NONBLOCK) do |io|
       opened = io.stat
