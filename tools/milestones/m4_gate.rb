@@ -780,7 +780,8 @@ module M4Gate
                            parity["rightRules"] || parity["right_rules"]
                          end
         unless entry.is_a?(Hash) && entry["readback"] == true && entry["identity"].is_a?(Hash) && entry["identity"].any? &&
-               valid_digest?(entry["identityDigest"]) && entry["identityDigest"] == canonical_document_digest(entry["identity"]) && entry["rules"].is_a?(Array) &&
+               valid_digest?(entry["identityDigest"]) && entry["identityDigest"] == canonical_document_digest(entry["identity"]) &&
+               entry["rules"].is_a?(Array) &&
                !entry["rules"].empty? && valid_digest?(entry["rulesDigest"]) && entry["rulesDigest"] == canonical_document_digest(entry["rules"])
           errors << "proxy #{backend} kernel readback identity is incomplete"
         end
