@@ -144,9 +144,7 @@ module Rubernetes
         attr_reader :root, :hierarchy
 
         def probe
-          unless @adapter.directory?(@root)
-            return Probe.new(available: false, controllers: [], subtree_control: [], reason: "cgroup root is not a directory")
-          end
+          return Probe.new(available: false, controllers: [], subtree_control: [], reason: "cgroup root is not a directory") unless @adapter.directory?(@root)
 
           controllers = read_words(File.join(@root, "cgroup.controllers"))
           subtree_control = read_words(File.join(@root, "cgroup.subtree_control"))
