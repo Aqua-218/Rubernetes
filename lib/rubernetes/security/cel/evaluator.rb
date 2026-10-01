@@ -246,7 +246,7 @@ module Rubernetes
           def eval_call(node)
             _, function, target_node, argument_nodes = node
             if target_node.nil?
-              arguments = argument_nodes.map { |argument| eval(argument) }
+              arguments = argument_nodes.map { |argument| evaluate(argument) }
               return @library.call(function, nil, arguments, self)
             end
             # Namespaced global functions (sets.contains, optional.of) look like
