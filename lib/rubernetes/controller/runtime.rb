@@ -967,7 +967,7 @@ module Rubernetes
 
       private
 
-      def enqueue_for(name, object, _old_object = nil, type = nil)
+      def enqueue_for(name, object, old_object = nil, type = nil)
         controller = @manager_mutex.synchronize { @controllers[name.to_s] }
         return unless controller
 
