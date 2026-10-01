@@ -665,9 +665,8 @@ module PrintersDifferential
         spec["service"] = {"namespace" => "kube-system", "name" => "metrics-server"} if random.rand < 0.6
         conditions = if random.rand < 0.7
                        [{"type" => "Available", "status" => %w[True False Unknown].sample(random: random),
-                         "reason" => ["", "FailedDiscoveryCheck"].sample(random: random), "lastTransitionTime" => generator.time}.reject do |_, v|
-                         v == ""
-                       end]
+                         "reason" => ["", "FailedDiscoveryCheck"].sample(random: random),
+                         "lastTransitionTime" => generator.time}.reject { |_, v| v == "" }]
                      else
                        []
                      end
