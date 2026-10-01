@@ -167,6 +167,13 @@ module Conformance
       end
     end
 
+    def drop_custom_groups(value, groups)
+      return value if groups.empty? || !value.is_a?(Hash) || !value["paths"].is_a?(Hash)
+
+      kept = value["paths"].reject { |path, _| groups.any? { |group| path == "apis/#{group}" || path.start_with?("apis/#{group}/") } }
+      value.merge("paths" => kept)
+    end
+
     # Keep the observable property of a volatile value: that it exists and what
     # shape it has, never its literal content.
     def present_shape(value)
