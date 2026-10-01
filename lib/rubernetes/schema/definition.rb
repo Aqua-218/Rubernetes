@@ -562,9 +562,7 @@ module Rubernetes
         field_map["spec"] = build_section_field("spec", raw_spec) if raw_spec && !field_map.key?("spec")
         field_map["status"] = build_section_field("status", raw_status) if raw_status && !field_map.key?("status")
         duplicate_json_names = field_map.values.group_by(&:json_name).select { |_json_name, values| values.length > 1 }
-        unless duplicate_json_names.empty?
-          raise ArgumentError, "schema contains duplicate JSON field names: #{duplicate_json_names.keys.sort.join(", ")}"
-        end
+        raise ArgumentError, "schema contains duplicate JSON field names: #{duplicate_json_names.keys.sort.join(", ")}" unless duplicate_json_names.empty?
 
         @fields = DeepFreeze.call(field_map)
         @known_keys = field_map.values.flat_map { |field| [field.name, field.json_name, field.ruby_name] }
