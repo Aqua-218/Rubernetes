@@ -4141,7 +4141,12 @@ module Rubernetes
           previous = record[:resize_pending]
           record[:resize_pending] = {"type" => "PodResizePending", "reason" => "Infeasible", "message" => message,
                                      "observedGeneration" => generation,
-                                     "lastTransitionTime" => previous && previous["reason"] == "Infeasible" ? previous["lastTransitionTime"] : Helpers.now(@clock).iso8601(6)}
+                                     "lastTransitionTime" => if previous &&
+                                                                previous["reason"] == "Infeasible"
+                                                               previous["lastTransitionTime"]
+                                                             else
+                                                               Helpers.now(@clock).iso8601(6)
+                                                             end}
           metrics_call(:pod_infeasible_resize, detail)
           if previous.nil? || previous["reason"] != "Infeasible" || previous["observedGeneration"] != generation
             event(record, "pod.resize_infeasible", message: PodResize.message("Pod resize Infeasible", object, generation, message))
