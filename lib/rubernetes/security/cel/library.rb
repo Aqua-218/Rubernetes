@@ -246,8 +246,8 @@ module Rubernetes
           when "isCIDR" then CIDR.valid?(arguments.fetch(0))
           when "url" then URL.parse(arguments.fetch(0))
           when "isURL" then URL.valid?(arguments.fetch(0))
-          when "semver" then SemVer.parse(arguments.fetch(0), arguments.fetch(1, false))
-          when "isSemver" then SemVer.valid?(arguments.fetch(0), arguments.fetch(1, false))
+          when "semver" then SemVer.parse(arguments.fetch(0), normalize: arguments.fetch(1, false))
+          when "isSemver" then SemVer.valid?(arguments.fetch(0), normalize: arguments.fetch(1, false))
           when "optional.of" then Optional.of(arguments.fetch(0))
           when "optional.none" then Optional.none
           when "sets.contains" then sets_contains(arguments.fetch(0), arguments.fetch(1))
