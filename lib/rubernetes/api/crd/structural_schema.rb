@@ -47,7 +47,7 @@ module Rubernetes
           @cel = cel
           validate_structural!(@schema, [])
           @validator_nodes = {}.compare_by_identity
-          build_validators(@schema) if @cel && has_validations?(@schema)
+          build_validators(@schema) if @cel && validations?(@schema)
         end
 
         # cel.NewValidator: one validator per schema node on the spine of the
