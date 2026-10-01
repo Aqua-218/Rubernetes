@@ -642,6 +642,14 @@ module Rubernetes
                           operation: "bpf(BPF_PROG_GET_FD_BY_ID)", resource_id: resource_id)
         end
 
+        # A load evidence digest is intentionally calculated over canonical
+        # kernel readback fields.  Hashing only the requested instruction
+        # stream would let a caller claim that a different translated program
+        # or verifier result was accepted by the kernel.
+        def self.evidence_digest(document)
+          Digest::SHA256.hexdigest(JSON.generate(canonicalize_evidence(document)))
+        end
+
         private
 
         def syscall_call(command, pointer, size)
