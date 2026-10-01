@@ -236,8 +236,8 @@ module Rubernetes
           index_digest = document.digest
           descriptor = document.select(platform, os: os, architecture: architecture, arch: arch, variant: variant)
           image_reference = image_reference.with_digest(descriptor.digest)
-          document = fetch_document(image_reference, descriptor.digest.to_s, expected_digest: descriptor.digest, 
-expected_size: descriptor.size, index_digest: index_digest)
+          document = fetch_document(image_reference, descriptor.digest.to_s, expected_digest: descriptor.digest,
+                                                                             expected_size: descriptor.size, index_digest: index_digest)
         end
         document
       end
