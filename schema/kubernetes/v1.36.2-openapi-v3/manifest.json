@@ -474,8 +474,10 @@
       "path": "apis/scheduling.k8s.io/v1.json",
       "upstream_path": "api/openapi-spec/v3/apis__scheduling.k8s.io__v1_openapi.json",
       "source_sha256": "c832d22dcc8c28e859a9bc2a01635fe22ccbf7e433ae401a1691b7afde3e0d66",
-      "sha256": "c832d22dcc8c28e859a9bc2a01635fe22ccbf7e433ae401a1691b7afde3e0d66",
-      "paths": 5
+      "sha256": "f59c05968d226d96b40101774e90cb4c37b28a296387e7d42a40b26f4923d7ae",
+      "paths": 5,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/scheduling.k8s.io/v1"
     },
     {
       "path": "apis/scheduling.k8s.io/v1alpha2.json",
