@@ -597,9 +597,7 @@ module M3Gate
       provenance = document["provenance"]
       if provenance.is_a?(Hash)
         errors << "#{label} provenance source_sha256 must match manifest" unless provenance["source_sha256"] == manifest["input_sha256"]
-        unless provenance["source_file_count"] == manifest["input_file_count"]
-          errors << "#{label} provenance source_file_count must match manifest"
-        end
+        errors << "#{label} provenance source_file_count must match manifest" unless provenance["source_file_count"] == manifest["input_file_count"]
         unless valid_digest?(provenance["runner_sha256"]) && provenance["runner_sha256"] == adapter["runner_sha256"]
           errors << "#{label} provenance runner_sha256 must match adapter"
         end
