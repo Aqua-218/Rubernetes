@@ -26,9 +26,12 @@ module Rubernetes
               self.unmarshal_class_method = :decode
               self.service_name = "v1.PodResourcesLister"
 
-              rpc :List, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::ListPodResourcesRequest, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::ListPodResourcesResponse
-              rpc :GetAllocatableResources, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::AllocatableResourcesRequest, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::AllocatableResourcesResponse
-              rpc :Get, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::GetPodResourcesRequest, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::GetPodResourcesResponse
+              rpc :List, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::ListPodResourcesRequest,
+                  ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::ListPodResourcesResponse
+              rpc :GetAllocatableResources, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::AllocatableResourcesRequest,
+                  ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::AllocatableResourcesResponse
+              rpc :Get, ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::GetPodResourcesRequest,
+                  ::Rubernetes::Node::Plugins::Generated::PodResourcesV1::GetPodResourcesResponse
             end
 
             Stub = Service.rpc_stub_class
