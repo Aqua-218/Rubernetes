@@ -1010,9 +1010,7 @@ module KubernetesCorpusImporter
       end
 
       path = File.expand_path(relative_path, @corpus_root)
-      unless path == @corpus_root || path.start_with?("#{@corpus_root}/")
-        raise ValidationError, "corpus path escaped output root: #{relative_path.inspect}"
-      end
+      raise ValidationError, "corpus path escaped output root: #{relative_path.inspect}" unless path == @corpus_root || path.start_with?("#{@corpus_root}/")
 
       path
     end
