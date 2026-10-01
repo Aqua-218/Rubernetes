@@ -124,9 +124,7 @@ module Rubernetes
           raise ArgumentError, "headers must be a Hash or Enumerable" unless source.respond_to?(:each)
 
           source.each do |entry|
-            unless entry.respond_to?(:to_ary) && entry.to_ary.length == 2
-              raise ArgumentError, "header entries must contain a name and value"
-            end
+            raise ArgumentError, "header entries must contain a name and value" unless entry.respond_to?(:to_ary) && entry.to_ary.length == 2
 
             name, value = entry.to_ary
             Array(value).each { |item| add(name, item) }
