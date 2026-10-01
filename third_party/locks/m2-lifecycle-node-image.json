@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "verified_at": "2026-09-04",
+  "verified_at": "2026-10-01",
   "purpose": "M2 lifecycle oracle: Kubernetes v1.36.2 node image (kubelet, kubeadm, kube-apiserver, etcd, containerd, runc, kindnetd) built from the pinned source checkout",
   "image": {
     "reference": "localhost:25000/rubernetes/kind-node@sha256:2f0ecbdcd9d0bb44584f8700f5ae0be071c65135989e325789388d3df59c4efa",
