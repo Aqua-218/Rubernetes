@@ -4024,6 +4024,8 @@ module Rubernetes
         document = @openapi.document_for(route.path)
         raise Status::NotFound.new("OpenAPI document was not found") if document.nil?
 
+        document = served_openapi_v3_index(document) if route.path == "/openapi/v3"
+
         protobuf = route.path == "/openapi/v2" && OpenAPIV2Protobuf.accepts?(request.header("accept"))
         content_type = protobuf ? OpenAPIV2Protobuf::RESPONSE_CONTENT_TYPE : "application/json"
         bytes, etag = openapi_encoded(route.path, document, protobuf)
