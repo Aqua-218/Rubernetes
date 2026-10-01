@@ -105,10 +105,8 @@ module Promql
       assert_equal [3.0], values("changes(resets_total[1m])")
     end
 
-    load("resets_total", {}, [10, 20, 5, 15])
-    # 10 -> 20 (+10), reset to 5 (+5 from zero), 5 -> 15 (+10): 25 over 45s
-    # of samples, extrapolated the 1s to the window start: 25 * 46/45.
-    inc = values("increase(resets_total[46s])").first
+    test "rate needs two samples and the result has no metric name" do
+      load("one", {"a" => "b"}, [5])
 
     assert_in_delta 25.0 * 46 / 45, inc, 1e-6
     assert_equal [1.0], values("resets(resets_total[1m])")
