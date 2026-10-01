@@ -29,7 +29,8 @@ matching with `on`/`ignoring`/`group_left`/`group_right`, set operators).
 rule-file format; alerts move through pending/firing/resolved, produce
 `ALERTS` series and can be posted to an Alertmanager-style webhook.
 
-* Database creation
+The HTTP API is Prometheus-compatible, so Grafana can use the dashboard as a
+Prometheus data source:
 
 * Database initialization
 
