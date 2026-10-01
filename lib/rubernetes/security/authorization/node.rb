@@ -439,7 +439,8 @@ module Rubernetes
         end
 
         def rule_allows?(rule, attributes)
-          rule["apiGroups"].include?(attributes.api_group) && rule["resources"].include?(attributes.resource_with_subresource) && rule["verbs"].include?(attributes.verb)
+          rule["apiGroups"].include?(attributes.api_group) && rule["resources"].include?(attributes.resource_with_subresource) &&
+            rule["verbs"].include?(attributes.verb)
         end
       end
     end
