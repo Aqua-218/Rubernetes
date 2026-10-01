@@ -708,7 +708,9 @@ class M2GateTest < Minitest::Test
          "after" => "parent", "measurement_source" => "production_native_adapter", "active_sha256" => Digest::SHA256.hexdigest(child)}
       ]
       {"architecture" => architecture, "available" => true, "status" => "PASS", "passed" => true,
-       "profile_sha256" => Digest::SHA256.hexdigest(architecture), "objects" => objects, "inventory_sha256" => M2Gate.canonical_kernel_inventory_digest(objects), "baseline_sha256" => Digest::SHA256.hexdigest("baseline-#{architecture}"), "final_sha256" => Digest::SHA256.hexdigest("final-#{architecture}"), "difference_count" => 0, "live_leak_count" => 0, "orphan_count" => 0}
+       "profile_sha256" => Digest::SHA256.hexdigest(architecture), "objects" => objects,
+       "inventory_sha256" => M2Gate.canonical_kernel_inventory_digest(objects), "baseline_sha256" => Digest::SHA256.hexdigest("baseline-#{architecture}"),
+       "final_sha256" => Digest::SHA256.hexdigest("final-#{architecture}"), "difference_count" => 0, "live_leak_count" => 0, "orphan_count" => 0}
     end
     finalize_report(report_base(sha, count, "m2_kernel_inventory").merge(
       "required_architectures" => M2Gate::REQUIRED_ARCHITECTURES,
