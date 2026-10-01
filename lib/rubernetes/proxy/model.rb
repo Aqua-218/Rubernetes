@@ -66,7 +66,7 @@ module Rubernetes
         deep_freeze(deep_copy(value))
       end
 
-      def bool(value, default = false)
+      def bool(value, default: false)
         return default if value.nil?
         return value if [true, false].include?(value)
 
