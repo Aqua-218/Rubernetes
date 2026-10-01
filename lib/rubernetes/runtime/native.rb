@@ -1544,7 +1544,7 @@ module Rubernetes
       def prepare_hook_bundle(sandbox, container, spec, command, rootfs, hooks)
         directory = hook_bundle_directory(sandbox, container)
         annotations = spec["annotations"].is_a?(Hash) ? spec["annotations"].transform_values(&:to_s) : {}
-        env = (spec["env"] || {}).to_h.reject { |_name, value| value.nil? }.map { |name, value| "#{name}=#{value}" }
+        env = (spec["env"] || {}).to_h.compact.map { |name, value| "#{name}=#{value}" }
         Hooks.write_bundle(directory, root: rootfs || "/", process: {"args" => Array(command), "env" => env, "cwd" => spec["cwd"] || "/"},
                                       mounts: Array(spec["mounts"]), annotations: annotations, hooks: hooks)
         {directory: directory, id: container.id, annotations: annotations,
