@@ -2045,12 +2045,8 @@ module M2Gate
         errors << "#{label} subresource #{name} response_sha256 is required" unless valid_digest?(entry["response_sha256"])
         route = entry["route"].to_s.split("?", 2).first
         errors << "#{label} subresource #{name} must use the production HTTP route" unless route == REQUIRED_SUBRESOURCE_ROUTES[name]
-        unless entry["server_class"] == "Rubernetes::Transport::HTTPServer"
-          errors << "#{label} subresource #{name} must use Transport::HTTPServer"
-        end
-        unless entry["api_server_class"] == "Rubernetes::API::Server"
-          errors << "#{label} subresource #{name} must be dispatched by API::Server"
-        end
+        errors << "#{label} subresource #{name} must use Transport::HTTPServer" unless entry["server_class"] == "Rubernetes::Transport::HTTPServer"
+        errors << "#{label} subresource #{name} must be dispatched by API::Server" unless entry["api_server_class"] == "Rubernetes::API::Server"
         unless entry["agent_service_class"] == "Rubernetes::Bootstrap::AgentService"
           errors << "#{label} subresource #{name} must resolve through Bootstrap::AgentService"
         end
