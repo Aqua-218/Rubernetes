@@ -1381,9 +1381,7 @@ module Rubernetes
             numbers = {}
             message.fields.each do |field|
               raise DuplicateFieldError, "duplicate protobuf field #{message.full_name}.#{field.name}" if names.key?(field.name)
-              if numbers.key?(field.number)
-                raise DuplicateFieldError, "duplicate protobuf field number #{message.full_name}.#{field.number}"
-              end
+              raise DuplicateFieldError, "duplicate protobuf field number #{message.full_name}.#{field.number}" if numbers.key?(field.number)
 
               names[field.name] = true
               numbers[field.number] = true
