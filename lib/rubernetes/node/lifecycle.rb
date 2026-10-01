@@ -1039,7 +1039,7 @@ module Rubernetes
       attr_reader :metrics_observer
       # The kubelet-side Pod volume translation and the node's API reader
       # (the agent attaches the SELinux tracker to them).
-      attr_reader :pod_volumes, :resource_reader
+      attr_reader :resource_reader
 
       # kubelet /metrics: the lifecycle's observer, and the volume operations
       # (storage_operation_duration_seconds) through the Pod volumes.
