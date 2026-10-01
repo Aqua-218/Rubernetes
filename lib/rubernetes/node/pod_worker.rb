@@ -144,7 +144,7 @@ module Rubernetes
           @stopping = true
           @queue << :__stop__
         end
-        @thread&.join if join
+        @thread&.join(timeout) if join
         self
       end
 
