@@ -105,9 +105,8 @@ module Rubernetes
 
         def to_h
           {"lock_path" => @lock_path, "firecracker_version" => firecracker_version, "verity_root_hash" => verity_root_hash,
-           "guest_bundle_sha256" => guest_bundle_sha256, "files" => entries.transform_values do |entry|
-                                                           {"path" => entry.path, "sha256" => entry.sha256}
-                                                         end,
+           "guest_bundle_sha256" => guest_bundle_sha256,
+           "files" => entries.transform_values { |entry| {"path" => entry.path, "sha256" => entry.sha256} },
            "digest" => digest}
         end
       end
