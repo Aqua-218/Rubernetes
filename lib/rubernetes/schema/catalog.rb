@@ -840,7 +840,7 @@ module Rubernetes
             value.each { |key, child| copy[deep_copy(key, seen)] = deep_copy(child, seen) }
             copy
           when Array
-            return seen.fetch(value.object_id) if seen.key?(value.object_id)
+            return seen.fetch(value) if seen.key?(value)
 
             copy = []
             seen[value.object_id] = copy
