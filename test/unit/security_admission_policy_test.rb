@@ -196,7 +196,8 @@ class SecurityAdmissionPolicyTest < Minitest::Test
                                   "reinvocationPolicy" => "IfNeeded"}]}, group: "admissionregistration.k8s.io")
     @context.put("validatingwebhookconfigurations", nil, "v",
                  {"metadata" => {"name" => "v"}, "webhooks" => [
-                   {"name" => "deny.example", "clientConfig" => {"url" => "https://deny.example/"}, "rules" => [rule], "sideEffects" => "None", "admissionReviewVersions" => ["v1"],
+                   {"name" => "deny.example", "clientConfig" => {"url" => "https://deny.example/"}, "rules" => [rule], "sideEffects" => "None",
+                    "admissionReviewVersions" => ["v1"],
                     "matchConditions" => [{"name" => "big", "expression" => "object.spec.replicas > 3"}]},
                    {"name" => "broken.example", "clientConfig" => {"url" => "https://broken.example/"}, "rules" => [rule], "sideEffects" => "Unknown",
                     "admissionReviewVersions" => ["v1"], "failurePolicy" => "Ignore"}
