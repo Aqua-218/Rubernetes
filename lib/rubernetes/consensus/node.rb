@@ -26,7 +26,7 @@ module Rubernetes
       Timing = Data.define(:election_timeout_min, :election_timeout_max, :heartbeat_interval,
                            :batch_max_entries, :batch_max_bytes, :batch_flush_timeout,
                            :snapshot_entries, :snapshot_wal_bytes, :snapshot_min_interval,
-                           :max_inflight_appends, :snapshot_chunk_bytes) do
+                           :max_inflight_appends, :snapshot_chunk_bytes, :max_command_bytes) do
         # snapshot_entries follows etcd 3.6's --snapshot-count (10,000): every
         # entry since the last snapshot stays in memory, so 100k entries of
         # whole objects kept each replica's log alone at hundreds of MB.
