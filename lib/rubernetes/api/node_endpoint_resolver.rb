@@ -245,6 +245,7 @@ module Rubernetes
             buffer = buffer.byteslice((line_end + 2 + size + 2)..) || "".b
             raise Status::ServiceUnavailable.new("node streaming endpoint sent an oversized response body") if result.bytesize > MAX_ERROR_BODY_BYTES
           end
+        rescue EOFError
           result
         end
 
