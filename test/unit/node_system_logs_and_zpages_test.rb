@@ -104,7 +104,8 @@ class NodeSystemLogsAndZPagesTest < Minitest::Test
                  [object["kind"], object["apiVersion"], object.dig("metadata", "name"), object["startTime"]]
     assert_nil headers["warning"]
     assert_equal 406, ZPages.statusz(component: "k", start_time: Time.now, binary_version: "1", accept: "application/json")[0]
-    _, _, flags = ZPages.flagz(component: "k", flags: ZPages.flags_from(arguments: ["--config=/etc/x.yml", "-v"], config: {"port" => 1, "tls" => {"token" => "t"}}),
+    _, _, flags = ZPages.flagz(component: "k",
+                               flags: ZPages.flags_from(arguments: ["--config=/etc/x.yml", "-v"], config: {"port" => 1, "tls" => {"token" => "t"}}),
                                accept: "application/yaml;g=config.k8s.io;v=v1alpha1;as=Flagz")
 
     assert_includes flags, "config: \"/etc/x.yml\""
