@@ -552,7 +552,8 @@ module Rubernetes
          "kubelet_started_containers_errors_total" => [:counter, "Cumulative number of errors when starting containers"],
          "kubelet_terminated_containers_total" => [:counter, "Cumulative number of container terminations."],
          "kubelet_restarted_pods_total" => [:counter,
-                                            "Number of pods that have been restarted because they were deleted and recreated with the same UID while the kubelet was watching them (common for static pods, extremely uncommon for API pods)"],
+                                            "Number of pods that have been restarted because they were deleted and recreated with the same UID while the " \
+                                            "kubelet was watching them (common for static pods, extremely uncommon for API pods)"],
          "kubelet_evictions" => [:counter, "Cumulative number of pod evictions by eviction signal"],
          "kubelet_preemptions" => [:counter, "Cumulative number of pod preemptions by preemption resource"],
          "kubelet_pleg_discard_events" => [:counter, "The number of discard events in PLEG."],
