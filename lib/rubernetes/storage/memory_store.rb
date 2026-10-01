@@ -1664,6 +1664,15 @@ module Rubernetes
           @last_revision&.to_s
         end
 
+        def self.positive_limit(value, name)
+          number = Integer(value)
+          raise ArgumentError, "#{name} must be positive" unless number.positive?
+
+          number
+        rescue TypeError, ArgumentError
+          raise ArgumentError, "#{name} must be a positive integer"
+        end
+
         private
 
         def event_for(mutation)
