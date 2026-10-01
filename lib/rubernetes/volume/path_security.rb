@@ -765,6 +765,10 @@ module Rubernetes
         handle
       end
 
+      def self.secure(root:, adapter: nil, resolver: nil)
+        new(root: root, adapter: adapter, resolver: resolver, require_openat2: true)
+      end
+
       private
 
       def open_sub_path(root_handle, sub_path, options)
