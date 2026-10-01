@@ -543,7 +543,7 @@ module Rubernetes
         @hostname = (hostname || ModelSupport.key(source, "hostname", nil))&.to_s
         @target_ref = ModelSupport.immutable(target_ref || ModelSupport.key(source, "targetRef", {}) || {})
         @ready = ready.nil? ? default_condition(source, "ready", true) : ModelSupport.bool(ready, default: true)
-        @serving = serving.nil? ? default_condition(source, "serving", @ready) : ModelSupport.bool(serving, @ready)
+        @serving = serving.nil? ? default_condition(source, "serving", @ready) : ModelSupport.bool(serving, default: @ready)
         @terminating = terminating.nil? ? default_condition(source, "terminating", false) : ModelSupport.bool(terminating)
         raw_hints = hints || ModelSupport.key(source, "hints", {}) || {}
         @hints = Array(ModelSupport.key(raw_hints, "forZones", nil) || ModelSupport.key(raw_hints, "for_zones", nil)).map do |hint|
