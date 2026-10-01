@@ -581,8 +581,8 @@ module M2LifecycleOracleNodeImage
     raise BuildError, "node image lock reference is not digest-pinned" unless reference.match?(/\A[^@\s]+@sha256:[0-9a-f]{64}\z/)
 
     kind_lock_document = kind_lock
-    raise BuildError, "node image lock kind binary SHA-256 does not match the kind lock" unless lock.dig("build",
-                                                                                                         "kind_binary_sha256") == kind_lock_document.fetch("artifacts").fetch("linux/amd64").fetch("sha256")
+    kind_binary_sha256 = kind_lock_document.fetch("artifacts").fetch("linux/amd64").fetch("sha256")
+    raise BuildError, "node image lock kind binary SHA-256 does not match the kind lock" unless lock.dig("build", "kind_binary_sha256") == kind_binary_sha256
 
     ensure_kind!(kind_lock_document)
     _stdout, stderr, status = docker("image", "inspect", "--format", "{{.Id}}", reference, allow_failure: true)
