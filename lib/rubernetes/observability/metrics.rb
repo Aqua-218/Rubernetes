@@ -181,7 +181,11 @@ module Rubernetes
       # into the registry the rest of the process still reads.
       def self.replace_global!(registry)
         @global_mutex ||= Mutex.new
-        @global_mutex.synchronize { @global = nil }
+        @global_mutex.synchronize do
+          previous = @global
+          @global = registry
+          previous
+        end
       end
 
       # +source+ answers [[group, resource, count]] for every stored
