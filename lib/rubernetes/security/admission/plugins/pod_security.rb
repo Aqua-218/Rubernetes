@@ -102,9 +102,7 @@ module Rubernetes
                  PS.compare_levels(new_policy.enforce.level, old_policy.enforce.level) < 1
                 return allowed
               end
-              if exempt_namespace?(name)
-                return exempt_namespace_warning_response(name, new_policy, metadata(namespace)["labels"]) || allowed
-              end
+              return exempt_namespace_warning_response(name, new_policy, metadata(namespace)["labels"]) || allowed if exempt_namespace?(name)
 
               Response.new(true, evaluate_pods_in_namespace(name, new_policy.enforce), {}, nil)
             end
