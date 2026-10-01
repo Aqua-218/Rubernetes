@@ -2624,7 +2624,7 @@ module Rubernetes
       end
 
       def symbolize(value)
-        value.to_h.transform_keys { |key| key.to_sym }
+        value.to_h.transform_keys(&:to_sym)
       end
     end
 
