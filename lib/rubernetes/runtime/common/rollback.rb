@@ -61,9 +61,7 @@ module Rubernetes
 
         if [NOT_FOUND, :missing].include?(response)
           observed_after = observe(resource)
-          if observed_after && !same_identity?(resource, observed_after)
-            raise IdentityMismatch, "not-found cleanup observed a different resource identity"
-          end
+          raise IdentityMismatch, "not-found cleanup observed a different resource identity" if observed_after && !same_identity?(resource, observed_after)
         end
         response
       end
