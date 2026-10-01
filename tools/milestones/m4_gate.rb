@@ -730,7 +730,8 @@ module M4Gate
              valid_digest?(kernel["caseInventorySha256"]) && kernel["caseInventorySha256"] == packet["caseInventorySha256"]
         errors << "proxy kernel readback must bind packet trace and case inventory"
       end
-      unless kernel["runnerIdentity"] == packet["runnerIdentity"] && kernel["runnerDigest"] == packet["runnerDigest"] && kernel["mode"] == packet["mode"] && valid_digest?(kernel["executionIdentitySha256"])
+      unless kernel["runnerIdentity"] == packet["runnerIdentity"] && kernel["runnerDigest"] == packet["runnerDigest"] && kernel["mode"] == packet["mode"] &&
+             valid_digest?(kernel["executionIdentitySha256"])
         errors << "proxy kernel runner provenance must match packet runner"
       end
       kernel_runner = kernel["runner"] || kernel["runner_provenance"]
