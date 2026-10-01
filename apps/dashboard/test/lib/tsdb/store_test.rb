@@ -185,10 +185,9 @@ module Tsdb
       @store = nil
       reopened = open_store
 
-    assert_match(/\Arefused: .*pid #{Process.pid}/, out)
-    assert_match(/^1$/, out, "readers are still admitted")
-    store.close
-    @store = nil
+      assert_equal ["old_total"], reopened.select_series([M.new(name: "__name__", op: "=", value: "old_total")]).map(&:metric)
+      assert_equal ["old_total"], reopened.label_values("__name__")
+    end
 
     assert_equal "opened\n1\n", IO.popen([RbConfig.ruby, "-e", script, @dir], &:read)
   end
