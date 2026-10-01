@@ -1238,7 +1238,10 @@ module M3Gate
       expected_inventory_count = source_inventory.lines.reject { |line| line.strip.empty? }.length
       errors << "#{label} pinned source inventory digest was not recomputed" unless source["source_inventory_sha256"] == expected_inventory_digest
       errors << "#{label} pinned source inventory count was not recomputed" unless source["source_inventory_file_count"] == expected_inventory_count
-      errors << "#{label} pinned source repository is not the official Kubernetes repository" unless source["repository"] == "https://github.com/kubernetes/kubernetes.git"
+      unless source["repository"] == "https://github.com/kubernetes/kubernetes.git"
+        errors << "#{label} pinned source repository is not the official Kubernetes " \
+                  "repository"
+      end
     rescue StandardError => error
       errors << "#{label} pinned source verification failed closed: #{error.class}: #{error.message}"
     end
