@@ -327,7 +327,8 @@ module Rubernetes
             end
             reject!("pod \"#{namespace}/#{pod_name}\" is a mirror pod") if (metadata(pod)["annotations"] || {}).key?(MIRROR_ANNOTATION)
             unless request["serviceAccountName"].to_s == spec(pod)["serviceAccountName"].to_s
-              reject!("PodCertificateRequest for pod \"#{namespace}/#{pod_name}\" contains serviceAccountName (#{request["serviceAccountName"].to_s.inspect}) that differs from running pod (#{spec(pod)["serviceAccountName"].to_s.inspect})")
+              reject!("PodCertificateRequest for pod \"#{namespace}/#{pod_name}\" contains serviceAccountName " \
+                      "(#{request["serviceAccountName"].to_s.inspect}) that differs from running pod (#{spec(pod)["serviceAccountName"].to_s.inspect})")
             end
             account = @context.get("serviceaccounts", namespace, request["serviceAccountName"].to_s)
             if account.nil?
