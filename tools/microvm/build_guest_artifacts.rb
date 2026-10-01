@@ -148,9 +148,10 @@ def main
   end
   File.chmod(0o755, ARTIFACTS)
   files = %w[firecracker jailer seccomp-filter.json vmlinux rootfs.ext4 rootfs.verity vmlinux.config].to_h do |name|
-    key = {"seccomp-filter.json" => "seccomp_filter", "vmlinux" => "kernel", "rootfs.ext4" => "rootfs", "rootfs.verity" => "verity_hash", "vmlinux.config" => "kernel_config"}.fetch(
-      name, name
-    )
+    key = {"seccomp-filter.json" => "seccomp_filter", "vmlinux" => "kernel", "rootfs.ext4" => "rootfs", "rootfs.verity" => "verity_hash",
+           "vmlinux.config" => "kernel_config"}.fetch(
+             name, name
+           )
     path = File.join(ARTIFACTS, name)
     [key, {"path" => path.delete_prefix("#{ROOT}/"), "sha256" => sha256(path), "bytes" => File.size(path)}]
   end
