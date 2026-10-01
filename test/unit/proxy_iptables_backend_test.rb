@@ -83,6 +83,7 @@ class ProxyIptablesBackendTest < Minitest::Test
     program = runner.programs.last
 
     assert_match(
+      # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
       /\A\*filter\n:KUBE-SERVICES - \[0:0\]\n:KUBE-EXTERNAL-SERVICES - \[0:0\]\n:KUBE-FORWARD - \[0:0\]\n:KUBE-NODEPORTS - \[0:0\]\n:KUBE-PROXY-FIREWALL - \[0:0\]\n:KUBE-FIREWALL - \[0:0\]\n/, program
     )
     svc = Iptables.service_chain("ns/svc:http", "TCP")
