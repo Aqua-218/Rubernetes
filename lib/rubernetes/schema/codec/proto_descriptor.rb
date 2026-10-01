@@ -1496,7 +1496,7 @@ module Rubernetes
 
             # OpenAPI uses Go import-path package spelling, while protoc turns
             # hyphens in those package segments into underscores.
-            "k8s.io.#{value.delete_prefix('io.k8s.').tr("-", "_")}"
+            "k8s.io.#{value.delete_prefix("io.k8s.").tr("-", "_")}"
           end
 
           def descriptor_paths(path)
