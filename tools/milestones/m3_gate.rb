@@ -829,7 +829,8 @@ module M3Gate
         unless entry["implementation_present"] == true && non_empty_string?(implementation)
           errors << "reconcile idempotency case #{index} must record a concrete implementation"
         end
-        if entry["uses_corpus_controller"] == true || implementation.to_s.end_with?("::CorpusController") || implementation.to_s == "Rubernetes::Controller::CorpusController"
+        if entry["uses_corpus_controller"] == true || implementation.to_s.end_with?("::CorpusController") ||
+           implementation.to_s == "Rubernetes::Controller::CorpusController"
           errors << "reconcile idempotency case #{index} must not use CorpusController fallback"
         end
       end
