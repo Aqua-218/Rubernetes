@@ -50,7 +50,7 @@ module Rubernetes
       remove_const(name) if const_defined?(name, false)
       const_set(name, value)
     end
-    remove_const(:NativeLoaderConstants)
+    remove_const(:NATIVE_LOADER_CONSTANTS)
   end
 end
 
