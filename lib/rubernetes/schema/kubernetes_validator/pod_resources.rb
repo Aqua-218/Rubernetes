@@ -159,9 +159,7 @@ module Rubernetes
         quantity = Quantity.from_json(raw)
         issues = []
         issues << valued_issue(path, quantity.to_s, IS_NEGATIVE_ERROR_MSG) if quantity.negative?
-        if integer_resource?(name) && (quantity.milli_value % 1000) != 0
-          issues << valued_issue(path, quantity.to_s, IS_NOT_INTEGER_ERROR_MSG)
-        end
+        issues << valued_issue(path, quantity.to_s, IS_NOT_INTEGER_ERROR_MSG) if integer_resource?(name) && (quantity.milli_value % 1000) != 0
         [quantity, issues]
       rescue Quantity::ParseError
         # The schema layer reports an unparsable quantity.
