@@ -24,7 +24,6 @@ module Rubernetes
             # Kubelet or the registered resourceName is already taken by another
             # active device plugin. Device plugin is expected to terminate upon registration failure
             class Service
-
               include ::GRPC::GenericService
 
               self.marshal_class_method = :encode
