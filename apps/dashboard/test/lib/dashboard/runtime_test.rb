@@ -25,10 +25,11 @@ module Dashboard
         assert_kind_of Prom::Rules, runtime.rules
         collector.round
 
-      assert_equal 1, collector.targets.length, "the built-in kube-state target"
-      runtime.stop
-    ensure
-      %w[DASHBOARD_DATA_DIR RUBERNETES_CLUSTER_JSON].each { |k| saved[k].nil? ? ENV.delete(k) : ENV[k] = saved[k] }
+        assert_equal 1, collector.targets.length, "the built-in kube-state target"
+        runtime.stop
+      ensure
+        %w[DASHBOARD_DATA_DIR RUBERNETES_CLUSTER_JSON].each { |k| saved[k].nil? ? ENV.delete(k) : ENV[k] = saved[k] }
+      end
     end
   end
 end
