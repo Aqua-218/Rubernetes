@@ -372,7 +372,7 @@ module Rubernetes
         if kind == "Pod" && operation == :update && subresource.to_s == "resize"
           issues.concat(pod_resize_errors(root, old))
         elsif subresource.to_s.empty?
-          issues.concat(pod_update_errors(root, kind, operation, old))
+          issues.concat(pod_update_errors(walk_root, kind, operation, walk_old))
         end
         issues.concat(ingress_errors(root)) if kind == "Ingress"
         issues.concat(service_errors(root)) if kind == "Service"
