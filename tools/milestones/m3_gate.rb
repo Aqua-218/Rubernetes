@@ -1492,9 +1492,7 @@ module M3Gate
         errors << "workload differential must execute 20 independent cases"
       end
       errors << "workload differential stream version must be 1" unless document["stream_version"] == 1
-      unless document["deadline_seconds"].is_a?(Numeric) && document["deadline_seconds"] > 0
-        errors << "workload differential deadline must be positive"
-      end
+      errors << "workload differential deadline must be positive" unless document["deadline_seconds"].is_a?(Numeric) && document["deadline_seconds"] > 0
       errors << "workload differential deadline failure count must be zero" unless document["deadline_failure_count"] == 0
       errors << "workload differential stream mismatch count must be zero" unless document["stream_mismatch_count"] == 0
       cases = document["cases"]
