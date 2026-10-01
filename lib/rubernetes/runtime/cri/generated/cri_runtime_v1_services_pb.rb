@@ -187,7 +187,8 @@ module Rubernetes
               # in time.
               # Feature gate: CRIListStreaming
               # See https://kep.k8s.io/5825 for more details.
-              rpc :StreamPodSandboxStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamPodSandboxStatsRequest, stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamPodSandboxStatsResponse)
+              rpc :StreamPodSandboxStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamPodSandboxStatsRequest,
+                  stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamPodSandboxStatsResponse)
               # UpdateRuntimeConfig updates the runtime configuration based on the given request.
               rpc :UpdateRuntimeConfig, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdateRuntimeConfigRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdateRuntimeConfigResponse
               # Status returns the status of the runtime.
