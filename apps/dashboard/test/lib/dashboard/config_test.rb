@@ -24,9 +24,13 @@ module Dashboard
       end
     end
 
-  test "DASHBOARD_HOSTS overrides the default list and empty disables the check" do
-    with_env("DASHBOARD_HOSTS" => "a.example.com, .b.example.com", "DASHBOARD_EXTERNAL_URL" => "https://x.example.com/") do
-      assert_equal ["a.example.com", ".b.example.com"], Dashboard::Config.allowed_hosts
+    test "DASHBOARD_HOSTS overrides the default list and empty disables the check" do
+      with_env("DASHBOARD_HOSTS" => "a.example.com, .b.example.com", "DASHBOARD_EXTERNAL_URL" => "https://x.example.com/") do
+        assert_equal ["a.example.com", ".b.example.com"], Dashboard::Config.allowed_hosts
+      end
+      with_env("DASHBOARD_HOSTS" => "") do
+        assert_equal [], Dashboard::Config.allowed_hosts
+      end
     end
     with_env("DASHBOARD_HOSTS" => "") do
       assert_equal [], Dashboard::Config.allowed_hosts
