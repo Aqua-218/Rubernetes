@@ -556,9 +556,7 @@ module Rubernetes
                         else
                           ResourceDescriptor.parse(entry.kind)
                         end
-        unless entry.name == name && expected_kind == kind
-          raise ValidationError, "controller #{name} does not match corpus entry #{entry.name.inspect}"
-        end
+        raise ValidationError, "controller #{name} does not match corpus entry #{entry.name.inspect}" unless entry.name == name && expected_kind == kind
 
         METADATA_FIELDS.each do |field|
           expected = Array(entry.public_send(field)).map(&:to_s)
