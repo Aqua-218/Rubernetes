@@ -762,7 +762,7 @@ module Rubernetes
           resource = @http_factory.call(uri)
           session = StreamSession.new(resource: resource, close_requested: false, close_in_progress: false,
                                       close_succeeded: false, close_error: nil)
-          @active_streams[session.object_id] = session
+          @active_streams[session] = session
           [resource, session]
         end
       end
