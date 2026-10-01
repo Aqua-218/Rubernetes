@@ -227,8 +227,7 @@ module M2LifecycleOracleNodeImage
       /usr/local/sbin/runc --version | head -1
       /usr/bin/kubelet --version
       echo "@@sha"
-      sha256sum /usr/local/bin/containerd /usr/local/sbin/runc /usr/bin/kubelet /opt/cni/bin/host-local /opt/cni/bin/loopback /opt/cni/bin/portmap
-      /opt/cni/bin/ptp /kind/manifests/default-cni.yaml
+      sha256sum /usr/local/bin/containerd /usr/local/sbin/runc /usr/bin/kubelet /opt/cni/bin/host-local /opt/cni/bin/loopback /opt/cni/bin/portmap /opt/cni/bin/ptp /kind/manifests/default-cni.yaml
       echo "@@images"
       ctr -n k8s.io images ls | awk 'NR>1 {print $1, $3}'
       for ref in $(grep -E '^\s+image:' /kind/manifests/default-cni.yaml | awk '{print $2}') registry.k8s.io/kube-apiserver:v1.36.2 $(ctr -n k8s.io images ls -q | grep '^registry.k8s.io/etcd:'); do
