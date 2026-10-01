@@ -517,6 +517,22 @@ module Rubernetes
         registry.render
       end
 
+      # The plugin behind a recorded mount: the PV's backend for a claim, the
+      # Pod source otherwise.
+      def self.mount_plugin(mount)
+        return nil unless mount.is_a?(Hash)
+
+        source = (mount["source"] || mount[:source]).to_s
+        backend = (mount["backend"] || mount[:backend]).to_s
+        if %w[persistentVolumeClaim ephemeral].include?(source)
+          return "kubernetes.io/csi" if !(mount["uniqueName"] || mount[:uniqueName]).to_s.empty? || backend.empty? || backend == "csi"
+
+          VOLUME_PLUGIN_NAMES[backend]
+        else
+          VOLUME_PLUGIN_NAMES[source] || VOLUME_PLUGIN_NAMES[backend]
+        end
+      end
+
       private
 
       def register_counters
