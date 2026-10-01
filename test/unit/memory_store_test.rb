@@ -805,7 +805,8 @@ class MemoryStoreTest < Minitest::Test
         "kind" => "Status",
         "metadata" => {},
         "status" => "Failure",
-        "message" => "ListOptions.meta.k8s.io \"\" is invalid: resourceVersionMatch: Forbidden: sendInitialEvents requires setting resourceVersionMatch to NotOlderThan",
+        "message" => "ListOptions.meta.k8s.io \"\" is invalid: resourceVersionMatch: Forbidden: sendInitialEvents requires setting resourceVersionMatch to " \
+                     "NotOlderThan",
         "reason" => "Invalid",
         "details" => {
           "group" => "meta.k8s.io",
