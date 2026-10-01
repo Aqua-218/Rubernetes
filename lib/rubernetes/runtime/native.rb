@@ -1369,7 +1369,9 @@ module Rubernetes
 
         metadata = resource.fetch("metadata", {})
         handle = @cgroup.lookup(metadata["path"] || resource.fetch("id"))
-        raise Platform::Linux::CgroupV2::Error, "cgroup #{resource_key(resource)} identity changed" unless handle.identity == resource.fetch("identity")
+        unless handle.identity == resource.fetch("identity")
+          raise Platform::Linux::CgroupV2::Error, "cgroup #{resource_key(resource)} identity changed"
+        end
 
         @cgroup.kill(handle)
       end
