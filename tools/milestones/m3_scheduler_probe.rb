@@ -304,6 +304,12 @@ M3ProbeSupport.run_report(kind: "m3_scheduler_differential", adapter_name: "sche
     entry
   end
   difference_count = cases.count { |entry| entry["passed"] != true }
+  comparisons = cases.map do |entry|
+    {"id" => entry["id"], "passed" => entry["passed"], "expected_observable" => entry["expected_observable"],
+     "actual_observable" => entry["actual_observable"], "expected_sha256" => entry["oracle_expected_sha256"],
+     "actual_sha256" => entry["evidence_sha256"], "oracle_observation" => entry["oracle_observation"]}
+  end
+  mismatch_count = ->(case_id) { cases.count { |entry| entry["id"] == case_id && !entry["passed"] } }
   oracle = {"executed" => oracle_document.is_a?(Hash), "version" => runner.is_a?(Hash) ? runner["version"] : nil,
             "source_commit" => runner.is_a?(Hash) ? runner["source_commit"] : nil, "runner_sha256" => runner.is_a?(Hash) ? runner["runner_sha256"] : nil,
             "runner" => runner, "execution" => oracle_execution, "input_payload" => M3ProbeSupport.canonical_value(oracle_input),
