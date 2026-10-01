@@ -1,5 +1,7 @@
 # Rubernetes
 
+English | [日本語](README.ja.md)
+
 Rubernetes is an independent, Ruby-first implementation of Kubernetes
 v1.36.2 for Linux: the API server, the Raft datastore, the controllers,
 the scheduler, the node agent with its own container runtime, the Pod
