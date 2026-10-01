@@ -644,9 +644,7 @@ module Rubernetes
       # families here.  These paths/messages are taken from the v1.36.2
       # Validate* functions and are deliberately grouped by rule family.
       def missing_root_errors(root, kind)
-        if kind == "ControllerRevision" && !root.key?("data") && !root.key?("revision")
-          return [issue(%w[data], :required, "data is mandatory")]
-        end
+        return [issue(%w[data], :required, "data is mandatory")] if kind == "ControllerRevision" && !root.key?("data") && !root.key?("revision")
         return [] if root.key?("spec")
 
         issues = []
