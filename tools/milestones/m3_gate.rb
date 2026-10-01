@@ -925,9 +925,7 @@ module M3Gate
         return nil
       end
       errors << "#{label} raw snapshot contains a non-object entry for run #{run_number}" unless raw_entries.all?(Hash)
-      unless snapshot["raw_entry_count"] == raw_entries.length
-        errors << "#{label} raw snapshot entry count is incorrect for run #{run_number}"
-      end
+      errors << "#{label} raw snapshot entry count is incorrect for run #{run_number}" unless snapshot["raw_entry_count"] == raw_entries.length
       unless valid_digest?(snapshot["raw_sha256"]) && snapshot["raw_sha256"] == canonical_document_digest(raw_entries)
         errors << "#{label} raw snapshot digest is invalid for run #{run_number}"
       end
