@@ -31,7 +31,7 @@ class CadvisorMetricsTest < Minitest::Test
       File.write(File.join(pid_dir, "limits"),
                  "Limit                     Soft Limit           Hard Limit           Units\nMax open files            1048576              1048576              files\n")
       File.symlink("socket:[12345]", File.join(pid_dir, "fd", "3"))
-      File.symlink("/dev/null", File.join(pid_dir, "fd", "0"))
+      File.symlink(File::NULL, File.join(pid_dir, "fd", "0"))
       FileUtils.mkdir_p(File.join(proc_root, "777", "net"))
       File.write(File.join(proc_root, "777", "net", "dev"), <<~DEV)
         Inter-|   Receive                                                |  Transmit
