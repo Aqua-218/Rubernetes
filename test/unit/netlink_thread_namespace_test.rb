@@ -21,7 +21,8 @@ class NetlinkThreadNamespaceTest < Minitest::Test
     loop do
       break if File.readlink("/proc/#{@holder}/ns/net") != File.readlink("/proc/self/ns/net")
 
-      flunk "unshare did not create a namespace" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      raise "setup: unshare did not create a namespace" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
       sleep 0.01
     end
     @namespace = File.open("/proc/#{@holder}/ns/net", File::RDONLY)
