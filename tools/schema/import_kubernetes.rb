@@ -720,9 +720,7 @@ module KubernetesCorpusImporter
       openapi.fetch("definitions").each do |definition_name, definition|
         extension = definition.is_a?(Hash) ? definition["x-kubernetes-group-version-kind"] : nil
         next if extension.nil?
-        unless extension.is_a?(Array) && !extension.empty?
-          raise ValidationError, "OpenAPI #{definition_name} has an invalid x-kubernetes-group-version-kind"
-        end
+        raise ValidationError, "OpenAPI #{definition_name} has an invalid x-kubernetes-group-version-kind" unless extension.is_a?(Array) && !extension.empty?
 
         extension.each do |record|
           unless record.is_a?(Hash) && %w[group version kind].all? { |field| record[field].is_a?(String) }
