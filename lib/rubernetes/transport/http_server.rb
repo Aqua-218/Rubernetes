@@ -990,8 +990,6 @@ module Rubernetes
 
         ready = readable ? socket.wait_readable(remaining) : socket.wait_writable(remaining)
         raise RequestTimeout unless ready
-      rescue IOError, Errno::EBADF
-        raise
       end
 
       def invoke_handler(request)
