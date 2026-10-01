@@ -39,7 +39,7 @@ module Rubernetes
           new(election_timeout_min: 0.150, election_timeout_max: 0.300, heartbeat_interval: 0.050,
               batch_max_entries: 256, batch_max_bytes: 1024 * 1024, batch_flush_timeout: 0.002,
               snapshot_entries: 10_000, snapshot_wal_bytes: 128 * 1024 * 1024, snapshot_min_interval: 30.0,
-              max_inflight_appends: 8, snapshot_chunk_bytes: 1024 * 1024)
+              max_inflight_appends: 8, snapshot_chunk_bytes: 1024 * 1024, max_command_bytes: 1_572_864)
         end
 
         # Timing for real processes.  The default above is tuned for the
