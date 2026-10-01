@@ -1622,7 +1622,8 @@ module M3Gate
              case_streams.values.all? { |digest| valid_digest?(digest) }
         errors << "workload oracle input case stream digest binding is incomplete"
       end
-      unless output.is_a?(Hash) && valid_digest?(output["raw_sha256"]) && valid_digest?(output["canonical_sha256"]) && output["bytes"].is_a?(Integer) && output["bytes"] > 0
+      unless output.is_a?(Hash) && valid_digest?(output["raw_sha256"]) && valid_digest?(output["canonical_sha256"]) && output["bytes"].is_a?(Integer) &&
+             output["bytes"] > 0
         errors << "workload oracle output raw and canonical digests are required"
       end
       raw_comparisons = oracle["raw_comparisons"] || oracle["comparisons"]
