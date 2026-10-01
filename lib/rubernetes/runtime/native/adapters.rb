@@ -87,7 +87,7 @@ module Rubernetes
             raise Error, "security probe #{adapters[:security_probe].class} is a fake adapter and cannot be used by a host profile"
           end
 
-          requirements = Requirements.dup
+          requirements = REQUIREMENTS.dup
           requirements.delete(:pidfd) unless %i[kernel_isolation l3].include?(profile.to_sym)
           requirements.each do |name, requirement|
             adapter = adapters[name]
