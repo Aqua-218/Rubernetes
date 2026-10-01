@@ -544,9 +544,7 @@ module Rubernetes
             selector = namespace_selector(attributes.namespace)
             pod_selector = spec(attributes.object)["nodeSelector"] || {}
             selector.each do |key, value|
-              if pod_selector.key?(key) && pod_selector[key] != value
-                reject!("pod node label selector conflicts with its namespace node label selector")
-              end
+              reject!("pod node label selector conflicts with its namespace node label selector") if pod_selector.key?(key) && pod_selector[key] != value
             end
           end
 
