@@ -884,7 +884,12 @@ module Rubernetes
               replicas, utilization, raw, = calculator.resource_replicas(spec_replicas, Integer(target["averageUtilization"]), resource, tolerances,
                                                                          namespace, selector, container)
               current = {"averageUtilization" => utilization, "averageValue" => quantity(resource, raw)}
-              name = container_type ? "#{resource} container resource utilization (percentage of request)" : "#{resource} resource utilization (percentage of request)"
+              name = if container_type
+                       "#{resource} container resource utilization (percentage of request)"
+                     else
+                       "#{resource} resource utilization (percentage " \
+                         "of request)"
+                     end
             else
               raise MetricsClient::MetricsError,
                     "invalid resource metric source: neither an average utilization target nor an average value (usage) target was set"
