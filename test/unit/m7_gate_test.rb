@@ -110,7 +110,8 @@ class M7GateTest < Minitest::Test
     cases.find { |entry| entry["id"] == "fault_jailer_kill" }["residue"]["jail_exists"] = true
     cases.find { |entry| entry["id"] == "cold_boot_lifecycle" }["confinement"]["seccomp"] = "0"
     errors = []
-    M7Gate.send(:validate_report, "kvm", report("m7_kvm_l4_l5_report", cases, "measurement_level" => "L5", "measurement_source" => "real_firecracker_jailer_kvm"),
+    M7Gate.send(:validate_report, "kvm",
+                report("m7_kvm_l4_l5_report", cases, "measurement_level" => "L5", "measurement_source" => "real_firecracker_jailer_kvm"),
                 "m7_kvm_l4_l5_report", identity, errors)
 
     assert errors.any? { |error| error.include?("fault_jailer_kill must leave no residue") }, errors.inspect
