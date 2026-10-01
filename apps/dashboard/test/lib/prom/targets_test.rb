@@ -50,7 +50,11 @@ module Prom
                                     fetched << url
                                     [200, "x 1\n"]
                                   })
-      all = targets.control_plane_targets
+      all = targets.discover
+      jobs = all.group_by(&:job).transform_values(&:length)
+
+      assert_equal({"kubelet" => 2, "cadvisor" => 2, "kubelet-resource" => 2, "kubelet-probes" => 2,
+                    "kubernetes-pods" => 3, "kubernetes-service-endpoints" => 1}, jobs)
 
       assert_equal %w[kube-controller-manager kube-proxy kube-scheduler kube-scheduler-resources], all.map(&:job).sort
       scheduler = all.find { |t| t.job == "kube-scheduler" }
