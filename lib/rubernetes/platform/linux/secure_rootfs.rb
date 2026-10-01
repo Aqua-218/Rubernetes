@@ -251,9 +251,7 @@ module Rubernetes
 
           parent_relative, name = split_parent(relative)
           with_parent(parent_relative, operation: :remove) do |parent|
-            if expected_identity && identity_at(parent.fd, name, relative) != expected_identity
-              raise UnsafePath, "rootfs entry identity changed before removal"
-            end
+            raise UnsafePath, "rootfs entry identity changed before removal" if expected_identity && identity_at(parent.fd, name, relative) != expected_identity
 
             remove_at(parent.fd, name, relative)
           end
