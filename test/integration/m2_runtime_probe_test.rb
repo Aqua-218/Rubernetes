@@ -125,9 +125,7 @@ class M2ProbesTest < Minitest::Test
     assert_equal ["x86_64"], kernel.fetch("required_architectures")
     assert_equal(["x86_64"], runtime.fetch("profiles").map { |profile| profile.fetch("architecture") })
     assert_equal(["x86_64"], kernel.fetch("architectures").map { |profile| profile.fetch("architecture") })
-    if kernel.fetch("architectures").first.fetch("available")
-      assert_operator kernel.fetch("architectures").first.fetch("objects").length, :>, 0
-    end
+    assert_operator kernel.fetch("architectures").first.fetch("objects").length, :>, 0 if kernel.fetch("architectures").first.fetch("available")
 
     refute(runtime.fetch("profiles").any? { |profile| profile.fetch("skip") })
     refute(kernel.fetch("architectures").any? { |profile| profile.fetch("skip") })
