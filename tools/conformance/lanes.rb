@@ -234,7 +234,7 @@ module Conformance
         # Rubernetes serves cluster DNS from the node agent, so only that
         # check is skipped.  The conformance run itself is untouched.
         command = [
-          sonobuoy, "run", "--mode=certified-conformance",
+          sonobuoy, "run", "--mode=certified-conformance", "--skip-preflight=dnscheck",
           "--kubeconfig", kubeconfig,
           "--kubernetes-version=v#{L.profiles.fetch("kubernetes").fetch("tag").delete_prefix("v")}",
           "--kube-conformance-image=#{L.reference_by_digest(L.kubernetes.fetch("conformance_image"))}",
