@@ -303,9 +303,9 @@ module Promql
       load("r", {"k" => "v"}, [1, 2, 3, 4, 5])
       result = @engine.query_range("r * 10", T0 - 60_000, T0, 30_000)
 
-  test "query_range evaluates per step and formats like the HTTP API" do
-    load("r", {"k" => "v"}, [1, 2, 3, 4, 5])
-    result = @engine.query_range("r * 10", T0 - 60_000, T0, 30_000)
+      assert_equal :matrix, result.type
+      assert_equal [[T0 - 60_000, 10.0], [T0 - 30_000, 30.0], [T0, 50.0]], result.value[0].points
+      api = result.to_api
 
     assert_equal :matrix, result.type
     assert_equal [[T0 - 60_000, 10.0], [T0 - 30_000, 30.0], [T0, 50.0]], result.value[0].points
