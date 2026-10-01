@@ -47,7 +47,8 @@ class BuiltinMultiVersionStorageTest < Minitest::Test
                    {"apiVersion" => "autoscaling/v2", "kind" => "HorizontalPodAutoscaler", "metadata" => {"name" => "web"},
                     "spec" => {"scaleTargetRef" => {"kind" => "Deployment", "name" => "web", "apiVersion" => "apps/v1"}, "minReplicas" => 1,
                                "maxReplicas" => 5,
-                               "metrics" => [{"type" => "Resource", "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 70}}},
+                               "metrics" => [{"type" => "Resource",
+                                              "resource" => {"name" => "cpu", "target" => {"type" => "Utilization", "averageUtilization" => 70}}},
                                              {"type" => "Pods",
                                               "pods" => {"metric" => {"name" => "qps"},
                                                          "target" => {"type" => "AverageValue", "averageValue" => "10"}}}]}})
