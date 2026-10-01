@@ -423,9 +423,7 @@ module Rubernetes
           Array(pod.dig("spec", "initContainers")).each do |container|
             cpus = guaranteed_cpus(pod, container)
             if !PodResources.restartable_init?(container)
-              if cpus.zero? && exclusive >= total
-                raise EmptyPodSharedPoolError, "pod rejected, pod has shared init containers but no cpus available for them"
-              end
+              raise EmptyPodSharedPoolError, "pod rejected, pod has shared init containers but no cpus available for them" if cpus.zero? && exclusive >= total
             elsif cpus.zero?
               shared_long_running = true
             else
