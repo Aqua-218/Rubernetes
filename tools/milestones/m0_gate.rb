@@ -840,7 +840,8 @@ module M0Gate
       case name
       when "abi_manifest"
         expected = subjects.find { |entry| entry["source_path"] == "generated/platform/linux/abi/x86_64.json" }
-        unless expected && value["manifest"] == expected["source_path"] && value["manifest_sha256"] == expected["sha256"] && value["manifest_bytes"] == expected["bytes"] && value["mismatch_count"] == 0
+        unless expected && value["manifest"] == expected["source_path"] && value["manifest_sha256"] == expected["sha256"] &&
+               value["manifest_bytes"] == expected["bytes"] && value["mismatch_count"] == 0
           errors << "abi_manifest payload is not bound to the captured ABI subject"
         end
       when "clone3_pid_namespace_mount_proc_pidfd_wait"
