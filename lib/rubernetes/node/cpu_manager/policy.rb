@@ -211,9 +211,7 @@ module Rubernetes
 
           if @options.strict_cpu_reservation
             overlap = @reserved_cpus.intersection(default)
-            unless overlap.empty?
-              raise Error, "some of strictly reserved cpus: #{overlap.to_s.dump} are present in defaultCpuSet: #{default.to_s.dump}"
-            end
+            raise Error, "some of strictly reserved cpus: #{overlap.to_s.dump} are present in defaultCpuSet: #{default.to_s.dump}" unless overlap.empty?
           elsif @reserved_cpus.intersection(default) != @reserved_cpus
             raise Error, "not all reserved cpus: #{@reserved_cpus.to_s.dump} are present in defaultCpuSet: #{default.to_s.dump}"
           end
