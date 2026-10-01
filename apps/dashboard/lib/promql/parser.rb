@@ -566,9 +566,7 @@ module Promql
         without = take.value == "without"
         grouping = parse_grouping
       end
-      if op == "count_values" && !param.is_a?(AST::StringLiteral)
-        raise ParseError.new("count_values needs a string label as first argument", peek.pos)
-      end
+      raise ParseError.new("count_values needs a string label as first argument", peek.pos) if op == "count_values" && !param.is_a?(AST::StringLiteral)
 
       AST::AggregateExpr.new(op, expr, param, grouping || [], without)
     end
