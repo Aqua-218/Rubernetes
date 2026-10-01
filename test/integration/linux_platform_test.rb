@@ -216,17 +216,18 @@ class LinuxPlatformTest < Minitest::Test
   def test_runtime_default_seccomp_allows_subprocess_wait_and_exit
     skip "static busybox is unavailable" unless File.executable?("/usr/bin/busybox")
 
-    security_adapter = Linux::NativeAdapters::SecurityAdapter.new
-    security = Linux::Security.new(adapter: security_adapter)
-    adapter = Linux::NativeAdapters::ProcessGateAdapter.new(
-      namespace_adapter: Object.new,
-      security: security
-    )
-    plan = security.plan({"seccomp" => "RuntimeDefault", "allow_privilege_escalation" => false})
-    process = adapter.spawn(
-      command: ["/usr/bin/busybox", "sh", "-c", "(echo child-ok) & wait"],
-      security_plan: plan
-    )
+    begin
+      security_adapter = Linux::NativeAdapters::SecurityAdapter.new
+      security = Linux::Security.new(adapter: security_adapter)
+      adapter = Linux::NativeAdapters::ProcessGateAdapter.new(
+        namespace_adapter: Object.new,
+        security: security
+      )
+      plan = security.plan({"seccomp" => "RuntimeDefault", "allow_privilege_escalation" => false})
+      process = adapter.spawn(
+        command: ["/usr/bin/busybox", "sh", "-c", "(echo child-ok) & wait"],
+        security_plan: plan
+      )
 
     assert(adapter.release_gate(process.fetch(:gate)))
     status = adapter.wait(pid: process.fetch(:pid), timeout: 3.0)
