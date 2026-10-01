@@ -977,9 +977,7 @@ module Rubernetes
         pair = tls_cache(:client_pair, [certificate, key]) do
           parsed_certificate = OpenSSL::X509::Certificate.new(certificate)
           parsed_key = OpenSSL::PKey.read(key)
-          unless parsed_certificate.check_private_key(parsed_key)
-            raise ConfigurationError, "client certificate does not match client private key"
-          end
+          raise ConfigurationError, "client certificate does not match client private key" unless parsed_certificate.check_private_key(parsed_key)
 
           [parsed_certificate, parsed_key]
         end
