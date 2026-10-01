@@ -143,7 +143,8 @@ class OCIRegistryTest < Minitest::Test
 
   def test_bearer_challenge_rejects_cross_origin_realm_before_sending_basic_credentials
     transport = FakeTransport.new([
-                                    {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://auth.example/token",service="registry.example"'}, body: ""}
+                                    {status: 401, headers: {"www-authenticate" => 'Bearer realm="https://auth.example/token",service="registry.example"'},
+                                     body: ""}
                                   ])
     client = Rubernetes::Image::RegistryClient.new(
       "registry.example/team/app:stable",
