@@ -1550,11 +1550,6 @@
           },
           "201": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.node.v1.RuntimeClass"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.node.v1.RuntimeClass"
