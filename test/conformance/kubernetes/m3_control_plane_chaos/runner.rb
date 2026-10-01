@@ -230,7 +230,7 @@ module M3ControlPlaneChaosRunner
       }
       record["generation"] = generation_for(record)
       @records << record
-      @handles[record.object_id] = pid
+      @handles[record] = pid
       record
     rescue SystemCallError => error
       raise "could not spawn #{role}/#{identity}: #{error.message}"
