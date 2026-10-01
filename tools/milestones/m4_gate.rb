@@ -833,7 +833,8 @@ module M4Gate
             entry["passed"] == true && entry["blocked"] == true &&
             VALID_NODE_CRASH_MEASUREMENT_SOURCES.include?(entry["measurement_source"]) && entry["attempt_count"] == 1
         else
-          unless entry.is_a?(Hash) && entry["passed"] == true && entry["blocked"] == true && entry["measurement_source"] == "production_module" && entry["attempt_count"] == 1
+          unless entry.is_a?(Hash) && entry["passed"] == true && entry["blocked"] == true && entry["measurement_source"] == "production_module" &&
+                 entry["attempt_count"] == 1
             errors << "mount attack case #{index} must be rejected by production module"
           end
         end
