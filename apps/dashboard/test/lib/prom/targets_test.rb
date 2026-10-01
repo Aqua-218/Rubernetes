@@ -3,11 +3,12 @@
 require "test_helper"
 require "tmpdir"
 
-class Prom::TargetsTest < ActiveSupport::TestCase
-  class FakeClient
-    def initialize(objects)
-      @objects = objects
-    end
+module Prom
+  class TargetsTest < ActiveSupport::TestCase
+    class FakeClient
+      def initialize(objects)
+        @objects = objects
+      end
 
     def get(resource, api_version: "v1", **)
       {"items" => @objects.fetch(resource, [])}
