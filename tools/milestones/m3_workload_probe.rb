@@ -276,9 +276,7 @@ module M3Workload
     dynamic_keys = %w[uid resourceVersion creationTimestamp deletionTimestamp time eventTime firstTimestamp lastTimestamp completionTime
                       startTime lastScheduleTime lastSuccessfulTime lastTransitionTime lastUpdateTime lastProbeTime]
     return dynamic_value(key, value) if dynamic_keys.include?(key)
-    if %w[currentRevision updateRevision].include?(key) && value.is_a?(String)
-      return value.sub(/-[bcdfghjklmnpqrstvwxz2456789]{1,10}\z/, "-<generated>")
-    end
+    return value.sub(/-[bcdfghjklmnpqrstvwxz2456789]{1,10}\z/, "-<generated>") if %w[currentRevision updateRevision].include?(key) && value.is_a?(String)
     if key == "conditions" && value.is_a?(Array)
       return canonical(value.sort_by do |condition|
         [condition.is_a?(Hash) ? condition["type"].to_s : "", condition.is_a?(Hash) ? condition["reason"].to_s : ""]
