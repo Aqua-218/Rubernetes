@@ -91,8 +91,8 @@ module Conformance
     def compare(observable, options)
       ours = invoke(observable, options[:kubeconfig])
       theirs = invoke(observable, options[:oracle])
-      normalized_ours = normalize(ours)
-      normalized_theirs = normalize(theirs)
+      normalized_ours = normalize(ours, custom_groups: custom_groups(options[:kubeconfig]))
+      normalized_theirs = normalize(theirs, custom_groups: custom_groups(options[:oracle]))
       {
         "id" => observable.fetch("id"),
         "matches" => normalized_ours == normalized_theirs,
