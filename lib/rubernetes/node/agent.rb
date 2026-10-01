@@ -1598,21 +1598,6 @@ module Rubernetes
       end
       public :sync_node_status, :request_node_status_sync
 
-      # nodeStatusHasChanged: conditions compared without their heartbeat
-      # time (and by type), everything else as it is.
-      def self.node_status_changed?(previous, current)
-        return previous.nil? != current.nil? if previous.nil? || current.nil?
-
-        strip = lambda do |status|
-          copy = JSON.parse(JSON.generate(status))
-          conditions = Array(copy.delete("conditions")).map do |condition|
-            condition.is_a?(Hash) ? condition.except("lastHeartbeatTime") : condition
-          end
-          [copy, conditions.sort_by { |condition| condition.is_a?(Hash) ? condition["type"].to_s : "" }]
-        end
-        strip.call(previous) != strip.call(current)
-      end
-
       def mark_volumes_from_status(status)
         return unless @lifecycle.respond_to?(:mark_volumes_reported_in_use)
 
