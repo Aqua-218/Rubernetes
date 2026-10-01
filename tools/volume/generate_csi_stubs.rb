@@ -48,9 +48,7 @@ module CSIStubGenerator
     gem_path = Gem::Specification.find_by_name("grpc-tools").full_gem_path
     platform_dir = File.join(gem_path, "bin", grpc_tools_platform)
     include_dir = File.join(platform_dir)
-    unless File.file?(File.join(include_dir, "google/protobuf/descriptor.proto"))
-      raise "grpc-tools protobuf include directory is unavailable: #{include_dir}"
-    end
+    raise "grpc-tools protobuf include directory is unavailable: #{include_dir}" unless File.file?(File.join(include_dir, "google/protobuf/descriptor.proto"))
 
     command = [Gem.bin_path("grpc-tools", "grpc_tools_ruby_protoc"), "-I", File.dirname(proto_path),
                "-I", include_dir, "--ruby_out=#{generated_dir}", "--grpc_out=#{generated_dir}", proto_path]
