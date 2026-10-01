@@ -620,7 +620,7 @@ module Rubernetes
         @known_keys.key?(key)
       end
 
-      def has_field?(name)
+      def field?(name)
         fields.key?(name.to_s)
       end
 
