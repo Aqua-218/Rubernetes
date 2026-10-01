@@ -315,9 +315,12 @@ module Promql
       assert_raises(Promql::EvalError) { @engine.query_range("r[1m]", T0 - 30_000, T0, 30_000) }
     end
 
-    assert_equal [4.0, 4.0], scalar_range.value[0].points.map(&:last)
-    assert_raises(Promql::EvalError) { @engine.query_range("r[1m]", T0 - 30_000, T0, 30_000) }
-  end
+    test "parser rejects what Prometheus rejects" do
+      ["sum(", "up offset", "rate(up)", "up and 1", "{}", '{job=~".*"}', "1 == 1", "topk(up)", "unknown_fn(up)",
+       'label_replace(up, "a")', "up[5m] + 1"].each do |bad|
+        assert_raises(Promql::ParseError, "#{bad.inspect} should not parse") { Promql::Parser.parse(bad) }
+      end
+      good = Promql::Parser.parse('sum by (job) (rate(http_requests_total{code=~"5.."}[5m] offset 1h)) > bool 0.1')
 
   test "parser rejects what Prometheus rejects" do
     ["sum(", "up offset", "rate(up)", "up and 1", "{}", '{job=~".*"}', "1 == 1", "topk(up)", "unknown_fn(up)",
