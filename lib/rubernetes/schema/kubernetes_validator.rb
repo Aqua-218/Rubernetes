@@ -565,7 +565,8 @@ module Rubernetes
       end
 
       def label_key_errors(key, path)
-        if key.match?(%r{\A(?:[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]\z}) && key.split("/").last.length <= 63
+        if key.match?(%r{\A(?:[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]\z}) &&
+           key.split("/").last.length <= 63
           return []
         end
 
