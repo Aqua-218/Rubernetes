@@ -227,8 +227,11 @@ module Rubernetes
           buffer = leftover.dup
           result = "".b
           loop do
-            line_end = raw.index("\r\n", offset)
-            break if line_end.nil?
+            line_end = buffer.index("\r\n")
+            if line_end.nil?
+              fill_buffer(buffer, socket)
+              next
+            end
 
             size = raw.byteslice(offset, line_end - offset).split(";").first.to_s.strip.to_i(16)
             break if size.zero?
