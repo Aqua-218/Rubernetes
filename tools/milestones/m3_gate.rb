@@ -752,9 +752,7 @@ module M3Gate
         end
         errors << "reconcile idempotency case #{index} did not pass" unless entry["passed"] == true
         errors << "reconcile idempotency case #{index} must execute exactly twice" unless entry["execution_count"] == 2
-        unless entry["manager_class"].to_s.end_with?("::Manager")
-          errors << "reconcile idempotency case #{index} must use production Manager"
-        end
+        errors << "reconcile idempotency case #{index} must use production Manager" unless entry["manager_class"].to_s.end_with?("::Manager")
         backend_class = entry["store_backend_class"].to_s
         errors << "reconcile idempotency case #{index} must use production StoreAdapter" unless entry["store_class"] == "Rubernetes::Controller::StoreAdapter" &&
                                                                                                 (backend_class.end_with?("::MemoryStore") || backend_class == "M3TransientMemoryStore")
