@@ -943,9 +943,7 @@ module M3Gate
         errors << "#{label} duplicate semantic API effect keys detected in run #{run_number}: #{duplicate_effect_keys.keys.join(", ")}"
       end
       duplicate_event_keys = inventory.fetch("event_effect_key_counts").select { |_key, count| count > 1 }
-      unless duplicate_event_keys.empty?
-        errors << "#{label} duplicate controller events detected in run #{run_number}: #{duplicate_event_keys.keys.join(", ")}"
-      end
+      errors << "#{label} duplicate controller events detected in run #{run_number}: #{duplicate_event_keys.keys.join(", ")}" unless duplicate_event_keys.empty?
       duplicate_event_signatures = inventory.fetch("event_signature_counts").select { |_signature, count| count > 1 }
       errors << "#{label} duplicate controller event signatures detected in run #{run_number}" unless duplicate_event_signatures.empty?
       duplicate_provider_keys = inventory.fetch("provider_effect_key_counts").select { |_key, count| count > 1 }
