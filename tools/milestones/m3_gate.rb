@@ -756,8 +756,11 @@ module M3Gate
         errors << "reconcile idempotency case #{index} must execute exactly twice" unless entry["execution_count"] == 2
         errors << "reconcile idempotency case #{index} must use production Manager" unless entry["manager_class"].to_s.end_with?("::Manager")
         backend_class = entry["store_backend_class"].to_s
-        errors << "reconcile idempotency case #{index} must use production StoreAdapter" unless entry["store_class"] == "Rubernetes::Controller::StoreAdapter" &&
-                                                                                                (backend_class.end_with?("::MemoryStore") || backend_class == "M3TransientMemoryStore")
+        unless entry["store_class"] == "Rubernetes::Controller::StoreAdapter" &&
+               (backend_class.end_with?("::MemoryStore") || backend_class == "M3TransientMemoryStore")
+          errors << "reconcile idempotency case #{index} must use production " \
+                    "StoreAdapter"
+        end
         first_observable = entry["first_effect_observable"]
         # A status-subresource write is an update for conflict/retry purposes
         # (upstream issues it as its own PUT and retries it on Conflict).
