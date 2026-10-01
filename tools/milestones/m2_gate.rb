@@ -1699,9 +1699,7 @@ module M2Gate
       errors << "#{label} inventory_diff_sha256 is required" unless valid_digest?(measurement["inventory_diff_sha256"])
       if valid_digest?(measurement["inventory_diff_sha256"])
         expected_digest = canonical_document_digest({"before" => before, "after" => after, "diff" => diff})
-        unless measurement["inventory_diff_sha256"] == expected_digest
-          errors << "#{label} inventory_diff_sha256 does not match canonical content"
-        end
+        errors << "#{label} inventory_diff_sha256 does not match canonical content" unless measurement["inventory_diff_sha256"] == expected_digest
       end
       %w[live_leak_count orphan_count live_wrong_deletion_count].each do |key|
         errors << "#{label} inventory #{key} must be zero" unless measurement[key] == 0
