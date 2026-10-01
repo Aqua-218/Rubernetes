@@ -389,7 +389,8 @@ module M2LifecycleOracleNodeImage
       docker("run", "-d", "--name", alias_container, "--network", network, "--network-alias", "host.docker.internal", alias_image)
       config = File.join(scratch, "kind.yaml")
       File.write(config,
-                 "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnetworking:\n  apiServerAddress: 127.0.0.1\n  apiServerPort: #{API_SERVER_PORT}\nnodes:\n- role: control-plane\n")
+                 "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nnetworking:\n  apiServerAddress: 127.0.0.1\n  apiServerPort: " \
+                 "#{API_SERVER_PORT}\nnodes:\n- role: control-plane\n")
       stdout, stderr, status = run(kind, "create", "cluster", "--name", name, "--image", reference, "--config", config, "--kubeconfig", File.join(scratch, "kubeconfig"), "--wait", "0", "--retain",
                                    env: {"KIND_EXPERIMENTAL_DOCKER_NETWORK" => network}, timeout: 600, allow_failure: true)
       unless status.success? || "#{stdout}#{stderr}".include?("failed to get api server port")
