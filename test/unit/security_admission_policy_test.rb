@@ -173,7 +173,8 @@ class SecurityAdmissionPolicyTest < Minitest::Test
         patch = [{"op" => "add", "path" => "/metadata/annotations", "value" => {"mutated" => "yes"}}]
         [200,
          {"apiVersion" => review["apiVersion"], "kind" => "AdmissionReview",
-          "response" => {"uid" => uid, "allowed" => true, "patchType" => "JSONPatch", "patch" => [JSON.generate(patch)].pack("m0"), "warnings" => ["be careful"]}}]
+          "response" => {"uid" => uid, "allowed" => true, "patchType" => "JSONPatch", "patch" => [JSON.generate(patch)].pack("m0"),
+                         "warnings" => ["be careful"]}}]
       when "https://deny.example/"
         [200,
          {"response" => {"uid" => uid, "allowed" => false,
