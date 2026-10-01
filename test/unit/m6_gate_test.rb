@@ -100,7 +100,8 @@ class M6GateTest < Minitest::Test
     cases << {"id" => "gate_corpus", "passed" => true, "gate_count" => 225}
     errors = []
     M6Gate.send(:validate_report, "feature_gate", report("m6_feature_gate_matrix", cases, "measurement_level" => "differentially_tested",
-                                                                                          "profiles" => {"default" => [], "all-beta" => [], "alpha-apis" => []}, "sources" => sources),
+                                                                                          "profiles" => {"default" => [], "all-beta" => [],
+                                                                                                         "alpha-apis" => []}, "sources" => sources),
                 "m6_feature_gate_matrix", manifest_identity, errors)
 
     assert(errors.any? { |error| error.include?("profile-default") })
