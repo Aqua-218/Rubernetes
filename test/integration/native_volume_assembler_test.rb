@@ -237,8 +237,6 @@ class NativeVolumeAssemblerIntegrationTest < Minitest::Test
       expected = Marshal.load(Marshal.dump(base))
       expected["volume"]["csi"]["identity"]["name"] = "test.csi"
       unavailable = assert_raises(Rubernetes::Bootstrap::Config::Error) do
-        expected = Marshal.load(Marshal.dump(base))
-        expected["volume"]["csi"]["identity"]["name"] = "test.csi"
         assembler.send(:build_volume, expected, adapters: {csi: StartupCSI.new(ready: false)})
       end
       assert_match(/not ready/, unavailable.message)
