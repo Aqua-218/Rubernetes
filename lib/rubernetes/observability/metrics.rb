@@ -663,7 +663,8 @@ module Rubernetes
         register("apiserver_request_duration_seconds", type: :histogram, buckets: REQUEST_DURATION_BUCKETS,
                                                        help: "Response latency distribution in seconds for each verb, group, version, resource and scope.")
         register("apiserver_response_sizes", type: :histogram, buckets: RESPONSE_SIZE_BUCKETS,
-                                             help: "Response size distribution in bytes for each group, version, verb, resource, subresource, scope and component.")
+                                             help: "Response size distribution in bytes for each group, version, verb, resource, subresource, scope and " \
+                                                   "component.")
         register("apiserver_current_inflight_requests", type: :gauge,
                                                         help: "Maximal number of currently used inflight request limit of this apiserver per request kind in last second.")
         register("apiserver_longrunning_requests", type: :gauge,
