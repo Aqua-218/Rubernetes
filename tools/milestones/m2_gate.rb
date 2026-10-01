@@ -1215,9 +1215,7 @@ module M2Gate
         errors << "#{label} comparison #{index} must run exactly once" unless comparison["attempt_count"] == 1
         expected = comparison["expected_sha256"]
         actual = comparison["actual_sha256"]
-        unless comparison["expected_source"] == "kubernetes_external"
-          errors << "#{label} comparison #{index} expected source must be external Kubernetes"
-        end
+        errors << "#{label} comparison #{index} expected source must be external Kubernetes" unless comparison["expected_source"] == "kubernetes_external"
         unless comparison["actual_source"] == LIFECYCLE_SEMANTICS_ACTUAL_SOURCE
           errors << "#{label} comparison #{index} actual source must be #{LIFECYCLE_SEMANTICS_ACTUAL_SOURCE}"
         end
