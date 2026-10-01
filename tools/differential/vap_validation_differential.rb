@@ -34,7 +34,8 @@ module VAPValidationDifferential
     if D.maybe(random, 0.3)
       spec["matchConditions"] = Array.new(random.rand(1..2)) do |i|
         {"name" => "m#{i}", "expression" => D.pick(random, [" object.metadata.name == 'a' ", "'a'", "params.x == 1", "request.operation == 'CREATE'",
-                                                            "authorizer.group('').resource('pods').check('get').allowed()", "variables.v0 == 1", "object.spec"])}
+                                                            "authorizer.group('').resource('pods').check('get').allowed()", "variables.v0 == " \
+                                                                                                                            "1", "object.spec"])}
       end
     end
     if D.maybe(random, 0.3)
