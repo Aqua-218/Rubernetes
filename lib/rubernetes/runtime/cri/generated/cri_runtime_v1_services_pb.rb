@@ -198,7 +198,8 @@ module Rubernetes
               rpc :CheckpointContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CheckpointContainerRequest,
                   ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CheckpointContainerResponse
               # GetContainerEvents gets container events from the CRI runtime
-              rpc :GetContainerEvents, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::GetEventsRequest, stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerEventResponse)
+              rpc :GetContainerEvents, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::GetEventsRequest,
+                  stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerEventResponse)
               # ListMetricDescriptors gets the descriptors for the metrics that will be returned in ListPodSandboxMetrics.
               # This list should be static at startup: either the client and server restart together when
               # adding or removing metrics descriptors, or they should not change.
