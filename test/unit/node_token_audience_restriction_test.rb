@@ -74,11 +74,8 @@ class NodeTokenAudienceRestrictionTest < Minitest::Test
                                          service_account_issuer: S::Authentication::ServiceAccount.new(
                                            issuer: "https://kubernetes.default.svc", signing_key: OpenSSL::PKey::RSA.new(2048),
                                            api_audiences: ["https://kubernetes.default.svc"],
-                                           lookup: S::Authentication::ServiceAccount::Lookup.new(service_account: lambda { |*|
-                                           }, pod: lambda { |*|
-                                              }, secret: lambda { |*|
-                                                 }, node: lambda { |*|
-                                                    })
+                                           lookup: S::Authentication::ServiceAccount::Lookup.new(service_account: ->(*) {}, pod: ->(*) {},
+                                                                                                 secret: ->(*) {}, node: ->(*) {})
                                          ))
     call = ->(method, path,
               body = nil) { server.call(Rubernetes::API::Request.new(method: method, path: path, headers: {"content-type" => "application/json"}, body: body && JSON.generate(body))) }
