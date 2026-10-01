@@ -2677,7 +2677,10 @@ module Rubernetes
                                               error_handler: lambda do |error|
                                                 log(:warn, "proxy.watch_error", error: error.class.name,
                                                                                 message: error.message.to_s[0, 500],
-                                                                                cause: error.respond_to?(:cause) && error.cause ? error.cause.message.to_s[0, 300] : nil,
+                                                                                cause: if error.respond_to?(:cause) &&
+                                                                                  error.cause
+                                                                                         error.cause.message.to_s[0, 300]
+                                                                                       end,
                                                                                 backtrace: Array(error.backtrace).first(4))
                                               end)
           raise Config::Error, "rubernetes-proxy could not start Service/EndpointSlice watch loops" if @subscriptions.empty?
