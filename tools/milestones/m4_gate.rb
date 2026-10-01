@@ -637,9 +637,7 @@ module M4Gate
         unless entry.is_a?(Hash) && entry["passed"] == true && entry["measurement_source"] == "production_module" && entry["attempt_count"] == 1
           errors << "proxy backend #{index} must pass from production module"
         end
-        unless entry.is_a?(Hash) && valid_digest?(entry["packet_trace_sha256"])
-          errors << "proxy backend #{index} must record a packet trace"
-        end
+        errors << "proxy backend #{index} must record a packet trace" unless entry.is_a?(Hash) && valid_digest?(entry["packet_trace_sha256"])
         unless entry.is_a?(Hash) && entry["kernel_readback"].is_a?(Hash) && entry["kernel_readback"]["readback"] == true && entry["kernel_readback"]["rules"].is_a?(Array) && !entry["kernel_readback"]["rules"].empty?
           errors << "proxy backend #{index} must reference verified kernel readback"
         end
