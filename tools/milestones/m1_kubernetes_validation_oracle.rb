@@ -1804,9 +1804,7 @@ module M1KubernetesValidationOracle
     collaborator_imports = collaborators.filter_map { |collaborator| collaborator["import"] }.uniq.sort
     helpers = collaborators.filter_map { |collaborator| collaborator["helper"] }.uniq.sort
     helper_imports = ["k8s.io/apimachinery/pkg/api/meta"]
-    if helpers.include?("policy_getter")
-      helper_imports << "k8s.io/apimachinery/pkg/api/errors" << "k8s.io/kubernetes/pkg/apis/admissionregistration"
-    end
+    helper_imports << "k8s.io/apimachinery/pkg/api/errors" << "k8s.io/kubernetes/pkg/apis/admissionregistration" if helpers.include?("policy_getter")
     # Only API packages register themselves on the scheme; apimachinery's
     # meta/v1 types are already registered by every group's AddToScheme.
     registrable = lambda { |path|
