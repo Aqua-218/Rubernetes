@@ -883,10 +883,6 @@ module Rubernetes
                    end
         value.nil? ? required : Integer(value) | required
       end
-
-      def self.secure(root:, adapter: nil, resolver: nil)
-        new(root: root, adapter: adapter, resolver: resolver, require_openat2: true)
-      end
     end
 
     Openat2PathValidator = PathSecurity unless const_defined?(:Openat2PathValidator, false)
