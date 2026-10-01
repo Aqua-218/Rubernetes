@@ -189,7 +189,9 @@ module Rubernetes
                                                                                    help: "Admission sub-step latency histogram in seconds, broken out for " \
                                                                                          "each operation and API resource and step type (validate or admit).")
           registry.register("apiserver_admission_controller_admission_duration_seconds", type: :histogram, buckets: STEP_BUCKETS,
-                                                                                         help: "Admission controller latency histogram in seconds, identified by name and broken out for each operation and API resource and type (validate or admit).")
+                                                                                         help: "Admission controller latency histogram in seconds, " \
+                                                                                               "identified by name and broken out for each operation and " \
+                                                                                               "API resource and type (validate or admit).")
           registry.register("apiserver_admission_webhook_admission_duration_seconds", type: :histogram, buckets: WEBHOOK_BUCKETS,
                                                                                       help: "Admission webhook latency histogram in seconds, identified by name and broken out for each operation and API resource and type (validate or admit).")
           registry.register("apiserver_admission_webhook_rejection_count", type: :counter,
