@@ -1037,7 +1037,12 @@ module Rubernetes
                                   Support.value(current, "reason", "") == REASON_NEW_RS_AVAILABLE
             if @c.progress_deadline?(d) && !complete_deployment
               if deployment_complete?(new_status)
-                message = new_rs ? "ReplicaSet \"#{Support.name(new_rs)}\" has successfully progressed." : "Deployment \"#{Support.name(d)}\" has successfully progressed."
+                message = if new_rs
+                            "ReplicaSet \"#{Support.name(new_rs)}\" has successfully progressed."
+                          else
+                            "Deployment \"#{Support.name(d)}\" has " \
+                              "successfully progressed."
+                          end
                 @c.set_condition!(new_status, @c.new_condition("Progressing", "True", REASON_NEW_RS_AVAILABLE, message, @now))
               elsif deployment_progressing?(new_status)
                 message = new_rs ? "ReplicaSet \"#{Support.name(new_rs)}\" is progressing." : "Deployment \"#{Support.name(d)}\" is progressing."
