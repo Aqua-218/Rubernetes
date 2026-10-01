@@ -682,7 +682,8 @@ module Rubernetes
                                               help: "[DEPRECATED, consider using apiserver_resource_objects instead] Number of stored objects at the time of " \
                                                     "last check split by kind. In case of a fetching error, the value will be -1.")
         register("apiserver_resource_objects", type: :gauge,
-                                               help: "Number of stored objects at the time of last check split by kind. In case of a fetching error, the value will be -1.")
+                                               help: "Number of stored objects at the time of last check split by kind. In case of a fetching error, the " \
+                                                     "value will be -1.")
       end
 
       def register_process_defaults
