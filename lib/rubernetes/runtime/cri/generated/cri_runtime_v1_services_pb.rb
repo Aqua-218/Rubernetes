@@ -195,7 +195,8 @@ module Rubernetes
               # Status returns the status of the runtime.
               rpc :Status, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StatusRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StatusResponse
               # CheckpointContainer checkpoints a container
-              rpc :CheckpointContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CheckpointContainerRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CheckpointContainerResponse
+              rpc :CheckpointContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CheckpointContainerRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CheckpointContainerResponse
               # GetContainerEvents gets container events from the CRI runtime
               rpc :GetContainerEvents, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::GetEventsRequest, stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerEventResponse)
               # ListMetricDescriptors gets the descriptors for the metrics that will be returned in ListPodSandboxMetrics.
