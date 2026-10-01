@@ -609,15 +609,9 @@ module Rubernetes
             length = value.length
             return result if finish.value == start.value
 
-            if start.value >= length || start.value.negative?
-              raise Error.new("array index out of bounds: index #{start.value}, length #{length}", values)
-            end
-            if finish.value > length || finish.value.negative?
-              raise Error.new("array index out of bounds: index #{finish.value - 1}, length #{length}", values)
-            end
-            if start.value > finish.value
-              raise Error.new("starting index #{start.value} is greater than ending index #{finish.value}", values)
-            end
+            raise Error.new("array index out of bounds: index #{start.value}, length #{length}", values) if start.value >= length || start.value.negative?
+            raise Error.new("array index out of bounds: index #{finish.value - 1}, length #{length}", values) if finish.value > length || finish.value.negative?
+            raise Error.new("starting index #{start.value} is greater than ending index #{finish.value}", values) if start.value > finish.value
 
             slice = value[start.value...finish.value]
             stride = 1
