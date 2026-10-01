@@ -4,15 +4,16 @@ require "test_helper"
 require "tmpdir"
 require "socket"
 
-class Prom::ScraperTest < ActiveSupport::TestCase
-  M = Tsdb::Store::Matcher
+module Prom
+  class ScraperTest < ActiveSupport::TestCase
+    M = Tsdb::Store::Matcher
 
-  def setup
-    @dir = Dir.mktmpdir("scraper")
-    @store = Tsdb::Store.new(@dir)
-    @now = 1_700_000_000_000
-    @scraper = Prom::Scraper.new(@store, timeout_seconds: 2, clock: -> { @now })
-  end
+    def setup
+      @dir = Dir.mktmpdir("scraper")
+      @store = Tsdb::Store.new(@dir)
+      @now = 1_700_000_000_000
+      @scraper = Prom::Scraper.new(@store, timeout_seconds: 2, clock: -> { @now })
+    end
 
   def teardown
     @store.close
