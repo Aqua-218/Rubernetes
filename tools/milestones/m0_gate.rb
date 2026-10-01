@@ -166,9 +166,7 @@ module M0Gate
         validate_time(command["finished_at"], errors, "command #{command["name"]} finished_at")
         command_started = parse_time(command["started_at"])
         command_finished = parse_time(command["finished_at"])
-        if command_started && command_finished && command_finished < command_started
-          errors << "command #{command["name"].inspect} time interval is invalid"
-        end
+        errors << "command #{command["name"].inspect} time interval is invalid" if command_started && command_finished && command_finished < command_started
         if previous_finished && command_started && command_started < previous_finished
           errors << "command #{command["name"].inspect} starts before the previous command finished"
         end
