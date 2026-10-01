@@ -30,7 +30,7 @@ module M2AttackProbe
                 # A whiteout whose target resolves to the root is rejected;
                 # accepting it would let an untrusted layer remove the whole
                 # rootfs rather than one child entry.
-                gzip_layer { |tar| tar.add_file_simple(".wh..", 0o600, 0) {} }
+                gzip_layer { |tar| tar.add_file_simple(".wh..", 0o600, 0) { nil } }
               when "symlink_race"
                 gzip_layer do |tar|
                   tar.add_symlink("redirect", "target", 0o777)
