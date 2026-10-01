@@ -2177,7 +2177,8 @@ module M1Gate
         collaborators = entry["collaborators"]
         if mode == "constructor" && collaborators.is_a?(Array) && !collaborators.empty?
           collaborators.each do |collaborator|
-            unless collaborator.is_a?(Hash) && non_empty_string?(collaborator["implementation"]) && non_empty_string?(collaborator["source_path"]) && non_empty_string?(collaborator["expression"])
+            unless collaborator.is_a?(Hash) && non_empty_string?(collaborator["implementation"]) && non_empty_string?(collaborator["source_path"]) &&
+                   non_empty_string?(collaborator["expression"])
               errors << "#{label} ledger entry #{index} collaborator provenance is incomplete"
             end
           end
