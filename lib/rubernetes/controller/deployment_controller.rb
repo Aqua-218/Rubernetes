@@ -1054,7 +1054,12 @@ module Rubernetes
                 end
                 @c.set_condition!(new_status, condition)
               elsif deployment_timed_out?(new_status)
-                message = new_rs ? "ReplicaSet \"#{Support.name(new_rs)}\" has timed out progressing." : "Deployment \"#{Support.name(d)}\" has timed out progressing."
+                message = if new_rs
+                            "ReplicaSet \"#{Support.name(new_rs)}\" has timed out progressing."
+                          else
+                            "Deployment \"#{Support.name(d)}\" has timed out " \
+                              "progressing."
+                          end
                 @c.set_condition!(new_status, @c.new_condition("Progressing", "False", REASON_TIMED_OUT, message, @now))
               end
             end
