@@ -1416,6 +1416,7 @@ module M1Gate
         else
           errors << "API surface discovery endpoint #{index} served endpoint must not carry a default-off reason" unless entry["availability_reason"].nil?
         end
+        errors << "API surface discovery endpoint #{index} expected source is invalid" unless entry["expected_source"] == "pinned_kubernetes_discovery"
         errors << "API surface discovery endpoint #{index} oracle source is invalid" unless entry["oracle_source"] == "kubernetes_external"
         errors << "API surface discovery endpoint #{index} Rubernetes source is invalid" unless entry["rubernetes_source"] == "rubernetes"
         errors << "API surface discovery endpoint #{index} comparison scope is invalid" unless entry["comparison_scope"] == "full_semantic"
