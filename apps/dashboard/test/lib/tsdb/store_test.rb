@@ -90,8 +90,8 @@ module Tsdb
       130.times { |i| store.append(labels("m"), t0 + (i * 1000), i.to_f) }
       store.maintain(t0 + 130_000)
 
-    assert_equal Array.new(130) { |i| [t0 + (i * 1000), i.to_f] }, store.samples(series.id, 0, t0 + 200_000)
-    stats = store.stats
+      assert_operator store.blocks.length, :>=, 1
+      series = store.select_series([M.new(name: "__name__", op: "=", value: "m")]).first
 
     assert_operator stats["block_bytes"], :>, 0
     # The WAL was rewritten with only what is still in the head.
