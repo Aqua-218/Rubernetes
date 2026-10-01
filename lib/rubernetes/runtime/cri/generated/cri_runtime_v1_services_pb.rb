@@ -253,7 +253,7 @@ module Rubernetes
 
               self.marshal_class_method = :encode
               self.unmarshal_class_method = :decode
-              self.service_name = 'runtime.v1.ImageService'
+              self.service_name = "runtime.v1.ImageService"
 
               # ListImages lists existing images.
               rpc :ListImages, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListImagesRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListImagesResponse
