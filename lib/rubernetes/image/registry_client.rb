@@ -477,8 +477,8 @@ module Rubernetes
       def fetch_document(image_reference, locator, expected_digest: nil, expected_size: nil, index_digest: nil)
         path = "/v2/#{image_reference.repository}/manifests/#{locator}"
         accept = (MediaTypes::MANIFEST_TYPES + MediaTypes::INDEX_TYPES).join(", ")
-        response = request("GET", path, accept: accept, scope: "repository:#{image_reference.repository}:pull", 
-max_bytes: @max_manifest_bytes)
+        response = request("GET", path, accept: accept, scope: "repository:#{image_reference.repository}:pull",
+                                        max_bytes: @max_manifest_bytes)
         ensure_success!(response, "GET #{path}")
         verify_response_digest!(response.body, expected_digest || (image_reference.digest if image_reference.digest), 
                                 response["docker-content-digest"])
