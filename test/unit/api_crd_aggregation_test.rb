@@ -142,8 +142,10 @@ class APICRDAggregationTest < Minitest::Test
          body: {"apiVersion" => "v1", "kind" => "Service", "metadata" => {"name" => "metrics"},
                 "spec" => {"ports" => [{"port" => 443, "targetPort" => 4443}], "selector" => {"app" => "metrics"}}})
     slice = call("POST", "/apis/discovery.k8s.io/v1/namespaces/kube-system/endpointslices",
-                 body: {"apiVersion" => "discovery.k8s.io/v1", "kind" => "EndpointSlice", "metadata" => {"name" => "metrics-1", "labels" => {"kubernetes.io/service-name" => "metrics"}},
-                        "addressType" => "IPv4", "ports" => [{"port" => 4443}], "endpoints" => [{"addresses" => ["10.0.0.9"], "conditions" => {"ready" => true}}]})
+                 body: {"apiVersion" => "discovery.k8s.io/v1", "kind" => "EndpointSlice",
+                        "metadata" => {"name" => "metrics-1", "labels" => {"kubernetes.io/service-name" => "metrics"}},
+                        "addressType" => "IPv4", "ports" => [{"port" => 4443}],
+                        "endpoints" => [{"addresses" => ["10.0.0.9"], "conditions" => {"ready" => true}}]})
 
     assert_equal 201, slice.status, slice.body.inspect
     assert wait_until(seconds: 15) {
