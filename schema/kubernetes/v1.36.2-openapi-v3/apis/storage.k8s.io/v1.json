@@ -902,7 +902,11 @@
             "type": "string"
           },
           "volumeMode": {
-            "description": "volumeMode defines if a volume is intended to be used with a formatted filesystem or to remain in raw block state. Value of Filesystem is implied when not included in spec.",
+            "description": "volumeMode defines if a volume is intended to be used with a formatted filesystem or to remain in raw block state. Value of Filesystem is implied when not included in spec.\n\nPossible enum values:\n - `\"Block\"` means the volume will not be formatted with a filesystem and will remain a raw block device.\n - `\"Filesystem\"` means the volume will be or is formatted with a filesystem.",
+            "enum": [
+              "Block",
+              "Filesystem"
+            ],
             "type": "string"
           },
           "vsphereVolume": {
