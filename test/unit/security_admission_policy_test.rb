@@ -235,7 +235,8 @@ class SecurityAdmissionPolicyTest < Minitest::Test
     @context.put("validatingwebhookconfigurations", nil, "fail",
                  {"metadata" => {"name" => "fail"},
                   "webhooks" => [{"name" => "broken.example", "clientConfig" => {"url" => "https://broken.example/"}, "rules" => [rule],
-                                  "sideEffects" => "None", "admissionReviewVersions" => ["v1"], "failurePolicy" => "Fail"}]}, group: "admissionregistration.k8s.io")
+                                  "sideEffects" => "None", "admissionReviewVersions" => ["v1"], "failurePolicy" => "Fail"}]},
+                 group: "admissionregistration.k8s.io")
     error = assert_raises(A::Rejected) { validating.validate(attributes("CREATE", object: deployment(replicas: 1))) }
     assert_equal 500, error.code
     assert_match(/failed calling webhook "broken.example"/, error.message)
