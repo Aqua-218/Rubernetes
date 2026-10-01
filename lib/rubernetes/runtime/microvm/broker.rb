@@ -62,9 +62,8 @@ module Rubernetes
             id: identity.fetch("capability_id"), subject_id: identity.fetch("subject_id"), vm_id: vm_id,
             policy_digest: identity.fetch("policy_digest"), revocation_epoch: identity.fetch("revocation_epoch"),
             expires_at: policy["expires_at"], operations: Array(policy["operations"]).map(&:to_s),
-            allowed_hosts: Array(policy["allowed_hosts"]).map(&:to_s), allowed_cidrs: Array(policy["allowed_cidrs"]).map do |cidr|
-                                                                         IPAddr.new(cidr)
-                                                                       end,
+            allowed_hosts: Array(policy["allowed_hosts"]).map(&:to_s),
+            allowed_cidrs: Array(policy["allowed_cidrs"]).map { |cidr| IPAddr.new(cidr) },
             allowed_ports: Array(policy["allowed_ports"]).map(&:to_i)
           )
           @mutex.synchronize { @capabilities[vm_id] = capability }
