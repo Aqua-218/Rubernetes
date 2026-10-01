@@ -38,7 +38,7 @@ module Rubernetes
 
               self.marshal_class_method = :encode
               self.unmarshal_class_method = :decode
-              self.service_name = 'runtime.v1.RuntimeService'
+              self.service_name = "runtime.v1.RuntimeService"
 
               # Version returns the runtime name, runtime version, and runtime API version.
               rpc :Version, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::VersionRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::VersionResponse
