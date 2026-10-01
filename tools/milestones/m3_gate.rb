@@ -724,9 +724,7 @@ module M3Gate
         unless entry["metadata_digest"] == expected_binding["metadata_digest"]
           errors << "controller registry entry #{index} metadata digest is not bound to the authoritative corpus"
         end
-        unless entry["binding_digest"] == expected_binding["binding_digest"]
-          errors << "controller registry entry #{index} binding digest is invalid"
-        end
+        errors << "controller registry entry #{index} binding digest is invalid" unless entry["binding_digest"] == expected_binding["binding_digest"]
       end
       %w[duplicate_count missing_count unexpected_count unregistered_count failure_count binding_failure_count].each do |key|
         errors << "controller registry #{key} must be zero" unless document[key] == 0
