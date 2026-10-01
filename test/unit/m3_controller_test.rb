@@ -424,7 +424,8 @@ class M3ControllerTest < Minitest::Test
   def stateful_set(replicas:)
     value = object("StatefulSet", "db", uid: "uid-set")
     value["spec"] = {"replicas" => replicas, "selector" => {"matchLabels" => {"app" => "db"}},
-                     "serviceName" => "db", "template" => {"metadata" => {"labels" => {"app" => "db"}}, "spec" => {"containers" => [{"name" => "db", "image" => "example/db:1"}]}}}
+                     "serviceName" => "db", "template" => {"metadata" => {"labels" => {"app" => "db"}},
+                                                           "spec" => {"containers" => [{"name" => "db", "image" => "example/db:1"}]}}}
     value
   end
 
