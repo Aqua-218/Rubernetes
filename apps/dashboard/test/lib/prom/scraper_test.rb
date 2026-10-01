@@ -25,10 +25,10 @@ module Prom
       Prom::Target.new(job: job, instance: instance, labels: labels, url: "http://#{instance}/metrics", fetch: fetch)
     end
 
-  def value_of(name, extra = {})
-    matchers = [M.new(name: "__name__", op: "=", value: name)] + extra.map { |k, v| M.new(name: k, op: "=", value: v) }
-    @store.query(matchers, 0, @now + 1).map { |series, points| [series.labels, points.last] }
-  end
+    def value_of(name, extra = {})
+      matchers = [M.new(name: "__name__", op: "=", value: name)] + extra.map { |k, v| M.new(name: k, op: "=", value: v) }
+      @store.query(matchers, 0, @now + 1).map { |series, points| [series.labels, points.last] }
+    end
 
   test "samples get job and instance labels, conflicts become exported_" do
     body = "# TYPE a counter\na{path=\"/x\",job=\"inner\"} 5\nb 1\n"
