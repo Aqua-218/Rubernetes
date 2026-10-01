@@ -86,77 +86,28 @@ cd apps/dashboard && bundle install
 RUBERNETES_KUBECONFIG=$KUBECONFIG bin/rails server -p 3000
 ```
 
-`rake m3:evidence` writes controller/scheduler/leader/watch reports below
-`artifacts/milestones/M3/`; `rake m4:evidence` writes network/policy/proxy/volume/mount reports
-below `artifacts/milestones/M4/`. Both runners record host/kernel/Ruby identity, timestamps,
-commands, result counts, artifact digests, source-input stability, and a zero Git-metadata check.
+Open `http://localhost:3000`. The dashboard scrapes every API server,
+kubelet endpoint and annotated Pod/Service into its own store, so it is also
+a Prometheus data source for Grafana (`/api/v1/query` and friends).
 
-## Project Boundaries
+## Repository layout
 
-- [`lib/rubernetes/`](lib/rubernetes/README.md) owns production Ruby policy and state machines.
-- [`ext/rubernetes_linux/`](ext/README.md) is limited to ABI shims that Ruby FFI cannot express safely.
-- [`schema/`](schema/README.md) is compiler input; [`generated/`](generated/README.md) is reproducible output and is never hand-edited.
-- [`test/`](test/README.md) separates unit, integration, upstream Conformance, compatibility, chaos, security, and performance evidence.
-- [`verification/`](verification/README.md) contains TLA+, Lean, and implementation-trace artifacts.
-- [`tools/`](tools/README.md) contains Ruby-first schema, conformance, verification, and release automation.
-- [`third_party/locks/`](third_party/locks/README.md) pins every upstream source, runner, binary, and image by digest.
-- [`exe/`](exe/README.md) reserves thin process entry points without shipping false-success stubs.
+| Path | Contents |
+|---|---|
+| [`lib/rubernetes/`](lib/rubernetes/README.md) | Production code, one directory per subsystem (`api/`, `consensus/`, `controller/`, `scheduler/`, `node/`, `runtime/`, `network/`, `proxy/`, `volume/`, `security/`, `schema/`, `observability/`, …) |
+| [`exe/`](exe/README.md) | The six executables; they parse options and hand over to `lib/rubernetes/bootstrap` |
+| [`ext/rubernetes_linux/`](ext/README.md) | The C ABI shim (`clone3` + exec, typed syscalls); no policy lives here |
+| `schema/` → `generated/` | The imported Kubernetes v1.36.2 schema, OpenAPI and defaults corpus, and the reproducible Ruby types, RBS, codecs and Manifest DSL compiled from it. `generated/` is never hand-edited |
+| [`spec/`](spec/README.md) | The normative specification and design documents |
+| [`test/`](test/README.md) | Unit, property, integration, e2e, chaos, security and compatibility suites, plus the conformance harness profiles |
+| [`tools/`](tools/README.md) | Ruby automation: schema import and generation, conformance (`cluster.rb`, lanes, Hydrophone), milestone probes and gates, formal verification runners, release artifacts, the commit recorder |
+| [`verification/`](verification/README.md) | TLA+ and Lean models (Raft, runtime lifecycle, bounded framing, KV sequential spec) and trace schemas |
+| [`third_party/locks/`](third_party/locks/README.md) | Every upstream source, image, runner binary and build input, pinned by commit and digest |
+| [`deploy/`](deploy/cluster/README.md) | systemd units and operator procedures |
+| [`apps/dashboard/`](apps/dashboard/README.md) | The Rails dashboard / metrics server |
+| `benchmarks/`, `artifacts/` | Benchmarks and (ignored) evidence bundles |
 
-## Related
-
-- [Specification entry](spec.md)
-- [Architecture](spec/foundation/architecture.md)
-- [Coding standards](spec/delivery/coding-standards.md)
-
-## M8 — Kubernetes compatibility
-
-`tools/conformance/run.rb` executes the K0–K7 lanes from
-[the compatibility contract](spec/verification/kubernetes-compatibility.md) and
-writes a run manifest per profile. A lane whose prerequisites are missing
-reports `INCOMPLETE` with the reason; it never substitutes a mock or reuses
-another run's result, and the M8 gate rejects any `INCOMPLETE` lane.
-
-- `test/compatibility/api/selection-ledger.json` classifies all 7 579 upstream
-  e2e specs (5 644 required, 992 platform-inapplicable, 924 provider-private,
-  19 implementation-internal) with zero unclassified and zero unlinked external
-  contracts, generated from a real Ginkgo dry-run by
-  `tools/conformance/build_selection_ledger.rb`.
-- `test/compatibility/projects/corpus.yml` pins 32 upstream projects (32 Helm
-  charts, 21 operators, 19 with CRD+webhook, 12 with StatefulSet+PVC) covering
-  all nine required domains; every chart carries the SHA-256 of the archive
-  pulled and all 78 images are pinned by registry digest.
-- `test/compatibility/clients/matrix.yml` pins kubectl v1.35.8, v1.36.2 and
-  v1.37.0 by their published checksums, covering the whole supported skew.
-
-`rake m8:lanes` runs the lanes, `rake m8:evidence` captures the bundle and
-`rake m8:verify` gates it.
-
-## M9 — Release
-
-`tools/release/` produces the release evidence: `sbom.rb` (CycloneDX 1.5,
-deterministic), `release_manifest.rb` (binds the source inventory digest),
-`loc_report.rb` (Ruby ratio, counting the native extension), `reproduce.rb`
-(byte-identical rebuild), `security_report.rb` (advisories, unpinned inputs,
-claim levels, undated markers), `benchmark.rb` (against a Kubernetes v1.36.2
-oracle) and `soak.rb` (72 hours, append-only journal).
-
-A soak shorter than 72 hours, a benchmark with no oracle, or a missing
-clean-host reproduction is reported as not satisfied rather than passed.
-`rake m9:artifacts` generates the artifacts, `rake m9:verify` gates them.
-
-## Repository recording
-
-The work tree is recorded into commits by `tools/repo/auto_commit.rb`, a
-recorder that never asks for a message: every contiguous edit becomes one
-commit named after the declaration it lands in (`feat(node): extend start`),
-a new or deleted file becomes one commit, and generated records report their
-status transition and headline field changes.  Sources are committed before
-tests, tools, docs and generated output.  The snapshot is taken once into a
-scratch index, written as a single `git fast-import` stream and published with
-a compare-and-swap on HEAD, so a run that overlaps another commit retries
-instead of clobbering, and an interrupted run leaves the repository untouched.
-The author is whoever `git var GIT_AUTHOR_IDENT` names; no other trailer is
-added.
+## Development
 
 ```sh
 rake repo:commit                              # record everything, one commit per edit
