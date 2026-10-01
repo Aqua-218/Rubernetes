@@ -583,7 +583,8 @@ module Rubernetes
                                                                                          "its containers are reported as " \
                                                                                          "started and observed via watch")
         @registry.register("kubelet_pod_start_duration_seconds", type: :histogram, buckets: POD_START_BUCKETS,
-                                                                 help: "Duration in seconds from kubelet seeing a pod for the first time to the pod starting to run")
+                                                                 help: "Duration in seconds from kubelet seeing a pod for the first time to the pod " \
+                                                                       "starting to run")
         # volume/util/metrics.go and volumemanager/metrics.
         @registry.register("storage_operation_duration_seconds", type: :histogram, buckets: STORAGE_BUCKETS,
                                                                  help: "Storage operation duration")
