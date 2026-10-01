@@ -124,9 +124,7 @@ module KubernetesBootstrapImporter
         sleep 2
         return
       end
-      if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
-        raise "#{path} was not bootstrapped (#{document["items"].length} < #{minimum})"
-      end
+      raise "#{path} was not bootstrapped (#{document["items"].length} < #{minimum})" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
 
       sleep 0.5
     end
