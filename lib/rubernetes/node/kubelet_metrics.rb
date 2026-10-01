@@ -577,8 +577,10 @@ module Rubernetes
         @registry.register("kubelet_runtime_operations_duration_seconds", type: :histogram, buckets: RUNTIME_BUCKETS,
                                                                           help: "Duration in seconds of runtime operations. Broken down by operation type.")
         @registry.register("kubelet_first_network_pod_start_sli_duration_seconds", type: :gauge,
-                                                                                   help: "[INTERNAL] Duration in seconds to start the first network pod, excluding time to pull images and run " \
-                                                                                         "init containers, measured from pod creation timestamp to when all its containers are reported as " \
+                                                                                   help: "[INTERNAL] Duration in seconds to start the first network pod, " \
+                                                                                         "excluding time to pull images and run " \
+                                                                                         "init containers, measured from pod creation timestamp to when all " \
+                                                                                         "its containers are reported as " \
                                                                                          "started and observed via watch")
         @registry.register("kubelet_pod_start_duration_seconds", type: :histogram, buckets: POD_START_BUCKETS,
                                                                  help: "Duration in seconds from kubelet seeing a pod for the first time to the pod starting to run")
