@@ -374,10 +374,10 @@ module Rubernetes
           return false unless schema.is_a?(Hash)
           return true unless Array(schema["x-kubernetes-validations"]).empty?
 
-          (schema["properties"] || {}).values.any? { |child| has_validations?(child) } ||
-            has_validations?(schema["items"]) || has_validations?(schema["additionalProperties"]) ||
-            %w[allOf anyOf oneOf].any? { |combinator| Array(schema[combinator]).any? { |child| has_validations?(child) } } ||
-            has_validations?(schema["not"])
+          (schema["properties"] || {}).values.any? { |child| validations?(child) } ||
+            validations?(schema["items"]) || validations?(schema["additionalProperties"]) ||
+            %w[allOf anyOf oneOf].any? { |combinator| Array(schema[combinator]).any? { |child| validations?(child) } } ||
+            validations?(schema["not"])
         end
 
         def validate_value(value, schema, path, causes, root: false)
