@@ -1498,12 +1498,8 @@ module M2Gate
         errors << "resource ledger #{key} must be zero" unless document[key] == 0
       end
       cycle_reuse_count = cycles.sum { |cycle| integer?(cycle["resource_reuse_count"]) ? cycle["resource_reuse_count"] : 0 }
-      unless document["resource_reuse_count"] == cycle_reuse_count
-        errors << "resource ledger aggregate resource reuse count must equal cycle counts"
-      end
-      unless document["failure_injection_count"].to_i >= REQUIRED_EFFECT_POINTS.length
-        errors << "resource ledger must inject every required effect point"
-      end
+      errors << "resource ledger aggregate resource reuse count must equal cycle counts" unless document["resource_reuse_count"] == cycle_reuse_count
+      errors << "resource ledger must inject every required effect point" unless document["failure_injection_count"].to_i >= REQUIRED_EFFECT_POINTS.length
       errors << "resource ledger digest is required" unless valid_digest?(document["ledger_sha256"])
       if valid_digest?(document["ledger_sha256"])
         canonical_payload = {
