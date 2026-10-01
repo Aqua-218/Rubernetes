@@ -232,7 +232,8 @@ module Rubernetes
               # - It is the expectation of the Kubelet that these fields are static for the lifecycle of the Kubelet.
               #   The Kubelet will not re-request the RuntimeConfiguration after startup, and CRI implementations should
               #   avoid updating them without a full node reboot.
-              rpc :RuntimeConfig, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RuntimeConfigRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RuntimeConfigResponse
+              rpc :RuntimeConfig, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RuntimeConfigRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RuntimeConfigResponse
               # UpdatePodSandboxResources synchronously updates the PodSandboxConfig with
               # the pod-level resource configuration. This method is called _after_ the
               # Kubelet reconfigures the pod-level cgroups.
