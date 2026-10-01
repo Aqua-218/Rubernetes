@@ -173,11 +173,13 @@ module Rubernetes
         @global_mutex.synchronize { @global ||= new(apiserver: false, process: false) }
       end
 
-      # Drops the process-wide registry so the next `global` starts empty.
-      # For tests that assert what one component serves: in a real process
-      # only that component's code records here, in a test process every
-      # earlier test did.
-      def self.reset_global!
+      # Swaps the process-wide registry and returns the previous one.  For
+      # tests that assert what one component serves: in a real process only
+      # that component's code records here, in a test process every earlier
+      # test did.  The caller puts the previous registry back afterwards, so
+      # objects that memoized it (HTTP clients, work queues) keep recording
+      # into the registry the rest of the process still reads.
+      def self.replace_global!(registry)
         @global_mutex ||= Mutex.new
         @global_mutex.synchronize { @global = nil }
       end
