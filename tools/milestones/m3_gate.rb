@@ -1611,7 +1611,8 @@ module M3Gate
     def validate_workload_oracle_provenance(oracle, errors)
       input = oracle["input"]
       output = oracle["output"]
-      unless input.is_a?(Hash) && valid_digest?(input["raw_sha256"]) && valid_digest?(input["canonical_sha256"]) && input["bytes"].is_a?(Integer) && input["bytes"] > 0
+      unless input.is_a?(Hash) && valid_digest?(input["raw_sha256"]) && valid_digest?(input["canonical_sha256"]) && input["bytes"].is_a?(Integer) &&
+             input["bytes"] > 0
         errors << "workload oracle input raw and canonical digests are required"
       end
       case_streams = input.is_a?(Hash) ? input["case_stream_sha256"] : nil
