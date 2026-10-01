@@ -160,9 +160,9 @@ module Prom
       assert_equal 1, collector.targets.length
     end
 
-  test "a binary-encoded body yields UTF-8 labels the index can match" do
-    body = "# TYPE http_requests_total counter\nhttp_requests_total{path=\"/caf\u00e9\"} 3\n".b
-    status = @scraper.scrape(target(body))
+    test "a binary-encoded body yields UTF-8 labels the index can match" do
+      body = "# TYPE http_requests_total counter\nhttp_requests_total{path=\"/caf\u00e9\"} 3\n".b
+      status = @scraper.scrape(target(body))
 
     assert_equal "up", status.health
     rows = value_of("http_requests_total", "path" => "/caf\u00e9")
