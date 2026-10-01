@@ -172,9 +172,7 @@ module Rubernetes
           value = annotations.is_a?(Hash) ? annotations[LB_SOURCE_RANGES] : nil
           unless value.nil?
             path = ["metadata", "annotations", LB_SOURCE_RANGES]
-            unless fetch(spec, "type").to_s == "LoadBalancer"
-              issues << issue(path, :forbidden, "may only be used when `type` is 'LoadBalancer'")
-            end
+            issues << issue(path, :forbidden, "may only be used when `type` is 'LoadBalancer'") unless fetch(spec, "type").to_s == "LoadBalancer"
             old_annotations = old.is_a?(Hash) ? dig_path(old, %w[metadata annotations]) : nil
             old_value = old_annotations.is_a?(Hash) ? old_annotations[LB_SOURCE_RANGES] : nil
             if old.nil? || old_value != value
