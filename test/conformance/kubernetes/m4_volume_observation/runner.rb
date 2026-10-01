@@ -352,9 +352,7 @@ module M4VolumeObservationRunner
       end
       restart_result = finish(restart)
       record["restart_result"] = restart_result.merge("stdout" => restart_result["stdout"]&.reject { |key, _| key == "worker" })
-      unless restart_result["exit_status"] == 0
-        @errors << "#{label}: restart lifecycle failed: #{restart_result["stderr"].to_s.strip.lines.last}"
-      end
+      @errors << "#{label}: restart lifecycle failed: #{restart_result["stderr"].to_s.strip.lines.last}" unless restart_result["exit_status"] == 0
       final_host = host_mounts_under(scenario_dir)
       record["host_mounts_under_scenario_after_restart"] = final_host.map { |entry| entry["line"] }
       @errors << "#{label}: mounts remain in the host namespace after restart cleanup" unless final_host.length == before_host.length
