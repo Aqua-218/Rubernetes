@@ -2029,11 +2029,6 @@
         "responses": {
           "200": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.certificates.v1.CertificateSigningRequest"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.certificates.v1.CertificateSigningRequest"
