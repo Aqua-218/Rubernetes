@@ -18,13 +18,6 @@ module Prom
         Struct.new(:status, :body).new(200, "proxied #{path}\n")
       end
     end
-  end
-
-  def pod(name, ns, ip, annotations, node: "worker-0", phase: "Running")
-    {"metadata" => {"name" => name, "namespace" => ns, "annotations" => annotations},
-     "spec" => {"nodeName" => node, "containers" => [{"name" => "c", "ports" => [{"containerPort" => 8080}]}]},
-     "status" => {"podIP" => ip, "phase" => phase}}
-  end
 
   test "discovers kubelet endpoints, annotated pods and annotated services" do
     objects = {
