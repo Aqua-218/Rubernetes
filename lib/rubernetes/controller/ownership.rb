@@ -150,9 +150,7 @@ module Rubernetes
         values = Array(objects)
         deleted_objects = Array(deleted)
         policy = propagation_policy.to_s.downcase.to_sym
-        unless %i[background foreground orphan].include?(policy)
-          raise ArgumentError, "propagation policy must be :background, :foreground, or :orphan"
-        end
+        raise ArgumentError, "propagation policy must be :background, :foreground, or :orphan" unless %i[background foreground orphan].include?(policy)
 
         cycle_paths = cycles(values)
         events = cycle_paths.map do |path|
