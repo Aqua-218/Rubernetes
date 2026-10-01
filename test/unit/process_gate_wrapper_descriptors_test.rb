@@ -25,7 +25,7 @@ class ProcessGateWrapperDescriptorsTest < Minitest::Test
     end
     unrelated_writer.close
 
-    ready = IO.select([unrelated_reader], nil, nil, 2.0)
+    ready = unrelated_reader.wait_readable(2.0)
 
     refute_nil ready, "the child must have closed its copy of the unrelated pipe"
     assert_nil unrelated_reader.read(1), "EOF: nobody else holds the write end"
