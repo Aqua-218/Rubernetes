@@ -776,6 +776,6 @@ module M2LifecycleProbe
   end
 end
 
-M2ProbeSupport.run_probe("m2_pod_lifecycle_trace", "m2-lifecycle-probe") do |_current, _input|
-  M2LifecycleProbe.run(_input)
+M2ProbeSupport.run_probe("m2_pod_lifecycle_trace", "m2-lifecycle-probe") do |_current, input|
+  M2LifecycleProbe.run(input)
 end
