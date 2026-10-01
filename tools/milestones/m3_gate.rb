@@ -802,8 +802,8 @@ module M3Gate
         second_snapshot = entry["second_run_raw_snapshot"]
         errors << "reconcile idempotency case #{index} must record a first-run raw snapshot" unless first_snapshot.is_a?(Hash)
         errors << "reconcile idempotency case #{index} must record a second-run raw snapshot" unless second_snapshot.is_a?(Hash)
-        if first_snapshot.is_a?(Hash) && !(entry["first_run_snapshot"] == first_snapshot &&
-                                                                                                     entry["first_run_raw_entries"] == first_snapshot["raw_entries"])
+        if first_snapshot.is_a?(Hash) &&
+           !(entry["first_run_snapshot"] == first_snapshot && entry["first_run_raw_entries"] == first_snapshot["raw_entries"])
           errors << "reconcile idempotency case #{index} first-run snapshot aliases disagree"
         end
         if second_snapshot.is_a?(Hash) && !(entry["second_run_snapshot"] == second_snapshot &&
