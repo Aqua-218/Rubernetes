@@ -242,7 +242,7 @@ class LinuxPlatformTest < Minitest::Test
       rescue StandardError
         nil
       end
-      process&.values_at(:stdout, :stderr)&.compact&.each { |io| io.close unless io.closed? }
+      process&.values_at(:stdout, :stderr)&.each { |io| io.close if io && !io.closed? }
     end
   end
 
