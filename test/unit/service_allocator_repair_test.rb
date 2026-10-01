@@ -75,7 +75,8 @@ class ServiceAllocatorRepairTest < Minitest::Test
     store.create(resource: resource, namespace: "team", object: {"apiVersion" => "v1", "kind" => "Service",
                                                                  "metadata" => {"name" => "b", "namespace" => "team", "uid" => "b-uid"},
                                                                  "spec" => {"type" => "NodePort", "clusterIP" => "10.96.0.9", "clusterIPs" => ["10.96.0.9"],
-                                                                            "ports" => [{"port" => 80, "nodePort" => 30_001}, {"port" => 81, "nodePort" => 40_000}]}})
+                                                                            "ports" => [{"port" => 80, "nodePort" => 30_001},
+                                                                                        {"port" => 81, "nodePort" => 40_000}]}})
     report = @server.service_allocator.repair!
 
     assert_equal 1, report["port_errors"]["duplicate"]
