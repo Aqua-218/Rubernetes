@@ -374,9 +374,7 @@ module Rubernetes
         @mutex.synchronize do
           mount = mount_for_identity(identity)
           return false unless mount
-          if expected && !identity_matches?(mount, expected)
-            raise MountIdentityError, "refusing to remove mount #{identity}: stable identity changed"
-          end
+          raise MountIdentityError, "refusing to remove mount #{identity}: stable identity changed" if expected && !identity_matches?(mount, expected)
 
           @mounts.delete(mount.identity)
           persist!(removed: [mount.identity])
