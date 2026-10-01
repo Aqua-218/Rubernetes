@@ -40,7 +40,8 @@ module Rubernetes
               "semantic Time, Quantity, IntOrString, and RawExtension conversion",
               "unknown fields inside synthetic map-entry messages"
             ].freeze,
-            "enum_note" => "The pinned Kubernetes generated.proto corpus declares no protobuf enums; enum sampling remains supported when descriptors declare them."
+            "enum_note" => "The pinned Kubernetes generated.proto corpus declares no protobuf enums; enum sampling remains supported when descriptors " \
+                           "declare them."
           }.freeze
 
           class CoverageError < Error
