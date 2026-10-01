@@ -477,9 +477,5 @@ class M4VolumeSecurityTest < Minitest::Test
       openat2&.close
       FileUtils.remove_entry(directory) if directory && File.exist?(directory)
     end
-  ensure
-    lease&.close
-    openat2&.close
-    FileUtils.remove_entry(directory) if directory && File.exist?(directory)
   end
 end
