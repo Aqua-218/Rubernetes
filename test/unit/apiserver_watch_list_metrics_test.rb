@@ -50,7 +50,7 @@ class APIServerWatchListMetricsTest < Minitest::Test
   end
 
   def test_a_plain_watch_is_not_a_watch_list
-    call("GET", "/api/v1/configmaps?watch=true&timeoutSeconds=1").body.each { |_event| break }
+    call("GET", "/api/v1/configmaps?watch=true&timeoutSeconds=1").body.each { |_event| break } # rubocop:disable Lint/UnreachableLoop -- reads one event from the stream
 
     refute_match(/^apiserver_watch_list_duration_seconds_count/, @metrics.render)
   end
