@@ -421,7 +421,10 @@ module Rubernetes
                        starting_token: Types.key(request, "startingToken"))
         when "ControllerExpandVolume" then expand(
           Types.key(request, "volumeId"), Types.key(request, "capacityRange", {})["requiredBytes"], token: token,
-                                                                                                    secrets: Types.key(request, "secrets", {}), volume_capability: Types.key(request, "volumeCapability")
+                                                                                                    secrets: Types.key(request, "secrets",
+                                                                                                                       {}),
+                                                                                                    volume_capability: Types.key(request,
+                                                                                                                                 "volumeCapability")
         )
         when "NodeStageVolume" then stage(Types.key(request, "volumeId"), Types.key(request, "stagingTargetPath"), token: token,
                                                                                                                    readonly: Types.key(request, "readonly",
