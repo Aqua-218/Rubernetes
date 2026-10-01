@@ -267,9 +267,7 @@ module Rubernetes
         preserve_allocations(service, existing)
         drop_type_dependent_fields(service, existing)
         allocate_cluster_ips!(service) if needs_cluster_ip?(service) && Array(service.dig("spec", "clusterIPs")).empty?
-        if !needs_cluster_ip?(service) && needs_cluster_ip?(existing) && headless?(service) == false && external_name?(service)
-          release_cluster_ips!(existing)
-        end
+        release_cluster_ips!(existing) if !needs_cluster_ip?(service) && needs_cluster_ip?(existing) && headless?(service) == false && external_name?(service)
         allocate_node_ports!(service, existing: existing)
         service
       end
