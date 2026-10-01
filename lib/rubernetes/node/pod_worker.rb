@@ -134,7 +134,7 @@ module Rubernetes
       # (the kubelet itself exits on SIGTERM without waiting for any Pod).
       def stop(drain: true, join: true, timeout: nil)
         if drain
-          drain_queue
+          drain(timeout: timeout)
         else
           clear_queue
         end
