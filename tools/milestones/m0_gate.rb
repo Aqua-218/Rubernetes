@@ -678,10 +678,11 @@ module M0Gate
         next unless entry.is_a?(Hash) && nonempty?(entry["path"])
 
         source = File.join(ROOT, entry["path"])
-        unless safe_component_chain?(ROOT,
-                                     source) && File.file?(source) && !File.symlink?(source) && Digest::SHA256.file(source).hexdigest == entry["sha256"] && File.size(source) == entry["bytes"]
-          errors << "native boundary scan source is stale or unsafe #{entry["path"]}"
-        end
+        next if safe_component_chain?(ROOT,
+                                      source) && File.file?(source) && !File.symlink?(source) && Digest::SHA256.file(source).hexdigest == entry["sha256"] &&
+                File.size(source) == entry["bytes"]
+
+        errors << "native boundary scan source is stale or unsafe #{entry["path"]}"
       end
       findings = document["findings"]
       unless findings.is_a?(Array)
