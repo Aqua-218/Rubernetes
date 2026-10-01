@@ -523,9 +523,7 @@ module Rubernetes
       def validate_platform!(config, target)
         image_os = config["os"]
         image_architecture = config["architecture"]
-        if image_os && image_os.to_s != target.os
-          raise ManifestError, "image config OS #{image_os.inspect} does not match #{target.os.inspect}"
-        end
+        raise ManifestError, "image config OS #{image_os.inspect} does not match #{target.os.inspect}" if image_os && image_os.to_s != target.os
         if image_architecture && Platform::ARCHITECTURES.fetch(image_architecture.to_s, image_architecture.to_s) != target.architecture
           raise ManifestError, "image config architecture #{image_architecture.inspect} does not match #{target.architecture.inspect}"
         end
