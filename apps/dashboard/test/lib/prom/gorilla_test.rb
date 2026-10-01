@@ -44,8 +44,14 @@ module Prom
       assert_equal [], Prom::Gorilla.decode([0].pack("n"))
     end
 
-    assert_equal samples, decoded
-  end
+    test "irregular and large timestamp gaps use the wider delta-of-delta buckets" do
+      t = 0
+      samples = []
+      [1, 1, 5000, 10_000, 70_000, 600_000, 10_000_000, 1, 1, 3_000_000_000].each_with_index do |gap, i|
+        t += gap
+        samples << [t, i.to_f]
+      end
+      _, decoded = roundtrip(samples)
 
   test "timestamps must not go backwards" do
     encoder = Prom::Gorilla::Encoder.new
