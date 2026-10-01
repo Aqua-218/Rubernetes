@@ -77,8 +77,8 @@ module Prom
       assert_match(/ECONNREFUSED/, status.last_error)
     end
 
-  test "parse errors and timeouts are recorded as failures" do
-    status = @scraper.scrape(target("this is not{ metrics\n"))
+    test "parse errors and timeouts are recorded as failures" do
+      status = @scraper.scrape(target("this is not{ metrics\n"))
 
     assert_equal "down", status.health
     assert_match(/parse error/, status.last_error)
