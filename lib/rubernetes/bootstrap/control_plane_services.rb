@@ -2274,7 +2274,8 @@ module Rubernetes
         # Strategic merge: conditions merge by type.  A JSON merge patch
         # replaced the whole list and took Ready away from a running victim.
         @client.patch("pods", {"status" => {"conditions" => [condition]}}, type: :strategic,
-                                                                           namespace: victim.namespace, api_version: "v1", name: victim.name, subresource: "status")
+                                                                           namespace: victim.namespace, api_version: "v1", name: victim.name,
+                                                                           subresource: "status")
       rescue Client::APIError => error
         # A victim that vanished, or whose status we may not write, must not
         # stop the preemption it was chosen for.
