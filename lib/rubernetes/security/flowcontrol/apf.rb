@@ -1548,7 +1548,11 @@ module Rubernetes
               (verbs.include?("*") || verbs.include?(attributes.verb)) &&
                 (groups.include?("*") || groups.include?(attributes.api_group)) &&
                 (resources.include?("*") || resources.include?(attributes.resource) || resources.include?(attributes.resource_with_subresource)) &&
-                (attributes.namespace.empty? ? (resource_rule["clusterScope"] == true || namespaces.include?("*")) : (namespaces.include?("*") || namespaces.include?(attributes.namespace)))
+                (if attributes.namespace.empty?
+                   resource_rule["clusterScope"] == true || namespaces.include?("*")
+                 else
+                   namespaces.include?("*") || namespaces.include?(attributes.namespace)
+                 end)
             end
           else
             Array(rule["nonResourceRules"]).any? do |non_resource_rule|
