@@ -12,10 +12,10 @@ module Dashboard
       saved.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
     end
 
-  test "allowed hosts default to local names plus the external URL host" do
-    with_env("DASHBOARD_HOSTS" => nil, "DASHBOARD_EXTERNAL_URL" => "https://dashboard.dev.provn-vm.jp/",
-             "DASHBOARD_BIND" => "10.240.0.1") do
-      hosts = Dashboard::Config.allowed_hosts
+    test "allowed hosts default to local names plus the external URL host" do
+      with_env("DASHBOARD_HOSTS" => nil, "DASHBOARD_EXTERNAL_URL" => "https://dashboard.dev.provn-vm.jp/",
+               "DASHBOARD_BIND" => "10.240.0.1") do
+        hosts = Dashboard::Config.allowed_hosts
 
       assert_includes hosts, "localhost"
       assert_includes hosts, "10.240.0.1"
