@@ -251,11 +251,8 @@ class CRIBackendTest < Minitest::Test
       rescue IOError
         nil
       end
-    rescue IOError
-      nil
-    end
-    @backend.run_sandbox(pod)
-    @backend.create_container("sb1", spec)
+      @backend.run_sandbox(pod)
+      @backend.create_container("sb1", spec)
 
     assert_equal true, @backend.tcp_socket("c1", {"port" => port}, timeout: 2)["success"]
     result = @backend.http_get("c1", {"port" => port, "path" => "healthz"}, timeout: 2)
