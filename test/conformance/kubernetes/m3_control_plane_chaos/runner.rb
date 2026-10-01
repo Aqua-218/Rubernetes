@@ -28,7 +28,10 @@ module M3ControlPlaneChaosRunner
   RUNNER_PATH = File.expand_path(__FILE__).freeze
   require File.join(ROOT, "lib", "rubernetes", "controller", "effect_journal")
   SHA256_PATTERN = /\A[0-9a-f]{64}\z/
-  BLOCKER = "M3 external-process evidence is blocked: no worker-restart shared API/store with replayable watch history, compare-and-swap leases, and effect IDs is configured; M3 requires the shared API/store process to survive worker SIGKILL, but does not require M5 disk-durable Raft or API-server HA. Provide a project-owned shared API/store or set RUBERNETES_M3_DURABLE_API_COMMAND, RUBERNETES_M3_DURABLE_API_ENDPOINT, and RUBERNETES_M3_DURABLE_API_CAPABILITIES before running the controller/scheduler chaos harness"
+  BLOCKER = "M3 external-process evidence is blocked: no worker-restart shared API/store with replayable watch history, compare-and-swap leases, and effect " \
+            "IDs is configured; M3 requires the shared API/store process to survive worker SIGKILL, but does not require M5 disk-durable Raft or API-server " \
+            "HA. Provide a project-owned shared API/store or set RUBERNETES_M3_DURABLE_API_COMMAND, RUBERNETES_M3_DURABLE_API_ENDPOINT, and " \
+            "RUBERNETES_M3_DURABLE_API_CAPABILITIES before running the controller/scheduler chaos harness"
 
   BUILT_IN_CAPABILITIES = {
     "backend" => "project_owned_apiserver_memorystore",
