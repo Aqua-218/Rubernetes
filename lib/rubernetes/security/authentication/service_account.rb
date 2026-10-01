@@ -100,7 +100,9 @@ module Rubernetes
         # OpenID discovery documents served at /.well-known/openid-configuration and /openid/v1/jwks.
         def jwks
           published = @external_signer ? @external_signer.discovery_keys.to_h { |key| [key.key_id, key.key] } : @static_verification_keys
-          {"keys" => published.map { |kid, key| JWT.to_jwk(key).merge("use" => "sig", "kid" => kid, "alg" => key.is_a?(OpenSSL::PKey::EC) ? "ES256" : "RS256") }}
+          {"keys" => published.map do |kid, key|
+            JWT.to_jwk(key).merge("use" => "sig", "kid" => kid, "alg" => key.is_a?(OpenSSL::PKey::EC) ? "ES256" : "RS256")
+          end}
         end
 
         def openid_configuration
