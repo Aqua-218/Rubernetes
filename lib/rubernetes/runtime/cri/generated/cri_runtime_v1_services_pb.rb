@@ -245,6 +245,7 @@ module Rubernetes
 
             Stub = Service.rpc_stub_class
           end
+
           module ImageService
             # ImageService defines the public APIs for managing images.
             class Service
