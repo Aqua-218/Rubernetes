@@ -396,9 +396,7 @@ module Rubernetes
         if process_config["l3"] == true && !%w[kernel_isolation l3].include?(normalized_profile)
           raise Error, "rubernetes-agent.l3 requires kernel_isolation or l3 runtime_profile"
         end
-        if normalized_profile == "l3" && process_config["l3"] != true
-          raise Error, "rubernetes-agent.l3 must be true for the l3 runtime_profile"
-        end
+        raise Error, "rubernetes-agent.l3 must be true for the l3 runtime_profile" if normalized_profile == "l3" && process_config["l3"] != true
 
         validate_network!(process_config["network"], "rubernetes-agent.network") if process_config.key?("network")
         validate_volume!(process_config["volume"], "rubernetes-agent.volume") if process_config.key?("volume")
