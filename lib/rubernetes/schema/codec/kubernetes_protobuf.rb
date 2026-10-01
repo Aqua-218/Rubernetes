@@ -811,9 +811,7 @@ module Rubernetes
           if field.message?
             type = registry.type_for(field)
             expected = Protobuf::WIRE_LENGTH_DELIMITED
-            unless wire[:wire_type] == expected
-              raise DecodeError, "field #{field.json_name} has wire type #{wire[:wire_type]}, expected #{expected}"
-            end
+            raise DecodeError, "field #{field.json_name} has wire type #{wire[:wire_type]}, expected #{expected}" unless wire[:wire_type] == expected
 
             return decode_special_or_message(type, wire[:value])
           end
