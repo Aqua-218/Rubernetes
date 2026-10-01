@@ -3530,7 +3530,7 @@ module Rubernetes
       end
 
       def send_signal(container_id, signal)
-        @runtime.public_send(:signal, container_id, signal)
+        @runtime.signal(container_id, signal)
       rescue ArgumentError => error
         raise unless error.message.include?("wrong number") || error.message.include?("unknown keyword")
 
