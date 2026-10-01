@@ -486,7 +486,8 @@ module Rubernetes
           if (old_spec["NodeSelector"] || {}).any? { |key, value| new_selector[key] != value }
             issues << ValidationIssue.new(path: %w[spec nodeSelector], code: :invalid,
                                           value: go_value(InternalPodSpec.compact(munged["NodeSelector"])),
-                                          message: "only additions to spec.nodeSelector are allowed (no mutations or deletions)", kubernetes_type: "Invalid value")
+                                          message: "only additions to spec.nodeSelector are allowed (no mutations or deletions)", kubernetes_type: "Invalid " \
+                                                                                                                                                   "value")
           end
           munged = munged.with("NodeSelector", old_spec["NodeSelector"])
         end
