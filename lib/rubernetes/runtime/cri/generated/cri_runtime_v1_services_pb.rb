@@ -88,7 +88,8 @@ module Rubernetes
               rpc :CreateContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CreateContainerRequest,
                   ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CreateContainerResponse
               # StartContainer starts the container.
-              rpc :StartContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StartContainerRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StartContainerResponse
+              rpc :StartContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StartContainerRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StartContainerResponse
               # StopContainer stops a running container with a grace period (i.e., timeout).
               # This call is idempotent, and must not return an error if the container has
               # already been stopped.
