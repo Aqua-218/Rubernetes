@@ -1091,7 +1091,8 @@ module Rubernetes
            "apiserver_flowcontrol_rejected_requests_total" => [:counter,
                                                                "Number of requests rejected by API Priority and Fairness subsystem"],
            "apiserver_flowcontrol_current_executing_requests" => [:gauge,
-                                                                  "Number of requests in initial (for a WATCH) or any (for a non-WATCH) execution stage in the API Priority and Fairness subsystem"],
+                                                                  "Number of requests in initial (for a WATCH) or any (for a non-WATCH) execution stage in " \
+                                                                  "the API Priority and Fairness subsystem"],
            "apiserver_flowcontrol_current_inqueue_requests" => [:gauge,
                                                                 "Number of requests currently pending in queues of the API Priority and Fairness subsystem"],
            "apiserver_flowcontrol_nominal_limit_seats" => [:gauge,
