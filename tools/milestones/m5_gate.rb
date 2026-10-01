@@ -299,9 +299,7 @@ module M5Gate
         unless entry["request_loss_effect_count"] == 1 && entry["response_loss_retry_effect_count"] == 0
           errors << "raft_store #{entry["effect"]} re-execution must apply exactly once"
         end
-        unless entry["measurement_source"] == "real_raft_cluster_tls"
-          errors << "raft_store #{entry["effect"]} must be measured on a real TLS cluster"
-        end
+        errors << "raft_store #{entry["effect"]} must be measured on a real TLS cluster" unless entry["measurement_source"] == "real_raft_cluster_tls"
       end
       points = document["effect_points"]
       errors << "ownership ledger must enumerate its effect points" unless points.is_a?(Array) && points.length >= 7
