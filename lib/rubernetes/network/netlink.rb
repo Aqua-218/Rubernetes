@@ -993,11 +993,7 @@ module Rubernetes
           end
 
           type_value = Support.fetch(hash, "type", default: nil)
-          type_number = begin
-            Integer(type_value)
-          rescue ArgumentError, TypeError
-            nil
-          end
+          type_number = Integer(type_value, exception: false)
           acknowledged ||= [NLMSG_ERROR, NLMSG_DONE].include?(type_number)
           acknowledged ||= hash.key?("error") || hash.key?(:error) || hash.key?("errno") || hash.key?(:errno)
           validate_message!(hash, request)
