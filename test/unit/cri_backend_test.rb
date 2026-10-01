@@ -233,18 +233,20 @@ class CRIBackendTest < Minitest::Test
   def test_probes_run_in_the_sandbox_network_namespace
     skip "setns needs root" unless Process.uid.zero?
 
-    server = TCPServer.new("127.0.0.1", 0)
-    port = server.addr[1]
-    acceptor = Thread.new do
-      loop do
-        client = server.accept
-        begin
-          client.readpartial(4096)
-          client.write("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
-        rescue EOFError
-          nil
-        ensure
-          client.close
+    begin
+      server = TCPServer.new("127.0.0.1", 0)
+      port = server.addr[1]
+      acceptor = Thread.new do
+        loop do
+          client = server.accept
+          begin
+            client.readpartial(4096)
+            client.write("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+          rescue EOFError
+            nil
+          ensure
+            client.close
+          end
         end
       end
     rescue IOError
