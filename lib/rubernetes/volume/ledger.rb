@@ -563,9 +563,7 @@ module Rubernetes
           availability = availability_supplied ? boolean_value(filesystem_uuid_available) : nil
           availability = true if availability.nil? && !filesystem_uuid.nil?
           if filesystem_uuid.nil?
-            unless availability_supplied && availability == false
-              raise_mount_error("filesystem UUID availability must be false when UUID is absent")
-            end
+            raise_mount_error("filesystem UUID availability must be false when UUID is absent") unless availability_supplied && availability == false
             raise_mount_error("mount root is required when filesystem UUID is absent") if root.nil?
             raise_mount_error("mount source identity is required when filesystem UUID is absent") unless source_identity_supplied
             raise_mount_error("mount source identity is required when filesystem UUID is absent") if source_identity.empty?
