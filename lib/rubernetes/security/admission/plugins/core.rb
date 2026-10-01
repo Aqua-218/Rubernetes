@@ -1107,12 +1107,8 @@ module Rubernetes
             cpu_allocatable = allocatable["cpu"] || zero
             memory = requests["memory"] || zero
             memory_allocatable = allocatable["memory"] || zero
-            if cpu.value > cpu_allocatable.value
-              messages << "cpu, requested: #{cpu.milli_value}, allocatable: #{cpu_allocatable.milli_value}"
-            end
-            if memory.value > memory_allocatable.value
-              messages << "memory, requested: #{memory.value.ceil}, allocatable: #{memory_allocatable.value.ceil}"
-            end
+            messages << "cpu, requested: #{cpu.milli_value}, allocatable: #{cpu_allocatable.milli_value}" if cpu.value > cpu_allocatable.value
+            messages << "memory, requested: #{memory.value.ceil}, allocatable: #{memory_allocatable.value.ceil}" if memory.value > memory_allocatable.value
             return if messages.empty?
 
             reject!("pods #{name.inspect} is forbidden: node didn't have enough allocatable resources: #{messages.join("; ")}",
