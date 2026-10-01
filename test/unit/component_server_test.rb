@@ -20,7 +20,15 @@ class ComponentServerTest < Minitest::Test
   def setup
     # The shared registry carries whatever earlier tests recorded (authorization
     # webhook, token cache ...); a scheduler process would never have those.
-    Rubernetes::Observability::Metrics.reset_global!
+    # A fresh one is used for this test only and the original goes back in
+    # teardown, because other tests hold references to it.
+    @previous_global = Rubernetes::Observability::Metrics.replace_global!(
+      Rubernetes::Observability::Metrics.new(apiserver: false, process: false)
+    )
+  end
+
+  def teardown
+    Rubernetes::Observability::Metrics.replace_global!(@previous_global)
   end
 
   def server(ready: -> { true })
