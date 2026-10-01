@@ -209,7 +209,8 @@ module M6SecurityPipelineProbe
     recorder.reset
     request(server, "POST", "/api/v1/namespaces/default/configmaps", token: "alice-token", body: nil)
     malformed = server.call(Rubernetes::API::Request.new(method: "POST", path: "/api/v1/namespaces/default/configmaps",
-                                                         headers: {"authorization" => "Bearer alice-token", "content-type" => "application/json"}, body: "{not json"))
+                                                         headers: {"authorization" => "Bearer alice-token",
+                                                                   "content-type" => "application/json"}, body: "{not json"))
     cases << {"id" => "malformed_body_is_400_without_internal_detail", "status" => malformed.status, "message" => malformed.body["message"],
               "passed" => malformed.status == 400 && malformed.body["reason"] == "BadRequest" && !leak?(malformed.body) && !recorder.events.include?("store.create")}
 
