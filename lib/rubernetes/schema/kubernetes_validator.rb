@@ -2981,7 +2981,7 @@ module Rubernetes
       # add ObjectMeta, series, eventTime, type and deprecated-field checks.
       # The wire object of events.k8s.io uses the renamed fields (regarding,
       # note, deprecated*); error paths use the internal field names.
-      def event_errors(root, operation = :create, old = nil, events_group = false)
+      def event_errors(root, operation = :create, old = nil, events_group: false)
         issues = event_legacy_errors(root, events_group)
         return issues unless events_group
 
