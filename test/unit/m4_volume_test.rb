@@ -141,7 +141,8 @@ class M4VolumeTest < Minitest::Test
                                      "allowVolumeExpansion" => true})
     @manager.register_pv({"metadata" => {"name" => "pv"}, "capacity" => {"storage" => "10Gi"}, "accessModes" => ["RWO"],
                           "storageClassName" => "fast",
-                          "nodeAffinity" => {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone", "operator" => "In", "values" => ["a"]}]}]}}})
+                          "nodeAffinity" => {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone", "operator" => "In",
+                                                                                                             "values" => ["a"]}]}]}}})
     pvc = @manager.register_pvc({"metadata" => {"name" => "claim", "namespace" => "default"}, "resources" => {"requests" => {"storage" => "1Gi"}},
                                  "accessModes" => ["RWO"], "storageClassName" => "fast"})
 
