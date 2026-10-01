@@ -3624,6 +3624,18 @@ module Rubernetes
             record[:cleanup_completed][key] = true
             clear_cleanup_error(record, key)
           rescue StandardError => error
+            # A container the runtime no longer knows is removed by
+            # definition (kubelet: a NotFound on RemoveContainer is success);
+            # recording it as a failure kept a Pod whose sandbox recovery had
+            # released CleanupPending for the life of the node.
+            if lost_container_error?(error)
+              event(record, "container.remove.already_gone", name: entry[:name], container_id: entry[:id],
+                                                             message: Helpers.failure_message(error))
+              record[:cleanup_completed][key] = true
+              clear_cleanup_error(record, key)
+              next
+            end
+
             record_cleanup_error(record, key, "container #{entry[:name]} cleanup failed: #{Helpers.failure_message(error)}")
             stage_failed = true
           end
