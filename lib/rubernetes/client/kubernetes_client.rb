@@ -1066,9 +1066,7 @@ module Rubernetes
         raise WatchStreamError, "watch stream line #{line_number} must be a JSON object" unless event.is_a?(Hash)
 
         event_type = event["type"]
-        unless WATCH_EVENT_TYPES.include?(event_type)
-          raise WatchStreamError, "watch stream line #{line_number} has an unsupported event type"
-        end
+        raise WatchStreamError, "watch stream line #{line_number} has an unsupported event type" unless WATCH_EVENT_TYPES.include?(event_type)
         raise WatchStreamError, "watch stream line #{line_number} must contain an object mapping" unless event["object"].is_a?(Hash)
 
         event
