@@ -44,7 +44,13 @@ module KubernetesOpenAPIV3Importer
     end
   end
 
-  def run
+  KUBECTL = File.join(ROOT, "build/tools/kubectl-v1.36.2")
+
+  def run(argv = ARGV)
+    options = {}
+    OptionParser.new do |parser|
+      parser.on("--kubeconfig PATH", "overlay the documents a running v1.36.2 kube-apiserver serves") { |v| options[:kubeconfig] = v }
+    end.parse!(argv)
     source_root = ENV.fetch("KUBERNETES_SOURCE_ROOT", "/tmp/kubernetes-v1.36.2")
     directory = File.join(source_root, SOURCE_DIRECTORY)
     raise "missing #{directory}" unless File.directory?(directory)
