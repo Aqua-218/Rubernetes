@@ -311,7 +311,8 @@ module Rubernetes
         !default_value.nil? || @has_default
       end
 
-      def has_default?
+      # The schema declared a default (even one whose value is nil).
+      def explicit_default?
         @has_default
       end
 
