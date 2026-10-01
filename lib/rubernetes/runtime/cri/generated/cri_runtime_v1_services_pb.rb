@@ -95,7 +95,8 @@ module Rubernetes
               # already been stopped.
               # The runtime must forcibly kill the container after the grace period is
               # reached.
-              rpc :StopContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StopContainerRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StopContainerResponse
+              rpc :StopContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StopContainerRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StopContainerResponse
               # RemoveContainer removes the container. If the container is running, the
               # container must be forcibly removed.
               # This call is idempotent, and must not return an error if the container has
