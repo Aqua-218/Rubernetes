@@ -147,7 +147,7 @@ module Rubernetes
         modes.freeze
       end
 
-      def bool(value, default = false)
+      def bool(value, default: false)
         return default if value.nil?
         return value if [true, false].include?(value)
 
