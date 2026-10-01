@@ -882,7 +882,8 @@ module Rubernetes
               next if version.is_a?(String) && version.match?(/\A[a-z]([-a-z0-9]*[a-z0-9])?\z/)
 
               errors << issue(path + ["admissionReviewVersions", version_index.to_s], :invalid,
-                              "a DNS-1035 label must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')")
+                              "a DNS-1035 label must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with " \
+                              "an alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')")
             end
           end
           client = fetch(webhook, "clientConfig")
