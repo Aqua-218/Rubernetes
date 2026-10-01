@@ -1016,9 +1016,7 @@ module M4Gate
       expected = comparison["expected_observable"]
       actual = comparison["actual_observable"]
       structured = ->(value) { value.is_a?(Hash) || value.is_a?(Array) }
-      unless structured.call(expected) && structured.call(actual)
-        errors << "#{label} must include structured expected and actual observations"
-      end
+      errors << "#{label} must include structured expected and actual observations" unless structured.call(expected) && structured.call(actual)
       expected_digest = comparison["expected_sha256"]
       actual_digest = comparison["actual_sha256"]
       unless structured.call(expected) && valid_digest?(expected_digest) && canonical_document_digest(expected) == expected_digest
