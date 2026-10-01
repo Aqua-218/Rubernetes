@@ -79,8 +79,10 @@
       "path": "apis/apiextensions.k8s.io/v1.json",
       "upstream_path": "api/openapi-spec/v3/apis__apiextensions.k8s.io__v1_openapi.json",
       "source_sha256": "1c7dd621bece6661867bcc29471f774a46b36c02567d59815c7c72f6d08aa512",
-      "sha256": "1c7dd621bece6661867bcc29471f774a46b36c02567d59815c7c72f6d08aa512",
-      "paths": 6
+      "sha256": "0c9f6be7bded53bcb1a13a816f10fd538965760ed2d0a7e5d877aad90624e995",
+      "paths": 6,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/apiextensions.k8s.io/v1"
     },
     {
       "path": "apis/apiextensions.k8s.io.json",
