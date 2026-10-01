@@ -323,9 +323,8 @@ class M3JobControllerTest < Minitest::Test
   def test_orphaned_pods_lose_the_tracking_finalizer_when_their_job_is_gone
     owner = job(completions: 1, parallelism: 1)
     orphan = pod("batch-a", owner, phase: "Succeeded", finalizer: true)
-    store = Controller::MemoryStore.new
-    store.create(orphan, descriptor: Controller::ResourceDescriptor.parse("Pod"))
-    adapter = Controller::StoreAdapter.new(store)
+    adapter = Controller::StoreAdapter.new(Rubernetes::Storage::MemoryStore.new)
+    adapter.create(orphan, descriptor: Controller::ResourceDescriptor.parse("Pod"))
 
     result = controller.plan_orphans("default/batch", store: adapter)
 
