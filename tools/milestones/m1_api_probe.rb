@@ -497,7 +497,6 @@ module M1APIDifferential
       "rubernetes_observable" => actual_observable,
       "passed" => passed
     }
-    result
   end
 
   def resource_version(response)
