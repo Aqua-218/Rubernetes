@@ -445,7 +445,8 @@ module M4VolumeObservationRunner
       end
       tampered_volume_exists = tampered_manager.list_volumes.any? { |volume| volume.id == "m4-snap-tampered" }
       record["comparisons"] << M4ObserverSupport.comparison("crash_recovery",
-                                                            {"operation" => "CrashRecovery", "tampered_restore_refused" => true, "tampered_volume_registered" => false,
+                                                            {"operation" => "CrashRecovery", "tampered_restore_refused" => true,
+                                                             "tampered_volume_registered" => false,
                                                              "interrupted_restore_state" => "Unknown", "interrupted_volume_usable" => false,
                                                              "interrupted_worker_killed" => true},
                                                             {"operation" => "CrashRecovery", "tampered_restore_refused" => tamper_outcome["restored"] == false && tamper_outcome["error_class"] == "Rubernetes::Volume::SnapshotIntegrityError",
