@@ -194,9 +194,7 @@ module Rubernetes
         raise ManifestError, "image manifest must be a JSON object" unless parsed.is_a?(Hash)
 
         actual_digest = Digest.from_bytes(raw)
-        if expected_digest && actual_digest != Digest.parse(expected_digest)
-          raise DigestMismatch, "image manifest digest does not match the descriptor"
-        end
+        raise DigestMismatch, "image manifest digest does not match the descriptor" if expected_digest && actual_digest != Digest.parse(expected_digest)
         raise ManifestError, "image manifest size does not match the descriptor" if expected_size && raw.bytesize != Integer(expected_size)
 
         media_type = parsed["mediaType"]
