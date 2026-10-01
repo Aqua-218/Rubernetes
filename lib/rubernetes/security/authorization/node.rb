@@ -161,9 +161,7 @@ module Rubernetes
 
             return authorize_read_namespaced(node_name, :serviceaccounts, attributes)
           end
-          if attributes.verb != "create" || attributes.name.empty?
-            return no_opinion("can only create tokens for individual service accounts")
-          end
+          return no_opinion("can only create tokens for individual service accounts") if attributes.verb != "create" || attributes.name.empty?
           return no_opinion("can only create token subresource of serviceaccount") unless attributes.subresource == "token"
           return allow("token of a service account related to the node") if related?(node_name, :serviceaccounts, attributes.namespace,
                                                                                      attributes.name)
