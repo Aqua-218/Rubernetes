@@ -3565,9 +3565,7 @@ module Rubernetes
               next unless term.is_a?(Hash)
 
               expressions = fetch(term, "matchLabelExpressions")
-              if !expressions.is_a?(Array) || expressions.empty?
-                issues << issue(["allowedTopologies", index.to_s, "matchLabelExpressions"], :duplicate, "")
-              end
+              issues << issue(["allowedTopologies", index.to_s, "matchLabelExpressions"], :duplicate, "") if !expressions.is_a?(Array) || expressions.empty?
             end
           end
         end
