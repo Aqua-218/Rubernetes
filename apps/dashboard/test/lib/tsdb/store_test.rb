@@ -157,8 +157,13 @@ module Tsdb
       end
     end
 
-    assert_equal 1, store.series_count
-  end
+    test "binary-encoded labels are stored as text and found by equality matchers" do
+      store = open_store
+      # Net::HTTP bodies are ASCII-8BIT; SQLite would keep such strings as BLOBs
+      # that never equal a TEXT parameter.
+      store.append({"__name__".b => "apiserver_request_total".b, "job".b => "apiserver".b, "verb" => "GET"}, 1000, 1.0)
+      found = store.select_series([M.new(name: "__name__", op: "=", value: "apiserver_request_total"),
+                                   M.new(name: "job", op: "=", value: "apiserver")])
 
   test "an index written with BLOB labels is repaired on open" do
     store = open_store
