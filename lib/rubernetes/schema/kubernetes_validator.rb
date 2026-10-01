@@ -363,7 +363,7 @@ module Rubernetes
         issues.concat(pvc_update_errors(root, old, operation)) if kind == "PersistentVolumeClaim"
         issues.concat(immutable_field_errors(root, old, kind, operation))
         issues.concat(immutable_data_errors(root, old, kind, operation))
-        issues.concat(event_errors(root, operation, old, events_group_definition?(definition))) if kind == "Event"
+        issues.concat(event_errors(root, operation, old, events_group: events_group_definition?(definition))) if kind == "Event"
         issues.concat(mutating_admission_policy_errors(root)) if kind == "MutatingAdmissionPolicy"
         issues.concat(validating_admission_policy_errors(root)) if kind == "ValidatingAdmissionPolicy"
         issues.concat(mutating_policy_binding_errors(root)) if kind == "MutatingAdmissionPolicyBinding"
