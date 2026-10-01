@@ -244,7 +244,6 @@ class LinuxPlatformTest < Minitest::Test
       end
       process&.values_at(:stdout, :stderr)&.compact&.each { |io| io.close unless io.closed? }
     end
-    process&.values_at(:stdout, :stderr)&.compact&.each { |io| io.close unless io.closed? }
   end
 
   def test_production_native_exec_and_port_forward_enter_pod_namespaces
