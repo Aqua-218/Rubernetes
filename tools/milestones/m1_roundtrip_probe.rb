@@ -694,9 +694,7 @@ def build_validation_parent_fixture(codec:, mapping:, owner_type:, target_json:,
   fixture = mapping["fixture"].is_a?(Hash) ? mapping["fixture"] : {}
   nested = fixture.fetch("nested", {})
   nested = nested[target_schema] || nested[target_schema.to_s.split(".").last] || {}
-  unless nested.empty? || nested.key?("create") || nested.key?("invalid") || nested.key?("update") || nested.key?("expectations")
-    nested = {"create" => nested}
-  end
+  nested = {"create" => nested} unless nested.empty? || nested.key?("create") || nested.key?("invalid") || nested.key?("update") || nested.key?("expectations")
   owner_hash = apply_fixture_patch(owner_hash, fixture["create"]) if fixture["create"]
   owner_hash = apply_fixture_patch(owner_hash, nested["create"]) if nested["create"]
   owner_missing_hash = {
