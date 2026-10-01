@@ -34,7 +34,8 @@ module Rubernetes
           "time.now" => {"fields" => [], "required" => []}
         }.freeze
 
-        Capability = Struct.new(:id, :subject_id, :vm_id, :policy_digest, :revocation_epoch, :expires_at, :operations, :allowed_hosts, :allowed_cidrs, :allowed_ports,
+        Capability = Struct.new(:id, :subject_id, :vm_id, :policy_digest, :revocation_epoch, :expires_at, :operations, :allowed_hosts, :allowed_cidrs,
+                                :allowed_ports,
                                 keyword_init: true) do
           def to_h
             {"id" => id, "subject_id" => subject_id, "vm_id" => vm_id, "policy_digest" => policy_digest, "revocation_epoch" => revocation_epoch,
