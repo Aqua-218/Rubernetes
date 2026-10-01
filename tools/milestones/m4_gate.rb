@@ -709,8 +709,15 @@ module M4Gate
       end
       capture = packet["packetCapture"] || packet["packet_capture"] || packet["pcap"]
       capture_count = capture.is_a?(Hash) ? (capture["packetCount"] || capture["packet_count"] || capture["count"]) : nil
-      errors << "proxy packet bytes/PCAP provenance is incomplete" unless capture.is_a?(Hash) && %w[pcap packet_bytes
-                                                                                                    raw].include?((capture["format"] || capture["type"]).to_s) && valid_digest?(capture["sha256"] || capture["packetBytesSha256"] || capture["packet_bytes_sha256"] || capture["pcapSha256"] || capture["pcap_sha256"]) && capture_count.is_a?(Integer) && capture_count.positive? && non_empty_string?(capture["source"] || capture["sourcePath"] || capture["source_path"])
+      capture_format = capture.is_a?(Hash) ? (capture["format"] || capture["type"]).to_s : nil
+      capture_digest = if capture.is_a?(Hash)
+                         capture["sha256"] || capture["packetBytesSha256"] || capture["packet_bytes_sha256"] ||
+                           capture["pcapSha256"] || capture["pcap_sha256"]
+                       end
+      capture_source = capture.is_a?(Hash) ? (capture["source"] || capture["sourcePath"] || capture["source_path"]) : nil
+      capture_complete = capture.is_a?(Hash) && %w[pcap packet_bytes raw].include?(capture_format) && valid_digest?(capture_digest) &&
+                         capture_count.is_a?(Integer) && capture_count.positive? && non_empty_string?(capture_source)
+      errors << "proxy packet bytes/PCAP provenance is incomplete" unless capture_complete
       cases = packet["cases"]
       inventory = packet["caseInventory"]
       ids = Array(cases).filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["case"] || entry["caseId"]) : nil }.map(&:to_s)
