@@ -151,8 +151,10 @@
       "path": "apis/authorization.k8s.io/v1.json",
       "upstream_path": "api/openapi-spec/v3/apis__authorization.k8s.io__v1_openapi.json",
       "source_sha256": "6654256e4da02e94d848dfecf10245b6e74769c205822ae6ce709e742a6018d9",
-      "sha256": "6654256e4da02e94d848dfecf10245b6e74769c205822ae6ce709e742a6018d9",
-      "paths": 5
+      "sha256": "0d45f3465c217a029539723c903da5e3424aba20a673d0c4ac825985efcffc1b",
+      "paths": 5,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/authorization.k8s.io/v1"
     },
     {
       "path": "apis/authorization.k8s.io.json",
