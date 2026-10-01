@@ -1724,6 +1724,35 @@ module Rubernetes
                "alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')")]
       end
 
+      # A CustomResourceDefinition without its OpenAPI schemas
+      # (spec.validation.openAPIV3Schema, spec.versions[*].schema), for the
+      # walkers that look for embedded Pod templates.  Other kinds pass as is.
+      def schema_free_root(root, kind)
+        return root unless kind == "CustomResourceDefinition" && root.is_a?(Hash)
+
+        spec = fetch(root, "spec")
+        return root unless spec.is_a?(Hash)
+
+        spec = spec.dup
+        spec.delete("validation")
+        spec.delete(:validation)
+        versions = fetch(spec, "versions")
+        if versions.is_a?(Array)
+          stripped = versions.map do |version|
+            next version unless version.is_a?(Hash)
+
+            version = version.dup
+            version.delete("schema")
+            version.delete(:schema)
+            version
+          end
+          spec.key?(:versions) ? spec[:versions] = stripped : spec["versions"] = stripped
+        end
+        root = root.dup
+        root.key?(:spec) ? root[:spec] = spec : root["spec"] = spec
+        root
+      end
+
       def probe_errors(root)
         issues = []
         walk(root) do |value, path|
