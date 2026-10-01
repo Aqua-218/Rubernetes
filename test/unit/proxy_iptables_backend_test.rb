@@ -211,7 +211,8 @@ class ProxyIptablesBackendTest < Minitest::Test
     renderer = Iptables::Renderer.new(family: "IPv6", node_name: "worker-0", node_ips: ["fd00::10"], nfacct_counters: {})
     rule = Proxy::Rule.new(service_key: "ns/svc", service_type: "LoadBalancer", kind: "LoadBalancer", virtual_ip: "2001:db8::5", port: 443, protocol: "TCP",
                            session_affinity: "ClientIP", session_affinity_timeout_seconds: 300,
-                           backends: [Proxy::Endpoint.new(address: "fd00:1::5", port: 8443, node_name: "worker-1", ready: true, serving: true, terminating: false)],
+                           backends: [Proxy::Endpoint.new(address: "fd00:1::5", port: 8443, node_name: "worker-1", ready: true, serving: true,
+                                                          terminating: false)],
                            metadata: {"servicePort" => {"name" => "https"}, "loadBalancerSourceRanges" => ["fd00::/64"]})
     program = renderer.render([rule]).text
     fw = Iptables.firewall_chain("ns/svc:https", "TCP")
