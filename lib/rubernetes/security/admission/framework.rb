@@ -196,7 +196,8 @@ module Rubernetes
                                                                            help: "Admission webhook rejection count, identified by name and broken out for " \
                                                                                  "each admission type (validating or admit) and operation.")
           registry.register("apiserver_admission_webhook_fail_open_count", type: :counter,
-                                                                           help: "Admission webhook fail open count, identified by name and broken out for each admission type (validating or admit).")
+                                                                           help: "Admission webhook fail open count, identified by name and broken out for " \
+                                                                                 "each admission type (validating or admit).")
           registry.register("apiserver_admission_webhook_request_total", type: :counter,
                                                                          help: "Admission webhook request total, identified by name and broken out for each admission type (validating or admit) and operation.")
           @plugins.each { |plugin| plugin.metrics = registry if plugin.respond_to?(:metrics=) }
