@@ -1026,9 +1026,7 @@ module Rubernetes
           raise MissingSchemaError, "registry type is missing for covered GVK schema #{schema_name.inspect}" if schema_name && !type
 
           expected_type = @types_by_gvk[key]
-          if expected_type && expected_type != type
-            raise MissingSchemaError, "covered GVK #{key} must reference schema #{expected_type.schema_name.inspect}"
-          end
+          raise MissingSchemaError, "covered GVK #{key} must reference schema #{expected_type.schema_name.inspect}" if expected_type && expected_type != type
 
           @gvk_entries_by_gvk[key] = GVKEntry.new(payload: payload, type: type)
         end
