@@ -1155,7 +1155,9 @@ module Rubernetes
           metrics.register("rest_client_request_retries_total", type: :counter,
                                                                 help: "Number of request retries, partitioned by status code, verb, and host.")
           metrics.register("rest_client_transport_create_calls_total", type: :counter,
-                                                                       help: "Number of calls to get a new transport, partitioned by the result of the operation hit: obtained from the cache, miss: created and added to the cache, uncacheable: created and not cached")
+                                                                       help: "Number of calls to get a new transport, partitioned by the result of the " \
+                                                                             "operation hit: obtained from the cache, miss: created and added to the cache, " \
+                                                                             "uncacheable: created and not cached")
           metrics.register("rest_client_transport_cache_entries", type: :gauge, help: "Number of transport entries in the internal cache.")
         end
       end
