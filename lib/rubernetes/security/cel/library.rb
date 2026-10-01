@@ -715,8 +715,8 @@ module Rubernetes
           NUMBERS = /\A[0-9]*\z/
           ALPHANUM = /\A[0-9A-Za-z-]*\z/
 
-          def self.valid?(text, normalize = false)
-            parse(text, normalize)
+          def self.valid?(text, normalize: false)
+            parse(text, normalize: normalize)
             true
           rescue EvaluationError, TypeMismatch
             false
