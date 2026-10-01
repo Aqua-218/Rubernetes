@@ -248,7 +248,8 @@ module Rubernetes
               ControllerMetrics.observe("taint_eviction_controller_pod_deletion_duration_seconds",
                                         self.class.go_duration_times_second(Process.clock_gettime(Process::CLOCK_MONOTONIC) - fired))
             end
-          end)
+          end
+          operations.concat(observed)
           events << {"type" => "Normal", "reason" => "TaintManagerEviction",
                      "message" => "Marking for deletion Pod #{name_key(pod)}", "involvedObject" => pod_reference(pod)}
         end
