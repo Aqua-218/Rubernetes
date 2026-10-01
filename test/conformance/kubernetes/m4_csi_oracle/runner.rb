@@ -37,7 +37,8 @@ module M4CSIOracleRunner
   RUNNER_PATH = File.expand_path(__FILE__)
   PLUGIN_DIR = File.join(__dir__, "plugin")
   BUILD_DIR = File.join(ROOT, "build/tools/m4-csi-oracle")
-  IMPLEMENTATION = "independent Go CSI plugin (container-storage-interface/spec v1.9.0, gRPC over UDS, bind-mount effects) driven by the production CSIBridge/CSIUDSClient"
+  IMPLEMENTATION = "independent Go CSI plugin (container-storage-interface/spec v1.9.0, gRPC over UDS, bind-mount effects) driven by the production " \
+                   "CSIBridge/CSIUDSClient"
   CSI_SPEC_VERSION = "1.9.0"
   NODE = "m4-oracle-node"
   DEFAULT_OPERATIONS = %w[
