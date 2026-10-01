@@ -3265,9 +3265,7 @@ module Rubernetes
               issues << issue(path + ["iqn"], :invalid, "must be valid format")
             end
           when "local"
-            unless fetch(spec, "nodeAffinity").is_a?(Hash)
-              issues << issue(%w[spec nodeAffinity], :required, "Local volume requires node affinity")
-            end
+            issues << issue(%w[spec nodeAffinity], :required, "Local volume requires node affinity") unless fetch(spec, "nodeAffinity").is_a?(Hash)
           when "nfs"
             path_value = fetch(source, "path")
             if blank?(path_value)
