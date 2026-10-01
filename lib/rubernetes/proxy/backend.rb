@@ -1004,9 +1004,7 @@ module Rubernetes
           return false
         end
         measurement_source = evidence_value(value, "measurementSource", "measurement_source")
-        if measurement_source.to_s.empty? || measurement_source.to_s == "model_only"
-          failures << "kernel readback measurement source is not external"
-        end
+        failures << "kernel readback measurement source is not external" if measurement_source.to_s.empty? || measurement_source.to_s == "model_only"
         validate_runner_provenance(value, "kernel readback", failures)
         validate_input_binding(value, "kernel readback", left_digest, right_digest, failures)
         failures << "kernel readback packet trace is required" unless valid_digest?(evidence_value(value, "packetTraceSha256",
