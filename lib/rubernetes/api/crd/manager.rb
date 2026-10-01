@@ -255,9 +255,8 @@ module Rubernetes
             categories: Array(names["categories"]), list_kind: names["listKind"], singular_name: names["singular"],
             verbs: %w[delete deletecollection get list patch create update watch], subresources: subresources,
             schema: contract, storage_version: storage_version, converter: converter,
-            printer_columns: Array(version["additionalPrinterColumns"]), selectable_fields: Array(version["selectableFields"]).map do |field|
-                                                                           field["jsonPath"]
-                                                                         end,
+            printer_columns: Array(version["additionalPrinterColumns"]),
+            selectable_fields: Array(version["selectableFields"]).map { |field| field["jsonPath"] },
             custom: true
           )
           @registry.register(resource)
