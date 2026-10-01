@@ -109,7 +109,9 @@ class ConsensusWALTest < Minitest::Test
 
       assert_equal 1, recovered.records.length
       assert recovered.recovery_report.truncated
-      assert_equal 4 - 4 + (C::WAL::RECORD_HEADER_BYTES + C::WAL.encode_record(C::WAL::TYPE_ENTRY, {"index" => 2, "term" => 1, "command" => {"a" => 2}}).bytesize - C::WAL::RECORD_HEADER_BYTES) - 4,
+      assert_equal 4 - 4 + (C::WAL::RECORD_HEADER_BYTES + C::WAL.encode_record(C::WAL::TYPE_ENTRY,
+                                                                               {"index" => 2, "term" => 1,
+                                                                                "command" => {"a" => 2}}).bytesize - C::WAL::RECORD_HEADER_BYTES) - 4,
                    recovered.recovery_report.torn_tail_bytes
       # The file is now clean and appendable.
       recovered.append([C::WAL::TYPE_ENTRY, {"index" => 2, "term" => 1, "command" => {"a" => 3}}])
