@@ -1061,9 +1061,7 @@ module Rubernetes
             end
             new_status.delete("conditions") if Array(new_status["conditions"]).empty?
 
-            if Support.canonical(compact_status(@status)) == Support.canonical(compact_status(new_status))
-              requeue_stuck_deployment(new_status)
-            end
+            requeue_stuck_deployment(new_status) if Support.canonical(compact_status(@status)) == Support.canonical(compact_status(new_status))
             @status = new_status
             finish
           end
