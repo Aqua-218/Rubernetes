@@ -1,8 +1,8 @@
 # Executable Boundary
 
-Milestone M0 creates `rubectl`, `rubernetes-apiserver`,
-`rubernetes-controller-manager`, `rubernetes-scheduler`, `rubernetes-agent`, and
-`rubernetes-proxy` here. Executables only parse process-level options and delegate to
+`rubectl`, `rubernetes-apiserver`, `rubernetes-controller-manager`,
+`rubernetes-scheduler`, `rubernetes-agent` and `rubernetes-proxy` live here.
+Executables only parse process-level options and delegate to
 `Rubernetes::Bootstrap`; domain policy remains in `lib/rubernetes/`.
 
 All entries implement `--help`, `--version`, `--config`, and `--check-config`. Help and version
