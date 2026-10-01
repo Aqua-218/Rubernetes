@@ -855,9 +855,7 @@ module M4Gate
       errors << "#{label} must exercise NodeStageVolume or NodePublishVolume" unless
         %w[NodeStageVolume NodePublishVolume].include?(operation)
       mount_adapter = document["mount_adapter_class"] || document["adapter_class"]
-      unless non_empty_string?(mount_adapter) && !mount_adapter.end_with?("FilesystemAdapter")
-        errors << "#{label} must identify a native mount adapter"
-      end
+      errors << "#{label} must identify a native mount adapter" unless non_empty_string?(mount_adapter) && !mount_adapter.end_with?("FilesystemAdapter")
       if non_empty_string?(document["adapter_class"]) && document["adapter_class"].end_with?("FilesystemAdapter")
         errors << "#{label} must not use FilesystemAdapter as the mount adapter"
       end
