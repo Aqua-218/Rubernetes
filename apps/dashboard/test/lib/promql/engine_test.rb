@@ -5,8 +5,15 @@ require "tmpdir"
 
 # PromQL semantics checked against the behaviour documented and tested in
 # prometheus/promql (testdata/functions.test, operators.test, aggregators.test).
-class Promql::EngineTest < ActiveSupport::TestCase
-  T0 = 1_700_000_010_000 # a fixed "now" in ms, a multiple of 15s
+module Promql
+  class EngineTest < ActiveSupport::TestCase
+    T0 = 1_700_000_010_000 # a fixed "now" in ms, a multiple of 15s
+
+    def setup
+      @dir = Dir.mktmpdir("promql")
+      @store = Tsdb::Store.new(@dir)
+      @engine = Promql::Engine.new(@store, now: -> { T0 })
+    end
 
   def setup
     @dir = Dir.mktmpdir("promql")
