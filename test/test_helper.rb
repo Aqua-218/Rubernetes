@@ -7,6 +7,7 @@ $LOAD_PATH.unshift File.expand_path("../lib", __dir__)
 # (pulled in by apps/dashboard's bundle) ships without minitest/mock.
 gem "minitest", "~> 5.25"
 require "minitest/autorun"
+require "minitest/mock"
 require "rubernetes"
 
 require_relative "support/junit_reporter" if ENV["RUBERNETES_JUNIT"]
