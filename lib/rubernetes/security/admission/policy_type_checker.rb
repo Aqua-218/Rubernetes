@@ -402,12 +402,8 @@ module Rubernetes
 
         def expand_children(schema, visited, &)
           result = schema.dup
-          if schema["properties"].is_a?(Hash)
-            result["properties"] = schema["properties"].transform_values { |property| populate_refs(property, visited, &) }
-          end
-          if schema["additionalProperties"].is_a?(Hash)
-            result["additionalProperties"] = populate_refs(schema["additionalProperties"], visited, &)
-          end
+          result["properties"] = schema["properties"].transform_values { |property| populate_refs(property, visited, &) } if schema["properties"].is_a?(Hash)
+          result["additionalProperties"] = populate_refs(schema["additionalProperties"], visited, &) if schema["additionalProperties"].is_a?(Hash)
           result["items"] = populate_refs(schema["items"], visited, &) if schema["items"].is_a?(Hash)
           result
         end
