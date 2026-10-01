@@ -1200,9 +1200,7 @@ module M3Gate
       return unless source.is_a?(Hash)
 
       actual_source = source["runner_source"].to_s
-      unless File.expand_path(actual_source) == expected_source
-        errors << "#{label} runner source path is not the project-owned pinned wrapper"
-      end
+      errors << "#{label} runner source path is not the project-owned pinned wrapper" unless File.expand_path(actual_source) == expected_source
       return unless File.file?(expected_source) && valid_digest?(source["runner_sha256"])
 
       return if Digest::SHA256.file(expected_source).hexdigest == source["runner_sha256"]
