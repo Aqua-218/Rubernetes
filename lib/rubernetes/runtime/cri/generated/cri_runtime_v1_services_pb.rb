@@ -208,7 +208,8 @@ module Rubernetes
               rpc :ListMetricDescriptors, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListMetricDescriptorsRequest,
                   ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListMetricDescriptorsResponse
               # ListPodSandboxMetrics gets pod sandbox metrics from CRI Runtime
-              rpc :ListPodSandboxMetrics, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxMetricsRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxMetricsResponse
+              rpc :ListPodSandboxMetrics, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxMetricsRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxMetricsResponse
               # StreamPodSandboxMetrics returns a stream of pod sandbox metrics.
               # This is an alternative to ListPodSandboxMetrics that streams results in
               # lists of at least one item, avoiding the gRPC message size limit for
