@@ -495,9 +495,7 @@ module Rubernetes
                   elsif @registry.respond_to?(:all)
                     @registry.all
                   elsif @registry.respond_to?(:each)
-                    result = []
-                    @registry.each { |entry| result << entry }
-                    result
+                    @registry.map { |entry| entry }
                   else
                     []
                   end
