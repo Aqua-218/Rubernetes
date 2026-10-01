@@ -87,7 +87,9 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     # Pod without that limit is rejected -- maxConstraint returns
     # "No limit is specified" (plugin/pkg/admission/limitranger/admission.go).
     @context.put("limitranges", "team", "limits",
-                 {"spec" => {"limits" => [{"type" => "Container", "default" => {"cpu" => "500m", "memory" => "512Mi"}, "defaultRequest" => {"cpu" => "100m", "memory" => "256Mi"}, "max" => {"memory" => "1Gi"}, "min" => {"cpu" => "50m"}}]}})
+                 {"spec" => {"limits" => [{"type" => "Container", "default" => {"cpu" => "500m", "memory" => "512Mi"},
+                                           "defaultRequest" => {"cpu" => "100m",
+                                                                "memory" => "256Mi"}, "max" => {"memory" => "1Gi"}, "min" => {"cpu" => "50m"}}]}})
     ranger = plugin("LimitRanger")
     attrs = attributes("CREATE", resource: "pods", object: pod("web"))
     ranger.admit(attrs)
