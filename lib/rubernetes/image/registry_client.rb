@@ -463,9 +463,7 @@ module Rubernetes
         expected_type = expected.to_s.split(";", 2).first.strip
         actual_type = actual.to_s.split(";", 2).first.strip
         return if actual_type == "application/octet-stream" || actual_type == expected_type
-        unless MediaTypes.layer?(actual_type) || MediaTypes.config?(actual_type) || MediaTypes.manifest?(actual_type) || MediaTypes.index?(actual_type)
-          return
-        end
+        return unless MediaTypes.layer?(actual_type) || MediaTypes.config?(actual_type) || MediaTypes.manifest?(actual_type) || MediaTypes.index?(actual_type)
 
         raise RegistryError, "registry response media type does not match the descriptor"
       end
