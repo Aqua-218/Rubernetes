@@ -1603,9 +1603,7 @@ module M1Gate
         if default_off
           errors << "API surface #{label} matrix entry #{index} default-off reason is invalid" unless entry["availability_reason"] == DEFAULT_OFF_REASON
         else
-          unless entry["availability_reason"].nil?
-            errors << "API surface #{label} matrix entry #{index} served entry must not carry a default-off reason"
-          end
+          errors << "API surface #{label} matrix entry #{index} served entry must not carry a default-off reason" unless entry["availability_reason"].nil?
         end
         API_SURFACE_FIELDS.each do |field|
           value = entry[field]
