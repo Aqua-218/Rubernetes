@@ -633,7 +633,8 @@ module M2LifecycleOracleHarness
         raise HarnessError, "kind create cluster failed: #{output.strip[-3000..] || output.strip}"
       end
 
-      step("kind_create_finished", exit_status: status.exitstatus, accepted_port_export_failure: !status.success?, output_sha256: Digest::SHA256.hexdigest(output))
+      step("kind_create_finished", exit_status: status.exitstatus, accepted_port_export_failure: !status.success?,
+                                   output_sha256: Digest::SHA256.hexdigest(output))
       running, = M2LifecycleOracleHarness.docker("inspect", "--format", "{{.State.Running}} {{.Config.Image}}", @node)
       raise HarnessError, "node container #{@node} is not running: #{running.strip}" unless running.split.first == "true"
       raise HarnessError, "node container image is #{running.split.last}, expected #{@node_image}" unless running.split.last == @node_image
