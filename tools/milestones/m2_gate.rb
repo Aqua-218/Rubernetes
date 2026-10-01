@@ -1435,9 +1435,7 @@ module M2Gate
           Array(cycle["residual_inventory_kinds"]).map(&:to_s).uniq.sort == residual_kinds
         errors << "#{label} resource_kinds must be a non-empty measured set" if cycle_kinds.empty?
         errors << "#{label} resource_kinds contain unknown kinds" unless (cycle_kinds - REQUIRED_RESOURCE_KINDS).empty?
-        unless cycle["measurement_source"] == "production_native_l3_cycles"
-          errors << "#{label} measurement_source must be production Native L3 cycles"
-        end
+        errors << "#{label} measurement_source must be production Native L3 cycles" unless cycle["measurement_source"] == "production_native_l3_cycles"
         errors << "#{label} kernel identity digest is required" unless valid_digest?(cycle["kernel_identity_sha256"])
         expected_identity_source = if fault.is_a?(Hash)
                                      "production_native_l3_effect_fault_inventory"
