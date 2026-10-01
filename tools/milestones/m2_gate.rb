@@ -1708,9 +1708,7 @@ module M2Gate
       errors << "#{label} inventory resource_kinds must be non-empty" if kinds.empty?
       errors << "#{label} inventory resource_kinds contain unknown kinds" unless (kinds - ALLOWED_INVENTORY_RESOURCE_KINDS).empty?
       required_kinds = Array(measurement["required_resource_kinds"]).map(&:to_s).uniq.sort
-      unless required_kinds == REQUIRED_RESOURCE_KINDS.sort
-        errors << "#{label} inventory required_resource_kinds must be mount/ns/cgroup/process/pidfd/temp"
-      end
+      errors << "#{label} inventory required_resource_kinds must be mount/ns/cgroup/process/pidfd/temp" unless required_kinds == REQUIRED_RESOURCE_KINDS.sort
       missing_kinds = Array(measurement["missing_resource_kinds"]).map(&:to_s).uniq.sort
       unless missing_kinds == (REQUIRED_RESOURCE_KINDS - kinds).sort
         errors << "#{label} inventory missing_resource_kinds does not match observed kinds"
