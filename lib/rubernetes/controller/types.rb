@@ -342,9 +342,9 @@ module Rubernetes
       # The same result with each operation replaced by the block's (an
       # observed copy), batches kept as they were.
       def map_operations
-        replaced = {}
-        operations = @operations.map { |operation| replaced[operation.object_id] = yield(operation) }
-        batches = @batches.map { |batch| batch.map { |operation| replaced.fetch(operation.object_id) { operation } } }
+        replaced = {}.compare_by_identity
+        operations = @operations.map { |operation| replaced[operation] = yield(operation) }
+        batches = @batches.map { |batch| batch.map { |operation| replaced.fetch(operation) { operation } } }
         ReconcileResult.new(operations: operations, batches: batches, status: @status, events: @events, controller: @controller, key: @key,
                             applied: @applied, requeue_after: @requeue_after)
       end
