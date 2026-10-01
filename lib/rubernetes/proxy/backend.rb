@@ -1238,9 +1238,7 @@ module Rubernetes
         identity = evidence_value(entry, "identity", "kernelIdentity", "kernel_identity")
         identity_digest = evidence_value(entry, "identityDigest", "identity_digest")
         failures << "#{name} kernel identity is required" unless identity.is_a?(Hash) && !identity.empty?
-        unless valid_digest?(identity_digest) && identity_digest == canonical_trace_digest(identity)
-          failures << "#{name} kernel identity digest is invalid"
-        end
+        failures << "#{name} kernel identity digest is invalid" unless valid_digest?(identity_digest) && identity_digest == canonical_trace_digest(identity)
         rules_digest = evidence_value(entry, "rulesDigest", "rules_digest", "ruleDigest", "rule_digest")
         unless valid_digest?(rules_digest) && rules_digest == canonical_trace_digest(rules)
           failures << "#{name} kernel rules digest does not match readback"
