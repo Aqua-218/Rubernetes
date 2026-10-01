@@ -411,7 +411,8 @@ class M4NetworkTest < Minitest::Test
                         Rubernetes::Network::Netlink::TLV.encode_many([
                                                                         {"type" => Rubernetes::Network::Netlink::NDA_DST,
                                                                          "value" => IPAddr.new("198.18.0.1").hton},
-                                                                        {"type" => Rubernetes::Network::Netlink::NDA_LLADDR, "value" => ["02aabbccddee"].pack("H12")}
+                                                                        {"type" => Rubernetes::Network::Netlink::NDA_LLADDR,
+                                                                         "value" => ["02aabbccddee"].pack("H12")}
                                                                       ])
     neighbour_message = Rubernetes::Network::Netlink::Message.new(type: Rubernetes::Network::Netlink::RTM_NEWNEIGH,
                                                                   flags: 0, sequence: 1, payload: neighbour_payload)
