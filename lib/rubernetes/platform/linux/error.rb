@@ -25,7 +25,7 @@ module Rubernetes
         def to_h
           {
             errno: errno,
-            errno_name: code&.name&.split("::")&.last,
+            errno_name: code&.then { |klass| klass.name.to_s.split("::").last },
             operation: operation,
             resource_id: resource_id,
             details: details,
