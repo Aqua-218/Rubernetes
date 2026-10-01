@@ -2110,9 +2110,7 @@ module M1Gate
           unless comparison["#{dimension}_expected_source"] == "kubernetes_external"
             errors << "#{label} comparison #{index} #{dimension} expected source must be external Kubernetes"
           end
-          unless comparison["#{dimension}_actual_source"] == "rubernetes"
-            errors << "#{label} comparison #{index} #{dimension} actual source must be Rubernetes"
-          end
+          errors << "#{label} comparison #{index} #{dimension} actual source must be Rubernetes" unless comparison["#{dimension}_actual_source"] == "rubernetes"
           unless valid_digest?(expected_digest) && valid_digest?(actual_digest)
             errors << "#{label} comparison #{index} #{dimension} must record expected and actual SHA-256 digests"
           end
