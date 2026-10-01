@@ -81,7 +81,7 @@ module Rubernetes
               node[2].each_with_object(Values::ObjectVal.new(node[1])) do |(field, value_node), hash|
                 raise EvaluationError, "duplicate field #{field.inspect} in #{node[1]}" if hash.key?(field)
 
-                hash[field] = eval(value_node)
+                hash[field] = evaluate(value_node)
               end
             when :map
               node[1].each_with_object({}) do |(key_node, value_node), hash|
