@@ -278,9 +278,7 @@ module Rubernetes
           else
             named_port = Array(pods).flat_map do |pod|
               Array(Support.value(Support.spec(pod), "containers", [])).flat_map do |container|
-                Array(Support.value(container, "ports", [])).filter_map do |container_port|
-                  container_port if Support.value(container_port, "name", "").to_s == target.to_s
-                end
+                Array(Support.value(container, "ports", [])).select { |container_port| Support.value(container_port, "name", "").to_s == target.to_s }
               end
             end.first
             # podutil.FindPort: a named targetPort that no selected Pod
