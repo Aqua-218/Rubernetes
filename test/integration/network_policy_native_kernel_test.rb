@@ -836,7 +836,7 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
 
       assert_predicate status, :success?, "isolated packet matrix failed\n#{output}\n#{error}"
       assert_match(/0 failures, 0 errors, 0 skips/, output)
-      skip
+      skip "the packet matrix ran in the isolated child process above"
     end
 
     result = NativePacketMatrixRunner.new.run
