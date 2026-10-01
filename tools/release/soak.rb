@@ -141,7 +141,25 @@ module Release
       end
     end
 
-    def cluster_sample(kubeconfig)
+    def process_sample(name, pid)
+      {
+        "name" => name,
+        "pid" => pid,
+        "rss_kb" => File.read("/proc/#{pid}/status")[/VmRSS:\s+(\d+)/, 1].to_i,
+        "open_files" => begin
+          Dir.children("/proc/#{pid}/fd").length
+        rescue StandardError
+          0
+        end
+      }
+    rescue Errno::ENOENT, Errno::ESRCH
+      nil
+    end
+
+    # The PodList as the API serves it: every `kubectl get ... -o json`
+    # across namespaces is a client-side merged List whose resourceVersion is
+    # empty (upstream too), which left the lost-commit check comparing zeros.
+    def cluster_sample(kubeconfig, netns: nil)
       kubectl = File.join(ROOT, "build/tools/kubectl-v1.36.2")
       out, _err, status = Open3.capture3(kubectl, "--kubeconfig", kubeconfig, "get",
                                          "pods,events", "--all-namespaces", "-o", "json")
