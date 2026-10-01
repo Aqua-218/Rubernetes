@@ -65,7 +65,8 @@ module Rubernetes
                   ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RemovePodSandboxResponse
               # PodSandboxStatus returns the status of the PodSandbox. If the PodSandbox is not
               # present, returns an error.
-              rpc :PodSandboxStatus, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatusRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatusResponse
+              rpc :PodSandboxStatus, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatusRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatusResponse
               # ListPodSandbox returns a list of PodSandboxes.
               rpc :ListPodSandbox, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxResponse
               # StreamPodSandboxes returns a stream of PodSandboxes.
