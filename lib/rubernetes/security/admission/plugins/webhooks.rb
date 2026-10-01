@@ -26,9 +26,7 @@ module Rubernetes
             versions = Array(rule["apiVersions"])
             resources = Array(rule["resources"])
             scope = rule["scope"] || "*"
-            unless scope == "*" || (scope == "Namespaced" && !attributes.namespace.empty?) || (scope == "Cluster" && attributes.namespace.empty?)
-              return false
-            end
+            return false unless scope == "*" || (scope == "Namespaced" && !attributes.namespace.empty?) || (scope == "Cluster" && attributes.namespace.empty?)
             return false unless groups.include?("*") || groups.include?(attributes.group)
             return false unless versions.include?("*") || versions.include?(attributes.version)
 
