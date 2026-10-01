@@ -98,7 +98,9 @@ class SecurityAdmissionPolicyTest < Minitest::Test
                  {"metadata" => {"name" => "label"},
                   "spec" => {"matchConstraints" => {"resourceRules" => [{"apiGroups" => ["apps"], "apiVersions" => ["*"], "operations" => ["CREATE"], "resources" => ["deployments"]}]},
                              "reinvocationPolicy" => "IfNeeded",
-                             "mutations" => [{"patchType" => "ApplyConfiguration", "applyConfiguration" => {"expression" => "Object{metadata: Object.metadata{labels: {'owner': 'policy'}}}"}},
+                             "mutations" => [{"patchType" => "ApplyConfiguration", "applyConfiguration" => {"expression" => "Object{metadata: " \
+                                                                                                                            "Object.metadata{labels: " \
+                                                                                                                            "{'owner': 'policy'}}}"}},
                                              {"patchType" => "JSONPatch",
                                               "jsonPatch" => {"expression" => "[JSONPatch{op: 'add', path: '/spec/paused', value: true}]"}}]}},
                  group: "admissionregistration.k8s.io")
