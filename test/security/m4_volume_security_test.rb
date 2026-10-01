@@ -360,40 +360,56 @@ class M4VolumeSecurityTest < Minitest::Test
   def test_csi_dispatch_uses_held_descriptor_and_fences_path_exchange
     skip "descriptor-relative CSI dispatch requires Linux openat2" unless RUBY_PLATFORM.include?("linux")
 
-    directory = Dir.mktmpdir("m4-csi-target-lease")
-    target = File.join(directory, "stage")
-    held = File.join(directory, "stage-held")
-    outside = File.join(directory, "outside")
-    FileUtils.mkdir_p(outside)
-    observations = {}
-    csi = Object.new
-    csi.define_singleton_method(:identity) do
-      Rubernetes::Volume::Identity.new(name: "lease.csi", vendor_version: "test")
-    end
-    csi.define_singleton_method(:create_volume) { |_spec, token:| {"volumeId" => "driver-volume"} }
-    csi.define_singleton_method(:publish) do |_id, _node, token:, readonly: false, context: {}|
-      {"publishContext" => {}}
-    end
-    csi.define_singleton_method(:stage) do |_id, dispatch_path, token:, readonly:, context:|
-      original_inode = File.stat(target).ino
-      File.rename(target, held)
-      File.symlink(outside, target)
-      observations["dispatch"] = dispatch_path
-      observations["dispatchInode"] = File.stat(dispatch_path).ino
-      observations["originalInode"] = original_inode
-      observations["outsideInode"] = File.stat(outside).ino
-      {"target" => dispatch_path}
-    end
-    openat2 = Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true)
-    security = Rubernetes::Volume::PathSecurity.new(root: "/", adapter: openat2, require_openat2: true)
-    manager = Rubernetes::Volume::Manager.new(
-      data_dir: File.join(directory, "data"), csi: csi, path_security: security, fsync: true
-    )
-    id = manager.create_volume({"name" => "lease", "csi" => {"driver" => "lease.csi"}}, token: "create")
-    manager.controller.publish(id, "node-a", token: "attach")
+    begin
+      directory = Dir.mktmpdir("m4-csi-target-lease")
+      target = File.join(directory, "stage")
+      held = File.join(directory, "stage-held")
+      outside = File.join(directory, "outside")
+      FileUtils.mkdir_p(outside)
+      observations = {}
+      csi = Object.new
+      csi.define_singleton_method(:identity) do
+        Rubernetes::Volume::Identity.new(name: "lease.csi", vendor_version: "test")
+      end
+      csi.define_singleton_method(:create_volume) { |_spec, token:| {"volumeId" => "driver-volume"} }
+      csi.define_singleton_method(:publish) do |_id, _node, token:, readonly: false, context: {}|
+        {"publishContext" => {}}
+      end
+      csi.define_singleton_method(:stage) do |_id, dispatch_path, token:, readonly:, context:|
+        original_inode = File.stat(target).ino
+        File.rename(target, held)
+        File.symlink(outside, target)
+        observations["dispatch"] = dispatch_path
+        observations["dispatchInode"] = File.stat(dispatch_path).ino
+        observations["originalInode"] = original_inode
+        observations["outsideInode"] = File.stat(outside).ino
+        {"target" => dispatch_path}
+      end
+      openat2 = Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true)
+      security = Rubernetes::Volume::PathSecurity.new(root: "/", adapter: openat2, require_openat2: true)
+      manager = Rubernetes::Volume::Manager.new(
+        data_dir: File.join(directory, "data"), csi: csi, path_security: security, fsync: true
+      )
+      id = manager.create_volume({"name" => "lease", "csi" => {"driver" => "lease.csi"}}, token: "create")
+      manager.controller.publish(id, "node-a", token: "attach")
 
-    assert_raises(Rubernetes::Volume::OperationUnknown) do
-      manager.node.stage(id, target, token: "stage", node: "node-a")
+      assert_raises(Rubernetes::Volume::OperationUnknown) do
+        manager.node.stage(id, target, token: "stage", node: "node-a")
+      end
+      # The plugin receives the canonical pathname (kubelet-compatible); the
+      # lease still pins the original inode and the post-effect verification
+      # detects the swap, fences the volume Unknown, and refuses to adopt the
+      # attacker's directory as the staged target.
+      assert_equal target, observations.fetch("dispatch")
+      assert_equal observations.fetch("outsideInode"), observations.fetch("dispatchInode"),
+                   "the swapped pathname now resolves to the attacker directory"
+      refute_equal observations.fetch("originalInode"), observations.fetch("dispatchInode")
+      assert_equal File.stat(held).ino, observations.fetch("originalInode")
+      assert_equal "Unknown", manager.volume(id).state
+      assert_empty manager.mount_ledger.entries
+    ensure
+      openat2&.close
+      FileUtils.remove_entry(directory) if directory && File.exist?(directory)
     end
     # The plugin receives the canonical pathname (kubelet-compatible); the
     # lease still pins the original inode and the post-effect verification
