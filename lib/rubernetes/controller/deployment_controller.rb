@@ -437,9 +437,7 @@ module Rubernetes
               min_ready_needs_update = Support.integer(rs_copy["spec"]["minReadySeconds"], 0) != @c.min_ready_seconds(d)
               if annotations_updated || min_ready_needs_update
                 rs_copy["spec"]["minReadySeconds"] = @c.min_ready_seconds(d)
-                if @c.min_ready_seconds(d).zero? && !Support.spec(existing).key?("minReadySeconds")
-                  rs_copy["spec"].delete("minReadySeconds")
-                end
+                rs_copy["spec"].delete("minReadySeconds") if @c.min_ready_seconds(d).zero? && !Support.spec(existing).key?("minReadySeconds")
                 @operations << @c.operation_update(existing, rs_copy, descriptor: REPLICA_SET, reason: "deployment replica set annotations")
                 replace_replica_set!(rs_copy)
                 return rs_copy
