@@ -98,7 +98,7 @@ module ServiceIPFamilyDifferential
   end
 
   def run_matrix(namespace)
-    cases.map do |test_case|
+    cases.to_h do |test_case|
       object = {"apiVersion" => "v1", "kind" => "Service",
                 "metadata" => {"name" => test_case["name"], "namespace" => namespace}, "spec" => test_case["spec"]}
       response = yield(:post, "/api/v1/namespaces/#{namespace}/services", object)
