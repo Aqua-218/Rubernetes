@@ -778,7 +778,7 @@ module Rubernetes
         if effect_keys.empty?
           violation(report, "missing_no_workload_effect", index,
                     "digest mismatch observation must include no_workload_effect")
-          return nil
+          return false
         end
         effect_keys.none? { |key| effect_value?(snapshot[key]) }
       end
