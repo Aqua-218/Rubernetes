@@ -2706,9 +2706,7 @@ module Rubernetes
           Filesystem.new.verify_digest(bytes, digest)
           verified = true
         end
-        if config.host_profile? && !verified
-          raise FailClosed, "production Native runtime requires image bytes or an adapter-verified OCI identity"
-        end
+        raise FailClosed, "production Native runtime requires image bytes or an adapter-verified OCI identity" if config.host_profile? && !verified
 
         if digest
           String(digest).downcase
