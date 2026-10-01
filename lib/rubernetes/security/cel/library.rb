@@ -633,7 +633,6 @@ module Rubernetes
             @text = text
           end
 
-          def initialize(address) = @address = address
           def cel_receiver? = true
           def family = @address.ipv4? ? 4 : 6
           def isCanonical = @address.to_s == @address.to_s
