@@ -165,9 +165,7 @@ module Rubernetes
             case attributes.operation
             when "CREATE"
               object = attributes.object || {}
-              unless spec(object)["configSource"].nil?
-                reject!("node #{node_name.inspect} is not allowed to create pods with a non-nil configSource")
-              end
+              reject!("node #{node_name.inspect} is not allowed to create pods with a non-nil configSource") unless spec(object)["configSource"].nil?
               bad = forbidden_labels(modified_labels(metadata(object)["labels"] || {}, {}))
               reject!("node #{node_name.inspect} is not allowed to set the following labels: #{bad.join(", ")}") unless bad.empty?
             when "UPDATE"
