@@ -338,9 +338,18 @@ module Rubernetes
         issues.concat(storage_version_migration_errors(root)) if kind == "StorageVersionMigration"
         issues.concat(data_key_errors(root, kind)) if %w[Secret ConfigMap].include?(kind)
         issues.concat(secret_type_errors(root)) if kind == "Secret"
-        issues.concat(probe_errors(root))
-        issues.concat(common_pod_errors(root, operation, old))
-        issues.concat(pod_resources_errors(root))
+        # The tree walkers below find Pod templates wherever an owner embeds
+        # them.  A CRD's OpenAPI schemas are maps of property NAMES, not
+        # objects: a schema for a Pod-shaped resource spells
+        # `postStart.properties.{exec,httpGet,tcpSocket,sleep}`, which the
+        # walkers read as a probe with four handlers, and a `restartPolicy`
+        # property as a Job restart policy.  apiextensions validates those
+        # schemas structurally only; Argo Workflows' CRDs were refused here.
+        walk_root = schema_free_root(root, kind)
+        walk_old = schema_free_root(old, kind)
+        issues.concat(probe_errors(walk_root))
+        issues.concat(common_pod_errors(walk_root, operation, walk_old))
+        issues.concat(pod_resources_errors(walk_root))
         issues.concat(pod_nested_errors(root, operation)) if kind == "Pod"
         if kind == "StatefulSet" && operation == :update
           # ValidateStatefulSetUpdate skips pod-template validation when the
