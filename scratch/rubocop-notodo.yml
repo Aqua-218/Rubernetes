@@ -1,0 +1,159 @@
+
+# RuboCop: strict layout and style for readability; size metrics stay off
+# (they measure design, not formatting) and remaining historical offenses
+# live in .rubocop_todo.yml, to be burned down.
+plugins:
+  - rubocop-minitest
+  - rubocop-performance
+  - rubocop-rake
+
+AllCops:
+  TargetRubyVersion: 3.4
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "build/**/*"
+    - "tmp/**/*"
+    - "artifacts/**/*"
+    - "pkg/**/*"
+    - "vendor/**/*"
+    - ".bundle/**/*"
+    - "a11-generated.*/**/*"
+    - "apps/*/node_modules/**/*"
+    - "apps/*/tmp/**/*"
+    - "apps/*/log/**/*"
+    - "apps/*/storage/**/*"
+    - "apps/*/db/schema.rb"
+    - "apps/*/bin/*"
+    - "lib/**/generated/*_pb.rb"
+    - "lib/**/*_pb.rb"
+    - "lib/**/*_services_pb.rb"
+    - "generated/**/*"
+
+Layout/LineLength:
+  Max: 140
+  AllowURI: true
+  AllowedPatterns:
+    - '\A\s*#'
+Layout/SpaceInsideHashLiteralBraces:
+  EnforcedStyle: no_space
+Layout/MultilineMethodCallIndentation:
+  EnforcedStyle: indented
+Layout/FirstArgumentIndentation:
+  EnforcedStyle: consistent
+Layout/HashAlignment:
+  EnforcedColonStyle: key
+  EnforcedHashRocketStyle: key
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: double_quotes
+Style/Documentation:
+  Enabled: false
+Style/FrozenStringLiteralComment:
+  EnforcedStyle: always
+Style/TrailingCommaInArrayLiteral:
+  EnforcedStyleForMultiline: no_comma
+Style/TrailingCommaInHashLiteral:
+  EnforcedStyleForMultiline: no_comma
+
+Metrics:
+  Enabled: false
+
+Naming/MethodParameterName:
+  MinNameLength: 2
+# v6, ipv4, sha256, rol32 are domain names, not numbered variables.
+Naming/VariableNumber:
+  EnforcedStyle: normalcase
+# Nested rescues name their exception distinctly on purpose (cleanup_error
+# next to the original error); renaming them all to `error` shadowed the
+# outer variable in 35 methods.
+Naming/RescuedExceptionsVariableName:
+  Enabled: false
+# Heuristic on return values; `close` returning true is not a predicate.
+Naming/PredicateMethod:
+  Enabled: false
+
+Minitest/MultipleAssertions:
+  Enabled: false
+# Helpers that assert (create_x, setup_pool) are not tests; the autocorrect
+# renamed six of them to test_* and broke their callers.
+Minitest/TestMethodName:
+  Enabled: false
+
+# Cops whose autocorrect assumes concrete core types.  This tree passes
+# duck-typed collections (Array/Headers/ListType where a Hash is expected,
+# CPUSet where an Array is, String or nil where a number is) and custom
+# exception constructors; batch-applying these on 2026-09-30 produced 249
+# test failures (each_key on Array, zero? on String, intersect? on CPUSet,
+# raise with three arguments).  They stay off rather than parked.
+Style/HashEachMethods:
+  Enabled: false
+Style/NumericPredicate:
+  Enabled: false
+Style/ArrayIntersect:
+  Enabled: false
+Style/HashExcept:
+  Enabled: false
+Style/HashSlice:
+  Enabled: false
+Style/RaiseArgs:
+  Enabled: false
+Style/SafeNavigation:
+  Enabled: false
+Style/DoubleNegation:
+  Enabled: false
+Style/StringConcatenation:
+  Enabled: false
+# SelectByRegexp rewrote `select { |v| matcher.match?(v) }` into `grep(matcher)`
+# where matcher is a Struct with its own match? (apps/dashboard tsdb): grep uses
+# ===, so every regex label selector silently returned nothing (found 2026-10-01).
+Style/SelectByRegexp:
+  Enabled: false
+# CombinableLoops merged two consecutive loops over the same hash into one
+# although the first loop `next`s past some entries (apps/dashboard rules):
+# ALERTS rows stopped being written for active alerts (found 2026-10-01).
+Style/CombinableLoops:
+  Enabled: false
+# assert_equal true / refute_equal false assert an exact boolean on purpose.
+Minitest/AssertTruthy:
+  Enabled: false
+Minitest/RefuteFalse:
+  Enabled: false
+
+# Judged not worth a tree-wide rewrite (2026-09-30), with the reason:
+# - ChainArrayAllocation (1,095): `map.select.first` chains read better than
+#   hand-fused loops; the arrays are small and never on a hot path we measured.
+# - CollectionLiteralInLoop (93): hoisting every `%w[]` out of a loop trades
+#   locality for a constant; the literals are tiny.
+# - MultilineBlockChain (84) / DuplicateBranch (102): the branches and chains are
+#   intentional for readability (parallel cases stay visibly parallel).
+# - UselessConstantScoping (247): `private` never scoped constants; the
+#   constants are referenced by tests and tools, so private_constant is wrong.
+# - StructNewOverride (27): Struct members named count/size/hash are wire-field
+#   names; renaming them would ripple through every caller and serializer.
+# - NoReturnInBeginEndBlocks (28): every `return` inside an assigned begin/end
+#   is meant to leave the method (early exit on a parse failure).
+Performance/ChainArrayAllocation:
+  Enabled: false
+Performance/CollectionLiteralInLoop:
+  Enabled: false
+Style/MultilineBlockChain:
+  Enabled: false
+Lint/DuplicateBranch:
+  Enabled: false
+Lint/UselessConstantScoping:
+  Enabled: false
+Lint/StructNewOverride:
+  Enabled: false
+Lint/NoReturnInBeginEndBlocks:
+  Enabled: false
+
+# Unused keyword arguments are interface conformance (a plan(**options)
+# contract shared by dozens of controllers); positional ones get the `_`.
+Lint/UnusedMethodArgument:
+  AllowUnusedKeywordArguments: true
+Lint/UnusedBlockArgument:
+  AllowUnusedKeywordArguments: true
+  IgnoreEmptyBlocks: true
