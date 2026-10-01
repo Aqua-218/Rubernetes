@@ -97,7 +97,9 @@ class M3ExternalProcessChaosTest < Minitest::Test
     harness.define_singleton_method(:wait_until) { |timeout:, &block| block.call }
     record = {"identity" => "old", "pid" => 999_999, "start_time" => 1, "generation" => "old:999999:1"}
     result = harness.send(:wait_for_recovery, [record], record, lease_name: "m3", started_at: M3ControlPlaneChaosRunner.monotonic_time,
-                                                                old_identity: "old", old_lease: {"metadata" => {"resourceVersion" => "7"}, "spec" => {"holderIdentity" => "old", "renewTime" => "2026-01-01T00:00:00Z"}})
+                                                                old_identity: "old", old_lease: {"metadata" => {"resourceVersion" => "7"},
+                                                                                                 "spec" => {"holderIdentity" => "old",
+                                                                                                            "renewTime" => "2026-01-01T00:00:00Z"}})
 
     assert_equal false, result.fetch("recovered")
   end
