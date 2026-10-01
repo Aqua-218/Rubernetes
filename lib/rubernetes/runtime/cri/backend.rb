@@ -462,9 +462,7 @@ module Rubernetes
             quota = limits["cpu"] ? [(value_of(limits["cpu"]) * 100_000).ceil, 1000].max : nil
             settings["cpu.max"] = "#{quota} 100000" if quota
           end
-          if (qos == "Guaranteed" || declared_for_all?(pod, "memory")) && limits["memory"]
-            settings["memory.max"] = value_of(limits["memory"]).ceil.to_s
-          end
+          settings["memory.max"] = value_of(limits["memory"]).ceil.to_s if (qos == "Guaranteed" || declared_for_all?(pod, "memory")) && limits["memory"]
           settings
         end
 
