@@ -74,6 +74,16 @@ def scheduler_fixture_cases
                                                                                                                                 "memory" => "0"}}}]}}]
   topology = [{"maxSkew" => 1, "topologyKey" => "topology.kubernetes.io/zone", "whenUnsatisfiable" => "ScheduleAnyway",
                "labelSelector" => {"matchLabels" => {"app" => "score"}}}]
+  victim_pod = {"apiVersion" => "v1", "kind" => "Pod",
+                "metadata" => {"name" => "m3-victim", "namespace" => "default", "uid" => "m3-victim-uid"},
+                "spec" => {"priority" => 1, "nodeName" => "node-a",
+                           "containers" => [{"name" => "victim", "image" => "example/victim",
+                                             "resources" => {"requests" => {"cpu" => "3", "memory" => "0"}}}]}}
+  volume_binding_pod = scheduler_pod(name: "m3-volume-binding-pod", uid: "m3-volume-binding-uid").merge(
+    "spec" => {"priority" => 10,
+               "containers" => [{"name" => "app", "image" => "example/app", "resources" => {"requests" => {"cpu" => "0", "memory" => "0"}}}],
+               "volumes" => [{"name" => "claim", "persistentVolumeClaim" => {"claimName" => "m3-pvc"}}]}
+  )
   {
     "filter" => base.merge("phase" => "filter",
                            "pod" => scheduler_pod(name: "m3-filter-pod", uid: "m3-filter-uid",
