@@ -193,7 +193,8 @@ module Rubernetes
           registry.register("apiserver_admission_webhook_admission_duration_seconds", type: :histogram, buckets: WEBHOOK_BUCKETS,
                                                                                       help: "Admission webhook latency histogram in seconds, identified by name and broken out for each operation and API resource and type (validate or admit).")
           registry.register("apiserver_admission_webhook_rejection_count", type: :counter,
-                                                                           help: "Admission webhook rejection count, identified by name and broken out for each admission type (validating or admit) and operation.")
+                                                                           help: "Admission webhook rejection count, identified by name and broken out for " \
+                                                                                 "each admission type (validating or admit) and operation.")
           registry.register("apiserver_admission_webhook_fail_open_count", type: :counter,
                                                                            help: "Admission webhook fail open count, identified by name and broken out for each admission type (validating or admit).")
           registry.register("apiserver_admission_webhook_request_total", type: :counter,
