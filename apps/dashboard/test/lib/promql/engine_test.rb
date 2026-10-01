@@ -62,9 +62,9 @@ module Promql
       assert_equal 1, vector('up{job!="b"}').length
     end
 
-  test "instant selectors use a five minute lookback and honour offset and @" do
-    load("up", {"job" => "a"}, [1, 1, 1, 1, 1])
-    load("up", {"job" => "b"}, [0], end_ms: T0 - (6 * 60_000)) # older than the lookback
+    test "stale markers end a series" do
+      load("m", {}, [1, 2, 3])
+      @store.append({"__name__" => "m"}, T0 + 15_000, Tsdb::Store::STALE_NAN)
 
     assert_equal [[{"__name__" => "up", "job" => "a"}, 1.0]], vector("up")
     assert_equal [], vector('up{job="b"}')
