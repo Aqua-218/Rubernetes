@@ -139,7 +139,7 @@ module M4VolumeObservationRunner
     # worker's own pid/start time, which is what SIGKILL must target.
     def wait_step(process, name, timeout: 120)
       path = File.join(process.fetch("control_dir"), "step-#{name}.json")
-      marker = M4ObserverSupport.wait_for(timeout: timeout) do
+      M4ObserverSupport.wait_for(timeout: timeout) do
         if File.file?(path)
           begin
             JSON.parse(File.binread(path))
