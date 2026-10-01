@@ -1178,9 +1178,7 @@ module Rubernetes
           return []
         end
 
-        if %i[label selector].include?(watch.via)
-          return matching_controller_keys(controller, object, selector_source: watch.selector_source)
-        end
+        return matching_controller_keys(controller, object, selector_source: watch.selector_source) if %i[label selector].include?(watch.via)
 
         # A Namespace controller's relation to a namespaced object is plain
         # containment: the object's own namespace is the only key worth
