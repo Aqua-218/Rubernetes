@@ -585,6 +585,17 @@ class APICoreTest < Minitest::Test
     assert_equal(200, update.status)
   end
 
+  def test_label_selector_matches_dotted_label_keys
+    selectors = Rubernetes::API::Selectors.new(label_selector: "app.kubernetes.io/name=web,tier!=cache")
+
+    assert selectors.matches?({"metadata" => {"labels" => {"app.kubernetes.io/name" => "web", "tier" => "frontend"}}})
+    refute selectors.matches?({"metadata" => {"labels" => {"app.kubernetes.io/name" => "api"}}})
+    fields = Rubernetes::API::Selectors.new(field_selector: "metadata.name=web")
+
+    assert fields.matches?({"metadata" => {"name" => "web"}})
+    refute fields.matches?({"metadata" => {"name" => "other"}})
+  end
+
   private
 
   def call(method, path, body = nil, query: nil, headers: {})
