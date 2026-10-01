@@ -298,9 +298,7 @@ module Rubernetes
           client.patch(target, patch_body, type: options[:patch_type], namespace: options[:namespace])
         else
           resource, name, extra = target.split("/", 3)
-          if resource.to_s.empty? || name.to_s.empty? || extra
-            raise Client::UsageError, "patch target must be RESOURCE/NAME or an absolute API path"
-          end
+          raise Client::UsageError, "patch target must be RESOURCE/NAME or an absolute API path" if resource.to_s.empty? || name.to_s.empty? || extra
 
           client.patch(
             resource,
