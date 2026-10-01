@@ -210,7 +210,7 @@ class LinuxPlatformTest < Minitest::Test
 
     assert_predicate(status, :success?)
   ensure
-    process&.values_at(:stdout, :stderr)&.compact&.each { |io| io.close unless io.closed? }
+    process&.values_at(:stdout, :stderr)&.each { |io| io.close if io && !io.closed? }
   end
 
   def test_runtime_default_seccomp_allows_subprocess_wait_and_exit
