@@ -42,9 +42,7 @@ module Rubernetes
           name_part = line[0, equals]
           name = name_part.sub(/[ \t]+\z/, "")
           raise Error, "invalid environment variable format at line #{line_number}: empty variable name" if name.empty?
-          if name_part != name
-            raise Error, "invalid environment variable format at line #{line_number}: whitespace before '=' is not allowed"
-          end
+          raise Error, "invalid environment variable format at line #{line_number}: whitespace before '=' is not allowed" if name_part != name
 
           value_part = line[(equals + 1)..]
           trimmed = value_part.sub(/\A[ \t]+/, "")
