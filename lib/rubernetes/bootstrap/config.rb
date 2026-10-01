@@ -656,9 +656,7 @@ module Rubernetes
         validate_mapping!(value, "rubernetes-agent.eviction")
         unknown = value.keys.map(&:to_s) - AGENT_EVICTION_KEYS
         raise Error, "rubernetes-agent.eviction has unknown fields: #{unknown.sort.join(", ")}" unless unknown.empty?
-        if value.key?("enabled") && ![true, false].include?(value["enabled"])
-          raise Error, "rubernetes-agent.eviction.enabled must be a boolean"
-        end
+        raise Error, "rubernetes-agent.eviction.enabled must be a boolean" if value.key?("enabled") && ![true, false].include?(value["enabled"])
 
         %w[hard soft soft_grace_period minimum_reclaim].each do |key|
           validate_mapping!(value[key], "rubernetes-agent.eviction.#{key}") if value.key?(key)
