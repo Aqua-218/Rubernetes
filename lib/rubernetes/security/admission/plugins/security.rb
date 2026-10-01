@@ -71,9 +71,7 @@ module Rubernetes
             when "CREATE" then validate_mirror_pod(attributes.object, node_name)
             when "DELETE"
               pod = existing_pod(attributes.namespace, attributes.name)
-              unless spec(pod)["nodeName"] == node_name
-                reject!("node #{node_name.inspect} can only delete pods with spec.nodeName set to itself")
-              end
+              reject!("node #{node_name.inspect} can only delete pods with spec.nodeName set to itself") unless spec(pod)["nodeName"] == node_name
             else
               reject!("unexpected operation #{attributes.operation.inspect}, node #{node_name.inspect} can only create and delete mirror pods")
             end
