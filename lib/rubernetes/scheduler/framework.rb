@@ -1598,9 +1598,7 @@ module Rubernetes
                     pod
                   end
           raise BindError, "bind handler returned a different pod" unless same_pod?(bound, pod)
-          if !bound.node_name.empty? && bound.node_name != node.name
-            raise BindError, "bind handler returned a pod bound to #{bound.node_name.inspect}"
-          end
+          raise BindError, "bind handler returned a pod bound to #{bound.node_name.inspect}" if !bound.node_name.empty? && bound.node_name != node.name
           return bound.with("spec" => bound.spec.merge("nodeName" => node.name)) if bound.node_name.empty?
 
           return bound
