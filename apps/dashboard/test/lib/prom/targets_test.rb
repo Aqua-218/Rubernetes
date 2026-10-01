@@ -10,9 +10,9 @@ module Prom
         @objects = objects
       end
 
-    def get(resource, api_version: "v1", **)
-      {"items" => @objects.fetch(resource, [])}
-    end
+      def get(resource, api_version: "v1", **)
+        {"items" => @objects.fetch(resource, [])}
+      end
 
     def raw(_method, path, **)
       Struct.new(:status, :body).new(200, "proxied #{path}\n")
