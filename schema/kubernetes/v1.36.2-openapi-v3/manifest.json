@@ -178,8 +178,10 @@
       "path": "apis/autoscaling/v2.json",
       "upstream_path": "api/openapi-spec/v3/apis__autoscaling__v2_openapi.json",
       "source_sha256": "47726b03de581449a6b1ab4323604df6edec4894e199f3059ff1870424d864ad",
-      "sha256": "47726b03de581449a6b1ab4323604df6edec4894e199f3059ff1870424d864ad",
-      "paths": 8
+      "sha256": "f401e4eeafcf62a10d2217f6d35561f8d3b3043bca947c99709feafc581e1857",
+      "paths": 8,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/autoscaling/v2"
     },
     {
       "path": "apis/autoscaling.json",
