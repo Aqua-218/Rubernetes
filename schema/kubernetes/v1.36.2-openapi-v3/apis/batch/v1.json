@@ -4385,7 +4385,13 @@
             "type": "string"
           },
           "operator": {
-            "description": "Operator represents a key's relationship to the value. Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal. Exists is equivalent to wildcard for value, so that a pod can tolerate all taints of a particular category. Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).",
+            "description": "Operator represents a key's relationship to the value. Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal. Exists is equivalent to wildcard for value, so that a pod can tolerate all taints of a particular category. Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).\n\nPossible enum values:\n - `\"Equal\"`\n - `\"Exists\"`\n - `\"Gt\"`\n - `\"Lt\"`",
+            "enum": [
+              "Equal",
+              "Exists",
+              "Gt",
+              "Lt"
+            ],
             "type": "string"
           },
           "tolerationSeconds": {
