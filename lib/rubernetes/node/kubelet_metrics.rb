@@ -817,9 +817,7 @@ module Rubernetes
         spec = entry && (entry[:spec] || entry["spec"])
         mounts = spec.is_a?(Hash) ? Array(spec["volumeMounts"]) : []
         mounts.each do |mount|
-          if mount.is_a?(Hash) && image_volumes.include?(mount["name"].to_s)
-            @registry.increment("kubelet_image_volume_mounted_succeed_total")
-          end
+          @registry.increment("kubelet_image_volume_mounted_succeed_total") if mount.is_a?(Hash) && image_volumes.include?(mount["name"].to_s)
         end
       end
 
