@@ -214,9 +214,7 @@ module M5Gate
         errors << "history #{entry["id"]} is not linearizable" unless entry["linearizable"] == true
         events = entry["events"] || {}
         errors << "history #{entry["id"]} has too few completed operations" unless events["ok"].to_i >= 10
-        unless entry["history"].is_a?(Array) && entry["history"].length == events.values.sum
-          errors << "history #{entry["id"]} must include its raw events"
-        end
+        errors << "history #{entry["id"]} must include its raw events" unless entry["history"].is_a?(Array) && entry["history"].length == events.values.sum
         if entry["history"].is_a?(Array) && M34EvidenceSupport.canonical_document_digest(entry["history"]) != entry["history_sha256"]
           errors << "history #{entry["id"]} digest mismatch"
         end
