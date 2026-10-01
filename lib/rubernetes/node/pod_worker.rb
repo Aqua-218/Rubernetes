@@ -124,7 +124,15 @@ module Rubernetes
       alias reconcile process
       alias run process
 
-      def stop(drain: true, join: true)
+      # A stop drains the queued work first, but never for ever: a worker
+      # blocked in a reconcile that cannot finish (an init container that
+      # never exits, a pull that hangs) kept the whole agent from exiting on
+      # SIGTERM -- agent-worker-0 sat in PodWorkerPool#stop for minutes while
+      # a Cilium init container ran, and the operator's restart timed out.
+      # Past +timeout+ the drain is abandoned, the stop marker is queued and
+      # the thread is given the same time to notice before it is left behind
+      # (the kubelet itself exits on SIGTERM without waiting for any Pod).
+      def stop(drain: true, join: true, timeout: nil)
         if drain
           drain_queue
         else
