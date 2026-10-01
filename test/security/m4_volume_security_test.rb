@@ -441,8 +441,8 @@ class M4VolumeSecurityTest < Minitest::Test
       end
       security = Rubernetes::Volume::PathSecurity.new(root: "/", adapter: adapter, require_openat2: true)
 
-    lease = security.acquire_target!(target, directory: true, create: true)
-    held_target = File.join(held_parent, "target")
+      lease = security.acquire_target!(target, directory: true, create: true)
+      held_target = File.join(held_parent, "target")
 
     assert_equal File.stat(held_target).ino, File.stat(lease.dispatch_path).ino
     refute_equal File.stat(target).ino, File.stat(lease.dispatch_path).ino
