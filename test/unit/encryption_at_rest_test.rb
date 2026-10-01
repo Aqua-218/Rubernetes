@@ -56,6 +56,7 @@ class EncryptionAtRestTest < Minitest::Test
     text = @metrics.render_own
 
     assert_match(
+      # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
       /apiserver_storage_transformation_operations_total\{resource="secrets",status="OK",transformation_type="to_storage",transformer_prefix="k8s:enc:aesgcm:v1:"\} 1/, text
     )
     assert_match(
