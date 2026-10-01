@@ -121,7 +121,8 @@ module M6FuzzProbe
         "\"#{random.alphanumeric(random.rand(1..40))}\":#{value}"
       end
       body = "{#{pairs.join(",")}}"
-      cases << exercise(service, crash_corpus, "random-#{round}", %w[POST PUT PATCH DELETE].sample(random: random), "/api/v1/namespaces/default/configmaps/r#{round}",
+      cases << exercise(service, crash_corpus, "random-#{round}", %w[POST PUT PATCH DELETE].sample(random: random),
+                        "/api/v1/namespaces/default/configmaps/r#{round}",
                         body: body, headers: {"content-type" => content_types.sample(random: random)})
     end
     # Policy bypass: malformed input replayed by an unauthorized user must stay 401/403.
