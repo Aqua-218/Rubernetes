@@ -366,9 +366,7 @@ module M2ProbeSupport
     expected_sha = ENV.fetch("RUBERNETES_M2_INPUT_SHA256", nil)
     expected_count = ENV.fetch("RUBERNETES_M2_INPUT_FILE_COUNT", nil)
     errors = []
-    if expected_sha && !M2Gate::SHA256_PATTERN.match?(expected_sha)
-      errors << "RUBERNETES_M2_INPUT_SHA256 must be a lowercase SHA-256 digest"
-    end
+    errors << "RUBERNETES_M2_INPUT_SHA256 must be a lowercase SHA-256 digest" if expected_sha && !M2Gate::SHA256_PATTERN.match?(expected_sha)
     parsed_count = begin
       Integer(expected_count, 10) if expected_count
     rescue ArgumentError, TypeError
