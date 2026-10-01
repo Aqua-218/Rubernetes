@@ -2338,7 +2338,8 @@ module M1Gate
       errors << "#{label} Kubernetes version must be #{KUBERNETES_VERSION}" unless oracle["kubernetes_version"] == KUBERNETES_VERSION
       errors << "#{label} Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}" unless oracle["source_commit"] == KUBERNETES_SOURCE_COMMIT
       errors << "#{label} source root must match provenance" unless non_empty_string?(oracle["source_root"]) && oracle.dig("provenance",
-                                                                                                                           "source", "root") == oracle["source_root"]
+                                                                                                                           "source",
+                                                                                                                           "root") == oracle["source_root"]
       errors << "#{label} source checkout must be clean" unless oracle["source_tree_clean"] == true
       unless integer?(oracle["comparison_count"]) && oracle["comparison_count"] == expected_count
         errors << "#{label} comparison count must match the report inventory"
