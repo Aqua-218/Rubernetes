@@ -151,10 +151,11 @@ module Tsdb
         assert_raises(Tsdb::Store::AlreadyOpen) { reader.append({"__name__" => "x"}, 1, 1.0) }
         series = reader.select_series([M.new(name: "__name__", op: "=", value: "shared")]).first
 
-    assert_equal 1, found.length
-    assert_equal Encoding::UTF_8, found.first.labels["job"].encoding
-    # A second append with UTF-8 strings is the same series, not a duplicate.
-    store.append({"__name__" => "apiserver_request_total", "job" => "apiserver", "verb" => "GET"}, 2000, 2.0)
+        assert_equal 20, reader.samples(series.id, 0, 10_000).length
+      ensure
+        reader.close
+      end
+    end
 
     assert_equal 1, store.series_count
   end
