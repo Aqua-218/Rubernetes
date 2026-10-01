@@ -59,6 +59,7 @@ module KubernetesOpenAPIV3Importer
     readme_text = File.file?(readme) ? File.read(readme) : nil
     FileUtils.rm_rf(OUTPUT)
     FileUtils.mkdir_p(OUTPUT)
+    File.write(readme, readme_text) if readme_text
     files = Dir.glob(File.join(directory, "*_openapi.json"), File::FNM_DOTMATCH).sort.map do |path|
       name = File.basename(path, "_openapi.json")
       # api__v1 -> api/v1 ; apis__apps__v1 -> apis/apps/v1 ; apis__apps -> apis/apps (group index, no paths)
