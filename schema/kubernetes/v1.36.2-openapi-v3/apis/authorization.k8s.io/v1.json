@@ -1437,11 +1437,6 @@
           },
           "201": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.authorization.v1.SubjectAccessReview"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.authorization.v1.SubjectAccessReview"
