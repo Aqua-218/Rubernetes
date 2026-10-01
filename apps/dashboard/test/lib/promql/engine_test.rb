@@ -66,13 +66,9 @@ module Promql
       load("m", {}, [1, 2, 3])
       @store.append({"__name__" => "m"}, T0 + 15_000, Tsdb::Store::STALE_NAN)
 
-    assert_equal [[{"__name__" => "up", "job" => "a"}, 1.0]], vector("up")
-    assert_equal [], vector('up{job="b"}')
-    assert_equal [[{"__name__" => "up", "job" => "b"}, 0.0]], vector('up{job="b"} offset 6m')
-    assert_equal [[{"__name__" => "up", "job" => "b"}, 0.0]], vector("up{job=\"b\"} @ #{(T0 - (6 * 60_000)) / 1000}")
-    assert_equal 1, vector('{__name__=~"u.*"}').length
-    assert_equal 1, vector('up{job!="b"}').length
-  end
+      assert_equal [3.0], values("m")
+      assert_equal [], vector("m", T0 + 30_000)
+    end
 
   test "stale markers end a series" do
     load("m", {}, [1, 2, 3])
