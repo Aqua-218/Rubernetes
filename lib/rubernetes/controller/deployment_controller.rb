@@ -312,7 +312,8 @@ module Rubernetes
 
           condition = condition.merge("lastTransitionTime" => current.fetch("lastTransitionTime")) if current &&
                                                                                                       Support.value(current, "status",
-                                                                                                                    "") == condition.fetch("status") && current.key?("lastTransitionTime")
+                                                                                                                    "") == condition.fetch("status") &&
+                                                                                                      current.key?("lastTransitionTime")
           status["conditions"] = filter_out_condition(status["conditions"], condition.fetch("type")) + [condition]
           status
         end
