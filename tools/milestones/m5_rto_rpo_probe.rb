@@ -204,7 +204,8 @@ module M5RTORPOProbe
       killed_at = M5ProbeSupport.monotonic
       quorum_lost_write = begin
         response = client_for(http_ports[survivor]).raw("POST", "/api/v1/namespaces/#{namespace}/configmaps",
-                                                        body: JSON.generate("apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm-during-outage"}),
+                                                        body: JSON.generate("apiVersion" => "v1", "kind" => "ConfigMap",
+                                                                            "metadata" => {"name" => "cm-during-outage"}),
                                                         headers: {"content-type" => "application/json"}, raise_for_status: false)
         {"status" => response.status, "acknowledged" => response.success?}
       rescue StandardError => error
