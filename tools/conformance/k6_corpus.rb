@@ -104,27 +104,7 @@ module Conformance
     }.freeze
 
     def exercise_verb(binary, verb, kubeconfig)
-      argv =
-        case verb
-        when "api-resources" then %w[api-resources --no-headers]
-        when "explain" then %w[explain pod.spec]
-        when "get" then %w[get namespaces]
-        when "create" then %w[create namespace k6-verbs --dry-run=client -o json]
-        when "apply" then %w[apply -f - --dry-run=server -o json]
-        when "diff" then %w[diff -f -]
-        when "patch" then ["patch", "namespace", "default", "--type=merge", "-p", "{}", "--dry-run=server"]
-        when "replace" then %w[replace -f - --dry-run=server -o json]
-        when "delete" then %w[delete namespace k6-absent --ignore-not-found]
-        when "auth" then %w[auth can-i get pods]
-        when "logs" then %w[logs --help]
-        when "exec" then %w[exec --help]
-        when "attach" then %w[attach --help]
-        when "port-forward" then %w[port-forward --help]
-        when "rollout" then %w[rollout --help]
-        when "scale" then %w[scale --help]
-        when "wait" then %w[wait --help]
-        when "top" then %w[top --help]
-        end
+      argv = VERB_ARGV[verb]
       stdin = if %w[apply diff
                     replace].include?(verb)
                 JSON.generate({"apiVersion" => "v1", "kind" => "Namespace",
