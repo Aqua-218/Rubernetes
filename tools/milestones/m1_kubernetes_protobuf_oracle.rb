@@ -90,7 +90,8 @@ module M1KubernetesProtobufOracle
       "defaulting_observable" => "generated zero-value Marshal bytes",
       "validation_observable" => "generated Unmarshal rejection of truncated length-delimited wire",
       "semantic_defaulting_scope" => "not claimed; descriptor-wide cases use the upstream generated zero-value serializer observable",
-      "compatibility_ceiling" => "exact upstream bytes are checked after generated custom-type normalization; generic Hash encoding is descriptor-wire compatible but not claimed to reproduce every gogoproto custom marshaler",
+      "compatibility_ceiling" => "exact upstream bytes are checked after generated custom-type normalization; generic Hash encoding is descriptor-wire " \
+                                 "compatible but not claimed to reproduce every gogoproto custom marshaler",
       "provenance" => provenance,
       "results" => response.sort_by { |entry| entry.fetch("id") }
     }
