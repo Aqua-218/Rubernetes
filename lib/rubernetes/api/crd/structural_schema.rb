@@ -113,6 +113,8 @@ module Rubernetes
           skip_any_of = int_or_string && int_or_string_any_of?(schema["anyOf"])
           %w[allOf anyOf oneOf].each do |combinator|
             Array(schema[combinator]).each_with_index do |branch, index|
+              next if combinator == "anyOf" && skip_any_of
+
               if branch.is_a?(Hash) && branch.key?("type")
                 raise NotStructural,
                       "#{join(path + ["#{combinator}[#{index}]"])}: must not set type"
