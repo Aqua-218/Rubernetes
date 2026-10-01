@@ -111,7 +111,8 @@ module M6APICoverageProbe
               "passed" => codec_kinds.nil? ? descriptor_count.positive? : codec_kinds >= descriptor_count}
     M6ProbeSupport.emit(M6ProbeSupport.report(
       kind: "m6_api_coverage_ledger", measurement_level: "differentially_tested", started_at: started_at, cases: cases,
-      extra: {"upstream_group_versions" => upstream.length, "sources" => M5ProbeSupport.source_files(%w[schema/kubernetes/v1.36.2/sources.json lib/rubernetes/api/server.rb])}
+      extra: {"upstream_group_versions" => upstream.length,
+              "sources" => M5ProbeSupport.source_files(%w[schema/kubernetes/v1.36.2/sources.json lib/rubernetes/api/server.rb])}
     ))
   end
 end
