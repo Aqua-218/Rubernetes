@@ -625,7 +625,7 @@ class HTTPTransportTest < Minitest::Test
         kubectl_run(service, "apply", "--validate=false", "-f", manifest.path)
       end
 
-    watch_transcript = read_until(watch_output, "watch-web", timeout: 5)
+      watch_transcript = read_until(watch_output, "watch-web", timeout: 5)
 
     assert_includes watch_transcript, "watch-web"
     Process.kill("TERM", watch_wait.pid)
