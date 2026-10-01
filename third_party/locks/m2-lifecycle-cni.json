@@ -28,6 +28,6 @@
   ],
   "ipam": "host-local",
   "node_image_lock_path": "third_party/locks/m2-lifecycle-node-image.json",
-  "node_image_reference": "localhost:25000/rubernetes/kind-node@sha256:2f0ecbdcd9d0bb44584f8700f5ae0be071c65135989e325789388d3df59c4efa",
-  "lock_sha256": "887ddefff28ff7d2045422eede1e21ef3f279cbd698e34520eaab2cd1518a251"
+  "node_image_reference": "localhost:25000/rubernetes/kind-node@sha256:f2ce941fe71ad2e2da20b75f441141ef7c81d065834630b3f430ed1929198854",
+  "lock_sha256": "80e29d66b4a14044979cfe23861b5614b4b3c1d11fdc3842f17003d749d04baa"
 }
