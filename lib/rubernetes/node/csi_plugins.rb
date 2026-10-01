@@ -175,6 +175,14 @@ module Rubernetes
         true
       end
 
+      # keepAllocatableCount: the new limit needs no CSINode update.
+      def self.keep_allocatable_count?(driver, max_volumes)
+        count = driver.dig("allocatable", "count")
+        return count.nil? if max_volumes.zero?
+
+        !count.nil? && Integer(count) == max_volumes
+      end
+
       private
 
       def highest_supported_version(name, versions)
