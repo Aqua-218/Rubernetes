@@ -650,9 +650,7 @@ module Rubernetes
           memo = [id, key]
           return @matches[memo] if @matches.key?(memo)
 
-          if data.klass && !selectors_match?(key, device, id, data.klass, Array(data.klass.dig("spec", "selectors")))
-            return @matches[memo] = false
-          end
+          return @matches[memo] = false if data.klass && !selectors_match?(key, device, id, data.klass, Array(data.klass.dig("spec", "selectors")))
           return @matches[memo] = false unless selectors_match?(key, device, id, nil, data.request.selectors)
 
           if slice.dig("spec", "perDeviceNodeSelection") == true &&
