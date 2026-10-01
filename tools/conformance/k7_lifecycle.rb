@@ -93,7 +93,8 @@ module Conformance
                      end
       stage.merge(
         "passed" => status.success? && loss.empty? && stuck.empty?,
-        "status" => status.success? ? "COMPLETE" : "FAILED",
+        "status" => stage_status,
+        "reason" => not_performed ? err.lines.last.to_s.strip : nil,
         "exit_status" => status.exitstatus,
         "elapsed_seconds" => (Time.now.utc - started).round(3),
         "data_loss" => loss,
