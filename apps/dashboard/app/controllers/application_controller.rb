@@ -72,7 +72,8 @@ class ApplicationController < ActionController::Base
              when Dashboard::Errors::Unavailable then :service_unavailable
              when ActionController::RoutingError then :not_found
              else
-               if error.instance_of?(::Rubernetes::Client::APIError) && error.respond_to?(:response) && error.response
+               if defined?(::Rubernetes::Client::APIError) && error.instance_of?(::Rubernetes::Client::APIError) &&
+                  error.respond_to?(:response) && error.response
                  code = error.response.status.to_i
                  code.between?(400, 599) ? code : :bad_gateway
                else
