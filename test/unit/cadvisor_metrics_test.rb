@@ -29,7 +29,8 @@ class CadvisorMetricsTest < Minitest::Test
                  "4242 (nginx) S 1 4242 4242 0 -1 4194560 100 0 0 0 1 2 0 0 20 0 3 0 100 1000 200 18446744073709551615\n")
       File.write(File.join(pid_dir, "status"), "Name:\tnginx\nThreads:\t3\n")
       File.write(File.join(pid_dir, "limits"),
-                 "Limit                     Soft Limit           Hard Limit           Units\nMax open files            1048576              1048576              files\n")
+                 "Limit                     Soft Limit           Hard Limit           Units\nMax open files            1048576              1048576              " \
+                 "files\n")
       File.symlink("socket:[12345]", File.join(pid_dir, "fd", "3"))
       File.symlink(File::NULL, File.join(pid_dir, "fd", "0"))
       FileUtils.mkdir_p(File.join(proc_root, "777", "net"))
