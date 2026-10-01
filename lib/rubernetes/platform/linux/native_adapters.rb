@@ -2895,9 +2895,7 @@ module Rubernetes
             loop do
               result = WAITPID.call(pid, storage, options)
               return nil if result.zero?
-              if result == -1 && Fiddle.last_error != Errno::EINTR::Errno
-                raise EffectError, "waitpid on hook #{pid} failed: #{Fiddle.last_error}"
-              end
+              raise EffectError, "waitpid on hook #{pid} failed: #{Fiddle.last_error}" if result == -1 && Fiddle.last_error != Errno::EINTR::Errno
               next if result == -1
 
               raw = storage[0, 4].unpack1("l")
