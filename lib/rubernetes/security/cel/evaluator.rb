@@ -158,7 +158,7 @@ module Rubernetes
 
           def eval_index(node)
             _, target_node, index_node, optional = node
-            target = eval(target_node)
+            target = evaluate(target_node)
             if target.is_a?(Values::Optional)
               return target unless target.present?
 
