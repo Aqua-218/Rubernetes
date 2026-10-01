@@ -255,8 +255,9 @@ module DRAAllocatorDifferential
     add.call("all-mode-max", slices: [slice("s1", (0...33).map do |index|
       device("d#{index}")
     end)], claims: [claim("c", [request("r", mode: "All")])])
-    add.call("multi-driver-order", slices: [slice("z", [device("z0")], driver: "b.example.com", pool: "p"), slice("a", [device("a0")], driver: "a.example.com", pool: "p")],
-                                   classes: [klass("any")], claims: [claim("c", [request("r", klass: "any", count: 2)])])
+    add.call("multi-driver-order",
+             slices: [slice("z", [device("z0")], driver: "b.example.com", pool: "p"), slice("a", [device("a0")], driver: "a.example.com", pool: "p")],
+             classes: [klass("any")], claims: [claim("c", [request("r", klass: "any", count: 2)])])
     list
   end
 
