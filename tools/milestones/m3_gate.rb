@@ -807,9 +807,7 @@ module M3Gate
         end
         if first_snapshot.is_a?(Hash) && first_observable.is_a?(Hash)
           journal_snapshot = first_observable.dig("durable_journal", "raw_snapshot")
-          unless journal_snapshot == first_snapshot
-            errors << "reconcile idempotency case #{index} first-run snapshot is not bound to the observable"
-          end
+          errors << "reconcile idempotency case #{index} first-run snapshot is not bound to the observable" unless journal_snapshot == first_snapshot
         end
         if second_snapshot.is_a?(Hash) && second_observable.is_a?(Hash)
           journal_snapshot = second_observable.dig("durable_journal", "raw_snapshot")
