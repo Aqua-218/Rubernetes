@@ -1515,7 +1515,7 @@ module Rubernetes
 
       def publish_not_ready_addresses?(rule)
         metadata = rule.respond_to?(:metadata) ? rule.metadata : {}
-        ModelSupport.bool(metadata["publishNotReadyAddresses"] || metadata[:publishNotReadyAddresses], false)
+        ModelSupport.bool(metadata["publishNotReadyAddresses"] || metadata[:publishNotReadyAddresses], default: false)
       end
 
       def endpoint_healthy?(backend)
