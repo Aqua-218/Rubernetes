@@ -189,7 +189,8 @@ module M6SecurityPipelineProbe
 
     recorder.reset
     forbidden = request(server, "POST", "/api/v1/namespaces/default/configmaps", token: "bob-token", body: configmap("x"))
-    cases << {"id" => "unauthorized_user_stops_before_admission_and_store", "status" => forbidden.status, "observed" => recorder.events.dup, "message" => forbidden.body["message"],
+    cases << {"id" => "unauthorized_user_stops_before_admission_and_store", "status" => forbidden.status, "observed" => recorder.events.dup,
+              "message" => forbidden.body["message"],
               "passed" => forbidden.status == 403 && recorder.events.include?("authentication") && recorder.events.include?("authorization") &&
                           !recorder.events.include?("admission.mutating") && !recorder.events.include?("store.create") &&
                           recorder.events.include?("audit.ResponseComplete") &&
