@@ -32,7 +32,6 @@ module Rubernetes
           module DRAResourceHealth
             # DRAResourceHealth service is implemented by DRA plugins and called by Kubelet.
             class Service
-
               include ::GRPC::GenericService
 
               self.marshal_class_method = :encode
