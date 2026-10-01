@@ -352,7 +352,8 @@ class M4NetworkTest < Minitest::Test
     link_info = Rubernetes::Network::Netlink::TLV.encode_many([
                                                                 {"type" => Rubernetes::Network::Netlink::IFLA_INFO_KIND,
                                                                  "value" => "vxlan\0"},
-                                                                {"type" => Rubernetes::Network::Netlink::IFLA_INFO_DATA, "value" => vxlan_data, "nested" => true}
+                                                                {"type" => Rubernetes::Network::Netlink::IFLA_INFO_DATA, "value" => vxlan_data,
+                                                                 "nested" => true}
                                                               ])
     payload = [0, 0, 0, 7, 1, 0].pack("CCS<l<L<L<") + Rubernetes::Network::Netlink::TLV.encode_many([
                                                                                                       {
