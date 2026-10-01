@@ -237,7 +237,10 @@ class MicroVMProtocolTest < Minitest::Test
     broker = M::Broker.new(resolver: resolver, http_factory: factory)
     broker.bind(vm_id: "vm-1", identity: {"capability_id" => "c", "subject_id" => "s", "policy_digest" => "p", "revocation_epoch" => 0},
                 policy: {"operations" => ["http.get"], "allowed_hosts" => ["a.internal"], "allowed_cidrs" => ["10.1.0.0/16"], "allowed_ports" => [443]})
-    error = assert_raises(M::PolicyError) { broker.handle("vm-1", "broker.request", {"operation" => "http.get", "params" => {"url" => "https://a.internal/start"}}) }
+    error = assert_raises(M::PolicyError) do
+      broker.handle("vm-1", "broker.request",
+                    {"operation" => "http.get", "params" => {"url" => "https://a.internal/start"}})
+    end
     assert_includes error.message, "b.external"
     assert_equal [["a.internal", "10.1.0.5"]], hops, "the redirect target was never fetched"
   end
