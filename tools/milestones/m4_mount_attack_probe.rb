@@ -398,9 +398,7 @@ def m4_run_native_crash_recovery!(root, errors)
     if restart_marker.is_a?(Hash)
       restart_child = restart_marker.dig("observation", "child")
       restart_child_live = m4_process_alive_with_identity?(restart_child)
-      if restart_child_live
-        File.open(restart_release_path, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write("continue\n") }
-      end
+      File.open(restart_release_path, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write("continue\n") } if restart_child_live
     end
     unless restart_child_live
       errors << "native mount restart evidence is incomplete: restart child PID/start-time binding is not live"
