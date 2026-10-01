@@ -408,7 +408,8 @@ module Rubernetes
         when "ControllerUnpublishVolume" then unpublish(Types.key(request, "volumeId"), Types.key(request, "nodeId"),
                                                         token: token, context: request)
         when "CreateSnapshot" then create_snapshot(Types.key(request, "sourceVolumeId"), token: token || Types.key(request, "name"),
-                                                                                         name: Types.key(request, "name"), secrets: Types.key(request, "secrets", {}))
+                                                                                         name: Types.key(request, "name"), secrets: Types.key(request,
+                                                                                                                                              "secrets", {}))
         when "DeleteSnapshot" then delete_snapshot(Types.key(request, "snapshotId"), token: token,
                                                                                      secrets: Types.key(request, "secrets", {}))
         when "ListSnapshots"
