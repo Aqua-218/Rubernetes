@@ -1093,6 +1093,27 @@ module Rubernetes
         raise PathSecurityError, "hostPath path must be a string"
       end
 
+      # kubelet follows symlinks on a hostPath (os.Stat / MkdirAll on the
+      # host's own filesystem), so `/var/run/cilium` on a host where
+      # /var/run -> /run is /run/cilium.  The descriptor walk below refuses
+      # symlinks (RESOLVE_NO_SYMLINKS), which turned every such hostPath into
+      # ELOOP and no Pod could mount it.  The existing prefix is resolved
+      # to its real path on the host first -- the one place where a symlink
+      # is trusted, because the path is the operator's -- and the
+      # not-yet-existing tail (DirectoryOrCreate) stays literal; the
+      # symlink-free result is then opened through openat2 as before.
+      def host_realpath(path)
+        existing = path
+        tail = []
+        until File.exist?(existing) || existing == "/"
+          tail.unshift(File.basename(existing))
+          existing = File.dirname(existing)
+        end
+        File.join(File.realpath(existing), *tail)
+      rescue SystemCallError
+        path
+      end
+
       def open_host_handle(path, kind:, allow_missing:)
         handle = @path_security.validate_host_path!(path, flags: host_open_flags(kind), resource_id: "hostPath:#{id}")
         host_path_stat(handle, path)
