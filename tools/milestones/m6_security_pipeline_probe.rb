@@ -238,7 +238,8 @@ module M6SecurityPipelineProbe
 
     M6ProbeSupport.emit(M6ProbeSupport.report(
       kind: "m6_security_pipeline_trace", measurement_level: "integration_tested", started_at: started_at, cases: cases,
-      extra: {"specified_order" => %w[tls request_id authentication authorization flow_control routing decode mutating_admission validating_admission strategy store encode audit],
+      extra: {"specified_order" => %w[tls request_id authentication authorization flow_control routing decode mutating_admission validating_admission strategy
+                                      store encode audit],
               "sources" => M5ProbeSupport.source_files(%w[lib/rubernetes/security/pipeline.rb lib/rubernetes/api/server.rb
                                                           lib/rubernetes/security/admission/framework.rb])}
     ))
