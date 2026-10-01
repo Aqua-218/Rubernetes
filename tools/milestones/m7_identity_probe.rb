@@ -85,7 +85,8 @@ module M7IdentityProbe
     S.emit(S.report(
       kind: "m7_identity_ledger", measurement_level: "L4", started_at: started_at, cases: cases,
       extra: {"host" => S.host_facts, "rotated_fields" => FIELDS, "measurement_source" => "real_snapshot_restores",
-              "sources" => M5ProbeSupport.source_files(%w[lib/rubernetes/runtime/microvm/identity.rb lib/rubernetes/runtime/microvm/session.rb lib/rubernetes/runtime/microvm/snapshot_pool.rb])}
+              "sources" => M5ProbeSupport.source_files(%w[lib/rubernetes/runtime/microvm/identity.rb lib/rubernetes/runtime/microvm/session.rb
+                                                          lib/rubernetes/runtime/microvm/snapshot_pool.rb])}
     ))
   end
 end
