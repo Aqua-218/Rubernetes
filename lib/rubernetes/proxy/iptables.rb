@@ -187,7 +187,6 @@ module Rubernetes
         # +existing_chains+: the KUBE-* chains currently in the nat table (a
         # full sync deletes the stale service chains).
         def render(rules, changed_services: nil, existing_chains: [])
-          filter_chains = []
           filter_rules = []
           nat_chains = []
           nat_rules = []
