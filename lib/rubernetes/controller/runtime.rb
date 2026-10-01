@@ -18,9 +18,7 @@ module Rubernetes
       attr_reader :store, :definition, :name
 
       def initialize(store: nil, definition: nil, name: nil, apply: true, event_sink: nil)
-        if instance_of?(BaseController)
-          raise MissingReconcileError, "BaseController is abstract and requires a concrete controller implementation"
-        end
+        raise MissingReconcileError, "BaseController is abstract and requires a concrete controller implementation" if instance_of?(BaseController)
 
         @store = store
         @adapter = store && (store.is_a?(StoreAdapter) ? store : StoreAdapter.new(store))
