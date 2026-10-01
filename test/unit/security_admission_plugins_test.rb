@@ -25,7 +25,8 @@ class SecurityAdmissionPluginsTest < Minitest::Test
   def attributes(operation, resource:, group: "", object: nil, old: nil, namespace: "team", name: nil, subresource: "", user: nil,
                  kind: nil)
     A::Attributes.new(operation: operation, user: user || S::UserInfo.new(name: "alice"), group: group, version: "v1", resource: resource,
-                      kind: kind || resource.capitalize, namespace: namespace, name: name || object&.dig("metadata", "name") || old&.dig("metadata", "name") || "",
+                      kind: kind || resource.capitalize, namespace: namespace, name: name || object&.dig("metadata", "name") || old&.dig("metadata",
+                                                                                                                                         "name") || "",
                       object: object, old_object: old, subresource: subresource)
   end
 
