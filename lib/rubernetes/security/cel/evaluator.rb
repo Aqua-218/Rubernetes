@@ -238,7 +238,7 @@ module Rubernetes
           end
 
           def safe(node)
-            eval(node)
+            evaluate(node)
           rescue EvaluationError => error
             error
           end
