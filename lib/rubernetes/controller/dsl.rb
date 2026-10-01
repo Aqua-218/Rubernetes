@@ -39,9 +39,7 @@ module Rubernetes
                   index_name: nil, queue_key: nil, scope: nil)
         descriptor = registry_descriptor(resource, scope: scope)
         relationship = via.to_sym
-        unless %i[owner_reference label selector all].include?(relationship)
-          raise InvalidWatchError, "unsupported watch relationship #{relationship.inspect}"
-        end
+        raise InvalidWatchError, "unsupported watch relationship #{relationship.inspect}" unless %i[owner_reference label selector all].include?(relationship)
         raise InvalidWatchError, "watch index must be a static name" if index && !index.is_a?(String) && !index.is_a?(Symbol)
 
         # `index` is the public shorthand used by the DSL specification.  It
