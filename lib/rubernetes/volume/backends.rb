@@ -1088,7 +1088,7 @@ module Rubernetes
 
         value = String(value)
         @path_security.validate!(value, allow_absolute: true)
-        value.start_with?("/") ? File.expand_path(value) : File.join(@path_security.root, value)
+        host_realpath(value.start_with?("/") ? File.expand_path(value) : File.join(@path_security.root, value))
       rescue TypeError
         raise PathSecurityError, "hostPath path must be a string"
       end
