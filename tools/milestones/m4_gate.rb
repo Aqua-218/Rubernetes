@@ -167,7 +167,9 @@ module M4Gate
       if waiver
         @accepted_waivers << waiver
       else
-        errors << "M4 requires a Linux kernel >= 6.12 (host #{host.is_a?(Hash) ? host["kernel"] : "unknown"}); an explicit manifest waiver naming #{KERNEL_WAIVER_REQUIREMENT}, a reason, and this host kernel is required to proceed"
+        errors << "M4 requires a Linux kernel >= 6.12 (host #{host.is_a?(Hash) ? host["kernel"] : "unknown"}); an explicit manifest waiver naming " \
+                  "#{KERNEL_WAIVER_REQUIREMENT}, a reason, and this host " \
+                  "kernel is required to proceed"
       end
     end
 
