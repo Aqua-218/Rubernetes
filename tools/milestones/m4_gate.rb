@@ -910,9 +910,7 @@ module M4Gate
       if target.is_a?(Hash) && mountinfo.is_a?(Array) && !mountinfo.include?(target["mountinfo_line"])
         errors << "#{label} target mountinfo line is not in the child mountinfo"
       end
-      unless document["signal"] == "SIGKILL" && document["child_killed"] == true
-        errors << "#{label} must record SIGKILL after the effect boundary"
-      end
+      errors << "#{label} must record SIGKILL after the effect boundary" unless document["signal"] == "SIGKILL" && document["child_killed"] == true
 
       restart = document["restart"]
       unless restart.is_a?(Hash) && restart["performed"] == true && restart["marker"].is_a?(Hash)
