@@ -18,7 +18,7 @@ require "time"
 # `require "rubernetes/runtime/native"` safe and warning-free.
 module Rubernetes
   module Runtime
-    NativeLoaderConstants = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache) unless const_defined?(:NativeLoaderConstants, false)
+    NATIVE_LOADER_CONSTANTS = {} # rubocop:disable Style/MutableConstant -- mutated at runtime (registry/cache) unless const_defined?(:NATIVE_LOADER_CONSTANTS, false)
     %i[Error JournalCorruption OwnershipConflict InvalidTransition RecoveryRequired
        RollbackJournal OwnershipLedger ResourceLedger Recovery StartupReconciler].each do |name|
       NativeLoaderConstants[name] = const_get(name, false) if const_defined?(name, false)
