@@ -5,8 +5,41 @@ topology cluster, invoke the pinned Hydrophone/Sonobuoy binaries and the
 upstream `e2e.test`, normalize JUnit/Ginkgo output, classify the upstream
 e2e inventory and emit the M8 evidence manifests.
 
-The tooling may orchestrate upstream executables but may not modify their source, focus,
-skip expression, or result. A failed or incomplete upstream run remains failed.
+The tooling may orchestrate upstream executables but may not modify their
+source, focus, skip expression, or result. A failed or incomplete upstream
+run remains failed.
+
+| Command | Purpose |
+|---|---|
+| `lock.rb` | Read-only view of `third_party/locks/` (Kubernetes commit, Conformance image digest, runner artifacts) |
+| `install_tools.rb` (`rake m8:tools`) | Install Hydrophone and Sonobuoy into `build/conformance/bin`, verifying each archive against the lock |
+| `build_e2e.rb` (`rake m8:e2e_build`) | Build the upstream `e2e.test` binary from the pinned checkout |
+| `cluster.rb up\|down\|status` | Bring up / tear down a 3 control-node + 3 worker cluster of real `exe/rubernetes-*` processes with PKI, kubeconfig and cluster DNS under `--root` |
+| `netns_env.sh up\|down\|exec` | Give one cluster instance its own network namespace with an uplink, NAT and resolver |
+| `round.sh` | One Hydrophone Conformance round inside a namespace; prints the JUnit totals and failed spec names |
+| `run.rb` (`rake m8:lanes`) | The official K1–K7 lane runner that writes the per-profile run manifest |
+| `k0_input_integrity.rb`, `k5_differential.rb`, `k6_corpus.rb`, `k7_lifecycle.rb`, `lanes.rb` | Lane implementations |
+| `build_selection_ledger.rb` (`rake m8:selection_ledger`) | Rebuild the K3 selection ledger from a Ginkgo dry-run |
+| `resolve_image_digests.rb` | Resolve the image tags of the project corpus to digests for the lock |
+
+## Day-to-day loop
+
+```bash
+export PATH=/opt/rubies/3.4.11/bin:$PATH
+rake m8:tools                                               # hydrophone + sonobuoy, once
+tools/conformance/netns_env.sh up conf4 --v4 3 --v6 e7      # one namespace per cluster instance
+RUBERNETES_M8_CGROUP_ROOT=/sys/fs/cgroup/conf4 \
+  tools/conformance/netns_env.sh exec conf4 -- \
+  ruby tools/conformance/cluster.rb up --profile linux-amd64-ipv4-native --root /srv/rbn-conf4
+setsid nohup tools/conformance/round.sh conf4 /srv/rbn-conf4/linux-amd64-ipv4-native \
+  /srv/rbn-conf4/rounds/01 --parallel 4 > /srv/rbn-conf4/rounds/01.out 2>&1 &
+```
+
+A full round at `--parallel 4` takes about 40 minutes on one host. Read
+`junit_01.xml` for the result: passes are silent in Hydrophone's log, so a
+quiet log is not a stalled run. Re-run a fix with `--focus` (a different run
+identity; it never replaces a full round). The last full IPv4 round on this
+tree passed 459/459 (2026-09-30).
 
 ## Related
 
