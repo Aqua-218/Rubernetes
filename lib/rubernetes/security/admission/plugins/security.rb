@@ -174,9 +174,7 @@ module Rubernetes
               if !spec(object)["configSource"].nil? && spec(object)["configSource"] != spec(old)["configSource"]
                 reject!("node #{node_name.inspect} is not allowed to update configSource to a new non-nil configSource")
               end
-              unless Array(spec(object)["taints"]) == Array(spec(old)["taints"])
-                reject!("node #{node_name.inspect} is not allowed to modify taints")
-              end
+              reject!("node #{node_name.inspect} is not allowed to modify taints") unless Array(spec(object)["taints"]) == Array(spec(old)["taints"])
               unless Array(metadata(object)["ownerReferences"]) == Array(metadata(old)["ownerReferences"])
                 reject!("node #{node_name.inspect} is not allowed to modify ownerReferences")
               end
