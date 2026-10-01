@@ -251,7 +251,8 @@ module Rubernetes
                 nat_rules << "-A KUBE-SERVICES -m comment --comment \"#{name} cluster IP\" -m #{protocol} -p #{protocol} -d #{cluster_ip} --dport " \
                              "#{svc.port} -j #{internal_chain}"
               else
-                filter_rules << "-A KUBE-SERVICES -m comment --comment #{internal_filter[1]} -m #{protocol} -p #{protocol} -d #{cluster_ip} --dport #{svc.port} -j #{internal_filter[0]}"
+                filter_rules << "-A KUBE-SERVICES -m comment --comment #{internal_filter[1]} -m #{protocol} -p #{protocol} -d #{cluster_ip} --dport " \
+                                "#{svc.port} -j #{internal_filter[0]}"
               end
             end
             svc.external_ips.each do |external_ip|
