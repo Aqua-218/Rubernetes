@@ -1329,11 +1329,6 @@
           },
           "202": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.authorization.v1.SelfSubjectRulesReview"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.authorization.v1.SelfSubjectRulesReview"
