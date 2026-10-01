@@ -666,7 +666,8 @@ module Rubernetes
                                              help: "Response size distribution in bytes for each group, version, verb, resource, subresource, scope and " \
                                                    "component.")
         register("apiserver_current_inflight_requests", type: :gauge,
-                                                        help: "Maximal number of currently used inflight request limit of this apiserver per request kind in last second.")
+                                                        help: "Maximal number of currently used inflight request limit of this apiserver per request kind " \
+                                                              "in last second.")
         register("apiserver_longrunning_requests", type: :gauge,
                                                    help: "Gauge of all active long-running apiserver requests broken out by verb, group, version, resource, scope and " \
                                                          "component. Not all requests are tracked this way.")
