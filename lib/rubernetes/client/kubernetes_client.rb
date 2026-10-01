@@ -1085,12 +1085,8 @@ module Rubernetes
 
       def normalize_rest_response(response)
         return response if response.respond_to?(:success?) && response.respond_to?(:body)
-        if response.is_a?(Hash)
-          return HTTPClient::Response.new(status: 200, headers: {"content-type" => "application/json"}, body: JSON.generate(response))
-        end
-        unless response.respond_to?(:status) && response.respond_to?(:body)
-          raise TransportError, "REST client returned an invalid response object"
-        end
+        return HTTPClient::Response.new(status: 200, headers: {"content-type" => "application/json"}, body: JSON.generate(response)) if response.is_a?(Hash)
+        raise TransportError, "REST client returned an invalid response object" unless response.respond_to?(:status) && response.respond_to?(:body)
 
         body = response.body.is_a?(String) ? response.body : JSON.generate(response.body)
         HTTPClient::Response.new(
