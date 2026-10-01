@@ -1003,7 +1003,7 @@ module M3Gate
 
     def lease_mutation_entry?(entry)
       entry["kind"] == "api_mutation" &&
-        entry["reconcile_key"].to_s.match?(%r{/leases/}) &&
+        entry["reconcile_key"].to_s.include?("/leases/") &&
         %w[create update].include?(entry["effect_type"].to_s)
     end
 
