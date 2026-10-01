@@ -200,7 +200,8 @@ module Rubernetes
           nat_rules << "-A KUBE-MARK-MASQ -j MARK --or-mark #{MASQUERADE_MARK}"
           if @localhost_node_ports
             filter_chains << ":KUBE-FIREWALL - [0:0]"
-            filter_rules << "-A KUBE-FIREWALL -m comment --comment \"block incoming localnet connections\" -d 127.0.0.0/8 ! -s 127.0.0.0/8 -m conntrack ! --ctstate RELATED,ESTABLISHED,DNAT -j DROP"
+            filter_rules << "-A KUBE-FIREWALL -m comment --comment \"block incoming localnet connections\" -d 127.0.0.0/8 ! -s 127.0.0.0/8 -m conntrack ! " \
+                            "--ctstate RELATED,ESTABLISHED,DNAT -j DROP"
           end
           active_chains = []
           no_local_internal = 0
