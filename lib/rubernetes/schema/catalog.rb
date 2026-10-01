@@ -815,7 +815,7 @@ module Rubernetes
           return value if value.nil? || value.is_a?(Numeric) || value == true || value == false || value.is_a?(Symbol)
           return value if seen.key?(value)
 
-          seen[value.object_id] = true
+          seen[value] = true
           case value
           when Hash
             value.each do |key, child|
