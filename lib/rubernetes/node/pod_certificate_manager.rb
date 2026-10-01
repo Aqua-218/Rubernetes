@@ -273,7 +273,10 @@ module Rubernetes
       end
 
       def not_found?(error)
-        (error.respond_to?(:status) && error.status.to_i == 404) || (error.respond_to?(:code) && error.code.to_i == 404) || error.message.to_s.match?(/\b404\b|not found/i)
+        return true if error.respond_to?(:status) && error.status.to_i == 404
+        return true if error.respond_to?(:code) && error.code.to_i == 404
+
+        error.message.to_s.match?(/\b404\b|not found/i)
       end
 
       # The terminal conditions of a request: Denied / Failed end it, Issued
