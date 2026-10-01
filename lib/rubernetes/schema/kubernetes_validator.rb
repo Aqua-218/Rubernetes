@@ -122,7 +122,7 @@ module Rubernetes
         kind = definition.kind
         issues = []
         issues.concat(metadata_errors(definition, root, kind, operation))
-        issues.concat(cross_field_errors(root, kind, operation, old, strategy_prepare, definition, subresource))
+        issues.concat(cross_field_errors(root, kind, operation, old, strategy_prepare: strategy_prepare, definition: definition, subresource: subresource))
         issues
       end
 
