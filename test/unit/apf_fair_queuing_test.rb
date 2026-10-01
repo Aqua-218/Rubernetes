@@ -350,7 +350,11 @@ class APFFairQueuingTest < Minitest::Test
                                                              {lower: 2.0, upper: 100.0, target: 3.0}])
 
     assert_equal [2.0, 2.0], allocs, "constrained from below"
-    assert_raises(ArgumentError) { FC::Controller.compute_concurrency_allocation(3, [{lower: 2.0, upper: 4.0, target: 3.0}, {lower: 2.0, upper: 4.0, target: 3.0}]) }
+    assert_raises(ArgumentError) do
+      FC::Controller.compute_concurrency_allocation(3,
+                                                    [{lower: 2.0, upper: 4.0, target: 3.0},
+                                                     {lower: 2.0, upper: 4.0, target: 3.0}])
+    end
   end
 
   def test_dealer_hands_distinct_cards
