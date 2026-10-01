@@ -283,12 +283,8 @@ module Rubernetes
       end
 
       def authorize!(request, route, identity, correlation_id)
-        if identity.nil? || identity.to_s.empty?
-          raise Status::Unauthorized.new("authentication is required for Pod #{route.subresource} subresources")
-        end
-        unless @trusted_mode || @authorizer
-          raise Status::ServiceUnavailable.new("Pod streaming subresource authorization is not configured")
-        end
+        raise Status::Unauthorized.new("authentication is required for Pod #{route.subresource} subresources") if identity.nil? || identity.to_s.empty?
+        raise Status::ServiceUnavailable.new("Pod streaming subresource authorization is not configured") unless @trusted_mode || @authorizer
         return if @trusted_mode
 
         context = AuthorizationContext.new(
