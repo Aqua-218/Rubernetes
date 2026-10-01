@@ -280,9 +280,7 @@ module Rubernetes
 
           absolute = File.expand_path(value)
           root_prefix = @root.end_with?(File::SEPARATOR) ? @root : "#{@root}#{File::SEPARATOR}"
-          unless absolute == @root || absolute.start_with?(root_prefix)
-            raise PathSecurityError, "path #{value.inspect} escapes configured root"
-          end
+          raise PathSecurityError, "path #{value.inspect} escapes configured root" unless absolute == @root || absolute.start_with?(root_prefix)
 
           relative = Pathname.new(absolute).relative_path_from(Pathname.new(@root)).to_s
           return "." if relative == "."
