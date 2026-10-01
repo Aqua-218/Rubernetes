@@ -536,11 +536,12 @@ class M3SchedulerTest < Minitest::Test
         context: Scheduler::CycleContext.new(nodes: [], pods: [], volume_data: {
                                                "persistentVolumeClaims" => {"default/claim" => {"metadata" => {"name" => "claim", "namespace" => "default"},
                                                                                                 "spec" => {"volumeName" => "pv-a"}}},
-                                               "persistentVolumes" => {"pv-a" => {"metadata" => {"name" => "pv-a"},
-                                                                                  "nodeAffinity" => {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{
-                                                                                    "key" => "topology.kubernetes.io/zone", "operator" => "In",
-                                                                                    "values" => ["zone-a"]
-                                                                                  }]}]}}}}
+                                               "persistentVolumes" => {"pv-a" => {
+                                                 "metadata" => {"name" => "pv-a"},
+                                                 "nodeAffinity" => {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{
+                                                   "key" => "topology.kubernetes.io/zone", "operator" => "In", "values" => ["zone-a"]
+                                                 }]}]}}
+                                               }}
                                              })
       },
       {
