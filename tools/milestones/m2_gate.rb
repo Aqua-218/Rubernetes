@@ -1531,9 +1531,7 @@ module M2Gate
         unless cycle_inventory["before"] == expected_cycle_before
           errors << "resource ledger lifecycle inventory before is not bound to cycle active inventories"
         end
-        unless cycle_inventory["after"] == expected_cycle_after
-          errors << "resource ledger lifecycle inventory after is not bound to cycle residual inventories"
-        end
+        errors << "resource ledger lifecycle inventory after is not bound to cycle residual inventories" unless cycle_inventory["after"] == expected_cycle_after
       else
         errors << "resource ledger lifecycle cycle inventory is required"
       end
