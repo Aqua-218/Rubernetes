@@ -66,6 +66,7 @@ task :compile do
   end
 end
 
+desc "Build the ABI shim, then run the whole suite serially (what the evidence gates use)"
 task test: :compile
 
 namespace :m0 do
