@@ -853,7 +853,7 @@ module Rubernetes
         end
         Plan.new(operations: operations.freeze, mtu: effective_mtu, backend: selected, revision: revision,
                  metadata: {"vni" => @vni, "dstport" => @dstport, "device" => device,
-                            "node_revisions" => entries.map { |entry| [entry.name, entry.revision] }.to_h}).freeze
+                            "node_revisions" => entries.to_h { |entry| [entry.name, entry.revision] }}).freeze
       end
 
       alias plan desired
