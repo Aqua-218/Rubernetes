@@ -1410,9 +1410,7 @@ module M1Gate
         errors << "API surface discovery endpoint #{index} must run exactly once" unless entry["attempt_count"] == 1
         default_off = DEFAULT_OFF_DISCOVERY_PATHS.include?(id)
         expected_availability = default_off ? "not_served_default" : "served"
-        unless entry["availability"] == expected_availability
-          errors << "API surface discovery endpoint #{index} availability profile is invalid"
-        end
+        errors << "API surface discovery endpoint #{index} availability profile is invalid" unless entry["availability"] == expected_availability
         if default_off
           unless entry["availability_reason"] == DEFAULT_OFF_REASON
             errors << "API surface discovery endpoint #{index} default-off reason is invalid"
