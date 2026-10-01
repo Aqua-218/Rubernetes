@@ -26,7 +26,7 @@ module CSIStubGenerator
     FileUtils.mkdir_p(output_dir)
     Dir.mktmpdir("rubernetes-csi-stubs") do |temporary|
       proto_path = File.join(temporary, "csi.proto")
-      File.binwrite(proto_path, URI.open(CSI_PROTO_URL, "rb", &:read))
+      File.binwrite(proto_path, URI.open(CSI_PROTO_URL, "rb", &:read)) # rubocop:disable Security/Open -- constant https URL pinned above
       verify_source!(proto_path)
 
       generated_dir = File.join(temporary, "generated")
