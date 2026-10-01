@@ -364,7 +364,8 @@ module Rubernetes
             account = @context.get("serviceaccounts", attributes.namespace, pod_spec["serviceAccountName"])
             if account.nil?
               unless pod_spec["serviceAccountName"] == DEFAULT_NAME && @config["allow_missing_default"] == true
-                return reject!("pods #{attributes.name.inspect} is forbidden: error looking up service account #{attributes.namespace}/#{pod_spec["serviceAccountName"]}: serviceaccount #{pod_spec["serviceAccountName"].inspect} not found")
+                return reject!("pods #{attributes.name.inspect} is forbidden: error looking up service account " \
+                               "#{attributes.namespace}/#{pod_spec["serviceAccountName"]}: serviceaccount #{pod_spec["serviceAccountName"].inspect} not found")
               end
 
               return
