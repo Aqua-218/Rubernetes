@@ -12,7 +12,8 @@ class APIServerProxyClientTest < Minitest::Test
 
   def data(proxy_client)
     {"version" => 1, "logging" => {"level" => "info"},
-     "processes" => {"rubernetes-apiserver" => {"bind_address" => "127.0.0.1", "port" => 6443, "max_body_bytes" => 3_145_728, "watch_history_limit" => 1000, "proxy_client" => proxy_client}}}
+     "processes" => {"rubernetes-apiserver" => {"bind_address" => "127.0.0.1", "port" => 6443, "max_body_bytes" => 3_145_728, "watch_history_limit" => 1000,
+                                                "proxy_client" => proxy_client}}}
   end
 
   def test_proxy_client_is_validated
