@@ -238,7 +238,8 @@ module Rubernetes
           # on) silently turns private.  A process that has not unshared its
           # mount namespace never has a legitimate reason to do this.
           if recursive && Integer(propagation) != MS_SHARED && File.expand_path(String(target)) == "/" && initial_mount_namespace?
-            raise Linux::Error.new(errno: Errno::EPERM::Errno, operation: "mount(#{propagation == MS_PRIVATE ? "MS_PRIVATE" : "MS_SLAVE"}|MS_REC, \"/\") in the initial mount namespace",
+            raise Linux::Error.new(errno: Errno::EPERM::Errno,
+                                   operation: "mount(#{propagation == MS_PRIVATE ? "MS_PRIVATE" : "MS_SLAVE"}|MS_REC, \"/\") in the initial mount namespace",
                                    resource_id: resource_id)
           end
 
