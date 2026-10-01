@@ -14,8 +14,9 @@ module Prom
         {"items" => @objects.fetch(resource, [])}
       end
 
-    def raw(_method, path, **)
-      Struct.new(:status, :body).new(200, "proxied #{path}\n")
+      def raw(_method, path, **)
+        Struct.new(:status, :body).new(200, "proxied #{path}\n")
+      end
     end
   end
 
