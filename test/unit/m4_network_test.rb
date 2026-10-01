@@ -357,7 +357,8 @@ class M4NetworkTest < Minitest::Test
                                                               ])
     payload = [0, 0, 0, 7, 1, 0].pack("CCS<l<L<L<") + Rubernetes::Network::Netlink::TLV.encode_many([
                                                                                                       {
-                                                                                                        "type" => Rubernetes::Network::Netlink::IFLA_IFNAME, "value" => "vxlan-test\0"
+                                                                                                        "type" => Rubernetes::Network::Netlink::IFLA_IFNAME,
+                                                                                                        "value" => "vxlan-test\0"
                                                                                                       },
                                                                                                       {
                                                                                                         "type" => Rubernetes::Network::Netlink::IFLA_MTU, "value" => [1430].pack("L<")
