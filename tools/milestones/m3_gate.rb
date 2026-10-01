@@ -1650,7 +1650,8 @@ module M3Gate
         errors << "workload oracle image provenance is incomplete"
       end
       controller_process = runner.is_a?(Hash) ? runner.dig("cluster", "controller_manager") : nil
-      unless controller_process.is_a?(Hash) && controller_process["pid"].is_a?(Integer) && controller_process["pid"] > 0 && controller_process["command"].is_a?(Array) && !controller_process["command"].empty? && valid_digest?(controller_process["binary_sha256"])
+      unless controller_process.is_a?(Hash) && controller_process["pid"].is_a?(Integer) && controller_process["pid"] > 0 &&
+             controller_process["command"].is_a?(Array) && !controller_process["command"].empty? && valid_digest?(controller_process["binary_sha256"])
         errors << "workload oracle controller-manager process provenance is incomplete"
       end
     end
