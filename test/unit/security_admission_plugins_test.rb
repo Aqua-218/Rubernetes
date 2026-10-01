@@ -210,7 +210,8 @@ class SecurityAdmissionPluginsTest < Minitest::Test
 
   def test_resource_quota_rejects_when_exceeded
     @context.put("resourcequotas", "team", "q",
-                 {"metadata" => {"name" => "q"}, "spec" => {"hard" => {"pods" => "2", "requests.cpu" => "1"}}, "status" => {"hard" => {"pods" => "2", "requests.cpu" => "1"}, "used" => {"pods" => "2", "requests.cpu" => "800m"}}})
+                 {"metadata" => {"name" => "q"}, "spec" => {"hard" => {"pods" => "2", "requests.cpu" => "1"}},
+                  "status" => {"hard" => {"pods" => "2", "requests.cpu" => "1"}, "used" => {"pods" => "2", "requests.cpu" => "800m"}}})
     quota = plugin("ResourceQuota")
     third = pod("third", containers: [{"name" => "c", "resources" => {"requests" => {"cpu" => "100m"}}}])
     error = assert_raises(A::Rejected) { quota.validate(attributes("CREATE", resource: "pods", object: third)) }
