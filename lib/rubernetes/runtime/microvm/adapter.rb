@@ -417,7 +417,7 @@ module Rubernetes
 
           ipv4 = entries.find { |entry| entry.addr&.ipv4? }
           ip = ipv4&.addr&.ip_address
-          prefix = ipv4&.netmask&.ip_address&.then { |mask| mask.split(".").map(&:to_i).sum { |octet| octet.to_s(2).count("1") } }
+          prefix = ipv4&.netmask&.then { |netmask| netmask.ip_address.split(".").map(&:to_i).sum { |octet| octet.to_s(2).count("1") } }
           gateway = nil
           File.foreach("/proc/net/route").drop(1).each do |line|
             fields = line.split
