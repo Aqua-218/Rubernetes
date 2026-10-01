@@ -112,7 +112,7 @@ module Rubernetes
           writer.close
           payload = reader.read
           Process.wait(pid)
-          status, *rest = Marshal.load(payload)
+          status, *rest = Marshal.load(payload) # rubocop:disable Security/MarshalLoad -- payload comes from our own forked child over a private pipe
           raise NetworkError, "#{rest[0]}: #{rest[1]}" if status == "error"
 
           rest.first
