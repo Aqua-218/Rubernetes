@@ -1071,7 +1071,9 @@ module Rubernetes
             return if workload.nil?
 
             reject!("Job #{attributes.name.inspect} refers to a Workload that does not exist") if @context.get("workloads",
-                                                                                                               attributes.namespace, workload, group: "scheduling.k8s.io", version: "v1alpha2").nil?
+                                                                                                               attributes.namespace, workload,
+                                                                                                               group: "scheduling.k8s.io",
+                                                                                                               version: "v1alpha2").nil?
           end
         end
         Registry.register("JobValidation") { |context, config| JobValidation.new("JobValidation", context: context, config: config) }
