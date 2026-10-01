@@ -254,9 +254,7 @@ module RubernetesSchemaGenerator
       type = "object" if type.nil? && (schema.key?("properties") || schema.key?("additionalProperties"))
       type = "any" if type.nil? && schema["x-kubernetes-int-or-string"]
       type ||= "any"
-      unless %w[any array boolean integer null number object string].include?(type)
-        raise Error, "OpenAPI field #{context} has unsupported type #{type.inspect}"
-      end
+      raise Error, "OpenAPI field #{context} has unsupported type #{type.inspect}" unless %w[any array boolean integer null number object string].include?(type)
 
       normalized = {"type" => type}
       if type == "array"
