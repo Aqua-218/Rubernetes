@@ -517,7 +517,8 @@ module Rubernetes
                 operation = document["operation"] || request_line.to_s.split[1].to_s.delete_prefix("/")
                 result = broker_call(operation, document["params"] || {})
                 payload = JSON.generate(result)
-                connection.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+                connection.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: #{payload.bytesize}\r\nConnection: " \
+                                 "close\r\n\r\n#{payload}")
               rescue StandardError => error
                 payload = JSON.generate({"error" => "#{error.class}: #{error.message}"})
                 begin
