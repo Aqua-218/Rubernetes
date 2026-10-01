@@ -172,7 +172,9 @@ module DRAAllocatorDifferential
     add.call("all-nodes", slices: [slice("s1", gpus(1), node_name: nil, pool: "shared", allNodes: true)],
                           claims: [claim("c", [request("r")])])
     add.call("node-selector-slice", slices: [slice("s1", gpus(1), node_name: nil, pool: "zone-a",
-                                                                  nodeSelector: {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone", "operator" => "In", "values" => ["a"]}]}]})],
+                                                                  nodeSelector: {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone",
+                                                                                                                                  "operator" => "In",
+                                                                                                                                  "values" => ["a"]}]}]})],
                                     claims: [claim("c", [request("r")])])
     add.call("node-selector-no-match", slices: [slice("s1", gpus(1), node_name: nil, pool: "zone-b",
                                                                      nodeSelector: {"nodeSelectorTerms" => [{"matchExpressions" => [{"key" => "zone", "operator" => "In", "values" => ["b"]}]}]})],
