@@ -187,7 +187,10 @@ module DRAAllocatorDifferential
     add.call("taint-no-schedule", slices: [slice("s1", [device("a", taints: [{"key" => "broken", "effect" => "NoSchedule"}]), device("b")])],
                                   claims: [claim("c", [request("r")])])
     add.call("taint-tolerated", slices: [slice("s1", [device("a", taints: [{"key" => "broken", "value" => "yes", "effect" => "NoExecute"}])])],
-                                claims: [claim("c", [request("r", tolerations: [{"key" => "broken", "operator" => "Equal", "value" => "yes", "effect" => "NoExecute"}])])])
+                                claims: [claim("c",
+                                               [request("r",
+                                                        tolerations: [{"key" => "broken", "operator" => "Equal", "value" => "yes",
+                                                                       "effect" => "NoExecute"}])])])
     add.call("taint-none-effect", slices: [slice("s1", [device("a", taints: [{"key" => "x", "effect" => "None"}])])],
                                   claims: [claim("c", [request("r")])])
     add.call("binding-conditions-last",
