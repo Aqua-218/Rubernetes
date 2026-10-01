@@ -3065,9 +3065,7 @@ module Rubernetes
       def validate_csi_driver!(spec, csi)
         requested = Types.key(spec, "driver").to_s
         return true if requested.empty?
-        unless csi.respond_to?(:identity)
-          raise CSIUnavailable, "CSI adapter identity is unavailable; cannot verify requested driver #{requested.inspect}"
-        end
+        raise CSIUnavailable, "CSI adapter identity is unavailable; cannot verify requested driver #{requested.inspect}" unless csi.respond_to?(:identity)
 
         identity = csi.identity
         actual = if identity.respond_to?(:name)
