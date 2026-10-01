@@ -642,7 +642,8 @@ module M4Gate
           errors << "proxy backend #{index} must pass from production module"
         end
         errors << "proxy backend #{index} must record a packet trace" unless entry.is_a?(Hash) && valid_digest?(entry["packet_trace_sha256"])
-        unless entry.is_a?(Hash) && entry["kernel_readback"].is_a?(Hash) && entry["kernel_readback"]["readback"] == true && entry["kernel_readback"]["rules"].is_a?(Array) && !entry["kernel_readback"]["rules"].empty?
+        unless entry.is_a?(Hash) && entry["kernel_readback"].is_a?(Hash) && entry["kernel_readback"]["readback"] == true &&
+               entry["kernel_readback"]["rules"].is_a?(Array) && !entry["kernel_readback"]["rules"].empty?
           errors << "proxy backend #{index} must reference verified kernel readback"
         end
       end
