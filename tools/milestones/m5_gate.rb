@@ -295,9 +295,7 @@ module M5Gate
       end
       cases.select { |entry| entry["component"] == "raft_store" }.each do |entry|
         errors << "raft_store #{entry["effect"]} must classify request loss" unless entry["request_loss_classification"] == "request_loss"
-        unless entry["response_loss_classification"] == "response_loss"
-          errors << "raft_store #{entry["effect"]} must classify response loss"
-        end
+        errors << "raft_store #{entry["effect"]} must classify response loss" unless entry["response_loss_classification"] == "response_loss"
         unless entry["request_loss_effect_count"] == 1 && entry["response_loss_retry_effect_count"] == 0
           errors << "raft_store #{entry["effect"]} re-execution must apply exactly once"
         end
