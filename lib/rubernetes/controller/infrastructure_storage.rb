@@ -420,9 +420,9 @@ module Rubernetes
           # a delete that went through is counted with the time since the
           # taint's effect became active (a Pod already gone is not).
           effective = device_eviction_time(pod, due_taint, node) || timestamp
-          operations.concat(disruption_and_delete(pod, timestamp, reason: "DeletionByDeviceTaintManager",
-                                                                  message: "Device Taint manager: deleting due to NoExecute taint",
-                                                                  uid_precondition: true).map do |operation|
+          deletions = disruption_and_delete(pod, timestamp, reason: "DeletionByDeviceTaintManager",
+                                                            message: "Device Taint manager: deleting due to NoExecute taint", uid_precondition: true)
+          observed = deletions.map do |operation|
             next operation unless operation.delete?
 
             operation.observed do |succeeded, _|
