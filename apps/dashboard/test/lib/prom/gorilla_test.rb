@@ -30,10 +30,8 @@ module Prom
       assert_equal samples, decoded
     end
 
-    assert_predicate decoded[1][1], :nan?
-    assert_equal [1, 1.0], decoded[0]
-    assert_equal [3, 2.0], decoded[2]
-  end
+    test "NaN survives as NaN" do
+      _, decoded = roundtrip([[1, 1.0], [2, Float::NAN], [3, 2.0]])
 
   test "single sample and two samples" do
     assert_equal [[5, 9.5]], roundtrip([[5, 9.5]]).last
