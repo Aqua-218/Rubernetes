@@ -473,12 +473,8 @@ module Rubernetes
           raise ValidationError, "ExternalName contains an invalid DNS name" unless valid_external_name?
         end
         raise ValidationError, "LoadBalancer requires a cluster IP" if headless? && service_type == "LoadBalancer"
-        if health_check_node_port && !health_check_node_port.between?(1, 65_535)
-          raise ValidationError, "healthCheckNodePort must be between 1 and 65535"
-        end
-        if health_check_node_port && external_traffic_policy != "Local"
-          raise ValidationError, "healthCheckNodePort requires externalTrafficPolicy Local"
-        end
+        raise ValidationError, "healthCheckNodePort must be between 1 and 65535" if health_check_node_port && !health_check_node_port.between?(1, 65_535)
+        raise ValidationError, "healthCheckNodePort requires externalTrafficPolicy Local" if health_check_node_port && external_traffic_policy != "Local"
 
         # A headless Service has ipFamilies but no ClusterIP ("None" is
         # dropped above); only an allocated address list must line up.
