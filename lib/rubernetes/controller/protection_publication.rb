@@ -721,7 +721,8 @@ module Rubernetes
           if current
             unless owner_reference_for?(pod, current)
               raise StoreError,
-                    "PVC #{Support.namespace(current)}/#{Support.name(current)} was not created for pod #{Support.namespace(pod)}/#{Support.name(pod)} (pod is not owner)"
+                    "PVC #{Support.namespace(current)}/#{Support.name(current)} was not created for pod #{Support.namespace(pod)}/#{Support.name(pod)} (pod " \
+                    "is not owner)"
             end
 
             next
