@@ -24,8 +24,9 @@ class SecurityAdmissionPolicyTest < Minitest::Test
                  group: "admissionregistration.k8s.io")
     @context.put("configmaps", "team", "limits", {"metadata" => {"name" => "limits"}, "data" => {"max" => "3"}})
     @context.put("validatingadmissionpolicybindings", nil, "deny",
-                 {"metadata" => {"name" => "deny"}, "spec" => {"policyName" => "replica-limit", "validationActions" => %w[Deny Audit], "paramRef" => {"name" => "limits", "namespace" => "team"},
-                                                               "matchResources" => {"namespaceSelector" => {"matchLabels" => {"env" => "prod"}}}}},
+                 {"metadata" => {"name" => "deny"},
+                  "spec" => {"policyName" => "replica-limit", "validationActions" => %w[Deny Audit], "paramRef" => {"name" => "limits", "namespace" => "team"},
+                             "matchResources" => {"namespaceSelector" => {"matchLabels" => {"env" => "prod"}}}}},
                  group: "admissionregistration.k8s.io")
     plugin = A::Registry.factories.fetch("ValidatingAdmissionPolicy").call(@context, {})
     metrics = Rubernetes::Observability::Metrics.new
