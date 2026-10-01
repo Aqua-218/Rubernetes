@@ -559,9 +559,7 @@ module Rubernetes
         # Validator.validate: each visit of a node that has a validator is one
         # evaluation, its time including the nodes below it.
         def validate_cel(value, schema, path, causes, old_value: nil, root: false)
-          unless CRD.metrics && @validator_nodes.key?(schema)
-            return validate_cel_node(value, schema, path, causes, old_value: old_value, root: root)
-          end
+          return validate_cel_node(value, schema, path, causes, old_value: old_value, root: root) unless CRD.metrics && @validator_nodes.key?(schema)
 
           started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           begin
