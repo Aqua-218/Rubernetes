@@ -50,9 +50,9 @@ module Promql
 
     # ---------------------------------------------------------- selectors
 
-  def values(expr, t = T0)
-    vector(expr, t).map(&:last)
-  end
+    test "instant selectors use a five minute lookback and honour offset and @" do
+      load("up", {"job" => "a"}, [1, 1, 1, 1, 1])
+      load("up", {"job" => "b"}, [0], end_ms: T0 - (6 * 60_000)) # older than the lookback
 
   # ---------------------------------------------------------- selectors
 
