@@ -254,9 +254,7 @@ module M34EvidenceSupport
 
     bytes = File.open(path, File::RDONLY | File::BINARY | File::NOFOLLOW | O_NONBLOCK) do |io|
       opened = io.stat
-      unless opened.file? && opened.dev == stat.dev && opened.ino == stat.ino && opened.size == stat.size
-        raise "packet capture changed while opening"
-      end
+      raise "packet capture changed while opening" unless opened.file? && opened.dev == stat.dev && opened.ino == stat.ino && opened.size == stat.size
 
       value = io.read.to_s.b
       after = io.stat
