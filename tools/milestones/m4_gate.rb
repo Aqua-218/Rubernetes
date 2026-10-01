@@ -769,9 +769,7 @@ module M4Gate
     def validate_volume(document, errors)
       kinds = document["volume_kinds"] || document["kinds"]
       ids = Array(kinds).filter_map { |entry| entry.is_a?(Hash) ? (entry["id"] || entry["kind"]) : nil }
-      unless ids.sort == REQUIRED_VOLUME_KINDS.sort && ids.uniq.length == REQUIRED_VOLUME_KINDS.length
-        errors << "volume lifecycle inventory is incomplete"
-      end
+      errors << "volume lifecycle inventory is incomplete" unless ids.sort == REQUIRED_VOLUME_KINDS.sort && ids.uniq.length == REQUIRED_VOLUME_KINDS.length
       Array(kinds).each_with_index do |entry, index|
         errors << "volume kind #{index} must pass from an identified production measurement source" unless
           entry.is_a?(Hash) && entry["passed"] == true && VALID_VOLUME_MEASUREMENT_SOURCES.include?(entry["measurement_source"]) && entry["attempt_count"] == 1
