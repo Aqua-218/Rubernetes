@@ -337,7 +337,7 @@ module Rubernetes
           if value.abs < 1e-6 || value.abs >= 1e21
             mantissa, exponent = format("%.17g", value).then { |s| Float(s) }.to_s.split("e")
             exponent ||= "0"
-            "#{mantissa.delete_suffix('.0')}e#{exponent.to_i.negative? ? "-" : "+"}#{exponent.to_i.abs.to_s.rjust(2, "0")}"
+            "#{mantissa.delete_suffix(".0")}e#{exponent.to_i.negative? ? "-" : "+"}#{exponent.to_i.abs.to_s.rjust(2, "0")}"
           else
             value.to_s
           end
