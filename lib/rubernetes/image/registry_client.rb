@@ -619,7 +619,7 @@ module Rubernetes
           arguments = transport_keyword_arguments(parameters, method: method, uri: uri, headers: headers, body: body, max_bytes: max_bytes)
           @transport.stream(**arguments, &)
         else
-          @transport.stream(method, uri, headers: headers, body: body, &block)
+          @transport.stream(method, uri, headers: headers, body: body, &)
         end
       end
 
