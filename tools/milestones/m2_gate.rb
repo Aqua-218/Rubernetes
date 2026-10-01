@@ -1868,9 +1868,7 @@ module M2Gate
       end
       errors << "#{label} effect checkpoint name does not match the matrix point" unless checkpoint["effect_point"] == effect_point
       errors << "#{label} Native state does not match the effect point" unless checkpoint["native_state"] == expected_checkpoint["state"]
-      unless checkpoint["actual_operation"] == expected_checkpoint["operation"]
-        errors << "#{label} actual operation does not match the effect point"
-      end
+      errors << "#{label} actual operation does not match the effect point" unless checkpoint["actual_operation"] == expected_checkpoint["operation"]
       errors << "#{label} workload gate must still be closed" unless checkpoint["workload_gate"] == "closed"
       errors << "#{label} workload code must not exist before the Running transition" unless
         checkpoint["workload_process_count"] == 0 && !checkpoint.key?("actual_workload")
