@@ -1033,9 +1033,7 @@ module Rubernetes
           stat = file.stat
           raise ConfigurationError, "#{label} file must be a regular file: #{path}" unless stat.file?
           raise ConfigurationError, "#{label} file has no read permission: #{path}" if stat.mode.nobits?(0o444)
-          if sensitive && stat.mode.anybits?(0o077)
-            raise ConfigurationError, "#{label} file must not grant permissions to group or other users: #{path}"
-          end
+          raise ConfigurationError, "#{label} file must not grant permissions to group or other users: #{path}" if sensitive && stat.mode.anybits?(0o077)
 
           content = file.read(MAX_CREDENTIAL_FILE_BYTES + 1)
           if content.bytesize > MAX_CREDENTIAL_FILE_BYTES
