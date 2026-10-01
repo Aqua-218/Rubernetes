@@ -43,7 +43,8 @@ module M7AttackProbe
                 "host_filesystem" => matrix["host_filesystem"], "passed" => denied == expected_denied}
       confinement = session.confinement_report
       jail_root = session.instance.chroot
-      jail_listing = Dir.glob(File.join(jail_root, "**", "*"), File::FNM_DOTMATCH).select { |path| File.file?(path) || File.blockdev?(path) || File.chardev?(path) }
+      jail_listing = Dir.glob(File.join(jail_root, "**", "*"),
+                              File::FNM_DOTMATCH).select { |path| File.file?(path) || File.blockdev?(path) || File.chardev?(path) }
         .map { |path| path.delete_prefix("#{jail_root}/") }.sort
       forbidden_in_jail = jail_listing.select { |path| path.end_with?(".pem", ".key", "kubeconfig") || path.include?("secret") }
       cases << {"id" => "host_confinement", "confinement" => confinement, "jail_files" => jail_listing, "forbidden_in_jail" => forbidden_in_jail,
