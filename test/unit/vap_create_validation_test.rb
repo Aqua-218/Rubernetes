@@ -78,8 +78,10 @@ class VAPCreateValidationTest < Minitest::Test
                   "expected type of field 'op' is 'string' but provided type is 'int'\n | [JSONPatch{op: 1, path: '/a'}]\n | .............^",
                   "spec.mutations[3].jsonPatch.expression: Invalid value: \"[]\": must evaluate to list(JSONPatch) but got list(dyn)",
                   "spec.mutations[4].jsonPatch.expression: Invalid value: \"[JSONPatch{op: 'add', path: '/metadata/labels/' + jsonpatch.escapeKey('a/b'), " \
-                  "value: variables.x}]\": compilation failed: ERROR: <input>:1:95: undefined field 'x'\n | [JSONPatch{op: 'add', path: '/metadata/labels/' + " \
-                  "jsonpatch.escapeKey('a/b'), value: variables.x}]\n | ..............................................................................................^"],
+                  "value: variables.x}]\": compilation failed: ERROR: <input>:1:95: undefined field 'x'\n | [JSONPatch{op: 'add', path: '/metadata/labels/' " \
+                  "+ " \
+                  "jsonpatch.escapeKey('a/b'), value: variables.x}]\n | " \
+                  "..............................................................................................^"],
                  errors
   end
 
