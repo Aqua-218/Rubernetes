@@ -3623,8 +3623,7 @@ module Rubernetes
                 "metadata" => {}, "items" => items}
         content_type = "application/json;g=#{AGGREGATED_DISCOVERY_GROUP};v=#{AGGREGATED_DISCOVERY_VERSION};as=#{AGGREGATED_DISCOVERY_KIND}"
         Response.new(status: 200,
-                     headers: {"content-type" => "application/json;g=#{AGGREGATED_DISCOVERY_GROUP};v=#{AGGREGATED_DISCOVERY_VERSION};as=#{AGGREGATED_DISCOVERY_KIND}",
-                               "cache-control" => "no-cache, private"},
+                     headers: {"content-type" => content_type, "cache-control" => "no-cache, private"},
                      body: body)
       end
 
