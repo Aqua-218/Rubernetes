@@ -104,9 +104,7 @@ module Rubernetes
 
       def apply_object_hash(value, object_definition, path, mode, kubernetes_admission_defaults, old = nil)
         union_target = union_object_definition(object_definition)
-        if union_target && value.respond_to?(:each_pair)
-          return apply_object_hash(value, union_target, path, mode, kubernetes_admission_defaults, old)
-        end
+        return apply_object_hash(value, union_target, path, mode, kubernetes_admission_defaults, old) if union_target && value.respond_to?(:each_pair)
 
         old = nil unless old.is_a?(Hash)
 
