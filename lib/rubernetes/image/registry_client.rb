@@ -653,7 +653,7 @@ module Rubernetes
       def normalize_response(response)
         return response if response.is_a?(RegistryResponse)
         if response.is_a?(Hash)
-          return RegistryResponse.new(status: response[:status] || response["status"], 
+          return RegistryResponse.new(status: response[:status] || response["status"],
                                       headers: response[:headers] || response["headers"] || {}, body: response[:body] || response["body"] || "")
         end
 
