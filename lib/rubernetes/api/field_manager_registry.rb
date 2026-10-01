@@ -148,9 +148,7 @@ module Rubernetes
           [%w[status]]
         when "status"
           return STATUS_RESET[kind] if STATUS_RESET.key?(kind)
-          if STATUS_METADATA_RESET_KINDS.include?(kind) || (resource.respond_to?(:custom?) && resource.custom?)
-            return [%w[metadata], %w[spec]]
-          end
+          return [%w[metadata], %w[spec]] if STATUS_METADATA_RESET_KINDS.include?(kind) || (resource.respond_to?(:custom?) && resource.custom?)
 
           [%w[spec]]
         else
