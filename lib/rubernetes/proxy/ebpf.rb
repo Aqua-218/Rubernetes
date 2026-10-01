@@ -780,9 +780,7 @@ module Rubernetes
         trace = evidence[:packet_trace_sha256] || evidence["packet_trace_sha256"] || evidence[:packetTraceSha256] || evidence["packetTraceSha256"]
         count = evidence[:packet_count] || evidence["packet_count"] || evidence[:packetCount] || evidence["packetCount"]
         kernel = evidence[:kernel] || evidence["kernel"] || evidence[:kernel_identity] || evidence["kernelIdentity"]
-        unless source.to_s != "" && source.to_s != "model_only" && trace.to_s.match?(/\A[0-9a-f]{64}\z/i) && count.to_i.positive?
-          return false
-        end
+        return false unless source.to_s != "" && source.to_s != "model_only" && trace.to_s.match?(/\A[0-9a-f]{64}\z/i) && count.to_i.positive?
         unless kernel.is_a?(Hash) && (kernel[:release] || kernel["release"] || kernel[:kernelRelease] || kernel["kernelRelease"]).to_s == @actual_kernel_release
           return false
         end
