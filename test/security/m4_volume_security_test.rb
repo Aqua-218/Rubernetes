@@ -457,13 +457,14 @@ class M4VolumeSecurityTest < Minitest::Test
   def test_target_lease_rejects_ordinary_leaf_replacement_after_mount_readback
     skip "descriptor-relative CSI dispatch requires Linux openat2" unless RUBY_PLATFORM.include?("linux")
 
-    directory = Dir.mktmpdir("m4-leaf-post-readback-race")
-    target = File.join(directory, "target")
-    held = File.join(directory, "target.held")
-    FileUtils.mkdir_p(target)
-    openat2 = Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true)
-    security = Rubernetes::Volume::PathSecurity.new(root: "/", adapter: openat2, require_openat2: true)
-    lease = security.acquire_target!(target, directory: true, create: true)
+    begin
+      directory = Dir.mktmpdir("m4-leaf-post-readback-race")
+      target = File.join(directory, "target")
+      held = File.join(directory, "target.held")
+      FileUtils.mkdir_p(target)
+      openat2 = Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true)
+      security = Rubernetes::Volume::PathSecurity.new(root: "/", adapter: openat2, require_openat2: true)
+      lease = security.acquire_target!(target, directory: true, create: true)
 
     File.rename(target, held)
     FileUtils.mkdir_p(target)
