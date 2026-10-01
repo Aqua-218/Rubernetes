@@ -134,7 +134,7 @@ module Release
     def component_processes
       names = Dir.glob(File.join(ROOT, "exe", "*")).map { |path| File.basename(path) }
       names.flat_map do |name|
-        out, _err, status = Open3.capture3("pgrep", "-f", name)
+        out, _err, status = Open3.capture3("pgrep", "-f", "(^|/)exe/#{Regexp.escape(name)}( |$)")
         next [] unless status.success?
 
         out.split.filter_map do |pid|
