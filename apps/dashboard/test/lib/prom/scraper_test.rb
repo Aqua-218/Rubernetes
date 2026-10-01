@@ -61,8 +61,8 @@ module Prom
       assert_equal @now, b[0]
       assert_equal([0.0], value_of("scrape_series_added").map { |_, p| p[1] })
 
-    @now += 15_000
-    status = @scraper.scrape(target(nil, status: 500))
+      @now += 15_000
+      status = @scraper.scrape(target(nil, status: 500))
 
     assert_equal "down", status.health
     assert_match(/HTTP status 500/, status.last_error)
