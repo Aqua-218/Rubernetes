@@ -655,9 +655,7 @@ module Rubernetes
           operation.action == "create_container" && operation.metadata.fetch("sandbox_id", nil) == sandbox_id &&
             operation.state != "Removed"
         end.each do |container|
-          unless container.state == "Stopped"
-            raise InvalidTransition, "container #{container.target_id} must be Stopped before sandbox removal"
-          end
+          raise InvalidTransition, "container #{container.target_id} must be Stopped before sandbox removal" unless container.state == "Stopped"
           raise Error, "remove_container backend effect returned false" if invoke_optional(:remove_container,
                                                                                            {id: container.target_id}) == false
 
