@@ -722,7 +722,8 @@ module M0Gate
         return
       end
       errors << "one x86_64 ABI probe is required" unless document["architecture"] == "x86_64"
-      unless document["input_sha256"] == manifest["input_sha256"] && document["input_file_count"] == manifest["input_file_count"] && document["input_stable"] == true
+      unless document["input_sha256"] == manifest["input_sha256"] && document["input_file_count"] == manifest["input_file_count"] &&
+             document["input_stable"] == true
         errors << "ABI probe input differs from manifest"
       end
       captured = capture_directory(manifest) || directory
