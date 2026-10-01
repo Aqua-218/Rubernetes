@@ -95,8 +95,8 @@ module Release
 
     def collect(options)
       at = Time.now.utc.iso8601
-      processes = component_processes
-      cluster = options[:kubeconfig] ? cluster_sample(options[:kubeconfig]) : {"available" => false}
+      processes = options[:cluster_root] ? cluster_processes(options[:cluster_root]) : component_processes
+      cluster = options[:kubeconfig] ? cluster_sample(options[:kubeconfig], netns: options[:netns]) : {"available" => false}
       {
         "at" => at,
         "processes" => processes,
