@@ -674,7 +674,8 @@ module Rubernetes
               spec["healthCheckNodePort"] = next_free_port(used, service)
             elsif used.include?(spec["healthCheckNodePort"].to_i) && spec["healthCheckNodePort"].to_i != (existing && existing.dig("spec",
                                                                                                                                    "healthCheckNodePort")).to_i
-              raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.healthCheckNodePort: Invalid value: #{spec["healthCheckNodePort"]}: provided port is already allocated",
+              raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.healthCheckNodePort: Invalid value: " \
+                                        "#{spec["healthCheckNodePort"]}: provided port is already allocated",
                                         details: {"kind" => "Service", "name" => name_of(service)})
             end
           else
