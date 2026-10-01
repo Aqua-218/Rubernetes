@@ -685,9 +685,12 @@ module M4Gate
         errors << "proxy packet runner provenance is incomplete"
       end
       runner = packet["runner"] || packet["runner_provenance"]
-      errors << "proxy packet runner PID/start-time/source/argv/stdout provenance is incomplete" unless runner.is_a?(Hash) && runner["pid"].is_a?(Integer) && runner["pid"].positive? && iso8601?(runner["startedAt"] || runner["started_at"] || runner["startTime"] || runner["start_time"]) && non_empty_string?(runner["source"] || runner["sourcePath"] || runner["source_path"]) && Array(runner["argv"] || runner["command"]).any? && Array(runner["argv"] || runner["command"]).all? do |arg|
-        non_empty_string?(arg)
-      end && runner["stdout"].is_a?(String) && valid_digest?(runner["stdoutSha256"] || runner["stdout_sha256"]) &&
+      errors << "proxy packet runner PID/start-time/source/argv/stdout provenance is incomplete" unless runner.is_a?(Hash) && runner["pid"].is_a?(Integer) &&
+                                                                                                        runner["pid"].positive? && iso8601?(runner["startedAt"] || runner["started_at"] || runner["startTime"] || runner["start_time"]) &&
+                                                                                                        non_empty_string?(runner["source"] || runner["sourcePath"] || runner["source_path"]) && Array(runner["argv"] || runner["command"]).any? &&
+                                                                                                        Array(runner["argv"] || runner["command"]).all? do |arg|
+                                                                                                          non_empty_string?(arg)
+                                                                                                        end && runner["stdout"].is_a?(String) && valid_digest?(runner["stdoutSha256"] || runner["stdout_sha256"]) &&
                                                                                                         Digest::SHA256.hexdigest(runner["stdout"]) == (runner["stdoutSha256"] || runner["stdout_sha256"])
       execution = packet["executionIdentity"]
       unless execution.is_a?(Hash) && execution["runnerIdentity"] == packet["runnerIdentity"] && execution["runnerDigest"] == packet["runnerDigest"] && execution["mode"] == packet["mode"] && valid_digest?(packet["executionIdentitySha256"]) && packet["executionIdentitySha256"] == canonical_document_digest(execution)
