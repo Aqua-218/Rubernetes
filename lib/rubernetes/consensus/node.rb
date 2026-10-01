@@ -1067,9 +1067,7 @@ module Rubernetes
           send_snapshot(peer, now)
           return
         end
-        while @inflight[peer].length < @timing.max_inflight_appends && @next_index.fetch(peer) <= @log.last_index
-          send_append(peer, heartbeat: false, now: now)
-        end
+        send_append(peer, heartbeat: false, now: now) while @inflight[peer].length < @timing.max_inflight_appends && @next_index.fetch(peer) <= @log.last_index
       end
 
       def send_append(peer, heartbeat:, now:)
