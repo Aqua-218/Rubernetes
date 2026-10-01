@@ -53,7 +53,8 @@ module Rubernetes
               # ListAndWatch returns a stream of List of Devices
               # Whenever a Device state change or a Device disappears, ListAndWatch
               # returns the new list
-              rpc :ListAndWatch, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::Empty, stream(::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::ListAndWatchResponse)
+              rpc :ListAndWatch, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::Empty,
+                  stream(::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::ListAndWatchResponse)
               # GetPreferredAllocation returns a preferred set of devices to allocate
               # from a list of available ones. The resulting preferred allocation is not
               # guaranteed to be the allocation ultimately performed by the
