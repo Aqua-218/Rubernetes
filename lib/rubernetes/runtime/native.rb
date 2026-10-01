@@ -649,9 +649,7 @@ module Rubernetes
         end
         command = spec["command"] || spec["argv"]
         if command.nil?
-          if config.host_profile? || spec["image"] || spec["resolved_image"]
-            raise FailClosed, "container image config did not provide an executable command"
-          end
+          raise FailClosed, "container image config did not provide an executable command" if config.host_profile? || spec["image"] || spec["resolved_image"]
 
           command = ["/bin/true"]
         end
