@@ -79,7 +79,8 @@ def build_rootfs(staging)
     key =~ /\A(https?_proxy|HTTPS?_PROXY|no_proxy|NO_PROXY)\z/
   end.flat_map { |key, value| ["-e", "#{key}=#{value}"] }
   run!("docker", "run", "--rm", *proxy_env, "-v", "#{File.join(ROOT, "ext")}:/src/ext:ro", "-v", "#{ext_output}:/out", reference, "sh", "-c",
-       "apk add --no-cache build-base linux-headers >/dev/null && mkdir -p /build && cp -r /src/ext/rubernetes_linux /build/ && cd /build/rubernetes_linux && ruby extconf.rb >/dev/null && make >/dev/null && cp rubernetes_linux.so /out/ && chmod 644 /out/rubernetes_linux.so")
+       "apk add --no-cache build-base linux-headers >/dev/null && mkdir -p /build && cp -r /src/ext/rubernetes_linux /build/ && cd /build/rubernetes_linux " \
+       "&& ruby extconf.rb >/dev/null && make >/dev/null && cp rubernetes_linux.so /out/ && chmod 644 /out/rubernetes_linux.so")
   raise "extension build produced no rubernetes_linux.so" unless File.file?(File.join(ext_output, "rubernetes_linux.so"))
 
   container = run!("docker", "create", reference, "true").strip
