@@ -312,7 +312,59 @@ module Conformance
         passed = executions.all? { |execution| execution.fetch("exit_status").zero? } && unclassified.empty? && unlinked.empty?
         {"lane" => "K3", "passed" => passed, "status" => passed ? "COMPLETE" : "FAILED",
          "required" => required.length, "unclassified" => unclassified.length,
-         "unlinked_external_contracts" => unlinked.length, "artifacts" => artifacts}
+         "unlinked_external_contracts" => unlinked.length, "chunks" => chunks.length, "totals" => totals,
+         "artifacts" => artifacts}
+      end
+
+      FOCUS_BYTES = 96 * 1024
+      CONCURRENCY = Integer(ENV.fetch("RUBERNETES_M8_K3_PARALLEL", "4"))
+
+      def focus_chunks(ids)
+        chunks = [[]]
+        ids.each do |id|
+          escaped = Regexp.escape(id)
+          current = chunks.last
+          if !current.empty? && current.sum(&:length) + current.length + escaped.length > FOCUS_BYTES
+            chunks << []
+            current = chunks.last
+          end
+          current << escaped
+        end
+        chunks.reject(&:empty?)
+      end
+
+      def run_chunks(binary, kubeconfig, directory, chunks)
+        queue = chunks.each_with_index.to_a
+        mutex = Mutex.new
+        results = Array.new(chunks.length)
+        workers = Array.new([CONCURRENCY, chunks.length].min) do
+          Thread.new do
+            loop do
+              chunk, index = mutex.synchronize { queue.shift }
+              break if chunk.nil?
+
+              report_dir = File.join(directory, format("chunk-%03d", index))
+              FileUtils.mkdir_p(report_dir)
+              results[index] = Lanes.capture([binary, "--provider=skeleton", "--kubeconfig", kubeconfig,
+                                              "--ginkgo.focus=#{chunk.join("|")}", "--report-dir=#{report_dir}"])
+            end
+          end
+        end
+        workers.each(&:join)
+        results
+      end
+
+      def junit_totals(directory)
+        totals = {"tests" => 0, "failures" => 0, "errors" => 0, "skipped" => 0, "reports" => 0}
+        Dir.glob(File.join(directory, "chunk-*", "junit_*.xml")).each do |path|
+          suite = REXML::Document.new(File.read(path)).root
+          suite = suite.elements["testsuite"] || suite if suite && suite.name == "testsuites"
+          next if suite.nil?
+
+          totals["reports"] += 1
+          %w[tests failures errors skipped].each { |key| totals[key] += suite.attributes[key].to_i }
+        end
+        totals
       end
     end
 
