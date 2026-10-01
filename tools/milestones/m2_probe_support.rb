@@ -1008,7 +1008,7 @@ module M2ProbeSupport
     leak_scan = nil
     limits_evidence = nil
     pidfd_baseline = pidfd_count
-    Dir.mktmpdir("rubernetes-m2-native-cycles-") do |directory|
+    native_cycle_workspace do |directory|
       sandbox_root = File.join(directory, "sandboxes")
       adapters = Rubernetes::Platform::Linux::NativeAdapters.for_profile(
         profile: :l3, sandbox_root: sandbox_root, cgroup_root: "/sys/fs/cgroup",
