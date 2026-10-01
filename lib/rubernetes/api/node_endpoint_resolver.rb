@@ -209,9 +209,7 @@ module Rubernetes
           if length
             body << socket.read(length - body.bytesize).to_s while body.bytesize < length
           elsif headers["transfer-encoding"].any? { |value| value.downcase.include?("chunked") }
-            raw = leftover.dup
-            raw << socket.read.to_s
-            body = decode_chunked(raw)
+            body = read_chunked(socket, leftover)
           end
           body
         rescue IOError, SystemCallError
