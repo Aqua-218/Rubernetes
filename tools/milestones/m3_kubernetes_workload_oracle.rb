@@ -468,9 +468,7 @@ module M3KubernetesWorkloadOracle
         annotations.delete("deployment.kubernetes.io/max-replicas")
       end
       status = candidate["status"]
-      if status.is_a?(Hash)
-        candidate["status"] = status.slice("replicas", "fullyLabeledReplicas", "observedGeneration", "terminatingReplicas")
-      end
+      candidate["status"] = status.slice("replicas", "fullyLabeledReplicas", "observedGeneration", "terminatingReplicas") if status.is_a?(Hash)
       spec = candidate["spec"]
       spec["template"] = semantic_template(spec["template"]) if spec.is_a?(Hash) && spec["template"].is_a?(Hash)
       selector = spec && spec["selector"]
