@@ -97,8 +97,8 @@ module K7ClusterDriver
     stop!(proxy, signal: "TERM") if proxy
     start!(agent)
     start!(proxy) if proxy
-    wait_until("worker-2 Ready with a fresh heartbeat", 240) do
-      out, _err, status = kubectl("get", "node", "worker-2", "-o", "json")
+    wait_until("#{node} Ready with a fresh heartbeat", 240) do
+      out, _err, status = kubectl("get", "node", node, "-o", "json")
       next false unless status.success?
 
       ready = JSON.parse(out).dig("status", "conditions")&.find { |condition| condition["type"] == "Ready" }
