@@ -234,6 +234,8 @@ class NativeVolumeAssemblerIntegrationTest < Minitest::Test
       end
       assert_match(/identity mismatch/, mismatch.message)
 
+      expected = Marshal.load(Marshal.dump(base))
+      expected["volume"]["csi"]["identity"]["name"] = "test.csi"
       unavailable = assert_raises(Rubernetes::Bootstrap::Config::Error) do
         expected = Marshal.load(Marshal.dump(base))
         expected["volume"]["csi"]["identity"]["name"] = "test.csi"
