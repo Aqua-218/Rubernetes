@@ -29,7 +29,8 @@ class ApiextensionsOpenAPIRegenerationMetricsTest < Minitest::Test
     schema = {"openAPIV3Schema" => {"type" => "object", "description" => description, "x-kubernetes-preserve-unknown-fields" => true}}
     {"apiVersion" => "apiextensions.k8s.io/v1", "kind" => "CustomResourceDefinition", "metadata" => {"name" => "#{plural}.example.com"},
      "spec" => {"group" => "example.com", "scope" => "Namespaced",
-                "names" => {"plural" => plural, "singular" => plural.chomp("s"), "kind" => plural.capitalize.chomp("s"), "listKind" => "#{plural.capitalize}List"},
+                "names" => {"plural" => plural, "singular" => plural.chomp("s"), "kind" => plural.capitalize.chomp("s"),
+                            "listKind" => "#{plural.capitalize}List"},
                 "versions" => versions.map do |name|
                   {"name" => name, "served" => true, "storage" => name == versions.first, "schema" => schema}
                 end}}
