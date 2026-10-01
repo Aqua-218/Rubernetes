@@ -505,7 +505,8 @@ module Rubernetes
                     to_delete << pod
                   elsif phase == "Succeeded"
                     @events << @c.event("Normal", "SucceededDaemonPod",
-                                        "Found succeeded daemon pod #{Support.namespace(pod)}/#{Support.name(pod)} on node #{Support.name(node)}, will try to delete it")
+                                        "Found succeeded daemon pod #{Support.namespace(pod)}/#{Support.name(pod)} on node #{Support.name(node)}, will try " \
+                                        "to delete it")
                     to_delete << pod
                   else
                     running << pod
