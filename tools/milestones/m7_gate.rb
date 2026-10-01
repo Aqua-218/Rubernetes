@@ -372,9 +372,7 @@ module M7Gate
       if totals.all?(Numeric) && !totals.empty?
         sorted = totals.sort
         p95 = sorted[((sorted.length - 1) * 0.95).round]
-        unless entry["p95_seconds"].is_a?(Numeric) && (entry["p95_seconds"] - p95).abs < 1e-6
-          errors << "reported p95 must match the raw samples"
-        end
+        errors << "reported p95 must match the raw samples" unless entry["p95_seconds"].is_a?(Numeric) && (entry["p95_seconds"] - p95).abs < 1e-6
         errors << "p95 start latency #{p95}s exceeds #{LATENCY_BOUND_SECONDS}s" unless p95 <= LATENCY_BOUND_SECONDS
       end
       errors << "latency samples must restore from a base snapshot" unless samples.all? { |sample| non_empty_string?(sample["base"]) }
