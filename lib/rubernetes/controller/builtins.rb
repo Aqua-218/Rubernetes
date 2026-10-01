@@ -415,9 +415,7 @@ module Rubernetes
             result[ordinal] = pod if ordinal
           end
           pod_policy = Support.value(Support.spec(working_set), "podManagementPolicy", "OrderedReady").to_s
-          unless %w[OrderedReady Parallel].include?(pod_policy)
-            raise ArgumentError, "unsupported StatefulSet podManagementPolicy #{pod_policy.inspect}"
-          end
+          raise ArgumentError, "unsupported StatefulSet podManagementPolicy #{pod_policy.inspect}" unless %w[OrderedReady Parallel].include?(pod_policy)
 
           monotonic = pod_policy == "OrderedReady"
           strategy = Support.value(Support.spec(working_set), "updateStrategy", {})
