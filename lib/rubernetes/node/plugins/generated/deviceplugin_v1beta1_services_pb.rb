@@ -70,7 +70,8 @@ module Rubernetes
               # PreStartContainer is called, if indicated by Device Plugin during registeration phase,
               # before each container start. Device plugin can run device specific operations
               # such as resetting the device before making devices available to the container
-              rpc :PreStartContainer, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::PreStartContainerRequest, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::PreStartContainerResponse
+              rpc :PreStartContainer, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::PreStartContainerRequest,
+                  ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::PreStartContainerResponse
             end
 
             Stub = Service.rpc_stub_class
