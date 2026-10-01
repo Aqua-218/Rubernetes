@@ -1097,7 +1097,12 @@ module Rubernetes
         "PersistentVolume" => lambda do |volume, now|
           spec = spec(volume)
           claim = spec["claimRef"]
-          class_name = annotations(volume).key?(BETA_STORAGE_CLASS_ANNOTATION) ? annotations(volume)[BETA_STORAGE_CLASS_ANNOTATION].to_s : spec["storageClassName"].to_s
+          volume_annotations = annotations(volume)
+          class_name = if volume_annotations.key?(BETA_STORAGE_CLASS_ANNOTATION)
+                         volume_annotations[BETA_STORAGE_CLASS_ANNOTATION].to_s
+                       else
+                         spec["storageClassName"].to_s
+                       end
           [object_name(volume), quantity(spec.dig("capacity", "storage")), access_modes(spec["accessModes"]),
            spec["persistentVolumeReclaimPolicy"].to_s, deleting?(volume) ? "Terminating" : status(volume)["phase"].to_s,
            claim.is_a?(Hash) ? "#{claim["namespace"]}/#{claim["name"]}" : "", class_name,
