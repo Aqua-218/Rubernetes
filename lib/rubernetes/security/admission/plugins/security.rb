@@ -306,7 +306,9 @@ module Rubernetes
                       code: 404, reason: "NotFound")
             end
             unless metadata(node)["uid"].to_s == request["nodeUID"].to_s
-              reject!("PodCertificateRequest for pod \"#{namespace}/#{pod_name}\" names node UID #{request["nodeUID"].to_s.inspect}, inconsistent with the running node (#{metadata(node)["uid"].to_s.inspect})",
+              reject!("PodCertificateRequest for pod \"#{namespace}/#{pod_name}\" names node UID #{request["nodeUID"].to_s.inspect}, inconsistent with the " \
+                      "running node " \
+                      "(#{metadata(node)["uid"].to_s.inspect})",
                       code: 500, reason: "InternalError")
             end
             pod = @context.get("pods", namespace, pod_name)
