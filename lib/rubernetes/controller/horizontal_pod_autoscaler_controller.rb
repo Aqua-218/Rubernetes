@@ -41,9 +41,7 @@ module Rubernetes
         raise UnknownGVKError, "HPA scale target #{group}/#{version}/#{kind} is not discoverable" unless ResourceDescriptor::KNOWN.key?(kind)
 
         descriptor = ResourceDescriptor.parse({"apiVersion" => api_version, "kind" => kind})
-        unless descriptor.group == group && descriptor.version == version
-          raise UnknownGVKError, "HPA scale target #{group}/#{version}/#{kind} is not served"
-        end
+        raise UnknownGVKError, "HPA scale target #{group}/#{version}/#{kind} is not served" unless descriptor.group == group && descriptor.version == version
 
         descriptor
       end
