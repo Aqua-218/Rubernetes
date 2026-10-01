@@ -294,7 +294,8 @@ module Rubernetes
                   ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RemoveImageResponse
               # ImageFSInfo returns information of the filesystem that is used to store images.
               # Usage information may include images that were removed, but are still being cleaned up.
-              rpc :ImageFsInfo, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ImageFsInfoRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ImageFsInfoResponse
+              rpc :ImageFsInfo, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ImageFsInfoRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ImageFsInfoResponse
             end
 
             Stub = Service.rpc_stub_class
