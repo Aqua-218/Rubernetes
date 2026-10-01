@@ -334,7 +334,7 @@ module Rubernetes
 
       def with(**changes)
         options = to_h.merge(changes)
-        options.delete(:default) unless changes.key?(:default) || has_default?
+        options.delete(:default) unless changes.key?(:default) || explicit_default?
         self.class.new(options)
       end
 
