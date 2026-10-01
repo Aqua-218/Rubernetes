@@ -117,7 +117,7 @@ rake abi:compile                 # 最初に 1 回、以後 ext/ を触ったと
 rake test:parallel               # 全スイートをファイルごとに別プロセスで。JOBS=n で幅を指定（約 6 分）
 rake test                        # 証拠ゲートが使う直列実行（約 1 時間）
 ruby -Ilib -Itest test/unit/some_test.rb -n /pattern/
-rake lint                        # RuboCop。Layout/Style は厳格、140 桁、ダブルクォート
+rake lint                        # RuboCop。Layout/Style は厳格、160 桁、ダブルクォート
 rake lint:fix                    # safe な自動修正のみ。実行後は必ずテストを回す
 rake rbs:validate                # 手書き RBS のベースライン
 ```
