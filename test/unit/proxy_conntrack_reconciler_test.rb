@@ -119,7 +119,7 @@ class ProxyConntrackReconcilerTest < Minitest::Test
 
     assert_nil reconciler.last_error
     assert_equal({"IPv4" => 3, "IPv6" => 0}, result, "four stale flows, one already gone (ENOENT is not a deletion)")
-    assert_equal [2, 3, 4, 5].length, socket.deletes.length
+    assert_equal 4, socket.deletes.length
     assert_equal %w[10.244.0.99 10.244.0.12 10.244.0.98 10.244.0.97], socket.deletes.map(&:reply_src)
     text = metrics.registry.render_own
 
