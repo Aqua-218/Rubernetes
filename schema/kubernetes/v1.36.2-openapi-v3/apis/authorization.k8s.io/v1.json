@@ -1201,11 +1201,6 @@
           },
           "202": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.authorization.v1.SelfSubjectAccessReview"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.authorization.v1.SelfSubjectAccessReview"
