@@ -1930,11 +1930,6 @@
           },
           "201": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.rbac.v1.ClusterRoleBinding"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.rbac.v1.ClusterRoleBinding"
