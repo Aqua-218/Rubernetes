@@ -5021,8 +5021,9 @@ module Rubernetes
         digest = OpenSSL::Digest::SHA256.digest(pod_uid)
         verified = case public_key
                    when OpenSSL::PKey::EC
-                     return [issue(pkix_path, :invalid, "elliptic public keys must use curve P256 or P384")] unless %w[prime256v1 secp384r1
-                                                                                                                       secp521r1].include?(public_key.group.curve_name)
+                     unless %w[prime256v1 secp384r1 secp521r1].include?(public_key.group.curve_name)
+                       return [issue(pkix_path, :invalid, "elliptic public keys must use curve P256 or P384")]
+                     end
 
                      public_key.dsa_verify_asn1(digest, proof_der.to_s)
                    when OpenSSL::PKey::RSA
