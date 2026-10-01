@@ -53,7 +53,8 @@ class SecurityAuthorizationTest < Minitest::Test
     source.cluster_roles << role("log-reader", [{"apiGroups" => [""], "resources" => %w[pods/log], "verbs" => %w[get]}])
     source.cluster_role_bindings << binding("viewers", "ClusterRole", "view-all", [{"kind" => "Group", "name" => "viewers"}])
     source.namespaced_roles["team"] << role("deployer",
-                                            [{"apiGroups" => %w[apps], "resources" => %w[deployments], "verbs" => %w[*], "resourceNames" => %w[web]}], kind: "Role", namespace: "team")
+                                            [{"apiGroups" => %w[apps], "resources" => %w[deployments], "verbs" => %w[*],
+                                              "resourceNames" => %w[web]}], kind: "Role", namespace: "team")
     source.namespaced_role_bindings["team"] << binding("deployer", "Role", "deployer",
                                                        [{"kind" => "ServiceAccount", "name" => "ci", "namespace" => "team"}], kind: "RoleBinding",
                                                                                                                               namespace: "team")
