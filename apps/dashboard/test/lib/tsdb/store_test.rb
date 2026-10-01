@@ -35,8 +35,10 @@ module Tsdb
       result = store.query([M.new(name: "__name__", op: "=", value: "up"), M.new(name: "job", op: "=", value: "apiserver")], t0,
                            t0 + (10 * 15_000))
 
-    regex = store.query([M.new(name: "__name__", op: "=", value: "up"), M.new(name: "instance", op: "=~", value: "[ab]:1")], t0,
-                        t0 + 200_000)
+      assert_equal 2, result.length
+      assert_equal %w[a:1 b:1], result.map { |series, _| series.labels["instance"] }.sort
+      assert_equal 10, result[0][1].length
+      assert_equal [t0, 1.0], result.find { |s, _| s.labels["instance"] == "a:1" }[1].first
 
     assert_equal 2, regex.length
     negative = store.query([M.new(name: "__name__", op: "=", value: "up"), M.new(name: "job", op: "!=", value: "node")], t0, t0 + 200_000)
