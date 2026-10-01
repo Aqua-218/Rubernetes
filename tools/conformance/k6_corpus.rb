@@ -81,6 +81,28 @@ module Conformance
     # Each verb is exercised against a disposable object; a verb that the
     # cluster legitimately cannot serve (no running Pod for `logs`) is set up
     # first rather than skipped.
+    # kubectl invocation per verb of the compatibility corpus.
+    VERB_ARGV = {
+      "api-resources" => %w[api-resources --no-headers],
+      "explain" => %w[explain pod.spec],
+      "get" => %w[get namespaces],
+      "create" => %w[create namespace k6-verbs --dry-run=client -o json],
+      "apply" => %w[apply -f - --dry-run=server -o json],
+      "diff" => %w[diff -f -],
+      "patch" => ["patch", "namespace", "default", "--type=merge", "-p", "{}", "--dry-run=server"],
+      "replace" => %w[replace -f - --dry-run=server -o json],
+      "delete" => %w[delete namespace k6-absent --ignore-not-found],
+      "auth" => %w[auth can-i get pods],
+      "logs" => %w[logs --help],
+      "exec" => %w[exec --help],
+      "attach" => %w[attach --help],
+      "port-forward" => %w[port-forward --help],
+      "rollout" => %w[rollout --help],
+      "scale" => %w[scale --help],
+      "wait" => %w[wait --help],
+      "top" => %w[top --help]
+    }.freeze
+
     def exercise_verb(binary, verb, kubeconfig)
       argv =
         case verb
