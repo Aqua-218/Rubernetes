@@ -70,7 +70,7 @@ module Rubernetes
         end
       end
       Context = KubeContext
-      KubeConfig = self
+      KubeConfig = self # rubocop:disable Naming/ConstantName -- alias of the class under its upstream name
 
       attr_reader :path, :data
 
