@@ -97,8 +97,10 @@
       "path": "apis/apiregistration.k8s.io/v1.json",
       "upstream_path": "api/openapi-spec/v3/apis__apiregistration.k8s.io__v1_openapi.json",
       "source_sha256": "d3a0471e3e8ed54872390d5e587a773c6ec750369ab470e35cc2c4a7e75a7e10",
-      "sha256": "d3a0471e3e8ed54872390d5e587a773c6ec750369ab470e35cc2c4a7e75a7e10",
-      "paths": 6
+      "sha256": "a4dcb030c915b16fe274131cd094e798fdb2d67df64e6559f0019b634d58d071",
+      "paths": 6,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/apiregistration.k8s.io/v1"
     },
     {
       "path": "apis/apiregistration.k8s.io.json",
