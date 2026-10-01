@@ -1050,9 +1050,7 @@ module M3Gate
           next unless plugin.is_a?(Hash)
 
           name = (plugin["id"] || plugin["name"]).to_s
-          unless REQUIRED_SCHEDULER_PLUGIN_WEIGHTS[name] == plugin["weight"]
-            errors << "scheduler plugin #{index} has an unexpected default weight"
-          end
+          errors << "scheduler plugin #{index} has an unexpected default weight" unless REQUIRED_SCHEDULER_PLUGIN_WEIGHTS[name] == plugin["weight"]
         end
       else
         errors << "scheduler plugin inventory is required"
