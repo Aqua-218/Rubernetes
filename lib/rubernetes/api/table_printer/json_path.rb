@@ -650,7 +650,7 @@ module Rubernetes
         end
 
         def eval_wildcard(values)
-          values.reject(&:nil?).flat_map { |value| children(value) }
+          values.compact.flat_map { |value| children(value) }
         end
 
         def eval_recursive(values)
