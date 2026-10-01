@@ -66,7 +66,8 @@ module CRDAggregationHarness
     {"apiVersion" => "apiextensions.k8s.io/v1", "kind" => "CustomResourceDefinition", "metadata" => {"name" => name},
      "spec" => {"group" => "example.com", "scope" => "Namespaced",
                 "names" => {"plural" => "widgets", "singular" => "widget", "kind" => "Widget", "shortNames" => ["wd"]},
-                "versions" => [{"name" => "v1", "served" => true, "storage" => true, "schema" => {"openAPIV3Schema" => schema}, "subresources" => {"status" => {}}}] + extra_versions}}
+                "versions" => [{"name" => "v1", "served" => true, "storage" => true, "schema" => {"openAPIV3Schema" => schema},
+                                "subresources" => {"status" => {}}}] + extra_versions}}
   end
 
   class FakeHTTP
