@@ -813,7 +813,7 @@ module Rubernetes
       class << self
         def deep_freeze(value, seen = {}.compare_by_identity)
           return value if value.nil? || value.is_a?(Numeric) || value == true || value == false || value.is_a?(Symbol)
-          return value if seen.key?(value.object_id)
+          return value if seen.key?(value)
 
           seen[value.object_id] = true
           case value
