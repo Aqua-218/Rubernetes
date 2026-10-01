@@ -123,8 +123,8 @@ module Promql
       # under the threshold, so delta extrapolates the full 15s.
       delta = values("delta(g[1m])").first
 
-  test "irate, idelta, delta, deriv and predict_linear" do
-    load("g", {}, [10, 20, 40, 30])
+      assert_in_delta 20.0 * 60 / 45, delta, 1e-6
+      load("lin", {}, [0, 1, 2, 3, 4])
 
     assert_in_delta 30.0 / 15, values("irate(g[1m])").first, 1e-9 # counter reset: last value / interval
     assert_equal [-10.0], values("idelta(g[1m])")
