@@ -650,7 +650,8 @@ module Rubernetes
         leaf_device = "#{stat.dev_major}:#{stat.dev_minor}"
         unless leaf_device == observed.fetch("deviceId").to_s
           raise MountIdentityError,
-                "unmount target #{normalized_target.inspect} no longer resolves to mount #{observed.fetch("mountId")} (device #{leaf_device} != #{observed.fetch("deviceId")})"
+                "unmount target #{normalized_target.inspect} no longer resolves to mount #{observed.fetch("mountId")} (device #{leaf_device} != " \
+                "#{observed.fetch("deviceId")})"
         end
 
         [dispatch_path, flags | UMOUNT_NOFOLLOW]
