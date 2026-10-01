@@ -337,7 +337,8 @@
       "upstream_path": "api/openapi-spec/v3/apis__internal.apiserver.k8s.io__v1alpha1_openapi.json",
       "source_sha256": "b3c5fe27eae1819e5b24095d7e8dc56b478c49b9f2040ea98fe11f9679e8e726",
       "sha256": "b3c5fe27eae1819e5b24095d7e8dc56b478c49b9f2040ea98fe11f9679e8e726",
-      "paths": 6
+      "paths": 6,
+      "source": "tree"
     },
     {
       "path": "apis/internal.apiserver.k8s.io.json",
