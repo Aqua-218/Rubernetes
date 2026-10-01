@@ -588,7 +588,7 @@ module M2KubernetesLifecycleOracle
     runner_sha256 = runner.is_a?(Hash) ? runner["runner_sha256"] : nil
     errors << "external lifecycle oracle runner SHA-256 is missing" unless valid_digest?(runner_sha256)
     expected_runner = begin
-      runner_identity || public_send(:runner_identity, command)
+      runner_identity || runner_identity(command)
     rescue OracleError => error
       errors << error.message
       nil
