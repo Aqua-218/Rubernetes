@@ -676,9 +676,7 @@ module Rubernetes
       def verify_response_digest!(body, expected, header_digest)
         expected_digest = expected && Digest.parse(expected)
         header = header_digest && Digest.parse(header_digest)
-        if expected_digest && Digest.from_bytes(body) != expected_digest
-          raise DigestMismatch, "registry response digest does not match the requested digest"
-        end
+        raise DigestMismatch, "registry response digest does not match the requested digest" if expected_digest && Digest.from_bytes(body) != expected_digest
         raise DigestMismatch, "registry response digest does not match Docker-Content-Digest" if header && Digest.from_bytes(body) != header
 
         true
