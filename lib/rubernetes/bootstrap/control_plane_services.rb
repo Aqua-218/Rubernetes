@@ -1988,7 +1988,8 @@ module Rubernetes
                   queue_backoff: queue.respond_to?(:backoff_size) ? queue.backoff_size : nil,
                   last_error: @last_error && "#{@last_error.class}: #{@last_error.message.to_s[0, 200]}",
                   last_result: if @last_result.respond_to?(:status)
-                                 {status: @last_result.status.to_s, pod: (@last_result.respond_to?(:pod) && @last_result.pod ? @last_result.pod.name : nil), error: (@last_result.respond_to?(:error) && @last_result.error ? @last_result.error.message.to_s[0, 200] : nil)}
+                                 {status: @last_result.status.to_s, pod: (@last_result.respond_to?(:pod) && @last_result.pod ? @last_result.pod.name : nil),
+                                  error: (@last_result.respond_to?(:error) && @last_result.error ? @last_result.error.message.to_s[0, 200] : nil)}
                                else
                                  @last_result.inspect[0, 120]
                                end,
