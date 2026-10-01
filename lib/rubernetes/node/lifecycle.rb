@@ -1427,9 +1427,7 @@ module Rubernetes
         raise LifecycleError, "lifecycle state snapshot must be a JSON object" unless payload.is_a?(Hash)
 
         schema = Helpers.key(payload, "schema", nil)
-        if schema && schema.to_s != "rubernetes.node.lifecycle.v1"
-          raise LifecycleError, "unsupported lifecycle state schema #{schema.inspect}"
-        end
+        raise LifecycleError, "unsupported lifecycle state schema #{schema.inspect}" if schema && schema.to_s != "rubernetes.node.lifecycle.v1"
 
         Array(Helpers.key(payload, "records", [])).each do |value|
           record = restore_record(value)
