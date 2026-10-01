@@ -669,7 +669,8 @@ module Rubernetes
                                                         help: "Maximal number of currently used inflight request limit of this apiserver per request kind " \
                                                               "in last second.")
         register("apiserver_longrunning_requests", type: :gauge,
-                                                   help: "Gauge of all active long-running apiserver requests broken out by verb, group, version, resource, scope and " \
+                                                   help: "Gauge of all active long-running apiserver requests broken out by verb, group, version, resource, " \
+                                                         "scope and " \
                                                          "component. Not all requests are tracked this way.")
         latency = "Response latency distribution (not counting webhook duration and priority & fairness queue wait times) in " \
                   "seconds for each verb, group, version, resource, subresource, scope and component."
