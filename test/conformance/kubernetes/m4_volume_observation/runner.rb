@@ -341,8 +341,10 @@ module M4VolumeObservationRunner
                                                        "deviceId" => claimed["deviceId"], "root" => claimed["root"], "filesystem" => claimed["filesystem"],
                                                        "kernelSource" => claimed["kernelSource"]},
                                                       observed ? M4ObserverSupport.stable_identity(observed).slice("target", "mountId",
-                                                                                                                   "deviceId", "root", "filesystem", "kernelSource") : {
-                                                                                                                     "target" => claimed["target"], "mounted" => false
+                                                                                                                   "deviceId", "root", "filesystem",
+                                                                                                                   "kernelSource") : {
+                                                                                                                     "target" => claimed["target"],
+                                                                                                                     "mounted" => false
                                                                                                                    })
             record["restart_#{key}_comparison"] = comparison
             @errors << "#{label}: restarted #{key} identity does not match the kernel" unless comparison["passed"]
