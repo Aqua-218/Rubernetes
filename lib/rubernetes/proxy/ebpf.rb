@@ -1619,9 +1619,7 @@ module Rubernetes
 
           [entry[:ifindex], entry[:direction], entry[:handle]]
         end
-        unless expected_ids.all? { |identity| actual_ids.include?(identity) }
-          raise "TC filter readback did not contain the loaded program identity"
-        end
+        raise "TC filter readback did not contain the loaded program identity" unless expected_ids.all? { |identity| actual_ids.include?(identity) }
 
         {program: program_info, maps: map_info.freeze, filters: filter_info.freeze}.freeze
       end
