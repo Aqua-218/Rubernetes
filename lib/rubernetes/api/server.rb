@@ -5980,7 +5980,7 @@ module Rubernetes
       # re-create the Node the e2e suite had just deleted -- as the same
       # object, same uid, same creationTimestamp -- and every later spec then
       # waited seven minutes for the ghost node to become Ready.
-      def prepare_created_metadata(object)
+      def prepare_created_metadata(object, resource: nil)
         result = deep_copy(object)
         result["metadata"] ||= {}
         result["metadata"]["uid"] = @uid_generator.call.to_s
