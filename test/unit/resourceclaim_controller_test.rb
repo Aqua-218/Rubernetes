@@ -175,7 +175,8 @@ class ResourceClaimControllerTest < Minitest::Test
 
     claim = {"apiVersion" => "resource.k8s.io/v1", "kind" => "ResourceClaim",
              "metadata" => {"name" => "shared", "namespace" => "ns", "uid" => "c1", "finalizers" => ["resource.kubernetes.io/delete-protection"]},
-             "spec" => {}, "status" => {"allocation" => {"devices" => {"results" => []}}, "reservedFor" => [{"resource" => "pods", "name" => "p", "uid" => "p1"}]}}
+             "spec" => {}, "status" => {"allocation" => {"devices" => {"results" => []}},
+                                        "reservedFor" => [{"resource" => "pods", "name" => "p", "uid" => "p1"}]}}
     operations = controller.plan(claim, store: Adapter.new([pod, claim])).operations
     status = operations.find { |operation| operation.action == :status_update }
 
