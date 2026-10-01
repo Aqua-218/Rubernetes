@@ -44,7 +44,8 @@ module Rubernetes
               # for use on the node. If an error is returned, the
               # response is ignored. Failures for individual claims
               # can be reported inside NodePrepareResourcesResponse.
-              rpc :NodePrepareResources, ::Rubernetes::Node::Plugins::Generated::DRAV1::NodePrepareResourcesRequest, ::Rubernetes::Node::Plugins::Generated::DRAV1::NodePrepareResourcesResponse
+              rpc :NodePrepareResources, ::Rubernetes::Node::Plugins::Generated::DRAV1::NodePrepareResourcesRequest,
+                  ::Rubernetes::Node::Plugins::Generated::DRAV1::NodePrepareResourcesResponse
               # NodeUnprepareResources is the opposite of NodePrepareResources.
               # The same error handling rules apply,
               rpc :NodeUnprepareResources, ::Rubernetes::Node::Plugins::Generated::DRAV1::NodeUnprepareResourcesRequest, ::Rubernetes::Node::Plugins::Generated::DRAV1::NodeUnprepareResourcesResponse
