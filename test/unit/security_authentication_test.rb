@@ -208,7 +208,11 @@ class SecurityAuthenticationTest < Minitest::Test
     other_issuer = A::JWT.sign(claims.merge("iss" => "https://other"), key: key, algorithm: "RS256", key_id: "issuer-key")
 
     assert_nil authenticator.authenticate_token(other_issuer)
-    assert_raises(S::ConfigurationError) { A::JWTAuthenticator.new(config: {"issuer" => {"url" => "http://plain", "audiences" => ["a"]}, "claimMappings" => {"username" => {"claim" => "sub", "prefix" => ""}}}, key_fetcher: ->(*) { jwks }) }
+    assert_raises(S::ConfigurationError) do
+      A::JWTAuthenticator.new(config: {"issuer" => {"url" => "http://plain", "audiences" => ["a"]},
+                                       "claimMappings" => {"username" => {"claim" => "sub",
+                                                                          "prefix" => ""}}}, key_fetcher: ->(*) { jwks })
+    end
   end
 
   def test_union_rejects_conflicting_identities_and_falls_back_to_anonymous
