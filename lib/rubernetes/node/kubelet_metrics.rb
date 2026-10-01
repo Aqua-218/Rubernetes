@@ -542,7 +542,8 @@ module Rubernetes
          "kubelet_desired_pods" => [:gauge,
                                     "The number of pods the kubelet is being instructed to run. static is true if the pod is not from the apiserver."],
          "kubelet_active_pods" => [:gauge,
-                                   "The number of pods the kubelet considers active and which are being considered when admitting new pods. static is true if the pod is not from the apiserver."],
+                                   "The number of pods the kubelet considers active and which are being considered when admitting new pods. static is true " \
+                                   "if the pod is not from the apiserver."],
          "kubelet_mirror_pods" => [:gauge, "The number of mirror pods the kubelet will try to create (one per admitted static pod)"],
          "kubelet_cgroup_version" => [:gauge, "cgroup version on the hosts."],
          "kubelet_started_pods_total" => [:counter, "Cumulative number of pods started"],
