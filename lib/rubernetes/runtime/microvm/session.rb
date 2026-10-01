@@ -384,9 +384,8 @@ module Rubernetes
           @phase = "snapshotted"
           @pool.store(id: id, runtime_class: runtime_class, mem_path: @instance.host_path("/snapshot/mem"),
                       vmstate_path: @instance.host_path("/snapshot/vmstate"),
-                      artifact_digest: @artifacts.digest, drive_layout: @drive_layout.map do |drive|
-                                                            drive.slice("id", "jail_path", "read_only", "root")
-                                                          end,
+                      artifact_digest: @artifacts.digest,
+                      drive_layout: @drive_layout.map { |drive| drive.slice("id", "jail_path", "read_only", "root") },
                       machine: @machine, guest_hello: @guest_hello, pause_ack: ack["ack"])
         end
 
