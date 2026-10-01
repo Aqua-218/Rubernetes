@@ -229,7 +229,8 @@ module M7KVMProbe
     residue = S.residue(runtime, session)
     {"id" => "fault_pause_ack_loss", "outcome" => outcome, "phase" => phase, "bases_after" => bases, "cleanup_errors" => errors, "residue" => residue,
      "workspace_reused" => false,
-     "passed" => outcome.start_with?("SnapshotPauseUnknown") && phase == "pause_unknown" && !bases.include?("pause-loss-base") && errors.empty? && S.residue_clean?(residue)}
+     "passed" => outcome.start_with?("SnapshotPauseUnknown") && phase == "pause_unknown" && !bases.include?("pause-loss-base") && errors.empty? &&
+       S.residue_clean?(residue)}
   end
 
   def run
