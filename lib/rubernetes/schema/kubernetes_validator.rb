@@ -1035,7 +1035,7 @@ module Rubernetes
         return [] unless spec.is_a?(Hash)
 
         trust_bundle = fetch(spec, "trustBundle")
-        valid_pem = trust_bundle.is_a?(String) && trust_bundle.match?(/-----BEGIN CERTIFICATE-----/)
+        valid_pem = trust_bundle.is_a?(String) && trust_bundle.include?("-----BEGIN CERTIFICATE-----")
         return [] if valid_pem
 
         [issue(%w[spec trustBundle], :invalid, "at least one trust anchor must be provided")]
