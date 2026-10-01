@@ -3,8 +3,9 @@
 require "test_helper"
 require "tmpdir"
 
-class Tsdb::StoreTest < ActiveSupport::TestCase
-  M = Tsdb::Store::Matcher
+module Tsdb
+  class StoreTest < ActiveSupport::TestCase
+    M = Tsdb::Store::Matcher
 
   def setup
     @dir = Dir.mktmpdir("tsdb")
