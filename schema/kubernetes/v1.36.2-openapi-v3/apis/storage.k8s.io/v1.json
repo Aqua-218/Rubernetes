@@ -672,6 +672,12 @@
             "description": "accessModes contains all ways the volume can be mounted. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#access-modes",
             "items": {
               "default": "",
+              "enum": [
+                "ReadOnlyMany",
+                "ReadWriteMany",
+                "ReadWriteOnce",
+                "ReadWriteOncePod"
+              ],
               "type": "string"
             },
             "type": "array",
