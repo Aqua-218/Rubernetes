@@ -120,9 +120,12 @@ module Tsdb
       assert_equal ["new"], store.select_series([M.new(name: "__name__", op: "=~", value: ".+")]).map(&:metric)
     end
 
-    assert Tsdb::Store.stale_marker?(values[1])
-    refute Tsdb::Store.stale_marker?(Float::NAN)
-  end
+    test "stale markers are preserved bit-exactly" do
+      store = open_store
+      store.append(labels("m"), 1, 1.0)
+      store.append(labels("m"), 2, Tsdb::Store::STALE_NAN)
+      series = store.select_series([M.new(name: "__name__", op: "=", value: "m")]).first
+      values = store.samples(series.id, 0, 10).map(&:last)
 
   test "batch append is one WAL flush and reports the count" do
     store = open_store
