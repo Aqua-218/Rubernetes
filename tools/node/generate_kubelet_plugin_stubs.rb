@@ -102,9 +102,7 @@ module KubeletPluginStubGenerator
   def run_protoc(proto_path, generated_dir)
     gem_path = Gem::Specification.find_by_name("grpc-tools").full_gem_path
     include_dir = File.join(gem_path, "bin", grpc_tools_platform)
-    unless File.file?(File.join(include_dir, "google/protobuf/descriptor.proto"))
-      raise "grpc-tools protobuf include directory is unavailable: #{include_dir}"
-    end
+    raise "grpc-tools protobuf include directory is unavailable: #{include_dir}" unless File.file?(File.join(include_dir, "google/protobuf/descriptor.proto"))
 
     command = [Gem.bin_path("grpc-tools", "grpc_tools_ruby_protoc"), "-I", File.dirname(proto_path),
                "-I", include_dir, "--ruby_out=#{generated_dir}", "--grpc_out=#{generated_dir}", proto_path]
