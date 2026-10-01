@@ -570,7 +570,8 @@ module PrintersDifferential
         {"apiVersion" => "storagemigration.k8s.io/v1beta1", "kind" => kind, "metadata" => cluster,
          "spec" => {"resource" => {"group" => pick("", "apps"), "resource" => "deployments"}},
          "status" => {"conditions" => Array.new(int(0..3)) do
-           {"type" => pick(%w[Running Failed Succeeded Other]), "status" => pick("True", "False"), "reason" => "R", "message" => "", "lastTransitionTime" => time}
+           {"type" => pick(%w[Running Failed Succeeded Other]), "status" => pick("True", "False"), "reason" => "R", "message" => "",
+            "lastTransitionTime" => time}
          end}}
       when "Workload"
         {"apiVersion" => "scheduling.k8s.io/v1alpha2", "kind" => kind, "metadata" => meta,
