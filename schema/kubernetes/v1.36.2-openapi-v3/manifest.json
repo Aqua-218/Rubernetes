@@ -559,8 +559,10 @@
       "path": "openid/v1/jwks.json",
       "upstream_path": "api/openapi-spec/v3/openid__v1__jwks_openapi.json",
       "source_sha256": "be0369fabc2dd2e26ddde8ffcc4829f0559c4f76841d96d154f76cb3ad2e95db",
-      "sha256": "be0369fabc2dd2e26ddde8ffcc4829f0559c4f76841d96d154f76cb3ad2e95db",
-      "paths": 1
+      "sha256": "ae3fb1592a55a17a13ffeadba405d27b6d4af716887ce89b5d274d5d021cfd64",
+      "paths": 1,
+      "source": "served",
+      "served_path": "/openapi/v3/openid/v1/jwks"
     },
     {
       "path": "version.json",
