@@ -25,7 +25,9 @@ class ProxyResyncDeletesSlicesTest < Minitest::Test
     removed = @proxy.send(:delete_watch_key, ["apps/web", "web-1"], :endpoint_slice)
 
     refute_nil removed
-    assert_nil @proxy.send(:instance_variable_get, :@endpoint_store).delete_endpoint_slice({"metadata" => {"name" => "web-1", "namespace" => "apps", "labels" => {"kubernetes.io/service-name" => "web"}}}),
+    assert_nil @proxy.send(:instance_variable_get,
+                           :@endpoint_store).delete_endpoint_slice({"metadata" => {"name" => "web-1", "namespace" => "apps",
+                                                                                   "labels" => {"kubernetes.io/service-name" => "web"}}}),
                "the slice was already removed by the resync"
   end
 end
