@@ -746,7 +746,7 @@ module Rubernetes
         @stream_mutex.synchronize do
           raise TransportError, "HTTP client is closed" if @closed
 
-          @active_streams[session.object_id] = session
+          @active_streams[session] = session
         end
         session
       end
