@@ -111,11 +111,11 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       holder_pid, clone3_creation, clone_flags = Timeout.timeout(5) { reader.read(24).unpack("Q<Q<Q<") }
       reader.close
 
-    assert_equal(1, clone3_creation)
-    assert_equal(Linux::Clone3::CLONE_PIDFD,
-                 clone_flags & Linux::Clone3::CLONE_PIDFD)
-    assert_equal(Linux::Clone3::CLONE_NEWPID,
-                 clone_flags & Linux::Clone3::CLONE_NEWPID)
+      assert_equal(1, clone3_creation)
+      assert_equal(Linux::Clone3::CLONE_PIDFD,
+                   clone_flags & Linux::Clone3::CLONE_PIDFD)
+      assert_equal(Linux::Clone3::CLONE_NEWPID,
+                   clone_flags & Linux::Clone3::CLONE_NEWPID)
 
     Process.kill(Signal.list.fetch("KILL"), orchestrator_pid)
     Process.wait(orchestrator_pid)
