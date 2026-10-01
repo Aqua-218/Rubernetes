@@ -106,3 +106,8 @@ tools/conformance/round.sh lanes6 /srv/rbn-lanes/linux-amd64-ipv6-native \
 - Both: the API servers' `kubernetes` Endpoints list one address per API
   server with distinct ports on the same uplink address (three replicas on one
   host), where kubeadm lists distinct addresses.
+
+## Related
+- [Kubernetes compatibility contract](../../spec/verification/kubernetes-compatibility.md)
+- [Milestone evidence rules](../../spec/delivery/milestones.md)
+- [Pinned runner inputs](../../third_party/locks/conformance-runners.json)
