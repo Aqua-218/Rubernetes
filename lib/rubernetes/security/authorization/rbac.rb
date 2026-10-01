@@ -86,7 +86,8 @@ module Rubernetes
 
         def describe(attributes)
           if attributes.resource_request?
-            "#{attributes.verb} #{attributes.resource_with_subresource} in #{attributes.api_group.empty? ? "core" : attributes.api_group}#{" namespace #{attributes.namespace}" unless attributes.namespace.empty?}"
+            "#{attributes.verb} #{attributes.resource_with_subresource} in " \
+              "#{attributes.api_group.empty? ? "core" : attributes.api_group}#{" namespace #{attributes.namespace}" unless attributes.namespace.empty?}"
           else
             "#{attributes.verb} #{attributes.path}"
           end
