@@ -20,6 +20,9 @@
 require "digest"
 require "fileutils"
 require "json"
+require "open3"
+require "optparse"
+require "time"
 
 module KubernetesOpenAPIV3Importer
   ROOT = File.expand_path("../..", __dir__)
