@@ -43,7 +43,6 @@ module Prom
       assert_equal [[5, 9.5], [65, 9.5]], roundtrip([[5, 9.5], [65, 9.5]]).last
       assert_equal [], Prom::Gorilla.decode([0].pack("n"))
     end
-    _, decoded = roundtrip(samples)
 
     assert_equal samples, decoded
   end
