@@ -203,6 +203,12 @@ does not serve, restore from the backup taken before the upgrade instead.
 The cluster's entire state is the Raft log and its snapshots. A backup is
 taken from one control node and is consistent as of the revision it names.
 
+The backup tool is the Ruby module `Rubernetes::Consensus::Backup`; it copies
+the latest verified snapshot and the write-ahead log of one control node's
+Raft data directory and writes a manifest with their digests. The data
+directory is the `datastore.data_dir` of that node's API server
+configuration.
+
 ```
 rubernetes-apiserver snapshot save /var/backups/rubernetes-$(date +%Y%m%dT%H%M%SZ).snapshot \
   --config /etc/rubernetes/apiserver.yml
