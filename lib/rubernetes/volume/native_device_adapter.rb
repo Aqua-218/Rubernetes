@@ -968,9 +968,7 @@ module Rubernetes
       end
 
       def device_number(stat, allow_non_block: false)
-        unless allow_non_block || (stat.respond_to?(:blockdev?) && stat.blockdev?)
-          raise ValidationError, "device stat is not a block device"
-        end
+        raise ValidationError, "device stat is not a block device" unless allow_non_block || (stat.respond_to?(:blockdev?) && stat.blockdev?)
 
         major = stat.respond_to?(:rdev_major) ? stat.rdev_major : decode_device_number(stat.rdev).split(":").first
         minor = stat.respond_to?(:rdev_minor) ? stat.rdev_minor : decode_device_number(stat.rdev).split(":").last
