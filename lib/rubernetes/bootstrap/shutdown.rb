@@ -129,7 +129,7 @@ module Rubernetes
       end
 
       def wait(timeout: nil)
-        ready = IO.select([@reader], nil, nil, timeout)
+        ready = @reader.wait_readable(timeout)
         return nil unless ready
 
         byte = @reader.read_nonblock(1)
