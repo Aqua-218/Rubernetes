@@ -23,8 +23,6 @@ module Tsdb
     def labels(name, extra = {})
       {"__name__" => name}.merge(extra)
     end
-    result = store.query([M.new(name: "__name__", op: "=", value: "up"), M.new(name: "job", op: "=", value: "apiserver")], t0,
-                         t0 + (10 * 15_000))
 
     assert_equal 2, result.length
     assert_equal %w[a:1 b:1], result.map { |series, _| series.labels["instance"] }.sort
