@@ -184,9 +184,7 @@ module Rubernetes
         limits = drop_cpu_memory_updates(result["limits"], old_limits)
         requests.nil? ? result.delete("requests") : result["requests"] = requests
         limits.nil? ? result.delete("limits") : result["limits"] = limits
-        if old_resources.nil? && (result["requests"] || {}).empty? && (result["limits"] || {}).empty? && Array(result["claims"]).empty?
-          return nil
-        end
+        return nil if old_resources.nil? && (result["requests"] || {}).empty? && (result["limits"] || {}).empty? && Array(result["claims"]).empty?
 
         result
       end
