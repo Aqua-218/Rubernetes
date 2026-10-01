@@ -42,6 +42,8 @@ Prometheus data source:
 
 ## Running it
 
-* Deployment instructions
+Ruby 3.4.11 and a kubeconfig for the cluster. The defaults point at a
+cluster brought up by `tools/conformance/cluster.rb` under
+`/srv/rbn-app/linux-amd64-ipv4-native`.
 
 * ...
