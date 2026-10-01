@@ -48,7 +48,8 @@ module M7LatencyProbe
     S.emit(S.report(
       kind: "m7_startup_latency_samples", measurement_level: "L4", started_at: started_at, cases: cases,
       extra: {"host" => S.host_facts, "measurement_source" => "real_snapshot_restores", "samples" => SAMPLES,
-              "sources" => M5ProbeSupport.source_files(%w[lib/rubernetes/runtime/microvm/session.rb lib/rubernetes/runtime/microvm/adapter.rb lib/rubernetes/runtime/microvm/guest/supervisor.rb])}
+              "sources" => M5ProbeSupport.source_files(%w[lib/rubernetes/runtime/microvm/session.rb lib/rubernetes/runtime/microvm/adapter.rb
+                                                          lib/rubernetes/runtime/microvm/guest/supervisor.rb])}
     ))
   end
 end
