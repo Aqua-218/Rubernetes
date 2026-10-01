@@ -1200,7 +1200,7 @@ module Rubernetes
           return true if current.is_a?(Errno::ENOENT)
           return true if current.respond_to?(:errno) && current.errno.to_i == Errno::ENOENT::Errno
 
-          seen[current.object_id] = true
+          seen[current] = true
           current = current.respond_to?(:cause) ? current.cause : nil
         end
         false
