@@ -11,7 +11,6 @@ module Prom
         {"items" => @objects.fetch(resource, [])}
       end
     end
-  end
 
   OBJECTS = {
     "nodes" => [{"metadata" => {"name" => "worker-0", "creationTimestamp" => "2026-09-29T08:00:00Z"},
