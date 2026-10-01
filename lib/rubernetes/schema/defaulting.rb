@@ -135,9 +135,7 @@ module Rubernetes
             )
           else
             key = key.to_s
-            if mode == :reject && !object_definition.preserve_unknown_fields
-              raise DefaultingError, "unknown field #{path_for(path, key)} is not allowed"
-            end
+            raise DefaultingError, "unknown field #{path_for(path, key)} is not allowed" if mode == :reject && !object_definition.preserve_unknown_fields
 
             result[key] = deep_copy(item) if mode == :preserve || object_definition.preserve_unknown_fields
           end
