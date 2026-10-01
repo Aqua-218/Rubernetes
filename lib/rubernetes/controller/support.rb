@@ -248,8 +248,7 @@ module Rubernetes
         return "" if selector.nil?
         return selector.to_s if selector.is_a?(String)
 
-        requirements = []
-        (value(selector, "matchLabels", nil) || {}).each { |key, expected| requirements << [key.to_s, "#{key}=#{expected}"] }
+        requirements = (value(selector, "matchLabels", nil) || {}).map { |key, expected| [key.to_s, "#{key}=#{expected}"] }
         Array(value(selector, "matchExpressions", nil)).each do |expression|
           key = value(expression, "key", "").to_s
           values = Array(value(expression, "values", [])).map(&:to_s).sort.join(",")
