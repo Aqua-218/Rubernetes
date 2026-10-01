@@ -187,6 +187,7 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
       controller.note_loaded
 
       assert_match(
+        # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
         /apiserver_authorization_config_controller_last_config_info\{apiserver_id_hash="sha256:[0-9a-f]{64}",hash="#{S::ConfigReloadController.data_hash("v1")}"\} 1/, metrics.render_own
       )
       refute controller.check!, "unchanged bytes are not a reload"
