@@ -32,7 +32,7 @@ AllCops:
     - "generated/**/*"
 
 Layout/LineLength:
-  Max: 140
+  Max: 160
   AllowURI: true
   AllowedPatterns:
     - '\A\s*#'
