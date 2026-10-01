@@ -153,7 +153,6 @@ module M4VolumeObservationRunner
           break nil
         end
       end
-      marker
     end
 
     def release_step(process, name)
