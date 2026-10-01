@@ -111,7 +111,8 @@ module Rubernetes
             elsif !username["claim"].to_s.empty? && !username["expression"].to_s.empty?
               errors << "#{path}.claimMappings.username: Invalid value: claim and expression can't both be set"
             elsif !username["claim"].to_s.empty? && username["prefix"].nil?
-              errors << "#{path}.claimMappings.username.prefix: Required value: prefix is required when claim is set. It can be set to an empty string to disable prefixing"
+              errors << "#{path}.claimMappings.username.prefix: Required value: prefix is required when claim is set. It can be set to an empty string to " \
+                        "disable prefixing"
             end
             raw
           end
