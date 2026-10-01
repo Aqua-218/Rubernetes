@@ -58,9 +58,7 @@ module Rubernetes
             when :call
               fold(node.target, type_idents) if node.member?
               args = node.args.map { |arg| fold(arg, type_idents) }
-              unless !node.member? && CONVERSIONS.include?(node.name) && args.length == 1 && !args[0].equal?(NOT_CONSTANT)
-                return NOT_CONSTANT
-              end
+              return NOT_CONSTANT unless !node.member? && CONVERSIONS.include?(node.name) && args.length == 1 && !args[0].equal?(NOT_CONSTANT)
 
               convert(node.name, args[0])
             when :select then fold(node.operand, type_idents)
