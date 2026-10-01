@@ -1815,21 +1815,11 @@ module M2Gate
           expected_agent_identity = if native_agent["agent_pid"] && native_agent["agent_start_time"]
                                       "process:node-agent:#{native_agent["agent_pid"]}:#{native_agent["agent_start_time"]}"
                                     end
-          unless native_agent["agent_process_identity"] == expected_agent_identity
-            errors << "#{entry_label} Native Node Agent process identity is required"
-          end
-          unless native_agent["agent_class"] == "Rubernetes::Node::Agent"
-            errors << "#{entry_label} agent_class must be Rubernetes::Node::Agent"
-          end
-          unless native_agent["sync_loop_class"] == "Rubernetes::Node::SyncLoop"
-            errors << "#{entry_label} sync_loop_class must be Rubernetes::Node::SyncLoop"
-          end
-          unless native_agent["lifecycle_class"] == "Rubernetes::Node::Lifecycle"
-            errors << "#{entry_label} lifecycle_class must be Rubernetes::Node::Lifecycle"
-          end
-          unless native_agent["runtime_class"] == "Rubernetes::Runtime::Native"
-            errors << "#{entry_label} runtime_class must be Rubernetes::Runtime::Native"
-          end
+          errors << "#{entry_label} Native Node Agent process identity is required" unless native_agent["agent_process_identity"] == expected_agent_identity
+          errors << "#{entry_label} agent_class must be Rubernetes::Node::Agent" unless native_agent["agent_class"] == "Rubernetes::Node::Agent"
+          errors << "#{entry_label} sync_loop_class must be Rubernetes::Node::SyncLoop" unless native_agent["sync_loop_class"] == "Rubernetes::Node::SyncLoop"
+          errors << "#{entry_label} lifecycle_class must be Rubernetes::Node::Lifecycle" unless native_agent["lifecycle_class"] == "Rubernetes::Node::Lifecycle"
+          errors << "#{entry_label} runtime_class must be Rubernetes::Runtime::Native" unless native_agent["runtime_class"] == "Rubernetes::Runtime::Native"
           errors << "#{entry_label} runtime_profile must be l3" unless native_agent["runtime_profile"] == "l3"
           recovery = native_agent["recovery"]
           errors << "#{entry_label} Native Node Agent recovery report is required" unless recovery.is_a?(Hash)
