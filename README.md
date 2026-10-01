@@ -110,10 +110,14 @@ a Prometheus data source for Grafana (`/api/v1/query` and friends).
 ## Development
 
 ```sh
-rake repo:commit                              # record everything, one commit per edit
-AUTO_COMMIT_ARGS="--granularity file" rake repo:commit
-rake "repo:record[test:parallel]"             # run the task, then record with Cycle: trailers
-ruby tools/repo/auto_commit.rb --dry-run -v   # preview the commits without making them
+bundle install
+rake abi:compile                 # once, and after touching ext/
+rake test:parallel               # whole suite, one process per file; JOBS=n sets the width (~6 min)
+rake test                        # the serial run the evidence gates use (~1 h)
+ruby -Ilib -Itest test/unit/some_test.rb -n /pattern/
+rake lint                        # RuboCop, strict Layout/Style, 140 columns, double quotes
+rake lint:fix                    # safe autocorrect only; re-run the tests afterwards
+rake rbs:validate                # hand-authored RBS baseline
 ```
 
 ## Dashboard (apps/dashboard)
