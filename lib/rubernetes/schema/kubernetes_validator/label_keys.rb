@@ -55,7 +55,8 @@ module Rubernetes
               term = weighted.is_a?(Hash) ? fetch(weighted, "podAffinityTerm") : nil
               next unless term.is_a?(Hash)
 
-              issues.concat(preferred_label_key_errors(path + ["affinity", section, "preferredDuringSchedulingIgnoredDuringExecution", index.to_s, "podAffinityTerm"],
+              issues.concat(preferred_label_key_errors(path + ["affinity", section, "preferredDuringSchedulingIgnoredDuringExecution", index.to_s,
+                                                               "podAffinityTerm"],
                                                        fetch(term, "matchLabelKeys"), fetch(term, "mismatchLabelKeys"), fetch(term, "labelSelector")))
             end
           end
