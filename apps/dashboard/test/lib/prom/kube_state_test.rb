@@ -102,8 +102,8 @@ module Prom
     test "is an in-process scrape target" do
       target = Prom::KubeState.new(client: FakeClient.new(OBJECTS)).target
 
-    assert_equal "kube-state", target.job
-    status, body = target.fetch.call
+      assert_equal "kube-state", target.job
+      status, body = target.fetch.call
 
     assert_equal 200, status
     assert_includes body, "kube_pod_info{"
