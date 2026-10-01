@@ -94,7 +94,8 @@ module SchedulerPodLevelDifferential
                                                         "podAffinityTerm" => {"labelSelector" => {"matchLabels" => {"app" => "web"}},
                                                                               "topologyKey" => "topology.kubernetes.io/zone"}}
                                                      ]}})),
-      "pts-soft-zone" => base.merge("phase" => "score", "existing_pods" => [labeled.call("w1", "node-a", {"app" => "web"}), labeled.call("w2", "node-a", {"app" => "web"})],
+      "pts-soft-zone" => base.merge("phase" => "score",
+                                    "existing_pods" => [labeled.call("w1", "node-a", {"app" => "web"}), labeled.call("w2", "node-a", {"app" => "web"})],
                                     "pod" => web.call("pts", "topologySpreadConstraints" => [spread.call("topology.kubernetes.io/zone", 1)])),
       "pts-hostname-mixed" => base.merge("phase" => "score", "nodes" => hosts,
                                          "existing_pods" => [labeled.call("w1", "node-b", {"app" => "web"})],
