@@ -4268,7 +4268,11 @@
             "type": "object"
           },
           "preemptionPolicy": {
-            "description": "PreemptionPolicy is the Policy for preempting pods with lower priority. One of Never, PreemptLowerPriority. Defaults to PreemptLowerPriority if unset.",
+            "description": "PreemptionPolicy is the Policy for preempting pods with lower priority. One of Never, PreemptLowerPriority. Defaults to PreemptLowerPriority if unset.\n\nPossible enum values:\n - `\"Never\"` means that pod never preempts other pods with lower priority.\n - `\"PreemptLowerPriority\"` means that pod can preempt other pods with lower priority.",
+            "enum": [
+              "Never",
+              "PreemptLowerPriority"
+            ],
             "type": "string"
           },
           "priority": {
