@@ -255,8 +255,8 @@ module Rubernetes
               arguments = argument_nodes.map { |argument| evaluate(argument) }
               return @library.call("#{target_node[1]}.#{function}", nil, arguments, self)
             end
-            target = eval(target_node)
-            arguments = argument_nodes.map { |argument| eval(argument) }
+            target = evaluate(target_node)
+            arguments = argument_nodes.map { |argument| evaluate(argument) }
             @library.call(function, target, arguments, self, has_target: true)
           end
 
