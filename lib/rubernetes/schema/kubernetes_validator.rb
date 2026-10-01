@@ -3196,7 +3196,8 @@ module Rubernetes
           next unless value.is_a?(Hash)
 
           source_names = %w[awsElasticBlockStore azureDisk azureFile cephfs cinder configMap downwardAPI emptyDir ephemeral fc flexVolume
-                            flocker gcePersistentDisk gitRepo glusterfs hostPath iscsi nfs persistentVolumeClaim portworxVolume projected quobyte rbd scaleIO storageos vsphere]
+                            flocker gcePersistentDisk gitRepo glusterfs hostPath iscsi nfs persistentVolumeClaim portworxVolume projected quobyte rbd scaleIO
+                            storageos vsphere]
           present = source_names.select { |name| source_key_present?(value, name) }
           next unless path.last == "volumes" || path.last == "volumeSource" || value.key?("persistentVolumeClaim")
 
