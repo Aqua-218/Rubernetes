@@ -177,14 +177,7 @@ module Promql
       assert_equal [[{"method" => "get"}, 24.0 / 124], [{"method" => "post"}, 6.0 / 106]], result
       result = vector('requests{code="500"} / on(method) total').sort_by { |m, _| m["method"] }
 
-  test "vector matching: one-to-one, on, ignoring, group_left and errors" do
-    load("requests", {"method" => "get", "code" => "500"}, [24])
-    load("requests", {"method" => "get", "code" => "200"}, [100])
-    load("requests", {"method" => "post", "code" => "500"}, [6])
-    load("requests", {"method" => "post", "code" => "200"}, [100])
-    load("total", {"method" => "get"}, [124])
-    load("total", {"method" => "post"}, [106])
-    result = vector('requests{code="500"} / ignoring(code) total').sort_by { |m, _| m["method"] }
+      assert_equal [{"method" => "get"}, {"method" => "post"}], result.map(&:first)
 
     assert_equal [[{"method" => "get"}, 24.0 / 124], [{"method" => "post"}, 6.0 / 106]], result
     result = vector('requests{code="500"} / on(method) total').sort_by { |m, _| m["method"] }
