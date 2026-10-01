@@ -96,5 +96,5 @@
     }
   },
   "cni_manifest_sha256": "798c30289c418da2b2561ab899e80f52715ae23eab1bf75d2ddd4b40a4c18c0d",
-  "lock_sha256": "373abfa03d943d4da96f274e154b109e24bd81343e2847d1a7e803215a428212"
+  "lock_sha256": "c48fe66bf774b107abfff5e4e654606b1593c858ee43f6aedee2a487a58b4fec"
 }
