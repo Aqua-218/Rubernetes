@@ -65,9 +65,7 @@ module Rubernetes
           body = response.respond_to?(:body) ? response.body : nil
           if body.is_a?(Hash) && body["kind"] == "Status"
             {"metadata" => {}, "code" => status, "status" => body["status"], "reason" => body["reason"],
-             "message" => body["message"]}.reject do |_key, value|
-              value.nil?
-            end
+             "message" => body["message"]}.compact
           else
             {"metadata" => {}, "code" => status}
           end
