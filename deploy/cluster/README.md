@@ -239,8 +239,8 @@ divergent histories.
 
    ```
    mv /var/lib/rubernetes/raft /var/lib/rubernetes/raft.pre-restore
-   rubernetes-apiserver snapshot restore /var/backups/<snapshot> \
-     --config /etc/rubernetes/apiserver.yml
+   ruby -I /usr/local/lib/rubernetes -r rubernetes/consensus -e \
+     'Rubernetes::Consensus::Backup.restore("/var/backups/<backup>", "/var/lib/rubernetes/raft")'
    ```
 
 3. Start one control node, confirm it becomes leader and serves reads, then
