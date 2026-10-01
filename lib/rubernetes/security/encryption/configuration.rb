@@ -195,7 +195,7 @@ module Rubernetes
           if parts[1].match?(/\Av\d/)
             ["", parts[2]]
           else
-            [(parts[1]).to_s, parts[3]]
+            [parts[1].to_s, parts[3]]
           end
         end
 
