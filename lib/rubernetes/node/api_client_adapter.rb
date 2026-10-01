@@ -87,9 +87,7 @@ module Rubernetes
       def watch(node_name: @node_name, resource_version: nil, timeout: nil)
         ensure_node_name!(node_name)
         query = pod_query(resource_version: resource_version, timeout: timeout)
-        if @client.respond_to?(:watch_each)
-          return @client.watch_each(POD_RESOURCE, api_version: POD_API_VERSION, namespace: :all, query: query)
-        end
+        return @client.watch_each(POD_RESOURCE, api_version: POD_API_VERSION, namespace: :all, query: query) if @client.respond_to?(:watch_each)
         raise ArgumentError, "client must implement watch_each or watch for Pod watches" unless @client.respond_to?(:watch)
 
         @client.watch(POD_RESOURCE, api_version: POD_API_VERSION, namespace: :all, query: query,
