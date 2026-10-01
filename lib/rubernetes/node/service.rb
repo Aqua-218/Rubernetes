@@ -194,7 +194,7 @@ module Rubernetes
                      close_source: true, close_sink: true, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
         @source = source
         @sink = sink
-        @request_id = request_id&.to_s&.dup&.freeze
+        @request_id = request_id&.then { |value| value.to_s.dup.freeze }
         @metadata = deep_freeze(metadata)
         @read_timeout = read_timeout
         @write_timeout = write_timeout
