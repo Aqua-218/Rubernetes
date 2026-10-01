@@ -142,7 +142,12 @@ class M6GateTest < Minitest::Test
   end
 
   def test_source_digest_mismatch_is_rejected
-    cases = [{"id" => "gate_corpus", "passed" => true, "gate_count" => 225}] + M6Gate::FEATURE_PROFILES.map { |id| {"id" => id, "passed" => true, "difference_count" => 0, "differences" => [], "documents_compared" => 60} }
+    cases = [{"id" => "gate_corpus", "passed" => true, "gate_count" => 225}] + M6Gate::FEATURE_PROFILES.map do |id|
+      {"id" => id, "passed" => true,
+       "difference_count" => 0,
+       "differences" => [],
+       "documents_compared" => 60}
+    end
     errors = []
     M6Gate.send(:validate_report, "feature_gate", report("m6_feature_gate_matrix", cases, "measurement_level" => "differentially_tested",
                                                                                           "profiles" => {"default" => [], "all-beta" => [], "alpha-apis" => []},
