@@ -2630,9 +2630,7 @@ module M1Gate
         return
       end
       errors << "#{label} provenance Kubernetes version must be #{KUBERNETES_VERSION}" unless source["version"] == KUBERNETES_VERSION
-      unless source["commit"] == KUBERNETES_SOURCE_COMMIT
-        errors << "#{label} provenance Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}"
-      end
+      errors << "#{label} provenance Kubernetes source commit must be #{KUBERNETES_SOURCE_COMMIT}" unless source["commit"] == KUBERNETES_SOURCE_COMMIT
       errors << "#{label} provenance Kubernetes source tag must be #{KUBERNETES_VERSION}" unless source["tag"] == KUBERNETES_VERSION
       if [KUBERNETES_PROTOBUF_ORACLE_KIND, KUBERNETES_SEMANTICS_ORACLE_KIND].include?(expected_kind)
         errors << "#{label} provenance source root is required" unless non_empty_string?(source["root"])
