@@ -59,7 +59,7 @@ class APIServerRequestMetricsTest < Minitest::Test
     assert_kind_of API::LongRunningBody, response.body
     events = Queue.new
     reader = Thread.new do
-      response.body.each do |event|
+      response.body.each do |event| # rubocop:disable Lint/UnreachableLoop -- reads one event from the stream
         events << event
         response.body.piece_written(1500)
         break
