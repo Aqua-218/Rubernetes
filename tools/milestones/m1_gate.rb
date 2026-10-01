@@ -1798,9 +1798,7 @@ module M1Gate
       validate_oracle_provenance(oracle, errors, "#{label} Kubernetes oracle", expected_kind: expected_kind)
       errors << "#{label} Kubernetes oracle was not executed" unless oracle["executed"] == true
       errors << "#{label} Kubernetes oracle version must be #{KUBERNETES_VERSION}" unless oracle["kubernetes_version"] == KUBERNETES_VERSION
-      unless oracle["source_commit"] == KUBERNETES_SOURCE_COMMIT
-        errors << "#{label} Kubernetes oracle source commit must be #{KUBERNETES_SOURCE_COMMIT}"
-      end
+      errors << "#{label} Kubernetes oracle source commit must be #{KUBERNETES_SOURCE_COMMIT}" unless oracle["source_commit"] == KUBERNETES_SOURCE_COMMIT
       comparison_count = oracle["comparison_count"]
       unless integer?(comparison_count) && comparison_count == expected_count
         errors << "#{label} Kubernetes oracle comparison count must match the report inventory"
