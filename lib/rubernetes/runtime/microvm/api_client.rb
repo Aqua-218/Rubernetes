@@ -115,9 +115,7 @@ module Rubernetes
 
         def request(method, path, body: nil)
           payload = body.nil? ? "" : JSON.generate(body)
-          if payload.bytesize > MAX_REQUEST_BODY_BYTES
-            raise APIError.new("request body of #{payload.bytesize} bytes exceeds #{MAX_REQUEST_BODY_BYTES}")
-          end
+          raise APIError.new("request body of #{payload.bytesize} bytes exceeds #{MAX_REQUEST_BODY_BYTES}") if payload.bytesize > MAX_REQUEST_BODY_BYTES
 
           header = "#{method} #{path} HTTP/1.1\r\nHost: localhost\r\nAccept: application/json\r\n"
           header += "Content-Type: application/json\r\nContent-Length: #{payload.bytesize}\r\n" unless body.nil?
