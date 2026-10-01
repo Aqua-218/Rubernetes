@@ -558,7 +558,9 @@ module Rubernetes
          "kubelet_preemptions" => [:counter, "Cumulative number of pod preemptions by preemption resource"],
          "kubelet_pleg_discard_events" => [:counter, "The number of discard events in PLEG."],
          "kubelet_orphaned_runtime_pods_total" => [:counter,
-                                                   "Number of pods that have been detected in the container runtime without being already known to the pod worker. This typically indicates the kubelet was restarted while a pod was force deleted in the API or in the local configuration, which is unusual."]}.each do |name, (type, help)|
+                                                   "Number of pods that have been detected in the container runtime without being already known to the pod " \
+                                                   "worker. This typically indicates the kubelet was restarted while a pod was force deleted in the API or " \
+                                                   "in the local configuration, which is unusual."]}.each do |name, (type, help)|
           @registry.register(name, type: type, help: help)
         end
         @registry.register("kubelet_image_pull_duration_seconds", type: :histogram, buckets: IMAGE_PULL_BUCKETS,
