@@ -911,9 +911,7 @@ module M3Gate
       first_calls = first_observable.fetch("provider_calls", []) if first_observable.is_a?(Hash)
       second_calls = second_observable.fetch("provider_calls", []) if second_observable.is_a?(Hash)
       if first["applicable"] == true
-        unless first_calls.is_a?(Array) && !first_calls.empty?
-          errors << "#{label} applicable provider path must record a first-run provider call"
-        end
+        errors << "#{label} applicable provider path must record a first-run provider call" unless first_calls.is_a?(Array) && !first_calls.empty?
       elsif first_calls.is_a?(Array) && !first_calls.empty?
         errors << "#{label} inapplicable provider path must not record a provider call"
       end
