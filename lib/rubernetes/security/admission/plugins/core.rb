@@ -332,7 +332,8 @@ module Rubernetes
               next if request.nil? || limit.nil? || quantity(request).zero?
 
               if quantity(limit) / quantity(request) > quantity(ratio)
-                reject!("#{resource} max limit to request ratio per #{item["type"]} is #{ratio}, but provided ratio is #{(quantity(limit) / quantity(request)).to_f}")
+                reject!("#{resource} max limit to request ratio per #{item["type"]} is #{ratio}, but provided ratio is " \
+                        "#{(quantity(limit) / quantity(request)).to_f}")
               end
             end
             attributes
