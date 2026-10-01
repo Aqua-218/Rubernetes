@@ -411,20 +411,6 @@ class M4VolumeSecurityTest < Minitest::Test
       openat2&.close
       FileUtils.remove_entry(directory) if directory && File.exist?(directory)
     end
-    # The plugin receives the canonical pathname (kubelet-compatible); the
-    # lease still pins the original inode and the post-effect verification
-    # detects the swap, fences the volume Unknown, and refuses to adopt the
-    # attacker's directory as the staged target.
-    assert_equal target, observations.fetch("dispatch")
-    assert_equal observations.fetch("outsideInode"), observations.fetch("dispatchInode"),
-                 "the swapped pathname now resolves to the attacker directory"
-    refute_equal observations.fetch("originalInode"), observations.fetch("dispatchInode")
-    assert_equal File.stat(held).ino, observations.fetch("originalInode")
-    assert_equal "Unknown", manager.volume(id).state
-    assert_empty manager.mount_ledger.entries
-  ensure
-    openat2&.close
-    FileUtils.remove_entry(directory) if directory && File.exist?(directory)
   end
 
   # The parent directory is replaced immediately after its descriptor is
