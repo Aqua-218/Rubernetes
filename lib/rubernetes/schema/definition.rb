@@ -237,7 +237,8 @@ module Rubernetes
       }.freeze
 
       attr_reader :lookup_keys, :lookup_symbols, :name, :json_name, :ruby_name, :type, :items, :properties, :required, :nullable,
-                  :default_value, :enum, :minimum, :maximum, :exclusive_minimum, :exclusive_maximum, :pattern, :preserve_unknown_fields, :additional_properties, :metadata
+                  :default_value, :enum, :minimum, :maximum, :exclusive_minimum, :exclusive_maximum, :pattern, :preserve_unknown_fields,
+                  :additional_properties, :metadata
 
       def initialize(name = nil, type = nil, **keywords)
         if type.is_a?(Hash) && keywords.empty?
