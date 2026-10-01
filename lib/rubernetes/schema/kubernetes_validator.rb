@@ -2986,9 +2986,7 @@ module Rubernetes
         return issues unless events_group
 
         if operation == :update && old.is_a?(Hash)
-          if event_field(root, "series", events_group) != event_field(old, "series", events_group)
-            issues.concat(event_series_errors(root, events_group))
-          end
+          issues.concat(event_series_errors(root, events_group)) if event_field(root, "series", events_group) != event_field(old, "series", events_group)
           %w[involvedObject reason message source firstTimestamp lastTimestamp count reason type eventTime action related
              reportingController reportingInstance].each do |name|
             next if event_field(root, name, events_group) == event_field(old, name, events_group)
