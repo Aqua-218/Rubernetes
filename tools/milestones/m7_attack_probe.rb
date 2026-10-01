@@ -50,7 +50,8 @@ module M7AttackProbe
       cases << {"id" => "host_confinement", "confinement" => confinement, "jail_files" => jail_listing, "forbidden_in_jail" => forbidden_in_jail,
                 "passed" => confinement["uid"] == [session.uid] && confinement["cap_eff"].to_i(16).zero? && confinement["seccomp"] == "2" &&
                             confinement["no_new_privs"] == "1" && confinement["root_inode"] == confinement["chroot_inode"] &&
-                            confinement["mount_namespace"] != confinement["host_mount_namespace"] && confinement["network_namespace"] != confinement["host_network_namespace"] &&
+                            confinement["mount_namespace"] != confinement["host_mount_namespace"] &&
+                            confinement["network_namespace"] != confinement["host_network_namespace"] &&
                             confinement["nspid"].last == "1" && forbidden_in_jail.empty?}
       # Spoofed / stale ACKs from a malicious guest are rejected by the host.
       key = [session.identity.fields["vsock_session_key"]].pack("H*")
