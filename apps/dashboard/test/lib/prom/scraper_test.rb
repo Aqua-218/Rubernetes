@@ -80,13 +80,13 @@ module Prom
     test "parse errors and timeouts are recorded as failures" do
       status = @scraper.scrape(target("this is not{ metrics\n"))
 
-    assert_equal "down", status.health
-    assert_match(/parse error/, status.last_error)
-    slow = target(nil) do
-      sleep 3
-      [200, "a 1\n"]
-    end
-    status = @scraper.scrape(slow)
+      assert_equal "down", status.health
+      assert_match(/parse error/, status.last_error)
+      slow = target(nil) do
+        sleep 3
+        [200, "a 1\n"]
+      end
+      status = @scraper.scrape(slow)
 
     assert_match(/deadline exceeded/, status.last_error)
   end
