@@ -256,7 +256,7 @@ module Rubernetes
         # serves both the size check and the batch.
         normalized = Canonical.normalize(command)
         encoded = JSON.generate(normalized)
-        raise InvalidCommand, "command exceeds #{@timing.batch_max_bytes} bytes" if encoded.bytesize > @timing.batch_max_bytes
+        raise InvalidCommand, "command exceeds #{@timing.max_command_bytes} bytes" if encoded.bytesize > @timing.max_command_bytes
 
         @pending_batch << [request_id, normalized]
         @pending_batch_ids << request_id
