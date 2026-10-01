@@ -15,10 +15,10 @@ module Prom
       @scraper = Prom::Scraper.new(@store, timeout_seconds: 2, clock: -> { @now })
     end
 
-  def teardown
-    @store.close
-    FileUtils.rm_rf(@dir)
-  end
+    def teardown
+      @store.close
+      FileUtils.rm_rf(@dir)
+    end
 
   def target(body, job: "test", instance: "t:1", labels: {}, status: 200, &block)
     fetch = block || -> { [status, body] }
