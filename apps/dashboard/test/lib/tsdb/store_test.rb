@@ -74,9 +74,9 @@ module Tsdb
       reopened = open_store
       series = reopened.select_series([M.new(name: "__name__", op: "=", value: "m")]).first
 
-    assert_equal 1, reopened.series_count
-    assert_equal 6, reopened.samples(series.id, 0, 2000).length
-  end
+      assert_equal Array.new(5) { |i| [1000 + i, i.to_f] }, reopened.samples(series.id, 0, 2000)
+      # And appending continues without duplicating the recovered series.
+      reopened.append(labels("m", "k" => "v"), 1005, 5.0)
 
   test "blocks are cut from the head on the block boundary and read back seamlessly" do
     store = open_store(block_range_ms: 60_000)
