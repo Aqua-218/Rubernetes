@@ -858,9 +858,7 @@ module M2Gate
       errors << "#{label} provenance command must name the Ruby probe" unless command.is_a?(Array) && command.any? do |part|
         part.is_a?(String) && part.end_with?(".rb")
       end
-      unless provenance["process_id"].is_a?(Integer) && provenance["process_id"].positive?
-        errors << "#{label} provenance process_id must be positive"
-      end
+      errors << "#{label} provenance process_id must be positive" unless provenance["process_id"].is_a?(Integer) && provenance["process_id"].positive?
       errors << "#{label} provenance measurement_id is required" unless non_empty_string?(provenance["measurement_id"])
       %w[started_at finished_at].each do |key|
         Time.iso8601(provenance[key].to_s)
