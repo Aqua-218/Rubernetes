@@ -15,7 +15,8 @@ class NodeAuthorizerGraphTest < Minitest::Test
     volumes << {"name" => "data", "persistentVolumeClaim" => {"claimName" => claim}} if claim
     {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => name, "namespace" => "ns", "uid" => "u-#{name}",
                                                            "annotations" => mirror ? {"kubernetes.io/config.mirror" => "x"} : {}},
-     "spec" => {"nodeName" => node, "serviceAccountName" => "sa-#{name}", "containers" => [{"name" => "c", "env" => [{"name" => "K", "valueFrom" => {"configMapKeyRef" => {"name" => "cm-#{name}", "key" => "k"}}}]}],
+     "spec" => {"nodeName" => node, "serviceAccountName" => "sa-#{name}",
+                "containers" => [{"name" => "c", "env" => [{"name" => "K", "valueFrom" => {"configMapKeyRef" => {"name" => "cm-#{name}", "key" => "k"}}}]}],
                 "volumes" => volumes}}
   end
 
