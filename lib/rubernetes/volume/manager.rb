@@ -3158,9 +3158,7 @@ module Rubernetes
           raise CSIError, "CSI #{operation} pagination exceeded the recovery bound" if pages > CSI_RECOVERY_PAGE_LIMIT
 
           page = invoke_csi_with_supported_keywords(method_name, kwargs.merge(starting_token: starting_token))
-          unless page.is_a?(Array) || (!page.nil? && page.respond_to?(:to_h))
-            raise CSIError, "CSI #{operation} returned a malformed pagination page"
-          end
+          raise CSIError, "CSI #{operation} returned a malformed pagination page" unless page.is_a?(Array) || (!page.nil? && page.respond_to?(:to_h))
 
           hash = page.is_a?(Array) ? {} : AdapterSupport.result_hash(page)
           page_entries = page.is_a?(Array) ? page : entry_keys.lazy.map { |key| hash[key] }.find(&:itself)
