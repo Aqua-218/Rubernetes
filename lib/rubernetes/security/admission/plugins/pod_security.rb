@@ -156,9 +156,7 @@ module Rubernetes
             if prioritized.length < total
               warnings << "new PodSecurity enforce level only checked against the first #{prioritized.length} of #{total} existing pods"
             end
-            if order.any?
-              warnings << "existing pods in namespace #{namespace.inspect} violate the new PodSecurity enforce level #{enforce.to_s.inspect}"
-            end
+            warnings << "existing pods in namespace #{namespace.inspect} violate the new PodSecurity enforce level #{enforce.to_s.inspect}" if order.any?
             decorated = order.map do |warning|
               entry = counts[warning]
               case entry[:count]
