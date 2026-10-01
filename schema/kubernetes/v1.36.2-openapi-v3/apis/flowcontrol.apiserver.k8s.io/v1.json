@@ -2920,11 +2920,6 @@
           },
           "202": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.flowcontrol.v1.PriorityLevelConfiguration"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.flowcontrol.v1.PriorityLevelConfiguration"
