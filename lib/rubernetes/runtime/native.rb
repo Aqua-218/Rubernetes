@@ -460,9 +460,7 @@ module Rubernetes
         @ledger.transition(operation_id: sandbox.id, to: "Stopping") if current_operation&.state == "Running"
         sandbox.transition(:stopped) if %i[stopping workload_stopped rolling_back].include?(sandbox.state)
         current_operation = @ledger.operation(sandbox.id)
-        if current_operation && %w[Stopping RollingBack].include?(current_operation.state)
-          @ledger.transition(operation_id: sandbox.id, to: "Stopped")
-        end
+        @ledger.transition(operation_id: sandbox.id, to: "Stopped") if current_operation && %w[Stopping RollingBack].include?(current_operation.state)
         record(:sandbox_stopped, sandbox_id: sandbox.id)
         true
       rescue Sandbox::Error => error
