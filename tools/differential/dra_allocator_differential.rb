@@ -295,8 +295,9 @@ module DRAAllocatorDifferential
   def comparable_error(message)
     return nil if message.nil?
 
-    index = message.index("CEL compile error: ")
-    index ? message[0, index + "CEL compile error: ".length] : message
+    prefix = "CEL compile error: "
+    index = message.index(prefix)
+    index ? message[0, index + prefix.length] : message
   end
 
   def run(show: false)
