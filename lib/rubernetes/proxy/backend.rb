@@ -1177,9 +1177,7 @@ module Rubernetes
           unless valid_digest?(expected_digest) && expected_digest == canonical_trace_digest(expected)
             failures << "packet corpus case expected digest is invalid"
           end
-          unless valid_digest?(actual_digest) && actual_digest == canonical_trace_digest(actual)
-            failures << "packet corpus case actual digest is invalid"
-          end
+          failures << "packet corpus case actual digest is invalid" unless valid_digest?(actual_digest) && actual_digest == canonical_trace_digest(actual)
           case_trace = evidence_value(entry, "packetTraceSha256", "packet_trace_sha256")
           failures << "packet corpus case trace is not bound to raw trace" unless case_trace == trace
         end
