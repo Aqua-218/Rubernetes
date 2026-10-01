@@ -562,8 +562,10 @@ class M3SchedulerTest < Minitest::Test
         pending: pod("unbound", extra_spec: {"volumes" => [{"name" => "claim", "persistentVolumeClaim" => {"claimName" => "missing"}}]}),
         candidate: node("a"),
         context: Scheduler::CycleContext.new(nodes: [], pods: [], volume_data: {
-                                               "persistentVolumeClaims" => {"default/missing" => {"metadata" => {"name" => "missing", "namespace" => "default"},
-                                                                                                  "spec" => {"resources" => {"requests" => {"storage" => "1Gi"}}}}},
+                                               "persistentVolumeClaims" => {"default/missing" => {
+                                                 "metadata" => {"name" => "missing", "namespace" => "default"},
+                                                 "spec" => {"resources" => {"requests" => {"storage" => "1Gi"}}}
+                                               }},
                                                "persistentVolumes" => []
                                              })
       },
