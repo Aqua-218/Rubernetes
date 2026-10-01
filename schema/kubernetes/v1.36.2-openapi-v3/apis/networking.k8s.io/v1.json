@@ -517,7 +517,12 @@
           },
           "protocol": {
             "default": "",
-            "description": "protocol is the protocol of the ingress port. The supported values are: \"TCP\", \"UDP\", \"SCTP\"",
+            "description": "protocol is the protocol of the ingress port. The supported values are: \"TCP\", \"UDP\", \"SCTP\"\n\nPossible enum values:\n - `\"SCTP\"` is the SCTP protocol.\n - `\"TCP\"` is the TCP protocol.\n - `\"UDP\"` is the UDP protocol.",
+            "enum": [
+              "SCTP",
+              "TCP",
+              "UDP"
+            ],
             "type": "string"
           }
         },
