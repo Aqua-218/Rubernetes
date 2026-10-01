@@ -1003,7 +1003,9 @@ module Rubernetes
             return if workload.nil?
 
             reject!("PodGroup #{attributes.name.inspect} refers to a Workload that does not exist") if @context.get("workloads",
-                                                                                                                    attributes.namespace, workload, group: "scheduling.k8s.io", version: "v1alpha2").nil?
+                                                                                                                    attributes.namespace, workload,
+                                                                                                                    group: "scheduling.k8s.io",
+                                                                                                                    version: "v1alpha2").nil?
           end
         end
         Registry.register("PodGroupWorkloadExists") do |context, config|
