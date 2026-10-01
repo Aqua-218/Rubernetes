@@ -458,7 +458,8 @@
       "upstream_path": "api/openapi-spec/v3/apis__resource.k8s.io__v1beta2_openapi.json",
       "source_sha256": "a68c052604b9e17fd2506bd7accf2516b735e8b7a0685aed441511105d2ab0ca",
       "sha256": "a68c052604b9e17fd2506bd7accf2516b735e8b7a0685aed441511105d2ab0ca",
-      "paths": 27
+      "paths": 27,
+      "source": "tree"
     },
     {
       "path": "apis/resource.k8s.io.json",
