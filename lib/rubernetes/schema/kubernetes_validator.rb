@@ -1779,9 +1779,7 @@ module Rubernetes
           in_status = path.include?("status")
           os = fetch(value, "os")
           os = fetch(os, "name") if os.is_a?(Hash)
-          if !in_status && !os.nil? && !SUPPORTED_OS.include?(os.to_s)
-            issues << issue(path + ["os"], :unsupported, "supported values: \"linux\", \"windows\"")
-          end
+          issues << issue(path + ["os"], :unsupported, "supported values: \"linux\", \"windows\"") if !in_status && !os.nil? && !SUPPORTED_OS.include?(os.to_s)
           restart = fetch(value, "restartPolicy")
           if !in_status && !path.include?("resizePolicy") && !restart.nil? &&
              !%w[Always OnFailure Never].include?(restart.to_s)
