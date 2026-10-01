@@ -201,7 +201,10 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     end
     error = assert_raises(A::Rejected) { restriction.validate(attributes("CREATE", resource: "pods", object: secret_mirror, user: kubelet)) }
     assert_includes error.message, "can not create pods that reference serviceaccounts (via projected volumes)"
-    assert_raises(A::Rejected) { restriction.validate(attributes("CREATE", resource: "pods", object: pod("plain", extra: {"nodeName" => "n1"}), user: kubelet)) }
+    assert_raises(A::Rejected) do
+      restriction.validate(attributes("CREATE", resource: "pods", object: pod("plain", extra: {"nodeName" => "n1"}),
+                                                user: kubelet))
+    end
     other = pod("o", extra: {"nodeName" => "n2"}).tap { |p| p["metadata"]["annotations"] = {"kubernetes.io/config.mirror" => "x"} }
     assert_raises(A::Rejected) { restriction.validate(attributes("CREATE", resource: "pods", object: other, user: kubelet)) }
     assert_raises(A::Rejected) { restriction.validate(attributes("UPDATE", resource: "nodes", namespace: "", name: "n2", object: {"metadata" => {"name" => "n2"}}, old: {"metadata" => {"name" => "n2"}}, user: kubelet)) }
