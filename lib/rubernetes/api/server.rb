@@ -1461,7 +1461,8 @@ module Rubernetes
             raise Status::NotFound.new("#{kind.downcase}s #{bound["name"].inspect} not found")
           end
           if bound["uid"] && !bound["uid"].to_s.empty? && metadata_value(object, "uid").to_s != bound["uid"].to_s
-            raise Status::Conflict.new("the UID in the bound object reference (#{bound["uid"]}) does not match the UID in record. The object might have been deleted and then recreated")
+            raise Status::Conflict.new("the UID in the bound object reference (#{bound["uid"]}) does not match the UID in record. The object might have " \
+                                       "been deleted and then recreated")
           end
 
           bound_object = {"kind" => kind, "name" => bound["name"], "uid" => metadata_value(object, "uid").to_s}
