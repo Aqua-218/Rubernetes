@@ -182,9 +182,9 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       assert_equal(:running, second.sandbox(sandbox_id).state)
       restored = second.container_status(container)
 
-    assert_equal("running", restored.fetch("state"))
-    assert_operator(restored.fetch("process").fetch("workload_pid"), :>, 0)
-    assert_match(/\Asha256:[0-9a-f]{64}\z/, restored.fetch("process").fetch("workload_executable_digest"))
+      assert_equal("running", restored.fetch("state"))
+      assert_operator(restored.fetch("process").fetch("workload_pid"), :>, 0)
+      assert_match(/\Asha256:[0-9a-f]{64}\z/, restored.fetch("process").fetch("workload_executable_digest"))
 
     second.stop_sandbox(sandbox_id, timeout: 2)
     second.remove_sandbox(sandbox_id)
