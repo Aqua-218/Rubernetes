@@ -457,9 +457,7 @@ module Rubernetes
               remove_at(directory, child, join_relative(relative, child))
             end
             @race_hook&.call(operation: :remove_before_rmdir, relative: relative.to_s, fd: directory)
-            if identity_at(parent_fd, name, relative) != directory_identity
-              raise UnsafePath, "rootfs directory identity changed before rmdir"
-            end
+            raise UnsafePath, "rootfs directory identity changed before rmdir" if identity_at(parent_fd, name, relative) != directory_identity
 
             call_unlinkat(parent_fd, name, AT_REMOVEDIR, "rootfs:rmdir:#{relative}")
           rescue Linux::Error => error
