@@ -605,7 +605,10 @@ module Rubernetes
           Thread.current[AUDIT_KEY] = previous_audit
           phase("security.exit") do
             @security.exit(entry, response, error: error, response_object: response&.body.is_a?(Hash) ? response.body : nil,
-                                            request_object: entry.attributes.resource_request? && request.body.is_a?(String) && !request.body.empty? ? safe_json(request.body) : nil)
+                                            request_object: if entry.attributes.resource_request? && request.body.is_a?(String) &&
+                                              !request.body.empty?
+                                                              safe_json(request.body)
+                                                            end)
           end
         end
       end
