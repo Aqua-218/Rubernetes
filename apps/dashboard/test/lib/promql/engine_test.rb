@@ -297,8 +297,7 @@ module Promql
       assert_equal [2 * (2 + 3 + 4 + 5).to_f], rate
     end
 
-    assert_equal [2 * (2 + 3 + 4 + 5).to_f], rate
-  end
+    # ---------------------------------------------------------- range queries
 
   # ---------------------------------------------------------- range queries
 
