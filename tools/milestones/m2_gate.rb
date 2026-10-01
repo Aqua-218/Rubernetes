@@ -1829,9 +1829,7 @@ module M2Gate
             errors << "#{entry_label} Native Node Agent recovery has blocked records" unless Array(recovery["blocked"]).empty?
             runtime_recovery = recovery["runtime"]
             if runtime_recovery.is_a?(Hash)
-              unless Array(runtime_recovery["identity_mismatch"]).empty?
-                errors << "#{entry_label} Native Node Agent runtime recovery has identity mismatches"
-              end
+              errors << "#{entry_label} Native Node Agent runtime recovery has identity mismatches" unless Array(runtime_recovery["identity_mismatch"]).empty?
               cleaned_orphans = Array(runtime_recovery["cleaned_orphans"]).map(&:to_s)
               unresolved_orphans = Array(runtime_recovery["orphans"]).filter_map do |orphan|
                 key = orphan.is_a?(Hash) ? "#{orphan["kind"] || orphan[:kind]}:#{orphan["id"] || orphan[:id]}" : orphan.to_s
