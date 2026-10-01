@@ -135,7 +135,8 @@ class ServingCertificateManagerTest < Minitest::Test
       File.write(File.join(dir, "tls.crt"), first.to_pem)
       File.write(File.join(dir, "tls.key"), key.to_pem)
       server = Rubernetes::Transport::HTTPServer.new(->(_request) { [200, {}, ["ok"]] }, host: "127.0.0.1", port: 0,
-                                                                                         cert_file: File.join(dir, "tls.crt"), key_file: File.join(dir, "tls.key"))
+                                                                                         cert_file: File.join(dir, "tls.crt"), key_file: File.join(dir,
+                                                                                                                                                   "tls.key"))
       server.start(background: true)
       begin
         request.subject = OpenSSL::X509::Name.parse("/CN=second")
