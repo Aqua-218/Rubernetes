@@ -327,9 +327,7 @@ module Rubernetes
           outbound = generated_id + bytes.byteslice(2, bytes.bytesize - 2)
           target = server ? validate_upstream(server) : @upstreams.first
           raise DNSUpstreamError, "DNS upstream would loop back to the cluster resolver" if target && target.to_s == @cluster_ip.to_s
-          if server && !@upstreams.empty? && !@upstreams.include?(target)
-            raise DNSUpstreamError, "DNS server is not in the configured upstream allowlist"
-          end
+          raise DNSUpstreamError, "DNS server is not in the configured upstream allowlist" if server && !@upstreams.empty? && !@upstreams.include?(target)
 
           response = invoke_upstream(outbound, target, client_address: client_address, **)
           normalize_upstream_response(response, generated_id: generated_id, client_id: incoming_id, target: target)
