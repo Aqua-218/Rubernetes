@@ -1599,9 +1599,7 @@ module M1Gate
         errors << "API surface #{label} matrix entry #{index} must pass" unless entry["passed"] == true
         default_off = (label == "GVR" ? DEFAULT_OFF_GVR_IDS : DEFAULT_OFF_GVK_IDS).include?(id.to_s)
         expected_availability = default_off ? "not_served_default" : "served"
-        unless entry["availability"] == expected_availability
-          errors << "API surface #{label} matrix entry #{index} availability profile is invalid"
-        end
+        errors << "API surface #{label} matrix entry #{index} availability profile is invalid" unless entry["availability"] == expected_availability
         if default_off
           unless entry["availability_reason"] == DEFAULT_OFF_REASON
             errors << "API surface #{label} matrix entry #{index} default-off reason is invalid"
