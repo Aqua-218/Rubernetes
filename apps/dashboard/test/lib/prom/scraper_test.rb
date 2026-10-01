@@ -73,9 +73,9 @@ module Prom
       failing = target(nil) { raise Errno::ECONNREFUSED, "connection refused" }
       status = @scraper.scrape(failing)
 
-    assert_equal "down", status.health
-    assert_match(/ECONNREFUSED/, status.last_error)
-  end
+      assert_equal "down", status.health
+      assert_match(/ECONNREFUSED/, status.last_error)
+    end
 
   test "parse errors and timeouts are recorded as failures" do
     status = @scraper.scrape(target("this is not{ metrics\n"))
