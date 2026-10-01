@@ -572,9 +572,7 @@ module Rubernetes
           raise Client::UsageError, "-f/--filename is required" if options[:filenames].empty?
         when "patch"
           raise Client::UsageError, "patch requires RESOURCE/NAME or PATH" unless arguments.length == 1
-          unless options[:patch] || options[:data] || options[:filenames].any?
-            raise Client::UsageError, "patch requires --patch, --filename, or --data"
-          end
+          raise Client::UsageError, "patch requires --patch, --filename, or --data" unless options[:patch] || options[:data] || options[:filenames].any?
         when "delete"
           raise Client::UsageError, "delete requires RESOURCE or PATH" unless (1..2).cover?(arguments.length)
         when "watch"
