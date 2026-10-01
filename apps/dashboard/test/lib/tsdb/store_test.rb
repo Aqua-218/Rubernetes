@@ -43,8 +43,8 @@ module Tsdb
       regex = store.query([M.new(name: "__name__", op: "=", value: "up"), M.new(name: "instance", op: "=~", value: "[ab]:1")], t0,
                           t0 + 200_000)
 
-    assert_equal 2, negative.length
-    window = store.samples(result[0][0].id, t0 + 30_000, t0 + 60_000)
+      assert_equal 2, regex.length
+      negative = store.query([M.new(name: "__name__", op: "=", value: "up"), M.new(name: "job", op: "!=", value: "node")], t0, t0 + 200_000)
 
     assert_equal [t0 + 30_000, t0 + 45_000, t0 + 60_000], window.map(&:first)
     assert_equal %w[__name__ instance job], store.label_names
