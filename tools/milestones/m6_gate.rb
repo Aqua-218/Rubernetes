@@ -309,9 +309,7 @@ module M6Gate
       errors << "webhook differential must be differentially tested" unless document["measurement_level"] == "differentially_tested"
       validate_oracle("webhook", document, errors)
       validate_differential_cases("webhook", cases, WEBHOOK_REQUIRED, errors)
-      unless non_empty_string?(document["docker_gateway"])
-        errors << "webhook differential must record the docker gateway used by the oracle"
-      end
+      errors << "webhook differential must record the docker gateway used by the oracle" unless non_empty_string?(document["docker_gateway"])
       timeout = cases.find { |entry| entry["id"] == "timeout_fail_policy" }
       errors << "timeout_fail_policy must observe a 500 InternalError on both servers" unless timeout && timeout.dig("rubernetes",
                                                                                                                      "status") == 500 && timeout.dig(
