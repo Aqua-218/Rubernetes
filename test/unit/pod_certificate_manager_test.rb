@@ -117,7 +117,8 @@ class PodCertificateManagerTest < Minitest::Test
     spec = created["spec"]
 
     assert_equal({"signerName" => "example.com/pods", "podName" => "web", "podUID" => "uid-web", "serviceAccountName" => "app", "serviceAccountUID" => "sa-uid",
-                  "nodeName" => "worker-0", "nodeUID" => "node-uid"}, spec.slice(*%w[signerName podName podUID serviceAccountName serviceAccountUID nodeName nodeUID]))
+                  "nodeName" => "worker-0", "nodeUID" => "node-uid"},
+                 spec.slice(*%w[signerName podName podUID serviceAccountName serviceAccountUID nodeName nodeUID]))
     csr = OpenSSL::X509::Request.new(Base64.strict_decode64(spec["stubPKCS10Request"]))
 
     assert csr.verify(csr.public_key), "the stub CSR proves possession of the key"
