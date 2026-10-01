@@ -1057,8 +1057,8 @@ module Rubernetes
       end
 
       def request_warnings(request)
-        @request_warnings ||= Hash.new { |hash, key| hash[key] = [] }
-        @request_warnings[request.object_id]
+        @request_warnings ||= Hash.new { |hash, key| hash[key] = [] }.compare_by_identity
+        @request_warnings[request]
       end
 
       # Admission warnings reach the client as RFC 7234 Warning headers with
