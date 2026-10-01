@@ -2377,9 +2377,7 @@ module Rubernetes
 
         if backend
           nested = Types.key(hash, backend, {})
-          if nested.respond_to?(:to_h) && !nested.is_a?(String)
-            hash = nested.to_h.merge(hash.reject { |key, _| key.to_s.casecmp?(backend.to_s) })
-          end
+          hash = nested.to_h.merge(hash.reject { |key, _| key.to_s.casecmp?(backend.to_s) }) if nested.respond_to?(:to_h) && !nested.is_a?(String)
         end
         hash["backend"] = backend || Types.key(hash, "backend", "emptyDir").to_s
         hash["capacityBytes"] = Types.parse_capacity(Types.key(hash, "capacityBytes", Types.key(hash, "capacity", 1)))
