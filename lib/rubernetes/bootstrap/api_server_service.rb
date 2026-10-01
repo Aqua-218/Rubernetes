@@ -108,9 +108,7 @@ module Rubernetes
           security: @security&.pipeline,
           feature_gates: @security ? @security.feature_gates : {},
           service_account_issuer: @security&.service_account_issuer,
-          api_audiences: (unless @security&.service_account_issuer&.api_audiences.to_a.empty?
-                            @security&.service_account_issuer&.api_audiences
-                          end),
+          api_audiences: (@security&.service_account_issuer&.api_audiences unless @security&.service_account_issuer&.api_audiences.to_a.empty?),
           openapi_repository: @openapi,
           crd_manager: @crd_manager,
           aggregator: @aggregator,
