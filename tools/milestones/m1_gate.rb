@@ -528,9 +528,7 @@ module M1Gate
           names << command["name"]
         end
         command_value = command["command"]
-        unless (command_value.is_a?(Array) && !command_value.empty?) || non_empty_string?(command_value)
-          errors << "command #{index} must record its argv"
-        end
+        errors << "command #{index} must record its argv" unless (command_value.is_a?(Array) && !command_value.empty?) || non_empty_string?(command_value)
         errors << "command #{index} must have an exit status" unless integer?(command["exit_status"])
         errors << "command #{index} did not exit zero" unless command["exit_status"] == 0
         %w[started_at finished_at].each do |key|
