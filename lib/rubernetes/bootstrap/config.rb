@@ -629,11 +629,7 @@ module Rubernetes
 
         raise Error, "rubernetes-agent.image_gc has unknown fields: #{unknown.sort.join(", ")}" unless unknown.empty?
 
-        if value.key?("enabled") && ![true, false].include?(value["enabled"])
-
-          raise Error, "rubernetes-agent.image_gc.enabled must be a boolean"
-
-        end
+        raise Error, "rubernetes-agent.image_gc.enabled must be a boolean" if value.key?("enabled") && ![true, false].include?(value["enabled"])
 
         high = value.fetch("high_threshold_percent", 85)
 
