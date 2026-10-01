@@ -636,19 +636,20 @@ class HTTPTransportTest < Minitest::Test
 
       service.stop(reason: "integration test")
 
-    assert_predicate service.http_server, :stopped?
-    assert_equal 0, service.http_server.active_connections
-  ensure
-    if watch_wait && watch_wait.alive?
-      begin
-        Process.kill("TERM", watch_wait.pid)
-      rescue StandardError
-        nil
-      end
-      begin
-        watch_wait.value
-      rescue StandardError
-        nil
+      assert_predicate service.http_server, :stopped?
+      assert_equal 0, service.http_server.active_connections
+    ensure
+      if watch_wait && watch_wait.alive?
+        begin
+          Process.kill("TERM", watch_wait.pid)
+        rescue StandardError
+          nil
+        end
+        begin
+          watch_wait.value
+        rescue StandardError
+          nil
+        end
       end
     end
     [watch_input, watch_output, watch_error].compact.each { |io| io.close unless io.closed? }
