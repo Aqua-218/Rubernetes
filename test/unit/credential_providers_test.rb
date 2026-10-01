@@ -202,7 +202,8 @@ class CredentialProvidersTest < Minitest::Test
       assert_equal({service_account: {uid: "sa-u", namespace: "ns", name: "sa"}}, credential.pull_secret)
       assert_equal({uid: "sa-u", namespace: "ns", name: "sa"}, keyring.service_account_for("registry.example/app:1"))
       keyring.add_secret({"type" => "kubernetes.io/dockerconfigjson", "metadata" => {"name" => "s", "uid" => "su", "namespace" => "ns"},
-                          "data" => {".dockerconfigjson" => [JSON.generate({"auths" => {"registry.example" => {"username" => "secret", "password" => "p"}}})].pack("m0")}})
+                          "data" => {".dockerconfigjson" => [JSON.generate({"auths" => {"registry.example" => {"username" => "secret",
+                                                                                                               "password" => "p"}}})].pack("m0")}})
 
       assert_equal "secret", keyring.lookup("registry.example/app:1").username
     end
