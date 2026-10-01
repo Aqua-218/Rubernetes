@@ -333,9 +333,7 @@ module Rubernetes
                 @window_changed.broadcast
               end
             when SETTINGS_MAX_FRAME_SIZE
-              unless value.between?(DEFAULT_MAX_FRAME_SIZE, MAX_FRAME_SIZE_LIMIT)
-                raise ConnectionError.new(PROTOCOL_ERROR, "MAX_FRAME_SIZE out of range")
-              end
+              raise ConnectionError.new(PROTOCOL_ERROR, "MAX_FRAME_SIZE out of range") unless value.between?(DEFAULT_MAX_FRAME_SIZE, MAX_FRAME_SIZE_LIMIT)
 
               @mutex.synchronize { @peer_max_frame_size = value }
             end
