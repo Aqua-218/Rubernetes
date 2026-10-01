@@ -1262,9 +1262,10 @@ module Rubernetes
           maps = evidence_value(entry, "maps", "mapIdentity", "map_identity")
           filters = evidence_value(entry, "filters", "tcFilters", "tc_filters")
           failures << "ebpf program verifier identity is required" unless program.is_a?(Hash) && positive_integer?(evidence_value(program,
-                                                                                                                                  "id")) && valid_bpf_tag?(evidence_value(
-                                                                                                                                    program, "tag"
-                                                                                                                                  ))
+                                                                                                                                  "id")) &&
+                                                                          valid_bpf_tag?(evidence_value(
+                                                                            program, "tag"
+                                                                          ))
           failures << "ebpf map readback identity is required" unless maps.is_a?(Array) && !maps.empty? && maps.all? do |map|
             map.is_a?(Hash) && positive_integer?(evidence_value(map, "id"))
           end
