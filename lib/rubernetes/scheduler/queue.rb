@@ -196,7 +196,7 @@ module Rubernetes
       def enqueue_unschedulable(pod, reason:, gated: false, plugins: [], event: EVENT_ATTEMPT_FAILURE)
         typed = pod.is_a?(Pod) ? pod : Pod.new(pod)
         key = identity_key(typed)
-        item = @mutex.synchronize do
+        @mutex.synchronize do
           @sequence += 1
           QueueItem.new(pod: typed, priority: typed.priority, sequence: @sequence,
                         reason: String(reason), unschedulable: true).tap do |entry|
