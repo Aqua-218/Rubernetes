@@ -412,7 +412,8 @@ module M4VolumeObservationRunner
       restored_root = File.join(data_dir, "volumes", restored_id)
       restored_digests = files.keys.to_h { |relative| [relative, Digest::SHA256.file(File.join(restored_root, relative)).hexdigest] }
       record["comparisons"] << M4ObserverSupport.comparison("snapshot_restore",
-                                                            {"operation" => "RestoreSnapshot", "source_snapshot_id" => snapshot_id, "content_sha256" => expected_digests, "state" => "Provisioned"},
+                                                            {"operation" => "RestoreSnapshot", "source_snapshot_id" => snapshot_id,
+                                                             "content_sha256" => expected_digests, "state" => "Provisioned"},
                                                             {"operation" => "RestoreSnapshot", "source_snapshot_id" => manager.volume(restored_id).spec.dig("backendResult", "restoredFrom"), "content_sha256" => restored_digests, "state" => manager.volume(restored_id).state},
                                                             "operation" => "RestoreSnapshot", "restored_volume_id" => restored_id)
       manager.delete_volume(restored_id, token: "snap-delete-restored")
