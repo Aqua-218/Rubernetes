@@ -393,7 +393,7 @@ module Rubernetes
             suffix = labels[index..].join(".")
             if compression && (pointer = compression[suffix])
               buffer << [0xc000 | pointer].pack("n")
-              return
+              return # rubocop:disable Lint/NonLocalExitFromIterator -- the method is done once this holds
             end
             # Pointers can only address the first 16 KiB of the message.
             compression[suffix] = buffer.bytesize if compression && buffer.bytesize < 0x3fff
