@@ -44,12 +44,8 @@ module Rubernetes
                                   "subresource" => attributes.subresource}.reject { |_key, value| value.to_s.empty? }
           end
           event["responseStatus"] = response_status(response) if response
-          if %w[Request RequestResponse].include?(level) && request_object
-            event["requestObject"] = sanitize(attributes, request_object, omit_managed_fields)
-          end
-          if level == "RequestResponse" && response_object
-            event["responseObject"] = sanitize(attributes, response_object, omit_managed_fields)
-          end
+          event["requestObject"] = sanitize(attributes, request_object, omit_managed_fields) if %w[Request RequestResponse].include?(level) && request_object
+          event["responseObject"] = sanitize(attributes, response_object, omit_managed_fields) if level == "RequestResponse" && response_object
           event.reject { |_key, value| value.nil? }
         end
 
