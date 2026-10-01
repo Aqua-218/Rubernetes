@@ -869,7 +869,7 @@ module Rubernetes
       end
 
       def hex_byte?(byte)
-        (byte.between?(0x30, 0x39)) || (byte.between?(0x41, 0x46)) || (byte.between?(0x61, 0x66))
+        byte.between?(0x30, 0x39) || byte.between?(0x41, 0x46) || byte.between?(0x61, 0x66)
       end
 
       def token_byte?(byte)
