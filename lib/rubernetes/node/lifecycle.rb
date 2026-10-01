@@ -429,8 +429,20 @@ module Rubernetes
 
           status = begin
             invoke(@runtime, :container_status, entry[:id])
-          rescue StandardError
-            nil
+          rescue StandardError => error
+            # The runtime no longer knows a container this record started:
+            # startup recovery released its sandbox after the agent crashed,
+            # or it was removed behind the agent's back.  Swallowing that
+            # left the Pod "Running" with a dead process for ever (and exec
+            # answering "unknown container").  kubelet's PLEG treats a
+            # container missing from the runtime as dead: it is reported
+            # Terminated/ContainerStatusUnknown (137) and, when the sandbox
+            # itself is gone, the Pod is killed and synced from scratch.
+            next unless lost_container_error?(error)
+            return lose_sandbox!(object, record, error) if sandbox_lost?(record)
+
+            {"state" => "exited", "exit_code" => 137, "reason" => CONTAINER_STATUS_UNKNOWN_REASON,
+             "message" => CONTAINER_STATUS_UNKNOWN_MESSAGE}
           end
           status = status.to_h if status.respond_to?(:to_h) && !status.is_a?(Hash)
           next unless status.is_a?(Hash)
