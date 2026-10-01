@@ -849,9 +849,7 @@ module Rubernetes
 
         phase = claim.dig("status", "phase").to_s
         pv_name = claim.dig("spec", "volumeName").to_s
-        if phase != "Bound" || pv_name.empty?
-          raise MissingDependency, "persistentvolumeclaim \"#{claim_name}\" is not bound (phase #{phase.inspect})"
-        end
+        raise MissingDependency, "persistentvolumeclaim \"#{claim_name}\" is not bound (phase #{phase.inspect})" if phase != "Bound" || pv_name.empty?
 
         pv = read("persistentvolumes", pv_name, namespace: nil)
         raise MissingDependency, "persistentvolume \"#{pv_name}\" bound to claim \"#{claim_name}\" not found" if pv.nil?
