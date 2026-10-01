@@ -161,9 +161,7 @@ module RubernetesFieldParity
         %w[ruby rbs openapi codec patch dsl].each do |surface|
           issue("invalid_array", "#{schema_name}.#{surface}", "Array", field_set[surface].class.name) unless field_set[surface].is_a?(Array)
         end
-        unless type["field_definitions"].is_a?(Hash)
-          issue("invalid_object", "#{schema_name}.field_definitions", "Hash", type["field_definitions"].class.name)
-        end
+        issue("invalid_object", "#{schema_name}.field_definitions", "Hash", type["field_definitions"].class.name) unless type["field_definitions"].is_a?(Hash)
         next if issues.any? { |entry| entry.fetch("subject").start_with?(schema_name) && entry.fetch("code") == "invalid_array" }
 
         validate_unique_array(type.fetch("fields"), "registry fields", schema_name)
