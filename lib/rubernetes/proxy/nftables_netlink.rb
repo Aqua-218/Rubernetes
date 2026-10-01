@@ -453,13 +453,9 @@ module Rubernetes
         true
       ensure
         if created && probe
-          begin
-            probe.detach
-          rescue StandardError
-            # A probe that cannot be cleaned up cannot prove a production
-            # capability.  Surface failure through the caller's false result.
-            raise
-          end
+          # A probe that cannot be cleaned up cannot prove a production
+          # capability: a detach failure propagates to the caller.
+          probe.detach
         end
       end
 
