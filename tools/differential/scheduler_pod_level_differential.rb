@@ -115,7 +115,8 @@ module SchedulerPodLevelDifferential
       # score case keeps every node feasible.
       "sidecar-overhead-score" => base.merge("phase" => "score", "existing_pods" => besteffort,
                                              "pod" => pod("sos", containers: [res(requests: {"cpu" => "500m", "memory" => "1Gi"})],
-                                                                 init: [res(requests: {"cpu" => "1"}).merge("restartPolicy" => "Always"), res(requests: {"cpu" => "2"})],
+                                                                 init: [res(requests: {"cpu" => "1"}).merge("restartPolicy" => "Always"),
+                                                                        res(requests: {"cpu" => "2"})],
                                                                  overhead: {"cpu" => "250m", "memory" => "128Mi"}))
     }
   end
