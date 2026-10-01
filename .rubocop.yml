@@ -58,8 +58,6 @@ Style/TrailingCommaInArrayLiteral:
   EnforcedStyleForMultiline: no_comma
 Style/TrailingCommaInHashLiteral:
   EnforcedStyleForMultiline: no_comma
-Style/NumericPredicate:
-  EnforcedStyle: predicate
 
 Metrics:
   Enabled: false
