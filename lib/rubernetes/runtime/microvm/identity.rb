@@ -198,7 +198,8 @@ module Rubernetes
 
         def append!(event, record)
           line = JSON.generate({"event" => event, "at" => @clock.call.iso8601(6), "record" => record.to_h,
-                                "next_uid" => @next_uid, "next_cid" => @next_cid, "policy_generation" => @policy_generation, "revocation_epoch" => @revocation_epoch})
+                                "next_uid" => @next_uid, "next_cid" => @next_cid, "policy_generation" => @policy_generation,
+                                "revocation_epoch" => @revocation_epoch})
           File.open(@path, File::WRONLY | File::APPEND | File::CREAT, 0o600) do |file|
             file.write(line + "\n")
             file.fsync if @fsync
