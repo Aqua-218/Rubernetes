@@ -705,9 +705,7 @@ module Rubernetes
 
         def validate_field_number!(field_number)
           number = Integer(field_number)
-          unless (1..MAX_FIELD_NUMBER).cover?(number)
-            raise Codec::EncodeError, "protobuf field number must be between 1 and #{MAX_FIELD_NUMBER}"
-          end
+          raise Codec::EncodeError, "protobuf field number must be between 1 and #{MAX_FIELD_NUMBER}" unless (1..MAX_FIELD_NUMBER).cover?(number)
 
           number
         rescue TypeError, ArgumentError => error
