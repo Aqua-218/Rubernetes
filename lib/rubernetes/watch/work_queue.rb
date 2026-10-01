@@ -329,7 +329,9 @@ module Rubernetes
          "workqueue_depth" => [:gauge, "Current depth of workqueue"],
          "workqueue_retries_total" => [:counter, "Total number of retries handled by workqueue"],
          "workqueue_unfinished_work_seconds" => [:gauge,
-                                                 "How many seconds of work has done that is in progress and hasn't been observed by work_duration. Large values indicate stuck threads. One can deduce the number of stuck threads by observing the rate at which this increases."],
+                                                 "How many seconds of work has done that is in progress and hasn't been observed by work_duration. Large " \
+                                                 "values indicate stuck threads. One can deduce the number of stuck threads by observing the rate at which " \
+                                                 "this increases."],
          "workqueue_longest_running_processor_seconds" => [:gauge,
                                                            "How many seconds has the longest running processor for workqueue been " \
                                                            "running."]}.each do |metric_name, (type, help)|
