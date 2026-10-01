@@ -69,6 +69,10 @@ module Rubernetes
         header("content-type").to_s.split(";", 2).first
       end
 
+      # The first value of a repeated key, as Go's url.Values.Get returns it
+      # (every value is `query_values`).  Returning the whole Array for a
+      # repeated key sent sonobuoy's `container=x&container=x` exec to the
+      # node as the container `["x", "x"]`, a 60s wait and a 503.
       def query_value(name, default = nil)
         value = @query[name.to_s]
         value = value.first if value.is_a?(Array) && value.length == 1
