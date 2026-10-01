@@ -173,7 +173,7 @@ module Rubernetes
             per_uncore = @topology.cpus_per_uncore
             sort_available_uncore_caches.each do |uncore|
               take_full_uncore if needs_at_least?(per_uncore)
-              return if satisfied?
+              return if satisfied? # rubocop:disable Lint/NonLocalExitFromIterator -- the method is done once this holds
 
               take_partial_uncore(uncore)
               return if satisfied?
