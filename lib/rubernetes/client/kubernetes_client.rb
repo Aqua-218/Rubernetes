@@ -334,7 +334,8 @@ module Rubernetes
         resource = path_or_resource.is_a?(Hash) ? path_or_resource : nil
         target_path = path || if resource
                                 resource_path(resource, name || resource.dig("metadata", "name"), namespace: namespace,
-                                                                                                  api_version: api_version, subresource: subresource, operation: :patch)
+                                                                                                  api_version: api_version, subresource: subresource,
+                                                                                                  operation: :patch)
                               else
                                 resource_path(path_or_resource, name, namespace: namespace, api_version: api_version,
                                                                       subresource: subresource, operation: :patch)
