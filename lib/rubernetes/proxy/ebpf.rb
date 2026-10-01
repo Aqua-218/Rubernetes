@@ -1364,9 +1364,7 @@ module Rubernetes
         flags = 0
         node_address = node_address_for(rule, family)
         has_node_address = node_address.bytes.any?(&:positive?)
-        if external_rule?(rule) && rule.external_traffic_policy.to_s == "Cluster" && has_node_address
-          flags |= EBPFProgram::WireFormat::SERVICE_FLAG_MASQUERADE
-        end
+        flags |= EBPFProgram::WireFormat::SERVICE_FLAG_MASQUERADE if external_rule?(rule) && rule.external_traffic_policy.to_s == "Cluster" && has_node_address
         flags |= EBPFProgram::WireFormat::SERVICE_FLAG_HAIRPIN if has_node_address
         flags |= EBPFProgram::WireFormat::SERVICE_FLAG_HEALTH_CHECK if rule.health_check
         flags |= EBPFProgram::WireFormat::SERVICE_FLAG_SOURCE_RANGES if rule.kind.to_s == "LoadBalancer" && source_ranges_for(rule).any?
