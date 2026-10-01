@@ -278,8 +278,10 @@ module M4VolumeObservationRunner
         comparison = M4ObserverSupport.comparison("effect-boundary:#{label}",
                                                   claimed.slice("target", "mountId", "deviceId", "root", "filesystem", "kernelSource"),
                                                   observed ? M4ObserverSupport.stable_identity(observed).slice("target", "mountId",
-                                                                                                               "deviceId", "root", "filesystem", "kernelSource") : {
-                                                                                                                 "target" => claimed["target"], "mounted" => false
+                                                                                                               "deviceId", "root", "filesystem",
+                                                                                                               "kernelSource") : {
+                                                                                                                 "target" => claimed["target"],
+                                                                                                                 "mounted" => false
                                                                                                                })
         record["effect_boundary_comparison"] = comparison
         @errors << "#{label}: production readback at the effect boundary does not match the kernel" unless comparison["passed"]
