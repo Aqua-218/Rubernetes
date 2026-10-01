@@ -1441,7 +1441,8 @@ module Rubernetes
           message = "#{property} \"#{current[property_key(property)]}\" conflicts with pod #{Support.name(other[:pod])} that uses the same volume as this " \
                     "pod with #{property} \"#{other[property_key(property)]}\". If both pods land on the same node, only one of them may access the volume."
         else
-          message = "#{property} \"#{current[property_key(property)]}\" conflicts with another pod that uses the same volume as this pod with a different #{property}. If both pods land on the same node, only one of them may access the volume."
+          message = "#{property} \"#{current[property_key(property)]}\" conflicts with another pod that uses the same volume as this pod with a different " \
+                    "#{property}. If both pods land on the same node, only one of them may access the volume."
         end
         {"type" => "Warning", "reason" => reason, "message" => message,
          "pod" => current_key, "otherPod" => other_key, "property" => property,
