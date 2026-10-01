@@ -34,7 +34,7 @@ module Rubernetes
 
         def run(program, variables)
           context = Context.new(variables: variables, library: @library, cost_limit: @cost_limit)
-          context.eval(program.ast)
+          context.evaluate(program.ast)
         end
 
         class Context
