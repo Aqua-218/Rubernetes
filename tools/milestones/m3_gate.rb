@@ -1615,9 +1615,7 @@ module M3Gate
       raw_comparisons = oracle["raw_comparisons"] || oracle["comparisons"]
       if output.is_a?(Hash) && valid_digest?(output["comparisons_sha256"])
         comparisons_digest = canonical_document_digest(raw_comparisons)
-        unless comparisons_digest == output["comparisons_sha256"]
-          errors << "workload oracle output comparisons digest does not match comparisons"
-        end
+        errors << "workload oracle output comparisons digest does not match comparisons" unless comparisons_digest == output["comparisons_sha256"]
       else
         errors << "workload oracle output comparisons digest is required"
       end
