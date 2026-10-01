@@ -121,7 +121,7 @@ module Rubernetes
               return lookup(qualified) if declared?(qualified)
               return @library.namespace_value(qualified) if @library.namespace_value?(qualified)
             end
-            target = eval(target_node)
+            target = evaluate(target_node)
             if target.is_a?(Values::Optional)
               return target unless target.present?
 
