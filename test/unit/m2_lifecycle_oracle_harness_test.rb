@@ -176,7 +176,8 @@ class M2LifecycleOracleHarnessTest < Minitest::Test
       "metadata" => {"name" => "m2-grace", "deletionTimestamp" => "2026-09-04T04:45:22Z", "deletionGracePeriodSeconds" => 2},
       "status" => {"phase" => "Failed",
                    "containerStatuses" => [{"name" => "app", "ready" => false, "started" => false, "restartCount" => 0,
-                                            "state" => {"terminated" => {"exitCode" => 137, "reason" => "Error", "message" => "preStop\nTERM\n", "startedAt" => "2026-09-04T04:45:00Z", "finishedAt" => "2026-09-04T04:45:23Z"}}}]}
+                                            "state" => {"terminated" => {"exitCode" => 137, "reason" => "Error", "message" => "preStop\nTERM\n",
+                                                                         "startedAt" => "2026-09-04T04:45:00Z", "finishedAt" => "2026-09-04T04:45:23Z"}}}]}
     }
     events = [{"at" => 1.0, "object" => {"reason" => "Killing", "message" => "Stopping container app"}},
               {"at" => 1.5, "object" => {"reason" => "Killing", "message" => "Stopping container app"}}]
