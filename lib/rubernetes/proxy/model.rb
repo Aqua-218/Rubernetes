@@ -220,9 +220,7 @@ module Rubernetes
         raise ValidationError, "service port must be between 1 and 65535" unless port.between?(1, 65_535)
         raise ValidationError, "target port must be between 1 and 65535" if target_port.is_a?(Integer) && !target_port.between?(1, 65_535)
         raise ValidationError, "invalid service port name #{name.inspect}" if name && !valid_port_name?(name)
-        if target_port.is_a?(String) && !valid_port_name?(target_port)
-          raise ValidationError, "invalid named target port #{target_port.inspect}"
-        end
+        raise ValidationError, "invalid named target port #{target_port.inspect}" if target_port.is_a?(String) && !valid_port_name?(target_port)
         return unless node_port && !node_port.between?(1, 65_535)
 
         raise ValidationError, "node port must be between 1 and 65535"
