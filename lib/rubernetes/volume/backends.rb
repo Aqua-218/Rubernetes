@@ -706,9 +706,7 @@ module Rubernetes
         end
 
         expected_target = identity_value(identity, "target")
-        unless File.expand_path(expected_target.to_s) == File.expand_path(path.to_s)
-          raise MountIdentityError, "mount target identity changed for volume #{id}"
-        end
+        raise MountIdentityError, "mount target identity changed for volume #{id}" unless File.expand_path(expected_target.to_s) == File.expand_path(path.to_s)
 
         observed = mount_identity_at(path)
         if observed
