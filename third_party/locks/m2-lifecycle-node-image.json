@@ -68,7 +68,7 @@
     "kubelet": {
       "in_image_path": "/usr/bin/kubelet",
       "version": "Kubernetes v1.36.2",
-      "binary_sha256": "043a8beb59a312597a751584d6f2f9e4dca0b58954a057ce5c7e9e773092e480"
+      "binary_sha256": "13d74d5bbf5412377a9cb52003a0bfd5f59d91e1950dbf02c650f2b5bb598280"
     }
   },
   "images": {
