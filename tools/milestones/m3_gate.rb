@@ -1031,9 +1031,7 @@ module M3Gate
 
           expected_sha = canonical_document_digest(entry["expected_observable"])
           actual_sha = canonical_document_digest(entry["actual_observable"])
-          unless entry["passed"] == (expected_sha == actual_sha)
-            errors << "scheduler case #{index} passed flag does not match independent observables"
-          end
+          errors << "scheduler case #{index} passed flag does not match independent observables" unless entry["passed"] == (expected_sha == actual_sha)
         end
       else
         errors << "scheduler cases must cover filter, score, tie_break, preemption, binding, and volume_binding"
