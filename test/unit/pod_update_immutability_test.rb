@@ -75,7 +75,7 @@ class PodUpdateImmutabilityTest < Minitest::Test
   def test_ephemeral_containers_change_only_through_their_subresource
     refute_empty errors(pod("ephemeralContainers" => [{"name" => "d", "image" => "busybox"}]), pod)
     new_pod = pod("ephemeralContainers" => [{"name" => "d", "image" => "busybox"}])
-    issues = Validator.send(:cross_field_errors, new_pod, "Pod", :update, pod, false, nil, "ephemeralcontainers")
+    issues = Validator.send(:cross_field_errors, new_pod, "Pod", :update, pod, subresource: "ephemeralcontainers")
 
     assert_empty(issues.select { |issue| issue.path == ["spec"] && issue.code == :forbidden })
   end
