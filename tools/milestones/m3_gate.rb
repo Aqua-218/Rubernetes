@@ -707,7 +707,8 @@ module M3Gate
         unless entry["implementation_present"] == true && non_empty_string?(implementation)
           errors << "controller registry entry #{index} must record a concrete implementation"
         end
-        if entry["uses_corpus_controller"] == true || implementation.to_s.end_with?("::CorpusController") || implementation.to_s == "Rubernetes::Controller::CorpusController"
+        if entry["uses_corpus_controller"] == true || implementation.to_s.end_with?("::CorpusController") ||
+           implementation.to_s == "Rubernetes::Controller::CorpusController"
           errors << "controller registry entry #{index} must not use CorpusController fallback"
         end
         expected_binding = authoritative_bindings && authoritative_bindings[entry["id"].to_s]
