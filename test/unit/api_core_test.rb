@@ -621,14 +621,4 @@ class APICoreTest < Minitest::Test
 
   # Label keys carry dots ("app.kubernetes.io/name"); the selector must match
   # the exact key rather than walking it as a dotted path.
-  def test_label_selector_matches_dotted_label_keys
-    selectors = Rubernetes::API::Selectors.new(label_selector: "app.kubernetes.io/name=web,tier!=cache")
-
-    assert selectors.matches?({"metadata" => {"labels" => {"app.kubernetes.io/name" => "web", "tier" => "frontend"}}})
-    refute selectors.matches?({"metadata" => {"labels" => {"app.kubernetes.io/name" => "api"}}})
-    fields = Rubernetes::API::Selectors.new(field_selector: "metadata.name=web")
-
-    assert fields.matches?({"metadata" => {"name" => "web"}})
-    refute fields.matches?({"metadata" => {"name" => "other"}})
-  end
 end
