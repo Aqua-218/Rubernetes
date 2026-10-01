@@ -480,7 +480,7 @@ module Rubernetes
         response = request("GET", path, accept: accept, scope: "repository:#{image_reference.repository}:pull",
                                         max_bytes: @max_manifest_bytes)
         ensure_success!(response, "GET #{path}")
-        verify_response_digest!(response.body, expected_digest || (image_reference.digest if image_reference.digest), 
+        verify_response_digest!(response.body, expected_digest || (image_reference.digest if image_reference.digest),
                                 response["docker-content-digest"])
         ManifestDocument.parse(response.body, expected_digest: expected_digest || (image_reference.digest if image_reference.digest), 
 expected_size: expected_size, max_bytes: @max_manifest_bytes, index_digest: index_digest)
