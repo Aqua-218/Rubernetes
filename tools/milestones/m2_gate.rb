@@ -840,9 +840,7 @@ module M2Gate
       end
 
       errors << "#{label} provenance source_sha256 must match manifest" unless provenance["source_sha256"] == manifest["input_sha256"]
-      unless provenance["source_file_count"] == manifest["input_file_count"]
-        errors << "#{label} provenance source_file_count must match manifest"
-      end
+      errors << "#{label} provenance source_file_count must match manifest" unless provenance["source_file_count"] == manifest["input_file_count"]
       errors << "#{label} provenance mode must be production" unless provenance["mode"] == "production"
       errors << "#{label} provenance must not be a self-comparison" unless provenance["self_comparison"] == false
       expected_source = document["measurement_source"]
