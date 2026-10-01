@@ -783,9 +783,8 @@ module Rubernetes
           next unless cursor < length
           return nil unless remainder.getbyte(cursor) == 44 # comma
 
-            cursor += 1
-            return nil if cursor >= length
-          end
+          cursor += 1
+          return nil if cursor >= length
         end
 
         return nil if scheme == "bearer" && (!attributes[:realm].is_a?(String) || attributes[:realm].empty?)
