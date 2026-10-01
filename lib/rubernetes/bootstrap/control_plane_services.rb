@@ -1121,8 +1121,8 @@ module Rubernetes
         @manager = Controller::Manager.new(store: @store, identity: identity, registry: @registry, lease: lease,
                                            controller_options: manager_options, store_for: store_for,
                                            error_handler: lambda do |key, error|
-                                             log(:warn, "reconcile.failed", key: key.to_s, error: error.class.name,
-                                                                            controller: error.respond_to?(:rubernetes_controller) ? error.rubernetes_controller : nil,
+                                             controller = error.respond_to?(:rubernetes_controller) ? error.rubernetes_controller : nil
+                                             log(:warn, "reconcile.failed", key: key.to_s, error: error.class.name, controller: controller,
                                                                             message: error.message.to_s[0, 500])
                                            end,
                                            slow_handler: lambda do |key, controller_name, seconds|
