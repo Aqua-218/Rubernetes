@@ -6001,7 +6001,19 @@ module Rubernetes
       # client-supplied value, so a Pod created with generation 100 kept it --
       # "[sig-node] Pods Extended (pod generation) custom-set generation on new
       # pods" checks for exactly 1.
-      GENERATION_TRACKED_KINDS = %w[ValidatingWebhookConfiguration MutatingWebhookConfiguration].freeze
+      # The built-in kinds whose registry strategy sets metadata.generation
+      # (`Generation = 1` in pkg/registry/**/strategy.go of the pinned tree,
+      # plus CustomResourceDefinition).  Namespace, Service, Node, ConfigMap
+      # and the other kinds with a spec but no strategy generation never carry
+      # one, exactly as kube-apiserver serves them.  Custom resources always
+      # do (apiextensions customresource strategy SetGeneration(1)).
+      GENERATION_TRACKED_KINDS = %w[
+        MutatingAdmissionPolicy MutatingAdmissionPolicyBinding MutatingWebhookConfiguration
+        ValidatingAdmissionPolicy ValidatingAdmissionPolicyBinding ValidatingWebhookConfiguration
+        DaemonSet Deployment ReplicaSet StatefulSet CronJob Job Pod PodTemplate ReplicationController
+        EndpointSlice FlowSchema PriorityLevelConfiguration Ingress IngressClass NetworkPolicy
+        PodDisruptionBudget DeviceClass DeviceTaintRule ResourceSlice PriorityClass CustomResourceDefinition
+      ].freeze
 
       def tracks_generation?(object, resource)
         return true if object.is_a?(Hash) && object["spec"].is_a?(Hash)
