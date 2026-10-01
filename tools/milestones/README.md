@@ -1,5 +1,7 @@
 # Milestone probes and gates
 
+English | [日本語](README.ja.md)
+
 > **Audience:** Verification engineers and reviewers
 
 Every milestone M0–M9 is closed by a content-addressed evidence bundle below
