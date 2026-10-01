@@ -1415,9 +1415,7 @@ module M4Gate
 
       expected_digest = observation["expected_sha256"]
       actual_digest = observation["actual_sha256"]
-      unless valid_digest?(expected_digest) && valid_digest?(actual_digest)
-        errors << "#{label} must include valid expected and actual SHA-256 digests"
-      end
+      errors << "#{label} must include valid expected and actual SHA-256 digests" unless valid_digest?(expected_digest) && valid_digest?(actual_digest)
       unless valid_digest?(expected_digest) && canonical_document_digest(expected) == expected_digest
         errors << "#{label} expected digest does not match observation"
       end
