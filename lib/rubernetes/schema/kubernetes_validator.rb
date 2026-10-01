@@ -596,9 +596,7 @@ module Rubernetes
         issues = []
         orphan = fetch(root, "orphanDependents")
         policy = fetch(root, "propagationPolicy")
-        if !orphan.nil? && !policy.nil?
-          issues << issue(%w[propagationPolicy], :invalid, "orphanDependents and deletionPropagation cannot be both set")
-        end
+        issues << issue(%w[propagationPolicy], :invalid, "orphanDependents and deletionPropagation cannot be both set") if !orphan.nil? && !policy.nil?
         if !policy.nil? && !DELETE_PROPAGATION_POLICIES.include?(policy.to_s)
           issues << issue(%w[propagationPolicy], :unsupported, "supported values: \"Foreground\", \"Background\", \"Orphan\", \"nil\"")
         end
