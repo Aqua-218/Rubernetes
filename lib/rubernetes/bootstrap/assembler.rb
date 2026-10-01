@@ -524,9 +524,7 @@ module Rubernetes
         runtime_profile = process.fetch("runtime_profile", "pure").to_s.downcase.tr("-", "_").to_sym
         volume_profile = config["profile"]&.then { |value| value.to_s.downcase.tr("-", "_") }
         native_profile = %i[host_integration kernel_isolation l3].include?(runtime_profile) || volume_profile == "native"
-        if native_profile && %w[test fake_io].include?(volume_profile)
-          raise Config::Error, "native runtime profiles require the native volume profile"
-        end
+        raise Config::Error, "native runtime profiles require the native volume profile" if native_profile && %w[test fake_io].include?(volume_profile)
 
         mount_adapter = adapters[:mount_adapter] || adapters["mount_adapter"]
         device_adapter = adapters[:device_adapter] || adapters["device_adapter"]
