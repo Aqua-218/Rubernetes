@@ -237,7 +237,8 @@ module M5RTORPOProbe
       # Control loop: scale the Deployment and wait for the ReplicaSet to follow.
       scale_ok = wait_until(timeout: 60) do
         response = client.raw("PATCH", "/apis/apps/v1/namespaces/#{namespace}/deployments/web",
-                              body: JSON.generate("spec" => {"replicas" => 3}), headers: {"content-type" => "application/merge-patch+json"}, raise_for_status: false)
+                              body: JSON.generate("spec" => {"replicas" => 3}), headers: {"content-type" => "application/merge-patch+json"},
+                              raise_for_status: false)
         response.success?
       end
       control_ok = scale_ok && wait_until(timeout: 60) { replicaset_replicas.call == [3] }
