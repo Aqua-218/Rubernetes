@@ -307,9 +307,7 @@ module Rubernetes
         end
         return id if operation.state == "Stopped"
         raise InvalidTransition, "container #{id} is already Removed" if operation.state == "Removed"
-        unless %w[Running WorkloadStopped].include?(operation.state)
-          raise InvalidTransition, "container #{id} cannot be stopped from #{operation.state}"
-        end
+        raise InvalidTransition, "container #{id} cannot be stopped from #{operation.state}" unless %w[Running WorkloadStopped].include?(operation.state)
 
         stop_operation = @ledger.begin_operation(
           request_id: request_id, operation_id: request_id, action: "stop_container",
