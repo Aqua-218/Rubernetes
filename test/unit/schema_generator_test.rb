@@ -174,7 +174,8 @@ class SchemaGeneratorTest < Minitest::Test
     }
     discovery = {
       "apiVersion" => "apidiscovery.k8s.io/v2", "kind" => "APIGroupDiscoveryList",
-      "items" => [{"metadata" => {"name" => "core"}, "versions" => [{"version" => "v1", "resources" => duplicate_resource ? [resource, resource] : [resource]}]}]
+      "items" => [{"metadata" => {"name" => "core"},
+                   "versions" => [{"version" => "v1", "resources" => duplicate_resource ? [resource, resource] : [resource]}]}]
     }
     File.write(File.join(directory, "openapi/v2.json"), JSON.generate(swagger))
     File.write(File.join(directory, "discovery/aggregated_v2.json"), JSON.generate(discovery))
