@@ -951,7 +951,8 @@ module M1Gate
             end
           end
           errors << "API operation #{index} request digest is invalid" unless valid_digest?(operation["request_sha256"])
-          if valid_digest?(operation["request_sha256"]) && operation["request"].is_a?(Hash) && operation["request_sha256"] != canonical_document_digest(operation["request"])
+          if valid_digest?(operation["request_sha256"]) && operation["request"].is_a?(Hash) &&
+             operation["request_sha256"] != canonical_document_digest(operation["request"])
             errors << "API operation #{index} request digest does not match its preimage"
           end
           attempt_count = operation["attempt_count"] || operation["attempts"]
