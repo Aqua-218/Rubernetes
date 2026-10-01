@@ -387,8 +387,10 @@
       "path": "apis/node.k8s.io.json",
       "upstream_path": "api/openapi-spec/v3/apis__node.k8s.io_openapi.json",
       "source_sha256": "a71526de7d1abab4f61aba32dbf3a0e42ca1eee39f2a2cbe42a3a47946133843",
-      "sha256": "a71526de7d1abab4f61aba32dbf3a0e42ca1eee39f2a2cbe42a3a47946133843",
-      "paths": 1
+      "sha256": "74fe5fd4be0f6cd25f1eb3fa9750a7381cbb1f5de6a6f997df361aa681a2261d",
+      "paths": 1,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/node.k8s.io"
     },
     {
       "path": "apis/policy/v1.json",
