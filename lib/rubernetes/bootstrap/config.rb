@@ -850,9 +850,7 @@ module Rubernetes
         raise Error, "#{process_name}.serving must be a mapping" unless section.is_a?(Hash)
 
         reject_unknown_keys!(section, SERVING_KEYS, "#{process_name}.serving")
-        if section.key?("enabled") && ![true, false].include?(section["enabled"])
-          raise Error, "#{process_name}.serving.enabled must be true or false"
-        end
+        raise Error, "#{process_name}.serving.enabled must be true or false" if section.key?("enabled") && ![true, false].include?(section["enabled"])
 
         validate_non_empty_string!(section["bind_address"], "#{process_name}.serving.bind_address") if section.key?("bind_address")
         port = section["port"]
