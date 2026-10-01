@@ -1369,7 +1369,9 @@ module M3Gate
       processes = chaos["processes"] || chaos["process_observations"]
       if processes.is_a?(Array) && !processes.empty?
         processes.each_with_index do |process, index|
-          unless process.is_a?(Hash) && process["pid"].is_a?(Integer) && process["pid"].positive? && process["start_time"].is_a?(Integer) && process["start_time"].positive? && non_empty_string?(process["generation"]) && process["generation"].include?(":#{process["pid"]}:") && process["observed_exit"] == true && process["exit_status"].is_a?(Integer)
+          unless process.is_a?(Hash) && process["pid"].is_a?(Integer) && process["pid"].positive? && process["start_time"].is_a?(Integer) &&
+                 process["start_time"].positive? && non_empty_string?(process["generation"]) && process["generation"].include?(":#{process["pid"]}:") &&
+                 process["observed_exit"] == true && process["exit_status"].is_a?(Integer)
             errors << "#{label} process observation #{index} must include pid, kernel start time, process generation, and exit status"
           end
           validate_process_provenance(process, errors, "#{label} process observation #{index}") if process.is_a?(Hash)
