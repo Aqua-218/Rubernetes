@@ -241,9 +241,7 @@ module Rubernetes
 
           if schema["x-kubernetes-preserve-unknown-fields"] == true && !schema["properties"] &&
              !schema["items"] && !schema["additionalProperties"] && !root
-            if schema["x-kubernetes-embedded-resource"] == true && value.is_a?(Hash)
-              collect_unknown_metadata(value["metadata"], path + ["metadata"], paths)
-            end
+            collect_unknown_metadata(value["metadata"], path + ["metadata"], paths) if schema["x-kubernetes-embedded-resource"] == true && value.is_a?(Hash)
             return
           end
 
