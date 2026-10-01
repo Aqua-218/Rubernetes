@@ -607,12 +607,8 @@ module Rubernetes
         raise CSIUnavailable, "CSI socket must not be world-writable" if @expected_socket_mode.nil? && mode.anybits?(0o002)
 
         peer_pid, peer_uid, peer_gid = peer_credentials
-        if @expected_peer_uid && peer_uid != @expected_peer_uid
-          raise CSIUnavailable, "CSI peer uid #{peer_uid} does not match pinned uid #{@expected_peer_uid}"
-        end
-        if @expected_peer_gid && peer_gid != @expected_peer_gid
-          raise CSIUnavailable, "CSI peer gid #{peer_gid} does not match pinned gid #{@expected_peer_gid}"
-        end
+        raise CSIUnavailable, "CSI peer uid #{peer_uid} does not match pinned uid #{@expected_peer_uid}" if @expected_peer_uid && peer_uid != @expected_peer_uid
+        raise CSIUnavailable, "CSI peer gid #{peer_gid} does not match pinned gid #{@expected_peer_gid}" if @expected_peer_gid && peer_gid != @expected_peer_gid
 
         {
           "device" => stat.dev, "inode" => stat.ino, "uid" => stat.uid, "gid" => stat.gid,
