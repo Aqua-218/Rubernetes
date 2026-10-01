@@ -194,7 +194,8 @@ class M4GateTest < Minitest::Test
       "executed" => true, "runner_sha256" => runner["runner_sha256"], "runner" => runner,
       "mountinfo" => [{"line" => "mountinfo", "line_sha256" => Digest::SHA256.hexdigest("mountinfo")}.merge(content_record.call({"mount" => "m4"}))],
       "syscalls" => [{"name" => "mount", "return" => 0}.merge(content_record.call({"syscall" => "mount", "return" => 0}))],
-      "container_observation" => [{"container_id" => "container-a", "pid" => Process.pid}.merge(content_record.call({"container" => "container-a", "pid" => Process.pid}))]
+      "container_observation" => [{"container_id" => "container-a",
+                                   "pid" => Process.pid}.merge(content_record.call({"container" => "container-a", "pid" => Process.pid}))]
     }
     csi_operations = %w[
       GetPluginInfo CreateVolume DeleteVolume ControllerPublishVolume ControllerUnpublishVolume
