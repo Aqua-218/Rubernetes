@@ -950,7 +950,7 @@ module Rubernetes
             super()
             update(values)
             @unknown_fields = Array(unknown_fields).map { |field| normalize_unknown(field) }.freeze
-            @original_bytes = original_bytes&.dup&.force_encoding(Encoding::BINARY)&.freeze
+            @original_bytes = original_bytes&.then { |bytes| bytes.dup.force_encoding(Encoding::BINARY).freeze }
             @original_fingerprint = fingerprint
           end
 
