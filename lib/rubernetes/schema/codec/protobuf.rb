@@ -682,9 +682,7 @@ module Rubernetes
 
         def extract_raw(object, max_bytes:, max_depth:)
           return object.raw.dup.b if object.is_a?(RuntimeUnknown)
-          if object.is_a?(Hash) && (object.key?(:raw) || object.key?("raw"))
-            return ensure_binary(object[:raw] || object["raw"], "protobuf raw payload")
-          end
+          return ensure_binary(object[:raw] || object["raw"], "protobuf raw payload") if object.is_a?(Hash) && (object.key?(:raw) || object.key?("raw"))
           return ensure_binary(object, "protobuf raw payload") if object.is_a?(String)
 
           JSONCodec.dump(object, canonical: true, max_bytes: max_bytes, max_depth: max_depth).b
