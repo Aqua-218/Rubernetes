@@ -469,7 +469,9 @@ module M2LifecycleOracleNodeImage
 
     inspected = inspect_node_image(reference)
     raise BuildError, "node image kubelet reports #{inspected.dig("runtime", "kubelet", "version")}" unless inspected.dig("runtime",
-                                                                                                                          "kubelet", "version") == "Kubernetes #{KUBERNETES_VERSION}"
+                                                                                                                          "kubelet",
+                                                                                                                          "version") == "Kubernetes " \
+                                                                                                                                        "#{KUBERNETES_VERSION}"
 
     cni = observe_cni_config!(kind, reference, pause_digest)
     # Imported (not pulled) images expose their CRI image ID, not a repo digest,
