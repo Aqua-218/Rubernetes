@@ -766,7 +766,8 @@ module Rubernetes
           security_context: {"privileged" => privileged},
           # kubelet: Localhost seccomp profiles live under <root-dir>/seccomp.
           seccomp_root: process.fetch("seccomp_root",
-                                      File.join(File.dirname(process.fetch("journal_path", paths.fetch("journal_path", Runtime::Native::Configuration::DEFAULT_JOURNAL_PATH))),
+                                      File.join(File.dirname(process.fetch("journal_path",
+                                                                           paths.fetch("journal_path", Runtime::Native::Configuration::DEFAULT_JOURNAL_PATH))),
                                                 "seccomp"))
         )
         if privileged && !privileged_capabilities_available?(runtime)
