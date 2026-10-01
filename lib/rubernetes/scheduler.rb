@@ -77,7 +77,7 @@ module Rubernetes
       end
     end
 
-    StandardFilters = {
+    STANDARD_FILTERS = {
       scheduling_gates: Filters::SchedulingGates,
       node_unschedulable: Filters::NodeUnschedulable,
       resources_fit: Filters::NodeResourcesFit,
