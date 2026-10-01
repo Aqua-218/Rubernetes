@@ -527,9 +527,7 @@ module Rubernetes
             controllers = read_words(File.join(parent, "cgroup.controllers"))
             enabled = read_words(File.join(parent, "cgroup.subtree_control"))
             missing_required = REQUIRED_CONTROLLERS.reject { |name| controllers.include?(name) }
-            unless missing_required.empty?
-              raise Unsupported, "cgroup #{parent} does not offer required controllers: #{missing_required.join(", ")}"
-            end
+            raise Unsupported, "cgroup #{parent} does not offer required controllers: #{missing_required.join(", ")}" unless missing_required.empty?
 
             wanted = (REQUIRED_CONTROLLERS + OPTIONAL_CONTROLLERS).select { |name| controllers.include?(name) && !enabled.include?(name) }
             next if wanted.empty?
