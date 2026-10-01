@@ -690,9 +690,7 @@ module M3Gate
       errors << "controller registry entry identifiers must be unique" unless ids.length == ids.uniq.length
       errors << "controller registry entry inventory differs from corpus" unless ids.sort == REQUIRED_CONTROLLER_NAMES.sort
       authoritative_bindings, startup_error = authoritative_controller_bindings
-      if startup_error
-        errors << "controller registry authoritative corpus recomputation failed: #{startup_error.class}: #{startup_error.message}"
-      end
+      errors << "controller registry authoritative corpus recomputation failed: #{startup_error.class}: #{startup_error.message}" if startup_error
       entries.each_with_index do |entry, index|
         unless entry.is_a?(Hash)
           errors << "controller registry entry #{index} must be an object"
