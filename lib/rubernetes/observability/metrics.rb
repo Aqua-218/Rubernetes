@@ -243,7 +243,8 @@ module Rubernetes
           "apiserver_peer_discovery_sync_errors_total" => no_peer_proxy,
           "apiserver_peer_proxy_errors_total" => no_peer_proxy,
           "apiserver_rerouted_request_total" => no_peer_proxy,
-          "etcd_lease_object_counts" => "no etcd leases: Events and other TTL'd objects expire through the raft store's own TTL index, not through attached etcd leases",
+          "etcd_lease_object_counts" => "no etcd leases: Events and other TTL'd objects expire through the raft store's own TTL index, not through attached " \
+                                        "etcd leases",
           "apiserver_storage_list_total" => no_list_to_log,
           "apiserver_storage_list_fetched_objects_total" => no_list_to_log,
           "apiserver_storage_list_evaluated_objects_total" => no_list_to_log,
