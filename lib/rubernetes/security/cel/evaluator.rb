@@ -252,7 +252,7 @@ module Rubernetes
             # Namespaced global functions (sets.contains, optional.of) look like
             # member calls on an undeclared identifier.
             if target_node.first == :ident && !declared?(target_node[1]) && @library.global_function?("#{target_node[1]}.#{function}")
-              arguments = argument_nodes.map { |argument| eval(argument) }
+              arguments = argument_nodes.map { |argument| evaluate(argument) }
               return @library.call("#{target_node[1]}.#{function}", nil, arguments, self)
             end
             target = eval(target_node)
