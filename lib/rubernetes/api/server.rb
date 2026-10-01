@@ -1992,9 +1992,7 @@ module Rubernetes
         # setPodNodeAndMetadata: the Binding's labels (PodTopologyLabels puts
         # the Node's zone and region there) overwrite the Pod's.
         labels = object.dig("metadata", "labels")
-        if labels.is_a?(Hash) && !labels.empty?
-          candidate["metadata"]["labels"] = (candidate["metadata"]["labels"] || {}).merge(stringify_keys(labels))
-        end
+        candidate["metadata"]["labels"] = (candidate["metadata"]["labels"] || {}).merge(stringify_keys(labels)) if labels.is_a?(Hash) && !labels.empty?
         candidate["status"] ||= {}
         # ClearingNominatedNodeNameAfterBinding (Beta, on).
         candidate["status"].delete("nominatedNodeName")
