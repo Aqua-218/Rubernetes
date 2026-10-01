@@ -241,6 +241,9 @@ module Conformance
           "--sonobuoy-image=#{L.runner("sonobuoy").fetch("image").fetch("reference")}",
           "--wait"
         ]
+        # A previous run's namespace (one whose retrieve failed, say) makes
+        # `sonobuoy run` refuse with "namespace already exists".
+        cleanup = Lanes.capture([sonobuoy, "delete", "--wait", "--all", "--kubeconfig", kubeconfig])
         execution = Lanes.capture(command)
         artifacts = [Lanes.record(directory, "sonobuoy-command.json", execution)]
         retrieve = Lanes.capture([sonobuoy, "retrieve", directory, "--kubeconfig", kubeconfig])
