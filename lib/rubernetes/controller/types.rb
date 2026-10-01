@@ -210,6 +210,7 @@ module Rubernetes
     # job is to *create* its first own-kind object in response to the foreign
     # one, because there is nothing to fan out to yet.  :self routes the
     # observed object itself through the watch's declared queue key.
+    ROUTES = %i[fan_out self namespace].freeze
     WatchSpec = Struct.new(:resource, :via, :predicate, :index_name, :queue_key, :scope, :route,
                            :selector_source, keyword_init: true) do
       ROUTES = %i[fan_out self namespace].freeze
