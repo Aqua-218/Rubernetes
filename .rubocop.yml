@@ -8,7 +8,6 @@ plugins:
   - rubocop-performance
   - rubocop-rake
 
-
 AllCops:
   TargetRubyVersion: 3.4
   NewCops: enable
