@@ -125,9 +125,11 @@ module DRAAllocatorDifferential
     add.call("match-attribute", slices: [slice("s1", [device("a", attributes: {"numa" => {"int" => 0}}), device("b", attributes: {"numa" => {"int" => 1}}),
                                                       device("c", attributes: {"numa" => {"int" => 1}})])],
                                 claims: [claim("c", [request("r", count: 2)], constraints: [{"matchAttribute" => "#{DRIVER}/numa"}])])
-    add.call("match-attribute-requests", slices: [slice("s1", [device("a", attributes: {"numa" => {"int" => 0}}), device("b", attributes: {"numa" => {"int" => 1}}),
-                                                               device("c", attributes: {"numa" => {"int" => 1}})])],
-                                         claims: [claim("c", [request("x"), request("y")], constraints: [{"requests" => %w[x y], "matchAttribute" => "#{DRIVER}/numa"}])])
+    add.call("match-attribute-requests",
+             slices: [slice("s1", [device("a", attributes: {"numa" => {"int" => 0}}), device("b", attributes: {"numa" => {"int" => 1}}),
+                                   device("c", attributes: {"numa" => {"int" => 1}})])],
+             claims: [claim("c", [request("x"), request("y")],
+                            constraints: [{"requests" => %w[x y], "matchAttribute" => "#{DRIVER}/numa"}])])
     add.call("distinct-attribute", slices: [slice("s1", [device("a", attributes: {"numa" => {"int" => 0}}), device("b", attributes: {"numa" => {"int" => 0}}),
                                                          device("c", attributes: {"numa" => {"int" => 1}})])],
                                    claims: [claim("c", [request("x"), request("y")], constraints: [{"distinctAttribute" => "#{DRIVER}/numa"}])])
