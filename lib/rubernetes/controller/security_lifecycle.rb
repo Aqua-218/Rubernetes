@@ -771,7 +771,7 @@ module Rubernetes
       def self_node_client?(csr)
         request = Support.value(Support.spec(csr), "request", nil)
         parsed = request && !request.to_s.empty? ? parse_certificate_request(request) : nil
-        common_name = parsed&.subject&.to_a&.find { |entry| entry[0].to_s == "CN" }&.fetch(1, nil)
+        common_name = parsed&.then { |cert| cert.subject.to_a.find { |entry| entry[0].to_s == "CN" }&.fetch(1, nil) }
         !common_name.nil? && common_name.to_s == Support.value(Support.spec(csr), "username", "").to_s
       end
 
