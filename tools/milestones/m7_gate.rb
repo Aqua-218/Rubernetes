@@ -239,9 +239,7 @@ module M7Gate
 
     def validate_kvm(document, cases, errors)
       errors << "KVM report must be at measurement level L5" unless document["measurement_level"] == "L5"
-      unless document["measurement_source"] == "real_firecracker_jailer_kvm"
-        errors << "KVM report must come from the real Firecracker/jailer/KVM stack"
-      end
+      errors << "KVM report must come from the real Firecracker/jailer/KVM stack" unless document["measurement_source"] == "real_firecracker_jailer_kvm"
       ids = cases.map { |entry| entry["id"] }
       KVM_REQUIRED.each { |id| errors << "KVM report is missing case #{id}" unless ids.include?(id) }
       %w[cold_boot_lifecycle restored_lifecycle].each do |id|
