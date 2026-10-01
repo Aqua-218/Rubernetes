@@ -172,7 +172,8 @@ module Rubernetes
               rpc :PodSandboxStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatsRequest,
                   ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatsResponse
               # ListPodSandboxStats returns stats of the pod sandboxes matching a filter.
-              rpc :ListPodSandboxStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxStatsRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxStatsResponse
+              rpc :ListPodSandboxStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxStatsRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxStatsResponse
               # StreamPodSandboxStats returns a stream of pod sandbox stats.
               # This is an alternative to ListPodSandboxStats that streams results in
               # lists of at least one item, avoiding the gRPC message size limit for
