@@ -449,7 +449,9 @@ module M4VolumeObservationRunner
                                                              "tampered_volume_registered" => false,
                                                              "interrupted_restore_state" => "Unknown", "interrupted_volume_usable" => false,
                                                              "interrupted_worker_killed" => true},
-                                                            {"operation" => "CrashRecovery", "tampered_restore_refused" => tamper_outcome["restored"] == false && tamper_outcome["error_class"] == "Rubernetes::Volume::SnapshotIntegrityError",
+                                                            {"operation" => "CrashRecovery",
+                                                             "tampered_restore_refused" => tamper_outcome["restored"] == false &&
+                                                               tamper_outcome["error_class"] == "Rubernetes::Volume::SnapshotIntegrityError",
                                                              "tampered_volume_registered" => tampered_volume_exists}.merge(interrupted_restore(data_dir, snapshot_id, pristine_catalog)),
                                                             "operation" => "CrashRecovery", "tamper" => tamper_outcome)
       manager.delete_volume(source_id, token: "snap-delete-source")
