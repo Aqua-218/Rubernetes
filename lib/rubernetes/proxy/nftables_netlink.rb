@@ -1538,7 +1538,7 @@ module Rubernetes
           next unless foreign
 
           raise NftablesNetlinkError,
-                "refusing to modify unmarked nftables #{key.delete_suffix('s')} in owned table #{@table_name.inspect}"
+                "refusing to modify unmarked nftables #{key.delete_suffix("s")} in owned table #{@table_name.inspect}"
         end
         affinity_sets = affinity_set_names(actual.fetch("sets"))
         foreign_element = actual.fetch("set_elements").find do |item|
