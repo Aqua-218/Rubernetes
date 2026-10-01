@@ -1720,15 +1720,6 @@ module Rubernetes
         def monotonic_now
           Process.clock_gettime(Process::CLOCK_MONOTONIC)
         end
-
-        def self.positive_limit(value, name)
-          number = Integer(value)
-          raise ArgumentError, "#{name} must be positive" unless number.positive?
-
-          number
-        rescue TypeError, ArgumentError
-          raise ArgumentError, "#{name} must be a positive integer"
-        end
       end
 
       private
