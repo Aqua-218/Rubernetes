@@ -255,7 +255,8 @@ class M2LifecycleOracleHarnessTest < Minitest::Test
     Dir.mktmpdir("rubernetes-m2-oci-") do |directory|
       archive = File.join(directory, "image.oci.tar")
       M2LifecycleOracleRegistryImage.write_oci_layout(archive, reference, manifest, "application/vnd.docker.distribution.manifest.v2+json",
-                                                      {"sha256:#{Digest::SHA256.hexdigest(config)}" => config, "sha256:#{Digest::SHA256.hexdigest(layer)}" => layer})
+                                                      {"sha256:#{Digest::SHA256.hexdigest(config)}" => config,
+                                                       "sha256:#{Digest::SHA256.hexdigest(layer)}" => layer})
 
       assert_equal true, M2LifecycleOracleRegistryImage.verify_archive(archive, reference)
       other = M2LifecycleOracleRegistryImage.parse_reference("registry.k8s.io/e2e-test-images/busybox@sha256:#{"d" * 64}")
