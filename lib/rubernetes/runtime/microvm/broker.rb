@@ -39,7 +39,8 @@ module Rubernetes
                                 keyword_init: true) do
           def to_h
             {"id" => id, "subject_id" => subject_id, "vm_id" => vm_id, "policy_digest" => policy_digest, "revocation_epoch" => revocation_epoch,
-             "expires_at" => expires_at, "operations" => operations, "allowed_hosts" => allowed_hosts, "allowed_cidrs" => allowed_cidrs, "allowed_ports" => allowed_ports}
+             "expires_at" => expires_at, "operations" => operations, "allowed_hosts" => allowed_hosts, "allowed_cidrs" => allowed_cidrs,
+             "allowed_ports" => allowed_ports}
           end
         end
 
