@@ -782,12 +782,8 @@ module Rubernetes
       def apply_item(value, item, path, mode, kubernetes_admission_defaults, old = nil)
         return nil if value.nil?
         return apply_field(value, item, path, mode, kubernetes_admission_defaults, old) if item.is_a?(Field)
-        if item.is_a?(Definition) && value.respond_to?(:each_pair)
-          return apply_object_hash(value, item, path, mode, kubernetes_admission_defaults, old)
-        end
-        if item.is_a?(Reference) && value.respond_to?(:each_pair)
-          return apply_object_hash(value, item.resolve, path, mode, kubernetes_admission_defaults, old)
-        end
+        return apply_object_hash(value, item, path, mode, kubernetes_admission_defaults, old) if item.is_a?(Definition) && value.respond_to?(:each_pair)
+        return apply_object_hash(value, item.resolve, path, mode, kubernetes_admission_defaults, old) if item.is_a?(Reference) && value.respond_to?(:each_pair)
 
         deep_copy(value)
       end
