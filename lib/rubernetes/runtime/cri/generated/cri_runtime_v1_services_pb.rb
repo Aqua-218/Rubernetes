@@ -169,7 +169,8 @@ module Rubernetes
                   stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamContainerStatsResponse)
               # PodSandboxStats returns stats of the pod sandbox. If the pod sandbox does not
               # exist, the call returns an error.
-              rpc :PodSandboxStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatsRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatsResponse
+              rpc :PodSandboxStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatsRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatsResponse
               # ListPodSandboxStats returns stats of the pod sandboxes matching a filter.
               rpc :ListPodSandboxStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxStatsRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxStatsResponse
               # StreamPodSandboxStats returns a stream of pod sandbox stats.
