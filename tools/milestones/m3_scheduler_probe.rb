@@ -31,7 +31,8 @@ def scheduler_storage
   {"persistent_volumes" => [{"apiVersion" => "v1", "kind" => "PersistentVolume", "metadata" => {"name" => "m3-pv"},
                              "spec" => {"capacity" => {"storage" => "1Gi"}, "accessModes" => ["ReadWriteOnce"], "storageClassName" => "m3-fast", "persistentVolumeReclaimPolicy" => "Delete", "volumeMode" => "Filesystem", "claimRef" => {"namespace" => "default", "name" => "m3-pvc", "uid" => "m3-pvc-uid"}}, "status" => {"phase" => "Bound"}}],
    "persistent_volume_claims" => [{"apiVersion" => "v1", "kind" => "PersistentVolumeClaim", "metadata" => {"name" => "m3-pvc", "namespace" => "default", "uid" => "m3-pvc-uid", "annotations" => {"pv.kubernetes.io/bind-completed" => "yes"}},
-                                   "spec" => {"accessModes" => ["ReadWriteOnce"], "storageClassName" => "m3-fast", "volumeName" => "m3-pv", "resources" => {"requests" => {"storage" => "1Gi"}}}, "status" => {"phase" => "Bound"}}],
+                                   "spec" => {"accessModes" => ["ReadWriteOnce"], "storageClassName" => "m3-fast", "volumeName" => "m3-pv",
+                                              "resources" => {"requests" => {"storage" => "1Gi"}}}, "status" => {"phase" => "Bound"}}],
    "storage_classes" => [{"apiVersion" => "storage.k8s.io/v1", "kind" => "StorageClass", "metadata" => {"name" => "m3-fast"},
                           "provisioner" => "kubernetes.io/no-provisioner", "volumeBindingMode" => "WaitForFirstConsumer"}]}
 end
