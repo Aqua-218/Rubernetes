@@ -71,9 +71,7 @@ module Rubernetes
             [:prefer_align_by_uncore_cache, :distribute_cpus_across_cores, PREFER_ALIGN_BY_UNCORE_CACHE, DISTRIBUTE_CPUS_ACROSS_CORES],
             [:prefer_align_by_uncore_cache, :distribute_cpus_across_numa, PREFER_ALIGN_BY_UNCORE_CACHE, DISTRIBUTE_CPUS_ACROSS_NUMA]
           ].each do |first, second, first_name, second_name|
-            if result[first] && result[second]
-              raise Error, "static policy options #{first_name} and #{second_name} can not be used at the same time"
-            end
+            raise Error, "static policy options #{first_name} and #{second_name} can not be used at the same time" if result[first] && result[second]
           end
           result
         rescue TopologyManager::Error => error
