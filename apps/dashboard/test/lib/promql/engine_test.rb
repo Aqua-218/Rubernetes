@@ -81,10 +81,14 @@ module Promql
 
     # ---------------------------------------------------------- range functions
 
-    assert_equal :matrix, result.type
-    # (T0-60s, T0] holds four samples: the one exactly at T0-60s is excluded.
-    assert_equal [2.0, 3.0, 4.0, 5.0], result.value[0].points.map(&:last)
-  end
+    test "rate and increase extrapolate to the window edges and handle counter resets" do
+      # 5 samples 15s apart: 0, 10, 20, 30, 40 -> exact rate 10/15 = 0.6667/s over a 60s window
+      load("http_requests_total", {}, [0, 10, 20, 30, 40])
+      # Window (T0-75s, T0] contains all five.  The first sample is 15s from
+      # the window start, under the 1.1 * interval threshold, so the increase
+      # would extrapolate 15s back -- but a counter is never extrapolated below
+      # zero, and the first value is 0, so nothing is added: 40 over 75s.
+      rate = values("rate(http_requests_total[75s])").first
 
   # ---------------------------------------------------------- range functions
 
