@@ -22,9 +22,7 @@ module Rubernetes
         end
 
         name_part, digest_part = text.split("@", 2)
-        if digest_part && (digest_part.empty? || digest_part.include?("@"))
-          raise ReferenceError, "image reference contains an invalid digest suffix"
-        end
+        raise ReferenceError, "image reference contains an invalid digest suffix" if digest_part && (digest_part.empty? || digest_part.include?("@"))
 
         digest = digest_part && Digest.parse(digest_part)
         components = name_part.split("/", -1)
