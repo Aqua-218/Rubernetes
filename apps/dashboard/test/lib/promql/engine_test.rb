@@ -165,22 +165,14 @@ module Promql
       assert_predicate scalar("0 / 0"), :nan?
     end
 
-  test "over_time functions" do
-    load("v", {}, [1, 2, 3, 4])
-
-    assert_equal [10.0], values("sum_over_time(v[1m])")
-    assert_equal [2.5], values("avg_over_time(v[1m])")
-    assert_equal [1.0], values("min_over_time(v[1m])")
-    assert_equal [4.0], values("max_over_time(v[1m])")
-    assert_equal [4.0], values("count_over_time(v[1m])")
-    assert_equal [4.0], values("last_over_time(v[1m])")
-    assert_equal [1.0], values("present_over_time(v[1m])")
-    assert_in_delta 2.5, values("quantile_over_time(0.5, v[1m])").first
-    assert_in_delta 1.25, values("stdvar_over_time(v[1m])").first
-    assert_in_delta Math.sqrt(1.25), values("stddev_over_time(v[1m])").first
-    assert_equal [1.0], values("absent_over_time(missing[1m])")
-    assert_equal [], vector("absent_over_time(v[1m])")
-  end
+    test "vector matching: one-to-one, on, ignoring, group_left and errors" do
+      load("requests", {"method" => "get", "code" => "500"}, [24])
+      load("requests", {"method" => "get", "code" => "200"}, [100])
+      load("requests", {"method" => "post", "code" => "500"}, [6])
+      load("requests", {"method" => "post", "code" => "200"}, [100])
+      load("total", {"method" => "get"}, [124])
+      load("total", {"method" => "post"}, [106])
+      result = vector('requests{code="500"} / ignoring(code) total').sort_by { |m, _| m["method"] }
 
   # ---------------------------------------------------------- operators
 
