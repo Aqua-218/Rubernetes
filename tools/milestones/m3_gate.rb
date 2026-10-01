@@ -1058,9 +1058,7 @@ module M3Gate
       oracle = document["oracle"]
       if oracle.is_a?(Hash)
         validate_external_runner(oracle, document, errors, "scheduler oracle")
-        unless oracle["comparison_count"] == REQUIRED_SCHEDULER_CASES.length
-          errors << "scheduler oracle comparison count must cover every scheduler case"
-        end
+        errors << "scheduler oracle comparison count must cover every scheduler case" unless oracle["comparison_count"] == REQUIRED_SCHEDULER_CASES.length
         comparisons = oracle["comparisons"]
         if comparisons.is_a?(Array) && comparisons.length == REQUIRED_SCHEDULER_CASES.length
           ids = comparisons.filter_map { |entry| entry.is_a?(Hash) ? entry["id"] : nil }
