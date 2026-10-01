@@ -223,4 +223,9 @@ Lint/MissingSuper:
 # invert (HPA scale policies, APF seat limits, webhook timeouts).
 Style/ComparableClamp:
   Enabled: false
+# FileOpen off: the block-less File.open calls hold a descriptor on purpose
+# (directory handles for fsync, namespace and tun fds handed to children,
+# lock files) and every one of them is closed in an ensure.
+Style/FileOpen:
+  Enabled: false
 
