@@ -102,9 +102,7 @@ module Rubernetes
           raise Error, "#{name} adapter #{adapter.class} is a recording/fake adapter and cannot be used by a host profile" if testing_adapter?(adapter)
 
           missing_methods = requirement.fetch(:methods).reject { |method| adapter.respond_to?(method) }
-          unless missing_methods.empty?
-            raise Error, "#{name} adapter #{adapter.class} is missing required effects: #{missing_methods.join(", ")}"
-          end
+          raise Error, "#{name} adapter #{adapter.class} is missing required effects: #{missing_methods.join(", ")}" unless missing_methods.empty?
 
           declaration = adapter.respond_to?(:native_capabilities) ? adapter.native_capabilities : nil
           unless declaration.respond_to?(:to_h)
