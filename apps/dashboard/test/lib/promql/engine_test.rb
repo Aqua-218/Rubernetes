@@ -326,10 +326,5 @@ module Promql
       assert good.return_bool
       assert_equal 3_600_000, good.lhs.expr.args[0].selector.offset_ms
     end
-    good = Promql::Parser.parse('sum by (job) (rate(http_requests_total{code=~"5.."}[5m] offset 1h)) > bool 0.1')
-
-    assert_instance_of Promql::AST::BinaryExpr, good
-    assert good.return_bool
-    assert_equal 3_600_000, good.lhs.expr.args[0].selector.offset_ms
   end
 end
