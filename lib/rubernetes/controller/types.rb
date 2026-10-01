@@ -213,8 +213,6 @@ module Rubernetes
     ROUTES = %i[fan_out self namespace].freeze
     WatchSpec = Struct.new(:resource, :via, :predicate, :index_name, :queue_key, :scope, :route,
                            :selector_source, keyword_init: true) do
-      ROUTES = %i[fan_out self namespace].freeze
-
       # `selector_source` names the kind that carries the label selector for a
       # `:label` watch when the controller's own kind does not.  An Endpoints
       # or EndpointSlice has no selector of its own -- the Service it is named
