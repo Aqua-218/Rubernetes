@@ -860,9 +860,7 @@ module M1Gate
       errors << "generation runs must produce the same tree digest" unless run_digests.length == 2 && run_digests.uniq.length == 1
       canonical_digest = document["canonical_tree_sha256"]
       errors << "generation report must include the canonical tree SHA-256" unless valid_digest?(canonical_digest)
-      unless valid_digest?(canonical_digest) && run_digests.all?(canonical_digest)
-        errors << "generation output must match the canonical tree"
-      end
+      errors << "generation output must match the canonical tree" unless valid_digest?(canonical_digest) && run_digests.all?(canonical_digest)
       byte_differences = document["byte_differences"] || document["byte_diff_entries"]
       canonical_differences = document["canonical_differences"] || document["canonical_diff_entries"]
       errors << "generation byte difference entries are required" unless byte_differences.is_a?(Array)
