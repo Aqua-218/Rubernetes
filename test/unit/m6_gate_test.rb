@@ -117,8 +117,9 @@ class M6GateTest < Minitest::Test
     end
     6.times { |index| cases << {"id" => "bypass-#{index}", "passed" => true} }
     errors = []
-    M6Gate.send(:validate_report, "fuzz", report("m6_fuzz_summary", cases, "measurement_level" => "integration_tested", "seed" => 1, "panics" => 1, "hangs" => 0,
-                                                                           "policy_bypasses" => 0, "crash_corpus" => [], "sources" => sources),
+    M6Gate.send(:validate_report, "fuzz",
+                report("m6_fuzz_summary", cases, "measurement_level" => "integration_tested", "seed" => 1, "panics" => 1, "hangs" => 0,
+                                                 "policy_bypasses" => 0, "crash_corpus" => [], "sources" => sources),
                 "m6_fuzz_summary", manifest_identity, errors)
 
     assert(errors.any? { |error| error.include?("panics") })
