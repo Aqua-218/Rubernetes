@@ -127,9 +127,7 @@ module Rubernetes
           enabled = raw["enabled"]
           errors << "anonymous.enabled: Required value" unless [true, false].include?(enabled)
           conditions = Array(raw["conditions"])
-          if !conditions.empty? && enabled != true
-            errors << "anonymous.conditions: Invalid value: enabled should be set to true when conditions are defined"
-          end
+          errors << "anonymous.conditions: Invalid value: enabled should be set to true when conditions are defined" if !conditions.empty? && enabled != true
           conditions.each_with_index do |condition, index|
             errors << "anonymous.conditions[#{index}].path: Required value" unless condition.is_a?(Hash) && !condition["path"].to_s.empty?
           end
