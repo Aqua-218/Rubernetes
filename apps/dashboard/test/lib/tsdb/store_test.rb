@@ -16,9 +16,9 @@ module Tsdb
       FileUtils.rm_rf(@dir)
     end
 
-  def labels(name, extra = {})
-    {"__name__" => name}.merge(extra)
-  end
+    def open_store(**)
+      @store = Tsdb::Store.new(@dir, **)
+    end
 
   test "appends samples and selects them back by matchers" do
     store = open_store
