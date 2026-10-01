@@ -63,7 +63,8 @@
       "upstream_path": "api/openapi-spec/v3/apis__admissionregistration.k8s.io__v1beta1_openapi.json",
       "source_sha256": "5cbea9331dd716f65aa073e5a3722b0139477266a9be10d2ca0530ad3ad71abd",
       "sha256": "5cbea9331dd716f65aa073e5a3722b0139477266a9be10d2ca0530ad3ad71abd",
-      "paths": 9
+      "paths": 9,
+      "source": "tree"
     },
     {
       "path": "apis/admissionregistration.k8s.io.json",
