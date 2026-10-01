@@ -54,7 +54,8 @@ module Rubernetes
         def metrics=(registry)
           @metrics = registry
           registry&.register("apiserver_client_certificate_expiration_seconds", type: :histogram, buckets: EXPIRATION_BUCKETS,
-                                                                                help: "Distribution of the remaining lifetime on the certificate used to authenticate a request.")
+                                                                                help: "Distribution of the remaining lifetime on the certificate used to " \
+                                                                                      "authenticate a request.")
         end
 
         def authenticate(context)
