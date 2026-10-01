@@ -142,7 +142,8 @@ module M7KVMProbe
     residue = S.residue(runtime, session)
     {"id" => "fault_vmm_hang", "stop_error" => stop_error, "container_state_after_hang" => state_after, "start_refused_while_unknown" => start_refused,
      "teardown_errors" => teardown_errors, "residue" => residue,
-     "passed" => !stop_error.nil? && %w[StateUnknown Stopping Stopped].include?(state_after) && start_refused && teardown_errors.empty? && S.residue_clean?(residue)}
+     "passed" => !stop_error.nil? && %w[StateUnknown Stopping Stopped].include?(state_after) && start_refused && teardown_errors.empty? &&
+       S.residue_clean?(residue)}
   end
 
   def fault_uds_disconnect(runtime, network)
