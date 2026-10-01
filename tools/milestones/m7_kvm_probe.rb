@@ -206,9 +206,8 @@ module M7KVMProbe
     session = M::VMSession.new(sandbox_id: "pause-loss", identity: identity, artifacts: S.artifacts, jailer: adapter.instance_variable_get(:@jailer),
                                verity: adapter.instance_variable_get(:@verity), netns: adapter.instance_variable_get(:@netns),
                                disks: adapter.instance_variable_get(:@disks),
-                               pool: runtime.snapshot_pool, broker: nil, clock: lambda {
-                                                                           Time.now.utc
-                                                                         }, machine: {"vcpu_count" => 1, "mem_size_mib" => 256},
+                               pool: runtime.snapshot_pool, broker: nil, clock: -> { Time.now.utc },
+                               machine: {"vcpu_count" => 1, "mem_size_mib" => 256},
                                network_device: true, run_root: adapter.instance_variable_get(:@run_root))
     session.allocate_workspace(images: [], workspace_mib: 16)
     session.create_isolation(base: nil)
