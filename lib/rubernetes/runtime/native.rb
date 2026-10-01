@@ -3191,7 +3191,7 @@ module Rubernetes
       # The Pod cgroup's cpu/memory settings and memory usage as the kernel
       # reports them (kubelet GetPodCgroupConfig / PodCPUAndMemoryStats), for
       # status.resources and the memory-limit-below-usage resize check.
-      PodCgroupFiles = %w[cpu.weight cpu.max memory.max memory.current].freeze
+      POD_CGROUP_FILES = %w[cpu.weight cpu.max memory.max memory.current].freeze
 
       public def pod_cgroup_readback(sandbox_id)
         sandbox = @mutex.synchronize { @sandboxes[String(sandbox_id)] }
