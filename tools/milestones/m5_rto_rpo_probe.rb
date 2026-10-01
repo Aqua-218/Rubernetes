@@ -160,7 +160,8 @@ module M5RTORPOProbe
       configs = IDS.to_h { |id| [id, write_config(root, id, http_ports, raft_ports)] }
       IDS.each do |id|
         processes[id] = Process.new(name: "apiserver-#{id}", log: File.join(root, "apiserver-#{id}.log"),
-                                    argv: [RbConfig.ruby, "-I", File.join(ROOT, "lib"), File.join(ROOT, "exe/rubernetes-apiserver"), "--config", configs[id]]).start
+                                    argv: [RbConfig.ruby, "-I", File.join(ROOT, "lib"), File.join(ROOT, "exe/rubernetes-apiserver"), "--config",
+                                           configs[id]]).start
       end
       clients = IDS.to_h { |id| [id, client_for(http_ports[id])] }
       boot_started = M5ProbeSupport.monotonic
