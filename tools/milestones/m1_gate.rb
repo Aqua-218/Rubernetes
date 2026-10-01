@@ -1685,12 +1685,8 @@ module M1Gate
                 observation["sha256"] == expected_digest
             end
           else
-            unless observation["fields"].nil?
-              errors << "API surface #{label} matrix entry #{index} #{source} absent observation must not carry fields"
-            end
-            unless observation["sha256"].nil?
-              errors << "API surface #{label} matrix entry #{index} #{source} absent observation must not carry a digest"
-            end
+            errors << "API surface #{label} matrix entry #{index} #{source} absent observation must not carry fields" unless observation["fields"].nil?
+            errors << "API surface #{label} matrix entry #{index} #{source} absent observation must not carry a digest" unless observation["sha256"].nil?
           end
         end
         if entry["expected"].is_a?(Hash) && entry["oracle"].is_a?(Hash) && entry["rubernetes"].is_a?(Hash) &&
