@@ -1912,7 +1912,8 @@ M1ProbeSupport.run_probe("m1_roundtrip_report", pretty: false) do |_current, inp
         "lib/rubernetes/schema/codec.rb",
         "lib/rubernetes/schema/codec/json.rb"
       ],
-      "behavior" => "For Kubernetes typed JSON canonical encoding, prune unknown fields unless preservation is explicitly requested; retain strict unknown-field rejection and concrete protobuf unknown-field preservation.",
+      "behavior" => "For Kubernetes typed JSON canonical encoding, prune unknown fields unless preservation is explicitly requested; retain strict " \
+                    "unknown-field rejection and concrete protobuf unknown-field preservation.",
       "verification" => "Re-run the 770-type M1 semantic oracle and retain this packet until all per-type unknown-field digests match."
     }
   }
