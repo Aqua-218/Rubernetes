@@ -3,16 +3,17 @@
 require "test_helper"
 require "tmpdir"
 
-class Dashboard::RuntimeTest < ActiveSupport::TestCase
-  test "components are built once, lazily, and nested builds do not deadlock" do
-    Dir.mktmpdir do |dir|
-      saved = ENV.slice("DASHBOARD_DATA_DIR", "RUBERNETES_CLUSTER_JSON")
-      ENV["DASHBOARD_DATA_DIR"] = dir
-      ENV["RUBERNETES_CLUSTER_JSON"] = File.join(dir, "absent.json") # no host cluster leaks in
-      client = Object.new
-      client.define_singleton_method(:get) { |*| {"items" => []} }
-      runtime = Dashboard::Runtime.new(client: client, kubeconfig_context: {server: "https://api"})
-      collector = runtime.collector # builds store, scraper, engine, rules, targets inside one lock
+module Dashboard
+  class RuntimeTest < ActiveSupport::TestCase
+    test "components are built once, lazily, and nested builds do not deadlock" do
+      Dir.mktmpdir do |dir|
+        saved = ENV.slice("DASHBOARD_DATA_DIR", "RUBERNETES_CLUSTER_JSON")
+        ENV["DASHBOARD_DATA_DIR"] = dir
+        ENV["RUBERNETES_CLUSTER_JSON"] = File.join(dir, "absent.json") # no host cluster leaks in
+        client = Object.new
+        client.define_singleton_method(:get) { |*| {"items" => []} }
+        runtime = Dashboard::Runtime.new(client: client, kubeconfig_context: {server: "https://api"})
+        collector = runtime.collector # builds store, scraper, engine, rules, targets inside one lock
 
       assert_same collector, runtime.collector
       assert_same runtime.store, runtime.engine.store
