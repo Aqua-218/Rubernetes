@@ -605,7 +605,8 @@ module Rubernetes
     # and routes packets with deterministic conntrack selection.
     class Proxy
       attr_reader :endpoint_store, :compiler, :rule_set, :conntrack, :node_port_allocator, :local_node, :backend, :clock,
-                  :last_compilation, :node_zone, :health_check_responder, :connection_probe, :connection_tracker, :node_addresses, :publish_coalescing_seconds, :last_publish_error
+                  :last_compilation, :node_zone, :health_check_responder, :connection_probe, :connection_tracker, :node_addresses, :publish_coalescing_seconds,
+                  :last_publish_error
 
       # Optional callable told about every watch event the proxy applied:
       # kind, type, key and what the Service compiles to afterwards.  A
