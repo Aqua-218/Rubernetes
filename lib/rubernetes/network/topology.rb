@@ -226,7 +226,8 @@ module Rubernetes
           ip = entry.fetch("address")
           prefix = entry.fetch("prefix")
           operations << op("address_add", "address:#{id}:#{ip}/#{prefix}", "#{id}:#{ip}/#{prefix}", "address" => ip,
-                                                                                                    "prefix" => prefix, "interface" => pod_ifname, "family" => entry.fetch("family"), **namespace_options,
+                                                                                                    "prefix" => prefix, "interface" => pod_ifname,
+                                                                                                    "family" => entry.fetch("family"), **namespace_options,
                                                                                                     "index" => index)
         end
         if Support.bool(Support.fetch(config_hash, "default_route", default: true))
