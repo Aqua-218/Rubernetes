@@ -248,8 +248,10 @@
       "path": "apis/coordination.k8s.io/v1.json",
       "upstream_path": "api/openapi-spec/v3/apis__coordination.k8s.io__v1_openapi.json",
       "source_sha256": "54b9a4143dbe22fa74ed47ae2a3694f844d1c65e7c1012c80667e0c7d0e5112a",
-      "sha256": "54b9a4143dbe22fa74ed47ae2a3694f844d1c65e7c1012c80667e0c7d0e5112a",
-      "paths": 7
+      "sha256": "fe8d3eb60db07b29b528ea7ba3369800fdc41f72c2b55672bb58b6576899b86e",
+      "paths": 7,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/coordination.k8s.io/v1"
     },
     {
       "path": "apis/coordination.k8s.io/v1alpha2.json",
