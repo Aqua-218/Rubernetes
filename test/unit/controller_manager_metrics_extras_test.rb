@@ -22,7 +22,7 @@ class ControllerManagerMetricsExtrasTest < Minitest::Test
 
   def value(series)
     line = @registry.render.lines.find { |text| text.start_with?("#{series} ") }
-    line&.split&.last&.to_f
+    line&.then { |text| text.split.last.to_f }
   end
 
   def node(name, annotations: {}, spec: {})
