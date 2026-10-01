@@ -167,7 +167,8 @@ module Prom
       assert_equal "up", status.health
       rows = value_of("http_requests_total", "path" => "/caf\u00e9")
 
-    assert_equal 1, rows.length
-    assert_in_delta(3.0, rows.first.last.last)
+      assert_equal 1, rows.length
+      assert_in_delta(3.0, rows.first.last.last)
+    end
   end
 end
