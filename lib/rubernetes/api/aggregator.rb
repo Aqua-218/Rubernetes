@@ -209,12 +209,8 @@ module Rubernetes
         %w[apiserver_kube_aggregator_x509_missing_san_total apiserver_kube_aggregator_x509_insecure_sha1_total].each do |name|
           registry.register(name, type: :counter) unless registry.registered?(name)
         end
-        unless Rubernetes::Observability::Metrics.certificate_has_san?(certificate)
-          registry.increment("apiserver_kube_aggregator_x509_missing_san_total")
-        end
-        if Rubernetes::Observability::Metrics.certificate_sha1?(certificate)
-          registry.increment("apiserver_kube_aggregator_x509_insecure_sha1_total")
-        end
+        registry.increment("apiserver_kube_aggregator_x509_missing_san_total") unless Rubernetes::Observability::Metrics.certificate_has_san?(certificate)
+        registry.increment("apiserver_kube_aggregator_x509_insecure_sha1_total") if Rubernetes::Observability::Metrics.certificate_sha1?(certificate)
       rescue StandardError
         nil
       end
