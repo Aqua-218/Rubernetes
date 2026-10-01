@@ -112,9 +112,7 @@ module ManagedFieldsDifferential
       meta["annotations"] = (meta["annotations"] || {}).merge("kubectl.kubernetes.io/last-applied-configuration" => applied)
     end
     containers = object.dig("spec", "template", "spec", "containers")
-    if op == "update" && containers&.any? && random.rand < 0.1
-      containers.first["env"] = [{"name" => "D", "value" => "1"}, {"name" => "D", "value" => "2"}]
-    end
+    containers.first["env"] = [{"name" => "D", "value" => "1"}, {"name" => "D", "value" => "2"}] if op == "update" && containers&.any? && random.rand < 0.1
     return unless op == "apply"
 
     roll = random.rand
