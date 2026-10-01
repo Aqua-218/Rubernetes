@@ -63,8 +63,9 @@ module BuiltinConversionDifferential
         target = if chance(0.5) then {"type" => "Value", "value" => quantity}
                  else {"type" => "AverageValue", "averageValue" => quantity, "value" => chance(0.3) ? quantity : nil}.compact
                  end
-        {"type" => "Object", "object" => {"metric" => {"name" => "rps"}, "describedObject" => {"kind" => "Service", "name" => "s", "apiVersion" => pick("v1", nil)}.compact,
-                                          "target" => target}}
+        {"type" => "Object",
+         "object" => {"metric" => {"name" => "rps"}, "describedObject" => {"kind" => "Service", "name" => "s", "apiVersion" => pick("v1", nil)}.compact,
+                      "target" => target}}
       else
         target = chance(0.5) ? {"type" => "Value", "value" => quantity} : {"type" => "AverageValue", "averageValue" => quantity}
         {"type" => "External", "external" => {"metric" => {"name" => "queue", "selector" => selector}.compact, "target" => target}}
