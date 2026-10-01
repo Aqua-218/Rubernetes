@@ -337,7 +337,10 @@ module Rubernetes
             end
             return if metadata(account)["uid"].to_s == request["serviceAccountUID"].to_s
 
-            reject!("PodCertificateRequest for pod \"#{namespace}/#{pod_name}\" names service account UID #{request["serviceAccountUID"].to_s.inspect}, which differs from the running service account (#{metadata(account)["uid"].to_s.inspect})",
+            reject!("PodCertificateRequest for pod \"#{namespace}/#{pod_name}\" names service account UID #{request["serviceAccountUID"].to_s.inspect}, " \
+                    "which differs from the running service " \
+                    "account " \
+                    "(#{metadata(account)["uid"].to_s.inspect})",
                     code: 500, reason: "InternalError")
           end
 
