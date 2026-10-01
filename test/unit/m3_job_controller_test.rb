@@ -340,10 +340,6 @@ class M3JobControllerTest < Minitest::Test
     assert_nil controller.plan_orphans("default/batch", store: adapter)
   end
 
-  # In the controller manager a built-in controller reaches the reconcile
-  # loop wrapped in a DefinitionController.  The orphan hook has to survive
-  # that wrapping: while it did not, the finalizer cleanup existed only in
-  # this test file and every CronJob namespace stayed Terminating forever.
   def test_the_orphan_hook_is_visible_through_the_definition_wrapper
     registry = Rubernetes::Controller.default_registry
     definition = registry.fetch("job-controller")
