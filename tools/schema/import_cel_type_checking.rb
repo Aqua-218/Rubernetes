@@ -77,8 +77,8 @@ module CELTypeCheckingImporter
 
   def main
     declarations = run(APISERVER_PACKAGE, "TestRubernetesCELDeclarations")
-    File.write(File.join(DEFAULTS, "cel_declarations.json"),
-               "#{JSON.pretty_generate({"source" => "typechecking.go buildEnvSet + NewCompositedCompilerForTypeChecking (Kubernetes v1.36.2)"}.merge(declarations))}\n")
+    declarations_document = {"source" => "typechecking.go buildEnvSet + NewCompositedCompilerForTypeChecking (Kubernetes v1.36.2)"}.merge(declarations)
+    File.write(File.join(DEFAULTS, "cel_declarations.json"), "#{JSON.pretty_generate(declarations_document)}\n")
     definitions = run(KCM_PACKAGE, "TestRubernetesOpenAPIDefinitions")
     document = {"source" => "k8s.io/kubernetes/pkg/generated/openapi GetOpenAPIDefinitions (Kubernetes v1.36.2), descriptions dropped",
                 "gvks" => definitions["gvks"].sort.to_h,
