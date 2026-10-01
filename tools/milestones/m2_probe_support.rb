@@ -2581,9 +2581,7 @@ module M2ProbeSupport
       rescue Errno::ECHILD
         raise "SIGKILL worker #{pid} disappeared before measurement barrier #{File.basename(path)}"
       end
-      if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
-        raise "SIGKILL worker #{pid} did not reach measurement barrier #{File.basename(path)}"
-      end
+      raise "SIGKILL worker #{pid} did not reach measurement barrier #{File.basename(path)}" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
 
       sleep 0.01
     end
