@@ -434,9 +434,7 @@ module Rubernetes
         detail << "live kernel helper ID readback is incomplete; external helper attestation is test-only" unless @helper_live_readback_attested
         detail << "TC filter identity readback is incomplete" unless @tc_attach_attested
         detail << "kernel_release override is test-only and cannot authorize production" if @kernel_release_override
-        if gaps.include?("ipv4_fragment_reassembly")
-          detail << "TC cannot reassemble IPv4 fragments; both datapaths use explicit fail-closed fragment handling"
-        end
+        detail << "TC cannot reassemble IPv4 fragments; both datapaths use explicit fail-closed fragment handling" if gaps.include?("ipv4_fragment_reassembly")
         "eBPF adapter is not production-capable: #{(detail + gaps).join("; ")}"
       end
 
