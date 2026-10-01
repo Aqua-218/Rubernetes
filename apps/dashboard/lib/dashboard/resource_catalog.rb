@@ -151,9 +151,8 @@ module Dashboard
       clusterroles: Entry.new(kind: "ClusterRole", resource: "clusterroles", api_version: "rbac.authorization.k8s.io/v1", scalable: false,
                               columns: {"Age" => AGE}),
       priorityclasses: Entry.new(kind: "PriorityClass", resource: "priorityclasses", api_version: "scheduling.k8s.io/v1", scalable: false, columns: {
-                                   "Value" => ->(o) { o["value"] }, "Global default" => lambda { |o|
-                                                                      o["globalDefault"] ? "true" : "false"
-                                                                    }, "Age" => AGE
+                                   "Value" => ->(o) { o["value"] },
+                                   "Global default" => ->(o) { o["globalDefault"] ? "true" : "false" }, "Age" => AGE
                                  })
     }.freeze
 
