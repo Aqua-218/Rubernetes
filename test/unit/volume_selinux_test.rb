@@ -256,7 +256,8 @@ class VolumeSELinuxTest < Minitest::Test
   def test_pod_volumes_conflict_fails_the_mount_and_rolls_back
     with_pod_volumes do |volumes|
       conflicting = {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "p", "namespace" => "ns", "uid" => "u3"},
-                     "spec" => {"containers" => [{"name" => "a", "securityContext" => {"seLinuxOptions" => options("s0:c1,c2")}, "volumeMounts" => [{"name" => "data", "mountPath" => "/a"}]},
+                     "spec" => {"containers" => [{"name" => "a", "securityContext" => {"seLinuxOptions" => options("s0:c1,c2")},
+                                                  "volumeMounts" => [{"name" => "data", "mountPath" => "/a"}]},
                                                  {"name" => "b", "securityContext" => {"seLinuxOptions" => options("s0:c3,c4")},
                                                   "volumeMounts" => [{"name" => "data", "mountPath" => "/b"}]}],
                                 "volumes" => [{"name" => "data", "persistentVolumeClaim" => {"claimName" => "claim"}}]}}
