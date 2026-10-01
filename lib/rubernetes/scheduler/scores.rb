@@ -325,7 +325,7 @@ module Rubernetes
             capacity = allocatable.fetch(index)
             next if capacity.zero?
 
-            [[requested.fetch(index).to_f / capacity.to_f, 0.0].max, 1.0].min
+            [[requested.fetch(index).to_f / capacity, 0.0].max, 1.0].min
           end
           return 100 if fractions.length < 2
 
