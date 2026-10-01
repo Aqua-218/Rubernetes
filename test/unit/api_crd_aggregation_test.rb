@@ -127,7 +127,8 @@ class APICRDAggregationTest < Minitest::Test
 
   def test_aggregated_apiservice_is_proxied_with_identity_headers_and_merged_into_discovery
     apiservice = {"apiVersion" => "apiregistration.k8s.io/v1", "kind" => "APIService", "metadata" => {"name" => "v1beta1.metrics.example"},
-                  "spec" => {"group" => "metrics.example", "version" => "v1beta1", "service" => {"namespace" => "kube-system", "name" => "metrics", "port" => 443},
+                  "spec" => {"group" => "metrics.example", "version" => "v1beta1",
+                             "service" => {"namespace" => "kube-system", "name" => "metrics", "port" => 443},
                              "groupPriorityMinimum" => 100, "versionPriority" => 100, "insecureSkipTLSVerify" => true}}
     response = call("POST", "/apis/apiregistration.k8s.io/v1/apiservices", body: apiservice)
 
