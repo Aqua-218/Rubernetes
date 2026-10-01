@@ -402,8 +402,10 @@ module M4VolumeObservationRunner
       catalog = JSON.parse(File.binread(File.join(data_dir, "snapshots.json")))
       catalog_digests = catalog.dig(snapshot_id, "metadata", "contentSha256")
       record["comparisons"] << M4ObserverSupport.comparison("snapshot_create",
-                                                            {"operation" => "CreateSnapshot", "source_volume_id" => source_id, "ready_to_use" => true, "content_sha256" => expected_digests},
-                                                            {"operation" => "CreateSnapshot", "source_volume_id" => snapshot.source_id, "ready_to_use" => snapshot.ready_to_use, "content_sha256" => catalog_digests},
+                                                            {"operation" => "CreateSnapshot", "source_volume_id" => source_id, "ready_to_use" => true,
+                                                             "content_sha256" => expected_digests},
+                                                            {"operation" => "CreateSnapshot", "source_volume_id" => snapshot.source_id,
+                                                             "ready_to_use" => snapshot.ready_to_use, "content_sha256" => catalog_digests},
                                                             "operation" => "CreateSnapshot", "snapshot_id" => snapshot_id)
       restored_id = manager.restore(snapshot_id, spec: {"id" => "m4-snap-restored", "name" => "m4-snap-restored", "backend" => "emptyDir"},
                                                  token: "snap-restore")
