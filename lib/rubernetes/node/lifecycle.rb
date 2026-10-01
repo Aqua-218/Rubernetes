@@ -778,7 +778,9 @@ module Rubernetes
           record[:phase] = terminal_phase || terminal_phase(record)
           # A phase the kubelet forced (DeadlineExceeded, Evicted) is final
           # whatever the restart policy says.
-          record[:forced_terminal] = true if terminal_phase
+          # A forced "Running" (a lost sandbox under Always/OnFailure, which
+          # the next sync starts again) is a published phase, not a terminal one.
+          record[:forced_terminal] = true if terminal_phase && %w[Failed Succeeded].include?(terminal_phase.to_s)
         end
         record[:phase] = "Unknown" unless record[:cleanup_errors].empty?
         remember_finished(record)
