@@ -326,8 +326,10 @@ module Rubernetes
                   write.call("-A #{external_chain} -m comment --comment \"pod traffic for #{name} external destinations\" -s #{@cluster_cidr} -j " \
                              "#{cluster_chain}")
                 end
-                write.call("-A #{external_chain} -m comment --comment \"masquerade LOCAL traffic for #{name} external destinations\" -m addrtype --src-type LOCAL -j KUBE-MARK-MASQ")
-                write.call("-A #{external_chain} -m comment --comment \"route LOCAL traffic for #{name} external destinations\" -m addrtype --src-type LOCAL -j #{cluster_chain}")
+                write.call("-A #{external_chain} -m comment --comment \"masquerade LOCAL traffic for #{name} external destinations\" -m addrtype --src-type " \
+                           "LOCAL -j KUBE-MARK-MASQ")
+                write.call("-A #{external_chain} -m comment --comment \"route LOCAL traffic for #{name} external destinations\" -m addrtype --src-type " \
+                           "LOCAL -j #{cluster_chain}")
               else
                 write.call("-A #{external_chain} -m comment --comment \"masquerade traffic for #{name} external destinations\" -j KUBE-MARK-MASQ")
               end
