@@ -106,9 +106,7 @@ module Rubernetes
             reject!("unexpected operation #{attributes.operation.inspect}") unless attributes.operation == "UPDATE"
 
             old = attributes.old_object
-            unless spec(old)["nodeName"] == node_name
-              reject!("node #{node_name.inspect} can only update pod status for pods with spec.nodeName set to itself")
-            end
+            reject!("node #{node_name.inspect} can only update pod status for pods with spec.nodeName set to itself") unless spec(old)["nodeName"] == node_name
             pod = attributes.object
             unless (metadata(old)["labels"] || {}) == (metadata(pod)["labels"] || {})
               reject!("node #{node_name.inspect} cannot update labels through pod status")
