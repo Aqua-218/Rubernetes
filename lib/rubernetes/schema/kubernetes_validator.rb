@@ -2915,9 +2915,7 @@ module Rubernetes
             seen_names[name.to_s] = true
           end
           number = fetch(port, "port")
-          if number.is_a?(Integer) && !number.between?(1, 65_535)
-            issues << issue(path + ["port"], :invalid, "must be between 1 and 65535, inclusive")
-          end
+          issues << issue(path + ["port"], :invalid, "must be between 1 and 65535, inclusive") if number.is_a?(Integer) && !number.between?(1, 65_535)
           protocol = fetch(port, "protocol")
           issues << issue(path + ["protocol"], :required, "") if protocol.is_a?(String) && protocol.empty?
         end
