@@ -713,9 +713,7 @@ module Rubernetes
 
       def verify_loop_identity!(identity, status, path)
         return true if identity.empty?
-        if identity["loopNumber"] && identity["loopNumber"].to_i != status["number"].to_i
-          raise MountIdentityError, "loop identity changed at #{path.inspect}"
-        end
+        raise MountIdentityError, "loop identity changed at #{path.inspect}" if identity["loopNumber"] && identity["loopNumber"].to_i != status["number"].to_i
         if identity["backingInode"] && identity["backingInode"].to_i != status["inode"].to_i
           raise MountIdentityError, "loop backing inode changed at #{path.inspect}"
         end
