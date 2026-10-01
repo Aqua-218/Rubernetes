@@ -1355,7 +1355,9 @@ module M4Gate
 
       ebpf = readback["ebpf"]
       nftables = readback["nftables"]
-      unless ebpf.is_a?(Hash) && ebpf["verified"] == true && ebpf["readback"] == true && ebpf["program_id"].is_a?(Integer) && ebpf["program_id"].positive? && ebpf["map_id"].is_a?(Integer) && ebpf["map_id"].positive? && valid_digest?(ebpf["verifier_log_sha256"]) && ebpf["rules"].is_a?(Array) && !ebpf["rules"].empty?
+      unless ebpf.is_a?(Hash) && ebpf["verified"] == true && ebpf["readback"] == true && ebpf["program_id"].is_a?(Integer) && ebpf["program_id"].positive? &&
+             ebpf["map_id"].is_a?(Integer) && ebpf["map_id"].positive? && valid_digest?(ebpf["verifier_log_sha256"]) && ebpf["rules"].is_a?(Array) &&
+             !ebpf["rules"].empty?
         errors << "proxy eBPF backend must include verifier and kernel readback evidence"
       end
       unless nftables.is_a?(Hash) && nftables["readback"] == true && non_empty_string?(nftables["family"]) && non_empty_string?(nftables["table"]) &&
