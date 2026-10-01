@@ -245,7 +245,9 @@ module Rubernetes
           when "Webhook"
             hook = authz.fetch("webhook")
             Security::Authorization::Webhook.new(transport: https_transport(hook), authorized_ttl: hook.fetch("cache_authorized_ttl", 300),
-                                                 unauthorized_ttl: hook.fetch("cache_unauthorized_ttl", 30), failure_policy: hook.fetch("failure_policy", "NoOpinion"), clock: @clock)
+                                                 unauthorized_ttl: hook.fetch("cache_unauthorized_ttl", 30), failure_policy: hook.fetch("failure_policy",
+                                                                                                                                        "NoOpinion"),
+                                                 clock: @clock)
           else raise Config::Error, "unknown authorization mode #{mode}"
           end
         end
