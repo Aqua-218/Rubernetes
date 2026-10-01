@@ -425,7 +425,10 @@ module M4ProxyKernelProbe
       end
       readback = response["readback"].is_a?(Hash) ? response["readback"] : {}
       readback_detail = readback.reject { |key, _| %w[tools rules maps program filters].include?(key) }.to_json[0, 600]
-      errors << "#{backend_name} packet corpus failed: #{Array(response["failed_cases"]).join(", ")}; readback=#{readback["readback"]}; first failures: #{detail.join(" | ")}; readback detail: #{readback_detail}"
+      errors << "#{backend_name} packet corpus failed: #{Array(response["failed_cases"]).join(", ")}; readback=#{readback["readback"]}; first failures: " \
+                "#{detail.join(" | ")}; readback " \
+                "detail: " \
+                "#{readback_detail}"
     end
     {"backend" => backend_name, "kernel_input" => kernel, "response" => response}
   end
