@@ -30,7 +30,9 @@ module Release
         journal: File.join(ROOT, "artifacts/release/soak-journal.jsonl"),
         hours: Float(ENV.fetch("RUBERNETES_SOAK_HOURS", REQUIRED_HOURS)),
         interval: Float(ENV.fetch("RUBERNETES_SOAK_INTERVAL", 60)),
-        kubeconfig: ENV.fetch("RUBERNETES_SOAK_KUBECONFIG", nil)
+        kubeconfig: ENV.fetch("RUBERNETES_SOAK_KUBECONFIG", nil),
+        cluster_root: ENV.fetch("RUBERNETES_SOAK_CLUSTER_ROOT", nil),
+        netns: ENV.fetch("RUBERNETES_SOAK_NETNS", nil)
       }
       OptionParser.new do |parser|
         parser.on("--output PATH") { |v| options[:output] = v }
