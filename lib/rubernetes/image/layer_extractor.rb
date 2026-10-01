@@ -150,9 +150,7 @@ module Rubernetes
         ensure
           input.close if close_input
         end
-        if expected_size && compressed_bytes != Integer(expected_size)
-          raise LayerError, "compressed layer size does not match the descriptor"
-        end
+        raise LayerError, "compressed layer size does not match the descriptor" if expected_size && compressed_bytes != Integer(expected_size)
 
         actual = digest.hexdigest
         unless secure_compare(actual, expected.hex)
