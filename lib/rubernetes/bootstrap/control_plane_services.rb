@@ -1927,9 +1927,7 @@ module Rubernetes
         events << "#{prefix}UpdatePodLabel" if previous.labels != pod.labels
         events << "#{prefix}UpdatePodToleration" if previous.tolerations != pod.tolerations
         events << "#{prefix}UpdatePodSchedulingGatesEliminated" if !previous.scheduling_gates.empty? && pod.scheduling_gates.empty?
-        if previous.status["resourceClaimStatuses"] != pod.status["resourceClaimStatuses"]
-          events << "#{prefix}UpdatePodGeneratedResourceClaim"
-        end
+        events << "#{prefix}UpdatePodGeneratedResourceClaim" if previous.status["resourceClaimStatuses"] != pod.status["resourceClaimStatuses"]
         before = previous.requests
         after = pod.requests
         events << "#{prefix}UpdatePodScaleDown" if before.any? { |name, amount| after.fetch(name, 0).to_f < amount.to_f }
