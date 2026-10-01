@@ -1901,12 +1901,8 @@ module M2Gate
       end
       errors << "#{label} WAL transition sequence must be positive" unless positive_integer?(wal_transition["sequence"])
       errors << "#{label} WAL transition must be a state_transition" unless wal_transition["event"] == "state_transition"
-      unless wal_transition["operation_id"] == checkpoint["operation_id"]
-        errors << "#{label} WAL transition operation does not match the checkpoint"
-      end
-      unless wal_transition["from"] == expected_checkpoint["from"]
-        errors << "#{label} WAL transition source does not match the effect point"
-      end
+      errors << "#{label} WAL transition operation does not match the checkpoint" unless wal_transition["operation_id"] == checkpoint["operation_id"]
+      errors << "#{label} WAL transition source does not match the effect point" unless wal_transition["from"] == expected_checkpoint["from"]
       errors << "#{label} WAL transition target does not match the effect point" unless
         wal_transition["to"] == expected_checkpoint["state"] && wal_transition["state"] == expected_checkpoint["state"]
       errors << "#{label} WAL transition digest is required" unless valid_digest?(wal_transition["digest"])
