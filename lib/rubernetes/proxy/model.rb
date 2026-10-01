@@ -674,10 +674,8 @@ module Rubernetes
                   :address_type, :ports, :endpoints, :raw
 
       def initialize(object = nil, name: nil, namespace: nil, service_name: nil,
-                     address_type: nil, ports: nil, endpoints: nil, **_options)
-        if object.nil? && (_options.key?(:metadata) || _options.key?("metadata") || _options.key?(:spec) || _options.key?("spec"))
-          object = _options
-        end
+                     address_type: nil, ports: nil, endpoints: nil, **options)
+        object = options if object.nil? && (options.key?(:metadata) || options.key?("metadata") || options.key?(:spec) || options.key?("spec"))
         source = ModelSupport.string_keys(object || {})
         metadata = ModelSupport.key(source, "metadata", {})
         @name = (name || ModelSupport.key(metadata, "name", nil)).to_s
