@@ -1221,9 +1221,7 @@ module M3Gate
       tree = git_output(root, "rev-parse", "HEAD^{tree}")
       source_inventory = git_output(root, "ls-tree", "-r", "--full-tree", "--name-only", "HEAD")
       status = git_output(root, "status", "--porcelain", "--untracked-files=all")
-      unless commit == KUBERNETES_SOURCE_COMMIT && source["commit"] == commit
-        errors << "#{label} pinned source commit was not recomputed from the checkout"
-      end
+      errors << "#{label} pinned source commit was not recomputed from the checkout" unless commit == KUBERNETES_SOURCE_COMMIT && source["commit"] == commit
       errors << "#{label} pinned source tag was not recomputed from the checkout" unless tag == KUBERNETES_VERSION && source["tag"] == tag
       errors << "#{label} pinned source tree was not recomputed from the checkout" unless tree == source["tree"]
       errors << "#{label} pinned source tree is dirty" unless status.to_s.empty? && source["tree_clean"] == true
