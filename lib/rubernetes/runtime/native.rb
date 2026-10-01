@@ -3197,7 +3197,7 @@ module Rubernetes
         sandbox = @mutex.synchronize { @sandboxes[String(sandbox_id)] }
         return nil unless sandbox && sandbox.respond_to?(:cgroup) && sandbox.cgroup && @cgroup.respond_to?(:pod_limits_readback)
 
-        @cgroup.pod_limits_readback(sandbox.cgroup, files: PodCgroupFiles)
+        @cgroup.pod_limits_readback(sandbox.cgroup, files: POD_CGROUP_FILES)
       rescue Platform::Linux::CgroupV2::Error, SystemCallError
         nil
       end
