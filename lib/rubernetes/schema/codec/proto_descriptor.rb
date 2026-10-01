@@ -1850,7 +1850,8 @@ module Rubernetes
                           decode_scalar(field.value_type, wire_field[:value], wire_type: expected)
                         else
                           decode_descriptor(resolve_map_value_message(field), wire_field[:value], strict: strict,
-                                                                                                  max_bytes: max_bytes, max_depth: max_depth, depth: depth, keys: keys,
+                                                                                                  max_bytes: max_bytes, max_depth: max_depth, depth: depth,
+                                                                                                  keys: keys,
                                                                                                   unknown_policy: unknown_policy)
                         end
                 # Map-entry unknowns stay unrepresented: surfacing them would need a synthetic nested slot.
