@@ -41,7 +41,8 @@ class SecurityAdmissionPolicyTest < Minitest::Test
     text = metrics.render
 
     assert_includes text,
-                    'apiserver_validating_admission_policy_check_total{enforcement_action="deny",error_type="invalid_error",policy="replica-limit",policy_binding="deny"} 1'
+                    'apiserver_validating_admission_policy_check_total{enforcement_action="deny",error_type="invalid_error",policy="replica-limit",' \
+                    'policy_binding="deny"} 1'
     assert_includes text,
                     'apiserver_validating_admission_policy_check_total{enforcement_action="audit",error_type="invalid_error",policy="replica-limit",policy_binding="deny"} 1'
     refute_match(/check_total\{enforcement_action="allow"/, text, "a plain admit is not counted")
