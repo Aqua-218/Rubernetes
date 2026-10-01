@@ -130,8 +130,22 @@ module Promql
       assert_in_delta 4.0 + (60.0 / 15), values("predict_linear(lin[2m], 60)").first, 1e-6
     end
 
-    assert_in_delta 20.0 * 60 / 45, delta, 1e-6
-    load("lin", {}, [0, 1, 2, 3, 4])
+    test "over_time functions" do
+      load("v", {}, [1, 2, 3, 4])
+
+      assert_equal [10.0], values("sum_over_time(v[1m])")
+      assert_equal [2.5], values("avg_over_time(v[1m])")
+      assert_equal [1.0], values("min_over_time(v[1m])")
+      assert_equal [4.0], values("max_over_time(v[1m])")
+      assert_equal [4.0], values("count_over_time(v[1m])")
+      assert_equal [4.0], values("last_over_time(v[1m])")
+      assert_equal [1.0], values("present_over_time(v[1m])")
+      assert_in_delta 2.5, values("quantile_over_time(0.5, v[1m])").first
+      assert_in_delta 1.25, values("stdvar_over_time(v[1m])").first
+      assert_in_delta Math.sqrt(1.25), values("stddev_over_time(v[1m])").first
+      assert_equal [1.0], values("absent_over_time(missing[1m])")
+      assert_equal [], vector("absent_over_time(v[1m])")
+    end
 
     assert_in_delta 1.0 / 15, values("deriv(lin[2m])").first, 1e-9
     assert_in_delta 4.0 + (60.0 / 15), values("predict_linear(lin[2m], 60)").first, 1e-6
