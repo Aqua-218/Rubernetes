@@ -1457,9 +1457,9 @@ module M1Gate
         id if non_empty_string?(id)
       end
       errors << "API surface discovery endpoint identifiers must be unique" unless ids.uniq.length == ids.length
-      unless pinned_endpoints.length == API_SURFACE_ENDPOINT_COUNT && ids.sort == pinned_endpoints.map { |entry| entry.fetch("path") }.sort
-        errors << "API surface discovery endpoint inventory differs from the pinned v1.36.2 inventory"
-      end
+      return if pinned_endpoints.length == API_SURFACE_ENDPOINT_COUNT && ids.sort == pinned_endpoints.map { |entry| entry.fetch("path") }.sort
+
+      errors << "API surface discovery endpoint inventory differs from the pinned v1.36.2 inventory"
     end
 
     def pinned_discovery_endpoint_inventory
