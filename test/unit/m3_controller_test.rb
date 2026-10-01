@@ -139,7 +139,8 @@ class M3ControllerTest < Minitest::Test
     )
     b = Controller::ControllerDefinition.new(
       name: "b-controller", kind: Controller::ResourceDescriptor.parse("ReplicaSet"),
-      owns: [Controller::OwnershipEdge.new(owner: Controller::ResourceDescriptor.parse("ReplicaSet"), dependent: Controller::ResourceDescriptor.parse("Deployment"))],
+      owns: [Controller::OwnershipEdge.new(owner: Controller::ResourceDescriptor.parse("ReplicaSet"),
+                                           dependent: Controller::ResourceDescriptor.parse("Deployment"))],
       reconcile_block: ->(_resource) {}
     )
     registry.register_many([a, b])
