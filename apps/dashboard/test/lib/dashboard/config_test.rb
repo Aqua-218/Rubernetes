@@ -2,14 +2,15 @@
 
 require "test_helper"
 
-class Dashboard::ConfigTest < ActiveSupport::TestCase
-  def with_env(pairs)
-    saved = pairs.keys.to_h { |k| [k, ENV.fetch(k, nil)] }
-    pairs.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
-    yield
-  ensure
-    saved.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
-  end
+module Dashboard
+  class ConfigTest < ActiveSupport::TestCase
+    def with_env(pairs)
+      saved = pairs.keys.to_h { |k| [k, ENV.fetch(k, nil)] }
+      pairs.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
+      yield
+    ensure
+      saved.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
+    end
 
   test "allowed hosts default to local names plus the external URL host" do
     with_env("DASHBOARD_HOSTS" => nil, "DASHBOARD_EXTERNAL_URL" => "https://dashboard.dev.provn-vm.jp/",
