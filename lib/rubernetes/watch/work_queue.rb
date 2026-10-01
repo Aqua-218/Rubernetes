@@ -331,7 +331,8 @@ module Rubernetes
          "workqueue_unfinished_work_seconds" => [:gauge,
                                                  "How many seconds of work has done that is in progress and hasn't been observed by work_duration. Large values indicate stuck threads. One can deduce the number of stuck threads by observing the rate at which this increases."],
          "workqueue_longest_running_processor_seconds" => [:gauge,
-                                                           "How many seconds has the longest running processor for workqueue been running."]}.each do |metric_name, (type, help)|
+                                                           "How many seconds has the longest running processor for workqueue been " \
+                                                           "running."]}.each do |metric_name, (type, help)|
           registry.register(metric_name, type: type, help: help)
         end
         registry.register("workqueue_queue_duration_seconds", type: :histogram, buckets: DURATION_BUCKETS,
