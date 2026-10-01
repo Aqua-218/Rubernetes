@@ -99,7 +99,11 @@ def scheduler_fixture_cases
     "volume_binding" => base.merge("phase" => "volume_binding",
                                    "pod" => scheduler_pod(name: "m3-volume-binding-pod",
                                                           uid: "m3-volume-binding-uid").merge("spec" => {"priority" => 10,
-                                                                                                         "containers" => [{"name" => "app", "image" => "example/app", "resources" => {"requests" => {"cpu" => "0", "memory" => "0"}}}], "volumes" => [{"name" => "claim", "persistentVolumeClaim" => {"claimName" => "m3-pvc"}}]}))
+                                                                                                         "containers" => [{"name" => "app",
+                                                                                                                           "image" => "example/app",
+                                                                                                                           "resources" => {"requests" => {
+                                                                                                                             "cpu" => "0", "memory" => "0"
+                                                                                                                           }}}], "volumes" => [{"name" => "claim", "persistentVolumeClaim" => {"claimName" => "m3-pvc"}}]}))
   }
 end
 
