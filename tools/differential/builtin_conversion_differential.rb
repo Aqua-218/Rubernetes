@@ -199,7 +199,8 @@ module BuiltinConversionDifferential
       body = kind == "ResourceClaim" ? {"spec" => spec} : {"spec" => {"metadata" => {"labels" => {"a" => "b"}}, "spec" => spec}}
       object = {"apiVersion" => "resource.k8s.io/#{version}", "kind" => kind, "metadata" => metadata}.merge(body)
       if kind == "ResourceClaim" && chance(0.5)
-        object["status"] = {"allocation" => {"devices" => {"results" => [{"request" => devices["requests"].first["name"], "driver" => "gpu.example.com", "pool" => "p", "device" => "gpu-0"}]}},
+        object["status"] = {"allocation" => {"devices" => {"results" => [{"request" => devices["requests"].first["name"], "driver" => "gpu.example.com",
+                                                                          "pool" => "p", "device" => "gpu-0"}]}},
                             "reservedFor" => [{"resource" => "pods", "name" => "p", "uid" => "u"}]}
       end
       object
