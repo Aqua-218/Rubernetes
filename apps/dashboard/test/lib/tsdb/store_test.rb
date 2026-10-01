@@ -82,8 +82,13 @@ module Tsdb
       assert_equal 6, reopened.samples(series.id, 0, 2000).length
     end
 
-    assert_operator store.blocks.length, :>=, 1
-    series = store.select_series([M.new(name: "__name__", op: "=", value: "m")]).first
+    test "blocks are cut from the head on the block boundary and read back seamlessly" do
+      store = open_store(block_range_ms: 60_000)
+      t0 = 600_000
+      # 130 samples one second apart: spans more than two block ranges and
+      # more than one 120-sample chunk.
+      130.times { |i| store.append(labels("m"), t0 + (i * 1000), i.to_f) }
+      store.maintain(t0 + 130_000)
 
     assert_equal Array.new(130) { |i| [t0 + (i * 1000), i.to_f] }, store.samples(series.id, 0, t0 + 200_000)
     stats = store.stats
