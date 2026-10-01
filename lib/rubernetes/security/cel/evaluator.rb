@@ -196,7 +196,7 @@ module Rubernetes
 
           def eval_unary(node)
             _, operator, operand_node = node
-            operand = eval(operand_node)
+            operand = evaluate(operand_node)
             case operator
             when "!"
               raise TypeMismatch, "! requires a bool" unless [true, false].include?(operand)
