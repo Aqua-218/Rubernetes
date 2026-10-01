@@ -1252,9 +1252,7 @@ module Rubernetes
         group = resource.group.to_s
         return eviction_response(request, route) if route.subresource == "eviction" && resource.resource == "pods" && group.empty?
         return binding_response(request, route) if route.subresource == "binding" && resource.resource == "pods" && group.empty?
-        if route.subresource == "proxy" && group.empty? && %w[pods services nodes].include?(resource.resource)
-          return proxy_response(request, route)
-        end
+        return proxy_response(request, route) if route.subresource == "proxy" && group.empty? && %w[pods services nodes].include?(resource.resource)
         if resource.resource == "componentstatuses" && group.empty? && route.subresource.nil?
           return %w[GET HEAD].include?(request.method) ? component_status_response(request, route) : nil
         end
