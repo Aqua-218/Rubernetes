@@ -63,6 +63,7 @@ class SchedulerMetricsTest < Minitest::Test
     apiserver = Rubernetes::Observability::Metrics.new
 
     assert_match(
+      # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
       /# HELP aggregator_discovery_nopeer_requests_total .*\(not implemented in Rubernetes, always empty: no UnknownVersionInteroperabilityProxy/, apiserver.render_own
     )
     # client-go registers these plain families unconditionally: present and
