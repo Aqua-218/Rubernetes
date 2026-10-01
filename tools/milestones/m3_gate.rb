@@ -1336,9 +1336,10 @@ module M3Gate
         return
       end
       runner = chaos["runner"]
-      unless runner.is_a?(Hash) && valid_digest?(runner["runner_sha256"]) && runner["command"].is_a?(Array) && !runner["command"].empty? && runner["command"].all? do |part|
-        non_empty_string?(part)
-      end && runner["process_id"].is_a?(Integer) && runner["process_id"].positive?
+      unless runner.is_a?(Hash) && valid_digest?(runner["runner_sha256"]) && runner["command"].is_a?(Array) && !runner["command"].empty? &&
+             runner["command"].all? do |part|
+               non_empty_string?(part)
+             end && runner["process_id"].is_a?(Integer) && runner["process_id"].positive?
         errors << "#{label} runner provenance is incomplete"
       end
       errors << "#{label} runner provenance mode must be external" unless runner.is_a?(Hash) && runner["mode"] == "external"
