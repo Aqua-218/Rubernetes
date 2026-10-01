@@ -12,7 +12,7 @@ require "open3"
 require "rubernetes/scheduler"
 
 PROBE = File.expand_path("../milestones/m3_scheduler_probe.rb", __dir__)
-eval(File.read(PROBE).split("\nM3ProbeSupport.run_report", 2).first, TOPLEVEL_BINDING, PROBE, 1)
+eval(File.read(PROBE).split("\nM3ProbeSupport.run_report", 2).first, TOPLEVEL_BINDING, PROBE, 1) # rubocop:disable Security/Eval -- loads the probe definitions without running the report
 
 module SchedulerPodLevelDifferential
   module_function
