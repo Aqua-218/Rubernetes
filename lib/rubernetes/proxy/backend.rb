@@ -1221,9 +1221,7 @@ module Rubernetes
         packet_inventory = evidence_value(packet_corpus, "caseInventorySha256", "case_inventory_sha256")
         kernel_inventory = evidence_value(kernel_readback, "caseInventorySha256", "case_inventory_sha256")
         failures << "packet/kernel raw packet trace digest differs" unless valid_digest?(packet_trace) && packet_trace == kernel_trace
-        unless valid_digest?(packet_inventory) && packet_inventory == kernel_inventory
-          failures << "packet/kernel case inventory digest differs"
-        end
+        failures << "packet/kernel case inventory digest differs" unless valid_digest?(packet_inventory) && packet_inventory == kernel_inventory
         failures.empty?
       end
 
