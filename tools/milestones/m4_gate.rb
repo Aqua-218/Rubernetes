@@ -847,9 +847,7 @@ module M4Gate
       errors << "#{label} measurement source must be native" unless VALID_NODE_CRASH_MEASUREMENT_SOURCES.include?(source)
       errors << "#{label} mode must identify a mount namespace or real CSI operation" unless
         %w[native_mount_namespace real_csi_node_operation].include?(document["mode"])
-      unless document["passed"] == true && document["available"] == true
-        errors << "#{label} must pass only when native crash evidence is complete"
-      end
+      errors << "#{label} must pass only when native crash evidence is complete" unless document["passed"] == true && document["available"] == true
       errors << "#{label} must report durable recovery with no unknown operations" unless
         document.dig("recovery", "unknown_count") == 0 && document.dig("recovery", "state_after_recovery") == "Attached"
       errors << "#{label} must report durable cleanup after restart" unless document["cleanup_passed"] == true
