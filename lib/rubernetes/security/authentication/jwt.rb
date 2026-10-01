@@ -173,7 +173,8 @@ module Rubernetes
                                                    "\x04".b + decode_segment(jwk.fetch("x")) + decode_segment(jwk.fetch("y")), 2
                                                  ))
             asn1 = OpenSSL::ASN1::Sequence.new([
-                                                 OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::ObjectId.new("id-ecPublicKey"), OpenSSL::ASN1::ObjectId.new(curve)]),
+                                                 OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::ObjectId.new("id-ecPublicKey"),
+                                                                              OpenSSL::ASN1::ObjectId.new(curve)]),
                                                  OpenSSL::ASN1::BitString.new(point.to_octet_string(:uncompressed))
                                                ])
             OpenSSL::PKey::EC.new(asn1.to_der)
