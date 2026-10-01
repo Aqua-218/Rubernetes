@@ -303,8 +303,11 @@ module Rubernetes
           os: image_platform.os,
           architecture: image_platform.architecture
         ).freeze
-        raise ManifestError, "image config has no Entrypoint or Cmd" if resolved.command.empty?
-
+        # An image with neither Entrypoint nor Cmd is a valid image (cilium's
+        # operator-generic, distroless bases run with the Pod's `command`);
+        # the error belongs to container creation, when the Pod gives no
+        # command either (ContainerSpec#build_command, as the CRI runtime's
+        # "no command specified").  Refusing it here was an ErrImagePull.
         store_image(cache_key, resolved) if cache_key
         record_pull(image_reference, resolved.digest, pull_secret)
         resolved
