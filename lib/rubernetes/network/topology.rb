@@ -564,7 +564,8 @@ module Rubernetes
          "metric" => Support.integer(Support.fetch(hash, "metric", default: 100), "route metric", min: 0, max: 0xffff_ffff),
          "table" => Support.integer(Support.fetch(hash, "table", default: 254), "route table", min: 0, max: 0xffff_ffff),
          "protocol" => Support.integer(Support.fetch(hash, "protocol", default: Netlink::RTPROT_STATIC), "route protocol", min: 0, max: 255),
-         "scope" => Support.integer(Support.fetch(hash, "scope", default: via ? Netlink::RT_SCOPE_UNIVERSE : Netlink::RT_SCOPE_LINK), "route scope", min: 0, max: 255),
+         "scope" => Support.integer(Support.fetch(hash, "scope", default: via ? Netlink::RT_SCOPE_UNIVERSE : Netlink::RT_SCOPE_LINK), "route scope", min: 0,
+                                                                                                                                                     max: 255),
          "route_type" => Support.integer(Support.fetch(hash, "route_type", "type", default: Netlink::RTN_UNICAST), "route type", min: 0, max: 255)}.compact
       end
 
