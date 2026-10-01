@@ -106,17 +106,20 @@ module Prom
       assert_equal(["one:1"], @scraper.statuses.values.map { |s| s.target.instance })
     end
 
-  test "scrapes a real HTTP endpoint and queries it through the engine" do
-    server = TCPServer.new("127.0.0.1", 0)
-    port = server.addr[1]
-    thread = Thread.new do
-      loop do
-        client = server.accept
-        client.gets
-        while (line = client.gets) && !line.strip.empty?; end
-        body = "# TYPE requests_total counter\nrequests_total{code=\"200\"} 42\nrequests_total{code=\"500\"} 1\n"
-        client.write("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
-        client.close
+    test "scrapes a real HTTP endpoint and queries it through the engine" do
+      server = TCPServer.new("127.0.0.1", 0)
+      port = server.addr[1]
+      thread = Thread.new do
+        loop do
+          client = server.accept
+          client.gets
+          while (line = client.gets) && !line.strip.empty?; end
+          body = "# TYPE requests_total counter\nrequests_total{code=\"200\"} 42\nrequests_total{code=\"500\"} 1\n"
+          client.write("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}")
+          client.close
+        end
+      rescue IOError
+        nil
       end
     rescue IOError
       nil
