@@ -554,9 +554,7 @@ module Rubernetes
             state.unavailable.merge(unavailable)
             return Filters::Helpers.reject("resourceclaim not available on the node", code: "UnschedulableAndUnresolvable")
           end
-          if state.allocator
-            state.node_allocations[node.name] = NodeAllocation.new(results: allocations, extended_claim: node_extended, mappings: mappings)
-          end
+          state.node_allocations[node.name] = NodeAllocation.new(results: allocations, extended_claim: node_extended, mappings: mappings) if state.allocator
         end
         true
       end
