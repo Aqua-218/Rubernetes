@@ -42,7 +42,8 @@ class M4GateTest < Minitest::Test
                                                          "finish" => {"sha256" => "0" * 64, "file_count" => 1}},
                                      "git_metadata_capture" => {"stable" => true, "start_paths" => [], "finish_paths" => [], "count" => 0},
                                      "commands" => [{"name" => "fixture", "command" => ["fixture"], "started_at" => Time.now.utc.iso8601, "finished_at" => Time.now.utc.iso8601, "exit_status" => 0}],
-                                     "artifacts" => [], "subjects" => [], "result_counts" => {"commands" => 1, "command_failures" => 0, "artifacts" => 0, "subjects" => 0, "reports" => 5, "source_files" => 1}))
+                                     "artifacts" => [], "subjects" => [], "result_counts" => {"commands" => 1, "command_failures" => 0, "artifacts" => 0,
+                                                                                              "subjects" => 0, "reports" => 5, "source_files" => 1}))
 
       result = M4Gate.evaluate(path)
 
