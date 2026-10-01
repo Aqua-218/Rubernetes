@@ -126,7 +126,8 @@ module Rubernetes
                   ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ContainerStatusResponse
               # UpdateContainerResources updates ContainerConfig of the container synchronously.
               # If runtime fails to transactionally update the requested resources, an error is returned.
-              rpc :UpdateContainerResources, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdateContainerResourcesRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdateContainerResourcesResponse
+              rpc :UpdateContainerResources, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdateContainerResourcesRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::UpdateContainerResourcesResponse
               # ReopenContainerLog asks runtime to reopen the stdout/stderr log file
               # for the container. This is often called after the log file has been
               # rotated. If the container is not running, container runtime can choose
