@@ -975,9 +975,7 @@ module Rubernetes
           return false
         end
         measurement_source = evidence_value(value, "measurementSource", "measurement_source")
-        if measurement_source.to_s.empty? || measurement_source.to_s == "model_only"
-          failures << "packet corpus measurement source is not external"
-        end
+        failures << "packet corpus measurement source is not external" if measurement_source.to_s.empty? || measurement_source.to_s == "model_only"
         failures << "packet corpus must report executed=true" unless evidence_value(value, "executed") == true
         validate_runner_provenance(value, "packet corpus", failures)
         validate_input_binding(value, "packet corpus", left_digest, right_digest, failures)
