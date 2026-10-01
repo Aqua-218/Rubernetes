@@ -1057,9 +1057,7 @@ module Rubernetes
         mode = evidence_value(value, "mode", "runnerMode", "runner_mode")
         failures << "#{label} runner identity is required" unless identity.is_a?(String) && !identity.empty?
         failures << "#{label} runner digest is invalid" unless valid_digest?(digest)
-        unless mode.is_a?(String) && !mode.empty? && mode.to_s != "model"
-          failures << "#{label} execution mode must identify an isolated external runner"
-        end
+        failures << "#{label} execution mode must identify an isolated external runner" unless mode.is_a?(String) && !mode.empty? && mode.to_s != "model"
         runner = evidence_value(value, "runner", "runnerProvenance", "runner_provenance")
         if runner.is_a?(Hash)
           pid = evidence_value(runner, "pid", "processId", "process_id")
