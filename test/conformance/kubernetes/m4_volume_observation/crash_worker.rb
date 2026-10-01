@@ -103,7 +103,8 @@ module M4CrashWorker
                                  "identity" => result.to_h.select do |key, _|
                                    %w[mountId deviceId root target filesystem kernelSource options readonly bind mountApi].include?(key)
                                  end,
-                                 "effect_boundary" => {"phase" => "after_effect_before_durable_commit", "syscall" => result["mountApi"] == "open_tree" ? "open_tree/move_mount" : "mount(2)"})
+                                 "effect_boundary" => {"phase" => "after_effect_before_durable_commit",
+                                                       "syscall" => result["mountApi"] == "open_tree" ? "open_tree/move_mount" : "mount(2)"})
       end
       result
     end
