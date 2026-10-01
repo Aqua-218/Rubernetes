@@ -87,9 +87,7 @@ module M9Gate
       errors << "schema_version must be #{MANIFEST_SCHEMA_VERSION}" unless manifest["schema_version"] == MANIFEST_SCHEMA_VERSION
       errors << "milestone must be M9" unless manifest["milestone"] == "M9"
       errors << "input_sha256 must be a SHA-256 digest" unless valid_digest?(manifest["input_sha256"])
-      unless manifest["input_file_count"].is_a?(Integer) && manifest["input_file_count"].positive?
-        errors << "input_file_count must be positive"
-      end
+      errors << "input_file_count must be positive" unless manifest["input_file_count"].is_a?(Integer) && manifest["input_file_count"].positive?
       errors << "source input must remain stable during evidence capture" unless manifest["input_stable"] == true
       host = manifest["host"]
       errors << "host architecture, kernel, and Ruby description are required" unless host.is_a?(Hash) && %w[architecture kernel
