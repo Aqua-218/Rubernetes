@@ -22,7 +22,7 @@ module Rubernetes
       attr_reader :resolver, :server, :bind_addresses, :port
 
       def initialize(client:, bind_addresses:, port: 53, cluster_domain: "cluster.local", upstreams: [],
-                     resolv_conf: "/etc/resolv.conf", logger: nil, positive_ttl: 5, negative_ttl: 5)
+                     resolv_conf: "/etc/resolv.conf", logger: nil, positive_ttl: 5, negative_ttl: 5, hosts: nil)
         raise ArgumentError, "client is required" unless client
         raise ArgumentError, "at least one DNS bind address is required" if Array(bind_addresses).empty?
 
@@ -35,7 +35,7 @@ module Rubernetes
         forwarders = forwarders.reject { |server| server.start_with?("127.") || server == "::1" }
         @resolver = Network::DNS::Resolver.new(domain: cluster_domain, cluster_ip: @bind_addresses.first,
                                                upstreams: forwarders, positive_ttl: positive_ttl, negative_ttl: negative_ttl,
-                                               upstream_adapter: Network::DNS::UpstreamClient.new)
+                                               upstream_adapter: Network::DNS::UpstreamClient.new, hosts: hosts)
         @server = Network::DNS::Server.new(resolver: @resolver, bind_addresses: @bind_addresses, port: @port,
                                            upstream_client: Network::DNS::UpstreamClient.new, logger: logger)
         @threads = []

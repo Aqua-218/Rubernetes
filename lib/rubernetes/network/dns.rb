@@ -92,8 +92,9 @@ module Rubernetes
                        positive_ttl: DEFAULT_TTL, negative_ttl: DEFAULT_TTL,
                        upstream: nil, upstreams: nil, adapter: nil, upstream_adapter: nil,
                        clock: -> { Time.now.utc }, max_packet_bytes: MAX_PACKET_BYTES,
-                       **_options)
+                       hosts: nil, **_options)
           @domain = normalize_domain(domain)
+          @hosts = normalize_hosts(hosts)
           @cluster_ip = Support.ip(cluster_ip, name: "cluster DNS IP").to_s
           @default_nameserver = nameserver ? Support.ip(nameserver, name: "DNS nameserver").to_s : @cluster_ip
           @positive_ttl = Support.integer(positive_ttl, "positive DNS TTL", min: 0, max: 86_400)
@@ -257,6 +258,7 @@ module Rubernetes
         def authoritative?(name)
           query_name = normalize_name(name)
           return true if query_name == @domain || query_name.end_with?(".#{@domain}")
+          return true if host_entry(query_name)
           return false unless query_name.end_with?(".in-addr.arpa", ".ip6.arpa")
 
           ip = begin
@@ -476,6 +478,13 @@ module Rubernetes
 
         def resolve_uncached(name, type)
           return resolve_ptr(name) if type == "PTR"
+          if (addresses = host_entry(name))
+            return addresses.filter_map do |ip|
+              next unless (type == "A" && IPAddr.new(ip).ipv4?) || (type == "AAAA" && IPAddr.new(ip).ipv6?)
+
+              Record.new(name: name, type: type, data: ip, ttl: @positive_ttl).freeze
+            end.freeze
+          end
           if (srv = parse_srv(name))
             return resolve_srv(srv)
           end
@@ -542,8 +551,40 @@ module Rubernetes
           "#{endpoint_host_label(endpoint)}.#{service.name}.#{service.namespace}.svc.#{@domain}"
         end
 
+        # Static names the node answers for, like CoreDNS' hosts plugin: an
+        # exact name or a `*.suffix` wildcard mapped to addresses.  A cluster
+        # whose public names resolve only to an address its Pods cannot reach
+        # (an AAAA record on an IPv4-only Pod network) points them here at the
+        # ingress node instead, so in-cluster callers -- cert-manager's HTTP-01
+        # self check above all -- hairpin through the node.
+        def normalize_hosts(hosts)
+          return {}.freeze if hosts.nil?
+
+          hosts.to_h.each_with_object({}) do |(name, addresses), result|
+            text = name.to_s
+            key = text.start_with?("*.") ? "*.#{normalize_name(text.delete_prefix("*."))}" : normalize_name(text)
+            list = Array(addresses).map { |ip| Support.ip(ip, name: "DNS hosts entry #{name}").to_s }
+            raise ValidationError, "DNS hosts entry #{name} needs at least one address" if list.empty?
+
+            result[key] = list.freeze
+          end.freeze
+        end
+
+        def host_entry(name)
+          return nil if @hosts.empty?
+          return @hosts[name] if @hosts.key?(name)
+
+          labels = name.split(".")
+          (1...labels.length).each do |index|
+            candidate = "*.#{labels[index..].join(".")}"
+            return @hosts[candidate] if @hosts.key?(candidate)
+          end
+          nil
+        end
+
         def name_exists_locked?(name)
           return true if [@domain, "svc.#{@domain}", "pod.#{@domain}"].include?(name)
+          return true if host_entry(name)
 
           suffix = ".svc.#{@domain}"
           if name.end_with?(suffix)

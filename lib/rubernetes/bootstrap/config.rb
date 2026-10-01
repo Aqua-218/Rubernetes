@@ -90,7 +90,7 @@ module Rubernetes
       # evictionMaxPodGracePeriod.
       AGENT_EVICTION_KEYS = %w[enabled hard soft soft_grace_period minimum_reclaim pressure_transition_period
                                max_pod_grace_period_seconds].freeze
-      AGENT_DNS_KEYS = %w[enabled port bind_addresses upstreams cluster_domain resolv_conf positive_ttl negative_ttl kubeconfig].freeze
+      AGENT_DNS_KEYS = %w[enabled port bind_addresses upstreams cluster_domain resolv_conf positive_ttl negative_ttl kubeconfig hosts].freeze
       AGENT_MICROVM_KEYS = %w[enabled data_dir chroot_base netns_root run_root parent_cgroup vcpu_count mem_size_mib use_base_snapshot
                               artifacts_lock workspace_mib].freeze
       AGENT_RUNTIME_PATH_KEYS = %w[sandbox_root cgroup_root log_root journal_path].freeze
@@ -433,6 +433,14 @@ module Rubernetes
                 "rubernetes-agent.dns.#{key} must be a list of addresses"
         end
         validate_non_empty_string!(section["cluster_domain"], "rubernetes-agent.dns.cluster_domain") if section.key?("cluster_domain")
+        if section.key?("hosts")
+          hosts = section["hosts"]
+          valid = hosts.is_a?(Hash) && hosts.all? do |name, addresses|
+            name.is_a?(String) && !name.empty? &&
+              Array(addresses).all? { |value| value.is_a?(String) && !value.empty? } && !Array(addresses).empty?
+          end
+          raise Error, "rubernetes-agent.dns.hosts must map names (or *.suffix) to one or more addresses" unless valid
+        end
         validate_absolute_path!(section["resolv_conf"], "rubernetes-agent.dns.resolv_conf") if section.key?("resolv_conf")
         validate_absolute_path!(section["kubeconfig"], "rubernetes-agent.dns.kubeconfig") if section.key?("kubeconfig")
         %w[positive_ttl negative_ttl].each do |key|

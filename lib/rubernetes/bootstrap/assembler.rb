@@ -388,7 +388,8 @@ module Rubernetes
               resolv_conf: options["resolv_conf"],
               logger: dependencies.resolve(:logger),
               positive_ttl: options["positive_ttl"],
-              negative_ttl: options["negative_ttl"]
+              negative_ttl: options["negative_ttl"],
+              hosts: options["hosts"]
             )
           end
         end
