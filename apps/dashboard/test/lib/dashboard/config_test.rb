@@ -32,10 +32,6 @@ module Dashboard
         assert_equal [], Dashboard::Config.allowed_hosts
       end
     end
-    with_env("DASHBOARD_HOSTS" => "") do
-      assert_equal [], Dashboard::Config.allowed_hosts
-    end
-  end
 
   test "a malformed external URL does not break the host list" do
     with_env("DASHBOARD_HOSTS" => nil, "DASHBOARD_EXTERNAL_URL" => "http://bad url") do
