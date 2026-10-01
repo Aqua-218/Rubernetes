@@ -2370,9 +2370,7 @@ module M1Gate
           errors << "#{label} comparison #{index} owner schema is required" unless non_empty_string?(comparison["owner_schema"])
           path = comparison["target_path"]
           errors << "#{label} comparison #{index} target path must be an array" unless path.is_a?(Array)
-          unless valid_digest?(comparison["operation_observation_sha256"])
-            errors << "#{label} comparison #{index} operation observation digest is required"
-          end
+          errors << "#{label} comparison #{index} operation observation digest is required" unless valid_digest?(comparison["operation_observation_sha256"])
           if api_differential_evidenced?(comparison)
             # Request/response types the apiserver never validates on
             # create/update are proven by the API differential operations
