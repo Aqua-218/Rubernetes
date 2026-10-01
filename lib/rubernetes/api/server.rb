@@ -3819,9 +3819,7 @@ module Rubernetes
         endpoint = Observability::Metrics.request_labels(**labels)
         identity = request.respond_to?(:identity) ? request.identity : nil
         user = identity.is_a?(Hash) ? (identity["username"] || identity[:username]) : nil
-        if user.to_s == "system:apiserver"
-          @metrics.increment("apiserver_selfrequest_total", endpoint.slice("verb", "group", "resource", "subresource"))
-        end
+        @metrics.increment("apiserver_selfrequest_total", endpoint.slice("verb", "group", "resource", "subresource")) if user.to_s == "system:apiserver"
         verb = REQUEST_BODY_VERBS[request.method.to_s.upcase]
         verb = "delete_collection" if verb == "delete" && route&.name.nil?
         body = request.respond_to?(:body) ? request.body : nil
