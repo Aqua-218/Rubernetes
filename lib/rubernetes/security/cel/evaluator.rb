@@ -278,7 +278,7 @@ module Rubernetes
                 accumulator = evaluate(step_node)
               end
             end
-            with(accu_var => accumulator) { eval(result_node) }
+            with(accu_var => accumulator) { evaluate(result_node) }
           end
         end
       end
