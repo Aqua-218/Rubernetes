@@ -569,7 +569,8 @@ module Rubernetes
         first = cidr.to_i + 1 + offset
         last = cidr.to_i + size - (cidr.ipv4? ? 2 : 1)
         if last < first
-          raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.clusterIPs: Invalid value: []: failed to allocate a serviceIP: range is full")
+          raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.clusterIPs: Invalid value: []: failed to allocate a serviceIP: range " \
+                                    "is full")
         end
 
         span = last - first + 1
