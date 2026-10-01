@@ -113,7 +113,20 @@ module Conformance
     # Structural normalisation: parse JSON when possible, drop per-cluster
     # values but keep whether they were present and well formed, and reduce
     # free text to its stable shape.
-    def normalize(result)
+    # The API groups a cluster serves from CustomResourceDefinitions.  K5
+    # compares the built-in API: a lane that ran after K6 left Argo's CRDs
+    # behind, and the oracle has none, so discovery and the OpenAPI root
+    # are compared without CRD groups on either side.
+    def custom_groups(kubeconfig)
+      @custom_groups ||= {}
+      @custom_groups[kubeconfig] ||= begin
+        out, _err, status = Open3.capture3(KUBECTL, "--kubeconfig", kubeconfig, "get", "customresourcedefinitions",
+                                           "-o", "jsonpath={range .items[*]}{.spec.group}{\"\\n\"}{end}")
+        status.success? ? out.split.uniq.sort : []
+      end
+    end
+
+    def normalize(result, custom_groups: [])
       body =
         begin
           scrub(JSON.parse(result.fetch("stdout")))
