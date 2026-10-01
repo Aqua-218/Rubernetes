@@ -1293,9 +1293,7 @@ module M3Gate
         errors << "leader-loss trace event #{required} is missing" unless ids.include?(required)
       end
       trace.each_with_index do |entry, index|
-        unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1
-          errors << "leader-loss trace entry #{index} must pass"
-        end
+        errors << "leader-loss trace entry #{index} must pass" unless entry.is_a?(Hash) && entry["passed"] == true && entry["attempt_count"] == 1
       end
       errors << "leader-loss trace must not double-apply side effects" unless document["double_side_effect_count"] == 0
       errors << "leader-loss trace must fence stale leaders" unless document["stale_side_effect_count"] == 0
