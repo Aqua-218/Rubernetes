@@ -25,7 +25,7 @@ class NodeStatusImagesTest < Minitest::Test
 
   def native(reference, size)
     ref = Rubernetes::Image::Reference.parse(reference)
-    Image.new(ref, "sha256:#{"%064x" % size}", Manifest.new([Layer.new(size - 10)], Layer.new(10)))
+    Image.new(ref, "sha256:#{format("%064x", size)}", Manifest.new([Layer.new(size - 10)], Layer.new(10)))
   end
 
   def test_images_are_largest_first_with_digests_then_tags
