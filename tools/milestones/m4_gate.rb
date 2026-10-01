@@ -1017,7 +1017,8 @@ module M4Gate
         errors << "#{label} runner digest must differ from the local probe"
       end
       %w[started_at finished_at].each { |key| errors << "#{label} runner #{key} must be ISO-8601" unless iso8601?(runner && runner[key]) }
-      if iso8601?(runner && runner["started_at"]) && iso8601?(runner && runner["finished_at"]) && Time.iso8601(runner["finished_at"]) < Time.iso8601(runner["started_at"])
+      if iso8601?(runner && runner["started_at"]) && iso8601?(runner && runner["finished_at"]) &&
+         Time.iso8601(runner["finished_at"]) < Time.iso8601(runner["started_at"])
         errors << "#{label} runner finished before it started"
       end
     end
