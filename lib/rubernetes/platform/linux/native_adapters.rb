@@ -692,9 +692,7 @@ module Rubernetes
                                expected_parent_pid && Process.ppid != Integer(expected_parent_pid)
                              end
             parent_changed ||= expected_parent_start_time && process_start_time(expected_parent_pid) != Integer(expected_parent_start_time)
-            if parent_changed
-              raise Linux::Error.new(errno: Errno::ESRCH::Errno, operation: "prctl(PR_SET_PDEATHSIG)", resource_id: "namespace")
-            end
+            raise Linux::Error.new(errno: Errno::ESRCH::Errno, operation: "prctl(PR_SET_PDEATHSIG)", resource_id: "namespace") if parent_changed
 
             true
           end
