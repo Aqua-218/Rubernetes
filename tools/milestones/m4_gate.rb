@@ -617,7 +617,8 @@ module M4Gate
         errors << "policy case #{index} oracle result differs" if entry.is_a?(Hash) && entry["expected"] != entry["actual"]
       end
       oracle = document["oracle"]
-      unless oracle.is_a?(Hash) && oracle["executed"] == true && valid_digest?(oracle["runner_sha256"]) && oracle["comparison_count"] == REQUIRED_POLICY_CASES.length
+      unless oracle.is_a?(Hash) && oracle["executed"] == true && valid_digest?(oracle["runner_sha256"]) &&
+             oracle["comparison_count"] == REQUIRED_POLICY_CASES.length
         errors << "policy oracle differential evidence is incomplete"
       end
       validate_external_runner_observation(oracle, errors, "network-policy oracle", owner_document: document)
