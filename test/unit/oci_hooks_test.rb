@@ -51,7 +51,7 @@ class OCIHooksTest < Minitest::Test
 
   def test_cdi_rejects_an_invalid_hook_before_the_container_is_created
     edits = Rubernetes::Node::CDI::Edits.empty
-    edits.merge!("hooks" => [{"hookName" => "bogus", "path" => "/bin/true"}])
+    edits["hooks"] = [{"hookName" => "bogus", "path" => "/bin/true"}]
     error = assert_raises(Rubernetes::Node::CDI::Error) { Rubernetes::Node::CDI.apply({"env" => []}, edits) }
     assert_includes error.message, %(invalid hook name "bogus")
   end
