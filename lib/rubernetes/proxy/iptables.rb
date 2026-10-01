@@ -193,7 +193,7 @@ module Rubernetes
           filter_chains = %w[KUBE-SERVICES KUBE-EXTERNAL-SERVICES KUBE-FORWARD KUBE-NODEPORTS KUBE-PROXY-FIREWALL].map do |chain|
             ":#{chain} - [0:0]"
           end
-          %w[KUBE-SERVICES KUBE-NODEPORTS KUBE-POSTROUTING KUBE-MARK-MASQ].each { |chain| nat_chains << ":#{chain} - [0:0]" }
+          nat_chains = %w[KUBE-SERVICES KUBE-NODEPORTS KUBE-POSTROUTING KUBE-MARK-MASQ].map { |chain| ":#{chain} - [0:0]" }
           nat_rules << "-A KUBE-POSTROUTING -m mark ! --mark #{MASQUERADE_MARK}/#{MASQUERADE_MARK} -j RETURN"
           nat_rules << "-A KUBE-POSTROUTING -j MARK --xor-mark #{MASQUERADE_MARK}"
           nat_rules << "-A KUBE-POSTROUTING -m comment --comment \"kubernetes service traffic requiring SNAT\" -j MASQUERADE --random-fully"
