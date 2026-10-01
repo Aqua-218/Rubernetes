@@ -917,9 +917,7 @@ module M2Gate
           errors << "#{label} Native workload evidence is required" unless native_workload.is_a?(Hash)
           next unless native_workload.is_a?(Hash)
 
-          unless native_workload["measurement_source"] == "production_native_l3"
-            errors << "#{label} Native workload must be measured by production L3 adapters"
-          end
+          errors << "#{label} Native workload must be measured by production L3 adapters" unless native_workload["measurement_source"] == "production_native_l3"
           errors << "#{label} Native workload must pass" unless native_workload["passed"] == true
           unless native_workload["runtime_class"] == "Rubernetes::Runtime::Native"
             errors << "#{label} Native workload runtime class is not production Native"
