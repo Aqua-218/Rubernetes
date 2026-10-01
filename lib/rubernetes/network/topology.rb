@@ -599,9 +599,7 @@ module Rubernetes
       def normalize_namespace(value, explicit_fd)
         target = explicit_fd || value
         return [nil, nil] if target.nil?
-        if target.is_a?(String) || value.is_a?(String)
-          raise ValidationError, "network namespace paths cannot be reopened; pass a verified open FD lease"
-        end
+        raise ValidationError, "network namespace paths cannot be reopened; pass a verified open FD lease" if target.is_a?(String) || value.is_a?(String)
 
         target = target.fileno if target.respond_to?(:fileno)
         descriptor = Support.integer(target, "network namespace FD", min: 0)
