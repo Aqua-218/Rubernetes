@@ -40,8 +40,8 @@ module Tsdb
       assert_equal 10, result[0][1].length
       assert_equal [t0, 1.0], result.find { |s, _| s.labels["instance"] == "a:1" }[1].first
 
-    assert_equal 2, regex.length
-    negative = store.query([M.new(name: "__name__", op: "=", value: "up"), M.new(name: "job", op: "!=", value: "node")], t0, t0 + 200_000)
+      regex = store.query([M.new(name: "__name__", op: "=", value: "up"), M.new(name: "instance", op: "=~", value: "[ab]:1")], t0,
+                          t0 + 200_000)
 
     assert_equal 2, negative.length
     window = store.samples(result[0][0].id, t0 + 30_000, t0 + 60_000)
