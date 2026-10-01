@@ -308,7 +308,8 @@ module Rubernetes
 
           address = host.include?(":") ? "[#{host}]" : host
           http_transport(url: "https://#{address}:#{port}/apis/authorization.k8s.io/v1/subjectaccessreviews",
-                         ca_pem: File.binread("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"), token: File.read(token_file).strip, timeout: hook.timeout)
+                         ca_pem: File.binread("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"), token: File.read(token_file).strip,
+                         timeout: hook.timeout)
         end
       end
 
