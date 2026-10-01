@@ -2366,8 +2366,8 @@ module Rubernetes
         existing = conditions.find { |entry| entry["type"] == condition["type"] }
         return if existing && existing["status"] == "True" && condition["status"] != "True"
 
-        stamped = condition.merge("observedGeneration" => current.dig("metadata", "generation"),
-                                  "lastTransitionTime" => (existing && existing["status"] == condition["status"] ? existing["lastTransitionTime"] : Time.now.utc.iso8601))
+        transition_time = existing && existing["status"] == condition["status"] ? existing["lastTransitionTime"] : Time.now.utc.iso8601
+        stamped = condition.merge("observedGeneration" => current.dig("metadata", "generation"), "lastTransitionTime" => transition_time)
         merged = conditions.reject { |entry| entry["type"] == condition["type"] } + [stamped]
         @client.patch({"status" => {"conditions" => merged}}, type: :merge, namespace: namespace, name: name,
                                                               api_version: "scheduling.k8s.io/v1alpha2",
