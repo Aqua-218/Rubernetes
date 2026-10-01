@@ -1116,16 +1116,6 @@
         "responses": {
           "200": {
             "content": {
-              "application/cbor": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.node.v1.RuntimeClassList"
-                }
-              },
-              "application/cbor-seq": {
-                "schema": {
-                  "$ref": "#/components/schemas/io.k8s.api.node.v1.RuntimeClassList"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/io.k8s.api.node.v1.RuntimeClassList"
