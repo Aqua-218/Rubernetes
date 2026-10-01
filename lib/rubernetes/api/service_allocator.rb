@@ -360,7 +360,8 @@ module Rubernetes
         cluster_families = @service_cidrs.map { |cidr| family_name(cidr) }.uniq
         unless selectorless
           if policy == "RequireDualStack" && cluster_families.length < 2
-            raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.ipFamilyPolicy: Invalid value: \"RequireDualStack\": this cluster is not configured for dual-stack services",
+            raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.ipFamilyPolicy: Invalid value: \"RequireDualStack\": this cluster " \
+                                      "is not configured for dual-stack services",
                                       details: {"kind" => "Service", "name" => name_of(service)})
           end
           families.each_with_index do |family, index|
