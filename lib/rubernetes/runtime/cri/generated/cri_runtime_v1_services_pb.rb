@@ -165,7 +165,8 @@ module Rubernetes
               # completed in time.
               # Feature gate: CRIListStreaming
               # See https://kep.k8s.io/5825 for more details.
-              rpc :StreamContainerStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamContainerStatsRequest, stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamContainerStatsResponse)
+              rpc :StreamContainerStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamContainerStatsRequest,
+                  stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamContainerStatsResponse)
               # PodSandboxStats returns stats of the pod sandbox. If the pod sandbox does not
               # exist, the call returns an error.
               rpc :PodSandboxStats, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatsRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatsResponse
