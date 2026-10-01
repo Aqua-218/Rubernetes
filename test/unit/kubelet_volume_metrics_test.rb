@@ -100,6 +100,7 @@ class KubeletVolumeMetricsTest < Minitest::Test
     text = metrics.render(records)
 
     assert_match(
+      # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
       /storage_operation_duration_seconds_bucket\{[^}]*operation_name="volume_mount"[^}]*status="success"[^}]*volume_plugin="kubernetes.io\/csi"[^}]*le="0.5"\} 1/, text
     )
     assert_match(%r{volume_manager_total_volumes\{plugin_name="kubernetes.io/csi",state="desired_state_of_world"\} 2}, text)
