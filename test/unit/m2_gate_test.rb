@@ -386,7 +386,8 @@ class M2GateTest < Minitest::Test
       errors = JSON.parse(stdout).fetch("errors")
 
       assert_includes errors, "Pod lifecycle Kubernetes semantic oracle comparison 0 actual source must be #{M2Gate::LIFECYCLE_SEMANTICS_ACTUAL_SOURCE}"
-      assert_includes errors, "Pod lifecycle Kubernetes semantic oracle comparison case init_sidecar_app_order actual source must be #{M2Gate::LIFECYCLE_SEMANTICS_ACTUAL_SOURCE}"
+      assert_includes errors, "Pod lifecycle Kubernetes semantic oracle comparison case init_sidecar_app_order actual source must be " \
+                              "#{M2Gate::LIFECYCLE_SEMANTICS_ACTUAL_SOURCE}"
     end
   end
 
