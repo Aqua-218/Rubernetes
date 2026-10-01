@@ -828,9 +828,7 @@ module Rubernetes
             raise EvaluationError, "Prerelease is empty" if text.empty?
 
             if NUMBERS.match?(text)
-              if text.length > 1 && text.start_with?("0")
-                raise EvaluationError, "Numeric PreRelease version must not contain leading zeroes #{text.inspect}"
-              end
+              raise EvaluationError, "Numeric PreRelease version must not contain leading zeroes #{text.inspect}" if text.length > 1 && text.start_with?("0")
 
               return Integer(text, 10)
             end
