@@ -135,9 +135,7 @@ module M0Gate
       if manifest_started && manifest_finished
         errors << "evidence capture duration exceeds the M0 bound" if manifest_finished - manifest_started > MAX_CAPTURE_DURATION_SECONDS
         errors << "evidence capture is stale" if now - manifest_finished > MAX_EVIDENCE_AGE_SECONDS
-        if manifest_started > now + MAX_FUTURE_SKEW_SECONDS || manifest_finished > now + MAX_FUTURE_SKEW_SECONDS
-          errors << "evidence capture is in the future"
-        end
+        errors << "evidence capture is in the future" if manifest_started > now + MAX_FUTURE_SKEW_SECONDS || manifest_finished > now + MAX_FUTURE_SKEW_SECONDS
       end
 
       capture = manifest["input_capture"]
