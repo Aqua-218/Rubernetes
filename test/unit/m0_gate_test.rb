@@ -536,7 +536,8 @@ class M0GateTest < Minitest::Test
     {
       "schema_version" => 2, "kind" => "m0_abi_probe", "architecture" => "x86_64",
       "input_sha256" => input_sha256, "input_file_count" => current_source_entries.length, "input_stable" => true,
-      "command" => [RbConfig.ruby, "-I#{File.join(ROOT, "build/ext/rubernetes_linux")}", "tools/milestones/m0_kernel_probe.rb", "--output", File.join(directory, "abi-probe-x86_64.json")],
+      "command" => [RbConfig.ruby, "-I#{File.join(ROOT, "build/ext/rubernetes_linux")}", "tools/milestones/m0_kernel_probe.rb", "--output",
+                    File.join(directory, "abi-probe-x86_64.json")],
       "output_path" => File.join(directory, "abi-probe-x86_64.json"),
       "tool_path" => "tools/milestones/m0_kernel_probe.rb",
       "tool_sha256" => Digest::SHA256.file(File.join(ROOT, "tools/milestones/m0_kernel_probe.rb")).hexdigest,
