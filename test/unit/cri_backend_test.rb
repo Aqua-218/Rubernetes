@@ -248,6 +248,8 @@ class CRIBackendTest < Minitest::Test
             client.close
           end
         end
+      rescue IOError
+        nil
       end
     rescue IOError
       nil
