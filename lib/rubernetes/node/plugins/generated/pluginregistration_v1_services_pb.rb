@@ -19,7 +19,6 @@ module Rubernetes
           module Registration
             # Registration is the service advertised by the Plugins.
             class Service
-
               include ::GRPC::GenericService
 
               self.marshal_class_method = :encode
