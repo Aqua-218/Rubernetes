@@ -1094,7 +1094,7 @@ module Rubernetes
               # mounted there any more): a concurrent or earlier cleanup got
               # there first -- the state this one is trying to reach.  A
               # runtime restart that hit this died with RecoveryRequired.
-              raise unless error.message.match?(/umount2/) && error.message.match?(/No such file or directory|Invalid argument/)
+              raise unless error.message.include?("umount2") && error.message.match?(/No such file or directory|Invalid argument/)
             end
             raise EffectError, "overlay mount remained after cleanup for #{workspace.identity}" if mount_present?(namespace_handle,
                                                                                                                   workspace.root)
