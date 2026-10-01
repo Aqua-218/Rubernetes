@@ -133,7 +133,8 @@ module Rubernetes
               # rotated. If the container is not running, container runtime can choose
               # to either create a new log file and return nil, or return an error.
               # Once it returns error, new container log file MUST NOT be created.
-              rpc :ReopenContainerLog, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ReopenContainerLogRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ReopenContainerLogResponse
+              rpc :ReopenContainerLog, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ReopenContainerLogRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ReopenContainerLogResponse
               # ExecSync runs a command in a container synchronously.
               rpc :ExecSync, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ExecSyncRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ExecSyncResponse
               # Exec prepares a streaming endpoint to execute a command in the container.
