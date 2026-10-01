@@ -2633,9 +2633,7 @@ module Rubernetes
           issues << issue(%w[spec persistentvolumesource], :forbidden,
                           "spec.persistentvolumesource is immutable after creation")
         end
-        unless fetch(new_spec, "volumeMode") == fetch(old_spec, "volumeMode")
-          issues << issue(%w[volumeMode], :invalid, "field is immutable")
-        end
+        issues << issue(%w[volumeMode], :invalid, "field is immutable") unless fetch(new_spec, "volumeMode") == fetch(old_spec, "volumeMode")
         issues
       end
 
