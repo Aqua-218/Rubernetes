@@ -973,9 +973,7 @@ module Rubernetes
         size_limit = Types.key(spec, "sizeLimit")
         mount_identity = nil
         if medium.casecmp?("Memory")
-          unless @mount_adapter.respond_to?(:ensure_tmpfs)
-            raise UnsupportedError, "emptyDir medium Memory requires a tmpfs-capable mount adapter"
-          end
+          raise UnsupportedError, "emptyDir medium Memory requires a tmpfs-capable mount adapter" unless @mount_adapter.respond_to?(:ensure_tmpfs)
 
           mount_identity = ensure_tmpfs_mount!(source_path, size_limit: size_limit)
           File.chmod(EMPTY_DIR_MODE, source_path) if File.directory?(source_path)
