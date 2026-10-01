@@ -1897,7 +1897,9 @@ module Rubernetes
                        else
                          []
                        end
-        dns_name_detail = "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')"
+        dns_name_detail = "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an " \
+                          "alphanumeric character (e.g. 'example.com', regex used for validation is " \
+                          "'[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')"
 
         walk(root) do |value, path|
           next if path.include?("status")
