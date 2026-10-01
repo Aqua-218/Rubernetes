@@ -243,7 +243,8 @@ module DRAAllocatorDifferential
     add.call("consumable-already-used", slices: [slice("s1", [shared.call("nic", bandwidth: "10G")])],
                                         claims: [claim("b", [request("r", capacity: {"requests" => {"bandwidth" => "5G"}})])],
                                         allocatedClaims: [claim("a", [request("r")], allocation: {"devices" => {"results" => [
-                                                                  {"request" => "r", "driver" => DRIVER, "pool" => "node-1", "device" => "nic", "shareID" => "11111111-1111-1111-1111-111111111111",
+                                                                  {"request" => "r", "driver" => DRIVER, "pool" => "node-1", "device" => "nic",
+                                                                   "shareID" => "11111111-1111-1111-1111-111111111111",
                                                                    "consumedCapacity" => {"bandwidth" => "6G"}}
                                                                 ]}})])
     add.call("allow-multiple-selector", slices: [slice("s1", [shared.call("nic", bandwidth: "10G"), device("plain")])],
