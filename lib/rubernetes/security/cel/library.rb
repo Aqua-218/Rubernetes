@@ -562,7 +562,8 @@ module Rubernetes
 
         class Quantity
           SUFFIXES = {"" => 1r, "n" => 1r / (10**9), "u" => 1r / (10**6), "m" => 1r / 1000, "k" => 1000r, "M" => 10**6r, "G" => 10**9r, "T" => 10**12r,
-                      "P" => 10**15r, "E" => 10**18r, "Ki" => 1024r, "Mi" => 1024r**2, "Gi" => 1024r**3, "Ti" => 1024r**4, "Pi" => 1024r**5, "Ei" => 1024r**6}.freeze
+                      "P" => 10**15r, "E" => 10**18r, "Ki" => 1024r, "Mi" => 1024r**2, "Gi" => 1024r**3, "Ti" => 1024r**4, "Pi" => 1024r**5,
+                      "Ei" => 1024r**6}.freeze
           attr_reader :value, :text
 
           def self.valid?(text)
