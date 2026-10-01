@@ -51,11 +51,11 @@ module Prom
       assert_equal([2.0], value_of("scrape_series_added").map { |_, p| p[1] })
     end
 
-  test "a series that disappears gets a stale marker and up goes to 0 on failure" do
-    @scraper.scrape(target("a 1\nb 2\n"))
-    @now += 15_000
-    @scraper.scrape(target("a 2\n"))
-    b = value_of("b")[0][1]
+    test "a series that disappears gets a stale marker and up goes to 0 on failure" do
+      @scraper.scrape(target("a 1\nb 2\n"))
+      @now += 15_000
+      @scraper.scrape(target("a 2\n"))
+      b = value_of("b")[0][1]
 
     assert Tsdb::Store.stale_marker?(b[1])
     assert_equal @now, b[0]
