@@ -2445,7 +2445,7 @@ module M2ProbeSupport
 
   def proc_status_security_fields(status)
     keys = %w[NoNewPrivs Seccomp Seccomp_filters CapEff CapBnd]
-    status.each_line.each_with_object({}) do |line, fields|
+    status.each_line.with_object({}) do |line, fields|
       key, value = line.split(":", 2)
       fields[key] = value.to_s.strip if keys.include?(key)
     end
