@@ -48,8 +48,8 @@ class EventedPLEGTest < Minitest::Test
     begin
       pleg.watch_events
     rescue StandardError
-      nil
-    end # the fourth stream raises: FakeClient is empty
+      nil # the fourth stream raises: FakeClient is empty
+    end
 
     assert_equal [%w[u1 CONTAINER_STARTED_EVENT c-u1], %w[u1 CONTAINER_STOPPED_EVENT c-u1]], seen,
                  "created events are not lifecycle events"
