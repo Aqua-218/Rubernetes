@@ -432,7 +432,8 @@ module Rubernetes
               ControllerMetrics.observe("device_taint_eviction_controller_pod_deletion_duration_seconds",
                                         [normalize_time(@clock.call) - effective, 0.0].max)
             end
-          end)
+          end
+          operations.concat(observed)
           events << {"type" => "Normal", "reason" => "DeviceTaintManagerEviction", "message" => "Marking for deletion",
                      "involvedObject" => pod_reference(pod)}
         end
