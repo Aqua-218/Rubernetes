@@ -191,9 +191,7 @@ module Rubernetes
           # The kernel verifier (check_cfg) rejects a program containing an
           # instruction no path can reach.  Failing here names the emitter
           # bug directly instead of surfacing "unreachable insn N" at load.
-          unless unreachable.empty?
-            raise ArgumentError, "eBPF emitter produced unreachable instructions at #{unreachable.first(8).join(", ")}"
-          end
+          raise ArgumentError, "eBPF emitter produced unreachable instructions at #{unreachable.first(8).join(", ")}" unless unreachable.empty?
 
           resolved.freeze
         end
