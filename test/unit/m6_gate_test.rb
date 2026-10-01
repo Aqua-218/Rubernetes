@@ -151,7 +151,8 @@ class M6GateTest < Minitest::Test
     errors = []
     M6Gate.send(:validate_report, "feature_gate", report("m6_feature_gate_matrix", cases, "measurement_level" => "differentially_tested",
                                                                                           "profiles" => {"default" => [], "all-beta" => [], "alpha-apis" => []},
-                                                                                          "sources" => [{"path" => "lib/rubernetes/api/server.rb", "sha256" => "1" * 64}]),
+                                                                                          "sources" => [{"path" => "lib/rubernetes/api/server.rb",
+                                                                                                         "sha256" => "1" * 64}]),
                 "m6_feature_gate_matrix", manifest_identity, errors)
 
     assert(errors.any? { |error| error.include?("digest does not match") })
