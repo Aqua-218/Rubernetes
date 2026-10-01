@@ -1107,7 +1107,8 @@ def production_workload_blocker(error)
     "required_watch" => {"group" => "apps", "version" => "v1", "resource" => "deployments", "kind" => "Deployment"},
     "registered_watches" => watches,
     "reason" => if deployment_watch_missing
-                  "the production deployment-controller registry wiring has no Deployment self-watch; a Deployment create is never enqueued, so the ControllerManagerService cannot create its ReplicaSet before the case deadline"
+                  "the production deployment-controller registry wiring has no Deployment self-watch; a Deployment create is never enqueued, so the " \
+                    "ControllerManagerService cannot create its ReplicaSet before the case deadline"
                 else
                   "the production ControllerManagerService did not settle the workload case before its deadline"
                 end,
