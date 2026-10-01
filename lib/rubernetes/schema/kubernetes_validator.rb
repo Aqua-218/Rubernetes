@@ -2264,9 +2264,7 @@ module Rubernetes
         if spec.is_a?(Hash)
           selector = fetch(spec, "selector")
           template = fetch(spec, "template")
-          if selector.nil? && !(kind == "DaemonSet" && (spec.key?("updateStrategy") || spec.key?("template")))
-            issues << issue(%w[spec selector], :required, "")
-          end
+          issues << issue(%w[spec selector], :required, "") if selector.nil? && !(kind == "DaemonSet" && (spec.key?("updateStrategy") || spec.key?("template")))
           if template.nil?
             if kind == "ReplicationController"
               issues << issue(%w[spec template], :required, "")
