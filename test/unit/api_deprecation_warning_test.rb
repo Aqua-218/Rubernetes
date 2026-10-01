@@ -28,7 +28,8 @@ class APIDeprecationWarningTest < Minitest::Test
     response = call("GET", "/apis/storage.k8s.io/v1beta1/volumeattributesclasses")
 
     assert_equal 200, response.status
-    assert_equal '299 - "storage.k8s.io/v1beta1 VolumeAttributesClass is deprecated in v1.34+, unavailable in v1.37+; use storage.k8s.io/v1 VolumeAttributesClass"',
+    assert_equal '299 - "storage.k8s.io/v1beta1 VolumeAttributesClass is deprecated in v1.34+, unavailable in v1.37+; use storage.k8s.io/v1 ' \
+                 'VolumeAttributesClass"',
                  response.header("warning")
     assert_nil call("GET", "/apis/storage.k8s.io/v1/volumeattributesclasses").header("warning")
     text = @server.instance_variable_get(:@metrics).render
