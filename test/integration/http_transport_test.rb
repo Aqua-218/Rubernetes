@@ -627,10 +627,10 @@ class HTTPTransportTest < Minitest::Test
 
       watch_transcript = read_until(watch_output, "watch-web", timeout: 5)
 
-    assert_includes watch_transcript, "watch-web"
-    Process.kill("TERM", watch_wait.pid)
-    watch_wait.value
-    wait_until(timeout: 5) { store_watcher_count(service.store) == baseline_watchers }
+      assert_includes watch_transcript, "watch-web"
+      Process.kill("TERM", watch_wait.pid)
+      watch_wait.value
+      wait_until(timeout: 5) { store_watcher_count(service.store) == baseline_watchers }
 
     assert_equal baseline_watchers, store_watcher_count(service.store)
 
