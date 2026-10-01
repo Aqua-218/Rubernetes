@@ -299,7 +299,8 @@ module Rubernetes
           token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
           if host.empty? || port.empty? || !File.file?(token_file)
             raise Config::Error,
-                  "authorization webhook connectionInfo.type InClusterConfig: unable to load in-cluster configuration (KUBERNETES_SERVICE_HOST and the service account token must be present)"
+                  "authorization webhook connectionInfo.type InClusterConfig: unable to load in-cluster configuration (KUBERNETES_SERVICE_HOST and the " \
+                  "service account token must be present)"
           end
 
           address = host.include?(":") ? "[#{host}]" : host
