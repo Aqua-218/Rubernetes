@@ -106,7 +106,8 @@ module Rubernetes
           authenticators << Security::Authentication::RequestHeader.new(
             ca_certificates: ca, allowed_names: Array(rh["allowed_names"]),
             username_headers: Array(rh["username_headers"] || ["X-Remote-User"]), group_headers: Array(rh["group_headers"] || ["X-Remote-Group"]),
-            uid_headers: Array(rh["uid_headers"] || ["X-Remote-Uid"]), extra_header_prefixes: Array(rh["extra_header_prefixes"] || ["X-Remote-Extra-"]), clock: @clock
+            uid_headers: Array(rh["uid_headers"] || ["X-Remote-Uid"]), extra_header_prefixes: Array(rh["extra_header_prefixes"] || ["X-Remote-Extra-"]),
+            clock: @clock
           )
         end
         if authn["client_ca_file"]
