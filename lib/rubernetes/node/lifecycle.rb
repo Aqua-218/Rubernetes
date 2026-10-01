@@ -460,7 +460,8 @@ module Rubernetes
 
           reason = status["oom_killed"] == true ? "OOMKilled" : Helpers.key(status, "reason", nil)
           begin
-            handle_container_exit(object, container_name: entry[:name], exit_code: Integer(exit_code), reason: reason, now: now)
+            handle_container_exit(object, container_name: entry[:name], exit_code: Integer(exit_code), reason: reason, now: now,
+                                          message: Helpers.key(status, "message", nil))
           rescue StandardError => error
             # A restart that fails (runtime refused the create, backoff
             # bookkeeping raised) must not abort the whole relist; the next
