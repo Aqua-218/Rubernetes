@@ -20,7 +20,8 @@ class FlowControlDefaultOnTest < Minitest::Test
                  flow_control.priority_levels.keys.sort
     assert_equal "exempt", flow_control.flow_schemas.first.dig("metadata", "name")
     assert_equal 600,
-                 Rubernetes::Security::FlowControl::Controller::DEFAULT_READ_SEATS + Rubernetes::Security::FlowControl::Controller::DEFAULT_MUTATING_SEATS, "--max-requests-inflight 400 + --max-mutating-requests-inflight 200"
+                 Rubernetes::Security::FlowControl::Controller::DEFAULT_READ_SEATS + Rubernetes::Security::FlowControl::Controller::DEFAULT_MUTATING_SEATS,
+                 "--max-requests-inflight 400 + --max-mutating-requests-inflight 200"
   end
 
   def test_explicit_settings_and_the_off_switch
