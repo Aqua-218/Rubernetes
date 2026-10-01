@@ -38,7 +38,7 @@ module Rubernetes
 
               self.marshal_class_method = :encode
               self.unmarshal_class_method = :decode
-              self.service_name = 'k8s.io.kubelet.pkg.apis.dra.v1beta1.DRAPlugin'
+              self.service_name = "k8s.io.kubelet.pkg.apis.dra.v1beta1.DRAPlugin"
 
               # NodePrepareResources prepares several ResourceClaims
               # for use on the node. If an error is returned, the
