@@ -87,7 +87,7 @@ module Rubernetes
         }.freeze
 
         def normalize_spec(spec)
-          input = spec.respond_to?(:to_h) ? spec.to_h.transform_keys { |key| key.to_s } : {}
+          input = spec.respond_to?(:to_h) ? spec.to_h.transform_keys(&:to_s) : {}
           pod_spec = input["spec"]
           if pod_spec.respond_to?(:to_h)
             pod_spec.to_h.each do |key, value|
