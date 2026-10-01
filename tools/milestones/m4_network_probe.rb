@@ -236,9 +236,7 @@ module M4NetworkKernelProbe
 
   def command_success?(command)
     output, error, status = Open3.capture3("timeout", "10", *command)
-    if !status.success? && ENV["RUBERNETES_M4_NETWORK_DEBUG"] == "1"
-      warn("m4 network packet command failed: #{command.inspect}\n#{output}#{error}")
-    end
+    warn("m4 network packet command failed: #{command.inspect}\n#{output}#{error}") if !status.success? && ENV["RUBERNETES_M4_NETWORK_DEBUG"] == "1"
     status.success?
   end
 
