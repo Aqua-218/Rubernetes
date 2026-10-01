@@ -1,10 +1,8 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Pin the upstream OpenAPI v3 documents (api/openapi-spec/v3/*.json at tag
-# v1.36.2) into schema/kubernetes/v1.36.2-openapi-v3/ so the generator can
-# emit the served path operations from the same source kube-apiserver
-# publishes.  Every file is recorded with its SHA-256 and the source commit.
+# Pin the upstream OpenAPI v3 documents into schema/kubernetes/v1.36.2-openapi-v3/
+# so the generator serves what kube-apiserver v1.36.2 publishes.
 #
 # Usage: KUBERNETES_SOURCE_ROOT=/tmp/kubernetes-v1.36.2 ruby tools/schema/import_kubernetes_openapi_v3.rb
 
