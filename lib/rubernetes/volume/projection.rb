@@ -236,9 +236,7 @@ module Rubernetes
       def expose_files(paths)
         paths.map { |relative| relative.split("/").first }.uniq.each do |segment|
           link = File.join(@root, segment)
-          if File.exist?(link) && !File.symlink?(link)
-            raise PathSecurityError, "projected file #{segment.inspect} was replaced by a non-symlink"
-          end
+          raise PathSecurityError, "projected file #{segment.inspect} was replaced by a non-symlink" if File.exist?(link) && !File.symlink?(link)
 
           temporary = "#{link}.tmp-#{Process.pid}-#{SecureRandom.hex(4)}"
           target = File.join(DATA_LINK, segment)
