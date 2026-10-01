@@ -619,7 +619,8 @@ module Rubernetes
         {"id" => operation_id, "request_id" => request_id, "sandbox_id" => sandbox_id,
          "owner" => owner, "config_digest" => config_digest, "state" => state,
          "result" => nil, "error" => nil, "resources" => [], "plan" => {"operations" => [], "mtu" => nil,
-                                                                        "backend" => nil, "revision" => nil, "metadata" => {}}, "created_at" => Support.now(@clock).iso8601(6)}
+                                                                        "backend" => nil, "revision" => nil, "metadata" => {}},
+         "created_at" => Support.now(@clock).iso8601(6)}
       end
 
       def bind_namespace_request(sandbox_hash, config_hash)
