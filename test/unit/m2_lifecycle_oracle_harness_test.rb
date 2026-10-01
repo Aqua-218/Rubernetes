@@ -125,7 +125,9 @@ class M2LifecycleOracleHarnessTest < Minitest::Test
     }
     running = lambda { |at, ready, started, restarts|
       {"at" => at, "type" => "MODIFIED",
-       "object" => pod("Running", {"name" => "app", "ready" => ready, "started" => started, "restartCount" => restarts, "state" => {"running" => {"startedAt" => "2026-09-04T04:42:40Z"}}})}
+       "object" => pod("Running",
+                       {"name" => "app", "ready" => ready, "started" => started, "restartCount" => restarts,
+                        "state" => {"running" => {"startedAt" => "2026-09-04T04:42:40Z"}}})}
     }
     pod_history = [running.call(1.0, false, false, 0), running.call(2.0, false, true, 0), running.call(4.0, true, true, 0),
                    running.call(15.0, false, false, 1)]
