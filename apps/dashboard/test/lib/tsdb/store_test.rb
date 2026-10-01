@@ -135,20 +135,9 @@ module Tsdb
       store = open_store
       rows = Array.new(1000) { |i| [labels("batch", "i" => (i % 10).to_s), 1_000 + ((i / 10) * 1000), i.to_f] }
 
-  test "readers in another process see cut blocks" do
-    store = open_store(block_range_ms: 1000)
-    20.times { |i| store.append(labels("shared"), i * 100, i.to_f) }
-    store.flush
-    assert_raises(Tsdb::Store::AlreadyOpen) { Tsdb::Store.new(@dir) }
-    reader = Tsdb::Store.new(@dir, readonly: true)
-    begin
-      assert_predicate reader, :readonly?
-      assert_raises(Tsdb::Store::AlreadyOpen) { reader.append({"__name__" => "x"}, 1, 1.0) }
-      series = reader.select_series([M.new(name: "__name__", op: "=", value: "shared")]).first
-
-      assert_equal 20, reader.samples(series.id, 0, 10_000).length
-    ensure
-      reader.close
+      assert_equal 1000, store.append_batch(rows)
+      assert_equal 10, store.series_count
+      assert_equal 100, store.samples(1, 0, 10**9).length
     end
   end
 
