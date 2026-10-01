@@ -500,7 +500,8 @@ module Rubernetes
                   phase = Support.value(Support.status(pod), "phase", "").to_s
                   if phase == "Failed"
                     @events << @c.event("Warning", "FailedDaemonPod",
-                                        "Found failed daemon pod #{Support.namespace(pod)}/#{Support.name(pod)} on node #{Support.name(node)}, will try to kill it")
+                                        "Found failed daemon pod #{Support.namespace(pod)}/#{Support.name(pod)} on node #{Support.name(node)}, will try to " \
+                                        "kill it")
                     to_delete << pod
                   elsif phase == "Succeeded"
                     @events << @c.event("Normal", "SucceededDaemonPod",
