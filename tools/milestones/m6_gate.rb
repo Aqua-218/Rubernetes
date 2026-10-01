@@ -251,9 +251,7 @@ module M6Gate
       ids = cases.map { |entry| entry["id"] }
       API_COVERAGE_REQUIRED.each { |id| errors << "API coverage ledger is missing case #{id}" unless ids.include?(id) }
       discovery = cases.count { |entry| entry["id"].to_s.start_with?("discovery:") }
-      unless discovery >= MIN_DISCOVERY_DOCUMENTS
-        errors << "API coverage ledger must compare at least #{MIN_DISCOVERY_DOCUMENTS} discovery documents"
-      end
+      errors << "API coverage ledger must compare at least #{MIN_DISCOVERY_DOCUMENTS} discovery documents" unless discovery >= MIN_DISCOVERY_DOCUMENTS
       %w[discovery_missing_resources discovery_missing_verbs_or_fields].each do |id|
         entry = cases.find { |candidate| candidate["id"] == id }
         errors << "#{id} must list zero missing items" unless entry && Array(entry["missing"]).empty?
