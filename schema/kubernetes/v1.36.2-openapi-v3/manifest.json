@@ -291,8 +291,10 @@
       "path": "apis/discovery.k8s.io.json",
       "upstream_path": "api/openapi-spec/v3/apis__discovery.k8s.io_openapi.json",
       "source_sha256": "ed1e6208224a2c6012c26df6e1644b6ed407c65311d993a33c1d97106d083bbd",
-      "sha256": "ed1e6208224a2c6012c26df6e1644b6ed407c65311d993a33c1d97106d083bbd",
-      "paths": 1
+      "sha256": "a79320dc24e7066a16a5c890f3c8afd7632cfb06133414a15d1d4610e685d640",
+      "paths": 1,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/discovery.k8s.io"
     },
     {
       "path": "apis/events.k8s.io/v1.json",
