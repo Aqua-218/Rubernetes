@@ -18,8 +18,10 @@
       "path": ".well-known/openid-configuration.json",
       "upstream_path": "api/openapi-spec/v3/.well-known__openid-configuration_openapi.json",
       "source_sha256": "d776f5a3b4924075c3105f6576a4167c56a9b31d94219e4eb304af17841f1c0c",
-      "sha256": "d776f5a3b4924075c3105f6576a4167c56a9b31d94219e4eb304af17841f1c0c",
-      "paths": 1
+      "sha256": "f9d2ea5cbf5e0b889ff444c246877a734d6b6bab15c70773e5065236fd6bec28",
+      "paths": 1,
+      "source": "served",
+      "served_path": "/openapi/v3/.well-known/openid-configuration"
     },
     {
       "path": "api/v1.json",
