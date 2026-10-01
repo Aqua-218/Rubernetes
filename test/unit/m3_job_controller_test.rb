@@ -4,6 +4,7 @@
 # error cannot mask a Job semantics regression.
 require "minitest/autorun"
 require "rubernetes/controller"
+require "rubernetes/storage/memory_store"
 require "rubernetes/observability/metrics"
 
 # Job controller semantics pinned to pkg/controller/job at Kubernetes v1.36.2.
