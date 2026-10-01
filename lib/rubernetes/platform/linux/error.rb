@@ -18,7 +18,7 @@ module Rubernetes
         def code
           Errno.constants.find do |name|
             candidate = Errno.const_get(name)
-            candidate.is_a?(Class) && candidate < SystemCallError && candidate::Errno == errno
+            candidate.is_a?(Class) && candidate < SystemCallError && errno == candidate::Errno
           end
         end
 
