@@ -721,9 +721,7 @@ module Rubernetes
           begin
             controller.reconcile(node, store: store, apply: true,
                                        leader_guard: lambda {
-                                         unless @elector.leader?
-                                           raise LeadershipLostError, "controller leadership was lost before applying an operation"
-                                         end
+                                         raise LeadershipLostError, "controller leadership was lost before applying an operation" unless @elector.leader?
                                        })
             reconciled += 1
           rescue LeadershipLostError
