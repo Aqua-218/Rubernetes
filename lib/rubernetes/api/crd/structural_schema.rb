@@ -639,7 +639,8 @@ module Rubernetes
         # field.TypeInvalid(path, value, "<path> in body must be of type <type>: <go type>")
         def type_invalid(causes, path, value, type)
           add(causes, path,
-              "Invalid value: #{render_value(value)}: #{join(path)} in body must be of type #{type}: #{go_quote(json_type_name(value))}", "FieldValueTypeInvalid")
+              "Invalid value: #{render_value(value)}: #{join(path)} in body must be of type #{type}: " \
+              "#{go_quote(json_type_name(value))}", "FieldValueTypeInvalid")
         end
 
         def too_many(causes, path, actual, maximum)
