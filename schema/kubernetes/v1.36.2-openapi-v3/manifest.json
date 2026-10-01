@@ -396,8 +396,10 @@
       "path": "apis/policy/v1.json",
       "upstream_path": "api/openapi-spec/v3/apis__policy__v1_openapi.json",
       "source_sha256": "89af0b1d3257e63e6bb55d9e0e9387a5461c27abacadd943e37d973b1c3fa67c",
-      "sha256": "89af0b1d3257e63e6bb55d9e0e9387a5461c27abacadd943e37d973b1c3fa67c",
-      "paths": 8
+      "sha256": "16211be73b60831b886bfd2d94c703fec0fc757de1606b2ba2ffa4b435f9a225",
+      "paths": 8,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/policy/v1"
     },
     {
       "path": "apis/policy.json",
