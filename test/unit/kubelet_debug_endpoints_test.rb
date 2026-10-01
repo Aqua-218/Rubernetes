@@ -194,7 +194,8 @@ class KubeletDebugEndpointsTest < Minitest::Test
 
     assert_includes text, "machine_cpu_cores 4\n"
     assert_includes text,
-                    'container_cpu_usage_seconds_total{container="app",cpu="total",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",pod="web"} 2'
+                    'container_cpu_usage_seconds_total{container="app",cpu="total",id="/kubepods/podu1/app",image="nginx:1",name="app",namespace="ns",' \
+                    'pod="web"} 2'
     assert_includes text,
                     'container_cpu_usage_seconds_total{container="",cpu="total",id="/kubepods/podu1",image="",name="",namespace="ns",pod="web"} 3'
     assert_includes text,
