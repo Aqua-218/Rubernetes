@@ -760,9 +760,7 @@ module M4Gate
                        kernel_runner["stdout"] == runner["stdout"] && kernel_stdout_digest == runner_stdout_digest &&
                        kernel_runner["stdout"].is_a?(String) && valid_digest?(kernel_stdout_digest) &&
                        Digest::SHA256.hexdigest(kernel_runner["stdout"]) == kernel_stdout_digest
-      unless kernel_matches
-        errors << "proxy kernel runner PID/start-time/source/argv/stdout provenance is incomplete"
-      end
+      errors << "proxy kernel runner PID/start-time/source/argv/stdout provenance is incomplete" unless kernel_matches
       unless kernel["inputBinding"] == binding && valid_digest?(kernel["inputBindingSha256"]) && kernel["inputBindingSha256"] == packet["inputBindingSha256"]
         errors << "proxy kernel input binding must match packet binding"
       end
