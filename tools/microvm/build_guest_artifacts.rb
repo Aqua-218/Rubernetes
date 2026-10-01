@@ -157,7 +157,8 @@ def main
   lock = {
     "schema_version" => 1,
     "verified_at" => Time.now.utc.iso8601,
-    "purpose" => "M7 MicroVM guest artifacts: Firecracker v1.16.1 release binaries, pinned guest kernel, read-only rootfs with the Ruby guest supervisor, dm-verity hash tree",
+    "purpose" => "M7 MicroVM guest artifacts: Firecracker v1.16.1 release binaries, pinned guest kernel, read-only rootfs with the Ruby guest supervisor, " \
+                 "dm-verity hash tree",
     "firecracker" => {"version" => "1.16.1", "release_archive_sha256" => FIRECRACKER_TGZ_SHA256,
                       "release_url" => "https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-x86_64.tgz"},
     "kernel" => {"version" => "6.1.128", "source_sha256" => "874d67d3181570e69ac6b33853f0448f05fc90d4cf3e4baaadc4a9cede7c50f3",
