@@ -553,9 +553,7 @@ module Rubernetes
         raise ValidationError, "endpoint address family must be IPv4 or IPv6" unless Service::IP_FAMILIES.include?(@family)
 
         address_families = @addresses.map { |candidate| ModelSupport.ip_family(candidate) }.uniq
-        if address_families.any? { |candidate| candidate != @family }
-          raise ValidationError, "endpoint address does not match address family #{@family}"
-        end
+        raise ValidationError, "endpoint address does not match address family #{@family}" if address_families.any? { |candidate| candidate != @family }
 
         @slice_name = slice_name&.to_s
         freeze
