@@ -537,12 +537,8 @@ module Rubernetes
           if watch.scope && watch.scope != watch.resource.scope
             raise ScopeMismatchError, "watch scope #{watch.scope.inspect} conflicts with #{watch.resource.identifier}"
           end
-          if watch.predicate && !watch.predicate.respond_to?(:call)
-            raise InvalidWatchError, "controller #{name} watch predicate must be callable"
-          end
-          if watch.queue_key && !watch.queue_key.respond_to?(:call)
-            raise InvalidWatchError, "controller #{name} watch queue key must be callable"
-          end
+          raise InvalidWatchError, "controller #{name} watch predicate must be callable" if watch.predicate && !watch.predicate.respond_to?(:call)
+          raise InvalidWatchError, "controller #{name} watch queue key must be callable" if watch.queue_key && !watch.queue_key.respond_to?(:call)
           if watch.index_name && (watch.index_name.empty? || watch.index_name != watch.index_name.strip)
             raise InvalidWatchError, "controller #{name} watch index name must be a non-empty static name"
           end
