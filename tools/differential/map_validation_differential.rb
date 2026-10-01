@@ -24,7 +24,8 @@ module MAPValidationDifferential
            "Object{spec: 1}", "Object.spec{replicas: 'x'}", "Object{metadata: Object.metadata{labels: params.data}}",
            "Object{metadata: Object.metadata{annotations: {'v': string(variables.v0)}}}", "Object{}", "object",
            "Object{metadata: Object.metadata{name: object.metadata.name + 1}}", "Other{}", "JSONPatch{op: 'add'}",
-           "Object{spec: Object.spec{template: Object.spec.template{spec: Object.spec.template.spec{containers: [Object.spec.template.spec.containers{name: 'c'}]}}}}"].freeze
+           "Object{spec: Object.spec{template: Object.spec.template{spec: Object.spec.template.spec{containers: [Object.spec.template.spec.containers{name: " \
+           "'c'}]}}}}"].freeze
   JSON_PATCH = ["[JSONPatch{op: 'add', path: '/metadata/labels/a', value: 'b'}]", "[JSONPatch{op: 1, path: '/a'}]", "JSONPatch{op: 'add', path: '/a'}",
                 "[JSONPatch{op: 'add', path: '/metadata/labels/' + jsonpatch.escapeKey('a/b'), value: 'c'}]", "[]", "[{'op': 'add'}]",
                 "[JSONPatch{op: 'test', path: '/spec/replicas', value: 1}, JSONPatch{op: 'replace', path: '/spec/replicas', value: params.x}]",
