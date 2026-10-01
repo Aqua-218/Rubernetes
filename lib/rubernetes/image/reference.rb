@@ -37,9 +37,7 @@ module Rubernetes
           tag = final_component[(colon + 1)..]
           repository_with_tag = repository_with_tag[0...-(tag.bytesize + 1)]
         end
-        if (registry.to_s.downcase == "docker.io") && !repository_with_tag.include?("/")
-          repository_with_tag = "library/#{repository_with_tag}"
-        end
+        repository_with_tag = "library/#{repository_with_tag}" if (registry.to_s.downcase == "docker.io") && !repository_with_tag.include?("/")
         tag ||= default_tag unless digest
 
         validate_registry!(registry)
