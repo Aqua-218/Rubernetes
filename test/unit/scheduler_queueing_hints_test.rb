@@ -66,7 +66,8 @@ class SchedulerQueueingHintsTest < Minitest::Test
 
   def test_pod_and_volume_hints
     pending = pod("p", tolerations: [],
-                       topologySpreadConstraints: [{"maxSkew" => 1, "topologyKey" => "zone", "whenUnsatisfiable" => "DoNotSchedule", "labelSelector" => {"matchLabels" => {"app" => "web"}}}])
+                       topologySpreadConstraints: [{"maxSkew" => 1, "topologyKey" => "zone", "whenUnsatisfiable" => "DoNotSchedule",
+                                                    "labelSelector" => {"matchLabels" => {"app" => "web"}}}])
     web_gone = S::Pod.new(pod("web", node: "n", labels: {"app" => "web"}))
     other_gone = S::Pod.new(pod("db", node: "n", labels: {"app" => "db"}))
 
