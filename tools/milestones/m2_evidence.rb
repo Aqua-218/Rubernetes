@@ -440,7 +440,8 @@ manifest = {
   "prior_milestones" => prior_milestones,
   "result_counts" => {"commands" => commands.length, "command_failures" => commands.count do |command|
     command.fetch("exit_status") != 0
-  end, "artifacts" => artifacts.length, "subjects" => 0, "reports" => REPORT_SPECS.length + (formal_requested && File.file?(formal_report_path) ? 1 : 0), "source_files" => starting_input.fetch("file_count")},
+  end, "artifacts" => artifacts.length, "subjects" => 0, "reports" => REPORT_SPECS.length + (formal_requested && File.file?(formal_report_path) ? 1 : 0),
+                      "source_files" => starting_input.fetch("file_count")},
   "artifacts" => artifacts,
   "subjects" => []
 }
