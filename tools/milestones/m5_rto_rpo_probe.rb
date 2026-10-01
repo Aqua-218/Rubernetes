@@ -193,7 +193,8 @@ module M5RTORPOProbe
       acknowledged = []
       40.times do |index|
         response = client.raw("POST", "/api/v1/namespaces/#{namespace}/configmaps",
-                              body: JSON.generate("apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm-#{index}"}, "data" => {"i" => index.to_s}),
+                              body: JSON.generate("apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "cm-#{index}"},
+                                                  "data" => {"i" => index.to_s}),
                               headers: {"content-type" => "application/json"}, raise_for_status: false)
         acknowledged << "cm-#{index}" if response.success?
       end
