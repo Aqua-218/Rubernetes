@@ -86,9 +86,7 @@ module PrintersDifferential
       end}
       when 2
         {"terminated" => {"exitCode" => pick(0, 0, 1, 137), "signal" => pick(0, 0, 9), "reason" => pick("", "Completed", "Error", "OOMKilled"),
-                          "finishedAt" => time}.reject do |_, v|
-          v == ""
-        end}
+                          "finishedAt" => time}.reject { |_, v| v == "" }}
       else {}
       end
     end
