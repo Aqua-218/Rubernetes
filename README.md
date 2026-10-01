@@ -62,10 +62,24 @@ sudo ruby tools/conformance/cluster.rb status --root /srv/rbn-dev
 sudo ruby tools/conformance/cluster.rb down   --root /srv/rbn-dev
 ```
 
-`rake m2:evidence` writes the M2 bundle below `artifacts/milestones/M2/`. It reports `COMPLETE`
-only when every required profile and report passes the content-addressed gate for the same source
-input as M0 and M1. M2–M4 completion is established by the latest cumulative `COMPLETE` M4 bundle,
-not merely by source presence, command availability, or isolated test success.
+`cluster.rb` is also what the conformance runs use, so it is the reference
+for a correct configuration (`<root>/<profile>/cluster.json` lists every
+process, port and file). Two things to know before running it on a shared
+host: `up` kills workloads under `<RUBERNETES_M8_CGROUP_ROOT>/rubernetes`
+(default `/sys/fs/cgroup/rubernetes`), removes stale `rbn*` bridges and
+`rbn-*` network namespaces in its network namespace, and refuses
+to start while another cluster from a different root is alive in the same
+network namespace. To run several clusters on one host, give each its own
+network namespace with `tools/conformance/netns_env.sh`; the recipe is in
+[tools/conformance/README.md](tools/conformance/README.md).
+
+For a long-lived installation from release artifacts (systemd units, PKI,
+upgrade, backup and restore procedures) read
+[deploy/cluster/README.md](deploy/cluster/README.md). Each daemon takes one
+YAML file (`--config`, validated by `--check-config`) and nothing from the
+environment; `config/defaults/` holds the versioned defaults.
+
+### Dashboard and metrics
 
 M3 and M4 verification are cumulative. M3 requires COMPLETE M0, M1, and M2 bundles captured from
 the same source inventory; M4 additionally requires COMPLETE M3. Source changes invalidate the
