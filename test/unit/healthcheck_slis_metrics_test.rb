@@ -53,7 +53,8 @@ class HealthcheckSLIsMetricsTest < Minitest::Test
 
   def test_component_servers_serve_and_reset_their_slis
     ready = false
-    subject = Rubernetes::Bootstrap::ComponentServer.new(component: "kube-controller-manager", config: {}, metrics: Rubernetes::Observability::Metrics.new(apiserver: false),
+    subject = Rubernetes::Bootstrap::ComponentServer.new(component: "kube-controller-manager", config: {},
+                                                         metrics: Rubernetes::Observability::Metrics.new(apiserver: false),
                                                          host: "127.0.0.1", port: 0, ready: -> { ready })
     subject.call(request("/healthz"))
     subject.call(request("/readyz"))
