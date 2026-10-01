@@ -18,7 +18,8 @@ class CustomResourceFieldSelectorTest < Minitest::Test
     @store = store = Rubernetes::Storage::MemoryStore.new(history_revisions: nil, history_seconds: nil)
     registry = Rubernetes::API::Registry.new(resources: [], defaults: false)
     registry.register(Rubernetes::API::Resource.new(group: "apiextensions.k8s.io", version: "v1", resource: "customresourcedefinitions",
-                                                    kind: "CustomResourceDefinition", scope: :cluster, subresources: [{resource: "status", verbs: %w[get patch update]}]))
+                                                    kind: "CustomResourceDefinition", scope: :cluster, subresources: [{resource: "status",
+                                                                                                                       verbs: %w[get patch update]}]))
     registry.register(Rubernetes::API::Resource.new(group: "", version: "v1", resource: "namespaces", kind: "Namespace", scope: :cluster))
     converter = lambda do |_config, review, timeout_seconds: 30|
       req = review["request"]
