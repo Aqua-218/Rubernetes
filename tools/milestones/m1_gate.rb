@@ -1221,9 +1221,7 @@ module M1Gate
       end
       digest = document["header_policy_sha256"]
       errors << "API semantic header exclusion policy digest is required" unless valid_digest?(digest)
-      if valid_digest?(digest) && digest != canonical_document_digest(policy)
-        errors << "API semantic header exclusion policy digest does not match policy"
-      end
+      errors << "API semantic header exclusion policy digest does not match policy" if valid_digest?(digest) && digest != canonical_document_digest(policy)
 
       operations = document["operations"] || document["results"]
       return unless operations.is_a?(Array)
