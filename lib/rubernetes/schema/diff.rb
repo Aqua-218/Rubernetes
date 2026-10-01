@@ -244,7 +244,7 @@ module Rubernetes
         return :status if path.include?("status")
         return :unknown if path.first == "unknown" || options.fetch(:unknown_paths, []).include?(path)
         return inherited unless inherited == :root
-        return :unknown if definition && path.first && !definition.has_field?(path.first) && path.first != "metadata"
+        return :unknown if definition && path.first && !definition.field?(path.first) && path.first != "metadata"
         return :metadata if path.first == "metadata"
 
         :metadata
