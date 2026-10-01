@@ -107,7 +107,30 @@ module Release
       }
     end
 
-    # Rubernetes components running on this host, by their exe/ names.
+    def default_cluster_root(kubeconfig)
+      return nil if kubeconfig.nil?
+
+      root = File.dirname(File.expand_path(kubeconfig))
+      File.file?(File.join(root, "cluster.json")) ? root : nil
+    end
+
+    # The soaked cluster's own processes, named by its pids/*.pid files (the
+    # cluster.rb layout; the K7 driver rewrites them on a restart).  A pid
+    # file whose process is gone is reported with rss 0 so the exit shows.
+    def cluster_processes(root)
+      Dir.glob(File.join(root, "pids", "*.pid")).filter_map do |path|
+        pid = Integer(File.read(path).strip, 10)
+        process_sample(File.basename(path, ".pid"), pid) || {"name" => File.basename(path, ".pid"), "pid" => pid, "rss_kb" => 0,
+                                                             "open_files" => 0, "alive" => false}
+      rescue ArgumentError
+        nil
+      end
+    end
+
+    # Fallback without a cluster layout: every Rubernetes daemon on this
+    # host, matched on its exe/ path.  A bare `pgrep -f <name>` also matched
+    # shells, test runs and `rubectl` arguments that merely mention the name,
+    # which made the baseline a random set of transient pids.
     def component_processes
       names = Dir.glob(File.join(ROOT, "exe", "*")).map { |path| File.basename(path) }
       names.flat_map do |name|
