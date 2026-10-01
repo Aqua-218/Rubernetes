@@ -106,6 +106,27 @@ module K7ClusterDriver
     end
   end
 
+  # Every process of the cluster, one at a time and never two control nodes
+  # together, so a cluster whose processes predate the code under test is
+  # brought onto it without losing quorum or a node's Pods: the API servers,
+  # then scheduler and controller-manager, then each worker's agent and
+  # proxy.  This is the operator "upgrade" procedure of deploy/cluster/README.md
+  # applied to a cluster.rb layout.
+  def cluster_rolling_restart
+    apiserver_rolling_restart
+    %w[scheduler controller-manager].each do |component|
+      process = processes.find { |entry| entry.fetch("name") == component } || next
+      restarted_at = Time.now.utc
+      restart!(process, signal: "TERM")
+      wait_until("#{component} lease renewed after the restart", 180) do
+        lease = leases.find { |entry| entry.fetch("holder").to_s.include?(component) }
+        lease && Time.iso8601(lease.fetch("renew_time")) > restarted_at
+      end
+    end
+    workers = processes.select { |entry| entry.fetch("name").start_with?("agent-") }
+    workers.map { |entry| entry.fetch("name").delete_prefix("agent-") }.sort.each { |node| reboot_worker!(node) }
+  end
+
   # One control node loses its datastore directory and is rebuilt from a
   # backup taken just before, while the other two keep the quorum: the
   # acknowledged state must come back identical.
