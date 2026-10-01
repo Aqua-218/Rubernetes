@@ -88,6 +88,14 @@ module Rubernetes
         addresses
       end
 
+      # The API server ID (config.go): also the identity Lease's name.
+      def self.apiserver_id(identity)
+        data = [identity.to_s, "kube-apiserver"].map { |part| [part.bytesize].pack("n") + part.b }.join
+        digest = Digest::SHA256.digest(data)[0, 16]
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+        "apiserver-#{digest.unpack1("B*").scan(/.{1,5}/).map { |chunk| alphabet[chunk.ljust(5, "0").to_i(2)] }.join.downcase}"
+      end
+
       private
 
       def loop_forever
