@@ -617,7 +617,7 @@ module Rubernetes
         keyword = parameters.any? { |kind, name| %i[key keyreq keyrest].include?(kind) && name == :method }
         if keyword
           arguments = transport_keyword_arguments(parameters, method: method, uri: uri, headers: headers, body: body, max_bytes: max_bytes)
-          @transport.stream(**arguments, &block)
+          @transport.stream(**arguments, &)
         else
           @transport.stream(method, uri, headers: headers, body: body, &block)
         end
