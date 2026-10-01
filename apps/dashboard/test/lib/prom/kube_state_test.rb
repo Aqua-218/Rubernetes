@@ -2,12 +2,14 @@
 
 require "test_helper"
 
-class Prom::KubeStateTest < ActiveSupport::TestCase
-  class FakeClient
-    def initialize(objects) = @objects = objects
+module Prom
+  class KubeStateTest < ActiveSupport::TestCase
+    class FakeClient
+      def initialize(objects) = @objects = objects
 
-    def get(resource, api_version: "v1", **)
-      {"items" => @objects.fetch(resource, [])}
+      def get(resource, api_version: "v1", **)
+        {"items" => @objects.fetch(resource, [])}
+      end
     end
   end
 
