@@ -2350,7 +2350,8 @@ module M1Gate
 
       semantic = document["semantic_oracle"]
       criterion = semantic.is_a?(Hash) ? semantic["validation_criterion"] : nil
-      if criterion.is_a?(Hash) && valid_digest?(oracle["validation_criterion_sha256"]) && oracle["validation_criterion_sha256"] != canonical_document_digest(criterion)
+      if criterion.is_a?(Hash) && valid_digest?(oracle["validation_criterion_sha256"]) &&
+         oracle["validation_criterion_sha256"] != canonical_document_digest(criterion)
         errors << "#{label} validation criterion digest does not match semantic evidence"
       end
 
