@@ -1416,12 +1416,8 @@ module M2Gate
         errors << "#{label} resource_count must match the raw active inventory" unless cycle["resource_count"] == active_inventory.length
         cycle_kinds = Array(cycle["resource_kinds"]).map(&:to_s).uniq.sort
         errors << "#{label} resource_kinds must match the raw active inventory" unless cycle_kinds == active_kinds
-        unless cycle["kernel_identity_sha256"] == active_digest
-          errors << "#{label} kernel identity digest must match the raw active inventory"
-        end
-        unless cycle["active_inventory_measurement_id"] == inventory_measurement_id
-          errors << "#{label} active inventory measurement binding is required"
-        end
+        errors << "#{label} kernel identity digest must match the raw active inventory" unless cycle["kernel_identity_sha256"] == active_digest
+        errors << "#{label} active inventory measurement binding is required" unless cycle["active_inventory_measurement_id"] == inventory_measurement_id
         residual_inventory = cycle["residual_inventory"]
         unless residual_inventory.is_a?(Array)
           errors << "#{label} residual_inventory must record the raw residual inventory"
