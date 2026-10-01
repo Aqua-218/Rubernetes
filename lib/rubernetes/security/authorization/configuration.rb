@@ -273,9 +273,7 @@ module Rubernetes
           conditions = Array(raw["matchConditions"])
           mc_version = raw["matchConditionSubjectAccessReviewVersion"].to_s
           if mc_version.empty?
-            unless conditions.empty?
-              errors << "#{path}.matchConditionSubjectAccessReviewVersion: Required value: required if match conditions are specified"
-            end
+            errors << "#{path}.matchConditionSubjectAccessReviewVersion: Required value: required if match conditions are specified" unless conditions.empty?
           elsif mc_version != "v1"
             errors << "#{path}.matchConditionSubjectAccessReviewVersion: Unsupported value: #{mc_version.inspect}: supported values: v1"
           end
