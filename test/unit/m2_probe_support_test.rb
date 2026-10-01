@@ -123,7 +123,7 @@ class M2ProbeSupportTest < Minitest::Test
     transport = native_transport(stream)
     body = transport.request("GET", "/watch").body
 
-    assert_raises(RuntimeError) { body.each { raise "consumer failed" } }
+    assert_raises(RuntimeError) { body.each { raise "consumer failed" } } # rubocop:disable Lint/UnreachableLoop -- the consumer fails on purpose
     assert_equal 0, transport.active_watch_count
     assert_equal 1, stream.close_calls
   end
