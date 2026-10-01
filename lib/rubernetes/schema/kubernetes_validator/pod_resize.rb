@@ -49,9 +49,7 @@ module Rubernetes
 
         munged["containers"] = Array(munged["containers"]).each_with_index.map do |container, index|
           dropped = drop_cpu_memory_from_container(container, old_spec["containers"][index])
-          unless semantic_equal?(dropped, old_spec["containers"][index])
-            issues << issue(["spec"], :forbidden, "only cpu and memory resources are mutable")
-          end
+          issues << issue(["spec"], :forbidden, "only cpu and memory resources are mutable") unless semantic_equal?(dropped, old_spec["containers"][index])
           dropped
         end
         if munged.key?("initContainers")
