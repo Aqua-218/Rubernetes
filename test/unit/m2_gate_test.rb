@@ -582,7 +582,8 @@ class M2GateTest < Minitest::Test
        "unclassified_count" => 0, "evidence_sha256" => Digest::SHA256.hexdigest(level.to_s), "evidence" => evidence}.compact
     end
     profiles = M2Gate::REQUIRED_ARCHITECTURES.map do |architecture|
-      {"architecture" => architecture, "available" => true, "status" => "PASS", "passed" => true, "profile_sha256" => Digest::SHA256.hexdigest(architecture), "levels" => levels}
+      {"architecture" => architecture, "available" => true, "status" => "PASS", "passed" => true, "profile_sha256" => Digest::SHA256.hexdigest(architecture),
+       "levels" => levels}
     end
     finalize_report(report_base(sha, count, "m2_runtime_profiles").merge(
       "required_architectures" => M2Gate::REQUIRED_ARCHITECTURES,
