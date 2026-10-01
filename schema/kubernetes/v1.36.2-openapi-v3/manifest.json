@@ -300,8 +300,10 @@
       "path": "apis/events.k8s.io/v1.json",
       "upstream_path": "api/openapi-spec/v3/apis__events.k8s.io__v1_openapi.json",
       "source_sha256": "59e3fdad17e39047e9fab4f75fdcc7aaf7269bf1dc148a7f3865ab90e3334e80",
-      "sha256": "59e3fdad17e39047e9fab4f75fdcc7aaf7269bf1dc148a7f3865ab90e3334e80",
-      "paths": 7
+      "sha256": "9a500d423b18bf8bd48c5566b809c28686b532bfabcc1adeea076a45c058ad8b",
+      "paths": 7,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/events.k8s.io/v1"
     },
     {
       "path": "apis/events.k8s.io.json",
