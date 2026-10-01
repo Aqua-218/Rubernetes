@@ -353,7 +353,8 @@ module Rubernetes
         policy = spec["ipFamilyPolicy"].to_s
         families = Array(spec["ipFamilies"]).map(&:to_s)
         if policy == "SingleStack" && families.length == 2
-          raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.ipFamilyPolicy: Invalid value: \"SingleStack\": must be 'RequireDualStack' or 'PreferDualStack' when multiple IP families are specified",
+          raise Status::Invalid.new("Service \"#{name_of(service)}\" is invalid: spec.ipFamilyPolicy: Invalid value: \"SingleStack\": must be " \
+                                    "'RequireDualStack' or 'PreferDualStack' when multiple IP families are specified",
                                     details: {"kind" => "Service", "name" => name_of(service)})
         end
         cluster_families = @service_cidrs.map { |cidr| family_name(cidr) }.uniq
