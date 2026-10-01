@@ -671,7 +671,10 @@ class M2GateTest < Minitest::Test
       cycle["inventory_measurement_id"] = cycle_inventory.fetch("measurement_id")
       cycle["active_inventory_measurement_id"] = cycle_inventory.fetch("measurement_id")
     end
-    effects = M2Gate::REQUIRED_EFFECT_POINTS.map { |name| {"name" => name, "injected_count" => 1, "live_leak_count" => 0, "measurement_source" => "production_native_effect_injection"} }
+    effects = M2Gate::REQUIRED_EFFECT_POINTS.map do |name|
+      {"name" => name, "injected_count" => 1, "live_leak_count" => 0,
+       "measurement_source" => "production_native_effect_injection"}
+    end
     canonical_payload = {
       "cycle_count" => 1000,
       "cycles" => cycles,
