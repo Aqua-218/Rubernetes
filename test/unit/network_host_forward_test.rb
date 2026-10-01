@@ -42,8 +42,16 @@ class NetworkHostForwardTest < Minitest::Test
     nat = runner.calls.select { |call| call[1] == "-t" && call[2] == "nat" }
 
     refute_empty nat
-    assert(nat.all? { |call| call.include?("MASQUERADE") && call.include?("-s") && call.include?("10.240.0.0/16") })
-    assert(nat.all? { |call| call.each_cons(3).any? { |a, b, c| a == "!" && b == "-d" && c == "10.240.0.0/16" } })
+    # One rule per destination (iptables takes a single -d): cluster CIDRs
+    # and multicast are accepted in the chain, the rest masqueraded, and
+    # POSTROUTING jumps there for the Pod CIDR.
+    assert(nat.any? do |call|
+      call.include?("RUBERNETES-POSTROUTING") && call.include?("-d") && call.include?("10.240.0.0/16") && call.include?("ACCEPT")
+    end)
+    assert(nat.any? { |call| call.include?("RUBERNETES-POSTROUTING") && call.include?("MASQUERADE") })
+    assert(nat.any? do |call|
+      call.include?("POSTROUTING") && call.include?("-s") && call.include?("10.240.0.0/16") && call.last == "RUBERNETES-POSTROUTING"
+    end)
   end
 
   def test_an_existing_rule_is_not_installed_twice

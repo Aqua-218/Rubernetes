@@ -50,6 +50,7 @@ module Rubernetes
       end
 
       NAT_CHAIN = "POSTROUTING"
+      EGRESS_CHAIN = "RUBERNETES-POSTROUTING"
       MASQUERADE_COMMENT = "rubernetes pod egress"
 
       def ensure!(cidrs)
@@ -73,7 +74,12 @@ module Rubernetes
               skipped << [binary, direction, cidr]
             end
           end
-          ensure_masquerade!(binary, cidr, list, installed, present, skipped)
+        end
+        %w[iptables ip6tables].each do |binary|
+          family = list.select { |cidr| cidr.include?(":") == (binary == "ip6tables") }
+          next if family.empty?
+
+          ensure_masquerade!(binary, family, installed, present, skipped)
         end
         log(installed, present, skipped)
         Result.new(installed: installed, already_present: present, skipped: skipped)
@@ -81,27 +87,37 @@ module Rubernetes
 
       private
 
-      # The bridge CNI plugin's ipMasq: traffic from the Pod CIDR to anything
-      # outside the cluster leaves with the node's address.  Without it a Pod
-      # reaches the host and other Pods but nothing beyond (its address is
-      # not routable upstream), and an HTTPS call from a Pod to the internet
-      # -- cert-manager registering an ACME account, 2026-10-01 -- times out
-      # without a trace.  Cluster-internal and multicast destinations are
-      # excluded, as the plugin does.
-      def ensure_masquerade!(binary, cidr, cluster_cidrs, installed, present, skipped)
-        rule = [NAT_CHAIN, "-s", cidr]
-        cluster_cidrs.select { |other| other.include?(":") == cidr.include?(":") }.each { |other| rule += ["!", "-d", other] }
-        unless cluster_cidrs.include?(cidr.include?(":") ? "ff00::/8" : "224.0.0.0/4")
-          rule += ["!", "-d",
-                   cidr.include?(":") ? "ff00::/8" : "224.0.0.0/4"]
+      # The bridge CNI plugin's ipMasq, in its shape: one chain per family
+      # (iptables takes a single -d per rule, so each exclusion is a rule of
+      # its own) that accepts cluster-internal and multicast destinations and
+      # masquerades the rest, entered from POSTROUTING for each Pod CIDR.
+      # Without it a Pod reaches the host and other Pods but nothing beyond
+      # (its address is not routable upstream): cert-manager registering an
+      # ACME account timed out without a trace (2026-10-01).
+      def ensure_masquerade!(binary, cidrs, installed, present, skipped)
+        nat = ["-t", "nat"]
+        unless invoke(binary, *nat, "-S", EGRESS_CHAIN) || invoke(binary, *nat, "-N", EGRESS_CHAIN)
+          cidrs.each { |cidr| skipped << [binary, "masquerade", cidr] }
+          return
         end
-        rule += ["-m", "comment", "--comment", MASQUERADE_COMMENT, "-j", "MASQUERADE"]
-        if invoke(binary, "-t", "nat", "-C", *rule)
-          present << [binary, "masquerade", cidr]
-        elsif invoke(binary, "-t", "nat", "-A", *rule)
-          installed << [binary, "masquerade", cidr]
-        else
-          skipped << [binary, "masquerade", cidr]
+        multicast = binary == "ip6tables" ? "ff00::/8" : "224.0.0.0/4"
+        chain_rules = cidrs.map { |cidr| [EGRESS_CHAIN, "-d", cidr, "-j", "ACCEPT"] }
+        chain_rules << [EGRESS_CHAIN, "-d", multicast, "-j", "ACCEPT"]
+        chain_rules << [EGRESS_CHAIN, "-m", "comment", "--comment", MASQUERADE_COMMENT, "-j", "MASQUERADE"]
+        chain_rules.each do |rule|
+          next if invoke(binary, *nat, "-C", *rule)
+
+          invoke(binary, *nat, "-A", *rule)
+        end
+        cidrs.each do |cidr|
+          jump = [NAT_CHAIN, "-s", cidr, "-m", "comment", "--comment", MASQUERADE_COMMENT, "-j", EGRESS_CHAIN]
+          if invoke(binary, *nat, "-C", *jump)
+            present << [binary, "masquerade", cidr]
+          elsif invoke(binary, *nat, "-A", *jump)
+            installed << [binary, "masquerade", cidr]
+          else
+            skipped << [binary, "masquerade", cidr]
+          end
         end
       end
 
