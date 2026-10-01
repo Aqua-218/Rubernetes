@@ -453,7 +453,8 @@ module Rubernetes
             spdy_protocol = tunnel.delete_prefix(Streaming::TUNNEL_PREFIX)
             unless Streaming::PORT_FORWARD_SPDY_PROTOCOLS.include?(spdy_protocol)
               return [403, {"content-type" => "text/plain"},
-                      ["unable to upgrade: unable to negotiate protocol: client supports #{[spdy_protocol].inspect}, server accepts #{Streaming::PORT_FORWARD_SPDY_PROTOCOLS.inspect}\n"]]
+                      ["unable to upgrade: unable to negotiate protocol: client supports #{[spdy_protocol].inspect}, server accepts " \
+                       "#{Streaming::PORT_FORWARD_SPDY_PROTOCOLS.inspect}\n"]]
             end
 
             headers = Transport::WebSocket.handshake_headers(request, protocol: tunnel)
