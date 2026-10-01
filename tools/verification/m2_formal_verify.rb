@@ -454,6 +454,7 @@ module Rubernetes
       # proven; the digest binds the verdict text and every other line so a
       # proof profile can pin the real tool output across runs.
       def normalize_tool_output(text)
+        # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
         text.to_s.each_line.grep_v(/Total time|It took me|Finished in|Finished computing|Finished checking|Progress\(|Starting\.\.\.|Starting SANY|Parsing file|Semantic processing|Checking temporal|initial state|states generated|at \(|_apalache-out|m2-formal-|Created by|Output directory|Check the trace|Loading configuration|Writing|Generated|Running in|Tool home|Warning: Please run|Finished by|Running breadth-first|\[pid:|heap and|seed/i).map do |line|
           line.gsub(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?/, "<timestamp>")
             .gsub(/[IEW]@\d{2}:\d{2}:\d{2}\.\d{3}/, "<log>")
