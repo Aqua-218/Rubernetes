@@ -844,9 +844,7 @@ module Rubernetes
 
         signer_name = Support.value(Support.spec(csr), "signerName", "").to_s
         ca_certificate, ca_key = signer_material(signer_cas, signer_name, ca_certificate, ca_key)
-        if signer.nil? && certificate.nil? && (ca_certificate.nil? || ca_key.nil?)
-          return empty_result(csr, controller: name, descriptor: CSR)
-        end
+        return empty_result(csr, controller: name, descriptor: CSR) if signer.nil? && certificate.nil? && (ca_certificate.nil? || ca_key.nil?)
 
         status = Support.status(csr)
         specification = Support.spec(csr)
