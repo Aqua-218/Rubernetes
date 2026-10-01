@@ -191,9 +191,7 @@ module KubernetesCorpusImporter
       end
 
       sha = entry["sha"]
-      unless sha.is_a?(String) && sha.match?(COMMIT_PATTERN)
-        raise ValidationError, "GitHub contents entry has invalid blob/tree SHA: #{path}"
-      end
+      raise ValidationError, "GitHub contents entry has invalid blob/tree SHA: #{path}" unless sha.is_a?(String) && sha.match?(COMMIT_PATTERN)
       return unless entry["type"] == "file"
 
       expected_url = raw_url(commit, path)
