@@ -1773,9 +1773,7 @@ module M2Gate
         errors << "#{entry_label} kill_observed must be true" unless entry["kill_observed"] == true
         errors << "#{entry_label} restart_observed must be true" unless entry["restart_observed"] == true
         errors << "#{entry_label} wal_replayed must be true" unless entry["wal_replayed"] == true
-        unless entry["target_start_time"].to_s.match?(/\A\d+\z/)
-          errors << "#{entry_label} target_start_time must be a numeric /proc start time"
-        end
+        errors << "#{entry_label} target_start_time must be a numeric /proc start time" unless entry["target_start_time"].to_s.match?(/\A\d+\z/)
         errors << "#{entry_label} measurement_id is required" unless non_empty_string?(entry["measurement_id"])
         errors << "#{entry_label} wal_path is required" unless non_empty_string?(entry["wal_path"])
         errors << "#{entry_label} WAL change must be observed across recovery" unless entry["wal_changed"] == true
