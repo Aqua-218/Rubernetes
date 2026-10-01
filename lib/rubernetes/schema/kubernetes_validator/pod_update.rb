@@ -235,7 +235,7 @@ module Rubernetes
           when "int", "uint" then value.is_a?(Numeric) ? value.to_i : 0
           when "float" then value.is_a?(Numeric) ? value.to_f : 0.0
           when "bool" then value == true
-          when "ptr" then value.nil? ? nil : convert_value(type["e"], value, keep_empty)
+          when "ptr" then value.nil? ? nil : convert_value(type["e"], value, keep_empty: keep_empty)
           when "slice"
             return nil unless value.is_a?(Array) && (keep_empty || !value.empty?)
 
