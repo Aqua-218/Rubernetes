@@ -31,7 +31,7 @@ class KubeletPodStartupMetricsTest < Minitest::Test
 
   def sample(name, suffix = "_count", labels = "")
     line = @metrics.registry.render.lines.find { |text| text.start_with?("#{name}#{suffix}#{labels} ") }
-    line&.split&.last&.to_f
+    line&.then { |text| text.split.last.to_f }
   end
 
   def test_the_sli_leaves_out_image_pulls_counted_once_and_init_containers
