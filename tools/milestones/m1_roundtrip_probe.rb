@@ -302,9 +302,7 @@ def semantic_error_signature(errors)
       # the same rule.  Keep the generic public issue message intact and
       # normalize only this external REST-observable projection.
       detail = "" if error.code.to_sym == :required && detail.match?(/\Afield .* is required\z/)
-      if error.code.to_sym == :enum && error.expected.is_a?(Array)
-        detail = "supported values: #{error.expected.map { |item| JSON.generate(item) }.join(", ")}"
-      end
+      detail = "supported values: #{error.expected.map { |item| JSON.generate(item) }.join(", ")}" if error.code.to_sym == :enum && error.expected.is_a?(Array)
       {
         "type" => error.respond_to?(:kubernetes_error_type) ? error.kubernetes_error_type : error.code.to_s,
         "field" => error.respond_to?(:kubernetes_field) ? error.kubernetes_field : error.path.to_s,
