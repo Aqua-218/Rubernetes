@@ -498,9 +498,7 @@ module Rubernetes
           if atom.map
             left_map = deref(lhs, Hash, "lhs: ", "map", errors)
             right_map = deref(rhs, Hash, "rhs: ", "map", errors)
-            if atom.map.atomic? || ((left_map.nil? || left_map.empty?) && (right_map.nil? || right_map.empty?))
-              return merge_leaf(lhs, rhs, state)
-            end
+            return merge_leaf(lhs, rhs, state) if atom.map.atomic? || ((left_map.nil? || left_map.empty?) && (right_map.nil? || right_map.empty?))
             return if left_map.nil? && right_map.nil?
 
             out = {}
