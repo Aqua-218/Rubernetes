@@ -538,7 +538,8 @@ class M3SchedulerTest < Minitest::Test
                                                                                                 "spec" => {"volumeName" => "pv-a"}}},
                                                "persistentVolumes" => {"pv-a" => {"metadata" => {"name" => "pv-a"},
                                                                                   "nodeAffinity" => {"required" => {"nodeSelectorTerms" => [{"matchExpressions" => [{
-                                                                                    "key" => "topology.kubernetes.io/zone", "operator" => "In", "values" => ["zone-a"]
+                                                                                    "key" => "topology.kubernetes.io/zone", "operator" => "In",
+                                                                                    "values" => ["zone-a"]
                                                                                   }]}]}}}}
                                              })
       },
