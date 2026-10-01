@@ -356,9 +356,7 @@ module Rubernetes
         end
         unready.each { |name| metrics[name] = MetricsClient::PodMetric.new(value: 0) } if scale_up_with_unready
         new_ratio, = utilization_ratio(metrics, requests, target_utilization)
-        if tolerances.within?(new_ratio) || (ratio < 1.0 && new_ratio > 1.0) || (ratio > 1.0 && new_ratio < 1.0)
-          return [current, utilization, raw, timestamp]
-        end
+        return [current, utilization, raw, timestamp] if tolerances.within?(new_ratio) || (ratio < 1.0 && new_ratio > 1.0) || (ratio > 1.0 && new_ratio < 1.0)
 
         replicas = (new_ratio * metrics.length).ceil
         return [current, utilization, raw, timestamp] if (new_ratio < 1.0 && replicas > current) || (new_ratio > 1.0 && replicas < current)
