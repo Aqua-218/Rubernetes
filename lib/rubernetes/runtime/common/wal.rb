@@ -198,9 +198,7 @@ module Rubernetes
         previous = EMPTY_DIGEST
         records.each_with_index do |record, index|
           expected_sequence = index + 1
-          unless record.sequence == expected_sequence
-            raise JournalCorruption, "WAL sequence #{record.sequence} expected #{expected_sequence}"
-          end
+          raise JournalCorruption, "WAL sequence #{record.sequence} expected #{expected_sequence}" unless record.sequence == expected_sequence
           raise JournalCorruption, "WAL previous digest mismatch at #{record.sequence}" unless record.previous_digest == previous
           raise JournalCorruption, "WAL digest is invalid at #{record.sequence}" unless record.digest.match?(DIGEST_PATTERN)
 
