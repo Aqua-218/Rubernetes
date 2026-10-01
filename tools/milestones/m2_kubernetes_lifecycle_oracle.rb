@@ -644,9 +644,7 @@ module M2KubernetesLifecycleOracle
     identity_errors = errors.dup
     comparisons.each do |comparison|
       errors << "external lifecycle oracle case #{comparison.fetch("id")} must run exactly once" unless comparison["attempt_count"] == 1
-      unless comparison["passed"] == true
-        errors << "external lifecycle oracle case #{comparison.fetch("id")} differs from Rubernetes production semantics"
-      end
+      errors << "external lifecycle oracle case #{comparison.fetch("id")} differs from Rubernetes production semantics" unless comparison["passed"] == true
     end
 
     provenance_source = source.is_a?(Hash) ? source.dup : {}
