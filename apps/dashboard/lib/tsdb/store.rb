@@ -584,7 +584,9 @@ module Tsdb
         end
 
         matcher = bounding.first
-        values = @db.execute("SELECT DISTINCT value FROM labels WHERE name = ?", [matcher.name]).flatten.grep(matcher)
+        # Matcher is a Struct, not a Regexp: Array#grep would compare with ==.
+        values = @db.execute("SELECT DISTINCT value FROM labels WHERE name = ?", [matcher.name]).flatten
+        values = values.select { |value| matcher.match?(value) }
         return [] if values.empty?
 
         return values.each_slice(400).flat_map do |slice|
