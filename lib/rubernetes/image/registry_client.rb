@@ -213,9 +213,7 @@ module Rubernetes
         @username = username
         @password = password
         @bearer_token = bearer_token || token
-        if token_realm_allowlist && allowed_token_realms
-          raise RegistryError, "token_realm_allowlist and allowed_token_realms are mutually exclusive"
-        end
+        raise RegistryError, "token_realm_allowlist and allowed_token_realms are mutually exclusive" if token_realm_allowlist && allowed_token_realms
 
         @token_realm_allowlist = normalize_token_realm_allowlist(token_realm_allowlist || allowed_token_realms)
         validate_credentials!
