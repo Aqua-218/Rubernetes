@@ -44,7 +44,8 @@ module Rubernetes
               rpc :Version, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::VersionRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::VersionResponse
               # RunPodSandbox creates and starts a pod-level sandbox. Runtimes must ensure
               # the sandbox is in the ready state on success.
-              rpc :RunPodSandbox, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RunPodSandboxRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RunPodSandboxResponse
+              rpc :RunPodSandbox, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RunPodSandboxRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::RunPodSandboxResponse
               # StopPodSandbox stops any running process that is part of the sandbox and
               # reclaims network resources (e.g., IP addresses) allocated to the sandbox.
               # If there are any running containers in the sandbox, they must be forcibly
