@@ -147,9 +147,7 @@ module M1KubernetesSemanticOracle
         raise OracleError, "oracle request #{id.inspect} #{key} is invalid JSON: #{error.message}"
       end
       validation_applicable = entry.fetch("validation_applicable", false)
-      unless [true, false].include?(validation_applicable)
-        raise OracleError, "oracle request #{id.inspect} validation_applicable must be boolean"
-      end
+      raise OracleError, "oracle request #{id.inspect} validation_applicable must be boolean" unless [true, false].include?(validation_applicable)
 
       validation_reason = entry.fetch("validation_reason", "")
       raise OracleError, "oracle request #{id.inspect} validation_reason must be a string" unless validation_reason.is_a?(String)
