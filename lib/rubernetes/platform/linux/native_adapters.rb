@@ -3438,7 +3438,7 @@ module Rubernetes
             socket = Socket.new(info.afamily, Socket::SOCK_STREAM, 0)
             begin
               socket.connect_nonblock(address, exception: false)
-              ready = IO.select(nil, [socket], nil, timeout)
+              ready = socket.wait_writable(timeout)
               return {"connected" => false, "message" => "connect timed out"} unless ready
 
               error = socket.getsockopt(Socket::SOL_SOCKET, Socket::SO_ERROR).int
