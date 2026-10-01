@@ -756,9 +756,7 @@ module M2Gate
         next unless tool.is_a?(Hash)
 
         tool_label = "#{label} external tool #{tool["name"]}"
-        unless tool["executed"] == true && tool["isolated_workdir"] == true
-          errors << "#{tool_label} must be executed in an isolated workdir"
-        end
+        errors << "#{tool_label} must be executed in an isolated workdir" unless tool["executed"] == true && tool["isolated_workdir"] == true
         errors << "#{tool_label} must pass with exit status zero" unless tool["success"] == true && tool["exit_status"] == 0
         errors << "#{tool_label} argv is required" unless tool["argv"].is_a?(Array) && !tool["argv"].empty?
         errors << "#{tool_label} output digest is required" unless valid_digest?(tool["output_sha256"])
