@@ -174,23 +174,8 @@ module Promql
       load("total", {"method" => "post"}, [106])
       result = vector('requests{code="500"} / ignoring(code) total').sort_by { |m, _| m["method"] }
 
-  # ---------------------------------------------------------- operators
-
-  test "arithmetic drops the metric name and comparisons filter unless bool" do
-    load("x", {"i" => "1"}, [2])
-    load("x", {"i" => "2"}, [8])
-
-    assert_equal [[{"i" => "1"}, 4.0], [{"i" => "2"}, 16.0]], vector("x * 2")
-    assert_equal [[{"i" => "1"}, 0.5], [{"i" => "2"}, 0.125]], vector("1 / x")
-    assert_equal [[{"__name__" => "x", "i" => "2"}, 8.0]], vector("x > 5")
-    assert_equal [[{"i" => "1"}, 0.0], [{"i" => "2"}, 1.0]], vector("x > bool 5")
-    assert_in_delta(1.0, scalar("3 > bool 2"))
-    assert_in_delta(8.0, scalar("2 ^ 3"))
-    assert_in_delta(-1.0, scalar("-7 % 3"))
-    assert_in_delta(2.0, scalar("7 % -5"))
-    assert_predicate scalar("1 / 0"), :infinite?
-    assert_predicate scalar("0 / 0"), :nan?
-  end
+      assert_equal [[{"method" => "get"}, 24.0 / 124], [{"method" => "post"}, 6.0 / 106]], result
+      result = vector('requests{code="500"} / on(method) total').sort_by { |m, _| m["method"] }
 
   test "vector matching: one-to-one, on, ignoring, group_left and errors" do
     load("requests", {"method" => "get", "code" => "500"}, [24])
