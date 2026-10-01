@@ -271,9 +271,7 @@ module M4VolumeObservationRunner
       record["mounts_in_worker_namespace_at_kill"] = namespace_mounts.map { |entry| M4ObserverSupport.stable_identity(entry) }
       record["worker_namespace_is_private"] = worker_identity["mount_namespace_inode"] != @host_ns
       @errors << "#{label}: worker did not run in a private mount namespace" unless record["worker_namespace_is_private"]
-      if (point != "before_effect") && namespace_mounts.empty?
-        @errors << "#{label}: no kernel mount was visible in the worker namespace at the kill point"
-      end
+      @errors << "#{label}: no kernel mount was visible in the worker namespace at the kill point" if (point != "before_effect") && namespace_mounts.empty?
       if marker["identity"].is_a?(Hash)
         claimed = marker["identity"]
         observed = namespace_mounts.find { |entry| entry["target"] == claimed["target"] }
