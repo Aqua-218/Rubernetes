@@ -74,7 +74,8 @@ module Rubernetes
           output, status = Open3.capture2e(@veritysetup, "status", name)
           return nil unless status.success?
 
-          {"name" => name, "active" => output.include?("is active"), "verified" => output.include?("status:    verified") || output.include?("status: verified"),
+          {"name" => name, "active" => output.include?("is active"),
+           "verified" => output.include?("status:    verified") || output.include?("status: verified"),
            "output" => output}
         end
 
