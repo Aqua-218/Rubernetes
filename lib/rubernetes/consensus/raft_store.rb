@@ -457,24 +457,23 @@ module Rubernetes
 
       def map_error(document)
         klass = ERROR_CLASSES.fetch(document["class"], Error)
-        error = case klass.name
-                when "Rubernetes::Storage::NotFound", "Rubernetes::Storage::AlreadyExists"
-                  klass.new(document["key"], document["message"])
-                when "Rubernetes::Storage::Conflict"
-                  klass.new(document["key"], document["message"], resource_version: document["resource_version"])
-                when "Rubernetes::Storage::RequestUIDConflict"
-                  # Keep the server's UID and message: reconstructing with a
-                  # blank UID hides which request actually collided.
-                  klass.new(document["request_uid"], document["key"], document["message"])
-                when "Rubernetes::Storage::Gone"
-                  klass.new(document["resource_version"], document["compacted_revision"])
-                when "Rubernetes::Storage::InvalidResourceVersion"
-                  klass.new(document["message"])
-                else
-                  Error.new(document["message"], status: document["status"], reason: document["reason"], key: document["key"],
-                                                 resource_version: document["resource_version"], details: document["details"], causes: document["causes"])
-                end
-        error
+        case klass.name
+        when "Rubernetes::Storage::NotFound", "Rubernetes::Storage::AlreadyExists"
+          klass.new(document["key"], document["message"])
+        when "Rubernetes::Storage::Conflict"
+          klass.new(document["key"], document["message"], resource_version: document["resource_version"])
+        when "Rubernetes::Storage::RequestUIDConflict"
+          # Keep the server's UID and message: reconstructing with a
+          # blank UID hides which request actually collided.
+          klass.new(document["request_uid"], document["key"], document["message"])
+        when "Rubernetes::Storage::Gone"
+          klass.new(document["resource_version"], document["compacted_revision"])
+        when "Rubernetes::Storage::InvalidResourceVersion"
+          klass.new(document["message"])
+        else
+          Error.new(document["message"], status: document["status"], reason: document["reason"], key: document["key"],
+                                         resource_version: document["resource_version"], details: document["details"], causes: document["causes"])
+        end
       end
 
       def check_precondition!(key, object, expected)
