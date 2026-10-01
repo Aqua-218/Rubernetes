@@ -2372,9 +2372,7 @@ module Rubernetes
         spec_path = paths[:spec_replicas].to_s
         spec, found = nested_int64(object, spec_path)
         unless found
-          unless for_update
-            raise Status::InternalError.new("the spec replicas field #{ManagedFields::Value.go_quote(spec_path)} does not exist")
-          end
+          raise Status::InternalError.new("the spec replicas field #{ManagedFields::Value.go_quote(spec_path)} does not exist") unless for_update
 
           spec = INVALID_SPEC_REPLICAS
         end
