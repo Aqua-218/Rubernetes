@@ -693,7 +693,9 @@ module M4Gate
                                                                                                         end && runner["stdout"].is_a?(String) && valid_digest?(runner["stdoutSha256"] || runner["stdout_sha256"]) &&
                                                                                                         Digest::SHA256.hexdigest(runner["stdout"]) == (runner["stdoutSha256"] || runner["stdout_sha256"])
       execution = packet["executionIdentity"]
-      unless execution.is_a?(Hash) && execution["runnerIdentity"] == packet["runnerIdentity"] && execution["runnerDigest"] == packet["runnerDigest"] && execution["mode"] == packet["mode"] && valid_digest?(packet["executionIdentitySha256"]) && packet["executionIdentitySha256"] == canonical_document_digest(execution)
+      unless execution.is_a?(Hash) && execution["runnerIdentity"] == packet["runnerIdentity"] && execution["runnerDigest"] == packet["runnerDigest"] &&
+             execution["mode"] == packet["mode"] && valid_digest?(packet["executionIdentitySha256"]) &&
+             packet["executionIdentitySha256"] == canonical_document_digest(execution)
         errors << "proxy packet immutable execution identity is incomplete"
       end
       binding = packet["inputBinding"]
