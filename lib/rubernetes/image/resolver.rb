@@ -207,9 +207,7 @@ module Rubernetes
           end
           # imagePullPolicy Always: the registry is asked every time, with the
           # Pod's credentials; an unchanged digest reuses the unpacked image.
-          if cached && policy.casecmp("Always").zero?
-            return pulling(on_pull) { always_pull(cached, image_reference, target, credentials, pull_secret) }
-          end
+          return pulling(on_pull) { always_pull(cached, image_reference, target, credentials, pull_secret) } if cached && policy.casecmp("Always").zero?
           return accessible(cached, image_reference, target, credentials, pull_secret, pod_credentials, on_pull) if cached
 
           image = pulling(on_pull) do
