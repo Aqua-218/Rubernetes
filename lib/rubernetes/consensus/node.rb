@@ -1361,8 +1361,6 @@ module Rubernetes
           @snapshot_in_flight = nil
           raise
         end
-      rescue DurabilityError, CorruptionError
-        raise
       end
 
       def finish_snapshot(capture, metadata)
