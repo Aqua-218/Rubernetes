@@ -1233,9 +1233,7 @@ module M2Gate
       return unless oracle["executed"] == true
 
       source = provenance.is_a?(Hash) ? provenance["source"] : nil
-      unless source.is_a?(Hash) && non_empty_string?(source["kubelet_image"])
-        errors << "#{label} provenance kubelet image identity is required"
-      end
+      errors << "#{label} provenance kubelet image identity is required" unless source.is_a?(Hash) && non_empty_string?(source["kubelet_image"])
       runtime = source.is_a?(Hash) ? source["runtime"] : nil
       cni = source.is_a?(Hash) ? source["cni"] : nil
       unless runtime.is_a?(Hash) && %w[containerd runc].all? do |name|
