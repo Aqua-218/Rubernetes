@@ -354,7 +354,8 @@ class M2KubernetesLifecycleOracleTest < Minitest::Test
     runtime = {
       "containerd" => {"path" => runtime_path, "version" => "containerd", "binary_sha256" => Digest::SHA256.file(runtime_path).hexdigest,
                        "identity_method" => "realpath+version+binary_sha256"},
-      "runc" => {"path" => runtime_path, "version" => "runc", "binary_sha256" => Digest::SHA256.file(runtime_path).hexdigest, "identity_method" => "realpath+version+binary_sha256"}
+      "runc" => {"path" => runtime_path, "version" => "runc", "binary_sha256" => Digest::SHA256.file(runtime_path).hexdigest,
+                 "identity_method" => "realpath+version+binary_sha256"}
     }
     cni = {
       "plugin" => "pinned-cni", "version" => "1.0.0", "source_commit" => "2" * 40,
