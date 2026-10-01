@@ -1048,9 +1048,7 @@ module M2Gate
         end
         errors << "Pod lifecycle flow must use the production Native runtime" unless flow["runtime_class"] == "Rubernetes::Runtime::Native"
         errors << "Pod lifecycle flow must finish in Removed" unless flow["finish_state"] == "Removed"
-        unless flow["measurement_source"] == "production_native_lifecycle"
-          errors << "Pod lifecycle flow measurement_source must be production Native"
-        end
+        errors << "Pod lifecycle flow measurement_source must be production Native" unless flow["measurement_source"] == "production_native_lifecycle"
       else
         errors << "Pod lifecycle Apply -> Node::Lifecycle -> Native flow evidence is required"
       end
