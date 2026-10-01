@@ -737,9 +737,7 @@ class M1GateTest < Minitest::Test
     current_identity = Digest::SHA256.hexdigest(
       source_entries.map { |entry| "#{entry.fetch("path")}\0#{entry.fetch("sha256")}\n" }.join
     )
-    unless current_identity == input_sha256 && source_entries.length == input_file_count
-      raise "M0 fixture source input changed while building"
-    end
+    raise "M0 fixture source input changed while building" unless current_identity == input_sha256 && source_entries.length == input_file_count
 
     commands = m0_command_records(m0_directory, timestamp, source_entries)
     FileUtils.cp(current_gem_path, File.join(m0_directory, "rubernetes-0.1.0.gem"))
