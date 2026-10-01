@@ -212,9 +212,7 @@ module Rubernetes
 
         target_lock(normalized_target).synchronize do
           existing = possibly_mount_root?(normalized_target) ? mount_entry_at(normalized_target) : nil
-          if existing
-            raise MountIdentityError, "mount target #{normalized_target.inspect} is already mounted with id #{existing.fetch("mountId")}"
-          end
+          raise MountIdentityError, "mount target #{normalized_target.inspect} is already mounted with id #{existing.fetch("mountId")}" if existing
 
           # A descriptor lease has already created and opened the target
           # through its verified parent.  Touching the pathname again here
