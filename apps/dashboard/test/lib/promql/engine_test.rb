@@ -181,7 +181,9 @@ module Promql
 
       result = vector("requests / ignoring(code) group_left total").sort_by { |m, _| [m["method"], m["code"]] }
 
-    assert_equal [{"method" => "get"}, {"method" => "post"}], result.map(&:first)
+      assert_equal 4, result.length
+      assert_equal({"code" => "200", "method" => "get"}, result[0][0])
+      assert_in_delta 100.0 / 124, result[0][1]
 
     result = vector("requests / ignoring(code) group_left total").sort_by { |m, _| [m["method"], m["code"]] }
 
