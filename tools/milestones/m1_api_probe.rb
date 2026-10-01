@@ -1216,6 +1216,8 @@ module M1APIDifferential
     rubernetes_initial_watch, oracle_initial_watch = call_pair(
       rubernetes, oracle, method: "GET", path: COLLECTION_PATH, query: initial_watch_query
     )
+    initial_watch_path = "#{COLLECTION_PATH}?watch=true&sendInitialEvents=true&allowWatchBookmarks=true&" \
+                         "resourceVersionMatch=NotOlderThan&resourceVersion=0&timeoutSeconds=1"
     operations << operation(
       "initial-watch", method: "GET",
                        path: "#{COLLECTION_PATH}?watch=true&sendInitialEvents=true&allowWatchBookmarks=true&resourceVersionMatch=NotOlderThan&resourceVersion=0&timeoutSeconds=1",
