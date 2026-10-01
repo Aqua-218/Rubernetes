@@ -260,8 +260,6 @@ module Rubernetes
         raise Client::UsageError, "get requires RESOURCE or PATH" if target.nil?
         raise Client::UsageError, "get accepts RESOURCE [NAME]" unless arguments.empty?
 
-        if target.start_with?("/")
-        end
         client.get(target, name, namespace: options[:namespace])
       end
 
