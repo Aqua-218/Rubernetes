@@ -281,10 +281,8 @@ module M6Gate
       corpus = cases.find { |entry| entry["id"] == "gate_corpus" }
       errors << "feature-gate matrix must record at least #{MIN_FEATURE_GATES} corpus gates" unless corpus && corpus["gate_count"].to_i >= MIN_FEATURE_GATES
       profiles = document["profiles"]
-      errors << "feature-gate matrix must describe the default, all-beta and alpha-apis profiles" unless profiles.is_a?(Hash) && %w[default
-                                                                                                                                    all-beta alpha-apis].all? do |key|
-        profiles.key?(key)
-      end
+      profiles_described = profiles.is_a?(Hash) && %w[default all-beta alpha-apis].all? { |key| profiles.key?(key) }
+      errors << "feature-gate matrix must describe the default, all-beta and alpha-apis profiles" unless profiles_described
     end
 
     def validate_crd(document, cases, errors)
