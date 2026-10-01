@@ -188,7 +188,6 @@ module Rubernetes
         # full sync deletes the stale service chains).
         def render(rules, changed_services: nil, existing_chains: [])
           filter_rules = []
-          nat_chains = []
           nat_rules = []
           skipped_nat_rules = 0
           %w[KUBE-SERVICES KUBE-EXTERNAL-SERVICES KUBE-FORWARD KUBE-NODEPORTS KUBE-PROXY-FIREWALL].each do |chain|
