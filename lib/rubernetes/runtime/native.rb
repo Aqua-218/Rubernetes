@@ -46,7 +46,7 @@ module Rubernetes
        RollbackJournal OwnershipLedger ResourceLedger Recovery StartupReconciler].each do |name|
       Native::Support.const_set(name, const_get(name, false)) unless Native::Support.const_defined?(name, false)
     end
-    NativeLoaderConstants.each do |name, value|
+    NATIVE_LOADER_CONSTANTS.each do |name, value|
       remove_const(name) if const_defined?(name, false)
       const_set(name, value)
     end
