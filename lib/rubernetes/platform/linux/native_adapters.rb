@@ -3069,9 +3069,7 @@ module Rubernetes
               # fails, the rescue path can still append an error marker.
               @status.close_on_exec = true
               argv = pointer_vector(@command.map { |value| c_string(value) })
-              envp = pointer_vector(@env.reject do |_key, value|
-                value.nil?
-              end.sort_by { |key, _| key }.map { |key, value| c_string("#{key}=#{value}") })
+              envp = pointer_vector(@env.compact.sort_by { |key, _| key }.map { |key, value| c_string("#{key}=#{value}") })
               error = if @executable_info&.fetch(:script)
                         @pivot.execveat_path(path: @executable_info.fetch(:path), argv: argv, envp: envp, resource_id: "workload:execveat")
                       else
