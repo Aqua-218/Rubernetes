@@ -100,7 +100,8 @@ class M7GateTest < Minitest::Test
 
   def test_kvm_report_accepts_a_complete_measurement_and_rejects_residue_and_missing_confinement
     errors = []
-    M7Gate.send(:validate_report, "kvm", report("m7_kvm_l4_l5_report", kvm_cases, "measurement_level" => "L5", "measurement_source" => "real_firecracker_jailer_kvm"),
+    M7Gate.send(:validate_report, "kvm",
+                report("m7_kvm_l4_l5_report", kvm_cases, "measurement_level" => "L5", "measurement_source" => "real_firecracker_jailer_kvm"),
                 "m7_kvm_l4_l5_report", identity, errors)
 
     assert_empty errors
