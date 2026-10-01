@@ -3014,7 +3014,7 @@ module Rubernetes
         object = preserve_metadata(object, existing) if existing
         object = with_managed_fields(object, managed_fields) if patch_type == :apply
         if existing.nil?
-          object = prepare_created_metadata(object)
+          object = prepare_created_metadata(object, resource: route.resource)
           # Server-side apply and a patch that creates take the same registry
           # PrepareForCreate hooks as POST; skipping them here made an applied
           # object differ from a posted one.
