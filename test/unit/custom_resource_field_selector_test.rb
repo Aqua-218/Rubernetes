@@ -69,9 +69,9 @@ class CustomResourceFieldSelectorTest < Minitest::Test
     sleep 0.05 until @call.call("GET", "/apis/example.com/v2/namespaces/ns/es").status == 200 || Time.now > deadline
 
     [{"host" => "host1", "port" => "80"}, {"host" => "host1", "port" => "8080"}, {"host" => "host2"}].each_with_index do |spec, i|
-      assert_equal 201,
-                   @call.call("POST", "/apis/example.com/v2/namespaces/ns/es",
-                              {"apiVersion" => "example.com/v2", "kind" => "E", "metadata" => {"name" => "cr#{i}"}}.merge(spec)).status
+      status = @call.call("POST", "/apis/example.com/v2/namespaces/ns/es",
+                          {"apiVersion" => "example.com/v2", "kind" => "E", "metadata" => {"name" => "cr#{i}"}}.merge(spec)).status
+      raise "setup: custom resource create returned #{status}" unless status == 201
     end
   end
 
