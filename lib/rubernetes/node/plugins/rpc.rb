@@ -113,7 +113,7 @@ module Rubernetes
               Process.wait(pid)
               raise Error, "plugin call timed out after #{seconds.round(1)}s"
             end
-            ready = IO.select([reader], nil, nil, remaining)
+            ready = reader.wait_readable(remaining)
             next unless ready
 
             chunk = reader.read_nonblock(65_536, exception: false)
