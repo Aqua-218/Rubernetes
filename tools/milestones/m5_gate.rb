@@ -138,9 +138,7 @@ module M5Gate
       valid.each do |entry|
         path = File.expand_path(entry.fetch("path"), PROJECT_ROOT)
         errors << "source inventory entry #{entry.fetch("path")} is missing" unless File.file?(path)
-        if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
-          errors << "source inventory digest mismatch #{entry.fetch("path")}"
-        end
+        errors << "source inventory digest mismatch #{entry.fetch("path")}" if File.file?(path) && Digest::SHA256.file(path).hexdigest != entry["sha256"]
       end
       # The formal sources are part of the input and must be exactly the
       # files the model-checking sources are pinned against.
