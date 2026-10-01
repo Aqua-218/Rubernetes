@@ -135,9 +135,11 @@ rake rbs:validate                # 手書き RBS のベースライン
   `INCOMPLETE` かエラーとして報告し、合格にはしない。免除（waiver）は名前と
   理由を記録する（[tools/milestones/README.ja.md](tools/milestones/README.ja.md)
   のカーネル waiver を参照）。
-- **ダックタイピングは意図的。** レシーバの具象型を仮定する RuboCop の cop は
-  理由付きで `.rubocop.yml` で無効化してある。過去の違反は `.rubocop_todo.yml`
-  に退避し手で減らす。整形のみのコミットは `.git-blame-ignore-revs` に列挙。
+- **ダックタイピングは意図的。** 無効化している RuboCop の cop は全て理由付きで
+  `.rubocop.yml` に列挙してある。大半は自動修正がレシーバの具象型を仮定するもの
+  （Struct への `grep`、Hash への `partition`、`File::Stat` への `empty?`）。
+  `rake lint` は常に違反ゼロで、todo ファイルは無い。整形のみのコミットは
+  `.git-blame-ignore-revs` に列挙。
 - **`lib/` に `require` を足したら lib 全体を 1 度ロードする**
   （`ruby -Ilib -e 'require "rubernetes"'`）。壊れた `require_relative` は
   それを必要とするプロセスでしか露見しない。
