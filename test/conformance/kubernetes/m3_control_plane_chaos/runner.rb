@@ -205,7 +205,7 @@ module M3ControlPlaneChaosRunner
     def initialize(directory:)
       @directory = directory
       @records = []
-      @handles = {}
+      @handles = {}.compare_by_identity
       FileUtils.mkdir_p(File.join(directory, "logs"))
     end
 
