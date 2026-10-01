@@ -28,7 +28,7 @@ module Rubernetes
 
               self.marshal_class_method = :encode
               self.unmarshal_class_method = :decode
-              self.service_name = 'v1beta1.Registration'
+              self.service_name = "v1beta1.Registration"
 
               rpc :Register, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::RegisterRequest, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::Empty
             end
