@@ -178,9 +178,9 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       second = Rubernetes::Runtime::Native.new(**options, log_root: File.join(directory, "logs-restarted"))
       report = second.recover(observer: -> { observed })
 
-    assert_empty(report.to_h.fetch("errors"))
-    assert_equal(:running, second.sandbox(sandbox_id).state)
-    restored = second.container_status(container)
+      assert_empty(report.to_h.fetch("errors"))
+      assert_equal(:running, second.sandbox(sandbox_id).state)
+      restored = second.container_status(container)
 
     assert_equal("running", restored.fetch("state"))
     assert_operator(restored.fetch("process").fetch("workload_pid"), :>, 0)
