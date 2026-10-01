@@ -136,7 +136,8 @@ class NodeDeclaredFeaturesTest < Minitest::Test
     assert_equal %w[ExtendWebSocketsToKubelet InPlacePodLevelResourcesVerticalScaling InPlacePodVerticalScalingInitContainers
                     RestartAllContainersOnContainerExits UserNamespacesHostNetworkSupport],
                  NDF::DEFAULT_FRAMEWORK.registry.map(&:name)
-    assert_equal %w[InPlacePodLevelResourcesVerticalScaling], NDF::DEFAULT_FRAMEWORK.feature_requirements("InPlacePodLevelResourcesVerticalScaling").enabled_feature_gates
+    assert_equal %w[InPlacePodLevelResourcesVerticalScaling],
+                 NDF::DEFAULT_FRAMEWORK.feature_requirements("InPlacePodLevelResourcesVerticalScaling").enabled_feature_gates
     assert_raises(NDF::Error) { NDF::DEFAULT_FRAMEWORK.feature_requirements("Nope") }
   end
 
