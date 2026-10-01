@@ -148,9 +148,7 @@ module Rubernetes
                 if name_token.value == "bind" && expression == [:ident, "cel"]
                   # ext.Bindings: cel.bind(var, init, expr) evaluates +expr+
                   # with +var+ bound to +init+.
-                  unless arguments.length == 3 && arguments.first.first == :ident
-                    raise SyntaxError, "cel.bind() requires an identifier and 2 expressions"
-                  end
+                  raise SyntaxError, "cel.bind() requires an identifier and 2 expressions" unless arguments.length == 3 && arguments.first.first == :ident
 
                   expression = [:bind, arguments[0][1], arguments[1], arguments[2]]
                 elsif MACROS.include?(name_token.value)
