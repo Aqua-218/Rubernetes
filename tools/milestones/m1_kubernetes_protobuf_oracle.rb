@@ -149,12 +149,8 @@ module M1KubernetesProtobufOracle
         raise OracleError, "no generated.proto file owns #{descriptor.full_name}"
       end
       go_package = file.options["go_package"]
-      unless go_package.is_a?(String) && !go_package.empty?
-        raise OracleError, "generated.proto for #{descriptor.full_name} has no go_package"
-      end
-      unless descriptor.name.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
-        raise OracleError, "protobuf message name is not a Go identifier: #{descriptor.name.inspect}"
-      end
+      raise OracleError, "generated.proto for #{descriptor.full_name} has no go_package" unless go_package.is_a?(String) && !go_package.empty?
+      raise OracleError, "protobuf message name is not a Go identifier: #{descriptor.name.inspect}" unless descriptor.name.match?(/\A[A-Za-z_][A-Za-z0-9_]*\z/)
 
       result[request.fetch("id")] = [go_package, descriptor.name]
     end
