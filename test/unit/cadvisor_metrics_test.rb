@@ -10,7 +10,8 @@ class CadvisorMetricsTest < Minitest::Test
   Cadvisor = Rubernetes::Node::CadvisorMetrics
 
   def usage(path:, cpu_usec: 1_500_000, current: 50_000_000, procs: [])
-    {"cpu" => {"usage_usec" => cpu_usec, "user_usec" => 1_000_000, "system_usec" => 500_000, "nr_periods" => 10, "nr_throttled" => 2, "throttled_usec" => 250_000},
+    {"cpu" => {"usage_usec" => cpu_usec, "user_usec" => 1_000_000, "system_usec" => 500_000, "nr_periods" => 10, "nr_throttled" => 2,
+               "throttled_usec" => 250_000},
      "memory" => {"anon" => 30_000_000, "file" => 20_000_000, "kernel" => 1_000_000, "file_mapped" => 4_000_000, "inactive_file" => 10_000_000,
                   "pgfault" => 700, "pgmajfault" => 3},
      "memory.current" => current, "memory.max" => 100_000_000, "memory.low" => 0, "memory.peak" => 60_000_000,
