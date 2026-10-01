@@ -50,6 +50,7 @@ module K7ClusterDriver
 
     case stage
     when "apiserver_rolling_restart" then apiserver_rolling_restart
+    when "cluster_rolling_restart" then cluster_rolling_restart
     when "controller_leader_loss" then leader_loss("controller-manager")
     when "scheduler_leader_loss" then leader_loss("scheduler")
     when "worker_reboot" then worker_reboot
