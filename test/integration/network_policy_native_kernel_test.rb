@@ -505,7 +505,8 @@ class NetworkPolicyNativeKernelTest < Minitest::Test
                      [rule.fetch("direction"), rule.fetch("target"), rule.dig("peer", "ip")]
                    end
                    unless readback.fetch("verified") && readback.fetch("chains").any? && forward && reverse
-                     raise "multi-interface readback=#{readback.fetch("verified")} rules=#{rule_count} summary=#{rule_summary.inspect} forward=#{forward}(#{forward_detail}) reverse=#{reverse}(#{reverse_detail})"
+                     raise "multi-interface readback=#{readback.fetch("verified")} rules=#{rule_count} summary=#{rule_summary.inspect} " \
+                           "forward=#{forward}(#{forward_detail}) reverse=#{reverse}(#{reverse_detail})"
                    end
 
                    true
