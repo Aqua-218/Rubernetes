@@ -69,8 +69,6 @@ Style/TrailingCommaInHashLiteral:
 Metrics:
   Enabled: false
 
-Naming/MethodParameterName:
-  MinNameLength: 2
 # v6, ipv4, sha256, rol32 are domain names, not numbered variables.
 # Nested rescues name their exception distinctly on purpose (cleanup_error
 # next to the original error); renaming them all to `error` shadowed the
