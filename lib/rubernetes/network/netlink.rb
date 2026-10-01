@@ -847,12 +847,6 @@ module Rubernetes
         close_namespace_fd&.close unless close_namespace_fd&.closed?
       end
 
-      def self.fork_for_namespaces?
-        return @fork_for_namespaces unless @fork_for_namespaces.nil?
-
-        @fork_for_namespaces = ENV["RUBY_MN_THREADS"] == "1"
-      end
-
       class << self
         attr_writer :fork_for_namespaces
       end
