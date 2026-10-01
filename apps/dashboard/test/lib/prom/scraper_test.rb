@@ -30,26 +30,26 @@ module Prom
       @store.query(matchers, 0, @now + 1).map { |series, points| [series.labels, points.last] }
     end
 
-  test "samples get job and instance labels, conflicts become exported_" do
-    body = "# TYPE a counter\na{path=\"/x\",job=\"inner\"} 5\nb 1\n"
-    status = @scraper.scrape(target(body, labels: {"node" => "worker-0"}))
+    test "samples get job and instance labels, conflicts become exported_" do
+      body = "# TYPE a counter\na{path=\"/x\",job=\"inner\"} 5\nb 1\n"
+      status = @scraper.scrape(target(body, labels: {"node" => "worker-0"}))
 
-    assert_equal "up", status.health
-    assert_equal 2, status.samples
-    a = value_of("a")
+      assert_equal "up", status.health
+      assert_equal 2, status.samples
+      a = value_of("a")
 
-    assert_equal 1, a.length
-    assert_equal(
-      {"__name__" => "a", "path" => "/x", "job" => "test", "exported_job" => "inner", "instance" => "t:1", "node" => "worker-0"}, a[0][0]
-    )
-    assert_in_delta(5.0, a[0][1][1])
-    up = value_of("up")
+      assert_equal 1, a.length
+      assert_equal(
+        {"__name__" => "a", "path" => "/x", "job" => "test", "exported_job" => "inner", "instance" => "t:1", "node" => "worker-0"}, a[0][0]
+      )
+      assert_in_delta(5.0, a[0][1][1])
+      up = value_of("up")
 
-    assert_equal([1.0], up.map { |_, point| point[1] })
-    assert_equal({"__name__" => "up", "job" => "test", "instance" => "t:1", "node" => "worker-0"}, up[0][0])
-    assert_equal([2.0], value_of("scrape_samples_scraped").map { |_, p| p[1] })
-    assert_equal([2.0], value_of("scrape_series_added").map { |_, p| p[1] })
-  end
+      assert_equal([1.0], up.map { |_, point| point[1] })
+      assert_equal({"__name__" => "up", "job" => "test", "instance" => "t:1", "node" => "worker-0"}, up[0][0])
+      assert_equal([2.0], value_of("scrape_samples_scraped").map { |_, p| p[1] })
+      assert_equal([2.0], value_of("scrape_series_added").map { |_, p| p[1] })
+    end
 
   test "a series that disappears gets a stale marker and up goes to 0 on failure" do
     @scraper.scrape(target("a 1\nb 2\n"))
