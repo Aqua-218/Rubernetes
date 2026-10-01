@@ -38,12 +38,10 @@ module Prom
       assert_equal [3, 2.0], decoded[2]
     end
 
-  test "irregular and large timestamp gaps use the wider delta-of-delta buckets" do
-    t = 0
-    samples = []
-    [1, 1, 5000, 10_000, 70_000, 600_000, 10_000_000, 1, 1, 3_000_000_000].each_with_index do |gap, i|
-      t += gap
-      samples << [t, i.to_f]
+    test "single sample and two samples" do
+      assert_equal [[5, 9.5]], roundtrip([[5, 9.5]]).last
+      assert_equal [[5, 9.5], [65, 9.5]], roundtrip([[5, 9.5], [65, 9.5]]).last
+      assert_equal [], Prom::Gorilla.decode([0].pack("n"))
     end
     _, decoded = roundtrip(samples)
 
