@@ -449,7 +449,8 @@ module Rubernetes
         @recovered = false
       end
       attr_reader :declared_features, :stats_provider, :eviction_manager, :image_gc_manager, :dra_manager, :plugin_manager, :csi_plugins,
-                  :kubelet_metrics, :container_manager, :shutdown_manager, :capacity, :allocatable, :node_name, :api, :runtime, :lifecycle, :sync_loop, :status, :lease_duration_seconds, :node_namespace, :startup_error, :recovery_report
+                  :kubelet_metrics, :container_manager, :shutdown_manager, :capacity, :allocatable, :node_name, :api, :runtime, :lifecycle, :sync_loop,
+                  :status, :lease_duration_seconds, :node_namespace, :startup_error, :recovery_report
 
       def registered?
         @mutex.synchronize { @registered }
