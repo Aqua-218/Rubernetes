@@ -233,7 +233,7 @@ module Rubernetes
 
               false
             else
-              @library.binary(operator, eval(left_node), eval(right_node), self)
+              @library.binary(operator, evaluate(left_node), evaluate(right_node), self)
             end
           end
 
