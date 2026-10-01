@@ -690,7 +690,8 @@ module Rubernetes
             next unless code && code != 0
 
             message = if code == 111
-                        "error forwarding port #{@port} to pod #{@pod}, uid #{@uid}: failed to connect to localhost:#{@port} inside namespace: connection refused"
+                        "error forwarding port #{@port} to pod #{@pod}, uid #{@uid}: failed to connect to localhost:#{@port} inside namespace: connection " \
+                          "refused"
                       else
                         "error forwarding port #{@port} to pod #{@pod}, uid #{@uid}: connector exited with #{code}"
                       end
