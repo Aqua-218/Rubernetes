@@ -168,29 +168,33 @@ class ExecLateCgroupJoinTest < Minitest::Test
   def test_a_child_joins_through_a_descriptor_opened_before_it_dropped_privileges
     skip "needs root and a writable cgroup v2 root" unless Process.euid.zero? && File.writable?("/sys/fs/cgroup/cgroup.procs")
 
-    hierarchy = "rbn-late-join-test-#{Process.pid}"
-    parent = File.join("/sys/fs/cgroup", hierarchy)
-    Dir.mkdir(parent)
-    File.write(File.join(parent, "cgroup.subtree_control"), "+cpu")
-    path = File.join(parent, "c1")
-    Dir.mkdir(path)
-    File.write(File.join(path, "cpu.max"), "1000 100000")
-    cgroup = CgroupV2.new(root: "/sys/fs/cgroup", hierarchy: hierarchy)
-    procs = cgroup.open_procs(path)
-    reader, writer = IO.pipe
-    pid = fork do
-      reader.close
-      Process::Sys.setresgid(65_534, 65_534, 65_534)
-      Process::Sys.setresuid(65_534, 65_534, 65_534)
-      # Pre-exec work, outside the limited cgroup.
-      x = 0
-      2_000_000.times { |i| x += i }
-      pre_join_usec = (Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID) * 1_000_000).to_i
-      before = File.read("/proc/self/cgroup").strip
-      procs.syswrite("0")
-      after = File.read("/proc/self/cgroup").strip
-      writer.write(JSON.generate("before" => before, "after" => after, "uid" => Process.euid,
-                                 "pre_join_usec" => pre_join_usec))
+    begin
+      hierarchy = "rbn-late-join-test-#{Process.pid}"
+      parent = File.join("/sys/fs/cgroup", hierarchy)
+      Dir.mkdir(parent)
+      File.write(File.join(parent, "cgroup.subtree_control"), "+cpu")
+      path = File.join(parent, "c1")
+      Dir.mkdir(path)
+      File.write(File.join(path, "cpu.max"), "1000 100000")
+      cgroup = CgroupV2.new(root: "/sys/fs/cgroup", hierarchy: hierarchy)
+      procs = cgroup.open_procs(path)
+      reader, writer = IO.pipe
+      pid = fork do
+        reader.close
+        Process::Sys.setresgid(65_534, 65_534, 65_534)
+        Process::Sys.setresuid(65_534, 65_534, 65_534)
+        # Pre-exec work, outside the limited cgroup.
+        x = 0
+        2_000_000.times { |i| x += i }
+        pre_join_usec = (Process.clock_gettime(Process::CLOCK_PROCESS_CPUTIME_ID) * 1_000_000).to_i
+        before = File.read("/proc/self/cgroup").strip
+        procs.syswrite("0")
+        after = File.read("/proc/self/cgroup").strip
+        writer.write(JSON.generate("before" => before, "after" => after, "uid" => Process.euid,
+                                   "pre_join_usec" => pre_join_usec))
+        writer.close
+        exit!(0)
+      end
       writer.close
       exit!(0)
     end
