@@ -302,7 +302,7 @@ module Rubernetes
         end
       end
 
-      def cross_field_errors(root, kind, operation, old, strategy_prepare = false, definition = nil, subresource = nil)
+      def cross_field_errors(root, kind, operation, old, strategy_prepare: false, definition: nil, subresource: nil)
         return handler_request_errors(root, kind) if HANDLER_REQUEST_KINDS.include?(kind)
 
         issues = missing_root_errors(root, kind)
