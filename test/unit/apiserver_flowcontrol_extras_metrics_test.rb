@@ -20,7 +20,8 @@ class APIServerFlowControlExtrasMetricsTest < Minitest::Test
     {"metadata" => {"name" => "tiny"}, "spec" => {"type" => "Limited", "limited" => {"nominalConcurrencyShares" => 1,
                                                                                      "limitResponse" => {"type" => "Queue",
                                                                                                          "queuing" => {"queues" => 1,
-                                                                                                                       "handSize" => 1, "queueLengthLimit" => 1}}}}},
+                                                                                                                       "handSize" => 1,
+                                                                                                                       "queueLengthLimit" => 1}}}}},
     {"metadata" => {"name" => "none"},
      "spec" => {"type" => "Limited", "limited" => {"nominalConcurrencyShares" => 1, "limitResponse" => {"type" => "Reject"}}}},
     {"metadata" => {"name" => "exempt"}, "spec" => {"type" => "Exempt"}}
