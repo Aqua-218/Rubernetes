@@ -111,8 +111,8 @@ module Promql
       assert_equal [], vector("rate(one[1m])")
       load("two", {"a" => "b"}, [5, 6])
 
-  test "rate needs two samples and the result has no metric name" do
-    load("one", {"a" => "b"}, [5])
+      assert_equal [{"a" => "b"}], vector("rate(two[1m])").map(&:first)
+    end
 
     assert_equal [], vector("rate(one[1m])")
     load("two", {"a" => "b"}, [5, 6])
