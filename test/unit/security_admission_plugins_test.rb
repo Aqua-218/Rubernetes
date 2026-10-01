@@ -213,7 +213,10 @@ class SecurityAdmissionPluginsTest < Minitest::Test
                                                 user: kubelet))
     end
     labelled = {"metadata" => {"name" => "n1", "labels" => {"node-restriction.kubernetes.io/tier" => "gold"}}}
-    assert_raises(A::Rejected) { restriction.validate(attributes("UPDATE", resource: "nodes", namespace: "", name: "n1", object: labelled, old: {"metadata" => {"name" => "n1"}}, user: kubelet)) }
+    assert_raises(A::Rejected) do
+      restriction.validate(attributes("UPDATE", resource: "nodes", namespace: "", name: "n1", object: labelled,
+                                                old: {"metadata" => {"name" => "n1"}}, user: kubelet))
+    end
     ok = {"metadata" => {"name" => "n1", "labels" => {"kubernetes.io/hostname" => "n1", "example.com/rack" => "r1"}}}
     restriction.validate(attributes("UPDATE", resource: "nodes", namespace: "", name: "n1", object: ok,
                                               old: {"metadata" => {"name" => "n1"}}, user: kubelet))
