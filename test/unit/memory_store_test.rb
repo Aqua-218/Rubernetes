@@ -467,7 +467,7 @@ class MemoryStoreTest < Minitest::Test
   # page it already had, and a chunked listing then reports more objects than
   # exist -- which is exactly what the API chunking conformance spec counts.
   def test_a_compacted_continue_token_comes_back_with_an_inconsistent_continue
-    10.times { |index| @store.create("pods/%02d" % index, object(name: "%02d" % index)) }
+    10.times { |index| @store.create(format("pods/%02d", index), object(name: format("%02d", index))) }
     first_page = @store.list("pods/", limit: 3)
 
     assert_equal(3, first_page.items.length)
