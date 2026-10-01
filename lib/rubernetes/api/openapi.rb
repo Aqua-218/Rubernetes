@@ -186,9 +186,7 @@ module Rubernetes
         case value
         when Hash
           reference = value["$ref"]
-          if reference.is_a?(String) && reference.start_with?("#/components/schemas/")
-            found << reference.delete_prefix("#/components/schemas/")
-          end
+          found << reference.delete_prefix("#/components/schemas/") if reference.is_a?(String) && reference.start_with?("#/components/schemas/")
           value.each_value { |child| collect_refs(child, found) }
         when Array
           value.each { |child| collect_refs(child, found) }
