@@ -255,7 +255,12 @@ module Prom
             entry.state = "resolved"
             entry.resolved_at_ms = now_ms
           end
-        next unless key[0] == rule.object_id
+        end
+        # A second pass on purpose: the first one above skips the alerts that
+        # are still active (`next if seen`), this one writes a row for every
+        # alert of the rule, active or just resolved.
+        @active.each do |key, entry|
+          next unless key[0] == rule.object_id
 
           alert_labels = entry.labels.merge("__name__" => "ALERTS", "alertstate" => entry.state)
           if entry.state == "resolved"
