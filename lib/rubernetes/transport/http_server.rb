@@ -988,9 +988,7 @@ module Rubernetes
         remaining = deadline - monotonic_time
         raise RequestTimeout if remaining <= 0
 
-        readers = readable ? [socket] : nil
-        writers = readable ? nil : [socket]
-        ready = IO.select(readers, writers, nil, remaining)
+        ready = readable ? socket.wait_readable(remaining) : socket.wait_writable(remaining)
         raise RequestTimeout unless ready
       rescue IOError, Errno::EBADF
         raise
