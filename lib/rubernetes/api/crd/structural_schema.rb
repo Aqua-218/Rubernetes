@@ -103,6 +103,14 @@ module Rubernetes
           raise NotStructural, "#{join(path)}: type #{type.inspect} is not allowed" if type && !TYPES.include?(type)
           raise NotStructural, "root schema must be an object" if path.empty? && type != "object"
 
+          # apiextensions validation.go: the IntOrString exception.  With
+          # x-kubernetes-int-or-string: true, `anyOf: [{type: integer}, {type:
+          # string}]` may set the types (upstream also allows it as the first
+          # allOf entry's anyOf; combinator branches are not descended here,
+          # so that form passes already).  Argo CD's Application CRD spells
+          # kustomize replica counts that way and was refused as
+          # non-structural, so no Application was ever served.
+          skip_any_of = int_or_string && int_or_string_any_of?(schema["anyOf"])
           %w[allOf anyOf oneOf].each do |combinator|
             Array(schema[combinator]).each_with_index do |branch, index|
               if branch.is_a?(Hash) && branch.key?("type")
