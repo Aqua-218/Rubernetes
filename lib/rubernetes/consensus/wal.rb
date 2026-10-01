@@ -137,9 +137,7 @@ module Rubernetes
               end
               raise WALCorruption.new("WAL record header is zero-filled inside the file", path: path, offset: offset)
             end
-            if length > max_record_bytes
-              raise WALCorruption.new("WAL record length #{length} exceeds #{max_record_bytes}", path: path, offset: offset)
-            end
+            raise WALCorruption.new("WAL record length #{length} exceeds #{max_record_bytes}", path: path, offset: offset) if length > max_record_bytes
 
             if remaining < RECORD_HEADER_BYTES + length
               torn_offset = offset
