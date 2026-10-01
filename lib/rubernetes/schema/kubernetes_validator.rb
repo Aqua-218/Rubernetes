@@ -5099,7 +5099,9 @@ module Rubernetes
             messages.concat(dns1123_subdomain_messages(group).map { |message| "group part: #{message}" })
           end
         else
-          return ["an apiVersion is a DNS-1035 label, which must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?') with an optional DNS subdomain prefix and '/' (e.g. 'example.com/MyVersion')"]
+          return ["an apiVersion is a DNS-1035 label, which must consist of lower case alphanumeric characters or '-', start with an alphabetic character, " \
+                  "and end with an alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?') with " \
+                  "an optional DNS subdomain prefix and '/' (e.g. 'example.com/MyVersion')"]
         end
         if version.empty?
           messages << "version part: must be non-empty"
