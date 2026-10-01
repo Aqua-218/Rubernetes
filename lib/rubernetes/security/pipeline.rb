@@ -229,6 +229,36 @@ module Rubernetes
         end
       end
 
+      # fields.Selector.RequiresExactMatch: the value of a "field=value" or
+      # "field==value" requirement (backslash escapes allowed).
+      def self.exact_field_match(selector, field)
+        terms = []
+        current = +""
+        escaped = false
+        selector.each_char do |char|
+          if escaped
+            current << char
+            escaped = false
+          elsif char == "\\"
+            current << char
+            escaped = true
+          elsif char == ","
+            terms << current
+            current = +""
+          else
+            current << char
+          end
+        end
+        terms << current
+        terms.each do |term|
+          match = term.strip.match(/\A(.+?)(==|=|!=)(.*)\z/)
+          next unless match && match[1].strip == field && match[2] != "!="
+
+          return match[3].gsub(/\\(.)/, "\\1")
+        end
+        nil
+      end
+
       private
 
       # WithConstrainedImpersonation / WithImpersonation, after the audit
