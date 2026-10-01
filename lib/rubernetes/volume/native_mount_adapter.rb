@@ -807,9 +807,7 @@ module Rubernetes
 
       def readback_mount!(target, requested_filesystem:, bind:, readonly:, resource_id:)
         observed = mount_entry_at(target)
-        unless observed
-          raise MountIdentityError, "mount(2) reported success but #{target.inspect} is absent from mountinfo (resource=#{resource_id})"
-        end
+        raise MountIdentityError, "mount(2) reported success but #{target.inspect} is absent from mountinfo (resource=#{resource_id})" unless observed
 
         validate_stable_identity!(observed, resource_id)
         if requested_filesystem && !bind && !observed.fetch("filesystem").casecmp?(requested_filesystem)
