@@ -249,9 +249,22 @@ module Promql
       assert_in_delta 0.3, summed[0][1], 1e-9
     end
 
-  test "histogram_quantile interpolates within the bucket" do
-    {"0.1" => 10, "0.5" => 30, "1" => 40, "+Inf" => 40}.each do |le, count|
-      load("d_bucket", {"le" => le}, [count])
+    test "label_replace, label_join, sort and clamp" do
+      load("s", {"instance" => "host-1:9100"}, [3])
+      load("s", {"instance" => "host-2:9100"}, [1])
+      replaced = vector('label_replace(s, "host", "$1", "instance", "(.*):.*")').map { |m, _| m["host"] }.sort
+
+      assert_equal %w[host-1 host-2], replaced
+      joined = vector('label_join(s, "j", "-", "instance", "instance")').map { |m, _| m["j"] }.sort
+
+      assert_equal ["host-1:9100-host-1:9100", "host-2:9100-host-2:9100"], joined
+      assert_equal [1.0, 3.0], values("sort(s)")
+      assert_equal [3.0, 1.0], values("sort_desc(s)")
+      assert_equal [2.0, 2.0], values("clamp(s, 2, 2)")
+      assert_equal [3.0, 2.0], values("clamp_min(s, 2)")
+      assert_equal [2.0, 1.0], values("clamp_max(s, 2)")
+      assert_equal [3.0, 1.0], values("round(s)")
+      assert_equal [5.0, 0.0], values("round(s, 5)")
     end
     # rank 0.5*40 = 20 lies in the (0.1, 0.5] bucket at (20-10)/20 -> 0.3
     assert_in_delta 0.3, values("histogram_quantile(0.5, d_bucket)").first, 1e-9
