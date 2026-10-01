@@ -414,9 +414,7 @@ module Rubernetes
       def validate_agent_dns!(section)
         validate_mapping!(section, "rubernetes-agent.dns")
         reject_unknown_keys!(section, AGENT_DNS_KEYS, "rubernetes-agent.dns")
-        if section.key?("enabled") && ![true, false].include?(section["enabled"])
-          raise Error, "rubernetes-agent.dns.enabled must be true or false"
-        end
+        raise Error, "rubernetes-agent.dns.enabled must be true or false" if section.key?("enabled") && ![true, false].include?(section["enabled"])
 
         validate_positive_integer!(section["port"], "rubernetes-agent.dns.port") if section.key?("port")
         %w[bind_addresses upstreams].each do |key|
