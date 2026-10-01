@@ -25,8 +25,10 @@ module Rubernetes
               self.unmarshal_class_method = :decode
               self.service_name = "pluginregistration.Registration"
 
-              rpc :GetInfo, ::Rubernetes::Node::Plugins::Generated::PluginRegistrationV1::InfoRequest, ::Rubernetes::Node::Plugins::Generated::PluginRegistrationV1::PluginInfo
-              rpc :NotifyRegistrationStatus, ::Rubernetes::Node::Plugins::Generated::PluginRegistrationV1::RegistrationStatus, ::Rubernetes::Node::Plugins::Generated::PluginRegistrationV1::RegistrationStatusResponse
+              rpc :GetInfo, ::Rubernetes::Node::Plugins::Generated::PluginRegistrationV1::InfoRequest,
+                  ::Rubernetes::Node::Plugins::Generated::PluginRegistrationV1::PluginInfo
+              rpc :NotifyRegistrationStatus, ::Rubernetes::Node::Plugins::Generated::PluginRegistrationV1::RegistrationStatus,
+                  ::Rubernetes::Node::Plugins::Generated::PluginRegistrationV1::RegistrationStatusResponse
             end
 
             Stub = Service.rpc_stub_class
