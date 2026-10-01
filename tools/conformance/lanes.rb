@@ -230,6 +230,9 @@ module Conformance
         sonobuoy = Lanes.tool_path("sonobuoy")
         return Lanes.incomplete("K2", "sonobuoy binary is not installed; run `rake m8:tools`") if sonobuoy.nil?
 
+        # sonobuoy's preflight looks for kube-dns/CoreDNS Pods in kube-system;
+        # Rubernetes serves cluster DNS from the node agent, so only that
+        # check is skipped.  The conformance run itself is untouched.
         command = [
           sonobuoy, "run", "--mode=certified-conformance",
           "--kubeconfig", kubeconfig,
