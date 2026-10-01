@@ -235,9 +235,7 @@ module M3IdempotencyMeasurement
     # controllers only warn (SelectingAll) and never reconcile without one, so
     # an unselected fixture would measure a warning event instead of a
     # reconcile.
-    if %w[Deployment ReplicaSet StatefulSet DaemonSet].include?(descriptor.kind.to_s)
-      object["spec"]["selector"] = {"matchLabels" => {"app" => "m3"}}
-    end
+    object["spec"]["selector"] = {"matchLabels" => {"app" => "m3"}} if %w[Deployment ReplicaSet StatefulSet DaemonSet].include?(descriptor.kind.to_s)
     case descriptor.kind
     when "CronJob"
       # A generic workload fixture would leave CronJob's default `* * * * *`
