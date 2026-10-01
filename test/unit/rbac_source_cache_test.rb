@@ -108,7 +108,6 @@ class RBACSourceCacheTest < Minitest::Test
     assert_equal 2, lists["registry/clusterroles/"]
   end
 
-class RBACSourceCacheScopeTest < RBACSourceCacheTest
   def test_a_namespaced_binding_write_keeps_the_cluster_cache
     # bob has no cluster grant, so his check walks the namespaced lists too.
     refute_predicate @rbac.authorize(attributes("bob")), :allowed?
