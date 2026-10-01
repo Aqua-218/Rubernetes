@@ -68,7 +68,8 @@ module Rubernetes
               rpc :PodSandboxStatus, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatusRequest,
                   ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PodSandboxStatusResponse
               # ListPodSandbox returns a list of PodSandboxes.
-              rpc :ListPodSandbox, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxResponse
+              rpc :ListPodSandbox, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ListPodSandboxResponse
               # StreamPodSandboxes returns a stream of PodSandboxes.
               # This is an alternative to ListPodSandbox that streams results in lists
               # of at least one item, avoiding the gRPC message size limit for nodes with
