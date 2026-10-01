@@ -43,13 +43,6 @@ quiet log is not a stalled run. Re-run a fix with `--focus` (a different run
 identity; it never replaces a full round). The last full IPv4 round on this
 tree passed 459/459 (2026-09-30).
 
-## Related
-
-- [Kubernetes compatibility contract](../../spec/verification/kubernetes-compatibility.md)
-- [Milestone evidence rules](../../spec/delivery/milestones.md)
-- [Pinned runner inputs](../../third_party/locks/conformance-runners.json)
-
-
 ## Bringing up the IPv6 and dual-stack profiles
 
 `test/conformance/kubernetes/profiles.yml` defines three profiles, all 3 control
