@@ -230,7 +230,9 @@ module Rubernetes
             errors.concat(label_errors(prefix, DNS1123_SUBDOMAIN, "prefix part #{DNS1123_SUBDOMAIN_MESSAGE}", DNS1123_SUBDOMAIN_MAX))
           end
         else
-          errors << "a qualified name must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character (e.g. 'MyName',  or 'my.name',  or '123-abc', regex used for validation is '([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]') with an optional DNS subdomain prefix and '/' (e.g. 'example.com/MyName')"
+          errors << "a qualified name must consist of alphanumeric characters, '-', '_' or '.', and must start and end with an alphanumeric character (e.g. " \
+                    "'MyName',  or 'my.name',  or '123-abc', regex used for validation is '([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]') with an optional DNS " \
+                    "subdomain prefix and '/' (e.g. 'example.com/MyName')"
           return errors
         end
         if name.empty?
