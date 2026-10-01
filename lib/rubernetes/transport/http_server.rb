@@ -125,9 +125,7 @@ module Rubernetes
         if (tls_enabled && !(cert_file || cert)) || (tls_enabled && !(key_file || key))
           raise ConfigurationError, "TLS requires both certificate and private key"
         end
-        if (cert_file || cert || key_file || key) && tls == false
-          raise ConfigurationError, "TLS certificate and key cannot be used with tls: false"
-        end
+        raise ConfigurationError, "TLS certificate and key cannot be used with tls: false" if (cert_file || cert || key_file || key) && tls == false
         raise ConfigurationError, "unknown TLS options: #{tls_options.keys.join(", ")}" unless tls_options.empty?
 
         @handler = handler
