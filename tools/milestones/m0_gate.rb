@@ -997,7 +997,8 @@ module M0Gate
         [item["classname"].to_s, item["name"].to_s] if item.is_a?(Hash) && nonempty?(item["classname"]) && nonempty?(item["name"])
       end
       canonical = identities.sort.map { |classname, name| "#{classname}\0#{name}\n" }.join
-      unless identities.uniq.length == identities.length && identities.length == document["testcase_count"] && Digest::SHA256.hexdigest(canonical) == document["testcase_sha256"]
+      unless identities.uniq.length == identities.length && identities.length == document["testcase_count"] &&
+             Digest::SHA256.hexdigest(canonical) == document["testcase_sha256"]
         errors << "current Minitest inventory identity is invalid"
         return nil
       end
