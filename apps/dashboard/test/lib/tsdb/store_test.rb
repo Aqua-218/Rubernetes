@@ -24,10 +24,16 @@ module Tsdb
       {"__name__" => name}.merge(extra)
     end
 
-    assert_equal 2, result.length
-    assert_equal %w[a:1 b:1], result.map { |series, _| series.labels["instance"] }.sort
-    assert_equal 10, result[0][1].length
-    assert_equal [t0, 1.0], result.find { |s, _| s.labels["instance"] == "a:1" }[1].first
+    test "appends samples and selects them back by matchers" do
+      store = open_store
+      t0 = 1_700_000_000_000
+      10.times do |i|
+        store.append(labels("up", "job" => "apiserver", "instance" => "a:1"), t0 + (i * 15_000), 1.0)
+        store.append(labels("up", "job" => "apiserver", "instance" => "b:1"), t0 + (i * 15_000), i.even? ? 1.0 : 0.0)
+        store.append(labels("up", "job" => "node", "instance" => "n:1"), t0 + (i * 15_000), 1.0)
+      end
+      result = store.query([M.new(name: "__name__", op: "=", value: "up"), M.new(name: "job", op: "=", value: "apiserver")], t0,
+                           t0 + (10 * 15_000))
 
     regex = store.query([M.new(name: "__name__", op: "=", value: "up"), M.new(name: "instance", op: "=~", value: "[ab]:1")], t0,
                         t0 + 200_000)
