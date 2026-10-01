@@ -271,9 +271,7 @@ module M7Gate
         end.values.none? && Array(residue["resources_listed"]).empty?
       end
       hang = cases.find { |entry| entry["id"] == "fault_vmm_hang" }
-      unless hang && hang["start_refused_while_unknown"] == true
-        errors << "fault_vmm_hang must refuse start while the VM state is unresolved"
-      end
+      errors << "fault_vmm_hang must refuse start while the VM state is unresolved" unless hang && hang["start_refused_while_unknown"] == true
       errors << "fault_vmm_hang must leave the container in a non-running unresolved state" unless hang && %w[StateUnknown Stopping
                                                                                                               Stopped].include?(hang["container_state_after_hang"])
       pause = cases.find { |entry| entry["id"] == "fault_pause_ack_loss" }
