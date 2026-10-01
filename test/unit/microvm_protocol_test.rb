@@ -195,7 +195,8 @@ class MicroVMProtocolTest < Minitest::Test
     broker = M::Broker.new(resolver: resolver, audit: ->(entry) { audit << entry }, revocation_epoch: -> { epoch })
     identity = {"capability_id" => "cap-1", "subject_id" => "subj-1", "policy_digest" => "pd", "revocation_epoch" => 0}
     broker.bind(vm_id: "vm-1", identity: identity, policy: {"operations" => %w[dns.resolve http.get], "allowed_hosts" => ["api.example.com", "*.internal"],
-                                                            "allowed_cidrs" => ["10.1.0.0/16"], "allowed_ports" => [443], "expires_at" => (Time.now + 60).utc.iso8601})
+                                                            "allowed_cidrs" => ["10.1.0.0/16"], "allowed_ports" => [443],
+                                                            "expires_at" => (Time.now + 60).utc.iso8601})
 
     assert_equal({"name" => "api.example.com", "addresses" => ["10.1.0.5", "10.1.0.6"]},
                  broker.handle("vm-1", "broker.request", {"operation" => "dns.resolve", "params" => {"name" => "api.example.com"}}))
