@@ -161,7 +161,8 @@ module Rubernetes
         required = Array(attributes["requiredServiceAccountAnnotationKeys"]).map(&:to_s)
         optional = Array(attributes["optionalServiceAccountAnnotationKeys"]).map(&:to_s)
         if attributes["requireServiceAccount"] == false && !required.empty?
-          errors << "#{path}.requiredServiceAccountAnnotationKeys: Forbidden: requireServiceAccount cannot be false when requiredServiceAccountAnnotationKeys is set"
+          errors << "#{path}.requiredServiceAccountAnnotationKeys: Forbidden: requireServiceAccount cannot be false when " \
+                    "requiredServiceAccountAnnotationKeys is set"
         end
         {"requiredServiceAccountAnnotationKeys" => required, "optionalServiceAccountAnnotationKeys" => optional}.each do |field, keys|
           keys.each_with_index do |key, index|
