@@ -186,8 +186,7 @@ module Rubernetes
       end
 
       def format_resolv_conf(nameservers, searches, options)
-        lines = []
-        nameservers.first(MAX_NAMESERVERS).each { |server| lines << "nameserver #{server}" }
+        lines = nameservers.first(MAX_NAMESERVERS).map { |server| "nameserver #{server}" }
         trimmed = []
         total = 0
         searches.each do |domain|
