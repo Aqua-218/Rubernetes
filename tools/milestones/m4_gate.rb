@@ -691,7 +691,8 @@ module M4Gate
         errors << "proxy packet immutable execution identity is incomplete"
       end
       binding = packet["inputBinding"]
-      unless binding.is_a?(Hash) && valid_digest?(binding["leftDigest"]) && valid_digest?(binding["rightDigest"]) && valid_digest?(packet["inputBindingSha256"]) && packet["inputBindingSha256"] == canonical_document_digest(binding)
+      unless binding.is_a?(Hash) && valid_digest?(binding["leftDigest"]) && valid_digest?(binding["rightDigest"]) &&
+             valid_digest?(packet["inputBindingSha256"]) && packet["inputBindingSha256"] == canonical_document_digest(binding)
         errors << "proxy packet immutable input binding is incomplete"
       end
       unless packet["rawPacketTrace"] && valid_digest?(packet["packetTraceSha256"]) && packet["packetTraceSha256"] == canonical_document_digest(packet["rawPacketTrace"])
