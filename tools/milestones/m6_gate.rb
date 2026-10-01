@@ -262,9 +262,7 @@ module M6Gate
       unless openapi && openapi["upstream_paths"].to_i >= MIN_UPSTREAM_OPENAPI_PATHS
         errors << "openapi_operations must cover at least #{MIN_UPSTREAM_OPENAPI_PATHS} upstream paths"
       end
-      unless openapi && openapi["missing_count"] == 0 && Array(openapi["missing"]).empty?
-        errors << "openapi_operations must report zero missing operations"
-      end
+      errors << "openapi_operations must report zero missing operations" unless openapi && openapi["missing_count"] == 0 && Array(openapi["missing"]).empty?
       protobuf = cases.find { |entry| entry["id"] == "protobuf_descriptors" }
       errors << "protobuf_descriptors must count the corpus messages" unless protobuf && protobuf["descriptor_messages"].to_i.positive?
       return if document["upstream_group_versions"].to_i >= MIN_DISCOVERY_DOCUMENTS
