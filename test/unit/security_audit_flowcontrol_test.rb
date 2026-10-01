@@ -211,7 +211,8 @@ class SecurityAuditFlowControlTest < Minitest::Test
     assert_equal "client-id", backend.events.last["auditID"]
     assert_equal "list", backend.events.last["verb"]
     allow = S::Pipeline.new(authenticator: authenticator,
-                            authorizer: S::Authorization::Union.new(authorizers: [S::Authorization::AlwaysAllow.new]), audit_policy: policy, audit_backend: backend)
+                            authorizer: S::Authorization::Union.new(authorizers: [S::Authorization::AlwaysAllow.new]), audit_policy: policy,
+                            audit_backend: backend)
     entry = allow.enter(good, route)
 
     assert_equal "alice", entry.request.identity["username"]
