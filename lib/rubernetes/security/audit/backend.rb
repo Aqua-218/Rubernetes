@@ -21,7 +21,8 @@ module Rubernetes
           registry.register("apiserver_audit_event_total", type: :counter,
                                                            help: "Counter of audit events generated and sent to the audit backend.")
           registry.register("apiserver_audit_error_total", type: :counter,
-                                                           help: "Counter of audit events that failed to be audited properly. Plugin identifies the plugin affected by the error.")
+                                                           help: "Counter of audit events that failed to be audited properly. Plugin identifies the plugin " \
+                                                                 "affected by the error.")
           registry.register("apiserver_audit_level_total", type: :counter,
                                                            help: "Counter of policy levels for audit events (1 per request).")
           registry.register("apiserver_audit_requests_rejected_total", type: :counter,
