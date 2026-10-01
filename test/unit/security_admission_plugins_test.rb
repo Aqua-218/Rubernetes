@@ -281,7 +281,8 @@ class SecurityAdmissionPluginsTest < Minitest::Test
 
   def test_pod_security_enforces_baseline_and_restricted
     @context.put("namespaces", nil, "locked",
-                 {"metadata" => {"name" => "locked", "labels" => {"pod-security.kubernetes.io/enforce" => "restricted", "pod-security.kubernetes.io/warn" => "baseline"}}})
+                 {"metadata" => {"name" => "locked",
+                                 "labels" => {"pod-security.kubernetes.io/enforce" => "restricted", "pod-security.kubernetes.io/warn" => "baseline"}}})
     pss = plugin("PodSecurity")
     privileged = pod("p", containers: [{"name" => "c", "securityContext" => {"privileged" => true}}])
     error = assert_raises(A::Rejected) { pss.validate(attributes("CREATE", resource: "pods", object: privileged, namespace: "locked")) }
