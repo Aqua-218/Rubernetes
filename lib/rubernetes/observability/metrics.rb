@@ -467,7 +467,7 @@ module Rubernetes
         def add(delta) = update { @numerator += delta }
         def set(value) = update { @numerator = value.to_f }
         def set_denominator(value) = update { @denominator = value.to_f }
-        def flush = update {}
+        def flush = update { nil }
 
         private
 
