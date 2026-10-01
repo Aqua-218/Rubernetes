@@ -899,7 +899,12 @@ module Rubernetes
                      elsif !target["averageUtilization"].nil? then "failed to get #{resource} utilization: #{error.message}"
                      else error.message
                      end
-            label = container_type ? "failed to get #{source["container"]} container metric value: #{detail}" : "failed to get #{resource} resource metric value: #{detail}"
+            label = if container_type
+                      "failed to get #{source["container"]} container metric value: #{detail}"
+                    else
+                      "failed to get #{resource} resource metric " \
+                        "value: #{detail}"
+                    end
             return [0, "", nil, unable_condition(context, reason, detail), label]
           end
           status = if container_type
