@@ -750,8 +750,15 @@ module M4Gate
         errors << "proxy kernel runner provenance must match packet runner"
       end
       kernel_runner = kernel["runner"] || kernel["runner_provenance"]
-      unless kernel_runner.is_a?(Hash) && kernel_runner["pid"] == runner["pid"] &&
-             (kernel_runner["startedAt"] || kernel_runner["started_at"] || kernel_runner["startTime"] || kernel_runner["start_time"]) == (runner["startedAt"] || runner["started_at"] || runner["startTime"] || runner["start_time"]) && (kernel_runner["source"] || kernel_runner["sourcePath"] || kernel_runner["source_path"]) == (runner["source"] || runner["sourcePath"] || runner["source_path"]) && Array(kernel_runner["argv"] || kernel_runner["command"]) == Array(runner["argv"] || runner["command"]) && kernel_runner["stdout"] == runner["stdout"] && (kernel_runner["stdoutSha256"] || kernel_runner["stdout_sha256"]) == (runner["stdoutSha256"] || runner["stdout_sha256"]) && kernel_runner["stdout"].is_a?(String) && valid_digest?(kernel_runner["stdoutSha256"] || kernel_runner["stdout_sha256"]) && Digest::SHA256.hexdigest(kernel_runner["stdout"]) == (kernel_runner["stdoutSha256"] || kernel_runner["stdout_sha256"])
+      kernel_started = kernel_runner.is_a?(Hash) ? (kernel_runner["startedAt"] || kernel_runner["started_at"] || kernel_runner["startTime"] || kernel_runner["start_time"]) : nil
+      kernel_source = kernel_runner.is_a?(Hash) ? (kernel_runner["source"] || kernel_runner["sourcePath"] || kernel_runner["source_path"]) : nil
+      kernel_stdout_digest = kernel_runner.is_a?(Hash) ? (kernel_runner["stdoutSha256"] || kernel_runner["stdout_sha256"]) : nil
+      kernel_matches = kernel_runner.is_a?(Hash) && kernel_runner["pid"] == runner["pid"] && kernel_started == runner_started &&
+                       kernel_source == runner_source && Array(kernel_runner["argv"] || kernel_runner["command"]) == runner_argv &&
+                       kernel_runner["stdout"] == runner["stdout"] && kernel_stdout_digest == runner_stdout_digest &&
+                       kernel_runner["stdout"].is_a?(String) && valid_digest?(kernel_stdout_digest) &&
+                       Digest::SHA256.hexdigest(kernel_runner["stdout"]) == kernel_stdout_digest
+      unless kernel_matches
         errors << "proxy kernel runner PID/start-time/source/argv/stdout provenance is incomplete"
       end
       unless kernel["inputBinding"] == binding && valid_digest?(kernel["inputBindingSha256"]) && kernel["inputBindingSha256"] == packet["inputBindingSha256"]
