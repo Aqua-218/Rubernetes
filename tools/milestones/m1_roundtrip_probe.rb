@@ -417,7 +417,7 @@ def go_struct_field_metadata(source_root, go_package, go_type, cache:)
     end
   end
 
-  body = source&.last&.match(/(?:^|\n)type\s+#{Regexp.escape(go_type)}\s+struct\s*\{(.*?)^\}/m)&.captures&.first
+  body = source&.last&.then { |text| text.match(/(?:^|\n)type\s+#{Regexp.escape(go_type)}\s+struct\s*\{(.*?)^\}/m)&.captures&.first }
   source_content = source&.last.to_s
   imports = {}
   source_content.scan(/^\s*(?:(\w+)\s+)?"([^"]+)"\s*$/).each do |alias_name, imported_package|
