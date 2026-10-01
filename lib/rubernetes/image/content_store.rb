@@ -36,8 +36,6 @@ module Rubernetes
         parsed = Digest.parse(digest)
         directory = File.join(root, parsed.algorithm)
         File.join(directory, parsed.hex)
-      rescue DigestError => error
-        raise error
       end
 
       def include?(digest, verify: false)
