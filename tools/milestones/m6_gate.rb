@@ -281,9 +281,7 @@ module M6Gate
         errors << "#{id} must compare discovery documents" unless entry["documents_compared"].to_i >= MIN_DISCOVERY_DOCUMENTS
       end
       corpus = cases.find { |entry| entry["id"] == "gate_corpus" }
-      unless corpus && corpus["gate_count"].to_i >= MIN_FEATURE_GATES
-        errors << "feature-gate matrix must record at least #{MIN_FEATURE_GATES} corpus gates"
-      end
+      errors << "feature-gate matrix must record at least #{MIN_FEATURE_GATES} corpus gates" unless corpus && corpus["gate_count"].to_i >= MIN_FEATURE_GATES
       profiles = document["profiles"]
       errors << "feature-gate matrix must describe the default, all-beta and alpha-apis profiles" unless profiles.is_a?(Hash) && %w[default
                                                                                                                                     all-beta alpha-apis].all? do |key|
