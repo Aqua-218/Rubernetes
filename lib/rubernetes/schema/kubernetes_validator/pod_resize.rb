@@ -108,9 +108,7 @@ module Rubernetes
         else
           munged["resources"] = munged_resources
         end
-        unless semantic_equal?(munged_resources, old_resources)
-          issues << issue(["spec"], :forbidden, "only cpu and memory resources are mutable at pod-level")
-        end
+        issues << issue(["spec"], :forbidden, "only cpu and memory resources are mutable at pod-level") unless semantic_equal?(munged_resources, old_resources)
         issues
       end
 
