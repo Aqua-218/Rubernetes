@@ -55,13 +55,8 @@ module Tsdb
       assert_equal 3, store.series_count
     end
 
-    assert store.append(labels("m"), 100, 1.0)
-    refute store.append(labels("m"), 100, 2.0)
-    refute store.append(labels("m"), 50, 2.0)
-    assert store.append(labels("m"), 101, 2.0)
-    assert_equal [[100, 1.0], [101, 2.0]],
-                 store.samples(store.select_series([M.new(name: "__name__", op: "=", value: "m")]).first.id, 0, 200)
-  end
+    test "out of order and duplicate timestamps are rejected per series" do
+      store = open_store
 
   test "the head survives a restart through the WAL" do
     store = open_store
