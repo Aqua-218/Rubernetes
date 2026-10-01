@@ -81,9 +81,7 @@ module Rubernetes
             mismatches << "word_size expected=#{Fiddle::SIZEOF_VOIDP * 8} actual=#{data.fetch("word_size")}"
           end
           expected_byte_order = [1].pack("S").getbyte(0) == 1 ? "little" : "big"
-          unless data.fetch("byte_order") == expected_byte_order
-            mismatches << "byte_order expected=#{expected_byte_order} actual=#{data.fetch("byte_order")}"
-          end
+          mismatches << "byte_order expected=#{expected_byte_order} actual=#{data.fetch("byte_order")}" unless data.fetch("byte_order") == expected_byte_order
           {"clone_args" => 88, "bpf_insn" => 8, "nlmsghdr" => 16, "sockaddr_nl" => 12}.each do |name, size|
             actual = structure(name).fetch("size")
             mismatches << "#{name}.size expected=#{size} actual=#{actual}" unless actual == size
