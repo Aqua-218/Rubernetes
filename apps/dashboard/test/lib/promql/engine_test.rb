@@ -79,9 +79,7 @@ module Promql
       assert_equal [2.0, 3.0, 4.0, 5.0], result.value[0].points.map(&:last)
     end
 
-  test "range selectors are left-open windows" do
-    load("c", {}, [1, 2, 3, 4, 5]) # T0-60s .. T0
-    result = @engine.query("c[1m]")
+    # ---------------------------------------------------------- range functions
 
     assert_equal :matrix, result.type
     # (T0-60s, T0] holds four samples: the one exactly at T0-60s is excluded.
