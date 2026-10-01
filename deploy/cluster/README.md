@@ -45,13 +45,11 @@ worker node runs `agent` and `proxy`. A node may be both.
    service CIDR, which is what in-cluster clients reach through the
    `kubernetes` Service.
 
-   ```
-   rubernetes-pki init --directory /etc/rubernetes/pki \
-     --advertise-address <node-ip> --service-cidr 10.96.0.0/12
-   ```
-
-   `tools/conformance/cluster.rb` performs the same steps in Ruby and is the
-   reference for what a correct PKI looks like.
+   There is no separate PKI command yet. Issue the certificates with your
+   own CA, or let `tools/conformance/cluster.rb` do it: it writes a complete
+   `pki/` (CA, serving certificate with the addresses above, admin client
+   certificate, service account signing key, per-component identities) and
+   is the reference for what a correct PKI looks like.
 
 4. **Write the process configuration.** `config/defaults/` carries a
    versioned default for each daemon; copy it and set the node's own values
