@@ -144,9 +144,7 @@ module Rubernetes
         def step(name)
           expected_index = CONFIGURATION_ORDER.index(name)
           done = @configured.map { |entry| CONFIGURATION_ORDER.index(entry) }
-          if done.any? { |index| index > expected_index }
-            raise APIError.new("configuration step #{name} must precede #{CONFIGURATION_ORDER[done.max]}")
-          end
+          raise APIError.new("configuration step #{name} must precede #{CONFIGURATION_ORDER[done.max]}") if done.any? { |index| index > expected_index }
 
           result = yield
           @configured << name unless @configured.include?(name)
