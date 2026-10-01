@@ -259,7 +259,8 @@ module Rubernetes
             count("serviceaccount_invalid_legacy_auto_token_uses_total")
             track_last_used(namespace, secret_name, labels)
             raise AuthenticationError, "the token in secret #{namespace}/#{secret_name} for service account #{namespace}/#{sa_name} has been marked invalid. " \
-                                       "Use tokens from the TokenRequest API or manually created secret-based tokens, or remove the '#{INVALID_SINCE_LABEL}' label from the secret to temporarily allow use of this token"
+                                       "Use tokens from the TokenRequest API or manually created secret-based tokens, or remove the " \
+                                       "'#{INVALID_SINCE_LABEL}' label from the secret to temporarily allow use of this token"
           end
           auto_generated = Array(account["secrets"]).any? { |reference| reference["name"].to_s == secret_name }
           count(auto_generated ? "serviceaccount_legacy_auto_token_uses_total" : "serviceaccount_legacy_manual_token_uses_total")
