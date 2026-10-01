@@ -133,9 +133,7 @@ module Rubernetes
         raise UnsupportedError, "Secret-backed volumes cannot be snapshotted" if volume.respond_to?(:secret?) && volume.secret?
 
         record = @record_lookup&.call(volume_id)
-        if !allow_published && record && !record.publishes.empty?
-          raise ConflictError, "volume #{volume_id} is published; stop consumers before snapshot"
-        end
+        raise ConflictError, "volume #{volume_id} is published; stop consumers before snapshot" if !allow_published && record && !record.publishes.empty?
 
         remote = volume.respond_to?(:remote?) && volume.remote?
         source = if remote
