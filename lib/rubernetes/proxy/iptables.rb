@@ -261,7 +261,8 @@ module Rubernetes
                              "#{svc.port} -j #{external_chain}"
               end
               unless has_external
-                filter_rules << "-A KUBE-EXTERNAL-SERVICES -m comment --comment #{external_filter[1]} -m #{protocol} -p #{protocol} -d #{external_ip} --dport #{svc.port} -j #{external_filter[0]}"
+                filter_rules << "-A KUBE-EXTERNAL-SERVICES -m comment --comment #{external_filter[1]} -m #{protocol} -p #{protocol} -d #{external_ip} " \
+                                "--dport #{svc.port} -j #{external_filter[0]}"
               end
             end
             svc.load_balancer_ips.each do |lb_ip|
