@@ -2067,9 +2067,10 @@ module Rubernetes
         # until the PDB is updated to allow it").
         caller_version = delete_options.is_a?(Hash) ? delete_options.dig("preconditions", "resourceVersion") : nil
         if caller_version && caller_version.to_s != metadata_value(existing, "resourceVersion").to_s
-          raise Status::Conflict.new("the ResourceVersion in the precondition (#{caller_version}) does not match the ResourceVersion in record (#{metadata_value(
-            existing, "resourceVersion"
-          )}). The object might have been modified")
+          raise Status::Conflict.new("the ResourceVersion in the precondition (#{caller_version}) does not match the ResourceVersion in record " \
+                                     "(#{metadata_value(
+                                       existing, "resourceVersion"
+                                     )}). The object might have been modified")
         end
 
         existing = mark_evicted(route.resource, namespace, route.name, existing) unless dry_run
