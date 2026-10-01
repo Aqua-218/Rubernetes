@@ -34,7 +34,7 @@
       "<RUBERNETES_M2_KUBERNETES_SOURCE>"
     ],
     "built_at": null,
-    "build_log_sha256": "ad8b092651e7fc8108d68cf23660121cc773480c014ba2de9c804fb38dc8c3fc",
+    "build_log_sha256": null,
     "reused_existing_image": true
   },
   "digest_pinning": {
