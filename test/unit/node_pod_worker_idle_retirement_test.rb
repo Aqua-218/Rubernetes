@@ -78,7 +78,8 @@ class NodePodWorkerIdleRetirementTest < Minitest::Test
       sleep(round.even? ? 0.01 : 0.012)
     end
     received = []
-    received << processed.pop(timeout: 2.0) while (received.length < 40 && !processed.empty?) || (received.length < 40 && (sleep(0.01) || true) && received.length < 40 && processed.size.positive?)
+    received << processed.pop(timeout: 2.0) while (received.length < 40 && !processed.empty?) ||
+                                                  (received.length < 40 && (sleep(0.01) || true) && received.length < 40 && processed.size.positive?)
     pool.drain(timeout: 2.0)
     received << processed.pop until processed.empty?
 
