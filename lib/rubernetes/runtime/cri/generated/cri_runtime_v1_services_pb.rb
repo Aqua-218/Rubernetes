@@ -85,7 +85,8 @@ module Rubernetes
               rpc :StreamPodSandboxes, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamPodSandboxesRequest,
                   stream(::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StreamPodSandboxesResponse)
               # CreateContainer creates a new container in specified PodSandbox
-              rpc :CreateContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CreateContainerRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CreateContainerResponse
+              rpc :CreateContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CreateContainerRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::CreateContainerResponse
               # StartContainer starts the container.
               rpc :StartContainer, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StartContainerRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StartContainerResponse
               # StopContainer stops a running container with a grace period (i.e., timeout).
