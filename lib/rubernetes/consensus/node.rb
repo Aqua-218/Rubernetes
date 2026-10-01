@@ -30,6 +30,11 @@ module Rubernetes
         # snapshot_entries follows etcd 3.6's --snapshot-count (10,000): every
         # entry since the last snapshot stays in memory, so 100k entries of
         # whole objects kept each replica's log alone at hundreds of MB.
+        # max_command_bytes is etcd's --max-request-bytes (1.5 MiB): the
+        # largest single write the datastore accepts.  batch_max_bytes only
+        # groups commands; a command above it still travels, alone in its
+        # batch.  Argo Workflows' `workflows` CRD is a 1.28 MB object and was
+        # refused with "command exceeds 1048576 bytes" (a 500 to kubectl).
         def self.default
           new(election_timeout_min: 0.150, election_timeout_max: 0.300, heartbeat_interval: 0.050,
               batch_max_entries: 256, batch_max_bytes: 1024 * 1024, batch_flush_timeout: 0.002,
