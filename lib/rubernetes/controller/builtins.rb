@@ -2035,7 +2035,7 @@ module Rubernetes
           return result if operations.empty?
 
           ReconcileResult.new(operations: Array(result.operations) + operations,
-                              batches: Array(result.batches) + operations.map { |operation| [operation] },
+                              batches: Array(result.batches) + operations.zip,
                               status: result.status, events: result.events,
                               controller: result.controller, key: result.key)
         end
