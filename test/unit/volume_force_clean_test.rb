@@ -38,7 +38,8 @@ class VolumeForceCleanTest < Minitest::Test
   def test_unknown_volumes_are_force_cleaned_and_counted
     Dir.mktmpdir do |dir|
       write_record(dir, "vol-unknown", state: "Unknown",
-                                       publishes: {"pod-a\u0000/mnt/a" => {"pod" => "pod-a", "target" => "/mnt/a"}, "pod-b\u0000/mnt/b" => {"pod" => "pod-b", "target" => "/mnt/b"}})
+                                       publishes: {"pod-a\u0000/mnt/a" => {"pod" => "pod-a", "target" => "/mnt/a"},
+                                                   "pod-b\u0000/mnt/b" => {"pod" => "pod-b", "target" => "/mnt/b"}})
       write_record(dir, "vol-ok", state: "Published", publishes: {"pod-c\u0000/mnt/c" => {"pod" => "pod-c", "target" => "/mnt/c"}})
       mounts = FakeMounts.new(fail_on: ["/mnt/b"])
       manager = Rubernetes::Volume::Manager.new(data_dir: dir, csi: Object.new, mount_adapter: mounts, fsync: false)
