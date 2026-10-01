@@ -217,7 +217,6 @@ module Rubernetes
             prune_in_flight_events_locked
           end
         end
-        item
       end
 
       alias add_unschedulable enqueue_unschedulable
