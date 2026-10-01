@@ -62,7 +62,9 @@ class CustomResourceFieldSelectorTest < Minitest::Test
                       "conversion" => {"strategy" => "Webhook", "webhook" => {"clientConfig" => {"url" => "https://x"}, "conversionReviewVersions" => ["v1"]}},
                       "versions" => [v.call("v1", true, %w[hostPort], %w[.hostPort]), v.call("v2", false, %w[host port], %w[.host .port])]}}
 
-    assert_equal 201, @call.call("POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", crd).status
+    status = @call.call("POST", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions", crd).status
+    raise "setup: CRD create returned #{status}" unless status == 201
+
     deadline = Time.now + 5
     sleep 0.05 until @call.call("GET", "/apis/example.com/v2/namespaces/ns/es").status == 200 || Time.now > deadline
 
