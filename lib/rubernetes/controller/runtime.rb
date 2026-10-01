@@ -616,10 +616,6 @@ module Rubernetes
         self
       end
 
-      def leader?
-        @elector.leader?
-      end
-
       # `wait` is how long the first key may be waited for; the rest of the
       # batch is drained without waiting.  A caller that polls on its own
       # schedule leaves it at 0; the process loop passes a real timeout so a
