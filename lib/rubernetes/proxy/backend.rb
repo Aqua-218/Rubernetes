@@ -381,9 +381,7 @@ module Rubernetes
       end
 
       def apply_diff_locked(diff)
-        if diff.from_revision != @revision
-          raise StaleRevisionError, "rule diff starts at revision #{diff.from_revision}, expected #{@revision}"
-        end
+        raise StaleRevisionError, "rule diff starts at revision #{diff.from_revision}, expected #{@revision}" if diff.from_revision != @revision
 
         next_rules = @rules.dup
         diff.added.each { |rule| next_rules[rule.key] = rule }
