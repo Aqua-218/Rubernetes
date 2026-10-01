@@ -232,15 +232,17 @@ class LinuxPlatformTest < Minitest::Test
       assert(adapter.release_gate(process.fetch(:gate)))
       status = adapter.wait(pid: process.fetch(:pid), timeout: 3.0)
 
-    refute_nil(status, "RuntimeDefault workload spun after a denied signal-wait syscall")
-    assert_predicate(status, :success?)
-    assert_equal("child-ok\n", process.fetch(:stdout).read)
-    assert_equal("", process.fetch(:stderr).read)
-  ensure
-    begin
-      adapter&.signal(pid: process.fetch(:pid), signal: Signal.list.fetch("KILL")) if process && File.exist?("/proc/#{process.fetch(:pid)}")
-    rescue StandardError
-      nil
+      refute_nil(status, "RuntimeDefault workload spun after a denied signal-wait syscall")
+      assert_predicate(status, :success?)
+      assert_equal("child-ok\n", process.fetch(:stdout).read)
+      assert_equal("", process.fetch(:stderr).read)
+    ensure
+      begin
+        adapter&.signal(pid: process.fetch(:pid), signal: Signal.list.fetch("KILL")) if process && File.exist?("/proc/#{process.fetch(:pid)}")
+      rescue StandardError
+        nil
+      end
+      process&.values_at(:stdout, :stderr)&.compact&.each { |io| io.close unless io.closed? }
     end
     process&.values_at(:stdout, :stderr)&.compact&.each { |io| io.close unless io.closed? }
   end
