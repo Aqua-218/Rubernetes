@@ -100,12 +100,8 @@ module Rubernetes
           local_gvks = {}
           local_gvrs = {}
           items.each do |definition|
-            if local_gvks.key?(definition.gvk) || @by_gvk.key?(definition.gvk)
-              raise DuplicateGVKError.new(definition.gvk, @by_gvk[definition.gvk])
-            end
-            if local_gvrs.key?(definition.gvr) || @by_gvr.key?(definition.gvr)
-              raise DuplicateGVRError.new(definition.gvr, @by_gvr[definition.gvr])
-            end
+            raise DuplicateGVKError.new(definition.gvk, @by_gvk[definition.gvk]) if local_gvks.key?(definition.gvk) || @by_gvk.key?(definition.gvk)
+            raise DuplicateGVRError.new(definition.gvr, @by_gvr[definition.gvr]) if local_gvrs.key?(definition.gvr) || @by_gvr.key?(definition.gvr)
 
             local_gvks[definition.gvk] = definition
             local_gvrs[definition.gvr] = definition
