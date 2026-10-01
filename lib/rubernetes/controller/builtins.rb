@@ -4,7 +4,6 @@ require "json"
 require "time"
 
 require "digest"
-require "time"
 require_relative "errors"
 require_relative "support"
 require_relative "types"
