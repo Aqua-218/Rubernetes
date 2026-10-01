@@ -743,10 +743,10 @@ module Rubernetes
           role_ref = fetch(root, "roleRef")
           role_ref = {} unless role_ref.is_a?(Hash)
           allowed = kind == "ClusterRoleBinding" ? %w[ClusterRole] : %w[Role ClusterRole]
-          issues << issue(%w[roleRef apiGroup], :unsupported, "supported values: \"rbac.authorization.k8s.io\"") if !blank?(fetch(role_ref,
-                                                                                                                                  "apiGroup")) && fetch(
-                                                                                                                                    role_ref, "apiGroup"
-                                                                                                                                  ).to_s != "rbac.authorization.k8s.io"
+          api_group = fetch(role_ref, "apiGroup")
+          if !blank?(api_group) && api_group.to_s != "rbac.authorization.k8s.io"
+            issues << issue(%w[roleRef apiGroup], :unsupported, "supported values: \"rbac.authorization.k8s.io\"")
+          end
           unless allowed.include?(fetch(role_ref, "kind").to_s)
             issues << issue(%w[roleRef kind], :unsupported, "supported values: #{allowed.map do |value|
               "\"#{value}\""
