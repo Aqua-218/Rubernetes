@@ -419,19 +419,22 @@ class M4VolumeSecurityTest < Minitest::Test
   def test_target_lease_uses_parent_fd_for_leaf_and_rejects_parent_replacement
     skip "descriptor-relative CSI dispatch requires Linux openat2" unless RUBY_PLATFORM.include?("linux")
 
-    directory = Dir.mktmpdir("m4-parent-fd-race")
-    parent = File.join(directory, "parent")
-    held_parent = "#{parent}.held"
-    target = File.join(parent, "target")
-    FileUtils.mkdir_p(parent)
-    openat2 = Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true)
-    adapter = Object.new
-    adapter.define_singleton_method(:open) do |path, **kwargs|
-      handle = openat2.open(path, **kwargs)
-      if kwargs[:resource_id].to_s.start_with?("volume-target-parent:")
-        File.rename(parent, held_parent)
-        FileUtils.mkdir_p(parent)
-        FileUtils.mkdir_p(target)
+    begin
+      directory = Dir.mktmpdir("m4-parent-fd-race")
+      parent = File.join(directory, "parent")
+      held_parent = "#{parent}.held"
+      target = File.join(parent, "target")
+      FileUtils.mkdir_p(parent)
+      openat2 = Rubernetes::Platform::Linux::Openat2.new(root: "/", strict: true)
+      adapter = Object.new
+      adapter.define_singleton_method(:open) do |path, **kwargs|
+        handle = openat2.open(path, **kwargs)
+        if kwargs[:resource_id].to_s.start_with?("volume-target-parent:")
+          File.rename(parent, held_parent)
+          FileUtils.mkdir_p(parent)
+          FileUtils.mkdir_p(target)
+        end
+        handle
       end
       handle
     end
