@@ -87,8 +87,12 @@ module K7ClusterDriver
   end
 
   def worker_reboot
-    agent = processes.find { |entry| entry.fetch("name") == "agent-worker-2" } || raise("no agent-worker-2 process")
-    proxy = processes.find { |entry| entry.fetch("name") == "proxy-worker-2" }
+    reboot_worker!("worker-2")
+  end
+
+  def reboot_worker!(node)
+    agent = processes.find { |entry| entry.fetch("name") == "agent-#{node}" } || raise("no agent-#{node} process")
+    proxy = processes.find { |entry| entry.fetch("name") == "proxy-#{node}" }
     stop!(agent, signal: "TERM")
     stop!(proxy, signal: "TERM") if proxy
     start!(agent)
