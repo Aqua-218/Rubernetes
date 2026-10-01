@@ -105,7 +105,8 @@ module Prom
       assert_equal "kube-state", target.job
       status, body = target.fetch.call
 
-    assert_equal 200, status
-    assert_includes body, "kube_pod_info{"
+      assert_equal 200, status
+      assert_includes body, "kube_pod_info{"
+    end
   end
 end
