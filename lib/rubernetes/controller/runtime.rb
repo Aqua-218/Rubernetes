@@ -760,10 +760,8 @@ module Rubernetes
         @last_error = error
       end
 
-      # How much work is waiting, and how much has been done: the two numbers
-      # that say whether a manager is idle or behind.
-      attr_reader :queue
-
+      # How much work has been done (the queue depth is `queue.length`): the
+      # two numbers that say whether a manager is idle or behind.
       def reconciled_total
         @reconciled_mutex.synchronize { @reconciled_total }
       end
