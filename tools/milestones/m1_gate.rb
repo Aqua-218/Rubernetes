@@ -2598,12 +2598,8 @@ module M1Gate
       errors << "#{label} actual source must be Rubernetes" unless dimension["actual_source"] == "rubernetes"
       expected_digest = dimension["expected_sha256"]
       actual_digest = dimension["actual_sha256"]
-      unless valid_digest?(expected_digest) && valid_digest?(actual_digest)
-        errors << "#{label} must record expected and actual SHA-256 digests"
-      end
-      if valid_digest?(expected_digest) && valid_digest?(actual_digest) && expected_digest != actual_digest
-        errors << "#{label} observable digests differ"
-      end
+      errors << "#{label} must record expected and actual SHA-256 digests" unless valid_digest?(expected_digest) && valid_digest?(actual_digest)
+      errors << "#{label} observable digests differ" if valid_digest?(expected_digest) && valid_digest?(actual_digest) && expected_digest != actual_digest
       errors << "#{label} must record a matching semantic result" unless dimension["matches"] == true
       unless dimension["expected"].is_a?(Hash) && dimension["actual"].is_a?(Hash)
         errors << "#{label} expected and actual observations are required"
