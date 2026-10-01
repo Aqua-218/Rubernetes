@@ -45,7 +45,7 @@ module Prom
                                               {"addresses" => ["10.242.0.10"], "conditions" => {"ready" => false}}]}]
       }
       fetched = []
-      targets = Prom::Targets.new(client: FakeClient.new({}), cluster_json: cluster, kubeconfig_context: nil,
+      targets = Prom::Targets.new(client: FakeClient.new(objects), cluster_json: {}, kubeconfig_context: {server: "https://api:6443"},
                                   http: lambda { |url|
                                     fetched << url
                                     [200, "x 1\n"]
