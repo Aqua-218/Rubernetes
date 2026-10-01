@@ -944,9 +944,7 @@ module M2Gate
 
     def validate_architecture_set(entries, label, errors)
       actual = entries.filter_map { |entry| entry.is_a?(Hash) ? canonical_architecture(entry["architecture"]) : nil }
-      unless actual.uniq.sort == REQUIRED_ARCHITECTURES.sort
-        errors << "#{label} architecture profiles must be exactly #{REQUIRED_ARCHITECTURES.join(", ")}"
-      end
+      errors << "#{label} architecture profiles must be exactly #{REQUIRED_ARCHITECTURES.join(", ")}" unless actual.uniq.sort == REQUIRED_ARCHITECTURES.sort
       errors << "#{label} architecture profiles must not be duplicated" unless actual.uniq.length == actual.length
     end
 
