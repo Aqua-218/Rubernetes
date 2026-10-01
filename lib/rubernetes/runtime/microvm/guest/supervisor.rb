@@ -522,7 +522,8 @@ module Rubernetes
               rescue StandardError => error
                 payload = JSON.generate({"error" => "#{error.class}: #{error.message}"})
                 begin
-                  connection.write("HTTP/1.1 502 Bad Gateway\r\nContent-Type: application/json\r\nContent-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
+                  connection.write("HTTP/1.1 502 Bad Gateway\r\nContent-Type: application/json\r\nContent-Length: #{payload.bytesize}\r\nConnection: " \
+                                   "close\r\n\r\n#{payload}")
                 rescue StandardError
                   nil
                 end
