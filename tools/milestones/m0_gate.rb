@@ -733,7 +733,8 @@ module M0Gate
         captured, "abi-probe-x86_64.json"
       )
       tool_path = File.join(ROOT, "tools/milestones/m0_kernel_probe.rb")
-      unless document["tool_path"] == "tools/milestones/m0_kernel_probe.rb" && digest?(document["tool_sha256"]) && File.file?(tool_path) && document["tool_sha256"] == Digest::SHA256.file(tool_path).hexdigest
+      unless document["tool_path"] == "tools/milestones/m0_kernel_probe.rb" && digest?(document["tool_sha256"]) && File.file?(tool_path) &&
+             document["tool_sha256"] == Digest::SHA256.file(tool_path).hexdigest
         errors << "ABI probe is not bound to the current kernel probe tool"
       end
       validate_time(document["started_at"], errors, "ABI probe started_at")
