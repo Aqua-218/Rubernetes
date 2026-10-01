@@ -55,7 +55,8 @@ module Rubernetes
               # at least once before calling RemovePodSandbox. It will also attempt to
               # reclaim resources eagerly, as soon as a sandbox is not needed. Hence,
               # multiple StopPodSandbox calls are expected.
-              rpc :StopPodSandbox, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StopPodSandboxRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StopPodSandboxResponse
+              rpc :StopPodSandbox, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StopPodSandboxRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::StopPodSandboxResponse
               # RemovePodSandbox removes the sandbox. If there are any running containers
               # in the sandbox, they must be forcibly terminated and removed.
               # This call is idempotent, and must not return an error if the sandbox has
