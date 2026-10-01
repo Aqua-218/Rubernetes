@@ -368,7 +368,7 @@ module Rubernetes
             @syscall_numbers = defaults.merge(syscall_numbers.transform_keys(&:to_s)).transform_values { |value| Integer(value) }
             names = allowlist.nil? ? nil : Array(allowlist).map(&:to_s)
             names -= ["arch_prctl"] if names && @architecture == "aarch64"
-            @allowlist = names&.uniq&.sort&.freeze
+            @allowlist = names&.then { |list| list.uniq.sort.freeze }
           end
 
           attr_reader :architecture, :syscall_numbers
