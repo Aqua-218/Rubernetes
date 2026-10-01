@@ -4151,7 +4151,8 @@ module Rubernetes
             issues << issue(base + ["messageExpression"], :required, "must be non-empty if specified")
           elsif !message_expression.strip.empty?
             compile_issue = cel_compile_issue(base + ["messageExpression"], message_expression, compiler: compiler,
-                                                                                                return_types: cel_return_types(:string), has_params: has_params, has_authorizer: false)
+                                                                                                return_types: cel_return_types(:string),
+                                                                                                has_params: has_params, has_authorizer: false)
             issues << compile_issue if compile_issue
           end
           message = fetch(validation, "message").to_s
