@@ -98,7 +98,8 @@ module M7AttackProbe
       restricted_pod = S.start_pod(restricted, nil, "attack-restricted")
       restricted_hello = restricted_pod["session"].guest_hello
       restricted_matrix = restricted_pod["session"].attack_matrix({"other_cid" => 3, "unlisted_port" => 9999})
-      cases << {"id" => "restricted_no_network_device", "interfaces" => restricted_matrix["network_interfaces"], "guest" => restricted_hello.slice("isolation_profile", "phase"),
+      cases << {"id" => "restricted_no_network_device", "interfaces" => restricted_matrix["network_interfaces"],
+                "guest" => restricted_hello.slice("isolation_profile", "phase"),
                 "passed" => restricted_matrix["network_interfaces"] == ["lo"] && restricted_hello["isolation_profile"] == "l3"}
       stop_errors = S.stop_pod(restricted, nil,
                                restricted_pod) + S.stop_pod(runtime, network, attacker) + S.stop_pod(runtime, other_network, victim)
