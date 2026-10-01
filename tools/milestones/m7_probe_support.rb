@@ -117,7 +117,8 @@ module M7ProbeSupport
       shell!("ip", "-n", alias_name, "link", "set", "eth0", "up")
       shell!("ip", "-n", alias_name, "route", "add", "default", "via", gateway)
       shell!("ip", "addr", "add", "#{gateway}/24", "dev", host_link) unless system("ip", "addr", "show", "dev", host_link, out: File::NULL,
-                                                                                                                           err: File::NULL) && `ip addr show dev #{host_link}`.include?(gateway)
+                                                                                                                           err: File::NULL) &&
+                                                                            `ip addr show dev #{host_link}`.include?(gateway)
       shell!("ip", "link", "set", host_link, "up")
       @attached[sandbox_id] = {"ip" => ip, "host_link" => host_link, "alias" => alias_name}
       {"ip" => ip, "gateway" => gateway, "host_link" => host_link}
