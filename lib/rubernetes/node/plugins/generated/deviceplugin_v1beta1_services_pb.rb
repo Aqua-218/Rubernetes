@@ -60,7 +60,8 @@ module Rubernetes
               # guaranteed to be the allocation ultimately performed by the
               # devicemanager. It is only designed to help the devicemanager make a more
               # informed allocation decision when possible.
-              rpc :GetPreferredAllocation, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::PreferredAllocationRequest, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::PreferredAllocationResponse
+              rpc :GetPreferredAllocation, ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::PreferredAllocationRequest,
+                  ::Rubernetes::Node::Plugins::Generated::DevicePluginV1beta1::PreferredAllocationResponse
               # Allocate is called during container creation so that the Device
               # Plugin can run device specific operations and instruct Kubelet
               # of the steps to make the Device available in the container
