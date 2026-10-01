@@ -1195,7 +1195,8 @@ module Rubernetes
             candidate_start = observed["workload_start_time"]
             candidate_digest = observed["workload_executable_digest"] || observed["executable_digest"]
             candidate_identity = if candidate_pid
-                                   "process:#{metadata["parent"]}:#{metadata["container_id"]}:#{candidate_pid}:#{candidate_start || "unknown"}:#{candidate_digest || "unknown"}"
+                                   "process:#{metadata["parent"]}:#{metadata["container_id"]}:#{candidate_pid}:" \
+                                     "#{candidate_start || "unknown"}:#{candidate_digest || "unknown"}"
                                  end
             candidate_identity == expected &&
               (metadata_pid.nil? || candidate_pid.to_i == metadata_pid.to_i) &&
