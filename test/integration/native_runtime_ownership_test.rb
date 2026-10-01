@@ -189,19 +189,20 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       second.stop_sandbox(sandbox_id, timeout: 2)
       second.remove_sandbox(sandbox_id)
 
-    refute(second.resource_inventory.any? { |entry| entry.fetch("id").to_s.start_with?(sandbox_id) })
-  ensure
-    begin
-      second&.stop_sandbox(sandbox_id, timeout: 1) if second && second.sandboxes.any?
-      second&.remove_sandbox(sandbox_id) if second && second.sandboxes.any?
-    rescue StandardError
-      nil
-    end
-    begin
-      first&.stop_sandbox(sandbox_id, timeout: 1) if first && first.sandboxes.any?
-      first&.remove_sandbox(sandbox_id) if first && first.sandboxes.any?
-    rescue StandardError
-      nil
+      refute(second.resource_inventory.any? { |entry| entry.fetch("id").to_s.start_with?(sandbox_id) })
+    ensure
+      begin
+        second&.stop_sandbox(sandbox_id, timeout: 1) if second && second.sandboxes.any?
+        second&.remove_sandbox(sandbox_id) if second && second.sandboxes.any?
+      rescue StandardError
+        nil
+      end
+      begin
+        first&.stop_sandbox(sandbox_id, timeout: 1) if first && first.sandboxes.any?
+        first&.remove_sandbox(sandbox_id) if first && first.sandboxes.any?
+      rescue StandardError
+        nil
+      end
     end
   end
 
