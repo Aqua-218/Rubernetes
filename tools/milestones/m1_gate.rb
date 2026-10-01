@@ -2079,9 +2079,7 @@ module M1Gate
         unless comparison["json_expected_source"] == "kubernetes_external"
           errors << "#{label} comparison #{index} JSON expected source must be external Kubernetes"
         end
-        unless comparison["json_actual_source"] == "rubernetes"
-          errors << "#{label} comparison #{index} JSON actual source must be Rubernetes"
-        end
+        errors << "#{label} comparison #{index} JSON actual source must be Rubernetes" unless comparison["json_actual_source"] == "rubernetes"
         unless valid_digest?(json_expected_digest) && valid_digest?(json_actual_digest)
           errors << "#{label} comparison #{index} JSON must record expected and actual SHA-256 digests"
         end
