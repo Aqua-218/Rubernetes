@@ -290,7 +290,8 @@ module Rubernetes
                 nat_rules << "-A KUBE-NODEPORTS -m comment --comment #{name} -m #{protocol} -p #{protocol} --dport #{svc.node_port} -j #{external_chain}"
               end
               unless has_external
-                filter_rules << "-A KUBE-EXTERNAL-SERVICES -m comment --comment #{external_filter[1]} -m addrtype --dst-type LOCAL -m #{protocol} -p #{protocol} --dport #{svc.node_port} -j #{external_filter[0]}"
+                filter_rules << "-A KUBE-EXTERNAL-SERVICES -m comment --comment #{external_filter[1]} -m addrtype --dst-type LOCAL -m #{protocol} -p " \
+                                "#{protocol} --dport #{svc.node_port} -j #{external_filter[0]}"
               end
             end
             if svc.health_check_node_port.positive?
