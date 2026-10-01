@@ -81,13 +81,9 @@ environment; `config/defaults/` holds the versioned defaults.
 
 ### Dashboard and metrics
 
-M3 and M4 verification are cumulative. M3 requires COMPLETE M0, M1, and M2 bundles captured from
-the same source inventory; M4 additionally requires COMPLETE M3. Source changes invalidate the
-previous digest and force a fresh evidence chain.
-
-```bash
-RUBERNETES_M3_M2_MANIFEST=artifacts/milestones/M2/<run-id>/manifest.json rake m3:verify
-RUBERNETES_M4_M3_MANIFEST=artifacts/milestones/M3/<run-id>/manifest.json rake m4:verify
+```sh
+cd apps/dashboard && bundle install
+RUBERNETES_KUBECONFIG=$KUBECONFIG bin/rails server -p 3000
 ```
 
 `rake m3:evidence` writes controller/scheduler/leader/watch reports below
