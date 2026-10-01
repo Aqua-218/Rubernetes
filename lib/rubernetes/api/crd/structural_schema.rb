@@ -708,6 +708,14 @@ module Rubernetes
           end
         end
 
+        INT_OR_STRING_ANY_OF = [{"type" => "integer"}, {"type" => "string"}].freeze
+
+        def int_or_string_any_of?(branches)
+          branches.is_a?(Array) && branches.length == 2 &&
+            branches.map { |branch| branch.is_a?(Hash) ? branch.slice("type") : nil } == INT_OR_STRING_ANY_OF &&
+            branches.all? { |branch| (branch.keys - %w[type]).empty? }
+        end
+
         def join(path)
           path.empty? ? "<root>" : path.join(".").gsub(".[", "[")
         end
