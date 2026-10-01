@@ -252,7 +252,8 @@ module Rubernetes
           registry = Encryption.metrics
           if registry && !registry.registered?("apiserver_encryption_config_controller_last_config_info")
             registry.register("apiserver_encryption_config_controller_last_config_info", type: :gauge,
-                                                                                         help: "Information about the last applied encryption configuration with hash as label, split by apiserver identity.")
+                                                                                         help: "Information about the last applied encryption configuration " \
+                                                                                               "with hash as label, split by apiserver identity.")
           end
           Encryption.set("apiserver_encryption_config_controller_last_config_info", 1,
                          {"apiserver_id_hash" => Encryption.apiserver_id_hash, "hash" => "sha256:#{configuration.hash}"})
