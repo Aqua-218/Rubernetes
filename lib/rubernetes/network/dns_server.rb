@@ -129,7 +129,7 @@ module Rubernetes
         TCP_IDLE_TIMEOUT = 5.0
         MAX_CNAME_DEPTH = 8
 
-        Counters = %w[queries udp_queries tcp_queries authoritative nxdomain nodata forwarded refused
+        COUNTERS = %w[queries udp_queries tcp_queries authoritative nxdomain nodata forwarded refused
                       formerr notimp truncated oversized loops upstream_errors].freeze
 
         attr_reader :resolver, :port, :bind_addresses, :udp_sockets, :tcp_servers
