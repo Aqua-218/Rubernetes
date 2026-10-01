@@ -101,12 +101,8 @@ module Rubernetes
         raise ValidationError, "#{canonical_name} weight must be a positive integer" unless normalized_weight.positive?
 
         phases = Array(supported_phases || normalized_phase).map(&:to_sym).uniq
-        unless phases.all? { |candidate| PHASES.include?(candidate) }
-          raise ValidationError, "#{canonical_name} has an unsupported lifecycle phase"
-        end
-        unless phases.include?(normalized_phase) || normalized_phase == :multi_point
-          raise ValidationError, "#{canonical_name} primary phase must be supported"
-        end
+        raise ValidationError, "#{canonical_name} has an unsupported lifecycle phase" unless phases.all? { |candidate| PHASES.include?(candidate) }
+        raise ValidationError, "#{canonical_name} primary phase must be supported" unless phases.include?(normalized_phase) || normalized_phase == :multi_point
 
         @name = canonical_name.freeze
         @kind = normalized_phase
