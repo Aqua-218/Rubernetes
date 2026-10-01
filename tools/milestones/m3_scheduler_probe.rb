@@ -314,12 +314,9 @@ M3ProbeSupport.run_report(kind: "m3_scheduler_differential", adapter_name: "sche
             "source_commit" => runner.is_a?(Hash) ? runner["source_commit"] : nil, "runner_sha256" => runner.is_a?(Hash) ? runner["runner_sha256"] : nil,
             "runner" => runner, "execution" => oracle_execution, "input_payload" => M3ProbeSupport.canonical_value(oracle_input),
             "external_document_sha256" => oracle_document.is_a?(Hash) ? M3ProbeSupport.digest(oracle_document) : nil,
-            "input" => oracle_document.is_a?(Hash) ? oracle_document["input"] : nil, "output" => oracle_document.is_a?(Hash) ? oracle_document["output"] : nil,
-            "comparison_count" => cases.length, "comparisons" => cases.map do |entry|
-                                                  {"id" => entry["id"], "passed" => entry["passed"], "expected_observable" => entry["expected_observable"],
-                                                   "actual_observable" => entry["actual_observable"], "expected_sha256" => entry["oracle_expected_sha256"], "actual_sha256" => entry["evidence_sha256"],
-                                                   "oracle_observation" => entry["oracle_observation"]}
-                                                end}
+            "input" => oracle_document.is_a?(Hash) ? oracle_document["input"] : nil,
+            "output" => oracle_document.is_a?(Hash) ? oracle_document["output"] : nil,
+            "comparison_count" => cases.length, "comparisons" => comparisons}
   {"measurement_source" => "production_module", "adapter_class" => class_name, "plugins" => plugins, "cases" => cases, "oracle" => oracle,
    "difference_count" => difference_count,
    "filter_mismatch_count" => cases.count do |entry|
