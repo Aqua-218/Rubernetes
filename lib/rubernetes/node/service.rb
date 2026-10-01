@@ -79,9 +79,7 @@ module Rubernetes
             @bytes << bytes.byteslice(offset, chunk_size)
             offset += chunk_size
             @read_condition.broadcast
-            if offset < bytes.bytesize
-              wait_for(@write_condition, deadline, BackpressureError, "stream write timed out while waiting for capacity")
-            end
+            wait_for(@write_condition, deadline, BackpressureError, "stream write timed out while waiting for capacity") if offset < bytes.bytesize
           end
         end
         bytes.bytesize
