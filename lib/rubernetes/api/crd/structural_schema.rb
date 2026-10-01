@@ -370,7 +370,7 @@ module Rubernetes
           nil
         end
 
-        def has_validations?(schema)
+        def validations?(schema)
           return false unless schema.is_a?(Hash)
           return true unless Array(schema["x-kubernetes-validations"]).empty?
 
