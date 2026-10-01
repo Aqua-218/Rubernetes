@@ -1647,9 +1647,10 @@ module M3Gate
       unless build.is_a?(Hash) && build["source_build"] == true && valid_digest?(build["binary_sha256"])
         errors << "workload oracle controller-manager source build provenance is incomplete"
       end
-      unless image.is_a?(Hash) && non_empty_string?(image["kube_apiserver"]) && non_empty_string?(image["etcd"]) && image["network_isolated"] == true && image.dig(
-        "controller_manager", "used"
-      ) == false
+      unless image.is_a?(Hash) && non_empty_string?(image["kube_apiserver"]) && non_empty_string?(image["etcd"]) && image["network_isolated"] == true &&
+             image.dig(
+               "controller_manager", "used"
+             ) == false
         errors << "workload oracle image provenance is incomplete"
       end
       controller_process = runner.is_a?(Hash) ? runner.dig("cluster", "controller_manager") : nil
