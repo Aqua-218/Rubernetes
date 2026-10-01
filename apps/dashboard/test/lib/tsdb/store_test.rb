@@ -140,13 +140,16 @@ module Tsdb
       assert_equal 100, store.samples(1, 0, 10**9).length
     end
 
-  test "binary-encoded labels are stored as text and found by equality matchers" do
-    store = open_store
-    # Net::HTTP bodies are ASCII-8BIT; SQLite would keep such strings as BLOBs
-    # that never equal a TEXT parameter.
-    store.append({"__name__".b => "apiserver_request_total".b, "job".b => "apiserver".b, "verb" => "GET"}, 1000, 1.0)
-    found = store.select_series([M.new(name: "__name__", op: "=", value: "apiserver_request_total"),
-                                 M.new(name: "job", op: "=", value: "apiserver")])
+    test "readers in another process see cut blocks" do
+      store = open_store(block_range_ms: 1000)
+      20.times { |i| store.append(labels("shared"), i * 100, i.to_f) }
+      store.flush
+      assert_raises(Tsdb::Store::AlreadyOpen) { Tsdb::Store.new(@dir) }
+      reader = Tsdb::Store.new(@dir, readonly: true)
+      begin
+        assert_predicate reader, :readonly?
+        assert_raises(Tsdb::Store::AlreadyOpen) { reader.append({"__name__" => "x"}, 1, 1.0) }
+        series = reader.select_series([M.new(name: "__name__", op: "=", value: "shared")]).first
 
     assert_equal 1, found.length
     assert_equal Encoding::UTF_8, found.first.labels["job"].encoding
