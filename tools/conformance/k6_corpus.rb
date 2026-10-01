@@ -123,6 +123,11 @@ module Conformance
       corpus = YAML.safe_load_file(CORPUS)
       projects = corpus.fetch("projects", [])
       projects = projects.select { |project| options[:only].include?(project.fetch("name")) } if options[:only]
+      options = options.merge(path: client_path)
+      preparation = prepare_repositories(corpus.fetch("repositories", {}), projects, options)
+      options[:preparation] = preparation
+      return projects.map { |project| unprepared_project(project, preparation) } unless preparation.all? { |entry| entry.fetch("passed") }
+
       projects.map { |project| run_project(project, options) }
     end
 
