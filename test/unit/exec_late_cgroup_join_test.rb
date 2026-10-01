@@ -86,18 +86,20 @@ class ExecLateCgroupJoinTest < Minitest::Test
   def with_limited_cgroup
     skip "needs root and a writable cgroup v2 root" unless Process.euid.zero? && File.writable?("/sys/fs/cgroup/cgroup.procs")
 
-    hierarchy = "rbn-exec-stop-test-#{Process.pid}-#{rand(1 << 30)}"
-    parent = File.join("/sys/fs/cgroup", hierarchy)
-    Dir.mkdir(parent)
-    File.write(File.join(parent, "cgroup.subtree_control"), "+cpu")
-    path = File.join(parent, "c1")
-    Dir.mkdir(path)
-    File.write(File.join(path, "cpu.max"), "1000 100000")
-    procs = CgroupV2.new(root: "/sys/fs/cgroup", hierarchy: hierarchy).open_procs(path)
-    yield procs, "0::/#{hierarchy}/c1"
-  ensure
-    sleep 0.1
-    [path, parent].each { |dir| Dir.rmdir(dir) if dir && Dir.exist?(dir) }
+    begin
+      hierarchy = "rbn-exec-stop-test-#{Process.pid}-#{rand(1 << 30)}"
+      parent = File.join("/sys/fs/cgroup", hierarchy)
+      Dir.mkdir(parent)
+      File.write(File.join(parent, "cgroup.subtree_control"), "+cpu")
+      path = File.join(parent, "c1")
+      Dir.mkdir(path)
+      File.write(File.join(path, "cpu.max"), "1000 100000")
+      procs = CgroupV2.new(root: "/sys/fs/cgroup", hierarchy: hierarchy).open_procs(path)
+      yield procs, "0::/#{hierarchy}/c1"
+    ensure
+      sleep 0.1
+      [path, parent].each { |dir| Dir.rmdir(dir) if dir && Dir.exist?(dir) }
+    end
   end
 
   def traced_child(&)
