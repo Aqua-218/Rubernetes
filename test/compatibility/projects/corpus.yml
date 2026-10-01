@@ -13,6 +13,38 @@
 schema_version: 1
 verified_at: "2026-09-07"
 kubernetes_target: v1.36.2
+# Helm repositories behind the chart aliases above.  The runner adds them
+# under exactly these names and verifies every pulled package against
+# chart_sha256 before any install command runs.
+repositories:
+  argo: https://argoproj.github.io/argo-helm
+  cilium: https://helm.cilium.io/
+  cnpg: https://cloudnative-pg.github.io/charts
+  elastic: https://helm.elastic.co
+  external-secrets: https://charts.external-secrets.io
+  fluxcd: https://fluxcd-community.github.io/helm-charts
+  gatekeeper: https://open-policy-agent.github.io/gatekeeper/charts
+  grafana: https://grafana.github.io/helm-charts
+  harbor: https://helm.goharbor.io
+  hashicorp: https://helm.releases.hashicorp.com
+  ingress-nginx: https://kubernetes.github.io/ingress-nginx
+  istio: https://istio-release.storage.googleapis.com/charts
+  jaegertracing: https://jaegertracing.github.io/helm-charts
+  jetstack: https://charts.jetstack.io
+  kedacore: https://kedacore.github.io/charts
+  kyverno: https://kyverno.github.io/kyverno/
+  longhorn: https://charts.longhorn.io
+  mariadb-operator: https://helm.mariadb.com/mariadb-operator
+  metrics-server: https://kubernetes-sigs.github.io/metrics-server/
+  minio-operator: https://operator.min.io
+  nats: https://nats-io.github.io/k8s/helm/charts/
+  open-telemetry: https://open-telemetry.github.io/opentelemetry-helm-charts
+  prometheus-community: https://prometheus-community.github.io/helm-charts
+  rook-release: https://charts.rook.io/release
+  strimzi: https://strimzi.io/charts/
+  traefik: https://traefik.github.io/charts
+  vmware-tanzu: https://vmware-tanzu.github.io/helm-charts
+
 projects:
   - name: argo-cd
     chart: argo/argo-cd
