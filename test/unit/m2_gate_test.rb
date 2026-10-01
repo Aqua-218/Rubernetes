@@ -576,7 +576,8 @@ class M2GateTest < Minitest::Test
     levels = M2Gate::REQUIRED_LEVELS.map do |level|
       evidence = if level == "L3"
                    {"details" => {"native_workload" => {"passed" => true, "measurement_source" => "production_native_l3",
-                                                        "runtime_class" => "Rubernetes::Runtime::Native", "adapter_class" => "Rubernetes::Platform::Linux::NativeAdapters"}}}
+                                                        "runtime_class" => "Rubernetes::Runtime::Native",
+                                                        "adapter_class" => "Rubernetes::Platform::Linux::NativeAdapters"}}}
                  end
       {"level" => level, "status" => "PASS", "passed" => true, "attempt_count" => 1, "failure_count" => 0, "unexpected_skip_count" => 0,
        "unclassified_count" => 0, "evidence_sha256" => Digest::SHA256.hexdigest(level.to_s), "evidence" => evidence}.compact
