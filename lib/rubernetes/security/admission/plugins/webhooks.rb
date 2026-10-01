@@ -558,7 +558,8 @@ module Rubernetes
           include Matching
 
           def bindings_for(policy_name, binding_resource)
-            @context.list(binding_resource, nil, group: AdmissionWebhook::CONFIGURATION_GROUP).select { |binding| binding.dig("spec", "policyName") == policy_name }
+            @context.list(binding_resource, nil,
+                          group: AdmissionWebhook::CONFIGURATION_GROUP).select { |binding| binding.dig("spec", "policyName") == policy_name }
           end
 
           def match_resources?(match, attributes)
