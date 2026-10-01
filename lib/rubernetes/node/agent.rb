@@ -243,9 +243,7 @@ module Rubernetes
         @lifecycle = lifecycle
         # devicemanager: device plugins registering on
         # <device_plugin_dir>/kubelet.sock advertise their devices here.
-        @device_plugins = if device_plugin_dir
-                            DevicePlugins::Manager.new(directory: device_plugin_dir, on_change: -> { device_plugins_changed })
-                          end
+        @device_plugins = (DevicePlugins::Manager.new(directory: device_plugin_dir, on_change: -> { device_plugins_changed }) if device_plugin_dir)
         # newCrashLoopBackOff: the configured maxContainerRestartPeriod caps
         # the backoff, and the initial delay never exceeds it.
         restart_manager = if crash_loop_back_off_max
