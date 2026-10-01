@@ -85,7 +85,7 @@ module Rubernetes
               end
             when :map
               node[1].each_with_object({}) do |(key_node, value_node), hash|
-                key = eval(key_node)
+                key = evaluate(key_node)
                 unless [Integer, Values::UInt, TrueClass, FalseClass, String].any? { |type| key.is_a?(type) }
                   raise EvaluationError, "map key must be int, uint, bool or string"
                 end
