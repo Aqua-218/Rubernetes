@@ -166,7 +166,8 @@ class KubeletCSIPluginRegistrationTest < Minitest::Test
   # (the Node was recreated) is deleted and created again for this Node.
   def test_csinode_owned_by_another_node_is_replaced
     @client.put("csinodes", {"apiVersion" => "storage.k8s.io/v1", "kind" => "CSINode",
-                             "metadata" => {"name" => "n1", "ownerReferences" => [{"apiVersion" => "v1", "kind" => "Node", "name" => "n1", "uid" => "old-uid"}]},
+                             "metadata" => {"name" => "n1",
+                                            "ownerReferences" => [{"apiVersion" => "v1", "kind" => "Node", "name" => "n1", "uid" => "old-uid"}]},
                              "spec" => {"drivers" => [{"name" => "stale.csi", "nodeID" => "x", "topologyKeys" => []}]}})
     @registry.initialize_csi_node
 
