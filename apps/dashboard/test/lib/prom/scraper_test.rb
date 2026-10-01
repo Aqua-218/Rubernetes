@@ -101,10 +101,10 @@ module Prom
       @scraper.scrape_all([first])
       two = value_of("a", "instance" => "two:1")[0][1]
 
-    assert Tsdb::Store.stale_marker?(two[1])
-    assert Tsdb::Store.stale_marker?(value_of("up", "instance" => "two:1")[0][1][1])
-    assert_equal(["one:1"], @scraper.statuses.values.map { |s| s.target.instance })
-  end
+      assert Tsdb::Store.stale_marker?(two[1])
+      assert Tsdb::Store.stale_marker?(value_of("up", "instance" => "two:1")[0][1][1])
+      assert_equal(["one:1"], @scraper.statuses.values.map { |s| s.target.instance })
+    end
 
   test "scrapes a real HTTP endpoint and queries it through the engine" do
     server = TCPServer.new("127.0.0.1", 0)
