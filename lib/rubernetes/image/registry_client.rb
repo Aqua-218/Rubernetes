@@ -841,8 +841,10 @@ module Rubernetes
         raise RegistryError, "registry basic authentication requires username and password" if @username.nil? ^ @password.nil?
 
         [@username, @password, @bearer_token].compact.each do |value|
-          raise RegistryError, 
-                "registry credentials must be strings without control characters" unless value.is_a?(String) && !value.match?(/[\x00-\x1f\x7f]/)
+          unless value.is_a?(String) && !value.match?(/[\x00-\x1f\x7f]/)
+            raise RegistryError,
+                  "registry credentials must be strings without control characters"
+          end
         end
         return if @username.nil? && @password.nil? && @bearer_token.nil?
         return if endpoint.scheme == "https"
