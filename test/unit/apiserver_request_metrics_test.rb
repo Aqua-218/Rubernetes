@@ -31,7 +31,7 @@ class APIServerRequestMetricsTest < Minitest::Test
     samples(name).find { |line| labels.all? { |key, value| line.include?(%(#{key}="#{value}")) } }
   end
 
-  def value(name, **labels) = sample(name, **labels)&.split&.last&.to_f
+  def value(name, **labels) = sample(name, **labels)&.then { |line| line.split.last.to_f }
 
   def test_verbs_and_scopes_are_upstreams
     call("POST", "/api/v1/namespaces/dev/configmaps", {"metadata" => {"name" => "a"}})
