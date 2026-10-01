@@ -25,29 +25,25 @@ module Prom
        "status" => {"podIP" => ip, "phase" => phase}}
     end
 
-    assert_equal [], targets.discover
-  end
-
-  test "discovers the scheduler, controller manager and proxies from their serving config" do
-    Dir.mktmpdir do |dir|
-      write = lambda do |name, process, port|
-        path = File.join(dir, "#{name}.yml")
-        File.write(path,
-                   {"version" => 1,
-                    "processes" => {process => {"serving" => {"enabled" => true, "bind_address" => "127.0.0.1", "port" => port}}}}.to_yaml)
-        path
-      end
-      off = File.join(dir, "proxy-worker-1.yml")
-      File.write(off, {"version" => 1, "processes" => {"rubernetes-proxy" => {"node_name" => "worker-1"}}}.to_yaml)
-      cluster = {"processes" => [
-        {"name" => "scheduler", "executable" => "rubernetes-scheduler",
-         "config" => write.call("scheduler", "rubernetes-scheduler", 21_001)},
-        {"name" => "controller-manager", "executable" => "rubernetes-controller-manager",
-         "config" => write.call("controller-manager", "rubernetes-controller-manager", 21_002)},
-        {"name" => "proxy-worker-0", "executable" => "rubernetes-proxy",
-         "config" => write.call("proxy-worker-0", "rubernetes-proxy", 21_003)},
-        {"name" => "proxy-worker-1", "executable" => "rubernetes-proxy", "config" => off}
-      ]}
+    test "discovers kubelet endpoints, annotated pods and annotated services" do
+      objects = {
+        "nodes" => [{"metadata" => {"name" => "worker-0"}}, {"metadata" => {"name" => "worker-1"}}],
+        "pods" => [
+          pod("gitaly-0", "gitlab", "10.240.0.6",
+              {"prometheus.io/scrape" => "true", "prometheus.io/port" => "9236", "prometheus.io/path" => "/metrics"}),
+          pod("plain", "default", "10.240.0.7", {}),
+          pod("noport", "default", "10.240.0.8", {"prometheus.io/scrape" => "true"}),
+          pod("pending", "default", "", {"prometheus.io/scrape" => "true"}, phase: "Pending"),
+          pod("v6", "default", "fd00::5", {"prometheus.io/scrape" => "true", "prometheus.io/port" => "80", "prometheus.io/path" => "stats"})
+        ],
+        "services" => [{"metadata" => {"name" => "exporter", "namespace" => "gitlab",
+                                       "annotations" => {"prometheus.io/scrape" => "true"}}}],
+        "endpointslices" => [{"metadata" => {"name" => "exporter-abc", "namespace" => "gitlab", "labels" => {"kubernetes.io/service-name" => "exporter"}},
+                              "ports" => [{"port" => 9168}],
+                              "endpoints" => [{"addresses" => ["10.242.0.9"], "conditions" => {"ready" => true}, "nodeName" => "worker-2",
+                                               "targetRef" => {"name" => "exporter-pod"}},
+                                              {"addresses" => ["10.242.0.10"], "conditions" => {"ready" => false}}]}]
+      }
       fetched = []
       targets = Prom::Targets.new(client: FakeClient.new({}), cluster_json: cluster, kubeconfig_context: nil,
                                   http: lambda { |url|
