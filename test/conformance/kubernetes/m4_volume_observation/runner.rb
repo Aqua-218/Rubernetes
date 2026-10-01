@@ -338,7 +338,8 @@ module M4VolumeObservationRunner
             observed = restart_mounts.find { |entry| entry["target"] == claimed["target"] }
             comparison = M4ObserverSupport.comparison("restart:#{label}:#{key}",
                                                       {"target" => claimed["target"], "mountId" => claimed["mountId"],
-                                                       "deviceId" => claimed["deviceId"], "root" => claimed["root"], "filesystem" => claimed["filesystem"], "kernelSource" => claimed["kernelSource"]},
+                                                       "deviceId" => claimed["deviceId"], "root" => claimed["root"], "filesystem" => claimed["filesystem"],
+                                                       "kernelSource" => claimed["kernelSource"]},
                                                       observed ? M4ObserverSupport.stable_identity(observed).slice("target", "mountId",
                                                                                                                    "deviceId", "root", "filesystem", "kernelSource") : {
                                                                                                                      "target" => claimed["target"], "mounted" => false
