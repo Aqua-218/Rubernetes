@@ -229,8 +229,8 @@ class LinuxPlatformTest < Minitest::Test
         security_plan: plan
       )
 
-    assert(adapter.release_gate(process.fetch(:gate)))
-    status = adapter.wait(pid: process.fetch(:pid), timeout: 3.0)
+      assert(adapter.release_gate(process.fetch(:gate)))
+      status = adapter.wait(pid: process.fetch(:pid), timeout: 3.0)
 
     refute_nil(status, "RuntimeDefault workload spun after a denied signal-wait syscall")
     assert_predicate(status, :success?)
