@@ -4,7 +4,18 @@
 # Pin the upstream OpenAPI v3 documents into schema/kubernetes/v1.36.2-openapi-v3/
 # so the generator serves what kube-apiserver v1.36.2 publishes.
 #
-# Usage: KUBERNETES_SOURCE_ROOT=/tmp/kubernetes-v1.36.2 ruby tools/schema/import_kubernetes_openapi_v3.rb
+# Two sources, both recorded per file in manifest.json:
+# - the source tree's api/openapi-spec/v3/*_openapi.json at the pinned tag
+#   (every group/version, including feature-gated ones);
+# - with --kubeconfig, the documents a running v1.36.2 kube-apiserver serves
+#   (`/openapi/v3/<path>` for every entry of its root document), which
+#   overlay the tree's.  The served documents carry the `enum` lists
+#   (OpenAPIEnums) and `info.version` that the checked-in files do not; they
+#   are what `kubectl explain` prints and what the K5 wire differential
+#   compares, so the pin follows the server.
+#
+# Usage: KUBERNETES_SOURCE_ROOT=/tmp/kubernetes-v1.36.2 \
+#          ruby tools/schema/import_kubernetes_openapi_v3.rb [--kubeconfig PATH]
 
 require "digest"
 require "fileutils"
