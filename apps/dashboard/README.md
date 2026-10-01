@@ -1,5 +1,7 @@
 # Rubernetes dashboard
 
+English | [日本語](README.ja.md)
+
 A Rails 8 application that is both the cluster's web UI and its Prometheus.
 It runs on the host (or anywhere with a kubeconfig), not inside the cluster,
 so it keeps working while the cluster is unhealthy.
