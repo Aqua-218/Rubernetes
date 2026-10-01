@@ -272,6 +272,7 @@ module M4ObserverSupport
     end
   end
 
+  # rubocop:disable-next Layout/LineLength -- the pattern reads better whole
   STRACE_LINE = /\A(?:(?<pid>\d+)\s+)?(?<ts>\d+\.\d+)\s+(?<name>[a-z_0-9]+)\((?<args>.*)\)\s+=\s+(?<ret>-?\d+|0x[0-9a-fA-F]+|\?)(?:\s+(?<errno>E[A-Z0-9]+)\s+\((?<errmsg>[^)]*)\))?/
   STRACE_RESUMED = /\A(?:(?<pid>\d+)\s+)?(?<ts>\d+\.\d+)\s+<\.\.\.\s+(?<name>[a-z_0-9]+)\s+resumed>\s*(?<args>.*)\)\s+=\s+(?<ret>-?\d+|0x[0-9a-fA-F]+|\?)(?:\s+(?<errno>E[A-Z0-9]+)\s+\((?<errmsg>[^)]*)\))?/
 
