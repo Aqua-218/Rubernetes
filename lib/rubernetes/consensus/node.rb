@@ -1192,8 +1192,8 @@ module Rubernetes
         @snapshot_store.install(bytes)
         @apply_mutex.synchronize do
           if @log.term_at(snapshot.index) == snapshot.term && snapshot.index <= @log.last_index
-          else
-            @log.truncate_from(@log.snapshot_index + 1) if @log.last_index > @log.snapshot_index
+          elsif @log.last_index > @log.snapshot_index
+            @log.truncate_from(@log.snapshot_index + 1)
           end
           @log.compact_to(index: snapshot.index, term: snapshot.term)
           @log.rotate! if @log.respond_to?(:rotate!)
