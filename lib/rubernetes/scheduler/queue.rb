@@ -637,7 +637,7 @@ module Rubernetes
         return @max_backoff_seconds if exponent > 32
 
         delay = @initial_backoff_seconds * (2**exponent)
-        delay > @max_backoff_seconds ? @max_backoff_seconds : delay
+        [delay, @max_backoff_seconds].min
       end
 
       def now_seconds
