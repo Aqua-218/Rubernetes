@@ -146,7 +146,10 @@ class SecurityAuditFlowControlTest < Minitest::Test
   end
 
   def test_apf_metrics_follow_the_flowcontrol_families
-    plcs = [{"metadata" => {"name" => "tiny"}, "spec" => {"type" => "Limited", "limited" => {"nominalConcurrencyShares" => 1, "limitResponse" => {"type" => "Queue", "queuing" => {"queues" => 1, "handSize" => 1, "queueLengthLimit" => 1}}}}},
+    plcs = [{"metadata" => {"name" => "tiny"},
+             "spec" => {"type" => "Limited",
+                        "limited" => {"nominalConcurrencyShares" => 1,
+                                      "limitResponse" => {"type" => "Queue", "queuing" => {"queues" => 1, "handSize" => 1, "queueLengthLimit" => 1}}}}},
             {"metadata" => {"name" => "none"},
              "spec" => {"type" => "Limited", "limited" => {"nominalConcurrencyShares" => 1, "limitResponse" => {"type" => "Reject"}}}}]
     rule = [{"subjects" => [{"kind" => "Group", "group" => {"name" => "*"}}],
