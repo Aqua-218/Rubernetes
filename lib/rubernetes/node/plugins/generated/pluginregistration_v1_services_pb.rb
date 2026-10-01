@@ -8,7 +8,7 @@
 # Original file comments:
 # To regenerate api.pb.go run `hack/update-codegen.sh protobindings`
 
-require 'grpc'
+require "grpc"
 require_relative "pluginregistration_v1_pb"
 
 module Rubernetes
