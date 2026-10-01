@@ -57,7 +57,8 @@ class M2LifecycleOracleHarnessTest < Minitest::Test
 
   def test_backoff_messages_are_parsed_into_durations
     assert_equal "10s",
-                 H.parse_backoff_message("back-off 10s restarting failed container=app pod=m2-restart-always-exit-0_default(496f3187-1756-43e1-9477-133c85427e27)")
+                 H.parse_backoff_message("back-off 10s restarting failed container=app " \
+                                         "pod=m2-restart-always-exit-0_default(496f3187-1756-43e1-9477-133c85427e27)")
     assert_equal "2m40s", H.parse_backoff_message("back-off 2m40s restarting failed container=app pod=x_default(uid)")
     assert_nil H.parse_backoff_message("Container image already present on machine")
     assert_nil H.parse_backoff_message(nil)
