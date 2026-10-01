@@ -131,7 +131,8 @@ class HPAControllerUpstreamTest < Minitest::Test
 
   def test_behavior_rate_limits_a_scale_up
     behavior = {"scaleUp" => {"stabilizationWindowSeconds" => 0, "selectPolicy" => "Max",
-                              "policies" => [{"type" => "Pods", "value" => 4, "periodSeconds" => 15}, {"type" => "Percent", "value" => 100, "periodSeconds" => 15}]},
+                              "policies" => [{"type" => "Pods", "value" => 4, "periodSeconds" => 15},
+                                             {"type" => "Percent", "value" => 100, "periodSeconds" => 15}]},
                 "scaleDown" => {"selectPolicy" => "Max", "policies" => [{"type" => "Percent", "value" => 100, "periodSeconds" => 15}]}}
     metrics = FakeMetrics.new("web-0" => 10_000)
     result = controller(metrics, deployment(1), history: []).plan(hpa(min: 1, max: 20, target: 50, behavior: behavior), pods: pods(1))
