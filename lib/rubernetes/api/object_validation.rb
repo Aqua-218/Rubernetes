@@ -21,7 +21,9 @@ module Rubernetes
       LABEL_VALUE_MAX = 63
       TOTAL_ANNOTATION_SIZE_LIMIT = 256 * 1024
 
-      DNS1123_SUBDOMAIN_MESSAGE = "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')"
+      DNS1123_SUBDOMAIN_MESSAGE = "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end " \
+                                  "with an alphanumeric character (e.g. 'example.com', regex used for validation is " \
+                                  "'[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')"
       DNS1123_LABEL_MESSAGE = "a lowercase RFC 1123 label must consist of lower case alphanumeric characters or '-', and must start and end with an " \
                               "alphanumeric character (e.g. 'my-name',  or '123-abc', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?')"
       DNS1035_LABEL_MESSAGE = "a DNS-1035 label must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with " \
