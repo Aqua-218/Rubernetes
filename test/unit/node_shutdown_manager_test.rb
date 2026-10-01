@@ -404,7 +404,7 @@ class NodeShutdownManagerTest < Minitest::Test
 
       assert_operator members.index("AddMatch"), :<, members.index("Inhibit")
       assert_equal 1, members.count("AddMatch")
-      thread = Thread.new { logind.monitor_shutdown { |_| } }
+      thread = Thread.new { logind.monitor_shutdown { |_| nil } }
       sleep 0.05
 
       assert_equal 1, bus.calls.count { |call| call[1] == "AddMatch" }, "monitoring does not subscribe twice"
