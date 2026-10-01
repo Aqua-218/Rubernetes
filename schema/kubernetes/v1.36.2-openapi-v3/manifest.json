@@ -542,8 +542,10 @@
       "path": "apis.json",
       "upstream_path": "api/openapi-spec/v3/apis_openapi.json",
       "source_sha256": "a35becf993dbb081b28fe5afcdd9b5bf22ff70a8a83b1d773e8e541bb06810de",
-      "sha256": "a35becf993dbb081b28fe5afcdd9b5bf22ff70a8a83b1d773e8e541bb06810de",
-      "paths": 1
+      "sha256": "f6f28a2544b452b1103704eaa61ef932df1fe3ae3f8e5bb0d0818634646ca314",
+      "paths": 1,
+      "source": "served",
+      "served_path": "/openapi/v3/apis"
     },
     {
       "path": "logs.json",
