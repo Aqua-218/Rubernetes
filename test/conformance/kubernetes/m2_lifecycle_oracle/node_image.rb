@@ -509,7 +509,8 @@ module M2LifecycleOracleNodeImage
         "reused_existing_image" => built_at.nil?
       },
       "digest_pinning" => {
-        "method" => "docker push to an ephemeral local registry (localhost, port >= 25000); the recorded RepoDigest resolves from the local image store without the registry",
+        "method" => "docker push to an ephemeral local registry (localhost, port >= 25000); the recorded RepoDigest resolves from the local image store " \
+                    "without the registry",
         "registry_image" => pinned.fetch("registry_image")
       },
       "alias_container_image" => {
