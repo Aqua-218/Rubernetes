@@ -240,8 +240,10 @@ module Rubernetes
               return result
             end
 
-            result << raw.byteslice(line_end + 2, size).to_s
-            offset = line_end + 2 + size + 2
+            fill_buffer(buffer, socket) while buffer.bytesize < line_end + 2 + size + 2
+            result << buffer.byteslice(line_end + 2, size)
+            buffer = buffer.byteslice((line_end + 2 + size + 2)..) || "".b
+            raise Status::ServiceUnavailable.new("node streaming endpoint sent an oversized response body") if result.bytesize > MAX_ERROR_BODY_BYTES
           end
           result
         end
