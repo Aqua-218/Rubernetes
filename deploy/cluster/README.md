@@ -267,6 +267,7 @@ API no longer owns them.
 ## Uninstall
 
 ```
+rubectl drain <node> --ignore-daemonsets      # on each node: the agent stops and releases every Pod
 systemctl disable --now rubernetes-agent rubernetes-proxy \
   rubernetes-apiserver rubernetes-scheduler rubernetes-controller-manager
 rubernetes-agent cleanup --config /etc/rubernetes/agent.yml    # releases sandboxes, mounts, network
