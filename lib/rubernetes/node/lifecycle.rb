@@ -3534,7 +3534,7 @@ module Rubernetes
       rescue ArgumentError => error
         raise unless error.message.include?("wrong number") || error.message.include?("unknown keyword")
 
-        @runtime.public_send(:signal, container_id, signal: signal)
+        @runtime.signal(container_id, signal: signal)
       end
 
       # The runtime's own word that a sandbox's removal completed.
