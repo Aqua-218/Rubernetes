@@ -3988,9 +3988,7 @@ module Rubernetes
           # released it: its namespace and links are gone with it).  That is
           # not a lookup that might land on the host namespace; it is the
           # answer "nothing left to enter", which the caller handles.
-          if Helpers.failure_message(error).include?("unknown sandbox")
-            raise SandboxGone, "sandbox #{sandbox_id} is gone: #{Helpers.failure_message(error)}"
-          end
+          raise SandboxGone, "sandbox #{sandbox_id} is gone: #{Helpers.failure_message(error)}" if Helpers.failure_message(error).include?("unknown sandbox")
 
           raise LifecycleError,
                 "sandbox network namespace lookup failed: #{Helpers.failure_message(error)}"
