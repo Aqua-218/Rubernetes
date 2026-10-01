@@ -130,10 +130,9 @@ module Rubernetes
               case function
               when "timestamp" then value
               when "int" then value.seconds
-              when "string" then Time.at(value.seconds, value.nanos,
-                                         :nanosecond).utc.iso8601(value.nanos.zero? ? 0 : 9).sub(/\.?0+Z\z/) do |m|
-                m.start_with?(".") ? "Z" : m
-              end
+              when "string"
+                rendered = Time.at(value.seconds, value.nanos, :nanosecond).utc.iso8601(value.nanos.zero? ? 0 : 9)
+                rendered.sub(/\.?0+Z\z/) { |m| m.start_with?(".") ? "Z" : m }
               else conversion_error("google.protobuf.Timestamp", target)
               end
             else conversion_error(type_name(value), target)
