@@ -150,8 +150,7 @@ class BootstrapProcessServicesTest < Minitest::Test
 
   NetworkPort = Class.new
 
-  class VolumePort
-  end
+  VolumePort = Class.new
 
   def setup
     @logger = Logger.new
