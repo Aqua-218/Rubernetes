@@ -111,9 +111,7 @@ module Rubernetes
             unless (metadata(old)["labels"] || {}) == (metadata(pod)["labels"] || {})
               reject!("node #{node_name.inspect} cannot update labels through pod status")
             end
-            unless resource_claim_statuses(old) == resource_claim_statuses(pod)
-              reject!("node #{node_name.inspect} cannot update resource claim statues")
-            end
+            reject!("node #{node_name.inspect} cannot update resource claim statues") unless resource_claim_statuses(old) == resource_claim_statuses(pod)
             return if (old || {}).dig("status", "extendedResourceClaimStatus") == (pod || {}).dig("status", "extendedResourceClaimStatus")
 
             reject!("node #{node_name.inspect} cannot update extended resource claim status")
