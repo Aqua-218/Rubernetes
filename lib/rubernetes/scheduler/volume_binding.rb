@@ -112,9 +112,7 @@ module Rubernetes
         return true if state.claims.nil?
 
         podvolumes, reasons = find_pod_volumes(pod, state.claims, node, data)
-        unless reasons.empty?
-          return Filters::Helpers.reject(reasons.first, code: "UnschedulableAndUnresolvable", details: {"reasons" => reasons})
-        end
+        return Filters::Helpers.reject(reasons.first, code: "UnschedulableAndUnresolvable", details: {"reasons" => reasons}) unless reasons.empty?
 
         @mutex.synchronize { state.by_node[node.name] = podvolumes }
         true
