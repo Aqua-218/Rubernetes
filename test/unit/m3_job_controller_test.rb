@@ -335,7 +335,7 @@ class M3JobControllerTest < Minitest::Test
     assert_equal [], update.object.dig("metadata", "finalizers")
 
     # With the Job present the Pod is not an orphan and the normal sync owns it.
-    store.create(owner, descriptor: Controller::ResourceDescriptor.parse("Job"))
+    adapter.create(owner, descriptor: Controller::ResourceDescriptor.parse("Job"))
 
     assert_nil controller.plan_orphans("default/batch", store: adapter)
   end
