@@ -30,7 +30,7 @@ module Rubernetes
 
         def self.of(seats, seconds) = (seats.to_f * seconds.to_f * SCALE).round.clamp(MIN, MAX)
         def self.to_f(value) = value.to_f / SCALE
-        def self.duration_per_seat(value, seats) = value.to_f / seats.to_f / SCALE
+        def self.duration_per_seat(value, seats) = value.to_f / seats / SCALE
       end
 
       # fairqueuing.Integrator: a time-weighted gauge that remembers the
