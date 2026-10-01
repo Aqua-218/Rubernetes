@@ -211,7 +211,7 @@ module Conformance
     def stage(project, id, command, namespace, options)
       return nil if command.nil? || command.to_s.empty?
 
-      env = {"KUBECONFIG" => options.fetch(:kubeconfig), "K6_NAMESPACE" => namespace}
+      env = {"KUBECONFIG" => options.fetch(:kubeconfig), "K6_NAMESPACE" => namespace, "PATH" => options.fetch(:path, ENV.fetch("PATH", ""))}
       started = Time.now.utc
       stdout, stderr, status = Open3.capture3(env, "bash", "-o", "pipefail", "-c", command, chdir: ROOT)
       {"project" => project, "stage" => id, "passed" => status.success?, "exit_status" => status.exitstatus,
