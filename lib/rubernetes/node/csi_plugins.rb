@@ -237,14 +237,6 @@ module Rubernetes
         end
       end
 
-      # keepAllocatableCount: the new limit needs no CSINode update.
-      def self.keep_allocatable_count?(driver, max_volumes)
-        count = driver.dig("allocatable", "count")
-        return count.nil? if max_volumes.zero?
-
-        !count.nil? && Integer(count) == max_volumes
-      end
-
       def uninstall_driver(name)
         update_csi_node { |drivers| drivers.reject { |driver| driver["name"] == name } }
         update_node do |annotations, _labels|
