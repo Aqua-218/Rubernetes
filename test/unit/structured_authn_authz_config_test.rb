@@ -302,7 +302,8 @@ class StructuredAuthnAuthzConfigTest < Minitest::Test
 
       authz_controller = assembly.reload_controllers.find { |controller| controller.kind == "authorization" }
       File.write(authz_path, authz_document([{"type" => "Node", "name" => "node"}, {"type" => "RBAC", "name" => "rbac"},
-                                             webhook_entry("audit.example.com", kubeconfig, conditions: ['request.resourceAttributes.namespace == "kube-system"'])]).to_yaml)
+                                             webhook_entry("audit.example.com", kubeconfig,
+                                                           conditions: ['request.resourceAttributes.namespace == "kube-system"'])]).to_yaml)
 
       assert authz_controller.check!
       assert_equal %w[Node RBAC audit.example.com], pipeline.authorizer.modes, "the pipeline's union sees the new chain"
