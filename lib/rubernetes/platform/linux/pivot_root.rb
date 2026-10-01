@@ -94,7 +94,7 @@ module Rubernetes
         # Parse /proc/<pid>/mountinfo (proc(5)).  Field 4 (mountpoint) is
         # octal-escaped for space, tab, newline, and backslash.
         def self.parse_mountinfo(contents)
-          String(contents).each_line(chomp: true).each_with_index.filter_map do |line, index|
+          String(contents).each_line(chomp: true).with_index.filter_map do |line, index|
             next if line.strip.empty?
 
             before, after = line.split(" - ", 2)
