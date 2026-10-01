@@ -647,7 +647,8 @@ module Rubernetes
           def isLinkLocalUnicast = @address.link_local?
 
           def isGlobalUnicast
-            !(isLoopback || isUnspecified || @address.link_local? || (@address.ipv4? ? IPAddr.new("224.0.0.0/4").include?(@address) : IPAddr.new("ff00::/8").include?(@address)))
+            multicast = @address.ipv4? ? IPAddr.new("224.0.0.0/4").include?(@address) : IPAddr.new("ff00::/8").include?(@address)
+            !(isLoopback || isUnspecified || @address.link_local? || multicast)
           end
 
           def to_s = @address.to_s
