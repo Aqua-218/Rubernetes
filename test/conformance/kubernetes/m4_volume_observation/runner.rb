@@ -444,6 +444,7 @@ module M4VolumeObservationRunner
         {"restored" => false, "error_class" => error.class.name, "message" => error.message}
       end
       tampered_volume_exists = tampered_manager.list_volumes.any? { |volume| volume.id == "m4-snap-tampered" }
+      interrupted = interrupted_restore(data_dir, snapshot_id, pristine_catalog)
       record["comparisons"] << M4ObserverSupport.comparison("crash_recovery",
                                                             {"operation" => "CrashRecovery", "tampered_restore_refused" => true,
                                                              "tampered_volume_registered" => false,
