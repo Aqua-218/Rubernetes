@@ -91,10 +91,10 @@ module Prom
       assert_match(/deadline exceeded/, status.last_error)
     end
 
-  test "scrape_all runs targets concurrently and retires targets that vanish" do
-    first = target("a 1\n", instance: "one:1")
-    second = target("a 2\n", instance: "two:1")
-    @scraper.scrape_all([first, second])
+    test "scrape_all runs targets concurrently and retires targets that vanish" do
+      first = target("a 1\n", instance: "one:1")
+      second = target("a 2\n", instance: "two:1")
+      @scraper.scrape_all([first, second])
 
     assert_equal 2, value_of("a").length
     @now += 15_000
