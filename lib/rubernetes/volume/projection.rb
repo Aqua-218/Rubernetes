@@ -220,9 +220,7 @@ module Rubernetes
       def swap_data_link(generation_name)
         temporary = File.join(@root, "#{DATA_LINK}.tmp-#{Process.pid}-#{SecureRandom.hex(6)}")
         destination = File.join(@root, DATA_LINK)
-        if File.exist?(destination) && !File.symlink?(destination)
-          raise PathSecurityError, "projected data link was replaced by a non-symlink"
-        end
+        raise PathSecurityError, "projected data link was replaced by a non-symlink" if File.exist?(destination) && !File.symlink?(destination)
 
         File.symlink(generation_name, temporary)
         File.rename(temporary, destination)
