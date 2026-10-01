@@ -234,12 +234,11 @@ class EgressSelectorTest < Minitest::Test
       File.write(File.join(dir, "c.crt"), cert.to_pem)
       File.write(File.join(dir, "c.key"), key.to_pem)
       File.write(File.join(dir, "ca.crt"), cert.to_pem)
-      selector = Egress::Selector.from_h(base.merge("egressSelections" => [{"name" => "cluster", "connection" => {"proxyProtocol" => "HTTPConnect",
-                                                                                                                  "transport" => {"tcp" => {"url" => "https://proxy.example:8131",
-                                                                                                                                            "tlsConfig" => {
-                                                                                                                                              "caBundle" => File.join(dir,
-                                                                                                                                                                      "ca.crt"), "clientCert" => File.join(dir, "c.crt"), "clientKey" => File.join(dir, "c.key"), "tlsServerName" => "proxy"
-                                                                                                                                            }}}}}]))
+      tls_config = {"caBundle" => File.join(dir, "ca.crt"), "clientCert" => File.join(dir, "c.crt"), "clientKey" => File.join(dir, "c.key"),
+                    "tlsServerName" => "proxy"}
+      transport = {"tcp" => {"url" => "https://proxy.example:8131", "tlsConfig" => tls_config}}
+      selector = Egress::Selector.from_h(base.merge("egressSelections" => [{"name" => "cluster",
+                                                                            "connection" => {"proxyProtocol" => "HTTPConnect", "transport" => transport}}]))
       dialer = selector.dialer("cluster")
 
       assert_equal "proxy.example:8131", dialer.proxy_address
