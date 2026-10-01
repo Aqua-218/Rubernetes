@@ -83,7 +83,8 @@ module M7KVMProbe
                                                 sleeper: ->(_seconds) {})
     pod = {"apiVersion" => "v1", "kind" => "Pod", "metadata" => {"name" => "m7-node-lifecycle", "namespace" => "default", "uid" => "m7-node-lifecycle"},
            "spec" => {"runtimeClassName" => "microvm", "containers" => [{"name" => "app", "image" => image.reference,
-                                                                         "command" => ["/bin/busybox", "sh", "-c", "echo node-lifecycle-ok; while :; do /bin/busybox sleep 1; done"]}]}}
+                                                                         "command" => ["/bin/busybox", "sh", "-c",
+                                                                                       "echo node-lifecycle-ok; while :; do /bin/busybox sleep 1; done"]}]}}
     started = lifecycle.start(pod)
     record_state = started.respond_to?(:phase) ? started.phase : started.to_s
     finished = lifecycle.terminate(pod)
