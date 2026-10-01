@@ -360,7 +360,8 @@ module M4NetworkObservationRunner
       payload = "m4-network-observation-#{Process.pid}"
       client = Thread.new do
         M4NetworkObservationRunner.run_command(*M4NetworkObservationRunner.in_namespace(@keeper_pid, RbConfig.ruby, "-rsocket", "-e",
-                                                                                        "s = TCPSocket.new(ARGV[0], Integer(ARGV[1])); s.write(ARGV[2]); s.close_write; print s.read; s.close",
+                                                                                        "s = TCPSocket.new(ARGV[0], Integer(ARGV[1])); s.write(ARGV[2]); " \
+                                                                                        "s.close_write; print s.read; s.close",
                                                                                         address, port.to_s, payload), allow_failure: true)
       end
       connection = nil
