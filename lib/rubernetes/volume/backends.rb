@@ -648,9 +648,7 @@ module Rubernetes
             "filesystem" => filesystem
           }.filter_map { |field, field_value| field if field_value.nil? || field_value.to_s.empty? }
           raise MountIdentityError, "mount readback for volume #{id} lacks stable fields: #{missing.join(", ")}" unless missing.empty?
-          unless device_id.to_s.match?(/\A\d+:\d+\z/)
-            raise MountIdentityError, "mount readback for volume #{id} lacks a kernel major:minor device identity"
-          end
+          raise MountIdentityError, "mount readback for volume #{id} lacks a kernel major:minor device identity" unless device_id.to_s.match?(/\A\d+:\d+\z/)
 
           if block_filesystem_mount?(source: source, filesystem: filesystem, root: root,
                                      bind: bind_identity) && !(%w[ext4
