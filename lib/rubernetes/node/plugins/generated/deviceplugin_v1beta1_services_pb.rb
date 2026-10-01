@@ -36,6 +36,7 @@ module Rubernetes
 
             Stub = Service.rpc_stub_class
           end
+
           module DevicePlugin
             # DevicePlugin is the service advertised by Device Plugins
             class Service
