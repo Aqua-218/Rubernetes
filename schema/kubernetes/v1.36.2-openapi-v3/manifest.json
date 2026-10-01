@@ -214,8 +214,10 @@
       "path": "apis/certificates.k8s.io/v1.json",
       "upstream_path": "api/openapi-spec/v3/apis__certificates.k8s.io__v1_openapi.json",
       "source_sha256": "d8a3339d727913d644016ba2f24aaee9ad4416011066d3baed2c1afc3bf1f6c8",
-      "sha256": "d8a3339d727913d644016ba2f24aaee9ad4416011066d3baed2c1afc3bf1f6c8",
-      "paths": 7
+      "sha256": "b473086d2df68da750df8168c638b117fb27650a5b004c27978fac1456b50b4e",
+      "paths": 7,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/certificates.k8s.io/v1"
     },
     {
       "path": "apis/certificates.k8s.io/v1alpha1.json",
