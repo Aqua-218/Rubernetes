@@ -224,7 +224,8 @@ class ProxyIptablesBackendTest < Minitest::Test
     assert_includes program, "-A #{fw} -m comment --comment \"ns/svc:https loadbalancer IP\" -s 2001:db8::5 -j #{ext}",
                     "the node sits inside the source range"
     assert_includes program,
-                    "-A KUBE-PROXY-FIREWALL -m comment --comment \"ns/svc:https traffic not accepted by #{fw}\" -m tcp -p tcp -d 2001:db8::5 --dport 443 -j DROP"
+                    "-A KUBE-PROXY-FIREWALL -m comment --comment \"ns/svc:https traffic not accepted by #{fw}\" -m tcp -p tcp -d 2001:db8::5 --dport 443 -j " \
+                    "DROP"
     assert_includes program, "-m recent --name #{sep} --rcheck --seconds 300 --reap -j #{sep}"
     assert_includes program, "-m recent --name #{sep} --set -m tcp -p tcp -j DNAT --to-destination [fd00:1::5]:8443"
     assert_includes program, "-m addrtype --dst-type LOCAL ! -d ::1/128 -j KUBE-NODEPORTS"
