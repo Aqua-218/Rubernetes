@@ -15,11 +15,10 @@ module Promql
       @engine = Promql::Engine.new(@store, now: -> { T0 })
     end
 
-  def setup
-    @dir = Dir.mktmpdir("promql")
-    @store = Tsdb::Store.new(@dir)
-    @engine = Promql::Engine.new(@store, now: -> { T0 })
-  end
+    def teardown
+      @store.close
+      FileUtils.rm_rf(@dir)
+    end
 
   def teardown
     @store.close
