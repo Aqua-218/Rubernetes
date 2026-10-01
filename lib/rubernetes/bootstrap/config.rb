@@ -46,6 +46,7 @@ module Rubernetes
       DATASTORE_TIMING_KEYS = %w[
         election_timeout_min election_timeout_max heartbeat_interval batch_max_entries batch_max_bytes
         batch_flush_timeout snapshot_entries snapshot_wal_bytes snapshot_min_interval max_inflight_appends snapshot_chunk_bytes
+        max_command_bytes
       ].freeze
       CONTROL_PLANE_KEYS = %w[api_server kubeconfig context identity sync lease resource_kinds controllers root_ca_file metrics_server serving cluster_signing
                               use_service_account_credentials service_account_private_key_file].freeze
