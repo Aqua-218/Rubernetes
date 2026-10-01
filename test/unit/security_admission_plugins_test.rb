@@ -207,7 +207,11 @@ class SecurityAdmissionPluginsTest < Minitest::Test
     end
     other = pod("o", extra: {"nodeName" => "n2"}).tap { |p| p["metadata"]["annotations"] = {"kubernetes.io/config.mirror" => "x"} }
     assert_raises(A::Rejected) { restriction.validate(attributes("CREATE", resource: "pods", object: other, user: kubelet)) }
-    assert_raises(A::Rejected) { restriction.validate(attributes("UPDATE", resource: "nodes", namespace: "", name: "n2", object: {"metadata" => {"name" => "n2"}}, old: {"metadata" => {"name" => "n2"}}, user: kubelet)) }
+    assert_raises(A::Rejected) do
+      restriction.validate(attributes("UPDATE", resource: "nodes", namespace: "", name: "n2",
+                                                object: {"metadata" => {"name" => "n2"}}, old: {"metadata" => {"name" => "n2"}},
+                                                user: kubelet))
+    end
     labelled = {"metadata" => {"name" => "n1", "labels" => {"node-restriction.kubernetes.io/tier" => "gold"}}}
     assert_raises(A::Rejected) { restriction.validate(attributes("UPDATE", resource: "nodes", namespace: "", name: "n1", object: labelled, old: {"metadata" => {"name" => "n1"}}, user: kubelet)) }
     ok = {"metadata" => {"name" => "n1", "labels" => {"kubernetes.io/hostname" => "n1", "example.com/rack" => "r1"}}}
