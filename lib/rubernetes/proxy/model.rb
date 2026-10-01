@@ -657,7 +657,7 @@ module Rubernetes
 
       def default_condition(source, name, default)
         value = ModelSupport.key(ModelSupport.key(source, "conditions", {}) || {}, name, default)
-        ModelSupport.bool(value, default)
+        ModelSupport.bool(value, default: default)
       end
 
       def target_ref_identity
