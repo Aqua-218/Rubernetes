@@ -38,7 +38,8 @@ module Rubernetes
       POD_GROUP_PROTECTION_FINALIZER = "scheduling.k8s.io/podgroup-protection"
       ROOT_CA_CONFIG_MAP_NAME = "kube-root-ca.crt"
       ROOT_CA_DESCRIPTION_ANNOTATION = "kubernetes.io/description"
-      ROOT_CA_DESCRIPTION = "Contains a CA bundle that can be used to verify the kube-apiserver when using internal endpoints such as the internal service IP or kubernetes.default.svc. No other usage is guaranteed across distributions of Kubernetes clusters."
+      ROOT_CA_DESCRIPTION = "Contains a CA bundle that can be used to verify the kube-apiserver when using internal endpoints such as the internal service " \
+                            "IP or kubernetes.default.svc. No other usage is guaranteed across distributions of Kubernetes clusters."
       CLUSTER_TRUST_BUNDLE_SIGNER = "kubernetes.io/kube-apiserver-serving"
       IDENTITY_LEASE_LABEL = "apiserver.kubernetes.io/identity"
       KUBE_APISERVER_IDENTITY = "kube-apiserver"
