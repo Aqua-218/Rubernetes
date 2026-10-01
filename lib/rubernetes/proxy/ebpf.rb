@@ -1538,7 +1538,7 @@ module Rubernetes
       def rule_topology_hints_enabled?(rule)
         metadata = rule.respond_to?(:metadata) ? rule.metadata : {}
         value = metadata["topologyAwareHints"] || metadata[:topologyAwareHints]
-        value.nil? || ModelSupport.bool(value, true)
+        value.nil? || ModelSupport.bool(value, default: true)
       end
 
       def backend_identity(backend)
