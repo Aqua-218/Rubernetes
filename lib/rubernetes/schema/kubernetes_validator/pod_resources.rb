@@ -151,9 +151,7 @@ module Rubernetes
           end
           request_cpu_or_memory = true if QOS_COMPUTE_RESOURCES.include?(name)
         end
-        if !limit_cpu_or_memory && !request_cpu_or_memory && (request_huge || limit_huge)
-          issues << issue(path, :forbidden, "HugePages require cpu or memory")
-        end
+        issues << issue(path, :forbidden, "HugePages require cpu or memory") if !limit_cpu_or_memory && !request_cpu_or_memory && (request_huge || limit_huge)
         issues
       end
 
