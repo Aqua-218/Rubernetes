@@ -37,7 +37,8 @@ Prometheus data source:
 /api/v1/metadata  /api/v1/targets  /api/v1/rules  /api/v1/alerts  /api/v1/status/{buildinfo,tsdb,runtimeinfo,config}
 ```
 
-* How to run the test suite
+`/graph` is the expression browser, `/targets`, `/rules`, `/alerts` and
+`/status` the usual status pages, `/up` the health check.
 
 * Services (job queues, cache servers, search engines, etc.)
 
