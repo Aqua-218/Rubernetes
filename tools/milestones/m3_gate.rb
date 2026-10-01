@@ -1362,7 +1362,8 @@ module M3Gate
       if valid_digest?(local_runner_sha256) && runner.is_a?(Hash) && runner["runner_sha256"] == local_runner_sha256
         errors << "#{label} runner digest must differ from the local probe"
       end
-      if iso8601?(runner && runner["started_at"]) && iso8601?(runner && runner["finished_at"]) && Time.iso8601(runner["finished_at"]) < Time.iso8601(runner["started_at"])
+      if iso8601?(runner && runner["started_at"]) && iso8601?(runner && runner["finished_at"]) &&
+         Time.iso8601(runner["finished_at"]) < Time.iso8601(runner["started_at"])
         errors << "#{label} runner finished before it started"
       end
       processes = chaos["processes"] || chaos["process_observations"]
