@@ -741,9 +741,7 @@ module Rubernetes
           if context.seccomp_name != "Unconfined" && !probe.available?(:seccomp)
             raise Unsupported, "seccomp is required by the security context but unavailable"
           end
-          if context.landlock_required? && !probe.available?(:landlock)
-            raise Unsupported, "Landlock is required by the security context but unavailable"
-          end
+          raise Unsupported, "Landlock is required by the security context but unavailable" if context.landlock_required? && !probe.available?(:landlock)
 
           context
         end
