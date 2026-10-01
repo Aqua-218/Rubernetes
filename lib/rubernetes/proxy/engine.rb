@@ -278,7 +278,9 @@ module Rubernetes
           listener.fetch(:server).close
         rescue StandardError
           nil
-        thread = listener[:thread]
+        end
+        listeners.each do |listener|
+          thread = listener[:thread]
           thread.join(REQUEST_TIMEOUT + 1) if thread && thread != Thread.current
         end
       end
