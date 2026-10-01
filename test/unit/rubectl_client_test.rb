@@ -192,7 +192,7 @@ class RubectlClientTest < Minitest::Test
     )
     stream_error = nil
     worker = Thread.new do
-      client.stream("GET", "/watch") { |_chunk| }
+      client.stream("GET", "/watch") { |_chunk| nil }
     rescue StandardError => error
       stream_error = error
     end
