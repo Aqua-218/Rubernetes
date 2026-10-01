@@ -57,9 +57,9 @@ module Prom
       @scraper.scrape(target("a 2\n"))
       b = value_of("b")[0][1]
 
-    assert Tsdb::Store.stale_marker?(b[1])
-    assert_equal @now, b[0]
-    assert_equal([0.0], value_of("scrape_series_added").map { |_, p| p[1] })
+      assert Tsdb::Store.stale_marker?(b[1])
+      assert_equal @now, b[0]
+      assert_equal([0.0], value_of("scrape_series_added").map { |_, p| p[1] })
 
     @now += 15_000
     status = @scraper.scrape(target(nil, status: 500))
