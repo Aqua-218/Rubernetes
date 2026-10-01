@@ -1129,9 +1129,7 @@ module M2Gate
         errors << "#{label} actual provenance is required"
         return
       end
-      unless provenance["source"] == LIFECYCLE_SEMANTICS_ACTUAL_SOURCE
-        errors << "#{label} actual source must be #{LIFECYCLE_SEMANTICS_ACTUAL_SOURCE}"
-      end
+      errors << "#{label} actual source must be #{LIFECYCLE_SEMANTICS_ACTUAL_SOURCE}" unless provenance["source"] == LIFECYCLE_SEMANTICS_ACTUAL_SOURCE
       expected.each do |key, value|
         errors << "#{label} actual provenance #{key} is not truthful" unless provenance[key] == value
       end
