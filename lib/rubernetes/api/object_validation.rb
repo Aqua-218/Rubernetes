@@ -448,9 +448,7 @@ module Rubernetes
           next if value.nil?
 
           minimum = %w[successThreshold failureThreshold periodSeconds timeoutSeconds].include?(key) ? 1 : 0
-          if !value.is_a?(Integer) || value < minimum
-            causes << invalid("#{path}.#{key}", value, "must be greater than or equal to #{minimum}")
-          end
+          causes << invalid("#{path}.#{key}", value, "must be greater than or equal to #{minimum}") if !value.is_a?(Integer) || value < minimum
         end
       end
 
