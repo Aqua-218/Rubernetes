@@ -134,9 +134,12 @@ module M6SecurityPipelineProbe
                         "limited" => {"nominalConcurrencyShares" => 10,
                                       "limitResponse" => {"type" => "Queue",
                                                           "queuing" => {"queues" => 8, "handSize" => 2, "queueLengthLimit" => 10}}}}}]
-    schemas = [{"metadata" => {"name" => "all"}, "spec" => {"matchingPrecedence" => 1000, "priorityLevelConfiguration" => {"name" => "all"}, "distinguisherMethod" => {"type" => "ByUser"},
-                                                            "rules" => [{"subjects" => [{"kind" => "Group", "group" => {"name" => "*"}}], "resourceRules" => [{"verbs" => ["*"], "apiGroups" => ["*"], "resources" => ["*"], "namespaces" => ["*"], "clusterScope" => true}],
-                                                                         "nonResourceRules" => [{"verbs" => ["*"], "nonResourceURLs" => ["*"]}]}]}}]
+    schemas = [{"metadata" => {"name" => "all"},
+                "spec" => {"matchingPrecedence" => 1000, "priorityLevelConfiguration" => {"name" => "all"}, "distinguisherMethod" => {"type" => "ByUser"},
+                           "rules" => [{"subjects" => [{"kind" => "Group", "group" => {"name" => "*"}}],
+                                        "resourceRules" => [{"verbs" => ["*"], "apiGroups" => ["*"], "resources" => ["*"],
+                                                             "namespaces" => ["*"], "clusterScope" => true}],
+                                        "nonResourceRules" => [{"verbs" => ["*"], "nonResourceURLs" => ["*"]}]}]}}]
     flow = observed(S::FlowControl::Controller.new(flow_schemas: schemas, priority_level_configurations: plcs), recorder, "flow_control",
                     :enter)
     sink = S::Audit::MemoryBackend.new
