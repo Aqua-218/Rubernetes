@@ -2050,9 +2050,7 @@ module M1Gate
       unless integer?(oracle["comparison_count"]) && oracle["comparison_count"] == expected_count
         errors << "#{label} comparison count must match the report inventory"
       end
-      unless integer?(oracle["missing_comparison_count"]) && oracle["missing_comparison_count"].zero?
-        errors << "#{label} missing comparison count must be zero"
-      end
+      errors << "#{label} missing comparison count must be zero" unless integer?(oracle["missing_comparison_count"]) && oracle["missing_comparison_count"].zero?
       errors << "#{label} runner SHA-256 is required" unless valid_digest?(oracle["runner_sha256"])
       errors << "#{label} request seed SHA-256 is required" unless valid_digest?(oracle["request_seed_sha256"])
       validate_semantic_validation_criterion(oracle, expected_count, expected_items, errors, label)
