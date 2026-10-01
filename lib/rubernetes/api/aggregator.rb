@@ -74,7 +74,8 @@ module Rubernetes
             @backends.delete(name)
             return nil
           end
-          @backends[name] = Backend.new(name: name, group: spec["group"].to_s, version: spec["version"].to_s, priority: [spec["groupPriorityMinimum"].to_i, spec["versionPriority"].to_i],
+          @backends[name] = Backend.new(name: name, group: spec["group"].to_s, version: spec["version"].to_s,
+                                        priority: [spec["groupPriorityMinimum"].to_i, spec["versionPriority"].to_i],
                                         service_namespace: service["namespace"], service_name: service["name"], port: service["port"] || 443,
                                         ca_bundle: spec["caBundle"], insecure: spec["insecureSkipTLSVerify"] == true)
         end
