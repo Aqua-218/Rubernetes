@@ -64,9 +64,7 @@ module M4VolumeObservationRunner
     raise ArgumentError, "observation request must name the mount root" unless root.start_with?("/")
 
     live_worker = M4ObserverSupport.process_identity(worker["pid"])
-    unless live_worker["start_time_ticks"] == worker["start_time_ticks"]
-      raise ArgumentError, "worker #{worker["pid"]} start time does not match the request"
-    end
+    raise ArgumentError, "worker #{worker["pid"]} start time does not match the request" unless live_worker["start_time_ticks"] == worker["start_time_ticks"]
 
     errors << "worker shares the runner's mount namespace; no private namespace evidence" if
       live_worker["mount_namespace_inode"] == File.stat("/proc/self/ns/mnt").ino
