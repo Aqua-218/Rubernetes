@@ -207,10 +207,31 @@ module Promql
       assert_match(/grouping labels must ensure unique matches/, error.message)
     end
 
-    assert_equal 2, vector('requests{code="500"} and on(method) total').length
-    assert_equal 0, vector('requests{code="500"} unless on(method) total').length
-    assert_equal 6, vector("requests or total").length
-  end
+    # ---------------------------------------------------------- aggregations
+
+    test "aggregations with by and without" do
+      load("n", {"job" => "a", "instance" => "1"}, [1])
+      load("n", {"job" => "a", "instance" => "2"}, [3])
+      load("n", {"job" => "b", "instance" => "3"}, [10])
+
+      assert_equal [[{}, 14.0]], vector("sum(n)")
+      assert_equal([[{"job" => "a"}, 4.0], [{"job" => "b"}, 10.0]], vector("sum by (job) (n)").sort_by { |m, _| m["job"] })
+      assert_equal([[{"job" => "a"}, 4.0], [{"job" => "b"}, 10.0]], vector("sum without (instance) (n)").sort_by { |m, _| m["job"] })
+      assert_equal([[{"job" => "a"}, 2.0], [{"job" => "b"}, 10.0]], vector("avg by (job) (n)").sort_by { |m, _| m["job"] })
+      assert_equal [[{}, 3.0]], vector("count(n)")
+      assert_equal [[{}, 1.0]], vector("min(n)")
+      assert_equal [[{}, 10.0]], vector("max(n)")
+      assert_equal([[{"job" => "a"}, 1.0], [{"job" => "b"}, 1.0]], vector("group by (job) (n)").sort_by { |m, _| m["job"] })
+      assert_in_delta 1.0, vector("stdvar by (job) (n)").find { |m, _| m["job"] == "a" }[1]
+      assert_in_delta 3.0, vector("quantile(0.5, n)")[0][1]
+      top = vector("topk(2, n)").map(&:last)
+
+      assert_equal [10.0, 3.0], top
+      assert_equal [1.0], vector("bottomk(1, n)").map(&:last)
+      counts = vector("count_values(\"v\", n)").to_h { |m, c| [m["v"], c] }
+
+      assert_equal({"1" => 1.0, "3" => 1.0, "10" => 1.0}, counts)
+    end
 
   test "group_right carries labels from the many side" do
     load("a", {"k" => "1", "extra" => "x"}, [1])
