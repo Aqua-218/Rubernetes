@@ -277,7 +277,8 @@ module Rubernetes
             end
             unless has_external
               svc.load_balancer_ips.each do |lb_ip|
-                filter_rules << "-A KUBE-EXTERNAL-SERVICES -m comment --comment #{external_filter[1]} -m #{protocol} -p #{protocol} -d #{lb_ip} --dport #{svc.port} -j #{external_filter[0]}"
+                filter_rules << "-A KUBE-EXTERNAL-SERVICES -m comment --comment #{external_filter[1]} -m #{protocol} -p #{protocol} -d #{lb_ip} --dport " \
+                                "#{svc.port} -j #{external_filter[0]}"
               end
             end
             if svc.node_port.positive?
