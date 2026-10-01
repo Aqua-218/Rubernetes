@@ -133,7 +133,8 @@ class M3ControllerTest < Minitest::Test
 
     a = Controller::ControllerDefinition.new(
       name: "a-controller", kind: Controller::ResourceDescriptor.parse("Deployment"),
-      owns: [Controller::OwnershipEdge.new(owner: Controller::ResourceDescriptor.parse("Deployment"), dependent: Controller::ResourceDescriptor.parse("ReplicaSet"))],
+      owns: [Controller::OwnershipEdge.new(owner: Controller::ResourceDescriptor.parse("Deployment"),
+                                           dependent: Controller::ResourceDescriptor.parse("ReplicaSet"))],
       reconcile_block: ->(_resource) {}
     )
     b = Controller::ControllerDefinition.new(
