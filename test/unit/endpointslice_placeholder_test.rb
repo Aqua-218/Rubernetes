@@ -98,7 +98,8 @@ class EndpointSlicePlaceholderTest < Minitest::Test
   end
 
   class MissingServiceStore < Rubernetes::Controller::StoreAdapter
-    def initialize; end
+    def initialize; end # rubocop:disable Style/RedundantInitialize -- the parent requires a store; this double has none
+
     def find(*, **) = nil
   end
 
