@@ -184,9 +184,8 @@ begin
     result["recovery"] = {
       "state_before" => before["state"], "state_after_recovery" => after.state,
       "unknown_count" => recovery.unknown.length, "unknown" => recovery.unknown,
-      "owned" => recovery.owned, "missing" => recovery.missing, "orphans_under_root" => recovery.orphans.select do |entry|
-                                                                  entry["target"].to_s.start_with?(data_dir)
-                                                                end,
+      "owned" => recovery.owned, "missing" => recovery.missing,
+      "orphans_under_root" => recovery.orphans.select { |entry| entry["target"].to_s.start_with?(data_dir) },
       "identity_mismatches" => recovery.identity_mismatches, "actions" => recovery.actions, "errors" => recovery.errors,
       "operations" => manager.operations.entries.map(&:to_h)
     }
