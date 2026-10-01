@@ -182,9 +182,7 @@ module Rubernetes
           # threaded callers through a single-threaded supervisor process;
           # the supervisor owns the clone3 child until the pidfd is closed.
           def create(plan:, id:, identity:)
-            if Thread.list.count(&:alive?) > 1 && @clone3.instance_of?(Clone3)
-              return create_through_exec_supervisor(plan: plan, id: id, identity: identity)
-            end
+            return create_through_exec_supervisor(plan: plan, id: id, identity: identity) if Thread.list.count(&:alive?) > 1 && @clone3.instance_of?(Clone3)
 
             create_direct(plan: plan, id: id, identity: identity)
           end
