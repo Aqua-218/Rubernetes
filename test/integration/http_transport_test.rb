@@ -684,7 +684,7 @@ class HTTPTransportTest < Minitest::Test
     output = +"".b
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
     until output.include?(marker) || Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
-      ready = IO.select([io], nil, nil, 0.1)
+      ready = io.wait_readable(0.1)
       next unless ready
 
       chunk = io.read_nonblock(16 * 1024, exception: false)
