@@ -305,9 +305,7 @@ module Rubernetes
               key_start = @offset
               key = read_item(depth + 1)
               key_encoding = @input.byteslice(key_start, @offset - key_start).b
-              if @strict && previous_key && compare_keys(previous_key, key_encoding) >= 0
-                raise Codec::ParseError, "CBOR map keys are not in canonical order"
-              end
+              raise Codec::ParseError, "CBOR map keys are not in canonical order" if @strict && previous_key && compare_keys(previous_key, key_encoding) >= 0
 
               previous_key = key_encoding
               raise Codec::ParseError, "CBOR map key is not hashable" unless key.hash
