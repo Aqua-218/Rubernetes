@@ -294,9 +294,8 @@ module Promql
       # rate over a subquery of an instant expression
       rate = vector("sum_over_time((sq * 2)[1m:15s])").map(&:last)
 
-    assert_equal [5.0], result.map(&:last)
-    # rate over a subquery of an instant expression
-    rate = vector("sum_over_time((sq * 2)[1m:15s])").map(&:last)
+      assert_equal [2 * (2 + 3 + 4 + 5).to_f], rate
+    end
 
     assert_equal [2 * (2 + 3 + 4 + 5).to_f], rate
   end
