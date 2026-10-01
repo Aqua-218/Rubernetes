@@ -226,7 +226,6 @@ module Rubernetes
         def read_chunked(socket, leftover)
           buffer = leftover.dup
           result = "".b
-          offset = 0
           loop do
             line_end = raw.index("\r\n", offset)
             break if line_end.nil?
