@@ -30,11 +30,8 @@ module Promql
       end
     end
 
-  # load "15s" style series: values per 15s step ending at T0.
-  def load(name, labels, values, step_ms: 15_000, end_ms: T0)
-    start = end_ms - ((values.length - 1) * step_ms)
-    values.each_with_index do |value, i|
-      next if value.nil?
+    def vector(expr, t = T0)
+      result = @engine.query(expr, t)
 
       @store.append({"__name__" => name}.merge(labels), start + (i * step_ms), value.to_f)
     end
