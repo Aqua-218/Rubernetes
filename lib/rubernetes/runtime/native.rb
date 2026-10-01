@@ -1515,7 +1515,12 @@ module Rubernetes
         return nil if image_root.to_s.empty? || sandbox.workspace.nil?
 
         resolved = input["resolved_image"] || input[:resolved_image]
-        digest = resolved.respond_to?(:[]) && (resolved["digest"] || resolved[:digest]) ? (resolved["digest"] || resolved[:digest]) : sandbox.workspace.image_digest
+        digest = if resolved.respond_to?(:[]) &&
+                    (resolved["digest"] || resolved[:digest])
+                   resolved["digest"] || resolved[:digest]
+                 else
+                   sandbox.workspace.image_digest
+                 end
         identifier = "#{sandbox.id}.#{container.id}"
         namespace_spec = namespace_spec_for(sandbox.config, sandbox.identity)
         workspace = @filesystem.prepare(id: identifier, image_digest: digest, lowerdirs: [image_root],
