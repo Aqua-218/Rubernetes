@@ -77,7 +77,43 @@ module KubernetesOpenAPIV3Importer
     manifest = {"schema_version" => 2, "kubernetes" => {"tag" => "v1.36.2", "commit" => EXPECTED_COMMIT}, "source_directory" => SOURCE_DIRECTORY,
                 "served" => served, "file_count" => files.length, "path_count" => files.sum { |file| file["paths"] }, "files" => files}
     File.write(File.join(OUTPUT, "manifest.json"), JSON.pretty_generate(manifest) << "\n")
-    puts "pinned #{files.length} OpenAPI v3 documents with #{manifest["path_count"]} paths"
+    summary = "pinned #{files.length} OpenAPI v3 documents with #{manifest["path_count"]} paths"
+    summary << " (#{served["file_count"]} served by #{served["git_version"]})" if served
+    puts summary
+  end
+
+  # Replace the tree's documents by the ones the server at +kubeconfig+
+  # serves, one per entry of its root document, and record where they came from.
+  def overlay_served!(files, kubeconfig)
+    version = JSON.parse(kubectl(kubeconfig, "version", "-o", "json")).fetch("serverVersion")
+    raise "the server at #{kubeconfig} is #{version.fetch("gitVersion")}, not v1.36.2" unless version.fetch("gitVersion") == "v1.36.2"
+
+    root = JSON.parse(kubectl(kubeconfig, "get", "--raw", "/openapi/v3"))
+    count = 0
+    root.fetch("paths").keys.sort.each do |key|
+      document = JSON.parse(kubectl(kubeconfig, "get", "--raw", "/openapi/v3/#{key}"))
+      relative = "#{key}.json"
+      target = File.join(OUTPUT, relative)
+      FileUtils.mkdir_p(File.dirname(target))
+      File.write(target, canonical_json(document) << "\n")
+      entry = files.find { |file| file["path"] == relative }
+      unless entry
+        entry = {"path" => relative, "upstream_path" => nil, "source_sha256" => nil}
+        files << entry
+      end
+      entry.merge!("source" => "served", "served_path" => "/openapi/v3/#{key}", "sha256" => Digest::SHA256.file(target).hexdigest,
+                   "paths" => (document["paths"] || {}).length)
+      count += 1
+    end
+    {"git_version" => version.fetch("gitVersion"), "git_commit" => version["gitCommit"], "captured_at" => Time.now.utc.iso8601,
+     "file_count" => count}
+  end
+
+  def kubectl(kubeconfig, *arguments)
+    out, err, status = Open3.capture3({"NO_PROXY" => "*", "no_proxy" => "*"}, KUBECTL, "--kubeconfig", kubeconfig, *arguments)
+    raise "kubectl #{arguments.join(" ")} failed: #{err.strip}" unless status.success?
+
+    out
   end
 end
 
