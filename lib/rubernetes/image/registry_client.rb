@@ -575,8 +575,11 @@ module Rubernetes
           end
           raise RegistryError, "registry redirect with userinfo" if target.userinfo
 
-          current_headers = same_origin?(target) && same_origin?(current) ? current_headers : current_headers.reject { |name, _|
- name.to_s.casecmp?("authorization") }
+          unless same_origin?(target) && same_origin?(current)
+            current_headers = current_headers.reject do |name, _|
+              name.to_s.casecmp?("authorization")
+            end
+          end
           current = target
         end
       end
