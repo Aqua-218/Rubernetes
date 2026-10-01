@@ -82,8 +82,6 @@ Minitest/MultipleAssertions:
 # renamed six of them to test_* and broke their callers.
 Minitest/TestMethodName:
   Enabled: false
-Minitest/AssertTruthy:
-  Enabled: true
 
 # Cops whose autocorrect assumes concrete core types.  This tree passes
 # duck-typed collections (Array/Headers/ListType where a Hash is expected,
