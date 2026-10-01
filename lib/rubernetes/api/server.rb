@@ -3621,6 +3621,7 @@ module Rubernetes
         body = {"kind" => AGGREGATED_DISCOVERY_KIND,
                 "apiVersion" => "#{AGGREGATED_DISCOVERY_GROUP}/#{AGGREGATED_DISCOVERY_VERSION}",
                 "metadata" => {}, "items" => items}
+        content_type = "application/json;g=#{AGGREGATED_DISCOVERY_GROUP};v=#{AGGREGATED_DISCOVERY_VERSION};as=#{AGGREGATED_DISCOVERY_KIND}"
         Response.new(status: 200,
                      headers: {"content-type" => "application/json;g=#{AGGREGATED_DISCOVERY_GROUP};v=#{AGGREGATED_DISCOVERY_VERSION};as=#{AGGREGATED_DISCOVERY_KIND}",
                                "cache-control" => "no-cache, private"},
