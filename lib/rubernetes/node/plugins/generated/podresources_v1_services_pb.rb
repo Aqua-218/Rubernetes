@@ -20,7 +20,6 @@ module Rubernetes
             # PodResourcesLister is a service provided by the kubelet that provides information about the
             # node resources consumed by pods and containers on the node
             class Service
-
               include ::GRPC::GenericService
 
               self.marshal_class_method = :encode
