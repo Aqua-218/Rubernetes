@@ -99,7 +99,8 @@ module CRDAggregationHarness
       path = outbound.path
       if path == "/apis/metrics.example/v1beta1"
         Response.new("200", JSON.generate({"kind" => "APIResourceList", "apiVersion" => "v1", "groupVersion" => "metrics.example/v1beta1",
-                                           "resources" => [{"name" => "nodes", "singularName" => "", "namespaced" => false, "kind" => "NodeMetrics", "verbs" => %w[get list]}]}), {"content-type" => "application/json"})
+                                           "resources" => [{"name" => "nodes", "singularName" => "", "namespaced" => false, "kind" => "NodeMetrics",
+                                                            "verbs" => %w[get list]}]}), {"content-type" => "application/json"})
       elsif path.start_with?("/apis/metrics.example/v1beta1/nodes")
         user = outbound.respond_to?(:[]) ? outbound["X-Remote-User"] : nil
         Response.new("200", JSON.generate({"kind" => "NodeMetricsList", "apiVersion" => "metrics.example/v1beta1", "items" => [], "seenUser" => user,
