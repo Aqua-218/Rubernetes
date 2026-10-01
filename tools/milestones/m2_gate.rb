@@ -1268,9 +1268,7 @@ module M2Gate
       expected_digest = File.file?(expected_path) && !File.symlink?(expected_path) ? Digest::SHA256.file(expected_path).hexdigest : nil
       if command == expected_command
         errors << "#{label} built-in runner source must be a regular non-symlink file" unless expected_digest
-        unless expected_digest && oracle["runner_sha256"] == expected_digest
-          errors << "#{label} runner SHA-256 must match the built-in runner file"
-        end
+        errors << "#{label} runner SHA-256 must match the built-in runner file" unless expected_digest && oracle["runner_sha256"] == expected_digest
         unless expected_digest && provenance["runner_sha256"] == expected_digest
           errors << "#{label} provenance runner SHA-256 must match the built-in runner file"
         end
