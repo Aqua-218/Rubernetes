@@ -119,7 +119,7 @@ module Rubernetes
             unresolved << id
             next
           end
-          unless applied_specs.key?(spec.object_id)
+          unless applied_specs.key?(spec)
             edits.merge!(spec["containerEdits"])
             applied_specs[spec.object_id] = true
           end
