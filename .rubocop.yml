@@ -228,4 +228,34 @@ Style/ComparableClamp:
 # lock files) and every one of them is closed in an ensure.
 Style/FileOpen:
   Enabled: false
+# Unsafe autocorrects tried on 2026-10-01 that changed behaviour; off with the reason:
+# - AccessModifierDeclarations: `public def` / `private def` keep the
+#   visibility next to the method on purpose; the group-form autocorrect
+#   moved methods across the class and dedented them.
+# - MemoizedInstanceVariableName: the `||=` sits in a non-accessor method and
+#   the ivar is read elsewhere under its own name; renaming it broke callers.
+# - InefficientHashSearch / ZeroLengthPredicate / Performance/Count: the
+#   receivers are Structs, CPUSets and File::Stat, which have `values`,
+#   `count` and `size` but no `value?`, `none?` or `empty?`.
+# - PartitionInsteadOfDoubleSelect: select/reject on a Hash keep Hashes,
+#   partition returns two Arrays of pairs.
+# - Lint/PercentStringArray: the "stray" commas inside %w[] are test inputs.
+Style/AccessModifierDeclarations:
+  Enabled: false
+Naming/MemoizedInstanceVariableName:
+  Enabled: false
+Performance/InefficientHashSearch:
+  Enabled: false
+Style/ZeroLengthPredicate:
+  Enabled: false
+Performance/Count:
+  Enabled: false
+Style/PartitionInsteadOfDoubleSelect:
+  Enabled: false
+Lint/PercentStringArray:
+  Enabled: false
+# CollectionQuerying off: `mask.count.zero?` / `affinity.count == 1` are on
+# CPUSet bitmasks, which have count but no none?/one?.
+Style/CollectionQuerying:
+  Enabled: false
 
