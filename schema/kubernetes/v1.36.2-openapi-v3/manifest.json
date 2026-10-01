@@ -318,8 +318,10 @@
       "path": "apis/flowcontrol.apiserver.k8s.io/v1.json",
       "upstream_path": "api/openapi-spec/v3/apis__flowcontrol.apiserver.k8s.io__v1_openapi.json",
       "source_sha256": "9f8b7cd5953c2316b42d12c55339ec4f1b16046a644634256cc02d7312a8d895",
-      "sha256": "9f8b7cd5953c2316b42d12c55339ec4f1b16046a644634256cc02d7312a8d895",
-      "paths": 11
+      "sha256": "05459bd1801d39bf08ff4db23c73cad2a171a32a2766fe38ad366667b631e775",
+      "paths": 11,
+      "source": "served",
+      "served_path": "/openapi/v3/apis/flowcontrol.apiserver.k8s.io/v1"
     },
     {
       "path": "apis/flowcontrol.apiserver.k8s.io.json",
