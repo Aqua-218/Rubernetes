@@ -71,9 +71,7 @@ module Rubernetes
           return left == right if left.class == right.class
           return numeric_equal?(left, right) if numeric?(left) && numeric?(right)
           return left.zip(right).all? { |a, b| equal?(a, b) } if left.is_a?(Array) && right.is_a?(Array) && left.length == right.length
-          if left.is_a?(Hash) && right.is_a?(Hash) && left.length == right.length
-            return left.all? { |key, value| right.key?(key) && equal?(value, right[key]) }
-          end
+          return left.all? { |key, value| right.key?(key) && equal?(value, right[key]) } if left.is_a?(Hash) && right.is_a?(Hash) && left.length == right.length
 
           false
         end
