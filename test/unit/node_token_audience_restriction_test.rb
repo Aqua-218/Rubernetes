@@ -86,7 +86,8 @@ class NodeTokenAudienceRestrictionTest < Minitest::Test
                         {"apiVersion" => "v1", "kind" => "ServiceAccount", "metadata" => {"name" => "robot"}}).body
     path = "/api/v1/namespaces/team/serviceaccounts/robot/token"
     ok = call.call("POST", path,
-                   {"kind" => "TokenRequest", "apiVersion" => "authentication.k8s.io/v1", "metadata" => {"uid" => account.dig("metadata", "uid")}, "spec" => {}})
+                   {"kind" => "TokenRequest", "apiVersion" => "authentication.k8s.io/v1", "metadata" => {"uid" => account.dig("metadata", "uid")},
+                    "spec" => {}})
 
     assert_equal 201, ok.status, ok.body.inspect
     stale = call.call("POST", path,
