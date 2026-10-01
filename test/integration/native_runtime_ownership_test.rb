@@ -117,9 +117,9 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       assert_equal(Linux::Clone3::CLONE_NEWPID,
                    clone_flags & Linux::Clone3::CLONE_NEWPID)
 
-    Process.kill(Signal.list.fetch("KILL"), orchestrator_pid)
-    Process.wait(orchestrator_pid)
-    wait_until(timeout: 3.0) { !File.exist?("/proc/#{holder_pid}") }
+      Process.kill(Signal.list.fetch("KILL"), orchestrator_pid)
+      Process.wait(orchestrator_pid)
+      wait_until(timeout: 3.0) { !File.exist?("/proc/#{holder_pid}") }
 
     refute_path_exists("/proc/#{holder_pid}", "PID namespace holder survived agent SIGKILL")
   ensure
