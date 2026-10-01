@@ -489,12 +489,8 @@ module KubernetesCorpusImporter
         end
       end.sort
       raise ValidationError, "discovery GVKs missing from OpenAPI: #{missing.join(", ")}" unless missing.empty?
-      unless openapi_gvks.fetch(:duplicates).empty?
-        raise ValidationError, "duplicate OpenAPI GVKs: #{openapi_gvks.fetch(:duplicates).join(", ")}"
-      end
-      unless discovery.fetch(:duplicate_gvrs).empty?
-        raise ValidationError, "duplicate discovery GVRs: #{discovery.fetch(:duplicate_gvrs).join(", ")}"
-      end
+      raise ValidationError, "duplicate OpenAPI GVKs: #{openapi_gvks.fetch(:duplicates).join(", ")}" unless openapi_gvks.fetch(:duplicates).empty?
+      raise ValidationError, "duplicate discovery GVRs: #{discovery.fetch(:duplicate_gvrs).join(", ")}" unless discovery.fetch(:duplicate_gvrs).empty?
 
       served_gvr_coverage = validate_served_gvr_openapi_coverage!(discovery, openapi_gvks)
       protobuf_closure = validate_protobuf_closure!(protobuf_sources)
