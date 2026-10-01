@@ -112,9 +112,7 @@ module Rubernetes
           errors << "query: Invalid value: #{go_list(query.files)}: cannot specify file with options"
         elsif query.files.length == 1
           target = inside(query.files.first)
-          unless target && File.exist?(target)
-            errors << "query: Invalid value: #{go_list(query.files)}: statat #{query.files.first}: no such file or directory"
-          end
+          errors << "query: Invalid value: #{go_list(query.files)}: statat #{query.files.first}: no such file or directory" unless target && File.exist?(target)
         end
         if query.since_time && query.until_time && query.since_time > query.until_time
           errors << "untilTime: Invalid value: \"#{query.until_time.utc.iso8601}\": must be after `sinceTime`"
