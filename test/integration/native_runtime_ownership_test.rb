@@ -186,8 +186,8 @@ class NativeRuntimeOwnershipTest < Minitest::Test
       assert_operator(restored.fetch("process").fetch("workload_pid"), :>, 0)
       assert_match(/\Asha256:[0-9a-f]{64}\z/, restored.fetch("process").fetch("workload_executable_digest"))
 
-    second.stop_sandbox(sandbox_id, timeout: 2)
-    second.remove_sandbox(sandbox_id)
+      second.stop_sandbox(sandbox_id, timeout: 2)
+      second.remove_sandbox(sandbox_id)
 
     refute(second.resource_inventory.any? { |entry| entry.fetch("id").to_s.start_with?(sandbox_id) })
   ensure
