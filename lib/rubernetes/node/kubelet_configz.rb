@@ -153,7 +153,8 @@ module Rubernetes
 
         result["shutdownGracePeriodByPodPriority"] = Array(shutdown["grace_period_by_pod_priority"]).map do |entry|
           entry = entry.to_h
-          {"priority" => Integer(entry["priority"] || 0), "shutdownGracePeriodSeconds" => Integer(entry["shutdown_grace_period_seconds"] || entry["shutdownGracePeriodSeconds"] || 0)}
+          {"priority" => Integer(entry["priority"] || 0),
+           "shutdownGracePeriodSeconds" => Integer(entry["shutdown_grace_period_seconds"] || entry["shutdownGracePeriodSeconds"] || 0)}
         end
       end
 
