@@ -364,8 +364,8 @@ module Rubernetes
         return [operations].freeze if batches.nil?
 
         normalized = Array(batches).map { |batch| Array(batch).freeze }
-        covered = normalized.flat_map(&:to_a).to_h { |operation| [operation.object_id, true] }
-        remainder = operations.reject { |operation| covered[operation.object_id] }
+        covered = normalized.flat_map(&:to_a).to_h { |operation| [operation, true] }.compare_by_identity
+        remainder = operations.reject { |operation| covered[operation] }
         normalized += remainder.map { |operation| [operation].freeze }
         normalized.freeze
       end
