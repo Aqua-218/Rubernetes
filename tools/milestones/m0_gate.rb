@@ -616,7 +616,8 @@ module M0Gate
         validate_time(entry["finished_at"], errors, "executable #{executable} finished_at")
         result_started = parse_time(entry["started_at"])
         result_finished = parse_time(entry["finished_at"])
-        unless result_started && result_finished && report_started && report_finished && result_finished >= result_started && result_started >= report_started && result_finished <= report_finished
+        unless result_started && result_finished && report_started && report_finished && result_finished >= result_started &&
+               result_started >= report_started && result_finished <= report_finished
           errors << "executable #{executable} result time is outside the report interval"
         end
       end
