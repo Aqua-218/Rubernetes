@@ -243,6 +243,11 @@ divergent histories.
      'Rubernetes::Consensus::Backup.restore("/var/backups/<backup>", "/var/lib/rubernetes/raft")'
    ```
 
+   `restore` re-verifies the manifest digests and the framing of every file
+   before it writes, and refuses a target directory that is not empty. The
+   same sequence is what the K7 lifecycle lane runs as its `backup_restore`
+   stage (`tools/conformance/k7_cluster_driver.rb`).
+
 3. Start one control node, confirm it becomes leader and serves reads, then
    start the rest.
 
