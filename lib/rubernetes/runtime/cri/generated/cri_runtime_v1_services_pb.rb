@@ -249,7 +249,6 @@ module Rubernetes
           module ImageService
             # ImageService defines the public APIs for managing images.
             class Service
-
               include ::GRPC::GenericService
 
               self.marshal_class_method = :encode
