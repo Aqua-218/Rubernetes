@@ -275,7 +275,8 @@ module Rubernetes
               # ImageStatus returns the status of the image. If the image is not
               # present, returns a response with ImageStatusResponse.Image set to
               # nil.
-              rpc :ImageStatus, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ImageStatusRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ImageStatusResponse
+              rpc :ImageStatus, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ImageStatusRequest,
+                  ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::ImageStatusResponse
               # PullImage pulls an image with authentication config.
               rpc :PullImage, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PullImageRequest, ::Rubernetes::Runtime::CRI::Generated::RuntimeV1::PullImageResponse
               # RemoveImage removes the image.
