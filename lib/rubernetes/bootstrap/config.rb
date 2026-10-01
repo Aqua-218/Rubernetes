@@ -929,9 +929,7 @@ module Rubernetes
           validate_absolute_path!(value[key], "#{context}.#{key}") if value.key?(key)
         end
         raise Error, "#{context}.fsync must be true or false" if value.key?("fsync") && ![true, false].include?(value["fsync"])
-        if value.key?("profile") && !value["profile"].is_a?(String)
-          raise Error, "#{context}.profile must be one of #{VOLUME_PROFILES.join(", ")}"
-        end
+        raise Error, "#{context}.profile must be one of #{VOLUME_PROFILES.join(", ")}" if value.key?("profile") && !value["profile"].is_a?(String)
         if value.key?("profile") && !VOLUME_PROFILES.include?(value["profile"].downcase.tr("-", "_"))
           raise Error, "#{context}.profile must be one of #{VOLUME_PROFILES.join(", ")}"
         end
