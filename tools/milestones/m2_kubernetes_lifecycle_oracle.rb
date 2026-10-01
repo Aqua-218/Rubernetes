@@ -571,9 +571,7 @@ module M2KubernetesLifecycleOracle
     if document["timeline_sha256"] && document["timeline_sha256"] != request["timeline_sha256"]
       errors << "external lifecycle oracle timeline SHA-256 does not match the request"
     end
-    unless document["request_seed_sha256"] == request["request_seed_sha256"]
-      errors << "external lifecycle oracle must echo request_seed_sha256"
-    end
+    errors << "external lifecycle oracle must echo request_seed_sha256" unless document["request_seed_sha256"] == request["request_seed_sha256"]
 
     trace = document["trace"]
     errors << "external lifecycle oracle trace is required" unless trace.is_a?(Array) && !trace.empty?
