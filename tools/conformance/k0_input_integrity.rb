@@ -157,9 +157,7 @@ module Conformance
     #    share credentials with the Kubernetes oracle cluster.
     def kubeconfig_isolation(kubeconfig, oracle_kubeconfig)
       return {"id" => "kubeconfig_isolation", "passed" => false, "error" => "no kubeconfig given"} unless kubeconfig
-      unless File.file?(kubeconfig)
-        return {"id" => "kubeconfig_isolation", "passed" => false, "error" => "kubeconfig #{kubeconfig} is missing"}
-      end
+      return {"id" => "kubeconfig_isolation", "passed" => false, "error" => "kubeconfig #{kubeconfig} is missing"} unless File.file?(kubeconfig)
 
       require "yaml"
       document = YAML.safe_load_file(kubeconfig, aliases: true) || {}
