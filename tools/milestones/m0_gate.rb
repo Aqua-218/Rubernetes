@@ -411,9 +411,7 @@ module M0Gate
       end.map { |entry| "#{entry.fetch("path", "")}\0#{entry.fetch("sha256", "")}\n" }.join
       computed = Digest::SHA256.hexdigest(canonical)
       errors << "source inventory digest differs from manifest" unless computed == manifest["input_sha256"]
-      unless document["input_sha256"] == computed && document["input_file_count"] == entries.length
-        errors << "source inventory self identity differs"
-      end
+      errors << "source inventory self identity differs" unless document["input_sha256"] == computed && document["input_file_count"] == entries.length
 
       current = current_source_inventory
       return if current && current["entries"] == entries
