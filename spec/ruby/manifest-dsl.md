@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [ruby](README.md)
+[仕様書の目次](../README.md) / [Ruby設計](README.md)
 
 <a id="sec-3-5"></a>
 # 3.5 Ruby manifest DSL
