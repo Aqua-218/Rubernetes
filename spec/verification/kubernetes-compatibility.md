@@ -200,7 +200,7 @@ Ginkgoのdry-runで得たテストの一覧について、すべてのテスト�
 
 未分類の件数と、置き換えのテストが接続されていない件数は、どちらも0でなければならない。
 
-mock runtime、fake cgroup、network namespaceなしのcontainer内testをNode Conformance evidenceに数えない。
+## K4 Node Conformance
 
 ## K5 — API and Wire Differential
 
