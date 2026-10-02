@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-Ruby製Raftのtiming、WAL、commit、snapshot、transport、membershipを定義する。
+Ruby製のRaftについて、タイミング、WAL、コミット、スナップショット、トランスポート、メンバーシップを定義する。
 
 
 > **Diagram:** [図 02 — Storage / Raft](../diagrams/02-storage-raft.md)
