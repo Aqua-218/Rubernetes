@@ -14,10 +14,10 @@ Kubernetes本体との関係は次の3点です。
 
 | 項目 | 内容 |
 |---|---|
-| Kubernetes 互換契約 | v1.36.2（`status.nodeInfo.kubeletVersion` にもこの値を報告） |
-| 直近のフル Conformance | 459 / 459 合格、2026-09-30、`linux-amd64-ipv4-native`、無改変の `registry.k8s.io/conformance` イメージを Hydrophone で実行 |
-| 対象環境 | Linux x86_64、cgroup v2、root。Ruby 3.4.11 |
-| 規模 | `lib/` と `ext/` の Ruby と C が約 22 万行、テストが約 10 万行 |
+| 互換対象 | Kubernetes v1.36.2 |
+| 公式Conformance | 459件中459件合格（2026-09-30、IPv4プロファイル） |
+| 対象環境 | Linux x86_64、cgroup v2、root権限、Ruby 3.4.11 |
+| 規模 | `lib/`と`ext/`のRubyとCが約22万行、テストが約10万行 |
 | ライセンス | Apache-2.0 |
 
 規範仕様は [`spec/`](spec/README.md) にあります。この README は実用面の
