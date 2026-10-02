@@ -90,9 +90,35 @@ on).
 
 There are three container runtimes:
 
-Everything a cluster needs at runtime is Ruby plus one small C shim
-([`ext/rubernetes_linux`](ext/README.md)) for the syscalls that cannot be
-made safely from a forking Ruby VM.
+- native: uses clone3, cgroup v2 and namespaces directly. OCI images are
+  pulled and verified in Ruby.
+- microvm: runs a Pod in Firecracker under the jailer, with a
+  dm-verity-verified rootfs and a supervisor reached over vsock.
+- CRI: connects to an external CRI runtime. It is used only when enabled
+  explicitly.
+
+The Pod network is a built-in bridge datapath with dual-stack IPAM,
+NetworkPolicy, egress NAT and cluster DNS. NetworkPolicy is enforced with
+nftables or eBPF.
+
+### rubernetes-proxy
+
+Handles Service, EndpointSlice, NodePort, session affinity and traffic
+policies. It has iptables, nftables and eBPF datapaths, with the same chain
+layout and metrics as upstream.
+
+### rubectl
+
+Supports `get`, `create`, `apply`, `patch`, `delete`, `watch` and `raw`, and
+reads the Ruby Manifest DSL generated from the schema. A real `kubectl`
+works just as well.
+
+### apps/dashboard
+
+A Rails dashboard. It browses the cluster and keeps its own
+Prometheus-shaped time-series store, with PromQL, recording and alerting
+rules, and a Prometheus-compatible HTTP API. See
+[its README](apps/dashboard/README.md).
 
 ## Quick start
 
