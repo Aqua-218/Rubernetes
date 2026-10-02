@@ -74,12 +74,14 @@ Linux上で実行できるKubernetes v1.36.2の機能は、後の段階や後続
 <a id="sec-1-4"></a>
 ## 1.4 前提環境
 
-- Linux kernel 6.12 以降（cgroup v2、OverlayFS、seccomp、Landlock、netlink、eBPF、KVM を使用）
-- x86_64 または aarch64
-- Ruby 3.4 以降
-- Native backend は特権 bootstrap helper を起動後、専用非特権 UID へ降格する
-- MicroVM backend は `/dev/kvm`、Firecracker 1.16.1 および同版の `jailer` を使用する
-- cgroup v2 unified hierarchy、unprivileged user namespace、overlay、vxlan、br_netfilter、BPF を有効にする
+- Linux kernel 6.12以降。cgroup v2、OverlayFS、seccomp、Landlock、netlink、eBPF、KVMを使う
+- x86_64またはaarch64
+- Ruby 3.4以降
+- cgroup v2 unified hierarchy、unprivileged user namespace、overlay、vxlan、br_netfilter、BPFが有効であること
+
+Native backendは、特権を持つbootstrap helperを起動したあと、専用の非特権UIDに降格する。
+
+MicroVM backendは、`/dev/kvm`、Firecracker 1.16.1、同じ版の`jailer`を使う。
 
 <a id="sec-1-5"></a>
 ## 1.5 規模・可用性・性能
