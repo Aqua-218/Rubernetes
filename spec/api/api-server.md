@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [API](README.md)
 
 <a id="sec-5-1"></a>
-# 5.1 API Server
+# 5.1 APIサーバ
 
 > **Audience:** API Server実装者、セキュリティ設計者
 >
