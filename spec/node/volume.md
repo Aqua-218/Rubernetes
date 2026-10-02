@@ -70,7 +70,7 @@ Declared → Provisioned → Attached → Staged → Published → Unpublishing 
 - ephemeral volume
 
 <a id="sec-5-11-3"></a>
-## 5.11.3 投影と path security
+## 5.11.3 投影とパスの安全性
 
 - ConfigMap、Secret、downwardAPI、projected は世代 directory へ書き、symlink の atomic swap で更新する
 - Secret と ServiceAccount token は tmpfs にだけ置き、swap、snapshot、log、core dump、base image に含めない
