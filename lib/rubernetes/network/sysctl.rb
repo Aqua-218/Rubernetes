@@ -38,6 +38,7 @@ module Rubernetes
       def initialize(state_path:, root: "/proc/sys", journal: nil, fsync: true, boot_id: self.class.current_boot_id)
         @root = File.expand_path(String(root))
         @journal = journal
+        @boot_id = boot_id
         @store = DurableState.new(state_path, default: default_state, fsync: fsync)
         @state = normalize_state(@store.read)
         @mutex = Mutex.new
