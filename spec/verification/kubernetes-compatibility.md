@@ -204,8 +204,7 @@ Ginkgoのdry-runで得たテストの一覧について、すべてのテスト�
 
 upstreamのNode Conformanceを、実際のkernelで動くamd64のノードに対して実行する。
 
-同一seedからKubernetes v1.36.2 oracle clusterとRubernetes clusterへrequest sequenceを与え、
-次のobservableを正規化して比較する。
+ノードエージェントは、Kubernetesが公開している次の挙動を提供する。
 
 - discovery、OpenAPI、protobuf descriptor、content negotiation
 - success/error HTTP status、headers、`Status.reason/details/causes`
