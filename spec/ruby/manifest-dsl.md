@@ -48,10 +48,7 @@ DSLのトップレベルメソッドとフィールドメソッドは、[6.2](sc
 
 上限を超えた場合は、APIを呼び出す前に失敗する。
 
-評価プロセスはネットワーク接続とクラスタ資格情報を持たず、生成結果だけを長さ付き IPC で
-親の `rubectl` へ返す。既定の実行時間は 5 秒、最大出力は 16 MiB、最大リソース数は
-10,000 とし、超過時は API 呼び出し前に失敗する。`--allow-code` の明示なしに、
-信頼していない DSL ファイルを実行してはならない。
+信頼していないDSLファイルを、`--allow-code`の明示なしに実行してはならない。
 
 child mount namespace には DSL file、明示した import、Ruby runtime、必要な標準 library だけを
 read-only で公開し、home、kubeconfig、SSH key、credential store を公開しない。環境変数は
