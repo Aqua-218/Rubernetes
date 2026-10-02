@@ -11,9 +11,9 @@ Rubyのコードから標準のKubernetes JSONを生成するManifest DSLを定�
 
 ## 動作
 
-`rubectl apply -f app.rb` は Ruby ファイルを専用プロセスで評価し、標準 Kubernetes
-JSON オブジェクトへコンパイルして既存 API に POST/PATCH する。API Server の要求・応答形式、
-保存形式および wire protocol は DSL の有無で変化してはならない。
+`rubectl apply -f app.rb`は、Rubyファイルを専用のプロセスで評価する。評価結果を標準のKubernetes JSONオブジェクトにコンパイルし、既存のAPIにPOSTまたはPATCHする。
+
+APIサーバの要求と応答の形式、保存形式、ワイヤプロトコルは、DSLを使っても使わなくても変わってはならない。
 
 ```ruby
 deployment "web", namespace: "prod" do
