@@ -14,8 +14,7 @@ NativeとMicroVMの2つのランタイム、状態機械、資源の所有権、
 <a id="sec-5-8-1"></a>
 ## 5.8.1 backendとRuntimeClass
 
-`Runtime` は共通の lifecycle と resource ownership を持ち、隔離機構だけを backend で分ける。
-両 backend は本仕様の必須実装である。
+`Runtime`は、ライフサイクルと資源の所有権を共通に持つ。backendごとに異なるのは隔離の仕組みだけである。本仕様では両方のbackendの実装を必須とする。
 
 | RuntimeClass handler | backend | 隔離単位 | 用途 | Pod overhead 既定値 |
 |---|---|---|---|---|
