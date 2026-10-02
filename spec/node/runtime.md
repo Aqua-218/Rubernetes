@@ -111,7 +111,7 @@ stateDiagram-v2
 <a id="sec-5-8-4"></a>
 ## 5.8.4 資源の所有権とロールバック
 
-各 sandbox は取得した resource を durable ledger で追跡する。
+各サンドボックスは、取得した資源を耐久性のある台帳で追跡する。
 
 | resource | stable identity | 解放前条件 |
 |---|---|---|
