@@ -98,7 +98,7 @@ Run it as a systemd service.
 
 ```sh
 cp deploy/rubernetes-dashboard.service /etc/systemd/system/
-install -m 0600 deploy/rubernetes-dashboard.env /etc/rubernetes/dashboard.env   # then edit it
+install -m 0600 deploy/rubernetes-dashboard.env /etc/rubernetes/dashboard.env   # edit it after copying
 RAILS_ENV=production bin/rails assets:precompile
 systemctl daemon-reload && systemctl enable --now rubernetes-dashboard
 curl --noproxy '*' -sS http://<DASHBOARD_BIND>:3000/up
