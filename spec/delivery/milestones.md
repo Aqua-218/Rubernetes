@@ -147,14 +147,12 @@ graph LR
 
 ### 完了条件
 
-1. x86_64 release targetでRuntime L0〜L3をすべて通す。ARM実機profileは完了条件に含めない。
-2. image digest mismatch、path traversal、whiteout escape、symlink raceをfail-closedで拒否する。
-3. init container、sidecar、startup/liveness/readiness probe、全restartPolicy、graceful terminationが
-   Kubernetes oracleと同じ外部状態遷移を示す。
-4. 1,000回のcreate/start/stop/deleteと各effect pointの失敗注入後に、mount、namespace、cgroup、
-   process、pidfd、temporary fileのlive leakが0である。
-5. agentを各effect point直後にSIGKILLして再起動しても、live workloadの誤削除とdead resourceの残留が0である。
-6. 既存のPod manifestを無変更でapplyし、log、exec、attach、port-forwardを利用できる。
+1. x86_64のリリース対象で、ランタイムのL0〜L3をすべて通過する。ARMの実機プロファイルは完了条件に含めない。
+2. イメージのダイジェストの不一致、パストラバーサル、whiteoutによる脱出、symlinkのレースを、fail-closedで拒否する。
+3. initコンテナ、sidecar、startup・liveness・readinessの各probe、すべてのrestartPolicy、graceful terminationが、Kubernetesと同じ外部状態の遷移を示す。
+4. create、start、stop、deleteを1,000回繰り返したあと、資源のリークが0である。各effect pointで失敗を注入したあとも同様である。対象は、マウント、namespace、cgroup、プロセス、pidfd、一時ファイルである。
+5. 各effect pointの直後にagentをSIGKILLして再起動しても、動いているワークロードを誤って削除しない。使われていない資源も残さない。
+6. 既存のPodマニフェストを変更せずにapplyでき、log、exec、attach、port-forwardを使える。
 
 ### Required evidence
 
