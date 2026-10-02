@@ -9,8 +9,7 @@
 
 PodのSyncLoopと、起動、probe、再起動、終了、evictionの順序を定義する。
 
-
-> **Diagram:** [図 04 — Node Agent](../diagrams/04-node-agent.md)
+図は[図04 ノードエージェント](../diagrams/04-node-agent.md)にある。ボリュームの詳細は[図07 ストレージとボリューム](../diagrams/07-storage-volume.md)を参照する。
 
 <a id="sec-5-7-1"></a>
 ## 5.7.1 SyncLoop
