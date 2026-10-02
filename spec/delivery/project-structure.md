@@ -3,7 +3,7 @@
 <a id="project-structure"></a>
 # プロジェクト構成
 
-> **Audience:** 実装者、reviewer、build担当者、検証者
+> 対象読者: 実装者、レビュア、ビルドの担当者、検証者
 >
 > **Status:** Normative — version 0.3
 
