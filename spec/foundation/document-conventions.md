@@ -15,7 +15,9 @@
 
 本書では次の3つを禁止する。
 
-## Related
+- 未決であることを示すマーカー
+- 後の版への先送り
+- 実装時の判断への委任
 
 - [仕様書インデックス](../README.md)
 - [goals and compatibility](goals-and-compatibility.md)
