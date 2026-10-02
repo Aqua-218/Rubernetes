@@ -88,15 +88,7 @@ shutdown, device plugins, the CPU, memory and topology managers, and DRA. It
 also serves the kubelet API (`exec`, `logs`, `/metrics`, `/configz` and so
 on).
 
-| Rubernetes process | Stands in for | Notes |
-|---|---|---|
-| `rubernetes-apiserver` | kube-apiserver + etcd | Full v1.36.2 default API surface and discovery, JSON/YAML/Protobuf, watch, patch, server-side apply with field managers, admission (plugins from the pinned corpus, webhooks, CEL policies), authn/authz, API Priority and Fairness, audit, encryption at rest, CRDs, API aggregation, feature gates and `--runtime-config`. Storage is the built-in Raft datastore (`lib/rubernetes/consensus/`): CRC-32C WAL, snapshots, joint consensus, pre-vote, ReadIndex, mutual TLS. |
-| `rubernetes-controller-manager` | kube-controller-manager | The upstream controller set (workloads, GC, namespace, endpoints and EndpointSlice, service accounts and tokens, node lifecycle, CSR approval, PV/PVC, quota, …) on an informer/work-queue framework with leader election. |
-| `rubernetes-scheduler` | kube-scheduler | The scheduling framework with the default plugin set, preemption, async binding, scoring. |
-| `rubernetes-agent` | kubelet + CRI runtime + CNI | Pod sync loop, probes, eviction, graceful node shutdown, device plugins, CPU/memory/topology managers, DRA, kubelet API (`exec`, `logs`, `/metrics*`, `/configz`, …). Runtimes: **native** (clone3, cgroup v2, namespaces, OCI images pulled and verified in Ruby), **microvm** (Firecracker with jailer, dm-verity rootfs, vsock supervisor) and an opt-in **CRI** backend. Networking is a built-in bridge datapath with dual-stack IPAM, NetworkPolicy (nftables or eBPF), egress NAT and an in-process cluster DNS. |
-| `rubernetes-proxy` | kube-proxy | Service, EndpointSlice, NodePort, session affinity, traffic policies; **iptables**, **nftables** and **eBPF** datapaths with the upstream chain layout and metrics. |
-| `rubectl` | kubectl (subset) | `get`, `create`, `apply`, `patch`, `delete`, `watch`, `raw`; a Ruby Manifest DSL compiled from the schema corpus. Any real `kubectl` works too. |
-| `apps/dashboard` | Kubernetes dashboard + Prometheus | A Rails application: cluster browser, its own Prometheus-shaped time-series store, PromQL, recording and alerting rules, a Prometheus-compatible HTTP API. See [its README](apps/dashboard/README.md). |
+There are three container runtimes:
 
 Everything a cluster needs at runtime is Ruby plus one small C shim
 ([`ext/rubernetes_linux`](ext/README.md)) for the syscalls that cannot be
