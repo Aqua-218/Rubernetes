@@ -239,7 +239,7 @@ graph LR
 5. メンバーシップの変更中と、スナップショットのinstall中にリーダーが失われても、split brainとコミットの喪失が0である。
 6. すべてのeffect pointについて、要求の喪失と応答の喪失を区別する。再実行しても副作用が二重に起きない。
 
-### Exit criteria
+### 必要な証拠
 
 1. 3 nodeで1 failure、5 nodeで2 failure中もcommit済みstateを失わない。
 2. acknowledged writeのRPOが0で、quorum回復後60秒以内にread/writeと制御loopを再開する。
