@@ -457,7 +457,7 @@ Removed(sandbox)     => OwnedResources(sandbox) = {}
 
 ## 関連
 
-- [node agent](node-agent.md)
-- [network](network.md)
-- [formal methods](../verification/formal-methods.md)
-- [05 runtime](../diagrams/05-runtime.md)
+- [ノードエージェント](node-agent.md)
+- [ネットワーク](network.md)
+- [形式仕様](../verification/formal-methods.md)
+- [05 ランタイム](../diagrams/05-runtime.md)
