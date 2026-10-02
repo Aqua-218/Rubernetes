@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [api](README.md)
+[仕様書の目次](../README.md) / [API](README.md)
 
 <a id="sec-5-1"></a>
 # 5.1 API Server
