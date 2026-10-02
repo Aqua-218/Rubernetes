@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [構成図](README.md)
 
 <a id="sec-a-3"></a>
-# A.3 図 03 — 制御ループ
+# A.3 図03 制御ループ
 
 > **Audience:** Controller/Scheduler実装者
 >
