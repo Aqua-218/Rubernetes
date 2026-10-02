@@ -5,7 +5,7 @@
 
 > 対象読者: 制御ループの実装者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 Reflector、DeltaFIFO、Indexer、WorkQueueの接続とevent/retry不変条件を定義する。
 
