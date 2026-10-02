@@ -44,8 +44,7 @@ SchedulingQueue → Filter → Score → Reserve → Bind
 <a id="sec-5-6-4"></a>
 ## 5.6.4 Bind
 
-`Pod.spec.nodeName` を書き込む。
-書き込みが失敗した場合、Reserve を巻き戻して再キューする。
+`Pod.spec.nodeName`を書き込む。書き込みに失敗した場合は、Reserveを取り消してPodをキューに戻す。
 
 <a id="sec-5-6-5"></a>
 ## 5.6.5 Preemption
