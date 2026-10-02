@@ -288,4 +288,4 @@ upstreamと同じく、`--runtime-config`で有効にしたときだけ提供し
 
 ## ライセンス
 
-Apache License 2.0。[LICENSE](LICENSE) を参照。
+Apache License 2.0です。全文は[LICENSE](LICENSE)にあります。upstream由来の部分とそのライセンスは[NOTICE](NOTICE)に記載しています。
