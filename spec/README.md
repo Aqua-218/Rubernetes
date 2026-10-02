@@ -94,10 +94,10 @@ graph TD
 - [形式仕様](verification/formal-methods.md)
 - [検証戦略](verification/testing.md)
 - [Kubernetes互換性試験](verification/kubernetes-compatibility.md)
-- [マイルストーンと完了証拠](delivery/milestones.md)
-- [Project Structure](delivery/project-structure.md)
-- [実装計画とrelease gate](delivery/implementation-plan.md)
-- [Coding Standards](delivery/coding-standards.md)
+- [マイルストーンと完了の証拠](delivery/milestones.md)
+- [プロジェクト構成](delivery/project-structure.md)
+- [実装計画とリリースゲート](delivery/implementation-plan.md)
+- [コーディング規約](delivery/coding-standards.md)
 - [規範参照](references.md)
 
 ### Diagrams
