@@ -178,7 +178,7 @@ listは、対応するList kind、`metadata.resourceVersion`、`continue`、`rem
 {"type":"BOOKMARK","object":{"metadata":{"resourceVersion":"N"}}}
 ```
 
-要件:
+watchの要件は次のとおりである。
 
 - W1: `resourceVersion=N` を指定した場合、N より後の変更のみを送る
 - W2: N が古すぎて保持していない場合、`410 Gone` を返す。クライアントは再 list する
