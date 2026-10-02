@@ -229,7 +229,7 @@ upstreamのアルゴリズムをRubyへ移植したコードは、`lib/`に置�
 
 テストは、対象のクラスのディレクトリではなく、保証のレベルに応じて配置する。
 
-## Test Placement Rule
+同じ挙動について、単体、property、統合、e2eのテストがある場合は、メタデータに同じシナリオIDを付ける。
 
 testは対象classのdirectoryではなく、保証levelで配置する。同一behaviorにunit、property、integration、
 E2Eがある場合は同じscenario IDをmetadataへ付ける。production bugから得た最小反例は、最も低いlevelで
