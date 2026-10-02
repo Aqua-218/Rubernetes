@@ -54,8 +54,7 @@ graph LR
 | ネットワーク | `Network` | Rubyの`Native` | CNI実装の観測結果 |
 | ボリューム | `Volume` | Rubyの組み込み実装と、CSI互換プラグインへの接続 | 既存のCSI実装の観測結果 |
 
-`etcd`、`runc`、`containerd`、`CRI-O`、既存 CNI、`kube-proxy`、`CoreDNS` は
-本番クラスタの必須または代替実装として使用してはならない。
+`etcd`、`runc`、`containerd`、`CRI-O`、既存のCNI、`kube-proxy`、`CoreDNS`を、本番クラスタの必須の実装として使ってはならない。代替の実装として使ってもならない。
 
 <a id="sec-3-3"></a>
 ## 3.3 実装独立性と信頼境界
