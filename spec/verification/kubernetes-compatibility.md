@@ -235,12 +235,7 @@ upstreamのNode Conformanceを、実際のkernelで動くamd64のノードに対
 
 UID、タイムスタンプ、乱数の値、ノード固有のアドレスは、値が一致することを要求しない。形式、一意性、単調性、因果関係を比較する。
 
-- Helm chart 10件以上、Operator/controller 10件以上、CRD+webhookを持つproject 5件以上、
-  StatefulSet+PVCを持つproject 5件以上を含む。1 projectが複数categoryを満たしてよい
-- ingress、certificate、observability、database、message queue、autoscaling、GitOps、storage、securityを網羅する
-- source commit、chart/package digest、全container image digest、license、upstream install procedureを固定する
-- Kubernetes v1.36をupstreamがsupportすると明記したreleaseだけを採用する
-- template、manifest、source、image、webhook設定へRubernetes専用patchを当てない
+結果が一致しなかった場合は、自動的に最小の例まで縮める。要求の列、両方の応答、両方のトレースを、回帰用のfixtureとして固定する。
 
 全projectでinstall、Ready待機、公開smoke scenario、scale、upgrade、rollback、controller restart、
 uninstallを行う。残存namespaced/cluster-scoped resource、finalizer、Volume、network identityを0にする。
