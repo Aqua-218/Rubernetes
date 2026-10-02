@@ -91,10 +91,7 @@ MicroVMとMicroVMRestrictedは、プロジェクトが書いたe2eで検査す�
 
 upstreamのソースにRuntimeClassを注入する変更を加えた実行は、K1とK2の証拠に数えてはならない。
 
-K1はdefault RuntimeClassを変更せずupstream testを実行する。MicroVMとMicroVMRestrictedは、
-Pod specへRuntimeClassを明示するproject-authored E2Eで同じPod API contractを検査し、
-[Runtime L4/L5](testing.md#sec-8-7)とM7を通過する。upstream sourceへRuntimeClass injection patchを
-当てたrunをK1/K2 evidenceに数えてはならない。
+## K0 入力の整合性
 
 ## K0 — Input Integrity
 
