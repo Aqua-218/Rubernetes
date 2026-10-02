@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-MVCC、watch、WAL、Raft、snapshot、failure pathを示す。
+MVCC、watch、WAL、Raft、スナップショットと、障害時の経路を示す。
 
 ```mermaid
 graph TB
