@@ -233,11 +233,7 @@ QoS class、requests、limits、Pod overhead、initコンテナとsidecarのリ�
 
 プロセスは、workload gateを開く前に対象のcgroupに移す。移動に失敗した場合は、実行してはならない。
 
-階層は `/sys/fs/cgroup/rubernetes/<qos>/<pod-uid>/<container-id>` とする。
-QoS class、requests、limits、Pod overhead、init/sidecar resource semantics を v1.36.2 と同じ式で反映する。
-limits 未指定時は該当 controller の hard limit を設定しない。process は workload gate を開く前に
-対象 cgroup へ移動し、移動失敗時に実行してはならない。OOM は `memory.events` から取得し、
-exit reason と Pod status へ一度だけ反映する。
+OOMは`memory.events`から取得する。終了理由とPodのstatusには、1回だけ反映する。
 
 <a id="sec-5-8-9"></a>
 ## 5.8.9 SecurityContext
