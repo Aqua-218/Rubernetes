@@ -5,7 +5,7 @@
 
 > 対象読者: ボリュームとストレージの実装者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 PV/PVC、controller、CSI、built-in volume、mount ownershipを示す。
 
