@@ -115,10 +115,11 @@ curl --noproxy '*' -sS http://<DASHBOARD_BIND>:3000/up
 | `DASHBOARD_RETENTION` | `15d` | 保持期間 |
 | `DASHBOARD_BLOCK_RANGE` | `2h` | ブロックの長さ |
 | `DASHBOARD_RULES` | `config/rules.yml` | ルールファイル |
-| `DASHBOARD_ALERT_WEBHOOK` | 空 | Alertmanager 互換の受信先 |
-| `DASHBOARD_ALLOW_WRITES` | `1` | `0` で UI を読み取り専用に |
-| `DASHBOARD_COLLECTOR` | `1` | `0` で scrape を無効化（UI のみ） |
-| `no_proxy` | | Pod/Service の scrape は Pod IP に直接つなぐ。HTTP プロキシを通さないこと |
+| `DASHBOARD_ALERT_WEBHOOK` | 空 | Alertmanager互換の通知先 |
+| `DASHBOARD_ALLOW_WRITES` | `1` | `0`にするとUIが読み取り専用になる |
+| `DASHBOARD_COLLECTOR` | `1` | `0`にするとメトリクスを取得せず、UIだけが動く |
+
+PodとServiceのメトリクスは、PodのIPに直接接続して取得します。HTTPプロキシを使う環境では、`no_proxy`を設定してPod宛ての通信がプロキシを通らないようにしてください。
 
 ## 開発
 
