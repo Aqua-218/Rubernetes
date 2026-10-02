@@ -218,7 +218,9 @@ upstreamのNode Conformanceを、実際のkernelで動くamd64のノードに対
 
 次のテストは、Node Conformanceの証拠に数えない。
 
-### Client matrix
+- モックのランタイムを使ったテスト
+- 偽のcgroupを使ったテスト
+- network namespaceを持たないコンテナの中でのテスト
 
 target API Server 1.36に対し、Kubernetesのversion-skew policyが許す公開済みkubectl minorをすべて試す。
 2026-08-22時点のrequired setはv1.35の最新patchとv1.36.2である。v1.37が正式公開された時点で
