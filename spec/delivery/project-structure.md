@@ -16,6 +16,8 @@
 ```text
 .
 ├── README.md
+├── LICENSE
+├── NOTICE                        # upstream由来の部分の出典とライセンス
 ├── Gemfile
 ├── Rakefile
 ├── rubernetes.gemspec
