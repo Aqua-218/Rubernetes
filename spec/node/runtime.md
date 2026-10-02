@@ -99,12 +99,14 @@ stateDiagram-v2
     StateUnknown --> Stopping: ownership reconciled
 ```
 
-- `Validated` までは filesystem、process、network、device、cgroup を変更してはならない
-- `WorkloadStopped` までは workload code を 1 instruction も実行させない
-- `Running` への遷移は image、volume、network、identity、policy の digest を照合した後の 1 回だけとする
-- `StateUnknown` では start、resume、snapshot、resource reuse を禁止し、照合と cleanup だけを許可する
-- 状態遷移は `{operation_id, from, to, owned_resources, config_digest}` として WAL に fsync する
-- process crash 後は ledger と kernel/VMM の実状態を照合し、推測で成功状態へ進めてはならない
+状態機械について、次のとおり定める。
+
+- `Validated`までは、ファイルシステム、プロセス、ネットワーク、デバイス、cgroupを変更してはならない。
+- `WorkloadStopped`までは、ワークロードのコードを1命令も実行させない。
+- `Running`への遷移は1回だけとする。イメージ、ボリューム、ネットワーク、identity、ポリシーのダイジェストを照合したあとに行う。
+- `StateUnknown`では、start、resume、スナップショット、資源の再利用を禁止する。許可するのは照合と後始末だけである。
+- 状態の遷移は、`{operation_id, from, to, owned_resources, config_digest}`の形でWALにfsyncする。
+- プロセスがクラッシュしたあとは、台帳と、kernelやVMMの実際の状態を照合する。推測で成功の状態に進めてはならない。
 
 <a id="sec-5-8-4"></a>
 ## 5.8.4 resource ownership と rollback
