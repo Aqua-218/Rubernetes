@@ -18,14 +18,14 @@
 | actual state | 実際に観測された状態 |
 | reconcile | desired stateとactual stateの差を埋める操作。冪等でなければならない |
 | resourceVersion | ストアが採番する単調増加のリビジョン。楽観ロックに使う |
-| 収束 | reconcile の反復により actual が desired に一致すること |
-| ノード | ワーカーを実行する 1 台のホスト |
-| サンドボックス | Pod 単位で共有される namespace の集合 |
-| Native backend | Ruby が Linux syscall を直接発行して Pod を隔離する既定ランタイム |
-| MicroVM backend | Ruby が Firecracker を制御し、1 Pod を 1 microVM に隔離するランタイム |
-| compatibility oracle | Kubernetes v1.36.2 または既存実装を、差分テストでのみ使う比較対象 |
-| effect point | syscall、mutating API、永続化など、管理対象の外部状態が初めて変化し得る地点 |
-| owned resource | sandbox が排他的に取得し、解放完了まで所有権を追跡する OS 資源 |
+| 収束 | reconcileを繰り返した結果、actual stateがdesired stateに一致すること |
+| ノード | ワーカーを実行する1台のホスト |
+| サンドボックス | Pod単位で共有されるnamespaceの集合 |
+| Native backend | RubyがLinuxのシステムコールを直接発行してPodを隔離する、既定のランタイム |
+| MicroVM backend | RubyがFirecrackerを制御し、1つのPodを1つのmicroVMに隔離するランタイム |
+| compatibility oracle | 差分テストでだけ使う比較対象。Kubernetes v1.36.2または既存の実装を指す |
+| effect point | 管理対象の外部状態が初めて変化しうる地点。システムコール、変更を伴うAPI呼び出し、永続化など |
+| owned resource | サンドボックスが排他的に取得したOS資源。解放が完了するまで所有権を追跡する |
 | ambiguous state | 要求の成否を観測できず、成功とも失敗とも断定できない状態 |
 
 ## Related
