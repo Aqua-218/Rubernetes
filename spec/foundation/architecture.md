@@ -82,7 +82,7 @@ graph LR
 | agentからapiserver | 同上。watchはchunkedのストリーム |
 | Raftノード間 | 自作のRPC。[5.3.6](../control-plane/raft.md#sec-5-3-6)を参照 |
 
-## Related
+## 関連
 
 - [00 overview](../diagrams/00-overview.md)
 - [Ruby Design index](../ruby/README.md)
