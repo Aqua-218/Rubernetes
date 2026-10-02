@@ -15,22 +15,22 @@
 
 | 段階 | 到達点 | 主な検証 |
 |---|---|---|
-| 00 | Ruby FFI、ABI generator、clone3/pidfd/mount/netlink/bpf/KVM capability probe | x86_64実kernel smoke |
-| 01 | v1.36.2 corpus、schema DSL/compiler、Ruby type/codec/OpenAPI/RBS/manifest DSL | 再生成差分ゼロ、全 GVK round-trip |
-| 02 | API Server + MemoryStore、discovery、CRUD/watch/patch/apply | `kubectl` と API differential |
-| 03 | Native sandbox、image、namespace、OverlayFS、cgroup、seccomp、process gate | Runtime L0〜L3、resource leak zero |
-| 04 | Node Agent と 1 node Pod lifecycle を端から端まで貫通 | init/sidecar/probe/restart/terminate E2E |
-| 05 | Controller DSL、Deployment → ReplicaSet → Pod | 冪等性、ownership、rollout differential |
-| 06 | Informer と v1.36.2 built-in controller 全体 | event 欠落、全 controller corpus 登録 |
-| 07 | Scheduler DSL、全標準 plugin、preemption、複数 node | Filter/Score Lean、配置 differential |
-| 08 | Native Network、IPAM、VXLAN、NetworkPolicy、DNS、eBPF/nftables Proxy | Pod/Service/Ingress/Egress E2E |
-| 09 | Volume、PV/PVC/StorageClass、snapshot、CSI protocol | mount attack、attach race、storage E2E |
-| 10 | RaftStore、WAL、snapshot、membership | TLA+、crash recovery、線形化可能性 |
-| 11 | 全認証/認可/admission、CRD、aggregation、全 API/subresource | v1.36.2 API corpus 差分ゼロ |
-| 12 | Firecracker/jailer、Ruby guest supervisor、standard/restricted MicroVM | Runtime L0〜L5、identity non-reuse |
-| 13 | 全 component の durable ownership、rollback、crash recovery | 全 effect point fault matrix |
-| 14 | Conformance、Helm/Operator corpus、障害 DSL、trace/model/proof bridge | upstream 無改変 test、反例固定 |
-| 15 | 性能、長時間試験、供給網固定、release artifact | [§9.3](implementation-plan.md#sec-9-3) release gate 全項目 |
+| 00 | RubyのFFI、ABIの生成器、機能のプローブ（clone3、pidfd、mount、netlink、bpf、KVM） | x86_64の実kernelでのスモークテスト |
+| 01 | v1.36.2のコーパス、スキーマDSLとコンパイラ、Rubyの型、コーデック、OpenAPI、RBS、Manifest DSL | 再生成の差分がゼロ、全GVKのround-trip |
+| 02 | APIサーバとMemoryStore、discovery、CRUD、watch、patch、apply | `kubectl`と、APIの差分テスト |
+| 03 | Nativeのサンドボックス、イメージ、namespace、OverlayFS、cgroup、seccomp、プロセスのgate | ランタイムのL0〜L3、資源のリークがゼロ |
+| 04 | ノードエージェントと、1ノードでのPodライフサイクルの一貫した動作 | initコンテナ、sidecar、probe、再起動、終了のe2e |
+| 05 | Controller DSL、DeploymentからReplicaSet、Podまで | 冪等性、所有関係、rolloutの差分テスト |
+| 06 | informerと、v1.36.2の組み込みコントローラの全体 | イベントの欠落、全コントローラのコーパスへの登録 |
+| 07 | Scheduler DSL、すべての標準プラグイン、preemption、複数ノード | FilterとScoreのLeanによる証明、配置の差分テスト |
+| 08 | Nativeのネットワーク、IPAM、VXLAN、NetworkPolicy、DNS、eBPFとnftablesのプロキシ | Pod、Service、Ingress、Egressのe2e |
+| 09 | ボリューム、PV・PVC・StorageClass、スナップショット、CSIプロトコル | マウントへの攻撃、attachのレース、ストレージのe2e |
+| 10 | RaftStore、WAL、スナップショット、メンバーシップ | TLA+、クラッシュからの回復、線形化可能性 |
+| 11 | すべての認証、認可、admission、CRD、aggregation、すべてのAPIとsubresource | v1.36.2のAPIコーパスとの差分がゼロ |
+| 12 | Firecrackerとjailer、Ruby製のゲストsupervisor、標準とrestrictedのMicroVM | ランタイムのL0〜L5、identityを再利用しないこと |
+| 13 | すべてのコンポーネントの耐久性のある所有権、ロールバック、クラッシュからの回復 | すべてのeffect pointの障害の組み合わせ |
+| 14 | Conformance、HelmとOperatorのコーパス、障害注入のDSL、トレース・モデル・証明の対応付け | 改変していないupstreamのテスト、反例の固定 |
+| 15 | 性能、長時間の試験、供給網の固定、リリースの成果物 | [9.3](implementation-plan.md#sec-9-3)のリリースゲートの全項目 |
 
 <a id="sec-9-1"></a>
 ## 9.1 段階 00 の完了条件
