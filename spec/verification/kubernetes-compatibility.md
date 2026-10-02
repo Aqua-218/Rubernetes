@@ -196,7 +196,7 @@ Ginkgoのdry-runで得たテストの一覧について、すべてのテスト�
 
 `required`以外に分類した項目は、`selection-ledger.json`に記録する。記録する内容は、upstreamのテストID、ファイル、分類の理由、外部契約の有無、置き換えたテストのID、レビュアである。
 
-## K4 — Node Conformance
+`provider-private`または`implementation-internal`に分類した項目に、外部から観測できる契約がある場合がある。その場合は、同じ入力と同じ観測点を持つプロジェクト作成のテストが合格するまで、その項目を完了にしてはならない。
 
 upstream Node Conformanceを実kernelのamd64 nodeへ実行する。Node AgentはKubernetesが公開する
 node registration、Pod lifecycle、probe、log、exec、resource isolation、status behaviorを提供する。
