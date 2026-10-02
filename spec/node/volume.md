@@ -79,7 +79,7 @@ Declared → Provisioned → Attached → Staged → Published → Unpublishing 
 - `fsGroup`、SELinuxのラベル、読み取り専用、mountPropagationは、publishの前に適用する。適用に失敗した場合は、ワークロードを開始させない。
 - マウント元、マウント先、マウントID、ファイルシステムのUUID、デバイスIDを、ランタイムの台帳に記録する。
 
-## Related
+## 関連
 
 - [node agent](node-agent.md)
 - [runtime](runtime.md)
