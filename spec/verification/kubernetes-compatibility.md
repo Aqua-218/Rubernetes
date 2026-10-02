@@ -363,11 +363,13 @@ Kubernetes v1.36.2と互換な状態の形式を保ったまま、次のアッ�
 
 | きっかけ | 必要な検査 |
 |---|---|
-| Pull request | K0、変更componentのunit/property/integration、K5 affected corpus |
-| Merge to main | K0、single-profile K1、K3 affected shard、K5、K6 affected project |
-| Nightly | 3 x86_64 profile K1をrotation、K3全shard、K4、K5、K6、K7 recovery subset |
-| Milestone M8 candidate | K0〜K7全体、3 x86_64 profile × 3 consecutive K1、K2 |
-| Release M9 | M8全体をrelease commitとrelease artifactで再実行 |
+| プルリクエスト | K0。変更したコンポーネントの単体、property、統合の各テスト。K5のうち影響を受けるコーパス |
+| mainへのマージ | K0。1つのプロファイルでのK1。K3のうち影響を受けるshard。K5。K6のうち影響を受けるプロジェクト |
+| 毎晩 | x86_64の3つのプロファイルを順に回すK1。K3の全shard。K4、K5、K6。K7のうち回復に関する部分 |
+| M8の候補 | K0〜K7の全体。x86_64の3つのプロファイルそれぞれで連続3回のK1。K2 |
+| M9のリリース | M8の全体を、リリースのコミットとリリースの成果物で再実行する |
+
+テストをshardに分けることは許可する。ただし、選択台帳と、全shardを合わせたものが、必須のテスト一覧と一致しなければならない。
 
 test shardingは許可するが、selection ledgerと全shardのunionがrequired inventoryと一致しなければならない。
 cancelled shard、missing result、artifact upload failureはsuite failureとして扱う。
