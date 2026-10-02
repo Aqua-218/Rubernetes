@@ -21,5 +21,5 @@ Kubernetes API上の標準のlabel、annotation、フィールド名は、互換
 
 ## 関連
 
-- [goals and compatibility](goals-and-compatibility.md)
-- [references](../references.md)
+- [目的と互換性](goals-and-compatibility.md)
+- [規範参照](../references.md)
