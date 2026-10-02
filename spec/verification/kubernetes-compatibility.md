@@ -194,8 +194,7 @@ Ginkgoのdry-runで得たテストの一覧について、すべてのテスト�
 
 未実装、失敗、タイムアウト、環境構築の難しさも、除外の理由にならない。
 
-`provider-private`または`implementation-internal`に外部観測可能contractがある場合、同じ入力と観測点を持つ
-project-authored testがpassするまで当該項目をclosedにしてはならない。未分類件数と置換test未接続件数は0とする。
+`required`以外に分類した項目は、`selection-ledger.json`に記録する。記録する内容は、upstreamのテストID、ファイル、分類の理由、外部契約の有無、置き換えたテストのID、レビュアである。
 
 ## K4 — Node Conformance
 
