@@ -28,7 +28,7 @@ graph LR
 | [検証戦略](testing.md) | テストの階層、障害注入のDSL、線形化、差分テスト、ランタイムのL0〜L5 |
 | [Kubernetes互換性試験](kubernetes-compatibility.md) | upstreamのConformanceとe2e、クライアントとプロジェクトのコーパス、スキップを認めないリリースゲート |
 
-## Related
+## 関連
 
 - [Verification図](../diagrams/08-verification.md)
 - [Runtime](../node/runtime.md)
