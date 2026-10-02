@@ -22,5 +22,5 @@
 
 ## 関連
 
-- [Foundation Architecture](../foundation/architecture.md)
-- [仕様書インデックス](../README.md)
+- [アーキテクチャ](../foundation/architecture.md)
+- [仕様書の目次](../README.md)
