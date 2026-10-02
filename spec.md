@@ -16,10 +16,12 @@ Rubernetesの仕様と設計書の正本は、複数の文書からなる[`spec/
 
 ## 仕様の状態
 
-- Version: 0.2
-- Status: 実装基準ドラフト
-- Normative source: [`spec/`](spec/README.md)
-- Kubernetes compatibility target: v1.36.2
+| 項目 | 値 |
+|---|---|
+| 版 | 0.2 |
+| 状態 | 実装基準ドラフト |
+| 正本 | [`spec/`](spec/README.md) |
+| 互換対象 | Kubernetes v1.36.2 |
 
 個別文書間の優先順位、MUST/SHOULD/MAY、固定外部仕様の扱いは、
 [文書規約](spec/foundation/document-conventions.md)に従う。
