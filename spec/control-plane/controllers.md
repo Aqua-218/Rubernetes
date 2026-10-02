@@ -29,10 +29,10 @@
 <a id="sec-5-5-2"></a>
 ## 5.5.2 DeploymentController
 
-- Deployment の `spec.template` のハッシュで ReplicaSet を識別する
-- RollingUpdate: `maxSurge` / `maxUnavailable` を満たす範囲で新旧の replicas を増減する
-- 履歴を `revisionHistoryLimit` 件保持する
-- `status` に `observedGeneration` を記録し、`spec.generation` と比較して進行を判定する
+- Deploymentの`spec.template`のハッシュでReplicaSetを識別する。
+- RollingUpdateでは、`maxSurge`と`maxUnavailable`を満たす範囲で、新旧のreplicasを増減する。
+- 履歴を`revisionHistoryLimit`件保持する。
+- `status`に`observedGeneration`を記録する。`spec.generation`と比較して進行を判定する。
 
 <a id="sec-5-5-3"></a>
 ## 5.5.3 ReplicaSetController
