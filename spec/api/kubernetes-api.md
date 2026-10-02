@@ -180,13 +180,15 @@ listは、対応するList kind、`metadata.resourceVersion`、`continue`、`rem
 
 watchの要件は次のとおりである。
 
-- W1: `resourceVersion=N` を指定した場合、N より後の変更のみを送る
-- W2: N が古すぎて保持していない場合、`410 Gone` を返す。クライアントは再 list する
-- W3: `allowWatchBookmarks=true` では、変更がなくても最大 30 秒間隔で BOOKMARK を送り、再開点を保持させる
-- W4: 接続が切れてもサーバ側に状態を残さない
-- W5: 同一開始 revision の複数 watcher は同じ変更を同じ revision 順で観測する
-- W6: `sendInitialEvents=true` では初期状態を synthetic `ADDED` として送り、直後に初期同期完了 BOOKMARK を送る
-- W7: 1 watcher の送信待ち buffer は 1,024 event または 16 MiB の小さい方を上限とし、超過時は接続を終了して再 list を要求する
+| 番号 | 要件 |
+|---|---|
+| W1 | `resourceVersion=N`を指定した場合、Nより後の変更だけを送る |
+| W2 | Nが古く、サーバがその履歴を保持していない場合は`410 Gone`を返す。クライアントはlistをやり直す |
+| W3 | `allowWatchBookmarks=true`の場合、変更がなくても最大30秒の間隔でBOOKMARKを送り、クライアントに再開点を持たせる |
+| W4 | 接続が切れても、サーバ側に状態を残さない |
+| W5 | 同じリビジョンから始めた複数のwatcherは、同じ変更を同じリビジョン順で観測する |
+| W6 | `sendInitialEvents=true`の場合、初期状態を合成した`ADDED`として送る。その直後に、初期同期の完了を示すBOOKMARKを送る |
+| W7 | 1つのwatcherの送信待ちバッファは、1,024イベントと16 MiBのうち小さいほうを上限とする。上限を超えたら接続を終了し、listのやり直しを要求する |
 
 <a id="sec-4-5"></a>
 ## 4.5 楽観的並行制御
