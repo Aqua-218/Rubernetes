@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-clientから低層Runtimeと検証層までのsystem-wide component mapを示す。
+クライアントから低層のランタイム、検証の層までを含む、システム全体のコンポーネントの配置を示す。
 
 ```mermaid
 graph TB
