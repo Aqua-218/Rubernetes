@@ -64,8 +64,7 @@ PUT    {base}/{resource}/{name}/{subresource}                 update subresource
 PATCH  {base}/{resource}/{name}/{subresource}                 patch subresource
 ```
 
-Namespaced resource の `{base}` は
-`.../namespaces/{namespace}`、全 namespace の list/watch は group/version 直下とする。
+namespaceに属するリソースでは、`{base}`は`.../namespaces/{namespace}`になる。すべてのnamespaceを対象にしたlistとwatchは、group/versionの直下で受け付ける。
 
 PATCH は次をすべて実装する。
 
