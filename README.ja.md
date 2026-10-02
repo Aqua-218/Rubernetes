@@ -145,18 +145,20 @@ RUBERNETES_KUBECONFIG=$KUBECONFIG bin/rails server -p 3000
 
 | パス | 内容 |
 |---|---|
-| [`lib/rubernetes/`](lib/rubernetes/README.md) | 本番コード。サブシステムごとに 1 ディレクトリ（`api/`、`consensus/`、`controller/`、`scheduler/`、`node/`、`runtime/`、`network/`、`proxy/`、`volume/`、`security/`、`schema/`、`observability/` など） |
-| [`exe/`](exe/README.ja.md) | 6 つの実行ファイル。オプションを解釈して `lib/rubernetes/bootstrap` に渡すだけ |
-| [`ext/rubernetes_linux/`](ext/README.md) | C の ABI シム（`clone3` + exec、型付きシステムコール）。ポリシーは置かない |
-| `schema/` → `generated/` | 取り込んだ Kubernetes v1.36.2 のスキーマ・OpenAPI・既定値コーパスと、そこから再現可能に生成した Ruby 型、RBS、コーデック、Manifest DSL。`generated/` は手で編集しない |
-| [`spec/`](spec/README.md) | 規範仕様と設計書 |
-| [`test/`](test/README.md) | unit、property、integration、e2e、chaos、security、compatibility の各スイートと conformance ハーネスのプロファイル |
-| [`tools/`](tools/README.md) | Ruby 製の自動化: スキーマ取り込みと生成、conformance（`cluster.rb`、レーン、Hydrophone）、マイルストーンのプローブとゲート、形式検証ランナー、リリース成果物、コミット記録器 |
-| [`verification/`](verification/README.md) | TLA+ と Lean のモデル（Raft、ランタイムライフサイクル、bounded framing、KV 逐次仕様）とトレースのスキーマ |
-| [`third_party/locks/`](third_party/locks/README.md) | すべての upstream ソース、イメージ、ランナーバイナリ、ビルド入力をコミットとダイジェストで固定 |
-| [`deploy/`](deploy/cluster/README.md) | systemd ユニットと運用手順 |
-| [`apps/dashboard/`](apps/dashboard/README.ja.md) | Rails 製ダッシュボード / メトリクスサーバ |
-| `benchmarks/`、`artifacts/` | ベンチマークと（Git 管理外の）証拠バンドル |
+| [`lib/rubernetes/`](lib/rubernetes/README.md) | 本体のコード。`api/`、`consensus/`、`scheduler/`、`node/`のようにサブシステムごとに分かれています |
+| [`exe/`](exe/README.ja.md) | 6つの実行ファイル。オプションを解釈して`lib/rubernetes/bootstrap`に渡します |
+| [`ext/rubernetes_linux/`](ext/README.md) | Cの拡張。`clone3`とexec、型付きのシステムコールを提供します |
+| `schema/` | Kubernetes v1.36.2から取り込んだスキーマ、OpenAPI、既定値 |
+| `generated/` | `schema/`から生成したRubyの型、RBS、コーデック、Manifest DSL。手では編集しません |
+| [`spec/`](spec/README.md) | 仕様と設計書 |
+| [`test/`](test/README.md) | unit、property、integration、e2e、chaos、security、compatibilityの各テストとconformanceのプロファイル |
+| [`tools/`](tools/README.md) | Rubyで書いた自動化ツール。スキーマの取り込みと生成、conformance、マイルストーンのゲート、形式検証、リリース |
+| [`verification/`](verification/README.md) | TLA+とLeanのモデル、トレースのスキーマ |
+| [`third_party/locks/`](third_party/locks/README.md) | upstreamのソース、イメージ、バイナリをコミットとダイジェストで固定した一覧 |
+| [`deploy/`](deploy/cluster/README.md) | systemdユニットと運用手順 |
+| [`apps/dashboard/`](apps/dashboard/README.ja.md) | Rails製のダッシュボード兼メトリクスサーバ |
+| `benchmarks/` | ベンチマーク |
+| `artifacts/` | 証拠バンドル。Gitでは管理しません |
 
 ## 開発
 
