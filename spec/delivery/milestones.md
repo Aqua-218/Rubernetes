@@ -252,7 +252,7 @@ graph LR
 RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕様の7.2](../verification/formal-methods.md#sec-7-2)に示す。
 
 <a id="milestone-m6"></a>
-## M6 — Complete Kubernetes API Surface
+## M6 完全なKubernetes API
 
 ### Deliverables
 
