@@ -223,9 +223,15 @@ subPathは、kubeletのmakeMountsと同じく、そのコンテナの起動時�
 | CPU | `cpu.max`、`cpu.weight`、`cpu.stat` |
 | メモリ | `memory.min`、`memory.low`、`memory.high`、`memory.max`、`memory.swap.max`、`memory.events` |
 | I/O | `io.max`、`io.weight`、`io.stat` |
-| Process | `pids.max`、`pids.current` |
-| Placement | `cpuset.cpus`、`cpuset.mems` |
-| Pressure | `cpu.pressure`、`memory.pressure`、`io.pressure` |
+| プロセス | `pids.max`、`pids.current` |
+| 配置 | `cpuset.cpus`、`cpuset.mems` |
+| pressure | `cpu.pressure`、`memory.pressure`、`io.pressure` |
+
+階層は`/sys/fs/cgroup/rubernetes/<qos>/<pod-uid>/<container-id>`とする。
+
+QoS class、requests、limits、Pod overhead、initコンテナとsidecarのリソースの意味論は、v1.36.2と同じ式で反映する。limitsが指定されていない場合、該当するcontrollerにはハードリミットを設定しない。
+
+プロセスは、workload gateを開く前に対象のcgroupに移す。移動に失敗した場合は、実行してはならない。
 
 階層は `/sys/fs/cgroup/rubernetes/<qos>/<pod-uid>/<container-id>` とする。
 QoS class、requests、limits、Pod overhead、init/sidecar resource semantics を v1.36.2 と同じ式で反映する。
