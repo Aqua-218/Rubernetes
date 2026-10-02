@@ -57,11 +57,21 @@ recover                → recovery_report
 <a id="sec-5-9-5"></a>
 ## 5.9.5 オーバーレイ
 
-- `vxlan` と `host-gw` の両 backend を Ruby netlink 実装で提供する
-- `Auto` は全 node が同一 L2 で next-hop 到達可能なら `host-gw`、それ以外は VXLAN を選ぶ
-- VXLAN は VNI 4096、UDP port 4789 を既定とし、underlay MTU から IPv4 は 50 byte、IPv6 は 70 byte を差し引く
-- 各 node の VTEP、対向 subnet、FDB、route を Node/Lease watch の revision と対応付けて差分更新する
-- node 削除時は route/FDB を削除する前に、その node の Pod IP を EndpointSlice と conntrack から除外する
+`vxlan`と`host-gw`の2つのbackendを、Rubyのnetlink実装で提供する。
+
+`Auto`を指定した場合は、次のように選ぶ。すべてのノードが同じL2にあり、next-hopで到達できるなら`host-gw`を使う。そうでなければVXLANを使う。
+
+VXLANの既定値は次のとおりである。
+
+| 項目 | 既定値 |
+|---|---|
+| VNI | 4096 |
+| UDPポート | 4789 |
+| MTU | underlayのMTUから、IPv4では50 byte、IPv6では70 byteを引いた値 |
+
+各ノードのVTEP、対向のサブネット、FDB、経路は、NodeとLeaseのwatchのリビジョンに対応付けて、差分だけを更新する。
+
+ノードを削除するときは、経路とFDBを消す前に、そのノードのPod IPをEndpointSliceとconntrackから取り除く。
 
 <a id="sec-5-9-6"></a>
 ## 5.9.6 NetworkPolicy
