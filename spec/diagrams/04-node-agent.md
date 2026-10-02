@@ -5,7 +5,7 @@
 
 > 対象読者: ノードエージェントとランタイムの実装者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 Pod workerからruntime、network、volume、statusへのlifecycle flowを示す。
 
