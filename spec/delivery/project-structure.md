@@ -233,8 +233,7 @@ upstreamのアルゴリズムをRubyへ移植したコードは、`lib/`に置�
 
 本番のバグから得た最小の反例は、それを再現できる最も低いレベルのテストとして固定する。必要であれば、e2eの回帰テストとしても固定する。
 
-upstream testをcopyして改変したものはConformance evidenceに数えない。補助testとして保持する場合は
-`test/compatibility/`へ置き、upstream file、commit、変更理由をmetadataへ記録する。
+upstreamのテストをコピーして改変したものは、Conformanceの証拠に数えない。補助的なテストとして保持する場合は、`test/compatibility/`に置く。メタデータには、upstreamのファイル、コミット、変更の理由を記録する。
 
 ## Build and Artifact Policy
 
