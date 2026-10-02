@@ -36,7 +36,7 @@ Indexerが返したオブジェクトを、呼び出し側が変更してはな�
 
 キャッシュはすべてのコントローラが共有している。1か所で破壊的に変更すると、無関係なコントローラの判断まで誤らせる。そのため、オブジェクトは返すときにfreezeする。コーディング規約のR-4.2に対応する。
 
-## Related
+## 関連
 
 - [controllers](controllers.md)
 - [kubernetes api](../api/kubernetes-api.md)
