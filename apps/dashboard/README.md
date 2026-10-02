@@ -92,8 +92,9 @@ bundle install
 RUBERNETES_KUBECONFIG=/path/to/kubeconfig bin/rails server -p 3000
 ```
 
-Production, as a systemd service (the unit keeps Puma to one worker because
-the time-series head lives in the collector's process):
+### In production
+
+Run it as a systemd service.
 
 ```sh
 cp deploy/rubernetes-dashboard.service /etc/systemd/system/
