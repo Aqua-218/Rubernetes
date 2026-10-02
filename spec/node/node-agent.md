@@ -42,7 +42,7 @@ PodのSyncLoopと、起動、probe、再起動、終了、evictionの順序を�
 | liveness | コンテナを再起動する |
 | readiness | Endpointsから外す。再起動はしない |
 
-方式は `exec` / `httpGet` / `tcpSocket`。
+probeの方式は`exec`、`httpGet`、`tcpSocket`の3つである。
 
 <a id="sec-5-7-4"></a>
 ## 5.7.4 再起動制御
