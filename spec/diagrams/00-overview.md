@@ -3,7 +3,7 @@
 <a id="sec-a-0"></a>
 # A.0 図00 全景
 
-> **Audience:** 全読者、アーキテクト
+> 対象読者: 全読者、アーキテクト
 >
 > **Status:** Normative — version 0.2
 
