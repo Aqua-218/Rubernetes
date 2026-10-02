@@ -65,8 +65,9 @@ checkpoint_base(runtime_class:)              → snapshot_id
 recover                                      → recovery_report
 ```
 
-公開操作は request ID を受け取り冪等でなければならない。timeout は処理の放棄ではなく
-caller の待機上限を表し、runtime は操作結果を durable ledger へ確定させるまで回復処理を続ける。
+公開している操作はrequest IDを受け取り、冪等でなければならない。
+
+timeoutは、呼び出し側が待つ時間の上限を表す。処理を放棄するという意味ではない。ランタイムは、操作の結果を耐久性のある台帳に確定させるまで、回復の処理を続ける。
 
 <a id="sec-5-8-3"></a>
 ## 5.8.3 共通 lifecycle
