@@ -62,8 +62,12 @@ setsid nohup tools/conformance/round.sh conf4 /srv/rbn-conf4/linux-amd64-ipv4-na
 
 残りの設定は`cluster.rb`がプロファイルから決めます。
 
-各クラスタインスタンスは専用のネットワーク名前空間で動くので、Pod ブリッジ、
-nftables テーブル、NodePort、経路がホストや他インスタンスと干渉しません。
+- プロファイルにIPv6があれば、APIサーバは`::`にbindします。advertiseするのはprimaryファミリのアドレスです。
+- `kubernetes` Serviceとそのendpointsもprimaryファミリに従います。
+- 各ノードはファミリごとに1つの`InternalIP`を公開します。値はPodブリッジの先頭アドレスで、`10.24n.0.1`と`fd00:d8:n::1`です。
+- サービング証明書には両ファミリのアドレスが入ります。
+
+クラスタはそれぞれ専用のネットワーク名前空間で動きます。そのため、Podブリッジ、nftablesのテーブル、NodePort、経路がホストやほかのクラスタと衝突しません。
 
 ```bash
 export PATH=/opt/rubies/3.4.11/bin:$PATH            # Gemfile の Ruby
