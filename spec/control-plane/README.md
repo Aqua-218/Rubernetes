@@ -34,4 +34,3 @@ graph LR
 - [制御ループの図](../diagrams/03-control-loop.md)
 - [ノード](../node/README.md)
 - [形式仕様](../verification/formal-methods.md)
-
