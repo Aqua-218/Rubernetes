@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [ノード](README.md)
 
 <a id="sec-5-10"></a>
-# 5.10 Proxy
+# 5.10 サービスプロキシ
 
 > **Audience:** Service datapath実装者
 >
