@@ -97,12 +97,12 @@ end
 
 | レベル | 実行する対象 | 確かめられる範囲 |
 |---|---|---|
-| L0 Pure | state transition、config validation、rollback plan | 副作用前の決定性 |
-| L1 Fake I/O | failure injection 可能な adapter | 全 branch と error 保持 |
-| L2 Host integration | 実 process、filesystem、Unix socket | PID reuse、path、framing、cleanup |
-| L3 Kernel isolation | 実 namespace/cgroup/seccomp/netlink/eBPF | kernel が境界を適用した事実 |
-| L4 KVM gate | 実 Firecracker/jailer/dm-verity/vsock | microVM lifecycle と host cleanup |
-| L5 Adversarial | 悪性 image/guest/workload と強制 crash | fail-closed と resource non-reuse |
+| L0 Pure | 状態の遷移、設定の検証、ロールバックの計画 | 副作用が起きる前の決定性 |
+| L1 Fake I/O | 障害を注入できるアダプタ | すべての分岐と、エラーの保持 |
+| L2 Host integration | 実際のプロセス、ファイルシステム、Unixソケット | PIDの再利用、パス、フレーミング、後始末 |
+| L3 Kernel isolation | 実際のnamespace、cgroup、seccomp、netlink、eBPF | kernelが境界を適用したという事実 |
+| L4 KVM gate | 実際のFirecracker、jailer、dm-verity、vsock | microVMのライフサイクルと、ホスト側の後始末 |
+| L5 Adversarial | 悪意のあるイメージ、ゲスト、ワークロードと、強制的なクラッシュ | fail-closedであることと、資源を再利用しないこと |
 
 release は x86_64 の L3と、x86_64でKVMを提供するRuntimeのL4/L5を通過しなければならない。
 ARM実機profileはmilestoneまたはreleaseの完了条件に含めない。
