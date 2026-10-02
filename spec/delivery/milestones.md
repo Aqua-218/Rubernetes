@@ -156,8 +156,13 @@ graph LR
 
 ### 必要な証拠
 
-x86_64 L0〜L3 report、kernel object inventory差分、Pod lifecycle trace、OCI攻撃corpus結果、
-1,000-cycle resource ledgerを保存する。
+次のものを保存する。
+
+- x86_64のL0〜L3のレポート
+- kernelオブジェクトの一覧の差分
+- Podのライフサイクルのトレース
+- OCI攻撃コーパスの結果
+- 1,000サイクル分の資源の台帳
 
 <a id="milestone-m3"></a>
 ## M3 — Control Loops
