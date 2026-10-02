@@ -167,9 +167,9 @@ bundle installs.
 | Path | Contents |
 |---|---|
 | `app/` | Controllers and views for the cluster browser and the Prometheus pages |
-| `lib/dashboard/` | Configuration, the resource catalog (which kinds are browsable and how), runtime wiring that starts the collector with the web server |
-| `lib/prom/` | Collector loop, target discovery, scraper, exposition parser, Gorilla chunk codec, kube-state exporter, rules |
-| `lib/promql/` | Parser, engine and function set |
+| `lib/dashboard/` | Configuration, the resource catalog, and the code that starts the collector together with the web server. The catalog defines which kinds can be browsed and how |
+| `lib/prom/` | Collector loop, target discovery, scraper, exposition parser, Gorilla chunks, kube-state exporter, rules |
+| `lib/promql/` | Parser, engine and functions |
 | `lib/tsdb/` | The store: head, WAL, blocks, retention, label index |
 | `config/rules.yml` | Default recording and alerting rules |
 | `deploy/` | systemd unit, environment file, Ingress manifest |
