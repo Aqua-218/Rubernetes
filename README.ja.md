@@ -2,15 +2,17 @@
 
 [English](README.md) | 日本語
 
-Rubernetes は、Kubernetes v1.36.2 を Linux 向けに Ruby 中心で独立実装した
-ものです。API サーバ、Raft データストア、コントローラ、スケジューラ、独自の
-コンテナランタイムを持つノードエージェント、Pod ネットワーク、サービス
-プロキシ、クラスタ DNS、ボリューム経路のすべてがプロジェクト自身の Ruby
-コードです。Kubernetes のコードは固定したテストオラクルとしてのみ使い、
-依存にはしません。クラスタは Kubernetes API をそのまま話すので、`kubectl`、
-Helm、client-go、upstream の chart は無改変で動きます。
+RubernetesはKubernetes v1.36.2をRubyで実装し直したものです。Linux上で動きます。本物の`kubectl`やHelm、client-go、upstreamのchartを、手を加えずにそのまま使えます。
 
-| | |
+クラスタを構成するプログラムはすべてこのリポジトリのRubyコードです。APIサーバ、Raftデータストア、コントローラ、スケジューラ、ノードエージェント、コンテナランタイム、Podネットワーク、サービスプロキシ、クラスタDNS、ボリュームを自前で持っています。
+
+Kubernetes本体との関係は次の3点です。
+
+- クラスタの中でKubernetes由来のプログラムは動きません。
+- Kubernetesのバイナリとイメージは、挙動を比べるテストの基準としてだけ使います。バージョンは固定しています。
+- APIスキーマはupstreamから取り込みました。server-side apply、CELの型検査、DRAアロケータ、device cgroupフィルタなど一部のアルゴリズムは、upstreamのGoコードをRubyへ移植したものです。移植元とライセンスは[`NOTICE`](NOTICE)にまとめてあります。
+
+| 項目 | 内容 |
 |---|---|
 | Kubernetes 互換契約 | v1.36.2（`status.nodeInfo.kubeletVersion` にもこの値を報告） |
 | 直近のフル Conformance | 459 / 459 合格、2026-09-30、`linux-amd64-ipv4-native`、無改変の `registry.k8s.io/conformance` イメージを Hydrophone で実行 |
