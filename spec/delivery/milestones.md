@@ -186,8 +186,11 @@ graph LR
 
 次のものを保存する。
 
-controller registry、reconcile idempotency matrix、scheduler differential result、leader-loss trace、
-queue/informer property resultを保存する。
+- コントローラのレジストリ
+- reconcileの冪等性の表
+- スケジューラの差分テストの結果
+- リーダー喪失時のトレース
+- キューとinformerのproperty testの結果
 
 <a id="milestone-m4"></a>
 ## M4 — Workload Data Plane
