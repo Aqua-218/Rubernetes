@@ -5,7 +5,7 @@
 
 > 対象読者: 形式検証の担当者、テストの実装者、審査者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 TLA+、Lean、Ruby実装、fault injection、保証判定のbridgeを示す。
 
