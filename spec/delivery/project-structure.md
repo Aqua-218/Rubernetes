@@ -245,7 +245,7 @@ upstreamのテストをコピーして改変したものは、Conformanceの証�
 
 ## ディレクトリの追加
 
-新しいtop-level directoryは、既存boundaryで表現できず、次を同じ変更で満たす場合だけ追加する。
+トップレベルに新しいディレクトリを追加してよいのは、既存の境界では表現できない場合だけである。追加するときは、次のことを同じ変更の中で行う。
 
 1. 本文にsingle responsibilityとownerを追加する。
 2. dependency diagramへ依存方向を追加し、cycleが0であることを検査する。
