@@ -10,7 +10,7 @@ Rubernetesの仕様と設計書の正本は、複数の文書からなる[`spec/
 - [Rubyの言語設計](spec/ruby/README.md)
 - [マイルストーンと完了の証拠](spec/delivery/milestones.md)
 - [Kubernetes互換性試験](spec/verification/kubernetes-compatibility.md)
-- [Project Structure](spec/delivery/project-structure.md)
+- [プロジェクト構成](spec/delivery/project-structure.md)
 - [実装計画と受け入れ基準](spec/delivery/implementation-plan.md)
 - [構成図集](spec/diagrams/README.md)
 
