@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [ノード](README.md)
 
 <a id="sec-5-11"></a>
-# 5.11 Volume（自作 core + CSI 互換）
+# 5.11 ボリューム
 
 > **Audience:** Volume実装者、Runtime実装者、セキュリティ設計者
 >
