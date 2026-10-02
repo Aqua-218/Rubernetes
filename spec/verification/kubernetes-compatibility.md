@@ -7,8 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-Kubernetes upstream testをRubernetesへ無改変で接続する方法、test選択規則、実行profile、
-evidence format、完全互換を名乗るためのzero-failure gateを定義する。
+Kubernetesのupstreamテストを、改変せずにRubernetesへ接続する方法を定義する。あわせて、テストを選択する規則、実行するプロファイル、証拠の形式、完全互換を名乗るためのゲートを定める。ゲートは失敗ゼロを要求する。
 
 Kubernetes Conformanceは必須の第1gateだが、完全な互換性の十分条件ではない。
 Conformance、portable upstream e2e、Node Conformance、API differential、client version skew、
