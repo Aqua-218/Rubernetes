@@ -464,7 +464,10 @@ module Rubernetes
           items.each { |item| @crd_manager.sync(item) }
           (@crd_manager.served_names - names).each { |name| @crd_manager.withdraw(name) }
         else
-          items.each { |item| @aggregator.sync(item) }
+          items.each do |item|
+            @aggregator.sync(item)
+            @api_server.schedule_apiservice_availability(item.dig("metadata", "name"))
+          end
           (@aggregator.backend_names - names).each { |name| @aggregator.remove(name) }
         end
       end
