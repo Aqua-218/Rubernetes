@@ -238,9 +238,33 @@ OOMは`memory.events`から取得する。終了理由とPodのstatusには、1�
 <a id="sec-5-8-9"></a>
 ## 5.8.9 SecurityContext
 
-`runAsUser`、`runAsGroup`、`supplementalGroups`、`fsGroup`、capabilities、`privileged`、
-`allowPrivilegeEscalation`、seccomp、AppArmor、SELinux、procMount、readOnlyRootFilesystem を
-v1.36.2 と同じ defaulting と validation で適用する。
+次の項目を、v1.36.2と同じdefaultingとvalidationで適用する。
+
+- `runAsUser`、`runAsGroup`、`supplementalGroups`、`fsGroup`
+- capabilities
+- `privileged`
+- `allowPrivilegeEscalation`
+- seccomp、AppArmor、SELinux
+- procMount
+- readOnlyRootFilesystem
+
+### 適用の順序
+
+セキュリティの各ステップは、スキーマから依存関係のグラフを生成し、トポロジカルソートで順序を決める。順序の制約がかかるステップは次のとおりである。
+
+- namespaceとマウントの構築
+- groupの設定
+- UIDとGIDの変更
+- capability set
+- securebits
+- `no_new_privs`
+- LSMのラベル
+- rlimit
+- seccomp
+- fdのclose
+- `execveat`
+
+依存関係が循環している組み合わせと、kernelで実現できない組み合わせは、プロセスを作る前に拒否する。
 
 security step は schema から依存 graph を生成し、namespace/mount 構築、group 設定、UID/GID 変更、
 capability set、securebits、`no_new_privs`、LSM label、rlimit、seccomp、fd close、`execveat` の順序制約を
