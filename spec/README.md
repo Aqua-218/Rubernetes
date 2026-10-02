@@ -74,7 +74,7 @@ graph TD
 - [Ruby Manifest DSL](ruby/manifest-dsl.md)
 - [スキーマコンパイラ](ruby/schema-compiler.md)
 - [Kubernetes API](api/kubernetes-api.md)
-- [API Server](api/api-server.md)
+- [APIサーバ](api/api-server.md)
 
 ### Control Plane and Node
 
