@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [実装と納品](README.md)
 
 <a id="project-structure"></a>
-# Project Structure
+# プロジェクト構成
 
 > **Audience:** 実装者、reviewer、build担当者、検証者
 >
