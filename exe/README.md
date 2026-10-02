@@ -2,20 +2,45 @@
 
 English | [日本語](README.ja.md)
 
-`rubectl`, `rubernetes-apiserver`, `rubernetes-controller-manager`,
-`rubernetes-scheduler`, `rubernetes-agent` and `rubernetes-proxy` live here.
-Executables only parse process-level options and delegate to
-`Rubernetes::Bootstrap`; domain policy remains in `lib/rubernetes/`.
+This directory holds six executables:
 
-Every daemon implements `--help`, `--version`, `--config PATH` and
-`--check-config`. Help and version paths do not read configuration or
-assemble dependencies. A daemon reads one YAML file and nothing from the
-environment, becomes ready only after its dependencies are assembled and
-healthy, and stops cleanly on `SIGINT`/`SIGTERM`. `rubectl` offers `get`,
-`create`, `apply`, `patch`, `delete`, `watch` and `raw` against a kubeconfig
-or explicit `--server`/credential flags, and loads Ruby manifests only inside
-an isolated sandbox (`--allow-code`). Anything not implemented fails with an
-error rather than a false success.
+- `rubectl`
+- `rubernetes-apiserver`
+- `rubernetes-controller-manager`
+- `rubernetes-scheduler`
+- `rubernetes-agent`
+- `rubernetes-proxy`
+
+An executable only parses its options and hands over to
+`Rubernetes::Bootstrap`. The functionality is implemented in
+`lib/rubernetes/`.
+
+## Daemons
+
+The five executables other than `rubectl` are daemons. Every daemon accepts
+`--help`, `--version`, `--config PATH` and `--check-config`.
+
+- `--help` and `--version` exit without reading configuration or assembling
+  dependencies.
+- Configuration comes from the one YAML file given with `--config`. Nothing
+  is read from the environment.
+- A daemon becomes ready only after all its dependencies are assembled and
+  working.
+- It stops cleanly on `SIGINT` or `SIGTERM`.
+
+## rubectl
+
+Supports `get`, `create`, `apply`, `patch`, `delete`, `watch` and `raw`.
+Specify the server with a kubeconfig, or with `--server` and the credential
+flags.
+
+Loading a manifest written in Ruby requires `--allow-code`. The manifest is
+evaluated inside an isolated sandbox.
+
+Calling a feature that is not implemented ends with an error. It never
+pretends to succeed.
+
+## Examples
 
 ```sh
 ruby -Ilib exe/rubernetes-apiserver --config /etc/rubernetes/apiserver.yml --check-config
