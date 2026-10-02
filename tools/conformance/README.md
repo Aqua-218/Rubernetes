@@ -46,28 +46,40 @@ setsid nohup tools/conformance/round.sh conf4 /srv/rbn-conf4/linux-amd64-ipv4-na
   /srv/rbn-conf4/rounds/01 --parallel 4 > /srv/rbn-conf4/rounds/01.out 2>&1 &
 ```
 
-A full round at `--parallel 4` takes about 40 minutes on one host. Read
-`junit_01.xml` for the result: passes are silent in Hydrophone's log, so a
-quiet log is not a stalled run. Re-run a fix with `--focus` (a different run
-identity; it never replaces a full round). The last full IPv4 round on this
-tree passed 459/459 (2026-09-30).
+A full run at `--parallel 4` takes about 40 minutes on one host.
 
-## Bringing up the IPv6 and dual-stack profiles
+Read the result from `junit_01.xml`. Hydrophone prints nothing for a spec
+that passes, so a log that looks stuck does not mean the run has stopped.
 
-`test/conformance/kubernetes/profiles.yml` defines three profiles, all 3 control
-nodes + 3 workers on one host: `linux-amd64-ipv4-native`, `linux-amd64-ipv6-native`
-(Pod CIDRs `fd00:d8:<n>::/48`, service CIDR `fd00:d8:5::/112`) and
-`linux-amd64-dualstack-native` (both; IPv4 is the primary family, as the
-profile lists it first).  `cluster.rb` derives everything else from the
-profile: the API servers bind `::` when IPv6 is present and advertise an
-address of the primary family, the `kubernetes` Service and its endpoints
-follow that family, every node publishes one `InternalIP` per family (the
-first address of its Pod bridge, `10.24n.0.1` / `fd00:d8:n::1`), and the
-serving certificates carry the addresses of both families.
+Use `--focus` to re-run after a fix. A `--focus` run counts as a separate
+run and never replaces the result of a full run.
 
-Each cluster instance runs inside a network namespace of its own so the Pod
-bridges, nftables tables, node ports and routes never meet the host's or
-another instance's:
+The last full run on this tree was on 2026-09-30. 459 of 459 passed on the
+IPv4 profile.
+
+## IPv6 and dual-stack profiles
+
+`test/conformance/kubernetes/profiles.yml` defines three profiles. Each one
+builds 3 control nodes and 3 workers on one host.
+
+| Profile | Addresses |
+|---|---|
+| `linux-amd64-ipv4-native` | IPv4 only |
+| `linux-amd64-ipv6-native` | IPv6 only. Pod CIDRs are `fd00:d8:<n>::/48` and the service CIDR is `fd00:d8:5::/112` |
+| `linux-amd64-dualstack-native` | Both. IPv4 is primary because the profile lists it first |
+
+`cluster.rb` derives the rest from the profile:
+
+- When the profile has IPv6, the API servers bind `::`. They advertise an
+  address of the primary family.
+- The `kubernetes` Service and its endpoints follow the primary family.
+- Every node publishes one `InternalIP` per family. The value is the first
+  address of its Pod bridge: `10.24n.0.1` and `fd00:d8:n::1`.
+- The serving certificates carry the addresses of both families.
+
+Each cluster runs in a network namespace of its own, so its Pod bridges,
+nftables tables, NodePorts and routes never collide with the host's or
+another cluster's.
 
 ```bash
 export PATH=/opt/rubies/3.4.11/bin:$PATH            # the Gemfile's Ruby
