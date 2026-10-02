@@ -366,8 +366,18 @@ VMのブートが完了しただけでは、workload gateを開いてはなら�
 
 スナップショットの作成を要求したあと、pauseのACKを受け取る前に接続が切れた場合は、`SnapshotPauseUnknown`とする。この状態のVMに対して、resume、スナップショットの再試行、作業領域の再利用を行ってはならない。行ってよいのは、停止の確認と後始末だけである。
 
-guest supervisor は新しい identity と policy digest を受信し、旧 identity を破棄したことを署名付き ACK で返す。
-host は ACK の VM identity、policy digest、nonce を照合するまで workload gate を開かない。
+### 復元
+
+復元は`resume=false`で行う。次のものをすべて新しく生成し、または接続し直したあとにだけresumeする。
+
+- VM ID、PodのサンドボックスID、subject ID、capability ID、request ID、vsockのCID
+- ゲストのエントロピー、hostname、machine ID、ネットワークのidentity、Pod IPと経路
+- 書き込みできる作業領域、ConfigMap、Secret、ServiceAccountのトークン、ボリュームのアタッチ
+- ポリシーのダイジェスト、成果物のダイジェスト、失効のepoch
+
+ゲストsupervisorは、新しいidentityとポリシーのダイジェストを受け取る。古いidentityを破棄したことを、署名付きのACKで返す。
+
+ホストは、ACKに含まれるVMのidentity、ポリシーのダイジェスト、nonceを照合する。照合が済むまで、workload gateを開かない。
 
 <a id="sec-5-8-13"></a>
 ## 5.8.13 guest-host protocol と restricted broker
