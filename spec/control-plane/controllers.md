@@ -95,10 +95,17 @@ controller ReplicaSet do
 end
 ```
 
-`owns` は ownerReference index と GarbageCollector の ownership edge を登録する。
-`watches` は GVR、event predicate、index lookup、queue key 変換を静的に確定する。
-未登録 GVK、循環した ownership 宣言、scope が矛盾する watch は起動前に失敗させる。
-DSL は配線を生成するだけであり、reconcile の C1〜C7 を緩和しない。
+`owns`は、ownerReferenceのインデックスと、GarbageCollectorが使う所有関係の辺を登録する。
+
+`watches`は、GVR、イベントの述語、インデックスの検索、キューのキーへの変換を静的に確定する。
+
+次の宣言は、起動する前に失敗させる。
+
+- 未登録のGVK
+- 循環した所有関係
+- scopeが矛盾するwatch
+
+DSLは配線を生成するだけである。reconcileに対するC1〜C7の規約は緩めない。
 
 ## Related
 
