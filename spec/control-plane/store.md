@@ -39,7 +39,7 @@ watch(prefix, since:)            → イベントストリーム
 | S5 | リクエストボディ、WALのエントリ、スナップショットはチェックサムを持つ。破損を検出したあとは、部分的に適用しない |
 | S6 | 同じrequest UIDの再送は二重に適用しない。保存済みの結果を返すか、同じ結果に収束させる |
 
-## Related
+## 関連
 
 - [raft](raft.md)
 - [api server](../api/api-server.md)
