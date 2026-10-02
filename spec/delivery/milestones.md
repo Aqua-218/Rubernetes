@@ -348,10 +348,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 - インストール、アップグレード、ロールバック、バックアップとリストア、アンインストールの手順
 - コンテストでのデモと同じ入力のSHA-256から再現できる、証拠のバンドル
 
-- reproducible source/gem/package/cluster artifactsとSBOM
-- TLA+ model-check、Lean proof、trace refinement、security、performance、soak evidence
-- install、upgrade、rollback、backup/restore、uninstall手順
-- contest demonstrationと同一input SHA-256から再現できるevidence bundle
+### 完了条件
 
 ### Exit criteria
 
