@@ -49,9 +49,9 @@ SchedulingQueue → Filter → Score → Reserve → Bind
 <a id="sec-5-6-5"></a>
 ## 5.6.5 Preemption
 
-Filter が全ノードで失敗し、Pod の優先度が既存 Pod より高い場合、
-退去させる Pod の集合を求めて削除する。
-退去対象が見つからない場合は `unschedulableQ` に入れる。
+Filterがすべてのノードで失敗し、かつPodの優先度が既存のPodより高い場合に行う。退去させるPodの集合を求め、それらを削除する。
+
+退去の対象が見つからない場合は、Podを`unschedulableQ`に入れる。
 
 <a id="sec-5-6-6"></a>
 ## 5.6.6 Scheduler plugin DSL
