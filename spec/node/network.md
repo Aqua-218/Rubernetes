@@ -3,7 +3,7 @@
 <a id="sec-5-9"></a>
 # 5.9 ネットワーク
 
-> **Audience:** Network実装者、セキュリティ検証者
+> 対象読者: ネットワークの実装者、セキュリティの検証者
 >
 > **Status:** Normative — version 0.2
 
