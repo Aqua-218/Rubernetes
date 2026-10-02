@@ -29,7 +29,7 @@ graph LR
 | [コントローラ](controllers.md) | reconcileの規約、組み込みのコントローラ、Controller DSL |
 | [スケジューラ](scheduler.md) | Filter、Score、Bind、Preemption、プラグインDSL |
 
-## Related
+## 関連
 
 - [Control Loop図](../diagrams/03-control-loop.md)
 - [Node](../node/README.md)
