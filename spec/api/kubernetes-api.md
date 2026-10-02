@@ -72,9 +72,9 @@ PATCHは次の形式をすべて実装する。
 
 | Content-Type | 意味 |
 |---|---|
-| `application/json-patch+json` | RFC 6902 JSON Patch |
-| `application/merge-patch+json` | RFC 7386 JSON Merge Patch |
-| `application/strategic-merge-patch+json` | schema の patch strategy を使う Strategic Merge Patch |
+| `application/json-patch+json` | RFC 6902のJSON Patch |
+| `application/merge-patch+json` | RFC 7386のJSON Merge Patch |
+| `application/strategic-merge-patch+json` | スキーマのpatch strategyを使うStrategic Merge Patch |
 | `application/apply-patch+yaml` | Server-Side Apply |
 | `application/apply-patch+cbor` | CBOR apply。対応 feature gate 無効時は upstream と同じ拒否 |
 
