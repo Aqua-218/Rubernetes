@@ -214,27 +214,36 @@ ruby -Ilib -e 'require "rubernetes"'
 
 ## 検証
 
-4 層あり、それぞれ専用のツールがあります。
+検証は4種類あります。
 
-1. **テスト**（`rake test`）: unit、property、integration、chaos、security の
-   約 3,400 ケースに加え、コーデック、validation、server-side apply、
-   コントローラ、スケジューラの Go オラクル differential。
-2. **Kubernetes Conformance と互換レーン**
-   （[tools/conformance](tools/conformance/README.ja.md)）: K0 入力整合性、
-   K1 公式 Conformance スイート（Hydrophone）、K2 Sonobuoy certified-conformance、
-   K3 選択台帳に基づく e2e 全量（`test/compatibility/api/selection-ledger.json`、
-   7,579 spec を分類済み）、K4 node conformance、K5 本物の kube-apiserver との
-   differential、K6 固定した upstream の Helm chart と operator 32 件のコーパス、
-   K7 クラスタライフサイクル。プロファイルは IPv4、IPv6、dual-stack の 3 つで、
-   いずれも control 3 + worker 3（`test/conformance/kubernetes/profiles.yml`）。
-3. **形式モデル**（[verification/](verification/README.md)）: Raft とランタイム
-   ライフサイクルを TLA+（TLC、Apalache）と Lean で記述し、本番ジャーナルから
-   再生したトレースで実装と結び付ける。実クライアント履歴に対する
-   線形化可能性チェッカも含む。
-4. **マイルストーン証拠ゲート**（[tools/milestones](tools/milestones/README.ja.md)）:
-   M0（実行基盤）から M9（リリース）まで、各段が内容アドレスの証拠バンドルを
-   作り、厳格なゲートが再検査する。連鎖は累積的で、ソースが変わると無効になる。
-   `rake m<n>:evidence`、`rake m<n>:verify`。
+### テスト
+
+`rake test`で実行します。unit、property、integration、chaos、securityを合わせて約3,400ケースあります。コーデック、validation、server-side apply、コントローラ、スケジューラについては、Goで書いた基準実装と結果を比べるテストも含みます。
+
+### Kubernetes Conformanceと互換性の検査
+
+[tools/conformance](tools/conformance/README.ja.md)で実行します。検査はK0からK7までの8段階です。
+
+| 段階 | 内容 |
+|---|---|
+| K0 | 入力の整合性 |
+| K1 | 公式Conformanceスイート。Hydrophoneで実行 |
+| K2 | Sonobuoyのcertified-conformance |
+| K3 | e2eテスト全体。7,579件のspecを分類した台帳に従って実行 |
+| K4 | node conformance |
+| K5 | 本物のkube-apiserverとの結果比較 |
+| K6 | upstreamのHelm chartとoperator 32件 |
+| K7 | クラスタのライフサイクル |
+
+K3の台帳は`test/compatibility/api/selection-ledger.json`です。プロファイルはIPv4、IPv6、dual-stackの3つで、どれもcontrol 3ノードとworker 3ノードの構成です。定義は`test/conformance/kubernetes/profiles.yml`にあります。
+
+### 形式モデル
+
+[verification/](verification/README.md)に置いてあります。Raftとランタイムのライフサイクルを、TLA+とLeanで記述しました。TLA+の検査にはTLCとApalacheを使います。本体が出力したジャーナルをトレースとして再生し、モデルと実装が一致するかを確かめます。実際のクライアント履歴を対象にした線形化可能性のチェッカもあります。
+
+### マイルストーンの証拠ゲート
+
+[tools/milestones](tools/milestones/README.ja.md)で実行します。マイルストーンはM0の実行基盤からM9のリリースまでの10段です。各段は検査結果を証拠バンドルにまとめ、ゲートがそのバンドルを再検査します。バンドルは前の段の結果を含むので、ソースを変えると後ろの段もすべて無効になります。コマンドは`rake m<n>:evidence`と`rake m<n>:verify`です。
 
 ## 現状と既知の制約
 
