@@ -1181,7 +1181,9 @@ module Conformance
           false
         else
           ready = document.fetch("items", []).count do |node|
-            node.dig("status", "conditions")&.any? { |c| c["type"] == "Ready" && c["status"] == "True" }
+            node.dig("status", "conditions")&.any? do |c|
+              c["type"] == "Ready" && c["status"] == "True" && (since.nil? || Time.iso8601(c.fetch("lastHeartbeatTime")) >= since)
+            end
           end
           ready >= expected
         end
