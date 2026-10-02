@@ -93,7 +93,7 @@ watchは長時間の接続なので、実行中の数には含めない。
 - 情報を失わないconversionが定義されたバージョンの間では、外部、hub、外部と変換しても情報が保存されることを、property testで強制する。
 
 <a id="sec-5-1-6"></a>
-## 5.1.6 削除と finalizer
+## 5.1.6 削除とfinalizer
 
 1. `DELETE` を受けたら `metadata.deletionTimestamp` を設定する
 2. `finalizers` が空でない限り、オブジェクトは削除しない
