@@ -165,7 +165,9 @@ graph LR
 - 1,000サイクル分の資源の台帳
 
 <a id="milestone-m3"></a>
-## M3 — Control Loops
+## M3 制御ループ
+
+### 成果物
 
 ### Deliverables
 
