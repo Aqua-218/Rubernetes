@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [API](README.md)
 
 <a id="sec-4"></a>
-# 4. API 仕様
+# 4. API仕様
 
 > **Audience:** API実装者、クライアント作者、互換性検証者
 >
