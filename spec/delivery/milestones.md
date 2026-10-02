@@ -262,12 +262,12 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 
 ### 完了条件
 
-1. v1.36.2 discovery、OpenAPI、protobuf descriptor、API operation corpusの未実装項目が0である。
-2. 全feature gateの既定profileと有効profileでAPI差分が0である。
-3. CRD structural schema、defaulting、pruning、conversion、subresource、OpenAPI publishがoracleと一致する。
-4. webhook timeout、failure policy、reinvocation、match policy、version conversionを差分検査する。
-5. authn/authz/admission/auditの順序とerror disclosureが仕様どおりである。
-6. malformed、oversized、duplicate-key、content-negotiation fuzz corpusでpanic、hang、policy bypassが0である。
+1. v1.36.2のdiscovery、OpenAPI、protobufのディスクリプタ、API操作のコーパスに対して、未実装の項目が0である。
+2. すべてのfeature gateについて、既定のプロファイルと有効にしたプロファイルで、APIの差分が0である。
+3. CRDのstructural schema、defaulting、pruning、conversion、subresource、OpenAPIの公開が、比較対象と一致する。
+4. webhookのタイムアウト、failure policy、reinvocation、match policy、バージョンの変換を、差分で検査する。
+5. 認証、認可、admission、監査の順序と、エラーで開示する情報が、仕様どおりである。
+6. 不正な入力、過大な入力、重複したキー、content negotiationのfuzzコーパスで、panic、ハング、ポリシーの回避が0である。
 
 ### Required evidence
 
