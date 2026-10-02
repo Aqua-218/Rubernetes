@@ -279,7 +279,7 @@ upstreamと同じく、`--runtime-config`で有効にしたときだけ提供し
 
 ## ドキュメント
 
-- [仕様インデックス](spec/README.md) と [アーキテクチャ](spec/foundation/architecture.md)
+- [仕様の目次](spec/README.md)と[アーキテクチャ](spec/foundation/architecture.md)
 - [マイルストーンと完了ゲート](spec/delivery/milestones.md)
 - [Kubernetes 互換性試験契約](spec/verification/kubernetes-compatibility.md)
 - [Coding standards](spec/delivery/coding-standards.md) と [Project structure](spec/delivery/project-structure.md)
