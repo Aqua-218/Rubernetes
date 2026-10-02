@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [delivery](README.md)
+[仕様書の目次](../README.md) / [実装と納品](README.md)
 
 <a id="milestones"></a>
 # マイルストーンと完了証拠
