@@ -256,9 +256,9 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 
 ### 成果物
 
-- 全built-in resource/subresource、CRD、conversion、aggregation、admission
-- authentication、authorization、audit、encryption、API Priority and Fairness
-- feature-gate別API、defaulting、validation、conversion behavior
+- すべての組み込みのresourceとsubresource、CRD、conversion、aggregation、admission
+- 認証、認可、監査、暗号化、API Priority and Fairness
+- feature gateごとのAPI、defaulting、validation、conversionの挙動
 
 ### Exit criteria
 
