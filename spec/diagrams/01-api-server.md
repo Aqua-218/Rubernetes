@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-API request pipeline、admission、scheme、storage接続を示す。
+APIリクエストの処理経路と、admission、スキーム、ストレージとの接続を示す。
 
 ```mermaid
 graph TB
