@@ -18,7 +18,9 @@ Kubernetes Conformanceは、最初に通過しなければならないゲート�
 - クライアントのバージョン差の検査
 - 実在するプロジェクトのコーパス
 
-| Input | Immutable identity | Purpose |
+## 固定するupstreamの入力
+
+| 入力 | 変更できない識別子 | 用途 |
 |---|---|---|
 | Kubernetes source | tag `v1.36.2` → commit `24e2b02af5543d7910c2bb074c7264df5a8f0467` | e2e source、test metadata、API oracle |
 | Conformance definition | 446 tests、SHA-256 `cdbad746df8e8f5f7e63ef147b579e921c1ad70a68d826f2b9c5af27dbbf7641` | required test inventory |
