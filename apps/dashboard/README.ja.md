@@ -84,10 +84,17 @@ systemctl daemon-reload && systemctl enable --now rubernetes-dashboard
 curl --noproxy '*' -sS http://<DASHBOARD_BIND>:3000/up
 ```
 
-`deploy/ingress.yaml` はホストで動くダッシュボードをクラスタの ingress
-controller 経由で公開します: selector 無しの Service、`DASHBOARD_BIND` を指す
-EndpointSlice、cert-manager 発行の証明書を持つ Ingress。公開前に必ず
-`DASHBOARD_PASSWORD` を設定してください。UI から Pod を削除できます。
+ユニットはPumaのworkerを1つに固定しています。時系列データの最新部分をcollectorのプロセスがメモリに持っているためです。
+
+### クラスタ経由での公開
+
+`deploy/ingress.yaml`を適用すると、ホストで動くダッシュボードをクラスタのingress controller経由で公開できます。マニフェストは次の3つを作ります。
+
+- selectorのないService
+- `DASHBOARD_BIND`を指すEndpointSlice
+- cert-managerが発行した証明書を使うIngress
+
+公開する前に、必ず`DASHBOARD_PASSWORD`を設定してください。UIからPodを削除できるためです。
 
 ## 設定
 
