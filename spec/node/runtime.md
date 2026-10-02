@@ -165,7 +165,7 @@ stateDiagram-v2
 whiteoutとopaque directoryは、OCIの規則に従って処理する。各パス名を適用するときに、それがrootfsの中にあることを改めて確認する。
 
 <a id="sec-5-8-6"></a>
-## 5.8.6 Namespace
+## 5.8.6 namespace
 
 Native backend は `clone3(2)`、`unshare(2)`、`setns(2)` と pidfd を用いる。
 
