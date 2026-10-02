@@ -100,7 +100,7 @@ module Conformance
       when "down" then exclusively(options) { down(options) }
       when "status" then status(options)
       else
-        warn "usage: cluster.rb {up|down|status} [--profile NAME] [--root DIR]"
+        warn "usage: cluster.rb {up|start|down|status} [--profile NAME] [--root DIR]"
         2
       end
     end
