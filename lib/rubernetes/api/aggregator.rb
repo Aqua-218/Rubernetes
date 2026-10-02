@@ -30,6 +30,17 @@ module Rubernetes
       # system:masters, through the front-proxy client certificate.
       AGGREGATOR_IDENTITY = {"X-Remote-User" => "system:kube-aggregator", "X-Remote-Group" => "system:masters"}.freeze
 
+      # Net::HTTP writes a repeated field as one comma-joined line, so two
+      # groups reached the backend as the single group "a, b" and lost
+      # system:masters.  client-go sends one line per value; so do we.
+      module RepeatedHeaderLines
+        def each_capitalized
+          return enum_for(__method__) unless block_given?
+
+          @header.each { |key, values| values.each { |value| yield capitalize(key), value } }
+        end
+      end
+
       Backend = Struct.new(:name, :group, :version, :priority, :service_namespace, :service_name, :port, :ca_bundle, :insecure,
                            keyword_init: true)
 
