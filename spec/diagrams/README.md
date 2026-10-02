@@ -8,7 +8,7 @@
 
 ## 図の一覧
 
-| ID | 図 | 対応本文 |
+| 番号 | 図 | 対応する本文 |
 |---|---|---|
 | 00 | [全景](00-overview.md) | [Architecture](../foundation/architecture.md) |
 | 01 | [API Server](01-api-server.md) | [API Server](../api/api-server.md) |
