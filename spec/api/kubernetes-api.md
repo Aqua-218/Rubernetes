@@ -203,9 +203,24 @@ watchの要件は次のとおりである。
 <a id="sec-4-6"></a>
 ## 4.6 互換性判定
 
-API 互換性は、Ruby 実装と隔離した Kubernetes v1.36.2 oracle に同一の初期状態と要求列を与え、
-応答および watch trace を比較して判定する。比較器は動的値を意味に従って対応付けるが、
-未知フィールド、default、field ownership、event type、HTTP status、`Status` の構造を無視してはならない。
+### 判定の方法
+
+APIの互換性は、Ruby実装と、隔離したKubernetes v1.36.2に、同じ初期状態と同じ要求の列を与えて判定する。両者の応答とwatchのトレースを比較する。
+
+比較器は、動的な値を意味に従って対応付ける。ただし、次のものを無視してはならない。
+
+- 未知のフィールド
+- 既定値
+- フィールドの所有権
+- イベントの種別
+- HTTPステータス
+- `Status`の構造
+
+### upstreamのテストの扱い
+
+upstreamのconformanceテストについて、スキップ、書き換え、期待値の変更は禁止する。
+
+Linux以外の環境、特定のクラウドプロバイダ、特定のハードウェアを必要とするテストは除外できる。除外するときは、テストID、理由、対象外とする境界を、機械可読な許可リストに記録する。
 
 upstream conformance test の skip、書換え、期待値変更は禁止する。Linux 以外、特定 cloud provider、
 特定ハードウェアを要求する test の除外は、test ID、理由、対象外境界を機械可読な allowlist に記録する。
