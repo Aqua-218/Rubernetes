@@ -136,7 +136,7 @@ class M1,M2,M3,M4,M5,M6 mo
 class O1,O2,O3 ob
 ```
 
-## Related
+## 関連
 
 - [volume](../node/volume.md)
 - [runtime](../node/runtime.md)
