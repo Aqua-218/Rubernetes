@@ -318,10 +318,13 @@ jailへの入力とその親ディレクトリは、非特権のユーザが書�
 
 RubyのAPIクライアントは、Unixドメインソケットを使う。設定は次の固定した順で行う。
 
-Ruby API client は Unix domain socket を用い、machine config、boot source、read-only verified rootfs、
-writable workspace、vsock、network device、InstanceStart の固定順で設定する。HTTP header/body は各 64 KiB、
-応答全体は 1 MiB を上限とし、duplicate Content-Length、Content-Length と Transfer-Encoding の併用、
-不正 framing、未要求 response を拒否する。VM boot 完了だけで workload gate を開いてはならない。
+1. machine config
+2. boot source
+3. 読み取り専用の検証済みrootfs
+4. 書き込みできる作業領域
+5. vsock
+6. ネットワークデバイス
+7. InstanceStart
 
 `rubernetes-firecracker` は専用 TAP を guest の virtio-net へ接続し、[§5.9](network.md#sec-5-9) の Pod IP、route、DNS、
 NetworkPolicy を適用する。Firecracker 自体に packet filter を委ねてはならない。
