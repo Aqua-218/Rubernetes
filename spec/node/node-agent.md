@@ -38,7 +38,7 @@ PodのSyncLoopと、起動、probe、再起動、終了、evictionの順序を�
 
 | 種別 | 失敗したときの動作 |
 |---|---|
-| startup | 成功するまで liveness / readiness を開始しない |
+| startup | 成功するまでlivenessとreadinessを始めない |
 | liveness | コンテナを再起動する |
 | readiness | Endpoints から外す。再起動はしない |
 
