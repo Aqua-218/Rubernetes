@@ -3,7 +3,7 @@
 <a id="sec-6"></a>
 # 6. データモデル
 
-> **Audience:** Ruby型システム実装者、API実装者、審査者
+> 対象読者: Rubyの型システムの実装者、API実装者、審査者
 >
 > **Status:** Normative — version 0.2
 
