@@ -39,7 +39,7 @@ graph TD
 
 ## 文書群
 
-| Family | 責務 | Index |
+| 文書群 | 扱う内容 | 目次 |
 |---|---|---|
 | Foundation | 文書規約、目的、互換境界、用語、全体構造、名称 | [foundation/](foundation/README.md) |
 | Ruby Design | Manifest DSL、Schema DSL、metaprogramming生成境界 | [ruby/](ruby/README.md) |
