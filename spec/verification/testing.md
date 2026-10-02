@@ -129,7 +129,7 @@ Conformanceの成功だけを、完全な互換性の根拠としてはならな
 - 失敗したあとにfocusで絞って再実行したテスト
 - 未実装の機能をスキップしたテスト
 
-## Related
+## 関連
 
 - [formal methods](formal-methods.md)
 - [kubernetes compatibility](kubernetes-compatibility.md)
