@@ -127,7 +127,7 @@
 
 ## ソース管理の方針
 
-## Source Control Policy
+プロジェクトのソースツリーにGitリポジトリは作成しない。ビルド、テスト、証拠、リリースの自動化は、次のものに依存してはならない。
 
 project source treeにGit repositoryは作成しない。build、test、evidence、release automationは
 Git command、commit SHA、branch、tag、working-tree状態へ依存してはならない。source identityと
