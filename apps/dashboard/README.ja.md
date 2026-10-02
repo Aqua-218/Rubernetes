@@ -136,10 +136,10 @@ gemのバージョンを2つ固定しています。json gemはRuby 3.4.11に付
 
 | パス | 内容 |
 |---|---|
-| `app/` | クラスタブラウザと Prometheus 系ページのコントローラとビュー |
-| `lib/dashboard/` | 設定、リソースカタログ（どの kind をどう閲覧できるか）、Web サーバと一緒に collector を起動する配線 |
-| `lib/prom/` | collector ループ、ターゲット発見、scraper、exposition パーサ、Gorilla チャンク、kube-state エクスポータ、ルール |
-| `lib/promql/` | パーサ、エンジン、関数群 |
-| `lib/tsdb/` | ストア: head、WAL、ブロック、保持期間、ラベルインデックス |
-| `config/rules.yml` | 既定の recording / alerting ルール |
-| `deploy/` | systemd ユニット、環境ファイル、Ingress マニフェスト |
+| `app/` | クラスタブラウザとPrometheus系ページのコントローラとビュー |
+| `lib/dashboard/` | 設定、リソースカタログ、collectorをWebサーバと一緒に起動する処理。カタログは、どのkindをどう閲覧できるかを定義する |
+| `lib/prom/` | collectorのループ、対象の発見、scraper、expositionのパーサ、Gorillaチャンク、kube-stateエクスポータ、ルール |
+| `lib/promql/` | パーサ、エンジン、関数 |
+| `lib/tsdb/` | ストア。head、WAL、ブロック、保持期間、ラベルインデックス |
+| `config/rules.yml` | 既定のrecordingルールとalertingルール |
+| `deploy/` | systemdユニット、環境ファイル、Ingressのマニフェスト |
