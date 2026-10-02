@@ -64,22 +64,20 @@ graph LR
 
 | 段階 | 検査の内容 | 要求する結果 |
 |---|---|---|
-| K0 | lock、signature、digest、source cleanliness | mismatch 0、unresolved input 0 |
-| K1 | upstream `[Conformance]` 446 tests | profileごとにpass 446、fail/skip/flake 0 |
-| K2 | Sonobuoy `certified-conformance` | CNCF形式のrequired test欠落0、failure 0 |
-| K3 | upstream portable Linux e2e | eligible test pass 100%、unclassified 0 |
-| K4 | upstream Node Conformance | amd64でfailure 0、unexpected skip 0 |
-| K5 | API/schema/wire differential | operation/state/error差分0 |
-| K6 | kubectl/client-go/Helm/Kustomize/project corpus | supported matrixのfailure 0、project patch 0 |
-| K7 | install/upgrade/rollback/restart/backup/restore | data loss 0、stuck operation 0 |
+| K0 | ロック、署名、ダイジェスト、ソースに変更がないこと | 不一致が0、解決できない入力が0 |
+| K1 | upstreamの`[Conformance]`446件 | プロファイルごとに合格446、失敗・スキップ・flakeが0 |
+| K2 | Sonobuoyの`certified-conformance` | CNCF形式で必須テストの欠落が0、失敗が0 |
+| K3 | upstreamの可搬なLinux e2e | 対象のテストが100%合格、未分類が0 |
+| K4 | upstreamのNode Conformance | amd64で失敗が0、想定外のスキップが0 |
+| K5 | API、スキーマ、ワイヤ形式の差分テスト | 操作、状態、エラーの差分が0 |
+| K6 | kubectl、client-go、Helm、Kustomize、プロジェクトのコーパス | サポートする組み合わせで失敗が0、プロジェクトへの変更が0 |
+| K7 | インストール、アップグレード、ロールバック、再起動、バックアップ、リストア | データの喪失が0、止まったままの操作が0 |
 
-## Cluster Profiles
+## クラスタのプロファイル
 
-K1は[`test/conformance/kubernetes/profiles.yml`](../../test/conformance/kubernetes/profiles.yml)の
-3 x86_64 profileをすべて実行する。各profileは3 control node、3 schedulable worker nodeを持ち、
-同一minor/patchのRubernetes componentだけで構成する。
+K1は、[`test/conformance/kubernetes/profiles.yml`](../../test/conformance/kubernetes/profiles.yml)にあるx86_64の3つのプロファイルをすべて実行する。各プロファイルは、制御ノード3台と、スケジュール可能なワーカーノード3台を持つ。構成するのは、minorとpatchが同じRubernetesのコンポーネントだけである。
 
-| Architecture | Network | Runtime | Runs required for M8 |
+| アーキテクチャ | ネットワーク | ランタイム | M8に必要な実行 |
 |---|---|---|---:|
 | amd64 | IPv4 | Native | consecutive clean runs 3 |
 | amd64 | IPv6 | Native | consecutive clean runs 3 |
