@@ -5,7 +5,7 @@
 
 > 対象読者: スケジューラの実装者、形式検証の担当者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 Filter、Score、Reserve、Bind、PreemptionとRuby scheduler plugin DSLを定義する。
 
