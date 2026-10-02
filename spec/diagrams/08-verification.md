@@ -3,7 +3,7 @@
 <a id="sec-a-8"></a>
 # A.8 図08 検証
 
-> **Audience:** 形式検証者、test実装者、審査者
+> 対象読者: 形式検証の担当者、テストの実装者、審査者
 >
 > **Status:** Normative — version 0.2
 
