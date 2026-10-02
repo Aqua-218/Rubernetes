@@ -441,7 +441,7 @@ agentは起動時に、新しいPodを受け付ける前に、次のものをす
 
 ### 不変条件
 
-次を Runtime の MUST 不変条件とする。
+次の条件を、ランタイムが必ず満たす不変条件（MUST）とする。
 
 ```text
 LiveOwner(resource)  => not Released(resource)
