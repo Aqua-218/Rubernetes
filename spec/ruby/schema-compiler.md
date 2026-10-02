@@ -87,7 +87,7 @@ CRDはコードとして評価しない。構造化されたOpenAPIスキーマ�
 生成したオブジェクトと入れ子のコレクションはdeep freezeする。更新は、変更のない部分を共有した新しいオブジェクトを返す。
 
 <a id="sec-6-3"></a>
-## 6.3 schema compiler の完全性
+## 6.3 スキーマコンパイラの完全性
 
 - 同じ schema AST と compiler version は byte-identical な生成物を返す
 - generated source は repository に commit し、CI で再生成差分がないことを検査する
