@@ -221,7 +221,7 @@ subPathは、kubeletのmakeMountsと同じく、そのコンテナの起動時�
 | 制御 | ファイル、イベント |
 |---|---|
 | CPU | `cpu.max`、`cpu.weight`、`cpu.stat` |
-| Memory | `memory.min`、`memory.low`、`memory.high`、`memory.max`、`memory.swap.max`、`memory.events` |
+| メモリ | `memory.min`、`memory.low`、`memory.high`、`memory.max`、`memory.swap.max`、`memory.events` |
 | I/O | `io.max`、`io.weight`、`io.stat` |
 | Process | `pids.max`、`pids.current` |
 | Placement | `cpuset.cpus`、`cpuset.mems` |
