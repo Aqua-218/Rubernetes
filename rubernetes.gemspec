@@ -29,6 +29,7 @@ Gem::Specification.new do |spec|
     "sig/**/*.rbs",
     "README.md",
     "LICENSE",
+    "NOTICE",
     "spec.md",
     "spec/**/*.md"
   ]
