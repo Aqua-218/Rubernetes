@@ -39,7 +39,7 @@
 | MicroVM | jailerのkill、Firecrackerのハング、UDSの切断、pause ACKの喪失、スナップショットの破損、vsockの切断 |
 | identity | スナップショットのクローン、CID・IP・UIDの再利用の要求、古いポリシーのACK、失効とeffectの競合 |
 
-シナリオは Ruby DSL で記述し、単調時計上の注入と回復の時系列を制御する。
+シナリオはRuby DSLで書く。単調時計の上で、障害の注入と回復の時系列を制御する。
 
 ```ruby
 scenario "leader loss during rollout" do
