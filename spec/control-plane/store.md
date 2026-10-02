@@ -9,8 +9,7 @@
 
 MVCCストアの操作、リビジョン、watchの履歴、競合の処理、破損の検出を定義する。
 
-
-> **Diagram:** [図 02 — Storage / Raft](../diagrams/02-storage-raft.md)
+図は[図02 ストレージとRaft](../diagrams/02-storage-raft.md)にある。
 
 <a id="sec-5-2-1"></a>
 ## 5.2.1 インターフェース
