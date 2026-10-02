@@ -51,8 +51,8 @@
 <a id="sec-5-5-5"></a>
 ## 5.5.5 EndpointController
 
-- Service の `selector` に一致する Pod を集める
-- `readiness` が真の Pod のみを `addresses` に載せる。偽は `notReadyAddresses`
+- Serviceの`selector`に一致するPodを集める。
+- `readiness`が真のPodだけを`addresses`に載せる。偽のPodは`notReadyAddresses`に載せる。
 
 <a id="sec-5-5-6"></a>
 ## 5.5.6 GarbageCollector
