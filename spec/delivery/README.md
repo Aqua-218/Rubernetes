@@ -15,7 +15,7 @@
 | [プロジェクト構成](project-structure.md) | リポジトリのツリー、モジュールの境界、依存の方向、成果物の配置 |
 | [コーディング規約](coding-standards.md) | システムコール、エラー、並行性、不変性、メタプログラミング、証明との対応 |
 
-## Related
+## 関連
 
 - [目的と完成基準](../foundation/goals-and-compatibility.md)
 - [検証](../verification/README.md)
