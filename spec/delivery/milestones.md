@@ -269,7 +269,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 5. 認証、認可、admission、監査の順序と、エラーで開示する情報が、仕様どおりである。
 6. 不正な入力、過大な入力、重複したキー、content negotiationのfuzzコーパスで、panic、ハング、ポリシーの回避が0である。
 
-### Required evidence
+### 必要な証拠
 
 API coverage ledger、feature-gate matrix、CRD/aggregation differential、security pipeline trace、
 fuzz summaryとcrash corpusを保存する。
