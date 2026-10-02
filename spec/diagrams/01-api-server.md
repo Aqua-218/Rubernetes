@@ -3,7 +3,7 @@
 <a id="sec-a-1"></a>
 # A.1 図01 APIサーバ
 
-> **Audience:** API Server実装者
+> 対象読者: APIサーバの実装者
 >
 > **Status:** Normative — version 0.2
 
