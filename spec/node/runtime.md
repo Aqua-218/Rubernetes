@@ -277,13 +277,13 @@ OOMは`memory.events`から取得する。終了理由とPodのstatusには、1�
 <a id="sec-5-8-10"></a>
 ## 5.8.10 プロセスの生成と監視
 
-- `clone3` と `CLONE_PIDFD` で sandbox init/container process を生成し、数値 PID だけを identity に用いない
-- 親子同期 pipe で child を workload gate 手前に停止し、親が mapping、cgroup、network、mount、policy を完了するまで待たせる
-- `close_range` と allow-list で不要 fd を閉じ、stdin/stdout/stderr と明示 volume fd 以外を継承させない
-- Entrypoint/Cmd、environment、cwd、user、group を確定後、検証済み fd に `execveat` する
-- sandbox init は subreaper/PID 1 として signal 転送、zombie 回収、exit code 伝播を行う
-- `exec`/`attach` は対象 sandbox namespace と cgroup に参加し、新しい security policy を同じ順序で適用する
-- log は container ごとに 10 MiB × 5 file で rotation し、UTF-8 を仮定せず byte stream として保持する
+- sandbox initとコンテナのプロセスは、`clone3`と`CLONE_PIDFD`で生成する。数値のPIDだけをidentityとして使わない。
+- 親子間の同期用パイプで、子をworkload gateの手前で止める。親がマッピング、cgroup、ネットワーク、マウント、ポリシーを完了するまで待たせる。
+- `close_range`と許可リストで、不要なfdを閉じる。stdin、stdout、stderrと、明示したボリュームのfd以外は継承させない。
+- Entrypoint、Cmd、環境変数、cwd、user、groupを確定したあと、検証済みのfdに対して`execveat`する。
+- sandbox initは、subreaperとPID 1を兼ねる。シグナルの転送、zombieの回収、終了コードの伝播を行う。
+- `exec`と`attach`は、対象のサンドボックスのnamespaceとcgroupに参加する。新しいプロセスにも、同じ順序でセキュリティポリシーを適用する。
+- ログは、コンテナごとに10 MiBのファイルを5つまで保持し、ローテーションする。UTF-8であるとは仮定せず、バイト列として保持する。
 
 <a id="sec-5-8-11"></a>
 ## 5.8.11 MicroVM 起動
