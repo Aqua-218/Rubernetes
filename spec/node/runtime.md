@@ -5,7 +5,7 @@
 
 > 対象読者: ランタイムの実装者、セキュリティの検証者、形式検証の担当者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 Native/MicroVM Runtime、状態機械、resource ownership、rollback、snapshot identityを定義する。
 
