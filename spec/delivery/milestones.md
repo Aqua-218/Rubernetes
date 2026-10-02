@@ -63,16 +63,16 @@ graph LR
 
 | マイルストーン | 対応するstage | そこまでに達成すること |
 |---|---:|---|
-| M0 | 00 | Ruby package、process entry、Linux ABI境界が実機で成立する |
-| M1 | 01〜02 | schemaからAPI surfaceを生成し、single-node APIが操作できる |
-| M2 | 03〜04 | Native Runtimeで1 node Pod lifecycleが完結する |
-| M3 | 05〜07 | Informer、Controller、Schedulerがdesired stateを収束させる |
-| M4 | 08〜09 | Network、Service、DNS、Volumeを含むworkload data planeが成立する |
-| M5 | 10、13 | 3/5 node Raftと全副作用のcrash recoveryが成立する |
-| M6 | 11 | Kubernetes v1.36.2の全API、security、extension surfaceが埋まる |
-| M7 | 12 | Firecracker MicroVM系RuntimeClassがL5を通過する |
-| M8 | 14 | upstream testと実project corpusで互換性の欠落が0になる |
-| M9 | 15 | 形式検証、性能、供給網、release evidenceを含む1.0.0 gateを通過する |
+| M0 | 00 | Rubyのパッケージ、プロセスの入口、LinuxのABIとの境界が、実機で成立する |
+| M1 | 01〜02 | スキーマからAPIを生成し、単一ノードのAPIを操作できる |
+| M2 | 03〜04 | Nativeランタイムで、1ノードでのPodのライフサイクルが完結する |
+| M3 | 05〜07 | informer、コントローラ、スケジューラが、desired stateに収束させる |
+| M4 | 08〜09 | ネットワーク、Service、DNS、ボリュームを含むデータプレーンが成立する |
+| M5 | 10、13 | 3ノードと5ノードのRaftと、すべての副作用についてのクラッシュからの回復が成立する |
+| M6 | 11 | Kubernetes v1.36.2のすべてのAPI、セキュリティ、拡張の機能がそろう |
+| M7 | 12 | FirecrackerによるMicroVM系のRuntimeClassがL5を通過する |
+| M8 | 14 | upstreamのテストと実在のプロジェクトのコーパスで、互換性の欠落が0になる |
+| M9 | 15 | 形式検証、性能、供給網、リリースの証拠を含む、1.0.0のゲートを通過する |
 
 <a id="milestone-m0"></a>
 ## M0 — Executable Foundation
