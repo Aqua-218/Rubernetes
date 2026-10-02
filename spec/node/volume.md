@@ -30,10 +30,19 @@ node.stats(id)                                         → stats
 recover                                                → recovery_report
 ```
 
-組込み backend は Ruby で `emptyDir`、`hostPath`、`configMap`、`secret`、`downwardAPI`、
-`projected`、`image`、local PV、loop/device-mapper volume を実装する。外部 CSI driver は
-Kubernetes CSI gRPC protocol の標準 extension point として接続できるが、VolumeManager、
-state machine、mount、path validation、ownership、Secret 受渡しは Ruby が保持する。
+組み込みのbackendは、次のボリュームをRubyで実装する。
+
+- `emptyDir`
+- `hostPath`
+- `configMap`
+- `secret`
+- `downwardAPI`
+- `projected`
+- `image`
+- local PV
+- loopとdevice-mapperによるボリューム
+
+外部のCSIドライバは、Kubernetes CSIのgRPCプロトコルという標準の拡張点を通じて接続できる。ただし、VolumeManager、状態機械、マウント、パスの検証、所有権、Secretの受け渡しはRubyが保持する。
 
 <a id="sec-5-11-2"></a>
 ## 5.11.2 lifecycle と所有権
