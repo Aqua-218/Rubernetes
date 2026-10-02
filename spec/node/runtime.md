@@ -453,7 +453,7 @@ Stopped(sandbox)     => no LiveProcessOwnedBy(sandbox)
 Removed(sandbox)     => OwnedResources(sandbox) = {}
 ```
 
-これらは TLA+、Lean、property test、実機 fault injection の担当範囲を [§7](../verification/formal-methods.md#sec-7) と [§8](../verification/testing.md#sec-8) で分けて検証する。
+これらの不変条件は、TLA+、Lean、property test、実機での障害注入で検証する。それぞれが受け持つ範囲は、[7章](../verification/formal-methods.md#sec-7)と[8章](../verification/testing.md#sec-8)で分けて定める。
 
 ## Related
 
