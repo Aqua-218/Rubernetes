@@ -484,6 +484,7 @@ module Rubernetes
           @aggregator.remove(name)
         else
           @aggregator.sync(object)
+          @api_server.schedule_apiservice_availability(name)
         end
       end
 
