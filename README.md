@@ -6,8 +6,12 @@ Rubernetes is an independent, Ruby-first implementation of Kubernetes
 v1.36.2 for Linux: the API server, the Raft datastore, the controllers,
 the scheduler, the node agent with its own container runtime, the Pod
 network, the service proxy, cluster DNS and the volume path are all
-project-owned Ruby. Kubernetes code is used only as a pinned test oracle,
-never as a dependency. A cluster speaks the Kubernetes API unchanged, so
+project-owned Ruby. Nothing from Kubernetes runs in a cluster: its binaries
+and images are used only as a pinned test oracle, never as a dependency.
+The API schema is imported from upstream, and some algorithms (server-side
+apply, CEL type checking, the DRA allocator, the device cgroup filter, …)
+are Ruby ports of the upstream Go code; [`NOTICE`](NOTICE) lists them with
+their origins and licenses. A cluster speaks the Kubernetes API unchanged, so
 `kubectl`, Helm, client-go and upstream charts work against it as they are.
 
 | | |
