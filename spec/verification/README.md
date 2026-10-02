@@ -20,7 +20,7 @@ graph LR
     Faults -->|"counterexamples"| Claims
 ```
 
-## Documents
+## 文書
 
 | 文書 | 内容 |
 |---|---|
