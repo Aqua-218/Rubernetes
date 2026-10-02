@@ -40,7 +40,7 @@ graph LR
 - 利用者が書いたRuby DSLは、クラスタの資格情報を持たない隔離プロセスで評価する。
 - Leanから抽出したコードは本番の処理に使わない。Ruby実装を検査するテストの基準として使う。
 
-## Related
+## 関連
 
 - [Coding Standards](../delivery/coding-standards.md)
 - [Kubernetes API](../api/kubernetes-api.md)
