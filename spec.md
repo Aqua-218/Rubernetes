@@ -1,7 +1,6 @@
 # Rubernetes仕様・設計書
 
-Rubernetes の規範仕様と設計書は、複数文書からなる [`spec/`](spec/README.md) を正本とする。
-本ファイルは、従来の `spec.md` 参照とIDEの入口を維持するための案内ページである。
+Rubernetesの仕様と設計書の正本は、複数の文書からなる[`spec/`](spec/README.md)である。このファイルは入口の案内だけを載せる。以前から`spec.md`を参照している文書やIDEの設定が、そのまま使えるように残してある。
 
 ## Start Here
 
