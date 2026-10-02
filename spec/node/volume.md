@@ -45,7 +45,17 @@ recover                                                → recovery_report
 外部のCSIドライバは、Kubernetes CSIのgRPCプロトコルという標準の拡張点を通じて接続できる。ただし、VolumeManager、状態機械、マウント、パスの検証、所有権、Secretの受け渡しはRubyが保持する。
 
 <a id="sec-5-11-2"></a>
-## 5.11.2 lifecycle と所有権
+## 5.11.2 ライフサイクルと所有権
+
+ボリュームは次の順に遷移する。
+
+```text
+Declared → Provisioned → Attached → Staged → Published → Unpublishing → Unstaged → Detached
+```
+
+各遷移は操作トークンで冪等にする。controllerまたはnodeの応答が失われた場合は、状態を`Unknown`として扱う。そのうえで`ListVolumes`、マウントテーブル、デバイスのidentityを照合する。
+
+プロセスまたはVMがボリュームを参照している間は、unpublish、unmap、loopのdetach、作業領域の削除を行ってはならない。
 
 Volume は `Declared → Provisioned → Attached → Staged → Published → Unpublishing → Unstaged → Detached`
 の順に遷移する。各遷移は operation token で冪等化し、controller/node の応答消失時は
