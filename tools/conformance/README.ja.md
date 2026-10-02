@@ -17,18 +17,19 @@ Kubernetesとの互換性を検査するためのRubyコマンド群です。次
 
 | コマンド | 役割 |
 |---|---|
-| `lock.rb` | `third_party/locks/` の読み取り専用ビュー（Kubernetes コミット、Conformance イメージのダイジェスト、ランナー成果物） |
-| `install_tools.rb`（`rake m8:tools`） | Hydrophone と Sonobuoy を `build/conformance/bin` に導入。各アーカイブをロックと照合 |
-| `build_e2e.rb`（`rake m8:e2e_build`） | 固定したチェックアウトから upstream `e2e.test` をビルド |
-| `cluster.rb up\|down\|status` | 本物の `exe/rubernetes-*` プロセスによる control 3 + worker 3 クラスタを、PKI・kubeconfig・クラスタ DNS 込みで `--root` 配下に起動／停止 |
-| `netns_env.sh up\|down\|exec` | クラスタインスタンスごとに uplink・NAT・リゾルバ付きのネットワーク名前空間を用意 |
-| `round.sh` | 名前空間内で Hydrophone の Conformance を 1 ラウンド実行し、JUnit の合計と失敗 spec 名を出力 |
-| `run.rb`（`rake m8:lanes`） | プロファイルごとの実行マニフェストを書く公式 K1〜K7 レーンランナー |
-| `k0_input_integrity.rb`、`k5_differential.rb`、`k6_corpus.rb`、`k7_lifecycle.rb`、`lanes.rb` | レーンの実装 |
-| `build_selection_ledger.rb`（`rake m8:selection_ledger`） | Ginkgo の dry-run から K3 選択台帳を再生成 |
-| `resolve_image_digests.rb` | プロジェクトコーパスのイメージタグをロック用のダイジェストに解決 |
+| `lock.rb` | `third_party/locks/`を読み出す。Kubernetesのコミット、Conformanceイメージのダイジェスト、ランナーの成果物を返す |
+| `install_tools.rb` | HydrophoneとSonobuoyを`build/conformance/bin`に入れる。アーカイブはロックと照合する。`rake m8:tools`で実行 |
+| `build_e2e.rb` | 固定したチェックアウトからupstreamの`e2e.test`をビルドする。`rake m8:e2e_build`で実行 |
+| `cluster.rb up\|down\|status` | control 3ノードとworker 3ノードのクラスタを`--root`配下に起動、停止する。本物の`exe/rubernetes-*`を使い、PKI、kubeconfig、クラスタDNSも用意する |
+| `netns_env.sh up\|down\|exec` | クラスタごとにネットワーク名前空間を用意する。uplink、NAT、リゾルバが付く |
+| `round.sh` | 名前空間の中でHydrophoneのConformanceを1ラウンド実行する。JUnitの合計と失敗したspec名を出力する |
+| `run.rb` | K1〜K7の検査を実行し、プロファイルごとの実行マニフェストを書く。`rake m8:lanes`で実行 |
+| `build_selection_ledger.rb` | Ginkgoのdry-runからK3の選択台帳を再生成する。`rake m8:selection_ledger`で実行 |
+| `resolve_image_digests.rb` | コーパスが使うイメージのタグを、ロック用のダイジェストに解決する |
 
-## 日常のループ
+検査の実装は`k0_input_integrity.rb`、`k5_differential.rb`、`k6_corpus.rb`、`k7_lifecycle.rb`、`lanes.rb`にあります。
+
+## 日常の実行手順
 
 ```bash
 export PATH=/opt/rubies/3.4.11/bin:$PATH
