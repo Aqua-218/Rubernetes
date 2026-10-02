@@ -268,9 +268,11 @@ OOMは`memory.events`から取得する。終了理由とPodのstatusには、1�
 
 ### seccomp
 
-seccomp の `RuntimeDefault` は arch ごとの allow-list BPF を Ruby で生成する。arch を先に検査し、
-未知 syscall は `EPERM`、arch 不一致は process kill とする。`Unconfined` と `Localhost` profile は
-Pod Security Admission と node policy が許可した場合だけ用いる。生成 BPF の意味保存は [§7.3](../verification/formal-methods.md#sec-7-3) で証明する。
+`RuntimeDefault`では、アーキテクチャごとの許可リストのBPFをRubyで生成する。BPFは最初にアーキテクチャを検査する。未知のシステムコールには`EPERM`を返す。アーキテクチャが一致しない場合はプロセスをkillする。
+
+`Unconfined`と`Localhost`のプロファイルは、Pod Security Admissionとノードのポリシーが許可した場合だけ使う。
+
+生成したBPFが意味を保存していることは、[7.3](../verification/formal-methods.md#sec-7-3)で証明する。
 
 <a id="sec-5-8-10"></a>
 ## 5.8.10 process 生成と監視
