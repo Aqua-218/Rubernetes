@@ -147,7 +147,7 @@ listは、対応するList kind、`metadata.resourceVersion`、`continue`、`rem
 
 ### エラー
 
-エラーは `Status` オブジェクトで返す。
+エラーは`Status`オブジェクトで返す。
 
 ```json
 {
