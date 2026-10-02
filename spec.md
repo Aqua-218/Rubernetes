@@ -4,8 +4,8 @@ Rubernetesの仕様と設計書の正本は、複数の文書からなる[`spec/
 
 ## 最初に読む文書
 
-- [仕様・設計書インデックス](spec/README.md)
-- [目的・Kubernetes互換性・完成条件](spec/foundation/goals-and-compatibility.md)
+- [仕様・設計書の目次](spec/README.md)
+- [目的、Kubernetes互換性、完成条件](spec/foundation/goals-and-compatibility.md)
 - [全体アーキテクチャ](spec/foundation/architecture.md)
 - [Ruby Design](spec/ruby/README.md)
 - [マイルストーンと完了証拠](spec/delivery/milestones.md)
