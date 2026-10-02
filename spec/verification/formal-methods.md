@@ -58,22 +58,20 @@ Raftの安全性についての主張は、`verification/claims.yml`に`integrat
 
 | 対象 | 命題 | 命題が偽のときに起きること |
 |---|---|---|
-| Raft ログ演算 | LogMatching が全ログ長で成立 | コミット済みデータが失われる |
-| seccomp コンパイラ | `⟦compile p⟧ = ⟦p⟧` | 意図しない syscall が通る／必要な syscall が塞がる |
-| IPAM | 払い出し IP が重複しない | 2 つの Pod が同一 IP を持ち通信が壊れる |
-| OverlayFS 合成 | 合成が結合的、上書き順序が正しい | イメージ層の内容が誤って見える |
-| Scheduler | Filter が全域、Score が決定的 | スケジュール結果が再現せず解析不能になる |
-| cgroup 階層 | 制限が単調に伝播する | 子が親の上限を超える |
-| schema compiler | schema field 集合と Ruby/RBS/codec/OpenAPI/patch field 集合が一致 | API の一部だけが欠落または異なる意味になる |
-| rollback planner | dependency DAG の逆 topological order だけを返す | live owner より先に下位資源を解放する |
-| snapshot identity | 旧 identity set と復元 identity set が disjoint | token、nonce、IP、workspace が clone 間で再利用される |
-| bounded framing | length check 後の allocation が上限以下 | 不正 peer が host memory を枯渇させる |
+| Raftのログ演算 | LogMatchingがすべてのログ長で成り立つ | コミット済みのデータが失われる |
+| seccompコンパイラ | `⟦compile p⟧ = ⟦p⟧` | 意図しないシステムコールが通る。または、必要なシステムコールが拒否される |
+| IPAM | 払い出したIPが重複しない | 2つのPodが同じIPを持ち、通信できなくなる |
+| OverlayFSの合成 | 合成が結合的で、上書きの順序が正しい | イメージレイヤの内容が誤って見える |
+| スケジューラ | Filterが全域で、Scoreが決定的である | スケジュールの結果を再現できず、解析できなくなる |
+| cgroupの階層 | 制限が単調に伝播する | 子が親の上限を超える |
+| スキーマコンパイラ | スキーマのフィールドの集合と、Ruby、RBS、コーデック、OpenAPI、patchのフィールドの集合が一致する | APIの一部だけが欠ける。または、異なる意味になる |
+| ロールバックの計画 | 依存関係のDAGの逆トポロジカル順だけを返す | 生きている所有者より先に、下位の資源を解放する |
+| スナップショットのidentity | 古いidentityの集合と、復元後のidentityの集合に共通部分がない | トークン、nonce、IP、作業領域がクローンの間で再利用される |
+| bounded framing | 長さを検査したあとのメモリ確保が上限以下になる | 不正な相手がホストのメモリを使い果たす |
 
-各定理には「偽なら何が壊れるか」を必ず付す。
-書けない命題は証明しない。守っている対象がないため。
+各定理には「偽のときに起きること」を必ず書く。それを書けない命題は証明しない。守る対象がないためである。
 
-Lean から得た executable reference は test oracle としてだけ使用する。本番処理を Lean 抽出コードへ
-委譲せず、Ruby 実装へ同じ入力を与える differential property test で対応付ける。
+Leanから得た実行可能な参照実装は、テストの基準としてだけ使う。本番の処理を、Leanから抽出したコードに任せてはならない。Ruby実装に同じ入力を与える差分のproperty testで、両者を対応付ける。
 
 <a id="sec-7-4"></a>
 ## 7.4 証明の強度
