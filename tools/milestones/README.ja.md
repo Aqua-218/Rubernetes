@@ -54,7 +54,7 @@ RUBERNETES_M9_M8_MANIFEST=artifacts/milestones/M8/<run-id>/manifest.json rake m9
 
 ## M1 スキーマとAPIコア
 
-## M1 スキーマと API コア
+次の5つの実アダプタを要求します。
 
 5 つの実アダプタ: 生成の再現性、Kubernetes validation オラクル（生成した全型
 770/770 を実行可能な upstream REST strategy に対応付け）、round-trip プローブ
