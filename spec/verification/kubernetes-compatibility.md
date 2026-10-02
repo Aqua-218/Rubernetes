@@ -9,9 +9,7 @@
 
 Kubernetesのupstreamテストを、改変せずにRubernetesへ接続する方法を定義する。あわせて、テストを選択する規則、実行するプロファイル、証拠の形式、完全互換を名乗るためのゲートを定める。ゲートは失敗ゼロを要求する。
 
-Kubernetes Conformanceは必須の第1gateだが、完全な互換性の十分条件ではない。
-Conformance、portable upstream e2e、Node Conformance、API differential、client version skew、
-実project corpusをすべて通過して初めて[Milestone M8](../delivery/milestones.md#milestone-m8)を完了できる。
+Kubernetes Conformanceは、最初に通過しなければならないゲートである。ただし、Conformanceに通るだけでは完全な互換性は示せない。[マイルストーンM8](../delivery/milestones.md#milestone-m8)を完了するには、次のすべてを通過する必要がある。
 
 ## Pinned Upstream Inputs
 
