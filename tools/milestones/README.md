@@ -105,12 +105,19 @@ is not a prerequisite of the gate.
 
 ## M3 Control loops
 
-The workload differential runs all 20 cases (Deployment, StatefulSet,
-DaemonSet, Job, CronJob × rollout/rollback/scale/delete) through the
-production ControllerManagerService against the pinned
-kube-controller-manager, the scheduler differential matches the pinned
-scheduler, and the leader-loss and queue/informer chaos runners prove Lease
-hand-over with live process generations.
+There are three kinds of check.
+
+The workload differential has 20 cases: rollout, rollback, scale and delete
+for each of Deployment, StatefulSet, DaemonSet, Job and CronJob. The results
+of the production ControllerManagerService are compared with those of a
+pinned kube-controller-manager.
+
+The scheduler differential confirms that results match a pinned
+kube-scheduler.
+
+The chaos runners cause leader loss and queue and informer failures. They
+confirm that the Lease is handed over after the process has actually been
+replaced.
 
 ## M4 Workload data plane
 
