@@ -34,14 +34,7 @@
 
 完了済みのゲートが現在のソース入力で失敗した場合、その時点で、そのマイルストーン以降は再び未完了になる。
 
-- 当該マイルストーンと、それ以前の全マイルストーンのexit criteriaが同一input SHA-256で成立する
-- 必須testのfailure、unexpected skip、未分類test、再試行だけで成功したtestが0である
-- source、generated artifact、test、形式仕様、構成図を含むfile inventoryがinput digestへ包含される
-- `artifacts/milestones/<milestone>/<run-id>/manifest.json` が全証拠を参照する
-- 証拠にはhost architecture、kernel、Ruby、入力digest、入力file数、capture中の入力安定性、実行command、
-  開始・終了時刻、exit status、結果件数、artifact SHA-256を含める
-- required profileが複数ある場合、一部profileの成功で完了としてはならない
-- 既に完了したgateが現在のsource inputで失敗した時点で、そのマイルストーン以降は再び未完了となる
+### Gitに依存しないこと
 
 project source treeにGit repositoryは作成せず、Git metadata、commit SHA、branch、working-tree状態を
 buildまたは完了証拠の前提にしてはならない。複数hostの証拠同一性は、pathとfile SHA-256から決定論的に
