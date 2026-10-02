@@ -297,12 +297,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 5. `microvm`で、標準のPodライフサイクル、probe、log、exec、ボリューム、ネットワークを、Nativeと同じAPIの契約で使える。
 6. キャッシュ済みのベーススナップショットからのPodの起動で、p95が1.5秒以内である。
 
-1. Firecracker 1.16.1とpinned guest artifactでRuntime L0〜L5を通す。
-2. jailer kill、VMM hang、UDS/vsock切断、pause ACK loss、snapshot corruptionをfail-closedで処理する。
-3. snapshot cloneごとにCID、IP、UID、credential、policy generationを再発行し、identity reuseが0である。
-4. malicious guestからjailer root、他VMのvsock、host filesystem、他tenant networkへ到達できない。
-5. `microvm`で標準Pod lifecycle、probe、log、exec、volume、networkをNativeと同じAPI契約で利用できる。
-6. cached base snapshotからのPod start p95が1.5秒以内である。
+### 必要な証拠
 
 ### Required evidence
 
