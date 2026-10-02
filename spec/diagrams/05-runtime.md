@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [diagrams](README.md)
+[仕様書の目次](../README.md) / [構成図](README.md)
 
 <a id="sec-a-5"></a>
 # A.5 図 05 — Runtime
