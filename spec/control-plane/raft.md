@@ -76,6 +76,6 @@ single-server changeは実装が単純である。しかし、特定の順序で
 
 ## 関連
 
-- [store](store.md)
-- [formal methods](../verification/formal-methods.md)
-- [02 storage raft](../diagrams/02-storage-raft.md)
+- [ストア](store.md)
+- [形式仕様](../verification/formal-methods.md)
+- [02 ストレージとRaft](../diagrams/02-storage-raft.md)
