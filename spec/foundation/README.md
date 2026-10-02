@@ -21,4 +21,3 @@ Rubernetesが何を作るのか、何を互換と呼ぶのか、どこを信頼�
 - [Ruby設計](../ruby/README.md)
 - [全景図](../diagrams/00-overview.md)
 - [規範参照](../references.md)
-
