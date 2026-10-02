@@ -3,7 +3,7 @@
 <a id="sec-10"></a>
 # 10. コーディング規約
 
-> **Audience:** 全実装者、reviewer
+> 対象読者: すべての実装者、レビュア
 >
 > **Status:** Normative — version 0.2
 
