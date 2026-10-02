@@ -41,15 +41,15 @@ graph TD
 
 | 文書群 | 扱う内容 | 目次 |
 |---|---|---|
-| Foundation | 文書規約、目的、互換境界、用語、全体構造、名称 | [foundation/](foundation/README.md) |
-| Ruby Design | Manifest DSL、Schema DSL、metaprogramming生成境界 | [ruby/](ruby/README.md) |
-| API | Kubernetes APIとAPI Server | [api/](api/README.md) |
-| Control Plane | Store、Raft、Informer、Controller、Scheduler | [control-plane/](control-plane/README.md) |
-| Node | Node Agent、Runtime、Network、Service Proxy、Volume | [node/](node/README.md) |
-| Verification | TLA+、Lean、upstream Conformance/e2e、差分試験、障害注入、実機gate | [verification/](verification/README.md) |
-| Delivery | milestone、repository構造、実装順、release gate、coding standard | [delivery/](delivery/README.md) |
-| Diagrams | 00〜08の構成図 | [diagrams/](diagrams/README.md) |
-| References | 固定する外部仕様と設計由来 | [references.md](references.md) |
+| 基礎 | 文書規約、目的、互換性の境界、用語、全体構造、名称 | [foundation/](foundation/README.md) |
+| Ruby設計 | Manifest DSL、Schema DSL、メタプログラミングによる生成の境界 | [ruby/](ruby/README.md) |
+| API | Kubernetes APIとAPIサーバ | [api/](api/README.md) |
+| 制御面 | ストア、Raft、informer、コントローラ、スケジューラ | [control-plane/](control-plane/README.md) |
+| ノード | ノードエージェント、ランタイム、ネットワーク、サービスプロキシ、ボリューム | [node/](node/README.md) |
+| 検証 | TLA+、Lean、upstreamのConformanceとe2e、差分試験、障害注入、実機でのゲート | [verification/](verification/README.md) |
+| 実装と納品 | マイルストーン、リポジトリ構造、実装順、リリースゲート、コーディング規約 | [delivery/](delivery/README.md) |
+| 構成図 | 00〜08の構成図 | [diagrams/](diagrams/README.md) |
+| 規範参照 | 固定する外部仕様と設計の由来 | [references.md](references.md) |
 
 ## Normative Rules
 
