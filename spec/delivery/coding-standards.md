@@ -18,10 +18,10 @@ Ruby、FFI、エラー、並行性、不変性、メタプログラミング、�
 
 | 層 | 厳しさ |
 |---|---|
-| FFI、Runtime、Network の syscall 直叩き部分 | 最大 |
-| Raft、Store | 高 |
-| Controller、Scheduler、Agent | 標準 |
-| CLI、テスト補助 | 緩 |
+| FFI、ランタイム、ネットワークのうち、システムコールを直接呼ぶ部分 | 最大 |
+| Raft、ストア | 高 |
+| コントローラ、スケジューラ、agent | 標準 |
+| CLI、テストの補助 | 緩い |
 
 <a id="sec-10-2"></a>
 ## 10.2 分類
