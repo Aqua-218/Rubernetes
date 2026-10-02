@@ -239,8 +239,7 @@ UID、タイムスタンプ、乱数の値、ノード固有のアドレスは�
 
 ## K6 クライアントと既存プロジェクトのコーパス
 
-有限のproject corpusだけで「すべてのproject」を証明したとは扱わない。完全互換の主根拠は
-K3/K5の全external contract ledgerであり、project corpusは複合利用経路の独立検査とする。
+### クライアントの組み合わせ
 
 ## K7 — Upgrade and Recovery
 
