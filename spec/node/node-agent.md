@@ -70,7 +70,7 @@ probeの方式は`exec`、`httpGet`、`tcpSocket`の3つである。
 
 ## 関連
 
-- [runtime](runtime.md)
-- [network](network.md)
-- [volume](volume.md)
-- [04 node agent](../diagrams/04-node-agent.md)
+- [ランタイム](runtime.md)
+- [ネットワーク](network.md)
+- [ボリューム](volume.md)
+- [04 ノードエージェント](../diagrams/04-node-agent.md)
