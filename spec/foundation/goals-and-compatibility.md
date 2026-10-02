@@ -55,11 +55,7 @@ G5では網羅的なモデル検査を行わない。[7.2](../verification/forma
 - コントローラ、スケジューラ、ノード、ボリューム、ネットワーク、Service、DNSの、外部から観測できる挙動
 - `kubectl`、client-go、Dynamic Client、Helm、Operatorから観測されるエラーの契約
 
-- すべての built-in API group/version/resource/subresource と CRD
-- 既定および feature gate 有効時の defaulting、validation、conversion、admission
-- JSON、YAML、Kubernetes Protobuf、watch、exec、attach、port-forward の wire protocol
-- Controller、Scheduler、Node、Volume、Network、Service、DNS の外部観測可能な挙動
-- `kubectl`、client-go、Dynamic Client、Helm および Operator から観測されるエラー契約
+「互換」とは内部構造が一致することではない。同じ前提状態と同じ要求に対して、次の項目が一致することをいう。
 
 「互換」とは内部構造の一致ではなく、同一の前提状態と要求に対して、成功・失敗、
 HTTP status、`Status.reason/details/causes`、defaulting 後のオブジェクト、field ownership、
