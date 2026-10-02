@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [制御面](README.md)
 
 <a id="sec-5-4"></a>
-# 5.4 Informer
+# 5.4 informer
 
 > **Audience:** 制御ループ実装者
 >
