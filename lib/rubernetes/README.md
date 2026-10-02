@@ -1,6 +1,6 @@
 # Production Ruby Module Boundaries
 
-> **Audience:** Implementers and reviewers
+For implementers and reviewers.
 
 Production policy, state machines, resource ownership, codecs, controllers, schedulers,
 and node lifecycle logic live below this directory. Dependency direction is enforced by
