@@ -94,7 +94,7 @@ graph LR
 5. ネイティブ拡張に、ポリシーの分岐、再試行、認可、状態機械が含まれていないことを、静的に検査する。
 6. 意図的に起こした失敗のそれぞれについて、元の`errno`、操作、資源のidentityを、Rubyの例外に保持する。
 
-### Required evidence
+### 必要な証拠
 
 `gem-build.json`、`executables.json`、`abi-probe-x86_64.json`、JUnit、native-boundary scan結果、
 全binaryとABI manifestのSHA-256を保存する。
