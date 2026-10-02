@@ -182,12 +182,7 @@ graph LR
 5. スケジューラのFilterの結果、Score、同点時の選択、preemptionで退去させるPodの集合が、差分テストで比較対象と一致する。
 6. controller-managerとschedulerのリーダーが失われている間、副作用が二重に起きない。quorumの回復から60秒以内に収束を再開する。
 
-1. [Controller共通規約](../control-plane/controllers.md)の全規約を全controllerへ機械検査する。
-2. v1.36.2 built-in controller corpusの未登録controllerが0である。
-3. duplicate、out-of-order、watch reconnect、resync、controller restart下でもdesired stateへ収束する。
-4. Deployment、StatefulSet、DaemonSet、Job、CronJobのrollout/rollback/scale/deleteがoracleと一致する。
-5. schedulerのFilter結果、Score、tie break、preemption victim集合がoracle differentialで一致する。
-6. controller-managerとschedulerのleader loss中に二重副作用が0で、quorum回復後60秒以内に収束を再開する。
+### 必要な証拠
 
 ### Required evidence
 
