@@ -87,12 +87,12 @@ graph LR
 
 ### 完了条件
 
-1. `gem build rubernetes.gemspec`と`rake test`が証跡対象のsource inputで成功する。
-2. 6個のexecutableが`--version`と`--help`を副作用なしで終了status 0にする。
-3. x86_64の実kernelで[stage 00](implementation-plan.md#sec-9-1)の全項目を通す。
-4. ABI manifestと実行hostのsize、alignment、syscall numberの不一致が0である。
-5. native extensionにpolicy branch、retry、authorization、state machineが0であることを静的検査する。
-6. intentional failureごとに元の`errno`、operation、resource identityをRuby exceptionへ保持する。
+1. 証拠の対象とするソース入力で、`gem build rubernetes.gemspec`と`rake test`が成功する。
+2. 6つの実行ファイルが、`--version`と`--help`に対して、副作用を起こさずに終了ステータス0で終わる。
+3. x86_64の実際のkernelで、[stage 00](implementation-plan.md#sec-9-1)のすべての項目を通過する。
+4. ABIマニフェストと実行ホストの間で、サイズ、アラインメント、システムコール番号の不一致が0である。
+5. ネイティブ拡張に、ポリシーの分岐、再試行、認可、状態機械が含まれていないことを、静的に検査する。
+6. 意図的に起こした失敗のそれぞれについて、元の`errno`、操作、資源のidentityを、Rubyの例外に保持する。
 
 ### Required evidence
 
