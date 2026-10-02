@@ -56,7 +56,7 @@ Filterがすべてのノードで失敗し、かつPodの優先度が既存のPo
 <a id="sec-5-6-6"></a>
 ## 5.6.6 スケジューラプラグインDSL
 
-Filter と Score は schema で型付けされた Pod/Node を受ける Ruby block として登録できる。
+FilterとScoreは、Rubyのブロックとして登録できる。ブロックは、スキーマで型付けされたPodとNodeを受け取る。
 
 ```ruby
 scheduler do
