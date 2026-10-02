@@ -37,7 +37,7 @@ graph TD
 | リポジトリの構造を確認する | [プロジェクト構成](delivery/project-structure.md) → [アーキテクチャ](foundation/architecture.md) |
 | upstreamのテストを導入する | [Kubernetes互換性試験](verification/kubernetes-compatibility.md) → [検証戦略](verification/testing.md) |
 
-## Specification Families
+## 文書群
 
 | Family | 責務 | Index |
 |---|---|---|
