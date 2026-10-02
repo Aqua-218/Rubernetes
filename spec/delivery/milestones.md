@@ -106,7 +106,9 @@ graph LR
 - すべてのバイナリとABIマニフェストのSHA-256
 
 <a id="milestone-m1"></a>
-## M1 — Schema and API Core
+## M1 スキーマとAPIコア
+
+### 成果物
 
 ### Deliverables
 
