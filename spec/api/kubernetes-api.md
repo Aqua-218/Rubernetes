@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [api](README.md)
+[仕様書の目次](../README.md) / [API](README.md)
 
 <a id="sec-4"></a>
 # 4. API 仕様
