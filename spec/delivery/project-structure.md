@@ -84,10 +84,10 @@
 │   ├── e2e/
 │   ├── conformance/kubernetes/    # 改変していないupstreamのテストを実行するプロファイル
 │   ├── compatibility/
-│   │   ├── api/                    # Request/response differential corpus
-│   │   ├── clients/                # kubectl/client-go/Helm/Kustomize matrix
-│   │   └── projects/               # Unmodified Chart and Operator corpus
-│   ├── chaos/                      # Ruby scenario DSL and deterministic replay
+│   │   ├── api/                    # 要求と応答の差分テストのコーパス
+│   │   ├── clients/                # kubectl、client-go、Helm、Kustomizeの組み合わせ
+│   │   └── projects/               # 改変していないChartとOperatorのコーパス
+│   ├── chaos/                      # RubyのシナリオDSLと決定的な再生
 │   ├── security/
 │   ├── performance/
 │   ├── support/
