@@ -106,11 +106,11 @@ graph TD
 - [01 APIサーバ](diagrams/01-api-server.md)
 - [02 ストレージとRaft](diagrams/02-storage-raft.md)
 - [03 制御ループ](diagrams/03-control-loop.md)
-- [04 Node Agent](diagrams/04-node-agent.md)
-- [05 Runtime](diagrams/05-runtime.md)
-- [06 Network](diagrams/06-network.md)
-- [07 Storage / Volume](diagrams/07-storage-volume.md)
-- [08 Verification](diagrams/08-verification.md)
+- [04 ノードエージェント](diagrams/04-node-agent.md)
+- [05 ランタイム](diagrams/05-runtime.md)
+- [06 ネットワーク](diagrams/06-network.md)
+- [07 ストレージとボリューム](diagrams/07-storage-volume.md)
+- [08 検証](diagrams/08-verification.md)
 
 ## Related
 
