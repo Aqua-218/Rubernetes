@@ -210,12 +210,7 @@ graph LR
 5. PVとPVCのbinding、attach、mount、unmount、detach、スナップショットとリストアを、すべてのaccess modeで検査する。
 6. マウントのトラバーサル、hostPathからの脱出、attachのレース、ノードのクラッシュ後の二重attachが0である。
 
-1. x86_64のIPv4、IPv6、dual-stackでPod間通信、Service、DNS、Ingress/Egressを通す。
-2. eBPFとnftablesの両backendで同じService semanticsを示し、backend切替時のconnection lossを測定する。
-3. NetworkPolicyのdefault deny、selector、named port、`endPort`、SCTPをoracleと差分比較する。
-4. projected ConfigMap/Secret更新がatomicで、途中世代をcontainerから観測できない。
-5. PV/PVC binding、attach/mount/unmount/detach、snapshot/restoreを全access modeで検査する。
-6. mount traversal、host path escape、attach race、node crash後の二重attachが0である。
+### 必要な証拠
 
 ### Required evidence
 
