@@ -115,19 +115,22 @@ stateDiagram-v2
 
 | 資源 | 安定したidentity | 解放の前提条件 |
 |---|---|---|
-| process / microVM | pidfd、start time、executable digest | exit を pidfd で確認 |
-| cgroup | cgroup ID と絶対 path | `cgroup.events populated=0` |
-| namespace | namespace inode と保持 pidfd | 全参加 process の exit |
-| mount | mount ID と target inode | 子 mount がない |
-| network | netns inode、link ifindex、IP lease ID | workload process/VM の停止 |
-| workspace | filesystem UUID、path、image digest | mount、mapper、process/VM の解放 |
-| block mapping | dm UUID / loop device ID | consumer process/VM の停止 |
-| jail root | inode、owner UID/GID | jailer/Firecracker の停止 |
+| プロセス、microVM | pidfd、開始時刻、実行ファイルのダイジェスト | 終了をpidfdで確認している |
+| cgroup | cgroup IDと絶対パス | `cgroup.events`が`populated=0`である |
+| namespace | namespaceのinodeと、保持しているpidfd | 参加している全プロセスが終了している |
+| マウント | マウントIDと、マウント先のinode | 子のマウントがない |
+| ネットワーク | netnsのinode、リンクのifindex、IPリースのID | ワークロードのプロセスまたはVMが停止している |
+| 作業領域 | ファイルシステムのUUID、パス、イメージのダイジェスト | マウント、mapper、プロセスまたはVMが解放されている |
+| ブロックのマッピング | dmのUUID、loopデバイスのID | 利用しているプロセスまたはVMが停止している |
+| jailのroot | inode、所有者のUIDとGID | jailerとFirecrackerが停止している |
 
-resource は取得順に ledger へ追加し、失敗時は逆順で解放する。各 cleanup は冪等とし、
-`not found` を成功として扱う前に stable identity の不一致がないことを確認する。上位 owner の
-停止を確認できなければ、下位 resource を再利用・削除してはならない。cleanup 失敗は最初の
-操作 error を置換せず、`cleanup_errors` としてすべて保持する。
+資源は取得した順に台帳に追加する。失敗したときは逆の順に解放する。
+
+後始末の各操作は冪等とする。`not found`を成功として扱う前に、安定したidentityが一致していることを確認する。
+
+上位の所有者が停止したことを確認できない場合、下位の資源を再利用したり削除したりしてはならない。
+
+後始末に失敗しても、最初の操作のエラーを置き換えない。後始末のエラーは、`cleanup_errors`としてすべて保持する。
 
 <a id="sec-5-8-5"></a>
 ## 5.8.5 イメージ取得と固定
