@@ -175,7 +175,7 @@ Secret、ServiceAccountのトークン、bootstrapの資格情報、指定した
 
 鍵のローテーションでは、読み取りに古い鍵を使い、書き込みに新しい鍵を使う。バックグラウンドでの書き直しが終わったら、古い鍵を廃止する。
 
-## Related
+## 関連
 
 - [kubernetes api](kubernetes-api.md)
 - [store](../control-plane/store.md)
