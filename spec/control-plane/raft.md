@@ -74,7 +74,7 @@ joint consensus方式を使う。single-server change方式は使わない。
 
 single-server changeは実装が単純である。しかし、特定の順序で複数の変更を行うと安全性が失われるという、既知の問題がある。
 
-## Related
+## 関連
 
 - [store](store.md)
 - [formal methods](../verification/formal-methods.md)
