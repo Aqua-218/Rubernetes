@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [ノード](README.md)
 
 <a id="sec-5-9"></a>
-# 5.9 Network（自作）
+# 5.9 ネットワーク
 
 > **Audience:** Network実装者、セキュリティ検証者
 >
