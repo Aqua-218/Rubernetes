@@ -247,11 +247,11 @@ upstreamのテストをコピーして改変したものは、Conformanceの証�
 
 トップレベルに新しいディレクトリを追加してよいのは、既存の境界では表現できない場合だけである。追加するときは、次のことを同じ変更の中で行う。
 
-1. 本文にsingle responsibilityとownerを追加する。
-2. dependency diagramへ依存方向を追加し、cycleが0であることを検査する。
-3. build/package includeまたはexclude規則を更新する。
-4. test placementとrelease artifactへの影響を定義する。
-5. `spec/README.md`または該当family indexから到達可能にする。
+1. 本文に、そのディレクトリの単一の責務と所有者を追加する。
+2. 依存関係の図に依存の方向を追加し、循環がないことを検査する。
+3. ビルドとパッケージに含めるか除くかの規則を更新する。
+4. テストの配置と、リリースの成果物への影響を定義する。
+5. `spec/README.md`か、該当する文書群の目次からたどれるようにする。
 
 ## Related
 
