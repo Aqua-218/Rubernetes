@@ -224,9 +224,7 @@ upstreamのNode Conformanceを、実際のkernelで動くamd64のノードに対
 
 ## K5 APIとワイヤ形式の差分
 
-各kubectlで`api-resources`、`explain`、`get/list/watch`、`create/apply/diff/patch/replace/delete`、
-`auth can-i`、`logs`、`exec`、`attach`、`port-forward`、`rollout`、`scale`、`wait`、`top`を実行する。
-同じversion範囲のclient-go typed/dynamic/discovery client、Helm、Kustomizeも同じAPIへ接続する。
+同じseedから作った要求の列を、Kubernetes v1.36.2のクラスタとRubernetesのクラスタに与える。次の観測結果を正規化して比較する。
 
 ### Existing projects
 
