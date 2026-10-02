@@ -178,10 +178,10 @@ graph TD
 
 ### スキーマと生成コード
 
-- `schema/`はcompiler input、`lib/rubernetes/schema/`はcompiler implementation、`generated/`はoutputである。
-- generated Rubyは`Rubernetes::Generated`配下に置き、hand-authored classと同じconstantを再openしない。
-- generated fileはgenerator version、input digest、output schema versionをheaderへ持つ。
-- CIはgenerateを2回実行してbyte-identicalであることと、canonical generated treeとの差分0を検査する。
+- `schema/`はコンパイラへの入力である。`lib/rubernetes/schema/`はコンパイラの実装である。`generated/`は出力である。
+- 生成したRubyは`Rubernetes::Generated`の下に置く。手書きのクラスと同じ定数を再オープンしない。
+- 生成したファイルは、生成器のバージョン、入力のダイジェスト、出力スキーマのバージョンをヘッダに持つ。
+- CIは生成を2回実行し、結果がバイト単位で同一であることを検査する。正規の生成ツリーとの差分がないことも検査する。
 
 ### Store and consensus
 
