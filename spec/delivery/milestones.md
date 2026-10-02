@@ -361,7 +361,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 
 ### 必要な証拠
 
-### Required evidence
+次のものを保存する。
 
 `release-manifest.json`、SBOM、signature、provenance、formal verification report、benchmark raw data、
 72-hour soak report、security report、Ruby LOC report、clean-room reproduction transcriptを保存する。
