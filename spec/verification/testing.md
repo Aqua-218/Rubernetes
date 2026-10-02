@@ -56,9 +56,11 @@ scenario "leader loss during rollout" do
 end
 ```
 
-`assert_eventually` は TLA+ の `◇`、`assert_always` は `□` に対応し、assertion 名、観測 predicate、
-deadline、sampling/event trigger を trace metadata に残す。`assert_eventually` の deadline は必須、
-`assert_always` は setup 完了から teardown 開始までの全 event 後に評価する。
+`assert_eventually`はTLA+の`◇`に対応する。`assert_always`は`□`に対応する。
+
+トレースのメタデータには、アサーションの名前、観測する述語、期限、サンプリングまたはイベントによる起動条件を残す。
+
+`assert_eventually`では期限の指定を必須とする。`assert_always`は、setupの完了からteardownの開始までの間、すべてのイベントのあとに評価する。
 
 <a id="sec-8-3"></a>
 ## 8.3 線形化可能性
