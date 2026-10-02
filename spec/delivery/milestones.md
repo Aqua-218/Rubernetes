@@ -301,8 +301,11 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 
 次のものを保存する。
 
-x86_64 KVM L4/L5 report、guest/host attack matrix、identity ledger、snapshot corruption corpus、
-startup latency raw samplesを保存する。
+- x86_64のKVMでのL4とL5のレポート
+- ゲストとホストの間の攻撃の組み合わせ表
+- identityの台帳
+- スナップショットの破損コーパス
+- 起動レイテンシの生サンプル
 
 <a id="milestone-m8"></a>
 ## M8 — Kubernetes Compatibility Closure
