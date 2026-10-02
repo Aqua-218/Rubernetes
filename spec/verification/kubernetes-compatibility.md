@@ -93,7 +93,7 @@ upstreamのソースにRuntimeClassを注入する変更を加えた実行は、
 
 ## K0 入力の整合性
 
-## K0 — Input Integrity
+Rubyのランナー`tools/conformance/run.rb`は、クラスタに接続する前に次の項目を検査する。
 
 Ruby runner `tools/conformance/run.rb`はclusterへ接続する前に次を検査する。
 
