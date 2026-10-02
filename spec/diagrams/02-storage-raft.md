@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [構成図](README.md)
 
 <a id="sec-a-2"></a>
-# A.2 図 02 — Storage / Raft
+# A.2 図02 ストレージとRaft
 
 > **Audience:** Store/Raft実装者、形式検証者
 >
