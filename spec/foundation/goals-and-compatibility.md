@@ -86,9 +86,28 @@ MicroVM backendは、`/dev/kvm`、Firecracker 1.16.1、同じ版の`jailer`を�
 <a id="sec-1-5"></a>
 ## 1.5 規模・可用性・性能
 
-v1.36 の supported scale と同じく、1 cluster あたり 5,000 node、150,000 Pod、
-300,000 container、1 node あたり 110 Pod を上限として扱う。この範囲内で API schema、
-counter、queue、revision、identifier が overflow または意図しない hard limit に達してはならない。
+### 規模
+
+Kubernetes v1.36がサポートする規模と同じ上限を扱う。
+
+| 項目 | 上限 |
+|---|---|
+| 1クラスタあたりのノード数 | 5,000 |
+| 1クラスタあたりのPod数 | 150,000 |
+| 1クラスタあたりのコンテナ数 | 300,000 |
+| 1ノードあたりのPod数 | 110 |
+
+この範囲内で、APIスキーマ、カウンタ、キュー、リビジョン、識別子がオーバーフローしてはならない。意図しないハードリミットに達してもならない。
+
+### 可用性
+
+制御ノードは3台または5台で構成できる。`floor((N-1)/2)`台が停止していても、コミット済みの状態を失わない。
+
+quorumが回復してから60秒以内に、APIへの書き込み、コントローラのreconcile、スケジューラのbindを再開する。コミット済みのAPIオブジェクトのRPOは0とする。
+
+### 性能
+
+性能はKubernetes v1.36.2と比較する。比較では、ハードウェア、オブジェクトのコーパス、リクエストのトレースを同じにする。
 
 3 または 5 control node を構成でき、`floor((N-1)/2)` node の停止中も commit 済み state を失わない。
 quorum 回復後 60 秒以内に API write、controller reconcile、scheduler bind を再開する。
