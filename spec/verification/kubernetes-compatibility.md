@@ -161,7 +161,10 @@ sonobuoy run \
 
 次のものは禁止する。
 
-## K3 — Portable Upstream Linux E2E
+- `certified-conformance`以外のmode
+- `E2E_SKIP`
+- skip用の正規表現の追加
+- focusでテストを絞ること
 
 Conformance外も含むupstream `test/e2e`をv1.36.2 sourceからbuildし、provider `skeleton`で
 Rubernetesへ接続する。upstream sourceとgenerated test binaryへpatchを当ててはならない。
