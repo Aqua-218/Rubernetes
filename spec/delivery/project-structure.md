@@ -102,8 +102,10 @@
 │   ├── verification/
 │   └── release/
 ├── third_party/
-│   ├── locks/                     # Immutable source/artifact/image digests
-│   └── cache/                     # Ignored downloaded upstream artifacts
+│   ├── locks/                     # ソース、成果物、イメージの変更できないダイジェスト
+│   └── cache/                     # ダウンロードしたupstreamの成果物
+├── apps/
+│   └── dashboard/                 # Rails製のダッシュボード兼メトリクスサーバ
 ├── examples/
 │   ├── manifests/
 │   ├── controllers/
