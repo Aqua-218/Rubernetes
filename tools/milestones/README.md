@@ -215,28 +215,56 @@ once.
 
 ## M6 Complete API surface
 
-- `m6_api_coverage_probe.rb` compares every served discovery document, verb,
-  OpenAPI v3 operation and protobuf descriptor with the pinned corpus and
-  requires zero missing items.
-- `m6_feature_gate_probe.rb` compares the served API surface with the oracle
-  discovery captured under the default, `AllBeta=true` and alpha-API
-  profiles and requires zero differences.
-- `m6_crd_differential_probe.rb` runs one CRD/aggregation script (structural
-  validation messages, defaulting, pruning, multi-version serving, status
-  subresource, OpenAPI publish, APIService availability, cleanup finalizer)
-  against the pinned kube-apiserver in Docker and against the production
-  server, and requires identical normalized observations.
-- `m6_webhook_differential_probe.rb` registers the same admission webhooks on
-  both servers (timeouts with Fail/Ignore policy, mutation and warnings,
-  reinvocation policy, match policy, match conditions, AdmissionReview
-  version negotiation, dry-run side effects, object selectors) and requires
-  identical outcomes.
-- `m6_security_pipeline_probe.rb` records the stage order of the production
-  pipeline and checks error disclosure (401 before 403 before 404, no
-  internal detail, audit of every outcome).
-- `m6_fuzz_probe.rb` drives malformed, oversized, duplicate-key, path and
-  content-negotiation inputs (seeded, reproducible) and requires zero panics,
-  hangs and policy bypasses.
+There are six probes.
+
+### m6_api_coverage_probe.rb
+
+Compares the served discovery documents, verbs, OpenAPI v3 operations and
+protobuf descriptors with the pinned corpus. It requires zero gaps.
+
+### m6_feature_gate_probe.rb
+
+Compares the served API with discovery captured from the reference
+kube-apiserver under three profiles: default, `AllBeta=true` and alpha APIs.
+It requires zero differences.
+
+### m6_crd_differential_probe.rb
+
+Runs one script that exercises CRDs and aggregation against both a pinned
+kube-apiserver in Docker and the production server. It requires the
+normalized observations to match. The script covers:
+
+- structural validation messages
+- defaulting and pruning
+- serving multiple versions
+- the status subresource
+- OpenAPI publication
+- APIService availability
+- the cleanup finalizer
+
+### m6_webhook_differential_probe.rb
+
+Registers the same admission webhooks with both servers and requires the
+results to match. It covers:
+
+- timeouts under the Fail and Ignore policies
+- mutation and warnings
+- the reinvocation policy, match policy and match conditions
+- AdmissionReview version negotiation
+- side effects on dry run
+- object selectors
+
+### m6_security_pipeline_probe.rb
+
+Records the order of the stages in the production request pipeline. It also
+checks error disclosure: 401, 403 and 404 are decided in that order, no
+internal detail leaks, and every outcome is audited.
+
+### m6_fuzz_probe.rb
+
+Feeds malformed input, oversized input, duplicate keys, paths and
+content-negotiation input. A seed reproduces the same input. It requires
+zero panics, hangs and policy bypasses.
 
 ## M7 MicroVM isolation
 
