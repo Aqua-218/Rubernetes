@@ -218,7 +218,7 @@ subPathは、kubeletのmakeMountsと同じく、そのコンテナの起動時�
 <a id="sec-5-8-8"></a>
 ## 5.8.8 cgroup v2
 
-| 制御 | file / event |
+| 制御 | ファイル、イベント |
 |---|---|
 | CPU | `cpu.max`、`cpu.weight`、`cpu.stat` |
 | Memory | `memory.min`、`memory.low`、`memory.high`、`memory.max`、`memory.swap.max`、`memory.events` |
