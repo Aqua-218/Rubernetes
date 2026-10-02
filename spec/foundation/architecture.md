@@ -84,7 +84,7 @@ graph LR
 
 ## 関連
 
-- [00 overview](../diagrams/00-overview.md)
-- [Ruby Design index](../ruby/README.md)
-- [Control Plane index](../control-plane/README.md)
-- [Node index](../node/README.md)
+- [00 全景](../diagrams/00-overview.md)
+- [Ruby設計の目次](../ruby/README.md)
+- [制御面の目次](../control-plane/README.md)
+- [ノードの目次](../node/README.md)
