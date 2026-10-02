@@ -19,7 +19,9 @@ Kubernetes v1.36.2に対するリソース、エンドポイント、ワイヤ�
 - Protocol Bufferの定義
 - APIのライフサイクル情報
 
-| corpus | 内容 | 更新規則 |
+リソースの一覧は本文に複製しない。次の機械可読なコーパスを規範とする。
+
+| コーパス | 内容 | 更新の規則 |
 |---|---|---|
 | `compat/kubernetes/v1.36.2/discovery/` | group、version、resource、scope、verb、shortName、category、subresource | upstream 応答を正規化して固定 |
 | `compat/kubernetes/v1.36.2/openapi/` | field、型、required、default、validation、patch strategy | upstream 配布物の SHA-256 を固定 |
