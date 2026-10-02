@@ -125,13 +125,7 @@ graph LR
 6. 成功時とエラー時のHTTPステータス、ヘッダ、`Status`のボディ、フィールドの所有権が、Kubernetesと一致する。
 7. watchの再接続、resourceVersion、bookmark、compactionの境界について、property testを満たす。
 
-1. pinned corpusに存在する全built-in GVK/GVRがregistryに一度だけ登録される。
-2. 全型でJSONとKubernetes Protobufのround-trip、unknown field、defaulting、validationがoracleと一致する。
-3. 同一inputから2回生成したtreeのbyte差分が0で、source tree内のcanonical generated treeとの差分も0である。
-4. Ruby accessor、RBS、OpenAPI、codec、patch field、DSL methodのfield集合差分が0である。
-5. `kubectl v1.36.2 get/apply/patch/delete/watch`がMemoryStore clusterへ成功する。
-6. successとerrorのHTTP status、headers、`Status` body、field ownershipがKubernetes oracleと一致する。
-7. watchのreconnect、resourceVersion、bookmark、compaction境界をproperty testで満たす。
+### 必要な証拠
 
 ### Required evidence
 
