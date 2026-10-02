@@ -375,6 +375,6 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 ## 関連
 
 - [実装順](implementation-plan.md)
-- [Project Structure](project-structure.md)
+- [プロジェクト構成](project-structure.md)
 - [Kubernetes互換性試験](../verification/kubernetes-compatibility.md)
 - [検証戦略](../verification/testing.md)
