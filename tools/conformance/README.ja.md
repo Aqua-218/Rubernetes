@@ -33,8 +33,8 @@ Kubernetesとの互換性を検査するためのRubyコマンド群です。次
 
 ```bash
 export PATH=/opt/rubies/3.4.11/bin:$PATH
-rake m8:tools                                               # hydrophone + sonobuoy、1 回だけ
-tools/conformance/netns_env.sh up conf4 --v4 3 --v6 e7      # クラスタインスタンスごとに名前空間 1 つ
+rake m8:tools                                               # hydrophoneとsonobuoyを導入。1回だけ
+tools/conformance/netns_env.sh up conf4 --v4 3 --v6 e7      # クラスタごとに名前空間を1つ作る
 RUBERNETES_M8_CGROUP_ROOT=/sys/fs/cgroup/conf4 \
   tools/conformance/netns_env.sh exec conf4 -- \
   ruby tools/conformance/cluster.rb up --profile linux-amd64-ipv4-native --root /srv/rbn-conf4
