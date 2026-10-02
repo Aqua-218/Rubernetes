@@ -170,7 +170,7 @@ sonobuoy run \
 
 ## K3 可搬なupstreamのLinux e2e
 
-Ginkgo dry-run inventoryの全testを、次のいずれかへexactly once分類する。
+Conformance以外も含むupstreamの`test/e2e`を、v1.36.2のソースからビルドする。provider `skeleton`でRubernetesに接続する。upstreamのソースと、生成したテストバイナリを変更してはならない。
 
 | Classification | Meaning | M8 treatment |
 |---|---|---|
