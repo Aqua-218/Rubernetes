@@ -112,7 +112,7 @@ Leanから得た実行可能な参照実装は、テストの基準としてだ�
 | `integration_tested` | 実際のkernelまたはKVMの上で、境界を検査した |
 | `assumed_tcb` | kernel、KVM、CPU、Firecrackerなどに置いた仮定である |
 
-VM escape 耐性、host kernel/KVM/CPU の正しさ、全 syscall 実装の正しさは `assumed_tcb` とする。
+VM escapeへの耐性、ホストのkernel・KVM・CPUの正しさ、すべてのシステムコールの実装の正しさは、`assumed_tcb`とする。
 
 ## Related
 
