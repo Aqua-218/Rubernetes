@@ -44,9 +44,9 @@
 <a id="sec-5-5-4"></a>
 ## 5.5.4 NodeController
 
-- Node heartbeat の grace period は既定 40 秒とし、超過時に `Ready=Unknown` とする
-- `Ready=Unknown` または `Ready=False` が既定 5 分継続した場合、対応する taint を付与する
-- taint を許容しない Pod は退去対象とする
+- Nodeのheartbeatのgrace periodは、既定で40秒とする。超えた場合は`Ready=Unknown`にする。
+- `Ready=Unknown`または`Ready=False`が既定で5分続いた場合、対応するtaintを付ける。
+- taintを許容しないPodは退去の対象とする。
 
 <a id="sec-5-5-5"></a>
 ## 5.5.5 EndpointController
