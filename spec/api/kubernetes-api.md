@@ -114,8 +114,9 @@ GET /healthz  /livez  /readyz                     ヘルスチェック
 
 content negotiationでは次のものを選択できる。
 
-`kubectl` は起動時に discovery 系（`/api`、`/apis`、`APIResourceList`）を
-必ず叩く。ここが正しく返らないと以降が一切動かない。実装順で最優先とする。
+- HTTP/1.1、HTTP/2、WebSocket、SPDYへのフォールバック
+- JSON、YAML、Kubernetes Protobuf
+- gzip
 
 <a id="sec-4-3"></a>
 ## 4.3 レスポンス形式
