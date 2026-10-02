@@ -58,27 +58,27 @@
 | D7 | rootlessは、user namespaceと専用のhelperによる最小特権の分離として実装する。特権が必要な処理をagent本体に置かない |
 
 <a id="sec-9-3"></a>
-## 9.3 release 完了条件
+## 9.3 リリースの完了条件
 
-次の全項目を満たすまで `1.0.0`、完成、完全互換を名乗ってはならない。
+次のすべての項目を満たすまで、`1.0.0`、完成、完全互換を名乗ってはならない。
 
-- v1.36.2 discovery/OpenAPI/protobuf/API behavior corpus の未実装項目が 0
-- upstream v1.36.2 Linux Conformance 446件の失敗/skip 0、再試行によってだけ成功する flaky test 0
-- platform allowlist 以外の skip 0
-- Native、MicroVM、MicroVMRestricted が対応する Runtime L0〜L5 gate を通過
-- built-in controller、scheduler plugin、CRD、CSI、NetworkPolicy、eBPF/nftables Proxy が E2E を通過
-- すべての effect point で crash/response-loss を注入し、live resource の誤解放と identity 再利用が 0
-- TLA+ release scope で反例 0、Lean の `sorry` / `admit` / 禁止 escape hatch 0
-- schema 生成差分、RBS、OpenAPI、codec、patch field 集合の不一致 0
-- compatibility corpus の Helm chart/Operator を変更なしで install/upgrade/rollback/uninstall 可能
-- [Kubernetes互換性試験契約](../verification/kubernetes-compatibility.md)のK0〜K7を全profileで通過
-- project-authored production source の Ruby 比率 85% 以上
-- 未決マーカー、期限のない作業注記、保証レベル未記載の security claim 0
+- v1.36.2のdiscovery、OpenAPI、protobuf、APIの挙動のコーパスに対して、未実装の項目が0である。
+- upstreamのv1.36.2のLinux Conformance 446件で、失敗とスキップが0である。再試行でしか成功しないflakyなテストも0である。
+- プラットフォームの許可リストにないスキップが0である。
+- Native、MicroVM、MicroVMRestrictedが、それぞれ対応するランタイムのL0〜L5のゲートを通過している。
+- 組み込みのコントローラ、スケジューラのプラグイン、CRD、CSI、NetworkPolicy、eBPFとnftablesのプロキシが、e2eを通過している。
+- すべてのeffect pointでクラッシュと応答の喪失を注入しても、動いている資源の誤った解放と、identityの再利用が0である。
+- TLA+のリリース用スコープで反例が0である。Leanの`sorry`、`admit`、禁止した抜け道が0である。
+- スキーマの生成の差分が0である。RBS、OpenAPI、コーデック、patchのフィールドの集合に不一致がない。
+- 互換性コーパスのHelm chartとOperatorを、変更せずにinstall、upgrade、rollback、uninstallできる。
+- [Kubernetes互換性試験契約](../verification/kubernetes-compatibility.md)のK0〜K7を、すべてのプロファイルで通過している。
+- プロジェクトが書いた本番ソースのうち、Rubyの比率が85%以上である。
+- 未決のマーカー、期限のない作業メモ、保証レベルが書かれていないセキュリティ上の主張が0である。
 
-## Related
+## 関連
 
-- [coding standards](coding-standards.md)
-- [milestones](milestones.md)
-- [project structure](project-structure.md)
-- [goals and compatibility](../foundation/goals-and-compatibility.md)
-- [kubernetes compatibility](../verification/kubernetes-compatibility.md)
+- [コーディング規約](coding-standards.md)
+- [マイルストーン](milestones.md)
+- [プロジェクト構成](project-structure.md)
+- [目的と互換性](../foundation/goals-and-compatibility.md)
+- [Kubernetes互換性試験](../verification/kubernetes-compatibility.md)
