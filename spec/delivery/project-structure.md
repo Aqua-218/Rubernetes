@@ -129,9 +129,11 @@
 
 プロジェクトのソースツリーにGitリポジトリは作成しない。ビルド、テスト、証拠、リリースの自動化は、次のものに依存してはならない。
 
-project source treeにGit repositoryは作成しない。build、test、evidence、release automationは
-Git command、commit SHA、branch、tag、working-tree状態へ依存してはならない。source identityと
-cross-host evidence identityには、対象fileのrelative pathとSHA-256から生成する決定論的なinput digestを使う。
+- Gitのコマンド
+- コミットのSHA
+- ブランチ
+- タグ
+- 作業ツリーの状態
 
 ## Module Dependency Direction
 
