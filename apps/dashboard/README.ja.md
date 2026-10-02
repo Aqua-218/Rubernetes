@@ -78,7 +78,7 @@ RUBERNETES_KUBECONFIG=/path/to/kubeconfig bin/rails server -p 3000
 
 ```sh
 cp deploy/rubernetes-dashboard.service /etc/systemd/system/
-install -m 0600 deploy/rubernetes-dashboard.env /etc/rubernetes/dashboard.env   # その後編集
+install -m 0600 deploy/rubernetes-dashboard.env /etc/rubernetes/dashboard.env   # コピー後に編集する
 RAILS_ENV=production bin/rails assets:precompile
 systemctl daemon-reload && systemctl enable --now rubernetes-dashboard
 curl --noproxy '*' -sS http://<DASHBOARD_BIND>:3000/up
