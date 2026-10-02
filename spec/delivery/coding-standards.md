@@ -256,7 +256,7 @@ Leanで証明した性質に依存する実装の箇所には、定理の名前�
 | 例外の全面禁止とResult型の採用 | 標準ライブラリが例外を投げるので、境界で変換が必要になる。変換の漏れという新しい誤りが生まれる |
 | `nil`の禁止 | Kubernetes APIは、未設定と空を区別する。`nil`をなくすと、この区別を表現できなくなる |
 
-## Related
+## 関連
 
 - [document conventions](../foundation/document-conventions.md)
 - [Ruby Design index](../ruby/README.md)
