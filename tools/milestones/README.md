@@ -42,9 +42,10 @@ RUBERNETES_M7_M6_MANIFEST=artifacts/milestones/M6/<run-id>/manifest.json rake m7
 RUBERNETES_M9_M8_MANIFEST=artifacts/milestones/M8/<run-id>/manifest.json rake m9:verify
 ```
 
-Any source change invalidates the digest and forces a fresh chain from M0.
-The sections below describe what each gate demands and record the
-verification history that used to live in the top-level README.
+A source change alters the digest and invalidates every captured bundle.
+When that happens, re-capture from M0.
+
+The sections below describe what each gate requires.
 
 ## M0 Executable foundation
 
