@@ -5,9 +5,7 @@
 
 > 対象読者: すべての実装者、レビュア
 >
-> **Status:** Normative — version 0.2
-
-Ruby、FFI、error、concurrency、immutability、metaprogramming、形式仕様対応の規約を定義する。
+> 状態: 規範、版0.2
 
 
 <a id="sec-10-1"></a>
