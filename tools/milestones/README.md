@@ -6,9 +6,29 @@ For verification engineers and reviewers.
 
 ## How it works
 
-The chain is cumulative: `rake m1:verify` needs a `COMPLETE` M0 manifest,
-M2 needs M1, and so on through M9. Each gate takes the previous manifest
-through an environment variable:
+There are ten milestones, M0 to M9. Each one is judged complete in two
+steps.
+
+1. `rake m<n>:evidence` runs the checks and collects the results into an
+   evidence bundle under `artifacts/milestones/M<n>/<run-id>/`. A bundle is
+   identified by the digest of its contents.
+2. `rake m<n>:verify` is the gate. It re-checks the bundle.
+
+A bundle is `COMPLETE` only when all of the following hold:
+
+- The digest of the source inventory did not change during the capture.
+- Every required real adapter and external runner ran.
+- The earlier bundles it refers to were captured from the same source.
+
+A missing adapter, a skipped test or a source change during the capture
+makes the bundle `INCOMPLETE`. An `INCOMPLETE` bundle never passes. The
+tools here neither require nor create a Git repository.
+
+## The chain of gates
+
+Each gate depends on the one before it. `rake m1:verify` needs a `COMPLETE`
+M0 manifest, M2 needs M1, and so on through M9. Pass the previous manifest
+in an environment variable.
 
 ```bash
 rake m0:evidence
