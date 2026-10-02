@@ -22,7 +22,7 @@
 ├── Rakefile
 ├── rubernetes.gemspec
 ├── spec.md
-├── spec/                         # Normative specification and design source of truth
+├── spec/                         # 仕様と設計書の正本
 │   ├── foundation/
 │   ├── ruby/
 │   ├── api/
