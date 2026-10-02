@@ -135,7 +135,7 @@ hydrophone \
 
 タイムアウト、並列数、テストの順序を変えた実行は、別の実行として扱う。失敗した実行の置き換えには使えない。
 
-JUnitとGinkgo JSONを`conformance.yaml`のcodenameへjoinし、次を検査する。
+JUnitとGinkgoのJSONを、`conformance.yaml`の`codename`で結合する。そのうえで次の項目を検査する。
 
 - 446 codenameがそれぞれexactly once選択される
 - pass 446、fail 0、skip 0、pending 0、aborted 0である
