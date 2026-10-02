@@ -100,7 +100,7 @@ watchは長時間の接続なので、実行中の数には含めない。
 3. 各finalizerを担当するコントローラが後始末をし、自分の項目を取り除く。
 4. `finalizers`が空になった時点で、実際に削除する。
 
-猶予期間（`gracePeriodSeconds`）の既定値は Pod で 30 秒。
+猶予期間`gracePeriodSeconds`の既定値は、Podでは30秒である。
 
 <a id="sec-5-1-7"></a>
 ## 5.1.7 Admission と API 拡張
