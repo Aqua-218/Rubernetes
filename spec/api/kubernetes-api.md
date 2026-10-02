@@ -106,10 +106,13 @@ GET /openapi/v3/apis/{group}/{version}            group/version OpenAPI v3
 GET /healthz  /livez  /readyz                     ヘルスチェック
 ```
 
-`exec`、`attach`、`portforward`、`log`、`proxy`、`eviction`、`binding`、`scale`、
-`status`、`token`、`approval` 等の subresource は discovery corpus の verb と
-Kubernetes streaming protocol に従う。HTTP/1.1、HTTP/2、WebSocket、SPDY fallback、
-JSON、YAML、Kubernetes Protobuf、gzip を content negotiation で選択する。
+`kubectl`は起動時に、`/api`、`/apis`、`APIResourceList`といったdiscovery系のエンドポイントを必ず呼ぶ。discoveryが正しく返らないと、以降の操作はすべて失敗する。そのため、実装順ではdiscoveryを最優先とする。
+
+### subresourceとプロトコル
+
+`exec`、`attach`、`portforward`、`log`、`proxy`、`eviction`、`binding`、`scale`、`status`、`token`、`approval`などのsubresourceは、discoveryコーパスのverbと、Kubernetesのストリーミングプロトコルに従う。
+
+content negotiationでは次のものを選択できる。
 
 `kubectl` は起動時に discovery 系（`/api`、`/apis`、`APIResourceList`）を
 必ず叩く。ここが正しく返らないと以降が一切動かない。実装順で最優先とする。
