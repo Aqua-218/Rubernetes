@@ -22,11 +22,15 @@ Kubernetes Conformanceは、最初に通過しなければならないゲート�
 
 | 入力 | 変更できない識別子 | 用途 |
 |---|---|---|
-| Kubernetes source | tag `v1.36.2` → commit `24e2b02af5543d7910c2bb074c7264df5a8f0467` | e2e source、test metadata、API oracle |
-| Conformance definition | 446 tests、SHA-256 `cdbad746df8e8f5f7e63ef147b579e921c1ad70a68d826f2b9c5af27dbbf7641` | required test inventory |
-| Conformance image | `registry.k8s.io/conformance@sha256:e86cfc45351bd6937c4744477a204130af2c822682b79465490d1cd2d1f7c246` | official `e2e.test`/Ginkgo execution image |
-| Hydrophone | `v0.7.0`、commit `3de3e886a2f6f09635d8b981c195490af1584d97` | lightweight direct runner |
-| Sonobuoy | `v0.57.5`、commit `310c51d9874a4d10d021ec8a19f8b42292ec0bfc` | CNCF certified-conformance形式のevidence |
+| Kubernetesのソース | タグ`v1.36.2`、コミット`24e2b02af5543d7910c2bb074c7264df5a8f0467` | e2eのソース、テストのメタデータ、APIの比較対象 |
+| Conformanceの定義 | 446件、SHA-256 `cdbad746df8e8f5f7e63ef147b579e921c1ad70a68d826f2b9c5af27dbbf7641` | 必須テストの一覧 |
+| Conformanceイメージ | `registry.k8s.io/conformance@sha256:e86cfc45351bd6937c4744477a204130af2c822682b79465490d1cd2d1f7c246` | 公式の`e2e.test`とGinkgoを実行するイメージ |
+| Hydrophone | `v0.7.0`、コミット`3de3e886a2f6f09635d8b981c195490af1584d97` | 軽量な直接実行ランナー |
+| Sonobuoy | `v0.57.5`、コミット`310c51d9874a4d10d021ec8a19f8b42292ec0bfc` | CNCFのcertified-conformance形式の証拠 |
+
+アーキテクチャ別のイメージのダイジェスト、ランナーのアーカイブのチェックサム、補助イメージのダイジェストは、[`third_party/locks/`](../../third_party/locks/README.md)を機械可読な正本とする。
+
+次のものだけをリリースの入力にしてはならない。
 
 architecture別image digest、runner archive checksum、support image digestは
 [`third_party/locks/`](../../third_party/locks/README.md)をmachine-readable source of truthとする。
