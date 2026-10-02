@@ -16,14 +16,14 @@
 
 | 層 | 対象 | 実行する頻度 |
 |---|---|---|
-| 単体 | 関数・クラス | 毎コミット |
-| プロパティ | 不変条件を満たすか | 毎コミット |
-| 統合 | コンポーネント間 | 毎コミット |
-| E2E | クラスタ全体 | 毎マージ |
-| Kubernetes Conformance | v1.36.2定義446件、3 x86_64 release profile | main branch 日次、milestone candidate、release |
-| 障害注入 | 分散・Runtime・MicroVM の安全性 | main branch 日次、release |
-| モデル検査 | TLA+ 仕様 | 仕様変更時と release |
-| 実機境界 | namespace/cgroup/seccomp/netlink/KVM/dm-verity/vsock | 対応 component 変更時、release |
+| 単体 | 関数とクラス | 毎コミット |
+| property | 不変条件を満たすかどうか | 毎コミット |
+| 統合 | コンポーネントの間 | 毎コミット |
+| e2e | クラスタ全体 | 毎マージ |
+| Kubernetes Conformance | v1.36.2が定義する446件。x86_64の3つのリリースプロファイルで実行する | mainブランチで毎日、マイルストーンの候補、リリース |
+| 障害注入 | 分散処理、ランタイム、MicroVMの安全性 | mainブランチで毎日、リリース |
+| モデル検査 | TLA+の仕様 | 仕様の変更時、リリース |
+| 実機の境界 | namespace、cgroup、seccomp、netlink、KVM、dm-verity、vsock | 対応するコンポーネントの変更時、リリース |
 
 <a id="sec-8-2"></a>
 ## 8.2 障害注入
