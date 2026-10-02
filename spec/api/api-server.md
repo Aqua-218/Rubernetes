@@ -58,9 +58,9 @@ RBAC、Node、Webhook、ABAC、AlwaysAllow、AlwaysDenyの各authorizerを実装
 
 評価の規則は次のとおりである。
 
-- 適用可能な Role / ClusterRole の中に 1 つでも許可があれば許可
-- 明示的な拒否ルールは持たない（Kubernetes に合わせる）
-- 未認可は `403`
+- 適用できるRoleとClusterRoleの中に許可が1つでもあれば、許可する。
+- 明示的な拒否のルールは持たない。Kubernetesに合わせるためである。
+- 認可されなかった要求には`403`を返す。
 
 <a id="sec-5-1-4"></a>
 ## 5.1.4 流量制御
