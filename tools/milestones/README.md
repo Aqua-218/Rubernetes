@@ -314,14 +314,22 @@ taken. The p95 must be 1.5 seconds or less.
 
 ## M8 Kubernetes compatibility
 
-`tools/conformance/run.rb` executes the K0–K7 lanes from
-[the compatibility contract](../../spec/verification/kubernetes-compatibility.md)
-and writes a run manifest per profile. A lane whose prerequisites are
-missing reports `INCOMPLETE` with the reason; it never substitutes a mock or
-reuses another run's result, and the M8 gate rejects any `INCOMPLETE` lane.
-`rake m8:lanes` runs the lanes, `rake m8:evidence` captures the bundle and
-`rake m8:verify` gates it. See [tools/conformance](../conformance/README.md)
-for the cluster bring-up and the day-to-day conformance loop.
+`tools/conformance/run.rb` runs lanes K0 to K7 of the
+[compatibility contract](../../spec/verification/kubernetes-compatibility.md)
+and writes a run manifest per profile.
+
+A lane whose prerequisite is missing reports `INCOMPLETE` with the reason.
+It does not substitute a mock or reuse the result of another run. The M8
+gate fails when any lane is `INCOMPLETE`.
+
+| Command | Purpose |
+|---|---|
+| `rake m8:lanes` | Run the lanes |
+| `rake m8:evidence` | Capture the bundle |
+| `rake m8:verify` | Run the gate |
+
+For cluster bring-up and day-to-day conformance runs, see
+[tools/conformance](../conformance/README.md).
 
 ## M9 Release
 
