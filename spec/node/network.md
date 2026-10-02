@@ -39,11 +39,11 @@ recover                → recovery_report
 <a id="sec-5-9-3"></a>
 ## 5.9.3 Podネットワークの構築
 
-1. veth pair を作成する
-2. 一方を Pod の network namespace へ移動する
-3. Pod 側に IP を割り当て、up にする
-4. ホスト側をブリッジに接続する
-5. デフォルトルートを設定する
+1. vethのペアを作る。
+2. 片方をPodのnetwork namespaceに移す。
+3. Pod側にIPを割り当て、リンクをupにする。
+4. ホスト側をブリッジに接続する。
+5. デフォルトルートを設定する。
 
 <a id="sec-5-9-4"></a>
 ## 5.9.4 IPAM
