@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [制御面](README.md)
 
 <a id="sec-5-6"></a>
-# 5.6 Scheduler
+# 5.6 スケジューラ
 
 > **Audience:** Scheduler実装者、形式検証者
 >
