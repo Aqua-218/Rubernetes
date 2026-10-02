@@ -189,7 +189,7 @@ graph TD
 - `consensus/`は、`Store`の耐久性のある実装を提供する。APIオブジェクトの意味論は所有しない。
 - コントローラ、スケジューラ、ノードは、WALやRaftノードに直接アクセスしない。APIか、明示したStoreの契約を使う。
 
-### Node and Linux boundary
+### ノードとLinuxの境界
 
 - `node/`はPod desired/observed stateとrollback順序を所有する。
 - `runtime/`、`network/`、`proxy/`、`volume/`は互いのprivate implementationへ依存せず、Node Agentのcontractで接続する。
