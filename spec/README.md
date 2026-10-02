@@ -78,7 +78,7 @@ graph TD
 
 ### 制御面とノード
 
-- [Store](control-plane/store.md)
+- [ストア](control-plane/store.md)
 - [Raft](control-plane/raft.md)
 - [Informer](control-plane/informer.md)
 - [Controllers](control-plane/controllers.md)
