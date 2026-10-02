@@ -5,7 +5,7 @@
 
 > 対象読者: APIサーバの実装者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 API request pipeline、admission、scheme、storage接続を示す。
 
