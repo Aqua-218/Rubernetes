@@ -245,9 +245,7 @@ UID、タイムスタンプ、乱数の値、ノード固有のアドレスは�
 
 2026-08-22の時点で必須なのは、v1.35の最新のpatchと、v1.36.2である。v1.37が正式に公開された時点で、v1.37の最新のpatchを自動的に必須に加える。各バイナリは、公式のチェックサムと署名で固定する。
 
-upgrade、rollback、API Server rolling restart、controller/scheduler leader loss、worker reboot、
-backup/restore後に、acknowledged object、managedFields、UID ownership、Volume attachment、Pod identityを失わない。
-rollback不能なstorage migrationをrelease artifactへ含めてはならない。
+各kubectlで、次のコマンドを実行する。
 
 ## Evidence Manifest
 
