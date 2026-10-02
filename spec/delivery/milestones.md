@@ -75,7 +75,7 @@ graph LR
 | M9 | 15 | 形式検証、性能、供給網、リリースの証拠を含む、1.0.0のゲートを通過する |
 
 <a id="milestone-m0"></a>
-## M0 — Executable Foundation
+## M0 実行基盤
 
 ### Deliverables
 
