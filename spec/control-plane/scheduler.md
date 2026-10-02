@@ -23,11 +23,11 @@ SchedulingQueue → Filter → Score → Reserve → Bind
 
 次の条件をすべて満たすノードだけを候補にする。
 
-- `NodeResourcesFit`: requests の合計が割当可能量以内
-- `NodeName` / `NodeSelector` / `NodeAffinity`
-- `TaintToleration`
-- `PodAffinity` / `PodAntiAffinity`
-- ノードが `Ready` であること
+- `NodeResourcesFit`: requestsの合計が、割り当て可能な量に収まる。
+- `NodeName`、`NodeSelector`、`NodeAffinity`を満たす。
+- `TaintToleration`を満たす。
+- `PodAffinity`、`PodAntiAffinity`を満たす。
+- ノードが`Ready`である。
 
 <a id="sec-5-6-3"></a>
 ## 5.6.3 Score
