@@ -60,7 +60,7 @@ graph TD
 
 ## 全文書の一覧
 
-### Foundation
+### 基礎
 
 - [文書規約](foundation/document-conventions.md)
 - [目的・互換性・規模](foundation/goals-and-compatibility.md)
