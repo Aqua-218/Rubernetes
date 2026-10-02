@@ -288,9 +288,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 - `microvm`と`microvm-restricted`のRuntimeClass
 - スナップショットのプール、identityのローテーション、dm-verity、ホスト側の後始末
 
-- Firecracker/jailer controller、guest image、Ruby guest supervisor、vsock protocol
-- `microvm`と`microvm-restricted` RuntimeClass
-- snapshot pool、identity rotation、dm-verity、host cleanup
+### 完了条件
 
 ### Exit criteria
 
