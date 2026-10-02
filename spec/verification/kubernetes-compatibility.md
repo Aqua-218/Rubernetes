@@ -62,7 +62,7 @@ graph LR
     K7 --> Gate
 ```
 
-| Lane | Suite | Required result |
+| 段階 | 検査の内容 | 要求する結果 |
 |---|---|---|
 | K0 | lock、signature、digest、source cleanliness | mismatch 0、unresolved input 0 |
 | K1 | upstream `[Conformance]` 446 tests | profileごとにpass 446、fail/skip/flake 0 |
