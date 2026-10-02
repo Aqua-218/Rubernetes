@@ -115,22 +115,22 @@ sudo ruby tools/conformance/cluster.rb status --root /srv/rbn-dev
 sudo ruby tools/conformance/cluster.rb down   --root /srv/rbn-dev
 ```
 
-`cluster.rb` は conformance 実行にも使っているもので、正しい構成の参照実装
-です（`<root>/<profile>/cluster.json` にすべてのプロセス・ポート・ファイルが
-並びます）。共用ホストで動かす前に 2 点: `up` は
-`<RUBERNETES_M8_CGROUP_ROOT>/rubernetes`（既定 `/sys/fs/cgroup/rubernetes`）
-配下のワークロードを殺し、自分のネットワーク名前空間内の古い `rbn*` ブリッジと
-`rbn-*` 名前空間を消します。また同じネットワーク名前空間で別 root のクラスタが
-生きていれば起動を拒否します。1 ホストで複数クラスタを動かすには
-`tools/conformance/netns_env.sh` でクラスタごとにネットワーク名前空間を
-与えてください。手順は [tools/conformance/README.ja.md](tools/conformance/README.ja.md)
-にあります。
+`cluster.rb up`は1台のホスト上に6ノードのクラスタを作ります。PKI、コンポーネントごとのidentity、クラスタDNS、kubeconfigも同時に用意します。起動したプロセス、ポート、ファイルの一覧は`<root>/<profile>/cluster.json`で確認できます。Conformanceの実行にも同じスクリプトを使っているので、正しい構成の見本として読めます。
 
-リリース成果物からの常設インストール（systemd ユニット、PKI、アップグレード、
-バックアップとリストア）は [deploy/cluster/README.md](deploy/cluster/README.md)
-を読んでください。各デーモンは YAML 1 ファイル（`--config`、`--check-config`
-で検証）だけを読み、環境変数は読みません。`config/defaults/` に版付きの
-既定値があります。
+### 共用ホストで動かすときの注意
+
+`up`は起動前に次のものを消します。
+
+- `/sys/fs/cgroup/rubernetes`配下で動いているワークロード。場所は`RUBERNETES_M8_CGROUP_ROOT`で変えられます。
+- 同じネットワーク名前空間にある古い`rbn*`ブリッジと`rbn-*`名前空間
+
+同じネットワーク名前空間で別のrootのクラスタが動いている場合、`up`は起動を拒否します。1台で複数のクラスタを動かすときは、`tools/conformance/netns_env.sh`でクラスタごとにネットワーク名前空間を分けてください。手順は[tools/conformance/README.ja.md](tools/conformance/README.ja.md)にあります。
+
+### 常設インストール
+
+リリース成果物から常設のクラスタを作る手順は[deploy/cluster/README.md](deploy/cluster/README.md)にあります。systemdユニット、PKI、アップグレード、バックアップとリストアを扱っています。
+
+各デーモンは`--config`で渡したYAMLファイル1つだけを読み、環境変数は読みません。`--check-config`を付けると設定を検証できます。既定値は`config/defaults/`にバージョンごとに置いてあります。
 
 ### ダッシュボードとメトリクス
 
