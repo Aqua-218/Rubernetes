@@ -3524,7 +3524,18 @@ module Rubernetes
                      options = {timeout: grace}
                      options[:release_process] = release_process if accepts_keyword?(@runtime, :stop_container, :release_process)
                      invoke(@runtime, :stop_container, container_id, **options)
-                   rescue StandardError
+                   rescue StandardError => error
+                     # A container the runtime no longer knows (the host
+                     # rebooted, or recovery released its sandbox) has nothing
+                     # left to stop.  Waiting out the grace period for it kept
+                     # a restarted node NotReady for the sum of its Pods'
+                     # grace periods; kubelet reports such a container
+                     # terminated (137) and moves on.
+                     if lost_container_error?(error)
+                       (@stop_details ||= {})[container_id] = {killed: true}
+                       return true
+                     end
+
                      false
                    end
                  elsif @runtime.respond_to?(:signal)
