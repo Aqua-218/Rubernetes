@@ -173,33 +173,44 @@ rake lint:fix                    # 安全な自動修正だけを適用。実行
 rake rbs:validate                # 手書きのRBSを検証
 ```
 
-守るべき約束事:
+コードを変更するときは次の決まりを守ってください。
 
-- **型の正はスキーマコーパス。** Kubernetes の型を手書きしない。`tools/schema/`
-  の importer / generator を変えて再生成する。生成物はバイト単位で再現可能で
-  あること。
-- **振る舞いは upstream と突き合わせて確かめる。自分の読解と突き合わせない。**
-  新しい API・コントローラ・スケジューラ・kubelet の振る舞いには、可能なら
-  固定した Kubernetes バイナリ／イメージに対する differential かオラクルの
-  テストを、無理なら対応する upstream テストから起こしたテストを付ける。
-- **黙ってスキップしない。** アダプタ、カーネル機能、外部ランナーが無ければ
-  `INCOMPLETE` かエラーとして報告し、合格にはしない。免除（waiver）は名前と
-  理由を記録する（[tools/milestones/README.ja.md](tools/milestones/README.ja.md)
-  のカーネル waiver を参照）。
-- **ダックタイピングは意図的。** 無効化している RuboCop の cop は全て理由付きで
-  `.rubocop.yml` に列挙してある。大半は自動修正がレシーバの具象型を仮定するもの
-  （Struct への `grep`、Hash への `partition`、`File::Stat` への `empty?`）。
-  `rake lint` は常に違反ゼロで、todo ファイルは無い。整形のみのコミットは
-  `.git-blame-ignore-revs` に列挙。
-- **`lib/` に `require` を足したら lib 全体を 1 度ロードする**
-  （`ruby -Ilib -e 'require "rubernetes"'`）。壊れた `require_relative` は
-  それを必要とするプロセスでしか露見しない。
-- **コミットは書くのではなく記録する。** `rake repo:commit`（または
-  `ruby tools/repo/auto_commit.rb --cycle <name> --status 0`）が作業ツリーを
-  「連続した編集 1 つ = 1 コミット」に変換し、変更が属する宣言名でコミット名を
-  付け、ソース → テスト → ドキュメントの順で、HEAD への compare-and-swap で
-  公開する。未ステージの変更もコミットするので、載せたくないものは stash
-  しておく。著者以外のトレーラは付けない。
+### 型はスキーマから生成する
+
+Kubernetesの型を手で書かないでください。型を変えたいときは`tools/schema/`のimporterかgeneratorを直し、再生成します。生成物はバイト単位で再現できる必要があります。
+
+### 振る舞いはupstreamと比べて確かめる
+
+API、コントローラ、スケジューラ、kubeletの振る舞いを足したら、固定したKubernetesのバイナリかイメージと結果を比べるテストを付けてください。比べられない場合は、対応するupstreamのテストをもとにテストを書きます。自分がソースを読んで理解した内容だけを根拠にしないでください。
+
+### 実行できなかった検査を合格にしない
+
+アダプタ、カーネル機能、外部ランナーが足りないとき、検査は`INCOMPLETE`かエラーを報告します。免除する場合は名前と理由を記録してください。カーネルの免除の例が[tools/milestones/README.ja.md](tools/milestones/README.ja.md)にあります。
+
+### ダックタイピングを前提にする
+
+無効にしているRuboCopのcopは、理由とともに`.rubocop.yml`に並べてあります。その多くは、自動修正がレシーバの型を決め打ちするcopです。Structへの`grep`、Hashへの`partition`、`File::Stat`への`empty?`がその例にあたります。`rake lint`は違反ゼロを保ち、todoファイルは置きません。整形だけのコミットは`.git-blame-ignore-revs`に登録してください。
+
+### requireを足したらlib全体を読み込む
+
+`lib/`に`require`を足したら、次のコマンドでlib全体を一度読み込んでください。
+
+```sh
+ruby -Ilib -e 'require "rubernetes"'
+```
+
+`require_relative`の誤りは、そのファイルを読み込むプロセスを起動するまでエラーになりません。
+
+### コミットはツールで作る
+
+`rake repo:commit`を実行すると、ツールが作業ツリーの変更をコミットに分けます。`ruby tools/repo/auto_commit.rb --cycle <name> --status 0`でも同じです。ツールの動きは次のとおりです。
+
+- 連続した編集1つを1コミットにします。
+- 変更が属する宣言の名前をコミット名にします。
+- ソース、テスト、ドキュメントの順に並べます。
+- HEADへのcompare-and-swapで公開します。
+- ステージしていない変更もコミットします。含めたくない変更は先にstashしてください。
+- 著者以外のトレーラは付けません。
 
 ## 検証
 
