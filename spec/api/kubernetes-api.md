@@ -23,11 +23,13 @@ Kubernetes v1.36.2に対するリソース、エンドポイント、ワイヤ�
 
 | コーパス | 内容 | 更新の規則 |
 |---|---|---|
-| `compat/kubernetes/v1.36.2/discovery/` | group、version、resource、scope、verb、shortName、category、subresource | upstream 応答を正規化して固定 |
-| `compat/kubernetes/v1.36.2/openapi/` | field、型、required、default、validation、patch strategy | upstream 配布物の SHA-256 を固定 |
-| `compat/kubernetes/v1.36.2/protobuf/` | wire field number と message 定義 | upstream `.proto` と descriptor set を固定 |
-| `compat/kubernetes/v1.36.2/conformance.yaml` | 規範的な API と E2E 挙動 | upstream test list を無変更で固定 |
-| `compat/kubernetes/v1.36.2/features.yaml` | feature gate、既定値、対象 API | 全 gate の on/off profile を生成 |
+| `schema/kubernetes/v1.36.2/discovery/` | group、version、resource、scope、verb、shortName、category、subresource | upstreamの応答を正規化して固定する |
+| `schema/kubernetes/v1.36.2/openapi/` | フィールド、型、required、既定値、validation、patch strategy | upstreamの配布物のSHA-256を固定する |
+| `schema/kubernetes/v1.36.2/protobuf/` | ワイヤ上のフィールド番号とメッセージの定義 | upstreamの`.proto`とdescriptor setを固定する |
+| `schema/kubernetes/v1.36.2-defaults/features.json` | feature gate、既定値、対象のAPI | すべてのgateについてon、offのプロファイルを生成する |
+| upstreamの`test/conformance/testdata/conformance.yaml` | 規範となるAPIとe2eの挙動 | upstreamのテスト一覧を変更せず、`third_party/locks/kubernetes-v1.36.2.json`でダイジェストを固定する |
+
+CRDを登録した場合は、組み込みのリソースと同じ経路で扱う。対象は、提供するバージョン、subresource、conversion、defaulting、CELによるvalidation、selectable field、printer column、OpenAPIの公開、discoveryへの反映である。
 
 CRD を登録した場合は、その served version、subresource、conversion、defaulting、CEL validation、
 selectable field、printer column、OpenAPI 公開および discovery 反映を built-in resource と同じ経路で扱う。
