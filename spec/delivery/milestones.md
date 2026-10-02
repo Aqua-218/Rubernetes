@@ -241,12 +241,7 @@ graph LR
 
 ### 必要な証拠
 
-1. 3 nodeで1 failure、5 nodeで2 failure中もcommit済みstateを失わない。
-2. acknowledged writeのRPOが0で、quorum回復後60秒以内にread/writeと制御loopを再開する。
-3. disk full、short write、fsync error、torn WAL、snapshot corruptionをfail-closedで処理する。
-4. partition、asymmetric partition、reorder、clock jumpを含むhistoryが線形化可能である。
-5. membership changeとsnapshot install中のleader lossでsplit brainとlost commitが0である。
-6. 全effect pointについてrequest lossとresponse lossを区別し、再実行で二重副作用を起こさない。
+次のものを保存する。
 
 ### Required evidence
 
