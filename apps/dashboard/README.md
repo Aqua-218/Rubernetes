@@ -141,8 +141,11 @@ All configuration is through environment variables, defined in
 | `DASHBOARD_RULES` | `config/rules.yml` | Rule file |
 | `DASHBOARD_ALERT_WEBHOOK` | empty | Alertmanager-compatible receiver |
 | `DASHBOARD_ALLOW_WRITES` | `1` | `0` makes the UI read-only |
-| `DASHBOARD_COLLECTOR` | `1` | `0` disables scraping (UI only) |
-| `no_proxy` | | Pod and Service scrapes dial Pod IPs; keep them off any HTTP proxy |
+| `DASHBOARD_COLLECTOR` | `1` | `0` disables scraping, leaving only the UI |
+
+Pod and Service metrics are scraped by connecting directly to Pod IPs. Where
+an HTTP proxy is in use, set `no_proxy` so that traffic to Pods does not go
+through the proxy.
 
 ## Development
 
