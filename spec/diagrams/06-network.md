@@ -3,7 +3,7 @@
 <a id="sec-a-6"></a>
 # A.6 図06 ネットワーク
 
-> **Audience:** Network/Service実装者
+> 対象読者: ネットワークとServiceの実装者
 >
 > **Status:** Normative — version 0.2
 
