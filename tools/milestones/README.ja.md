@@ -35,9 +35,9 @@ RUBERNETES_M7_M6_MANIFEST=artifacts/milestones/M6/<run-id>/manifest.json rake m7
 RUBERNETES_M9_M8_MANIFEST=artifacts/milestones/M8/<run-id>/manifest.json rake m9:verify
 ```
 
-ソースを変更するとダイジェストが無効になり、M0 から連鎖を取り直すことに
-なります。以下は各ゲートの要求事項と、かつてトップレベル README にあった
-検証履歴です。
+ソースを変更するとダイジェストが変わり、取得済みのバンドルはすべて無効になります。その場合はM0から取り直してください。
+
+以下、各ゲートが何を要求するかを順に説明します。
 
 ## M0 実行基盤
 
