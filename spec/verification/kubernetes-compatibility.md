@@ -145,7 +145,7 @@ JUnitとGinkgoのJSONを、`conformance.yaml`の`codename`で結合する。そ�
 
 途中で失敗したテストだけを再実行して成功しても、元の実行を成功に書き換えてはならない。失敗の原因を修正した新しいコミットで、スイート全体を最初から実行する。
 
-## K2 — Certified-Conformance Evidence
+## K2 certified-conformanceの証拠
 
 CNCF提出形式の独立確認としてSonobuoyを使用する。Ruby runnerは次と同値のargvを実行する。
 
