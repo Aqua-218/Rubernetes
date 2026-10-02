@@ -72,10 +72,11 @@ end
 <a id="sec-8-4"></a>
 ## 8.4 差分テスト
 
-自作実装と隔離した oracle（Kubernetes v1.36.2、etcd、runc/containerd、既存 CNI/CSI）に
-同一入力を与え、観測可能な結果を比較する。oracle binary は test image 内だけに置き、
-production artifact と production dependency graph への混入を CI で拒否する。
-不一致は最小反例に縮約して記録する。
+自作の実装と、隔離した比較対象に同じ入力を与え、観測できる結果を比べる。比較対象は、Kubernetes v1.36.2、etcd、runcとcontainerd、既存のCNIとCSIである。
+
+比較対象のバイナリは、テスト用のイメージの中だけに置く。本番の成果物や本番の依存関係のグラフに混入した場合は、CIで拒否する。
+
+結果が一致しなかった場合は、最小の反例に縮めて記録する。
 
 これが [§3.2](../foundation/architecture.md#sec-3-2) で差し替え境界を設けた主目的である。
 
