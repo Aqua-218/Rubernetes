@@ -47,7 +47,13 @@ G5では網羅的なモデル検査を行わない。[7.2](../verification/forma
 <a id="sec-1-3"></a>
 ## 1.3 互換性の境界
 
-互換性の規範対象は Kubernetes v1.36.2 が Linux ノード向けに公開する次の境界である。
+互換性の規範対象は、Kubernetes v1.36.2がLinuxノード向けに公開する次の境界である。
+
+- すべての組み込みAPIのgroup、version、resource、subresourceと、CRD
+- defaulting、validation、conversion、admission。既定の状態と、feature gateを有効にした状態の両方を含む
+- JSON、YAML、Kubernetes Protobuf、watch、exec、attach、port-forwardのワイヤプロトコル
+- コントローラ、スケジューラ、ノード、ボリューム、ネットワーク、Service、DNSの、外部から観測できる挙動
+- `kubectl`、client-go、Dynamic Client、Helm、Operatorから観測されるエラーの契約
 
 - すべての built-in API group/version/resource/subresource と CRD
 - 既定および feature gate 有効時の defaulting、validation、conversion、admission
