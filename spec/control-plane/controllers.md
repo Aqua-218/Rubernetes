@@ -3,7 +3,7 @@
 <a id="sec-5-5"></a>
 # 5.5 コントローラ
 
-> **Audience:** Controller実装者、Ruby DSL設計者
+> 対象読者: コントローラの実装者、Ruby DSLの設計者
 >
 > **Status:** Normative — version 0.2
 
