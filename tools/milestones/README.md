@@ -4,14 +4,7 @@ English | [日本語](README.ja.md)
 
 For verification engineers and reviewers.
 
-Every milestone M0–M9 is closed by a content-addressed evidence bundle below
-`artifacts/milestones/M<n>/<run-id>/` (`rake m<n>:evidence`) that a strict
-gate re-checks (`rake m<n>:verify`). A bundle is `COMPLETE` only when the
-source inventory digest stayed stable while it was captured, every required
-real adapter and external runner ran, and the referenced lower bundles were
-captured from the identical source input. A missing adapter, a test skip or
-an unstable source tree is recorded as `INCOMPLETE`; it is never promoted to
-a pass. Nothing here requires or creates a Git repository.
+## How it works
 
 The chain is cumulative: `rake m1:verify` needs a `COMPLETE` M0 manifest,
 M2 needs M1, and so on through M9. Each gate takes the previous manifest
