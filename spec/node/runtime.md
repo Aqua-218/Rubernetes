@@ -398,10 +398,21 @@ vsockのメッセージは、`[u32 big-endian length][canonical CBOR payload]`�
 
 ### restricted broker
 
-restricted broker が公開できる operation は schema registry に登録した closed set に限る。
-各 operation は effect point で capability、subject、object、parameters、expiry、revocation epoch、policy digest を
-再認可する。DNS は全回答 IP が policy を満たさなければ全体を拒否し、HTTP redirect は hop ごとに
-名前解決と認可をやり直す。未知 operation と未知 field は fail-closed する。
+restricted brokerが公開できる操作は、スキーマレジストリに登録した、閉じた集合に限る。
+
+各操作は、effect pointで次の項目を再び認可する。
+
+- capability
+- subject
+- object
+- パラメータ
+- 有効期限
+- 失効のepoch
+- ポリシーのダイジェスト
+
+DNSでは、回答に含まれるすべてのIPがポリシーを満たさなければ、回答全体を拒否する。HTTPのリダイレクトでは、hopごとに名前解決と認可をやり直す。
+
+未知の操作と未知のフィールドは、fail-closedで拒否する。
 
 <a id="sec-5-8-14"></a>
 ## 5.8.14 crash recovery と安全不変条件
