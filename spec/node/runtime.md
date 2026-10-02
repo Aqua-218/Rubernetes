@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-Native/MicroVM Runtime、状態機械、resource ownership、rollback、snapshot identityを定義する。
+NativeとMicroVMの2つのランタイム、状態機械、資源の所有権、ロールバック、スナップショットのidentityを定義する。ランタイムは自作する。
 
 
 > **Diagram:** [図 05 — Runtime](../diagrams/05-runtime.md)
