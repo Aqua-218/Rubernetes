@@ -5,9 +5,7 @@
 
 > 対象読者: API実装者、クライアントの作者、互換性の検証者
 >
-> **Status:** Normative — version 0.2
-
-Kubernetes v1.36.2 に対する resource、endpoint、wire format、watch、patch、互換判定を定義する。
+> 状態: 規範、版0.2
 
 
 <a id="sec-4-1"></a>
