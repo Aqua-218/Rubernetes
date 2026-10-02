@@ -37,8 +37,7 @@ Kubernetes Conformanceは、最初に通過しなければならないゲート�
 - `latest`
 - レジストリのタグを解決し直した結果
 
-test imageが内部で参照する全container imageはrun開始前に列挙し、registry manifest digestを
-`resolved-images.json`へ固定する。test実行中に同じtagのdigestが変化した場合、そのrunは無効とする。
+テストイメージが内部で参照するコンテナイメージは、実行を始める前にすべて列挙する。レジストリのマニフェストのダイジェストを`resolved-images.json`に固定する。テストの実行中に同じタグのダイジェストが変わった場合、その実行は無効とする。
 
 ## Verification Lanes
 
