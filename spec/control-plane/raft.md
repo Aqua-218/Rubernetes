@@ -26,8 +26,7 @@ OngaroとOusterhoutによるRaftの論文に従う。以下は、本実装で決
 | スナップショットを取る契機 | コミット済みのエントリが100,000件に達するか、WALが512 MiBに達するか、どちらか早いほう |
 | スナップショットの最小間隔 | 30秒 |
 
-election timeout は heartbeat interval の 3 倍以上とする。
-これを下回ると安定したリーダーが不要な選挙で失われる。
+election timeoutは、heartbeat intervalの3倍以上とする。3倍を下回ると、不要な選挙が起き、安定していたリーダーが交代してしまう。
 
 <a id="sec-5-3-2"></a>
 ## 5.3.2 永続化
