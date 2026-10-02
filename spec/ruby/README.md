@@ -26,11 +26,11 @@ graph LR
 
 | DSL | 定義している文書 | 生成するもの、保証するもの |
 |---|---|---|
-| Schema | [Schema Compiler](schema-compiler.md) | type、validator、codec、default、OpenAPI、RBS、diff |
-| Manifest | [Manifest DSL](manifest-dsl.md) | 標準Kubernetes JSON。API wire formatは変更しない |
-| Controller | [Controllers](../control-plane/controllers.md#sec-5-5-8) | Informer、index、queue、ownershipの配線 |
-| Scheduler | [Scheduler](../control-plane/scheduler.md#sec-5-6-6) | 型付きFilter/Score plugin |
-| Scenario | [検証戦略](../verification/testing.md#sec-8-2) | 時系列障害注入と時相assertion |
+| Schema | [スキーマコンパイラ](schema-compiler.md) | 型、validator、コーデック、既定値、OpenAPI、RBS、diff |
+| Manifest | [Manifest DSL](manifest-dsl.md) | 標準のKubernetes JSON。APIのワイヤ形式は変えない |
+| Controller | [コントローラ](../control-plane/controllers.md#sec-5-5-8) | informer、インデックス、キュー、所有関係の配線 |
+| Scheduler | [スケジューラ](../control-plane/scheduler.md#sec-5-6-6) | 型付きのFilterプラグインとScoreプラグイン |
+| Scenario | [検証戦略](../verification/testing.md#sec-8-2) | 時系列での障害注入と、時相に関するアサーション |
 
 ## Metaprogramming Boundary
 
