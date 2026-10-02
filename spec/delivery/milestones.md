@@ -299,7 +299,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 
 ### 必要な証拠
 
-### Required evidence
+次のものを保存する。
 
 x86_64 KVM L4/L5 report、guest/host attack matrix、identity ledger、snapshot corruption corpus、
 startup latency raw samplesを保存する。
