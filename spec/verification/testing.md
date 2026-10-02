@@ -109,7 +109,19 @@ end
 ARMの実機プロファイルは、マイルストーンとリリースの完了条件に含めない。
 
 <a id="sec-8-8"></a>
-## 8.8 Kubernetes upstream test
+## 8.8 Kubernetesのupstreamテスト
+
+Kubernetesのテストについて、次の項目は[Kubernetes v1.36.2互換性試験契約](kubernetes-compatibility.md)に従う。
+
+- ソース
+- ランナー
+- テストの選択
+- アーキテクチャとネットワークのプロファイル
+- スキップを禁止する規則
+- クライアントとプロジェクトのコーパス
+- 証拠のスキーマ
+
+Conformanceの成功だけを、完全な互換性の根拠としてはならない。同じ文書のK0〜K7をすべて通過する必要がある。
 
 Kubernetes testのsource、runner、selection、architecture/network profile、skip禁止規則、
 client/project corpus、evidence schemaは
