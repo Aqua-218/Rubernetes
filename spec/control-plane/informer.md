@@ -38,6 +38,6 @@ Indexerが返したオブジェクトを、呼び出し側が変更してはな�
 
 ## 関連
 
-- [controllers](controllers.md)
-- [kubernetes api](../api/kubernetes-api.md)
-- [03 control loop](../diagrams/03-control-loop.md)
+- [コントローラ](controllers.md)
+- [Kubernetes API](../api/kubernetes-api.md)
+- [03 制御ループ](../diagrams/03-control-loop.md)
