@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [構成図](README.md)
 
 <a id="sec-a-8"></a>
-# A.8 図 08 — Verification
+# A.8 図08 検証
 
 > **Audience:** 形式検証者、test実装者、審査者
 >
