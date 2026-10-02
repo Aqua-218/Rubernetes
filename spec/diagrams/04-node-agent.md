@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [diagrams](README.md)
+[仕様書の目次](../README.md) / [構成図](README.md)
 
 <a id="sec-a-4"></a>
 # A.4 図 04 — Node Agent
