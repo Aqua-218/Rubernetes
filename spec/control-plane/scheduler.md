@@ -89,6 +89,6 @@ Filterは、`true`か、理由を付けた拒否だけを返す。Scoreは0〜10
 
 ## 関連
 
-- [controllers](controllers.md)
-- [node agent](../node/node-agent.md)
-- [formal methods](../verification/formal-methods.md)
+- [コントローラ](controllers.md)
+- [ノードエージェント](../node/node-agent.md)
+- [形式仕様](../verification/formal-methods.md)
