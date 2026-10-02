@@ -222,7 +222,7 @@ rake test                        # serial run, about 1 h; the evidence gates use
 ruby -Ilib -Itest test/unit/some_test.rb -n /pattern/
 rake lint                        # RuboCop, 160 columns, double quotes
 rake lint:fix                    # safe autocorrect only; re-run the tests afterwards
-rake rbs:validate                # hand-authored RBS baseline
+rake rbs:validate                # validates the hand-written RBS
 ```
 
 Conventions that matter:
