@@ -59,13 +59,18 @@ graph LR
 <a id="sec-3-3"></a>
 ## 3.3 実装の独立性と信頼境界
 
-- Ruby が policy、状態機械、resource ownership、codec、controller、scheduler を保持する
-- C 拡張は Ruby FFI で表現できない ABI の薄い shim に限定し、policy を実装してはならない
-- 生成コードはスキーマ DSL から再生成可能でなければならず、手編集してはならない
-- Linux kernel、CPU、KVM、Firecracker、jailer、guest kernel は MicroVM backend の TCB に含む
-- Native backend は host kernel を共有するため、kernel compromise を隔離できるとは主張しない
-- MicroVM backend は guest kernel compromise の封じ込めを目的とするが、VM escape 耐性の証明とは主張しない
-- 形式検証の主張、実機で検査した主張、TCB に仮定した主張を混同してはならない
+実装の独立性について、次のとおり定める。
+
+- ポリシー、状態機械、資源の所有権、コーデック、コントローラ、スケジューラはRubyが保持する。
+- C拡張は、RubyのFFIで表現できないABIを扱う薄いshimに限定する。C拡張にポリシーを実装してはならない。
+- 生成コードは、スキーマDSLから再生成できなければならない。手で編集してはならない。
+
+信頼境界について、次のとおり定める。
+
+- Linux kernel、CPU、KVM、Firecracker、jailer、ゲストkernelは、MicroVM backendのTCBに含む。
+- Native backendはホストのkernelを共有する。そのため、kernelが侵害された場合に隔離できるとは主張しない。
+- MicroVM backendは、ゲストkernelが侵害された場合の封じ込めを目的とする。ただし、VM escapeへの耐性を証明したとは主張しない。
+- 形式検証による主張、実機で検査した主張、TCBに仮定した主張を混同してはならない。
 
 <a id="sec-3-4"></a>
 ## 3.4 通信
