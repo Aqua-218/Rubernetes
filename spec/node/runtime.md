@@ -439,9 +439,7 @@ agentは起動時に、新しいPodを受け付ける前に、次のものをす
 
 いずれも監査の記録を残したうえで回収する。
 
-agent 起動時は新規 Pod を受理する前に runtime ledger、process、pidfd、cgroup、mount table、network link、
-IP lease、dm/loop device、jail root、Firecracker socket を全走査する。ledger にだけ存在する resource、
-kernel にだけ存在する orphan、identity が一致しない再利用 resource を区別し、監査記録を残して回収する。
+### 不変条件
 
 次を Runtime の MUST 不変条件とする。
 
