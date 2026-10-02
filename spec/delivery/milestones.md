@@ -117,7 +117,13 @@ graph LR
 
 ### 完了条件
 
-### Exit criteria
+1. 固定したコーパスにあるすべての組み込みのGVKとGVRが、レジストリにちょうど1回ずつ登録されている。
+2. すべての型で、JSONとKubernetes Protobufのround-trip、未知のフィールド、defaulting、validationが、比較対象と一致する。
+3. 同じ入力から2回生成したツリーの間に、バイト単位の差分がない。ソースツリー内の正規の生成ツリーとの差分もない。
+4. Rubyのアクセサ、RBS、OpenAPI、コーデック、patchのフィールド、DSLのメソッドの間で、フィールドの集合に差分がない。
+5. `kubectl v1.36.2`の`get`、`apply`、`patch`、`delete`、`watch`が、MemoryStoreのクラスタに対して成功する。
+6. 成功時とエラー時のHTTPステータス、ヘッダ、`Status`のボディ、フィールドの所有権が、Kubernetesと一致する。
+7. watchの再接続、resourceVersion、bookmark、compactionの境界について、property testを満たす。
 
 1. pinned corpusに存在する全built-in GVK/GVRがregistryに一度だけ登録される。
 2. 全型でJSONとKubernetes Protobufのround-trip、unknown field、defaulting、validationがoracleと一致する。
