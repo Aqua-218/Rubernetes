@@ -11,7 +11,7 @@
 
 ## 固定する外部仕様
 
-| 参照 | 固定対象 | 本書での役割 |
+| 参照 | 固定する対象 | 本書での役割 |
 |---|---|---|
 | [Ruby 3.4.11](https://www.ruby-lang.org/en/news/2026/09/23/ruby-3-4-11-released/) | source SHA-256 `5c22be44524312b3d433d68739bcc530633b1da5ef8ba0afa0a37680da17d3de` | development/CI runtime、Ruby API・ABI baseline |
 | [Kubernetes](https://github.com/kubernetes/kubernetes/tree/v1.36.2) | tag `v1.36.2` | API、controller、scheduler、node の互換 oracle |
