@@ -67,7 +67,7 @@ DSLのトップレベルメソッドとフィールドメソッドは、[6.2](sc
 rubectl apply -f app.rb --allow-code --env REPLICAS
 ```
 
-## Related
+## 関連
 
 - [schema compiler](schema-compiler.md)
 - [kubernetes api](../api/kubernetes-api.md)
