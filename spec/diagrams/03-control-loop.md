@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-Informer、WorkQueue、built-in/custom controller、schedulerのevent flowを示す。
+informer、WorkQueue、組み込みとカスタムのコントローラ、スケジューラの間を流れるイベントを示す。
 
 ```mermaid
 graph TB
