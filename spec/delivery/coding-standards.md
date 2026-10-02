@@ -178,8 +178,7 @@ Threadを生成する場所を集約する。任意の場所で生成しない�
 
 `send`でprivateメソッドを呼ばない。
 
-**R-5.2 M ⚙** 標準ライブラリおよび外部 gem のクラスを再定義しない。
-根拠: 影響範囲がプロセス全体に及び、局所的な検証で捉えられない。
+根拠: カプセル化の境界が意味を持たなくなる。
 
 **R-5.3 R 👁** `define_method` による定義は、
 schema compiler が生成する型、codec、manifest DSL、controller/scheduler の登録面に限る。
