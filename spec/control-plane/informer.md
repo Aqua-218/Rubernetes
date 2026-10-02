@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-Reflector、DeltaFIFO、Indexer、WorkQueueの接続とevent/retry不変条件を定義する。
+Reflector、DeltaFIFO、Indexer、WorkQueueの接続を定義する。イベントと再試行についての不変条件も定める。
 
 
 > **Diagram:** [図 03 — 制御ループ](../diagrams/03-control-loop.md)
