@@ -3,7 +3,7 @@
 <a id="sec-a-7"></a>
 # A.7 図07 ストレージとボリューム
 
-> **Audience:** Volume/Storage実装者
+> 対象読者: ボリュームとストレージの実装者
 >
 > **Status:** Normative — version 0.2
 
