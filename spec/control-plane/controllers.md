@@ -5,7 +5,7 @@
 
 > 対象読者: コントローラの実装者、Ruby DSLの設計者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 built-in controller の共通規約、主要controllerの振る舞い、Controller DSLを定義する。
 
