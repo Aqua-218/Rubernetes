@@ -162,7 +162,7 @@ class R1,R2,R3,R4,U1,U2,U3 st
 class API,CRI,CNI,CSI api
 ```
 
-## Related
+## 関連
 
 - [node agent](../node/node-agent.md)
 - [runtime](../node/runtime.md)
