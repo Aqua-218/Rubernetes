@@ -138,8 +138,7 @@ git clone <this repository> && cd 2026
 bundle install
 rake abi:compile                    # builds the C extension under build/
 
-# A 3 control-node + 3 worker cluster on this host, with PKI, bootstrap
-# per-component identities, cluster DNS and a kubeconfig, all under /srv/rbn-dev:
+# Create a cluster of 3 control nodes and 3 workers under /srv/rbn-dev
 sudo -E ruby tools/conformance/cluster.rb up --profile linux-amd64-ipv4-native --root /srv/rbn-dev
 
 export KUBECONFIG=/srv/rbn-dev/linux-amd64-ipv4-native/kubeconfig
