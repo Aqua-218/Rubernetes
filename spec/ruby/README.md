@@ -1,6 +1,6 @@
 [仕様書の目次](../README.md)
 
-# Ruby Language Design
+# Rubyの言語設計
 
 > **Audience:** Ruby実装者、DSL利用者、審査者
 
