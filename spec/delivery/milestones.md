@@ -312,9 +312,9 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 
 ### 成果物
 
-- [Kubernetes互換性試験契約](../verification/kubernetes-compatibility.md)の全lane
-- upstream test selection ledger、client version-skew matrix、real-project corpus
-- CNCF提出形式と同じConformance evidence
+- [Kubernetes互換性試験契約](../verification/kubernetes-compatibility.md)のすべての段階
+- upstreamのテストの選択台帳、クライアントのバージョン差の表、実在のプロジェクトのコーパス
+- CNCFへの提出形式と同じConformanceの証拠
 
 ### Exit criteria
 
