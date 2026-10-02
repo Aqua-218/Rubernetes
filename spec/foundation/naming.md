@@ -5,7 +5,7 @@
 
 > 対象読者: 全読者、リリース担当者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 project、module、CLI、daemon、extension domainの正式名称を定義する。
 
