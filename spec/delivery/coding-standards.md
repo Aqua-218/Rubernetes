@@ -68,8 +68,7 @@ Ruby、FFI、エラー、並行性、不変性、メタプログラミング、�
 
 ### R-1.5（R、レビュー）
 
-**R-1.2 M ⚙** `errno` は syscall 直後に読む。
-根拠: 後続の任意のライブラリ呼び出しが `errno` を上書きする。
+構造体のレイアウトは、アーキテクチャごとに定義する。サイズはテストで検証する。
 
 **R-1.3 M 👁** 確保した資源（fd、mount、namespace、cgroup、VM）は、
 取得前 intent、取得後 identity、解放状態を同一の ownership object と durable ledger で対にする。
