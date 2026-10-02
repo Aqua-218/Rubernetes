@@ -1,4 +1,4 @@
-# Rubernetes ダッシュボード
+# Rubernetesダッシュボード
 
 [English](README.md) | 日本語
 
