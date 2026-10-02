@@ -103,14 +103,17 @@ curl --noproxy '*' -sS http://<DASHBOARD_BIND>:3000/up
 | 変数 | 既定値 | 意味 |
 |---|---|---|
 | `RUBERNETES_KUBECONFIG` | `<RUBERNETES_CLUSTER_ROOT>/kubeconfig` | クラスタの認証情報 |
-| `RUBERNETES_CLUSTER_ROOT` | `/srv/rbn-app/linux-amd64-ipv4-native` | `cluster.json` と kubeconfig の置き場所 |
-| `DASHBOARD_BIND` | `10.240.0.1`（systemd ユニット） | 待ち受けアドレス |
-| `DASHBOARD_PASSWORD` | 空（認証なし） | UI と API の HTTP basic 認証パスワード |
-| `DASHBOARD_EXTERNAL_URL`、`DASHBOARD_HOSTS` | | 公開 URL と Rails が受け付ける Host ヘッダ |
-| `DASHBOARD_DATA_DIR` | `apps/dashboard/data` | ブロック、WAL、ラベルインデックス |
-| `DASHBOARD_SCRAPE_INTERVAL`、`DASHBOARD_SCRAPE_TIMEOUT` | `15`、`10` | 秒 |
-| `DASHBOARD_EVALUATION_INTERVAL` | scrape 間隔 | ルール評価の周期 |
-| `DASHBOARD_RETENTION`、`DASHBOARD_BLOCK_RANGE` | `15d`、`2h` | 保持期間とブロック長 |
+| `RUBERNETES_CLUSTER_ROOT` | `/srv/rbn-app/linux-amd64-ipv4-native` | `cluster.json`とkubeconfigの置き場所 |
+| `DASHBOARD_BIND` | `10.240.0.1`（systemdユニットの場合） | 待ち受けアドレス |
+| `DASHBOARD_PASSWORD` | 空。認証なし | UIとAPIのHTTP basic認証のパスワード |
+| `DASHBOARD_EXTERNAL_URL` | なし | 公開URL |
+| `DASHBOARD_HOSTS` | なし | Railsが受け付けるHostヘッダ |
+| `DASHBOARD_DATA_DIR` | `apps/dashboard/data` | ブロック、WAL、ラベルインデックスの保存先 |
+| `DASHBOARD_SCRAPE_INTERVAL` | `15` | メトリクスを取得する間隔。単位は秒 |
+| `DASHBOARD_SCRAPE_TIMEOUT` | `10` | 取得のタイムアウト。単位は秒 |
+| `DASHBOARD_EVALUATION_INTERVAL` | 取得間隔と同じ | ルールを評価する間隔 |
+| `DASHBOARD_RETENTION` | `15d` | 保持期間 |
+| `DASHBOARD_BLOCK_RANGE` | `2h` | ブロックの長さ |
 | `DASHBOARD_RULES` | `config/rules.yml` | ルールファイル |
 | `DASHBOARD_ALERT_WEBHOOK` | 空 | Alertmanager 互換の受信先 |
 | `DASHBOARD_ALLOW_WRITES` | `1` | `0` で UI を読み取り専用に |
