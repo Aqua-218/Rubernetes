@@ -75,8 +75,8 @@
 │   └── fixtures/                  # 生成した、round-tripと差分テスト用のfixture
 ├── sig/                           # 生成対象の外にある、手書きのRBS
 ├── config/
-│   ├── defaults/                  # Versioned default process configuration
-│   └── policies/                  # Admission, audit and runtime policy inputs
+│   ├── defaults/                  # バージョン付きの既定のプロセス設定
+│   └── policies/                  # admission、監査、ランタイムのポリシーの入力
 ├── test/
 │   ├── unit/
 │   ├── property/
