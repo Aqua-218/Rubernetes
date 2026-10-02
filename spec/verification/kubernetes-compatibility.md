@@ -131,8 +131,9 @@ hydrophone \
   --output-dir artifacts/conformance
 ```
 
-`--focus`はHydrophoneの`--conformance`が設定する`[Conformance]`だけとし、`--skip`を渡さない。
-timeout、parallelism、test orderingを変更したrunは別run identityを持ち、失敗runの置換に使えない。
+`--focus`には、Hydrophoneの`--conformance`が設定する`[Conformance]`だけを使う。`--skip`は渡さない。
+
+タイムアウト、並列数、テストの順序を変えた実行は、別の実行として扱う。失敗した実行の置き換えには使えない。
 
 JUnitとGinkgo JSONを`conformance.yaml`のcodenameへjoinし、次を検査する。
 
