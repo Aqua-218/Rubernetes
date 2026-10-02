@@ -109,7 +109,17 @@ Rubyのランナー`tools/conformance/run.rb`は、クラスタに接続する�
 
 次の3点を確認する。
 
-Canonical executionはHydrophoneで、次と同値のargvをRuby runnerが`execve`する。
+- SHA-256がロックと一致する。
+- エントリが446件ある。
+- `codename`が446件あり、重複がない。
+
+一意なキーは`codename`である。JUnitの結果との結合にも`codename`を使う。
+
+`testname`に重複がないことを要求してはならない。v1.36.2のupstreamの定義では、446件のエントリに対して、異なる`testname`は436件しかない。`MutatingAdmissionPolicy`など10件の読みやすい名前を、複数のテストが共有しているためである。
+
+## K1 upstreamのConformance
+
+正規の実行にはHydrophoneを使う。Rubyのランナーは、次と同じ意味の引数で`execve`する。
 
 ```bash
 hydrophone \
