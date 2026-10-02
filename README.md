@@ -280,30 +280,52 @@ The tool:
 
 ## Verification
 
-Four layers, each with its own tooling:
+There are four kinds of verification.
 
-1. **Tests** (`rake test`): about 3,400 test cases across unit, property,
-   integration, chaos and security suites, plus Go-oracle differentials for
-   codecs, validation, server-side apply, controllers and the scheduler.
-2. **Kubernetes Conformance and compatibility lanes**
-   ([tools/conformance](tools/conformance/README.md)): K0 input integrity,
-   K1 the official Conformance suite through Hydrophone, K2 Sonobuoy
-   certified-conformance, K3 the full e2e inventory under the selection
-   ledger (`test/compatibility/api/selection-ledger.json`, 7,579 specs
-   classified), K4 node conformance, K5 differential against a real
-   kube-apiserver, K6 a corpus of 32 pinned upstream Helm charts and
-   operators, K7 cluster lifecycle. Profiles: IPv4, IPv6 and dual-stack,
-   three control nodes and three workers each
-   (`test/conformance/kubernetes/profiles.yml`).
-3. **Formal models** ([verification/](verification/README.md)): Raft and the
-   runtime lifecycle in TLA+ (TLC, Apalache) and Lean, tied to the
-   implementation by traces replayed from the production journals, and a
-   linearizability checker over real client histories.
-4. **Milestone evidence gates** ([tools/milestones](tools/milestones/README.md)):
-   M0 (executable foundation) through M9 (release) each produce a
-   content-addressed bundle that a strict gate re-checks; the chain is
-   cumulative and any source change invalidates it. `rake m<n>:evidence`,
-   `rake m<n>:verify`.
+### Tests
+
+Run with `rake test`. There are about 3,400 test cases across the unit,
+property, integration, chaos and security suites. They include tests that
+compare codecs, validation, server-side apply, controllers and the scheduler
+with reference programs written in Go.
+
+### Kubernetes Conformance and compatibility
+
+Run with [tools/conformance](tools/conformance/README.md). The checks are
+split into eight lanes, K0 to K7.
+
+| Lane | What it checks |
+|---|---|
+| K0 | Integrity of the inputs |
+| K1 | The official Conformance suite, run through Hydrophone |
+| K2 | Sonobuoy certified-conformance |
+| K3 | The whole e2e inventory, run according to a ledger that classifies 7,579 specs |
+| K4 | Node conformance |
+| K5 | Comparison against a real kube-apiserver |
+| K6 | 32 upstream Helm charts and operators |
+| K7 | Cluster lifecycle |
+
+The K3 ledger is `test/compatibility/api/selection-ledger.json`. There are
+three profiles (IPv4, IPv6 and dual-stack), each with three control nodes
+and three workers. They are defined in
+`test/conformance/kubernetes/profiles.yml`.
+
+### Formal models
+
+These are in [verification/](verification/README.md). Raft and the runtime
+lifecycle are specified in TLA+ and Lean; the TLA+ specifications are checked
+with TLC and Apalache. Journals written by the production code are replayed
+as traces to confirm that the implementation matches the models. There is
+also a linearizability checker that works on real client histories.
+
+### Milestone evidence gates
+
+Run with [tools/milestones](tools/milestones/README.md). There are ten
+milestones, from M0 (executable foundation) to M9 (release). Each one
+collects its check results into an evidence bundle, and a gate re-checks the
+bundle. A bundle includes the results of the milestones before it, so a
+source change invalidates every later milestone as well. The commands are
+`rake m<n>:evidence` and `rake m<n>:verify`.
 
 ## Status and known limitations
 
