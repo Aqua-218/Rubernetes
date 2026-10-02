@@ -82,9 +82,15 @@ PATCHは次の形式をすべて実装する。
 
 list、watch、deletecollectionは、次のパラメータを受け付ける。validationと意味はv1.36.2と同じにする。
 
-list、watch、deletecollection は `labelSelector`、`fieldSelector`、`limit`、`continue`、
-`resourceVersion`、`resourceVersionMatch`、`timeoutSeconds`、`allowWatchBookmarks`、
-`sendInitialEvents` を v1.36.2 と同じ validation および意味で処理する。
+- `labelSelector`
+- `fieldSelector`
+- `limit`
+- `continue`
+- `resourceVersion`
+- `resourceVersionMatch`
+- `timeoutSeconds`
+- `allowWatchBookmarks`
+- `sendInitialEvents`
 
 補助エンドポイント:
 
