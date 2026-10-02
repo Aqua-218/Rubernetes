@@ -4,7 +4,7 @@
 
 > 対象読者: API実装者、クライアントの作者、互換性の検証者
 
-Kubernetes v1.36.2の公開API境界と、その要求を処理するRuby製API Serverを定義する。
+Kubernetes v1.36.2が公開するAPIの境界と、その要求を処理するRuby製のAPIサーバを定義する。
 
 ## Documents
 
