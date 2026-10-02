@@ -34,10 +34,14 @@ RuntimeClassのscheduling、nodeSelector、toleration、overheadは、admission�
 
 Firecrackerは外部のVMMとして使う。ただし、次のものはRubyの実装が所有する。
 
-Pod に `runtimeClassName` がなければ `rubernetes-native` を使う。指定された RuntimeClass の
-handler が存在しない、node が backend を提供しない、または overhead を確保できない場合、
-Pod を起動せず Kubernetes と同じ `Failed`/Event を報告する。RuntimeClass の scheduling、
-nodeSelector、toleration、overhead は admission と Scheduler の双方で評価する。
+- Podの解釈
+- イメージの管理
+- 状態機械
+- ネットワーク
+- ボリューム
+- ポリシー
+- ゲスト内のsupervisor
+- 回収の判断
 
 Firecracker は外部 VMM として用いるが、Pod 解釈、image 管理、状態機械、network、volume、
 policy、guest supervisor および回収判断は Ruby 実装が所有する。Firecracker を
