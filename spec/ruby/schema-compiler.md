@@ -20,7 +20,7 @@
 <a id="sec-6-2"></a>
 ## 6.2 内部表現
 
-API 型は Ruby schema DSL の 1 定義を source of truth とする。
+APIの型は、RubyのスキーマDSLによる1つの定義を正とする。
 
 ```ruby
 resource :Pod, group: "", version: "v1", scope: :namespaced do
