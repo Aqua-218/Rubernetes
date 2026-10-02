@@ -31,7 +31,7 @@
 │   ├── verification/
 │   ├── delivery/
 │   └── diagrams/
-├── exe/                          # Thin process entry points; no domain policy
+├── exe/                          # 薄いプロセスの入口。ドメインのポリシーは置かない
 │   ├── rubectl
 │   ├── rubernetes-apiserver
 │   ├── rubernetes-controller-manager
