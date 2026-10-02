@@ -34,8 +34,10 @@ SchedulingQueue → Filter → Score → Reserve → Bind
 
 各項目を0〜100で採点し、重みを付けた合計でノードを選ぶ。
 
-- `LeastAllocated`: 使用率が低いほど高得点
-- `TopologySpread`: 同一トポロジ内の同一ラベル Pod が少ないほど高得点
+| 項目 | 採点 |
+|---|---|
+| `LeastAllocated` | 使用率が低いほど高得点 |
+| `TopologySpread` | 同じトポロジの中に同じラベルのPodが少ないほど高得点 |
 
 同点の場合は決定的な規則で選ぶ（ノード名の辞書順）。
 乱択を用いない。再現性が失われ、障害解析ができなくなるため。
