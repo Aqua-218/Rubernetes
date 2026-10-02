@@ -247,7 +247,12 @@ UID、タイムスタンプ、乱数の値、ノード固有のアドレスは�
 
 各kubectlで、次のコマンドを実行する。
 
-## Evidence Manifest
+- `api-resources`、`explain`
+- `get`、`list`、`watch`
+- `create`、`apply`、`diff`、`patch`、`replace`、`delete`
+- `auth can-i`
+- `logs`、`exec`、`attach`、`port-forward`
+- `rollout`、`scale`、`wait`、`top`
 
 各runは次の最小JSON Schemaを満たす`manifest.json`を生成する。
 
