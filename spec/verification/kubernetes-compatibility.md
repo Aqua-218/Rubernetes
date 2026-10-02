@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [検証](README.md)
 
 <a id="kubernetes-compatibility"></a>
-# Kubernetes v1.36.2 互換性試験契約
+# Kubernetes v1.36.2互換性試験契約
 
 > **Audience:** 互換性検証者、CI実装者、release担当者、API/Node実装者
 >
