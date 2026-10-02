@@ -110,5 +110,5 @@ DSLは配線を生成するだけである。reconcileに対するC1〜C7の規�
 ## 関連
 
 - [informer](informer.md)
-- [Ruby Design index](../ruby/README.md)
-- [03 control loop](../diagrams/03-control-loop.md)
+- [Ruby設計の目次](../ruby/README.md)
+- [03 制御ループ](../diagrams/03-control-loop.md)
