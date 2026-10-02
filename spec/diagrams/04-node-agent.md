@@ -164,6 +164,6 @@ class API,CRI,CNI,CSI api
 
 ## 関連
 
-- [node agent](../node/node-agent.md)
-- [runtime](../node/runtime.md)
-- [構成図インデックス](README.md)
+- [ノードエージェント](../node/node-agent.md)
+- [ランタイム](../node/runtime.md)
+- [構成図の目次](README.md)
