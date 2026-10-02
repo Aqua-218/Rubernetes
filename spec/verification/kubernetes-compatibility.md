@@ -147,7 +147,7 @@ JUnitとGinkgoのJSONを、`conformance.yaml`の`codename`で結合する。そ�
 
 ## K2 certified-conformanceの証拠
 
-CNCF提出形式の独立確認としてSonobuoyを使用する。Ruby runnerは次と同値のargvを実行する。
+CNCFへの提出形式を独立に確認するために、Sonobuoyを使う。Rubyのランナーは、次と同じ意味の引数で実行する。
 
 ```bash
 sonobuoy run \
