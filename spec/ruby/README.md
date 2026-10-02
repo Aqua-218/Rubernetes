@@ -22,7 +22,7 @@ graph LR
     Registry -->|"type"| Scenario["Scenario DSL"]
 ```
 
-## DSL Surfaces
+## DSLの種類
 
 | DSL | 定義箇所 | 生成・保証するもの |
 |---|---|---|
