@@ -1168,7 +1168,7 @@ module Conformance
       false
     end
 
-    def await_nodes!(kubeconfig, expected)
+    def await_nodes!(kubeconfig, expected, since: nil)
       await!("#{expected} Ready nodes") do
         output = `#{KUBECTL} --kubeconfig #{kubeconfig} get nodes -o json 2>/dev/null`
         document =
