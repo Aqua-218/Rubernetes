@@ -380,7 +380,21 @@ VMのブートが完了しただけでは、workload gateを開いてはなら�
 ホストは、ACKに含まれるVMのidentity、ポリシーのダイジェスト、nonceを照合する。照合が済むまで、workload gateを開かない。
 
 <a id="sec-5-8-13"></a>
-## 5.8.13 guest-host protocol と restricted broker
+## 5.8.13 ゲストとホストの間のプロトコルとrestricted broker
+
+### vsockのメッセージ
+
+vsockのメッセージは、`[u32 big-endian length][canonical CBOR payload]`の形式とする。長さは、メモリを確保する前に検査する。
+
+| 項目 | 上限 |
+|---|---|
+| 1フレームの大きさ | 1 MiB |
+| 1接続あたりの未処理の要求 | 128 |
+| 応答を待つ時間 | 30秒 |
+
+呼び出し元のidentityは、ペイロードの自己申告からは決めない。vsockの接続、CID、ランタイムの台帳から解決する。
+
+ゲストのイメージに、ホストの資格情報、レジストリの資格情報、クラスタ管理者の資格情報を保存してはならない。
 
 vsock message は `[u32 big-endian length][canonical CBOR payload]` とし、length は確保前に検査する。
 1 frame は 1 MiB、1 connection の未処理 request は 128、応答待ちは 30 秒を上限とする。
