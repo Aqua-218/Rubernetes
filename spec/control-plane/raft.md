@@ -70,8 +70,9 @@ election timeoutは、heartbeat intervalの3倍以上とする。3倍を下回�
 <a id="sec-5-3-7"></a>
 ## 5.3.7 メンバーシップ変更
 
-joint consensus 方式を用いる。single-server change は用いない。
-理由: 実装は単純だが、特定の順序で複数変更を行うと安全性が壊れる既知の問題がある。
+joint consensus方式を使う。single-server change方式は使わない。
+
+single-server changeは実装が単純である。しかし、特定の順序で複数の変更を行うと安全性が失われるという、既知の問題がある。
 
 ## Related
 
