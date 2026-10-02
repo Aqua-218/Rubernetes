@@ -85,12 +85,12 @@ VXLANの既定値は次のとおりである。
 <a id="sec-5-9-7"></a>
 ## 5.9.7 DNS
 
-- cluster domain の既定を `cluster.local`、positive/negative TTL の既定を各 5 秒とする
-- Service/EndpointSlice/Pod を watch し、`<svc>.<ns>.svc.<domain>` の A、AAAA、SRV、PTR を返す
-- headless Service は ready endpoint の Pod IP、publishNotReadyAddresses 指定時は not-ready も返す
-- ExternalName は CNAME、Pod hostname/subdomain と StatefulSet の stable name を Kubernetes 規則で生成する
-- `dnsPolicy`、`dnsConfig`、`hostNetwork` に応じた nameserver、search、option を `/etc/resolv.conf` へ atomic 投影する
-- cluster 外 query は設定済み upstream へ transaction ID を再生成して転送し、loop、response spoof、過大 packet を拒否する
+- cluster domainの既定値は`cluster.local`とする。positive TTLとnegative TTLの既定値は、どちらも5秒とする。
+- Service、EndpointSlice、Podをwatchする。`<svc>.<ns>.svc.<domain>`に対してA、AAAA、SRV、PTRを返す。
+- headless Serviceでは、readyなendpointのPod IPを返す。`publishNotReadyAddresses`が指定されていれば、readyでないendpointも返す。
+- ExternalNameにはCNAMEを返す。Podのhostnameとsubdomain、StatefulSetの安定した名前は、Kubernetesの規則で生成する。
+- `dnsPolicy`、`dnsConfig`、`hostNetwork`に応じたnameserver、search、optionを、`/etc/resolv.conf`にatomicに書き出す。
+- クラスタ外への問い合わせは、設定済みのupstreamに転送する。転送するときはtransaction IDを生成し直す。ループ、応答の偽装、大きすぎるパケットは拒否する。
 
 ## Related
 
