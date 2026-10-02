@@ -19,7 +19,7 @@
 
 Kubernetes API上の標準のlabel、annotation、フィールド名は、互換性を保つために改名しない。`rubernetes.io`を使うのは独自拡張だけである。
 
-## Related
+## 関連
 
 - [goals and compatibility](goals-and-compatibility.md)
 - [references](../references.md)
