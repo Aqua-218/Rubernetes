@@ -148,6 +148,6 @@ class U1,U2,U3 ud
 
 ## 関連
 
-- [api server](../api/api-server.md)
-- [kubernetes api](../api/kubernetes-api.md)
-- [構成図インデックス](README.md)
+- [APIサーバ](../api/api-server.md)
+- [Kubernetes API](../api/kubernetes-api.md)
+- [構成図の目次](README.md)
