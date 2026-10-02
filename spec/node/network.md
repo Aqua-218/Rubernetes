@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-Ruby netlink、IPAM、overlay、NetworkPolicy、DNSを定義する。
+Rubyによるnetlinkの実装、IPAM、オーバーレイ、NetworkPolicy、DNSを定義する。ネットワークは自作する。
 
 
 > **Diagram:** [図 06 — Network](../diagrams/06-network.md)
