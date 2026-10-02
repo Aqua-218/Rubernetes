@@ -126,6 +126,6 @@ dual-stackのプロファイルでは、`kubernetes` Serviceはprimaryファミ�
 
 ## 関連
 
-- [Kubernetes 互換性試験契約](../../spec/verification/kubernetes-compatibility.md)
-- [マイルストーン証拠規則](../../spec/delivery/milestones.md)
-- [固定したランナー入力](../../third_party/locks/conformance-runners.json)
+- [Kubernetes互換性の試験契約](../../spec/verification/kubernetes-compatibility.md)
+- [マイルストーンの証拠の規則](../../spec/delivery/milestones.md)
+- [固定したランナーの入力](../../third_party/locks/conformance-runners.json)
