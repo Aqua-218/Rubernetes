@@ -85,7 +85,7 @@ graph LR
 - Linuxプラットフォームのアダプタ。`clone3`、pidfd、mount、netlink、BPF、KVMを型付きで公開する
 - kernelのヘッダから作ったABIマニフェストと、その再生成器
 
-### Exit criteria
+### 完了条件
 
 1. `gem build rubernetes.gemspec`と`rake test`が証跡対象のsource inputで成功する。
 2. 6個のexecutableが`--version`と`--help`を副作用なしで終了status 0にする。
