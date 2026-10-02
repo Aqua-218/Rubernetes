@@ -82,7 +82,7 @@
 │   ├── property/
 │   ├── integration/
 │   ├── e2e/
-│   ├── conformance/kubernetes/    # Unmodified upstream test runner profiles
+│   ├── conformance/kubernetes/    # 改変していないupstreamのテストを実行するプロファイル
 │   ├── compatibility/
 │   │   ├── api/                    # Request/response differential corpus
 │   │   ├── clients/                # kubectl/client-go/Helm/Kustomize matrix
