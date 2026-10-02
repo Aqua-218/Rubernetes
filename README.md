@@ -23,9 +23,9 @@ How it relates to Kubernetes itself:
 
 | | |
 |---|---|
-| Kubernetes contract | v1.36.2 (`status.nodeInfo.kubeletVersion` reports it) |
-| Latest full Conformance run | 459 / 459 passed, 2026-09-30, `linux-amd64-ipv4-native`, unmodified `registry.k8s.io/conformance` image via Hydrophone |
-| Target | Linux x86_64, cgroup v2, root. Ruby 3.4.11 |
+| Compatibility target | Kubernetes v1.36.2 |
+| Official Conformance | 459 of 459 passed (2026-09-30, IPv4 profile) |
+| Target environment | Linux x86_64, cgroup v2, root, Ruby 3.4.11 |
 | Size | about 220 k lines of Ruby and C under `lib/` and `ext/`, 100 k lines of tests |
 | License | Apache-2.0; upstream-derived parts are listed in [`NOTICE`](NOTICE) |
 
