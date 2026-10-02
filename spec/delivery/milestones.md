@@ -222,7 +222,13 @@ graph LR
 - マウント攻撃コーパスの結果
 
 <a id="milestone-m5"></a>
-## M5 — Durable High Availability
+## M5 耐久性と高可用性
+
+### 成果物
+
+- RaftStore。WAL、スナップショット、ログの複製、メンバーシップを備える
+- 制御ノード3台と5台の構成、リーダー選出、バックアップとリストア
+- すべてのeffect pointについての、耐久性のある所有権、操作のジャーナル、クラッシュからの回復
 
 ### Deliverables
 
