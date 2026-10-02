@@ -161,31 +161,57 @@ kernel.
 
 ## M5 Durable high availability
 
-- `m5_linearizability_probe.rb` drives the production Raft node in a
-  deterministic simulation (partitions, asymmetric partitions, reordering,
-  duplication, loss, crash/restart, clock jumps) and checks every client
-  history with `tools/verification/linearizability.rb`; the Ruby sequential
-  model is first compared with the Lean reference
-  `verification/lean/KVSequential.lean`.
-- `m5_fault_matrix_probe.rb` runs real worker processes over TLS, SIGKILLs
-  one of three and two of five nodes while writes are acknowledged, kills the
-  leader during a joint-consensus membership change and during a snapshot
-  install, and requires zero lost commits, zero split brain and identical
-  replicas after restart.
-- `m5_corruption_probe.rb` damages real WAL and snapshot files (bit flips,
-  torn and zero-filled tails, oversized lengths, truncation), fills a
-  size-limited tmpfs to provoke ENOSPC, injects short writes and fsync
-  failures, and requires every case to fail closed while the acknowledged
-  prefix survives; it also round-trips a backup and rejects a tampered one.
-- `m5_rto_rpo_probe.rb` starts three real `rubernetes-apiserver` processes on
-  the Raft datastore and a real controller manager, kills two API servers,
-  verifies that no write is acknowledged and `/readyz` fails during the
-  outage, restores quorum and measures the time until reads, writes and the
-  Deployment control loop resume (bound 60 s, RPO 0 objects).
-- `m5_ownership_probe.rb` replays every durable effect journal (Raft store,
-  Native runtime, controller, volume, network) after a crash before and after
-  the effect and requires exactly-once re-execution with the request-loss /
-  response-loss distinction recorded.
+There are five probes.
+
+### m5_linearizability_probe.rb
+
+Drives the production Raft node under a deterministic simulation. The
+injected faults are partitions, asymmetric partitions, reordering,
+duplication, drops, crash and restart, and clock jumps. Every client history
+is checked with `tools/verification/linearizability.rb`. The Ruby sequential
+model used by the checker is first compared with the Lean reference model,
+`verification/lean/KVSequential.lean`.
+
+### m5_fault_matrix_probe.rb
+
+Runs real worker processes over TLS and causes faults while writes are being
+acknowledged:
+
+- SIGKILL one node of three, and two of five.
+- Stop the leader during a joint-consensus membership change.
+- Stop the leader during a snapshot install.
+
+In every case it requires zero lost commits, zero split brain, and replicas
+that agree after restart.
+
+### m5_corruption_probe.rb
+
+Corrupts real WALs and snapshots: bit flips, torn tails, zero-filled tails,
+oversized lengths and truncation. It also fills a size-limited tmpfs to
+cause ENOSPC, and injects short writes and fsync failures.
+
+In every case it requires the process to stop safely and the acknowledged
+range of data to survive. It also checks the backup round trip and that a
+tampered backup is rejected.
+
+### m5_rto_rpo_probe.rb
+
+Starts three real `rubernetes-apiserver` processes and a real controller
+manager on the Raft datastore. It then stops two API servers and checks
+that:
+
+- while they are down, writes are not acknowledged and `/readyz` fails
+- once quorum is restored, reads, writes and the Deployment control loop
+  resume within 60 seconds
+- zero objects are lost
+
+### m5_ownership_probe.rb
+
+Covers every durable effect journal: the Raft store, the Native runtime, the
+controllers, volumes and the network. It crashes the process before and
+after each effect and replays the journal. It records whether the request or
+the response was lost, and requires each effect to be re-executed exactly
+once.
 
 ## M6 Complete API surface
 
