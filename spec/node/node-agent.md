@@ -40,7 +40,7 @@ PodのSyncLoopと、起動、probe、再起動、終了、evictionの順序を�
 |---|---|
 | startup | 成功するまでlivenessとreadinessを始めない |
 | liveness | コンテナを再起動する |
-| readiness | Endpoints から外す。再起動はしない |
+| readiness | Endpointsから外す。再起動はしない |
 
 方式は `exec` / `httpGet` / `tcpSocket`。
 
