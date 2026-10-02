@@ -23,11 +23,11 @@ graph LR
 
 | 文書 | 内容 |
 |---|---|
-| [Store](store.md) | MVCC、revision、watch history、transaction |
-| [Raft](raft.md) | election、WAL、commit、snapshot、membership |
-| [Informer](informer.md) | Reflector、DeltaFIFO、Indexer、WorkQueue |
-| [Controllers](controllers.md) | reconcile規約、built-in controller、Controller DSL |
-| [Scheduler](scheduler.md) | Filter、Score、Bind、Preemption、plugin DSL |
+| [ストア](store.md) | MVCC、リビジョン、watchの履歴、トランザクション |
+| [Raft](raft.md) | 選挙、WAL、コミット、スナップショット、メンバーシップ |
+| [informer](informer.md) | Reflector、DeltaFIFO、Indexer、WorkQueue |
+| [コントローラ](controllers.md) | reconcileの規約、組み込みのコントローラ、Controller DSL |
+| [スケジューラ](scheduler.md) | Filter、Score、Bind、Preemption、プラグインDSL |
 
 ## Related
 
