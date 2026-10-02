@@ -32,7 +32,7 @@ SchedulingQueue → Filter → Score → Reserve → Bind
 <a id="sec-5-6-3"></a>
 ## 5.6.3 Score
 
-各項目 0〜100 で採点し、重み付き合計で選ぶ。
+各項目を0〜100で採点し、重みを付けた合計でノードを選ぶ。
 
 - `LeastAllocated`: 使用率が低いほど高得点
 - `TopologySpread`: 同一トポロジ内の同一ラベル Pod が少ないほど高得点
