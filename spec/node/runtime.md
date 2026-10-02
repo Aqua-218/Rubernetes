@@ -133,7 +133,34 @@ stateDiagram-v2
 後始末に失敗しても、最初の操作のエラーを置き換えない。後始末のエラーは、`cleanup_errors`としてすべて保持する。
 
 <a id="sec-5-8-5"></a>
-## 5.8.5 イメージ取得と固定
+## 5.8.5 イメージの取得と固定
+
+### 取得と検証
+
+- OCI Distribution SpecとOCI Image Specに従い、レジストリと直接通信する。
+- タグは、Podの起動ごとに1回だけダイジェストに解決する。以後は、そのダイジェストをconfig fingerprintに固定する。
+- マニフェスト、config、各レイヤ、署名、Firecrackerのバイナリ、kernel、rootfsのSHA-256を、effect pointの前に検証する。
+- ダイジェスト、署名、サイズ、media typeが一致しない場合は、作業領域を作る前に失敗させる。
+- content-addressable storeは、ダイジェストをキーにする。一時ファイルにfsyncしたあと、atomicにrenameする。
+
+### レイヤの展開
+
+レイヤは、圧縮されたストリームと展開後の両方で上限を検査する。次の上限を超えたイメージは拒否する。
+
+| 項目 | 上限 |
+|---|---|
+| 展開後の大きさ | 20 GiB |
+| エントリの数 | 1,000,000 |
+| パスの長さ | 4,096 byte |
+
+次のエントリは、安全規則に従って拒否する。
+
+- `..`を含むパス
+- 絶対パス
+- NULを含むパス
+- rootfsの外を指すsymlinkとhardlink
+
+デバイスノード、FIFO、socketのエントリは、rootfsに作らずに読み飛ばし、件数を記録する。コンテナの`/dev`は、ランタイムがnodevのtmpfsの上に自分で構成するためである。containerdはこれらのノードを作成する。本実装はレイヤ全体を拒否せず、該当するエントリだけを採用しない。
 
 - OCI Distribution Spec と OCI Image Spec に従い registry と直接通信する
 - tag は Pod 起動単位で digest へ 1 回だけ解決し、以後は digest を config fingerprint に固定する
