@@ -3,7 +3,7 @@
 <a id="sec-5-7"></a>
 # 5.7 ノードエージェント
 
-> **Audience:** Node Agent実装者、Runtime実装者
+> 対象読者: ノードエージェントの実装者、ランタイムの実装者
 >
 > **Status:** Normative — version 0.2
 
