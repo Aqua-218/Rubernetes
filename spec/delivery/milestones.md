@@ -260,7 +260,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 - 認証、認可、監査、暗号化、API Priority and Fairness
 - feature gateごとのAPI、defaulting、validation、conversionの挙動
 
-### Exit criteria
+### 完了条件
 
 1. v1.36.2 discovery、OpenAPI、protobuf descriptor、API operation corpusの未実装項目が0である。
 2. 全feature gateの既定profileと有効profileでAPI差分が0である。
