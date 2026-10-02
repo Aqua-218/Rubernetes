@@ -196,7 +196,7 @@ class TG_RAFT,TG_KV,TG_CTL,TG_RT,TG_SCHEMA tgt
 class O_SAFE,O_LIVE,O_ISO,O_OWN orc
 ```
 
-## Related
+## 関連
 
 - [formal methods](../verification/formal-methods.md)
 - [testing](../verification/testing.md)
