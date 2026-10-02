@@ -136,7 +136,7 @@ needed only for the `microvm` RuntimeClass.
 ```sh
 git clone <this repository> && cd 2026
 bundle install
-rake abi:compile                    # builds the C shim under build/
+rake abi:compile                    # builds the C extension under build/
 
 # A 3 control-node + 3 worker cluster on this host, with PKI, bootstrap
 # per-component identities, cluster DNS and a kubeconfig, all under /srv/rbn-dev:
