@@ -107,7 +107,7 @@ Rubyのランナー`tools/conformance/run.rb`は、クラスタに接続する�
 
 ### conformance.yamlの検査
 
-## K1 — Upstream Conformance
+次の3点を確認する。
 
 Canonical executionはHydrophoneで、次と同値のargvをRuby runnerが`execve`する。
 
