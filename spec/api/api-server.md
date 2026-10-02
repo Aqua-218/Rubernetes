@@ -114,10 +114,7 @@ watchは長時間の接続なので、実行中の数には含めない。
 - ValidatingAdmissionWebhook
 - ValidatingAdmissionPolicyとCEL
 
-v1.36.2 の built-in mutating/validating admission plugin、MutatingAdmissionWebhook、
-ValidatingAdmissionWebhook、ValidatingAdmissionPolicy/CEL を feature corpus に従って実装する。
-webhook の matchPolicy、namespace/object selector、matchConditions、failurePolicy、sideEffects、
-reinvocationPolicy、timeoutSeconds、version negotiation、warning を同じ順序と条件で評価する。
+### webhookの評価
 
 Mutating phase は再呼出しを含む最終 object を確定してから Validating phase へ進む。
 webhook timeout の既定は 10 秒、API が許す上限は 30 秒とし、timeout/通信失敗時は failurePolicy に従う。
