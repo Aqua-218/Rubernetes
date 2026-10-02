@@ -124,7 +124,7 @@ PodとServiceのメトリクスは、PodのIPに直接接続して取得しま�
 ## 開発
 
 ```sh
-bin/rails test                     # 79 テスト: PromQL エンジン、TSDB、scraper、ルール、API、ページ
+bin/rails test                     # 79テスト。PromQLエンジン、TSDB、scraper、ルール、API、ページ
 bin/rails console
 ```
 
