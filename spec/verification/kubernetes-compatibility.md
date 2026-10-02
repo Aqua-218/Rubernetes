@@ -237,8 +237,7 @@ UID、タイムスタンプ、乱数の値、ノード固有のアドレスは�
 
 結果が一致しなかった場合は、自動的に最小の例まで縮める。要求の列、両方の応答、両方のトレースを、回帰用のfixtureとして固定する。
 
-全projectでinstall、Ready待機、公開smoke scenario、scale、upgrade、rollback、controller restart、
-uninstallを行う。残存namespaced/cluster-scoped resource、finalizer、Volume、network identityを0にする。
+## K6 クライアントと既存プロジェクトのコーパス
 
 有限のproject corpusだけで「すべてのproject」を証明したとは扱わない。完全互換の主根拠は
 K3/K5の全external contract ledgerであり、project corpusは複合利用経路の独立検査とする。
