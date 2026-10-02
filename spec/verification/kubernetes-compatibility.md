@@ -202,7 +202,7 @@ Ginkgoのdry-runで得たテストの一覧について、すべてのテスト�
 
 ## K4 Node Conformance
 
-## K5 — API and Wire Differential
+upstreamのNode Conformanceを、実際のkernelで動くamd64のノードに対して実行する。
 
 同一seedからKubernetes v1.36.2 oracle clusterとRubernetes clusterへrequest sequenceを与え、
 次のobservableを正規化して比較する。
