@@ -235,7 +235,7 @@ upstreamのアルゴリズムをRubyへ移植したコードは、`lib/`に置�
 
 upstreamのテストをコピーして改変したものは、Conformanceの証拠に数えない。補助的なテストとして保持する場合は、`test/compatibility/`に置く。メタデータには、upstreamのファイル、コミット、変更の理由を記録する。
 
-## Build and Artifact Policy
+## ビルドと成果物
 
 - source treeへのbuild output書込み先は`build/`だけとする。
 - runtime scratchは`tmp/`、test/release evidenceは`artifacts/`へ分離する。
