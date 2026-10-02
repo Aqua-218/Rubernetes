@@ -137,11 +137,11 @@ hydrophone \
 
 JUnitとGinkgoのJSONを、`conformance.yaml`の`codename`で結合する。そのうえで次の項目を検査する。
 
-- 446 codenameがそれぞれexactly once選択される
-- pass 446、fail 0、skip 0、pending 0、aborted 0である
-- suite setup/teardown failure、namespace cleanup failure、log collection failureが0である
-- run前後でtest namespace、cluster-scoped fixture、Pod、Volume、network resourceのleakが0である
-- 同じprofileで3回連続clean runになるまで、M8 evidenceを確定しない
+- 446件の`codename`が、それぞれちょうど1回ずつ選択されている。
+- 合格が446、失敗が0、スキップが0、pendingが0、中断が0である。
+- スイートのsetupとteardownの失敗、namespaceの後始末の失敗、ログ収集の失敗が0である。
+- 実行の前後で、テスト用のnamespace、クラスタスコープのfixture、Pod、ボリューム、ネットワークの資源が残っていない。
+- 同じプロファイルで3回続けて問題のない実行になるまで、M8の証拠を確定しない。
 
 途中のfailure後にtest単体を再実行して成功しても、元のrunを成功へ書き換えてはならない。
 failure原因を修正した新commitでfull suiteを最初から実行する。
