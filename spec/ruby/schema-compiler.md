@@ -98,6 +98,6 @@ CRDはコードとして評価しない。構造化されたOpenAPIスキーマ�
 
 ## 関連
 
-- [manifest dsl](manifest-dsl.md)
-- [kubernetes api](../api/kubernetes-api.md)
-- [formal methods](../verification/formal-methods.md)
+- [Manifest DSL](manifest-dsl.md)
+- [Kubernetes API](../api/kubernetes-api.md)
+- [形式仕様](../verification/formal-methods.md)
