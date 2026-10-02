@@ -28,7 +28,7 @@
 | owned resource | サンドボックスが排他的に取得したOS資源。解放が完了するまで所有権を追跡する |
 | ambiguous state | 要求の成否を観測できず、成功とも失敗とも断定できない状態 |
 
-## Related
+## 関連
 
 - [document conventions](document-conventions.md)
 - [architecture](architecture.md)
