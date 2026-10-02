@@ -9,8 +9,7 @@
 
 TLA+、Lean、実行時検証のそれぞれの役割を定義する。あわせて、定理、禁止事項、保証レベルの台帳を定める。
 
-
-> **Diagram:** [図 08 — Verification](../diagrams/08-verification.md)
+図は[図08 検証](../diagrams/08-verification.md)にある。
 
 <a id="sec-7-1"></a>
 ## 7.1 分担
