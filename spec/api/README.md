@@ -10,8 +10,8 @@ Kubernetes v1.36.2が公開するAPIの境界と、その要求を処理するRu
 
 | 文書 | 内容 |
 |---|---|
-| [Kubernetes API](kubernetes-api.md) | resource corpus、endpoint、wire format、watch、patch/apply、互換判定 |
-| [API Server](api-server.md) | request pipeline、authn/authz、APF、admission、audit、encryption |
+| [Kubernetes API](kubernetes-api.md) | リソースのコーパス、エンドポイント、ワイヤ形式、watch、patchとapply、互換性の判定 |
+| [APIサーバ](api-server.md) | リクエスト処理の順序、認証と認可、流量制御、admission、監査、暗号化 |
 
 ## Data and Code Generation
 
