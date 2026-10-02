@@ -4,9 +4,19 @@ English | [日本語](README.ja.md)
 
 Ruby commands for checking compatibility with Kubernetes. They:
 
-The tooling may orchestrate upstream executables but may not modify their
-source, focus, skip expression, or result. A failed or incomplete upstream
-run remains failed.
+- verify the pinned upstream inputs
+- bring up a cluster with the same topology as a release
+- run the pinned Hydrophone and Sonobuoy binaries and the upstream
+  `e2e.test`
+- normalize JUnit and Ginkgo output
+- classify the upstream e2e inventory
+- emit the M8 evidence manifests
+
+The tooling only invokes upstream executables. It must not modify their
+source, focus expression, skip expression or result. An upstream run that
+fails or ends early stays a failure.
+
+## Commands
 
 | Command | Purpose |
 |---|---|
