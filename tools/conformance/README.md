@@ -20,18 +20,20 @@ fails or ends early stays a failure.
 
 | Command | Purpose |
 |---|---|
-| `lock.rb` | Read-only view of `third_party/locks/` (Kubernetes commit, Conformance image digest, runner artifacts) |
-| `install_tools.rb` (`rake m8:tools`) | Install Hydrophone and Sonobuoy into `build/conformance/bin`, verifying each archive against the lock |
-| `build_e2e.rb` (`rake m8:e2e_build`) | Build the upstream `e2e.test` binary from the pinned checkout |
-| `cluster.rb up\|down\|status` | Bring up / tear down a 3 control-node + 3 worker cluster of real `exe/rubernetes-*` processes with PKI, kubeconfig and cluster DNS under `--root` |
-| `netns_env.sh up\|down\|exec` | Give one cluster instance its own network namespace with an uplink, NAT and resolver |
-| `round.sh` | One Hydrophone Conformance round inside a namespace; prints the JUnit totals and failed spec names |
-| `run.rb` (`rake m8:lanes`) | The official K1–K7 lane runner that writes the per-profile run manifest |
-| `k0_input_integrity.rb`, `k5_differential.rb`, `k6_corpus.rb`, `k7_lifecycle.rb`, `lanes.rb` | Lane implementations |
-| `build_selection_ledger.rb` (`rake m8:selection_ledger`) | Rebuild the K3 selection ledger from a Ginkgo dry-run |
-| `resolve_image_digests.rb` | Resolve the image tags of the project corpus to digests for the lock |
+| `lock.rb` | Reads `third_party/locks/` and returns the Kubernetes commit, the Conformance image digest and the runner artifacts |
+| `install_tools.rb` | Installs Hydrophone and Sonobuoy into `build/conformance/bin`, checking each archive against the lock. Run with `rake m8:tools` |
+| `build_e2e.rb` | Builds the upstream `e2e.test` from the pinned checkout. Run with `rake m8:e2e_build` |
+| `cluster.rb up\|down\|status` | Starts and stops a cluster of 3 control nodes and 3 workers under `--root`. It uses the real `exe/rubernetes-*` processes and sets up the PKI, a kubeconfig and cluster DNS |
+| `netns_env.sh up\|down\|exec` | Gives each cluster its own network namespace with an uplink, NAT and a resolver |
+| `round.sh` | Runs one Hydrophone Conformance round inside a namespace and prints the JUnit totals and the names of failed specs |
+| `run.rb` | Runs lanes K1 to K7 and writes a run manifest per profile. Run with `rake m8:lanes` |
+| `build_selection_ledger.rb` | Rebuilds the K3 selection ledger from a Ginkgo dry run. Run with `rake m8:selection_ledger` |
+| `resolve_image_digests.rb` | Resolves the image tags used by the corpus to digests for the lock |
 
-## Day-to-day loop
+The lanes are implemented in `k0_input_integrity.rb`, `k5_differential.rb`,
+`k6_corpus.rb`, `k7_lifecycle.rb` and `lanes.rb`.
+
+## Day-to-day runs
 
 ```bash
 export PATH=/opt/rubies/3.4.11/bin:$PATH
