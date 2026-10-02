@@ -5,7 +5,7 @@
 
 > 対象読者: 実装者、レビュア、ビルドの担当者、検証者
 >
-> **Status:** Normative — version 0.3
+> 状態: 規範、版0.3
 
 Ruby中心のproduction code、生成物、Linux ABI shim、upstream互換試験、形式仕様を
 混同しないsource tree layoutと依存方向を定義する。directoryの存在は実装完了を意味せず、
