@@ -12,9 +12,9 @@ Rubernetesは、Kubernetes v1.36.2と外部から観測して互換なLinuxコ�
 
 ```mermaid
 graph TD
-    Hub["仕様・設計書インデックス"]
-    Hub -->|"目的と全体構造"| Foundation["Foundation"]
-    Hub -->|"Rubyの言語設計"| RubyDesign["Ruby Design"]
+    Hub["仕様・設計書の目次"]
+    Hub -->|"目的と全体構造"| Foundation["基礎"]
+    Hub -->|"Rubyの言語設計"| RubyDesign["Ruby設計"]
     Hub -->|"Kubernetes API"| API["API"]
     Hub -->|"分散制御"| ControlPlane["Control Plane"]
     Hub -->|"Pod実行"| Node["Node"]
