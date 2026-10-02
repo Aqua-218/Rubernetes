@@ -171,23 +171,31 @@ Native backendは、`clone3(2)`、`unshare(2)`、`setns(2)`とpidfdを使う。
 
 | namespace | Podの中での共有 | Kubernetesのフィールドとの関係 |
 |---|---|---|
-| Network | 共有 | `hostNetwork=true` では host に参加 |
-| IPC | 共有 | `hostIPC=true` では host に参加 |
-| UTS | 共有 | hostname/subdomain を設定 |
-| PID | 既定は非共有 | `shareProcessNamespace=true` で Pod 内共有、`hostPID=true` で host に参加 |
-| Mount | container ごと | volume だけを明示的に共有 |
-| User | `hostUsers=false` の Pod 内で共有 | `hostUsers=true` または未指定では host user namespace |
-| Cgroup | container ごとに private | cgroup path と host process を隠す |
+| Network | 共有する | `hostNetwork=true`ではホストのnamespaceに参加する |
+| IPC | 共有する | `hostIPC=true`ではホストのnamespaceに参加する |
+| UTS | 共有する | hostnameとsubdomainを設定する |
+| PID | 既定では共有しない | `shareProcessNamespace=true`ではPodの中で共有する。`hostPID=true`ではホストのnamespaceに参加する |
+| Mount | コンテナごとに持つ | ボリュームだけを明示的に共有する |
+| User | `hostUsers=false`のPodの中で共有する | `hostUsers=true`または未指定の場合は、ホストのuser namespaceを使う |
+| Cgroup | コンテナごとにprivateにする | cgroupのパスとホストのプロセスを隠す |
 
-namespace holder の mount namespace は host peer group の slave（`MS_SLAVE|MS_REC`、runc の既定）とし、
-private にしてはならない。node agent は Pod root directory を shared な self bind mount にし、sandbox 作成後に
-host 側で行う bind（container 起動時に解決する subPath）が holder と container の namespace に伝播するようにする。
-holder 内の mount は host に伝播しない。
+### マウントの伝播
 
-`hostUsers=false` では Pod ごとに重複しない 65,536 UID/GID range を永続割当し、
-`setgroups=deny` の後に `uid_map` / `gid_map` を設定する。割当は sandbox identity と結び、
-全 process の停止確認前に再利用してはならない。namespace holder は Ruby 製 sandbox init とし、
-PID 1 の signal 処理と zombie 回収を行う。
+namespaceを保持するプロセス（holder）のmount namespaceは、ホストのpeer groupのslaveとする。フラグは`MS_SLAVE|MS_REC`で、runcの既定と同じである。privateにしてはならない。
+
+ノードエージェントは、Podのrootディレクトリを、sharedな自己bind mountにする。サンドボックスを作ったあとにホスト側で行うbindが、holderとコンテナのnamespaceに伝播するようにするためである。コンテナの起動時に解決するsubPathが、このbindに当たる。
+
+holderの中で行ったマウントは、ホストには伝播しない。
+
+### user namespace
+
+`hostUsers=false`の場合は、Podごとに、重複しない65,536個のUIDとGIDの範囲を永続的に割り当てる。`setgroups=deny`を設定したあとで、`uid_map`と`gid_map`を設定する。
+
+割り当てはサンドボックスのidentityに結び付ける。全プロセスの停止を確認するまで、再利用してはならない。
+
+### holder
+
+holderはRuby製のsandbox initとする。PID 1として、シグナルの処理とzombieの回収を行う。
 
 <a id="sec-5-8-7"></a>
 ## 5.8.7 ファイルシステム
