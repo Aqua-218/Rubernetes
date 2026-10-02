@@ -232,9 +232,12 @@ graph LR
 
 ### 完了条件
 
-- WAL、snapshot、log replication、membershipを備えたRaftStore
-- 3/5 control-node構成、leader election、backup/restore
-- 全effect pointのdurable ownership、operation journal、crash recovery
+1. 3ノードで1台、5ノードで2台が故障している間も、コミット済みの状態を失わない。
+2. ackを返した書き込みのRPOが0である。quorumの回復から60秒以内に、読み書きと制御ループを再開する。
+3. ディスクフル、short write、fsyncのエラー、途中で切れたWAL、スナップショットの破損を、fail-closedで処理する。
+4. 分断、非対称な分断、並べ替え、時刻のジャンプを含む履歴が、線形化可能である。
+5. メンバーシップの変更中と、スナップショットのinstall中にリーダーが失われても、split brainとコミットの喪失が0である。
+6. すべてのeffect pointについて、要求の喪失と応答の喪失を区別する。再実行しても副作用が二重に起きない。
 
 ### Exit criteria
 
