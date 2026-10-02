@@ -2,37 +2,69 @@
 
 English | [日本語](README.ja.md)
 
-A Rails 8 application that is both the cluster's web UI and its Prometheus.
-It runs on the host (or anywhere with a kubeconfig), not inside the cluster,
-so it keeps working while the cluster is unhealthy.
+A Rails 8 application that serves as both the cluster's web UI and its
+Prometheus. It runs on the host, not inside the cluster. It starts anywhere
+a kubeconfig is available and keeps working while the cluster is unhealthy.
 
-**Web UI.** Nodes, namespaces, workloads (Deployments, StatefulSets,
-DaemonSets, Jobs, CronJobs, Services, Ingresses, ConfigMaps, …), Pods with
-logs and YAML, events and alerts. Writes (delete Pod, scale, rollout
-restart) can be switched off.
+## Features
 
-**Metrics server.** A collector thread in the same process discovers and
-scrapes, every `DASHBOARD_SCRAPE_INTERVAL` seconds:
+### Web UI
 
-- every API server (`/metrics`),
-- every node's kubelet endpoints (`/metrics`, `/metrics/cadvisor`,
-  `/metrics/resource`, `/metrics/probes`),
-- Pods and Services annotated `prometheus.io/scrape: "true"`
-  (`prometheus.io/port`, `prometheus.io/path`, `prometheus.io/scheme`),
-- a built-in kube-state exporter (`kube_node_*`, `kube_pod_*`,
-  `kube_deployment_*`, …) computed from the API.
+You can browse:
 
-Samples go into `lib/tsdb`, a Prometheus-shaped store: Gorilla-compressed
-chunks, a write-ahead log, 2-hour blocks, time-based retention and a SQLite
-label index. `lib/promql` implements PromQL (instant and range selectors,
-`offset` and `@`, subqueries, the aggregation and function set, vector
-matching with `on`/`ignoring`/`group_left`/`group_right`, set operators).
-`config/rules.yml` holds recording and alerting rules in the Prometheus
-rule-file format; alerts move through pending/firing/resolved, produce
-`ALERTS` series and can be posted to an Alertmanager-style webhook.
+- nodes and namespaces
+- Deployments, StatefulSets, DaemonSets, Jobs, CronJobs, Services,
+  Ingresses, ConfigMaps and other resources
+- Pods, with their logs and YAML
+- events and alerts
 
-The HTTP API is Prometheus-compatible, so Grafana can use the dashboard as a
-Prometheus data source:
+The UI can also write: delete a Pod, scale, and restart a rollout. Writes
+can be turned off in the configuration.
+
+### Metrics collection
+
+A collector thread runs in the same process. Every
+`DASHBOARD_SCRAPE_INTERVAL` seconds it discovers targets and scrapes them.
+There are four kinds of target:
+
+- `/metrics` of every API server
+- the kubelet endpoints of every node: `/metrics`, `/metrics/cadvisor`,
+  `/metrics/resource` and `/metrics/probes`
+- Pods and Services annotated with `prometheus.io/scrape: "true"`. Use
+  `prometheus.io/port`, `prometheus.io/path` and `prometheus.io/scheme` to
+  say where to connect
+- a built-in kube-state exporter, which computes `kube_node_*`,
+  `kube_pod_*`, `kube_deployment_*` and similar metrics from the API
+
+### Time-series store
+
+Samples are stored by `lib/tsdb`, which is structured like Prometheus.
+Chunks are Gorilla-compressed, there is a write-ahead log, and samples are
+compacted into 2-hour blocks. Old data is deleted according to the retention
+period. The label index uses SQLite.
+
+### PromQL
+
+`lib/promql` implements PromQL. It supports:
+
+- instant and range selectors
+- `offset` and `@`
+- subqueries
+- aggregations and functions
+- vector matching with `on`, `ignoring`, `group_left` and `group_right`
+- set operators
+
+### Rules and alerts
+
+Write recording and alerting rules in `config/rules.yml`, in the Prometheus
+rule-file format. An alert moves through pending, firing and resolved, and
+produces `ALERTS` series. Alerts can also be sent to an Alertmanager-style
+webhook.
+
+### HTTP API
+
+The HTTP API is compatible with Prometheus, so Grafana can register the
+dashboard as a Prometheus data source.
 
 ```
 /api/v1/query  /api/v1/query_range  /api/v1/series  /api/v1/labels  /api/v1/label/:name/values
