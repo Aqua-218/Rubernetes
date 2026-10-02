@@ -167,7 +167,7 @@ whiteoutとopaque directoryは、OCIの規則に従って処理する。各パ�
 <a id="sec-5-8-6"></a>
 ## 5.8.6 namespace
 
-Native backend は `clone3(2)`、`unshare(2)`、`setns(2)` と pidfd を用いる。
+Native backendは、`clone3(2)`、`unshare(2)`、`setns(2)`とpidfdを使う。
 
 | namespace | Pod 内共有 | Kubernetes field |
 |---|---|---|
