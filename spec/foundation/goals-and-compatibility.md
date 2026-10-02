@@ -109,9 +109,12 @@ quorumが回復してから60秒以内に、APIへの書き込み、コントロ
 
 性能はKubernetes v1.36.2と比較する。比較では、ハードウェア、オブジェクトのコーパス、リクエストのトレースを同じにする。
 
-3 または 5 control node を構成でき、`floor((N-1)/2)` node の停止中も commit 済み state を失わない。
-quorum 回復後 60 秒以内に API write、controller reconcile、scheduler bind を再開する。
-commit 済み API object の RPO は 0 とする。
+| 項目 | 基準 |
+|---|---|
+| 定常状態でのAPIの読み書き、watchの配信、スケジューリングのスループット | p99レイテンシが比較対象の2倍以内 |
+| エラー率 | 比較対象以下 |
+| イメージがキャッシュ済みのNative Podの起動 | p95が比較対象の2倍以内 |
+| ベーススナップショットからのMicroVMの起動 | p95が1.5秒以内 |
 
 性能は同一 hardware、同一 object corpus、同一 request trace の Kubernetes v1.36.2 oracle と比較する。
 steady state の API read/write、watch delivery、scheduling throughput の p99 latency は oracle の 2 倍以内、
