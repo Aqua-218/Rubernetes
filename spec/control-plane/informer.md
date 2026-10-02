@@ -3,7 +3,7 @@
 <a id="sec-5-4"></a>
 # 5.4 informer
 
-> **Audience:** 制御ループ実装者
+> 対象読者: 制御ループの実装者
 >
 > **Status:** Normative — version 0.2
 
