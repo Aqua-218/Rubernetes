@@ -204,7 +204,7 @@ graph TD
 - TLA+とLeanのソースは`verification/`に置く。Rubyとの対応付けとトレースのアダプタは、`lib/rubernetes/observability/`と`tools/verification/`に分けて置く。
 - 生の結果は`artifacts/`に出力する。回帰の入力として採用した最小の反例だけを、ソースとして保存する。保存先は`test/fixtures/`または`verification/traces/`である。
 
-## Namespace Mapping
+upstreamのアルゴリズムをRubyへ移植したコードは、`lib/`に置いてよい。その場合は、移植元とライセンスをリポジトリ直下の`NOTICE`に記載しなければならない。
 
 | Filesystem | Ruby namespace |
 |---|---|
