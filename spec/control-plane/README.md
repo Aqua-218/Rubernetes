@@ -6,7 +6,7 @@
 
 Ruby製の制御面を定義する。制御面は、APIが受理したdesired stateを永続化する。そのうえで、watchのイベントをもとにコントローラとスケジューラを動かし、actual stateをdesired stateに収束させる。
 
-## Component Flow
+## コンポーネント間の流れ
 
 ```mermaid
 graph LR
