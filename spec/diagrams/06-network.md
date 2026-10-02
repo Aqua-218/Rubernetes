@@ -151,7 +151,7 @@ class R1,R2,R3,R4,R5,R6,R7 px
 class B1,B2,B3,B4,B5,B6 bp
 ```
 
-## Related
+## 関連
 
 - [network](../node/network.md)
 - [service proxy](../node/service-proxy.md)
