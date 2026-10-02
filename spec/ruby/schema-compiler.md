@@ -89,12 +89,12 @@ CRDはコードとして評価しない。構造化されたOpenAPIスキーマ�
 <a id="sec-6-3"></a>
 ## 6.3 スキーマコンパイラの完全性
 
-- 同じ schema AST と compiler version は byte-identical な生成物を返す
-- generated source は repository に commit し、CI で再生成差分がないことを検査する
-- OpenAPI field、Ruby accessor、RBS member、codec field、patch field の集合は一致しなければならない
-- schema に存在する field の生成漏れ、存在しない field の生成、method collision は build error とする
-- 全 GVK を空 object、最小 object、全 field object、unknown-field object で round-trip property test する
-- upstream corpus と生成 OpenAPI/protobuf descriptor/discovery の構造差分を release gate でゼロにする
+- 同じスキーマASTと同じコンパイラのバージョンからは、バイト単位で同一の生成物が得られる。
+- 生成したソースはリポジトリにコミットする。再生成しても差分が出ないことをCIで検査する。
+- OpenAPIのフィールド、Rubyのアクセサ、RBSのメンバ、コーデックのフィールド、patchのフィールドは、集合として一致しなければならない。
+- スキーマにあるフィールドの生成漏れ、スキーマにないフィールドの生成、メソッド名の衝突は、ビルドエラーとする。
+- すべてのGVKについて、round-tripのproperty testを行う。入力は、空のオブジェクト、最小のオブジェクト、全フィールドを持つオブジェクト、未知のフィールドを持つオブジェクトの4種類とする。
+- upstreamのコーパスと、生成したOpenAPI、protobufのディスクリプタ、discoveryを比べる。リリースゲートでは構造の差分がゼロでなければならない。
 
 ## Related
 
