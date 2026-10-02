@@ -72,8 +72,9 @@ bundle install
 RUBERNETES_KUBECONFIG=/path/to/kubeconfig bin/rails server -p 3000
 ```
 
-本番は systemd サービスとして動かします（時系列の head が collector の
-プロセスにあるため、ユニットは Puma を 1 worker に固定しています）。
+### 本番での運用
+
+本番ではsystemdサービスとして動かしてください。
 
 ```sh
 cp deploy/rubernetes-dashboard.service /etc/systemd/system/
