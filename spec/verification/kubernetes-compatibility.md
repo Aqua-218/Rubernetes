@@ -192,9 +192,7 @@ Ginkgoのdry-runで得たテストの一覧について、すべてのテスト�
 - `[Flaky]`
 - `[Feature:*]`
 
-`[LinuxOnly]`、`[Disruptive]`、`[Slow]`、`[Serial]`、`[Flaky]`、`[Feature:*]`は除外理由にならない。
-未実装、失敗、timeout、環境構築困難も除外理由にならない。各非required項目はupstream test ID、file、
-分類理由、外部contractの有無、置換test ID、reviewerを`selection-ledger.json`へ記録する。
+未実装、失敗、タイムアウト、環境構築の難しさも、除外の理由にならない。
 
 `provider-private`または`implementation-internal`に外部観測可能contractがある場合、同じ入力と観測点を持つ
 project-authored testがpassするまで当該項目をclosedにしてはならない。未分類件数と置換test未接続件数は0とする。
