@@ -18,7 +18,7 @@ OngaroとOusterhoutによるRaftの論文に従う。以下は、本実装で決
 
 | 項目 | 値 |
 |---|---|
-| election timeout | 150〜300 ms からランダム |
+| election timeout | 150〜300 msの範囲からランダムに選ぶ |
 | heartbeat interval | 50 ms |
 | 最大バッチ entry 数 | 256 entry |
 | 最大バッチ encoded size | 1 MiB |
