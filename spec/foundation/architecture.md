@@ -57,7 +57,7 @@ graph LR
 `etcd`、`runc`、`containerd`、`CRI-O`、既存のCNI、`kube-proxy`、`CoreDNS`を、本番クラスタの必須の実装として使ってはならない。代替の実装として使ってもならない。
 
 <a id="sec-3-3"></a>
-## 3.3 実装独立性と信頼境界
+## 3.3 実装の独立性と信頼境界
 
 - Ruby が policy、状態機械、resource ownership、codec、controller、scheduler を保持する
 - C 拡張は Ruby FFI で表現できない ABI の薄い shim に限定し、policy を実装してはならない
