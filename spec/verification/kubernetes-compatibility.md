@@ -166,8 +166,7 @@ sonobuoy run \
 - skip用の正規表現の追加
 - focusでテストを絞ること
 
-Conformance外も含むupstream `test/e2e`をv1.36.2 sourceからbuildし、provider `skeleton`で
-Rubernetesへ接続する。upstream sourceとgenerated test binaryへpatchを当ててはならない。
+リリースの証拠には、Sonobuoyのアーカイブ全体を保存する。少なくとも、`e2e.log`、`junit_01.xml`、実行したコマンド、解決したイメージのダイジェスト、クラスタのプロファイルを含める。
 
 ### Inventory classification
 
