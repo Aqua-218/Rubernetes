@@ -2,7 +2,7 @@
 
 [English](README.md) | 日本語
 
-> **読者:** 検証エンジニアとレビュア
+検証を担当する人とレビュアに向けた文書です。
 
 M0〜M9 の各マイルストーンは、`artifacts/milestones/M<n>/<run-id>/` 配下の
 内容アドレス証拠バンドル（`rake m<n>:evidence`）を厳格なゲートが再検査する
