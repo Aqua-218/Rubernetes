@@ -216,7 +216,7 @@ upstreamのNode Conformanceを、実際のkernelで動くamd64のノードに対
 
 テストが、kubelet固有の非公開のパスやプロセス名を要求する場合は、K3と同じ台帳で分類する。その場合、外部契約はランタイムのL3とL5のテストに置き換える。
 
-## K6 — Client and Existing-Project Corpus
+次のテストは、Node Conformanceの証拠に数えない。
 
 ### Client matrix
 
