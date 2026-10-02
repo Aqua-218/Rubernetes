@@ -225,34 +225,58 @@ rake lint:fix                    # safe autocorrect only; re-run the tests after
 rake rbs:validate                # validates the hand-written RBS
 ```
 
-Conventions that matter:
+Follow these rules when you change the code.
 
-- **The schema corpus is the source of truth for types.** Do not hand-write
-  Kubernetes types; change the importer or generator under `tools/schema/`
-  and regenerate. Generated output must be byte-reproducible.
-- **Behaviour is checked against upstream, not against our own reading of
-  it.** New API, controller, scheduler or kubelet behaviour gets a
-  differential or oracle test against the pinned Kubernetes binaries or
-  images where one is possible, and otherwise a test derived from the
-  upstream test it mirrors.
-- **No silent skips.** A missing adapter, kernel feature or external runner
-  is reported as `INCOMPLETE` or an error, never as a pass. Waivers are
-  recorded by name and reason (see the kernel waiver in
-  [tools/milestones/README.md](tools/milestones/README.md)).
-- **Duck typing is deliberate.** Every RuboCop cop that is off is listed in
-  `.rubocop.yml` with the reason, most of them because their autocorrect
-  assumes a concrete receiver type (`grep` on a Struct, `partition` on a
-  Hash, `empty?` on a `File::Stat`). `rake lint` must stay clean; there is
-  no todo file. Format-only commits are listed in `.git-blame-ignore-revs`.
-- **After adding a `require` under `lib/`, load the whole library once**
-  (`ruby -Ilib -e 'require "rubernetes"'`); a bad `require_relative` only
-  shows up in the process that needs it.
-- **Commits are recorded, not written.** `rake repo:commit` (or
-  `ruby tools/repo/auto_commit.rb --cycle <name> --status 0`) turns the work
-  tree into one commit per contiguous edit, named after the declaration it
-  lands in, sources before tests before docs, published with a
-  compare-and-swap on HEAD. It commits unstaged changes as well, so stash
-  what should not land. No trailers are added beyond the author.
+### Generate types from the schema
+
+Do not write Kubernetes types by hand. To change a type, change the importer
+or generator under `tools/schema/` and regenerate. Generated output must be
+reproducible byte for byte.
+
+### Check behaviour against upstream
+
+When you add API, controller, scheduler or kubelet behaviour, add a test
+that compares the result with the pinned Kubernetes binaries or images.
+Where that is not possible, derive the test from the corresponding upstream
+test. Your own reading of the source is not enough evidence.
+
+### Never report an unexecuted check as a pass
+
+A check that lacks an adapter, a kernel feature or an external runner
+reports `INCOMPLETE` or an error. A waiver is recorded with its name and
+reason; the kernel waiver in
+[tools/milestones/README.md](tools/milestones/README.md) is an example.
+
+### Assume duck typing
+
+Every RuboCop cop that is turned off is listed in `.rubocop.yml` with the
+reason. Most of them have an autocorrect that assumes a concrete receiver
+type: `grep` on a Struct, `partition` on a Hash, `empty?` on a `File::Stat`.
+`rake lint` stays at zero offenses and there is no todo file. List
+format-only commits in `.git-blame-ignore-revs`.
+
+### Load the whole library after adding a require
+
+After adding a `require` under `lib/`, load the whole library once:
+
+```sh
+ruby -Ilib -e 'require "rubernetes"'
+```
+
+A wrong `require_relative` raises no error until a process loads that file.
+
+### Create commits with the tool
+
+`rake repo:commit` splits the changes in the work tree into commits.
+`ruby tools/repo/auto_commit.rb --cycle <name> --status 0` does the same.
+The tool:
+
+- makes one commit per contiguous edit
+- names each commit after the declaration the change belongs to
+- orders sources before tests before documents
+- publishes with a compare-and-swap on HEAD
+- commits unstaged changes too, so stash anything that should not land
+- adds no trailers other than the author
 
 ## Verification
 
