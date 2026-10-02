@@ -61,11 +61,11 @@ election timeoutは、heartbeat intervalの3倍以上とする。3倍を下回�
 <a id="sec-5-3-6"></a>
 ## 5.3.6 トランスポート
 
-- 自作 RPC。フレーム形式は `[長さ 4 byte][種別 1 byte][ペイロード]`
-- frame length は payload を確保する前に検査し、上限 16 MiB を超えた接続を切断する
-- peer certificate の cluster ID と node ID を検証し、接続内容から caller identity を確定する
-- 再送はアプリケーション層で行う。RPC は `{cluster_id,node_id,term,request_id}` で冪等化する
-- リーダーからフォロワーへの `AppendEntries` はパイプライン化する
+- RPCは自作する。フレームの形式は`[長さ 4 byte][種別 1 byte][ペイロード]`とする。
+- フレームの長さは、ペイロード用のメモリを確保する前に検査する。上限の16 MiBを超えた場合は接続を切断する。
+- 相手の証明書に含まれるcluster IDとnode IDを検証する。呼び出し元の身元は、接続の内容から確定する。
+- 再送はアプリケーション層で行う。RPCは`{cluster_id,node_id,term,request_id}`で冪等にする。
+- リーダーからフォロワーへの`AppendEntries`はパイプライン化する。
 
 <a id="sec-5-3-7"></a>
 ## 5.3.7 メンバーシップ変更
