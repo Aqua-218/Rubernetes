@@ -89,7 +89,7 @@ graph TD
 - [サービスプロキシ](node/service-proxy.md)
 - [ボリューム](node/volume.md)
 
-### Verification and Delivery
+### 検証と納品
 
 - [形式仕様](verification/formal-methods.md)
 - [検証戦略](verification/testing.md)
