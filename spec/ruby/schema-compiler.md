@@ -39,7 +39,9 @@ resource :Pod, group: "", version: "v1", scope: :namespaced do
 end
 ```
 
-schema compiler は次を同一 AST から決定的に生成する。
+### 生成物
+
+スキーマコンパイラは、次のものを同じASTから決定的に生成する。
 
 | 生成物 | 要件 |
 |---|---|
