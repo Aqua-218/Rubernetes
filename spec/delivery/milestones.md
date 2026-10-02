@@ -284,7 +284,9 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 
 ### 成果物
 
-### Deliverables
+- Firecrackerとjailerのコントローラ、ゲストイメージ、Ruby製のゲストsupervisor、vsockのプロトコル
+- `microvm`と`microvm-restricted`のRuntimeClass
+- スナップショットのプール、identityのローテーション、dm-verity、ホスト側の後始末
 
 - Firecracker/jailer controller、guest image、Ruby guest supervisor、vsock protocol
 - `microvm`と`microvm-restricted` RuntimeClass
