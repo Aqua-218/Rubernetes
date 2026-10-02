@@ -364,10 +364,7 @@ VMのブートが完了しただけでは、workload gateを開いてはなら�
 
 動いているPodのcheckpointとrestoreを、スナップショットのキャッシュとして使ってはならない。
 
-- VM ID、Pod sandbox ID、subject ID、capability ID、request ID、vsock CID
-- guest entropy、hostname、machine ID、network identity、Pod IP と route
-- writable workspace、ConfigMap、Secret、ServiceAccount token、volume attachment
-- policy digest、artifact digest、revocation epoch
+スナップショットの作成を要求したあと、pauseのACKを受け取る前に接続が切れた場合は、`SnapshotPauseUnknown`とする。この状態のVMに対して、resume、スナップショットの再試行、作業領域の再利用を行ってはならない。行ってよいのは、停止の確認と後始末だけである。
 
 guest supervisor は新しい identity と policy digest を受信し、旧 identity を破棄したことを署名付き ACK で返す。
 host は ACK の VM identity、policy digest、nonce を照合するまで workload gate を開かない。
