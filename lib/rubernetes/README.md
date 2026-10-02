@@ -27,6 +27,12 @@ dependencies between these directories. Do not invert it for convenience.
 | `observability/` | Structured events, metrics, traces and evidence export |
 | `platform/linux/` | Typed Linux UAPI adapters over the native extension boundary |
 | `support/` | Shared primitives with no domain-policy ownership |
+| `transport/` | HTTP/1.1 and HTTP/2 server and socket adapters for the API process boundary |
+| `client/` | Kubernetes API client, kubeconfig loading and output formatting |
+| `rubectl/` | The `rubectl` command line |
+| `manifest/` | Ruby Manifest DSL builder and the sandbox that evaluates it |
+| `dra/` | Dynamic Resource Allocation: the structured allocator and its CEL device selectors |
+| `metrics_server/` | The `metrics.k8s.io` API and its storage |
 
 ## Related
 
