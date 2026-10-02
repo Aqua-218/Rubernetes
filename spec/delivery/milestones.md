@@ -254,7 +254,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 <a id="milestone-m6"></a>
 ## M6 完全なKubernetes API
 
-### Deliverables
+### 成果物
 
 - 全built-in resource/subresource、CRD、conversion、aggregation、admission
 - authentication、authorization、audit、encryption、API Priority and Fairness
