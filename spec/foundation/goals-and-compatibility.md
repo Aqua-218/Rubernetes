@@ -57,10 +57,13 @@ G5では網羅的なモデル検査を行わない。[7.2](../verification/forma
 
 「互換」とは内部構造が一致することではない。同じ前提状態と同じ要求に対して、次の項目が一致することをいう。
 
-「互換」とは内部構造の一致ではなく、同一の前提状態と要求に対して、成功・失敗、
-HTTP status、`Status.reason/details/causes`、defaulting 後のオブジェクト、field ownership、
-イベント順序および最終的なクラスタ状態が一致することをいう。UID、時刻、乱数、
-`resourceVersion`、ノード固有値は値そのものではなく、形式、単調性、一意性、因果順序を比較する。
+- 成功か失敗か
+- HTTPステータス
+- `Status.reason`、`Status.details`、`Status.causes`
+- defaulting後のオブジェクト
+- フィールドの所有権
+- イベントの順序
+- 最終的なクラスタの状態
 
 Windows ノードと Windows コンテナは対象外とする。これは未実装機能ではなく、
 Linux syscall、KVM、cgroup v2 を実行基盤とする本システムのプラットフォーム境界である。
