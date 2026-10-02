@@ -104,10 +104,20 @@ systemctl daemon-reload && systemctl enable --now rubernetes-dashboard
 curl --noproxy '*' -sS http://<DASHBOARD_BIND>:3000/up
 ```
 
-`deploy/ingress.yaml` publishes the host-run dashboard through the cluster's
-ingress controller: a Service without selector, an EndpointSlice pointing at
-`DASHBOARD_BIND`, and an Ingress with a cert-manager issued certificate. Set
-`DASHBOARD_PASSWORD` before publishing it: the UI can delete Pods.
+The unit fixes Puma at one worker, because the collector's process holds the
+newest part of the time-series data in memory.
+
+### Publishing through the cluster
+
+Applying `deploy/ingress.yaml` publishes the host-run dashboard through the
+cluster's ingress controller. The manifest creates:
+
+- a Service without a selector
+- an EndpointSlice pointing at `DASHBOARD_BIND`
+- an Ingress that uses a certificate issued by cert-manager
+
+Always set `DASHBOARD_PASSWORD` before publishing, because the UI can delete
+Pods.
 
 ## Configuration
 
