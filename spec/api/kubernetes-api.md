@@ -12,9 +12,12 @@ Kubernetes v1.36.2に対するリソース、エンドポイント、ワイヤ�
 <a id="sec-4-1"></a>
 ## 4.1 対象リソース
 
-対象は Kubernetes `v1.36.2` tag が配布する discovery、OpenAPI v2/v3、
-Protocol Buffer 定義および API lifecycle 情報に現れる全リソースである。
-固定した列挙を本文へ複製せず、次の machine-readable corpus を規範とする。
+対象は、Kubernetesの`v1.36.2`タグが配布する次の情報に現れるすべてのリソースである。
+
+- discovery
+- OpenAPI v2とv3
+- Protocol Bufferの定義
+- APIのライフサイクル情報
 
 | corpus | 内容 | 更新規則 |
 |---|---|---|
