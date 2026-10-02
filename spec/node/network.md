@@ -92,7 +92,7 @@ VXLANの既定値は次のとおりである。
 - `dnsPolicy`、`dnsConfig`、`hostNetwork`に応じたnameserver、search、optionを、`/etc/resolv.conf`にatomicに書き出す。
 - クラスタ外への問い合わせは、設定済みのupstreamに転送する。転送するときはtransaction IDを生成し直す。ループ、応答の偽装、大きすぎるパケットは拒否する。
 
-## Related
+## 関連
 
 - [service proxy](service-proxy.md)
 - [runtime](runtime.md)
