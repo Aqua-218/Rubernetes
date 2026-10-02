@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-Service/EndpointSlice、conntrack、eBPF/nftables backendの互換動作を定義する。
+ServiceとEndpointSlice、conntrack、eBPFとnftablesの各backendについて、互換な動作を定義する。
 
 
 - Service と EndpointSlice を watch する
