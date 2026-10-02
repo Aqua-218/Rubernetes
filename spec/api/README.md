@@ -15,8 +15,7 @@ Kubernetes v1.36.2が公開するAPIの境界と、その要求を処理するRu
 
 ## データとコード生成
 
-API型のsource of truthは[Schema Compiler](../ruby/schema-compiler.md)であり、
-manifest DSLは[独立したCLI層](../ruby/manifest-dsl.md)として標準API objectを生成する。
+APIの型は[スキーマコンパイラ](../ruby/schema-compiler.md)の定義を正とする。Manifest DSLは[独立したCLIの層](../ruby/manifest-dsl.md)であり、標準のAPIオブジェクトを生成する。
 
 ## Related
 
