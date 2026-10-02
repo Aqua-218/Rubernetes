@@ -3,7 +3,7 @@
 <a id="sec-1"></a>
 # 1. 目的とスコープ
 
-> **Audience:** 全読者、審査者、アーキテクト
+> 対象読者: 全読者、審査者、アーキテクト
 >
 > **Status:** Normative — version 0.2
 
