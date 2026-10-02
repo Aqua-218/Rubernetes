@@ -66,8 +66,8 @@
 │   ├── include/                   # 生成した、または手でレビューした最小限のCヘッダ
 │   └── src/                       # ABI用のshimだけ。オーケストレーションのポリシーは置かない
 ├── schema/
-│   ├── kubernetes/v1.36.2/       # Normalized pinned Kubernetes schema inputs
-│   └── rubernetes/                # Project extension schema inputs
+│   ├── kubernetes/v1.36.2/       # 正規化して固定したKubernetesのスキーマ入力
+│   └── rubernetes/                # プロジェクト独自の拡張スキーマの入力
 ├── generated/
 │   ├── ruby/                      # Generated types, codecs and validators
 │   ├── rbs/                       # Generated public signatures
