@@ -35,9 +35,15 @@ APIリクエストの処理順序、認証、認可、流量制御、admission�
 <a id="sec-5-1-2"></a>
 ## 5.1.2 認証
 
-認証器は x509 client certificate、ServiceAccount の署名付き JWT と TokenRequest、
-OIDC、webhook token authenticator、bootstrap token、request-header proxy および
-static token file を実装する。複数の認証器で得た user/group/extra が矛盾した場合は拒否する。
+次の認証器を実装する。
+
+- x509クライアント証明書
+- ServiceAccountの署名付きJWTとTokenRequest
+- OIDC
+- webhook token authenticator
+- bootstrap token
+- request-headerによるプロキシ認証
+- 静的なトークンファイル
 
 未認証は `401` と `WWW-Authenticate` を返す。匿名認証の既定値と endpoint ごとの扱いは
 v1.36.2 の structured authentication configuration に従う。token、証明書、認証 header、
