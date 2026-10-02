@@ -102,8 +102,7 @@ git clone <this repository> && cd 2026
 bundle install
 rake abi:compile                    # Cの拡張をbuild/配下にビルド
 
-# このホスト上に control 3 ノード + worker 3 ノードのクラスタを、PKI・
-# コンポーネントごとの identity・クラスタ DNS・kubeconfig 込みで /srv/rbn-dev に作る:
+# control 3ノードとworker 3ノードのクラスタを/srv/rbn-devに作る
 sudo -E ruby tools/conformance/cluster.rb up --profile linux-amd64-ipv4-native --root /srv/rbn-dev
 
 export KUBECONFIG=/srv/rbn-dev/linux-amd64-ipv4-native/kubeconfig
