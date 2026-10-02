@@ -359,14 +359,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 7. プロジェクトが書いた本番ソースのうち、Rubyの比率が85%以上である。
 8. クリーンなホストにリリースの成果物だけを入れて、クラスタの作成からM8の全ゲートの実行までを再現できる。
 
-1. [release完了条件](implementation-plan.md#sec-9-3)を全項目満たす。
-2. x86_64の独立したclean hostで同一sourceから再buildしたartifact digestが一致する。
-3. TLA+ release scopeのcounterexampleが0、Leanの`sorry`、`admit`、禁止escape hatchが0である。
-4. performance targetを同一hardwareのKubernetes v1.36.2 oracle比較で満たす。
-5. 72時間soak中のunexpected process exit、resource leak、stuck queue、lost watch、lost commitが0である。
-6. critical/high security finding、unreviewed dependency、unpinned production/test inputが0である。
-7. project-authored production sourceのRuby比率が85%以上である。
-8. clean hostにrelease artifactだけを導入し、cluster作成から全M8 gate実行まで再現できる。
+### 必要な証拠
 
 ### Required evidence
 
