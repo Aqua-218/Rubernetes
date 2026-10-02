@@ -107,7 +107,7 @@ end
 
 DSLは配線を生成するだけである。reconcileに対するC1〜C7の規約は緩めない。
 
-## Related
+## 関連
 
 - [informer](informer.md)
 - [Ruby Design index](../ruby/README.md)
