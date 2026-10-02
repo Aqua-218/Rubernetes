@@ -221,9 +221,13 @@ upstreamのアルゴリズムをRubyへ移植したコードは、`lib/`に置�
 | `lib/rubernetes/platform/linux/` | `Rubernetes::Platform::Linux` |
 | `generated/ruby/` | `Rubernetes::Generated` |
 
-file path、module namespace、主要public class名は一致させる。acronymはRuby constantでは
-`API`、`OCI`、`IPAM`、`UID`、`GVK`、`GVR`を用い、filenameでは`api`、`oci`、`ipam`、
-`uid`、`gvk`、`gvr`を用いる。
+ファイルのパス、モジュールの名前空間、主な公開クラスの名前は一致させる。
+
+頭字語は、Rubyの定数では`API`、`OCI`、`IPAM`、`UID`、`GVK`、`GVR`と書く。ファイル名では`api`、`oci`、`ipam`、`uid`、`gvk`、`gvr`と書く。
+
+## テストの配置
+
+テストは、対象のクラスのディレクトリではなく、保証のレベルに応じて配置する。
 
 ## Test Placement Rule
 
