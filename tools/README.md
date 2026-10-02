@@ -11,7 +11,7 @@ commands. The gate deliberately refuses a missing x86_64 kernel profile, test sk
 source inputs, and digest mismatches. Evidence is content-addressed and neither requires nor
 creates a Git repository.
 
-`milestones/m5_*_probe.rb` produce the M5 durable-HA reports (TLC run, linearizability
+`milestones/m5_*_probe.rb` produce the M5 durable-HA reports (linearizability
 histories, real-process fault matrix, WAL/snapshot corruption corpus, RTO/RPO report and
 resource ownership ledger); `m5_gate.rb` validates them on top of the complete M0–M4 chain.
 `verification/linearizability.rb` is the history checker and `verification/kv_sequential_oracle.rb`
