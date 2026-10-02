@@ -1,4 +1,4 @@
-# Conformance Tooling Boundary
+# Conformance tooling
 
 English | [日本語](README.ja.md)
 
