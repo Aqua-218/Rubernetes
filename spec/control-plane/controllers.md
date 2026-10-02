@@ -37,9 +37,9 @@
 <a id="sec-5-5-3"></a>
 ## 5.5.3 ReplicaSetController
 
-- 現存 Pod 数と `spec.replicas` の差だけ作成 / 削除する
-- 削除優先度: 未スケジュール → Pending → 起動が新しい順
-- 1 reconcile の作成上限は 500 Pod とし、slow-start batch を 1 から倍増する
+- 現在のPod数と`spec.replicas`の差の分だけ、Podを作成または削除する。
+- 削除するPodは次の優先順で選ぶ。まだスケジュールされていないPod、PendingのPod、起動が新しいPodの順である。
+- 1回のreconcileで作成するPodは500個までとする。slow-startのバッチは1個から始めて倍に増やす。
 
 <a id="sec-5-5-4"></a>
 ## 5.5.4 NodeController
