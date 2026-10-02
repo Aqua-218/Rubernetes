@@ -197,7 +197,9 @@ graph LR
 
 ### 成果物
 
-### Deliverables
+- IPv4とIPv6のIPAM、bridge・veth・VXLAN、経路、NetworkPolicy
+- Service、EndpointSlice、DNS、eBPFとnftablesのプロキシ
+- ephemeral・projected・localの各ボリューム、PV・PVC・StorageClass、スナップショット、CSI互換の接続
 
 - IPv4/IPv6 IPAM、bridge/veth/VXLAN、route、NetworkPolicy
 - Service、EndpointSlice、DNS、eBPF/nftables proxy
