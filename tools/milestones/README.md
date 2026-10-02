@@ -354,25 +354,44 @@ gate.
 
 ## History
 
-- 2026-09-04: an independent audit found the 2026-08-23 `COMPLETE` bundles
-  rejected by the then-current gates. Over 2026-09-04/05 the M1–M4 oracles,
-  probes and gate contracts were repaired (TypeMeta restoration from list
-  envelopes, status-subresource journaling, effect-checkpoint binding, ledger
-  cycle kinds, oracle stdin binding, observable digests, chaos recovery
-  record shape, generator temp-directory exclusion) and the full M0 → M4
-  chain was re-captured on one source identity with every manifest
-  `COMPLETE`. Two flaky measurements were made deterministic rather than
-  retried: the L3 runtime smoke treats `pidfd_open` EINVAL on an
-  already-exited short workload as the documented exit race, and the
-  graceful-termination oracle derives "killed after the grace period" from
-  the harness's measured delete-to-DELETED interval instead of
-  second-granularity API timestamps.
-- 2026-09-06/07: M5, M6 and M7 probes and gates landed; the M5–M7 chain was
-  captured on top of the 2026-09-05 M4 bundle.
-- 2026-09-30: after the repository-wide RuboCop reformat, the M0/M1 gates
-  and probes were re-run clean on the new tree. Bundles captured before a
-  source change are, by design, stale for the current tree; a release
-  candidate re-captures the whole chain.
+### 2026-09-04 to 05
+
+An independent audit found that the `COMPLETE` bundles captured on
+2026-08-23 were rejected by the gates of that time. The M1–M4 oracles,
+probes and gate contracts were repaired:
+
+- Restore TypeMeta from list envelopes.
+- Journal the status subresource.
+- Bind effect checkpoints.
+- Give the ledger cycle kinds.
+- Bind the oracle's standard input.
+- Record digests of observations.
+- Fix the shape of the chaos recovery records.
+- Exclude the generator's temporary directory from the source inventory, for
+  every milestone.
+
+M0 through M4 were then re-captured from one source, and every manifest
+became `COMPLETE`.
+
+Two measurements that gave unstable results were made deterministic instead
+of being retried. The first is the L3 runtime smoke test. Calling
+`pidfd_open` on a short-lived workload that has already exited returns
+EINVAL, and this is now treated as the documented exit race. The second is
+the graceful-termination oracle. It no longer derives "killed after the
+grace period" from API timestamps with one-second precision. It uses the
+interval from delete to DELETED measured by the harness.
+
+### 2026-09-06 to 07
+
+The M5, M6 and M7 probes and gates were added. M5 through M7 were captured
+on top of the M4 bundle from 2026-09-05.
+
+### 2026-09-30
+
+The whole repository was formatted with RuboCop. The M0 and M1 gates and
+probes were re-run on the formatted tree and found no problems. Bundles
+captured before a source change become invalid by design. A release
+candidate re-captures the whole chain.
 
 ## Related
 
