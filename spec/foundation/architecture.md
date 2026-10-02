@@ -33,12 +33,12 @@ graph LR
 
 | プロセス | 役割 | 配置 |
 |---|---|---|
-| `apiserver` | REST API、認証認可、admission、watch 配信 | 制御ノード |
-| `controller-manager` | v1.36.2 の built-in controller、動的 controller、リーダー選出 | 制御ノード |
-| `scheduler` | Pod のノード割当 | 制御ノード |
-| `agent` | Pod のライフサイクル管理 | 全ワーカーノード |
-| `proxy` | Service のデータパス | 全ワーカーノード |
-| `rubectl` | kubectl 互換操作と Ruby manifest DSL のコンパイル | 任意 |
+| `apiserver` | REST API、認証と認可、admission、watchの配信 | 制御ノード |
+| `controller-manager` | v1.36.2の組み込みコントローラ、動的コントローラ、リーダー選出 | 制御ノード |
+| `scheduler` | Podのノードへの割り当て | 制御ノード |
+| `agent` | Podのライフサイクル管理 | すべてのワーカーノード |
+| `proxy` | Serviceのデータパス | すべてのワーカーノード |
+| `rubectl` | kubectl互換の操作と、Ruby Manifest DSLのコンパイル | 任意 |
 
 `apiserver` は内部に Raft ノードを持ち、複数の制御ノードで合意を形成する。
 
