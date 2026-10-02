@@ -72,12 +72,12 @@ Declared → Provisioned → Attached → Staged → Published → Unpublishing 
 <a id="sec-5-11-3"></a>
 ## 5.11.3 投影とパスの安全性
 
-- ConfigMap、Secret、downwardAPI、projected は世代 directory へ書き、symlink の atomic swap で更新する
-- Secret と ServiceAccount token は tmpfs にだけ置き、swap、snapshot、log、core dump、base image に含めない
-- token は audience、expiry、Pod UID に bind し、有効期間の 80% 到達時に rotate する
-- `subPath` と hostPath は `openat2` と file descriptor で解決し、symlink/hardlink/mount replacement の TOCTOU を防ぐ
-- `fsGroup`、SELinux label、read-only、mountPropagation を publish 前に適用し、失敗時に workload gate を開かない
-- mount source、target、mount ID、filesystem UUID、device ID を runtime ledger に記録する
+- ConfigMap、Secret、downwardAPI、projectedの内容は、世代ごとのディレクトリに書く。更新はsymlinkのatomicな入れ替えで行う。
+- SecretとServiceAccountのトークンはtmpfsだけに置く。swap、スナップショット、ログ、コアダンプ、ベースイメージに含めない。
+- トークンは、audience、有効期限、PodのUIDに結び付ける。有効期間の80%に達した時点でローテートする。
+- `subPath`とhostPathは、`openat2`とファイルディスクリプタで解決する。symlink、hardlink、マウントの差し替えによるTOCTOUを防ぐためである。
+- `fsGroup`、SELinuxのラベル、読み取り専用、mountPropagationは、publishの前に適用する。適用に失敗した場合は、ワークロードを開始させない。
+- マウント元、マウント先、マウントID、ファイルシステムのUUID、デバイスIDを、ランタイムの台帳に記録する。
 
 ## Related
 
