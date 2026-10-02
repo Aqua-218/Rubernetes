@@ -72,7 +72,7 @@ graph TD
 
 - [Ruby設計の概要](ruby/README.md)
 - [Ruby Manifest DSL](ruby/manifest-dsl.md)
-- [Schema Compiler](ruby/schema-compiler.md)
+- [スキーマコンパイラ](ruby/schema-compiler.md)
 - [Kubernetes API](api/kubernetes-api.md)
 - [API Server](api/api-server.md)
 
