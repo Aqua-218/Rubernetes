@@ -1,4 +1,4 @@
-# Rubernetes 仕様・設計書
+# Rubernetes仕様・設計書
 
 > **Audience:** 利用者、実装者、検証者、運用者、審査者
 >
