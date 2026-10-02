@@ -20,6 +20,7 @@ class M1GemContentsTest < Minitest::Test
   GENERATED_ROOTS = %w[generated/ruby/ generated/rbs/ generated/openapi/ generated/schema/].freeze
   REQUIRED_FILES = %w[
     LICENSE
+    NOTICE
     README.md
     spec.md
     config/defaults/m0.yml
