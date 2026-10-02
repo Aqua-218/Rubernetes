@@ -19,3 +19,6 @@ APIの型は[スキーマコンパイラ](../ruby/schema-compiler.md)の定義�
 
 ## 関連
 
+- [ストア](../control-plane/store.md)
+- [APIサーバの図](../diagrams/01-api-server.md)
+- [検証戦略](../verification/testing.md)
