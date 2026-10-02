@@ -10,10 +10,10 @@
 
 | 文書 | 内容 |
 |---|---|
-| [実装計画](implementation-plan.md) | stage 00〜15、固定済み判断、1.0.0 release gate |
-| [マイルストーン](milestones.md) | M0〜M9の累積成果物、exit criteria、required evidence |
-| [Project Structure](project-structure.md) | repository tree、module境界、依存方向、artifact配置 |
-| [Coding Standards](coding-standards.md) | syscall、error、concurrency、immutability、metaprogramming、proof traceability |
+| [実装計画](implementation-plan.md) | stage 00〜15、確定済みの判断、1.0.0のリリースゲート |
+| [マイルストーン](milestones.md) | M0〜M9の累積的な成果物、完了条件、必要な証拠 |
+| [プロジェクト構成](project-structure.md) | リポジトリのツリー、モジュールの境界、依存の方向、成果物の配置 |
+| [コーディング規約](coding-standards.md) | システムコール、エラー、並行性、不変性、メタプログラミング、証明との対応 |
 
 ## Related
 
