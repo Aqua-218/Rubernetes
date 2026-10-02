@@ -29,9 +29,9 @@ graph TD
 | 目的 | 読む順序 |
 |---|---|
 | 全体像を知りたい | [目的と互換性](foundation/goals-and-compatibility.md) → [アーキテクチャ](foundation/architecture.md) → [全景図](diagrams/00-overview.md) |
-| Rubyらしさを見たい | [Ruby Design](ruby/README.md) → [Schema Compiler](ruby/schema-compiler.md) → [Controller DSL](control-plane/controllers.md) |
-| Kubernetes互換を実装する | [Kubernetes API](api/kubernetes-api.md) → [API Server](api/api-server.md) → [互換性試験](verification/testing.md) |
-| コンテナ実行を実装する | [Node Agent](node/node-agent.md) → [Runtime](node/runtime.md) → [Network](node/network.md) → [Volume](node/volume.md) |
+| Rubyらしさを見たい | [Ruby設計](ruby/README.md) → [スキーマコンパイラ](ruby/schema-compiler.md) → [コントローラDSL](control-plane/controllers.md) |
+| Kubernetes互換を実装する | [Kubernetes API](api/kubernetes-api.md) → [APIサーバ](api/api-server.md) → [検証戦略](verification/testing.md) |
+| コンテナ実行を実装する | [ノードエージェント](node/node-agent.md) → [ランタイム](node/runtime.md) → [ネットワーク](node/network.md) → [ボリューム](node/volume.md) |
 | 正しさを確認する | [形式仕様](verification/formal-methods.md) → [検証戦略](verification/testing.md) → [検証図](diagrams/08-verification.md) |
 | 実装順と完成条件を確認する | [マイルストーン](delivery/milestones.md) → [実装計画](delivery/implementation-plan.md) → [Coding Standards](delivery/coding-standards.md) |
 | repository構造を確認する | [Project Structure](delivery/project-structure.md) → [Architecture](foundation/architecture.md) |
