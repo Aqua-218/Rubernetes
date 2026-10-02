@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-PV/PVC、controller、CSI、built-in volume、mount ownershipを示す。
+PVとPVC、コントローラ、CSI、組み込みのボリューム、マウントの所有権を示す。
 
 ```mermaid
 graph TB
