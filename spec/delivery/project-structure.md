@@ -167,7 +167,7 @@ graph TD
 - プロセス単位のシングルトンを経由した、隠れた逆向きの依存
 - 定数の探索を使った循環の回避
 
-## Layer Rules
+## 層ごとの規則
 
 ### Public entry and bootstrap
 
