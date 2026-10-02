@@ -8,7 +8,7 @@
 
 Rubernetesは、Kubernetes v1.36.2と外部から観測して互換なLinuxコンテナオーケストレータである。制御面からコンテナ実行、ネットワークまでをRuby中心で独立に実装する。このディレクトリが仕様と設計書の正本であり、このページが入口である。
 
-## Documentation Map
+## 文書の全体像
 
 ```mermaid
 graph TD
