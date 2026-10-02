@@ -49,13 +49,13 @@
 
 | ID | 決定 |
 |---|---|
-| D1 | User namespace は `hostUsers=false` の Pod 単位で共有し、既定の `hostUsers=true` は Kubernetes 互換を維持する |
-| D2 | Raft batch は 256 entry/1 MiB/2 ms、snapshot は 100,000 entry または WAL 512 MiB とする |
-| D3 | Proxy は eBPF と nftables の両 backend を実装し、capability probe で自動選択する |
-| D4 | Lean 抽出物は test oracle に限定し、本番 Ruby 実装と differential property test で結ぶ |
-| D5 | CRD、dynamic registration、conversion、OpenAPI publish は release 必須要件とする |
-| D6 | Native を既定、MicroVM と MicroVMRestricted を標準 RuntimeClass とする |
-| D7 | rootless は user namespace と専用 helper の最小特権分離として実装し、特権処理を agent 本体へ置かない |
+| D1 | user namespaceは、`hostUsers=false`のPodの単位で共有する。既定の`hostUsers=true`では、Kubernetesとの互換を保つ |
+| D2 | Raftのバッチは、256エントリ、1 MiB、2 msとする。スナップショットは、100,000エントリまたはWAL 512 MiBで取る |
+| D3 | プロキシはeBPFとnftablesの両方のbackendを実装する。機能のプローブで自動的に選ぶ |
+| D4 | Leanから抽出したコードはテストの基準に限定する。本番のRuby実装とは、差分のproperty testで結び付ける |
+| D5 | CRD、動的な登録、conversion、OpenAPIの公開は、リリースの必須要件とする |
+| D6 | Nativeを既定とする。MicroVMとMicroVMRestrictedを標準のRuntimeClassとする |
+| D7 | rootlessは、user namespaceと専用のhelperによる最小特権の分離として実装する。特権が必要な処理をagent本体に置かない |
 
 <a id="sec-9-3"></a>
 ## 9.3 release 完了条件
