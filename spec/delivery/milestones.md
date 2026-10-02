@@ -36,9 +36,7 @@
 
 ### Gitに依存しないこと
 
-project source treeにGit repositoryは作成せず、Git metadata、commit SHA、branch、working-tree状態を
-buildまたは完了証拠の前提にしてはならない。複数hostの証拠同一性は、pathとfile SHA-256から決定論的に
-生成したinput SHA-256およびinput file countの一致で判定する。
+プロジェクトのソースツリーにGitリポジトリは作成しない。Gitのメタデータ、コミットのSHA、ブランチ、作業ツリーの状態を、ビルドや完了の証拠の前提にしてはならない。
 
 作業量、期限、発表予定、デモ成功は完了条件にならない。完了判定器は人間向けlogではなく、
 上記manifestとmachine-readable test resultを入力にして非0で失敗しなければならない。
