@@ -112,7 +112,7 @@ graph TD
 - [07 ストレージとボリューム](diagrams/07-storage-volume.md)
 - [08 検証](diagrams/08-verification.md)
 
-## Related
+## 関連
 
 - [ルート案内](../spec.md)
 - [規範参照](references.md)
