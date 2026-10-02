@@ -206,12 +206,13 @@ upstreamのNode Conformanceを、実際のkernelで動くamd64のノードに対
 
 ノードエージェントは、Kubernetesが公開している次の挙動を提供する。
 
-- discovery、OpenAPI、protobuf descriptor、content negotiation
-- success/error HTTP status、headers、`Status.reason/details/causes`
-- defaulting、validation、conversion、pruning、admission結果
-- JSON/YAML/Protobuf/CBOR、watch、exec、attach、port-forward framing
-- patch/apply result、managedFields、conflict、resourceVersion因果順序
-- controller/scheduler/nodeによるevent sequenceとeventual cluster state
+- ノードの登録
+- Podのライフサイクル
+- probe
+- log
+- exec
+- リソースの隔離
+- statusの報告
 
 UID、timestamp、random value、node-specific addressは値の一致を要求せず、format、一意性、単調性、
 因果関係を比較する。不一致は自動縮約し、request sequence、両response、両traceを回帰fixtureへ固定する。
