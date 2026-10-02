@@ -235,6 +235,51 @@ module Conformance
       1
     end
 
+    # The datastore, the node ledgers and every configuration file live under
+    # the root, so a provisioned cluster only needs its processes again.  They
+    # come back in the order `up` starts them: the datastore quorum before its
+    # clients, the control loops before the nodes.
+    def start(options)
+      paths = Dir[File.join(options.fetch(:root), "*", "cluster.json")]
+      raise Error, "no provisioned cluster under #{options.fetch(:root)}; run `up` first" if paths.empty?
+
+      ensure_cgroup_root!
+      started = paths.map { |path| restart_cluster(path) }
+      puts JSON.pretty_generate({"kind" => "conformance_cluster_start", "passed" => true, "clusters" => started})
+      0
+    rescue StandardError => error
+      puts JSON.pretty_generate({"kind" => "conformance_cluster_start", "passed" => false,
+                                 "detail" => "#{error.class}: #{error.message}",
+                                 "logs" => Dir[File.join(options.fetch(:root), "**", "*.log")].last(12)})
+      1
+    end
+
+    def restart_cluster(path)
+      descriptor = JSON.parse(File.binread(path))
+      root = descriptor.fetch("root")
+      kubeconfig = descriptor.fetch("kubeconfig")
+      live = descriptor.fetch("processes").select { |process| alive?(process.fetch("pid")) }
+      raise Error, "#{root} is running (#{live.map { |process| process.fetch("name") }.join(", ")}); bring it down first" unless live.empty?
+
+      servers, clients = descriptor.fetch("processes").partition { |process| process.fetch("executable") == "rubernetes-apiserver" }
+      respawned = servers.map { |process| spawn_process(root, process.fetch("name"), process.fetch("executable"), process.fetch("config")) }
+      await!("#{root} /readyz") { system(KUBECTL, "--kubeconfig", kubeconfig, "get", "--raw", "/readyz", out: File::NULL, err: File::NULL) }
+      # The Node objects still say Ready from before the stop; only a
+      # heartbeat written by the restarted agents counts.
+      since = Time.now.utc
+      respawned.concat(clients.map { |process| spawn_process(root, process.fetch("name"), process.fetch("executable"), process.fetch("config")) })
+      await_nodes!(kubeconfig, WORKER_IDS.length, since: since)
+
+      dead = respawned.reject { |process| alive?(process.fetch("pid")) }
+      raise Error, "#{root}: #{dead.map { |process| process.fetch("name") }.join(", ")} exited during start" unless dead.empty?
+
+      descriptor["processes"] = respawned
+      descriptor["restarted_at"] = Time.now.utc.iso8601
+      File.write(path, JSON.pretty_generate(descriptor))
+      {"profile" => descriptor.dig("profile", "name"), "root" => root, "kubeconfig" => kubeconfig,
+       "processes" => respawned.map { |process| process.slice("name", "pid") }}
+    end
+
     def down(options)
       stopped = []
       Dir[File.join(options.fetch(:root), "*", "cluster.json")].each do |path|
