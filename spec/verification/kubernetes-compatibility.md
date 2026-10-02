@@ -159,9 +159,7 @@ sonobuoy run \
   --wait
 ```
 
-`certified-conformance`以外のmode、`E2E_SKIP`、追加skip regex、test focus narrowingは禁止する。
-release evidenceにはSonobuoy archive全体と、最低限`e2e.log`、`junit_01.xml`、run command、
-resolved image digest、cluster profileを保存する。
+次のものは禁止する。
 
 ## K3 — Portable Upstream Linux E2E
 
