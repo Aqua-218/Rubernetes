@@ -9,8 +9,7 @@
 
 組み込みのボリューム、CSIとの接続、ライフサイクル、所有権、投影、パスの安全性を定義する。中核は自作し、CSI互換のプラグインを接続できるようにする。
 
-
-> **Diagram:** [図 07 — Storage / Volume](../diagrams/07-storage-volume.md)
+図は[図07 ストレージとボリューム](../diagrams/07-storage-volume.md)にある。
 
 <a id="sec-5-11-1"></a>
 ## 5.11.1 インターフェース
