@@ -362,9 +362,7 @@ VMのブートが完了しただけでは、workload gateを開いてはなら�
 - Pod IP
 - 作業領域
 
-snapshot 作成要求後、pause ACK の受信前に接続が失われた場合は `SnapshotPauseUnknown` とする。
-この状態の VM を resume、snapshot 再試行、workspace 再利用してはならず、停止確認と cleanup だけを行う。
-restore は `resume=false` で行い、次をすべて新規生成・再接続した後にだけ resume する。
+動いているPodのcheckpointとrestoreを、スナップショットのキャッシュとして使ってはならない。
 
 - VM ID、Pod sandbox ID、subject ID、capability ID、request ID、vsock CID
 - guest entropy、hostname、machine ID、network identity、Pod IP と route
