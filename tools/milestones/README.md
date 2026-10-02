@@ -333,15 +333,24 @@ For cluster bring-up and day-to-day conformance runs, see
 
 ## M9 Release
 
-`tools/release/` produces the release evidence: `sbom.rb` (CycloneDX 1.5,
-deterministic), `release_manifest.rb` (binds the source inventory digest),
-`loc_report.rb` (Ruby ratio, counting the native extension), `reproduce.rb`
-(byte-identical rebuild), `security_report.rb` (advisories, unpinned inputs,
-claim levels, undated markers), `benchmark.rb` (against a Kubernetes v1.36.2
-oracle) and `soak.rb` (72 hours, append-only journal). A soak shorter than
-72 hours, a benchmark with no oracle, or a missing clean-host reproduction is
-reported as not satisfied rather than passed. `rake m9:artifacts` generates
-the artifacts, `rake m9:verify` gates them.
+The tools under `tools/release/` produce the release evidence.
+
+| Tool | Output |
+|---|---|
+| `sbom.rb` | An SBOM in CycloneDX 1.5. The output is deterministic |
+| `release_manifest.rb` | Binds the digest of the source inventory |
+| `loc_report.rb` | The Ruby ratio, counting the native extension |
+| `reproduce.rb` | A rebuild that matches byte for byte |
+| `security_report.rb` | Advisories, unpinned inputs, claim levels and undated markers |
+| `benchmark.rb` | A performance comparison with Kubernetes v1.36.2 |
+| `soak.rb` | A 72-hour continuous run, recorded in an append-only journal |
+
+A soak shorter than 72 hours, a benchmark with nothing to compare against,
+or a missing clean-host reproduction is reported as not satisfied. It does
+not pass.
+
+`rake m9:artifacts` generates the artifacts and `rake m9:verify` runs the
+gate.
 
 ## History
 
