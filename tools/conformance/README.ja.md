@@ -54,15 +54,13 @@ setsid nohup tools/conformance/round.sh conf4 /srv/rbn-conf4/linux-amd64-ipv4-na
 
 `test/conformance/kubernetes/profiles.yml`に3つのプロファイルが定義してあります。どれも1台のホスト上にcontrol 3ノードとworker 3ノードを作ります。
 
-`test/conformance/kubernetes/profiles.yml` は 3 つのプロファイルを定義します。
-いずれも 1 ホスト上の control 3 + worker 3 です: `linux-amd64-ipv4-native`、
-`linux-amd64-ipv6-native`（Pod CIDR `fd00:d8:<n>::/48`、service CIDR
-`fd00:d8:5::/112`）、`linux-amd64-dualstack-native`（両方。プロファイルで先に
-並ぶ IPv4 が primary）。`cluster.rb` は残りをプロファイルから導出します: IPv6 が
-あれば API サーバは `::` に bind し primary ファミリのアドレスを advertise、
-`kubernetes` Service とその endpoints もそのファミリに従い、各ノードは
-ファミリごとに 1 つの `InternalIP`（Pod ブリッジの先頭アドレス `10.24n.0.1` /
-`fd00:d8:n::1`）を公開し、サービング証明書には両ファミリのアドレスが入ります。
+| プロファイル | アドレス |
+|---|---|
+| `linux-amd64-ipv4-native` | IPv4だけ |
+| `linux-amd64-ipv6-native` | IPv6だけ。Pod CIDRは`fd00:d8:<n>::/48`、service CIDRは`fd00:d8:5::/112` |
+| `linux-amd64-dualstack-native` | 両方。プロファイルで先に書いてあるIPv4がprimaryになる |
+
+残りの設定は`cluster.rb`がプロファイルから決めます。
 
 各クラスタインスタンスは専用のネットワーク名前空間で動くので、Pod ブリッジ、
 nftables テーブル、NodePort、経路がホストや他インスタンスと干渉しません。
