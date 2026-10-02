@@ -76,11 +76,11 @@ VXLANの既定値は次のとおりである。
 <a id="sec-5-9-6"></a>
 ## 5.9.6 NetworkPolicy
 
-- `podSelector`、`namespaceSelector`、両者の conjunction、`ipBlock` と `except` を実装する
-- ingress/egress、TCP/UDP/SCTP、named port、`endPort`、IPv4/IPv6 を扱う
-- policy 対象でない方向は allow、1 個以上の policy が選択した方向は rule の和集合だけを allow する
-- selector から得た identity set を eBPF map または nftables set へ revision 単位で atomic swap する
-- default-deny 更新時に一時的な allow-all window を作ってはならない
+- `podSelector`、`namespaceSelector`、両者の組み合わせ、`ipBlock`と`except`を実装する。
+- ingressとegress、TCP・UDP・SCTP、名前付きポート、`endPort`、IPv4とIPv6を扱う。
+- ポリシーの対象になっていない方向の通信は許可する。1つ以上のポリシーが選択した方向では、ルールの和集合に含まれる通信だけを許可する。
+- selectorから得たidentityの集合を、eBPFマップまたはnftablesのsetに反映する。反映はリビジョン単位で、atomicに入れ替える。
+- default-denyを更新するときに、一時的にすべての通信を許可する時間を作ってはならない。
 
 <a id="sec-5-9-7"></a>
 ## 5.9.7 DNS
