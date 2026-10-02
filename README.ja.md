@@ -65,7 +65,7 @@ upstreamと同じコントローラ一式を動かします。ワークロード
 
 kubeletの役割を担います。Podの同期、probe、eviction、ノードのgraceful shutdown、device plugin、CPU・メモリ・topologyの各manager、DRAを実装しています。`exec`、`logs`、`/metrics`、`/configz`などのkubelet APIも提供します。
 
-## 中身
+コンテナランタイムは3種類から選べます。
 
 | Rubernetes のプロセス | 相当する upstream | 内容 |
 |---|---|---|
