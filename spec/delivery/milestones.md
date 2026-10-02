@@ -184,7 +184,7 @@ graph LR
 
 ### 必要な証拠
 
-### Required evidence
+次のものを保存する。
 
 controller registry、reconcile idempotency matrix、scheduler differential result、leader-loss trace、
 queue/informer property resultを保存する。
