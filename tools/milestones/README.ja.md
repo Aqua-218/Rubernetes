@@ -298,4 +298,4 @@ M5、M6、M7のプローブとゲートを追加しました。2026-09-05に取�
 
 - [マイルストーンと完了ゲート](../../spec/delivery/milestones.md)
 - [検証戦略](../../spec/verification/testing.md)
-- [形式検証ソース](../../verification/README.md)
+- [形式検証のソース](../../verification/README.md)
