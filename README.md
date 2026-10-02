@@ -151,22 +151,35 @@ sudo ruby tools/conformance/cluster.rb status --root /srv/rbn-dev
 sudo ruby tools/conformance/cluster.rb down   --root /srv/rbn-dev
 ```
 
-`cluster.rb` is also what the conformance runs use, so it is the reference
-for a correct configuration (`<root>/<profile>/cluster.json` lists every
-process, port and file). Two things to know before running it on a shared
-host: `up` kills workloads under `<RUBERNETES_M8_CGROUP_ROOT>/rubernetes`
-(default `/sys/fs/cgroup/rubernetes`), removes stale `rbn*` bridges and
-`rbn-*` network namespaces in its network namespace, and refuses
-to start while another cluster from a different root is alive in the same
-network namespace. To run several clusters on one host, give each its own
-network namespace with `tools/conformance/netns_env.sh`; the recipe is in
-[tools/conformance/README.md](tools/conformance/README.md).
+`cluster.rb up` builds a six-node cluster on one host, together with the
+PKI, per-component identities, cluster DNS and a kubeconfig.
+`<root>/<profile>/cluster.json` lists every process, port and file it
+started. The Conformance runs use the same script, so it doubles as the
+reference for a correct configuration.
 
-For a long-lived installation from release artifacts (systemd units, PKI,
-upgrade, backup and restore procedures) read
-[deploy/cluster/README.md](deploy/cluster/README.md). Each daemon takes one
-YAML file (`--config`, validated by `--check-config`) and nothing from the
-environment; `config/defaults/` holds the versioned defaults.
+### Before running it on a shared host
+
+`up` removes the following before it starts:
+
+- workloads under `/sys/fs/cgroup/rubernetes` (set
+  `RUBERNETES_M8_CGROUP_ROOT` to use a different place)
+- stale `rbn*` bridges and `rbn-*` network namespaces in its own network
+  namespace
+
+`up` refuses to start while a cluster from a different root is alive in the
+same network namespace. To run several clusters on one host, give each its
+own network namespace with `tools/conformance/netns_env.sh`. The steps are
+in [tools/conformance/README.md](tools/conformance/README.md).
+
+### Long-lived installation
+
+[deploy/cluster/README.md](deploy/cluster/README.md) describes how to install
+a long-lived cluster from release artifacts: systemd units, PKI, upgrade,
+backup and restore.
+
+Each daemon reads one YAML file, given with `--config`, and nothing from the
+environment. `--check-config` validates the file. Versioned defaults are in
+`config/defaults/`.
 
 ### Dashboard and metrics
 
