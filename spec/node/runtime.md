@@ -109,7 +109,7 @@ stateDiagram-v2
 - プロセスがクラッシュしたあとは、台帳と、kernelやVMMの実際の状態を照合する。推測で成功の状態に進めてはならない。
 
 <a id="sec-5-8-4"></a>
-## 5.8.4 resource ownership と rollback
+## 5.8.4 資源の所有権とロールバック
 
 各 sandbox は取得した resource を durable ledger で追跡する。
 
