@@ -68,7 +68,7 @@ probeの方式は`exec`、`httpGet`、`tcpSocket`の3つである。
 
 メモリまたはディスクの空きが閾値を下回った場合、優先度の低いPodから退去させる。退去では`SIGKILL`を直接送らず、通常の終了処理を行う。
 
-## Related
+## 関連
 
 - [runtime](runtime.md)
 - [network](network.md)
