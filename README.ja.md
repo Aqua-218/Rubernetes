@@ -87,10 +87,15 @@ Railsで書いたダッシュボードです。クラスタの中身を閲覧で
 
 ## クイックスタート
 
-必要なもの: cgroup v2 の Linux x86_64、root、`nft` と `iptables`、Ruby 3.4.11
-（Gemfile が固定）、イメージ取得のための外向き通信、`build/tools/kubectl-v1.36.2`
-に置いた kubectl v1.36.2（チェックサムは `test/compatibility/clients/matrix.yml`）。
-KVM は `microvm` RuntimeClass を使うときだけ要ります。
+次のものを用意してください。
+
+- cgroup v2が有効なLinux x86_64とroot権限
+- `nft`と`iptables`
+- Ruby 3.4.11（Gemfileで固定しています）
+- イメージを取得するための外向き通信
+- `build/tools/kubectl-v1.36.2`に置いたkubectl v1.36.2
+
+kubectlのチェックサムは`test/compatibility/clients/matrix.yml`に書いてあります。KVMは`microvm` RuntimeClassを使うときだけ必要です。
 
 ```sh
 git clone <this repository> && cd 2026
