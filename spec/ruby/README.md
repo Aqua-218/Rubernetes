@@ -42,7 +42,7 @@ graph LR
 
 ## 関連
 
-- [Coding Standards](../delivery/coding-standards.md)
+- [コーディング規約](../delivery/coding-standards.md)
 - [Kubernetes API](../api/kubernetes-api.md)
 - [形式仕様](../verification/formal-methods.md)
 
