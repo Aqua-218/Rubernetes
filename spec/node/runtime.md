@@ -396,10 +396,7 @@ vsockのメッセージは、`[u32 big-endian length][canonical CBOR payload]`�
 
 ゲストのイメージに、ホストの資格情報、レジストリの資格情報、クラスタ管理者の資格情報を保存してはならない。
 
-vsock message は `[u32 big-endian length][canonical CBOR payload]` とし、length は確保前に検査する。
-1 frame は 1 MiB、1 connection の未処理 request は 128、応答待ちは 30 秒を上限とする。
-caller identity は payload の自己申告ではなく vsock connection、CID、runtime ledger から解決する。
-guest image に host credential、registry credential、cluster administrator credential を保存してはならない。
+### restricted broker
 
 restricted broker が公開できる operation は schema registry に登録した closed set に限る。
 各 operation は effect point で capability、subject、object、parameters、expiry、revocation epoch、policy digest を
