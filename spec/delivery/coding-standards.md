@@ -184,8 +184,7 @@ Threadを生成する場所を集約する。任意の場所で生成しない�
 
 スキーマ、GVK、フィールド、プラグインの解決に、`method_missing`と`respond_to_missing?`を使わない。
 
-**R-5.5 M ⚙** `method_missing` と `respond_to_missing?` を schema、GVK、field、plugin 解決に用いない。
-根拠: typo が実行時まで検出されず、生成 API 全体を RBS と静的検査へ公開できなくなる。
+根拠: 名前の打ち間違いを実行時まで検出できない。生成したAPIの全体を、RBSと静的検査に公開することもできなくなる。
 
 **R-5.6 M 👁** user supplied Ruby DSL は cluster credential を持たない隔離 process で評価し、
 明示的な信頼承認なしに実行しない。
