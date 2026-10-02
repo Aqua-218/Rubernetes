@@ -33,4 +33,4 @@ graph LR
 - [検証の図](../diagrams/08-verification.md)
 - [ランタイム](../node/runtime.md)
 - [マイルストーン](../delivery/milestones.md)
-- [Release Gate](../delivery/implementation-plan.md#sec-9-3)
+- [リリースゲート](../delivery/implementation-plan.md#sec-9-3)
