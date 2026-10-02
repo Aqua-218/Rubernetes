@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [構成図](README.md)
 
 <a id="sec-a-7"></a>
-# A.7 図 07 — Storage / Volume
+# A.7 図07 ストレージとボリューム
 
 > **Audience:** Volume/Storage実装者
 >
