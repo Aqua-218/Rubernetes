@@ -3,7 +3,7 @@
 <a id="sec-a-5"></a>
 # A.5 図05 ランタイム
 
-> **Audience:** Runtime実装者、セキュリティ検証者
+> 対象読者: ランタイムの実装者、セキュリティの検証者
 >
 > **Status:** Normative — version 0.2
 
