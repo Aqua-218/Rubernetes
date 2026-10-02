@@ -382,7 +382,7 @@ Kubernetes v1.36.2と互換な状態の形式を保ったまま、次のアッ�
 - [Kubernetesのversion-skew policy](https://kubernetes.io/releases/version-skew-policy/)
 - [KubernetesのNode Conformance](https://kubernetes.io/docs/setup/best-practices/node-conformance/)
 
-## Related
+## 関連
 
 - [検証戦略](testing.md)
 - [形式仕様](formal-methods.md)
