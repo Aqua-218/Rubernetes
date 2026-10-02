@@ -4,12 +4,6 @@
 proofs, and `traces/` contains schemas and replay inputs connecting Ruby executions to the
 formal models. Generated reports are written to ignored `artifacts/`, not this source tree.
 
-## Related
-
-- [Formal methods](../spec/verification/formal-methods.md)
-- [Verification strategy](../spec/verification/testing.md)
-- [Verification diagram](../spec/diagrams/08-verification.md)
-
 ## M2 RuntimeLifecycle evidence
 
 `tla/RuntimeLifecycle.tla` models the complete M2 resource set (`mount`, `ns`,
