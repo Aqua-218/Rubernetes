@@ -281,8 +281,8 @@ upstreamと同じく、`--runtime-config`で有効にしたときだけ提供し
 
 - [仕様の目次](spec/README.md)と[アーキテクチャ](spec/foundation/architecture.md)
 - [マイルストーンと完了ゲート](spec/delivery/milestones.md)
-- [Kubernetes 互換性試験契約](spec/verification/kubernetes-compatibility.md)
-- [Coding standards](spec/delivery/coding-standards.md) と [Project structure](spec/delivery/project-structure.md)
+- [Kubernetes互換性の試験](spec/verification/kubernetes-compatibility.md)
+- [コーディング規約](spec/delivery/coding-standards.md)と[プロジェクト構成](spec/delivery/project-structure.md)
 - [クラスタの運用](deploy/cluster/README.md)
 - [Conformance ツール](tools/conformance/README.ja.md) と [マイルストーンゲート](tools/milestones/README.ja.md)
 
