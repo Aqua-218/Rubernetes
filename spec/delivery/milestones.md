@@ -214,8 +214,12 @@ graph LR
 
 次のものを保存する。
 
-network matrix、packet trace、policy differential、proxy backend parity、volume lifecycle trace、
-mount attack corpus結果を保存する。
+- ネットワークの組み合わせ表
+- パケットのトレース
+- ポリシーの差分テストの結果
+- プロキシのbackend間の一致の結果
+- ボリュームのライフサイクルのトレース
+- マウント攻撃コーパスの結果
 
 <a id="milestone-m5"></a>
 ## M5 — Durable High Availability
