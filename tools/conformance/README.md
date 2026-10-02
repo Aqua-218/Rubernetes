@@ -37,8 +37,8 @@ The lanes are implemented in `k0_input_integrity.rb`, `k5_differential.rb`,
 
 ```bash
 export PATH=/opt/rubies/3.4.11/bin:$PATH
-rake m8:tools                                               # hydrophone + sonobuoy, once
-tools/conformance/netns_env.sh up conf4 --v4 3 --v6 e7      # one namespace per cluster instance
+rake m8:tools                                               # install hydrophone and sonobuoy, once
+tools/conformance/netns_env.sh up conf4 --v4 3 --v6 e7      # one namespace per cluster
 RUBERNETES_M8_CGROUP_ROOT=/sys/fs/cgroup/conf4 \
   tools/conformance/netns_env.sh exec conf4 -- \
   ruby tools/conformance/cluster.rb up --profile linux-amd64-ipv4-native --root /srv/rbn-conf4
