@@ -23,8 +23,7 @@ Rubernetesの仕様と設計書の正本は、複数の文書からなる[`spec/
 | 正本 | [`spec/`](spec/README.md) |
 | 互換対象 | Kubernetes v1.36.2 |
 
-個別文書間の優先順位、MUST/SHOULD/MAY、固定外部仕様の扱いは、
-[文書規約](spec/foundation/document-conventions.md)に従う。
+文書間の優先順位、MUST・SHOULD・MAYの意味、固定した外部仕様の扱いは、[文書規約](spec/foundation/document-conventions.md)に従う。
 
 ## Related
 
