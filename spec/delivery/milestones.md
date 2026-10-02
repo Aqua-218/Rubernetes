@@ -115,10 +115,7 @@ graph LR
 - APIサーバ、MemoryStore、discovery、CRUD、watch、patch、server-side apply
 - `rubectl`の各経路。kubeconfig、生のREST、マニフェストのコンパイルとapply
 
-- Kubernetes v1.36.2 corpus importer、Schema DSL、compiler、GVK/GVR registry
-- Ruby type、validator、defaulting、codec、OpenAPI、RBS、Manifest DSL、diffの派生器
-- API Server、MemoryStore、discovery、CRUD、watch、patch、server-side apply
-- `rubectl`のkubeconfig、raw REST、manifest compile/apply経路
+### 完了条件
 
 ### Exit criteria
 
