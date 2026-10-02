@@ -326,9 +326,28 @@ RubyのAPIクライアントは、Unixドメインソケットを使う。設定
 6. ネットワークデバイス
 7. InstanceStart
 
-`rubernetes-firecracker` は専用 TAP を guest の virtio-net へ接続し、[§5.9](network.md#sec-5-9) の Pod IP、route、DNS、
-NetworkPolicy を適用する。Firecracker 自体に packet filter を委ねてはならない。
-`rubernetes-firecracker-restricted` は network device を追加せず、[§5.8.13](runtime.md#sec-5-8-13) の broker だけを外部通信に使う。
+上限は次のとおりである。
+
+| 項目 | 上限 |
+|---|---|
+| HTTPヘッダ | 64 KiB |
+| HTTPボディ | 64 KiB |
+| 応答全体 | 1 MiB |
+
+次の応答は拒否する。
+
+- Content-Lengthが重複している。
+- Content-LengthとTransfer-Encodingが併用されている。
+- フレーミングが不正である。
+- 要求していない応答である。
+
+VMのブートが完了しただけでは、workload gateを開いてはならない。
+
+### ネットワーク
+
+`rubernetes-firecracker`は、専用のTAPをゲストのvirtio-netに接続する。[5.9](network.md#sec-5-9)のPod IP、経路、DNS、NetworkPolicyを適用する。パケットのフィルタリングをFirecracker自体に任せてはならない。
+
+`rubernetes-firecracker-restricted`は、ネットワークデバイスを追加しない。外部との通信には、[5.8.13](runtime.md#sec-5-8-13)のbrokerだけを使う。
 
 <a id="sec-5-8-12"></a>
 ## 5.8.12 snapshot と identity
