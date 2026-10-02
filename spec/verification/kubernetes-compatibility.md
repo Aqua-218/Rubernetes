@@ -243,8 +243,7 @@ UID、タイムスタンプ、乱数の値、ノード固有のアドレスは�
 
 対象のAPIサーバ1.36に対して、公開済みのkubectlのminorバージョンをすべて試す。対象は、Kubernetesのversion-skew policyが許す範囲である。
 
-Kubernetes v1.36.2互換state formatを保ったまま、single-nodeから3-node、MemoryStoreからRaftStore、
-旧Rubernetes releaseから1.0.0へupgradeする。各段階でK1 smoke subsetとK5 state comparisonを実行する。
+2026-08-22の時点で必須なのは、v1.35の最新のpatchと、v1.36.2である。v1.37が正式に公開された時点で、v1.37の最新のpatchを自動的に必須に加える。各バイナリは、公式のチェックサムと署名で固定する。
 
 upgrade、rollback、API Server rolling restart、controller/scheduler leader loss、worker reboot、
 backup/restore後に、acknowledged object、managedFields、UID ownership、Volume attachment、Pod identityを失わない。
