@@ -76,8 +76,7 @@ controller-managerは複数起動することがある。Leaseリソースでリ
 <a id="sec-5-5-8"></a>
 ## 5.5.8 Controller DSL
 
-Controller の配線は Ruby DSL で宣言し、Informer、Indexer、WorkQueue と reconcile を
-[§5.5.1](controllers.md#sec-5-5-1) の規約に従って生成する。
+コントローラの配線はRuby DSLで宣言する。DSLは、informer、Indexer、WorkQueue、reconcileを、[5.5.1](controllers.md#sec-5-5-1)の規約に従って生成する。
 
 ```ruby
 controller ReplicaSet do
