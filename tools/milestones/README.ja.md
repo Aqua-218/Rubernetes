@@ -41,11 +41,18 @@ RUBERNETES_M9_M8_MANIFEST=artifacts/milestones/M8/<run-id>/manifest.json rake m9
 
 ## M0 実行基盤
 
-`rake m0:verify` は gem ビルド、テストスイート、実行ファイルの help/version
-プローブ、ネイティブ境界スキャンを実行し、`rake m0:kernel` は特権付きの x86_64
-stage-00 カーネルプローブを実行します。`rake m0:evidence` は、ソース入力の
-ダイジェストが安定し、同じ入力に対して実カーネルプローブが成功したときだけ
-`COMPLETE` を報告します。
+`rake m0:verify`は次の4つを実行します。
+
+- gemのビルド
+- テストスイート
+- 各実行ファイルの`--help`と`--version`の確認
+- ネイティブ境界のスキャン
+
+`rake m0:kernel`は、特権が必要なx86_64のstage-00カーネルプローブを実行します。
+
+`rake m0:evidence`が`COMPLETE`を報告する条件は2つです。ソースのダイジェストが安定していること、そして同じソースに対して実カーネルプローブが成功していることです。
+
+## M1 スキーマとAPIコア
 
 ## M1 スキーマと API コア
 
