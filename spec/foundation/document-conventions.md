@@ -19,6 +19,10 @@
 - 後の版への先送り
 - 実装時の判断への委任
 
-- [仕様書インデックス](../README.md)
-- [goals and compatibility](goals-and-compatibility.md)
-- [coding standards](../delivery/coding-standards.md)
+環境に依存する値を書くときは、既定値、許容範囲、変更方法、互換性への影響を同時に定義しなければならない。
+
+## 関連
+
+- [仕様書の目次](../README.md)
+- [目的と互換性](goals-and-compatibility.md)
+- [コーディング規約](../delivery/coding-standards.md)
