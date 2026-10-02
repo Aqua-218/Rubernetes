@@ -3,7 +3,7 @@
 <a id="sec-5-2"></a>
 # 5.2 ストア
 
-> **Audience:** Store実装者、分散システム検証者
+> 対象読者: ストアの実装者、分散システムの検証者
 >
 > **Status:** Normative — version 0.2
 
