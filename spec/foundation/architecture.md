@@ -3,7 +3,7 @@
 <a id="sec-3"></a>
 # 3. アーキテクチャ
 
-> **Audience:** アーキテクト、実装者、運用者
+> 対象読者: アーキテクト、実装者、運用者
 >
 > **Status:** Normative — version 0.2
 
