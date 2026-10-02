@@ -243,7 +243,7 @@ upstreamのテストをコピーして改変したものは、Conformanceの証�
 - リリースのパッケージに含めるのは、`lib/`、`generated/ruby/`、必要な`config/`、ネイティブ拡張だけである。
 - `test/`、`verification/`、`third_party/cache/`、比較対象のバイナリを、本番のパッケージに含めてはならない。
 
-## Adding a Directory
+## ディレクトリの追加
 
 新しいtop-level directoryは、既存boundaryで表現できず、次を同じ変更で満たす場合だけ追加する。
 
