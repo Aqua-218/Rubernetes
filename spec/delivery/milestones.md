@@ -175,7 +175,12 @@ graph LR
 
 ### 完了条件
 
-### Exit criteria
+1. [コントローラの共通規約](../control-plane/controllers.md)のすべての規約を、すべてのコントローラについて機械的に検査する。
+2. v1.36.2の組み込みコントローラのコーパスに対して、未登録のコントローラが0である。
+3. イベントの重複、順序の入れ替わり、watchの再接続、resync、コントローラの再起動が起きても、desired stateに収束する。
+4. Deployment、StatefulSet、DaemonSet、Job、CronJobのrollout、rollback、scale、deleteが、比較対象と一致する。
+5. スケジューラのFilterの結果、Score、同点時の選択、preemptionで退去させるPodの集合が、差分テストで比較対象と一致する。
+6. controller-managerとschedulerのリーダーが失われている間、副作用が二重に起きない。quorumの回復から60秒以内に収束を再開する。
 
 1. [Controller共通規約](../control-plane/controllers.md)の全規約を全controllerへ機械検査する。
 2. v1.36.2 built-in controller corpusの未登録controllerが0である。
