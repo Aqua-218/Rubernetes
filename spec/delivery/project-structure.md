@@ -171,10 +171,10 @@ graph TD
 
 ### 公開する入口とbootstrap
 
-- `lib/rubernetes.rb`は安定public namespaceだけをloadし、daemonを起動しない。
-- `exe/*`はargument parse、config path確定、exit code変換だけを行う。
-- `bootstrap/`だけがconcrete implementationを組み立てる。domain moduleはbootstrapへ依存しない。
-- process間通信は[Architecture](../foundation/architecture.md)で定義したprotocol境界を越える。
+- `lib/rubernetes.rb`は、安定した公開の名前空間だけを読み込む。デーモンは起動しない。
+- `exe/*`が行うのは、引数の解釈、設定ファイルのパスの確定、終了コードへの変換だけである。
+- 具体的な実装を組み立てるのは`bootstrap/`だけである。ドメインのモジュールは`bootstrap/`に依存しない。
+- プロセス間の通信は、[アーキテクチャ](../foundation/architecture.md)で定義したプロトコルの境界を通す。
 
 ### Schema and generated code
 
