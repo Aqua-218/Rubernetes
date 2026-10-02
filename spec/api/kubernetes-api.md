@@ -44,8 +44,11 @@ CRDを登録した場合は、組み込みのリソースと同じ経路で扱�
 <a id="sec-4-2"></a>
 ## 4.2 エンドポイント
 
-core group は `/api/{version}`、named group は `/apis/{group}/{version}` を基点とする。
-各 GVR の scope と verbs は discovery corpus に従い、次のテンプレートから機械生成する。
+### リソースのエンドポイント
+
+core groupは`/api/{version}`を基点とする。名前付きのgroupは`/apis/{group}/{version}`を基点とする。
+
+各GVRのscopeとverbはdiscoveryのコーパスに従う。エンドポイントは次のテンプレートから機械的に生成する。
 
 ```text
 GET    {base}/{resource}                                      list
