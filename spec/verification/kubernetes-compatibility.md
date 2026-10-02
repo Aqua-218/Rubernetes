@@ -89,7 +89,7 @@ K1では、既定のRuntimeClassを変更せずにupstreamのテストを実行�
 
 MicroVMとMicroVMRestrictedは、プロジェクトが書いたe2eで検査する。このe2eはPodのspecにRuntimeClassを明示し、同じPod APIの契約を確かめる。あわせて、[ランタイムのL4とL5](testing.md#sec-8-7)とM7を通過する。
 
-ARM profileは任意の追加互換性試験として実行できるが、M8またはM9の完了証拠には要求しない。
+upstreamのソースにRuntimeClassを注入する変更を加えた実行は、K1とK2の証拠に数えてはならない。
 
 K1はdefault RuntimeClassを変更せずupstream testを実行する。MicroVMとMicroVMRestrictedは、
 Pod specへRuntimeClassを明示するproject-authored E2Eで同じPod API contractを検査し、
