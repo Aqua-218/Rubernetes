@@ -231,9 +231,7 @@ upstreamのアルゴリズムをRubyへ移植したコードは、`lib/`に置�
 
 同じ挙動について、単体、property、統合、e2eのテストがある場合は、メタデータに同じシナリオIDを付ける。
 
-testは対象classのdirectoryではなく、保証levelで配置する。同一behaviorにunit、property、integration、
-E2Eがある場合は同じscenario IDをmetadataへ付ける。production bugから得た最小反例は、最も低いlevelで
-再現するtestと、必要ならend-to-end regressionの両方へ固定する。
+本番のバグから得た最小の反例は、それを再現できる最も低いレベルのテストとして固定する。必要であれば、e2eの回帰テストとしても固定する。
 
 upstream testをcopyして改変したものはConformance evidenceに数えない。補助testとして保持する場合は
 `test/compatibility/`へ置き、upstream file、commit、変更理由をmetadataへ記録する。
