@@ -45,28 +45,46 @@ end
 
 | 生成物 | 要件 |
 |---|---|
-| Ruby type | immutable value object、presence bit、型付き accessor、copy-with update |
-| validator | required、enum、range、pattern、CEL、union、相関 validation |
-| defaulting / conversion | external version ↔ hub ↔ storage version の純関数 |
-| codec | JSON、YAML、CBOR、Kubernetes Protobuf の encode/decode |
-| OpenAPI | v2/v3 schema と `x-kubernetes-*` extension |
-| RBS | 全 public accessor、builder、controller block の型 |
-| manifest DSL | resource、nested block、field、helper method |
-| patch metadata | merge key、list/map/struct type、field set、managedFields path |
-| diff | semantic equality、default-aware diff、status/spec 分離 |
-| generator manifest | 入力 digest、compiler version、全生成 method 名、出力 digest |
+| Rubyの型 | 不変の値オブジェクト。presence bit、型付きのアクセサ、一部を変えたコピーを返す更新を持つ |
+| validator | required、enum、range、pattern、CEL、union、フィールド間の相関の検査 |
+| defaultingとconversion | 外部バージョン、hub、保存バージョンの間を変換する純関数 |
+| コーデック | JSON、YAML、CBOR、Kubernetes Protobufのエンコードとデコード |
+| OpenAPI | v2とv3のスキーマ、`x-kubernetes-*`拡張 |
+| RBS | 公開しているすべてのアクセサ、builder、コントローラのブロックの型 |
+| Manifest DSL | リソース、入れ子のブロック、フィールド、ヘルパーメソッド |
+| patchのメタデータ | merge key、list・map・structの種別、field set、managedFieldsのパス |
+| diff | 意味上の等価性、既定値を考慮したdiff、statusとspecの分離 |
+| 生成マニフェスト | 入力のダイジェスト、コンパイラのバージョン、生成した全メソッドの名前、出力のダイジェスト |
 
-`define_method` は schema compiler が生成する専用 Module 内だけで用いる。`method_missing`、
-文字列 `eval`、`class_eval`、global class への monkey patch は禁止する。Ruby identifier にできない
-JSON field は `field(:json_name)` accessor を必ず持ち、安全な alias を衝突しない場合だけ生成する。
+### メソッド生成の制限
 
-built-in schema DSL は build 時に評価する。CRD は code として評価せず、構造化 OpenAPI schema を
-同じ AST へ変換する。CRD が `Kernel`、`Object`、既存 method と衝突する field 名を含んでも、
-global method table を変更してはならない。
+`define_method`は、スキーマコンパイラが生成する専用のModuleの中だけで使う。次のものは禁止する。
 
-resource object は field の「未指定」、明示 `null`、空配列、空 object を区別する。
-unknown field は [§5.1.5](../api/api-server.md#sec-5-1-5) の pruning/preserve 規則に従って raw field map に保持する。
-生成後の object と nested collection は deep freeze し、更新は structural sharing した新 object を返す。
+- `method_missing`
+- 文字列の`eval`
+- `class_eval`
+- グローバルなクラスへのモンキーパッチ
+
+Rubyの識別子にできないJSONフィールドには、必ず`field(:json_name)`形式のアクセサを用意する。安全な別名は、ほかの名前と衝突しない場合だけ生成する。
+
+### 組み込みの型とCRD
+
+組み込みのスキーマDSLはビルド時に評価する。
+
+CRDはコードとして評価しない。構造化されたOpenAPIスキーマを、同じASTに変換する。CRDのフィールド名が`Kernel`、`Object`、既存のメソッドと衝突していても、グローバルなメソッドテーブルを変更してはならない。
+
+### オブジェクトの表現
+
+リソースオブジェクトは、フィールドについて次の4つを区別する。
+
+- 未指定
+- 明示的な`null`
+- 空の配列
+- 空のオブジェクト
+
+未知のフィールドは、[5.1.5](../api/api-server.md#sec-5-1-5)のpruningとpreserveの規則に従い、生のフィールドマップに保持する。
+
+生成したオブジェクトと入れ子のコレクションはdeep freezeする。更新は、変更のない部分を共有した新しいオブジェクトを返す。
 
 <a id="sec-6-3"></a>
 ## 6.3 schema compiler の完全性
