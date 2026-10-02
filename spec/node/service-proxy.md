@@ -13,7 +13,12 @@ ServiceとEndpointSlice、conntrack、eBPFとnftablesの各backendについて�
 
 ServiceとEndpointSliceをwatchする。次の種類のServiceを処理する。
 
-## Related
+- ClusterIP
+- headless
+- NodePort
+- LoadBalancer
+- ExternalIP
+- ExternalName
 
 - [network](network.md)
 - [kubernetes api](../api/kubernetes-api.md)
