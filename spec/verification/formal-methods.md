@@ -114,7 +114,7 @@ Leanから得た実行可能な参照実装は、テストの基準としてだ�
 
 VM escapeへの耐性、ホストのkernel・KVM・CPUの正しさ、すべてのシステムコールの実装の正しさは、`assumed_tcb`とする。
 
-## Related
+## 関連
 
 - [testing](testing.md)
 - [raft](../control-plane/raft.md)
