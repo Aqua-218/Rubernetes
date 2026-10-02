@@ -5,7 +5,7 @@
 
 > 対象読者: 互換性の検証者、CIの実装者、リリース担当者、APIとノードの実装者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 Kubernetes upstream testをRubernetesへ無改変で接続する方法、test選択規則、実行profile、
 evidence format、完全互換を名乗るためのzero-failure gateを定義する。
