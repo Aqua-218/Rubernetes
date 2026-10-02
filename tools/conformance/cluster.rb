@@ -10,6 +10,10 @@
 #   ruby tools/conformance/cluster.rb down [--root DIR]
 #   ruby tools/conformance/cluster.rb status [--root DIR]
 #
+# `start` brings the clusters already provisioned under the root back after a
+# host reboot or a `down`: the same configuration, PKI, raft log and node
+# state, nothing reissued and nothing removed.
+#
 # `up` prints the cluster descriptor, including the kubeconfig path the
 # conformance runner needs.  Every process is a real `exe/rubernetes-*` under
 # its own configuration: nothing here runs the control plane in-process, and a
