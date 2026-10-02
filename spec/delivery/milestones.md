@@ -310,7 +310,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 <a id="milestone-m8"></a>
 ## M8 Kubernetes互換性の完了
 
-### Deliverables
+### 成果物
 
 - [Kubernetes互換性試験契約](../verification/kubernetes-compatibility.md)の全lane
 - upstream test selection ledger、client version-skew matrix、real-project corpus
