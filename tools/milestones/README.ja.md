@@ -56,11 +56,15 @@ RUBERNETES_M9_M8_MANIFEST=artifacts/milestones/M8/<run-id>/manifest.json rake m9
 
 次の5つの実アダプタを要求します。
 
-5 つの実アダプタ: 生成の再現性、Kubernetes validation オラクル（生成した全型
-770/770 を実行可能な upstream REST strategy に対応付け）、round-trip プローブ
-（不一致ゼロ）、固定した kube-apiserver/etcd に対する API differential
-（TokenReview、SelfSubjectReview、SelfSubjectRulesReview、SubjectAccessReview、
-ComponentStatus、Pod eviction を含む必須 22 操作すべて）、kubectl プローブ。
+| アダプタ | 合格の条件 |
+|---|---|
+| 生成の再現性 | 生成物がバイト単位で再現できる |
+| Kubernetes validationオラクル | 生成した770の型すべてを、実行可能なupstreamのREST strategyに対応付けられる |
+| round-tripプローブ | 不一致がゼロ |
+| API differential | 固定したkube-apiserverとetcdを相手に、必須の22操作がすべて一致する |
+| kubectlプローブ | kubectlからの操作が通る |
+
+API differentialの22操作には、TokenReview、SelfSubjectReview、SelfSubjectRulesReview、SubjectAccessReview、ComponentStatus、Podのevictionが含まれます。
 
 ## M2 Native Pod
 
