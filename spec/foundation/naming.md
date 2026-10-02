@@ -3,7 +3,7 @@
 <a id="sec-11"></a>
 # 11. 名称
 
-> **Audience:** 全読者、release担当者
+> 対象読者: 全読者、リリース担当者
 >
 > **Status:** Normative — version 0.2
 
