@@ -42,6 +42,7 @@ module Rubernetes
         @store = DurableState.new(state_path, default: default_state, fsync: fsync)
         @state = normalize_state(@store.read)
         @mutex = Mutex.new
+        discard_previous_boot!
       end
 
       # `operation_id` is the sandbox's network operation: the records this
