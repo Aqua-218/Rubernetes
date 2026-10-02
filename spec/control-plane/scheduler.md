@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-Filter、Score、Reserve、Bind、PreemptionとRuby scheduler plugin DSLを定義する。
+Filter、Score、Reserve、Bind、Preemptionと、Rubyで書くスケジューラプラグインのDSLを定義する。
 
 
 > **Diagram:** [図 03 — 制御ループ](../diagrams/03-control-loop.md)
