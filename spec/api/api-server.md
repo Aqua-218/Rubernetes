@@ -118,9 +118,33 @@ watchは長時間の接続なので、実行中の数には含めない。
 
 webhookの次の項目を、v1.36.2と同じ順序と条件で評価する。
 
-CRD conversion webhook と API aggregation proxy は mTLS で peer identity を検証し、request body 3 MiB、
-応答 3 MiB、接続 30 秒を上限とする。aggregated API の discovery/OpenAPI/health は built-in と統合し、
-同一 GVR の競合を起動時または登録 transaction 内で拒否する。
+- matchPolicy
+- namespace selectorとobject selector
+- matchConditions
+- failurePolicy
+- sideEffects
+- reinvocationPolicy
+- timeoutSeconds
+- バージョンの交渉
+- warning
+
+mutatingの段階では、再呼び出しを含めて最終のオブジェクトを確定する。そのあとでvalidatingの段階に進む。
+
+webhookのタイムアウトの既定値は10秒とする。APIが許す上限は30秒である。タイムアウトや通信の失敗が起きたときは、failurePolicyに従う。
+
+dry-runの要求では、sideEffectsが`None`でも`NoneOnDryRun`でもないwebhookを呼び出さない。
+
+### conversion webhookとAPI aggregation
+
+CRDのconversion webhookと、API aggregationのプロキシは、mTLSで相手の身元を検証する。上限は次のとおりである。
+
+| 項目 | 上限 |
+|---|---|
+| リクエストボディ | 3 MiB |
+| 応答 | 3 MiB |
+| 接続 | 30秒 |
+
+aggregated APIのdiscovery、OpenAPI、healthは、組み込みのものと統合する。同じGVRが競合する場合は、起動時か登録のトランザクションの中で拒否する。
 
 <a id="sec-5-1-8"></a>
 ## 5.1.8 監査と保存時暗号化
