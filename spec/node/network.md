@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [node](README.md)
+[仕様書の目次](../README.md) / [ノード](README.md)
 
 <a id="sec-5-9"></a>
 # 5.9 Network（自作）
