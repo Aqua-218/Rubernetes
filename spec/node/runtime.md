@@ -18,9 +18,21 @@ NativeとMicroVMの2つのランタイム、状態機械、資源の所有権、
 
 | RuntimeClassのhandler | backend | 隔離の単位 | 用途 | Pod overheadの既定値 |
 |---|---|---|---|---|
-| `rubernetes-native` | `Native` | Linux namespace / cgroup | 既定、完全な Pod 互換 | 0 |
-| `rubernetes-firecracker` | `MicroVM` | 1 Pod = 1 microVM | kernel 境界を追加 | CPU 50m、memory 128Mi |
-| `rubernetes-firecracker-restricted` | `MicroVMRestricted` | 1 Pod = 1 microVM、NIC なし | broker 許可済み外部作用だけ | CPU 50m、memory 128Mi |
+| `rubernetes-native` | `Native` | Linuxのnamespaceとcgroup | 既定。Podと完全に互換 | 0 |
+| `rubernetes-firecracker` | `MicroVM` | 1つのPodに1つのmicroVM | kernelの境界を追加する | CPU 50m、メモリ128Mi |
+| `rubernetes-firecracker-restricted` | `MicroVMRestricted` | 1つのPodに1つのmicroVM。NICなし | brokerが許可した外部への作用だけを行う | CPU 50m、メモリ128Mi |
+
+Podに`runtimeClassName`がなければ、`rubernetes-native`を使う。
+
+次のいずれかに当たる場合は、Podを起動しない。Kubernetesと同じ`Failed`とEventを報告する。
+
+- 指定されたRuntimeClassのhandlerが存在しない。
+- ノードがそのbackendを提供していない。
+- overheadを確保できない。
+
+RuntimeClassのscheduling、nodeSelector、toleration、overheadは、admissionとスケジューラの両方で評価する。
+
+Firecrackerは外部のVMMとして使う。ただし、次のものはRubyの実装が所有する。
 
 Pod に `runtimeClassName` がなければ `rubernetes-native` を使う。指定された RuntimeClass の
 handler が存在しない、node が backend を提供しない、または overhead を確保できない場合、
