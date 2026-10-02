@@ -128,10 +128,9 @@ bin/rails test                     # 79テスト。PromQLエンジン、TSDB、s
 bin/rails console
 ```
 
-`test/support/fake_cluster.rb` が API サーバの代役なので、スイートはクラスタ
-無しで動きます。json gem はメインの Gemfile と同じ理由で Ruby 3.4.11 既定の
-`json 2.9.1` に、minitest は 5.25 系に固定しています（dashboard の bundle が
-入れた新しい gem を、bundler を通さない本体のテストが拾ってしまうため）。
+テストはクラスタがなくても動きます。`test/support/fake_cluster.rb`がAPIサーバの代わりを務めます。
+
+gemのバージョンを2つ固定しています。json gemはRuby 3.4.11に付属する`json 2.9.1`に、minitestは5.25系に固定しました。本体のテストはbundlerを通さずに動きます。ダッシュボードのbundleが新しいgemを入れると、本体のテストがそのgemを読み込んでしまうためです。
 
 ## 構成
 
