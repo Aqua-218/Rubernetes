@@ -56,12 +56,12 @@ probeの方式は`exec`、`httpGet`、`tcpSocket`の3つである。
 <a id="sec-5-7-5"></a>
 ## 5.7.5 終了処理
 
-1. Endpoints から外す
-2. preStop フックを実行する
-3. `SIGTERM` を送る
-4. `gracePeriodSeconds` 待つ
-5. 残っていれば `SIGKILL`
-6. ネットワーク解放、サンドボックス破棄、Volume 解放
+1. Endpointsから外す。
+2. preStopフックを実行する。
+3. `SIGTERM`を送る。
+4. `gracePeriodSeconds`だけ待つ。
+5. プロセスが残っていれば`SIGKILL`を送る。
+6. ネットワークを解放し、サンドボックスを破棄し、ボリュームを解放する。
 
 <a id="sec-5-7-6"></a>
 ## 5.7.6 Eviction
