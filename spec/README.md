@@ -103,8 +103,8 @@ graph TD
 ### 構成図
 
 - [00 全景](diagrams/00-overview.md)
-- [01 API Server](diagrams/01-api-server.md)
-- [02 Storage / Raft](diagrams/02-storage-raft.md)
+- [01 APIサーバ](diagrams/01-api-server.md)
+- [02 ストレージとRaft](diagrams/02-storage-raft.md)
 - [03 制御ループ](diagrams/03-control-loop.md)
 - [04 Node Agent](diagrams/04-node-agent.md)
 - [05 Runtime](diagrams/05-runtime.md)
