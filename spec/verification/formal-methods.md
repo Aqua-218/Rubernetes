@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [verification](README.md)
+[仕様書の目次](../README.md) / [検証](README.md)
 
 <a id="sec-7"></a>
 # 7. 形式仕様
