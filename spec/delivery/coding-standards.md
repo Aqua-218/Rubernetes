@@ -182,8 +182,7 @@ Threadを生成する場所を集約する。任意の場所で生成しない�
 
 ### R-5.5（M、機械）
 
-**R-5.4 R ⚙** `send` を用いて private メソッドを呼ばない。
-根拠: カプセル化の境界が意味を失う。
+スキーマ、GVK、フィールド、プラグインの解決に、`method_missing`と`respond_to_missing?`を使わない。
 
 **R-5.5 M ⚙** `method_missing` と `respond_to_missing?` を schema、GVK、field、plugin 解決に用いない。
 根拠: typo が実行時まで検出されず、生成 API 全体を RBS と静的検査へ公開できなくなる。
