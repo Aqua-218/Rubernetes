@@ -47,7 +47,7 @@ graph LR
 
 次の境界をインターフェースとして定義する。本番の経路に入る実装は、自作の実装と、明示的に許可した外部プラグインだけである。同等の機能を持つ既存の実装は、compatibility oracleとしてテストプロセスから呼ぶ。クラスタ本体には組み込まない。
 
-| 境界 | インターフェース | 本番実装 | テスト oracle |
+| 境界 | インターフェース | 本番の実装 | テストでの比較対象 |
 |---|---|---|---|
 | ストレージ | `Store` | Ruby `RaftStore`、Ruby `MemoryStore` | etcd の観測結果 |
 | ランタイム | `Runtime` | Ruby `Native`、Ruby制御の `MicroVM` | runc/containerd の観測結果 |
