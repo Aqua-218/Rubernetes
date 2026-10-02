@@ -5,7 +5,7 @@
 
 > 対象読者: CLI利用者、Ruby実装者、審査者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 Ruby コードから標準 Kubernetes JSON を生成する manifest DSL と、その隔離実行境界を定義する。
 
