@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [node](README.md)
+[仕様書の目次](../README.md) / [ノード](README.md)
 
 <a id="sec-5-11"></a>
 # 5.11 Volume（自作 core + CSI 互換）
