@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-TLA+、Lean、Ruby実装、fault injection、保証判定のbridgeを示す。
+TLA+、Lean、Ruby実装、障害注入と、保証の判定とのつながりを示す。
 
 ```mermaid
 graph TB
