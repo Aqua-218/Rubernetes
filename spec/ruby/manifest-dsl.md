@@ -50,10 +50,22 @@ DSLのトップレベルメソッドとフィールドメソッドは、[6.2](sc
 
 信頼していないDSLファイルを、`--allow-code`の明示なしに実行してはならない。
 
-child mount namespace には DSL file、明示した import、Ruby runtime、必要な標準 library だけを
-read-only で公開し、home、kubeconfig、SSH key、credential store を公開しない。環境変数は
-`--env NAME` または project policy で allowlist した名前だけを継承する。上例は
-`rubectl apply -f app.rb --allow-code --env REPLICAS` として実行する。
+## 評価プロセスに見せるもの
+
+子プロセスのmount namespaceには、次のものだけを読み取り専用で公開する。
+
+- DSLファイル
+- 明示したimport
+- Rubyのランタイム
+- 必要な標準ライブラリ
+
+ホームディレクトリ、kubeconfig、SSH鍵、資格情報のストアは公開しない。
+
+環境変数は、`--env NAME`で指定した名前か、プロジェクトのポリシーで許可した名前だけを引き継ぐ。上の例は次のように実行する。
+
+```sh
+rubectl apply -f app.rb --allow-code --env REPLICAS
+```
 
 ## Related
 
