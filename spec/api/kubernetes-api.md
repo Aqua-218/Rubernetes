@@ -222,9 +222,7 @@ upstreamのconformanceテストについて、スキップ、書き換え、期�
 
 Linux以外の環境、特定のクラウドプロバイダ、特定のハードウェアを必要とするテストは除外できる。除外するときは、テストID、理由、対象外とする境界を、機械可読な許可リストに記録する。
 
-upstream conformance test の skip、書換え、期待値変更は禁止する。Linux 以外、特定 cloud provider、
-特定ハードウェアを要求する test の除外は、test ID、理由、対象外境界を機械可読な allowlist に記録する。
-allowlist に API、Controller、Scheduler、Node、Network、Storage の Linux core behavior を加えてはならない。
+API、コントローラ、スケジューラ、ノード、ネットワーク、ストレージについて、Linuxでの中核となる挙動を許可リストに加えてはならない。
 
 ## Related
 
