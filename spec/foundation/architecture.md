@@ -9,7 +9,7 @@
 
 プロセスの構成、差し替えの境界、信頼の境界、プロセス間の通信を定義する。
 
-> **Diagram:** [図 00 — 全景](../diagrams/00-overview.md)
+図は[図00 全景](../diagrams/00-overview.md)にある。
 
 ## System Context
 
