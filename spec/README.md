@@ -53,10 +53,10 @@ graph TD
 
 ## 規範上の規則
 
-- 本文中のMUST/MUST NOT/SHOULD/MAYと無印の規範文は[文書規約](foundation/document-conventions.md)に従う。
-- 同一事項について本文と図が衝突した場合は本文を正とする。
-- Kubernetes v1.36.2の外部観測可能な挙動と本文が衝突した場合は、明示したLinux platform境界を除き互換挙動を優先する。
-- 仕様変更では、本文、図、machine-readable corpus、形式仕様、testを同じ変更単位で更新する。
+- 本文中のMUST、MUST NOT、SHOULD、MAYと、これらの語が付かない規範文は、[文書規約](foundation/document-conventions.md)に従う。
+- 同じ事項について本文と図が食い違う場合は、本文を正とする。
+- Kubernetes v1.36.2の外部から観測できる挙動と本文が食い違う場合は、互換な挙動を優先する。ただし、明示したLinuxプラットフォームの境界は除く。
+- 仕様を変更するときは、本文、図、機械可読のコーパス、形式仕様、テストを同じ変更単位で更新する。
 
 ## Complete Document Index
 
