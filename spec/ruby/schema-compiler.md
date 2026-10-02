@@ -7,6 +7,7 @@
 >
 > 状態: 規範、版0.2
 
+1つのスキーマDSLから、Rubyの型、validator、コーデック、OpenAPI、RBS、DSL、diffを生成する規則を定義する。
 
 <a id="sec-6-1"></a>
 ## 6.1 キー空間
