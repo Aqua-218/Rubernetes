@@ -40,5 +40,5 @@ ruby -Ilib exe/rubectl --kubeconfig ~/.kube/config get pods -n kube-system -o ya
 ## 関連
 
 - [命名](../spec/foundation/naming.md)
-- [Project structure](../spec/delivery/project-structure.md)
+- [プロジェクト構成](../spec/delivery/project-structure.md)
 - [マイルストーン](../spec/delivery/milestones.md)
