@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [構成図](README.md)
 
 <a id="sec-a-1"></a>
-# A.1 図 01 — API Server
+# A.1 図01 APIサーバ
 
 > **Audience:** API Server実装者
 >
