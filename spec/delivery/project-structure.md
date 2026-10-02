@@ -115,12 +115,12 @@
 │   ├── runtime/
 │   └── scheduler/
 ├── deploy/
-│   ├── cluster/                   # Self-host/bootstrap deployment inputs
-│   └── systemd/                   # Host service units and hardening overrides
-├── packaging/                     # Reproducible package definitions
-├── artifacts/                     # Ignored local/CI evidence output
-├── build/                         # Ignored build output
-└── tmp/                           # Ignored runtime scratch space
+│   ├── cluster/                   # 自己ホストとbootstrapのためのデプロイ入力
+│   └── systemd/                   # ホストのサービスユニットと、堅牢化のための上書き設定
+├── packaging/                     # 再現可能なパッケージの定義
+├── artifacts/                     # ローカルとCIの証拠の出力先。管理対象外
+├── build/                         # ビルドの出力先。管理対象外
+└── tmp/                           # 実行時の作業領域。管理対象外
 ```
 
 `exe/`の6ファイルはM0で生成または実装するrequired entryである。雛形段階では
