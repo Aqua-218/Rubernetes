@@ -1,8 +1,6 @@
 # Native extension
 
-`rubernetes_linux/` contains only ABI shims that cannot be expressed safely through Ruby
-FFI. It may expose typed syscalls and structure-layout probes, but it may not own policy,
-state machines, retries, authorization, scheduling, or resource-lifecycle decisions.
+English | [日本語](README.ja.md)
 
 M0 uses one native operation, `clone3_exec`: Ruby supplies flags, argv, the proc target, and the
 output descriptor; the shim performs only the post-clone private-mount, proc-mount, descriptor,
