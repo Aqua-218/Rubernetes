@@ -3,7 +3,7 @@
 <a id="sec-5-1"></a>
 # 5.1 APIサーバ
 
-> **Audience:** API Server実装者、セキュリティ設計者
+> 対象読者: APIサーバの実装者、セキュリティの設計者
 >
 > **Status:** Normative — version 0.2
 
