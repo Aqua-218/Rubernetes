@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-test階層、障害注入DSL、線形化、差分test、trace照合、Runtime実機gateを定義する。
+テストの階層、障害注入のDSL、線形化、差分テスト、トレースの照合、ランタイムの実機でのゲートを定義する。
 
 
 > **Diagram:** [図 08 — Verification](../diagrams/08-verification.md)
