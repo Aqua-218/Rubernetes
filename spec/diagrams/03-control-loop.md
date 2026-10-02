@@ -154,5 +154,6 @@ class API api
 ## 関連
 
 - [informer](../control-plane/informer.md)
-- [controllers](../control-plane/controllers.md)
-- [scheduler](../control-plane/scheduler.md)
+- [コントローラ](../control-plane/controllers.md)
+- [スケジューラ](../control-plane/scheduler.md)
+- [構成図の目次](README.md)
