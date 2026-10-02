@@ -10,15 +10,15 @@
 
 | 番号 | 図 | 対応する本文 |
 |---|---|---|
-| 00 | [全景](00-overview.md) | [Architecture](../foundation/architecture.md) |
-| 01 | [API Server](01-api-server.md) | [API Server](../api/api-server.md) |
-| 02 | [Storage / Raft](02-storage-raft.md) | [Store](../control-plane/store.md)、[Raft](../control-plane/raft.md) |
-| 03 | [制御ループ](03-control-loop.md) | [Informer](../control-plane/informer.md)、[Controllers](../control-plane/controllers.md) |
-| 04 | [Node Agent](04-node-agent.md) | [Node Agent](../node/node-agent.md) |
-| 05 | [Runtime](05-runtime.md) | [Runtime](../node/runtime.md) |
-| 06 | [Network](06-network.md) | [Network](../node/network.md)、[Service Proxy](../node/service-proxy.md) |
-| 07 | [Storage / Volume](07-storage-volume.md) | [Volume](../node/volume.md) |
-| 08 | [Verification](08-verification.md) | [Formal Methods](../verification/formal-methods.md)、[Testing](../verification/testing.md) |
+| 00 | [全景](00-overview.md) | [アーキテクチャ](../foundation/architecture.md) |
+| 01 | [APIサーバ](01-api-server.md) | [APIサーバ](../api/api-server.md) |
+| 02 | [ストレージとRaft](02-storage-raft.md) | [ストア](../control-plane/store.md)、[Raft](../control-plane/raft.md) |
+| 03 | [制御ループ](03-control-loop.md) | [informer](../control-plane/informer.md)、[コントローラ](../control-plane/controllers.md) |
+| 04 | [ノードエージェント](04-node-agent.md) | [ノードエージェント](../node/node-agent.md) |
+| 05 | [ランタイム](05-runtime.md) | [ランタイム](../node/runtime.md) |
+| 06 | [ネットワーク](06-network.md) | [ネットワーク](../node/network.md)、[サービスプロキシ](../node/service-proxy.md) |
+| 07 | [ストレージとボリューム](07-storage-volume.md) | [ボリューム](../node/volume.md) |
+| 08 | [検証](08-verification.md) | [形式仕様](../verification/formal-methods.md)、[検証戦略](../verification/testing.md) |
 
 ## Related
 
