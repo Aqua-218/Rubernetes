@@ -20,8 +20,50 @@ Kubernetes本体との関係は次の3点です。
 | 規模 | `lib/`と`ext/`のRubyとCが約22万行、テストが約10万行 |
 | ライセンス | Apache-2.0 |
 
-規範仕様は [`spec/`](spec/README.md) にあります。この README は実用面の
-入口です。
+Conformanceは、公式の`registry.k8s.io/conformance`イメージを改変せずにHydrophoneで実行した結果です。プロファイル名は`linux-amd64-ipv4-native`です。
+
+このREADMEは使い方の入口です。仕様と設計は[`spec/`](spec/README.md)に書いてあります。
+
+## 構成要素
+
+実行ファイルは6つあり、ほかにダッシュボードが付属します。
+
+| 実行ファイル | Kubernetesで相当するもの |
+|---|---|
+| `rubernetes-apiserver` | kube-apiserverとetcd |
+| `rubernetes-controller-manager` | kube-controller-manager |
+| `rubernetes-scheduler` | kube-scheduler |
+| `rubernetes-agent` | kubelet、CRIランタイム、CNI |
+| `rubernetes-proxy` | kube-proxy |
+| `rubectl` | kubectlの一部 |
+| `apps/dashboard` | Kubernetes dashboardとPrometheus |
+
+実行時に必要なものはRubyと小さなCの拡張だけです。forkするRuby VMからは安全に呼べないシステムコールがあり、その呼び出しを[`ext/rubernetes_linux`](ext/README.ja.md)が受け持ちます。
+
+### rubernetes-apiserver
+
+v1.36.2が既定で提供するAPIとdiscoveryをすべて備えています。対応している機能は次のとおりです。
+
+- JSON、YAML、Protobufでの入出力
+- watch、patch、field manager付きのserver-side apply
+- admissionプラグイン、webhook、CELポリシー
+- 認証と認可、API Priority and Fairness、監査、保存時の暗号化
+- CRDとAPI aggregation
+- feature gateと`--runtime-config`
+
+データは内蔵のRaftデータストアに保存します。コードは`lib/rubernetes/consensus/`にあります。CRC-32C付きのWAL、スナップショット、joint consensus、pre-vote、ReadIndex、相互TLSを実装しました。
+
+### rubernetes-controller-manager
+
+upstreamと同じコントローラ一式を動かします。ワークロード、GC、namespace、EndpointsとEndpointSlice、ServiceAccountとトークン、nodeのライフサイクル、CSRの承認、PVとPVC、quotaなどです。informerとwork queueの枠組みの上で動き、リーダー選出にも対応しています。
+
+### rubernetes-scheduler
+
+スケジューリングフレームワークと既定のプラグイン一式を実装しています。preemption、非同期のbind、scoringが使えます。
+
+### rubernetes-agent
+
+kubeletの役割を担います。Podの同期、probe、eviction、ノードのgraceful shutdown、device plugin、CPU・メモリ・topologyの各manager、DRAを実装しています。`exec`、`logs`、`/metrics`、`/configz`などのkubelet APIも提供します。
 
 ## 中身
 
