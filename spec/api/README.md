@@ -17,9 +17,5 @@ Kubernetes v1.36.2が公開するAPIの境界と、その要求を処理するRu
 
 APIの型は[スキーマコンパイラ](../ruby/schema-compiler.md)の定義を正とする。Manifest DSLは[独立したCLIの層](../ruby/manifest-dsl.md)であり、標準のAPIオブジェクトを生成する。
 
-## Related
-
-- [Store](../control-plane/store.md)
-- [API Server図](../diagrams/01-api-server.md)
-- [互換性試験](../verification/testing.md)
+## 関連
 
