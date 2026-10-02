@@ -329,8 +329,14 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 
 ### 必要な証拠
 
-HydrophoneとSonobuoyのraw log/JUnit、test inventory、selection ledger、architecture/network profile matrix、
-client/project corpus結果、全run manifestを保存する。
+次のものを保存する。
+
+- HydrophoneとSonobuoyの生のログとJUnit
+- テストの一覧
+- 選択台帳
+- アーキテクチャとネットワークのプロファイルの表
+- クライアントとプロジェクトのコーパスの結果
+- すべての実行のマニフェスト
 
 <a id="milestone-m9"></a>
 ## M9 — Release 1.0.0
