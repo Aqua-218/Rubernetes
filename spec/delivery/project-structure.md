@@ -63,8 +63,8 @@
 │       ├── platform/linux/        # LinuxのABIを型付きで扱うRubyのアダプタ
 │       └── support/               # ポリシーを持たない共通の基本部品
 ├── ext/rubernetes_linux/
-│   ├── include/                   # Generated/hand-reviewed minimal C headers
-│   └── src/                       # ABI shim only; no orchestration policy
+│   ├── include/                   # 生成した、または手でレビューした最小限のCヘッダ
+│   └── src/                       # ABI用のshimだけ。オーケストレーションのポリシーは置かない
 ├── schema/
 │   ├── kubernetes/v1.36.2/       # Normalized pinned Kubernetes schema inputs
 │   └── rubernetes/                # Project extension schema inputs
