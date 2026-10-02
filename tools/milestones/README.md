@@ -144,9 +144,15 @@ RUBERNETES_M4_NETWORK_POLICY_ORACLE_COMMAND="ruby test/conformance/kubernetes/m4
 RUBERNETES_M4_KERNEL_WAIVER_REASON="<owner-granted reason>"
 ```
 
-The network observation runner leaves a daemon holding the observed
-namespace alive for the gate; `runner.rb --reap` stops it, escalates and
-sweeps orphaned host links.
+The network observation runner leaves a daemon that holds the observed
+namespaces. Run `runner.rb --reap` after the gate. It stops the daemon,
+kills it if it does not stop, and removes the host links left behind.
+
+### Kernel waiver
+
+The M4 gate expects Linux 6.12 or later for the SCTP CRC32c helper check.
+When M4 was captured on 2026-09-04, the development host could not be
+rebooted into that kernel, so the project owner waived the requirement.
 
 **Kernel waiver.** The M4 gate expects Linux >= 6.12 for the SCTP CRC32c
 helper path. The development host could not be rebooted onto such a kernel
