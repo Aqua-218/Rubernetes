@@ -11,9 +11,7 @@ Ruby製のRaftについて、タイミング、WAL、コミット、スナップ
 
 図は[図02 ストレージとRaft](../diagrams/02-storage-raft.md)にある。
 
-> **Diagram:** [図 02 — Storage / Raft](../diagrams/02-storage-raft.md)
-
-Raft 論文（Ongaro & Ousterhout）に従う。以下は本実装の決定事項。
+OngaroとOusterhoutによるRaftの論文に従う。以下は、本実装で決めた事項である。
 
 <a id="sec-5-3-1"></a>
 ## 5.3.1 パラメータ
