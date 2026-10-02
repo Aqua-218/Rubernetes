@@ -76,7 +76,32 @@ tools/conformance/netns_env.sh up lanes6 --v4 1 --v6 e6   # veth uplink、NAT、
 tools/conformance/netns_env.sh exec lanes6 -- \
   ruby tools/conformance/cluster.rb up --profile linux-amd64-ipv6-native --root /srv/rbn-lanes
 tools/conformance/round.sh lanes6 /srv/rbn-lanes/linux-amd64-ipv6-native \
-  /srv/rbn-lanes/rounds/ipv6-01 --parallel 4          # setsid nohup で起動する
+  /srv/rbn-lanes/rounds/ipv6-01 --parallel 4          # setsid nohupで起動する
+```
+
+### netns_env.sh
+
+`netns_env.sh up <name> --v4 <n> --v6 <hex>`は次の設定を行います。
+
+- 名前空間にホストへのuplinkを作る。アドレスは`10.250.<n>.0/30`と`fd00:1a:<hex>::/64`。
+- 名前空間の中で、Podのトラフィックをuplinkのアドレスにマスカレードする。
+- ホスト側で、uplinkからの通信を外向きにマスカレードし、転送を有効にする。
+- `/etc/netns/<name>/resolv.conf`を書く。ホストのスタブリゾルバ`127.0.0.53`には名前空間の中から届かないためです。
+
+`exec`はcgroup2を`/sys/fs/cgroup`にマウントし直します。`ip netns exec`が新しいsysfsをマウントし、その結果cgroup2が見えなくなるためです。
+
+2つ目のクラスタを作るときは、別の`<n>`と`<hex>`、別の`RUBERNETES_M8_CGROUP_ROOT`を指定してください。`cluster.rb up`が古いワークロードを消す範囲は、指定したcgroup rootの中だけです。rootを分けておけば、クラスタ同士が相手のPodを消すことはありません。
+
+`cluster.rb up`は、同じ`--root`で動いているクラスタがあれば先に止めます。エージェントのストリーミングポートがworkerごとに固定されているためです。
+
+### round.sh
+
+`round.sh`は、`lock.rb`が返す固定イメージを使い、名前空間の中でHydrophoneを実行します。Hydrophoneの標準出力は末尾だけを残します。終了後、`junit_01.xml`から合計と失敗したspec名を取り出して出力します。合否はJUnitで判断し、Hydrophoneの標準出力では判断しないでください。
+
+実行中の進み具合は次のコマンドで見られます。
+
+```bash
+kubectl -n conformance logs e2e-conformance-test -c conformance-container
 ```
 
 - `netns_env.sh up <name> --v4 <n> --v6 <hex>` は名前空間にホストへの uplink
