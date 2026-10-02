@@ -121,7 +121,8 @@ Pods.
 
 ## Configuration
 
-Everything is environment variables (`lib/dashboard/config.rb`):
+All configuration is through environment variables, defined in
+`lib/dashboard/config.rb`.
 
 | Variable | Default | Meaning |
 |---|---|---|
