@@ -83,7 +83,7 @@ seatの配分にはAPFの規則を適用する。
 watchは長時間の接続なので、実行中の数には含めない。
 
 <a id="sec-5-1-5"></a>
-## 5.1.5 Scheme / Codec
+## 5.1.5 スキームとコーデック
 
 - GVK と Ruby クラスの対応をレジストリで一元管理する
 - external version、internal hub version、storage version 間の conversion graph を保持する
