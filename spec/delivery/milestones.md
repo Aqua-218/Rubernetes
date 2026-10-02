@@ -193,7 +193,9 @@ graph LR
 - キューとinformerのproperty testの結果
 
 <a id="milestone-m4"></a>
-## M4 — Workload Data Plane
+## M4 ワークロードデータプレーン
+
+### 成果物
 
 ### Deliverables
 
