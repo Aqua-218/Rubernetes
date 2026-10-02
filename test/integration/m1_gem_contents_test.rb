@@ -214,6 +214,7 @@ class M1GemContentsTest < Minitest::Test
       "sig/**/*.rbs",
       "README.md",
       "LICENSE",
+      "NOTICE",
       "spec.md",
       "spec/**/*.md"
     ]
