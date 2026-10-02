@@ -286,7 +286,33 @@ OOMは`memory.events`から取得する。終了理由とPodのstatusには、1�
 - ログは、コンテナごとに10 MiBのファイルを5つまで保持し、ローテーションする。UTF-8であるとは仮定せず、バイト列として保持する。
 
 <a id="sec-5-8-11"></a>
-## 5.8.11 MicroVM 起動
+## 5.8.11 MicroVMの起動
+
+### PodとVMの対応
+
+MicroVM backendは、1つのPodを、1つのFirecrackerプロセスと1つのゲストkernelに対応付ける。異なるPodを同じmicroVMに同居させてはならない。
+
+同じPodの中のコンテナどうしは、互いに信頼する境界の内側にあるとみなす。同じゲストの中で、Ruby製のゲストsupervisorが[5.8.6](runtime.md#sec-5-8-6)から[5.8.10](runtime.md#sec-5-8-10)までのコンテナ隔離を実行する。
+
+### 起動前の検証
+
+起動する前に、次のもののダイジェスト、所有者、モードを検証する。
+
+- Firecrackerとjailer
+- ゲストkernel
+- 読み取り専用のrootfs
+- dm-verityのroot hash
+- Rubyのゲストbundle
+
+Firecrackerは、次の制限のもとで起動する。
+
+- 専用の非特権のUIDとGID
+- privateなPID、mount、networkの各namespace
+- cgroup
+- default-denyのseccomp
+- jailerによるchroot
+
+jailへの入力とその親ディレクトリは、非特権のユーザが書き換えられない状態でなければならない。
 
 MicroVM backend は 1 Pod を 1 Firecracker process と 1 guest kernel に対応付ける。
 同一 Pod 内の container は相互信頼境界とみなし、同一 guest 内で [§5.8.6](runtime.md#sec-5-8-6)〜[§5.8.10](runtime.md#sec-5-8-10) の
