@@ -2,17 +2,24 @@
 
 English | [日本語](README.ja.md)
 
-Rubernetes is an independent, Ruby-first implementation of Kubernetes
-v1.36.2 for Linux: the API server, the Raft datastore, the controllers,
-the scheduler, the node agent with its own container runtime, the Pod
-network, the service proxy, cluster DNS and the volume path are all
-project-owned Ruby. Nothing from Kubernetes runs in a cluster: its binaries
-and images are used only as a pinned test oracle, never as a dependency.
-The API schema is imported from upstream, and some algorithms (server-side
-apply, CEL type checking, the DRA allocator, the device cgroup filter, …)
-are Ruby ports of the upstream Go code; [`NOTICE`](NOTICE) lists them with
-their origins and licenses. A cluster speaks the Kubernetes API unchanged, so
-`kubectl`, Helm, client-go and upstream charts work against it as they are.
+Rubernetes is a reimplementation of Kubernetes v1.36.2 in Ruby. It runs on
+Linux. A real `kubectl`, Helm, client-go and upstream charts work against it
+unchanged.
+
+Every program in a cluster is Ruby code from this repository: the API
+server, the Raft datastore, the controllers, the scheduler, the node agent,
+the container runtime, the Pod network, the service proxy, cluster DNS and
+the volume path.
+
+How it relates to Kubernetes itself:
+
+- Nothing from Kubernetes runs inside a cluster.
+- Kubernetes binaries and images are used only as the reference that tests
+  compare against. Their versions are pinned.
+- The API schema is imported from upstream. Some algorithms (server-side
+  apply, CEL type checking, the DRA allocator, the device cgroup filter and
+  others) are Ruby ports of the upstream Go code. [`NOTICE`](NOTICE) lists
+  each port with its origin and license.
 
 | | |
 |---|---|
