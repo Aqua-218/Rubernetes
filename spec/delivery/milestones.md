@@ -96,8 +96,14 @@ graph LR
 
 ### 必要な証拠
 
-`gem-build.json`、`executables.json`、`abi-probe-x86_64.json`、JUnit、native-boundary scan結果、
-全binaryとABI manifestのSHA-256を保存する。
+次のものを保存する。
+
+- `gem-build.json`
+- `executables.json`
+- `abi-probe-x86_64.json`
+- JUnit
+- ネイティブ境界のスキャン結果
+- すべてのバイナリとABIマニフェストのSHA-256
 
 <a id="milestone-m1"></a>
 ## M1 — Schema and API Core
