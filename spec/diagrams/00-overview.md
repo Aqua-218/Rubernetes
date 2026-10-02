@@ -5,7 +5,7 @@
 
 > 対象読者: 全読者、アーキテクト
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 clientから低層Runtimeと検証層までのsystem-wide component mapを示す。
 
