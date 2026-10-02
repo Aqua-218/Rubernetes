@@ -117,98 +117,137 @@ RUBERNETES_M4_NETWORK_POLICY_ORACLE_COMMAND="ruby test/conformance/kubernetes/m4
 RUBERNETES_M4_KERNEL_WAIVER_REASON="<owner-granted reason>"
 ```
 
-ネットワーク観測ランナーは、ゲートのために観測した名前空間を保持する
-デーモンを残します。`runner.rb --reap` がそれを停止し、エスカレートし、
-孤児となったホストリンクを掃除します。
+ネットワーク観測ランナーは、観測した名前空間を保持するデーモンを残します。ゲートが終わったら`runner.rb --reap`を実行してください。デーモンを停止し、止まらなければ強制終了し、残ったホスト側のリンクを削除します。
 
-**カーネル waiver。** M4 ゲートは SCTP CRC32c ヘルパ経路のために Linux >= 6.12
-を期待します。M4 取得時（2026-09-04）、開発ホストはそのカーネルに再起動
-できず、プロジェクトオーナーがこの要件を免除しました。waiver は
-`RUBERNETES_M4_KERNEL_WAIVER_REASON` を通じて M4 マニフェスト（`waivers`）に
-明示的に記録され、ゲートも表示します。黙ったスキップではなく、6.12 専用
-ヘルパに依存しないものはすべて古いカーネル上で検証しています。
+### カーネルの免除
 
-## M5 耐久性のある高可用性
+M4のゲートは、SCTP CRC32cヘルパの検査のためにLinux 6.12以降を期待します。M4を取得した2026-09-04の時点で、開発ホストはそのカーネルで再起動できませんでした。そこでプロジェクトオーナーがこの要件を免除しています。
 
-- `m5_linearizability_probe.rb` は本番 Raft ノードを決定的シミュレーション
-  （分断、非対称分断、並べ替え、重複、欠落、クラッシュ/再起動、時刻ジャンプ）で
-  駆動し、すべてのクライアント履歴を `tools/verification/linearizability.rb` で
-  検査します。Ruby の逐次モデルは先に Lean の参照
-  `verification/lean/KVSequential.lean` と比較します。
-- `m5_fault_matrix_probe.rb` は実 worker プロセスを TLS 上で動かし、書き込みが
-  ack されている最中に 3 台中 1 台と 5 台中 2 台を SIGKILL し、joint-consensus の
-  メンバー変更中とスナップショット install 中にリーダーを殺し、コミット喪失
-  ゼロ、split brain ゼロ、再起動後のレプリカ一致を要求します。
-- `m5_corruption_probe.rb` は実 WAL とスナップショットを破壊し（ビット反転、
-  切れた末尾とゼロ埋め末尾、過大な長さ、切り詰め）、サイズ制限 tmpfs を満杯に
-  して ENOSPC を起こし、short write と fsync 失敗を注入し、すべてのケースで
-  fail closed しつつ ack 済みプレフィックスが生き残ることを要求します。
-  バックアップの round-trip と改竄バックアップの拒否も確認します。
-- `m5_rto_rpo_probe.rb` は Raft データストア上で本物の `rubernetes-apiserver`
-  3 プロセスと本物の controller manager を起動し、API サーバ 2 台を殺し、停止中に
-  書き込みが ack されず `/readyz` が失敗することを確認し、quorum を回復して
-  読み書きと Deployment 制御ループが再開するまでの時間を測ります（上限 60 秒、
-  RPO 0 オブジェクト）。
-- `m5_ownership_probe.rb` はすべての耐久効果ジャーナル（Raft ストア、Native
-  ランタイム、コントローラ、ボリューム、ネットワーク）を効果の前後でのクラッシュ
-  後に再生し、request-loss / response-loss の区別を記録したうえでの
-  exactly-once 再実行を要求します。
+免除の理由は`RUBERNETES_M4_KERNEL_WAIVER_REASON`で渡します。理由はM4マニフェストの`waivers`に記録され、ゲートの出力にも表示されます。6.12専用のヘルパに依存しない検査は、すべて古いカーネル上で実行済みです。
 
-## M6 完全な API 面
+## M5 耐久性と高可用性
 
-- `m6_api_coverage_probe.rb` は提供する全 discovery 文書、verb、OpenAPI v3
-  操作、protobuf ディスクリプタを固定コーパスと比較し、欠落ゼロを要求します。
-- `m6_feature_gate_probe.rb` は提供する API 面を、default、`AllBeta=true`、alpha
-  API の各プロファイルで取得したオラクルの discovery と比較し、差分ゼロを
-  要求します。
-- `m6_crd_differential_probe.rb` は 1 本の CRD/aggregation スクリプト（structural
-  validation メッセージ、defaulting、pruning、複数バージョン提供、status
-  サブリソース、OpenAPI 公開、APIService の可用性、cleanup finalizer）を Docker 内の
-  固定 kube-apiserver と本番サーバの両方で実行し、正規化した観測の一致を
-  要求します。
-- `m6_webhook_differential_probe.rb` は同じ admission webhook（Fail/Ignore
-  ポリシーのタイムアウト、mutation と warning、reinvocation policy、match policy、
-  match condition、AdmissionReview のバージョン交渉、dry-run の副作用、object
-  selector）を両サーバに登録し、結果の一致を要求します。
-- `m6_security_pipeline_probe.rb` は本番パイプラインの段階順序を記録し、
-  エラー開示（401 → 403 → 404 の順、内部詳細なし、全結果の監査）を検査します。
-- `m6_fuzz_probe.rb` は不正・過大・重複キー・パス・content negotiation の入力を
-  （seed 付きで再現可能に）投入し、panic・ハング・ポリシー回避ゼロを要求します。
+5つのプローブがあります。
 
-## M7 MicroVM 分離
+### m5_linearizability_probe.rb
 
-ゲスト成果物は `rake m7:artifacts`（`tools/microvm/build_guest_kernel.sh`、
-`tools/microvm/build_guest_artifacts.rb`）でビルドし、
-`third_party/locks/m7-microvm-artifacts.json` に固定します。プローブは本物の
-KVM ホストで動きます。
+本番のRaftノードを決定的シミュレーションで動かします。注入する障害は、分断、非対称な分断、並べ替え、重複、欠落、クラッシュと再起動、時刻のジャンプです。すべてのクライアント履歴を`tools/verification/linearizability.rb`で検査します。検査に使うRubyの逐次モデルは、先にLeanの参照モデル`verification/lean/KVSequential.lean`と比較しておきます。
 
-- `m7_kvm_probe.rb`（L4/L5 レポート）: 成果物検証、コールドブートと復元の Pod
-  ライフサイクル（exec/logs/stats/probes/network とカーネルで検証した閉じ込め）、
-  multiplexer 経由の `Node::Lifecycle` API 契約、障害マトリクス（jailer kill、VMM
-  ハング、UDS 切断、vsock 切断、pause ACK 喪失）。それぞれ残骸ゼロで fail closed。
-- `m7_attack_probe.rb`: ライブなゲストが jailer root、ホストファイルシステム、
-  他 VM の vsock、未登録のホストポート、他テナントのネットワーク、自身の rootfs を
-  攻撃。偽造・陳腐化した ACK と未知の broker 操作は拒否。restricted クラスには
-  NIC がない。
-- `m7_identity_probe.rb`: 1 つのベーススナップショットから 8 クローン。ローテート
-  される identity フィールドはクローン間と台帳履歴で一意。陳腐化した ACK と
-  失効した capability は拒否。
-- `m7_snapshot_probe.rb`: スナップショット破壊コーパス（ビット反転、切り詰め、
-  再署名したゴミ、成果物不一致、ファイル欠落）。壊れたベースから VM は決して
-  起動しない。
-- `m7_latency_probe.rb`: キャッシュ済みベースからの Pod 起動の生サンプル。p95 が
-  1.5 秒以下であること。
+### m5_fault_matrix_probe.rb
 
-## M8 Kubernetes 互換性
+実際のworkerプロセスをTLS上で動かし、書き込みのackが返っている最中に障害を起こします。
 
-`tools/conformance/run.rb` は
-[互換性契約](../../spec/verification/kubernetes-compatibility.md) の K0〜K7
-レーンを実行し、プロファイルごとに実行マニフェストを書きます。前提条件が
-欠けたレーンは理由付きで `INCOMPLETE` を報告し、モックで代替したり他の実行の
-結果を再利用したりはしません。M8 ゲートは `INCOMPLETE` なレーンを拒否します。
-`rake m8:lanes` がレーンを実行し、`rake m8:evidence` がバンドルを取得し、
-`rake m8:verify` がゲートします。クラスタ起動と日常の conformance ループは
-[tools/conformance](../conformance/README.ja.md) を参照。
+- 3台構成で1台、5台構成で2台をSIGKILLする。
+- joint consensusによるメンバー変更の最中にリーダーを停止する。
+- スナップショットのinstall中にリーダーを停止する。
+
+どの場合も、コミットの喪失がゼロ、split brainがゼロ、再起動後にレプリカが一致することを要求します。
+
+### m5_corruption_probe.rb
+
+実際のWALとスナップショットを破壊します。破壊の種類は、ビット反転、末尾の欠落、ゼロ埋めされた末尾、過大な長さ、切り詰めです。さらに、サイズを制限したtmpfsを満杯にしてENOSPCを起こし、short writeとfsyncの失敗も注入します。
+
+すべてのケースで、プロセスが安全側に停止し、ack済みの範囲のデータが残ることを要求します。バックアップのround-tripと、改竄したバックアップの拒否も確認します。
+
+### m5_rto_rpo_probe.rb
+
+Raftデータストアの上で、本物の`rubernetes-apiserver`を3プロセスと本物のcontroller managerを起動します。そのうえでAPIサーバを2台停止し、次の点を確かめます。
+
+- 停止中は書き込みにackが返らず、`/readyz`が失敗する。
+- quorumを回復すると読み書きとDeploymentの制御ループが再開する。再開までの時間は60秒以内。
+- 失われるオブジェクトは0件。
+
+### m5_ownership_probe.rb
+
+耐久性のある効果ジャーナルをすべて対象にします。Raftストア、Nativeランタイム、コントローラ、ボリューム、ネットワークの5つです。効果の前と後のそれぞれでクラッシュさせ、ジャーナルを再生します。要求の喪失と応答の喪失を区別して記録したうえで、各効果がちょうど1回だけ再実行されることを要求します。
+
+## M6 完全なAPI
+
+6つのプローブがあります。
+
+### m6_api_coverage_probe.rb
+
+提供しているdiscovery文書、verb、OpenAPI v3の操作、protobufのディスクリプタを、固定したコーパスと比較します。欠落がゼロであることを要求します。
+
+### m6_feature_gate_probe.rb
+
+提供しているAPIを、基準のkube-apiserverから取得したdiscoveryと比較します。比較するプロファイルは、既定、`AllBeta=true`、alpha APIの3つです。差分がゼロであることを要求します。
+
+### m6_crd_differential_probe.rb
+
+CRDとaggregationを扱う1本のスクリプトを、Docker内の固定したkube-apiserverと本番サーバの両方で実行します。正規化した観測結果が一致することを要求します。スクリプトが扱う項目は次のとおりです。
+
+- structural validationのメッセージ
+- defaultingとpruning
+- 複数バージョンの提供
+- statusサブリソース
+- OpenAPIの公開
+- APIServiceの可用性
+- cleanup finalizer
+
+### m6_webhook_differential_probe.rb
+
+同じadmission webhookを両方のサーバに登録し、結果が一致することを要求します。確かめる項目は次のとおりです。
+
+- FailとIgnoreの各ポリシーでのタイムアウト
+- mutationとwarning
+- reinvocation policy、match policy、match condition
+- AdmissionReviewのバージョン交渉
+- dry-runでの副作用
+- object selector
+
+### m6_security_pipeline_probe.rb
+
+本番のリクエスト処理パイプラインについて、段階の順序を記録します。エラーの開示も検査します。401、403、404の順で判定されること、内部の詳細が漏れないこと、すべての結果が監査に残ることを確かめます。
+
+### m6_fuzz_probe.rb
+
+不正な入力、過大な入力、重複したキー、パス、content negotiationの入力を投入します。seedを指定すれば同じ入力を再現できます。panic、ハング、ポリシーの回避がゼロであることを要求します。
+
+## M7 MicroVM分離
+
+ゲストの成果物は`rake m7:artifacts`でビルドします。実体は`tools/microvm/build_guest_kernel.sh`と`tools/microvm/build_guest_artifacts.rb`です。ビルド結果は`third_party/locks/m7-microvm-artifacts.json`に固定します。プローブは本物のKVMホストで動かしてください。
+
+### m7_kvm_probe.rb
+
+L4とL5のレポートを作ります。検査する内容は次の4つです。
+
+- 成果物の検証
+- コールドブートと復元の両方でのPodライフサイクル。exec、logs、stats、probe、ネットワークを確かめ、閉じ込めをカーネル側で検証する。
+- multiplexer経由での`Node::Lifecycle` APIの契約
+- 障害マトリクス。jailerのkill、VMMのハング、UDSの切断、vsockの切断、pause ACKの喪失を起こす。
+
+どの障害でも、安全側に停止し、残骸が残らないことを要求します。
+
+### m7_attack_probe.rb
+
+動いているゲストから攻撃を試みます。対象は、jailerのroot、ホストのファイルシステム、他のVMのvsock、未登録のホストポート、他テナントのネットワーク、自身のrootfsです。偽造したACK、古いACK、未知のbroker操作が拒否されることも確かめます。restrictedクラスのVMにNICがないことも確認します。
+
+### m7_identity_probe.rb
+
+1つのベーススナップショットから8つのクローンを作ります。ローテートされるidentityフィールドが、クローン間でも台帳の履歴の中でも重複しないことを要求します。古いACKと失効したcapabilityが拒否されることも確かめます。
+
+### m7_snapshot_probe.rb
+
+スナップショットを破壊するコーパスを使います。破壊の種類は、ビット反転、切り詰め、再署名したゴミデータ、成果物の不一致、ファイルの欠落です。壊れたベースからVMが起動しないことを要求します。
+
+### m7_latency_probe.rb
+
+キャッシュ済みのベースからPodを起動し、所要時間の生サンプルを記録します。p95が1.5秒以下であることを要求します。
+
+## M8 Kubernetes互換性
+
+`tools/conformance/run.rb`が、[互換性の試験契約](../../spec/verification/kubernetes-compatibility.md)にあるK0〜K7の検査を実行します。結果はプロファイルごとの実行マニフェストに書き出されます。
+
+前提条件が欠けている検査は、理由を付けて`INCOMPLETE`を報告します。モックで代用したり、ほかの実行の結果を流用したりはしません。M8のゲートは`INCOMPLETE`の検査があると不合格にします。
+
+| コマンド | 役割 |
+|---|---|
+| `rake m8:lanes` | 検査を実行する |
+| `rake m8:evidence` | バンドルを取得する |
+| `rake m8:verify` | ゲートを実行する |
+
+クラスタの起動と日常のconformance実行については、[tools/conformance](../conformance/README.ja.md)を読んでください。
 
 ## M9 リリース
 
