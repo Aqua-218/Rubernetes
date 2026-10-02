@@ -386,4 +386,5 @@ M0 through M9.
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+Apache License 2.0. The full text is in [LICENSE](LICENSE). Upstream-derived
+parts and their licenses are listed in [NOTICE](NOTICE).
