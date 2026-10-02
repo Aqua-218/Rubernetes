@@ -14,11 +14,9 @@ PodのSyncLoopと、起動、probe、再起動、終了、evictionの順序を�
 <a id="sec-5-7-1"></a>
 ## 5.7.1 SyncLoop
 
-- 自ノード宛の Pod を watch する
-- イベント駆動に加え、既定 1 分周期で全 Pod を再同期する
-- Pod ごとに直列化された worker を持つ。同一 Pod の操作は並行しない
-
-> Volume の詳細は [図 07 — Storage / Volume](../diagrams/07-storage-volume.md) を参照。
+- 自分のノードに割り当てられたPodをwatchする。
+- イベントで動くのに加えて、既定で1分ごとにすべてのPodを再同期する。
+- Podごとに、直列化されたworkerを持つ。同じPodへの操作が並行して走ることはない。
 
 <a id="sec-5-7-2"></a>
 ## 5.7.2 Pod 起動手順
