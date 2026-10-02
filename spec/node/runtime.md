@@ -169,7 +169,7 @@ whiteoutとopaque directoryは、OCIの規則に従って処理する。各パ�
 
 Native backendは、`clone3(2)`、`unshare(2)`、`setns(2)`とpidfdを使う。
 
-| namespace | Pod 内共有 | Kubernetes field |
+| namespace | Podの中での共有 | Kubernetesのフィールドとの関係 |
 |---|---|---|
 | Network | 共有 | `hostNetwork=true` では host に参加 |
 | IPC | 共有 | `hostIPC=true` では host に参加 |
