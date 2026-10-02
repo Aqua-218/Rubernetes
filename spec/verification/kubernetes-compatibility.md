@@ -143,8 +143,7 @@ JUnitとGinkgoのJSONを、`conformance.yaml`の`codename`で結合する。そ�
 - 実行の前後で、テスト用のnamespace、クラスタスコープのfixture、Pod、ボリューム、ネットワークの資源が残っていない。
 - 同じプロファイルで3回続けて問題のない実行になるまで、M8の証拠を確定しない。
 
-途中のfailure後にtest単体を再実行して成功しても、元のrunを成功へ書き換えてはならない。
-failure原因を修正した新commitでfull suiteを最初から実行する。
+途中で失敗したテストだけを再実行して成功しても、元の実行を成功に書き換えてはならない。失敗の原因を修正した新しいコミットで、スイート全体を最初から実行する。
 
 ## K2 — Certified-Conformance Evidence
 
