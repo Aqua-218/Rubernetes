@@ -1,6 +1,6 @@
 [仕様書の目次](../README.md)
 
-# Verification
+# 検証
 
 > **Audience:** 形式検証者、test実装者、セキュリティ検証者、審査者
 
