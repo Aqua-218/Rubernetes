@@ -100,7 +100,7 @@ graph TD
 - [コーディング規約](delivery/coding-standards.md)
 - [規範参照](references.md)
 
-### Diagrams
+### 構成図
 
 - [00 全景](diagrams/00-overview.md)
 - [01 API Server](diagrams/01-api-server.md)
