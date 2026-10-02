@@ -49,10 +49,10 @@ graph LR
 
 | 境界 | インターフェース | 本番の実装 | テストでの比較対象 |
 |---|---|---|---|
-| ストレージ | `Store` | Ruby `RaftStore`、Ruby `MemoryStore` | etcd の観測結果 |
-| ランタイム | `Runtime` | Ruby `Native`、Ruby制御の `MicroVM` | runc/containerd の観測結果 |
-| ネットワーク | `Network` | Ruby `Native` | CNI 実装の観測結果 |
-| Volume | `Volume` | Ruby組込み実装、CSI互換プラグイン接続 | 既存 CSI 実装の観測結果 |
+| ストレージ | `Store` | Rubyの`RaftStore`と`MemoryStore` | etcdの観測結果 |
+| ランタイム | `Runtime` | Rubyの`Native`と、Rubyが制御する`MicroVM` | runcとcontainerdの観測結果 |
+| ネットワーク | `Network` | Rubyの`Native` | CNI実装の観測結果 |
+| ボリューム | `Volume` | Rubyの組み込み実装と、CSI互換プラグインへの接続 | 既存のCSI実装の観測結果 |
 
 `etcd`、`runc`、`containerd`、`CRI-O`、既存 CNI、`kube-proxy`、`CoreDNS` は
 本番クラスタの必須または代替実装として使用してはならない。
