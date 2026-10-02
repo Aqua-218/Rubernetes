@@ -3,7 +3,7 @@
 <a id="sec-a-3"></a>
 # A.3 図03 制御ループ
 
-> **Audience:** Controller/Scheduler実装者
+> 対象読者: コントローラとスケジューラの実装者
 >
 > **Status:** Normative — version 0.2
 
