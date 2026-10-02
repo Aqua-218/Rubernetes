@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-API request pipeline、認証、認可、流量制御、admission、監査、保存時暗号化を定義する。
+APIリクエストの処理順序、認証、認可、流量制御、admission、監査、保存時の暗号化を定義する。
 
 
 > **Diagram:** [図 01 — API Server](../diagrams/01-api-server.md)
