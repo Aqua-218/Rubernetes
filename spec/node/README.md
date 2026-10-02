@@ -1,6 +1,6 @@
 [仕様書の目次](../README.md)
 
-# Node and Workload Execution
+# ノードとワークロードの実行
 
 > **Audience:** Node、Runtime、Network、Storage実装者、セキュリティ検証者
 
