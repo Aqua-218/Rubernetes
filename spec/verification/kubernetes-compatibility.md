@@ -105,7 +105,7 @@ Rubyのランナー`tools/conformance/run.rb`は、クラスタに接続する�
 
 いずれかが一致しない場合は、テストの失敗として扱う。ネットワークから取得した値でロックを自動的に更新してはならない。
 
-いずれかの不一致はtest failureであり、network取得によるlockの自動更新を行ってはならない。
+### conformance.yamlの検査
 
 ## K1 — Upstream Conformance
 
