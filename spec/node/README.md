@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md)
+[仕様書の目次](../README.md)
 
 # Node and Workload Execution
 
