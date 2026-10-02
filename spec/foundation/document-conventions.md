@@ -3,7 +3,7 @@
 <a id="sec-0"></a>
 # 0. この文書について
 
-> **Audience:** 全読者、仕様編集者
+> 対象読者: 全読者、仕様編集者
 >
 > **Status:** Normative — version 0.2
 
