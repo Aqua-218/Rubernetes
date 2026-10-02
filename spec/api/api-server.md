@@ -149,9 +149,29 @@ aggregated APIのdiscovery、OpenAPI、healthは、組み込みのものと統�
 <a id="sec-5-1-8"></a>
 ## 5.1.8 監査と保存時暗号化
 
-監査は RequestReceived、ResponseStarted、ResponseComplete、Panic stage を policy に従って記録する。
-token、Authorization header、client key、Secret data、exec/attach stream body を記録してはならない。
-監査 sink の停止は API write を無条件に停止させず、bounded queue 超過を metric/Event と durable local log に残す。
+### 監査
+
+監査は、RequestReceived、ResponseStarted、ResponseComplete、Panicの各ステージを、ポリシーに従って記録する。
+
+次のものを記録してはならない。
+
+- トークン
+- Authorizationヘッダ
+- クライアントの秘密鍵
+- Secretのデータ
+- execとattachのストリームの内容
+
+監査の出力先が停止しても、APIへの書き込みを無条件に止めてはならない。上限付きのキューがあふれた場合は、メトリクス、Event、耐久性のあるローカルログに記録する。
+
+### 保存時暗号化
+
+Secret、ServiceAccountのトークン、bootstrapの資格情報、指定したAPIのフィールドは、envelope encryptionで暗号化する。
+
+- 組み込みのプロバイダはAES-256-GCMを使う。
+- 外部のプロバイダはKubernetes KMS v2プロトコルを使う。
+- データ暗号化鍵はオブジェクトごとに生成する。
+- 同じ鍵でnonceを再利用しない。
+- 暗号化に失敗したとき、平文をストア、WAL、スナップショットに書いてはならない。
 
 Secret、ServiceAccount token、bootstrap credential と指定 API field は envelope encryption する。
 組込み provider は AES-256-GCM、外部 provider は Kubernetes KMS v2 protocol とし、data encryption key を
