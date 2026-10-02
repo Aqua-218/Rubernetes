@@ -33,9 +33,9 @@ graph TD
 | Kubernetes互換を実装する | [Kubernetes API](api/kubernetes-api.md) → [APIサーバ](api/api-server.md) → [検証戦略](verification/testing.md) |
 | コンテナ実行を実装する | [ノードエージェント](node/node-agent.md) → [ランタイム](node/runtime.md) → [ネットワーク](node/network.md) → [ボリューム](node/volume.md) |
 | 正しさを確認する | [形式仕様](verification/formal-methods.md) → [検証戦略](verification/testing.md) → [検証図](diagrams/08-verification.md) |
-| 実装順と完成条件を確認する | [マイルストーン](delivery/milestones.md) → [実装計画](delivery/implementation-plan.md) → [Coding Standards](delivery/coding-standards.md) |
-| repository構造を確認する | [Project Structure](delivery/project-structure.md) → [Architecture](foundation/architecture.md) |
-| upstream testを導入する | [Kubernetes互換性試験](verification/kubernetes-compatibility.md) → [検証戦略](verification/testing.md) |
+| 実装順と完成条件を確認する | [マイルストーン](delivery/milestones.md) → [実装計画](delivery/implementation-plan.md) → [コーディング規約](delivery/coding-standards.md) |
+| リポジトリの構造を確認する | [プロジェクト構成](delivery/project-structure.md) → [アーキテクチャ](foundation/architecture.md) |
+| upstreamのテストを導入する | [Kubernetes互換性試験](verification/kubernetes-compatibility.md) → [検証戦略](verification/testing.md) |
 
 ## Specification Families
 
