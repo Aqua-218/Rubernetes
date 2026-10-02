@@ -173,10 +173,7 @@ Secret、ServiceAccountのトークン、bootstrapの資格情報、指定した
 - 同じ鍵でnonceを再利用しない。
 - 暗号化に失敗したとき、平文をストア、WAL、スナップショットに書いてはならない。
 
-Secret、ServiceAccount token、bootstrap credential と指定 API field は envelope encryption する。
-組込み provider は AES-256-GCM、外部 provider は Kubernetes KMS v2 protocol とし、data encryption key を
-object ごとに生成する。nonce は key ごとに再利用せず、暗号化失敗時に plaintext を Store/WAL/snapshot へ
-書いてはならない。key rotation は旧 key で read、新 key で write し、background rewrite 後に旧 key を廃止する。
+鍵のローテーションでは、読み取りに古い鍵を使い、書き込みに新しい鍵を使う。バックグラウンドでの書き直しが終わったら、古い鍵を廃止する。
 
 ## Related
 
