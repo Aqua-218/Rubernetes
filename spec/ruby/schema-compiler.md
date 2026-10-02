@@ -96,7 +96,7 @@ CRDはコードとして評価しない。構造化されたOpenAPIスキーマ�
 - すべてのGVKについて、round-tripのproperty testを行う。入力は、空のオブジェクト、最小のオブジェクト、全フィールドを持つオブジェクト、未知のフィールドを持つオブジェクトの4種類とする。
 - upstreamのコーパスと、生成したOpenAPI、protobufのディスクリプタ、discoveryを比べる。リリースゲートでは構造の差分がゼロでなければならない。
 
-## Related
+## 関連
 
 - [manifest dsl](manifest-dsl.md)
 - [kubernetes api](../api/kubernetes-api.md)
