@@ -120,6 +120,6 @@ quorumが回復してから60秒以内に、APIへの書き込み、コントロ
 
 ## 関連
 
-- [architecture](architecture.md)
-- [kubernetes api](../api/kubernetes-api.md)
-- [implementation plan](../delivery/implementation-plan.md)
+- [アーキテクチャ](architecture.md)
+- [Kubernetes API](../api/kubernetes-api.md)
+- [実装計画](../delivery/implementation-plan.md)
