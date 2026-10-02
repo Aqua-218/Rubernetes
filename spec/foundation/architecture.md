@@ -11,7 +11,7 @@
 
 図は[図00 全景](../diagrams/00-overview.md)にある。
 
-## System Context
+## システムの全体像
 
 ```mermaid
 graph LR
