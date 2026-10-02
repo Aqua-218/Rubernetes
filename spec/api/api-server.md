@@ -85,12 +85,12 @@ watchは長時間の接続なので、実行中の数には含めない。
 <a id="sec-5-1-5"></a>
 ## 5.1.5 スキームとコーデック
 
-- GVK と Ruby クラスの対応をレジストリで一元管理する
-- external version、internal hub version、storage version 間の conversion graph を保持する
-- JSON、YAML、CBOR、Kubernetes Protobuf と内部表現の変換を一箇所に集約する
-- built-in field の unknown-field pruning、strict validation、warning は `fieldValidation` に従う
-- CRD の未知フィールド保持は `x-kubernetes-preserve-unknown-fields` に従う
-- lossless conversion が定義された version 間では external → hub → external の情報保存を property test で強制する
+- GVKとRubyのクラスの対応を、レジストリで一元管理する。
+- 外部バージョン、内部のhubバージョン、保存バージョンの間のconversionグラフを保持する。
+- JSON、YAML、CBOR、Kubernetes Protobufと内部表現との変換を、1か所に集約する。
+- 組み込みのフィールドについて、未知のフィールドのpruning、strict validation、warningは`fieldValidation`に従う。
+- CRDで未知のフィールドを保持するかどうかは、`x-kubernetes-preserve-unknown-fields`に従う。
+- 情報を失わないconversionが定義されたバージョンの間では、外部、hub、外部と変換しても情報が保存されることを、property testで強制する。
 
 <a id="sec-5-1-6"></a>
 ## 5.1.6 削除と finalizer
