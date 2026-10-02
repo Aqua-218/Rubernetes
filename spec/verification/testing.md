@@ -9,8 +9,7 @@
 
 テストの階層、障害注入のDSL、線形化、差分テスト、トレースの照合、ランタイムの実機でのゲートを定義する。
 
-
-> **Diagram:** [図 08 — Verification](../diagrams/08-verification.md)
+図は[図08 検証](../diagrams/08-verification.md)にある。
 
 <a id="sec-8-1"></a>
 ## 8.1 テスト階層
