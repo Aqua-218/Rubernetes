@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-Native/MicroVM、ownership、image、namespace、filesystem、cgroup、security、recoveryを示す。
+NativeとMicroVM、所有権、イメージ、namespace、ファイルシステム、cgroup、セキュリティ、回復を示す。
 
 ```mermaid
 graph TB
