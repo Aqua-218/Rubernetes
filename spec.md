@@ -2,7 +2,7 @@
 
 Rubernetesの仕様と設計書の正本は、複数の文書からなる[`spec/`](spec/README.md)である。このファイルは入口の案内だけを載せる。以前から`spec.md`を参照している文書やIDEの設定が、そのまま使えるように残してある。
 
-## Start Here
+## 最初に読む文書
 
 - [仕様・設計書インデックス](spec/README.md)
 - [目的・Kubernetes互換性・完成条件](spec/foundation/goals-and-compatibility.md)
