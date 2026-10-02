@@ -154,9 +154,13 @@ bin/rails test                     # 79 tests: PromQL engine, TSDB, scraper, rul
 bin/rails console
 ```
 
-`test/support/fake_cluster.rb` stands in for the API server, so the suite
-runs without a cluster. The JSON gem is pinned to the Ruby 3.4.11 default
-(`json 2.9.1`) for the same reason as the main Gemfile.
+The tests run without a cluster. `test/support/fake_cluster.rb` stands in
+for the API server.
+
+Two gem versions are pinned: the json gem to `json 2.9.1`, which ships with
+Ruby 3.4.11, and minitest to the 5.25 series. The main project's tests run
+without bundler, so they would load any newer gem that the dashboard's
+bundle installs.
 
 ## Layout
 
