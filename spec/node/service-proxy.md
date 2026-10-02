@@ -9,6 +9,7 @@
 
 ServiceとEndpointSlice、conntrack、eBPFとnftablesの各backendについて、互換な動作を定義する。
 
+## 対象
 
 - Service と EndpointSlice を watch する
 - ClusterIP、headless、NodePort、LoadBalancer、ExternalIP、ExternalName と IPv4/IPv6 dual-stack を処理する
