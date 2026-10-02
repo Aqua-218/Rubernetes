@@ -5,7 +5,7 @@
 
 > 対象読者: APIサーバの実装者、セキュリティの設計者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 API request pipeline、認証、認可、流量制御、admission、監査、保存時暗号化を定義する。
 
