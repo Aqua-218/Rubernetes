@@ -251,14 +251,21 @@ L4とL5のレポートを作ります。検査する内容は次の4つです。
 
 ## M9 リリース
 
-`tools/release/` がリリース証拠を作ります: `sbom.rb`（CycloneDX 1.5、決定的）、
-`release_manifest.rb`（ソースインベントリのダイジェストを束ねる）、
-`loc_report.rb`（ネイティブ拡張を含めた Ruby 比率）、`reproduce.rb`（バイト一致の
-再ビルド）、`security_report.rb`（advisory、未固定入力、主張レベル、日付なし
-マーカー）、`benchmark.rb`（Kubernetes v1.36.2 オラクルとの比較）、`soak.rb`
-（72 時間、追記専用ジャーナル）。72 時間未満の soak、オラクルなしのベンチ
-マーク、クリーンホストでの再現欠落は、合格ではなく未達として報告されます。
-`rake m9:artifacts` が成果物を生成し、`rake m9:verify` がゲートします。
+`tools/release/`のツールがリリースの証拠を作ります。
+
+| ツール | 内容 |
+|---|---|
+| `sbom.rb` | CycloneDX 1.5形式のSBOM。出力は決定的 |
+| `release_manifest.rb` | ソース一覧のダイジェストをまとめる |
+| `loc_report.rb` | ネイティブ拡張を含めたRubyの比率 |
+| `reproduce.rb` | バイト単位で一致する再ビルド |
+| `security_report.rb` | advisory、固定していない入力、主張レベル、日付のないマーカー |
+| `benchmark.rb` | Kubernetes v1.36.2との性能比較 |
+| `soak.rb` | 72時間の連続稼働。追記専用のジャーナルに記録する |
+
+72時間に満たないsoak、比較相手のないベンチマーク、クリーンなホストでの再現の欠落は、未達として報告されます。合格にはなりません。
+
+`rake m9:artifacts`で成果物を生成し、`rake m9:verify`でゲートを実行します。
 
 ## 履歴
 
