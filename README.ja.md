@@ -100,7 +100,7 @@ kubectlのチェックサムは`test/compatibility/clients/matrix.yml`に書い�
 ```sh
 git clone <this repository> && cd 2026
 bundle install
-rake abi:compile                    # C シムを build/ 配下にビルド
+rake abi:compile                    # Cの拡張をbuild/配下にビルド
 
 # このホスト上に control 3 ノード + worker 3 ノードのクラスタを、PKI・
 # コンポーネントごとの identity・クラスタ DNS・kubeconfig 込みで /srv/rbn-dev に作る:
