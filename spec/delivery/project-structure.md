@@ -93,10 +93,10 @@
 │   ├── support/
 │   └── fixtures/
 ├── verification/
-│   ├── tla/                       # TLA+ modules and TLC configurations
-│   ├── lean/                      # Definitions, proofs and extracted oracles
-│   └── traces/                    # Trace schema, refinement maps and regressions
-├── tools/                         # Ruby-first repository automation
+│   ├── tla/                       # TLA+のモジュールとTLCの設定
+│   ├── lean/                      # 定義、証明、抽出した参照実装
+│   └── traces/                    # トレースのスキーマ、対応付けの定義、回帰用のトレース
+├── tools/                         # Rubyを中心にしたリポジトリの自動化
 │   ├── schema/
 │   ├── conformance/
 │   ├── verification/
