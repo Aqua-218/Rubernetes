@@ -201,9 +201,7 @@ graph LR
 - Service、EndpointSlice、DNS、eBPFとnftablesのプロキシ
 - ephemeral・projected・localの各ボリューム、PV・PVC・StorageClass、スナップショット、CSI互換の接続
 
-- IPv4/IPv6 IPAM、bridge/veth/VXLAN、route、NetworkPolicy
-- Service、EndpointSlice、DNS、eBPF/nftables proxy
-- ephemeral/projected/local volume、PV/PVC/StorageClass、snapshot、CSI互換接続
+### 完了条件
 
 ### Exit criteria
 
