@@ -87,7 +87,7 @@ Filterは、`true`か、理由を付けた拒否だけを返す。Scoreは0〜10
 
 同点の処理は[5.6.3](scheduler.md#sec-5-6-3)の決定的な規則に従う。DSLから上書きすることはできない。
 
-## Related
+## 関連
 
 - [controllers](controllers.md)
 - [node agent](../node/node-agent.md)
