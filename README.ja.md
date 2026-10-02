@@ -67,15 +67,9 @@ kubeletの役割を担います。Podの同期、probe、eviction、ノードの
 
 コンテナランタイムは3種類から選べます。
 
-| Rubernetes のプロセス | 相当する upstream | 内容 |
-|---|---|---|
-| `rubernetes-apiserver` | kube-apiserver + etcd | v1.36.2 のデフォルト API 面と discovery を完全に提供。JSON/YAML/Protobuf、watch、patch、field manager 付き server-side apply、admission（固定コーパス由来のプラグイン、webhook、CEL ポリシー）、認証・認可、API Priority and Fairness、監査、保存時暗号化、CRD、API aggregation、feature gate と `--runtime-config`。ストレージは内蔵の Raft データストア（`lib/rubernetes/consensus/`）: CRC-32C WAL、スナップショット、joint consensus、pre-vote、ReadIndex、相互 TLS。 |
-| `rubernetes-controller-manager` | kube-controller-manager | upstream のコントローラ群（ワークロード、GC、namespace、Endpoints と EndpointSlice、ServiceAccount とトークン、node lifecycle、CSR 承認、PV/PVC、quota など）を informer / work queue フレームワークとリーダー選出の上で実行。 |
-| `rubernetes-scheduler` | kube-scheduler | デフォルトプラグイン一式を持つスケジューリングフレームワーク、preemption、非同期 bind、scoring。 |
-| `rubernetes-agent` | kubelet + CRI ランタイム + CNI | Pod sync loop、probe、eviction、graceful node shutdown、device plugin、CPU/memory/topology manager、DRA、kubelet API（`exec`、`logs`、`/metrics*`、`/configz` など）。ランタイムは **native**（clone3、cgroup v2、namespace、OCI イメージの取得と検証も Ruby）、**microvm**（jailer 付き Firecracker、dm-verity rootfs、vsock supervisor）、オプトインの **CRI** バックエンド。ネットワークは内蔵 bridge データパスで、dual-stack IPAM、NetworkPolicy（nftables または eBPF）、egress NAT、プロセス内クラスタ DNS を持つ。 |
-| `rubernetes-proxy` | kube-proxy | Service、EndpointSlice、NodePort、session affinity、traffic policy。**iptables**、**nftables**、**eBPF** の 3 データパスを upstream と同じチェーン構成とメトリクスで実装。 |
-| `rubectl` | kubectl（部分集合） | `get`、`create`、`apply`、`patch`、`delete`、`watch`、`raw`。スキーマコーパスから生成した Ruby Manifest DSL も読める。本物の `kubectl` もそのまま使える。 |
-| `apps/dashboard` | Kubernetes dashboard + Prometheus | Rails アプリ。クラスタブラウザ、Prometheus 型の自前時系列ストア、PromQL、recording / alerting ルール、Prometheus 互換 HTTP API。[個別 README](apps/dashboard/README.ja.md) 参照。 |
+- native: clone3、cgroup v2、namespaceを直接使います。OCIイメージの取得と検証もRubyで行います。
+- microvm: jailer付きのFirecrackerでPodを動かします。rootfsはdm-verityで検証し、vsock経由のsupervisorが中で動きます。
+- CRI: 外部のCRIランタイムにつなぎます。明示的に有効にしたときだけ使われます。
 
 実行時に必要なのは Ruby と、fork する Ruby VM から安全に発行できない
 システムコールのための小さな C シム（[`ext/rubernetes_linux`](ext/README.ja.md)）
