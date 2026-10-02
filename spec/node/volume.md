@@ -57,10 +57,7 @@ Declared → Provisioned → Attached → Staged → Published → Unpublishing 
 
 プロセスまたはVMがボリュームを参照している間は、unpublish、unmap、loopのdetach、作業領域の削除を行ってはならない。
 
-Volume は `Declared → Provisioned → Attached → Staged → Published → Unpublishing → Unstaged → Detached`
-の順に遷移する。各遷移は operation token で冪等化し、controller/node の応答消失時は
-`Unknown` として `ListVolumes`、mount table、device identity を照合する。process/VM が volume を
-参照している間、unpublish、unmap、loop detach、workspace delete を行ってはならない。
+次の機能は、v1.36.2と同じ条件で扱う。
 
 `ReadWriteOncePod`、multi-attach prohibition、nodeAffinity、accessMode、reclaimPolicy、
 WaitForFirstConsumer、online expansion、snapshot/clone、ephemeral volume を v1.36.2 と同じ条件で扱う。
