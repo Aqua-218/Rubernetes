@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-Ruby コードから標準 Kubernetes JSON を生成する manifest DSL と、その隔離実行境界を定義する。
+Rubyのコードから標準のKubernetes JSONを生成するManifest DSLを定義する。DSLを隔離して実行する境界も定める。
 
 
 `rubectl apply -f app.rb` は Ruby ファイルを専用プロセスで評価し、標準 Kubernetes
