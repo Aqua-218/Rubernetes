@@ -5,7 +5,7 @@
 
 > 対象読者: ネットワークの実装者、セキュリティの検証者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 Ruby netlink、IPAM、overlay、NetworkPolicy、DNSを定義する。
 
