@@ -9,6 +9,13 @@
 
 プロジェクト、モジュール、CLI、デーモン、拡張用ドメインの正式名称を定義する。
 
+| 対象 | 名称 |
+|---|---|
+| プロジェクト | Rubernetes |
+| Rubyのモジュール名前空間 | `Rubernetes` |
+| CLI | `rubectl` |
+| デーモンの実行ファイル | `rubernetes-apiserver`、`rubernetes-controller-manager`、`rubernetes-scheduler`、`rubernetes-agent`、`rubernetes-proxy` |
+| 独自拡張のドメイン | `rubernetes.io` |
 
 プロジェクト名は **Rubernetes**、Ruby module namespace は `Rubernetes`、
 CLI は `rubectl` とする。daemon binary は `rubernetes-apiserver`、
