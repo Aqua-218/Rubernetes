@@ -153,6 +153,6 @@ class B1,B2,B3,B4,B5,B6 bp
 
 ## 関連
 
-- [network](../node/network.md)
-- [service proxy](../node/service-proxy.md)
-- [構成図インデックス](README.md)
+- [ネットワーク](../node/network.md)
+- [サービスプロキシ](../node/service-proxy.md)
+- [構成図の目次](README.md)
