@@ -26,7 +26,7 @@ graph TD
 
 ## 目的別の読み方
 
-| 読者 | 読む順序 |
+| 目的 | 読む順序 |
 |---|---|
 | 全体像を知りたい | [目的と互換性](foundation/goals-and-compatibility.md) → [アーキテクチャ](foundation/architecture.md) → [全景図](diagrams/00-overview.md) |
 | Rubyらしさを見たい | [Ruby Design](ruby/README.md) → [Schema Compiler](ruby/schema-compiler.md) → [Controller DSL](control-plane/controllers.md) |
