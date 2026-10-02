@@ -280,7 +280,9 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 - fuzzの要約と、クラッシュを起こした入力のコーパス
 
 <a id="milestone-m7"></a>
-## M7 — MicroVM Isolation
+## M7 MicroVM分離
+
+### 成果物
 
 ### Deliverables
 
