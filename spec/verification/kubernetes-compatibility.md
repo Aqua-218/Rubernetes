@@ -11,7 +11,12 @@ Kubernetesのupstreamテストを、改変せずにRubernetesへ接続する方�
 
 Kubernetes Conformanceは、最初に通過しなければならないゲートである。ただし、Conformanceに通るだけでは完全な互換性は示せない。[マイルストーンM8](../delivery/milestones.md#milestone-m8)を完了するには、次のすべてを通過する必要がある。
 
-## Pinned Upstream Inputs
+- Conformance
+- 可搬なupstreamのe2e
+- Node Conformance
+- APIの差分テスト
+- クライアントのバージョン差の検査
+- 実在するプロジェクトのコーパス
 
 | Input | Immutable identity | Purpose |
 |---|---|---|
