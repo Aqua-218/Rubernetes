@@ -17,11 +17,7 @@
 | デーモンの実行ファイル | `rubernetes-apiserver`、`rubernetes-controller-manager`、`rubernetes-scheduler`、`rubernetes-agent`、`rubernetes-proxy` |
 | 独自拡張のドメイン | `rubernetes.io` |
 
-プロジェクト名は **Rubernetes**、Ruby module namespace は `Rubernetes`、
-CLI は `rubectl` とする。daemon binary は `rubernetes-apiserver`、
-`rubernetes-controller-manager`、`rubernetes-scheduler`、`rubernetes-agent`、
-`rubernetes-proxy` とする。Kubernetes API 上の標準 label、annotation、field 名は
-互換性のため改名せず、独自 extension の domain だけに `rubernetes.io` を用いる。
+Kubernetes API上の標準のlabel、annotation、フィールド名は、互換性を保つために改名しない。`rubernetes.io`を使うのは独自拡張だけである。
 
 ## Related
 
