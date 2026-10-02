@@ -191,10 +191,10 @@ graph TD
 
 ### ノードとLinuxの境界
 
-- `node/`はPod desired/observed stateとrollback順序を所有する。
-- `runtime/`、`network/`、`proxy/`、`volume/`は互いのprivate implementationへ依存せず、Node Agentのcontractで接続する。
-- `platform/linux/`はsyscall、netlink、BPF、KVM ABIをRuby objectとして公開するがpolicyを決めない。
-- `ext/rubernetes_linux/`はFFIで安全に表現できないABI shimだけを含み、production sourceのRuby比率計算に含める。
+- `node/`は、Podのdesired stateとobserved state、ロールバックの順序を所有する。
+- `runtime/`、`network/`、`proxy/`、`volume/`は、互いの非公開の実装に依存しない。ノードエージェントの契約を通じて接続する。
+- `platform/linux/`は、システムコール、netlink、BPF、KVMのABIをRubyのオブジェクトとして公開する。ポリシーは決めない。
+- `ext/rubernetes_linux/`には、FFIで安全に表現できないABI用のshimだけを置く。本番ソースのRuby比率の計算には、このディレクトリも含める。
 
 ### Verification and upstream code
 
