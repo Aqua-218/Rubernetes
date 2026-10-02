@@ -53,15 +53,15 @@
 │       ├── node/                  # ノードの登録とPodのSyncLoop
 │       ├── image/                 # OCIイメージの取得、検証、展開、キャッシュ
 │       ├── runtime/
-│       │   ├── native/             # Namespace/cgroup/seccomp process backend
-│       │   └── microvm/            # Firecracker/jailer/vsock backend
-│       ├── network/               # Netlink, IPAM, VXLAN, policy and DNS
-│       ├── proxy/                 # eBPF and nftables Service backends
-│       ├── volume/                # Volume, PV/PVC, snapshot and CSI bridge
-│       ├── security/              # Identity, policy, audit and secret primitives
-│       ├── observability/         # Events, metrics, traces and evidence export
-│       ├── platform/linux/        # Typed Ruby adapters over Linux ABI
-│       └── support/               # Policy-free shared primitives
+│       │   ├── native/             # namespace、cgroup、seccompによるプロセスのbackend
+│       │   └── microvm/            # Firecracker、jailer、vsockによるbackend
+│       ├── network/               # netlink、IPAM、VXLAN、ポリシー、DNS
+│       ├── proxy/                 # eBPFとnftablesによるServiceのbackend
+│       ├── volume/                # ボリューム、PVとPVC、スナップショット、CSIとの接続
+│       ├── security/              # identity、ポリシー、監査、secretの基本部品
+│       ├── observability/         # イベント、メトリクス、トレース、証拠の出力
+│       ├── platform/linux/        # LinuxのABIを型付きで扱うRubyのアダプタ
+│       └── support/               # ポリシーを持たない共通の基本部品
 ├── ext/rubernetes_linux/
 │   ├── include/                   # Generated/hand-reviewed minimal C headers
 │   └── src/                       # ABI shim only; no orchestration policy
