@@ -106,11 +106,11 @@ Leanから得た実行可能な参照実装は、テストの基準としてだ�
 
 | レベル | 意味 |
 |---|---|
-| `proved` | Lean で全称量化された定理を `sorry` なしで証明 |
-| `model_checked` | 明記した有限 scope で TLA+/TLC が反例なし |
-| `differentially_tested` | 固定 oracle corpus と観測結果が一致 |
-| `integration_tested` | 実 kernel/KVM 上の境界を検査 |
-| `assumed_tcb` | kernel、KVM、CPU、Firecracker 等へ置いた仮定 |
+| `proved` | 全称量化された定理を、Leanで`sorry`なしに証明した |
+| `model_checked` | 明記した有限のスコープで、TLA+とTLCが反例を見つけなかった |
+| `differentially_tested` | 固定した比較対象のコーパスと、観測結果が一致した |
+| `integration_tested` | 実際のkernelまたはKVMの上で、境界を検査した |
+| `assumed_tcb` | kernel、KVM、CPU、Firecrackerなどに置いた仮定である |
 
 VM escape 耐性、host kernel/KVM/CPU の正しさ、全 syscall 実装の正しさは `assumed_tcb` とする。
 
