@@ -3,7 +3,7 @@
 <a id="sec-5-10"></a>
 # 5.10 サービスプロキシ
 
-> **Audience:** Service datapath実装者
+> 対象読者: Serviceのデータパスの実装者
 >
 > **Status:** Normative — version 0.2
 
