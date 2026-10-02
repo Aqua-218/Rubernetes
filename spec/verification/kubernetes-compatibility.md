@@ -198,10 +198,7 @@ Ginkgoのdry-runで得たテストの一覧について、すべてのテスト�
 
 `provider-private`または`implementation-internal`に分類した項目に、外部から観測できる契約がある場合がある。その場合は、同じ入力と同じ観測点を持つプロジェクト作成のテストが合格するまで、その項目を完了にしてはならない。
 
-upstream Node Conformanceを実kernelのamd64 nodeへ実行する。Node AgentはKubernetesが公開する
-node registration、Pod lifecycle、probe、log、exec、resource isolation、status behaviorを提供する。
-testがkubelet固有のprivate pathまたはprocess nameを要求する場合はK3と同じledgerで分類し、
-外部contractをRuntime L3/L5 testへ置換する。
+未分類の件数と、置き換えのテストが接続されていない件数は、どちらも0でなければならない。
 
 mock runtime、fake cgroup、network namespaceなしのcontainer内testをNode Conformance evidenceに数えない。
 
