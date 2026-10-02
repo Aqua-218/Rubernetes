@@ -178,6 +178,6 @@ class M1,M2,M3,M4,M5 mo
 
 ## 関連
 
-- [runtime](../node/runtime.md)
-- [formal methods](../verification/formal-methods.md)
-- [構成図インデックス](README.md)
+- [ランタイム](../node/runtime.md)
+- [形式仕様](../verification/formal-methods.md)
+- [構成図の目次](README.md)
