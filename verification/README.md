@@ -58,3 +58,9 @@ corpus before any history is judged.  None of the Lean sources use `sorry`,
 `admit` or `native_decide`.
 
 `claims.yml` is the assurance-level ledger required by section 7.7.
+
+## Related
+
+- [Formal methods](../spec/verification/formal-methods.md)
+- [Verification strategy](../spec/verification/testing.md)
+- [Verification diagram](../spec/diagrams/08-verification.md)
