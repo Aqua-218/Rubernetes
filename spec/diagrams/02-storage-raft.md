@@ -5,7 +5,7 @@
 
 > 対象読者: ストアとRaftの実装者、形式検証の担当者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 MVCC、watch、WAL、Raft、snapshot、failure pathを示す。
 
