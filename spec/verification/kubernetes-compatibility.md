@@ -375,9 +375,9 @@ Kubernetes v1.36.2と互換な状態の形式を保ったまま、次のアッ�
 
 ## 一次資料
 
-- [Kubernetes v1.36.2 source](https://github.com/kubernetes/kubernetes/tree/v1.36.2)
-- [v1.36.2 Conformance definition](https://github.com/kubernetes/kubernetes/blob/v1.36.2/test/conformance/testdata/conformance.yaml)
-- [CNCF Conformance instructions](https://github.com/cncf/k8s-conformance/blob/691d9b951a75accf18dfc29b811a3947db874081/instructions.md)
+- [Kubernetes v1.36.2のソース](https://github.com/kubernetes/kubernetes/tree/v1.36.2)
+- [v1.36.2のConformanceの定義](https://github.com/kubernetes/kubernetes/blob/v1.36.2/test/conformance/testdata/conformance.yaml)
+- [CNCFのConformanceの手順](https://github.com/cncf/k8s-conformance/blob/691d9b951a75accf18dfc29b811a3947db874081/instructions.md)
 - [Hydrophone](https://github.com/kubernetes-sigs/hydrophone)
 - [Kubernetes version-skew policy](https://kubernetes.io/releases/version-skew-policy/)
 - [Kubernetes Node Conformance](https://kubernetes.io/docs/setup/best-practices/node-conformance/)
