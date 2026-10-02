@@ -6,6 +6,7 @@
 # datastore, native runtime) and tears it down again.
 #
 #   ruby tools/conformance/cluster.rb up   --profile <name> [--root DIR]
+#   ruby tools/conformance/cluster.rb start [--root DIR]
 #   ruby tools/conformance/cluster.rb down [--root DIR]
 #   ruby tools/conformance/cluster.rb status [--root DIR]
 #
