@@ -233,7 +233,7 @@ upstreamのNode Conformanceを、実際のkernelで動くamd64のノードに対
 - patchとapplyの結果、managedFields、競合、resourceVersionの因果の順序
 - コントローラ、スケジューラ、ノードが出すイベントの列と、最終的なクラスタの状態
 
-`test/compatibility/projects/corpus.yml`は最低30件を含み、次をすべて満たす。
+UID、タイムスタンプ、乱数の値、ノード固有のアドレスは、値が一致することを要求しない。形式、一意性、単調性、因果関係を比較する。
 
 - Helm chart 10件以上、Operator/controller 10件以上、CRD+webhookを持つproject 5件以上、
   StatefulSet+PVCを持つproject 5件以上を含む。1 projectが複数categoryを満たしてよい
