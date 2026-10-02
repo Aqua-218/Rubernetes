@@ -48,11 +48,11 @@ recover                → recovery_report
 <a id="sec-5-9-4"></a>
 ## 5.9.4 IPAM
 
-- cluster CIDR の IPv4/IPv6 subnet を node ごとに重複なく割り当てる
-- node 内で Pod sandbox ID に対して IP を reserve、network 接続後に commit、停止確認後に release する
-- lease は `{family,ip,pod_uid,sandbox_id,operation_id,state}` として fsync し、再起動時に kernel link/route と照合する
-- dual-stack Pod では両 family の取得を 1 transaction とし、片方の失敗時に両方を rollback する
-- 同時に commit 済みの IP は重複しない。release 前または旧 sandbox の生存中に再利用しない（Lean、[§7.3](../verification/formal-methods.md#sec-7-3)）
+- cluster CIDRのIPv4とIPv6のサブネットを、ノードごとに重複なく割り当てる。
+- ノードの中では、PodのサンドボックスIDに対してIPを予約する。ネットワークに接続したあとで確定し、停止を確認したあとで解放する。
+- リースは`{family,ip,pod_uid,sandbox_id,operation_id,state}`の形でfsyncする。再起動時には、kernelのリンクと経路に照合する。
+- dual-stackのPodでは、両ファミリの取得を1つのトランザクションにする。片方が失敗したら両方を取り消す。
+- 同時に確定しているIPは重複しない。解放する前や、古いサンドボックスが生きている間は、IPを再利用しない。この性質はLeanで証明する。[7.3](../verification/formal-methods.md#sec-7-3)を参照。
 
 <a id="sec-5-9-5"></a>
 ## 5.9.5 オーバーレイ
