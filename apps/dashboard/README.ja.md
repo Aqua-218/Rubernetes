@@ -64,9 +64,7 @@ HTTP APIはPrometheusと互換です。そのためGrafanaのPrometheusデータ
 
 ## 起動
 
-Ruby 3.4.11 とクラスタの kubeconfig が必要です。既定値は
-`tools/conformance/cluster.rb` が `/srv/rbn-app/linux-amd64-ipv4-native` に
-作ったクラスタを指します。
+Ruby 3.4.11とクラスタのkubeconfigが必要です。何も指定しない場合は、`tools/conformance/cluster.rb`が`/srv/rbn-app/linux-amd64-ipv4-native`に作ったクラスタに接続します。
 
 ```sh
 cd apps/dashboard
