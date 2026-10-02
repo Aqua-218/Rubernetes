@@ -350,7 +350,11 @@ VMのブートが完了しただけでは、workload gateを開いてはなら�
 `rubernetes-firecracker-restricted`は、ネットワークデバイスを追加しない。外部との通信には、[5.8.13](runtime.md#sec-5-8-13)のbrokerだけを使う。
 
 <a id="sec-5-8-12"></a>
-## 5.8.12 snapshot と identity
+## 5.8.12 スナップショットとidentity
+
+### スナップショットの作成
+
+スナップショットは、`WorkloadStopped`のベースイメージからだけ作る。ベースイメージとは、次のものを注入する前の状態である。
 
 snapshot は Pod workload、Secret、ServiceAccount token、Pod IP、workspace を注入する前の
 `WorkloadStopped` base image からだけ作成する。稼働 Pod の checkpoint/restore を snapshot cache として
