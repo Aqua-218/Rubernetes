@@ -16,7 +16,7 @@ NativeとMicroVMの2つのランタイム、状態機械、資源の所有権、
 
 `Runtime`は、ライフサイクルと資源の所有権を共通に持つ。backendごとに異なるのは隔離の仕組みだけである。本仕様では両方のbackendの実装を必須とする。
 
-| RuntimeClass handler | backend | 隔離単位 | 用途 | Pod overhead 既定値 |
+| RuntimeClassのhandler | backend | 隔離の単位 | 用途 | Pod overheadの既定値 |
 |---|---|---|---|---|
 | `rubernetes-native` | `Native` | Linux namespace / cgroup | 既定、完全な Pod 互換 | 0 |
 | `rubernetes-firecracker` | `MicroVM` | 1 Pod = 1 microVM | kernel 境界を追加 | CPU 50m、memory 128Mi |
