@@ -16,7 +16,7 @@
 | GVR | Group、Version、Resourceの組。RESTパス上でリソースを識別する |
 | desired state | マニフェストが表す、あるべき状態 |
 | actual state | 実際に観測された状態 |
-| reconcile | desired と actual の差分を埋める操作。冪等でなければならない |
+| reconcile | desired stateとactual stateの差を埋める操作。冪等でなければならない |
 | resourceVersion | ストアが採番する単調増加のリビジョン。楽観ロックに使う |
 | 収束 | reconcile の反復により actual が desired に一致すること |
 | ノード | ワーカーを実行する 1 台のホスト |
