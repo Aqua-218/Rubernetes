@@ -66,7 +66,7 @@ module Rubernetes
           entries = target_entries(bridge_name).map do |path, target|
             {"path" => path, "original" => read_exact(path), "target" => target}
           end
-          pending = {"version" => 1, "state" => "applying", "owners" => [owner_id],
+          pending = {"version" => 1, "state" => "applying", "owners" => [owner_id], "boot_id" => @boot_id,
                      "bridge" => bridge_name, "netns_inode" => File.stat(Netlink::THREAD_NAMESPACE_PATH).ino,
                      "entries" => entries}
           persist!(pending, "network_sysctl_apply_started", operation_id: operation_id)
