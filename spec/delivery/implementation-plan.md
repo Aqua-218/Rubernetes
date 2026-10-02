@@ -35,12 +35,12 @@
 <a id="sec-9-1"></a>
 ## 9.1 段階00の完了条件
 
-- Ruby から `clone3(2)` を FFI 経由で呼び、`CLONE_NEWPID | CLONE_NEWNS | CLONE_PIDFD` を指定できる
-- 子プロセス内で `/proc` を再マウントし、`ps` が自プロセスのみを表示する
-- 親が pidfd で子の終了を待ち、PID 再利用と混同せず終了コードを取得できる
-- 失敗時に `errno` を正しく取得できる
-- x86_64のstruct size、alignment、syscall numberをkernel header由来manifestと照合できる
-- netlink ACK、BPF verifier log、`/dev/kvm` capability を Ruby から取得できる
+- Rubyから`clone3(2)`をFFI経由で呼べる。`CLONE_NEWPID | CLONE_NEWNS | CLONE_PIDFD`を指定できる。
+- 子プロセスの中で`/proc`をマウントし直すと、`ps`が自分のプロセスだけを表示する。
+- 親がpidfdで子の終了を待てる。PIDの再利用と混同せずに、終了コードを取得できる。
+- 失敗したときに、`errno`を正しく取得できる。
+- x86_64の構造体のサイズ、アラインメント、システムコール番号を、kernelのヘッダから作ったマニフェストと照合できる。
+- netlinkのACK、BPF verifierのログ、`/dev/kvm`の機能を、Rubyから取得できる。
 
 この段階が通らなければ以降の設計が成立しない。最優先で確認する。
 
