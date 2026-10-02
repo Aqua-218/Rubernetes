@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [foundation](README.md)
+[仕様書の目次](../README.md) / [基礎](README.md)
 
 <a id="sec-11"></a>
 # 11. 名称
