@@ -35,7 +35,7 @@ log length 0..5, 2 clients.  It states `ElectionSafety`, `LeaderAppendOnly`,
 `LogMatching`, `LeaderCompleteness`, `StateMachineSafety` and
 `CommittedInQuorum`.
 
-**No model-checking result backs the M5 Raft claims.**  Exhaustive TLC at that
+No model-checking result backs the M5 Raft claims.  Exhaustive TLC at that
 scope was measured infeasible on 2026-09-06: 1.21e9 distinct states with 7.9e8
 still queued after four hours and 133 GB of state files, still growing.  The
 M5 gate therefore requires no TLC report, and `verification/claims.yml` records
