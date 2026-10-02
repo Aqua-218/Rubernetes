@@ -3,7 +3,7 @@
 <a id="sec-5-6"></a>
 # 5.6 スケジューラ
 
-> **Audience:** Scheduler実装者、形式検証者
+> 対象読者: スケジューラの実装者、形式検証の担当者
 >
 > **Status:** Normative — version 0.2
 
