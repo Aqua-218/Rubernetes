@@ -81,8 +81,7 @@ informer and work-queue framework with leader election.
 Implements the scheduling framework with the default plugin set, including
 preemption, asynchronous binding and scoring.
 
-The normative specification lives in [`spec/`](spec/README.md) (Japanese);
-this README is the practical entry point.
+### rubernetes-agent
 
 ## What is in the box
 
