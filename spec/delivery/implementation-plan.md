@@ -3,7 +3,7 @@
 <a id="sec-9"></a>
 # 9. 実装順
 
-> **Audience:** 実装者、project管理者、審査者
+> 対象読者: 実装者、プロジェクトの管理者、審査者
 >
 > **Status:** Normative — version 0.3
 
