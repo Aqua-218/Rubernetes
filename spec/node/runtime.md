@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [ノード](README.md)
 
 <a id="sec-5-8"></a>
-# 5.8 Runtime（自作）
+# 5.8 ランタイム
 
 > **Audience:** Runtime実装者、セキュリティ検証者、形式検証者
 >
