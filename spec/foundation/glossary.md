@@ -5,9 +5,7 @@
 
 > 対象読者: 全読者
 >
-> **Status:** Normative — version 0.2
-
-本仕様全体で使用する Kubernetes、Runtime、形式検証の用語を一意に定義する。
+> 状態: 規範、版0.2
 
 
 | 用語 | 定義 |
