@@ -30,17 +30,19 @@ Kubernetesのバイナリとライブラリは、本システムの実行経路�
 
 | # | 基準 | 検証方法 |
 |---|---|---|
-| G1 | 本物の `kubectl` が接続し、`get` / `apply` / `delete` が通る | 実機で kubectl を実行 |
-| G2 | 既存の Deployment マニフェストが無改変で動作する | 公開されている nginx Deployment を適用 |
-| G3 | Pod がコンテナとして実際に隔離起動する | namespace / cgroup を実機で確認 |
-| G4 | ノード障害時に Pod が別ノードで再作成される | 障害注入シナリオ |
-| G5 | Raft の安全性が検証されている | 決定的な障害注入シミュレーションで TLA+ の不変条件が成立し、`LogMatching` は Lean で全 domain について証明。網羅的モデル検査は行わない（[7.2](../verification/formal-methods.md#sec-7-2) の実測により Raft では完了しないため） |
-| G6 | 主要ロジックが Lean で証明されている | `sorry` ゼロ、CI で強制 |
-| G7 | Kubernetes v1.36.2 の Linux Conformance と全 API 適合試験を通過する | upstream の固定済み test corpus を無変更で実行 |
-| G8 | 既存の Helm chart と Operator が無変更で動く | 代表 corpus の install、upgrade、rollback、uninstall と reconcile を差分比較 |
-| G9 | Native と MicroVM の両ランタイムが資源リークなく fail-closed する | 実機障害注入、再起動回復、TLA+ トレース照合 |
-| G10 | プロジェクト固有の本番コードの 85% 以上を Ruby が占める | 生成物、vendor、fixture、TLA+、Lean、シェルを除外した LOC を CI で集計 |
-| G11 | 1 個のスキーマ定義から型と全派生成物が一意に生成される | 再生成差分ゼロ、生成物相互整合テスト |
+| G1 | 本物の`kubectl`が接続でき、`get`、`apply`、`delete`が通る | 実機でkubectlを実行する |
+| G2 | 既存のDeploymentマニフェストが無改変で動作する | 公開されているnginxのDeploymentを適用する |
+| G3 | Podがコンテナとして実際に隔離されて起動する | namespaceとcgroupを実機で確認する |
+| G4 | ノード障害時にPodが別のノードで再作成される | 障害注入のシナリオを実行する |
+| G5 | Raftの安全性が検証されている | 決定的な障害注入シミュレーションでTLA+の不変条件が成立する。`LogMatching`はLeanで全domainについて証明する |
+| G6 | 主要なロジックがLeanで証明されている | `sorry`がゼロであることをCIで強制する |
+| G7 | Kubernetes v1.36.2のLinux Conformanceと全API適合試験を通過する | upstreamの固定したテストコーパスを変更せずに実行する |
+| G8 | 既存のHelm chartとOperatorが無変更で動く | 代表コーパスのinstall、upgrade、rollback、uninstall、reconcileを差分比較する |
+| G9 | NativeとMicroVMの両ランタイムが、資源をリークせずfail-closedする | 実機での障害注入、再起動後の回復、TLA+トレースとの照合 |
+| G10 | プロジェクト固有の本番コードの85%以上をRubyが占める | LOCをCIで集計する。生成物、vendor、fixture、TLA+、Lean、シェルは除く |
+| G11 | 1つのスキーマ定義から、型とすべての派生成果物が一意に生成される | 再生成しても差分が出ないこと、生成物どうしが整合することをテストする |
+
+G5では網羅的なモデル検査を行わない。[7.2](../verification/formal-methods.md#sec-7-2)の実測により、Raftでは完了しないことがわかっているためである。
 
 <a id="sec-1-3"></a>
 ## 1.3 互換性の境界
