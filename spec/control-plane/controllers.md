@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [control-plane](README.md)
+[仕様書の目次](../README.md) / [制御面](README.md)
 
 <a id="sec-5-5"></a>
 # 5.5 Controllers
