@@ -94,15 +94,18 @@ RuntimeLifecycleの形式的な主張は、本番のNativeランタイムが書�
 
 ## M4 ワークロードデータプレーン
 
-すべてのデータプレーンプローブは独立した外部ランナーを必要とします:
-ボリューム観測とクラッシュのランナー（private mount namespace、すべての
-効果境界での SIGKILL、スナップショット整合性）、本番 CSI クライアントが gRPC で
-駆動する Go 製 CSI プラグインオラクル、マウント攻撃観測ランナー、ゲートの間
-ライブなネットワーク名前空間とパケットキャプチャを保持するネットワーク観測
-ランナー、固定した kind ノードイメージを kindnetd 強制付きで起動する
-NetworkPolicy オラクル、プロキシ parity ランナー（eBPF と nftables の両
-データパスでコーパス 41/41、バックエンド切替時の接続断ゼロ）。ランナーの
-コマンドは `rake m4:evidence` の前に export します。
+データプレーンのプローブは、どれも独立した外部ランナーを必要とします。
+
+| ランナー | 内容 |
+|---|---|
+| ボリューム観測とクラッシュ | private mount namespaceで動かす。効果の境界ごとにSIGKILLを送り、スナップショットの整合性を確かめる |
+| CSIプラグインオラクル | Goで書いたCSIプラグイン。本番のCSIクライアントがgRPCで駆動する |
+| マウント攻撃観測 | マウントへの攻撃を観測する |
+| ネットワーク観測 | ゲートが動いている間、ネットワーク名前空間とパケットキャプチャを保持する |
+| NetworkPolicyオラクル | 固定したkindノードイメージを起動する。kindnetdによるポリシー強制を有効にする |
+| プロキシparity | eBPFとnftablesの両データパスでコーパス41件がすべて一致する。バックエンド切替時の接続断がゼロ |
+
+`rake m4:evidence`を実行する前に、ランナーのコマンドを環境変数にexportしてください。
 
 ```bash
 RUBERNETES_M4_VOLUME_OBSERVATION_COMMAND="ruby test/conformance/kubernetes/m4_volume_observation/runner.rb --mode observation"
