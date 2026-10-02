@@ -39,7 +39,7 @@
 │   ├── rubernetes-agent
 │   └── rubernetes-proxy
 ├── lib/
-│   ├── rubernetes.rb             # Public namespace entry
+│   ├── rubernetes.rb             # 公開する名前空間の入口
 │   └── rubernetes/
 │       ├── version.rb
 │       ├── bootstrap/             # Config, dependency graph, process lifecycle
