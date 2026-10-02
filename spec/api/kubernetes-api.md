@@ -156,9 +156,15 @@ listは、対応するList kind、`metadata.resourceVersion`、`continue`、`rem
 }
 ```
 
-`reason`、`details`、`causes`、`retryAfterSeconds` は kubectl とクライアントが
-分岐に使うため、v1.36.2 の同一要求と一致させる。内部例外の class 名、backtrace、
-host path、token および Secret 値を `message` に含めてはならない。
+`reason`、`details`、`causes`、`retryAfterSeconds`は、v1.36.2が同じ要求に返す値と一致させる。kubectlやクライアントが、これらの値で処理を分岐するためである。
+
+`message`に次のものを含めてはならない。
+
+- 内部の例外のクラス名
+- バックトレース
+- ホスト上のパス
+- トークン
+- Secretの値
 
 <a id="sec-4-4"></a>
 ## 4.4 watch
