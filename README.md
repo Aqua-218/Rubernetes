@@ -188,9 +188,10 @@ cd apps/dashboard && bundle install
 RUBERNETES_KUBECONFIG=$KUBECONFIG bin/rails server -p 3000
 ```
 
-Open `http://localhost:3000`. The dashboard scrapes every API server,
-kubelet endpoint and annotated Pod/Service into its own store, so it is also
-a Prometheus data source for Grafana (`/api/v1/query` and friends).
+Then open `http://localhost:3000`. The dashboard scrapes every API server,
+every kubelet and every annotated Pod and Service into its own store. It
+serves the Prometheus HTTP API (`/api/v1/query` and the rest), so Grafana can
+use it as a Prometheus data source.
 
 ## Repository layout
 
