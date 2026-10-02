@@ -23,9 +23,9 @@ delete(key, prec:)               → object | NotFound | Conflict
 watch(prefix, since:)            → イベントストリーム
 ```
 
-`guaranteed_update` はブロックを受け、競合時に最大 8 回再実行する。
-待機は 5 ms から始めて 2 倍し、最大 640 ms の full jitter とする。
-8 回競合した場合は `Conflict` を返し、呼び出し元が新しい要求として再試行する。
+`guaranteed_update`はブロックを受け取る。競合が起きたときは、ブロックを最大8回まで再実行する。待ち時間は5 msから始めて2倍ずつ増やし、最大640 msとする。待ち時間にはfull jitterを適用する。
+
+8回続けて競合した場合は`Conflict`を返す。呼び出し元は、新しい要求としてやり直す。
 
 <a id="sec-5-2-2"></a>
 ## 5.2.2 要件
