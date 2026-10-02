@@ -308,7 +308,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 - 起動レイテンシの生サンプル
 
 <a id="milestone-m8"></a>
-## M8 — Kubernetes Compatibility Closure
+## M8 Kubernetes互換性の完了
 
 ### Deliverables
 
