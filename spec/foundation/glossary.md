@@ -30,6 +30,6 @@
 
 ## 関連
 
-- [document conventions](document-conventions.md)
-- [architecture](architecture.md)
-- [runtime](../node/runtime.md)
+- [文書規約](document-conventions.md)
+- [アーキテクチャ](architecture.md)
+- [ランタイム](../node/runtime.md)
