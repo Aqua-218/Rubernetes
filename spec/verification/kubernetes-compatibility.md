@@ -168,7 +168,7 @@ sonobuoy run \
 
 リリースの証拠には、Sonobuoyのアーカイブ全体を保存する。少なくとも、`e2e.log`、`junit_01.xml`、実行したコマンド、解決したイメージのダイジェスト、クラスタのプロファイルを含める。
 
-### Inventory classification
+## K3 可搬なupstreamのLinux e2e
 
 Ginkgo dry-run inventoryの全testを、次のいずれかへexactly once分類する。
 
