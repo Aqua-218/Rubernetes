@@ -32,9 +32,10 @@ Kubernetes Conformanceは、最初に通過しなければならないゲート�
 
 次のものだけをリリースの入力にしてはならない。
 
-architecture別image digest、runner archive checksum、support image digestは
-[`third_party/locks/`](../../third_party/locks/README.md)をmachine-readable source of truthとする。
-tag文字列だけ、branch head、`latest`、registry tagの再解決結果だけをrelease inputにしてはならない。
+- タグの文字列
+- ブランチの先頭
+- `latest`
+- レジストリのタグを解決し直した結果
 
 test imageが内部で参照する全container imageはrun開始前に列挙し、registry manifest digestを
 `resolved-images.json`へ固定する。test実行中に同じtagのdigestが変化した場合、そのrunは無効とする。
