@@ -198,13 +198,11 @@ graph TD
 
 ### 検証とupstreamのコード
 
-- `test/conformance/kubernetes/`はpinned upstream binary/imageを実行するadapterだけを保持する。
-- Kubernetes、etcd、runc/containerd、CNI/CSI oracle codeは`lib/`、`exe/`、production packageへ入れてはならない。
-- upstream sourceとbinaryは`third_party/cache/`へ取得し、`third_party/locks/`のdigestと一致しなければ実行しない。
-- TLA+/Lean sourceは`verification/`、Rubyとのrefinement/trace adapterは`lib/rubernetes/observability/`と
-  `tools/verification/`に分ける。
-- raw resultは`artifacts/`へ出力し、回帰入力へ採用した最小反例だけを`test/fixtures/`または
-  `verification/traces/`へsource artifactとして保存する。
+- `test/conformance/kubernetes/`には、固定したupstreamのバイナリとイメージを実行するアダプタだけを置く。
+- 比較対象として使うKubernetes、etcd、runcとcontainerd、CNIとCSIのコードを、`lib/`、`exe/`、本番のパッケージに入れてはならない。
+- upstreamのソースとバイナリは`third_party/cache/`に取得する。`third_party/locks/`のダイジェストと一致しなければ実行しない。
+- TLA+とLeanのソースは`verification/`に置く。Rubyとの対応付けとトレースのアダプタは、`lib/rubernetes/observability/`と`tools/verification/`に分けて置く。
+- 生の結果は`artifacts/`に出力する。回帰の入力として採用した最小の反例だけを、ソースとして保存する。保存先は`test/fixtures/`または`verification/traces/`である。
 
 ## Namespace Mapping
 
