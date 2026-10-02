@@ -42,11 +42,15 @@ setsid nohup tools/conformance/round.sh conf4 /srv/rbn-conf4/linux-amd64-ipv4-na
   /srv/rbn-conf4/rounds/01 --parallel 4 > /srv/rbn-conf4/rounds/01.out 2>&1 &
 ```
 
-`--parallel 4` のフルラウンドは 1 ホストで約 40 分です。結果は `junit_01.xml` を
-読んでください。Hydrophone のログでは合格は何も出力しないので、静かなログは
-停止ではありません。修正の再実行は `--focus` で行います（別の実行 identity で
-あり、フルラウンドの結果を置き換えることはありません）。このツリーでの直近の
-IPv4 フルラウンドは 459/459 合格（2026-09-30）。
+`--parallel 4`で全件を実行すると、1台のホストで約40分かかります。
+
+結果は`junit_01.xml`で確認してください。Hydrophoneは合格したspecについて何も出力しません。ログが止まって見えても、実行は続いています。
+
+修正を確かめるための再実行には`--focus`を使います。`--focus`付きの実行は別の実行として扱われ、全件実行の結果を置き換えません。
+
+このツリーで最後に全件を実行したのは2026-09-30で、IPv4プロファイルで459件中459件が合格しました。
+
+## IPv6とdual-stackのプロファイル
 
 ## IPv6 と dual-stack プロファイルの起動
 
