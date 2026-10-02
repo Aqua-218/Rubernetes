@@ -136,7 +136,7 @@ graph LR
 - kubectlの実行記録
 
 <a id="milestone-m2"></a>
-## M2 — Native Pod
+## M2 Native Pod
 
 ### Deliverables
 
