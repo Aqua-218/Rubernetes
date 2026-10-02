@@ -154,13 +154,10 @@ The M4 gate expects Linux 6.12 or later for the SCTP CRC32c helper check.
 When M4 was captured on 2026-09-04, the development host could not be
 rebooted into that kernel, so the project owner waived the requirement.
 
-**Kernel waiver.** The M4 gate expects Linux >= 6.12 for the SCTP CRC32c
-helper path. The development host could not be rebooted onto such a kernel
-when M4 was captured (2026-09-04) and the project owner waived the
-requirement. The waiver is recorded explicitly in the M4 manifest
-(`waivers`) through `RUBERNETES_M4_KERNEL_WAIVER_REASON` and echoed by the
-gate; it is never a silent skip, and everything that does not depend on the
-6.12-only helper is verified on the older kernel.
+Pass the reason in `RUBERNETES_M4_KERNEL_WAIVER_REASON`. It is recorded in
+the `waivers` field of the M4 manifest and shown in the gate output. Every
+check that does not depend on the 6.12-only helper has been run on the older
+kernel.
 
 ## M5 Durable high availability
 
