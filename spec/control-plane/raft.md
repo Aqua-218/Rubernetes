@@ -3,7 +3,7 @@
 <a id="sec-5-3"></a>
 # 5.3 Raft
 
-> **Audience:** 分散システム実装者、形式検証者
+> 対象読者: 分散システムの実装者、形式検証の担当者
 >
 > **Status:** Normative — version 0.2
 
