@@ -25,7 +25,7 @@ Rubernetesの仕様と設計書の正本は、複数の文書からなる[`spec/
 
 文書間の優先順位、MUST・SHOULD・MAYの意味、固定した外部仕様の扱いは、[文書規約](spec/foundation/document-conventions.md)に従う。
 
-## Related
+## 関連
 
 - [外部仕様と参考資料](spec/references.md)
 - [検証戦略](spec/verification/README.md)
