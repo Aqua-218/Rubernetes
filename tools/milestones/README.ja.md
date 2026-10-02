@@ -84,12 +84,13 @@ RuntimeLifecycleの形式的な主張は、本番のNativeランタイムが書�
 
 ## M3 制御ループ
 
-ワークロード differential は 20 ケースすべて（Deployment、StatefulSet、
-DaemonSet、Job、CronJob × rollout/rollback/scale/delete）を本番の
-ControllerManagerService で固定した kube-controller-manager と突き合わせ、
-スケジューラ differential は固定したスケジューラと一致し、リーダー喪失と
-queue/informer のカオスランナーは実プロセス世代での Lease の引き継ぎを
-示します。
+3種類の検査があります。
+
+ワークロードのdifferentialは20ケースです。Deployment、StatefulSet、DaemonSet、Job、CronJobのそれぞれについて、rollout、rollback、scale、deleteを試します。本番のControllerManagerServiceの結果を、固定したkube-controller-managerの結果と比べます。
+
+スケジューラのdifferentialは、固定したkube-schedulerと結果が一致することを確かめます。
+
+カオスランナーは、リーダーの喪失とqueue・informerの障害を起こします。プロセスが実際に入れ替わったあとでLeaseが引き継がれることを確認します。
 
 ## M4 ワークロードデータプレーン
 
