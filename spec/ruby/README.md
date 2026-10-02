@@ -24,7 +24,7 @@ graph LR
 
 ## DSLの種類
 
-| DSL | 定義箇所 | 生成・保証するもの |
+| DSL | 定義している文書 | 生成するもの、保証するもの |
 |---|---|---|
 | Schema | [Schema Compiler](schema-compiler.md) | type、validator、codec、default、OpenAPI、RBS、diff |
 | Manifest | [Manifest DSL](manifest-dsl.md) | 標準Kubernetes JSON。API wire formatは変更しない |
