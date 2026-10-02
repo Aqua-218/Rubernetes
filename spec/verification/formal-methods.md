@@ -54,7 +54,7 @@ RaftはTLCの必須対象から除外する。
 Raftの安全性についての主張は、`verification/claims.yml`に`integration_tested`として記録する。根拠は、決定的な障害注入シミュレーションとM5のプローブである。`LogMatching`がすべてのdomainで成り立つという主張は、Lean 4の証明が支える。
 
 <a id="sec-7-3"></a>
-## 7.3 Lean で証明するもの
+## 7.3 Leanで証明するもの
 
 | 対象 | 命題 | 偽なら何が壊れるか |
 |---|---|---|
