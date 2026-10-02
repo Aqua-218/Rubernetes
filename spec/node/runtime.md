@@ -275,7 +275,7 @@ OOMは`memory.events`から取得する。終了理由とPodのstatusには、1�
 生成したBPFが意味を保存していることは、[7.3](../verification/formal-methods.md#sec-7-3)で証明する。
 
 <a id="sec-5-8-10"></a>
-## 5.8.10 process 生成と監視
+## 5.8.10 プロセスの生成と監視
 
 - `clone3` と `CLONE_PIDFD` で sandbox init/container process を生成し、数値 PID だけを identity に用いない
 - 親子同期 pipe で child を workload gate 手前に停止し、親が mapping、cgroup、network、mount、policy を完了するまで待たせる
