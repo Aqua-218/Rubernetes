@@ -54,8 +54,13 @@ HTTP APIはPrometheusと互換です。そのためGrafanaのPrometheusデータ
 /api/v1/metadata  /api/v1/targets  /api/v1/rules  /api/v1/alerts  /api/v1/status/{buildinfo,tsdb,runtimeinfo,config}
 ```
 
-`/graph` が式ブラウザ、`/targets`、`/rules`、`/alerts`、`/status` が各種
-状態ページ、`/up` がヘルスチェックです。
+### ページ
+
+| パス | 内容 |
+|---|---|
+| `/graph` | 式ブラウザ |
+| `/targets`、`/rules`、`/alerts`、`/status` | 各種の状態 |
+| `/up` | ヘルスチェック |
 
 ## 起動
 
