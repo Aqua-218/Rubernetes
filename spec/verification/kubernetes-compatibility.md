@@ -178,10 +178,19 @@ Ginkgoのdry-runで得たテストの一覧について、すべてのテスト�
 
 | 分類 | 意味 | M8での扱い |
 |---|---|---|
-| `required` | Linux clusterの公開APIまたは外部観測可能behaviorを検査する | 必ず実行してpassさせる |
-| `platform-inapplicable` | `[WindowsOnly]`など明示した非Linux platformだけを検査する | 除外可能 |
-| `provider-private` | 特定cloud account/hardware/provider私有APIなしには成立しない | contract testへ置換して除外可能 |
-| `implementation-internal` | Kubernetes process path、Go internal metric、etcd直接操作など実装一致を要求する | 外部behavior testへ置換して除外可能 |
+| `required` | Linuxクラスタの公開APIか、外部から観測できる挙動を検査する | 必ず実行して合格させる |
+| `platform-inapplicable` | `[WindowsOnly]`のように、明示されたLinux以外のプラットフォームだけを検査する | 除外できる |
+| `provider-private` | 特定のクラウドのアカウント、ハードウェア、プロバイダ独自のAPIがなければ成立しない | 契約を確かめるテストに置き換えたうえで除外できる |
+| `implementation-internal` | Kubernetesのプロセスのパス、Go内部のメトリクス、etcdの直接操作など、実装が一致することを要求する | 外部から見た挙動のテストに置き換えたうえで除外できる |
+
+次のタグは、除外の理由にならない。
+
+- `[LinuxOnly]`
+- `[Disruptive]`
+- `[Slow]`
+- `[Serial]`
+- `[Flaky]`
+- `[Feature:*]`
 
 `[LinuxOnly]`、`[Disruptive]`、`[Slow]`、`[Serial]`、`[Flaky]`、`[Feature:*]`は除外理由にならない。
 未実装、失敗、timeout、環境構築困難も除外理由にならない。各非required項目はupstream test ID、file、
