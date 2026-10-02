@@ -68,7 +68,7 @@ graph TD
 - [アーキテクチャ](foundation/architecture.md)
 - [名称](foundation/naming.md)
 
-### Ruby Design and API
+### Ruby設計とAPI
 
 - [Ruby Design Overview](ruby/README.md)
 - [Ruby Manifest DSL](ruby/manifest-dsl.md)
