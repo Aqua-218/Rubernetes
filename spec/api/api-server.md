@@ -54,8 +54,9 @@ APIリクエストの処理順序、認証、認可、流量制御、admission�
 <a id="sec-5-1-3"></a>
 ## 5.1.3 認可
 
-RBAC、Node、Webhook、ABAC および AlwaysAllow/AlwaysDeny authorizer を実装し、
-設定された順に union 評価する。既定構成は Node,RBAC とする。評価規則:
+RBAC、Node、Webhook、ABAC、AlwaysAllow、AlwaysDenyの各authorizerを実装する。設定された順に評価し、結果を合わせて判定する。既定の構成は`Node,RBAC`とする。
+
+評価の規則は次のとおりである。
 
 - 適用可能な Role / ClusterRole の中に 1 つでも許可があれば許可
 - 明示的な拒否ルールは持たない（Kubernetes に合わせる）
