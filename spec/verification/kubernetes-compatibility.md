@@ -241,7 +241,7 @@ UID、タイムスタンプ、乱数の値、ノード固有のアドレスは�
 
 ### クライアントの組み合わせ
 
-## K7 — Upgrade and Recovery
+対象のAPIサーバ1.36に対して、公開済みのkubectlのminorバージョンをすべて試す。対象は、Kubernetesのversion-skew policyが許す範囲である。
 
 Kubernetes v1.36.2互換state formatを保ったまま、single-nodeから3-node、MemoryStoreからRaftStore、
 旧Rubernetes releaseから1.0.0へupgradeする。各段階でK1 smoke subsetとK5 state comparisonを実行する。
