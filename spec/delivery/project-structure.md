@@ -161,8 +161,11 @@ graph TD
     Platform --> Support
 ```
 
-矢印は「左が右へ依存できる」を表す。逆向きimport、process singleton経由の隠れた逆依存、
-constant lookupによる循環回避は禁止する。
+矢印は、元のモジュールが先のモジュールに依存してよいことを表す。次のものは禁止する。
+
+- 矢印と逆向きのimport
+- プロセス単位のシングルトンを経由した、隠れた逆向きの依存
+- 定数の探索を使った循環の回避
 
 ## Layer Rules
 
