@@ -152,7 +152,7 @@ class S_1,S_2,S_3,S_4 ps
 class VER ve
 ```
 
-## Related
+## 関連
 
 - [store](../control-plane/store.md)
 - [raft](../control-plane/raft.md)
