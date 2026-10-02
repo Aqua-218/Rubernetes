@@ -154,6 +154,6 @@ class VER ve
 
 ## 関連
 
-- [store](../control-plane/store.md)
-- [raft](../control-plane/raft.md)
-- [構成図インデックス](README.md)
+- [ストア](../control-plane/store.md)
+- [Raft](../control-plane/raft.md)
+- [構成図の目次](README.md)
