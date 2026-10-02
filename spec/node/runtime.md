@@ -415,7 +415,29 @@ DNSでは、回答に含まれるすべてのIPがポリシーを満たさなけ
 未知の操作と未知のフィールドは、fail-closedで拒否する。
 
 <a id="sec-5-8-14"></a>
-## 5.8.14 crash recovery と安全不変条件
+## 5.8.14 クラッシュからの回復と安全性の不変条件
+
+### 起動時の走査
+
+agentは起動時に、新しいPodを受け付ける前に、次のものをすべて走査する。
+
+- ランタイムの台帳
+- プロセスとpidfd
+- cgroup
+- マウントテーブル
+- ネットワークのリンク
+- IPのリース
+- dmとloopのデバイス
+- jailのroot
+- Firecrackerのソケット
+
+走査では、次の3種類を区別する。
+
+- 台帳にだけ存在する資源
+- kernelにだけ存在する、所有者のいない資源
+- identityが一致しない、再利用された資源
+
+いずれも監査の記録を残したうえで回収する。
 
 agent 起動時は新規 Pod を受理する前に runtime ledger、process、pidfd、cgroup、mount table、network link、
 IP lease、dm/loop device、jail root、Firecracker socket を全走査する。ledger にだけ存在する resource、
