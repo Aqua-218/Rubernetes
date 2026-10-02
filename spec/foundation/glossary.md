@@ -11,9 +11,9 @@
 
 | 用語 | 定義 |
 |---|---|
-| リソース | API サーバが管理する宣言的オブジェクト。Pod、Deployment 等 |
-| GVK | Group / Version / Kind の組。リソース型の識別子 |
-| GVR | Group / Version / Resource の組。REST パス上の識別子 |
+| リソース | APIサーバが管理する宣言的なオブジェクト。Pod、Deploymentなど |
+| GVK | Group、Version、Kindの組。リソースの型を識別する |
+| GVR | Group、Version、Resourceの組。RESTパス上でリソースを識別する |
 | desired state | マニフェストが表す、あるべき状態 |
 | actual state | 実際に観測された状態 |
 | reconcile | desired と actual の差分を埋める操作。冪等でなければならない |
