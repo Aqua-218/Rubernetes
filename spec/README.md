@@ -51,7 +51,7 @@ graph TD
 | 構成図 | 00〜08の構成図 | [diagrams/](diagrams/README.md) |
 | 規範参照 | 固定する外部仕様と設計の由来 | [references.md](references.md) |
 
-## Normative Rules
+## 規範上の規則
 
 - 本文中のMUST/MUST NOT/SHOULD/MAYと無印の規範文は[文書規約](foundation/document-conventions.md)に従う。
 - 同一事項について本文と図が衝突した場合は本文を正とする。
