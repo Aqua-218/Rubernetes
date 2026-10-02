@@ -12,7 +12,7 @@ NativeとMicroVMの2つのランタイム、状態機械、資源の所有権、
 図は[図05 ランタイム](../diagrams/05-runtime.md)にある。
 
 <a id="sec-5-8-1"></a>
-## 5.8.1 backend と RuntimeClass
+## 5.8.1 backendとRuntimeClass
 
 `Runtime` は共通の lifecycle と resource ownership を持ち、隔離機構だけを backend で分ける。
 両 backend は本仕様の必須実装である。
