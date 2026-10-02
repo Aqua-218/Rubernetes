@@ -141,8 +141,11 @@ content negotiationでは次のものを選択できる。
 }
 ```
 
-list は対応する List kind、`metadata.resourceVersion`、`continue`、
-`remainingItemCount` および `items` を schema と要求条件に従って返す。
+### list
+
+listは、対応するList kind、`metadata.resourceVersion`、`continue`、`remainingItemCount`、`items`を返す。内容はスキーマと要求の条件に従う。
+
+### エラー
 
 エラーは `Status` オブジェクトで返す。
 
