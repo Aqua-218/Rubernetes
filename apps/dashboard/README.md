@@ -71,8 +71,13 @@ dashboard as a Prometheus data source.
 /api/v1/metadata  /api/v1/targets  /api/v1/rules  /api/v1/alerts  /api/v1/status/{buildinfo,tsdb,runtimeinfo,config}
 ```
 
-`/graph` is the expression browser, `/targets`, `/rules`, `/alerts` and
-`/status` the usual status pages, `/up` the health check.
+### Pages
+
+| Path | Contents |
+|---|---|
+| `/graph` | The expression browser |
+| `/targets`, `/rules`, `/alerts`, `/status` | Status pages |
+| `/up` | The health check |
 
 ## Running it
 
