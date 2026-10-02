@@ -81,8 +81,9 @@ dashboard as a Prometheus data source.
 
 ## Running it
 
-Ruby 3.4.11 and a kubeconfig for the cluster. The defaults point at a
-cluster brought up by `tools/conformance/cluster.rb` under
+You need Ruby 3.4.11 and a kubeconfig for the cluster. With nothing
+specified, the dashboard connects to the cluster that
+`tools/conformance/cluster.rb` created under
 `/srv/rbn-app/linux-amd64-ipv4-native`.
 
 ```sh
