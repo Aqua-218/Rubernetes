@@ -121,8 +121,9 @@ content negotiationでは次のものを選択できる。
 <a id="sec-4-3"></a>
 ## 4.3 レスポンス形式
 
-すべてのリソースは `apiVersion`、`kind` および schema が指定する metadata を持つ。
-`spec` と `status` は当該 GVK の schema に存在する場合だけ持つ。次は Pod の例である。
+### オブジェクト
+
+すべてのリソースは、`apiVersion`、`kind`、スキーマが指定するmetadataを持つ。`spec`と`status`は、そのGVKのスキーマにある場合だけ持つ。次はPodの例である。
 
 ```json
 {
