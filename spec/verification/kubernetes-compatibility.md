@@ -79,9 +79,15 @@ K1は、[`test/conformance/kubernetes/profiles.yml`](../../test/conformance/kube
 
 | アーキテクチャ | ネットワーク | ランタイム | M8に必要な実行 |
 |---|---|---|---:|
-| amd64 | IPv4 | Native | consecutive clean runs 3 |
-| amd64 | IPv6 | Native | consecutive clean runs 3 |
-| amd64 | IPv4/IPv6 dual-stack | Native | consecutive clean runs 3 |
+| amd64 | IPv4 | Native | 連続3回の問題のない実行 |
+| amd64 | IPv6 | Native | 連続3回の問題のない実行 |
+| amd64 | IPv4とIPv6のdual-stack | Native | 連続3回の問題のない実行 |
+
+ARMのプロファイルは、任意の追加試験として実行できる。M8とM9の完了の証拠としては要求しない。
+
+K1では、既定のRuntimeClassを変更せずにupstreamのテストを実行する。
+
+MicroVMとMicroVMRestrictedは、プロジェクトが書いたe2eで検査する。このe2eはPodのspecにRuntimeClassを明示し、同じPod APIの契約を確かめる。あわせて、[ランタイムのL4とL5](testing.md#sec-8-7)とM7を通過する。
 
 ARM profileは任意の追加互換性試験として実行できるが、M8またはM9の完了証拠には要求しない。
 
