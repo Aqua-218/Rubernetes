@@ -290,7 +290,12 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 
 ### 完了条件
 
-### Exit criteria
+1. Firecracker 1.16.1と、固定したゲストの成果物で、ランタイムのL0〜L5を通過する。
+2. jailerのkill、VMMのハング、UDSとvsockの切断、pause ACKの喪失、スナップショットの破損を、fail-closedで処理する。
+3. スナップショットのクローンごとに、CID、IP、UID、資格情報、ポリシーの世代を発行し直す。identityの再利用が0である。
+4. 悪意のあるゲストから、jailerのroot、ほかのVMのvsock、ホストのファイルシステム、ほかのテナントのネットワークに到達できない。
+5. `microvm`で、標準のPodライフサイクル、probe、log、exec、ボリューム、ネットワークを、Nativeと同じAPIの契約で使える。
+6. キャッシュ済みのベーススナップショットからのPodの起動で、p95が1.5秒以内である。
 
 1. Firecracker 1.16.1とpinned guest artifactでRuntime L0〜L5を通す。
 2. jailer kill、VMM hang、UDS/vsock切断、pause ACK loss、snapshot corruptionをfail-closedで処理する。
