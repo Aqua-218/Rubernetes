@@ -143,7 +143,7 @@ module Rubernetes
           return Response.new(status: 405, body: Status.failure(message: "method not allowed", code: 405, reason: "MethodNotAllowed"))
         end
         target = query ? "#{path}?#{query}" : path
-        outbound = klass.new(target)
+        outbound = klass.new(target).extend(RepeatedHeaderLines)
         forwarded_headers(request).each do |name, value|
           if value.is_a?(Array)
             outbound.delete(name)
