@@ -32,7 +32,7 @@ graph LR
 | Scheduler | [スケジューラ](../control-plane/scheduler.md#sec-5-6-6) | 型付きのFilterプラグインとScoreプラグイン |
 | Scenario | [検証戦略](../verification/testing.md#sec-8-2) | 時系列での障害注入と、時相に関するアサーション |
 
-## Metaprogramming Boundary
+## メタプログラミングの境界
 
 - `method_missing`でGVK、field、pluginを解決しない。
 - `define_method`はschema compilerが所有する専用Moduleに限定する。
