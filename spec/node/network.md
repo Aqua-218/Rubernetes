@@ -94,6 +94,6 @@ VXLANの既定値は次のとおりである。
 
 ## 関連
 
-- [service proxy](service-proxy.md)
-- [runtime](runtime.md)
-- [06 network](../diagrams/06-network.md)
+- [サービスプロキシ](service-proxy.md)
+- [ランタイム](runtime.md)
+- [06 ネットワーク](../diagrams/06-network.md)
