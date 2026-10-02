@@ -5,7 +5,7 @@
 
 > 対象読者: コントローラとスケジューラの実装者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 Informer、WorkQueue、built-in/custom controller、schedulerのevent flowを示す。
 
