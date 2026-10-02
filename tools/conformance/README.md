@@ -91,42 +91,78 @@ tools/conformance/round.sh lanes6 /srv/rbn-lanes/linux-amd64-ipv6-native \
   /srv/rbn-lanes/rounds/ipv6-01 --parallel 4          # start it with setsid nohup
 ```
 
-- `netns_env.sh up <name> --v4 <n> --v6 <hex>` gives the namespace an uplink
-  `10.250.<n>.0/30` + `fd00:1a:<hex>::/64` to the host, masquerades Pod traffic to
-  the uplink address inside the namespace and the uplink out on the host, enables
-  forwarding, and writes `/etc/netns/<name>/resolv.conf` (the host's
-  `127.0.0.53` stub is unreachable from inside).  `exec` remounts cgroup2 on
-  `/sys/fs/cgroup`, which `ip netns exec`'s fresh sysfs hides.  A second instance
-  takes another `<n>`/`<hex>` and another `RUBERNETES_M8_CGROUP_ROOT`; `cluster.rb
-  up`'s stale-workload kill is scoped to that root, so instances never kill each
-  other's Pods.  `cluster.rb up` stops a cluster still running under the same
-  `--root` first (the agents' streaming ports are fixed per worker).
-- `round.sh` runs hydrophone inside the namespace with the pinned images from
-  `tools/conformance/lock.rb`, keeps only the tail of hydrophone's stdout, and
-  prints the JUnit totals and the failed spec names from `junit_01.xml`; read
-  the JUnit, never hydrophone's stdout.  Progress while it runs:
-  `kubectl -n conformance logs e2e-conformance-test -c conformance-container`.
-- The official runner (`tools/conformance/run.rb`, lanes K1-K7) enters the
-  namespace when `RUBERNETES_M8_NETNS=<name>` is set: every runner command and
-  the kubeconfig reachability probe run under `ip netns exec <name>`.
-- From the host, the cluster is reachable at the uplink address
-  (`https://10.250.<n>.2:<port>`, the port from `cluster.json`); this shell's
-  `http_proxy` covers everything but loopback, so use `NO_PROXY=10.250.<n>.2`
-  (or `curl --noproxy '*'`) or every request "fails" with the proxy's answer.
+### netns_env.sh
 
-### Known differences per profile (2026-09-27)
+`netns_env.sh up <name> --v4 <n> --v6 <hex>` does the following:
 
-- IPv6-only: an IPv6-only Pod has no route to IPv4 destinations (no NAT64);
-  image pulls are done by the node agent, which has both families through the
-  uplink, so this only affects test Pods that dial the IPv4 internet.
-- Dual-stack: the `kubernetes` Service is SingleStack in the primary family, as
-  kube-apiserver creates it.  The node agents publish `InternalIP`s of both
-  families; the cluster DNS a Pod gets (`nameserver`) is the bridge address of
-  the primary family only (kubelet's `clusterDNS` is a list; ours takes the
-  node's gateway addresses in profile order).
-- Both: the API servers' `kubernetes` Endpoints list one address per API
-  server with distinct ports on the same uplink address (three replicas on one
-  host), where kubeadm lists distinct addresses.
+- Creates an uplink from the namespace to the host, with the addresses
+  `10.250.<n>.0/30` and `fd00:1a:<hex>::/64`.
+- Inside the namespace, masquerades Pod traffic to the uplink address.
+- On the host, masquerades traffic from the uplink outwards and enables
+  forwarding.
+- Writes `/etc/netns/<name>/resolv.conf`, because the host's stub resolver
+  at `127.0.0.53` cannot be reached from inside the namespace.
+
+`exec` remounts cgroup2 on `/sys/fs/cgroup`. `ip netns exec` mounts a fresh
+sysfs, which hides cgroup2.
+
+For a second cluster, use another `<n>` and `<hex>` and another
+`RUBERNETES_M8_CGROUP_ROOT`. `cluster.rb up` removes stale workloads only
+inside the given cgroup root, so clusters with separate roots never remove
+each other's Pods.
+
+`cluster.rb up` first stops any cluster still running under the same
+`--root`, because the agents' streaming ports are fixed per worker.
+
+### round.sh
+
+`round.sh` runs Hydrophone inside the namespace with the pinned images that
+`lock.rb` returns. It keeps only the tail of Hydrophone's standard output.
+When the run ends, it prints the totals and the names of failed specs from
+`junit_01.xml`. Judge the result from the JUnit file, not from Hydrophone's
+standard output.
+
+To watch progress during a run:
+
+```bash
+kubectl -n conformance logs e2e-conformance-test -c conformance-container
+```
+
+### run.rb
+
+When the environment variable `RUBERNETES_M8_NETNS=<name>` is set, `run.rb`
+works inside that namespace. Every runner command and the kubeconfig
+reachability check run under `ip netns exec <name>`.
+
+### Reaching a cluster from the host
+
+From the host, a cluster is reachable at the uplink address. The URL is
+`https://10.250.<n>.2:<port>`, and the port is in `cluster.json`.
+
+In the shell on the development host, `http_proxy` applies to every
+destination except loopback. Set `NO_PROXY=10.250.<n>.2` or use
+`curl --noproxy '*'`. Otherwise requests go to the proxy and fail.
+
+### Differences between profiles
+
+Known as of 2026-09-27.
+
+The IPv6-only profile has no NAT64, so an IPv6-only Pod cannot reach IPv4
+destinations. Images are pulled by the node agent, which has both families
+through the uplink. Only test Pods that connect to the IPv4 internet are
+affected.
+
+In the dual-stack profile, the `kubernetes` Service is SingleStack in the
+primary family, the same as the Service kube-apiserver creates. The node
+agents publish `InternalIP`s of both families. The cluster DNS `nameserver`
+given to a Pod is the bridge address of the primary family only. The
+kubelet's `clusterDNS` is an explicit list, whereas Rubernetes uses the
+node's gateway addresses in profile order.
+
+One difference applies to every profile. The `kubernetes` Endpoints of the
+API servers list one entry per API server, with different ports on the same
+uplink address, because three replicas run on one host. A cluster made with
+kubeadm lists different addresses.
 
 ## Related
 - [Kubernetes compatibility contract](../../spec/verification/kubernetes-compatibility.md)
