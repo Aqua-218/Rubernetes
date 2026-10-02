@@ -83,7 +83,10 @@ preemption, asynchronous binding and scoring.
 
 ### rubernetes-agent
 
-## What is in the box
+Does the kubelet's job: the Pod sync loop, probes, eviction, graceful node
+shutdown, device plugins, the CPU, memory and topology managers, and DRA. It
+also serves the kubelet API (`exec`, `logs`, `/metrics`, `/configz` and so
+on).
 
 | Rubernetes process | Stands in for | Notes |
 |---|---|---|
