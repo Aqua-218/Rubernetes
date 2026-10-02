@@ -37,7 +37,7 @@ recover                → recovery_report
 使うメッセージ種別は、`RTM_NEWLINK`、`RTM_DELLINK`、`RTM_NEWADDR`、`RTM_NEWROUTE`、`RTM_SETLINK`である。
 
 <a id="sec-5-9-3"></a>
-## 5.9.3 Pod ネットワーク構築
+## 5.9.3 Podネットワークの構築
 
 1. veth pair を作成する
 2. 一方を Pod の network namespace へ移動する
