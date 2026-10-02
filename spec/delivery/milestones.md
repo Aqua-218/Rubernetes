@@ -249,9 +249,7 @@ graph LR
 - RTOとRPOのレポート
 - 資源の所有権の台帳
 
-linearizability histories、fault matrix、WAL/snapshot corruption corpus、RTO/RPO report、
-resource ownership ledgerを保存する。Raft の TLC result は必須証拠から除外する
-（理由は spec/verification/formal-methods.md 7.2 を参照）。
+RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕様の7.2](../verification/formal-methods.md#sec-7-2)に示す。
 
 <a id="milestone-m6"></a>
 ## M6 — Complete Kubernetes API Surface
