@@ -64,12 +64,19 @@ source.
 
 ## M1 Schema and API core
 
-Five real adapters: generation reproducibility, the Kubernetes validation
-oracle (every generated type, 770/770, mapped to an executable upstream REST
-strategy), the round-trip probe (zero mismatches), the API differential
-against the pinned kube-apiserver/etcd (all 22 required operations including
-TokenReview, SelfSubjectReview, SelfSubjectRulesReview, SubjectAccessReview,
-ComponentStatus and Pod eviction) and the kubectl probe.
+The gate requires five real adapters.
+
+| Adapter | Passes when |
+|---|---|
+| Generation reproducibility | The generated output is reproducible byte for byte |
+| Kubernetes validation oracle | All 770 generated types map to an executable upstream REST strategy |
+| Round-trip probe | There are zero mismatches |
+| API differential | All 22 required operations match a pinned kube-apiserver and etcd |
+| kubectl probe | Operations from kubectl succeed |
+
+The 22 API differential operations include TokenReview, SelfSubjectReview,
+SelfSubjectRulesReview, SubjectAccessReview, ComponentStatus and Pod
+eviction.
 
 ## M2 Native Pod
 
