@@ -21,9 +21,11 @@ check(sandbox)         → bool
 recover                → recovery_report
 ```
 
-各操作は sandbox ID と network operation ID で冪等化する。link、address、route、FDB、BPF map、
-IP lease を owned resource として [§5.8.4](runtime.md#sec-5-8-4) の ledger に参加させ、process/VM の停止確認前に
-IP と interface identity を再利用してはならない。
+各操作は、サンドボックスIDとネットワーク操作IDで冪等にする。
+
+リンク、アドレス、経路、FDB、BPFマップ、IPのリースは、owned resourceとして扱う。[5.8.4](runtime.md#sec-5-8-4)の台帳に記録する。
+
+プロセスまたはVMの停止を確認するまで、IPとインターフェースのidentityを再利用してはならない。
 
 <a id="sec-5-9-2"></a>
 ## 5.9.2 netlink
