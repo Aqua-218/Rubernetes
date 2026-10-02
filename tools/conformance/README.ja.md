@@ -52,7 +52,7 @@ setsid nohup tools/conformance/round.sh conf4 /srv/rbn-conf4/linux-amd64-ipv4-na
 
 ## IPv6とdual-stackのプロファイル
 
-## IPv6 と dual-stack プロファイルの起動
+`test/conformance/kubernetes/profiles.yml`に3つのプロファイルが定義してあります。どれも1台のホスト上にcontrol 3ノードとworker 3ノードを作ります。
 
 `test/conformance/kubernetes/profiles.yml` は 3 つのプロファイルを定義します。
 いずれも 1 ホスト上の control 3 + worker 3 です: `linux-amd64-ipv4-native`、
