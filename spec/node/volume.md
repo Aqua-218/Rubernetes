@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-built-in volume、CSI接続、lifecycle、ownership、projection、path securityを定義する。
+組み込みのボリューム、CSIとの接続、ライフサイクル、所有権、投影、パスの安全性を定義する。中核は自作し、CSI互換のプラグインを接続できるようにする。
 
 
 > **Diagram:** [図 07 — Storage / Volume](../diagrams/07-storage-volume.md)
