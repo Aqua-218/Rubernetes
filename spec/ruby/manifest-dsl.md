@@ -3,7 +3,7 @@
 <a id="sec-3-5"></a>
 # 3.5 Ruby Manifest DSL
 
-> **Audience:** CLI利用者、Ruby実装者、審査者
+> 対象読者: CLI利用者、Ruby実装者、審査者
 >
 > **Status:** Normative — version 0.2
 
