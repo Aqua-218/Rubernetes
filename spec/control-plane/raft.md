@@ -20,11 +20,11 @@ OngaroとOusterhoutによるRaftの論文に従う。以下は、本実装で決
 |---|---|
 | election timeout | 150〜300 msの範囲からランダムに選ぶ |
 | heartbeat interval | 50 ms |
-| 最大バッチ entry 数 | 256 entry |
-| 最大バッチ encoded size | 1 MiB |
-| バッチ flush timeout | 2 ms |
-| スナップショット契機 | commit 済み 100,000 entry または WAL 512 MiB の先着 |
-| スナップショット最小間隔 | 30 秒 |
+| 1バッチの最大エントリ数 | 256 |
+| 1バッチのエンコード後の最大サイズ | 1 MiB |
+| バッチをflushするまでの時間 | 2 ms |
+| スナップショットを取る契機 | コミット済みのエントリが100,000件に達するか、WALが512 MiBに達するか、どちらか早いほう |
+| スナップショットの最小間隔 | 30秒 |
 
 election timeout は heartbeat interval の 3 倍以上とする。
 これを下回ると安定したリーダーが不要な選挙で失われる。
