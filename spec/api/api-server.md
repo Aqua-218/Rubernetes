@@ -177,6 +177,6 @@ Secret、ServiceAccountのトークン、bootstrapの資格情報、指定した
 
 ## 関連
 
-- [kubernetes api](kubernetes-api.md)
-- [store](../control-plane/store.md)
-- [01 api server](../diagrams/01-api-server.md)
+- [Kubernetes API](kubernetes-api.md)
+- [ストア](../control-plane/store.md)
+- [01 APIサーバ](../diagrams/01-api-server.md)
