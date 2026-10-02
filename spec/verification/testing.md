@@ -125,8 +125,9 @@ Conformanceの成功だけを、完全な互換性の根拠としてはならな
 
 次のテストは、互換性の証拠に数えない。
 
-upstream sourceをRubernetes向けにpatchしたtest、failure後にfocusして再実行したtest、
-未実装機能をskipしたtestは互換性evidenceへ算入しない。
+- upstreamのソースをRubernetes向けに変更したテスト
+- 失敗したあとにfocusで絞って再実行したテスト
+- 未実装の機能をスキップしたテスト
 
 ## Related
 
