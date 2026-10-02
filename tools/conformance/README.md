@@ -82,8 +82,8 @@ nftables tables, NodePorts and routes never collide with the host's or
 another cluster's.
 
 ```bash
-export PATH=/opt/rubies/3.4.11/bin:$PATH            # the Gemfile's Ruby
-export RUBERNETES_M8_CGROUP_ROOT=/sys/fs/cgroup/lanes   # one cgroup root per instance
+export PATH=/opt/rubies/3.4.11/bin:$PATH            # the Ruby the Gemfile pins
+export RUBERNETES_M8_CGROUP_ROOT=/sys/fs/cgroup/lanes   # one cgroup root per cluster
 tools/conformance/netns_env.sh up lanes6 --v4 1 --v6 e6   # veth uplink, NAT, resolv.conf
 tools/conformance/netns_env.sh exec lanes6 -- \
   ruby tools/conformance/cluster.rb up --profile linux-amd64-ipv6-native --root /srv/rbn-lanes
