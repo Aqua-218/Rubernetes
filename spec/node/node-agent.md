@@ -36,7 +36,7 @@ PodのSyncLoopと、起動、probe、再起動、終了、evictionの順序を�
 <a id="sec-5-7-3"></a>
 ## 5.7.3 probe
 
-| 種別 | 失敗時の動作 |
+| 種別 | 失敗したときの動作 |
 |---|---|
 | startup | 成功するまで liveness / readiness を開始しない |
 | liveness | コンテナを再起動する |
