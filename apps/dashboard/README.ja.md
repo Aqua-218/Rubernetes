@@ -98,7 +98,7 @@ curl --noproxy '*' -sS http://<DASHBOARD_BIND>:3000/up
 
 ## 設定
 
-すべて環境変数です（`lib/dashboard/config.rb`）。
+設定はすべて環境変数で行います。定義は`lib/dashboard/config.rb`にあります。
 
 | 変数 | 既定値 | 意味 |
 |---|---|---|
