@@ -3,7 +3,7 @@
 <a id="milestones"></a>
 # マイルストーンと完了の証拠
 
-> **Audience:** 実装者、検証者、project管理者、release担当者、審査者
+> 対象読者: 実装者、検証者、プロジェクトの管理者、リリース担当者、審査者
 >
 > **Status:** Normative — version 0.4
 
