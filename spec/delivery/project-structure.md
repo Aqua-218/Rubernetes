@@ -196,7 +196,7 @@ graph TD
 - `platform/linux/`は、システムコール、netlink、BPF、KVMのABIをRubyのオブジェクトとして公開する。ポリシーは決めない。
 - `ext/rubernetes_linux/`には、FFIで安全に表現できないABI用のshimだけを置く。本番ソースのRuby比率の計算には、このディレクトリも含める。
 
-### Verification and upstream code
+### 検証とupstreamのコード
 
 - `test/conformance/kubernetes/`はpinned upstream binary/imageを実行するadapterだけを保持する。
 - Kubernetes、etcd、runc/containerd、CNI/CSI oracle codeは`lib/`、`exe/`、production packageへ入れてはならない。
