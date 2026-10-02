@@ -2,10 +2,7 @@
 
 English | [日本語](README.ja.md)
 
-Ruby commands that verify the pinned upstream inputs, bring up the release
-topology cluster, invoke the pinned Hydrophone/Sonobuoy binaries and the
-upstream `e2e.test`, normalize JUnit/Ginkgo output, classify the upstream
-e2e inventory and emit the M8 evidence manifests.
+Ruby commands for checking compatibility with Kubernetes. They:
 
 The tooling may orchestrate upstream executables but may not modify their
 source, focus, skip expression, or result. A failed or incomplete upstream
