@@ -316,10 +316,7 @@ jailへの入力とその親ディレクトリは、非特権のユーザが書�
 
 ### APIクライアント
 
-起動前に Firecracker/jailer、guest kernel、read-only rootfs、dm-verity root hash、Ruby guest bundle の
-digest と owner/mode を検証する。Firecracker は専用の非特権 UID/GID、private PID/mount/network namespace、
-cgroup、default-deny seccomp、jailer chroot で起動する。jail input と親 directory は非特権 user が
-書換不能でなければならない。
+RubyのAPIクライアントは、Unixドメインソケットを使う。設定は次の固定した順で行う。
 
 Ruby API client は Unix domain socket を用い、machine config、boot source、read-only verified rootfs、
 writable workspace、vsock、network device、InstanceStart の固定順で設定する。HTTP header/body は各 64 KiB、
