@@ -9,8 +9,7 @@
 
 NativeとMicroVMの2つのランタイム、状態機械、資源の所有権、ロールバック、スナップショットのidentityを定義する。ランタイムは自作する。
 
-
-> **Diagram:** [図 05 — Runtime](../diagrams/05-runtime.md)
+図は[図05 ランタイム](../diagrams/05-runtime.md)にある。
 
 <a id="sec-5-8-1"></a>
 ## 5.8.1 backend と RuntimeClass
