@@ -327,7 +327,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 7. ソースの変更、focusによる絞り込み、スキップの追加、失敗した結果の上書き、タイムアウトの延長による黙認が0である。
 8. 互換性の失敗の台帳に、未解決の項目がない。
 
-### Required evidence
+### 必要な証拠
 
 HydrophoneとSonobuoyのraw log/JUnit、test inventory、selection ledger、architecture/network profile matrix、
 client/project corpus結果、全run manifestを保存する。
