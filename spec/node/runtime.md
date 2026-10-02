@@ -314,9 +314,7 @@ Firecrackerは、次の制限のもとで起動する。
 
 jailへの入力とその親ディレクトリは、非特権のユーザが書き換えられない状態でなければならない。
 
-MicroVM backend は 1 Pod を 1 Firecracker process と 1 guest kernel に対応付ける。
-同一 Pod 内の container は相互信頼境界とみなし、同一 guest 内で [§5.8.6](runtime.md#sec-5-8-6)〜[§5.8.10](runtime.md#sec-5-8-10) の
-container 隔離を Ruby guest supervisor が実行する。異なる Pod を同一 microVM に同居させてはならない。
+### APIクライアント
 
 起動前に Firecracker/jailer、guest kernel、read-only rootfs、dm-verity root hash、Ruby guest bundle の
 digest と owner/mode を検証する。Firecracker は専用の非特権 UID/GID、private PID/mount/network namespace、
