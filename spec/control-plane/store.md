@@ -41,6 +41,6 @@ watch(prefix, since:)            → イベントストリーム
 
 ## 関連
 
-- [raft](raft.md)
-- [api server](../api/api-server.md)
-- [02 storage raft](../diagrams/02-storage-raft.md)
+- [Raft](raft.md)
+- [APIサーバ](../api/api-server.md)
+- [02 ストレージとRaft](../diagrams/02-storage-raft.md)
