@@ -3,7 +3,7 @@
 <a id="kubernetes-compatibility"></a>
 # Kubernetes v1.36.2互換性試験契約
 
-> **Audience:** 互換性検証者、CI実装者、release担当者、API/Node実装者
+> 対象読者: 互換性の検証者、CIの実装者、リリース担当者、APIとノードの実装者
 >
 > **Status:** Normative — version 0.2
 
