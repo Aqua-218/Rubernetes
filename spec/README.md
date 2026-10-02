@@ -76,7 +76,7 @@ graph TD
 - [Kubernetes API](api/kubernetes-api.md)
 - [APIサーバ](api/api-server.md)
 
-### Control Plane and Node
+### 制御面とノード
 
 - [Store](control-plane/store.md)
 - [Raft](control-plane/raft.md)
