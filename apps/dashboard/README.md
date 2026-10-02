@@ -150,7 +150,7 @@ through the proxy.
 ## Development
 
 ```sh
-bin/rails test                     # 79 tests: PromQL engine, TSDB store, scraper, rules, API, pages
+bin/rails test                     # 79 tests: PromQL engine, TSDB, scraper, rules, API, pages
 bin/rails console
 ```
 
