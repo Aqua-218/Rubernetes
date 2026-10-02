@@ -69,11 +69,11 @@
 │   ├── kubernetes/v1.36.2/       # 正規化して固定したKubernetesのスキーマ入力
 │   └── rubernetes/                # プロジェクト独自の拡張スキーマの入力
 ├── generated/
-│   ├── ruby/                      # Generated types, codecs and validators
-│   ├── rbs/                       # Generated public signatures
-│   ├── openapi/                   # Generated served schemas
-│   └── fixtures/                  # Generated round-trip/differential fixtures
-├── sig/                           # Hand-authored RBS outside generated surface
+│   ├── ruby/                      # 生成した型、コーデック、validator
+│   ├── rbs/                       # 生成した公開シグネチャ
+│   ├── openapi/                   # 生成した、提供用のスキーマ
+│   └── fixtures/                  # 生成した、round-tripと差分テスト用のfixture
+├── sig/                           # 生成対象の外にある、手書きのRBS
 ├── config/
 │   ├── defaults/                  # Versioned default process configuration
 │   └── policies/                  # Admission, audit and runtime policy inputs
