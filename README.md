@@ -329,32 +329,51 @@ source change invalidates every later milestone as well. The commands are
 
 ## Status and known limitations
 
-Honest list, as of 2026-10-01:
+As of 2026-10-01.
 
-- **Platform.** Linux x86_64 only. arm64 is untested. Kernel 6.8+ is
-  exercised; one M4 check (an SCTP CRC32c helper) wants 6.12 and is waived
-  explicitly on older kernels.
-- **Networking.** The Pod network is the built-in bridge datapath; external
-  CNI plugins are not executed. IPv6-only clusters have no NAT64. There are
-  no cloud-provider integrations (LoadBalancer Services stay pending unless
-  something external programs them, as on bare metal).
-- **Scale.** Everything that has been measured ran as a multi-node cluster
-  on one host (three control nodes, three workers). Multi-host operation is
-  configured through the same YAML but has not been exercised end to end.
-- **Metrics.** Component `/metrics` mirror the upstream families, including
-  cadvisor and kube-proxy ones. 27 apiserver and 2 kubelet families that
-  describe Go runtime internals or features Rubernetes has no equivalent
-  of are registered with an explicit "not implemented" help string and are
-  always empty, so a dashboard built for upstream still loads.
-- **Alpha APIs** are served only when enabled through `--runtime-config`,
-  as upstream. Most alpha feature gates have no behaviour behind them.
-- **Evidence bundles** on disk predate the latest source changes and are
-  therefore stale by construction; the gates and the Conformance suite have
-  been re-run on the current tree, but a release candidate must re-capture
-  the whole M0–M9 chain.
-- **Lint.** `rake lint` runs clean over the whole tree with no todo file;
-  the cops that are off are listed in `.rubocop.yml` with the reason
-  (mostly ones whose autocorrect assumes a concrete receiver type).
+### Platform
+
+Linux x86_64 only. arm64 has not been tested. The kernels exercised are 6.8
+and later. One M4 check, an SCTP CRC32c helper, needs kernel 6.12 and is
+recorded as a waiver on older kernels.
+
+### Networking
+
+The Pod network is the built-in bridge datapath only; external CNI plugins
+are not executed. IPv6-only clusters have no NAT64. There is no cloud
+provider integration, so a LoadBalancer Service stays pending unless
+something external configures it.
+
+### Scale
+
+Every measurement was taken on a six-node cluster built on one host. A
+multi-host cluster can be configured with the same YAML, but has not been
+verified end to end.
+
+### Metrics
+
+Each component's `/metrics` exposes the same metric names as upstream,
+including the cadvisor and kube-proxy ones. 27 apiserver metrics and 2
+kubelet metrics never have values, because they describe Go runtime
+internals or features Rubernetes has no counterpart for. Those 29 are
+registered with a "not implemented" help string, so dashboards built for
+upstream still load.
+
+### Alpha APIs
+
+Served only when enabled through `--runtime-config`, as upstream. Most alpha
+feature gates have no implementation behind them.
+
+### Evidence bundles
+
+The bundles on disk were captured before the latest source changes, so they
+are not valid for the current source. The gates and the Conformance suite
+have been re-run on the current tree. A release candidate has to re-capture
+M0 through M9.
+
+### Lint
+
+`rake lint` reports zero offenses over the whole tree.
 
 ## Documentation
 
