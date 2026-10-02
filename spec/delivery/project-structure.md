@@ -237,11 +237,11 @@ upstreamのテストをコピーして改変したものは、Conformanceの証�
 
 ## ビルドと成果物
 
-- source treeへのbuild output書込み先は`build/`だけとする。
-- runtime scratchは`tmp/`、test/release evidenceは`artifacts/`へ分離する。
-- `generated/`はsource artifactとして保持し、`build/`、`tmp/`、`artifacts/`はsource inputと配布物から除外する。
-- release packageは`lib/`、`generated/ruby/`、必要な`config/`、native extensionだけを含める。
-- `test/`、`verification/`、`third_party/cache/`、oracle binaryをproduction packageへ含めてはならない。
+- ビルドの出力をソースツリーに書き込む先は、`build/`だけとする。
+- 実行時の作業領域は`tmp/`に、テストとリリースの証拠は`artifacts/`に分ける。
+- `generated/`は、ソースの一部として保持する。`build/`、`tmp/`、`artifacts/`は、ソースの入力と配布物から除く。
+- リリースのパッケージに含めるのは、`lib/`、`generated/ruby/`、必要な`config/`、ネイティブ拡張だけである。
+- `test/`、`verification/`、`third_party/cache/`、比較対象のバイナリを、本番のパッケージに含めてはならない。
 
 ## Adding a Directory
 
