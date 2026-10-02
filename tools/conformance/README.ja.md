@@ -1,4 +1,4 @@
-# Conformance ツール境界
+# Conformanceツール
 
 [English](README.md) | 日本語
 
