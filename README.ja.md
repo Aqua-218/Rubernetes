@@ -139,10 +139,7 @@ cd apps/dashboard && bundle install
 RUBERNETES_KUBECONFIG=$KUBECONFIG bin/rails server -p 3000
 ```
 
-`http://localhost:3000` を開きます。ダッシュボードは全 API サーバ、全
-kubelet エンドポイント、アノテーション付き Pod/Service を自前ストアに
-scrape するので、Grafana の Prometheus データソース（`/api/v1/query` など）
-としても使えます。
+起動したら`http://localhost:3000`を開いてください。ダッシュボードはすべてのAPIサーバとkubelet、それにアノテーションの付いたPodとServiceからメトリクスを集めて自前のストアに保存します。`/api/v1/query`などのPrometheus互換APIがあるので、GrafanaのPrometheusデータソースとしても使えます。
 
 ## リポジトリ構成
 
