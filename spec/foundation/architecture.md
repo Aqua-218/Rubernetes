@@ -40,7 +40,7 @@ graph LR
 | `proxy` | Serviceのデータパス | すべてのワーカーノード |
 | `rubectl` | kubectl互換の操作と、Ruby Manifest DSLのコンパイル | 任意 |
 
-`apiserver` は内部に Raft ノードを持ち、複数の制御ノードで合意を形成する。
+`apiserver`は内部にRaftノードを持つ。複数の制御ノードの間で合意を形成する。
 
 <a id="sec-3-2"></a>
 ## 3.2 差し替え境界
