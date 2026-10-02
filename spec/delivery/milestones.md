@@ -79,11 +79,11 @@ graph LR
 
 ### 成果物
 
-- Ruby 3.4以上でloadできる`rubernetes` packageとRBS baseline
-- `rubectl`および5 daemonのprocess entry
-- config load、dependency assembly、structured logging、signal shutdownを担うbootstrap layer
-- `clone3`、pidfd、mount、netlink、BPF、KVMを型付きで公開するLinux platform adapter
-- kernel header由来のABI manifestと再生成器
+- Ruby 3.4以上で読み込める`rubernetes`パッケージと、RBSのベースライン
+- `rubectl`と5つのデーモンの、プロセスの入口
+- bootstrapの層。設定の読み込み、依存の組み立て、構造化ログ、シグナルによる停止を受け持つ
+- Linuxプラットフォームのアダプタ。`clone3`、pidfd、mount、netlink、BPF、KVMを型付きで公開する
+- kernelのヘッダから作ったABIマニフェストと、その再生成器
 
 ### Exit criteria
 
