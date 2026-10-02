@@ -5,7 +5,7 @@
 
 > 対象読者: ネットワークとServiceの実装者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 netlink、IPAM、Pod network、overlay、NetworkPolicy、DNS、Service proxyを示す。
 
