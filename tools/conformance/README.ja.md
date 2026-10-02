@@ -2,10 +2,7 @@
 
 [English](README.md) | 日本語
 
-固定した upstream 入力の検証、リリース構成クラスタの起動、固定した
-Hydrophone / Sonobuoy バイナリと upstream `e2e.test` の実行、JUnit/Ginkgo 出力の
-正規化、upstream e2e 一覧の分類、M8 証拠マニフェストの出力を行う Ruby
-コマンド群です。
+Kubernetesとの互換性を検査するためのRubyコマンド群です。次の作業を受け持ちます。
 
 ツールは upstream の実行ファイルを指揮してよいが、そのソース、focus、skip
 式、結果を改変してはならない。失敗または不完全な upstream 実行は失敗のまま
