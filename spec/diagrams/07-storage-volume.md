@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [diagrams](README.md)
+[仕様書の目次](../README.md) / [構成図](README.md)
 
 <a id="sec-a-7"></a>
 # A.7 図 07 — Storage / Volume
