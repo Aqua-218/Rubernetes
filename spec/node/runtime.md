@@ -200,12 +200,14 @@ holderはRuby製のsandbox initとする。PID 1として、シグナルの処�
 <a id="sec-5-8-7"></a>
 ## 5.8.7 ファイルシステム
 
-1. mount propagation を `MS_PRIVATE|MS_REC` にする
-2. 検証済み image layer を read-only lowerdir、sandbox 固有領域を upperdir/workdir として OverlayFS を構築する
-3. container 固有 mount namespace で `/proc`、`/sys`、`/dev`、`devpts`、`shm`、volume を構築する
-4. `maskedPaths`、`readonlyPaths`、read-only rootfs、mountPropagation、subPath を適用する（subPath は kubelet の makeMounts と同じく、その container の起動時に解決・bind する。先行する init container が書き込む emptyDir 内の path を後続 container が subPath で参照できる）
-5. `pivot_root` 後に旧 root を detach せず通常 umount し、到達不能を mount ID で確認する
-6. 最後に executable、cwd、volume source が新 root 内にあることを fd based path resolution で再検査する
+ファイルシステムは次の順に構築する。
+
+1. マウントの伝播を`MS_PRIVATE|MS_REC`にする。
+2. OverlayFSを構築する。検証済みのイメージレイヤを読み取り専用のlowerdirに、サンドボックス固有の領域をupperdirとworkdirにする。
+3. コンテナ固有のmount namespaceの中で、`/proc`、`/sys`、`/dev`、`devpts`、`shm`、ボリュームを構築する。
+4. `maskedPaths`、`readonlyPaths`、読み取り専用のrootfs、mountPropagation、subPathを適用する。
+5. `pivot_root`のあと、古いrootをdetachせずに通常のumountで外す。到達できなくなったことをマウントIDで確認する。
+6. 最後に、実行ファイル、cwd、ボリュームのマウント元が新しいrootの中にあることを、fdを使ったパス解決で再検査する。
 
 `chroot` を隔離境界として用いてはならない。path の認可後に pathname を再解決せず、
 `openat2` の `RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS` と file descriptor を effect point まで保持する。
