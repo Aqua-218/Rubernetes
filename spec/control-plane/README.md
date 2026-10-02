@@ -1,6 +1,6 @@
 [仕様書の目次](../README.md)
 
-# Control Plane
+# 制御面
 
 > **Audience:** 分散システム実装者、Controller/Scheduler実装者、形式検証者
 
