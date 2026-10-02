@@ -24,9 +24,9 @@ graph LR
 
 | 文書 | 内容 |
 |---|---|
-| [形式仕様](formal-methods.md) | TLA+/Lean分担、定理、禁止事項、保証レベル台帳 |
-| [検証戦略](testing.md) | test階層、障害DSL、線形化、差分、Runtime L0〜L5 |
-| [Kubernetes互換性試験](kubernetes-compatibility.md) | upstream Conformance/e2e、client/project corpus、zero-skip release gate |
+| [形式仕様](formal-methods.md) | TLA+とLeanの分担、定理、禁止事項、保証レベルの台帳 |
+| [検証戦略](testing.md) | テストの階層、障害注入のDSL、線形化、差分テスト、ランタイムのL0〜L5 |
+| [Kubernetes互換性試験](kubernetes-compatibility.md) | upstreamのConformanceとe2e、クライアントとプロジェクトのコーパス、スキップを認めないリリースゲート |
 
 ## Related
 
