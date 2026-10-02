@@ -116,11 +116,7 @@ quorumが回復してから60秒以内に、APIへの書き込み、コントロ
 | イメージがキャッシュ済みのNative Podの起動 | p95が比較対象の2倍以内 |
 | ベーススナップショットからのMicroVMの起動 | p95が1.5秒以内 |
 
-性能は同一 hardware、同一 object corpus、同一 request trace の Kubernetes v1.36.2 oracle と比較する。
-steady state の API read/write、watch delivery、scheduling throughput の p99 latency は oracle の 2 倍以内、
-error rate は oracle 以下とする。cached image の Native Pod start p95 は oracle の 2 倍以内、
-base snapshot からの MicroVM start p95 は 1.5 秒以内とする。比較条件、warm-up、sample 数、
-confidence interval、raw result を release artifact に保存する。
+比較条件、ウォームアップ、サンプル数、信頼区間、生の結果は、リリース成果物に保存する。
 
 ## Related
 
