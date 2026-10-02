@@ -256,6 +256,6 @@ upstreamのテストをコピーして改変したものは、Conformanceの証�
 ## 関連
 
 - [マイルストーン](milestones.md)
-- [Coding Standards](coding-standards.md)
-- [Architecture](../foundation/architecture.md)
+- [コーディング規約](coding-standards.md)
+- [アーキテクチャ](../foundation/architecture.md)
 - [Kubernetes互換性試験](../verification/kubernetes-compatibility.md)
