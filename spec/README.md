@@ -114,5 +114,5 @@ graph TD
 
 ## 関連
 
-- [ルート案内](../spec.md)
+- [ルートの案内](../spec.md)
 - [規範参照](references.md)
