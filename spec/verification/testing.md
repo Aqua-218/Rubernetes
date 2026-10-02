@@ -5,7 +5,7 @@
 
 > 対象読者: テストの実装者、互換性の検証者、セキュリティの検証者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 test階層、障害注入DSL、線形化、差分test、trace照合、Runtime実機gateを定義する。
 
