@@ -71,9 +71,7 @@
 <a id="sec-5-5-7"></a>
 ## 5.5.7 リーダー選出
 
-controller-manager は複数起動しうる。
-Lease リソースによるリーダー選出を行い、リーダーのみが reconcile する。
-リーダーでない間はキャッシュのみ維持する。
+controller-managerは複数起動することがある。Leaseリソースでリーダーを選出し、リーダーだけがreconcileを行う。リーダーでないプロセスは、キャッシュの維持だけを行う。
 
 <a id="sec-5-5-8"></a>
 ## 5.5.8 Controller DSL
