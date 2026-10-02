@@ -5,9 +5,7 @@
 
 > 対象読者: Rubyの型システムの実装者、API実装者、審査者
 >
-> **Status:** Normative — version 0.2
-
-単一schema DSLからRuby型、validator、codec、OpenAPI、RBS、DSL、diffを生成する規則を定義する。
+> 状態: 規範、版0.2
 
 
 <a id="sec-6-1"></a>
