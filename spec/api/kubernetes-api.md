@@ -224,7 +224,7 @@ Linux以外の環境、特定のクラウドプロバイダ、特定のハード
 
 API、コントローラ、スケジューラ、ノード、ネットワーク、ストレージについて、Linuxでの中核となる挙動を許可リストに加えてはならない。
 
-## Related
+## 関連
 
 - [api server](api-server.md)
 - [schema compiler](../ruby/schema-compiler.md)
