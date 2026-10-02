@@ -209,8 +209,11 @@ holderはRuby製のsandbox initとする。PID 1として、シグナルの処�
 5. `pivot_root`のあと、古いrootをdetachせずに通常のumountで外す。到達できなくなったことをマウントIDで確認する。
 6. 最後に、実行ファイル、cwd、ボリュームのマウント元が新しいrootの中にあることを、fdを使ったパス解決で再検査する。
 
-`chroot` を隔離境界として用いてはならない。path の認可後に pathname を再解決せず、
-`openat2` の `RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS` と file descriptor を effect point まで保持する。
+subPathは、kubeletのmakeMountsと同じく、そのコンテナの起動時に解決してbindする。これにより、先に動くinitコンテナがemptyDirの中に作ったパスを、後続のコンテナがsubPathで参照できる。
+
+`chroot`を隔離の境界として使ってはならない。
+
+パスを認可したあとは、パス名を解決し直さない。`openat2`の`RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS`で得たファイルディスクリプタを、effect pointまで保持する。
 
 <a id="sec-5-8-8"></a>
 ## 5.8.8 cgroup v2
