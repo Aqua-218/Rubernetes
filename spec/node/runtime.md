@@ -266,9 +266,7 @@ OOMは`memory.events`から取得する。終了理由とPodのstatusには、1�
 
 依存関係が循環している組み合わせと、kernelで実現できない組み合わせは、プロセスを作る前に拒否する。
 
-security step は schema から依存 graph を生成し、namespace/mount 構築、group 設定、UID/GID 変更、
-capability set、securebits、`no_new_privs`、LSM label、rlimit、seccomp、fd close、`execveat` の順序制約を
-topological sort する。循環または kernel で実現できない組合せは process 作成前に拒否する。
+### seccomp
 
 seccomp の `RuntimeDefault` は arch ごとの allow-list BPF を Ruby で生成する。arch を先に検査し、
 未知 syscall は `EPERM`、arch 不一致は process kill とする。`Unconfined` と `Localhost` profile は
