@@ -2,7 +2,7 @@
 
 # ノードとワークロードの実行
 
-> **Audience:** Node、Runtime、Network、Storage実装者、セキュリティ検証者
+> 対象読者: ノード、ランタイム、ネットワーク、ストレージの実装者、セキュリティの検証者
 
 Podをnodeへ受け入れ、隔離環境、network、volumeを構築し、processまたはmicroVMとして
 実行・監視・回収するdata planeを定義する。
