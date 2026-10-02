@@ -151,7 +151,7 @@ class Q1,F1,F2,F3,O1,O2,O3,V1,V2,V3,PR1,CC sc
 class API api
 ```
 
-## Related
+## 関連
 
 - [informer](../control-plane/informer.md)
 - [controllers](../control-plane/controllers.md)
