@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [実装と納品](README.md)
 
 <a id="milestones"></a>
-# マイルストーンと完了証拠
+# マイルストーンと完了の証拠
 
 > **Audience:** 実装者、検証者、project管理者、release担当者、審査者
 >
