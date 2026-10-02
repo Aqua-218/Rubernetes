@@ -271,8 +271,13 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 
 ### 必要な証拠
 
-API coverage ledger、feature-gate matrix、CRD/aggregation differential、security pipeline trace、
-fuzz summaryとcrash corpusを保存する。
+次のものを保存する。
+
+- APIの網羅状況の台帳
+- feature gateの組み合わせ表
+- CRDとaggregationの差分テストの結果
+- セキュリティのパイプラインのトレース
+- fuzzの要約と、クラッシュを起こした入力のコーパス
 
 <a id="milestone-m7"></a>
 ## M7 — MicroVM Isolation
