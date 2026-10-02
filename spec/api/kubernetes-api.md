@@ -226,6 +226,6 @@ API、コントローラ、スケジューラ、ノード、ネットワーク�
 
 ## 関連
 
-- [api server](api-server.md)
-- [schema compiler](../ruby/schema-compiler.md)
-- [testing](../verification/testing.md)
+- [APIサーバ](api-server.md)
+- [スキーマコンパイラ](../ruby/schema-compiler.md)
+- [検証戦略](../verification/testing.md)
