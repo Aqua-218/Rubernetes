@@ -1,6 +1,6 @@
 [仕様書の目次](../README.md)
 
-# Architecture Diagrams
+# 構成図
 
 > **Audience:** 全読者、アーキテクト、実装者、審査者
 
