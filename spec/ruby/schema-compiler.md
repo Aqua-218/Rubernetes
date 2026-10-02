@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [ruby](README.md)
+[仕様書の目次](../README.md) / [Ruby設計](README.md)
 
 <a id="sec-6"></a>
 # 6. データモデル
