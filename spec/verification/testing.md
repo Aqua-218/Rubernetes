@@ -34,10 +34,10 @@
 | ネットワーク | 分断、非対称な分断、遅延、ロス、並べ替え |
 | ディスク | fsyncの失敗、WALの途中での切断、領域の枯渇 |
 | 時計 | ずらし、巻き戻し |
-| 資源 | メモリ逼迫、CPU 飽和 |
-| Runtime | effect point ごとの失敗、応答消失、agent kill、kill 失敗、cleanup 失敗 |
-| MicroVM | jailer kill、Firecracker hang、UDS 切断、pause ACK 消失、snapshot 破損、vsock 切断 |
-| Identity | snapshot clone、CID/IP/UID 再利用要求、古い policy ACK、revoke と effect の競合 |
+| 資源 | メモリの逼迫、CPUの飽和 |
+| ランタイム | effect pointごとの失敗、応答の喪失、agentのkill、killの失敗、後始末の失敗 |
+| MicroVM | jailerのkill、Firecrackerのハング、UDSの切断、pause ACKの喪失、スナップショットの破損、vsockの切断 |
+| identity | スナップショットのクローン、CID・IP・UIDの再利用の要求、古いポリシーのACK、失効とeffectの競合 |
 
 シナリオは Ruby DSL で記述し、単調時計上の注入と回復の時系列を制御する。
 
