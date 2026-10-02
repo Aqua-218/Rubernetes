@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [verification](README.md)
+[仕様書の目次](../README.md) / [検証](README.md)
 
 <a id="kubernetes-compatibility"></a>
 # Kubernetes v1.36.2 互換性試験契約
