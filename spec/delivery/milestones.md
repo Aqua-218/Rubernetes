@@ -318,14 +318,14 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 
 ### 完了条件
 
-1. v1.36.2 Conformance定義446件を、required profileごとにfailure 0、skip 0、flake 0で通す。
-2. release profileごとに独立した3回のclean Conformance runを連続で得る。
-3. portableなupstream Linux e2eのeligible testが100%成功し、未分類testが0である。
-4. upstream Node Conformanceをx86_64でfailure 0、unexpected skip 0で通す。
-5. Kubernetesのversion-skew policy内にある公開済みkubectl minorすべてでclient matrixを通す。
-6. client-go、Dynamic Client、Helm、Kustomize、代表Operator/Chart corpusを変更なしで通す。
-7. source patch、focus narrowing、skip追加、失敗結果の上書き、test timeout延長による黙殺が0である。
-8. compatibility failure ledgerのopen itemが0である。
+1. v1.36.2のConformanceの定義446件を、必要なプロファイルごとに、失敗0、スキップ0、flake 0で通過する。
+2. リリースのプロファイルごとに、独立した3回の問題のないConformanceの実行を、連続して得る。
+3. 可搬なupstreamのLinux e2eのうち、対象のテストが100%成功する。未分類のテストが0である。
+4. upstreamのNode Conformanceを、x86_64で失敗0、想定外のスキップ0で通過する。
+5. Kubernetesのversion-skew policyの範囲にある公開済みのkubectlのminorすべてで、クライアントの検査を通過する。
+6. client-go、Dynamic Client、Helm、Kustomize、代表的なOperatorとChartのコーパスを、変更なしで通過する。
+7. ソースの変更、focusによる絞り込み、スキップの追加、失敗した結果の上書き、タイムアウトの延長による黙認が0である。
+8. 互換性の失敗の台帳に、未解決の項目がない。
 
 ### Required evidence
 
