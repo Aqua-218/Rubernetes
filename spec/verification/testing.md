@@ -131,7 +131,7 @@ Conformanceの成功だけを、完全な互換性の根拠としてはならな
 
 ## 関連
 
-- [formal methods](formal-methods.md)
-- [kubernetes compatibility](kubernetes-compatibility.md)
-- [kubernetes api](../api/kubernetes-api.md)
-- [milestones](../delivery/milestones.md)
+- [形式仕様](formal-methods.md)
+- [Kubernetes互換性試験](kubernetes-compatibility.md)
+- [Kubernetes API](../api/kubernetes-api.md)
+- [マイルストーン](../delivery/milestones.md)
