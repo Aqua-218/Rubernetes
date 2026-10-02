@@ -455,7 +455,7 @@ Removed(sandbox)     => OwnedResources(sandbox) = {}
 
 これらの不変条件は、TLA+、Lean、property test、実機での障害注入で検証する。それぞれが受け持つ範囲は、[7章](../verification/formal-methods.md#sec-7)と[8章](../verification/testing.md#sec-8)で分けて定める。
 
-## Related
+## 関連
 
 - [node agent](node-agent.md)
 - [network](network.md)
