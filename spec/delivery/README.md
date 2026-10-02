@@ -1,6 +1,6 @@
 [仕様書の目次](../README.md)
 
-# Delivery and Engineering Rules
+# 実装と納品の規則
 
 > **Audience:** 実装者、reviewer、project管理者、release担当者
 
