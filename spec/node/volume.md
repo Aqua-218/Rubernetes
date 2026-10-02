@@ -81,6 +81,6 @@ Declared → Provisioned → Attached → Staged → Published → Unpublishing 
 
 ## 関連
 
-- [node agent](node-agent.md)
-- [runtime](runtime.md)
-- [07 storage volume](../diagrams/07-storage-volume.md)
+- [ノードエージェント](node-agent.md)
+- [ランタイム](runtime.md)
+- [07 ストレージとボリューム](../diagrams/07-storage-volume.md)
