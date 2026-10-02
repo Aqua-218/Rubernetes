@@ -27,7 +27,15 @@ module Rubernetes
         "net/bridge/bridge-nf-call-arptables" => "0"
       }.freeze
 
-      def initialize(state_path:, root: "/proc/sys", journal: nil, fsync: true)
+      BOOT_ID_PATH = "/proc/sys/kernel/random/boot_id"
+
+      def self.current_boot_id
+        File.binread(BOOT_ID_PATH).strip
+      rescue SystemCallError, IOError
+        nil
+      end
+
+      def initialize(state_path:, root: "/proc/sys", journal: nil, fsync: true, boot_id: self.class.current_boot_id)
         @root = File.expand_path(String(root))
         @journal = journal
         @store = DurableState.new(state_path, default: default_state, fsync: fsync)
