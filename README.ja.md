@@ -168,9 +168,9 @@ rake abi:compile                 # 最初に1回。以後はext/を変更した�
 rake test:parallel               # 全テストをファイルごとに別プロセスで実行。約6分。JOBS=nで並列数を指定
 rake test                        # 直列実行。約1時間。証拠ゲートはこちらを使う
 ruby -Ilib -Itest test/unit/some_test.rb -n /pattern/
-rake lint                        # RuboCop。Layout/Style は厳格、160 桁、ダブルクォート
-rake lint:fix                    # safe な自動修正のみ。実行後は必ずテストを回す
-rake rbs:validate                # 手書き RBS のベースライン
+rake lint                        # RuboCop。160桁、ダブルクォート
+rake lint:fix                    # 安全な自動修正だけを適用。実行後はテストを回す
+rake rbs:validate                # 手書きのRBSを検証
 ```
 
 守るべき約束事:
