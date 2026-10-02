@@ -9,8 +9,7 @@
 
 Filter、Score、Reserve、Bind、Preemptionと、Rubyで書くスケジューラプラグインのDSLを定義する。
 
-
-> **Diagram:** [図 03 — 制御ループ](../diagrams/03-control-loop.md)
+図は[図03 制御ループ](../diagrams/03-control-loop.md)にある。
 
 <a id="sec-5-6-1"></a>
 ## 5.6.1 手順
