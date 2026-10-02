@@ -9,6 +9,7 @@
 
 Ruby製のRaftについて、タイミング、WAL、コミット、スナップショット、トランスポート、メンバーシップを定義する。
 
+図は[図02 ストレージとRaft](../diagrams/02-storage-raft.md)にある。
 
 > **Diagram:** [図 02 — Storage / Raft](../diagrams/02-storage-raft.md)
 
