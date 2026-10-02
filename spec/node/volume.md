@@ -5,7 +5,7 @@
 
 > 対象読者: ボリュームの実装者、ランタイムの実装者、セキュリティの設計者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 built-in volume、CSI接続、lifecycle、ownership、projection、path securityを定義する。
 
