@@ -80,14 +80,14 @@ graph TD
 
 - [ストア](control-plane/store.md)
 - [Raft](control-plane/raft.md)
-- [Informer](control-plane/informer.md)
-- [Controllers](control-plane/controllers.md)
-- [Scheduler](control-plane/scheduler.md)
-- [Node Agent](node/node-agent.md)
-- [Runtime](node/runtime.md)
-- [Network](node/network.md)
-- [Service Proxy](node/service-proxy.md)
-- [Volume](node/volume.md)
+- [informer](control-plane/informer.md)
+- [コントローラ](control-plane/controllers.md)
+- [スケジューラ](control-plane/scheduler.md)
+- [ノードエージェント](node/node-agent.md)
+- [ランタイム](node/runtime.md)
+- [ネットワーク](node/network.md)
+- [サービスプロキシ](node/service-proxy.md)
+- [ボリューム](node/volume.md)
 
 ### Verification and Delivery
 
