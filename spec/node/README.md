@@ -30,3 +30,6 @@ graph LR
 
 ## 関連
 
+- [ノードエージェントの図](../diagrams/04-node-agent.md)
+- [ランタイムの図](../diagrams/05-runtime.md)
+- [ランタイムの検証](../verification/testing.md#sec-8-7)
