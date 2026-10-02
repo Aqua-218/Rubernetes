@@ -5,7 +5,7 @@
 
 > 対象読者: ランタイムの実装者、セキュリティの検証者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 Native/MicroVM、ownership、image、namespace、filesystem、cgroup、security、recoveryを示す。
 
