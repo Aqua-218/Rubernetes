@@ -96,6 +96,7 @@ module Conformance
 
       case command
       when "up" then exclusively(options) { up(options) }
+      when "start" then exclusively(options) { start(options) }
       when "down" then exclusively(options) { down(options) }
       when "status" then status(options)
       else
