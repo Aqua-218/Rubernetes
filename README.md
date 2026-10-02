@@ -27,7 +27,59 @@ How it relates to Kubernetes itself:
 | Official Conformance | 459 of 459 passed (2026-09-30, IPv4 profile) |
 | Target environment | Linux x86_64, cgroup v2, root, Ruby 3.4.11 |
 | Size | about 220 k lines of Ruby and C under `lib/` and `ext/`, 100 k lines of tests |
-| License | Apache-2.0; upstream-derived parts are listed in [`NOTICE`](NOTICE) |
+| License | Apache-2.0 |
+
+The Conformance result comes from the unmodified `registry.k8s.io/conformance`
+image, run through Hydrophone against the `linux-amd64-ipv4-native` profile.
+
+This README is the practical entry point. The specification and design
+documents are in [`spec/`](spec/README.md) (Japanese).
+
+## Components
+
+There are six executables, plus a dashboard.
+
+| Executable | Kubernetes counterpart |
+|---|---|
+| `rubernetes-apiserver` | kube-apiserver and etcd |
+| `rubernetes-controller-manager` | kube-controller-manager |
+| `rubernetes-scheduler` | kube-scheduler |
+| `rubernetes-agent` | kubelet, a CRI runtime and CNI |
+| `rubernetes-proxy` | kube-proxy |
+| `rubectl` | a subset of kubectl |
+| `apps/dashboard` | Kubernetes dashboard and Prometheus |
+
+At runtime a cluster needs Ruby and one small C extension. Some syscalls
+cannot be made safely from a forking Ruby VM, and
+[`ext/rubernetes_linux`](ext/README.md) makes those.
+
+### rubernetes-apiserver
+
+Serves the whole default API surface and discovery of v1.36.2:
+
+- JSON, YAML and Protobuf
+- watch, patch, and server-side apply with field managers
+- admission plugins, webhooks and CEL policies
+- authentication and authorization, API Priority and Fairness, audit,
+  encryption at rest
+- CRDs and API aggregation
+- feature gates and `--runtime-config`
+
+Data is stored in the built-in Raft datastore under
+`lib/rubernetes/consensus/`. It has a CRC-32C WAL, snapshots, joint
+consensus, pre-vote, ReadIndex and mutual TLS.
+
+### rubernetes-controller-manager
+
+Runs the upstream controller set: workloads, garbage collection, namespaces,
+Endpoints and EndpointSlice, service accounts and tokens, node lifecycle,
+CSR approval, PV and PVC, quota and the rest. The controllers sit on an
+informer and work-queue framework with leader election.
+
+### rubernetes-scheduler
+
+Implements the scheduling framework with the default plugin set, including
+preemption, asynchronous binding and scoring.
 
 The normative specification lives in [`spec/`](spec/README.md) (Japanese);
 this README is the practical entry point.
