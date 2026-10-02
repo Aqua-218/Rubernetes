@@ -216,9 +216,9 @@ use it as a Prometheus data source.
 
 ```sh
 bundle install
-rake abi:compile                 # once, and after touching ext/
-rake test:parallel               # whole suite, one process per file; JOBS=n sets the width (~6 min)
-rake test                        # the serial run the evidence gates use (~1 h)
+rake abi:compile                 # once, and again after changing ext/
+rake test:parallel               # whole suite, one process per file, about 6 min; JOBS=n sets the width
+rake test                        # serial run, about 1 h; the evidence gates use this one
 ruby -Ilib -Itest test/unit/some_test.rb -n /pattern/
 rake lint                        # RuboCop, strict Layout/Style, 160 columns, double quotes
 rake lint:fix                    # safe autocorrect only; re-run the tests afterwards
