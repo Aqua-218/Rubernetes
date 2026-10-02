@@ -5,9 +5,7 @@
 
 > 対象読者: 全読者、審査者、アーキテクト
 >
-> **Status:** Normative — version 0.2
-
-Rubernetes の目的、Kubernetes 互換境界、対象環境、規模と完成基準を定義する。
+> 状態: 規範、版0.2
 
 
 <a id="sec-1-1"></a>
