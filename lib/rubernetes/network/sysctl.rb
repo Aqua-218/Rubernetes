@@ -147,7 +147,19 @@ module Rubernetes
 
       def default_state
         {"version" => 1, "state" => "inactive", "owners" => [], "bridge" => nil,
-         "netns_inode" => nil, "entries" => []}
+         "netns_inode" => nil, "entries" => [], "boot_id" => nil}
+      end
+
+      # A sysctl lives as long as the kernel that holds it.  After a reboot
+      # the values are the host's boot defaults again and the sandboxes that
+      # referenced them are gone, so a journal written under another boot
+      # owns nothing: verifying it against the new kernel ("changed while
+      # owned") refused every Pod network on a restarted node.  The next
+      # acquire captures the originals of this boot.
+      def discard_previous_boot!
+        return if @state.fetch("state") == "inactive" || @boot_id.nil? || @state["boot_id"] == @boot_id
+
+        persist!(default_state, "network_sysctl_previous_boot_discarded")
       end
 
       def normalize_state(value)
