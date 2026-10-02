@@ -3,7 +3,7 @@
 <a id="sec-2"></a>
 # 2. 用語
 
-> **Audience:** 全読者
+> 対象読者: 全読者
 >
 > **Status:** Normative — version 0.2
 
