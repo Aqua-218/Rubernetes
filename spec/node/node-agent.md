@@ -5,7 +5,7 @@
 
 > 対象読者: ノードエージェントの実装者、ランタイムの実装者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 Pod SyncLoop、起動・probe・restart・termination・evictionの順序を定義する。
 
