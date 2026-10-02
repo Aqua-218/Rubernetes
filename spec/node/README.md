@@ -28,9 +28,5 @@ graph LR
 | [サービスプロキシ](service-proxy.md) | Service、EndpointSlice、conntrack、eBPFとnftables |
 | [ボリューム](volume.md) | 組み込みのボリューム、CSI、ライフサイクル、投影、パスの安全性 |
 
-## Related
-
-- [Node Agent図](../diagrams/04-node-agent.md)
-- [Runtime図](../diagrams/05-runtime.md)
-- [Runtime検証](../verification/testing.md#sec-8-7)
+## 関連
 
