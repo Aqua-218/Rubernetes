@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [制御面](README.md)
 
 <a id="sec-5-5"></a>
-# 5.5 Controllers
+# 5.5 コントローラ
 
 > **Audience:** Controller実装者、Ruby DSL設計者
 >
