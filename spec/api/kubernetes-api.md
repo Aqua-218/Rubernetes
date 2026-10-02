@@ -169,8 +169,7 @@ listは、対応するList kind、`metadata.resourceVersion`、`continue`、`rem
 <a id="sec-4-4"></a>
 ## 4.4 watch
 
-`?watch=true&resourceVersion=N` でストリームを開始する。JSON/YAML では各イベントを
-独立したオブジェクトとして逐次 encode し、Protobuf では Kubernetes framing に従う。
+`?watch=true&resourceVersion=N`でストリームを開始する。JSONとYAMLでは、各イベントを独立したオブジェクトとして順にエンコードする。ProtobufではKubernetesのフレーミングに従う。
 
 ```jsonl
 {"type":"ADDED","object":{"apiVersion":"v1","kind":"Pod","metadata":{"name":"web"}}}
