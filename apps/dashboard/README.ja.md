@@ -2,37 +2,52 @@
 
 [English](README.md) | 日本語
 
-クラスタの Web UI と Prometheus を兼ねる Rails 8 アプリケーションです。
-クラスタの中ではなくホスト上（kubeconfig があればどこでも）で動くので、
-クラスタが不調なときも使えます。
+クラスタのWeb UIとPrometheusを兼ねるRails 8アプリケーションです。クラスタの中ではなくホスト上で動きます。kubeconfigがあればどこでも起動でき、クラスタの調子が悪いときにも使えます。
 
-**Web UI。** ノード、namespace、ワークロード（Deployment、StatefulSet、
-DaemonSet、Job、CronJob、Service、Ingress、ConfigMap など）、ログと YAML
-付きの Pod、イベント、アラート。書き込み操作（Pod 削除、scale、rollout
-restart）は無効化できます。
+## 機能
 
-**メトリクスサーバ。** 同じプロセス内の collector スレッドが
-`DASHBOARD_SCRAPE_INTERVAL` 秒ごとに次を発見・scrape します。
+### Web UI
 
-- すべての API サーバ（`/metrics`）
-- すべてのノードの kubelet エンドポイント（`/metrics`、`/metrics/cadvisor`、
-  `/metrics/resource`、`/metrics/probes`）
-- `prometheus.io/scrape: "true"` を付けた Pod と Service
-  （`prometheus.io/port`、`prometheus.io/path`、`prometheus.io/scheme`）
-- API から算出する内蔵 kube-state エクスポータ（`kube_node_*`、`kube_pod_*`、
-  `kube_deployment_*` など）
+次のものを閲覧できます。
 
-サンプルは Prometheus 型のストア `lib/tsdb` に入ります: Gorilla 圧縮チャンク、
-write-ahead log、2 時間ブロック、時間ベースの保持期間、SQLite のラベル
-インデックス。`lib/promql` は PromQL を実装します（instant / range セレクタ、
-`offset` と `@`、サブクエリ、集約と関数一式、`on`/`ignoring`/`group_left`/
-`group_right` のベクトルマッチ、集合演算）。`config/rules.yml` は Prometheus の
-ルールファイル形式で recording / alerting ルールを持ち、アラートは pending →
-firing → resolved と遷移して `ALERTS` 系列を生成し、Alertmanager 形式の
-webhook に通知できます。
+- ノードとnamespace
+- Deployment、StatefulSet、DaemonSet、Job、CronJob、Service、Ingress、ConfigMapなどのリソース
+- Pod。ログとYAMLも見られます
+- イベントとアラート
 
-HTTP API は Prometheus 互換なので、Grafana の Prometheus データソースとして
-使えます。
+Podの削除、scale、rollout restartといった書き込み操作もできます。書き込み操作は設定で無効にできます。
+
+### メトリクスの収集
+
+同じプロセスの中でcollectorスレッドが動きます。collectorは`DASHBOARD_SCRAPE_INTERVAL`秒ごとに対象を探し、メトリクスを取得します。対象は次の4種類です。
+
+- すべてのAPIサーバの`/metrics`
+- すべてのノードのkubeletエンドポイント。`/metrics`、`/metrics/cadvisor`、`/metrics/resource`、`/metrics/probes`の4つ
+- `prometheus.io/scrape: "true"`のアノテーションが付いたPodとService。`prometheus.io/port`、`prometheus.io/path`、`prometheus.io/scheme`で接続先を指定できます
+- 内蔵のkube-stateエクスポータ。APIの内容から`kube_node_*`、`kube_pod_*`、`kube_deployment_*`などを算出します
+
+### 時系列ストア
+
+取得したサンプルは`lib/tsdb`のストアに保存します。構造はPrometheusと同じです。チャンクはGorilla方式で圧縮し、write-ahead logを持ち、2時間ごとにブロックへまとめます。古いデータは保持期間に従って削除します。ラベルのインデックスにはSQLiteを使っています。
+
+### PromQL
+
+`lib/promql`がPromQLを実装しています。対応している構文は次のとおりです。
+
+- instantセレクタとrangeセレクタ
+- `offset`と`@`
+- サブクエリ
+- 集約と関数
+- `on`、`ignoring`、`group_left`、`group_right`によるベクトルマッチ
+- 集合演算
+
+### ルールとアラート
+
+`config/rules.yml`にrecordingルールとalertingルールを書きます。形式はPrometheusのルールファイルと同じです。アラートはpending、firing、resolvedの順に遷移し、`ALERTS`系列を生成します。Alertmanager形式のwebhookに通知することもできます。
+
+### HTTP API
+
+HTTP APIはPrometheusと互換です。そのためGrafanaのPrometheusデータソースとして登録できます。
 
 ```
 /api/v1/query  /api/v1/query_range  /api/v1/series  /api/v1/labels  /api/v1/label/:name/values
