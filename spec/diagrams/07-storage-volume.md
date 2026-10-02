@@ -138,6 +138,6 @@ class O1,O2,O3 ob
 
 ## 関連
 
-- [volume](../node/volume.md)
-- [runtime](../node/runtime.md)
-- [構成図インデックス](README.md)
+- [ボリューム](../node/volume.md)
+- [ランタイム](../node/runtime.md)
+- [構成図の目次](README.md)
