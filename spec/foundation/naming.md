@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-project、module、CLI、daemon、extension domainの正式名称を定義する。
+プロジェクト、モジュール、CLI、デーモン、拡張用ドメインの正式名称を定義する。
 
 
 プロジェクト名は **Rubernetes**、Ruby module namespace は `Rubernetes`、
