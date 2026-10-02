@@ -31,10 +31,15 @@ Kubernetes v1.36.2に対するリソース、エンドポイント、ワイヤ�
 
 CRDを登録した場合は、組み込みのリソースと同じ経路で扱う。対象は、提供するバージョン、subresource、conversion、defaulting、CELによるvalidation、selectable field、printer column、OpenAPIの公開、discoveryへの反映である。
 
-CRD を登録した場合は、その served version、subresource、conversion、defaulting、CEL validation、
-selectable field、printer column、OpenAPI 公開および discovery 反映を built-in resource と同じ経路で扱う。
-API corpus に新しい GVK を追加すると、[§6.2](../ruby/schema-compiler.md#sec-6-2) の生成処理により型、codec、validation、DSL、RBS、
-OpenAPI および差分計算が同時に生成されなければならない。
+コーパスに新しいGVKを追加したときは、[6.2](../ruby/schema-compiler.md#sec-6-2)の生成処理が次のものを同時に生成しなければならない。
+
+- 型
+- コーデック
+- validation
+- DSL
+- RBS
+- OpenAPI
+- 差分計算
 
 <a id="sec-4-2"></a>
 ## 4.2 エンドポイント
