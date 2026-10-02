@@ -122,11 +122,16 @@ rules, and a Prometheus-compatible HTTP API. See
 
 ## Quick start
 
-Requirements: Linux x86_64 with cgroup v2, root, `nft` and `iptables`
-installed, Ruby 3.4.11 (the Gemfile pins it), outbound access to pull
-images, and a `kubectl` v1.36.2 at `build/tools/kubectl-v1.36.2` (its
-checksum is in `test/compatibility/clients/matrix.yml`). KVM is only needed
-for the `microvm` RuntimeClass.
+You need:
+
+- Linux x86_64 with cgroup v2, and root
+- `nft` and `iptables`
+- Ruby 3.4.11 (pinned by the Gemfile)
+- outbound access to pull images
+- kubectl v1.36.2 at `build/tools/kubectl-v1.36.2`
+
+The kubectl checksum is in `test/compatibility/clients/matrix.yml`. KVM is
+needed only for the `microvm` RuntimeClass.
 
 ```sh
 git clone <this repository> && cd 2026
