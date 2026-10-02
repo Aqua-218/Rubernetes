@@ -1,4 +1,4 @@
-# Native Extension Boundary
+# Native extension
 
 `rubernetes_linux/` contains only ABI shims that cannot be expressed safely through Ruby
 FFI. It may expose typed syscalls and structure-layout probes, but it may not own policy,
