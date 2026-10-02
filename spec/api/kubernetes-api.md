@@ -76,7 +76,11 @@ PATCHは次の形式をすべて実装する。
 | `application/merge-patch+json` | RFC 7386のJSON Merge Patch |
 | `application/strategic-merge-patch+json` | スキーマのpatch strategyを使うStrategic Merge Patch |
 | `application/apply-patch+yaml` | Server-Side Apply |
-| `application/apply-patch+cbor` | CBOR apply。対応 feature gate 無効時は upstream と同じ拒否 |
+| `application/apply-patch+cbor` | CBORによるapply。対応するfeature gateが無効なときは、upstreamと同じように拒否する |
+
+### クエリパラメータ
+
+list、watch、deletecollectionは、次のパラメータを受け付ける。validationと意味はv1.36.2と同じにする。
 
 list、watch、deletecollection は `labelSelector`、`fieldSelector`、`limit`、`continue`、
 `resourceVersion`、`resourceVersionMatch`、`timeoutSeconds`、`allowWatchBookmarks`、
