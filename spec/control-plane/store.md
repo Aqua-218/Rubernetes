@@ -5,7 +5,7 @@
 
 > 対象読者: ストアの実装者、分散システムの検証者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 MVCC Store の操作、revision、watch履歴、競合処理、破損検出を定義する。
 
