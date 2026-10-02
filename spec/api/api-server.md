@@ -14,24 +14,23 @@ APIリクエストの処理順序、認証、認可、流量制御、admission�
 <a id="sec-5-1-1"></a>
 ## 5.1.1 処理順序
 
-リクエストは以下の順に通す。順序を変更してはならない。
+リクエストは次の順に処理する。この順序を変更してはならない。
 
-1. TLS 終端
-2. リクエスト ID 付与
-3. 認証（[§5.1.2](api-server.md#sec-5-1-2)）
-4. 認可（[§5.1.3](api-server.md#sec-5-1-3)）
-5. 流量制御（[§5.1.4](api-server.md#sec-5-1-4)）
-6. ルーティング / GVR 解決
-7. デコード（[§5.1.5](api-server.md#sec-5-1-5)）
-8. Mutating admission
-9. Validating admission
-10. Strategy（defaulting、正規化）
-11. ストア操作
-12. エンコード / 応答
-13. 監査記録
+1. TLSの終端
+2. リクエストIDの付与
+3. 認証（[5.1.2](api-server.md#sec-5-1-2)）
+4. 認可（[5.1.3](api-server.md#sec-5-1-3)）
+5. 流量制御（[5.1.4](api-server.md#sec-5-1-4)）
+6. ルーティングとGVRの解決
+7. デコード（[5.1.5](api-server.md#sec-5-1-5)）
+8. mutating admission
+9. validating admission
+10. strategy（defaultingと正規化）
+11. ストアの操作
+12. エンコードと応答
+13. 監査の記録
 
-認可を admission より前に置くのは、
-権限のない要求に対して admission の副作用を起こさないため。
+認可をadmissionより前に置く。権限のない要求でadmissionの副作用が起きることを防ぐためである。
 
 <a id="sec-5-1-2"></a>
 ## 5.1.2 認証
