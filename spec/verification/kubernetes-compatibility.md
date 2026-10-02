@@ -373,7 +373,7 @@ Kubernetes v1.36.2と互換な状態の形式を保ったまま、次のアッ�
 
 キャンセルされたshard、結果の欠落、成果物のアップロードの失敗は、スイートの失敗として扱う。
 
-## Primary Sources
+## 一次資料
 
 - [Kubernetes v1.36.2 source](https://github.com/kubernetes/kubernetes/tree/v1.36.2)
 - [v1.36.2 Conformance definition](https://github.com/kubernetes/kubernetes/blob/v1.36.2/test/conformance/testdata/conformance.yaml)
