@@ -197,18 +197,20 @@ use it as a Prometheus data source.
 
 | Path | Contents |
 |---|---|
-| [`lib/rubernetes/`](lib/rubernetes/README.md) | Production code, one directory per subsystem (`api/`, `consensus/`, `controller/`, `scheduler/`, `node/`, `runtime/`, `network/`, `proxy/`, `volume/`, `security/`, `schema/`, `observability/`, …) |
-| [`exe/`](exe/README.md) | The six executables; they parse options and hand over to `lib/rubernetes/bootstrap` |
-| [`ext/rubernetes_linux/`](ext/README.md) | The C ABI shim (`clone3` + exec, typed syscalls); no policy lives here |
-| `schema/` → `generated/` | The imported Kubernetes v1.36.2 schema, OpenAPI and defaults corpus, and the reproducible Ruby types, RBS, codecs and Manifest DSL compiled from it. `generated/` is never hand-edited |
-| [`spec/`](spec/README.md) | The normative specification and design documents |
-| [`test/`](test/README.md) | Unit, property, integration, e2e, chaos, security and compatibility suites, plus the conformance harness profiles |
-| [`tools/`](tools/README.md) | Ruby automation: schema import and generation, conformance (`cluster.rb`, lanes, Hydrophone), milestone probes and gates, formal verification runners, release artifacts, the commit recorder |
-| [`verification/`](verification/README.md) | TLA+ and Lean models (Raft, runtime lifecycle, bounded framing, KV sequential spec) and trace schemas |
-| [`third_party/locks/`](third_party/locks/README.md) | Every upstream source, image, runner binary and build input, pinned by commit and digest |
-| [`deploy/`](deploy/cluster/README.md) | systemd units and operator procedures |
-| [`apps/dashboard/`](apps/dashboard/README.md) | The Rails dashboard / metrics server |
-| `benchmarks/`, `artifacts/` | Benchmarks and (ignored) evidence bundles |
+| [`lib/rubernetes/`](lib/rubernetes/README.md) | Production code, one directory per subsystem (`api/`, `consensus/`, `scheduler/`, `node/` and so on) |
+| [`exe/`](exe/README.md) | The six executables. They parse options and hand over to `lib/rubernetes/bootstrap` |
+| [`ext/rubernetes_linux/`](ext/README.md) | The C extension: `clone3` plus exec, and typed syscalls |
+| `schema/` | The schema, OpenAPI and defaults imported from Kubernetes v1.36.2 |
+| `generated/` | Ruby types, RBS, codecs and the Manifest DSL generated from `schema/`. Never edited by hand |
+| [`spec/`](spec/README.md) | The specification and design documents |
+| [`test/`](test/README.md) | Unit, property, integration, e2e, chaos, security and compatibility suites, plus the conformance profiles |
+| [`tools/`](tools/README.md) | Automation written in Ruby: schema import and generation, conformance, milestone gates, formal verification, release |
+| [`verification/`](verification/README.md) | TLA+ and Lean models, and trace schemas |
+| [`third_party/locks/`](third_party/locks/README.md) | Every upstream source, image and binary, pinned by commit and digest |
+| [`deploy/`](deploy/cluster/README.md) | systemd units and operating procedures |
+| [`apps/dashboard/`](apps/dashboard/README.md) | The Rails dashboard and metrics server |
+| `benchmarks/` | Benchmarks |
+| `artifacts/` | Evidence bundles. Not tracked by Git |
 
 ## Development
 
