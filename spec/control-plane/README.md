@@ -2,7 +2,7 @@
 
 # 制御面
 
-> **Audience:** 分散システム実装者、Controller/Scheduler実装者、形式検証者
+> 対象読者: 分散システムの実装者、コントローラとスケジューラの実装者、形式検証の担当者
 
 APIで受理したdesired stateを永続化し、watch eventからcontrollerとschedulerを駆動して
 actual stateへ収束させるRuby製control planeを定義する。
