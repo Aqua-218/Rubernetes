@@ -869,6 +869,7 @@ module Rubernetes
           "resolv_conf" => options["resolv_conf"] || process["resolv_conf"] || "/etc/resolv.conf",
           "positive_ttl" => options.fetch("positive_ttl", 5),
           "negative_ttl" => options.fetch("negative_ttl", 5),
+          "hosts" => options["hosts"],
           # The resolver's own identity (the cluster DNS add-on's, CoreDNS
           # running as its service account): it watches every Service,
           # EndpointSlice and Pod, which a node identity may not.
