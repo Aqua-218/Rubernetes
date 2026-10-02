@@ -54,7 +54,7 @@ Filterがすべてのノードで失敗し、かつPodの優先度が既存のPo
 退去の対象が見つからない場合は、Podを`unschedulableQ`に入れる。
 
 <a id="sec-5-6-6"></a>
-## 5.6.6 Scheduler plugin DSL
+## 5.6.6 スケジューラプラグインDSL
 
 Filter と Score は schema で型付けされた Pod/Node を受ける Ruby block として登録できる。
 
