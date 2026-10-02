@@ -3,7 +3,7 @@
 <a id="sec-a-2"></a>
 # A.2 図02 ストレージとRaft
 
-> **Audience:** Store/Raft実装者、形式検証者
+> 対象読者: ストアとRaftの実装者、形式検証の担当者
 >
 > **Status:** Normative — version 0.2
 
