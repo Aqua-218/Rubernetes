@@ -43,9 +43,7 @@ Firecrackerは外部のVMMとして使う。ただし、次のものはRubyの�
 - ゲスト内のsupervisor
 - 回収の判断
 
-Firecracker は外部 VMM として用いるが、Pod 解釈、image 管理、状態機械、network、volume、
-policy、guest supervisor および回収判断は Ruby 実装が所有する。Firecracker を
-Native backend の代替や、本システムのコンテナ lifecycle 実装として扱ってはならない。
+FirecrackerをNative backendの代わりとして扱ってはならない。本システムのコンテナライフサイクルの実装として扱ってもならない。
 
 <a id="sec-5-8-2"></a>
 ## 5.8.2 インターフェース
