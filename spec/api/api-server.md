@@ -9,8 +9,7 @@
 
 APIリクエストの処理順序、認証、認可、流量制御、admission、監査、保存時の暗号化を定義する。
 
-
-> **Diagram:** [図 01 — API Server](../diagrams/01-api-server.md)
+図は[図01 APIサーバ](../diagrams/01-api-server.md)にある。
 
 <a id="sec-5-1-1"></a>
 ## 5.1.1 処理順序
