@@ -20,7 +20,7 @@ their origins and licenses. A cluster speaks the Kubernetes API unchanged, so
 | Latest full Conformance run | 459 / 459 passed, 2026-09-30, `linux-amd64-ipv4-native`, unmodified `registry.k8s.io/conformance` image via Hydrophone |
 | Target | Linux x86_64, cgroup v2, root. Ruby 3.4.11 |
 | Size | about 220 k lines of Ruby and C under `lib/` and `ext/`, 100 k lines of tests |
-| License | Apache-2.0 |
+| License | Apache-2.0; upstream-derived parts are listed in [`NOTICE`](NOTICE) |
 
 The normative specification lives in [`spec/`](spec/README.md) (Japanese);
 this README is the practical entry point.
