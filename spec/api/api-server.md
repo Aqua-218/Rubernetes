@@ -95,10 +95,10 @@ watchは長時間の接続なので、実行中の数には含めない。
 <a id="sec-5-1-6"></a>
 ## 5.1.6 削除とfinalizer
 
-1. `DELETE` を受けたら `metadata.deletionTimestamp` を設定する
-2. `finalizers` が空でない限り、オブジェクトは削除しない
-3. 各 finalizer の担当コントローラが後始末後に自分の項目を除去する
-4. `finalizers` が空になった時点で実削除する
+1. `DELETE`を受けたら、`metadata.deletionTimestamp`を設定する。
+2. `finalizers`が空でない間は、オブジェクトを削除しない。
+3. 各finalizerを担当するコントローラが後始末をし、自分の項目を取り除く。
+4. `finalizers`が空になった時点で、実際に削除する。
 
 猶予期間（`gracePeriodSeconds`）の既定値は Pod で 30 秒。
 
