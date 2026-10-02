@@ -38,6 +38,34 @@ class NodeRecoveryPendingPodTest < Minitest::Test
     refute_empty calls.select { |call| Array(call).first == :network_delete }, calls.inspect
   end
 
+  # After a host reboot every container of the stored records is gone.
+  class GoneContainerRuntime < GoneSandboxRuntime
+    def stop_container(id, timeout:)
+      raise StandardError, "unknown container #{id}" if gone
+
+      super
+    end
+  end
+
+  def test_a_container_the_runtime_lost_is_not_waited_for
+    calls = []
+    slept = []
+    runtime = GoneContainerRuntime.new
+    lifecycle = Rubernetes::Node::Lifecycle.new(runtime: runtime, volume: NodeLifecycleTest::Volume.new(calls),
+                                                network: NodeLifecycleTest::Network.new(calls),
+                                                sleeper: ->(seconds) { slept << seconds })
+    object = pod
+    lifecycle.start(object)
+    runtime.gone = true
+    slept.clear
+    result = lifecycle.terminate(object, reason: "StartupRecovery")
+
+    assert_equal "Removed", result.state, result.inspect
+    # The grace period (30 s by default, 300 s for ingress-nginx) is for a
+    # process that can still exit; there is none.
+    assert_empty slept.select { |seconds| seconds >= 1 }, slept.inspect
+  end
+
   def test_a_pending_pod_cleanup_does_not_keep_the_agent_down
     service = Rubernetes::Bootstrap::AgentService.allocate
     report = {"ready" => true, "errors" => [], "blocked" => ["3229d668-uid"],
