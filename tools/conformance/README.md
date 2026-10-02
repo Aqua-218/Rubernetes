@@ -165,6 +165,7 @@ uplink address, because three replicas run on one host. A cluster made with
 kubeadm lists different addresses.
 
 ## Related
+
 - [Kubernetes compatibility contract](../../spec/verification/kubernetes-compatibility.md)
 - [Milestone evidence rules](../../spec/delivery/milestones.md)
 - [Pinned runner inputs](../../third_party/locks/conformance-runners.json)
