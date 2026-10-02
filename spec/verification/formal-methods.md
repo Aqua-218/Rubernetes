@@ -116,7 +116,7 @@ VM escapeへの耐性、ホストのkernel・KVM・CPUの正しさ、すべて�
 
 ## 関連
 
-- [testing](testing.md)
-- [raft](../control-plane/raft.md)
-- [runtime](../node/runtime.md)
-- [08 verification](../diagrams/08-verification.md)
+- [検証戦略](testing.md)
+- [Raft](../control-plane/raft.md)
+- [ランタイム](../node/runtime.md)
+- [08 検証](../diagrams/08-verification.md)
