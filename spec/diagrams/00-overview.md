@@ -117,7 +117,7 @@ class R1,R2,R3,R4,R5 lo
 class V1,V2,V3 ve
 ```
 
-## Related
+## 関連
 
 - [architecture](../foundation/architecture.md)
 - [構成図インデックス](README.md)
