@@ -14,7 +14,7 @@ Rubernetesの仕様と設計書の正本は、複数の文書からなる[`spec/
 - [実装計画と受け入れ基準](spec/delivery/implementation-plan.md)
 - [構成図集](spec/diagrams/README.md)
 
-## Normative Status
+## 仕様の状態
 
 - Version: 0.2
 - Status: 実装基準ドラフト
