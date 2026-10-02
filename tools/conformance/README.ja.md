@@ -70,9 +70,9 @@ setsid nohup tools/conformance/round.sh conf4 /srv/rbn-conf4/linux-amd64-ipv4-na
 クラスタはそれぞれ専用のネットワーク名前空間で動きます。そのため、Podブリッジ、nftablesのテーブル、NodePort、経路がホストやほかのクラスタと衝突しません。
 
 ```bash
-export PATH=/opt/rubies/3.4.11/bin:$PATH            # Gemfile の Ruby
-export RUBERNETES_M8_CGROUP_ROOT=/sys/fs/cgroup/lanes   # インスタンスごとに cgroup root 1 つ
-tools/conformance/netns_env.sh up lanes6 --v4 1 --v6 e6   # veth uplink、NAT、resolv.conf
+export PATH=/opt/rubies/3.4.11/bin:$PATH            # Gemfileが指定するRuby
+export RUBERNETES_M8_CGROUP_ROOT=/sys/fs/cgroup/lanes   # クラスタごとにcgroup rootを1つ
+tools/conformance/netns_env.sh up lanes6 --v4 1 --v6 e6   # veth uplink、NAT、resolv.confを用意
 tools/conformance/netns_env.sh exec lanes6 -- \
   ruby tools/conformance/cluster.rb up --profile linux-amd64-ipv6-native --root /srv/rbn-lanes
 tools/conformance/round.sh lanes6 /srv/rbn-lanes/linux-amd64-ipv6-native \
