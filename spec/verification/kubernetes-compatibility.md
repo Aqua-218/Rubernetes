@@ -95,7 +95,13 @@ upstreamのソースにRuntimeClassを注入する変更を加えた実行は、
 
 Rubyのランナー`tools/conformance/run.rb`は、クラスタに接続する前に次の項目を検査する。
 
-Ruby runner `tools/conformance/run.rb`はclusterへ接続する前に次を検査する。
+1. Kubernetesのタグオブジェクトと、タグが指すコミットが、ロックと一致する。
+2. チェックアウトしたソースに変更がない。追跡しているファイルにも、追跡していないファイルにも変更がなく、submoduleとvendorのツリーが固定した状態にある。
+3. `conformance.yaml`が正しい。確認する内容は下の「conformance.yamlの検査」に示す。
+4. ランナーのアーカイブ、ランナーのイメージ、Conformanceイメージ、補助イメージのダイジェストがロックと一致する。
+5. 対象のアーキテクチャ用のマニフェストがインデックスの中にある。別のアーキテクチャで代用しない。
+6. KUBECONFIGがRubernetesのクラスタだけを指している。比較対象のKubernetesクラスタと資格情報を共有していない。
+7. テストの実行ID、クラスタID、ソースのコミット、プロファイル、解決したイメージの集合を、変更できないマニフェストに記録する。
 
 1. Kubernetes tag objectとpeeled commitがlockと一致する。
 2. checkoutにtracked/untracked source patchがなく、submoduleとvendor treeがpinned状態である。
