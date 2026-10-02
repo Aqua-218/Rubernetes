@@ -80,17 +80,28 @@ eviction.
 
 ## M2 Native Pod
 
-The gate requires the x86_64 Runtime L0–L3 profile, the OCI attack corpus,
-a lifecycle trace, a 1,000-cycle resource ledger and a kernel object
-inventory. Pod lifecycle observables (init ordering, probe thresholds,
-restart back-off, graceful termination) are compared with the real
-Kubernetes v1.36.2 node oracle (kind node image built from the pinned
-source). The RuntimeLifecycle formal claim is discharged on a trace replayed
-from the production Native runtime's hash-chained ownership journal, checked
-by the Ruby trace verifier, TLC, Apalache and Lean under the deterministic
-proof profile `verification/proof-profile.json`
-(`tools/verification/m2_proof_profile.rb`). `rake m2:kernel` runs the
-real-kernel adapter. ARM support is optional and not a prerequisite.
+The gate requires:
+
+- the x86_64 Runtime L0–L3 profile
+- the OCI attack corpus
+- a lifecycle trace
+- a resource ledger covering 1,000 cycles
+- the kernel object inventory
+
+Pod lifecycle observations are compared with a real Kubernetes v1.36.2 node.
+The compared items are init container ordering, probe thresholds, restart
+backoff and graceful termination. The reference node uses a kind node image
+built from the pinned source.
+
+The formal RuntimeLifecycle claim is decided on traces replayed from the
+ownership journal that the production Native runtime writes. The journal is
+hash-chained. The deciders are the Ruby trace checker, TLC, Apalache and
+Lean. The conditions of the check are fixed in
+`verification/proof-profile.json`, which
+`tools/verification/m2_proof_profile.rb` loads.
+
+`rake m2:kernel` runs the real-kernel adapter. ARM support is optional and
+is not a prerequisite of the gate.
 
 ## M3 Control loops
 
