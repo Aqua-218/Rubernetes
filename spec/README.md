@@ -16,12 +16,12 @@ graph TD
     Hub -->|"目的と全体構造"| Foundation["基礎"]
     Hub -->|"Rubyの言語設計"| RubyDesign["Ruby設計"]
     Hub -->|"Kubernetes API"| API["API"]
-    Hub -->|"分散制御"| ControlPlane["Control Plane"]
-    Hub -->|"Pod実行"| Node["Node"]
-    Hub -->|"証明と試験"| Verification["Verification"]
-    Hub -->|"実装と完成判定"| Delivery["Delivery"]
-    Hub -->|"構成図"| Diagrams["Diagrams"]
-    Hub -->|"固定外部仕様"| References["References"]
+    Hub -->|"分散制御"| ControlPlane["制御面"]
+    Hub -->|"Pod実行"| Node["ノード"]
+    Hub -->|"証明と試験"| Verification["検証"]
+    Hub -->|"実装と完成判定"| Delivery["実装と納品"]
+    Hub -->|"構成図"| Diagrams["構成図"]
+    Hub -->|"固定した外部仕様"| References["規範参照"]
 ```
 
 ## Reading Paths
