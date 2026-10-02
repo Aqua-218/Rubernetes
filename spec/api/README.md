@@ -1,6 +1,6 @@
 [仕様書の目次](../README.md)
 
-# API Specifications
+# API仕様
 
 > **Audience:** API実装者、クライアント作者、互換性検証者
 
