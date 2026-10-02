@@ -68,16 +68,19 @@ API differentialの22操作には、TokenReview、SelfSubjectReview、SelfSubjec
 
 ## M2 Native Pod
 
-ゲートは x86_64 の Runtime L0〜L3 プロファイル、OCI 攻撃コーパス、ライフ
-サイクルトレース、1,000 サイクルのリソース台帳、カーネルオブジェクト一覧を
-要求します。Pod ライフサイクルの観測値（init の順序、probe の閾値、再起動
-バックオフ、graceful termination）は本物の Kubernetes v1.36.2 ノードオラクル
-（固定ソースからビルドした kind ノードイメージ）と比較します。RuntimeLifecycle
-の形式的主張は、本番 Native ランタイムのハッシュ連鎖した所有権ジャーナルから
-再生したトレース上で、Ruby トレース検証器、TLC、Apalache、Lean により、
-決定的な証明プロファイル `verification/proof-profile.json`
-（`tools/verification/m2_proof_profile.rb`）の下で判定します。`rake m2:kernel`
-は実カーネルアダプタを実行します。ARM 対応は任意で、前提条件ではありません。
+ゲートは次の5つを要求します。
+
+- x86_64のRuntime L0〜L3プロファイル
+- OCI攻撃コーパス
+- ライフサイクルのトレース
+- 1,000サイクル分のリソース台帳
+- カーネルオブジェクトの一覧
+
+Podライフサイクルの観測値は、本物のKubernetes v1.36.2ノードと比較します。比較する項目は、initコンテナの順序、probeの閾値、再起動のバックオフ、graceful terminationです。比較相手のノードには、固定したソースからビルドしたkindノードイメージを使います。
+
+RuntimeLifecycleの形式的な主張は、本番のNativeランタイムが書いた所有権ジャーナルから再生したトレースで判定します。ジャーナルはハッシュで連鎖しています。判定にはRubyのトレース検証器、TLC、Apalache、Leanを使います。検査の条件は`verification/proof-profile.json`に固定してあり、`tools/verification/m2_proof_profile.rb`が読み込みます。
+
+`rake m2:kernel`で実カーネルアダプタを実行できます。ARM対応は任意で、ゲートの前提条件には含みません。
 
 ## M3 制御ループ
 
