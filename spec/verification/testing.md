@@ -123,10 +123,7 @@ Kubernetesのテストについて、次の項目は[Kubernetes v1.36.2互換性
 
 Conformanceの成功だけを、完全な互換性の根拠としてはならない。同じ文書のK0〜K7をすべて通過する必要がある。
 
-Kubernetes testのsource、runner、selection、architecture/network profile、skip禁止規則、
-client/project corpus、evidence schemaは
-[Kubernetes v1.36.2互換性試験契約](kubernetes-compatibility.md)に従う。
-Conformanceの成功だけを完全互換の根拠としてはならず、同文書のK0〜K7をすべて通過する。
+次のテストは、互換性の証拠に数えない。
 
 upstream sourceをRubernetes向けにpatchしたtest、failure後にfocusして再実行したtest、
 未実装機能をskipしたtestは互換性evidenceへ算入しない。
