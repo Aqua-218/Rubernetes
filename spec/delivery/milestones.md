@@ -243,7 +243,11 @@ graph LR
 
 次のものを保存する。
 
-### Required evidence
+- 線形化可能性の検査に使った履歴
+- 障害の組み合わせ表
+- WALとスナップショットの破損コーパス
+- RTOとRPOのレポート
+- 資源の所有権の台帳
 
 linearizability histories、fault matrix、WAL/snapshot corruption corpus、RTO/RPO report、
 resource ownership ledgerを保存する。Raft の TLC result は必須証拠から除外する
