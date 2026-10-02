@@ -5,7 +5,7 @@
 
 > 対象読者: Serviceのデータパスの実装者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 Service/EndpointSlice、conntrack、eBPF/nftables backendの互換動作を定義する。
 
