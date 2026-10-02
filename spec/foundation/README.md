@@ -1,6 +1,6 @@
 [仕様書の目次](../README.md)
 
-# Foundation
+# 基礎
 
 > **Audience:** 全読者、アーキテクト、仕様編集者
 
