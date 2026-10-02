@@ -72,7 +72,7 @@ timeoutは、呼び出し側が待つ時間の上限を表す。処理を放棄�
 <a id="sec-5-8-3"></a>
 ## 5.8.3 共通のライフサイクル
 
-Native と MicroVM は次の抽象状態機械を共有する。
+NativeとMicroVMは、次の抽象的な状態機械を共有する。
 
 ```mermaid
 stateDiagram-v2
