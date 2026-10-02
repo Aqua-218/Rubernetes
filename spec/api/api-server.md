@@ -65,11 +65,22 @@ RBAC、Node、Webhook、ABAC、AlwaysAllow、AlwaysDenyの各authorizerを実装
 <a id="sec-5-1-4"></a>
 ## 5.1.4 流量制御
 
-- FlowSchema と PriorityLevelConfiguration で要求を分類し、shuffle sharding した seat queue を持つ
-- 既定は 64 queue、hand size 8、queue length limit 50、request wait limit 60 秒とする
-- 短時間 read は 400 seat、mutating は 200 seat を既定上限とし、APF の seat 配分を適用する
-- 待機上限または queue 上限を超えた要求は `429` と `Retry-After` を返す
-- watch は長時間接続のため実行中カウントから除外する
+FlowSchemaとPriorityLevelConfigurationで要求を分類する。キューはseat単位で管理し、shuffle shardingで要求を振り分ける。
+
+| 項目 | 既定値 |
+|---|---|
+| キューの数 | 64 |
+| hand size | 8 |
+| キュー長の上限 | 50 |
+| 要求の待ち時間の上限 | 60秒 |
+| 短時間の読み取りのseat上限 | 400 |
+| 変更を伴う要求のseat上限 | 200 |
+
+seatの配分にはAPFの規則を適用する。
+
+待ち時間の上限かキューの上限を超えた要求には、`429`と`Retry-After`を返す。
+
+watchは長時間の接続なので、実行中の数には含めない。
 
 <a id="sec-5-1-5"></a>
 ## 5.1.5 Scheme / Codec
