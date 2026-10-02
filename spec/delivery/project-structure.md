@@ -183,7 +183,7 @@ graph TD
 - 生成したファイルは、生成器のバージョン、入力のダイジェスト、出力スキーマのバージョンをヘッダに持つ。
 - CIは生成を2回実行し、結果がバイト単位で同一であることを検査する。正規の生成ツリーとの差分がないことも検査する。
 
-### Store and consensus
+### ストアと合意
 
 - `storage/`が`Store` interface、transaction、revision、watch eventの意味を所有する。
 - `consensus/`は`Store`のdurable implementationを提供し、API object semanticsを所有しない。
