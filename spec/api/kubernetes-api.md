@@ -3,7 +3,7 @@
 <a id="sec-4"></a>
 # 4. API仕様
 
-> **Audience:** API実装者、クライアント作者、互換性検証者
+> 対象読者: API実装者、クライアントの作者、互換性の検証者
 >
 > **Status:** Normative — version 0.2
 
