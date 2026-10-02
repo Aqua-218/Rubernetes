@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [構成図](README.md)
 
 <a id="sec-a-6"></a>
-# A.6 図 06 — Network
+# A.6 図06 ネットワーク
 
 > **Audience:** Network/Service実装者
 >
