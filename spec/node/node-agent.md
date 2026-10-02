@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-Pod SyncLoop、起動・probe・restart・termination・evictionの順序を定義する。
+PodのSyncLoopと、起動、probe、再起動、終了、evictionの順序を定義する。
 
 
 > **Diagram:** [図 04 — Node Agent](../diagrams/04-node-agent.md)
