@@ -162,14 +162,7 @@ stateDiagram-v2
 
 デバイスノード、FIFO、socketのエントリは、rootfsに作らずに読み飛ばし、件数を記録する。コンテナの`/dev`は、ランタイムがnodevのtmpfsの上に自分で構成するためである。containerdはこれらのノードを作成する。本実装はレイヤ全体を拒否せず、該当するエントリだけを採用しない。
 
-- OCI Distribution Spec と OCI Image Spec に従い registry と直接通信する
-- tag は Pod 起動単位で digest へ 1 回だけ解決し、以後は digest を config fingerprint に固定する
-- manifest、config、各 layer、署名、Firecracker binary、kernel、rootfs の SHA-256 を effect point 前に検証する
-- layer は圧縮 stream と展開後の双方で上限を検査し、展開後 20 GiB、entry 1,000,000、path 長 4,096 byte を超えた image を拒否する
-- `..`、absolute path、NUL、rootfs 外を指す symlink/hardlink を安全規則に従って拒否する。device node、FIFO、socket の entry は rootfs に作成せず skip して件数を記録する（container の `/dev` は runtime が nodev tmpfs 上に自ら構成する。containerd は node を作成するが、本実装は layer 全体を拒否せず entry のみ不採用とする）
-- whiteout と opaque directory は OCI 規則に従い、各 pathname の適用時に rootfs 内であることを再認可する
-- content-addressable store は digest を key とし、temporary file へ fsync 後に atomic rename する
-- digest、署名、size、media type の不一致時は workspace 作成前に失敗させる
+whiteoutとopaque directoryは、OCIの規則に従って処理する。各パス名を適用するときに、それがrootfsの中にあることを改めて確認する。
 
 <a id="sec-5-8-6"></a>
 ## 5.8.6 Namespace
