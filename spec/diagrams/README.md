@@ -20,7 +20,7 @@
 | 07 | [ストレージとボリューム](07-storage-volume.md) | [ボリューム](../node/volume.md) |
 | 08 | [検証](08-verification.md) | [形式仕様](../verification/formal-methods.md)、[検証戦略](../verification/testing.md) |
 
-## Related
+## 関連
 
 - [Foundation Architecture](../foundation/architecture.md)
 - [仕様書インデックス](../README.md)
