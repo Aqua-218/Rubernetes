@@ -66,7 +66,9 @@ PATCH  {base}/{resource}/{name}/{subresource}                 patch subresource
 
 namespaceに属するリソースでは、`{base}`は`.../namespaces/{namespace}`になる。すべてのnamespaceを対象にしたlistとwatchは、group/versionの直下で受け付ける。
 
-PATCH は次をすべて実装する。
+### PATCH
+
+PATCHは次の形式をすべて実装する。
 
 | Content-Type | 意味 |
 |---|---|
