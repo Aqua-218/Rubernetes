@@ -146,7 +146,7 @@ class W1,W2,W3,W4 wa
 class U1,U2,U3 ud
 ```
 
-## Related
+## 関連
 
 - [api server](../api/api-server.md)
 - [kubernetes api](../api/kubernetes-api.md)
