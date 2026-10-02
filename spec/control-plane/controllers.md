@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-built-in controller の共通規約、主要controllerの振る舞い、Controller DSLを定義する。
+組み込みのコントローラに共通する規約、主なコントローラの振る舞い、Controller DSLを定義する。
 
 
 > **Diagram:** [図 03 — 制御ループ](../diagrams/03-control-loop.md)
