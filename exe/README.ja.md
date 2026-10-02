@@ -2,10 +2,7 @@
 
 [English](README.md) | 日本語
 
-`rubectl`、`rubernetes-apiserver`、`rubernetes-controller-manager`、
-`rubernetes-scheduler`、`rubernetes-agent`、`rubernetes-proxy` がここにあります。
-実行ファイルはプロセスレベルのオプションを解釈して `Rubernetes::Bootstrap` に
-委譲するだけで、ドメインのポリシーは `lib/rubernetes/` にあります。
+このディレクトリには6つの実行ファイルがあります。
 
 すべてのデーモンは `--help`、`--version`、`--config PATH`、`--check-config` を
 実装します。help と version の経路では設定を読まず依存も組み立てません。
