@@ -176,7 +176,7 @@ graph TD
 - 具体的な実装を組み立てるのは`bootstrap/`だけである。ドメインのモジュールは`bootstrap/`に依存しない。
 - プロセス間の通信は、[アーキテクチャ](../foundation/architecture.md)で定義したプロトコルの境界を通す。
 
-### Schema and generated code
+### スキーマと生成コード
 
 - `schema/`はcompiler input、`lib/rubernetes/schema/`はcompiler implementation、`generated/`はoutputである。
 - generated Rubyは`Rubernetes::Generated`配下に置き、hand-authored classと同じconstantを再openしない。
