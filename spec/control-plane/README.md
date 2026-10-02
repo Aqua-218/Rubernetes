@@ -4,8 +4,7 @@
 
 > 対象読者: 分散システムの実装者、コントローラとスケジューラの実装者、形式検証の担当者
 
-APIで受理したdesired stateを永続化し、watch eventからcontrollerとschedulerを駆動して
-actual stateへ収束させるRuby製control planeを定義する。
+Ruby製の制御面を定義する。制御面は、APIが受理したdesired stateを永続化する。そのうえで、watchのイベントをもとにコントローラとスケジューラを動かし、actual stateをdesired stateに収束させる。
 
 ## Component Flow
 
