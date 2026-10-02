@@ -121,16 +121,18 @@ replaced.
 
 ## M4 Workload data plane
 
-Every data-plane probe needs its independent external runner: volume
-observation and crash runners (private mount namespaces, SIGKILL at every
-effect boundary, snapshot integrity), a Go CSI plugin oracle driven by the
-production CSI client over gRPC, the mount-attack observation runner, a
-network observation runner that keeps a live network namespace and packet
-capture alive for the gate, a NetworkPolicy oracle that boots the pinned
-kind node image with kindnetd enforcement, and the proxy parity runner
-(41/41 corpus cases on the eBPF and nftables datapaths, zero connection loss
-across backend switches). The runner commands are exported before
-`rake m4:evidence`:
+Every data-plane probe needs an independent external runner.
+
+| Runner | What it does |
+|---|---|
+| Volume observation and crash | Runs in a private mount namespace. Sends SIGKILL at every effect boundary and checks snapshot integrity |
+| CSI plugin oracle | A CSI plugin written in Go, driven over gRPC by the production CSI client |
+| Mount attack observation | Observes attacks on mounts |
+| Network observation | Keeps the network namespaces and packet captures alive while the gate runs |
+| NetworkPolicy oracle | Boots the pinned kind node image with kindnetd policy enforcement enabled |
+| Proxy parity | All 41 corpus cases match on both the eBPF and nftables datapaths, with zero connection loss on a backend switch |
+
+Export the runner commands before running `rake m4:evidence`.
 
 ```bash
 RUBERNETES_M4_VOLUME_OBSERVATION_COMMAND="ruby test/conformance/kubernetes/m4_volume_observation/runner.rb --mode observation"
