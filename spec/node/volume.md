@@ -59,8 +59,15 @@ Declared → Provisioned → Attached → Staged → Published → Unpublishing 
 
 次の機能は、v1.36.2と同じ条件で扱う。
 
-`ReadWriteOncePod`、multi-attach prohibition、nodeAffinity、accessMode、reclaimPolicy、
-WaitForFirstConsumer、online expansion、snapshot/clone、ephemeral volume を v1.36.2 と同じ条件で扱う。
+- `ReadWriteOncePod`
+- multi-attachの禁止
+- nodeAffinity
+- accessMode
+- reclaimPolicy
+- WaitForFirstConsumer
+- オンラインでの拡張
+- スナップショットとクローン
+- ephemeral volume
 
 <a id="sec-5-11-3"></a>
 ## 5.11.3 投影と path security
