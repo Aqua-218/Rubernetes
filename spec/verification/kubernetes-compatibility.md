@@ -357,8 +357,7 @@ Kubernetes v1.36.2と互換な状態の形式を保ったまま、次のアッ�
 }
 ```
 
-raw log、JUnit、Ginkgo JSON、cluster event、component log、
-resolved image list、resource inventoryをrun IDで結び、release後も再検証可能な保存先へ配置する。
+生のログ、JUnit、GinkgoのJSON、クラスタのイベント、コンポーネントのログ、解決したイメージの一覧、資源の一覧は、実行IDで結び付ける。リリースのあとも再検証できる場所に保存する。
 
 ## CI Scheduling
 
