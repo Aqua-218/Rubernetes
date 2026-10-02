@@ -71,9 +71,19 @@ kubeletの役割を担います。Podの同期、probe、eviction、ノードの
 - microvm: jailer付きのFirecrackerでPodを動かします。rootfsはdm-verityで検証し、vsock経由のsupervisorが中で動きます。
 - CRI: 外部のCRIランタイムにつなぎます。明示的に有効にしたときだけ使われます。
 
-実行時に必要なのは Ruby と、fork する Ruby VM から安全に発行できない
-システムコールのための小さな C シム（[`ext/rubernetes_linux`](ext/README.ja.md)）
-だけです。
+Podネットワークは内蔵のbridgeデータパスです。dual-stackのIPAM、NetworkPolicy、egress NAT、クラスタDNSを持っています。NetworkPolicyはnftablesかeBPFで実現します。
+
+### rubernetes-proxy
+
+Service、EndpointSlice、NodePort、session affinity、traffic policyを処理します。データパスはiptables、nftables、eBPFの3種類です。チェーンの構成とメトリクスはupstreamに合わせました。
+
+### rubectl
+
+`get`、`create`、`apply`、`patch`、`delete`、`watch`、`raw`が使えます。スキーマから生成したRubyのManifest DSLも読み込めます。本物の`kubectl`を使ってもかまいません。
+
+### apps/dashboard
+
+Railsで書いたダッシュボードです。クラスタの中身を閲覧でき、Prometheus形式の時系列ストアを自前で持っています。PromQL、recordingルール、alertingルール、Prometheus互換のHTTP APIに対応しています。詳しくは[ダッシュボードのREADME](apps/dashboard/README.ja.md)を読んでください。
 
 ## クイックスタート
 
