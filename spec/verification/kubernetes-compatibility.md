@@ -387,5 +387,5 @@ Kubernetes v1.36.2と互換な状態の形式を保ったまま、次のアッ�
 - [検証戦略](testing.md)
 - [形式仕様](formal-methods.md)
 - [マイルストーン](../delivery/milestones.md)
-- [Project Structure](../delivery/project-structure.md)
+- [プロジェクト構成](../delivery/project-structure.md)
 - [規範参照](../references.md)
