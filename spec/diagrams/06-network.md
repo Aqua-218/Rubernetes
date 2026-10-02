@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [diagrams](README.md)
+[仕様書の目次](../README.md) / [構成図](README.md)
 
 <a id="sec-a-6"></a>
 # A.6 図 06 — Network
