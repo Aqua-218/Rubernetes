@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [ノード](README.md)
 
 <a id="sec-5-7"></a>
-# 5.7 Node Agent
+# 5.7 ノードエージェント
 
 > **Audience:** Node Agent実装者、Runtime実装者
 >
