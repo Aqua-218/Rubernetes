@@ -22,11 +22,11 @@ graph LR
 
 | 文書 | 内容 |
 |---|---|
-| [Node Agent](node-agent.md) | SyncLoop、Pod起動、probe、restart、termination、eviction |
-| [Runtime](runtime.md) | Native/MicroVM、状態機械、ownership、rollback、snapshot identity |
-| [Network](network.md) | netlink、IPAM、overlay、NetworkPolicy、DNS |
-| [Service Proxy](service-proxy.md) | Service、EndpointSlice、conntrack、eBPF/nftables |
-| [Volume](volume.md) | built-in volume、CSI、lifecycle、projection、path security |
+| [ノードエージェント](node-agent.md) | SyncLoop、Podの起動、probe、再起動、終了、eviction |
+| [ランタイム](runtime.md) | NativeとMicroVM、状態機械、所有権、ロールバック、スナップショットのidentity |
+| [ネットワーク](network.md) | netlink、IPAM、オーバーレイ、NetworkPolicy、DNS |
+| [サービスプロキシ](service-proxy.md) | Service、EndpointSlice、conntrack、eBPFとnftables |
+| [ボリューム](volume.md) | 組み込みのボリューム、CSI、ライフサイクル、投影、パスの安全性 |
 
 ## Related
 
