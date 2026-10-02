@@ -226,7 +226,12 @@ upstreamのNode Conformanceを、実際のkernelで動くamd64のノードに対
 
 同じseedから作った要求の列を、Kubernetes v1.36.2のクラスタとRubernetesのクラスタに与える。次の観測結果を正規化して比較する。
 
-### Existing projects
+- discovery、OpenAPI、protobufのディスクリプタ、content negotiation
+- 成功時とエラー時のHTTPステータス、ヘッダ、`Status.reason`、`Status.details`、`Status.causes`
+- defaulting、validation、conversion、pruning、admissionの結果
+- JSON、YAML、Protobuf、CBOR、watch、exec、attach、port-forwardのフレーミング
+- patchとapplyの結果、managedFields、競合、resourceVersionの因果の順序
+- コントローラ、スケジューラ、ノードが出すイベントの列と、最終的なクラスタの状態
 
 `test/compatibility/projects/corpus.yml`は最低30件を含み、次をすべて満たす。
 
