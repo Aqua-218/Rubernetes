@@ -9,8 +9,7 @@
 
 Rubyによるnetlinkの実装、IPAM、オーバーレイ、NetworkPolicy、DNSを定義する。ネットワークは自作する。
 
-
-> **Diagram:** [図 06 — Network](../diagrams/06-network.md)
+図は[図06 ネットワーク](../diagrams/06-network.md)にある。
 
 <a id="sec-5-9-1"></a>
 ## 5.9.1 インターフェース
