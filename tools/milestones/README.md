@@ -268,28 +268,49 @@ zero panics, hangs and policy bypasses.
 
 ## M7 MicroVM isolation
 
-Guest artifacts are built by `rake m7:artifacts`
-(`tools/microvm/build_guest_kernel.sh`, `tools/microvm/build_guest_artifacts.rb`)
-and pinned in `third_party/locks/m7-microvm-artifacts.json`. The probes run
-on a real KVM host:
+Build the guest artifacts with `rake m7:artifacts`, which runs
+`tools/microvm/build_guest_kernel.sh` and
+`tools/microvm/build_guest_artifacts.rb`. The result is pinned in
+`third_party/locks/m7-microvm-artifacts.json`. Run the probes on a real KVM
+host.
 
-- `m7_kvm_probe.rb` (L4/L5 report): artifact verification, cold-boot and
-  restored Pod lifecycles with exec/logs/stats/probes/network and
-  kernel-verified confinement, the `Node::Lifecycle` API contract through the
-  multiplexer, and the fault matrix (jailer kill, VMM hang, UDS disconnect,
-  vsock disconnect, pause ACK loss), each fail-closed with zero residue.
-- `m7_attack_probe.rb`: a live guest attacks the jailer root, host
-  filesystem, another VM's vsock, unlisted host ports, another tenant's
-  network and its own rootfs; forged and stale ACKs and unknown broker
-  operations are rejected; the restricted class has no NIC.
-- `m7_identity_probe.rb`: eight clones of one base snapshot; every rotated
-  identity field is unique across clones and the ledger history; stale ACKs
-  and revoked capabilities are refused.
-- `m7_snapshot_probe.rb`: the snapshot corruption corpus (bit flips,
-  truncation, re-signed garbage, artifact mismatch, missing file); no corrupt
-  base ever starts a VM.
-- `m7_latency_probe.rb`: raw Pod start samples from the cached base; p95
-  must be <= 1.5 s.
+### m7_kvm_probe.rb
+
+Produces the L4 and L5 reports. It checks:
+
+- artifact verification
+- the Pod lifecycle from both a cold boot and a restore: exec, logs, stats,
+  probes and network, with confinement verified from the kernel side
+- the `Node::Lifecycle` API contract through the multiplexer
+- the fault matrix: jailer kill, VMM hang, UDS disconnect, vsock disconnect
+  and a lost pause ACK
+
+Every fault must end with a safe stop and nothing left behind.
+
+### m7_attack_probe.rb
+
+Attacks from a running guest. The targets are the jailer root, the host
+filesystem, another VM's vsock, unregistered host ports, another tenant's
+network and the guest's own rootfs. It also checks that forged ACKs, stale
+ACKs and unknown broker operations are rejected, and that a VM of the
+restricted class has no NIC.
+
+### m7_identity_probe.rb
+
+Makes eight clones from one base snapshot. The rotated identity fields must
+be unique across the clones and across the ledger history. Stale ACKs and
+revoked capabilities must be rejected.
+
+### m7_snapshot_probe.rb
+
+Uses a corpus that corrupts snapshots: bit flips, truncation, re-signed
+garbage, artifact mismatch and missing files. A VM must never boot from a
+corrupt base.
+
+### m7_latency_probe.rb
+
+Starts Pods from a cached base and records the raw samples of the time
+taken. The p95 must be 1.5 seconds or less.
 
 ## M8 Kubernetes compatibility
 
