@@ -77,10 +77,10 @@ graph LR
 
 | 経路 | プロトコル |
 |---|---|
-| CLI → apiserver | HTTP/1.1 + JSON。Kubernetes API 互換 |
-| controller / scheduler → apiserver | 同上 |
-| agent → apiserver | 同上。watch は chunked ストリーム |
-| Raft ノード間 | 自作 RPC（[§5.3.6](../control-plane/raft.md#sec-5-3-6)） |
+| CLIからapiserver | HTTP/1.1とJSON。Kubernetes API互換 |
+| コントローラ、スケジューラからapiserver | 同上 |
+| agentからapiserver | 同上。watchはchunkedのストリーム |
+| Raftノード間 | 自作のRPC。[5.3.6](../control-plane/raft.md#sec-5-3-6)を参照 |
 
 ## Related
 
