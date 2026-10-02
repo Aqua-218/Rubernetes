@@ -371,8 +371,7 @@ Kubernetes v1.36.2と互換な状態の形式を保ったまま、次のアッ�
 
 テストをshardに分けることは許可する。ただし、選択台帳と、全shardを合わせたものが、必須のテスト一覧と一致しなければならない。
 
-test shardingは許可するが、selection ledgerと全shardのunionがrequired inventoryと一致しなければならない。
-cancelled shard、missing result、artifact upload failureはsuite failureとして扱う。
+キャンセルされたshard、結果の欠落、成果物のアップロードの失敗は、スイートの失敗として扱う。
 
 ## Primary Sources
 
