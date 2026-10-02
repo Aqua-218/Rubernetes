@@ -140,10 +140,10 @@ graph LR
 
 ### 成果物
 
-- OCI pull、digest verification、layer展開、OverlayFS rootfs
-- namespace、cgroup v2、capability、seccomp、Landlock、process lifecycleを担うNative Runtime
-- Node Agentのregistration、SyncLoop、init/sidecar、probe、restart、termination、status更新
-- rollback journal、orphan detection、startup reconciliation
+- OCIイメージの取得、ダイジェストの検証、レイヤの展開、OverlayFSによるrootfs
+- Nativeランタイム。namespace、cgroup v2、capability、seccomp、Landlock、プロセスのライフサイクルを受け持つ
+- ノードエージェント。登録、SyncLoop、initコンテナとsidecar、probe、再起動、終了、statusの更新を行う
+- ロールバック用のジャーナル、所有者のいない資源の検出、起動時の照合
 
 ### Exit criteria
 
