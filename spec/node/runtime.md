@@ -113,7 +113,7 @@ stateDiagram-v2
 
 各サンドボックスは、取得した資源を耐久性のある台帳で追跡する。
 
-| resource | stable identity | 解放前条件 |
+| 資源 | 安定したidentity | 解放の前提条件 |
 |---|---|---|
 | process / microVM | pidfd、start time、executable digest | exit を pidfd で確認 |
 | cgroup | cgroup ID と絶対 path | `cgroup.events populated=0` |
