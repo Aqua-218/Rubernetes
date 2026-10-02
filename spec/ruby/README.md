@@ -34,11 +34,11 @@ graph LR
 
 ## メタプログラミングの境界
 
-- `method_missing`でGVK、field、pluginを解決しない。
-- `define_method`はschema compilerが所有する専用Moduleに限定する。
-- 生成method一覧、入力schema digest、compiler version、生成物digestをmanifest化する。
-- user supplied Ruby DSLはcluster credentialを持たない隔離processで評価する。
-- Lean抽出コードを本番処理にせず、Ruby実装のtest oracleとして使う。
+- GVK、フィールド、プラグインを`method_missing`で解決しない。
+- `define_method`を使うのは、スキーマコンパイラが所有する専用のModuleの中だけとする。
+- 生成したメソッドの一覧、入力スキーマのダイジェスト、コンパイラのバージョン、生成物のダイジェストをマニフェストに記録する。
+- 利用者が書いたRuby DSLは、クラスタの資格情報を持たない隔離プロセスで評価する。
+- Leanから抽出したコードは本番の処理に使わない。Ruby実装を検査するテストの基準として使う。
 
 ## Related
 
