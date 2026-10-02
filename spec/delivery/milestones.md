@@ -154,7 +154,7 @@ graph LR
 5. 各effect pointの直後にagentをSIGKILLして再起動しても、動いているワークロードを誤って削除しない。使われていない資源も残さない。
 6. 既存のPodマニフェストを変更せずにapplyでき、log、exec、attach、port-forwardを使える。
 
-### Required evidence
+### 必要な証拠
 
 x86_64 L0〜L3 report、kernel object inventory差分、Pod lifecycle trace、OCI攻撃corpus結果、
 1,000-cycle resource ledgerを保存する。
