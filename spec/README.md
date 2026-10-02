@@ -24,7 +24,7 @@ graph TD
     Hub -->|"固定した外部仕様"| References["規範参照"]
 ```
 
-## Reading Paths
+## 目的別の読み方
 
 | 読者 | 読む順序 |
 |---|---|
