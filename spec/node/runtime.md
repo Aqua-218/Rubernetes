@@ -356,9 +356,11 @@ VMのブートが完了しただけでは、workload gateを開いてはなら�
 
 スナップショットは、`WorkloadStopped`のベースイメージからだけ作る。ベースイメージとは、次のものを注入する前の状態である。
 
-snapshot は Pod workload、Secret、ServiceAccount token、Pod IP、workspace を注入する前の
-`WorkloadStopped` base image からだけ作成する。稼働 Pod の checkpoint/restore を snapshot cache として
-用いてはならない。
+- Podのワークロード
+- Secret
+- ServiceAccountのトークン
+- Pod IP
+- 作業領域
 
 snapshot 作成要求後、pause ACK の受信前に接続が失われた場合は `SnapshotPauseUnknown` とする。
 この状態の VM を resume、snapshot 再試行、workspace 再利用してはならず、停止確認と cleanup だけを行う。
