@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [Ruby設計](README.md)
 
 <a id="sec-3-5"></a>
-# 3.5 Ruby manifest DSL
+# 3.5 Ruby Manifest DSL
 
 > **Audience:** CLI利用者、Ruby実装者、審査者
 >
