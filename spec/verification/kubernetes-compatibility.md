@@ -361,7 +361,7 @@ Kubernetes v1.36.2と互換な状態の形式を保ったまま、次のアッ�
 
 ## CIでの実行
 
-| Trigger | Required lanes |
+| きっかけ | 必要な検査 |
 |---|---|
 | Pull request | K0、変更componentのunit/property/integration、K5 affected corpus |
 | Merge to main | K0、single-profile K1、K3 affected shard、K5、K6 affected project |
