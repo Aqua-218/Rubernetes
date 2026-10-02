@@ -31,7 +31,7 @@ graph LR
 
 ## 関連
 
-- [Control Loop図](../diagrams/03-control-loop.md)
-- [Node](../node/README.md)
+- [制御ループの図](../diagrams/03-control-loop.md)
+- [ノード](../node/README.md)
 - [形式仕様](../verification/formal-methods.md)
 
