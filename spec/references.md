@@ -5,7 +5,7 @@
 
 > 対象読者: すべての実装者、検証者、仕様編集者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 固定する外部仕様、compatibility oracle、設計由来、参照優先順位を定義する。
 
