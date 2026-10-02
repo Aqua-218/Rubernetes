@@ -203,7 +203,12 @@ graph LR
 
 ### 完了条件
 
-### Exit criteria
+1. x86_64のIPv4、IPv6、dual-stackで、Pod間の通信、Service、DNS、IngressとEgressが通る。
+2. eBPFとnftablesの両方のbackendが、Serviceについて同じ意味論を示す。backendを切り替えたときの接続の切断を測定する。
+3. NetworkPolicyのdefault deny、selector、名前付きポート、`endPort`、SCTPを、比較対象と差分比較する。
+4. projectedなConfigMapとSecretの更新がatomicである。コンテナから途中の世代が見えない。
+5. PVとPVCのbinding、attach、mount、unmount、detach、スナップショットとリストアを、すべてのaccess modeで検査する。
+6. マウントのトラバーサル、hostPathからの脱出、attachのレース、ノードのクラッシュ後の二重attachが0である。
 
 1. x86_64のIPv4、IPv6、dual-stackでPod間通信、Service、DNS、Ingress/Egressを通す。
 2. eBPFとnftablesの両backendで同じService semanticsを示し、backend切替時のconnection lossを測定する。
