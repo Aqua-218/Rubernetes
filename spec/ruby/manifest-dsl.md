@@ -69,6 +69,6 @@ rubectl apply -f app.rb --allow-code --env REPLICAS
 
 ## 関連
 
-- [schema compiler](schema-compiler.md)
-- [kubernetes api](../api/kubernetes-api.md)
-- [controllers](../control-plane/controllers.md)
+- [スキーマコンパイラ](schema-compiler.md)
+- [Kubernetes API](../api/kubernetes-api.md)
+- [コントローラ](../control-plane/controllers.md)
