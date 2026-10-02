@@ -316,7 +316,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 - upstreamのテストの選択台帳、クライアントのバージョン差の表、実在のプロジェクトのコーパス
 - CNCFへの提出形式と同じConformanceの証拠
 
-### Exit criteria
+### 完了条件
 
 1. v1.36.2 Conformance定義446件を、required profileごとにfailure 0、skip 0、flake 0で通す。
 2. release profileごとに独立した3回のclean Conformance runを連続で得る。
