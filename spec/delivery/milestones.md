@@ -343,7 +343,10 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 
 ### 成果物
 
-### Deliverables
+- 再現可能なソース、gem、パッケージ、クラスタの成果物と、SBOM
+- TLA+のモデル検査、Leanの証明、トレースによる対応付け、セキュリティ、性能、soakの証拠
+- インストール、アップグレード、ロールバック、バックアップとリストア、アンインストールの手順
+- コンテストでのデモと同じ入力のSHA-256から再現できる、証拠のバンドル
 
 - reproducible source/gem/package/cluster artifactsとSBOM
 - TLA+ model-check、Lean proof、trace refinement、security、performance、soak evidence
