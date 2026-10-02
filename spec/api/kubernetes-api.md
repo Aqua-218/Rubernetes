@@ -92,7 +92,7 @@ list、watch、deletecollectionは、次のパラメータを受け付ける。v
 - `allowWatchBookmarks`
 - `sendInitialEvents`
 
-補助エンドポイント:
+### 補助エンドポイント
 
 ```text
 GET /version                                      VersionInfo
