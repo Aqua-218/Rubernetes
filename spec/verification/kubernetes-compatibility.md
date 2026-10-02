@@ -103,16 +103,7 @@ Rubyのランナー`tools/conformance/run.rb`は、クラスタに接続する�
 6. KUBECONFIGがRubernetesのクラスタだけを指している。比較対象のKubernetesクラスタと資格情報を共有していない。
 7. テストの実行ID、クラスタID、ソースのコミット、プロファイル、解決したイメージの集合を、変更できないマニフェストに記録する。
 
-1. Kubernetes tag objectとpeeled commitがlockと一致する。
-2. checkoutにtracked/untracked source patchがなく、submoduleとvendor treeがpinned状態である。
-3. `conformance.yaml`のSHA-256がlockと一致し、entryが446件、`codename`が446件かつ重複0である。
-   一意keyは`codename`であり、JUnit結果とのjoinもこれで行う。v1.36.2のupstream定義は446 entryに対し
-   distinctな`testname`が436件しかない（`MutatingAdmissionPolicy`など10件の可読名を複数testが共有する）ため、
-   `testname`の重複0を要求してはならない。
-4. runner archive、runner image、Conformance image、support imageのdigestがlockと一致する。
-5. target architecture用manifestがindex内に存在し、別architectureへfallbackしない。
-6. KUBECONFIGがRubernetes clusterだけを指し、Kubernetes oracle clusterとcredentialを共有しない。
-7. test run ID、cluster ID、source commit、profile、resolved image集合をimmutable manifestへ記録する。
+いずれかが一致しない場合は、テストの失敗として扱う。ネットワークから取得した値でロックを自動的に更新してはならない。
 
 いずれかの不一致はtest failureであり、network取得によるlockの自動更新を行ってはならない。
 
