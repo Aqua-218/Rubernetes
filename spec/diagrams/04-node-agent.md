@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-Pod workerからruntime、network、volume、statusへのlifecycle flowを示す。
+Podのworkerから、ランタイム、ネットワーク、ボリューム、statusの報告までのライフサイクルの流れを示す。
 
 ```mermaid
 graph TB
