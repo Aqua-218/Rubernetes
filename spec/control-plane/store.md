@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-MVCC Store の操作、revision、watch履歴、競合処理、破損検出を定義する。
+MVCCストアの操作、リビジョン、watchの履歴、競合の処理、破損の検出を定義する。
 
 
 > **Diagram:** [図 02 — Storage / Raft](../diagrams/02-storage-raft.md)
