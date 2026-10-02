@@ -4,8 +4,7 @@
 
 > 対象読者: 形式検証の担当者、テストの実装者、セキュリティの検証者、審査者
 
-TLA+、Lean、property test、differential test、Kubernetes Conformance、実kernel/KVM gateを
-組み合わせ、各主張の保証レベルとTCBを明示する。
+検証には、TLA+、Lean、property test、差分テスト、Kubernetes Conformance、実際のkernelとKVMを使うゲートを組み合わせる。それぞれの主張について、保証のレベルとTCBを明示する。
 
 ## Verification Bridge
 
