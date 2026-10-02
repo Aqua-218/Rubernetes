@@ -12,9 +12,14 @@ Rubernetesの目的、Kubernetesとの互換性の境界、対象環境、規模
 <a id="sec-1-1"></a>
 ## 1.1 目的
 
-Kubernetes v1.36.2 と外部観測上互換な Linux コンテナオーケストレータを
-Ruby で実装する。既存の Kubernetes マニフェスト、Helm chart、Operator、
-クライアントライブラリおよび `kubectl` は、対象システム向けの変更なしに動作する。
+Kubernetes v1.36.2と外部から観測して互換なLinuxコンテナオーケストレータを、Rubyで実装する。既存のKubernetesマニフェスト、Helm chart、Operator、クライアントライブラリ、`kubectl`は、Rubernetes向けに変更しなくても動作する。
+
+Kubernetesから利用するものは次のとおりである。
+
+- APIスキーマ
+- 公開プロトコル
+- 規範となる挙動
+- 適合試験と、差分テストの期待値
 
 Kubernetes から利用するものは API スキーマ、公開プロトコル、規範的な挙動、
 適合試験および差分テストの期待値だけである。Kubernetes の実装コードは
