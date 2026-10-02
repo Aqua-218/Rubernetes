@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [制御面](README.md)
 
 <a id="sec-5-2"></a>
-# 5.2 Store
+# 5.2 ストア
 
 > **Audience:** Store実装者、分散システム検証者
 >
