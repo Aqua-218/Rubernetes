@@ -31,7 +31,7 @@ election timeoutは、heartbeat intervalの3倍以上とする。3倍を下回�
 <a id="sec-5-3-2"></a>
 ## 5.3.2 永続化
 
-以下は投票応答・ログ応答を返す**前に** fsync 完了していなければならない。
+次の3つは、投票への応答とログへの応答を返す前に、fsyncが完了していなければならない。
 
 - `currentTerm`
 - `votedFor`
