@@ -230,7 +230,7 @@ graph LR
 - 制御ノード3台と5台の構成、リーダー選出、バックアップとリストア
 - すべてのeffect pointについての、耐久性のある所有権、操作のジャーナル、クラッシュからの回復
 
-### Deliverables
+### 完了条件
 
 - WAL、snapshot、log replication、membershipを備えたRaftStore
 - 3/5 control-node構成、leader election、backup/restore
