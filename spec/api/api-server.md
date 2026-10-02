@@ -103,7 +103,16 @@ watchは長時間の接続なので、実行中の数には含めない。
 猶予期間`gracePeriodSeconds`の既定値は、Podでは30秒である。
 
 <a id="sec-5-1-7"></a>
-## 5.1.7 Admission と API 拡張
+## 5.1.7 admissionとAPI拡張
+
+### 実装するもの
+
+次のものを、featureコーパスに従って実装する。
+
+- v1.36.2の組み込みのmutating admissionプラグインとvalidating admissionプラグイン
+- MutatingAdmissionWebhook
+- ValidatingAdmissionWebhook
+- ValidatingAdmissionPolicyとCEL
 
 v1.36.2 の built-in mutating/validating admission plugin、MutatingAdmissionWebhook、
 ValidatingAdmissionWebhook、ValidatingAdmissionPolicy/CEL を feature corpus に従って実装する。
