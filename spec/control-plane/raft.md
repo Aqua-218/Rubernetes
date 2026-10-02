@@ -5,7 +5,7 @@
 
 > 対象読者: 分散システムの実装者、形式検証の担当者
 >
-> **Status:** Normative — version 0.2
+> 状態: 規範、版0.2
 
 Ruby製Raftのtiming、WAL、commit、snapshot、transport、membershipを定義する。
 
