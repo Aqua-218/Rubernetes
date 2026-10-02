@@ -198,6 +198,6 @@ class O_SAFE,O_LIVE,O_ISO,O_OWN orc
 
 ## 関連
 
-- [formal methods](../verification/formal-methods.md)
-- [testing](../verification/testing.md)
-- [構成図インデックス](README.md)
+- [形式仕様](../verification/formal-methods.md)
+- [検証戦略](../verification/testing.md)
+- [構成図の目次](README.md)
