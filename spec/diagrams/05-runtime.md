@@ -1,7 +1,7 @@
 [仕様書の目次](../README.md) / [構成図](README.md)
 
 <a id="sec-a-5"></a>
-# A.5 図 05 — Runtime
+# A.5 図05 ランタイム
 
 > **Audience:** Runtime実装者、セキュリティ検証者
 >
