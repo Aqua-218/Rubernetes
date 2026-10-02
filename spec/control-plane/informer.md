@@ -9,8 +9,7 @@
 
 Reflector、DeltaFIFO、Indexer、WorkQueueの接続を定義する。イベントと再試行についての不変条件も定める。
 
-
-> **Diagram:** [図 03 — 制御ループ](../diagrams/03-control-loop.md)
+図は[図03 制御ループ](../diagrams/03-control-loop.md)にある。
 
 <a id="sec-5-4-1"></a>
 ## 5.4.1 構成
