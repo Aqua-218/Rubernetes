@@ -127,7 +127,7 @@ graph LR
 
 ### 必要な証拠
 
-### Required evidence
+次のものを保存する。
 
 `corpus-coverage.json`、`generation-diff.json`、全GVK round-trip report、API differential result、
 kubectl transcriptを保存する。
