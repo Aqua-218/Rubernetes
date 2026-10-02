@@ -95,7 +95,7 @@ end
 
 モックを使ったテストの成功を、隔離の境界の検証として扱ってはならない。ランタイムのテストには、次のレベルを明記する。
 
-| level | 実行対象 | 証明できる範囲 |
+| レベル | 実行する対象 | 確かめられる範囲 |
 |---|---|---|
 | L0 Pure | state transition、config validation、rollback plan | 副作用前の決定性 |
 | L1 Fake I/O | failure injection 可能な adapter | 全 branch と error 保持 |
