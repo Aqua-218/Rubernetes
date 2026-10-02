@@ -119,5 +119,5 @@ class V1,V2,V3 ve
 
 ## 関連
 
-- [architecture](../foundation/architecture.md)
-- [構成図インデックス](README.md)
+- [アーキテクチャ](../foundation/architecture.md)
+- [構成図の目次](README.md)
