@@ -193,12 +193,12 @@ watchの要件は次のとおりである。
 <a id="sec-4-5"></a>
 ## 4.5 楽観的並行制御
 
-- update strategy が resourceVersion を要求するリソースでは、空または不一致を `409 Conflict` とする
-- unconditional update を許すかは GVR ごとの v1.36.2 strategy corpus に従い、全リソース共通の例外を設けない
-- status サブリソースの更新は spec を変更せず、通常 endpoint の更新は status を変更しない
-- Server-Side Apply は structured-merge-diff と同じ field set、manager、operation、time、conflict、force semantics を実装し、`metadata.managedFields` を保持する
-- JSON Patch の `test`、Strategic Merge Patch の merge key / retainKeys、CRD の listType / mapType / structType を schema に従って処理する
-- mutation、defaulting、validation、field management が完了した最終オブジェクトだけを 1 revision として commit する
+- update strategyがresourceVersionを要求するリソースでは、resourceVersionが空の場合と一致しない場合に`409 Conflict`を返す。
+- 無条件の更新を許すかどうかは、GVRごとにv1.36.2のstrategyコーパスに従う。全リソース共通の例外は設けない。
+- statusサブリソースの更新はspecを変更しない。通常のエンドポイントの更新はstatusを変更しない。
+- Server-Side Applyは、structured-merge-diffと同じ意味論を実装する。対象はfield set、manager、operation、time、conflict、forceである。`metadata.managedFields`を保持する。
+- JSON Patchの`test`、Strategic Merge Patchのmerge keyと`retainKeys`、CRDのlistType、mapType、structTypeを、スキーマに従って処理する。
+- mutation、defaulting、validation、フィールド管理がすべて終わった最終のオブジェクトだけを、1つのリビジョンとしてコミットする。
 
 <a id="sec-4-6"></a>
 ## 4.6 互換性判定
