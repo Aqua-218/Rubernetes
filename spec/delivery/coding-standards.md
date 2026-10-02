@@ -1,4 +1,4 @@
-[仕様書インデックス](../README.md) / [delivery](README.md)
+[仕様書の目次](../README.md) / [実装と納品](README.md)
 
 <a id="sec-10"></a>
 # 10. コーディング規約
