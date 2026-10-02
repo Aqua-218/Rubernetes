@@ -164,9 +164,9 @@ RUBERNETES_KUBECONFIG=$KUBECONFIG bin/rails server -p 3000
 
 ```sh
 bundle install
-rake abi:compile                 # 最初に 1 回、以後 ext/ を触ったとき
-rake test:parallel               # 全スイートをファイルごとに別プロセスで。JOBS=n で幅を指定（約 6 分）
-rake test                        # 証拠ゲートが使う直列実行（約 1 時間）
+rake abi:compile                 # 最初に1回。以後はext/を変更したとき
+rake test:parallel               # 全テストをファイルごとに別プロセスで実行。約6分。JOBS=nで並列数を指定
+rake test                        # 直列実行。約1時間。証拠ゲートはこちらを使う
 ruby -Ilib -Itest test/unit/some_test.rb -n /pattern/
 rake lint                        # RuboCop。Layout/Style は厳格、160 桁、ダブルクォート
 rake lint:fix                    # safe な自動修正のみ。実行後は必ずテストを回す
