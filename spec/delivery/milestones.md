@@ -61,7 +61,7 @@ graph LR
     M8 --> M9["M9 Release 1.0.0"]
 ```
 
-| Milestone | 対応stage | 累積到達点 |
+| マイルストーン | 対応するstage | そこまでに達成すること |
 |---|---:|---|
 | M0 | 00 | Ruby package、process entry、Linux ABI境界が実機で成立する |
 | M1 | 01〜02 | schemaからAPI surfaceを生成し、single-node APIが操作できる |
