@@ -21,7 +21,7 @@ SchedulingQueue → Filter → Score → Reserve → Bind
 <a id="sec-5-6-2"></a>
 ## 5.6.2 Filter
 
-すべて満たすノードのみを候補とする。
+次の条件をすべて満たすノードだけを候補にする。
 
 - `NodeResourcesFit`: requests の合計が割当可能量以内
 - `NodeName` / `NodeSelector` / `NodeAffinity`
