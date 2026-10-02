@@ -16,7 +16,7 @@ Rubernetesが何を作るのか、何を互換と呼ぶのか、どこを信頼�
 | [アーキテクチャ](architecture.md) | プロセス、コンポーネントの境界、TCB、通信 |
 | [名称](naming.md) | Rubernetes、rubectl、デーモン、拡張用ドメイン |
 
-## Related
+## 関連
 
 - [Ruby Design](../ruby/README.md)
 - [全景図](../diagrams/00-overview.md)
