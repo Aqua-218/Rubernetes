@@ -145,7 +145,7 @@ graph LR
 - ノードエージェント。登録、SyncLoop、initコンテナとsidecar、probe、再起動、終了、statusの更新を行う
 - ロールバック用のジャーナル、所有者のいない資源の検出、起動時の照合
 
-### Exit criteria
+### 完了条件
 
 1. x86_64 release targetでRuntime L0〜L3をすべて通す。ARM実機profileは完了条件に含めない。
 2. image digest mismatch、path traversal、whiteout escape、symlink raceをfail-closedで拒否する。
