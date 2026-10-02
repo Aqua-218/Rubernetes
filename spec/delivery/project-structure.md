@@ -206,7 +206,9 @@ graph TD
 
 upstreamのアルゴリズムをRubyへ移植したコードは、`lib/`に置いてよい。その場合は、移植元とライセンスをリポジトリ直下の`NOTICE`に記載しなければならない。
 
-| Filesystem | Ruby namespace |
+## 名前空間の対応
+
+| ファイルシステム | Rubyの名前空間 |
 |---|---|
 | `lib/rubernetes/api/` | `Rubernetes::API` |
 | `lib/rubernetes/storage/` | `Rubernetes::Storage` |
