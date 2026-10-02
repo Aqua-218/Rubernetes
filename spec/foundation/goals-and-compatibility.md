@@ -118,7 +118,7 @@ quorumが回復してから60秒以内に、APIへの書き込み、コントロ
 
 比較条件、ウォームアップ、サンプル数、信頼区間、生の結果は、リリース成果物に保存する。
 
-## Related
+## 関連
 
 - [architecture](architecture.md)
 - [kubernetes api](../api/kubernetes-api.md)
