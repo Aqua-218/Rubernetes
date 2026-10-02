@@ -2,7 +2,7 @@
 
 # 検証
 
-> **Audience:** 形式検証者、test実装者、セキュリティ検証者、審査者
+> 対象読者: 形式検証の担当者、テストの実装者、セキュリティの検証者、審査者
 
 TLA+、Lean、property test、differential test、Kubernetes Conformance、実kernel/KVM gateを
 組み合わせ、各主張の保証レベルとTCBを明示する。
