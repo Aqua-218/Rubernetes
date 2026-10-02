@@ -372,7 +372,7 @@ RaftのTLCの結果は、必須の証拠から除外する。理由は[形式仕
 - RubyのLOCのレポート
 - クリーンな環境での再現の記録
 
-## Related
+## 関連
 
 - [実装順](implementation-plan.md)
 - [Project Structure](project-structure.md)
