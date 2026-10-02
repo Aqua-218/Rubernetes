@@ -42,16 +42,16 @@
 │   ├── rubernetes.rb             # 公開する名前空間の入口
 │   └── rubernetes/
 │       ├── version.rb
-│       ├── bootstrap/             # Config, dependency graph, process lifecycle
-│       ├── schema/                # Schema DSL/compiler/registry/codec/defaulting
-│       ├── api/                   # HTTP, authn/z, admission, patch/apply, watch
-│       ├── storage/               # Store interface and object persistence
-│       ├── consensus/             # Raft, WAL, snapshot, membership
-│       ├── watch/                 # Watch cache, Informer, index, WorkQueue
-│       ├── controller/            # Controller DSL and built-in controllers
-│       ├── scheduler/             # Scheduling framework and plugins
-│       ├── node/                  # Node registration and Pod SyncLoop
-│       ├── image/                 # OCI pull, verify, unpack and cache
+│       ├── bootstrap/             # 設定、依存のグラフ、プロセスのライフサイクル
+│       ├── schema/                # スキーマDSL、コンパイラ、レジストリ、コーデック、defaulting
+│       ├── api/                   # HTTP、認証と認可、admission、patchとapply、watch
+│       ├── storage/               # Storeのインターフェースとオブジェクトの永続化
+│       ├── consensus/             # Raft、WAL、スナップショット、メンバーシップ
+│       ├── watch/                 # watchキャッシュ、informer、インデックス、WorkQueue
+│       ├── controller/            # Controller DSLと組み込みのコントローラ
+│       ├── scheduler/             # スケジューリングフレームワークとプラグイン
+│       ├── node/                  # ノードの登録とPodのSyncLoop
+│       ├── image/                 # OCIイメージの取得、検証、展開、キャッシュ
 │       ├── runtime/
 │       │   ├── native/             # Namespace/cgroup/seccomp process backend
 │       │   └── microvm/            # Firecracker/jailer/vsock backend
