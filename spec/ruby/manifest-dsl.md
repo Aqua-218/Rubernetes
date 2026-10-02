@@ -9,6 +9,7 @@
 
 Rubyのコードから標準のKubernetes JSONを生成するManifest DSLを定義する。DSLを隔離して実行する境界も定める。
 
+## 動作
 
 `rubectl apply -f app.rb` は Ruby ファイルを専用プロセスで評価し、標準 Kubernetes
 JSON オブジェクトへコンパイルして既存 API に POST/PATCH する。API Server の要求・応答形式、
