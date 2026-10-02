@@ -6,7 +6,7 @@
 
 検証には、TLA+、Lean、property test、差分テスト、Kubernetes Conformance、実際のkernelとKVMを使うゲートを組み合わせる。それぞれの主張について、保証のレベルとTCBを明示する。
 
-## Verification Bridge
+## 検証手法のつながり
 
 ```mermaid
 graph LR
