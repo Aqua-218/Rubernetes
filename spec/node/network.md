@@ -30,10 +30,11 @@ recover                → recovery_report
 <a id="sec-5-9-2"></a>
 ## 5.9.2 netlink
 
-- `AF_NETLINK` ソケットを直接開く
-- メッセージヘッダと属性（TLV）を自前で組み立てる
-- 応答の `NLMSG_ERROR` を必ず検査する
-- 使用するメッセージ種別: `RTM_NEWLINK`、`RTM_DELLINK`、`RTM_NEWADDR`、`RTM_NEWROUTE`、`RTM_SETLINK`
+- `AF_NETLINK`ソケットを直接開く。
+- メッセージヘッダと属性（TLV）を自前で組み立てる。
+- 応答の`NLMSG_ERROR`を必ず検査する。
+
+使うメッセージ種別は、`RTM_NEWLINK`、`RTM_DELLINK`、`RTM_NEWADDR`、`RTM_NEWROUTE`、`RTM_SETLINK`である。
 
 <a id="sec-5-9-3"></a>
 ## 5.9.3 Pod ネットワーク構築
