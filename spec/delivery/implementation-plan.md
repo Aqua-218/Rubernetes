@@ -33,7 +33,7 @@
 | 15 | 性能、長時間の試験、供給網の固定、リリースの成果物 | [9.3](implementation-plan.md#sec-9-3)のリリースゲートの全項目 |
 
 <a id="sec-9-1"></a>
-## 9.1 段階 00 の完了条件
+## 9.1 段階00の完了条件
 
 - Ruby から `clone3(2)` を FFI 経由で呼び、`CLONE_NEWPID | CLONE_NEWNS | CLONE_PIDFD` を指定できる
 - 子プロセス内で `/proc` を再マウントし、`ps` が自プロセスのみを表示する
