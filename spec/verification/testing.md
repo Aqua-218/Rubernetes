@@ -104,8 +104,9 @@ end
 | L4 KVM gate | 実際のFirecracker、jailer、dm-verity、vsock | microVMのライフサイクルと、ホスト側の後始末 |
 | L5 Adversarial | 悪意のあるイメージ、ゲスト、ワークロードと、強制的なクラッシュ | fail-closedであることと、資源を再利用しないこと |
 
-release は x86_64 の L3と、x86_64でKVMを提供するRuntimeのL4/L5を通過しなければならない。
-ARM実機profileはmilestoneまたはreleaseの完了条件に含めない。
+リリースは、x86_64のL3を通過しなければならない。x86_64でKVMを提供するランタイムについては、L4とL5も通過しなければならない。
+
+ARMの実機プロファイルは、マイルストーンとリリースの完了条件に含めない。
 
 <a id="sec-8-8"></a>
 ## 8.8 Kubernetes upstream test
