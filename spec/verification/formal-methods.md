@@ -25,23 +25,33 @@ TLA+、Lean、実行時検証のそれぞれの役割を定義する。あわせ
 
 | 仕様 | 不変条件 | 活性 |
 |---|---|---|
-| Raft | ElectionSafety、LeaderAppendOnly、LogMatching、LeaderCompleteness、StateMachineSafety | リーダーが最終的に選出される。分断回復後に収束する |
-| 制御ループ | Pod 数が上限を超えない、二重スケジュールしない、孤児が残らない | actual が desired に到達する |
-| Runtime | live owner が持つ資源を解放しない、identity を再利用しない、Unknown から実行しない、rollback は逆順 | cleanup failure 解消後に `Stopped` または `Removed` へ到達する |
-| Snapshot | pause 不明状態を resume しない、復元 identity と secret が元状態と重複しない | 新 identity の ACK 後にだけ workload を開始できる |
-| Watch | revision 順序を逆転しない、同一開始点の watcher が同じ列を観測する | compaction がなければ event または bookmark が到達する |
+| Raft | ElectionSafety、LeaderAppendOnly、LogMatching、LeaderCompleteness、StateMachineSafety | リーダーがいずれ選出される。分断から回復したあとに収束する |
+| 制御ループ | Podの数が上限を超えない。二重にスケジュールしない。孤児が残らない | actual stateがdesired stateに到達する |
+| ランタイム | 生きている所有者が持つ資源を解放しない。identityを再利用しない。Unknownの状態から実行しない。ロールバックは逆順に行う | 後始末の失敗が解消したあと、`Stopped`または`Removed`に到達する |
+| スナップショット | pauseの成否が不明な状態からresumeしない。復元後のidentityとsecretが、元の状態と重複しない | 新しいidentityのACKを受け取ったあとにだけ、ワークロードを開始できる |
+| watch | リビジョンの順序を逆転させない。同じ開始点のwatcherが同じ列を観測する | compactionがなければ、イベントまたはbookmarkが届く |
 
-TLC の必須最小探索スコープは controller desired replicas 0〜5、runtime resource 6 種、
-各 effect point で success/fail/response-loss の 3 分岐とする。対称性除去前の全状態を `.cfg` と
-CI artifact に記録する。より小さい smoke scope を毎コミットで使ってよいが、release gate はこの
-最小値を下回ってはならない。
+### TLCの探索スコープ
 
-**Raft は TLC の必須対象から除外する。** 2026-09-06 に 3 node、term 0〜4、log 長 0〜5、client 2 で
-実測したところ、4 時間で到達状態 12.1 億・キュー 7.9 億・状態ファイル 133 GB に達してなお増加中であり、
-網羅探索は完了しない。原因は Raft の状態空間の大きさであってモデルの記述ではない（メッセージ表現の
-最適化と履歴変数の有界化による改善は約 2 割にとどまった）。Raft の安全性主張は
-`verification/claims.yml` で `integration_tested` として記録し、決定的な障害注入シミュレーションと
-M5 プローブを根拠とする。`LogMatching` の全 domain に対する主張は Lean 4 の証明が支える。
+TLCで必ず探索する最小のスコープは、次のとおりとする。
+
+- コントローラのdesired replicasは0〜5
+- ランタイムの資源は6種類
+- 各effect pointで、成功、失敗、応答の喪失の3通りに分岐する
+
+対称性を除去する前の全状態の数を、`.cfg`とCIの成果物に記録する。
+
+毎コミットの検査では、これより小さいスコープを使ってよい。ただし、リリースゲートはこの最小値を下回ってはならない。
+
+### RaftをTLCの必須対象から除外する理由
+
+RaftはTLCの必須対象から除外する。
+
+2026-09-06に、3ノード、term 0〜4、ログ長0〜5、クライアント2という条件で実測した。4時間で、到達した状態は12.1億、キューは7.9億、状態ファイルは133 GBに達した。その時点でも状態は増え続けていた。したがって、網羅的な探索は完了しない。
+
+原因はRaftの状態空間の大きさにある。モデルの書き方ではない。メッセージの表現を最適化し、履歴変数を有界にしても、改善は約2割にとどまった。
+
+Raftの安全性についての主張は、`verification/claims.yml`に`integration_tested`として記録する。根拠は、決定的な障害注入シミュレーションとM5のプローブである。`LogMatching`がすべてのdomainで成り立つという主張は、Lean 4の証明が支える。
 
 <a id="sec-7-3"></a>
 ## 7.3 Lean で証明するもの
