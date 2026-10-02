@@ -176,7 +176,7 @@ class P1,P2,P3,P4,P5,P6,P7 pr
 class M1,M2,M3,M4,M5 mo
 ```
 
-## Related
+## 関連
 
 - [runtime](../node/runtime.md)
 - [formal methods](../verification/formal-methods.md)
