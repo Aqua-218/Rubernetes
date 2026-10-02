@@ -169,7 +169,7 @@ graph TD
 
 ## 層ごとの規則
 
-### Public entry and bootstrap
+### 公開する入口とbootstrap
 
 - `lib/rubernetes.rb`は安定public namespaceだけをloadし、daemonを起動しない。
 - `exe/*`はargument parse、config path確定、exit code変換だけを行う。
