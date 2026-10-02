@@ -253,7 +253,7 @@ upstreamのテストをコピーして改変したものは、Conformanceの証�
 4. テストの配置と、リリースの成果物への影響を定義する。
 5. `spec/README.md`か、該当する文書群の目次からたどれるようにする。
 
-## Related
+## 関連
 
 - [マイルストーン](milestones.md)
 - [Coding Standards](coding-standards.md)
