@@ -127,14 +127,17 @@ All configuration is through environment variables, defined in
 | Variable | Default | Meaning |
 |---|---|---|
 | `RUBERNETES_KUBECONFIG` | `<RUBERNETES_CLUSTER_ROOT>/kubeconfig` | Cluster credentials |
-| `RUBERNETES_CLUSTER_ROOT` | `/srv/rbn-app/linux-amd64-ipv4-native` | Where `cluster.json` and the kubeconfig live |
-| `DASHBOARD_BIND` | `10.240.0.1` (systemd unit) | Listen address |
-| `DASHBOARD_PASSWORD` | empty (no auth) | HTTP basic-auth password for UI and API |
-| `DASHBOARD_EXTERNAL_URL`, `DASHBOARD_HOSTS` | | Public URL and the Host header values Rails accepts |
-| `DASHBOARD_DATA_DIR` | `apps/dashboard/data` | Blocks, WAL and label index |
-| `DASHBOARD_SCRAPE_INTERVAL`, `DASHBOARD_SCRAPE_TIMEOUT` | `15`, `10` | Seconds |
-| `DASHBOARD_EVALUATION_INTERVAL` | scrape interval | Rule evaluation cadence |
-| `DASHBOARD_RETENTION`, `DASHBOARD_BLOCK_RANGE` | `15d`, `2h` | Retention and block size |
+| `RUBERNETES_CLUSTER_ROOT` | `/srv/rbn-app/linux-amd64-ipv4-native` | Where `cluster.json` and the kubeconfig are |
+| `DASHBOARD_BIND` | `10.240.0.1` (in the systemd unit) | Listen address |
+| `DASHBOARD_PASSWORD` | empty: no authentication | HTTP basic-auth password for the UI and the API |
+| `DASHBOARD_EXTERNAL_URL` | none | Public URL |
+| `DASHBOARD_HOSTS` | none | Host header values Rails accepts |
+| `DASHBOARD_DATA_DIR` | `apps/dashboard/data` | Where blocks, the WAL and the label index are stored |
+| `DASHBOARD_SCRAPE_INTERVAL` | `15` | Scrape interval, in seconds |
+| `DASHBOARD_SCRAPE_TIMEOUT` | `10` | Scrape timeout, in seconds |
+| `DASHBOARD_EVALUATION_INTERVAL` | same as the scrape interval | Rule evaluation interval |
+| `DASHBOARD_RETENTION` | `15d` | Retention period |
+| `DASHBOARD_BLOCK_RANGE` | `2h` | Block length |
 | `DASHBOARD_RULES` | `config/rules.yml` | Rule file |
 | `DASHBOARD_ALERT_WEBHOOK` | empty | Alertmanager-compatible receiver |
 | `DASHBOARD_ALLOW_WRITES` | `1` | `0` makes the UI read-only |
