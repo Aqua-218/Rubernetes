@@ -7,7 +7,7 @@
 >
 > 状態: 規範、版0.2
 
-netlink、IPAM、Pod network、overlay、NetworkPolicy、DNS、Service proxyを示す。
+netlink、IPAM、Podネットワーク、オーバーレイ、NetworkPolicy、DNS、サービスプロキシを示す。
 
 ```mermaid
 graph TB
