@@ -77,7 +77,7 @@ graph LR
 <a id="milestone-m0"></a>
 ## M0 実行基盤
 
-### Deliverables
+### 成果物
 
 - Ruby 3.4以上でloadできる`rubernetes` packageとRBS baseline
 - `rubectl`および5 daemonのprocess entry
