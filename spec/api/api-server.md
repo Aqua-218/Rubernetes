@@ -45,9 +45,11 @@ APIリクエストの処理順序、認証、認可、流量制御、admission�
 - request-headerによるプロキシ認証
 - 静的なトークンファイル
 
-未認証は `401` と `WWW-Authenticate` を返す。匿名認証の既定値と endpoint ごとの扱いは
-v1.36.2 の structured authentication configuration に従う。token、証明書、認証 header、
-ServiceAccount Secret はログ、trace、Event、例外 message に出力してはならない。
+複数の認証器が返したuser、group、extraが矛盾する場合は、要求を拒否する。
+
+認証されていない要求には、`401`と`WWW-Authenticate`を返す。匿名認証の既定値と、エンドポイントごとの扱いは、v1.36.2のstructured authentication configurationに従う。
+
+トークン、証明書、認証ヘッダ、ServiceAccountのSecretを、ログ、トレース、Event、例外のメッセージに出力してはならない。
 
 <a id="sec-5-1-3"></a>
 ## 5.1.3 認可
