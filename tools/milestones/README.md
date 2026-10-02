@@ -49,11 +49,18 @@ The sections below describe what each gate requires.
 
 ## M0 Executable foundation
 
-`rake m0:verify` runs the gem build, the test suite, the executable
-help/version probe and the native-boundary scan; `rake m0:kernel` runs the
-privileged x86_64 stage-00 kernel probe. `rake m0:evidence` reports
-`COMPLETE` only when the source input digest remains stable and the
-real-kernel probe succeeds against that same input.
+`rake m0:verify` runs four things:
+
+- the gem build
+- the test suite
+- the `--help` and `--version` checks of every executable
+- the native-boundary scan
+
+`rake m0:kernel` runs the privileged x86_64 stage-00 kernel probe.
+
+`rake m0:evidence` reports `COMPLETE` under two conditions: the source
+digest stayed stable, and the real kernel probe succeeded on that same
+source.
 
 ## M1 Schema and API core
 
