@@ -284,7 +284,7 @@ upstreamと同じく、`--runtime-config`で有効にしたときだけ提供し
 - [Kubernetes互換性の試験](spec/verification/kubernetes-compatibility.md)
 - [コーディング規約](spec/delivery/coding-standards.md)と[プロジェクト構成](spec/delivery/project-structure.md)
 - [クラスタの運用](deploy/cluster/README.md)
-- [Conformance ツール](tools/conformance/README.ja.md) と [マイルストーンゲート](tools/milestones/README.ja.md)
+- [Conformanceツール](tools/conformance/README.ja.md)と[マイルストーンゲート](tools/milestones/README.ja.md)
 
 ## ライセンス
 
