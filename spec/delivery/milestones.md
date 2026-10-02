@@ -138,7 +138,7 @@ graph LR
 <a id="milestone-m2"></a>
 ## M2 Native Pod
 
-### Deliverables
+### 成果物
 
 - OCI pull、digest verification、layer展開、OverlayFS rootfs
 - namespace、cgroup v2、capability、seccomp、Landlock、process lifecycleを担うNative Runtime
