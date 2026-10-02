@@ -104,41 +104,25 @@ tools/conformance/round.sh lanes6 /srv/rbn-lanes/linux-amd64-ipv6-native \
 kubectl -n conformance logs e2e-conformance-test -c conformance-container
 ```
 
-- `netns_env.sh up <name> --v4 <n> --v6 <hex>` は名前空間にホストへの uplink
-  `10.250.<n>.0/30` + `fd00:1a:<hex>::/64` を与え、名前空間内では Pod トラフィックを
-  uplink アドレスに、ホストでは uplink を外向きにマスカレードし、転送を有効化し、
-  `/etc/netns/<name>/resolv.conf` を書きます（ホストの `127.0.0.53` スタブは中から
-  届かない）。`exec` は `ip netns exec` の新しい sysfs が隠す cgroup2 を
-  `/sys/fs/cgroup` に再マウントします。2 つ目のインスタンスは別の `<n>`/`<hex>` と
-  別の `RUBERNETES_M8_CGROUP_ROOT` を使います。`cluster.rb up` の古いワークロード
-  掃除はその root に限定されるので、インスタンス同士が互いの Pod を殺すことは
-  ありません。`cluster.rb up` は同じ `--root` で動いているクラスタを先に止めます
-  （エージェントのストリーミングポートは worker ごとに固定）。
-- `round.sh` は `tools/conformance/lock.rb` の固定イメージで名前空間内の hydrophone
-  を実行し、hydrophone の stdout は末尾だけ残し、`junit_01.xml` から JUnit の合計と
-  失敗 spec 名を出力します。読むのは JUnit で、hydrophone の stdout ではありません。
-  実行中の進捗: `kubectl -n conformance logs e2e-conformance-test -c conformance-container`。
-- 公式ランナー（`tools/conformance/run.rb`、レーン K1〜K7）は `RUBERNETES_M8_NETNS=<name>`
-  が設定されていれば名前空間に入ります。すべてのランナーコマンドと kubeconfig の
-  到達性プローブが `ip netns exec <name>` 下で動きます。
-- ホストからクラスタには uplink アドレス（`https://10.250.<n>.2:<port>`、ポートは
-  `cluster.json`）で届きます。このシェルの `http_proxy` はループバック以外すべてに
-  掛かるので、`NO_PROXY=10.250.<n>.2`（または `curl --noproxy '*'`）を付けないと
-  すべての要求がプロキシの応答で「失敗」します。
+### run.rb
 
-### プロファイルごとの既知の差異（2026-09-27）
+`run.rb`は、環境変数`RUBERNETES_M8_NETNS=<name>`が設定されていれば、その名前空間の中で動きます。ランナーのコマンドも、kubeconfigの到達性の確認も、すべて`ip netns exec <name>`の下で実行されます。
 
-- IPv6 専用: IPv6 専用 Pod には IPv4 宛先への経路がありません（NAT64 なし）。
-  イメージ取得は uplink 経由で両ファミリを持つノードエージェントが行うので、
-  影響は IPv4 のインターネットに接続するテスト Pod のみです。
-- Dual-stack: `kubernetes` Service は kube-apiserver が作るのと同様に primary
-  ファミリの SingleStack です。ノードエージェントは両ファミリの `InternalIP` を
-  公開しますが、Pod が受け取るクラスタ DNS（`nameserver`）は primary ファミリの
-  ブリッジアドレスだけです（kubelet の `clusterDNS` はリストで、こちらはノードの
-  ゲートウェイアドレスをプロファイル順に取る）。
-- 共通: API サーバの `kubernetes` Endpoints は同じ uplink アドレスに異なる
-  ポートで API サーバごとに 1 アドレスを列挙します（1 ホストに 3 レプリカ）。
-  kubeadm は異なるアドレスを列挙します。
+### ホストからクラスタへの接続
+
+ホストからはuplinkのアドレスでクラスタに届きます。URLは`https://10.250.<n>.2:<port>`で、ポートは`cluster.json`に書いてあります。
+
+開発ホストのシェルでは、`http_proxy`がループバック以外のすべての宛先に適用されます。`NO_PROXY=10.250.<n>.2`を設定するか、`curl --noproxy '*'`を使ってください。設定しないと、要求がプロキシに送られて失敗します。
+
+### プロファイルごとの違い
+
+2026-09-27時点でわかっている違いです。
+
+IPv6専用のプロファイルにはNAT64がありません。そのためIPv6専用のPodからIPv4の宛先には届きません。イメージの取得はノードエージェントが行い、エージェントはuplinkで両ファミリを使えます。影響を受けるのは、IPv4のインターネットに接続するテストPodだけです。
+
+dual-stackのプロファイルでは、`kubernetes` ServiceはprimaryファミリのSingleStackになります。これはkube-apiserverが作るServiceと同じです。ノードエージェントは両ファミリの`InternalIP`を公開します。一方、Podに渡すクラスタDNSの`nameserver`は、primaryファミリのブリッジアドレスだけです。kubeletの`clusterDNS`は明示したリストですが、Rubernetesはノードのゲートウェイアドレスをプロファイルの順に使います。
+
+すべてのプロファイルに共通の違いもあります。APIサーバの`kubernetes` Endpointsは、同じuplinkアドレスの異なるポートを、APIサーバごとに1件ずつ並べます。1台のホストに3つのレプリカがあるためです。kubeadmで作ったクラスタでは、異なるアドレスが並びます。
 
 ## 関連
 
