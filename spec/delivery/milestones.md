@@ -173,9 +173,7 @@ graph LR
 - Controller DSLと、すべての組み込みコントローラ
 - Scheduler DSLと、v1.36.2の標準プラグイン、preemption、binding
 
-- watch cache、Informer、index、WorkQueue、leader election
-- Controller DSLと全built-in controller
-- Scheduler DSLとv1.36.2標準plugin、preemption、binding
+### 完了条件
 
 ### Exit criteria
 
