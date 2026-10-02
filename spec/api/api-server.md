@@ -116,9 +116,7 @@ watchは長時間の接続なので、実行中の数には含めない。
 
 ### webhookの評価
 
-Mutating phase は再呼出しを含む最終 object を確定してから Validating phase へ進む。
-webhook timeout の既定は 10 秒、API が許す上限は 30 秒とし、timeout/通信失敗時は failurePolicy に従う。
-dry-run request では sideEffects が `None` または `NoneOnDryRun` でない webhook を呼び出さない。
+webhookの次の項目を、v1.36.2と同じ順序と条件で評価する。
 
 CRD conversion webhook と API aggregation proxy は mTLS で peer identity を検証し、request body 3 MiB、
 応答 3 MiB、接続 30 秒を上限とする。aggregated API の discovery/OpenAPI/health は built-in と統合し、
