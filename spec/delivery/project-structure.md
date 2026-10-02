@@ -185,9 +185,9 @@ graph TD
 
 ### ストアと合意
 
-- `storage/`が`Store` interface、transaction、revision、watch eventの意味を所有する。
-- `consensus/`は`Store`のdurable implementationを提供し、API object semanticsを所有しない。
-- controller、scheduler、nodeはWALやRaft nodeへ直接アクセスせず、APIまたは明示したStore contractを使う。
+- `storage/`は、`Store`のインターフェース、トランザクション、リビジョン、watchイベントの意味を所有する。
+- `consensus/`は、`Store`の耐久性のある実装を提供する。APIオブジェクトの意味論は所有しない。
+- コントローラ、スケジューラ、ノードは、WALやRaftノードに直接アクセスしない。APIか、明示したStoreの契約を使う。
 
 ### Node and Linux boundary
 
