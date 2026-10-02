@@ -258,6 +258,6 @@ Leanで証明した性質に依存する実装の箇所には、定理の名前�
 
 ## 関連
 
-- [document conventions](../foundation/document-conventions.md)
-- [Ruby Design index](../ruby/README.md)
-- [implementation plan](implementation-plan.md)
+- [文書規約](../foundation/document-conventions.md)
+- [Ruby設計の目次](../ruby/README.md)
+- [実装計画](implementation-plan.md)
