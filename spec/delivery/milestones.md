@@ -110,7 +110,10 @@ graph LR
 
 ### 成果物
 
-### Deliverables
+- Kubernetes v1.36.2のコーパスのimporter、Schema DSL、コンパイラ、GVKとGVRのレジストリ
+- 派生物の生成器。Rubyの型、validator、defaulting、コーデック、OpenAPI、RBS、Manifest DSL、diffを生成する
+- APIサーバ、MemoryStore、discovery、CRUD、watch、patch、server-side apply
+- `rubectl`の各経路。kubeconfig、生のREST、マニフェストのコンパイルとapply
 
 - Kubernetes v1.36.2 corpus importer、Schema DSL、compiler、GVK/GVR registry
 - Ruby type、validator、defaulting、codec、OpenAPI、RBS、Manifest DSL、diffの派生器
