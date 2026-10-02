@@ -2,9 +2,10 @@
 
 For implementers and reviewers.
 
-Production policy, state machines, resource ownership, codecs, controllers, schedulers,
-and node lifecycle logic live below this directory. Dependency direction is enforced by
-the project-structure specification and may not be inverted for convenience.
+The production code lives below this directory: policy, state machines,
+resource ownership, codecs, controllers, schedulers and node lifecycle
+logic. The project-structure specification fixes the direction of
+dependencies between these directories. Do not invert it for convenience.
 
 | Directory | Responsibility |
 |---|---|
