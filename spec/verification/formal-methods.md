@@ -56,7 +56,7 @@ Raftの安全性についての主張は、`verification/claims.yml`に`integrat
 <a id="sec-7-3"></a>
 ## 7.3 Leanで証明するもの
 
-| 対象 | 命題 | 偽なら何が壊れるか |
+| 対象 | 命題 | 命題が偽のときに起きること |
 |---|---|---|
 | Raft ログ演算 | LogMatching が全ログ長で成立 | コミット済みデータが失われる |
 | seccomp コンパイラ | `⟦compile p⟧ = ⟦p⟧` | 意図しない syscall が通る／必要な syscall が塞がる |
