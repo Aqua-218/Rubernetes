@@ -639,7 +639,7 @@ module Conformance
         # disturbed; one brought up inside its own netns has its own rbnN.
         next unless same_network_namespace?(descriptor)
 
-        alive = descriptor.fetch("processes", []).count { |process| alive?(process.fetch("pid")) }
+        alive = descriptor.fetch("processes", []).count { |process| owned?(process.fetch("pid"), process.fetch("config")) }
         {root: other_root, alive: alive} if alive.positive?
       end
     end
