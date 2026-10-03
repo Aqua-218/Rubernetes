@@ -258,7 +258,7 @@ module Conformance
       descriptor = JSON.parse(File.binread(path))
       root = descriptor.fetch("root")
       kubeconfig = descriptor.fetch("kubeconfig")
-      live = descriptor.fetch("processes").select { |process| alive?(process.fetch("pid")) }
+      live = descriptor.fetch("processes").select { |process| owned?(process.fetch("pid"), process.fetch("config")) }
       raise Error, "#{root} is running (#{live.map { |process| process.fetch("name") }.join(", ")}); bring it down first" unless live.empty?
 
       servers, clients = descriptor.fetch("processes").partition { |process| process.fetch("executable") == "rubernetes-apiserver" }
