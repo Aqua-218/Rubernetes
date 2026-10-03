@@ -308,7 +308,7 @@ module Conformance
         descriptor = JSON.parse(File.binread(path))
         {"profile" => descriptor.dig("profile", "name"), "kubeconfig" => descriptor["kubeconfig"],
          "processes" => descriptor.fetch("processes", []).map do |process|
-           {"name" => process.fetch("name"), "pid" => process.fetch("pid"), "alive" => alive?(process.fetch("pid"))}
+           {"name" => process.fetch("name"), "pid" => process.fetch("pid"), "alive" => owned?(process.fetch("pid"), process.fetch("config"))}
          end}
       end
       puts JSON.pretty_generate({"kind" => "conformance_cluster_status", "clusters" => descriptors})
