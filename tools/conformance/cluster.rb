@@ -645,7 +645,7 @@ module Conformance
     end
 
     def same_network_namespace?(descriptor)
-      pid = descriptor.fetch("processes", []).map { |process| process.fetch("pid") }.find { |candidate| alive?(candidate) }
+      pid = descriptor.fetch("processes", []).find { |process| owned?(process.fetch("pid"), process.fetch("config")) }&.fetch("pid")
       return false if pid.nil?
 
       File.readlink("/proc/#{pid}/ns/net") == File.readlink("/proc/self/ns/net")
