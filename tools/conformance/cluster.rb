@@ -1141,7 +1141,8 @@ module Conformance
     # each of them).
     def alive?(pid)
       Process.kill(0, pid)
-      true
+      state = File.binread("/proc/#{pid}/stat").split(") ").last.to_s[0]
+      state != "Z"
     rescue Errno::ESRCH, Errno::EPERM
       false
     end
