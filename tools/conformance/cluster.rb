@@ -1120,8 +1120,8 @@ module Conformance
       {"name" => name, "executable" => executable, "config" => config, "pid" => pid, "log" => log}
     end
 
-    def terminate(pid, name)
-      return nil unless alive?(pid)
+    def terminate(pid, name, marker)
+      return nil unless owned?(pid, marker)
 
       Process.kill("TERM", pid)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 15
