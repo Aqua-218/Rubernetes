@@ -294,7 +294,8 @@ module Conformance
         end
       end
       Dir[File.join(options.fetch(:root), "*", "pids", "*.pid")].each do |path|
-        stopped << terminate(Integer(File.read(path).strip), File.basename(path, ".pid"))
+        # A pid file names a process by its cluster directory only.
+        stopped << terminate(Integer(File.read(path).strip), File.basename(path, ".pid"), File.dirname(File.dirname(path)))
       rescue ArgumentError, SystemCallError
         nil
       end
