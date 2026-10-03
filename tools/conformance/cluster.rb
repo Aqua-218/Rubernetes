@@ -1135,6 +1135,10 @@ module Conformance
       {"name" => name, "pid" => pid}
     end
 
+    # A child this process has not reaped yet still answers kill(0); it
+    # is a zombie, not a running component (an `up` that fails and tears
+    # its own children down otherwise waits the full grace period for
+    # each of them).
     def alive?(pid)
       Process.kill(0, pid)
       true
