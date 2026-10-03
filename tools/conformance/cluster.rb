@@ -1145,6 +1145,22 @@ module Conformance
       state != "Z"
     rescue Errno::ESRCH, Errno::EPERM
       false
+    rescue SystemCallError, IOError
+      true
+    end
+
+    # A pid remembered in cluster.json or a pid file outlives the process:
+    # after a reboot (or once the counter wraps) the same number belongs to
+    # whatever happens to run now.  Treating it as ours made `start` refuse
+    # a cluster that was down and would have had `down` TERMinate a
+    # stranger.  Ours carry their configuration path (or at least their
+    # cluster directory) on the command line.
+    def owned?(pid, marker)
+      return false unless alive?(pid)
+
+      File.binread("/proc/#{pid}/cmdline").split("\0").any? { |argument| argument.start_with?(marker) }
+    rescue SystemCallError, IOError
+      false
     end
 
     # ------------------------------------------------------------- readiness
