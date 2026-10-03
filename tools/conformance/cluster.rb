@@ -290,7 +290,7 @@ module Conformance
             next
           end
         descriptor.fetch("processes", []).reverse_each do |process|
-          stopped << terminate(process.fetch("pid"), process.fetch("name"))
+          stopped << terminate(process.fetch("pid"), process.fetch("name"), process.fetch("config"))
         end
       end
       Dir[File.join(options.fetch(:root), "*", "pids", "*.pid")].each do |path|
