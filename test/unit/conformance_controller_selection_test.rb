@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
-require "rubernetes/controller/registry"
+require "rubernetes/cluster"
 
 # The conformance cluster derives its controller list from the corpus minus
 # two exclusions.  One of them -- "the apiserver does not serve this kind" --
@@ -11,18 +11,8 @@ require "rubernetes/controller/registry"
 # whose Service was deleted, a ReplicaSet whose Deployment was deleted and a
 # CronJob's Jobs all stayed in the API for ever.
 class ConformanceControllerSelectionTest < Minitest::Test
-  CLUSTER = File.expand_path("../../tools/conformance/cluster.rb", __dir__)
-
-  def setup
-    skip("tools/conformance/cluster.rb is not present") unless File.file?(CLUSTER)
-    @source = File.read(CLUSTER)
-  end
-
   def marker_kinds
-    match = @source[/CONTROLLER_ONLY_KINDS\s*=\s*%w\[([^\]]*)\]/, 1]
-
-    refute_nil(match, "cluster.rb no longer declares CONTROLLER_ONLY_KINDS")
-    match.split
+    Rubernetes::Cluster::CONTROLLER_ONLY_KINDS
   end
 
   def test_the_garbage_collector_kind_is_treated_as_controller_only
