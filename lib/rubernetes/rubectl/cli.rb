@@ -19,7 +19,10 @@ module Rubernetes
       EX_CONFIG = 78
       EX_INTERRUPTED = 130
 
-      COMMANDS = %w[get create apply patch delete watch raw].freeze
+      COMMANDS = %w[get create apply patch delete watch raw extension].freeze
+      # Commands that talk to the processes of a cluster on this host, not to
+      # its API.
+      LOCAL_COMMANDS = %w[console why trace].freeze
       PROJECT_ROOT = File.expand_path("../../..", __dir__).freeze
       DEFAULT_MANIFEST_REGISTRY_CANDIDATES = %w[
         generated/schema/registry.json
@@ -83,6 +86,9 @@ module Rubernetes
 
       def run(argv)
         arguments = Array(argv).dup
+        return run_cluster(arguments.drop(1)) if arguments.first == "cluster"
+        return run_console(arguments.first, arguments.drop(1)) if LOCAL_COMMANDS.include?(arguments.first)
+
         options = default_options
         parser = option_parser(options)
         parser.parse!(arguments)
@@ -185,7 +191,33 @@ module Rubernetes
         @stdout.puts(parser)
         @stdout.puts
         @stdout.puts("Commands: #{COMMANDS.join(", ")}")
+        @stdout.puts("Local clusters: rubectl cluster --help")
+        @stdout.puts("Extensions written in Ruby: rubectl extension")
+        @stdout.puts("Inside the running components: rubectl console, rubectl why, rubectl trace")
         EX_OK
+      end
+
+      # A cluster on this host; it has options of its own and needs no API
+      # client, so it is parsed apart from the resource commands.
+      def run_cluster(arguments)
+        require_relative "../cluster/cli"
+
+        Cluster::CLI.run(arguments, stdout: @stdout, stderr: @stderr)
+      end
+
+      def run_console(command, arguments)
+        require_relative "../console/cli"
+
+        Console::CLI.new(stdout: @stdout, stderr: @stderr, stdin: @stdin).run(command, arguments)
+      end
+
+      # `extension check` reads files only; the client is built when a
+      # subcommand first needs the cluster.
+      def run_extension(arguments, options)
+        require_relative "../extension/cli"
+
+        Extension::CLI.new(stdout: @stdout, client_factory: -> { build_client(options) }).run(arguments)
+        :no_output
       end
 
       def print_version
@@ -194,6 +226,8 @@ module Rubernetes
       end
 
       def dispatch(command, arguments, options)
+        return run_extension(arguments, options) if command == "extension"
+
         client = build_client(options)
         case command
         when "raw"
