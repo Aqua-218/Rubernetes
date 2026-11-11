@@ -43,7 +43,8 @@ Ruby. `rubectl console`, `rubectl why` and `rubectl trace` look inside the
 processes of a cluster running on this host.
 
 Loading a manifest written in Ruby requires `--allow-code`. The manifest is
-evaluated inside an isolated sandbox.
+evaluated inside an isolated sandbox. `rubectl render` prints the objects a
+manifest declares without contacting a cluster.
 
 Calling a feature that is not implemented ends with an error. It never
 pretends to succeed.
