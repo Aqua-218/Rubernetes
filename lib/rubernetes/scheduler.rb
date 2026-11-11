@@ -44,6 +44,7 @@ require_relative "scheduler/preemption"
 require_relative "scheduler/dynamic_resources"
 require_relative "scheduler/volume_binding"
 require_relative "scheduler/framework"
+require_relative "scheduler/decisions"
 
 module Rubernetes
   module Scheduler
