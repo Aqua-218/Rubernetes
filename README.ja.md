@@ -237,6 +237,36 @@ sudo ruby -Ilib exe/rubectl trace scheduler "Rubernetes::Scheduler::Framework#sc
 
 コンソールは、各プロセスが持つUnixソケットで待ち受けます。ソケットはrootだけが開けます。つないだ利用者はプロセスの中身をすべて読み書きできるので、その権限はデバッガを接続できる権限と同じです。仕様は[spec/ruby/console.md](spec/ruby/console.md)にあります。
 
+## マニフェストをRubyで書く
+
+マニフェストもRubyで書けます。出力は標準のKubernetesオブジェクトなので、本物の`kubectl`にそのまま渡せます。
+
+```ruby
+# web.rb
+deployment "web" do
+  replicas 3
+
+  container "nginx", image: "nginx:1.27" do
+    port 80
+    cpu request: "100m", limit: "500m"
+    env from: configmap("web-config")
+    readiness_probe http_get: {path: "/", port: 80}, period_seconds: 5
+  end
+end
+```
+
+```sh
+ruby -Ilib exe/rubectl render -f web.rb --allow-code -o yaml | kubectl apply -f -
+```
+
+`selector`と、それに対応するテンプレートのラベルは、書かなくても補われます。フィールドはスキーマと照合されるので、書き間違いは適用の前に分かります。
+
+```text
+web.rb:9: containers.nginx.readinessProbe.httpGet: HTTPGetAction has no field "pathh" (did you mean "path"?)
+```
+
+繰り返し、条件分岐、共通部分のメソッド化には、Rubyをそのまま使います。ファイルは、ネットワークとクラスタの資格情報を持たない別プロセスで評価されます。例は[examples/manifests/](examples/manifests/README.ja.md)に、仕様は[spec/ruby/manifest-dsl.md](spec/ruby/manifest-dsl.md)にあります。
+
 ## リポジトリ構成
 
 | パス | 内容 |
