@@ -85,6 +85,23 @@ module Rubernetes
         Result.new(installed: installed, already_present: present, skipped: skipped)
       end
 
+      # The reverse of ensure!, for a cluster that is being deleted.  The
+      # egress chain is shared by every cluster on the host, so it goes only
+      # when the caller knows no other cluster is left (`chain: true`).
+      def remove!(cidrs, chain: false)
+        Array(cidrs).map(&:to_s).reject(&:empty?).uniq.each do |cidr|
+          binary = cidr.include?(":") ? "ip6tables" : "iptables"
+          %w[-s -d].each { |direction| invoke(binary, "-D", CHAIN, direction, cidr, "-j", "ACCEPT") }
+          invoke(binary, "-t", "nat", "-D", NAT_CHAIN, "-s", cidr, "-m", "comment", "--comment", MASQUERADE_COMMENT, "-j", EGRESS_CHAIN)
+          invoke(binary, "-t", "nat", "-D", EGRESS_CHAIN, "-d", cidr, "-j", "ACCEPT")
+        end
+        return unless chain
+
+        %w[iptables ip6tables].each do |binary|
+          invoke(binary, "-t", "nat", "-F", EGRESS_CHAIN) && invoke(binary, "-t", "nat", "-X", EGRESS_CHAIN)
+        end
+      end
+
       private
 
       # The bridge CNI plugin's ipMasq, in its shape: one chain per family
