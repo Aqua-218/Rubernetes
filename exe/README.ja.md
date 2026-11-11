@@ -26,6 +26,10 @@
 
 `get`、`create`、`apply`、`patch`、`delete`、`watch`、`raw`が使えます。接続先はkubeconfigか、`--server`と認証用のフラグで指定してください。
 
+`rubectl cluster up`は、このホストの上にクラスタを1つ作ります。`start`、`down`、`status`、`kubeconfig`も使えます。root権限が必要です。オプションは`rubectl cluster --help`で確認できます。
+
+`rubectl extension`は、Rubyで書いた拡張を適用、確認、一覧、削除します。`rubectl console`、`rubectl why`、`rubectl trace`は、このホストで動いているクラスタのプロセスの中を調べます。
+
 Rubyで書いたマニフェストを読み込むには`--allow-code`が必要です。マニフェストは隔離したサンドボックスの中で評価されます。
 
 実装していない機能を呼ぶと、エラーで終了します。成功したように見せることはありません。
@@ -35,6 +39,7 @@ Rubyで書いたマニフェストを読み込むには`--allow-code`が必要�
 ```sh
 ruby -Ilib exe/rubernetes-apiserver --config /etc/rubernetes/apiserver.yml --check-config
 ruby -Ilib exe/rubectl --kubeconfig ~/.kube/config get pods -n kube-system -o yaml
+sudo ruby -Ilib exe/rubectl cluster up --ha
 ```
 
 ## 関連
