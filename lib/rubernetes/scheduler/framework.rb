@@ -429,12 +429,13 @@ module Rubernetes
         @pod_group_status_handler = pod_group_status
         @dynamic_resources = dynamic_resources || DynamicResources.new
         @volume_binding = volume_binding || VolumeBinding.new
-        @plugins = if standard_plugins
-                     self.class.default_registry({"DynamicResources" => @dynamic_resources, "VolumeBinding" => @volume_binding},
-                                                 feature_gates: @feature_gates).merge(custom)
-                   else
-                     custom
-                   end.freeze
+        @configured_plugins = if standard_plugins
+                                self.class.default_registry({"DynamicResources" => @dynamic_resources, "VolumeBinding" => @volume_binding},
+                                                            feature_gates: @feature_gates).merge(custom)
+                              else
+                                custom
+                              end.freeze
+        @plugins = @configured_plugins
         @queue = queue || SchedulingQueue.new
         @queue.hint_strategy = method(:queueing_strategy) if @queue.respond_to?(:hint_strategy=)
         @reserve_handler = reserve
@@ -463,8 +464,8 @@ module Rubernetes
         @preemption_observer = preemption_observer
         @waiting_pods = {}
         @cycle = 0
-        @batch = (OpportunisticBatch.new(plugin_names: (filter_plugins + score_plugins).map(&:name)) if opportunistic_batching)
-        @batch.metrics = @metrics if @batch.respond_to?(:metrics=)
+        @opportunistic_batching = opportunistic_batching
+        rebuild_batch
         @queue.metrics = @metrics if @queue.respond_to?(:metrics=)
         @metrics.queue = @queue if @metrics.respond_to?(:queue=)
         @volume_binding.metrics = @metrics if @volume_binding.respond_to?(:metrics=)
@@ -473,6 +474,21 @@ module Rubernetes
       end
 
       attr_reader :plugins, :queue, :preemption, :dynamic_resources, :volume_binding, :batch, :metrics
+
+      # Plugins loaded while the scheduler runs (Extension objects), on top of
+      # the configured ones; an empty registry takes them out again.  Pods
+      # scheduled from now on see the new set.  A plugin the batcher cannot
+      # sign switches opportunistic batching off, as a custom plugin does
+      # upstream.
+      def extension_plugins=(registry)
+        @plugins = @configured_plugins.merge(registry).freeze
+        rebuild_batch
+      end
+
+      def rebuild_batch
+        @batch = (OpportunisticBatch.new(plugin_names: (filter_plugins + score_plugins).map(&:name)) if @opportunistic_batching)
+        @batch.metrics = @metrics if @batch.respond_to?(:metrics=)
+      end
 
       # The node this Pod is nominated to, as far as this scheduler knows.
       def nominated_node_for(pod)
