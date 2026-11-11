@@ -28,6 +28,8 @@ class SecurityAdmissionFakeContext
     @objects[[group, resource, namespace.to_s]].values
   end
 
+  alias list! list
+
   def update(resource, namespace, name, object, resource_version:, group: "", version: "v1")
     put(resource, namespace, name, object, group: group)
   end
