@@ -34,6 +34,14 @@ Supports `get`, `create`, `apply`, `patch`, `delete`, `watch` and `raw`.
 Specify the server with a kubeconfig, or with `--server` and the credential
 flags.
 
+`rubectl cluster up` creates a cluster on this host; `start`, `down`,
+`status` and `kubeconfig` manage it afterwards. It needs root. See
+`rubectl cluster --help` for the options.
+
+`rubectl extension` applies, checks, lists and deletes extensions written in
+Ruby. `rubectl console`, `rubectl why` and `rubectl trace` look inside the
+processes of a cluster running on this host.
+
 Loading a manifest written in Ruby requires `--allow-code`. The manifest is
 evaluated inside an isolated sandbox.
 
@@ -45,6 +53,7 @@ pretends to succeed.
 ```sh
 ruby -Ilib exe/rubernetes-apiserver --config /etc/rubernetes/apiserver.yml --check-config
 ruby -Ilib exe/rubectl --kubeconfig ~/.kube/config get pods -n kube-system -o yaml
+sudo ruby -Ilib exe/rubectl cluster up --ha
 ```
 
 ## Related
