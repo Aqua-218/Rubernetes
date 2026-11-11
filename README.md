@@ -128,7 +128,7 @@ You need:
 - `nft` and `iptables`
 - Ruby 3.4.11 (pinned by the Gemfile)
 - outbound access to pull images
-- kubectl v1.36.2 at `build/tools/kubectl-v1.36.2`
+- kubectl v1.36.2 (not needed just to bring a cluster up)
 
 The kubectl checksum is in `test/compatibility/clients/matrix.yml`. KVM is
 needed only for the `microvm` RuntimeClass.
@@ -138,36 +138,47 @@ git clone <this repository> && cd 2026
 bundle install
 rake abi:compile                    # builds the C extension under build/
 
-# Create a cluster of 3 control nodes and 3 workers under /srv/rbn-dev
-sudo -E ruby tools/conformance/cluster.rb up --profile linux-amd64-ipv4-native --root /srv/rbn-dev
+# Create a cluster: 1 control node and 1 worker, usable in about ten seconds
+sudo ruby -Ilib exe/rubectl cluster up
 
-export KUBECONFIG=/srv/rbn-dev/linux-amd64-ipv4-native/kubeconfig
+export KUBECONFIG=/var/lib/rubernetes/clusters/default/kubeconfig
 kubectl get nodes
 kubectl create deployment web --image=nginx --replicas=3
 kubectl expose deployment web --port=80 --type=NodePort
 kubectl get pods -o wide
 
-sudo ruby tools/conformance/cluster.rb status --root /srv/rbn-dev
-sudo ruby tools/conformance/cluster.rb down   --root /srv/rbn-dev
+sudo ruby -Ilib exe/rubectl cluster status
+sudo ruby -Ilib exe/rubectl cluster down     # stop the processes; the state stays on disk
+sudo ruby -Ilib exe/rubectl cluster start    # start again from that state, also after a host reboot
 ```
 
-`cluster.rb up` builds a six-node cluster on one host, together with the
-PKI, per-component identities, cluster DNS and a kubeconfig.
-`<root>/<profile>/cluster.json` lists every process, port and file it
-started. The Conformance runs use the same script, so it doubles as the
-reference for a correct configuration.
+`rubectl cluster up` builds a cluster on one host, together with the PKI,
+the Raft datastore, cluster DNS and a kubeconfig. The state lives in
+`/var/lib/rubernetes/clusters/<name>`, and `cluster.json` there lists every process,
+port and file it started.
+
+| Option | Meaning |
+|---|---|
+| `--ha` | 3 control nodes and 3 workers; Raft reaches consensus among three |
+| `--controls N`, `--workers N` | choose the node counts yourself |
+| `--ip-family ipv4\|ipv6\|dual` | address family of Pods and Services |
+| `--identities components` | give each component the identity kubeadm gives it |
+| `--name NAME`, `--root DIR` | the cluster's name and where it lives |
+
+`tools/conformance/cluster.rb`, which the Conformance runs use, calls the
+same code (`lib/rubernetes/cluster/`). It only pins the topology to 3+3.
 
 ### Before running it on a shared host
 
 `up` removes the following before it starts:
 
-- workloads under `/sys/fs/cgroup/rubernetes` (set
-  `RUBERNETES_M8_CGROUP_ROOT` to use a different place)
+- workloads under `/sys/fs/cgroup/rubernetes`
 - stale `rbn*` bridges and `rbn-*` network namespaces in its own network
   namespace
 
-`up` refuses to start while a cluster from a different root is alive in the
-same network namespace. To run several clusters on one host, give each its
+`up` refuses to start while another cluster is alive in the same network
+namespace, and when `--root` names a directory holding files that are not a
+cluster's. To run several clusters on one host, give each its
 own network namespace with `tools/conformance/netns_env.sh`. The steps are
 in [tools/conformance/README.md](tools/conformance/README.md).
 
@@ -192,6 +203,114 @@ Then open `http://localhost:3000`. The dashboard scrapes every API server,
 every kubelet and every annotated Pod and Service into its own store. It
 serves the Prometheus HTTP API (`/api/v1/query` and the rest), so Grafana can
 use it as a Prometheus data source.
+
+## Extensions written in Ruby
+
+Cluster behaviour can be added with one Ruby file. The file is stored in the
+API, and the running components load it as it is: nothing is rebuilt and
+nothing restarts.
+
+| To add | In Kubernetes | In Rubernetes |
+|---|---|---|
+| a scheduler Filter or Score | write it in Go, rebuild kube-scheduler and replace it | a `filter` or `score` block |
+| admission validation or mutation | deploy a webhook server with its TLS certificates | a `validate` or `mutate` block |
+| a controller | build an operator image and deploy it | a `controller` block |
+
+This file makes a `team` label mandatory on Pods and keeps batch work off the
+nodes reserved for interactive services:
+
+```ruby
+# team_rules.rb
+validate "pods", on: :create do |request|
+  owner = request.object.dig("metadata", "labels", "team")
+  request.reject("Pods need a `team` label so we know whom to ask") if owner.to_s.empty?
+end
+
+filter "KeepBatchOffInteractive" do |pod, node|
+  next true unless pod.labels["tier"] == "batch"
+
+  node.labels["workload"] == "interactive" ? "node is reserved for interactive workloads" : true
+end
+```
+
+```sh
+sudo ruby -Ilib exe/rubectl cluster up --workers 3 --extensions
+export KUBECONFIG=/var/lib/rubernetes/clusters/default/kubeconfig
+
+ruby -Ilib exe/rubectl extension apply team_rules.rb
+# team-rules: filter:KeepBatchOffInteractive  validate:pods
+#   scheduler   loaded
+#   admission   loaded
+#   controller  loaded
+
+kubectl run web --image=nginx
+# Error from server (Forbidden): extension team-rules denied the request:
+# Pods need a `team` label so we know whom to ask
+```
+
+The reason a filter returns appears as it is in the scheduling failure
+message of `kubectl describe pod`. Fix the file, `apply` it again, and the
+next Pod is handled by the new version. A file with a syntax error is refused
+on your machine, with the line number.
+
+`rubectl extension list` shows what each component made of every extension
+and how often its blocks raised. Extensions are also visible through
+`kubectl get extensions.rubernetes.io`.
+
+An extension runs inside the scheduler, the API servers and the controller
+manager, with their privileges. It is not isolated. Treat anyone who can write
+an Extension as cluster-admin. Extensions are off by default: only a cluster
+brought up with `--extensions`, or a component whose configuration says
+`extensions: {enabled: true}`, loads them.
+
+Examples are in [examples/extensions/](examples/extensions/README.md), the
+specification in [spec/ruby/extensions.md](spec/ruby/extensions.md).
+
+## Looking inside a running cluster
+
+The components are Ruby processes, so they can be examined without stopping
+them. A cluster made by `rubectl cluster up` offers three commands for it,
+all run as root on the cluster host.
+
+`rubectl why` shows how the scheduler decided about a Pod: which plugin ruled
+each node out, and what every plugin scored the remaining ones. kube-scheduler
+shows this only after a restart at a higher verbosity.
+
+```sh
+sudo ruby -Ilib exe/rubectl why crunch
+# default/crunch: scheduled on worker-2  (attempt 1, 29.71 ms, 2026-11-11T15:34:20.272Z)
+#   worker-2    599  TaintToleration 100x3  NodeResourcesFit 99  team-rules.PreferQuietNodes 100x2
+#   worker-1    579  TaintToleration 100x3  NodeResourcesFit 99  team-rules.PreferQuietNodes 90x2
+#   worker-0      -  team-rules.KeepBatchOffInteractive: node is reserved for interactive workloads
+```
+
+`rubectl console` opens a Ruby prompt inside a running component. `help`
+lists what is in reach.
+
+```sh
+sudo ruby -Ilib exe/rubectl console scheduler
+# rubernetes-scheduler (pid 2641363, Ruby 3.4.11) -- `help` lists what is in reach, `exit` leaves
+# scheduler> nodes.map { |node| [node.name, node.pods.length] }
+# => [["worker-0", 2], ["worker-1", 2], ["worker-2", 3]]
+# scheduler> queue
+# => #<Rubernetes::Scheduler::SchedulingQueue @capacity @mutex @sequence @pending @unschedulable ...>
+# scheduler> ivar(queue, :unschedulable).length
+# => 1
+```
+
+`rubectl trace` prints the calls of one method as they happen, with
+arguments, result and duration. No logging is added and nothing is rebuilt;
+the TracePoint it attaches is taken off again when the watch ends.
+
+```sh
+sudo ruby -Ilib exe/rubectl trace scheduler "Rubernetes::Scheduler::Framework#schedule" --seconds 30
+# 15:37:00.558    78.220 ms  pod=#<Rubernetes::Scheduler::Pod default/t-86d6fc64db-r2sz2> nodes=[3 items] ...  => #<Rubernetes::Scheduler::ScheduleResult scheduled>
+```
+
+The console listens on a Unix socket each process owns; only root can open
+it. Whoever connects can read and change everything the process holds, which
+is the same privilege as attaching a debugger. The specification is
+[spec/ruby/console.md](spec/ruby/console.md) (Japanese).
 
 ## Repository layout
 
@@ -378,6 +497,7 @@ M0 through M9.
 ## Documentation
 
 - [Specification index](spec/README.md) and [architecture](spec/foundation/architecture.md)
+- [Extensions written in Ruby: specification](spec/ruby/extensions.md) and [examples](examples/extensions/README.md)
 - [Milestones and completion gates](spec/delivery/milestones.md)
 - [Kubernetes compatibility contract](spec/verification/kubernetes-compatibility.md)
 - [Coding standards](spec/delivery/coding-standards.md) and [project structure](spec/delivery/project-structure.md)
