@@ -29,7 +29,7 @@ graph TD
 | 目的 | 読む順序 |
 |---|---|
 | 全体像を知りたい | [目的と互換性](foundation/goals-and-compatibility.md) → [アーキテクチャ](foundation/architecture.md) → [全景図](diagrams/00-overview.md) |
-| Rubyらしさを見たい | [Ruby設計](ruby/README.md) → [スキーマコンパイラ](ruby/schema-compiler.md) → [コントローラDSL](control-plane/controllers.md) |
+| Rubyらしさを見たい | [Ruby設計](ruby/README.md) → [Extension](ruby/extensions.md) → [コンソール](ruby/console.md) → [スキーマコンパイラ](ruby/schema-compiler.md) → [コントローラDSL](control-plane/controllers.md) |
 | Kubernetes互換を実装する | [Kubernetes API](api/kubernetes-api.md) → [APIサーバ](api/api-server.md) → [検証戦略](verification/testing.md) |
 | コンテナ実行を実装する | [ノードエージェント](node/node-agent.md) → [ランタイム](node/runtime.md) → [ネットワーク](node/network.md) → [ボリューム](node/volume.md) |
 | 正しさを確認する | [形式仕様](verification/formal-methods.md) → [検証戦略](verification/testing.md) → [検証図](diagrams/08-verification.md) |
@@ -42,7 +42,7 @@ graph TD
 | 文書群 | 扱う内容 | 目次 |
 |---|---|---|
 | 基礎 | 文書規約、目的、互換性の境界、用語、全体構造、名称 | [foundation/](foundation/README.md) |
-| Ruby設計 | Manifest DSL、Schema DSL、メタプログラミングによる生成の境界 | [ruby/](ruby/README.md) |
+| Ruby設計 | Manifest DSL、Schema DSL、Extension、コンソール、メタプログラミングによる生成の境界 | [ruby/](ruby/README.md) |
 | API | Kubernetes APIとAPIサーバ | [api/](api/README.md) |
 | 制御面 | ストア、Raft、informer、コントローラ、スケジューラ | [control-plane/](control-plane/README.md) |
 | ノード | ノードエージェント、ランタイム、ネットワーク、サービスプロキシ、ボリューム | [node/](node/README.md) |
@@ -72,6 +72,8 @@ graph TD
 
 - [Ruby設計の概要](ruby/README.md)
 - [Ruby Manifest DSL](ruby/manifest-dsl.md)
+- [Extension](ruby/extensions.md)
+- [コンソール](ruby/console.md)
 - [スキーマコンパイラ](ruby/schema-compiler.md)
 - [Kubernetes API](api/kubernetes-api.md)
 - [APIサーバ](api/api-server.md)
