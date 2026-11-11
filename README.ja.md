@@ -93,7 +93,7 @@ Railsで書いたダッシュボードです。クラスタの中身を閲覧で
 - `nft`と`iptables`
 - Ruby 3.4.11（Gemfileで固定しています）
 - イメージを取得するための外向き通信
-- `build/tools/kubectl-v1.36.2`に置いたkubectl v1.36.2
+- kubectl v1.36.2。クラスタを立てるだけなら不要です
 
 kubectlのチェックサムは`test/compatibility/clients/matrix.yml`に書いてあります。KVMは`microvm` RuntimeClassを使うときだけ必要です。
 
@@ -102,29 +102,40 @@ git clone <this repository> && cd 2026
 bundle install
 rake abi:compile                    # Cの拡張をbuild/配下にビルド
 
-# control 3ノードとworker 3ノードのクラスタを/srv/rbn-devに作る
-sudo -E ruby tools/conformance/cluster.rb up --profile linux-amd64-ipv4-native --root /srv/rbn-dev
+# クラスタを作る。control 1ノードとworker 1ノードで、10秒ほどで使えるようになる
+sudo ruby -Ilib exe/rubectl cluster up
 
-export KUBECONFIG=/srv/rbn-dev/linux-amd64-ipv4-native/kubeconfig
+export KUBECONFIG=/var/lib/rubernetes/clusters/default/kubeconfig
 kubectl get nodes
 kubectl create deployment web --image=nginx --replicas=3
 kubectl expose deployment web --port=80 --type=NodePort
 kubectl get pods -o wide
 
-sudo ruby tools/conformance/cluster.rb status --root /srv/rbn-dev
-sudo ruby tools/conformance/cluster.rb down   --root /srv/rbn-dev
+sudo ruby -Ilib exe/rubectl cluster status
+sudo ruby -Ilib exe/rubectl cluster down     # プロセスを止める。状態はディスクに残る
+sudo ruby -Ilib exe/rubectl cluster start    # 同じ状態で起動し直す。ホストの再起動後もこれで戻る
 ```
 
-`cluster.rb up`は1台のホスト上に6ノードのクラスタを作ります。PKI、コンポーネントごとのidentity、クラスタDNS、kubeconfigも同時に用意します。起動したプロセス、ポート、ファイルの一覧は`<root>/<profile>/cluster.json`で確認できます。Conformanceの実行にも同じスクリプトを使っているので、正しい構成の見本として読めます。
+`rubectl cluster up`は1台のホスト上にクラスタを作ります。PKI、Raftデータストア、クラスタDNS、kubeconfigも同時に用意します。状態は`/var/lib/rubernetes/clusters/<name>`に置き、起動したプロセス、ポート、ファイルの一覧は同じ場所の`cluster.json`で確認できます。
+
+| オプション | 意味 |
+|---|---|
+| `--ha` | control 3ノードとworker 3ノードにする。Raftは3台で合意を取る |
+| `--controls N`、`--workers N` | ノード数を個別に決める |
+| `--ip-family ipv4\|ipv6\|dual` | Podとサービスのアドレスファミリ |
+| `--identities components` | 各コンポーネントにkubeadmと同じidentityを与える |
+| `--name NAME`、`--root DIR` | クラスタの名前と置き場所 |
+
+Conformanceの実行に使う`tools/conformance/cluster.rb`も同じコード（`lib/rubernetes/cluster/`）を呼んでいます。違いは構成を3+3に固定することだけです。
 
 ### 共用ホストで動かすときの注意
 
 `up`は起動前に次のものを消します。
 
-- `/sys/fs/cgroup/rubernetes`配下で動いているワークロード。場所は`RUBERNETES_M8_CGROUP_ROOT`で変えられます。
+- `/sys/fs/cgroup/rubernetes`配下で動いているワークロード
 - 同じネットワーク名前空間にある古い`rbn*`ブリッジと`rbn-*`名前空間
 
-同じネットワーク名前空間で別のrootのクラスタが動いている場合、`up`は起動を拒否します。1台で複数のクラスタを動かすときは、`tools/conformance/netns_env.sh`でクラスタごとにネットワーク名前空間を分けてください。手順は[tools/conformance/README.ja.md](tools/conformance/README.ja.md)にあります。
+同じネットワーク名前空間で別のクラスタが動いている場合、`up`は起動を拒否します。クラスタのものではないファイルが入ったディレクトリを`--root`に指定した場合も拒否します。1台で複数のクラスタを動かすときは、`tools/conformance/netns_env.sh`でクラスタごとにネットワーク名前空間を分けてください。手順は[tools/conformance/README.ja.md](tools/conformance/README.ja.md)にあります。
 
 ### 常設インストール
 
@@ -140,6 +151,91 @@ RUBERNETES_KUBECONFIG=$KUBECONFIG bin/rails server -p 3000
 ```
 
 起動したら`http://localhost:3000`を開いてください。ダッシュボードはすべてのAPIサーバとkubelet、それにアノテーションの付いたPodとServiceからメトリクスを集めて自前のストアに保存します。`/api/v1/query`などのPrometheus互換APIがあるので、GrafanaのPrometheusデータソースとしても使えます。
+
+## Rubyで書く拡張
+
+クラスタの振る舞いを、Rubyファイル1枚で書き足せます。ファイルはAPIに保存され、動いているコンポーネントがそのまま読み込みます。再ビルドも再起動も要りません。
+
+| 足したいもの | Kubernetesでの方法 | Rubernetesでの方法 |
+|---|---|---|
+| スケジューラのFilterとScore | Goで書き、kube-schedulerを再ビルドして入れ替える | `filter`と`score`のブロック |
+| admissionの検証と書き換え | webhookサーバをTLS証明書とともにデプロイする | `validate`と`mutate`のブロック |
+| コントローラ | オペレータをイメージにしてデプロイする | `controller`のブロック |
+
+次のファイルは、Podに`team`ラベルを必須にし、バッチ処理を対話用のノードから外します。
+
+```ruby
+# team_rules.rb
+validate "pods", on: :create do |request|
+  owner = request.object.dig("metadata", "labels", "team")
+  request.reject("Pods need a `team` label so we know whom to ask") if owner.to_s.empty?
+end
+
+filter "KeepBatchOffInteractive" do |pod, node|
+  next true unless pod.labels["tier"] == "batch"
+
+  node.labels["workload"] == "interactive" ? "node is reserved for interactive workloads" : true
+end
+```
+
+```sh
+sudo ruby -Ilib exe/rubectl cluster up --workers 3 --extensions
+export KUBECONFIG=/var/lib/rubernetes/clusters/default/kubeconfig
+
+ruby -Ilib exe/rubectl extension apply team_rules.rb
+# team-rules: filter:KeepBatchOffInteractive  validate:pods
+#   scheduler   loaded
+#   admission   loaded
+#   controller  loaded
+
+kubectl run web --image=nginx
+# Error from server (Forbidden): extension team-rules denied the request:
+# Pods need a `team` label so we know whom to ask
+```
+
+フィルタが返した理由は、`kubectl describe pod`のスケジューリング失敗のメッセージにそのまま出ます。ファイルを直して`apply`し直すと、次のPodから新しい版が使われます。構文エラーのあるファイルは、行番号を付けて手元で拒否されます。
+
+`rubectl extension list`で、各コンポーネントの読み込み結果と、ブロックが例外を出した回数を確認できます。Extensionは`kubectl get extensions.rubernetes.io`でも見えます。
+
+Extensionのコードは、スケジューラ、APIサーバ、コントローラマネージャのプロセスの中で、その権限で動きます。隔離はしません。Extensionを書ける利用者はcluster-adminと同等に扱ってください。既定では無効で、`--extensions`を付けたクラスタ、または設定に`extensions: {enabled: true}`を書いたコンポーネントだけが読み込みます。
+
+例は[examples/extensions/](examples/extensions/README.ja.md)に、仕様は[spec/ruby/extensions.md](spec/ruby/extensions.md)にあります。
+
+## 動いているクラスタの中を見る
+
+コンポーネントはRubyのプロセスなので、止めずに中を調べられます。`rubectl cluster up`で作ったクラスタでは、3つのコマンドが使えます。どれもクラスタのホスト上で、rootで実行します。
+
+`rubectl why`は、スケジューラがPodをどう判断したかを表示します。どのプラグインがどのノードを外し、残ったノードに各プラグインが何点を付けたかが分かります。kube-schedulerでは、verbosityを上げて再起動しないと見えない情報です。
+
+```sh
+sudo ruby -Ilib exe/rubectl why crunch
+# default/crunch: scheduled on worker-2  (attempt 1, 29.71 ms, 2026-11-11T15:34:20.272Z)
+#   worker-2    599  TaintToleration 100x3  NodeResourcesFit 99  team-rules.PreferQuietNodes 100x2
+#   worker-1    579  TaintToleration 100x3  NodeResourcesFit 99  team-rules.PreferQuietNodes 90x2
+#   worker-0      -  team-rules.KeepBatchOffInteractive: node is reserved for interactive workloads
+```
+
+`rubectl console`は、動いているコンポーネントの中でRubyのプロンプトを開きます。`help`で、手の届くものの一覧が出ます。
+
+```sh
+sudo ruby -Ilib exe/rubectl console scheduler
+# rubernetes-scheduler (pid 2641363, Ruby 3.4.11) -- `help` lists what is in reach, `exit` leaves
+# scheduler> nodes.map { |node| [node.name, node.pods.length] }
+# => [["worker-0", 2], ["worker-1", 2], ["worker-2", 3]]
+# scheduler> queue
+# => #<Rubernetes::Scheduler::SchedulingQueue @capacity @mutex @sequence @pending @unschedulable ...>
+# scheduler> ivar(queue, :unschedulable).length
+# => 1
+```
+
+`rubectl trace`は、メソッド1つの呼び出しを、引数、戻り値、所要時間とともに流します。ログを足して再ビルドする必要はありません。観測を終えると、取り付けたTracePointは外れます。
+
+```sh
+sudo ruby -Ilib exe/rubectl trace scheduler "Rubernetes::Scheduler::Framework#schedule" --seconds 30
+# 15:37:00.558    78.220 ms  pod=#<Rubernetes::Scheduler::Pod default/t-86d6fc64db-r2sz2> nodes=[3 items] ...  => #<Rubernetes::Scheduler::ScheduleResult scheduled>
+```
+
+コンソールは、各プロセスが持つUnixソケットで待ち受けます。ソケットはrootだけが開けます。つないだ利用者はプロセスの中身をすべて読み書きできるので、その権限はデバッガを接続できる権限と同じです。仕様は[spec/ruby/console.md](spec/ruby/console.md)にあります。
 
 ## リポジトリ構成
 
@@ -280,6 +376,7 @@ upstreamと同じく、`--runtime-config`で有効にしたときだけ提供し
 ## ドキュメント
 
 - [仕様の目次](spec/README.md)と[アーキテクチャ](spec/foundation/architecture.md)
+- [Rubyで書く拡張の仕様](spec/ruby/extensions.md)と[例](examples/extensions/README.ja.md)
 - [マイルストーンと完了ゲート](spec/delivery/milestones.md)
 - [Kubernetes互換性の試験](spec/verification/kubernetes-compatibility.md)
 - [コーディング規約](spec/delivery/coding-standards.md)と[プロジェクト構成](spec/delivery/project-structure.md)
