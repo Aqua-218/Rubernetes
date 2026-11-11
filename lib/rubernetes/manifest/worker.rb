@@ -22,8 +22,11 @@ builder = Rubernetes::Manifest::Builder.load(
   openapi_path: options.fetch(:openapi)
 )
 source = File.binread(options.fetch(:manifest), 4 * 1024 * 1024)
-builder.instance_eval(source, options.fetch(:manifest), 1)
-resources = builder.result
+resources = begin
+  builder.evaluate(source, options.fetch(:manifest))
+rescue Rubernetes::Manifest::Error => error
+  abort error.message
+end
 abort "manifest resource limit exceeded" if resources.length > Integer(options.fetch(:max_resources))
 
 payload = JSON.generate(resources)
