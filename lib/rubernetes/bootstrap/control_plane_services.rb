@@ -9,6 +9,9 @@ require_relative "../scheduler"
 require_relative "../watch"
 require_relative "../proxy"
 require_relative "../client"
+require_relative "../extension/controller_host"
+require_relative "../extension/loader"
+require_relative "../extension/scheduler_plugins"
 require_relative "component_server"
 
 module Rubernetes
@@ -989,6 +992,7 @@ module Rubernetes
                                                           metrics: metrics, ready: -> { started? }, logger: @logger)&.start
           @mutex.synchronize { @running = true }
           @thread = Thread.new { run_loop }
+          start_extensions
           log(:info, "process.ready", components: %w[controller-manager leader-election informers reconcile-loop] +
                                                   (@metrics_server ? ["metrics-server"] : []))
           self
@@ -1529,7 +1533,21 @@ module Rubernetes
       PV_PLUGINS = {"hostPath" => "kubernetes.io/host-path", "local" => "kubernetes.io/local-volume", "nfs" => "kubernetes.io/nfs",
                     "iscsi" => "kubernetes.io/iscsi", "fc" => "kubernetes.io/fc"}.freeze
 
+      # The controllers Extension objects declare run beside the built-in
+      # ones, on the leader only.
+      def start_extensions
+        return unless @config.dig("extensions", "enabled") == true && @client
+
+        @extensions = Extension::Loader.new(component: "controller", client: @client, logger: logger,
+                                            on_change: ->(loaded) { @extension_controllers.replace(loaded) })
+        @extension_controllers = Extension::ControllerHost.new(client: @client, leader: -> { @manager.leader? }, logger: logger,
+                                                               on_failure: @extensions.method(:failed))
+        @extensions.start
+      end
+
       def stop_components(reason:)
+        @extensions&.stop
+        @extension_controllers&.stop
         @component_server&.stop
         @component_server = nil
         @metrics_server&.stop
@@ -1591,9 +1609,11 @@ module Rubernetes
         @last_error = nil
         @scheduler_metrics = Scheduler::Metrics.new(registry: scheduler_metrics)
         @metrics = @scheduler_metrics.registry
+        @decisions = Scheduler::Decisions.new
       end
 
-      attr_reader :config, :logger, :framework, :client, :node_informer, :pod_informer, :elector, :last_result, :last_error, :metrics
+      attr_reader :config, :logger, :framework, :client, :node_informer, :pod_informer, :elector, :last_result, :last_error, :metrics,
+                  :decisions
 
       # pkg/scheduler/metrics: the STABLE series kube-scheduler serves.
       ATTEMPT_BUCKETS = Array.new(15) { |index| 0.001 * (2**index) }.freeze
@@ -1637,6 +1657,7 @@ module Rubernetes
         # one upstream never pops.
         return if (result.respond_to?(:gated?) && result.gated?) || (result.respond_to?(:dropped?) && result.dropped?)
 
+        @decisions.record(result, seconds) if result.is_a?(Scheduler::ScheduleResult)
         @scheduler_metrics.attempt(outcome, seconds)
         victims = result.respond_to?(:victims) ? Array(result.victims) : []
         return if victims.empty?
@@ -1674,6 +1695,7 @@ module Rubernetes
           @mutex.synchronize { @running = true }
           @thread = Thread.new { run_loop }
           start_scheduler_status_monitor
+          start_extensions
           @component_server = ComponentServer.from_config(component: "kube-scheduler", config: @config, metrics: @metrics,
                                                           ready: -> { started? }, logger: @logger,
                                                           extra_paths: {"/metrics/resources" => method(:resource_metrics_body)})&.start
@@ -2609,7 +2631,21 @@ module Rubernetes
         @elector = Controller::LeaseElector.new(store: @store, identity: identity, **lease)
       end
 
+      # Extension objects add filter and score plugins to the running
+      # framework.  A Pod an extension's filter turned away is waiting for
+      # nothing the cluster will report, so every change retries them all.
+      def start_extensions
+        return unless @config.dig("extensions", "enabled") == true && @client
+
+        @extensions = Extension::Loader.new(component: "scheduler", client: @client, logger: logger, on_change: lambda do |loaded|
+          @framework.extension_plugins = Extension::SchedulerPlugins.registry(loaded, on_failure: @extensions.method(:failed))
+          retry_unschedulable("extensions_changed")
+        end)
+        @extensions.start
+      end
+
       def stop_components(reason:)
+        @extensions&.stop
         @component_server&.stop
         @component_server = nil
         @node_informer&.stop(join: true) if @node_informer.respond_to?(:stop)
