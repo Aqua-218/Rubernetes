@@ -81,4 +81,25 @@ class NetworkHostForwardTest < Minitest::Test
     assert_empty result.installed
     assert_equal 3, result.skipped.length, "two FORWARD accepts and the egress masquerade"
   end
+
+  # A deleted cluster takes its own rules with it and nothing else: the egress
+  # chain is shared with every other cluster on the host.
+  def test_remove_deletes_only_the_rules_of_the_given_cidrs
+    runner = FakeRunner.new
+    HostForward.new(runner: runner).remove!(["10.240.0.0/16", "fd00:d8::/48"])
+
+    assert_includes runner.calls, ["iptables", "-D", "FORWARD", "-s", "10.240.0.0/16", "-j", "ACCEPT"]
+    assert_includes runner.calls, ["ip6tables", "-D", "FORWARD", "-d", "fd00:d8::/48", "-j", "ACCEPT"]
+    assert_includes runner.calls, ["iptables", "-t", "nat", "-D", "RUBERNETES-POSTROUTING", "-d", "10.240.0.0/16", "-j", "ACCEPT"]
+    assert_empty(runner.calls.select { |call| call.include?("-F") || call.include?("-X") })
+  end
+
+  def test_remove_drops_the_egress_chain_when_no_cluster_is_left
+    runner = FakeRunner.new
+    HostForward.new(runner: runner).remove!(["10.240.0.0/16"], chain: true)
+
+    assert_equal [%w[iptables -t nat -F RUBERNETES-POSTROUTING], %w[iptables -t nat -X RUBERNETES-POSTROUTING],
+                  %w[ip6tables -t nat -F RUBERNETES-POSTROUTING], %w[ip6tables -t nat -X RUBERNETES-POSTROUTING]],
+                 runner.calls.last(4)
+  end
 end
