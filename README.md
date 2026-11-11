@@ -312,6 +312,42 @@ it. Whoever connects can read and change everything the process holds, which
 is the same privilege as attaching a debugger. The specification is
 [spec/ruby/console.md](spec/ruby/console.md) (Japanese).
 
+## Manifests written in Ruby
+
+Manifests can be written in Ruby as well. What comes out is standard
+Kubernetes objects, so the real `kubectl` takes them as they are.
+
+```ruby
+# web.rb
+deployment "web" do
+  replicas 3
+
+  container "nginx", image: "nginx:1.27" do
+    port 80
+    cpu request: "100m", limit: "500m"
+    env from: configmap("web-config")
+    readiness_probe http_get: {path: "/", port: 80}, period_seconds: 5
+  end
+end
+```
+
+```sh
+ruby -Ilib exe/rubectl render -f web.rb --allow-code -o yaml | kubectl apply -f -
+```
+
+The `selector`, and the template labels it has to match, are filled in when
+they are not written. Fields are checked against the schema, so a slip shows
+before anything is applied:
+
+```text
+web.rb:9: containers.nginx.readinessProbe.httpGet: HTTPGetAction has no field "pathh" (did you mean "path"?)
+```
+
+Loops, conditions and shared parts are plain Ruby. The file is evaluated in a
+separate process with no network and no cluster credentials. Examples are in
+[examples/manifests/](examples/manifests/README.md), the specification in
+[spec/ruby/manifest-dsl.md](spec/ruby/manifest-dsl.md) (Japanese).
+
 ## Repository layout
 
 | Path | Contents |
