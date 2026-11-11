@@ -482,6 +482,21 @@ module Rubernetes
         Helpers.failure_message(error).match?(/unknown container|no such container|container .* not found/i)
       end
 
+      # See ResourceReader#forget_read_before.  A Pod without a creation time
+      # (a static Pod) is treated as created now.
+      def forget_objects_read_before(object)
+        return unless @resource_reader
+
+        metadata = Helpers.key(object, "metadata", {})
+        created = Helpers.key(metadata, "creationTimestamp", nil)
+        @resource_reader.forget_read_before(created ? Time.iso8601(created.to_s) : Time.now,
+                                            namespace: Helpers.key(metadata, "namespace", "default"))
+      end
+
+      def sandbox_lost_error?(error)
+        Helpers.failure_message(error).include?("unknown sandbox")
+      end
+
       def sandbox_lost?(record)
         return false unless record[:sandbox_id] && @runtime.respond_to?(:sandbox)
 
@@ -621,6 +636,7 @@ module Rubernetes
         begin
           admit!(object, record)
           set_state(record, "Validated")
+          forget_objects_read_before(object)
           # The Pod is in the desired state of the world from here on: its
           # attachable volumes are reported in use before they are mounted.
           note_attachable_volumes(object, record)
@@ -1023,7 +1039,18 @@ module Rubernetes
         uid = pod_uid(object)
         entry.delete(:restart_pending)
         entry.delete(:restart_attempt)
-        entry[:id] = create_container(record[:sandbox_id], entry[:spec])
+        begin
+          entry[:id] = create_container(record[:sandbox_id], entry[:spec])
+        rescue StandardError => error
+          # No restart can put a container into a sandbox the runtime no
+          # longer has (an agent restart found the namespace holder dead):
+          # the Pod kept "restarting" into it for ever, one backoff period
+          # at a time.  kubelet: pod sandbox changed -- kill the Pod and
+          # sync it from scratch.
+          raise unless sandbox_lost_error?(error) || sandbox_lost?(record)
+
+          return lose_sandbox!(object, record, error)
+        end
         # The new container is this restart count's run from now on: an exit
         # observed before this thread records the start (exit 0 within 100 ms)
         # takes the count from the status, and with the previous run's 0 there
