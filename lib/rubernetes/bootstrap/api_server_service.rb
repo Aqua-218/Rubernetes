@@ -10,6 +10,7 @@ require "socket"
 require_relative "../runtime/microvm/runtime_classes"
 
 require_relative "../transport"
+require_relative "../extension/resource"
 require_relative "security_assembly"
 require_relative "kubernetes_service_reconciler"
 require_relative "cluster_authentication_trust"
@@ -175,6 +176,7 @@ module Rubernetes
           @system_namespace_thread.name = "apiserver-system-namespaces"
         end
         install_bootstrap_objects if @security
+        install_bootstrap_object(Extension::CRD) if extensions_enabled?
         bootstrap_dynamic_apis
         start_dynamic_api_reconciler
         bootstrap_service_cidr
@@ -316,6 +318,7 @@ module Rubernetes
         return nil unless config["security"]
 
         SecurityAssembly.new(config: config["security"], store: @store, key_for: store_key_for, logger: @logger,
+                             extensions: extensions_enabled?,
                              apiserver_id: config["identity"] || Socket.gethostname,
                              service_resolver: service_endpoint_resolver,
                              resource_resolver: lambda { |group, kind|
@@ -526,6 +529,10 @@ module Rubernetes
       def with_type_meta(collection, object)
         api_version, kind = BOOTSTRAP_TYPE_META.fetch(collection)
         object.merge("apiVersion" => object["apiVersion"] || api_version, "kind" => object["kind"] || kind)
+      end
+
+      def extensions_enabled?
+        @config.dig("extensions", "enabled") == true
       end
 
       def install_bootstrap_object(object)
