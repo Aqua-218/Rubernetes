@@ -18,12 +18,16 @@ module Rubernetes
         rubernetes-proxy
       ].freeze
       DEFAULT_PATH = File.expand_path("../../../config/defaults/m1.yml", __dir__).freeze
-      TOP_LEVEL_KEYS = %w[version logging processes].freeze
+      TOP_LEVEL_KEYS = %w[version logging processes console].freeze
+      # A Ruby prompt inside the running process (Console::Server), for the
+      # owner of this socket only.  Absent, the process does not listen.
+      CONSOLE_KEYS = %w[socket].freeze
       LOGGING_KEYS = %w[level].freeze
       MAX_BYTES = 1_048_576
       APISERVER_KEYS = %w[bind_address port max_body_bytes watch_history_limit datastore tls security runtime_config
                           service_cluster_ip_range node_port_range advertise_address proxy_client kubelet_client
-                          encryption_config_file encryption_config_reload_interval_seconds egress_selector_config_file].freeze
+                          encryption_config_file encryption_config_reload_interval_seconds egress_selector_config_file
+                          extensions].freeze
       TLS_KEYS = %w[cert_file key_file].freeze
       SECURITY_KEYS = %w[authentication authorization admission audit flow_control feature_gates].freeze
       AUTHENTICATION_KEYS = %w[client_ca_file token_file service_account bootstrap_tokens request_header jwt webhook anonymous
@@ -49,7 +53,7 @@ module Rubernetes
         max_command_bytes
       ].freeze
       CONTROL_PLANE_KEYS = %w[api_server kubeconfig context identity sync lease resource_kinds controllers root_ca_file metrics_server serving cluster_signing
-                              use_service_account_credentials service_account_private_key_file].freeze
+                              use_service_account_credentials service_account_private_key_file extensions].freeze
       CLUSTER_SIGNING_KEYS = %w[cert_file key_file duration_seconds signers].freeze
       CLUSTER_SIGNING_SIGNERS = %w[kubelet_serving kubelet_client kube_apiserver_client legacy_unknown].freeze
       # ComponentServer: the scheduler's / controller-manager's endpoints.
@@ -58,7 +62,10 @@ module Rubernetes
         enabled port bind_address advertise_address metric_resolution_seconds scrape_timeout_seconds kubelet_scheme kubelet_port
         kubelet_insecure_tls address_type_priority node_selector register tls jitter
       ].freeze
-      SCHEDULER_KEYS = %w[api_server kubeconfig context identity sync lease resource_kinds serving feature_gates].freeze
+      SCHEDULER_KEYS = %w[api_server kubeconfig context identity sync lease resource_kinds serving feature_gates extensions].freeze
+      # Extension objects (rubernetes.io/v1alpha1) are Ruby source evaluated
+      # inside the component: off unless the configuration turns them on.
+      EXTENSIONS_KEYS = %w[enabled].freeze
       PROXY_KEYS = %w[api_server kubeconfig context node_name backend attach sync serving].freeze
       AGENT_KEYS = %w[
         node_name api_server kubeconfig context runtime_profile
@@ -179,6 +186,10 @@ module Rubernetes
         @data.fetch("processes").fetch(process_name)
       end
 
+      def console_socket
+        @data.dig("console", "socket")
+      end
+
       def to_h
         @data
       end
@@ -193,6 +204,7 @@ module Rubernetes
         raise Error, "logging must be a mapping" unless logging.is_a?(Hash)
 
         reject_unknown_keys!(logging, LOGGING_KEYS, "logging")
+        validate_console!(data["console"]) if data.key?("console")
         raise Error, "logging.level must be one of #{LEVELS.join(", ")}" unless LEVELS.include?(logging["level"])
 
         processes = data["processes"]
@@ -813,6 +825,7 @@ module Rubernetes
         validate_resource_kinds!(process_config["resource_kinds"], process_name) if process_config.key?("resource_kinds")
         validate_controllers!(process_config["controllers"], process_name) if process_config.key?("controllers")
         validate_serving!(process_config["serving"], process_name) if process_config.key?("serving")
+        validate_extensions!(process_config["extensions"], process_name) if process_config.key?("extensions")
       end
 
       def validate_cluster_signing!(section)
@@ -1017,8 +1030,23 @@ module Rubernetes
         raise Error, "#{context} must be an octal mode between 0000 and 7777" unless valid
       end
 
+      def validate_console!(section)
+        validate_mapping!(section, "console")
+        reject_unknown_keys!(section, CONSOLE_KEYS, "console")
+        validate_absolute_path!(section["socket"], "console.socket")
+      end
+
+      def validate_extensions!(section, process_name)
+        validate_mapping!(section, "#{process_name}.extensions")
+        reject_unknown_keys!(section, EXTENSIONS_KEYS, "#{process_name}.extensions")
+        return if !section.key?("enabled") || [true, false].include?(section["enabled"])
+
+        raise Error, "#{process_name}.extensions.enabled must be true or false"
+      end
+
       def validate_apiserver!(process_config)
         reject_unknown_keys!(process_config, APISERVER_KEYS, "rubernetes-apiserver configuration")
+        validate_extensions!(process_config["extensions"], "rubernetes-apiserver") if process_config.key?("extensions")
         if process_config.key?("encryption_config_file")
           validate_absolute_path!(process_config["encryption_config_file"],
                                   "rubernetes-apiserver.encryption_config_file")
