@@ -28,13 +28,15 @@ module Rubernetes
 
       SLOW_FETCH_SECONDS = 2.0
 
-      def initialize(client:, ttl: DEFAULT_TTL_SECONDS, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }, logger: nil)
+      def initialize(client:, ttl: DEFAULT_TTL_SECONDS, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }, logger: nil,
+                     wall_clock: -> { Time.now })
         raise ArgumentError, "client is required" unless client
 
         @client = client
         @logger = logger
         @ttl = Float(ttl)
         @clock = clock
+        @wall_clock = wall_clock
         @cache = {}
         @mutex = Mutex.new
       end
@@ -110,6 +112,25 @@ module Rubernetes
             @cache.delete_if do |key, _|
               key[0] == plural && (name.nil? || key[2] == name.to_s) && (namespace.nil? || key[1] == namespace.to_s)
             end
+          end
+        end
+      end
+
+      # A Pod must start with the ConfigMaps and Secrets as they were when it
+      # was created, at the least: `kubectl apply` of a ConfigMap followed by
+      # a rollout restart has to give the new Pods the new values.  A copy
+      # read before the Pod existed may predate such a change, so it is
+      # dropped; one read afterwards is kept, which is what lets a burst of
+      # Pods share a single read.  kubelet does the same when a Pod is
+      # registered with its ConfigMap and Secret managers.
+      #
+      # creationTimestamp is cut to the second, so "before" has to include
+      # the whole second the Pod was created in.
+      def forget_read_before(pod_created_at, namespace:)
+        horizon = pod_created_at + 1
+        @mutex.synchronize do
+          @cache.delete_if do |key, entry|
+            %w[configmaps secrets].include?(key[0]) && key[1] == namespace.to_s && entry.fetch(:read_at) <= horizon
           end
         end
       end
@@ -202,7 +223,7 @@ module Rubernetes
       end
 
       def write_cache(key, value)
-        @mutex.synchronize { @cache[key] = {value: value, at: @clock.call} }
+        @mutex.synchronize { @cache[key] = {value: value, at: @clock.call, read_at: @wall_clock.call} }
         value
       end
 
