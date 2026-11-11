@@ -7,6 +7,7 @@ require "openssl"
 require "yaml"
 
 require_relative "../security"
+require_relative "../extension/admission_plugin"
 
 module Rubernetes
   module Bootstrap
@@ -26,8 +27,9 @@ module Rubernetes
       attr_reader :authentication_info
 
       def initialize(config:, store:, key_for:, logger: nil, clock: -> { Time.now.utc }, resource_resolver: nil, service_resolver: nil,
-                     scope_resolver: nil, type_resolver: nil, defaulter: nil, apiserver_id: nil)
+                     scope_resolver: nil, type_resolver: nil, defaulter: nil, apiserver_id: nil, extensions: false)
         @defaulter = defaulter
+        @extensions = extensions
         @apiserver_id = apiserver_id || Socket.gethostname
         @reload_controllers = []
         @service_resolver = service_resolver
@@ -478,9 +480,14 @@ module Rubernetes
             config[plugin] = (config[plugin] || {}).merge("service_resolver" => @service_resolver)
           end
         end
-        Security::Admission::Registry.default_chain(context: context, enable: Array(admission&.fetch("enable", nil)),
-                                                    disable: Array(admission&.fetch("disable", nil)),
-                                                    config: config, feature_gates: @feature_gates)
+        chain = Security::Admission::Registry.default_chain(context: context, enable: Array(admission&.fetch("enable", nil)),
+                                                            disable: Array(admission&.fetch("disable", nil)),
+                                                            config: config, feature_gates: @feature_gates)
+        return chain unless @extensions
+
+        # Not one of upstream's plugins, so not in the pinned order: after all
+        # of them.
+        Security::Admission::Chain.new(plugins: chain.plugins + [Extension::AdmissionPlugin.new(context: context, logger: @logger)])
       end
 
       # ------------------------------------------------------------ helpers
